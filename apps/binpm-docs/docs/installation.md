@@ -124,7 +124,16 @@ bash ./scripts/install/binpm.sh --version latest --method direct
 ./scripts/install/binpm.ps1 -Version latest -Method direct
 ```
 
-Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
+Direct installers detect unsupported hosts before resolving release tags or downloading assets. Unsupported-host output reports the detected OS and architecture, lists the supported direct-install targets, and says that no first-party binpm direct installer artifact is published for that detected host. This is a direct-installer artifact boundary, not a statement that binpm cannot ever run there. Use an x64/arm64 host or supported CI image for direct install, use Homebrew or `cargo-binstall` where they support your host, or build binpm from source.
+
+Supported direct-install targets are:
+
+- `darwin/amd64` (macOS x64)
+- `darwin/arm64` (macOS arm64)
+- `linux/amd64` (Linux x64)
+- `linux/arm64` (Linux arm64)
+- `windows/amd64` (Windows x64)
+- `windows/arm64` (Windows arm64)
 
 Direct installers support bundle-enabled releases only.
 

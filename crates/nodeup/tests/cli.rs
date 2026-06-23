@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     fs,
     io::Write,
+    net::TcpListener,
     path::{Path, PathBuf},
 };
 
@@ -50,6 +51,13 @@ fn path_string_ends_with_components(path: &str, suffix: &[&str]) -> bool {
     let normalized = path.replace('\\', "/");
     let components = normalized.split('/').collect::<Vec<_>>();
     components.ends_with(suffix)
+}
+
+fn closed_loopback_download_base_url() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    format!("http://user:secret@{address}/download/release")
 }
 
 impl TestEnv {
@@ -313,7 +321,7 @@ fn help_lists_top_level_subcommand_descriptions() {
             "Manage executable-name dispatch shims",
         ))
         .stdout(predicates::str::contains(
-            "Generate shell completion scripts",
+            "Generate raw shell completion scripts",
         ));
 }
 
@@ -346,8 +354,9 @@ fn help_lists_nested_subcommand_descriptions() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "Generate shell completion scripts",
+            "Generate raw shell completion scripts",
         ))
+        .stdout(predicates::str::contains("JSON error envelopes on stderr"))
         .stdout(predicates::str::contains(
             "Optional top-level command scope",
         ));
@@ -364,6 +373,17 @@ fn help_lists_nested_subcommand_descriptions() {
         ))
         .stdout(predicates::str::contains(
             "Remove a runtime override for a directory",
+        ));
+
+    env.command()
+        .args(["override", "unset", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Mutually exclusive with `--nonexistent`",
+        ))
+        .stdout(predicates::str::contains(
+            "Mutually exclusive with `--path`",
         ));
 
     env.command()
@@ -508,16 +528,21 @@ fn json_output_help_still_uses_clap_help_output() {
 
 #[test]
 #[serial]
-fn delegated_run_arguments_do_not_request_json_parser_errors() {
+fn delegated_run_arguments_do_not_request_json_application_errors() {
     let env = TestEnv::new();
 
-    env.command()
-        .args(["run", "lts", "node", "--output", "json"])
-        .assert()
-        .failure()
-        .code(4)
-        .stderr(predicates::str::contains("nodeup error:"))
-        .stderr(predicates::str::contains("Release index request failed"));
+    for args in [
+        vec!["run", "current", "node", "--output", "json"],
+        vec!["run", "current", "node", "--output=json"],
+    ] {
+        env.command()
+            .args(&args)
+            .assert()
+            .failure()
+            .code(4)
+            .stderr(predicates::str::contains("nodeup error:"))
+            .stderr(predicates::str::contains("Release index request failed"));
+    }
 }
 
 #[test]
@@ -731,6 +756,20 @@ linked-script = "{}"
         "v22.1.0\nlinked-script\n"
     );
     assert!(script_safe.stderr.is_empty());
+
+    let with_tracing = env
+        .command()
+        .env("RUST_LOG", "nodeup=info")
+        .args(["toolchain", "list", "--quiet"])
+        .output()
+        .expect("toolchain list --quiet with explicit tracing");
+    assert!(with_tracing.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&with_tracing.stdout),
+        "v22.1.0\nlinked-script\n"
+    );
+    let stderr = String::from_utf8_lossy(&with_tracing.stderr);
+    assert!(stderr.contains("command_path: \"nodeup.toolchain.list\""));
 }
 
 #[test]
@@ -877,6 +916,8 @@ fn toolchain_link_rejects_reserved_channel_name_and_does_not_persist_selector() 
         "Reserved channel selectors (`lts`, `current`, `latest`) cannot be used as linked runtime \
          names.",
     ));
+    assert!(stderr.contains("local-lts"));
+    assert!(stderr.contains("work-node"));
 
     let list_output = env
         .command()
@@ -943,6 +984,7 @@ fn toolchain_link_rejects_case_variant_reserved_channel_name() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains(&format!("Invalid linked runtime name: {name}")));
         assert!(stderr.contains("differ from reserved channel selectors"));
+        assert!(stderr.contains(&format!("local-{}", name.to_ascii_lowercase())));
     }
 }
 
@@ -1124,6 +1166,7 @@ fn toolchain_link_json_reports_managed_shim_command_availability() {
     fs::create_dir_all(&runtime_bin).unwrap();
     write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
     write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
+    write_runtime_executable(runtime_bin.join("npx"), "#!/bin/sh\necho npx\n");
 
     let output = env
         .command()
@@ -1172,6 +1215,32 @@ fn toolchain_link_json_reports_managed_shim_command_availability() {
 
 #[test]
 #[serial]
+fn toolchain_link_human_separates_required_node_from_optional_missing_shims() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-node-only");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-node-only",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Required node check: passed"))
+        .stdout(predicates::str::contains(
+            "Optional package-manager shims missing: npm, npx, yarn, pnpm",
+        ))
+        .stdout(predicates::str::contains("npm: missing"))
+        .stdout(predicates::str::contains("pnpm: missing"));
+}
+
+#[test]
+#[serial]
 fn toolchain_link_human_reports_npm_exec_backed_managed_shims_available() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-human-command-availability");
@@ -1179,6 +1248,7 @@ fn toolchain_link_human_reports_npm_exec_backed_managed_shims_available() {
     fs::create_dir_all(&runtime_bin).unwrap();
     write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
     write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
+    write_runtime_executable(runtime_bin.join("npx"), "#!/bin/sh\necho npx\n");
 
     env.command()
         .args([
@@ -1189,6 +1259,9 @@ fn toolchain_link_human_reports_npm_exec_backed_managed_shims_available() {
         ])
         .assert()
         .success()
+        .stdout(predicates::str::contains(
+            "Optional package-manager shims: all available.",
+        ))
         .stdout(predicates::str::contains("yarn: available (via npm exec)"))
         .stdout(predicates::str::contains("pnpm: available (via npm exec)"));
 }
@@ -1313,7 +1386,12 @@ fn toolchain_unlink_conflicts_when_link_is_default() {
         .failure()
         .code(6)
         .stderr(predicates::str::contains(
-            "Cannot unlink 'linked-unlink-default'; it is used as the default runtime",
+            "Cannot unlink linked-unlink-default; referenced by blocking runtime selectors",
+        ))
+        .stderr(predicates::str::contains("global-default"))
+        .stderr(predicates::str::contains("nodeup default <runtime>"))
+        .stderr(predicates::str::contains(
+            "nodeup toolchain unlink linked-unlink-default",
         ));
 }
 
@@ -1339,8 +1417,9 @@ fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_default() {
         .failure()
         .code(6)
         .stderr(predicates::str::contains(
-            "Cannot unlink 'LTS'; it is used as the default runtime",
-        ));
+            "Cannot unlink LTS; referenced by blocking runtime selectors",
+        ))
+        .stderr(predicates::str::contains("global-default"));
 }
 
 #[test]
@@ -1381,8 +1460,172 @@ fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
         .failure()
         .code(6)
         .stderr(predicates::str::contains(
-            "Cannot unlink 'linked-unlink-override'; it is referenced by a directory override",
+            "Cannot unlink linked-unlink-override; referenced by blocking runtime selectors",
+        ))
+        .stderr(predicates::str::contains("directory-override"))
+        .stderr(predicates::str::contains(format!(
+            "nodeup override unset --path {}",
+            project_dir.display()
+        )))
+        .stderr(predicates::str::contains(
+            "nodeup toolchain unlink linked-unlink-override",
         ));
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_json_reports_all_blockers_with_remediation_commands() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-unlink-all-blockers");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho blockers\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-blocked",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-unlink-blocked"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-unlink-all-blockers");
+    fs::create_dir_all(&project_dir).unwrap();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "linked-unlink-blocked",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "unlink",
+            "linked-unlink-blocked",
+        ])
+        .output()
+        .expect("toolchain unlink blocked json");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_linked_runtimes"],
+        serde_json::json!(["linked-unlink-blocked"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["retry_commands"],
+        serde_json::json!(["nodeup toolchain unlink linked-unlink-blocked"])
+    );
+
+    let blockers = payload["diagnostics"]["blockers"].as_array().unwrap();
+    assert_eq!(blockers.len(), 2);
+    assert_eq!(blockers[0]["reference_type"], "global-default");
+    assert_eq!(blockers[0]["runtime"], "linked-unlink-blocked");
+    assert_eq!(blockers[0]["selector"], "linked-unlink-blocked");
+    assert_eq!(blockers[0]["change_command"], "nodeup default <runtime>");
+    assert_eq!(blockers[1]["reference_type"], "directory-override");
+    assert_eq!(blockers[1]["runtime"], "linked-unlink-blocked");
+    assert_eq!(blockers[1]["selector"], "linked-unlink-blocked");
+    assert_eq!(
+        blockers[1]["clear_command"],
+        format!("nodeup override unset --path {}", project_dir.display())
+    );
+    assert_eq!(
+        blockers[1]["change_command"],
+        format!(
+            "nodeup override set <runtime> --path {}",
+            project_dir.display()
+        )
+    );
+
+    assert!(runtime_dir.exists());
+    assert!(runtime_bin.join("node").exists());
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_blocked_retry_includes_all_requested_links() {
+    let env = TestEnv::new();
+    let blocked_runtime_dir = env.root.join("linked-runtime-unlink-blocked-mixed");
+    let blocked_runtime_bin = blocked_runtime_dir.join("bin");
+    fs::create_dir_all(&blocked_runtime_bin).unwrap();
+    write_runtime_executable(
+        blocked_runtime_bin.join("node"),
+        "#!/bin/sh\necho blocked\n",
+    );
+    let free_runtime_dir = env.root.join("linked-runtime-unlink-free-mixed");
+    let free_runtime_bin = free_runtime_dir.join("bin");
+    fs::create_dir_all(&free_runtime_bin).unwrap();
+    write_runtime_executable(free_runtime_bin.join("node"), "#!/bin/sh\necho free\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-blocked-mixed",
+            blocked_runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-free-mixed",
+            free_runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-unlink-blocked-mixed"])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "unlink",
+            "linked-unlink-blocked-mixed",
+            "linked-unlink-free-mixed",
+            "linked-unlink-blocked-mixed",
+        ])
+        .output()
+        .expect("toolchain unlink blocked mixed json");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        payload["diagnostics"]["blocked_linked_runtimes"],
+        serde_json::json!(["linked-unlink-blocked-mixed"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["retry_commands"],
+        serde_json::json!([
+            "nodeup toolchain unlink linked-unlink-blocked-mixed linked-unlink-free-mixed"
+        ])
+    );
 }
 
 #[test]
@@ -1417,8 +1660,9 @@ fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_used_by_override
         .failure()
         .code(6)
         .stderr(predicates::str::contains(
-            "Cannot unlink 'LATEST'; it is referenced by a directory override",
-        ));
+            "Cannot unlink LATEST; referenced by blocking runtime selectors",
+        ))
+        .stderr(predicates::str::contains("directory-override"));
 }
 
 #[test]
@@ -2590,6 +2834,20 @@ fn completion_redirection_examples_keep_stdout_clean() {
     assert!(!script_safe_stdout.contains("command_path:"));
     assert!(serde_json::from_slice::<Value>(&script_safe.stdout).is_err());
     assert!(script_safe.stderr.is_empty());
+
+    let with_tracing = env
+        .command()
+        .env("RUST_LOG", "nodeup=info")
+        .args(["completions", "bash"])
+        .output()
+        .expect("RUST_LOG=nodeup=info completions bash");
+    assert!(with_tracing.status.success());
+    let tracing_stdout = String::from_utf8_lossy(&with_tracing.stdout);
+    assert!(tracing_stdout.contains("nodeup"));
+    assert!(!tracing_stdout.contains("command_path:"));
+    assert!(serde_json::from_slice::<Value>(&with_tracing.stdout).is_err());
+    let tracing_stderr = String::from_utf8_lossy(&with_tracing.stderr);
+    assert!(tracing_stderr.contains("command_path: \"nodeup.completions\""));
 }
 
 #[test]
@@ -2622,7 +2880,10 @@ fn completions_accepts_help_after_shell() {
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Generate raw shell completion scripts"));
+    assert!(stdout.contains("Completion output is always raw script text"));
+    assert!(stdout.contains("JSON error envelopes on stderr"));
 }
 
 #[test]
@@ -2638,7 +2899,17 @@ fn completions_accepts_valid_top_level_scope() {
 
     assert!(output.status.success());
     assert!(!output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(stdout.contains("shim"));
+    assert!(
+        !stdout.contains("toolchain"),
+        "scoped bash completion unexpectedly included sibling command: {stdout}"
+    );
+    assert!(
+        !stdout.contains("override"),
+        "scoped bash completion unexpectedly included sibling command: {stdout}"
+    );
 }
 
 #[test]
@@ -2655,7 +2926,55 @@ fn completions_accepts_global_output_after_scope() {
     assert!(output.status.success());
     assert!(!output.stdout.is_empty());
     assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(stdout.contains("shim"));
+    assert!(
+        !stdout.contains("toolchain"),
+        "JSON-mode scoped bash completion unexpectedly included sibling command: {stdout}"
+    );
+}
+
+#[test]
+#[serial]
+fn completions_scope_generates_truly_scoped_scripts_for_supported_shells() {
+    let env = TestEnv::new();
+
+    for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
+        let output = env
+            .command()
+            .args(["completions", shell, "shim"])
+            .output()
+            .unwrap_or_else(|error| panic!("completions {shell} shim: {error}"));
+
+        assert!(
+            output.status.success(),
+            "completions {shell} shim failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("nodeup"),
+            "scoped {shell} completion did not include nodeup command name"
+        );
+        assert!(
+            stdout.contains("shim"),
+            "scoped {shell} completion did not include selected shim command"
+        );
+        assert!(
+            !stdout.contains("toolchain"),
+            "scoped {shell} completion unexpectedly included toolchain sibling: {stdout}"
+        );
+        assert!(
+            !stdout.contains("override"),
+            "scoped {shell} completion unexpectedly included override sibling: {stdout}"
+        );
+        assert!(
+            !stdout.contains("Manage installed runtimes"),
+            "scoped {shell} completion unexpectedly included toolchain description: {stdout}"
+        );
+    }
 }
 
 #[test]
@@ -2671,7 +2990,9 @@ fn completions_accepts_help_after_scope() {
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Generate raw shell completion scripts"));
+    assert!(stdout.contains("scoped to one supported top-level command"));
 }
 
 #[test]
@@ -2699,6 +3020,29 @@ fn json_completions_invalid_shell_emits_invalid_input_error_envelope() {
 
 #[test]
 #[serial]
+fn json_completions_invalid_shell_emits_json_when_output_follows_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bad-shell", "--output", "json"])
+        .output()
+        .expect("completions invalid shell --output json");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported shell"));
+}
+
+#[test]
+#[serial]
 fn json_completions_invalid_scope_emits_invalid_input_error_envelope() {
     let env = TestEnv::new();
 
@@ -2707,6 +3051,34 @@ fn json_completions_invalid_scope_emits_invalid_input_error_envelope() {
         .args(["--output", "json", "completions", "bash", "invalid-scope"])
         .output()
         .expect("completions --output json invalid scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope"));
+    assert_eq!(
+        payload["diagnostics"]["allowed_scope_category"],
+        "top-level-command"
+    );
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "invalid-scope");
+}
+
+#[test]
+#[serial]
+fn json_completions_invalid_scope_emits_json_when_output_follows_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "invalid-scope", "--output", "json"])
+        .output()
+        .expect("completions invalid scope --output json");
 
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
@@ -4991,11 +5363,118 @@ fn checksum_mismatch_json_includes_sanitized_mirror_diagnostics() {
     assert_eq!(payload["diagnostics"]["index_url_source"], "env");
     assert_eq!(payload["diagnostics"]["download_base_url_source"], "env");
     assert_eq!(payload["diagnostics"]["mirror_override_present"], true);
+    assert!(payload["diagnostics"]["mirror_mismatch_indicators"]
+        .as_array()
+        .unwrap()
+        .contains(&Value::String("different-release-root".to_string())));
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!stderr.contains("secret"));
     assert!(!stderr.contains("token="));
     assert!(!stderr.contains("fragment"));
+}
+
+#[test]
+#[serial]
+fn download_failure_json_includes_sanitized_mirror_diagnostics() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+
+    let credentialed_download_base_url = format!(
+        "{}/other/release?download_token=secret#download-fragment",
+        env.server
+            .base_url()
+            .replacen("http://", "http://user:secret@", 1)
+    );
+    let credentialed_index_url = format!(
+        "{}/download/release/index.json?index_token=secret#index-fragment",
+        env.server
+            .base_url()
+            .replacen("http://", "http://user:secret@", 1)
+    );
+
+    let output = env
+        .command()
+        .env("NODEUP_INDEX_URL", credentialed_index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", credentialed_download_base_url)
+        .args(["--output", "json", "toolchain", "install", "22.1.0"])
+        .output()
+        .expect("install download failure json diagnostics");
+
+    assert_eq!(output.status.code(), Some(4));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "network");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("verify NODEUP_INDEX_URL and NODEUP_DOWNLOAD_BASE_URL"));
+    assert_eq!(
+        payload["diagnostics"]["index_url"],
+        format!("{}/download/release/index.json", env.server.base_url())
+    );
+    assert_eq!(
+        payload["diagnostics"]["download_base_url"],
+        format!("{}/other/release", env.server.base_url())
+    );
+    assert_eq!(payload["diagnostics"]["index_url_source"], "env");
+    assert_eq!(payload["diagnostics"]["download_base_url_source"], "env");
+    assert_eq!(payload["diagnostics"]["mirror_override_present"], true);
+    assert!(payload["diagnostics"]["mirror_mismatch_indicators"]
+        .as_array()
+        .unwrap()
+        .contains(&Value::String("different-release-root".to_string())));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("secret"));
+    assert!(!stderr.contains("token="));
+    assert!(!stderr.contains("fragment"));
+}
+
+#[test]
+#[serial]
+fn archive_send_failure_json_includes_sanitized_mirror_diagnostics() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+
+    let download_base_url = closed_loopback_download_base_url();
+
+    let output = env
+        .command()
+        .env("NODEUP_DOWNLOAD_BASE_URL", &download_base_url)
+        .args(["--output", "json", "toolchain", "install", "22.1.0"])
+        .output()
+        .expect("install archive send failure json diagnostics");
+
+    assert_eq!(output.status.code(), Some(4));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "network");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Download request failed"));
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("verify NODEUP_INDEX_URL and NODEUP_DOWNLOAD_BASE_URL"));
+    assert_eq!(payload["diagnostics"]["index_url"], env.index_url);
+    assert_eq!(
+        payload["diagnostics"]["download_base_url"],
+        download_base_url.replace("user:secret@", "")
+    );
+    assert_eq!(payload["diagnostics"]["index_url_source"], "env");
+    assert_eq!(payload["diagnostics"]["download_base_url_source"], "env");
+    assert_eq!(payload["diagnostics"]["mirror_override_present"], true);
+    assert!(payload["diagnostics"]["mirror_mismatch_indicators"]
+        .as_array()
+        .unwrap()
+        .contains(&Value::String("different-host".to_string())));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("secret"));
 }
 
 #[test]
@@ -5975,6 +6454,103 @@ fn toolchain_install_rejects_missing_linked_runtime_selector_before_lookup() {
 
 #[test]
 #[serial]
+fn toolchain_install_preflights_all_selectors_before_installing() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "install",
+            "current",
+            "linked-name",
+        ])
+        .output()
+        .expect("toolchain install current linked-name");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("selector=linked-name"));
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn toolchain_install_preflights_reserved_case_channel_variants() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "current", "LTS"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Reserved channel selectors are case-sensitive",
+        ));
+
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn toolchain_install_valid_multi_selector_installs_each_target() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "install",
+            "22.1.0",
+            "current",
+        ])
+        .output()
+        .expect("toolchain install valid multi-selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("install JSON array");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["runtime"], "v22.1.0");
+    assert_eq!(entries[1]["runtime"], "v24.0.0");
+    assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
+    assert!(env.data_root.join("toolchains").join("v24.0.0").exists());
+}
+
+#[test]
+#[serial]
 fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
     let env = TestEnv::new();
 
@@ -6177,6 +6753,94 @@ fn update_linked_selector_reports_skipped_status() {
     assert_eq!(entries[0]["status"], "skipped-linked-runtime");
     assert!(entries[0]["previous_runtime"].is_null());
     assert!(entries[0]["updated_runtime"].is_null());
+}
+
+#[test]
+#[serial]
+fn update_preflights_all_explicit_selectors_before_installing() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update", "current", "LTS"])
+        .output()
+        .expect("update current LTS");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Reserved channel selectors are case-sensitive"));
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn update_preflights_alias_before_reserved_case_channel_variant() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["update", "latest", "Current"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Reserved channel selectors are case-sensitive",
+        ));
+
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn update_valid_multi_selector_preserves_channel_and_linked_behavior() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "update",
+            "current",
+            "linked-update-explicit",
+            "22.1.0",
+        ])
+        .output()
+        .expect("update valid multi-selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0]["selector"], "current");
+    assert_eq!(entries[0]["status"], "updated");
+    assert_eq!(entries[0]["updated_runtime"], "v24.0.0");
+    assert_eq!(entries[1]["selector"], "linked-update-explicit");
+    assert_eq!(entries[1]["status"], "skipped-linked-runtime");
+    assert_eq!(entries[2]["selector"], "22.1.0");
+    assert_eq!(entries[2]["status"], "skipped-exact-version");
 }
 
 #[test]
@@ -7440,10 +8104,11 @@ fn package_manager_range_json_error_identifies_failed_version_part() {
     assert_eq!(payload["diagnostics"]["problem"], "non-exact-semver");
     assert_eq!(payload["diagnostics"]["manager"], "pnpm");
     assert_eq!(payload["diagnostics"]["version"], "10.x");
+    assert_eq!(payload["diagnostics"]["correction"], "pnpm@10.32.1");
     assert!(payload["message"]
         .as_str()
         .unwrap()
-        .contains("pnpm@<major>.<minor>.<patch>"));
+        .contains("\"packageManager\": \"pnpm@10.32.1\""));
 }
 
 #[test]
@@ -7493,10 +8158,18 @@ fn unsupported_package_manager_json_error_identifies_manager_part() {
     assert_eq!(payload["diagnostics"]["failed_part"], "manager");
     assert_eq!(payload["diagnostics"]["problem"], "unsupported-manager");
     assert_eq!(payload["diagnostics"]["manager"], "npm");
+    assert_eq!(
+        payload["diagnostics"]["correction"],
+        serde_json::json!(["yarn@4.13.0", "pnpm@10.32.1"])
+    );
     assert!(payload["message"]
         .as_str()
         .unwrap()
         .contains("Unsupported packageManager manager 'npm'"));
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("only for `yarn` and `pnpm`"));
 }
 
 #[test]
@@ -7550,6 +8223,10 @@ fn non_string_package_manager_json_error_identifies_expected_shape() {
         payload["diagnostics"]["expected"],
         "<manager>@<exact-semver>"
     );
+    assert_eq!(
+        payload["diagnostics"]["correction"],
+        serde_json::json!(["yarn@4.13.0", "pnpm@10.32.1"])
+    );
 }
 
 #[test]
@@ -7590,6 +8267,52 @@ fn run_yarn_prefers_direct_binary_when_package_manager_field_is_missing() {
 
 #[test]
 #[serial]
+fn which_yarn_direct_mode_labels_runtime_binary_strategy() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-direct-yarn");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    write_runtime_executable(runtime_bin.join("yarn"), "#!/bin/sh\necho yarn\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-direct-yarn",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-direct-yarn"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-direct-yarn");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-direct-yarn"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["which", "yarn"])
+        .output()
+        .expect("which yarn direct mode");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("will run as direct runtime binary"));
+    assert!(stdout.contains("strategy=direct-runtime-binary"));
+    assert!(stdout.contains("corepack=unsupported"));
+}
+
+#[test]
+#[serial]
 fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_binary_is_missing() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
@@ -7621,8 +8344,68 @@ fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_bin
             "npm-argv:exec --yes --package @yarnpkg/cli-dist -- yarn --version",
         ))
         .stderr(predicates::str::contains(
-            "unpinned fallback; add exact packageManager",
+            "unpinned fallback; less reproducible; add exact packageManager",
         ));
+}
+
+#[test]
+#[serial]
+fn which_yarn_unpinned_fallback_json_exposes_strategy_and_corepack_state() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-fallback-yarn");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-fallback-yarn",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-fallback-yarn"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-fallback-yarn");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-fallback-yarn"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "which", "yarn"])
+        .output()
+        .expect("which yarn fallback json");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["mode"], "npm-exec");
+    assert_eq!(
+        payload["reason"],
+        "package-json-missing-field-fallback-npm-exec"
+    );
+    assert_eq!(payload["package_spec"], "@yarnpkg/cli-dist");
+    assert_eq!(payload["package_spec_pinned"], false);
+    assert_eq!(
+        payload["package_manager_strategy"],
+        "unpinned-npm-exec-fallback"
+    );
+    assert_eq!(payload["corepack_supported"], false);
+    assert_eq!(
+        payload["planning"]["package_manager_strategy"],
+        "unpinned-npm-exec-fallback"
+    );
+    assert_eq!(payload["planning"]["corepack_supported"], false);
 }
 
 #[cfg(unix)]

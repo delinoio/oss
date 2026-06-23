@@ -13,6 +13,7 @@ const MOBILE_SEARCH_LABEL = "Open documentation search";
 const REPOSITORY_LABEL = "Open Delino OSS repository on GitHub";
 const SIDEBAR_DRAWER_QUERY = "(max-width: 768px)";
 const OUTLINE_DRAWER_QUERY = "(max-width: 1279px)";
+const NAVIGATION_DRAWER_QUERY = "(max-width: 768px)";
 
 function setButtonName(element: Element | null, label: string) {
   if (!(element instanceof HTMLElement)) {
@@ -24,6 +25,18 @@ function setButtonName(element: Element | null, label: string) {
   }
   if (element.getAttribute("title") !== label) {
     element.setAttribute("title", label);
+  }
+}
+
+function setTextContent(element: HTMLElement, text: string) {
+  if (element.textContent !== text) {
+    element.textContent = text;
+  }
+}
+
+function setLocalHref(anchor: HTMLAnchorElement, href: string) {
+  if (anchor.getAttribute("href") !== href) {
+    anchor.setAttribute("href", href);
   }
 }
 
@@ -46,6 +59,20 @@ function isDrawerOpen(
   openClassName: string,
 ): boolean {
   return drawer?.classList.contains(openClassName) ?? false;
+}
+
+function getHeadingText(heading: HTMLHeadingElement) {
+  const clone = heading.cloneNode(true);
+
+  if (!(clone instanceof HTMLElement)) {
+    return heading.textContent?.trim() ?? "section";
+  }
+
+  for (const anchor of clone.querySelectorAll(".rp-header-anchor")) {
+    anchor.remove();
+  }
+
+  return clone.textContent?.replace(/\s+/g, " ").trim() || "section";
 }
 
 function setDrawerVisibility(
@@ -83,6 +110,48 @@ function setMobileDrawerState() {
     window.matchMedia(OUTLINE_DRAWER_QUERY).matches,
     isDrawerOpen(outline, "rp-doc-layout__outline--open"),
   );
+}
+
+function syncHeadingPermalinks() {
+  for (const heading of document.querySelectorAll<HTMLHeadingElement>(
+    ".rp-doc :is(h1, h2, h3, h4, h5, h6)[id]",
+  )) {
+    const headingId = heading.id;
+    const headingText = getHeadingText(heading);
+    const anchor = heading.querySelector<HTMLAnchorElement>("a.rp-header-anchor");
+
+    if (!anchor) {
+      continue;
+    }
+
+    const headingHref = `#${headingId}`;
+    const keyboardLabel = `Permalink to ${headingText}`;
+
+    if (anchor.hasAttribute("href")) {
+      anchor.removeAttribute("href");
+    }
+    setTextContent(anchor, "#");
+    if (anchor.getAttribute("aria-hidden") !== "true") {
+      anchor.setAttribute("aria-hidden", "true");
+    }
+    if (anchor.tabIndex !== -1) {
+      anchor.tabIndex = -1;
+    }
+
+    let keyboardAnchor = heading.nextElementSibling;
+    if (
+      !(keyboardAnchor instanceof HTMLAnchorElement) ||
+      !keyboardAnchor.classList.contains("delino-heading-permalink-keyboard")
+    ) {
+      keyboardAnchor = document.createElement("a");
+      keyboardAnchor.className = "delino-heading-permalink-keyboard";
+      heading.after(keyboardAnchor);
+    }
+
+    setLocalHref(keyboardAnchor, headingHref);
+    setTextContent(keyboardAnchor, keyboardLabel);
+    setButtonName(keyboardAnchor, keyboardLabel);
+  }
 }
 
 function syncAccessibleControls() {
@@ -126,7 +195,19 @@ function syncAccessibleControls() {
 
   const sidebar = document.querySelector(".rp-doc-layout__sidebar");
   const outline = document.querySelector(".rp-doc-layout__outline");
-  setButtonName(document.querySelector(".rp-sidebar-menu__left"), "Open menu");
+  setButtonName(
+    document.querySelector(".rp-sidebar-menu__left"),
+    isDrawerOpen(sidebar, "rp-doc-layout__sidebar--open")
+      ? "Close documentation pages"
+      : "Open documentation pages",
+  );
+  const sidebarMenuText = document.querySelector(".rp-sidebar-menu__left span");
+  if (
+    sidebarMenuText instanceof HTMLElement &&
+    sidebarMenuText.textContent !== "Docs"
+  ) {
+    sidebarMenuText.textContent = "Docs";
+  }
   setButtonName(
     document.querySelector(".rp-sidebar-menu__right"),
     isDrawerOpen(outline, "rp-doc-layout__outline--open")
@@ -136,12 +217,24 @@ function syncAccessibleControls() {
 
   for (const button of document.querySelectorAll(".rp-nav-hamburger")) {
     const isOpen = button.classList.contains("rp-nav-hamburger--active");
+    const isNavigationDrawer = window.matchMedia(NAVIGATION_DRAWER_QUERY).matches;
     setButtonName(
       button,
-      isOpen ? "Close navigation menu" : "Open navigation menu",
+      isNavigationDrawer
+        ? isOpen
+          ? "Close site navigation"
+          : "Open site navigation"
+        : isOpen
+          ? "Close site controls"
+          : "Open site controls",
     );
+    const ariaExpanded = String(isOpen);
+    if (button.getAttribute("aria-expanded") !== ariaExpanded) {
+      button.setAttribute("aria-expanded", ariaExpanded);
+    }
   }
 
+  syncHeadingPermalinks();
   setMobileDrawerState();
 }
 
@@ -205,12 +298,12 @@ function AccessibilitySync() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", setMobileDrawerState);
+    window.addEventListener("resize", syncAccessibleControls);
 
     return () => {
       observer.disconnect();
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", setMobileDrawerState);
+      window.removeEventListener("resize", syncAccessibleControls);
     };
   }, []);
 

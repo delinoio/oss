@@ -73,4 +73,4 @@ NODEUP_DOWNLOAD_BASE_URL=https://mirror.example/download/release
 NODEUP_RELEASE_INDEX_TTL_SECONDS=300
 ```
 
-Set both mirror variables together unless you intentionally mix sources. Checksum mismatch errors include sanitized index and download-base diagnostics when a mirror override is configured, and URL diagnostics omit credentials, query strings, and fragments.
+Set both mirror variables together unless you intentionally mix sources. Checksum mismatch and runtime download errors include sanitized index and download-base diagnostics when a mirror override is configured, and URL diagnostics omit credentials, query strings, and fragments.
