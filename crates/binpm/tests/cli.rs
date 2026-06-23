@@ -273,7 +273,7 @@ fn global_update_dry_run_reports_all_global_records_without_mutation() {
 }
 
 #[test]
-fn global_update_dry_run_json_reports_one_parseable_plan_without_mutation() {
+fn global_update_dry_run_json_propagates_resolution_failure_without_mutation() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
@@ -288,38 +288,14 @@ fn global_update_dry_run_json_reports_one_parseable_plan_without_mutation() {
         .output()
         .expect("update --json");
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
-    assert_eq!(payload["command"], "update");
-    assert_eq!(payload["scope"], "global");
-    assert_eq!(payload["dry_run"], true);
-    assert_eq!(payload["tools"].as_array().expect("tools").len(), 2);
-    assert_eq!(payload["tools"][0]["cmd"], "alpha");
-    assert_eq!(payload["tools"][0]["action"], "planned-update");
-    assert_eq!(payload["tools"][0]["source"], "github:owner/alpha");
-    assert_eq!(payload["tools"][0]["release_tag"], "1.0.0");
-    assert_eq!(payload["tools"][0]["selected_binary"], "alpha-linux-x64");
-    assert_eq!(payload["tools"][0]["checksum_source"], "local");
-    assert_eq!(payload["tools"][0]["verification"], "unverified");
-    let changed_files = payload["changed_files"]
-        .as_array()
-        .expect("changed files")
-        .iter()
-        .filter_map(|value| value.as_str())
-        .collect::<Vec<_>>();
-    let alpha_record = home
-        .join("packages")
-        .join("alpha.toml")
-        .display()
-        .to_string();
-    let alpha_bin = home.join("bin").join("alpha").display().to_string();
-    let packages_dir = home.join("packages").display().to_string();
-    let bin_dir = home.join("bin").display().to_string();
-    assert!(changed_files.contains(&alpha_record.as_str()));
-    assert!(changed_files.contains(&alpha_bin.as_str()));
-    assert!(!changed_files.contains(&packages_dir.as_str()));
-    assert!(!changed_files.contains(&bin_dir.as_str()));
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 1);
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("Failed to look up release metadata for `github:owner/alpha`"));
     assert_eq!(
         fs::read_to_string(alpha_record_path).expect("read alpha record after"),
         alpha_before

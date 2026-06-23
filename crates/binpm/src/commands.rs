@@ -1588,10 +1588,7 @@ fn preview_global_update_records_with(
     prepare_global_updates(records.clone())?
         .into_iter()
         .zip(records)
-        .map(|(update, current)| match resolve_record(paths, &update) {
-            Ok(record) => Ok((update.cmd, record)),
-            Err(_) => Ok(current),
-        })
+        .map(|(update, _current)| resolve_record(paths, &update).map(|record| (update.cmd, record)))
         .collect()
 }
 
@@ -7006,6 +7003,7 @@ fn remove_global_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
     let paths = ScopePaths::global(binpm_home()?);
     let record = read_package_record(&package_record_path(&paths, cmd))?;
     remove_global_tool_from_paths(&paths, cmd)?;
+    let changed_files = global_remove_changed_files(&paths, cmd, &record)?;
     if !output.is_json() {
         println!("cleaned global package record and executable state");
         println!(
@@ -7017,10 +7015,7 @@ fn remove_global_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
         command: "remove",
         scope: Scope::Global,
         dry_run: false,
-        changed_files: vec![
-            path_display(&package_record_path(&paths, cmd)),
-            record.installed_path.clone(),
-        ],
+        changed_files,
         tools: vec![mutation_tool_from_record(
             cmd,
             MutationAction::Removed,
@@ -7048,6 +7043,19 @@ fn remove_global_tool_from_paths(paths: &ScopePaths, cmd: &str) -> Result<()> {
         return Err(error);
     }
     Ok(())
+}
+
+fn global_remove_changed_files(
+    paths: &ScopePaths,
+    cmd: &str,
+    record: &PackageRecord,
+) -> Result<Vec<String>> {
+    let mut changed_files = vec![path_display(&package_record_path(paths, cmd))];
+    let installed_path = managed_installed_path(paths, cmd, record.target_os);
+    if !is_global_managed_installed_path(paths, cmd, &installed_path)? {
+        changed_files.push(record.installed_path.clone());
+    }
+    Ok(changed_files)
 }
 
 fn is_global_managed_installed_path(
@@ -8087,10 +8095,10 @@ mod tests {
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
-        format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
-        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, is_retryable_status, local_manifest_orphan_cmds,
-        local_runtime_lock_records, local_tool_execution_ready,
+        format_outdated_tool_line, github_sha256_digest, global_remove_changed_files,
+        global_update_selected_binary, has_current_cache_record, has_local_runtime_or_lock_state,
+        install_local_from_lock, install_path_collision_key, is_retryable_status,
+        local_manifest_orphan_cmds, local_runtime_lock_records, local_tool_execution_ready,
         local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, locked_record_download_request,
         locked_record_signature_sidecar, locked_record_verified_download_request,
@@ -8099,7 +8107,7 @@ mod tests {
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         mutation_tool_from_manifest_tool, normalize_bin_selection, override_snippet_candidate,
         package_record_output, package_shortcut_command, parse_manifest_source,
-        parse_manifest_tool_source, parse_source_argument, prepare_global_updates,
+        parse_manifest_tool_source, parse_source_argument, path_display, prepare_global_updates,
         preview_global_update_records_with, project_root_from, read_archive_selected_binary,
         record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
         release_asset_download_request, release_diagnostic_lines, release_diagnostics,
@@ -10942,6 +10950,32 @@ mod tests {
     }
 
     #[test]
+    fn global_remove_changed_files_omit_executable_owned_by_remaining_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        let mut removed = package_record();
+        removed.target_os = TargetOs::Windows;
+        removed.installed_path = paths.bin.join("tool.exe").display().to_string();
+        let mut remaining = package_record();
+        remaining.target_os = TargetOs::Windows;
+        remaining.installed_path = paths.bin.join("tool.exe").display().to_string();
+        write_package_record(&paths, "tool", &removed).expect("write removed record");
+        write_package_record(&paths, "tool.exe", &remaining).expect("write remaining record");
+        std::fs::write(paths.bin.join("tool.exe"), "remaining tool").expect("write exe");
+
+        remove_global_tool_from_paths(&paths, "tool").expect("remove global tool");
+        let changed_files =
+            global_remove_changed_files(&paths, "tool", &removed).expect("changed files");
+
+        assert_eq!(
+            changed_files,
+            vec![path_display(&crate::storage::package_record_path(
+                &paths, "tool"
+            ))]
+        );
+    }
+
+    #[test]
     fn global_remove_preserves_darwin_case_insensitive_path_owned_by_remaining_record() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
@@ -11927,12 +11961,12 @@ mod tests {
     }
 
     #[test]
-    fn global_update_preview_keeps_current_record_when_resolution_fails() {
+    fn global_update_preview_propagates_resolution_failure() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let paths = ScopePaths::global(temp_dir.path().join("home"));
         let current = package_record();
 
-        let planned = preview_global_update_records_with(
+        let error = preview_global_update_records_with(
             &paths,
             vec![("tool".to_string(), current.clone())],
             |_paths, _update| {
@@ -11942,11 +11976,9 @@ mod tests {
                 })
             },
         )
-        .expect("preview records");
+        .expect_err("resolution failure");
 
-        assert_eq!(planned.len(), 1);
-        assert_eq!(planned[0].0, "tool");
-        assert_eq!(planned[0].1.release_tag, current.release_tag);
+        assert!(matches!(error, BinpmError::AssetNotFound { .. }));
     }
 
     #[test]
