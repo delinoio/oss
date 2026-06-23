@@ -68,6 +68,8 @@ JSON selector-bearing responses include:
 - `canonical_selector`: the semantic selector identity used for tracking and alias reporting
 - `selector_alias_of`: present when a selector is an alias, currently `latest` -> `current`
 
+Use exact versions such as `22.1.0` or `v22.1.0` when a project, CI job, or override must stay fixed. Exact-version selectors are immutable pins during `nodeup update`; they are reported as `skipped-exact-version` and are not advanced to a newer patch or major release. Use channels such as `lts`, `current`, or `latest` when you want update to resolve and install the newest runtime for that channel. To move from one exact runtime to another, install or select the newer exact version with `nodeup toolchain install <version>`, `nodeup default <version>`, or `nodeup override set <version> --path <path>`.
+
 ## Installed and Linked Targets
 
 Exact versions and channels resolve to version directories under the toolchains root. Linked names resolve to the registered path.
