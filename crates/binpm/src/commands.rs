@@ -1987,9 +1987,7 @@ fn local_update_changed_files_for_record(
     let mut changed_files = BTreeSet::new();
     changed_files.insert(path_display(&package_record_path(paths, cmd)));
     changed_files.insert(record.installed_path.clone());
-    if let Some(cache_ref) = local_cache_ref_changed_file(root, cmd, record)? {
-        changed_files.insert(cache_ref);
-    }
+    changed_files.insert(local_cache_ref_changed_file_for_cached_record(root, cmd)?);
     changed_files.extend(local_cache_entry_changed_files(record, true)?);
     Ok(changed_files)
 }
@@ -3427,6 +3425,7 @@ fn install_local_tool(
     Ok(InstalledPackage {
         record,
         populated_cache_entry: install.populated_cache_entry,
+        cache_asset_changed: install.cache_asset_changed,
         deferred_cache_hit: install.deferred_cache_hit,
         cache_metadata_snapshot: install.cache_metadata_snapshot,
     })
@@ -3494,6 +3493,7 @@ fn local_tool_execution_ready(
 struct InstalledPackage {
     record: PackageRecord,
     populated_cache_entry: bool,
+    cache_asset_changed: bool,
     deferred_cache_hit: Option<ResolvedAsset>,
     cache_metadata_snapshot: Option<CacheMetadataSnapshot>,
 }
@@ -3768,6 +3768,7 @@ fn install_resolved(
             return Ok(InstalledPackage {
                 record,
                 populated_cache_entry: false,
+                cache_asset_changed: false,
                 deferred_cache_hit: Some(resolved),
                 cache_metadata_snapshot: None,
             });
@@ -3857,6 +3858,7 @@ fn install_resolved(
             true,
         )?,
         populated_cache_entry,
+        cache_asset_changed: !had_verified_cache_entry,
         deferred_cache_hit: None,
         cache_metadata_snapshot,
     })
@@ -3986,6 +3988,7 @@ fn install_local_from_lock(
     ensure_no_package_record_install_path_collision(&scope_paths, cmd, target.os)?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
     let mut populated_cache_entry = false;
+    let mut cache_asset_changed = false;
     let had_existing_cache_entry = cache_asset.symlink_metadata().is_ok();
     let cache_metadata_snapshot = if had_existing_cache_entry {
         Some(snapshot_cache_metadata(&cache_paths, &record.sha256)?)
@@ -4137,6 +4140,7 @@ fn install_local_from_lock(
             return Err(error);
         }
         populated_cache_entry = cache_metadata_snapshot.is_none();
+        cache_asset_changed = true;
     } else if !output.is_json() {
         eprintln!(
             "binpm: frozen restore reused verified cache for {cmd} \
@@ -4210,6 +4214,7 @@ fn install_local_from_lock(
         let install = InstalledPackage {
             record: record.clone(),
             populated_cache_entry,
+            cache_asset_changed,
             deferred_cache_hit: None,
             cache_metadata_snapshot: cache_metadata_snapshot.clone(),
         };
@@ -4241,6 +4246,7 @@ fn install_local_from_lock(
         let install = InstalledPackage {
             record: runtime_record.clone(),
             populated_cache_entry,
+            cache_asset_changed,
             deferred_cache_hit: None,
             cache_metadata_snapshot: cache_metadata_snapshot.clone(),
         };
@@ -4253,6 +4259,7 @@ fn install_local_from_lock(
     Ok(InstalledPackage {
         record: runtime_record,
         populated_cache_entry,
+        cache_asset_changed,
         deferred_cache_hit: None,
         cache_metadata_snapshot,
     })
@@ -6257,7 +6264,7 @@ fn local_completed_mutation_output(
         }
         changed_files.extend(local_cache_entry_changed_files(
             &completed_install.install.record,
-            completed_install.install.populated_cache_entry,
+            completed_install.install.cache_asset_changed,
         )?);
     }
     Ok(MutationOutput {
@@ -6335,7 +6342,9 @@ fn local_orphan_changed_files(
             record.target_os,
         ) {
             validate_installed_binary_path(&paths, cmd, record)?;
-            changed_files.insert(record.installed_path.clone());
+            if state.installed_snapshot.is_some() {
+                changed_files.insert(record.installed_path.clone());
+            }
         }
     }
     Ok(changed_files.into_iter().collect())
@@ -11948,6 +11957,7 @@ mod tests {
         let install = InstalledPackage {
             record,
             populated_cache_entry: true,
+            cache_asset_changed: true,
             deferred_cache_hit: None,
             cache_metadata_snapshot: None,
         };
@@ -11984,6 +11994,7 @@ mod tests {
         let install = InstalledPackage {
             record,
             populated_cache_entry: false,
+            cache_asset_changed: false,
             deferred_cache_hit: Some(resolved_asset(
                 "abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123",
             )),
@@ -12091,6 +12102,7 @@ mod tests {
             install: InstalledPackage {
                 record,
                 populated_cache_entry: false,
+                cache_asset_changed: false,
                 deferred_cache_hit: Some(resolved_asset(
                     "abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123",
                 )),
@@ -12120,6 +12132,56 @@ mod tests {
         assert!(result.changed_files.contains(&path_display(
             &crate::storage::CachePaths::new(&home).metadata_path(&sha256)
         )));
+        std::env::remove_var("BINPM_HOME");
+    }
+
+    #[test]
+    fn local_completed_mutation_output_reports_repaired_cache_asset_path() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        let root = temp_dir.path().join("project");
+        std::env::set_var("BINPM_HOME", &home);
+        let mut record = package_record();
+        record.installed_path = root.join(".binpm/bin/tool").display().to_string();
+        record.cache_key = Some(crate::storage::cache_key(&record.sha256));
+        record.cache_path = Some(
+            crate::storage::CachePaths::new(&home)
+                .asset_path(&record.sha256)
+                .display()
+                .to_string(),
+        );
+        let cache_path = record.cache_path.clone().expect("cache path");
+        let completed = CompletedLocalInstall {
+            cmd: "tool".to_string(),
+            install: InstalledPackage {
+                record,
+                populated_cache_entry: false,
+                cache_asset_changed: true,
+                deferred_cache_hit: None,
+                cache_metadata_snapshot: None,
+            },
+            prior_state: LocalToolState {
+                lockfile: crate::storage::Lockfile::default(),
+                lockfile_existed: false,
+                runtime: RuntimeToolState {
+                    package_record: None,
+                    installed_path: None,
+                    installed_snapshot: None,
+                },
+            },
+        };
+
+        let result = local_completed_mutation_output(
+            "install",
+            &root,
+            &[completed],
+            false,
+            MutationAction::Installed,
+        )
+        .expect("mutation output");
+
+        assert!(result.changed_files.contains(&cache_path));
         std::env::remove_var("BINPM_HOME");
     }
 
@@ -13459,6 +13521,31 @@ mod tests {
     }
 
     #[test]
+    fn local_update_preview_changed_files_include_fallback_cache_ref() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        let root = temp_dir.path().join("project");
+        std::env::set_var("BINPM_HOME", &home);
+        let paths = ScopePaths::local(root.clone());
+        let mut record = package_record();
+        record.installed_path = paths.bin.join("tool").display().to_string();
+        record.cache_key = None;
+        record.cache_path = None;
+
+        let changed_files = local_update_changed_files_for_record(&root, &paths, "tool", &record)
+            .expect("changed files");
+
+        assert!(changed_files.contains(
+            &local_cache_ref_changed_file_for_cached_record(&root, "tool").expect("cache ref")
+        ));
+        assert!(!changed_files.contains(&path_display(
+            &CachePaths::new(&home).metadata_path(&record.sha256)
+        )));
+        std::env::remove_var("BINPM_HOME");
+    }
+
+    #[test]
     fn local_update_preview_orphan_changed_files_validate_unsafe_installed_path() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let root = temp_dir.path().join("project");
@@ -13483,6 +13570,34 @@ mod tests {
         .expect_err("unsafe path");
 
         assert!(matches!(error, BinpmError::UnsafeInstalledPath { .. }));
+    }
+
+    #[test]
+    fn local_update_preview_orphan_changed_files_omit_missing_executable() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        let root = temp_dir.path().join("project");
+        let paths = ScopePaths::local(root.clone());
+        std::env::set_var("BINPM_HOME", &home);
+        let mut record = package_record();
+        record.installed_path = paths.bin.join("tool").display().to_string();
+        let state = RuntimeToolState {
+            package_record: Some(record.clone()),
+            installed_path: Some(paths.bin.join("tool")),
+            installed_snapshot: None,
+        };
+
+        let changed_files = local_orphan_changed_files(
+            &root,
+            &BTreeMap::new(),
+            &[("tool".to_string(), state, None)],
+        )
+        .expect("changed files");
+
+        assert!(changed_files.contains(&path_display(&package_record_path(&paths, "tool"))));
+        assert!(!changed_files.contains(&record.installed_path));
+        std::env::remove_var("BINPM_HOME");
     }
 
     #[test]
@@ -14286,6 +14401,7 @@ mod tests {
         let install = InstalledPackage {
             record,
             populated_cache_entry: false,
+            cache_asset_changed: false,
             deferred_cache_hit: Some(resolved_asset(&sha256)),
             cache_metadata_snapshot: None,
         };
@@ -14344,6 +14460,7 @@ mod tests {
         let install = InstalledPackage {
             record: package_record(),
             populated_cache_entry: false,
+            cache_asset_changed: false,
             deferred_cache_hit: None,
             cache_metadata_snapshot: Some(snapshot),
         };
@@ -14371,6 +14488,7 @@ mod tests {
         let install = InstalledPackage {
             record,
             populated_cache_entry: false,
+            cache_asset_changed: false,
             deferred_cache_hit: None,
             cache_metadata_snapshot: Some(snapshot),
         };
@@ -14401,6 +14519,7 @@ mod tests {
         let install = InstalledPackage {
             record,
             populated_cache_entry: true,
+            cache_asset_changed: true,
             deferred_cache_hit: None,
             cache_metadata_snapshot: None,
         };
@@ -14432,6 +14551,7 @@ mod tests {
         let install = InstalledPackage {
             record,
             populated_cache_entry: false,
+            cache_asset_changed: false,
             deferred_cache_hit: None,
             cache_metadata_snapshot: Some(snapshot),
         };
@@ -14553,6 +14673,7 @@ mod tests {
         let install = InstalledPackage {
             record,
             populated_cache_entry: false,
+            cache_asset_changed: false,
             deferred_cache_hit: None,
             cache_metadata_snapshot: Some(snapshot),
         };
