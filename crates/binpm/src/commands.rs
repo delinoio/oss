@@ -586,7 +586,7 @@ fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
             print_global_source_install_scope_feedback(&spec)?;
         }
         let result = install_global_source(spec, &alias, explicit_bin, args.require_verified)?;
-        print_mutation_output(result, output)
+        print_mutation_output(result.output, output)
     } else {
         if args.alias.is_some() || explicit_bin.is_some() {
             return Err(BinpmError::InvalidSourceSpec {
@@ -2788,12 +2788,17 @@ fn release_api_url(spec: &SourceSpec) -> String {
     }
 }
 
+struct GlobalInstallResult {
+    output: MutationOutput,
+    installed_record: PackageRecord,
+}
+
 fn install_global_source(
     spec: SourceSpec,
     cmd: &str,
     explicit_bin: Option<String>,
     require_verified: bool,
-) -> Result<MutationOutput> {
+) -> Result<GlobalInstallResult> {
     validate_command_name(cmd)?;
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
@@ -2826,12 +2831,10 @@ fn install_global_source(
         cache_cleanup_result?;
         return Err(error);
     }
-    Ok(global_install_mutation_output(
-        "install",
-        cmd,
-        &scope_paths,
-        &install,
-    ))
+    Ok(GlobalInstallResult {
+        output: global_install_mutation_output("install", cmd, &scope_paths, &install),
+        installed_record: record,
+    })
 }
 
 fn install_local_manifest(
@@ -3153,17 +3156,15 @@ fn update_global_packages(require_verified: bool, selected: &[String]) -> Result
                 return Err(error);
             }
         };
-        changed_files.extend(result.changed_files);
-        tools.extend(result.tools.into_iter().map(|mut tool| {
+        changed_files.extend(result.output.changed_files);
+        tools.extend(result.output.tools.into_iter().map(|mut tool| {
             tool.action = MutationAction::Updated;
             tool
         }));
-        let installed_record =
-            read_package_record(&package_record_path(&scope_paths, &update.cmd))?;
         completed.push(CompletedGlobalUpdate {
             cmd: update.cmd,
             prior_state,
-            installed_record,
+            installed_record: result.installed_record,
         });
     }
     Ok(MutationOutput {
