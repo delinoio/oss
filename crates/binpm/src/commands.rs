@@ -5,12 +5,15 @@ use std::{
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
     str::FromStr,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Mutex,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use serde::Serialize;
+use serde::{ser::SerializeStruct, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
@@ -152,13 +155,33 @@ enum CacheReferenceState {
     Unreferenced,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 struct MutationOutput {
     command: &'static str,
     scope: Scope,
     dry_run: bool,
     changed_files: Vec<String>,
     tools: Vec<MutationToolOutput>,
+}
+
+impl Serialize for MutationOutput {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let warnings = mutation_warnings_snapshot();
+        let mut state = serializer
+            .serialize_struct("MutationOutput", if warnings.is_empty() { 5 } else { 6 })?;
+        state.serialize_field("command", &self.command)?;
+        state.serialize_field("scope", &self.scope)?;
+        state.serialize_field("dry_run", &self.dry_run)?;
+        state.serialize_field("changed_files", &self.changed_files)?;
+        state.serialize_field("tools", &self.tools)?;
+        if !warnings.is_empty() {
+            state.serialize_field("warnings", &warnings)?;
+        }
+        state.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -402,6 +425,7 @@ const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
 const GITHUB_ACTIONS_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
 static SIGSTORE_TEMP_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 static SUPPRESS_DIAGNOSTIC_STDERR: AtomicBool = AtomicBool::new(false);
+static MUTATION_WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EnvPathScope {
@@ -413,6 +437,7 @@ enum EnvPathScope {
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
     SUPPRESS_DIAGNOSTIC_STDERR.store(output.is_json(), Ordering::Relaxed);
+    clear_mutation_warnings();
     match cli.command {
         Command::Install(args) => install(args, output),
         Command::Add(args) => add(args, output),
@@ -435,6 +460,32 @@ fn diagnostic_eprintln(args: std::fmt::Arguments<'_>) {
     if !SUPPRESS_DIAGNOSTIC_STDERR.load(Ordering::Relaxed) {
         eprintln!("{args}");
     }
+}
+
+fn mutation_warning(args: std::fmt::Arguments<'_>) {
+    let message = args.to_string();
+    if SUPPRESS_DIAGNOSTIC_STDERR.load(Ordering::Relaxed) {
+        MUTATION_WARNINGS
+            .lock()
+            .expect("mutation warnings mutex")
+            .push(message);
+    } else {
+        eprintln!("{message}");
+    }
+}
+
+fn clear_mutation_warnings() {
+    MUTATION_WARNINGS
+        .lock()
+        .expect("mutation warnings mutex")
+        .clear();
+}
+
+fn mutation_warnings_snapshot() -> Vec<String> {
+    MUTATION_WARNINGS
+        .lock()
+        .expect("mutation warnings mutex")
+        .clone()
 }
 
 fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
@@ -1355,10 +1406,7 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                 command: "remove",
                 scope,
                 dry_run: true,
-                changed_files: vec![
-                    path_display(&package_record_path(&paths, cmd)),
-                    record.installed_path.clone(),
-                ],
+                changed_files: global_remove_changed_files(&paths, cmd, &record)?,
                 tools: vec![mutation_tool_from_record(
                     cmd,
                     MutationAction::PlannedRemove,
@@ -1510,6 +1558,11 @@ fn preview_local_update_result(
     } else {
         Vec::new()
     };
+    if frozen_lockfile && !orphan_states.is_empty() {
+        return Err(BinpmError::FrozenLockfileOrphanCleanup {
+            path: root.join(LOCKFILE_FILE),
+        });
+    }
     let mut changed_files =
         if frozen_lockfile || (manifest.tools.is_empty() && orphan_states.is_empty()) {
             Vec::new()
@@ -3334,7 +3387,7 @@ fn install_resolved(
         });
     }
     if resolved.checksum_source == ChecksumSource::Local {
-        diagnostic_eprintln(format_args!(
+        mutation_warning(format_args!(
             "warning: no upstream checksum or verified signature was available for {}; using a \
              locally computed SHA-256",
             spec
@@ -8082,7 +8135,7 @@ mod tests {
         io::Write,
         path::{Path, PathBuf},
         str::FromStr,
-        sync::Mutex,
+        sync::{atomic::Ordering, Mutex},
     };
 
     use sha2::{Digest, Sha256};
@@ -8092,8 +8145,8 @@ mod tests {
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
-        cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
-        download_asset_name, download_initial_capacity,
+        cleanup_failed_install_cache, clear_mutation_warnings, commit_deferred_cache_hit,
+        deterministic_installed_path, download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
         format_outdated_tool_line, github_sha256_digest, global_remove_changed_files,
         global_update_selected_binary, has_current_cache_record, has_local_runtime_or_lock_state,
@@ -8105,28 +8158,29 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        mutation_tool_from_manifest_tool, normalize_bin_selection, override_snippet_candidate,
-        package_record_output, package_shortcut_command, parse_manifest_source,
-        parse_manifest_tool_source, parse_source_argument, path_display, prepare_global_updates,
-        preview_global_update_records_with, project_root_from, read_archive_selected_binary,
-        record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
-        release_asset_download_request, release_diagnostic_lines, release_diagnostics,
-        remove_global_tool_from_paths, remove_local_manifest_orphans,
-        require_executable_managed_file, resolved_has_supported_signature_evidence,
-        resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
-        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
-        selected_global_package_records, shell_path, shell_quote, signature_sidecar_for_asset,
-        sigstore_trust_policy, snapshot_cache_metadata, source_install_scope,
-        target_override_snippet, update_manifest_tool_source,
-        validate_frozen_update_current_release, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries, verification_state,
-        verify_check_output, verify_check_output_with_state, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, write_sigstore_verification_inputs,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, MutationAction, OutdatedToolOutput, OutputMode,
-        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        mutation_tool_from_manifest_tool, mutation_warning, normalize_bin_selection,
+        override_snippet_candidate, package_record_output, package_shortcut_command,
+        parse_manifest_source, parse_manifest_tool_source, parse_source_argument, path_display,
+        prepare_global_updates, preview_global_update_records_with, project_root_from,
+        read_archive_selected_binary, record_has_signature_evidence,
+        record_matches_current_provider_digest, regex_escape, release_asset_download_request,
+        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, require_executable_managed_file,
+        resolved_has_supported_signature_evidence, resolved_has_verified_source,
+        restore_local_remove_state, restore_runtime_tool_state, sanitize_download_diagnostic_url,
+        select_manifest_asset, selected_asset_display_url, selected_global_package_records,
+        shell_path, shell_quote, signature_sidecar_for_asset, sigstore_trust_policy,
+        snapshot_cache_metadata, source_install_scope, target_override_snippet,
+        update_manifest_tool_source, validate_frozen_update_current_release,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verification_state, verify_check_output,
+        verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
+        verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, MutationAction, MutationOutput, OutdatedToolOutput, OutputMode,
+        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT, SUPPRESS_DIAGNOSTIC_STDERR,
     };
     use crate::{
         assets::CandidateDecision,
@@ -10972,6 +11026,33 @@ mod tests {
             vec![path_display(&crate::storage::package_record_path(
                 &paths, "tool"
             ))]
+        );
+    }
+
+    #[test]
+    fn mutation_json_includes_captured_warnings() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        SUPPRESS_DIAGNOSTIC_STDERR.store(true, Ordering::Relaxed);
+        clear_mutation_warnings();
+        mutation_warning(format_args!(
+            "warning: no upstream checksum or verified signature was available for \
+             github:owner/tool; using a locally computed SHA-256"
+        ));
+        let payload = serde_json::to_value(MutationOutput {
+            command: "install",
+            scope: Scope::Local,
+            dry_run: false,
+            changed_files: Vec::new(),
+            tools: Vec::new(),
+        })
+        .expect("serialize mutation output");
+        clear_mutation_warnings();
+        SUPPRESS_DIAGNOSTIC_STDERR.store(false, Ordering::Relaxed);
+
+        assert_eq!(
+            payload["warnings"][0],
+            "warning: no upstream checksum or verified signature was available for \
+             github:owner/tool; using a locally computed SHA-256"
         );
     }
 
