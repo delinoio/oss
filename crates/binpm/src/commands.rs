@@ -5818,38 +5818,57 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
         }
         Err(error) => return Err(error),
     };
-    manifest
-        .tools
-        .into_iter()
-        .map(|(cmd, tool)| {
-            validate_command_name(&cmd)?;
-            let spec = parse_manifest_tool_source(&tool)?;
-            match local_tool_execution_ready(root, &cmd, &spec, Some(&tool)) {
-                Ok(true) => return Ok(None),
-                Ok(false) => {}
-                Err(error) => {
-                    warn!(
-                        command = "doctor",
-                        manifest_path = %manifest_path.display(),
-                        tool_cmd = %cmd,
-                        error = %error,
-                        "Treating local tool as declared-only because readiness could not be checked"
-                    );
-                }
+    let mut declared_only_tools = Vec::new();
+    for (cmd, tool) in manifest.tools {
+        if let Err(error) = validate_command_name(&cmd) {
+            warn!(
+                command = "doctor",
+                manifest_path = %manifest_path.display(),
+                tool_cmd = %cmd,
+                error = %error,
+                "Skipping declared-only tool scan because a manifest tool declaration is invalid"
+            );
+            return Ok(Vec::new());
+        }
+        let spec = match parse_manifest_tool_source(&tool) {
+            Ok(spec) => spec,
+            Err(error @ BinpmError::InvalidSourceSpec { .. }) => {
+                warn!(
+                    command = "doctor",
+                    manifest_path = %manifest_path.display(),
+                    tool_cmd = %cmd,
+                    source = %tool.source,
+                    error = %error,
+                    "Skipping declared-only tool scan because a manifest tool source is invalid"
+                );
+                return Ok(Vec::new());
             }
-            let paths = ScopePaths::local(root.to_path_buf());
-            Ok(DeclaredOnlyToolOutput {
-                expected_executable_path: current_platform_installed_path(&paths, &cmd)
-                    .display()
-                    .to_string(),
-                cmd,
-                source: tool.source,
-                requested_version: tool.version,
+            Err(error) => return Err(error),
+        };
+        match local_tool_execution_ready(root, &cmd, &spec, Some(&tool)) {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(error) => {
+                warn!(
+                    command = "doctor",
+                    manifest_path = %manifest_path.display(),
+                    tool_cmd = %cmd,
+                    error = %error,
+                    "Treating local tool as declared-only because readiness could not be checked"
+                );
             }
-            .into())
-        })
-        .filter_map(Result::transpose)
-        .collect()
+        }
+        let paths = ScopePaths::local(root.to_path_buf());
+        declared_only_tools.push(DeclaredOnlyToolOutput {
+            expected_executable_path: current_platform_installed_path(&paths, &cmd)
+                .display()
+                .to_string(),
+            cmd,
+            source: tool.source,
+            requested_version: tool.version,
+        });
+    }
+    Ok(declared_only_tools)
 }
 
 fn verification_state(record: &PackageRecord) -> VerificationState {

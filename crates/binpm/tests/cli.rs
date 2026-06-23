@@ -1380,6 +1380,60 @@ fn doctor_json_reports_path_states() {
 }
 
 #[test]
+fn doctor_stays_available_for_invalid_manifest_command_names() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools."bad/name"]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("manifest: present"))
+        .stdout(predicate::str::contains("lockfile: missing"))
+        .stdout(predicate::str::contains("declared_only_tools: 0"));
+}
+
+#[test]
+fn doctor_stays_available_for_invalid_manifest_sources() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "npm:eslint"
+"#,
+    )
+    .expect("write manifest");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["doctor", "--json"])
+        .output()
+        .expect("doctor --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse doctor json");
+    assert_eq!(payload["manifest"], "present");
+    assert_eq!(payload["lockfile"], "missing");
+    assert_eq!(payload["declared_only_tools"].as_array().unwrap().len(), 0);
+    assert!(payload["declared_only_next_step"].is_null());
+}
+
+#[test]
 fn list_json_reports_declared_local_tools_with_stable_fields() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
