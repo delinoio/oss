@@ -10,10 +10,29 @@ import "./repository-footer.css";
 
 const SEARCH_LABEL = "Search documentation";
 const MOBILE_SEARCH_LABEL = "Open documentation search";
+const SEARCH_DIALOG_LABEL = "Search documentation";
+const SEARCH_CLOSE_LABEL = "Close search";
 const REPOSITORY_LABEL = "Open Delino OSS repository on GitHub";
 const SIDEBAR_DRAWER_QUERY = "(max-width: 768px)";
 const OUTLINE_DRAWER_QUERY = "(max-width: 1279px)";
 const NAVIGATION_DRAWER_QUERY = "(max-width: 768px)";
+const SEARCH_FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+  "[contenteditable='true']",
+].join(",");
+
+let searchTriggerElement: HTMLElement | null = null;
+let wasSearchDialogOpen = false;
+
+function isElementVisible(element: HTMLElement) {
+  const style = window.getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden";
+}
 
 function setButtonName(element: Element | null, label: string) {
   if (!(element instanceof HTMLElement)) {
@@ -52,6 +71,146 @@ function setInteractiveDiv(element: Element | null, label: string) {
     element.setAttribute("tabindex", "0");
   }
   setButtonName(element, label);
+}
+
+function getSearchDialog() {
+  return document.querySelector<HTMLElement>(".rp-search-panel__modal");
+}
+
+function getSearchTrigger() {
+  if (
+    searchTriggerElement?.isConnected &&
+    !searchTriggerElement.hasAttribute("disabled") &&
+    isElementVisible(searchTriggerElement)
+  ) {
+    return searchTriggerElement;
+  }
+
+  const triggers = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      ".rp-search-button, .rp-search-button--mobile",
+    ),
+  );
+  return triggers.find(isElementVisible) ?? triggers[0] ?? null;
+}
+
+function rememberSearchTrigger(target: EventTarget | null) {
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const trigger = target.closest<HTMLElement>(
+    ".rp-search-button, .rp-search-button--mobile",
+  );
+  if (trigger) {
+    searchTriggerElement = trigger;
+  }
+}
+
+function getFocusableSearchElements(dialog: HTMLElement) {
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>(SEARCH_FOCUSABLE_SELECTOR),
+  ).filter((element) => {
+    if (element.inert || element.getAttribute("aria-hidden") === "true") {
+      return false;
+    }
+
+    return isElementVisible(element);
+  });
+}
+
+function focusSearchDialogStart() {
+  const dialog = getSearchDialog();
+  if (!dialog) {
+    return;
+  }
+
+  const input = dialog.querySelector<HTMLElement>(".rp-search-panel__input");
+  const firstFocusable = input ?? getFocusableSearchElements(dialog)[0] ?? dialog;
+  firstFocusable.focus();
+}
+
+function returnFocusToSearchTrigger() {
+  window.requestAnimationFrame(() => {
+    getSearchTrigger()?.focus();
+  });
+}
+
+function dispatchSyntheticClick(element: Element | null) {
+  if (!element) {
+    return false;
+  }
+
+  return element.dispatchEvent(
+    new MouseEvent("click", { bubbles: true, cancelable: true }),
+  );
+}
+
+function closeSearchDialog() {
+  const closeControl = document.querySelector(".rp-search-panel__close");
+  const mask = document.querySelector(".rp-search-panel__mask");
+
+  if (!dispatchSyntheticClick(mask)) {
+    dispatchSyntheticClick(closeControl);
+  }
+
+  returnFocusToSearchTrigger();
+}
+
+function syncSearchDialogAccessibility() {
+  const dialog = getSearchDialog();
+  const isOpen = Boolean(dialog);
+
+  if (!dialog) {
+    if (wasSearchDialogOpen) {
+      returnFocusToSearchTrigger();
+    }
+    wasSearchDialogOpen = false;
+    return;
+  }
+
+  if (dialog.getAttribute("role") !== "dialog") {
+    dialog.setAttribute("role", "dialog");
+  }
+  if (dialog.getAttribute("aria-modal") !== "true") {
+    dialog.setAttribute("aria-modal", "true");
+  }
+  if (dialog.getAttribute("aria-label") !== SEARCH_DIALOG_LABEL) {
+    dialog.setAttribute("aria-label", SEARCH_DIALOG_LABEL);
+  }
+  if (dialog.tabIndex !== -1) {
+    dialog.tabIndex = -1;
+  }
+
+  const rspressClose = dialog.querySelector<HTMLElement>(
+    ".rp-search-panel__close",
+  );
+  if (rspressClose) {
+    if (rspressClose.getAttribute("aria-hidden") !== "true") {
+      rspressClose.setAttribute("aria-hidden", "true");
+    }
+    if (rspressClose.tabIndex !== -1) {
+      rspressClose.tabIndex = -1;
+    }
+  }
+
+  let closeButton = dialog.querySelector<HTMLButtonElement>(
+    ".delino-search-dialog-close",
+  );
+  if (!closeButton) {
+    closeButton = document.createElement("button");
+    closeButton.className = "delino-search-dialog-close";
+    closeButton.type = "button";
+    closeButton.innerHTML = '<span aria-hidden="true">x</span>';
+    closeButton.addEventListener("click", closeSearchDialog);
+    dialog.append(closeButton);
+  }
+  setButtonName(closeButton, SEARCH_CLOSE_LABEL);
+
+  if (isOpen && !wasSearchDialogOpen) {
+    window.requestAnimationFrame(focusSearchDialogStart);
+  }
+  wasSearchDialogOpen = isOpen;
 }
 
 function isDrawerOpen(
@@ -235,6 +394,7 @@ function syncAccessibleControls() {
   }
 
   syncHeadingPermalinks();
+  syncSearchDialogAccessibility();
   setMobileDrawerState();
 }
 
@@ -281,6 +441,15 @@ function AccessibilitySync() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
+      rememberSearchTrigger(target);
+
+      if (
+        event.key.toLowerCase() === "k" &&
+        (event.ctrlKey || event.metaKey)
+      ) {
+        searchTriggerElement = getSearchTrigger();
+      }
+
       if (event.key === "Enter" || event.key === " ") {
         if (
           target instanceof HTMLElement &&
@@ -293,16 +462,72 @@ function AccessibilitySync() {
       }
 
       if (event.key === "Escape") {
+        if (getSearchDialog()) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeSearchDialog();
+          return;
+        }
+
         closeMobileDrawers();
+      }
+
+      if (event.key === "Tab") {
+        const dialog = getSearchDialog();
+        if (!dialog) {
+          return;
+        }
+
+        const focusableElements = getFocusableSearchElements(dialog);
+        const firstFocusable = focusableElements[0] ?? dialog;
+        const lastFocusable =
+          focusableElements[focusableElements.length - 1] ?? dialog;
+
+        if (!dialog.contains(document.activeElement)) {
+          event.preventDefault();
+          firstFocusable.focus();
+          return;
+        }
+
+        if (event.shiftKey && document.activeElement === firstFocusable) {
+          event.preventDefault();
+          lastFocusable.focus();
+          return;
+        }
+
+        if (!event.shiftKey && document.activeElement === lastFocusable) {
+          event.preventDefault();
+          firstFocusable.focus();
+        }
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    const handlePointerDown = (event: PointerEvent) => {
+      rememberSearchTrigger(event.target);
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const dialog = getSearchDialog();
+      if (!dialog) {
+        rememberSearchTrigger(event.target);
+        return;
+      }
+
+      if (!dialog.contains(event.target as Node | null)) {
+        focusSearchDialogStart();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("focusin", handleFocusIn);
     window.addEventListener("resize", syncAccessibleControls);
 
     return () => {
       observer.disconnect();
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("focusin", handleFocusIn);
       window.removeEventListener("resize", syncAccessibleControls);
     };
   }, []);

@@ -33,6 +33,7 @@
 - `binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 - `binpm-docs` top-level navigation must include all stable docs routes so the mobile site navigation exposes the same stable route set as the documentation sidebar.
 - `binpm-docs` must provide a skip-to-content link, expose user-facing accessible names for search, repository, theme, mobile navigation, sidebar, page-outline, permalink, and code-copy controls, keep closed mobile navigation drawers out of the focus order, keep decorative heading permalink markers out of accessible heading names, and support closing mobile drawers with `Esc`.
+- `binpm-docs` must expose the Rspress search overlay as an accessible modal dialog with a role and accessible name, contained keyboard focus while open, a named focusable close button, `Esc` close behavior, focus return to the search trigger, and unchanged search result navigation.
 - Stable `binpm-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, and `/reference`.
 - `binpm-docs` must keep Rspress clean URLs enabled and validate that stable route IDs have build output artifacts and generated internal links do not use `.html` suffixes.
 - `binpm-docs` content must remain documentation-only and must not imply new binpm runtime behavior before `docs/project-binpm.md` and `docs/crates-binpm-foundation.md` document it.
