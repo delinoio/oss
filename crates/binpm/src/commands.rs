@@ -3925,7 +3925,13 @@ fn unsupported_verification_sidecar_for_asset(
 }
 
 fn sidecar_matches_asset(asset_lower: &str, sidecar_lower: &str) -> bool {
-    sidecar_lower.starts_with(&format!("{asset_lower}."))
+    unsupported_verification_sidecar_suffixes()
+        .iter()
+        .any(|suffix| {
+            sidecar_lower.len() == asset_lower.len() + suffix.len()
+                && sidecar_lower.starts_with(asset_lower)
+                && sidecar_lower.ends_with(suffix)
+        })
 }
 
 fn unsupported_verification_sidecar_kind(
@@ -3968,6 +3974,34 @@ fn unsupported_verification_sidecar_kind(
     } else {
         None
     }
+}
+
+fn unsupported_verification_sidecar_suffixes() -> &'static [&'static str] {
+    &[
+        ".asc",
+        ".sig",
+        ".minisig",
+        ".sigstore",
+        ".sigstore.json",
+        ".sigstore.bundle",
+        ".cert",
+        ".crt",
+        ".pem",
+        ".pub",
+        ".intoto.json",
+        ".intoto.jsonl",
+        ".attestation",
+        ".attestation.json",
+        ".attestation.jsonl",
+        ".sbom",
+        ".sbom.json",
+        ".spdx",
+        ".spdx.json",
+        ".cyclonedx.json",
+        ".provenance",
+        ".provenance.json",
+        ".provenance.jsonl",
+    ]
 }
 
 fn add_unsupported_signature_sidecar_without_policy(resolved: &mut ResolvedAsset) {
@@ -11713,6 +11747,24 @@ mod tests {
         assert_eq!(
             unsupported_sidecar_names(&sidecars),
             vec!["tool.tar.gz.asc".to_string()]
+        );
+    }
+
+    #[test]
+    fn unsupported_verification_sidecars_match_exact_suffixes_for_bare_assets() {
+        let assets = [
+            release_asset("tool"),
+            release_asset("tool.asc"),
+            release_asset("tool.sbom.json"),
+            release_asset("tool-linux.tar.gz.asc"),
+            release_asset("tool.darwin.zip.sbom.json"),
+        ];
+
+        let sidecars = unsupported_verification_sidecars_for_asset("tool", &assets);
+
+        assert_eq!(
+            unsupported_sidecar_names(&sidecars),
+            vec!["tool.asc".to_string(), "tool.sbom.json".to_string()]
         );
     }
 
