@@ -32,7 +32,9 @@ prune` repairs stale structured project references before pruning unreferenced
 assets. Both commands make removed and preserved boundaries explicit in human
 output and `--json` summaries. Legacy cache references are preserved until a
 local install, update, or remove rewrites them as structured references.
-`binpm cache key` remains read-only and reports missing lockfiles explicitly.
+`binpm cache key` remains read-only, prints a concise lockfile-backed key when
+`binpm.lock` exists, and labels missing-lockfile keys with a recommended
+`binpm install` follow-up.
 
 Global binpm state lives under the fixed `~/.binpm` home by default. binpm does
 not split global cache, package records, binaries, or temporary extraction state
