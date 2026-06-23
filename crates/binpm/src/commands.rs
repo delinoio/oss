@@ -7618,7 +7618,7 @@ fn decode_utf16_profile(
     bytes: &[u8],
     encoding: ProfileEncoding,
 ) -> Result<ProfileContents> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(BinpmError::ProfileSetupRefused {
             path: profile.to_path_buf(),
             shell: shell.as_str(),
