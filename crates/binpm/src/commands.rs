@@ -1055,7 +1055,16 @@ fn list(args: ScopedArgs, output: OutputMode) -> Result<i32> {
             for (cmd, tool) in manifest.tools {
                 validate_command_name(&cmd)?;
                 printed.insert(cmd.clone());
-                if let Some(record) = local_runtime_tool_record(&root, &cmd)? {
+                let runtime_record = local_runtime_tool_record(&root, &cmd)?;
+                let has_current_manifest_record = match runtime_record.as_ref() {
+                    Some(record) => match local_runtime_record_matches_manifest(&tool, record) {
+                        Ok(matches) => matches,
+                        Err(BinpmError::InvalidSourceSpec { .. }) => false,
+                        Err(error) => return Err(error),
+                    },
+                    None => false,
+                };
+                if let Some(record) = runtime_record.filter(|_| has_current_manifest_record) {
                     let row = list_installed_tool(cmd, record);
                     print_list_tool(&row, output);
                     tools.push(row);
@@ -5762,9 +5771,10 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
             Err(error) => return Err(error),
         };
         let runtime_record = local_runtime_tool_record(root, &cmd)?;
-        let has_manifest_runtime_record = runtime_record
-            .as_ref()
-            .is_some_and(|record| local_runtime_record_matches_manifest(&spec, record));
+        let has_manifest_runtime_record = match runtime_record.as_ref() {
+            Some(record) => local_runtime_record_matches_manifest(&tool, record)?,
+            None => false,
+        };
         match local_tool_execution_ready(root, &cmd, &spec, Some(&tool)) {
             Ok(true) => continue,
             Ok(false) if has_manifest_runtime_record => continue,
@@ -5813,18 +5823,32 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
     Ok(declared_only_tools)
 }
 
-fn local_runtime_record_matches_manifest(spec: &SourceSpec, record: &PackageRecord) -> bool {
-    let Ok(target) = HostTarget::current() else {
-        return false;
-    };
-    record.source == spec.source_without_version()
+fn local_runtime_record_matches_manifest(
+    tool: &ManifestTool,
+    record: &PackageRecord,
+) -> Result<bool> {
+    let spec = parse_manifest_tool_source(tool)?;
+    let target = HostTarget::current()?;
+    let source_and_target_match = record.source == spec.source_without_version()
         && record.source_provider == spec.provider
         && record.source_host == spec.host
         && record.source_path == spec.path
         && record.requested_version == spec.version
         && record.target_os == target.os
         && record.target_arch == target.arch
-        && record.target_libc == target.libc
+        && record.target_libc == target.libc;
+    if !source_and_target_match {
+        return Ok(false);
+    }
+    if let Some(override_target) = manifest_target_override(Some(tool), &target)? {
+        return Ok(record.asset_name == override_target.asset
+            && manifest_bin_matches_record(&override_target.bin, &record.selected_binary));
+    }
+    Ok(tool
+        .bin
+        .as_ref()
+        .map(|bin| manifest_bin_matches_record(bin, &record.selected_binary))
+        .unwrap_or(true))
 }
 
 fn local_runtime_tool_record(root: &Path, cmd: &str) -> Result<Option<PackageRecord>> {
@@ -7924,7 +7948,8 @@ mod tests {
         format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
         install_path_collision_key, is_retryable_status, local_manifest_orphan_cmds,
-        local_runtime_lock_records, local_runtime_tool_record, local_tool_execution_ready,
+        local_runtime_lock_records, local_runtime_record_matches_manifest,
+        local_runtime_tool_record, local_tool_execution_ready,
         local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, locked_record_download_request,
         locked_record_signature_sidecar, locked_record_verified_download_request,
@@ -13246,6 +13271,68 @@ mod tests {
 
         assert_eq!(record.source, "github:owner/tool");
         assert_eq!(record.installed_path, installed_path.display().to_string());
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_rejects_stale_source_version_and_bin() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::new(),
+        };
+
+        assert!(local_runtime_record_matches_manifest(&tool, &record)
+            .expect("matching manifest record"));
+
+        let changed_source = ManifestTool {
+            source: "github:owner/other".to_string(),
+            ..tool.clone()
+        };
+        assert!(
+            !local_runtime_record_matches_manifest(&changed_source, &record)
+                .expect("source mismatch")
+        );
+
+        let changed_version = ManifestTool {
+            version: Some("2.0.0".to_string()),
+            ..tool.clone()
+        };
+        assert!(
+            !local_runtime_record_matches_manifest(&changed_version, &record)
+                .expect("version mismatch")
+        );
+
+        let changed_bin = ManifestTool {
+            bin: Some("other-tool".to_string()),
+            ..tool.clone()
+        };
+        assert!(
+            !local_runtime_record_matches_manifest(&changed_bin, &record).expect("bin mismatch")
+        );
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_accepts_selected_binary_basename() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        record.selected_binary = "dist/tool".to_string();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("tool".to_string()),
+            targets: BTreeMap::new(),
+        };
+
+        assert!(local_runtime_record_matches_manifest(&tool, &record).expect("basename bin match"));
     }
 
     #[test]
