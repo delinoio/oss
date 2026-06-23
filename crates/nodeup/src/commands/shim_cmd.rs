@@ -593,22 +593,33 @@ fn verification_commands(dir: &Path, shell: ShellKind) -> Vec<String> {
     let dir = shell_path_text(&dir.display().to_string(), shell);
     let dir_prefix = dir.trim_end_matches(['/', '\\']);
     match shell {
-        ShellKind::PowerShellWindows | ShellKind::PowerShellUnix => vec![format!(
+        ShellKind::PowerShellWindows => vec![format!(
+            "$nodeupShimDir = [IO.Path]::GetFullPath('{}'); foreach ($cmd in \
+             'node','npm','npx','yarn','pnpm') {{ $resolved = Get-Command $cmd -ErrorAction Stop; \
+             $resolvedPath = [IO.Path]::GetFullPath($resolved.Source); if (-not \
+             $resolvedPath.StartsWith($nodeupShimDir.TrimEnd([IO.Path]::DirectorySeparatorChar, \
+             [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar, \
+             [StringComparison]::OrdinalIgnoreCase)) {{ Write-Output \
+             \"nodeup-shim-inactive:$cmd\"; exit 1 }}; $resolved | Select-Object Name,Source }}; \
+             Write-Output nodeup-shim-active",
+            escape_powershell_single_quoted(dir_prefix)
+        )],
+        ShellKind::PowerShellUnix => vec![format!(
             "$nodeupShimDir = '{}'; foreach ($cmd in 'node','npm','npx','yarn','pnpm') {{ \
              $resolved = Get-Command $cmd -ErrorAction Stop; if (-not \
-             $resolved.Source.StartsWith($nodeupShimDir + [IO.Path]::DirectorySeparatorChar)) {{ \
-             Write-Output \"nodeup-shim-inactive:$cmd\"; exit 1 }}; $resolved | Select-Object \
-             Name,Source }}; Write-Output nodeup-shim-active",
+             $resolved.Source.StartsWith($nodeupShimDir + [IO.Path]::DirectorySeparatorChar, \
+             [StringComparison]::Ordinal)) {{ Write-Output \"nodeup-shim-inactive:$cmd\"; exit 1 \
+             }}; $resolved | Select-Object Name,Source }}; Write-Output nodeup-shim-active",
             escape_powershell_single_quoted(dir_prefix)
         )],
         ShellKind::Fish => vec![
             "for cmd in node npm npx yarn pnpm; command -v $cmd; end".to_string(),
             format!(
                 "for cmd in node npm npx yarn pnpm; set resolved (command -v $cmd); or exit 1; \
-                 test (string sub -s 1 -l {} -- $resolved) = {}; or begin; echo \
+                 set nodeup_shim_prefix {}; test (string sub -s 1 -l (string length -- \
+                 $nodeup_shim_prefix) -- $resolved) = $nodeup_shim_prefix; or begin; echo \
                  nodeup-shim-inactive:$cmd; exit 1; end; echo $resolved; end; echo \
                  nodeup-shim-active",
-                format!("{}/", dir.trim_end_matches('/')).len(),
                 shell_single_quote(&format!("{}/", dir.trim_end_matches('/')))
             ),
         ],

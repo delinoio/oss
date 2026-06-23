@@ -4399,6 +4399,20 @@ fn shim_setup_reports_powershell_core_path_guidance() {
             && command.contains("nodeup-shim-inactive:$cmd")
             && command.contains("nodeup-shim-active")
     }));
+    if cfg!(windows) {
+        assert!(verification_commands.iter().any(|command| {
+            let command = command.as_str().unwrap();
+            command.contains("[IO.Path]::GetFullPath")
+                && command.contains("[StringComparison]::OrdinalIgnoreCase")
+        }));
+    } else {
+        assert!(verification_commands.iter().any(|command| {
+            command
+                .as_str()
+                .unwrap()
+                .contains("[StringComparison]::Ordinal")
+        }));
+    }
     assert!(!verification_commands
         .iter()
         .any(|command| command.as_str().unwrap().contains("for cmd in")));
@@ -4475,6 +4489,7 @@ fn shim_setup_escapes_fish_verification_path_guidance() {
             let command = command.as_str().unwrap();
             command.contains("for cmd in node npm npx yarn pnpm")
                 && command.contains("string sub")
+                && command.contains("string length -- $nodeup_shim_prefix")
                 && command.contains(&shell_single_quote_for_test(&expected_prefix))
                 && command.contains("nodeup-shim-inactive:$cmd")
         }));
@@ -4482,7 +4497,57 @@ fn shim_setup_escapes_fish_verification_path_guidance() {
         .as_array()
         .unwrap()
         .iter()
+        .any(|command| command
+            .as_str()
+            .unwrap()
+            .contains(&format!("-l {}", expected_prefix.len()))));
+    assert!(!payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
         .any(|command| command.as_str().unwrap().contains("/*")));
+}
+
+#[test]
+#[serial]
+fn shim_setup_reports_windows_powershell_path_aware_verification() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-windows-powershell-shims");
+
+    let output = env
+        .command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .env(
+            "SHELL",
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        )
+        .env("PATH", env.root.join("empty-path"))
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("json shim setup windows powershell guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "powershell");
+    let verification_commands = payload["verification_commands"].as_array().unwrap();
+    assert!(verification_commands.iter().any(|command| {
+        let command = command.as_str().unwrap();
+        command.contains("[IO.Path]::GetFullPath")
+            && command.contains("[IO.Path]::AltDirectorySeparatorChar")
+            && command.contains("[StringComparison]::OrdinalIgnoreCase")
+            && command.contains("nodeup-shim-inactive:$cmd")
+    }));
+    assert!(!verification_commands.iter().any(|command| command
+        .as_str()
+        .unwrap()
+        .contains(".StartsWith($nodeupShimDir +")));
 }
 
 #[test]
