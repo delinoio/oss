@@ -493,10 +493,6 @@ enum ShellKind {
 
 impl ShellKind {
     fn detect() -> Self {
-        if host_is_windows() {
-            return Self::PowerShell;
-        }
-
         let shell_name = env::var_os("SHELL")
             .and_then(|value| PathBuf::from(value).file_name().map(|name| name.to_owned()))
             .and_then(|name| name.to_str().map(|value| value.to_ascii_lowercase()));
@@ -506,6 +502,7 @@ impl ShellKind {
             Some("zsh") => Self::Zsh,
             Some("fish") => Self::Fish,
             Some("pwsh") | Some("powershell") => Self::PowerShell,
+            _ if host_is_windows() => Self::PowerShell,
             _ => Self::Posix,
         }
     }
@@ -596,7 +593,10 @@ fn verification_commands(dir: &Path, shell: ShellKind) -> Vec<String> {
         )],
         ShellKind::Fish => vec![
             "for cmd in node npm npx yarn pnpm; command -v $cmd; end".to_string(),
-            format!("string match -q '{}/*' (command -v node)", dir),
+            format!(
+                "string match -q -e -- {} (command -v node)",
+                shell_single_quote(&format!("{}/", dir.trim_end_matches('/')))
+            ),
         ],
         ShellKind::Bash | ShellKind::Zsh | ShellKind::Posix => vec![
             "for cmd in node npm npx yarn pnpm; do command -v \"$cmd\"; done".to_string(),

@@ -3470,8 +3470,10 @@ fn self_uninstall_reports_fish_cleanup_and_verification_commands() {
             command.starts_with("set -gx PATH").then_some(command)
         })
         .unwrap();
-    assert!(path_cleanup.contains("string split : $PATH | string match -v -e"));
+    assert!(path_cleanup.contains("string split : $PATH | while read -l path"));
+    assert!(path_cleanup.contains("\"$path\" !="));
     assert!(!path_cleanup.contains("string match -v '"));
+    assert!(!path_cleanup.contains("string match -v -e"));
 
     let verification_commands = payload["verification_commands"].as_array().unwrap();
     assert!(verification_commands.iter().any(|command| {
@@ -4342,6 +4344,76 @@ fn shim_setup_reports_powershell_core_path_guidance() {
     assert!(!verification_commands
         .iter()
         .any(|command| command.as_str().unwrap().contains("for cmd in")));
+}
+
+#[test]
+#[serial]
+fn shim_setup_respects_bash_shell_guidance_on_windows_hosts() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-windows-bash-shims");
+
+    let output = env
+        .command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .env("SHELL", "/usr/bin/bash")
+        .env("PATH", env.root.join("empty-path"))
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("json shim setup windows bash guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "bash");
+    assert!(payload["path_instruction"]
+        .as_str()
+        .unwrap()
+        .starts_with("export PATH="));
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("command -v")));
+}
+
+#[test]
+#[serial]
+fn shim_setup_escapes_fish_verification_path_guidance() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("fish-shims-[glob]'quoted");
+    let shim_dir_text = shim_dir.to_str().unwrap();
+    let expected = format!(
+        "string match -q -e -- '{}/' (command -v node)",
+        shim_dir_text.trim_end_matches('/').replace('\'', "'\"'\"'")
+    );
+
+    let output = env
+        .command()
+        .env("SHELL", "/usr/bin/fish")
+        .env("PATH", env.root.join("empty-path"))
+        .args(["--output", "json", "shim", "setup", "--dir", shim_dir_text])
+        .output()
+        .expect("json shim setup fish guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "fish");
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap() == expected));
+    assert!(!payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("/*")));
 }
 
 #[test]

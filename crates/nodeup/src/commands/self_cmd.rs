@@ -1036,12 +1036,13 @@ fn current_session_path_cleanup_command(shim_dirs: &[String], shell: ShellKind) 
                 .join(" -and ")
         ),
         ShellKind::Fish => format!(
-            "set -gx PATH (string split : $PATH{})",
+            "set -gx PATH (string split : $PATH | while read -l path; if test {}; echo $path; \
+             end; end)",
             shim_dirs
                 .iter()
-                .map(|path| format!(" | string match -v -e {}", shell_single_quote(path)))
+                .map(|path| format!("\"$path\" != {}", shell_single_quote(path)))
                 .collect::<Vec<_>>()
-                .join("")
+                .join(" -a ")
         ),
         ShellKind::Bash | ShellKind::Zsh | ShellKind::Posix => format!(
             "export PATH=\"$(printf '%s\\n' \"$PATH\" | tr ':' '\\n' | awk {} {} | paste -sd: -)\"",
