@@ -773,24 +773,6 @@ fn escape_powershell_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::windows_drive_path_to_posix;
-
-    #[test]
-    fn converts_windows_drive_paths_to_posix_shell_paths() {
-        assert_eq!(
-            windows_drive_path_to_posix(r"C:\Users\me\.local\bin").as_deref(),
-            Some("/c/Users/me/.local/bin")
-        );
-        assert_eq!(
-            windows_drive_path_to_posix("D:/Tools/nodeup").as_deref(),
-            Some("/d/Tools/nodeup")
-        );
-        assert_eq!(windows_drive_path_to_posix("/already/posix"), None);
-    }
-}
-
 fn shim_internal(cause: impl Into<String>) -> NodeupError {
     NodeupError::internal_with_hint(
         cause,
@@ -829,4 +811,22 @@ fn shim_conflict_with_ownership(
          --dir <path>` to choose a different shim directory.",
         diagnostics,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::windows_drive_path_to_posix;
+
+    #[test]
+    fn converts_windows_drive_paths_to_posix_shell_paths() {
+        assert_eq!(
+            windows_drive_path_to_posix(r"C:\Users\me\.local\bin").as_deref(),
+            Some("/c/Users/me/.local/bin")
+        );
+        assert_eq!(
+            windows_drive_path_to_posix("D:/Tools/nodeup").as_deref(),
+            Some("/d/Tools/nodeup")
+        );
+        assert_eq!(windows_drive_path_to_posix("/already/posix"), None);
+    }
 }
