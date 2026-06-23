@@ -3096,6 +3096,39 @@ version = "1.0.0"
 }
 
 #[test]
+fn local_update_json_dry_run_omits_manifest_for_versionless_tools() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["--json", "update", "--local", "--dry-run"])
+        .output()
+        .expect("update json dry-run");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(
+        payload["file_changes"],
+        serde_json::json!([project.join("binpm.lock").display().to_string()])
+    );
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
 fn local_update_dry_run_reports_empty_manifest_orphan_cleanup() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");

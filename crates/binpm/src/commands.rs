@@ -1337,6 +1337,7 @@ fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
         .collect();
+    let manifest_can_change = planned.iter().any(|(_, tool)| tool.version.is_some());
     let planned_updates = planned
         .into_iter()
         .map(|(cmd, tool)| UpdatePlannedToolOutput {
@@ -1361,12 +1362,14 @@ fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
             }),
         });
     }
+    let mut file_changes = Vec::new();
+    if manifest_can_change {
+        file_changes.push(root.join(MANIFEST_FILE).display().to_string());
+    }
+    file_changes.push(root.join(LOCKFILE_FILE).display().to_string());
     Ok(UpdatePlan {
         planned_updates,
-        file_changes: vec![
-            root.join(MANIFEST_FILE).display().to_string(),
-            root.join(LOCKFILE_FILE).display().to_string(),
-        ],
+        file_changes,
         runtime_changes: vec![ScopePaths::local(root).bin.display().to_string()],
         no_op: None,
     })
@@ -2434,6 +2437,24 @@ fn latest_stable_tag_for_update(tool: &ManifestTool) -> Result<String> {
         .tag)
 }
 
+fn frozen_restore_download_error(
+    cmd: &str,
+    cache_path: &Path,
+    cache_state: &'static str,
+    url: &str,
+    authenticated: bool,
+    source: BinpmError,
+) -> BinpmError {
+    BinpmError::FrozenRestoreDownload {
+        cmd: cmd.to_string(),
+        cache_path: cache_path.to_path_buf(),
+        cache_state,
+        url: sanitize_download_diagnostic_url(url),
+        authenticated,
+        source: Box::new(source),
+    }
+}
+
 fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<i32> {
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
@@ -3230,12 +3251,14 @@ fn install_local_from_lock(
         };
         let repair_result = (|| {
             let download_request = locked_record_download_request(&record)?;
+            let download_url = download_request.url.clone();
+            let download_authenticated = download_request.auth.is_some();
             if !output.is_json() {
                 eprintln!(
                     "binpm: frozen restore cache {cache_state} for {cmd}; downloading locked \
                      asset URL (network_access_attempted=true, \
                      provider_authentication_attached={})",
-                    download_request.auth.is_some()
+                    download_authenticated
                 );
             }
             let bytes = download_asset_with_options(
@@ -3246,28 +3269,54 @@ fn install_local_from_lock(
                     silent: output.is_json(),
                 },
             )
-            .map_err(|source| BinpmError::FrozenRestoreDownload {
-                cmd: cmd.to_string(),
-                cache_path: cache_asset.clone(),
-                cache_state,
-                url: sanitize_download_diagnostic_url(&download_request.url),
-                authenticated: download_request.auth.is_some(),
-                source: Box::new(source),
+            .map_err(|source| {
+                frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    source,
+                )
             })?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
-                return Err(BinpmError::DigestMismatch {
-                    path: cache_asset.clone(),
-                    expected: record.sha256.clone(),
-                    actual,
-                });
+                return Err(frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    BinpmError::DigestMismatch {
+                        path: cache_asset.clone(),
+                        expected: record.sha256.clone(),
+                        actual,
+                    },
+                ));
             }
             if require_verified && !record.has_verified_source() {
-                let verification = reverify_locked_record_signature(&cache_paths, &record, &bytes)?;
+                let verification = reverify_locked_record_signature(&cache_paths, &record, &bytes)
+                    .map_err(|source| {
+                        frozen_restore_download_error(
+                            cmd,
+                            &cache_asset,
+                            cache_state,
+                            &download_url,
+                            download_authenticated,
+                            source,
+                        )
+                    })?;
                 if !verification.verified {
-                    return Err(BinpmError::VerificationRequired {
-                        package: record.package_spec.clone(),
-                    });
+                    return Err(frozen_restore_download_error(
+                        cmd,
+                        &cache_asset,
+                        cache_state,
+                        &download_url,
+                        download_authenticated,
+                        BinpmError::VerificationRequired {
+                            package: record.package_spec.clone(),
+                        },
+                    ));
                 }
                 repair_locked_verification = Some(verification);
             }
@@ -3306,7 +3355,16 @@ fn install_local_from_lock(
                 signature_available: record.signature_available,
                 signature_verified: record.signature_verified,
             };
-            populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
+            populate_cache_from_bytes(&cache_paths, &resolved, &bytes).map_err(|source| {
+                frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    source,
+                )
+            })?;
             Ok(())
         })();
         if let Err(error) = repair_result {
@@ -3316,7 +3374,7 @@ fn install_local_from_lock(
             return Err(error);
         }
         populated_cache_entry = cache_metadata_snapshot.is_none();
-    } else {
+    } else if !output.is_json() {
         eprintln!(
             "binpm: frozen restore reused verified cache for {cmd} \
              (network_access_attempted=false)"
