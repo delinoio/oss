@@ -1758,12 +1758,13 @@ fn preview_local_update_result(
     } else {
         local_update_manifest_with_latest_versions(&manifest, selected)?
     };
-    let mut tools = planned_manifest
+    let planned_records = planned_manifest
         .tools
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
         .map(|(cmd, tool)| {
-            preview_local_update_tool(cmd, tool, &paths, require_verified, current_target.clone())
+            preview_local_update_record(cmd, tool, &paths, require_verified, current_target.clone())
+                .map(|record| (cmd.clone(), record))
         })
         .collect::<Result<Vec<_>>>()?;
     let orphan_states = if selected.is_empty() {
@@ -1782,13 +1783,9 @@ fn preview_local_update_result(
         } else {
             vec![path_display(&root.join(LOCKFILE_FILE))]
         };
-    for tool in &tools {
-        changed_files.push(path_display(&package_record_path(&paths, &tool.cmd)));
-        if let Some(installed_path) = &tool.installed_path {
-            changed_files.push(installed_path.clone());
-        }
-        changed_files.push(local_cache_ref_changed_file_for_cached_record(
-            &root, &tool.cmd,
+    for (cmd, record) in &planned_records {
+        changed_files.extend(local_update_changed_files_for_record(
+            &root, &paths, cmd, record,
         )?);
     }
     changed_files.extend(local_orphan_changed_files(
@@ -1796,6 +1793,10 @@ fn preview_local_update_result(
         &manifest.tools,
         &orphan_states,
     )?);
+    let mut tools = planned_records
+        .iter()
+        .map(|(cmd, record)| mutation_tool_from_record(cmd, MutationAction::PlannedUpdate, record))
+        .collect::<Vec<_>>();
     tools.extend(local_orphan_mutation_tools(
         &orphan_states,
         MutationAction::PlannedRemove,
@@ -1814,16 +1815,16 @@ fn preview_local_update_result(
     })
 }
 
-fn preview_local_update_tool(
+fn preview_local_update_record(
     cmd: &str,
     tool: &ManifestTool,
     paths: &ScopePaths,
     require_verified: bool,
     current_target: HostTarget,
-) -> Result<MutationToolOutput> {
+) -> Result<PackageRecord> {
     let spec = parse_manifest_tool_source(tool)?;
     let resolved = resolve_asset(&spec, Some(tool))?;
-    preview_local_update_tool_from_resolved(
+    preview_local_update_record_from_resolved(
         cmd,
         &spec,
         resolved,
@@ -1833,6 +1834,7 @@ fn preview_local_update_tool(
     )
 }
 
+#[cfg(test)]
 fn preview_local_update_tool_from_resolved(
     cmd: &str,
     spec: &SourceSpec,
@@ -1841,7 +1843,27 @@ fn preview_local_update_tool_from_resolved(
     require_verified: bool,
     current_target: HostTarget,
 ) -> Result<MutationToolOutput> {
+    preview_local_update_record_from_resolved(
+        cmd,
+        spec,
+        resolved,
+        paths,
+        require_verified,
+        current_target,
+    )
+    .map(|record| mutation_tool_from_record(cmd, MutationAction::PlannedUpdate, &record))
+}
+
+fn preview_local_update_record_from_resolved(
+    cmd: &str,
+    spec: &SourceSpec,
+    resolved: ResolvedAsset,
+    paths: &ScopePaths,
+    require_verified: bool,
+    current_target: HostTarget,
+) -> Result<PackageRecord> {
     ensure_resolved_asset_satisfies_require_verified(&spec, &resolved, require_verified)?;
+    ensure_no_package_record_install_path_collision(paths, cmd, current_target.os)?;
     let preview_sha256 = resolved
         .provider_digest_sha256
         .clone()
@@ -1849,19 +1871,14 @@ fn preview_local_update_tool_from_resolved(
     let include_cache_fields = preview_sha256.is_some();
     let sha256 = preview_sha256.unwrap_or_else(zero_sha256);
     let cache_path = CachePaths::new(&paths.root).asset_path(&sha256);
-    let record = package_record_from_resolved(
+    package_record_from_resolved(
         cmd,
         &resolved,
         sha256.clone(),
         &cache_path,
         &managed_installed_path(paths, cmd, current_target.os),
         include_cache_fields,
-    )?;
-    Ok(mutation_tool_from_record(
-        cmd,
-        MutationAction::PlannedUpdate,
-        &record,
-    ))
+    )
 }
 
 fn zero_sha256() -> String {
@@ -1924,7 +1941,11 @@ fn preview_global_update_records_with(
     prepare_global_updates(records.clone())?
         .into_iter()
         .zip(records)
-        .map(|(update, _current)| resolve_record(paths, &update).map(|record| (update.cmd, record)))
+        .map(|(update, _current)| {
+            let record = resolve_record(paths, &update)?;
+            ensure_no_package_record_install_path_collision(paths, &update.cmd, record.target_os)?;
+            Ok((update.cmd, record))
+        })
         .collect()
 }
 
@@ -1956,6 +1977,22 @@ fn preview_global_update_record(
         &managed_installed_path(paths, &update.cmd, resolved.target.os),
         include_cache_fields,
     )
+}
+
+fn local_update_changed_files_for_record(
+    root: &Path,
+    paths: &ScopePaths,
+    cmd: &str,
+    record: &PackageRecord,
+) -> Result<BTreeSet<String>> {
+    let mut changed_files = BTreeSet::new();
+    changed_files.insert(path_display(&package_record_path(paths, cmd)));
+    changed_files.insert(record.installed_path.clone());
+    if let Some(cache_ref) = local_cache_ref_changed_file(root, cmd, record)? {
+        changed_files.insert(cache_ref);
+    }
+    changed_files.extend(local_cache_entry_changed_files(record)?);
+    Ok(changed_files)
 }
 
 fn global_update_changed_files_for_record(
@@ -6349,6 +6386,7 @@ fn local_orphan_changed_files(
             &installed_path,
             record.target_os,
         ) {
+            validate_installed_binary_path(&paths, cmd, record)?;
             changed_files.insert(record.installed_path.clone());
         }
     }
@@ -7611,16 +7649,17 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
         .transpose()?
         .into_iter()
         .collect();
+    let mut manifest = manifest;
+    manifest.tools.remove(cmd);
+    let changed_files = local_remove_changed_files(&root, cmd, &prior_state, &manifest.tools)?;
     let record_path = package_record_path(&paths, cmd);
     let cleanup_result = (|| {
-        let mut remaining_manifest = manifest.clone();
-        remaining_manifest.tools.remove(cmd);
         let stale_installed = if record_path.exists() {
             let record = read_package_record(&record_path)?;
             let installed_path = managed_installed_path(&paths, cmd, record.target_os);
             if !is_manifest_managed_installed_path(
                 &paths,
-                &remaining_manifest.tools,
+                &manifest.tools,
                 &installed_path,
                 record.target_os,
             ) {
@@ -7635,7 +7674,7 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
         if let Some((stale_installed_path, stale_target_os)) = stale_installed {
             if !is_manifest_managed_installed_path(
                 &paths,
-                &remaining_manifest.tools,
+                &manifest.tools,
                 &stale_installed_path,
                 stale_target_os,
             ) {
@@ -7651,10 +7690,6 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
         restore_local_remove_state(&root, cmd, prior_state);
         return Err(error);
     }
-
-    let mut manifest = manifest;
-    manifest.tools.remove(cmd);
-    let changed_files = local_remove_changed_files(&root, cmd, &prior_state, &manifest.tools)?;
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         restore_local_remove_state(&root, cmd, prior_state);
         return Err(error);
@@ -7698,8 +7733,8 @@ fn remove_global_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
     validate_command_name(cmd)?;
     let paths = ScopePaths::global(binpm_home()?);
     let record = read_package_record(&package_record_path(&paths, cmd))?;
-    remove_global_tool_from_paths(&paths, cmd)?;
     let changed_files = global_remove_changed_files(&paths, cmd, &record)?;
+    remove_global_tool_from_paths(&paths, cmd)?;
     if !output.is_json() {
         println!("cleaned global package record and executable state");
         println!(
@@ -8799,7 +8834,8 @@ mod tests {
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
         install_path_collision_key, is_retryable_status,
         local_cache_ref_changed_file_for_cached_record, local_install_mutation_output,
-        local_manifest_orphan_cmds, local_runtime_lock_records, local_tool_execution_ready,
+        local_manifest_orphan_cmds, local_orphan_changed_files, local_runtime_lock_records,
+        local_tool_execution_ready, local_update_changed_files_for_record,
         local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, locked_record_download_request,
         locked_record_signature_sidecar, locked_record_verified_download_request,
@@ -8813,7 +8849,7 @@ mod tests {
         preview_local_update_tool_from_resolved, project_root_from, read_archive_selected_binary,
         record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
         release_asset_download_request, release_diagnostic_lines, release_diagnostics,
-        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        remove_global_tool, remove_global_tool_from_paths, remove_local_manifest_orphans,
         require_executable_managed_file, resolved_has_supported_signature_evidence,
         resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
         sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
@@ -11688,6 +11724,32 @@ mod tests {
     }
 
     #[test]
+    fn global_remove_validates_unsafe_persisted_path_before_cleanup() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        std::env::set_var("BINPM_HOME", &home);
+        let paths = crate::storage::ScopePaths::global(home);
+        let outside = temp_dir.path().join("outside").join("tool.exe");
+        let mut removed = package_record();
+        removed.target_os = TargetOs::Windows;
+        removed.installed_path = outside.display().to_string();
+        let mut remaining = package_record();
+        remaining.target_os = TargetOs::Windows;
+        remaining.installed_path = paths.bin.join("tool.exe").display().to_string();
+        write_package_record(&paths, "tool", &removed).expect("write removed record");
+        write_package_record(&paths, "tool.exe", &remaining).expect("write remaining record");
+        std::fs::write(paths.bin.join("tool.exe"), "remaining tool").expect("write exe");
+
+        let error = remove_global_tool("tool", OutputMode::Json).expect_err("unsafe path");
+
+        assert!(matches!(error, BinpmError::UnsafeInstalledPath { .. }));
+        assert!(crate::storage::package_record_path(&paths, "tool").exists());
+        assert!(crate::storage::package_record_path(&paths, "tool.exe").exists());
+        std::env::remove_var("BINPM_HOME");
+    }
+
+    #[test]
     fn global_install_mutation_output_reports_cache_entry_paths() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
@@ -12891,6 +12953,28 @@ mod tests {
     }
 
     #[test]
+    fn global_update_preview_rejects_existing_package_record_collision() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().join("home"));
+        let mut existing = package_record();
+        existing.target_os = TargetOs::Windows;
+        write_package_record(&paths, "foo", &existing).expect("write package record");
+        let mut current = package_record();
+        current.target_os = TargetOs::Windows;
+        let mut planned = current.clone();
+        planned.target_os = TargetOs::Windows;
+
+        let error = preview_global_update_records_with(
+            &paths,
+            vec![("foo.exe".to_string(), current)],
+            |_paths, _update| Ok(planned.clone()),
+        )
+        .expect_err("collision");
+
+        assert!(matches!(error, BinpmError::InstalledPathCollision { .. }));
+    }
+
+    #[test]
     fn require_verified_preview_rejects_local_checksum_only_resolution() {
         let mut resolved =
             resolved_asset("abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123");
@@ -12974,6 +13058,88 @@ mod tests {
             tool.installed_path.as_deref(),
             Some(expected_installed_path.as_str())
         );
+    }
+
+    #[test]
+    fn local_update_preview_rejects_existing_package_record_collision() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().join("project"));
+        let mut existing = package_record();
+        existing.target_os = TargetOs::Windows;
+        write_package_record(&paths, "foo", &existing).expect("write package record");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source");
+        let mut resolved =
+            resolved_asset("abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123");
+        resolved.target.os = TargetOs::Windows;
+        let mut target = linux_target();
+        target.os = TargetOs::Windows;
+
+        let error = preview_local_update_tool_from_resolved(
+            "foo.exe", &spec, resolved, &paths, false, target,
+        )
+        .expect_err("collision");
+
+        assert!(matches!(error, BinpmError::InstalledPathCollision { .. }));
+    }
+
+    #[test]
+    fn local_update_preview_changed_files_include_cache_entry_paths() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        let root = temp_dir.path().join("project");
+        std::env::set_var("BINPM_HOME", &home);
+        let paths = ScopePaths::local(root.clone());
+        let mut record = package_record();
+        record.installed_path = paths.bin.join("tool").display().to_string();
+        record.cache_key = Some(crate::storage::cache_key(&record.sha256));
+        record.cache_path = Some(
+            CachePaths::new(&home)
+                .asset_path(&record.sha256)
+                .display()
+                .to_string(),
+        );
+
+        let changed_files = local_update_changed_files_for_record(&root, &paths, "tool", &record)
+            .expect("changed files");
+
+        assert!(changed_files.contains(&path_display(&package_record_path(&paths, "tool"))));
+        assert!(changed_files.contains(&record.installed_path));
+        assert!(changed_files.contains(
+            &local_cache_ref_changed_file_for_cached_record(&root, "tool").expect("cache ref")
+        ));
+        assert!(changed_files.contains(record.cache_path.as_ref().expect("cache path")));
+        assert!(changed_files.contains(&path_display(
+            &CachePaths::new(&home).metadata_path(&record.sha256)
+        )));
+        std::env::remove_var("BINPM_HOME");
+    }
+
+    #[test]
+    fn local_update_preview_orphan_changed_files_validate_unsafe_installed_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path().join("project");
+        let mut record = package_record();
+        record.installed_path = temp_dir
+            .path()
+            .join("outside")
+            .join("tool")
+            .display()
+            .to_string();
+        let state = RuntimeToolState {
+            package_record: Some(record),
+            installed_path: None,
+            installed_snapshot: None,
+        };
+
+        let error = local_orphan_changed_files(
+            &root,
+            &BTreeMap::new(),
+            &[("tool".to_string(), state, None)],
+        )
+        .expect_err("unsafe path");
+
+        assert!(matches!(error, BinpmError::UnsafeInstalledPath { .. }));
     }
 
     #[test]
