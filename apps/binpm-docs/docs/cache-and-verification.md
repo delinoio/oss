@@ -43,4 +43,6 @@ Package signature verification is separate from the release-installer verificati
 
 Raw `.sig`, `.asc`, `.minisig`, `.sigstore.json`, certificate, attestation, SBOM, checksum, or provenance sidecars do not count as verified bytes by presence alone and are not installable assets.
 
-`--require-verified` and `binpm verify --require-verified` fail when no trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified package signature is available.
+When binpm sees unsupported verification sidecars such as `.asc`, `.sig`, `.minisig`, raw Sigstore metadata, SBOM, attestation, or provenance files for the selected asset, it reports those names separately from trusted evidence. JSON diagnostics expose safe sidecar asset names and sidecar kinds, not URLs or provider credentials.
+
+`--require-verified` and `binpm verify --require-verified` fail when no trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified package signature is available. Strict failure diagnostics distinguish releases with no trusted evidence from releases that only have unsupported sidecars.

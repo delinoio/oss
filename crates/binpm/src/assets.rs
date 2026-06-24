@@ -757,6 +757,10 @@ fn strip_known_suffixes(name: &str) -> &str {
         ".intoto.jsonl",
         ".intoto.json",
         ".sbom.json",
+        ".sbom",
+        ".spdx.json",
+        ".spdx",
+        ".cyclonedx.json",
         ".cert",
         ".crt",
         ".pem",
@@ -845,10 +849,22 @@ fn is_sidecar_name(lower: &str) -> bool {
         || lower.ends_with(".sig")
         || lower.ends_with(".asc")
         || lower.ends_with(".minisig")
+        || lower.ends_with(".sigstore")
         || lower.ends_with(".sigstore.json")
+        || lower.ends_with(".sigstore.bundle")
         || lower.ends_with(".intoto.json")
         || lower.ends_with(".intoto.jsonl")
+        || lower.ends_with(".attestation")
+        || lower.ends_with(".attestation.json")
+        || lower.ends_with(".attestation.jsonl")
+        || lower.ends_with(".sbom")
         || lower.ends_with(".sbom.json")
+        || lower.ends_with(".spdx")
+        || lower.ends_with(".spdx.json")
+        || lower.ends_with(".cyclonedx.json")
+        || lower.ends_with(".provenance")
+        || lower.ends_with(".provenance.json")
+        || lower.ends_with(".provenance.jsonl")
         || lower.ends_with(".cert")
         || lower.ends_with(".crt")
         || lower.ends_with(".pem")
@@ -1093,7 +1109,19 @@ mod tests {
         for name in [
             "tool.tar.gz.sha256",
             "tool-linux-amd64.sigstore.json",
+            "tool-linux-amd64.sigstore.bundle",
+            "tool-linux-amd64.sigstore",
             "tool-linux-amd64.intoto.jsonl",
+            "tool-linux-amd64.attestation",
+            "tool-linux-amd64.attestation.json",
+            "tool-linux-amd64.attestation.jsonl",
+            "tool.sbom",
+            "tool.spdx",
+            "tool.spdx.json",
+            "tool.cyclonedx.json",
+            "tool-linux-amd64.provenance",
+            "tool-linux-amd64.provenance.json",
+            "tool-linux-amd64.provenance.jsonl",
             "tool-linux-amd64.cert",
             "tool-linux-amd64.pem",
         ] {

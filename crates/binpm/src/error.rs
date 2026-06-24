@@ -2,6 +2,8 @@ use std::{fmt, io, path::PathBuf, sync::OnceLock};
 
 use thiserror::Error;
 
+use crate::storage::{UnsupportedVerificationSidecar, UnsupportedVerificationSidecarKind};
+
 pub type Result<T> = std::result::Result<T, BinpmError>;
 
 static FROZEN_LOCKFILE_CONTEXT: OnceLock<FrozenLockfileCommandContext> = OnceLock::new();
@@ -322,11 +324,11 @@ pub enum BinpmError {
         manifest.display()
     )]
     ExecToolMissing { cmd: String, manifest: PathBuf },
-    #[error(
-        "`--require-verified` requires upstream digest, checksum, or verified signature material \
-         for `{package}`."
-    )]
-    VerificationRequired { package: String },
+    #[error("{}", verification_required_message(package, unsupported_sidecars))]
+    VerificationRequired {
+        package: String,
+        unsupported_sidecars: Vec<UnsupportedVerificationSidecar>,
+    },
     #[error(
         "Manifest checksum_source `{checksum_source}` is declarative only and cannot be used as \
          verified checksum evidence."
@@ -402,6 +404,22 @@ impl BinpmError {
                     "local_development_escape_hatch": "--no-frozen-lockfile"
                 }))
             }
+            Self::VerificationRequired {
+                package,
+                unsupported_sidecars,
+            } => {
+                let reason = if unsupported_sidecars.is_empty() {
+                    "missing_trusted_evidence"
+                } else {
+                    "unsupported_sidecar_presence"
+                };
+                Some(serde_json::json!({
+                    "kind": "verification_required",
+                    "package": package,
+                    "reason": reason,
+                    "unsupported_sidecars": unsupported_sidecars,
+                }))
+            }
             Self::FrozenLockfileMissingRecord { path, cmd } => {
                 let safest_next_command = frozen_lockfile_safest_next_command(Some(cmd));
                 Some(serde_json::json!({
@@ -446,25 +464,31 @@ impl BinpmError {
                 cache_state,
                 url,
                 authenticated,
-                ..
-            } => Some(serde_json::json!({
-                "kind": "frozen_restore",
-                "mode": frozen_lockfile_mode_label(),
-                "reason": "locked_asset_download_failed",
-                "cmd": cmd,
-                "cache_path": cache_path.display().to_string(),
-                "cache_state": cache_state,
-                "restore_source": "locked_sanitized_asset_url",
-                "locked_asset_url": url,
-                "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
-                "would_change": cache_path.display().to_string(),
-                "network_access_attempted": true,
-                "provider_authentication_attached": authenticated,
-                "offline_or_cache_only": false,
-                "release_list_pagination_attempted": false,
-                "safest_next_command": "pre-populate the binpm cache for the locked SHA-256 or run binpm install --local outside frozen mode with the required provider token",
-                "local_development_escape_hatch": "--no-frozen-lockfile"
-            })),
+                source,
+            } => {
+                let mut diagnostic = serde_json::json!({
+                    "kind": "frozen_restore",
+                    "mode": frozen_lockfile_mode_label(),
+                    "reason": "locked_asset_download_failed",
+                    "cmd": cmd,
+                    "cache_path": cache_path.display().to_string(),
+                    "cache_state": cache_state,
+                    "restore_source": "locked_sanitized_asset_url",
+                    "locked_asset_url": url,
+                    "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
+                    "would_change": cache_path.display().to_string(),
+                    "network_access_attempted": true,
+                    "provider_authentication_attached": authenticated,
+                    "offline_or_cache_only": false,
+                    "release_list_pagination_attempted": false,
+                    "safest_next_command": "pre-populate the binpm cache for the locked SHA-256 or run binpm install --local outside frozen mode with the required provider token",
+                    "local_development_escape_hatch": "--no-frozen-lockfile"
+                });
+                if let Some(source_diagnostic) = source.structured_diagnostic() {
+                    diagnostic["source_diagnostic"] = source_diagnostic;
+                }
+                Some(diagnostic)
+            }
             Self::ReleaseNotFound {
                 skipped_releases, ..
             } if !skipped_releases.is_empty() => Some(serde_json::json!({
@@ -560,6 +584,48 @@ impl BinpmError {
             | Self::CommandFailed { .. } => 2,
             Self::Execute { .. } => 1,
         }
+    }
+}
+
+fn verification_required_message(
+    package: &str,
+    unsupported_sidecars: &[UnsupportedVerificationSidecar],
+) -> String {
+    let base = format!(
+        "`--require-verified` requires upstream digest, checksum, or verified signature material \
+         for `{package}`."
+    );
+    if unsupported_sidecars.is_empty() {
+        return base;
+    }
+
+    let sidecars = unsupported_sidecars
+        .iter()
+        .map(|sidecar| {
+            format!(
+                "{} ({})",
+                sidecar.asset_name,
+                unsupported_verification_sidecar_kind_label(sidecar.kind)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{base} Unsupported verification sidecars were present but are not trusted: {sidecars}."
+    )
+}
+
+fn unsupported_verification_sidecar_kind_label(
+    kind: UnsupportedVerificationSidecarKind,
+) -> &'static str {
+    match kind {
+        UnsupportedVerificationSidecarKind::GpgSignature => "gpg-signature",
+        UnsupportedVerificationSidecarKind::MinisignSignature => "minisign-signature",
+        UnsupportedVerificationSidecarKind::RawSigstoreMetadata => "raw-sigstore-metadata",
+        UnsupportedVerificationSidecarKind::Certificate => "certificate",
+        UnsupportedVerificationSidecarKind::Attestation => "attestation",
+        UnsupportedVerificationSidecarKind::Sbom => "sbom",
+        UnsupportedVerificationSidecarKind::Provenance => "provenance",
     }
 }
 
@@ -877,6 +943,46 @@ mod tests {
         assert_eq!(
             diagnostic["local_development_escape_hatch"],
             "--no-frozen-lockfile"
+        );
+    }
+
+    #[test]
+    fn frozen_restore_download_diagnostic_preserves_nested_verification_details() {
+        let cache_path = PathBuf::from("/tmp/binpm/cache/sha256/abc/asset");
+        let error = BinpmError::FrozenRestoreDownload {
+            cmd: "tool".to_string(),
+            cache_path,
+            cache_state: "missing",
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux".to_string(),
+            authenticated: false,
+            source: Box::new(BinpmError::VerificationRequired {
+                package: "github:owner/tool@1.0.0".to_string(),
+                unsupported_sidecars: vec![UnsupportedVerificationSidecar {
+                    asset_name: "tool-linux.asc".to_string(),
+                    kind: UnsupportedVerificationSidecarKind::GpgSignature,
+                }],
+            }),
+        };
+
+        let diagnostic = error
+            .structured_diagnostic()
+            .expect("frozen restore diagnostic");
+        assert_eq!(diagnostic["kind"], "frozen_restore");
+        assert_eq!(
+            diagnostic["source_diagnostic"]["kind"],
+            "verification_required"
+        );
+        assert_eq!(
+            diagnostic["source_diagnostic"]["reason"],
+            "unsupported_sidecar_presence"
+        );
+        assert_eq!(
+            diagnostic["source_diagnostic"]["unsupported_sidecars"][0]["asset_name"],
+            "tool-linux.asc"
+        );
+        assert_eq!(
+            diagnostic["source_diagnostic"]["unsupported_sidecars"][0]["kind"],
+            "gpg-signature"
         );
     }
 }
