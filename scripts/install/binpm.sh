@@ -19,7 +19,6 @@ USAGE
 
 repo="delinoio/oss"
 tag_prefix="binpm@v"
-workflow_identity="https://github.com/delinoio/oss/.github/workflows/release-binpm.yml@"
 supported_direct_targets="darwin/amd64 (macOS x64), darwin/arm64 (macOS arm64), linux/amd64 (Linux x64), linux/arm64 (Linux arm64), windows/amd64 (Windows x64), windows/arm64 (Windows arm64)"
 unsupported_platform_hint="Use an x64/arm64 host or supported CI image for direct install, use Homebrew or cargo-binstall where they support your host, or build binpm from source."
 
@@ -92,42 +91,6 @@ install_via_package_manager() {
   return 1
 }
 
-download_bundle() {
-  local base_url="$1"
-  local artifact="$2"
-  local bundle_name="${artifact}.sigstore.json"
-
-  if ! curl -fsSLO "${base_url}/${bundle_name}"; then
-    echo "[install.binpm] missing bundle sidecar: ${bundle_name}" >&2
-    echo "[install.binpm] direct installs require releases published with Sigstore bundle sidecars" >&2
-    exit 1
-  fi
-}
-
-require_cosign() {
-  if ! command -v cosign >/dev/null 2>&1; then
-    echo "[install.binpm] missing required prerequisite: cosign" >&2
-    echo "[install.binpm] direct installs require cosign before artifact download so SHA256SUMS and Sigstore bundle sidecars can be verified" >&2
-    echo "[install.binpm] install cosign and retry:" >&2
-    echo "[install.binpm]   macOS: brew install cosign" >&2
-    echo "[install.binpm]   Linux: brew install cosign, or follow https://docs.sigstore.dev/cosign/system_config/installation/" >&2
-    echo "[install.binpm]   Windows: winget install sigstore.cosign, or scoop install cosign" >&2
-    exit 1
-  fi
-}
-
-verify_bundle() {
-  local artifact="$1"
-
-  require_cosign
-
-  cosign verify-blob \
-    --bundle "${artifact}.sigstore.json" \
-    --certificate-identity-regexp "$workflow_identity" \
-    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-    "$artifact"
-}
-
 unsupported_direct_platform() {
   local os="$1"
   local arch="$2"
@@ -191,8 +154,6 @@ install_direct() {
   local tag
   tag="$(resolve_tag)"
 
-  require_cosign
-
   local ext="tar.gz"
   local asset_name="binpm-${os}-${arch}.${ext}"
   local base_url="https://github.com/${repo}/releases/download/${tag}"
@@ -206,11 +167,9 @@ install_direct() {
   echo "[install.binpm] downloading artifact: $asset_name" >&2
   curl -fsSLO "${base_url}/${asset_name}"
   curl -fsSLO "${base_url}/SHA256SUMS"
-  download_bundle "$base_url" "$asset_name"
 
   grep " ${asset_name}$" SHA256SUMS > SHA256SUMS.binpm
   shasum -a 256 -c SHA256SUMS.binpm
-  verify_bundle "$asset_name"
 
   tar -xzf "$asset_name"
 

@@ -28,7 +28,7 @@
 - Publish tag creation is opt-in by default (no config means no tags), must remain local-only (`git tag` without push), and must use `<crate>@v<version>` naming.
 - Remote tag publication is owned by CI automation: `.github/workflows/auto-publish.yml` must run `git push --tags` after a successful `publish` command, with checkout credential persistence disabled and authentication bound to `secrets.GH_TOKEN` (non-`GITHUB_TOKEN`) so downstream tag-triggered workflows run.
 - If `publish` tag configuration references unknown workspace packages, command execution must fail with `invalid-input`.
-- Direct installers must remain available at `scripts/install/cargo-mono.sh` and `scripts/install/cargo-mono.ps1`, and direct installs must verify `SHA256SUMS` plus Sigstore bundle sidecars via `cosign verify-blob --bundle`.
+- Direct installers must remain available at `scripts/install/cargo-mono.sh` and `scripts/install/cargo-mono.ps1`, and direct installs must verify `SHA256SUMS` for the selected artifact without requiring `cosign` or artifact Sigstore sidecars.
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
 - Human-output color contract:
   - Global CLI flag: `--color <auto|always|never>`.

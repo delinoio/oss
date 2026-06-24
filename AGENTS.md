@@ -171,7 +171,7 @@ enum ProjectId {
 - `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
 - binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
 - `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
-- binpm direct-installer documentation must include latest docs-site installer commands for `https://binpm.delino.io/install.sh` and `https://binpm.delino.io/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, link `cosign` prerequisite guidance before installer commands, and keep binpm release verification separate from package verification.
+- binpm direct-installer documentation must include latest docs-site installer commands for `https://binpm.delino.io/install.sh` and `https://binpm.delino.io/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, describe checksum verification through `SHA256SUMS`, and keep binpm release verification separate from package verification.
 - binpm installation and release documentation must describe Homebrew as prebuilt-only, describe disabled `cargo-binstall` quick-install and compile fallbacks, and distinguish first-party binpm release platforms from broader third-party target parsing support.
 
 ### Nodeup Docs App Contract

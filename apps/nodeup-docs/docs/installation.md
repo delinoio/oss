@@ -6,12 +6,12 @@ Release asset names use `amd64` for the same 64-bit Intel/AMD CPU family that ma
 
 ## Choose an Install Method
 
-For most macOS and Linux users, start with Homebrew. For Windows users, start with the direct installer after installing `cosign`.
+For most macOS and Linux users, start with Homebrew. For Windows users, start with the direct installer.
 
 | Method | Use this when |
 | --- | --- |
 | Homebrew | You are on macOS or Linux and already use Homebrew, or you want the simplest managed install path. |
-| Direct installers | You want a first-party release artifact without Homebrew or `cargo-binstall`, and you can install `cosign` first. Use pinned commands in CI or audited environments. |
+| Direct installers | You want a first-party release artifact without Homebrew or `cargo-binstall`. Use pinned commands in CI or audited environments. |
 | `cargo-binstall` | You already have Rust tooling and want to install from first-party GitHub Release assets without source-build fallback. |
 | binpm | You want Nodeup managed by a project-local or dedicated binpm manifest, usually because the rest of your tooling already uses binpm. |
 
@@ -64,21 +64,7 @@ Here, `amd64` means the x64 CPU family.
 
 ## Direct Installers
 
-Direct installers are for users who want a release artifact without Homebrew or `cargo-binstall`. Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign verify-blob --bundle`. Missing `cosign` is a prerequisite failure, not a reason to disable verification. If you do not want to manage that prerequisite directly, use Homebrew or `cargo-binstall` instead.
-
-Install `cosign`:
-
-```bash
-brew install cosign
-```
-
-On Linux without Homebrew, follow the [Sigstore cosign installation guide](https://docs.sigstore.dev/cosign/system_config/installation/). On Windows, use:
-
-```powershell
-winget install sigstore.cosign
-# or
-scoop install cosign
-```
+Direct installers are for users who want a release artifact without Homebrew or `cargo-binstall`. They verify the selected artifact against its `SHA256SUMS` entry before installation. If you do not want to manage a direct release artifact yourself, use Homebrew or `cargo-binstall` instead.
 
 macOS and Linux short URL:
 
@@ -198,7 +184,7 @@ bash ./scripts/install/nodeup.sh --version latest --method direct
 
 Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
 
-Direct installers support bundle-enabled releases only. The selected release must include `SHA256SUMS`, the selected artifact, and the selected artifact's `<artifact>.sigstore.json` bundle sidecar. Legacy `.sig` or `.pem` sidecars are not enough for the direct installer. If an older release lacks bundle sidecars, use a newer bundle-enabled release, Homebrew on macOS/Linux when available, or `cargo-binstall` on supported hosts with complete first-party assets.
+Direct installers require the selected release to include `SHA256SUMS` and the selected artifact. If a release is missing either one, use a newer release, Homebrew on macOS/Linux when available, or `cargo-binstall` on supported hosts with complete first-party assets.
 
 Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before verifying the install, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
 
@@ -231,7 +217,7 @@ Nodeup's `cargo-binstall` metadata resolves first-party GitHub Release assets on
 - `nodeup-windows-amd64.zip`
 - `nodeup-windows-arm64.zip`
 
-Third-party quick-install and compile fallback strategies are disabled by contract. If the current host is unsupported or the matching first-party asset is missing from a release, `cargo-binstall` should fail instead of compiling from source or downloading a community-provided binary. Use Homebrew on macOS/Linux, the direct installer with `cosign`, or a supported x64/arm64 host with a complete Nodeup release.
+Third-party quick-install and compile fallback strategies are disabled by contract. If the current host is unsupported or the matching first-party asset is missing from a release, `cargo-binstall` should fail instead of compiling from source or downloading a community-provided binary. Use Homebrew on macOS/Linux, the direct installer, or a supported x64/arm64 host with a complete Nodeup release.
 
 ## GitHub Actions
 

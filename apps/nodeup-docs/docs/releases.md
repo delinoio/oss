@@ -1,6 +1,6 @@
 # Releases and Artifacts
 
-Nodeup releases provide prebuilt CLI downloads, checksums, and Sigstore verification material.
+Nodeup releases provide prebuilt CLI downloads and checksums.
 
 Download Nodeup release artifacts from the [`delinoio/oss` GitHub Releases page](https://github.com/delinoio/oss/releases). Look for releases whose tag starts with `nodeup@v`, such as `nodeup@v<semver>`.
 
@@ -25,18 +25,17 @@ Release downloads are provided for:
 
 In Nodeup release asset names, `amd64` means the same 64-bit Intel/AMD CPU family often called `x64` in operating-system and user-facing documentation. For example, Linux x64 hosts use `linux/amd64` assets, and Windows x64 hosts use `windows/amd64` assets.
 
-Each download can be checked against `SHA256SUMS` and Sigstore verification material. Direct installers require releases that include this verification material.
+Each download can be checked against `SHA256SUMS`. Direct installers require releases that include the selected artifact and `SHA256SUMS`.
 
 ## Direct Installer Verification
 
 Direct installers verify:
 
 1. The selected artifact's `SHA256SUMS` entry.
-2. The artifact's Sigstore bundle with `cosign`.
 
-Direct installers require `cosign` and support bundle-enabled releases only. Missing `cosign` is reported as a prerequisite failure before artifact download. If verification material is missing or verification fails, installation stops before the binary is installed with a distinct verification or release-material error.
+If `SHA256SUMS` is missing, the selected artifact has no checksum entry, or checksum verification fails, installation stops before the binary is installed.
 
-A release is direct-installer compatible only when it includes `SHA256SUMS`, the selected artifact, and the selected artifact's `<artifact>.sigstore.json` bundle sidecar. Legacy `.sig` or `.pem` sidecars are not supported by the direct installer. For older releases that lack bundle sidecars, use a newer bundle-enabled release, Homebrew on macOS/Linux when available, or `cargo-binstall` on supported hosts with complete first-party assets.
+A release is direct-installer compatible only when it includes `SHA256SUMS` and the selected artifact. For older releases that lack either one, use a newer release, Homebrew on macOS/Linux when available, or `cargo-binstall` on supported hosts with complete first-party assets.
 
 ## cargo-binstall Asset Contract
 
@@ -51,7 +50,7 @@ Supported `cargo-binstall` assets are:
 - `nodeup-windows-amd64.zip`
 - `nodeup-windows-arm64.zip`
 
-If a host is unsupported or a release is missing the expected asset, use Homebrew on macOS/Linux, the direct installer with `cosign`, or a supported x64/arm64 host with a complete Nodeup release.
+If a host is unsupported or a release is missing the expected asset, use Homebrew on macOS/Linux, the direct installer, or a supported x64/arm64 host with a complete Nodeup release.
 
 ## Runtime Download Artifacts
 
