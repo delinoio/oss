@@ -50,9 +50,10 @@ use crate::{
         require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
         scan_cache_references, validate_command_name, validate_download_url,
         validate_installed_binary_path, validate_sha256_digest, write_cache_ref, write_lockfile,
-        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
-        PackageRecord, ResolvedAsset, ScopePaths, SignatureSidecar, UnsupportedVerificationSidecar,
-        UnsupportedVerificationSidecarKind, LOCKFILE_FILE, MANIFEST_FILE,
+        write_manifest, write_package_record, CachePaths, LockTool, Manifest,
+        ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
+        SignatureSidecar, UnsupportedVerificationSidecar, UnsupportedVerificationSidecarKind,
+        LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -93,6 +94,8 @@ struct ListToolOutput {
     selected_binary: Option<String>,
     installed_path: Option<String>,
     verification: Option<VerificationState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_step: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -245,6 +248,16 @@ struct DoctorOutput {
     global_bin_on_path: bool,
     stale_cache_refs: usize,
     legacy_cache_refs: usize,
+    declared_only_tools: Vec<DeclaredOnlyToolOutput>,
+    declared_only_next_step: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DeclaredOnlyToolOutput {
+    cmd: String,
+    source: String,
+    requested_version: Option<String>,
+    expected_executable_path: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -744,16 +757,19 @@ fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
         if output.is_json() {
             return print_json(&result);
         }
+        let scope_paths = ScopePaths::local(root.clone());
         println!("declared {}", selected.join(", "));
         println!("manifest-only: wrote {}", manifest_path.display());
         println!(
             "manifest-only: did not update {}",
             root.join(LOCKFILE_FILE).display()
         );
-        println!(
-            "manifest-only: did not install executables under {}",
-            ScopePaths::local(root).bin.display()
-        );
+        for cmd in &selected {
+            println!(
+                "manifest-only: did not install executable {}",
+                current_platform_installed_path(&scope_paths, cmd).display()
+            );
+        }
         println!("next: run `binpm install` to resolve, lock, and install declared tools");
         return Ok(0);
     }
@@ -1185,28 +1201,26 @@ fn list(args: ScopedArgs, output: OutputMode) -> Result<i32> {
         Scope::Local => {
             let root = require_manifest_root()?;
             let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
-            let paths = ScopePaths::local(root);
+            let paths = ScopePaths::local(root.clone());
             let mut printed = BTreeSet::new();
             for (cmd, tool) in manifest.tools {
                 validate_command_name(&cmd)?;
                 printed.insert(cmd.clone());
-                let state = package_record_path(&paths, &cmd);
-                if state.exists() {
-                    let record = read_package_record(&state)?;
+                let runtime_record = local_runtime_tool_record(&root, &cmd)?;
+                let has_current_manifest_record = match runtime_record.as_ref() {
+                    Some(record) => match local_runtime_record_matches_manifest(&tool, record) {
+                        Ok(matches) => matches,
+                        Err(BinpmError::InvalidSourceSpec { .. }) => false,
+                        Err(error) => return Err(error),
+                    },
+                    None => false,
+                };
+                if let Some(record) = runtime_record.filter(|_| has_current_manifest_record) {
                     let row = list_installed_tool(cmd, record);
                     print_list_tool(&row, output);
                     tools.push(row);
                 } else {
-                    let row = ListToolOutput {
-                        cmd,
-                        state: ToolState::Declared,
-                        source: tool.source,
-                        requested_version: tool.version,
-                        release_tag: None,
-                        selected_binary: None,
-                        installed_path: None,
-                        verification: None,
-                    };
+                    let row = list_declared_tool(cmd, tool);
                     print_list_tool(&row, output);
                     tools.push(row);
                 }
@@ -2026,6 +2040,7 @@ fn doctor(output: OutputMode) -> Result<i32> {
     let global_bin_on_path = path_contains_entry(&global_bin);
     let cache_paths = CachePaths::new(&home);
     let cache_ref_scan = scan_cache_references(&cache_paths)?;
+    let declared_only_tools = declared_only_local_tools(&project_root)?;
 
     info!(
         command = "doctor",
@@ -2040,8 +2055,14 @@ fn doctor(output: OutputMode) -> Result<i32> {
         global_bin_on_path,
         stale_cache_refs = cache_ref_scan.stale_count(),
         legacy_cache_refs = cache_ref_scan.legacy_refs,
+        declared_only_tools = declared_only_tools.len(),
         "Prepared doctor inspection"
     );
+    let declared_only_next_step = if declared_only_tools.is_empty() {
+        None
+    } else {
+        Some("binpm install")
+    };
     if output.is_json() {
         return print_json(&DoctorOutput {
             command: "doctor",
@@ -2057,6 +2078,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
             global_bin_on_path,
             stale_cache_refs: cache_ref_scan.stale_count(),
             legacy_cache_refs: cache_ref_scan.legacy_refs,
+            declared_only_tools,
+            declared_only_next_step,
         });
     }
     println!("binpm doctor");
@@ -2069,6 +2092,20 @@ fn doctor(output: OutputMode) -> Result<i32> {
     println!("global_bin_on_path: {}", yes_no(global_bin_on_path));
     println!("stale_cache_refs: {}", cache_ref_scan.stale_count());
     println!("legacy_cache_refs: {}", cache_ref_scan.legacy_refs);
+    println!("declared_only_tools: {}", declared_only_tools.len());
+    for tool in &declared_only_tools {
+        println!(
+            "declared_only_tool: cmd={} state=declared-but-not-installed source={} \
+             requested_version={} expected_executable_path={} next=`binpm install --local`",
+            tool.cmd,
+            tool.source,
+            tool.requested_version.as_deref().unwrap_or("<latest>"),
+            tool.expected_executable_path
+        );
+    }
+    if declared_only_next_step.is_some() {
+        println!("declared_only_next_step: binpm install");
+    }
     if !global_bin_on_path {
         print_global_path_setup_guidance(&global_bin);
     }
@@ -6928,6 +6965,21 @@ fn list_installed_tool(cmd: String, record: PackageRecord) -> ListToolOutput {
         selected_binary: Some(record.selected_binary),
         installed_path: Some(record.installed_path),
         verification: Some(verification),
+        next_step: None,
+    }
+}
+
+fn list_declared_tool(cmd: String, tool: ManifestTool) -> ListToolOutput {
+    ListToolOutput {
+        cmd,
+        state: ToolState::Declared,
+        source: tool.source,
+        requested_version: tool.version,
+        release_tag: None,
+        selected_binary: None,
+        installed_path: None,
+        verification: None,
+        next_step: Some("binpm install --local".to_string()),
     }
 }
 
@@ -6937,12 +6989,13 @@ fn print_list_tool(row: &ListToolOutput, output: OutputMode) {
     }
     match row.state {
         ToolState::Declared => println!(
-            "installed_command_alias={} state=declared source={} requested_version={} \
-             release=<unknown> upstream_binary=<unknown> installed_path=<unknown> \
-             verification=<unknown>",
+            "installed_command_alias={} state=declared status=declared-but-not-installed \
+             source={} requested_version={} release=<unknown> upstream_binary=<unknown> \
+             installed_path=<unknown> verification=<unknown> next=`{}`",
             row.cmd,
             row.source,
-            row.requested_version.as_deref().unwrap_or("<latest>")
+            row.requested_version.as_deref().unwrap_or("<latest>"),
+            row.next_step.as_deref().unwrap_or("binpm install")
         ),
         ToolState::Installed => println!(
             "installed_command_alias={} state=installed source={} requested_version={} release={} \
@@ -7041,6 +7094,208 @@ fn json_path_state(path: &Path) -> PathState {
         PathState::Present
     } else {
         PathState::Missing
+    }
+}
+
+fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>> {
+    let manifest_path = root.join(MANIFEST_FILE);
+    if !manifest_path.exists() {
+        return Ok(Vec::new());
+    }
+    let lockfile_path = root.join(LOCKFILE_FILE);
+
+    let manifest = match read_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(
+            ref error @ (BinpmError::ParseToml { ref path, .. }
+            | BinpmError::UnsupportedStorageVersion {
+                kind: "manifest",
+                ref path,
+                ..
+            }
+            | BinpmError::ReadFile { ref path, .. }),
+        ) if path == &manifest_path => {
+            warn!(
+                command = "doctor",
+                manifest_path = %manifest_path.display(),
+                error_kind = match error {
+                    BinpmError::ParseToml { .. } => "parse toml",
+                    BinpmError::UnsupportedStorageVersion { .. } => "unsupported storage version",
+                    BinpmError::ReadFile { .. } => "read file",
+                    _ => "unknown",
+                },
+                "Skipping declared-only tool scan because the manifest could not be parsed"
+            );
+            return Ok(Vec::new());
+        }
+        Err(error) => return Err(error),
+    };
+    let mut declared_only_tools = Vec::new();
+    for (cmd, tool) in manifest.tools {
+        if let Err(error) = validate_command_name(&cmd) {
+            warn!(
+                command = "doctor",
+                manifest_path = %manifest_path.display(),
+                tool_cmd = %cmd,
+                error = %error,
+                "Skipping declared-only tool scan because a manifest tool declaration is invalid"
+            );
+            return Ok(Vec::new());
+        }
+        let spec = match parse_manifest_tool_source(&tool) {
+            Ok(spec) => spec,
+            Err(BinpmError::InvalidSourceSpec { .. }) => {
+                warn!(
+                    command = "doctor",
+                    manifest_path = %manifest_path.display(),
+                    tool_cmd = %cmd,
+                    error_kind = "invalid source spec",
+                    "Skipping declared-only tool scan because a manifest tool source is invalid"
+                );
+                return Ok(Vec::new());
+            }
+            Err(error) => return Err(error),
+        };
+        let runtime_record = local_runtime_tool_record(root, &cmd)?;
+        let has_manifest_runtime_record = match runtime_record.as_ref() {
+            Some(record) => local_runtime_record_matches_manifest(&tool, record)?,
+            None => false,
+        };
+        match local_tool_execution_ready(root, &cmd, &spec, Some(&tool)) {
+            Ok(true) => continue,
+            Ok(false) if has_manifest_runtime_record => continue,
+            Ok(false) => {}
+            Err(
+                ref error @ (BinpmError::ParseToml { ref path, .. }
+                | BinpmError::UnsupportedStorageVersion {
+                    kind: "lockfile",
+                    ref path,
+                    ..
+                }
+                | BinpmError::ReadFile { ref path, .. }),
+            ) if path == &lockfile_path => {
+                warn!(
+                    command = "doctor",
+                    manifest_path = %manifest_path.display(),
+                    lockfile_path = %lockfile_path.display(),
+                    tool_cmd = %cmd,
+                    error_kind = match error {
+                        BinpmError::ParseToml { .. } => "parse toml",
+                        BinpmError::UnsupportedStorageVersion { .. } => "unsupported storage version",
+                        BinpmError::ReadFile { .. } => "read file",
+                        _ => "unknown",
+                    },
+                    "Skipping declared-only tool scan because the lockfile could not be parsed"
+                );
+                return Ok(Vec::new());
+            }
+            Err(error) => {
+                if runtime_record.is_some() || matches!(error, BinpmError::UnsafeManagedFile { .. })
+                {
+                    return Err(error);
+                }
+                warn!(
+                    command = "doctor",
+                    manifest_path = %manifest_path.display(),
+                    tool_cmd = %cmd,
+                    error = %error,
+                    "Treating local tool as declared-only because readiness could not be checked"
+                );
+            }
+        }
+        let paths = ScopePaths::local(root.to_path_buf());
+        declared_only_tools.push(DeclaredOnlyToolOutput {
+            expected_executable_path: current_platform_installed_path(&paths, &cmd)
+                .display()
+                .to_string(),
+            cmd,
+            source: tool.source,
+            requested_version: tool.version,
+        });
+    }
+    Ok(declared_only_tools)
+}
+
+fn local_runtime_record_matches_manifest(
+    tool: &ManifestTool,
+    record: &PackageRecord,
+) -> Result<bool> {
+    let spec = parse_manifest_tool_source(tool)?;
+    let target = HostTarget::current()?;
+    let source_and_target_match = record.source == spec.source_without_version()
+        && record.source_provider == spec.provider
+        && record.source_host == spec.host
+        && record.source_path == spec.path
+        && record.requested_version == spec.version
+        && record.target_os == target.os
+        && record.target_arch == target.arch
+        && record.target_libc == target.libc;
+    if !source_and_target_match {
+        return Ok(false);
+    }
+    let override_target = match manifest_target_override(Some(tool), &target) {
+        Ok(override_target) => override_target,
+        Err(
+            BinpmError::InvalidTargetKey { .. } | BinpmError::UnsupportedTargetComponent { .. },
+        ) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if let Some(override_target) = override_target {
+        return Ok(
+            manifest_checksum_source_matches_record(override_target, record)
+                && record.asset_name == override_target.asset
+                && manifest_bin_matches_record(&override_target.bin, &record.selected_binary),
+        );
+    }
+    Ok(tool
+        .bin
+        .as_ref()
+        .map(|bin| manifest_bin_matches_record(bin, &record.selected_binary))
+        .unwrap_or(true))
+}
+
+fn manifest_checksum_source_matches_record(
+    override_target: &ManifestTargetOverride,
+    record: &PackageRecord,
+) -> bool {
+    match override_target.checksum_source {
+        Some(ChecksumSource::GitHubDigest) => {
+            record.source_provider == crate::contract::SourceProvider::GitHub
+                && record.checksum_source == ChecksumSource::GitHubDigest
+                && record.provider_digest_sha256.as_deref() == Some(record.sha256.as_str())
+        }
+        Some(_) => false,
+        None => true,
+    }
+}
+
+fn local_runtime_tool_record(root: &Path, cmd: &str) -> Result<Option<PackageRecord>> {
+    let paths = ScopePaths::local(root.to_path_buf());
+    let record = match read_package_record(&package_record_path(&paths, cmd)) {
+        Ok(record) => record,
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            return Ok(None)
+        }
+        Err(error) => return Err(error),
+    };
+
+    let installed_path = match validate_installed_binary_path(&paths, cmd, &record) {
+        Ok(path) => path,
+        Err(BinpmError::UnsafeInstalledPath { .. }) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    match require_regular_managed_file(&installed_path) {
+        Ok(()) => {}
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            return Ok(None)
+        }
+        Err(BinpmError::UnsafeManagedFile { .. }) => return Ok(None),
+        Err(error) => return Err(error),
+    }
+    match require_executable_managed_file(&installed_path) {
+        Ok(()) => Ok(Some(record)),
+        Err(BinpmError::UnsafeManagedFile { .. }) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 
@@ -9602,7 +9857,7 @@ mod tests {
         candidate_explain_lines, candidate_output, capture_local_remove_state,
         capture_runtime_tool_state, checksum_digest_from_text, checksum_manifest_candidates,
         checksum_sidecar_candidates, cleanup_failed_install_cache, clear_mutation_warnings,
-        command_alias_differs_from_upstream, commit_deferred_cache_hit,
+        command_alias_differs_from_upstream, commit_deferred_cache_hit, declared_only_local_tools,
         deterministic_installed_path, download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision,
         ensure_resolved_asset_satisfies_require_verified, execute_command,
@@ -9613,12 +9868,14 @@ mod tests {
         install_path_collision_key, installed_mutation_lines, is_retryable_status,
         local_cache_ref_changed_file_for_cached_record, local_completed_mutation_output,
         local_install_mutation_output, local_manifest_orphan_cmds, local_orphan_changed_files,
-        local_remove_changed_files, local_runtime_lock_records, local_tool_execution_ready,
-        local_update_changed_files_for_record, local_update_manifest_with_latest_versions_from,
-        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
-        locked_record_download_request, locked_record_signature_sidecar,
-        locked_record_verified_download_request, locked_release_lookup_spec, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
+        local_remove_changed_files, local_runtime_lock_records,
+        local_runtime_record_matches_manifest, local_runtime_tool_record,
+        local_tool_execution_ready, local_update_changed_files_for_record,
+        local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
+        lock_targets_conflict_with_record, locked_record_download_request,
+        locked_record_signature_sidecar, locked_record_verified_download_request,
+        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         merge_unsupported_verification_sidecars, mutation_tool_from_manifest_tool,
         mutation_tool_from_record, mutation_warning, normalize_bin_selection,
@@ -16187,6 +16444,538 @@ mod tests {
             !local_tool_execution_ready(root, "tool", &spec, None).expect("readiness check"),
             "non-executable managed binaries should be repaired by local x"
         );
+    }
+
+    #[test]
+    fn local_tool_execution_ready_surfaces_non_regular_binary() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("local scope dirs");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::create_dir(&installed_path).expect("create installed path directory");
+
+        let mut lock_record = package_record();
+        lock_record.target_os = target.os;
+        lock_record.target_arch = target.arch;
+        lock_record.target_libc = target.libc;
+        lock_record.installed_path = deterministic_installed_path("tool", target.os);
+        let mut runtime_record = lock_record.clone();
+        runtime_record.installed_path = installed_path.display().to_string();
+        write_lockfile(
+            &root.join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(target.key(), lock_record)]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+        write_package_record(&paths, "tool", &runtime_record).expect("write runtime record");
+        let mut spec = SourceSpec::from_str("github:owner/tool").expect("parse source");
+        spec.version = Some("1.0.0".to_string());
+
+        let error =
+            local_tool_execution_ready(root, "tool", &spec, None).expect_err("readiness check");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_ignores_malformed_manifest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        fs::write(temp_dir.path().join(MANIFEST_FILE), "version = [").expect("write manifest");
+
+        let tools = declared_only_local_tools(temp_dir.path()).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_ignores_unreadable_manifest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(temp_dir.path().join(MANIFEST_FILE)).expect("create manifest directory");
+
+        let tools = declared_only_local_tools(temp_dir.path()).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_ignores_malformed_lockfile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        fs::write(root.join(LOCKFILE_FILE), "version = [").expect("write malformed lockfile");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_ignores_unreadable_lockfile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        fs::create_dir(root.join(LOCKFILE_FILE)).expect("create lockfile directory");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_ignores_unsupported_lockfile_version() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        fs::write(root.join(LOCKFILE_FILE), "version = 2\n").expect("write unsupported lockfile");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_ignores_invalid_manifest_source_without_error() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "https://user:secret@[::1?token=secret".to_string(),
+                        version: None,
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_surfaces_corrupt_package_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        write_lockfile(
+            &root.join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+        )
+        .expect("write lockfile");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("ensure scope paths");
+        fs::write(package_record_path(&paths, "tool"), "package_spec = [")
+            .expect("write corrupt package record");
+
+        let error = declared_only_local_tools(root).expect_err("corrupt package record");
+
+        assert!(matches!(error, BinpmError::ParseToml { .. }));
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_surfaces_non_regular_binary() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("ensure scope paths");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::create_dir(&installed_path).expect("create installed path directory");
+        let mut lock_record = package_record();
+        lock_record.target_os = target.os;
+        lock_record.target_arch = target.arch;
+        lock_record.target_libc = target.libc;
+        lock_record.installed_path = deterministic_installed_path("tool", target.os);
+        let mut runtime_record = lock_record.clone();
+        runtime_record.installed_path = installed_path.display().to_string();
+        write_lockfile(
+            &root.join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(target.key(), lock_record)]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+        write_package_record(&paths, "tool", &runtime_record).expect("write runtime record");
+
+        let error = declared_only_local_tools(root).expect_err("declared-only scan");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_reports_existing_stale_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/replacement".to_string(),
+                        version: Some("2.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        let paths = ScopePaths::local(root.to_path_buf());
+        write_package_record(&paths, "tool", &package_record()).expect("write stale record");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].cmd, "tool");
+        assert_eq!(tools[0].source, "github:owner/replacement");
+        assert_eq!(tools[0].requested_version.as_deref(), Some("2.0.0"));
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_skips_manifest_matching_runtime_without_lockfile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("ensure scope paths");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::write(&installed_path, b"#!/bin/sh\n").expect("write executable");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mut permissions = fs::metadata(&installed_path)
+                .expect("metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&installed_path, permissions).expect("chmod executable");
+        }
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        record.installed_path = installed_path.display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write runtime record");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn local_runtime_tool_record_treats_non_regular_binary_as_missing() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("ensure scope paths");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::create_dir(&installed_path).expect("create installed path directory");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        record.installed_path = installed_path.display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write runtime record");
+
+        let record = local_runtime_tool_record(root, "tool").expect("runtime record");
+
+        assert!(record.is_none());
+    }
+
+    #[test]
+    fn local_runtime_tool_record_reports_installed_record_without_lockfile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("ensure scope paths");
+        let installed_path = root.join(".binpm/bin/tool");
+        let mut record = package_record();
+        record.installed_path = installed_path.display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write runtime record");
+        fs::write(&installed_path, b"#!/bin/sh\n").expect("write executable");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mut permissions = fs::metadata(&installed_path)
+                .expect("metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&installed_path, permissions).expect("chmod executable");
+        }
+
+        let record = local_runtime_tool_record(root, "tool")
+            .expect("runtime record")
+            .expect("installed");
+
+        assert_eq!(record.source, "github:owner/tool");
+        assert_eq!(record.installed_path, installed_path.display().to_string());
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_rejects_stale_source_version_and_bin() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::new(),
+        };
+
+        assert!(local_runtime_record_matches_manifest(&tool, &record)
+            .expect("matching manifest record"));
+
+        let changed_source = ManifestTool {
+            source: "github:owner/other".to_string(),
+            ..tool.clone()
+        };
+        assert!(
+            !local_runtime_record_matches_manifest(&changed_source, &record)
+                .expect("source mismatch")
+        );
+
+        let changed_version = ManifestTool {
+            version: Some("2.0.0".to_string()),
+            ..tool.clone()
+        };
+        assert!(
+            !local_runtime_record_matches_manifest(&changed_version, &record)
+                .expect("version mismatch")
+        );
+
+        let changed_bin = ManifestTool {
+            bin: Some("other-tool".to_string()),
+            ..tool.clone()
+        };
+        assert!(
+            !local_runtime_record_matches_manifest(&changed_bin, &record).expect("bin mismatch")
+        );
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_rejects_stale_target() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        if target.os == TargetOs::Windows {
+            record.target_os = TargetOs::Darwin;
+            record.target_libc = TargetLibc::Any;
+        } else {
+            record.target_os = TargetOs::Windows;
+            record.target_libc = TargetLibc::Msvc;
+        }
+        record.target_arch = target.arch;
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::new(),
+        };
+
+        assert!(!local_runtime_record_matches_manifest(&tool, &record).expect("target mismatch"));
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_rejects_stale_checksum_source_override() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        record.asset_name = "tool-linux".to_string();
+        record.selected_binary = "tool-linux".to_string();
+        record.checksum_source = ChecksumSource::Local;
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool-linux".to_string(),
+                    checksum_source: Some(ChecksumSource::GitHubDigest),
+                },
+            )]),
+        };
+
+        assert!(!local_runtime_record_matches_manifest(&tool, &record)
+            .expect("checksum source mismatch"));
+
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        record.provider_digest_sha256 = Some(record.sha256.clone());
+
+        assert!(
+            local_runtime_record_matches_manifest(&tool, &record).expect("checksum source match")
+        );
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_accepts_selected_binary_basename() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        record.selected_binary = "dist/tool".to_string();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("tool".to_string()),
+            targets: BTreeMap::new(),
+        };
+
+        assert!(local_runtime_record_matches_manifest(&tool, &record).expect("basename bin match"));
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_treats_invalid_target_override_as_stale() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                "linux-amd64-surprise".to_string(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool-linux".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        assert!(!local_runtime_record_matches_manifest(&tool, &record)
+            .expect("invalid override is a non-current diagnostic state"));
     }
 
     #[test]

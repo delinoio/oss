@@ -107,6 +107,14 @@ fn bash_quote_path(path: &Path) -> String {
     posix_single_quote(&bash_path(path))
 }
 
+fn local_executable_name(cmd: &str) -> String {
+    if cfg!(windows) {
+        format!("{cmd}.exe")
+    } else {
+        cmd.to_string()
+    }
+}
+
 fn fish_single_quote(raw: &str) -> String {
     format!("'{}'", raw.replace('\\', "\\\\").replace('\'', "\\'"))
 }
@@ -752,7 +760,28 @@ fn add_manifest_only_writes_only_manifest_and_supports_additional_commands() {
         .assert()
         .success()
         .stdout(predicate::str::contains("declared foo, bar"))
-        .stdout(predicate::str::contains("manifest-only: did not update"))
+        .stdout(predicate::str::contains(format!(
+            "manifest-only: did not update {}",
+            temp_dir.path().join("binpm.lock").display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "manifest-only: did not install executable {}",
+            temp_dir
+                .path()
+                .join(".binpm")
+                .join("bin")
+                .join(local_executable_name("foo"))
+                .display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "manifest-only: did not install executable {}",
+            temp_dir
+                .path()
+                .join(".binpm")
+                .join("bin")
+                .join(local_executable_name("bar"))
+                .display()
+        )))
         .stdout(predicate::str::contains("next: run `binpm install`"));
 
     let manifest = fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
@@ -2219,6 +2248,62 @@ fn doctor_json_reports_path_states() {
     );
     assert_eq!(payload["local_bin_on_path"], false);
     assert_eq!(payload["global_bin_on_path"], false);
+    assert_eq!(payload["declared_only_tools"].as_array().unwrap().len(), 0);
+    assert!(payload["declared_only_next_step"].is_null());
+}
+
+#[test]
+fn doctor_stays_available_for_invalid_manifest_command_names() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools."bad/name"]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("manifest: present"))
+        .stdout(predicate::str::contains("lockfile: missing"))
+        .stdout(predicate::str::contains("declared_only_tools: 0"));
+}
+
+#[test]
+fn doctor_stays_available_for_invalid_manifest_sources() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "npm:eslint"
+"#,
+    )
+    .expect("write manifest");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["doctor", "--json"])
+        .output()
+        .expect("doctor --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse doctor json");
+    assert_eq!(payload["manifest"], "present");
+    assert_eq!(payload["lockfile"], "missing");
+    assert_eq!(payload["declared_only_tools"].as_array().unwrap().len(), 0);
+    assert!(payload["declared_only_next_step"].is_null());
 }
 
 #[test]
@@ -2253,6 +2338,7 @@ version = "1.0.0"
     assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
     assert_eq!(payload["tools"][0]["requested_version"], "1.0.0");
     assert!(payload["tools"][0]["release_tag"].is_null());
+    assert_eq!(payload["tools"][0]["next_step"], "binpm install --local");
 }
 
 #[test]
@@ -2276,7 +2362,98 @@ source = "github:owner/tool"
         .args(["list"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("list scope: local"));
+        .stdout(predicate::str::contains("list scope: local"))
+        .stdout(predicate::str::contains("state=declared"))
+        .stdout(predicate::str::contains(
+            "status=declared-but-not-installed",
+        ))
+        .stdout(predicate::str::contains("next=`binpm install --local`"));
+}
+
+#[test]
+fn doctor_reports_declared_only_local_tools() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let expected_executable = temp_dir
+        .path()
+        .join(".binpm")
+        .join("bin")
+        .join(local_executable_name("tool"));
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("declared_only_tools: 1"))
+        .stdout(predicate::str::contains("state=declared-but-not-installed"))
+        .stdout(predicate::str::contains(format!(
+            "expected_executable_path={}",
+            expected_executable.display()
+        )))
+        .stdout(predicate::str::contains("next=`binpm install --local`"))
+        .stdout(predicate::str::contains("binpm install --local tool").not())
+        .stdout(predicate::str::contains(
+            "declared_only_next_step: binpm install",
+        ));
+}
+
+#[test]
+fn doctor_json_reports_declared_only_local_tools() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["doctor", "--json"])
+        .output()
+        .expect("doctor --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse doctor json");
+    assert_eq!(payload["declared_only_tools"].as_array().unwrap().len(), 1);
+    assert_eq!(payload["declared_only_tools"][0]["cmd"], "tool");
+    assert_eq!(
+        payload["declared_only_tools"][0]["source"],
+        "github:owner/tool"
+    );
+    assert_eq!(
+        payload["declared_only_tools"][0]["requested_version"],
+        "1.0.0"
+    );
+    assert_eq!(
+        payload["declared_only_tools"][0]["expected_executable_path"],
+        temp_dir
+            .path()
+            .join(".binpm")
+            .join("bin")
+            .join(local_executable_name("tool"))
+            .display()
+            .to_string()
+    );
+    assert_eq!(payload["declared_only_next_step"], "binpm install");
 }
 
 #[test]
@@ -3027,10 +3204,51 @@ version = "1.0.0"
         .stderr(predicate::str::contains(
             "On-demand install attempt: `binpm x`",
         ))
+        .stderr(predicate::str::contains(
+            "Safest next command: `binpm install --local`",
+        ))
         .stderr(predicate::str::contains("would change"))
         .stderr(predicate::str::contains("--no-frozen-lockfile"));
 
     assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn ci_frozen_x_after_manifest_only_points_to_install() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.rg]
+source = "github:BurntSushi/ripgrep"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("CI", "true")
+        .args(["x", "rg"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mode `CI=true`"))
+        .stderr(predicate::str::contains("reason `missing_lockfile`"))
+        .stderr(predicate::str::contains(
+            "On-demand install attempt: `binpm x`",
+        ))
+        .stderr(predicate::str::contains(
+            "Safest next command: `binpm install --local`",
+        ));
+
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
 }
 
 #[test]
