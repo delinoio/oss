@@ -38,7 +38,7 @@ GitHub Actions:
 - run: cargo binstall with-watch --no-confirm
 ```
 
-Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
+Direct installers verify the selected release artifact against its `SHA256SUMS` entry.
 
 ## Command modes
 

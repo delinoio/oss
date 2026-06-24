@@ -206,53 +206,35 @@ JSON errors include deterministic diagnostics:
 - `platform_source`
 - `supported_platforms`
 
-## Direct Installer Reports Missing cosign
+## Direct Installer Checksum Verification Fails
 
 Symptom:
 
 ```text
-[install.nodeup] missing required prerequisite: cosign
+[install.nodeup] checksum mismatch for <artifact>
 ```
 
-Direct installers require `cosign` before release artifact download because Nodeup verifies `SHA256SUMS` entries and Sigstore bundle sidecars. This is a missing-prerequisite failure, not a signature verification failure and not a reason to disable verification.
+This means the downloaded artifact did not match the published `SHA256SUMS` entry for that release. Do not bypass verification.
 
-Fix: install `cosign`, keep it on `PATH`, and rerun the installer.
-
-```bash
-brew install cosign
-```
-
-On Linux without Homebrew, follow the [Sigstore cosign installation guide](https://docs.sigstore.dev/cosign/system_config/installation/). On Windows:
-
-```powershell
-winget install sigstore.cosign
-# or
-scoop install cosign
-```
-
-Alternate install paths are Homebrew on macOS/Linux or `cargo binstall nodeup --no-confirm` on supported hosts with published first-party assets.
-
-## Direct Installer Verification Fails
-
-Symptom:
-
-```text
-[install.nodeup] Sigstore bundle verification failed
-```
-
-This means `cosign` was available, but the downloaded artifact did not verify against the published Sigstore bundle and the expected GitHub Actions release workflow identity. Retry only after confirming you are using a bundle-enabled Nodeup release from `delinoio/oss`. Do not bypass verification.
+Fix: retry the install, confirm you are using an expected first-party release from `delinoio/oss`, or switch to Homebrew on macOS/Linux or `cargo binstall nodeup --no-confirm` on supported hosts with published first-party assets.
 
 ## Direct Installer Release Material Is Missing
 
 Symptom:
 
 ```text
-[install.nodeup] required release verification material is missing
+curl: (22) The requested URL returned error: 404
 ```
 
-Direct installers support bundle-enabled releases only. The selected release must include `SHA256SUMS`, the selected artifact, and the selected artifact's `<artifact>.sigstore.json` bundle sidecar. Legacy `.sig` or `.pem` sidecars are not supported by the direct installer and are not treated as equivalent verification material.
+or the installer exits after failing to find the selected artifact in `SHA256SUMS`:
 
-Fix: choose a newer bundle-enabled Nodeup release from `delinoio/oss`, use Homebrew on macOS/Linux when the formula points at a complete release, or use `cargo binstall nodeup --no-confirm` on supported hosts when the release includes the matching first-party asset.
+```text
+[install.nodeup] checksum entry not found for <artifact>
+```
+
+Direct installers require the selected release to include `SHA256SUMS` and the selected artifact.
+
+Fix: choose a newer Nodeup release from `delinoio/oss`, use Homebrew on macOS/Linux when the formula points at a complete release, or use `cargo binstall nodeup --no-confirm` on supported hosts when the release includes the matching first-party asset.
 
 ## cargo-binstall Cannot Find an Asset
 
@@ -262,7 +244,7 @@ Fix:
 
 1. Confirm the host is macOS x64/arm64, Linux x64/arm64, or Windows x64/arm64.
 2. Confirm the Nodeup release includes the matching `nodeup-<os>-<arch>.tar.gz` or `nodeup-windows-<arch>.zip` asset.
-3. Use Homebrew on macOS/Linux or the direct installer with `cosign` when `cargo-binstall` is not the right path.
+3. Use Homebrew on macOS/Linux or the direct installer when `cargo-binstall` is not the right path.
 
 ## Checksum Mismatch
 

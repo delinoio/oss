@@ -33,7 +33,7 @@ GitHub Actions:
 - run: cargo binstall cargo-mono --no-confirm
 ```
 
-Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
+Direct installers verify the selected release artifact against its `SHA256SUMS` entry.
 
 ## Commands
 

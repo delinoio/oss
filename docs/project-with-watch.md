@@ -35,7 +35,7 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - Commands that mutate watched inputs directly must refresh the baseline snapshot after each run and suppress self-triggered reruns caused by their own writes.
 - Path-based watch inputs must anchor watcher subscriptions at the nearest existing directory so replace-style writers keep emitting later external changes.
 - Public crate installation must continue to support `cargo install with-watch`.
-- Direct installers must remain available at `scripts/install/with-watch.sh` and `scripts/install/with-watch.ps1`; direct installs must verify `SHA256SUMS` entries and Sigstore bundle sidecars and require `cosign`.
+- Direct installers must remain available at `scripts/install/with-watch.sh` and `scripts/install/with-watch.ps1`; direct installs must verify `SHA256SUMS` entries for the selected artifact and must not require `cosign` or artifact Sigstore sidecars.
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies.
 - Publish tag eligibility must remain enabled through root `[workspace.metadata.cargo-mono.publish.tag].packages`, and release tag naming must remain `with-watch@v<version>`.
 - Release automation must publish signed GitHub Release assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone binaries (`with-watch-<os>-<arch>[.exe]`) and archives (`with-watch-<os>-<arch>.tar.gz|zip`).

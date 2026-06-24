@@ -19,7 +19,6 @@ USAGE
 
 repo="delinoio/oss"
 tag_prefix="with-watch@v"
-workflow_identity="https://github.com/delinoio/oss/.github/workflows/release-with-watch.yml@"
 
 version="latest"
 method="package-manager"
@@ -90,33 +89,6 @@ install_via_package_manager() {
   return 1
 }
 
-download_bundle() {
-  local base_url="$1"
-  local artifact="$2"
-  local bundle_name="${artifact}.sigstore.json"
-
-  if ! curl -fsSLO "${base_url}/${bundle_name}"; then
-    echo "[install.with-watch] missing bundle sidecar: ${bundle_name}" >&2
-    echo "[install.with-watch] direct installs require releases published with Sigstore bundle sidecars" >&2
-    exit 1
-  fi
-}
-
-verify_bundle() {
-  local artifact="$1"
-
-  if ! command -v cosign >/dev/null 2>&1; then
-    echo "[install.with-watch] cosign is required for direct install verification" >&2
-    exit 1
-  fi
-
-  cosign verify-blob \
-    --bundle "${artifact}.sigstore.json" \
-    --certificate-identity-regexp "$workflow_identity" \
-    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-    "$artifact"
-}
-
 install_direct() {
   local tag
   tag="$(resolve_tag)"
@@ -167,11 +139,9 @@ install_direct() {
   echo "[install.with-watch] downloading artifact: $asset_name" >&2
   curl -fsSLO "${base_url}/${asset_name}"
   curl -fsSLO "${base_url}/SHA256SUMS"
-  download_bundle "$base_url" "$asset_name"
 
   grep " ${asset_name}$" SHA256SUMS > SHA256SUMS.with-watch
   shasum -a 256 -c SHA256SUMS.with-watch
-  verify_bundle "$asset_name"
 
   tar -xzf "$asset_name"
 

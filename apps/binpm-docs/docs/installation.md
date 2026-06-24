@@ -23,17 +23,7 @@ Homebrew is a prebuilt-only channel for binpm. The formula does not build binpm 
 
 ## Direct Installers
 
-Direct installers are for users who want a release artifact without Homebrew or `cargo-binstall`. Install [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/) first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign verify-blob --bundle`. Missing `cosign` is a prerequisite failure, not a reason to disable verification. If you do not want to manage that prerequisite directly, use [Homebrew](https://brew.sh/) or [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall) instead.
-
-Common prerequisite commands:
-
-```bash
-brew install cosign
-```
-
-```powershell
-winget install sigstore.cosign
-```
+Direct installers are for users who want a release artifact without Homebrew or `cargo-binstall`. They verify the selected artifact against its `SHA256SUMS` entry before installation. If you prefer a managed channel instead, use [Homebrew](https://brew.sh/) or [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall).
 
 Use the short docs-site URLs for interactive installs where you want the current public first-party installer script. These entrypoints are served from `https://binpm.delino.io` and are backed by the same maintained installer scripts as the repository paths.
 
@@ -171,8 +161,6 @@ Supported direct-install targets are:
 - `linux/arm64` (Linux arm64)
 - `windows/amd64` (Windows x64)
 - `windows/arm64` (Windows arm64)
-
-Direct installers support bundle-enabled releases only.
 
 Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before verifying the install, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
 

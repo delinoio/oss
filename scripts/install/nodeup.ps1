@@ -9,7 +9,6 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "delinoio/oss"
 $TagPrefix = "nodeup@v"
-$WorkflowIdentityPattern = "^https://github.com/delinoio/oss/.github/workflows/release-nodeup.yml@"
 $SupportedPlatforms = "macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64"
 $UnsupportedPlatformHint = "Use an x64/arm64 host or a supported CI image: macOS x64/arm64, Linux x64/arm64, or Windows x64/arm64."
 
@@ -47,57 +46,6 @@ function Verify-Checksum {
   $actualHash = (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($expectedHash -ne $actualHash) {
     throw "[install.nodeup] checksum mismatch for $AssetName"
-  }
-}
-
-function Assert-CosignPrerequisite {
-  if (Get-Command cosign -ErrorAction SilentlyContinue) {
-    return
-  }
-
-  throw @"
-[install.nodeup] missing required prerequisite: cosign
-[install.nodeup] direct installs require cosign before artifact download so SHA256SUMS and Sigstore bundle sidecars can be verified
-[install.nodeup] install cosign and retry:
-[install.nodeup]   macOS: brew install cosign
-[install.nodeup]   Linux: brew install cosign, or follow https://docs.sigstore.dev/cosign/system_config/installation/
-[install.nodeup]   Windows: winget install sigstore.cosign, or scoop install cosign
-[install.nodeup] alternate install paths: brew install delinoio/tap/nodeup, or cargo binstall nodeup --no-confirm
-"@
-}
-
-function Download-Bundle {
-  param(
-    [string]$BaseUrl,
-    [string]$AssetName,
-    [string]$BundlePath
-  )
-
-  try {
-    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath -UseBasicParsing
-  }
-  catch {
-    throw "[install.nodeup] direct installs require releases published with Sigstore bundle sidecars"
-  }
-}
-
-function Verify-Bundle {
-  param(
-    [string]$FilePath,
-    [string]$BundlePath
-  )
-
-  if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
-    Assert-CosignPrerequisite
-  }
-
-  & cosign verify-blob `
-    --bundle $BundlePath `
-    --certificate-identity-regexp $WorkflowIdentityPattern `
-    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
-    $FilePath | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    throw "[install.nodeup] Sigstore bundle verification failed for $FilePath. This is a verification failure, not a missing-prerequisite failure."
   }
 }
 
@@ -140,7 +88,6 @@ function Get-DirectPlatform {
 
 function Install-Direct {
   $platform = Get-DirectPlatform
-  Assert-CosignPrerequisite
   $tag = Resolve-Tag
   $baseUrl = "https://github.com/$Repo/releases/download/$tag"
   $assetArch = $platform.AssetArch
@@ -152,15 +99,12 @@ function Install-Direct {
   try {
     $assetPath = Join-Path $tmpDir $assetName
     $sumsPath = Join-Path $tmpDir "SHA256SUMS"
-    $bundlePath = "$assetPath.sigstore.json"
 
     Write-Host "[install.nodeup] downloading $assetName"
     Invoke-WebRequest -Uri "$baseUrl/$assetName" -OutFile $assetPath -UseBasicParsing
     Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath -UseBasicParsing
-    Download-Bundle -BaseUrl $baseUrl -AssetName $assetName -BundlePath $bundlePath
 
     Verify-Checksum -FilePath $assetPath -Sha256SumsPath $sumsPath -AssetName $assetName
-    Verify-Bundle -FilePath $assetPath -BundlePath $bundlePath
 
     $extractDir = Join-Path $tmpDir "extract"
     Expand-Archive -Path $assetPath -DestinationPath $extractDir -Force

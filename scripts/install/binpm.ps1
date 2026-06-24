@@ -9,7 +9,6 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "delinoio/oss"
 $TagPrefix = "binpm@v"
-$WorkflowIdentityPattern = "^https://github.com/delinoio/oss/.github/workflows/release-binpm.yml@"
 $SupportedDirectTargets = "darwin/amd64 (macOS x64), darwin/arm64 (macOS arm64), linux/amd64 (Linux x64), linux/arm64 (Linux arm64), windows/amd64 (Windows x64), windows/arm64 (Windows arm64)"
 $UnsupportedPlatformHint = "On Windows, use an x64/arm64 host or supported CI image for PowerShell direct install. On macOS/Linux x64 or arm64, use the POSIX installer. Otherwise use Homebrew or cargo-binstall where they support your host, or build binpm from source."
 
@@ -47,54 +46,6 @@ function Verify-Checksum {
   $actualHash = (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($expectedHash -ne $actualHash) {
     throw "[install.binpm] checksum mismatch for $AssetName"
-  }
-}
-
-function Download-Bundle {
-  param(
-    [string]$BaseUrl,
-    [string]$AssetName,
-    [string]$BundlePath
-  )
-
-  try {
-    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath -UseBasicParsing
-  }
-  catch {
-    throw "[install.binpm] direct installs require releases published with Sigstore bundle sidecars"
-  }
-}
-
-function Require-Cosign {
-  if (Get-Command cosign -ErrorAction SilentlyContinue) {
-    return
-  }
-
-  throw @"
-[install.binpm] missing required prerequisite: cosign
-[install.binpm] direct installs require cosign before artifact download so SHA256SUMS and Sigstore bundle sidecars can be verified
-[install.binpm] install cosign and retry:
-[install.binpm]   macOS: brew install cosign
-[install.binpm]   Linux: brew install cosign, or follow https://docs.sigstore.dev/cosign/system_config/installation/
-[install.binpm]   Windows: winget install sigstore.cosign, or scoop install cosign
-"@
-}
-
-function Verify-Bundle {
-  param(
-    [string]$FilePath,
-    [string]$BundlePath
-  )
-
-  Require-Cosign
-
-  cosign verify-blob `
-    --bundle $BundlePath `
-    --certificate-identity-regexp $WorkflowIdentityPattern `
-    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
-    $FilePath | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    throw "[install.binpm] Sigstore bundle verification failed"
   }
 }
 
@@ -183,7 +134,6 @@ function Get-DirectPlatform {
 function Install-Direct {
   $platform = Get-DirectPlatform
   $tag = Resolve-Tag
-  Require-Cosign
   $baseUrl = "https://github.com/$Repo/releases/download/$tag"
   $assetArch = $platform.AssetArch
   $assetName = "binpm-windows-$assetArch.zip"
@@ -194,15 +144,12 @@ function Install-Direct {
   try {
     $assetPath = Join-Path $tmpDir $assetName
     $sumsPath = Join-Path $tmpDir "SHA256SUMS"
-    $bundlePath = "$assetPath.sigstore.json"
 
     Write-Host "[install.binpm] downloading $assetName"
     Invoke-WebRequest -Uri "$baseUrl/$assetName" -OutFile $assetPath -UseBasicParsing
     Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath -UseBasicParsing
-    Download-Bundle -BaseUrl $baseUrl -AssetName $assetName -BundlePath $bundlePath
 
     Verify-Checksum -FilePath $assetPath -Sha256SumsPath $sumsPath -AssetName $assetName
-    Verify-Bundle -FilePath $assetPath -BundlePath $bundlePath
 
     $extractDir = Join-Path $tmpDir "extract"
     Expand-Archive -Path $assetPath -DestinationPath $extractDir -Force

@@ -9,7 +9,6 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "delinoio/oss"
 $TagPrefix = "with-watch@v"
-$WorkflowIdentityPattern = "^https://github.com/delinoio/oss/.github/workflows/release-with-watch.yml@"
 
 function Resolve-LatestTag {
   $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=200"
@@ -48,38 +47,6 @@ function Verify-Checksum {
   }
 }
 
-function Download-Bundle {
-  param(
-    [string]$BaseUrl,
-    [string]$AssetName,
-    [string]$BundlePath
-  )
-
-  try {
-    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath
-  }
-  catch {
-    throw "[install.with-watch] direct installs require releases published with Sigstore bundle sidecars"
-  }
-}
-
-function Verify-Bundle {
-  param(
-    [string]$FilePath,
-    [string]$BundlePath
-  )
-
-  if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
-    throw "[install.with-watch] cosign is required for direct installation"
-  }
-
-  cosign verify-blob `
-    --bundle $BundlePath `
-    --certificate-identity-regexp $WorkflowIdentityPattern `
-    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
-    $FilePath | Out-Null
-}
-
 function Install-Direct {
   $tag = Resolve-Tag
   $baseUrl = "https://github.com/$Repo/releases/download/$tag"
@@ -97,15 +64,12 @@ function Install-Direct {
   try {
     $assetPath = Join-Path $tmpDir $assetName
     $sumsPath = Join-Path $tmpDir "SHA256SUMS"
-    $bundlePath = "$assetPath.sigstore.json"
 
     Write-Host "[install.with-watch] downloading $assetName"
     Invoke-WebRequest -Uri "$baseUrl/$assetName" -OutFile $assetPath
     Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath
-    Download-Bundle -BaseUrl $baseUrl -AssetName $assetName -BundlePath $bundlePath
 
     Verify-Checksum -FilePath $assetPath -Sha256SumsPath $sumsPath -AssetName $assetName
-    Verify-Bundle -FilePath $assetPath -BundlePath $bundlePath
 
     $extractDir = Join-Path $tmpDir "extract"
     Expand-Archive -Path $assetPath -DestinationPath $extractDir -Force

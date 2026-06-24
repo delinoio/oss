@@ -19,7 +19,6 @@ USAGE
 
 repo="delinoio/oss"
 tag_prefix="nodeup@v"
-workflow_identity="https://github.com/delinoio/oss/.github/workflows/release-nodeup.yml@"
 supported_platforms="macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64"
 unsupported_platform_hint="Use an x64/arm64 host or a supported CI image: macOS x64/arm64, Linux x64/arm64, or Windows x64/arm64."
 
@@ -92,49 +91,6 @@ install_via_package_manager() {
   return 1
 }
 
-require_cosign() {
-  if command -v cosign >/dev/null 2>&1; then
-    return 0
-  fi
-
-  echo "[install.nodeup] missing required prerequisite: cosign" >&2
-  echo "[install.nodeup] direct installs require cosign before artifact download so SHA256SUMS and Sigstore bundle sidecars can be verified" >&2
-  echo "[install.nodeup] install cosign and retry:" >&2
-  echo "[install.nodeup]   macOS: brew install cosign" >&2
-  echo "[install.nodeup]   Linux: brew install cosign, or follow https://docs.sigstore.dev/cosign/system_config/installation/" >&2
-  echo "[install.nodeup]   Windows: winget install sigstore.cosign, or scoop install cosign" >&2
-  echo "[install.nodeup] alternate install paths: brew install delinoio/tap/nodeup, or cargo binstall nodeup --no-confirm" >&2
-  exit 1
-}
-
-download_bundle() {
-  local base_url="$1"
-  local artifact="$2"
-  local bundle_name="${artifact}.sigstore.json"
-
-  if ! curl -fsSLO "${base_url}/${bundle_name}"; then
-    echo "[install.nodeup] missing bundle sidecar: ${bundle_name}" >&2
-    echo "[install.nodeup] direct installs require releases published with Sigstore bundle sidecars" >&2
-    exit 1
-  fi
-}
-
-verify_bundle() {
-  local artifact="$1"
-
-  require_cosign
-
-  if ! cosign verify-blob \
-    --bundle "${artifact}.sigstore.json" \
-    --certificate-identity-regexp "$workflow_identity" \
-    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-    "$artifact"; then
-    echo "[install.nodeup] Sigstore bundle verification failed for ${artifact}" >&2
-    echo "[install.nodeup] this is a verification failure, not a missing-prerequisite failure" >&2
-    exit 1
-  fi
-}
-
 detect_direct_platform() {
   local uname_os
   uname_os="${NODEUP_INSTALL_TEST_UNAME_OS:-$(uname -s)}"
@@ -190,8 +146,6 @@ install_direct() {
   local os="${platform%% *}"
   local arch="${platform##* }"
 
-  require_cosign
-
   local tag
   tag="$(resolve_tag)"
 
@@ -208,11 +162,9 @@ install_direct() {
   echo "[install.nodeup] downloading artifact: $asset_name" >&2
   curl -fsSLO "${base_url}/${asset_name}"
   curl -fsSLO "${base_url}/SHA256SUMS"
-  download_bundle "$base_url" "$asset_name"
 
   grep " ${asset_name}$" SHA256SUMS > SHA256SUMS.nodeup
   shasum -a 256 -c SHA256SUMS.nodeup
-  verify_bundle "$asset_name"
 
   tar -xzf "$asset_name"
 

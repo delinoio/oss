@@ -26,7 +26,7 @@
 - `WW_LOG` must remain the only supported environment variable for configuring `with-watch` diagnostic `tracing` filters.
 - The default diagnostic log filter must remain `with_watch=off`, and `RUST_LOG` must not affect `with-watch` logging behavior.
 - Public crate installation must remain available via `cargo install with-watch`.
-- Direct installers must remain available at `scripts/install/with-watch.sh` and `scripts/install/with-watch.ps1`, and direct installs must verify `SHA256SUMS` plus Sigstore bundle sidecars via `cosign verify-blob --bundle`.
+- Direct installers must remain available at `scripts/install/with-watch.sh` and `scripts/install/with-watch.ps1`, and direct installs must verify `SHA256SUMS` for the selected artifact without requiring `cosign` or artifact Sigstore sidecars.
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
 - Publish tag naming must remain `with-watch@v<version>`.
 - Stable internal enums must remain aligned with the current v1 contract:

@@ -37,9 +37,9 @@
 ## Security
 - Published content must not expose internal-only secrets, unpublished release credentials, or private CI environment details.
 - Published content must not expose internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
-- Installation guidance must preserve the Nodeup direct-installer verification contract for `SHA256SUMS` and Sigstore bundle sidecars and must explain that legacy `.sig` or `.pem` sidecars do not satisfy the direct-installer bundle requirement.
+- Installation guidance must preserve the Nodeup direct-installer verification contract for `SHA256SUMS`.
 - Installation guidance must include a chooser that states when to use Homebrew, direct installers, `cargo-binstall`, and binpm.
-- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`, preserve current raw GitHub examples using stable first-party `delinoio/oss` raw GitHub URLs, include tag/commit-pinned raw GitHub command patterns for reproducible automation, keep canonical in-repo script paths visible for maintainer workflows, present `cosign` as a required prerequisite before direct installer commands, and distinguish missing prerequisite failures from missing release material and verification failures.
+- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`, preserve current raw GitHub examples using stable first-party `delinoio/oss` raw GitHub URLs, include tag/commit-pinned raw GitHub command patterns for reproducible automation, keep canonical in-repo script paths visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish unsupported-host, missing-release-material, and checksum-verification failures.
 - Installation, release, and troubleshooting guidance must explain that Nodeup `cargo-binstall` support uses first-party release assets only and does not enable `quick-install` or `compile` fallback strategies.
 - Cloudflare Pages deployment credentials must remain managed by CI or hosting configuration, not checked into the repository.
 

@@ -73,7 +73,7 @@ Homebrew installs consume first-party prebuilt binpm archives for macOS and Linu
 
 `cargo-binstall` for binpm also resolves first-party release assets only. Quick-install and compile fallbacks are disabled, so an unsupported cargo-binstall target should be treated as a distribution boundary instead of a prompt to bypass verification or use an unowned binary source.
 
-Direct installer failures before any artifact download usually mean the host is outside the first-party binpm release matrix or `cosign` is missing from `PATH`. Install `cosign`, choose a supported macOS/Linux/Windows x64 or arm64 host, or build from source for other runtime targets.
+Direct installer failures before any artifact download usually mean the host is outside the first-party binpm release matrix. Choose a supported macOS/Linux/Windows x64 or arm64 host, or build from source for other runtime targets.
 
 When the direct installer reports an unsupported host, it has stopped before release lookup and before artifact download. The message includes the detected OS and architecture, the supported direct-install targets (`darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64`, and `windows/arm64`), and alternatives for the current host. It should not print release URLs, artifact URLs, query strings, fragments, credentials, or tokens.
 
