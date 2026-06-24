@@ -2266,7 +2266,14 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
                 .collect(),
             selected_asset: asset_selection
                 .as_ref()
-                .map(|selection| selected_asset_output(&selection.selected))
+                .map(|asset_selection| {
+                    selected_asset_output_with_sidecars(
+                        &asset_selection.selected,
+                        &selection.release.assets,
+                        &spec,
+                        &release_tag,
+                    )
+                })
                 .transpose()?,
             candidates: all_decisions
                 .iter()
@@ -7059,12 +7066,6 @@ fn package_record_output(record: &PackageRecord) -> Result<PackageRecordOutput> 
         signature_verified: record.signature_verified,
         unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
     })
-}
-
-fn selected_asset_output(
-    decision: &crate::assets::CandidateDecision,
-) -> Result<SelectedAssetOutput> {
-    selected_asset_output_from_sidecars(decision, Vec::new())
 }
 
 fn selected_asset_output_with_sidecars(
