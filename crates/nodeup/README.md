@@ -18,6 +18,7 @@ Tag contract:
 Package manager:
 
 - macOS/Linux: `brew install delinoio/tap/nodeup`
+- binpm global CLI: `binpm install github:delinoio/oss@nodeup@v<semver> --as nodeup`
 
 Direct installers:
 
@@ -102,6 +103,8 @@ Windows PowerShell:
 ```powershell
 $env:Path = "$HOME\.local\bin;$env:Path"
 ```
+
+binpm installs Nodeup as a global CLI in the user-global binpm home. Add the global binpm bin directory to `PATH` with `binpm env --global` when needed, or use a dedicated repository manifest only when you want Nodeup pinned as part of project-local tooling.
 
 ## Quick Command Reference
 

@@ -13,35 +13,36 @@ For most macOS and Linux users, start with Homebrew. For Windows users, start wi
 | Homebrew | You are on macOS or Linux and already use Homebrew, or you want the simplest managed install path. |
 | Direct installers | You want a first-party release artifact without Homebrew or `cargo-binstall`. Use pinned commands in CI or audited environments. |
 | `cargo-binstall` | You already have Rust tooling and want to install from first-party GitHub Release assets without source-build fallback. |
-| binpm | You want Nodeup managed by a project-local or dedicated binpm manifest, usually because the rest of your tooling already uses binpm. |
+| binpm | You want a global CLI install managed by binpm, or you need a project-local manifest for reproducible per-repo tooling. |
 
 ## binpm
 
-Install binpm by following the [binpm installation docs](https://binpm.delino.io/installation). Use a dedicated Nodeup binpm home so `binpm add` does not modify an unrelated project manifest.
+Install binpm by following the [binpm installation docs](https://binpm.delino.io/installation).
 
-macOS and Linux (bash/zsh):
+For Nodeup itself, the normal path is a global CLI install:
 
 ```bash
-NODEUP_BINPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/nodeup-binpm"
-mkdir -p "$NODEUP_BINPM_HOME"
-cd "$NODEUP_BINPM_HOME"
-[ -f binpm.toml ] || binpm init
-binpm add nodeup github:delinoio/oss@nodeup@v<semver>
-eval "$(binpm env --shell bash)"
+binpm install github:delinoio/oss@nodeup@v<semver> --as nodeup
 ```
 
-Windows PowerShell:
+If `~/.binpm/bin` is not already on `PATH`, add the global binpm environment first.
+macOS and Linux:
+
+```bash
+eval "$(binpm env --global --shell bash)"
+```
+
+PowerShell:
 
 ```powershell
-$env:NODEUP_BINPM_HOME = Join-Path ${env:LOCALAPPDATA} "nodeup-binpm"
-New-Item -ItemType Directory -Force -Path $env:NODEUP_BINPM_HOME | Out-Null
-Set-Location $env:NODEUP_BINPM_HOME
-if (-not (Test-Path -LiteralPath "binpm.toml")) { binpm init }
-binpm add nodeup github:delinoio/oss@nodeup@v<semver>
-binpm env --shell powershell | Invoke-Expression
+binpm env --global --shell powershell | Invoke-Expression
 ```
 
+Use a dedicated or project-local manifest only when you want Nodeup pinned as part of a repository's committed tooling, or when you are deliberately managing a separate binpm home for automation.
+
 Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`.
+
+If you need Nodeup managed as part of a repository manifest, create or update that repository's `binpm.toml` with `binpm add nodeup github:delinoio/oss@nodeup@v<semver>`, then install it locally with `binpm install`. That path is useful for pinned team environments, but it is not the default install path for a standalone CLI.
 
 ## Homebrew
 
