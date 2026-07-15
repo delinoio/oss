@@ -17,7 +17,7 @@
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
-- `apps/public-docs`: Mintlify public documentation app.
+- `apps/public-docs`: Rspress static public documentation app.
 
 ### mpapp Rules
 
@@ -45,13 +45,13 @@
 
 ### public-docs Rules
 
-- `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
-- `public-docs` is an existing documented exception to the default Rsbuild/Rspress-style static-site toolchain and Cloudflare Pages deployment preference.
-- Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
+- `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
+- Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
+- `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
 - Current public-docs in-site top-level product page IDs are `cargo-mono`, `derun`, and `with-watch`.
 - Nodeup and binpm are major public projects exposed from `apps/public-docs` through external top-level navigation links: Nodeup points to `https://nodeup.delino.io` and binpm points to `https://binpm.delino.io`.
 - The legacy `/nodeup` public-docs route must remain a lightweight handoff page to `https://nodeup.delino.io` for compatibility with previously shared URLs.
-- Do not add or restore in-site `nodeup` or `binpm` guide routes under `apps/public-docs`; their public documentation is owned by `apps/nodeup-docs` and `apps/binpm-docs`.
+- Do not add or restore in-site `nodeup` or `binpm` guide routes under `apps/public-docs`; the lightweight legacy `/nodeup` handoff is the sole in-site Nodeup route, and their public documentation is owned by `apps/nodeup-docs` and `apps/binpm-docs`.
 - `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 

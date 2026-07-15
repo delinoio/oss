@@ -262,7 +262,7 @@ Release automation baseline:
 ### Scope in This Domain
 
 - `apps/mpapp`: Expo React Native mobile app.
-- `apps/public-docs`: Mintlify public documentation app.
+- `apps/public-docs`: Rspress static public documentation app.
 
 ### mpapp Rules
 
@@ -271,8 +271,8 @@ Release automation baseline:
 
 ### public-docs Rules
 
-- `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
-- Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
+- `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
+- Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
 ### Testing and Validation

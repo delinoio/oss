@@ -20,5 +20,5 @@ Internal contracts may include repository architecture, repo-local paths, implem
 ## Quality Gates
 
 - Run `pnpm --filter public-docs test` to verify broken links.
-- Keep `apps/public-docs/docs.json` navigation aligned with actual page IDs.
+- Keep `apps/public-docs/rspress.config.ts` navigation aligned with the stable clean routes.
 - Use pull requests to review both internal and public documentation impacts together.

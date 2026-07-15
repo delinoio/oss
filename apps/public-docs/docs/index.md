@@ -14,6 +14,6 @@ This site provides a curated, user-facing layer of documentation that complement
 
 ## Scope
 
-This Mintlify app focuses on externally consumable guidance and stable product-facing information.
+This Rspress app focuses on externally consumable guidance and stable product-facing information.
 Deep implementation contracts remain in repository project documents under `docs/project-*.md`.
 Major projects with standalone documentation stay linked from this surface without duplicating their guides inside `apps/public-docs`.

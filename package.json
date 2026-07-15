@@ -15,9 +15,6 @@
     "overrides": {
       "@expo/cli>tar": "7.5.16",
       "@expo/plist>@xmldom/xmldom": "0.8.13",
-      "@mintlify/previewing>tar": "7.5.16",
-      "@mintlify/scraping>zod": "3.25.76",
-      "@mintlify/validation>zod": "3.25.76",
       "@stoplight/spectral-core>minimatch": "3.1.5",
       "@xmldom/xmldom": "0.8.13",
       "axios": "1.16.0",
@@ -42,9 +39,6 @@
       "ws@>=6.0.0 <6.2.4": "6.2.4",
       "ws@>=7.0.0 <7.5.11": "7.5.11",
       "ws@>=8.0.0 <8.21.0": "8.21.0"
-    },
-    "patchedDependencies": {
-      "@mintlify/previewing@4.0.1031": "patches/@mintlify__previewing@4.0.1031.patch"
     }
   },
   "devDependencies": {

@@ -2,12 +2,15 @@
   "name": "public-docs",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "prepare:app": "echo \"public-docs prepared\"",
-    "dev": "mint dev --port 46249",
-    "test": "mint broken-links"
+    "dev": "rspress dev --port 46249",
+    "build": "rspress build",
+    "preview": "rspress preview",
+    "test": "rspress build && node scripts/validate-clean-urls.mjs"
   },
   "devDependencies": {
-    "mint": "^4.2.475"
+    "@rspress/core": "^2.0.0"
   }
 }
