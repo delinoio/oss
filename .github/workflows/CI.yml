@@ -36,7 +36,6 @@ jobs:
               - go.sum
               - scripts/generate-go-proto.sh
               - scripts/lib/go-proto-tools.sh
-              - protos/**
               - cmds/**
               - servers/**
 
@@ -117,7 +116,6 @@ jobs:
               - go.sum
               - scripts/generate-go-proto.sh
               - scripts/lib/go-proto-tools.sh
-              - protos/**
               - cmds/**
               - servers/**
 

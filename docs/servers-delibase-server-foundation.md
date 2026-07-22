@@ -46,7 +46,7 @@
 
 ## Build and Test
 - Required checks once implementation exists: `gofmt -w`/format check, `go vet ./...`, `go test ./servers/delibase/...`, sqlc generation/checks, PostgreSQL integration/concurrency tests, migration checks, Protobuf generation/compatibility checks, and Docker build validation. The Docker check must validate a minimal multi-stage image that runs as non-root and exposes working health/readiness behavior.
-- CI must test duplicate/reordered webhooks, idempotency, concurrent reservations, account/organization/team rules, five-level/cycle constraints, invitation role boundaries, protected-team deletion, billing state, outages, and deletion retention behavior.
+- CI must test duplicate/reordered webhooks, idempotency, concurrent reservations, account/organization/team rules, five-level/cycle constraints, invitation role boundaries, protected-team deletion, catalog validation with fixtures covering at least two apps and meters, billing state, outages, and deletion retention behavior.
 - Release CI must add `release-delibase.yml`, trigger only on `delibase@v*` tag pushes, and publish only signed `ghcr.io/delinoio/delibase:vX.Y.Z` and `:latest` multi-architecture (`linux/amd64`, `linux/arm64`) images with SPDX SBOM, provenance, and health/readiness plus non-root validation; no `edge`, SHA, or main-branch images.
 - This documentation change does not activate a service, deploy an API, or publish an image; the release workflow and artifacts are issue #722 implementation deliverables.
 
@@ -54,7 +54,7 @@
 - Consumes root sources at `protos/delibase/v1` and shared packages under `servers/internal`.
 - Integrates with DeliDev at `https://deli.dev`, Logto, Polar, PostgreSQL, and future GHCR artifact publication.
 - Catalog is checked-in validated configuration, synchronized idempotently at migration/startup; effective-dated price changes pin reservation versions. No runtime catalog mutation API or operator UI.
-- Configuration ownership: this service owns server non-secret configuration, database/catalog settings, CORS, API origin, and secret environment variable names; Logto/Polar own provider-side configuration; DeliDev owns browser-safe client configuration; shared defaults belong to `servers/internal`.
+- Configuration ownership: this service owns server non-secret configuration, database/catalog settings, CORS, API origin, and secret environment variable names; Logto/Polar own provider-side configuration; DeliDev owns browser-safe client configuration; shared defaults belong to `servers/internal`. The canonical server variables are `DELIBASE_API_ORIGIN`, `DELIBASE_CORS_ALLOWED_ORIGINS`, `DELIBASE_CATALOG_PATH`, `DELIBASE_LOGTO_ISSUER`, `DELIBASE_LOGTO_AUDIENCE`, and `DELIBASE_LOGTO_JWKS_URL` (non-secret), plus `DELIBASE_DATABASE_URL`, `DELIBASE_LOGTO_M2M_CLIENT_SECRET`, `DELIBASE_POLAR_ACCESS_TOKEN`, and `DELIBASE_POLAR_WEBHOOK_SECRET` (secret). The browser-safe client variables are `PUBLIC_DELIBASE_API_ORIGIN`, `PUBLIC_LOGTO_ENDPOINT`, `PUBLIC_LOGTO_APP_ID`, and `PUBLIC_LOGTO_AUDIENCE`; they must not contain secrets. No variable may be logged, and required variables fail closed when absent. The implementation must add the matching CI/deployment templates when the runtime is introduced.
 
 ## Change Triggers
 - Update this document, [project-delibase](project-delibase.md), the proto contract, app contract, and `servers/AGENTS.md` for service, data, auth, billing, usage, origin, or configuration changes.

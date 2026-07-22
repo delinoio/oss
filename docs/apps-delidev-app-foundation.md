@@ -48,7 +48,7 @@
 
 ## Dependencies and Integrations
 - Depends on `protos/delibase/v1` and the generated TypeScript Connect client.
-- Calls the future `https://delibase.deli.dev` API origin; configuration owns the origin, Logto client ID, and Logto API audience (`https://delibase.deli.dev`) values, while secrets remain outside the app artifact.
+- Calls the future `https://delibase.deli.dev` API origin; the canonical browser-safe build variables are `PUBLIC_DELIBASE_API_ORIGIN`, `PUBLIC_LOGTO_ENDPOINT`, `PUBLIC_LOGTO_APP_ID`, and `PUBLIC_LOGTO_AUDIENCE` (the latter is `https://delibase.deli.dev`). These values are non-secret and must never contain tokens or provider secrets; required values fail closed when absent.
 - Pages owns static hosting; GHCR is unrelated to this app and must not be used as its deployment path.
 
 ## Change Triggers
