@@ -48,14 +48,14 @@
 
 ## Dependencies and Integrations
 - Depends on `protos/delibase/v1` and the generated TypeScript Connect client.
-- Calls the future `https://delibase.deli.dev` API origin; configuration owns the origin and Logto client/audience values, while secrets remain outside the app artifact.
+- Calls the future `https://delibase.deli.dev` API origin; configuration owns the origin, Logto client ID, and Logto API audience (`https://delibase.deli.dev`) values, while secrets remain outside the app artifact.
 - Pages owns static hosting; GHCR is unrelated to this app and must not be used as its deployment path.
 
 ## Change Triggers
 - Update this document and [project-delidev](project-delidev.md) for route, PWA, cache, UI, build, origin, or configuration changes.
 - Update [project-delibase](project-delibase.md), [servers-delibase-server-foundation](servers-delibase-server-foundation.md), and [protos-delibase-api-contract](protos-delibase-api-contract.md) for API or domain semantic changes.
 - Update `apps/AGENTS.md`, CI docs/workflows, and release docs when validation, artifact, or deployment policy changes.
-- Issue #722 out of scope: runtime implementation, public activation/deployment, a complete brand system, and server-side background or production operations.
+- This documentation prerequisite change does not create or run the app runtime. Issue #722's app implementation, static artifact, and validation deliverables remain in scope; public activation/deployment, a complete brand system, and server-side background or production operations remain out of scope.
 
 ## References
 - [Project delidev](project-delidev.md)

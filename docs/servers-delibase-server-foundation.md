@@ -20,7 +20,7 @@
 - Six versioned Connect services: `AccountService` (account state/onboarding/deletion), `OrganizationService` (organizations, slugs, roles, invitations), `TeamService` (hierarchy, moves, subtree deletion, memberships/access), `CatalogService` (public app/meter metadata), `BillingService` (summary, checkout, portal, limits, ledger/usage reads), and `UsageService` (reserve/commit/release).
 - Human calls require a Logto user access token. Usage mutations require a Logto M2M token plus a dedicated redacted forwarded end-user Logto token. Validate issuer, audience, expiry, scopes, M2M service meter allowlists, membership, and effective team access server-side.
 - List APIs use opaque cursors. Errors use Connect status codes and stable enum-based details for auth, authorization, slug, invitation, team depth/cycle, subscription, overage, reservation, idempotency, deletion, and resource-state failures.
-- Persisted IDs are UUID v7. Slugs are globally unique/changeable and retain aliases. Teams have one organization, nullable parent, maximum five levels below the organization, downward inherited access, and an undeletable/renamable protected `General` team.
+- Persisted IDs are UUID v7. Slugs are globally unique/changeable and retain aliases. Teams have one organization, nullable parent, maximum five levels below the organization, downward inherited access, and an undeletable/non-renamable protected `General` team.
 - Invitations are hashed bearer links, seven-day valid, revocable, reusable by distinct users, role-limited, and team-targeted for team membership. Existing membership roles are not silently changed.
 - Organization roles: Owner (full access and deletion), Admin (management, billing, limits, full usage, but no Owner management/deletion), Member (app use, shared credits, and accessible team usage, but no invoices/full ledger/subscription/overage controls). Preserve at least one Owner.
 - Account deletion blocks on last-Owner status, disables local access, removes operational data, queues Logto deletion, signs out, retries external deletion, and retains only pseudonymized financial/audit references for seven years.
@@ -47,7 +47,8 @@
 ## Build and Test
 - Required checks once implementation exists: `gofmt -w`/format check, `go vet ./...`, `go test ./servers/delibase/...`, sqlc generation/checks, PostgreSQL integration/concurrency tests, migration checks, Protobuf generation/compatibility checks, and Docker build validation.
 - CI must test duplicate/reordered webhooks, idempotency, concurrent reservations, account/organization/team rules, five-level/cycle constraints, billing state, outages, and deletion retention behavior.
-- This contract does not activate a service, deploy an API, or publish an image. A later release contract may publish only signed `ghcr.io/delinoio/delibase:vX.Y.Z` and `:latest` multi-architecture (`linux/amd64`, `linux/arm64`) images from `delibase@v*` tags, with SPDX SBOM and provenance; no `edge`, SHA, or main-branch images.
+- Release CI must add `release-delibase.yml`, trigger only on `delibase@v*` tag pushes, and publish only signed `ghcr.io/delinoio/delibase:vX.Y.Z` and `:latest` multi-architecture (`linux/amd64`, `linux/arm64`) images with SPDX SBOM and provenance; no `edge`, SHA, or main-branch images.
+- This documentation change does not activate a service, deploy an API, or publish an image; the release workflow and artifacts are issue #722 implementation deliverables.
 
 ## Dependencies and Integrations
 - Consumes root sources at `protos/delibase/v1` and shared packages under `servers/internal`.
