@@ -20,10 +20,10 @@
 - Account: authenticated account state, mandatory first-organization onboarding, and account deletion/blockers.
 - Organization: CRUD, globally unique changeable slugs/aliases, member roles, invitations, acceptance, and revocation.
 - Team: nullable-parent hierarchy, depth/cycle-safe moves, subtree deletion, memberships, and effective downward access.
-- Catalog: anonymous public app/meter listing and details; no runtime mutation API.
+- Catalog: anonymous public app/meter listing and details, including public effective-dated USD micro-unit prices and their version metadata; no runtime mutation API.
 - Billing: summary, hosted Polar checkout/portal session, overage limit, ledger and usage reads.
 - Usage: reserve, commit, and release with organization/team/meter IDs, signed int64 units, pinned prices, reservation TTL, and service-scoped idempotency.
-- Human requests use Logto user access tokens. Usage mutations carry Logto M2M authorization and a dedicated redacted forwarded user token. The server owns authorization decisions.
+- Human requests use Logto user access tokens except for anonymous CatalogService reads. Usage mutations carry Logto M2M authorization and a dedicated redacted forwarded user token. The server owns authorization decisions.
 - Lists use opaque cursor pagination. Preserve released `delibase.v1` additively; breaking changes require `delibase.v2` or later.
 - Persisted entity IDs are UUID v7. Money values are signed int64 USD micro-units; usage values are signed int64 units. Error details use stable enum identifiers.
 
