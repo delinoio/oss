@@ -27,12 +27,48 @@ func RunPipe(
 	cmd.Dir = workingDir
 	cmd.Stdin = os.Stdin
 
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		return RunResult{}, commandRuntimeError("create stdout pipe", command, workingDir, err)
+	}
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		_ = stdoutReader.Close()
+		_ = stdoutWriter.Close()
+		return RunResult{}, commandRuntimeError("create stderr pipe", command, workingDir, err)
+	}
+
+	// Pass files to exec.Cmd so Wait only waits for the requested process. If a
+	// descendant inherits the descriptors, our copy goroutines are closed after
+	// the requested process exits instead of extending cmd.Wait indefinitely.
+	cmd.Stdout = stdoutWriter
+	cmd.Stderr = stderrWriter
 
 	if err := cmd.Start(); err != nil {
+		_ = stdoutReader.Close()
+		_ = stdoutWriter.Close()
+		_ = stderrReader.Close()
+		_ = stderrWriter.Close()
 		return RunResult{}, commandRuntimeError("start process", command, workingDir, err)
 	}
+	_ = stdoutWriter.Close()
+	_ = stderrWriter.Close()
+
+	copyDone := make(chan error, 2)
+	go copyPipeOutput(stdoutReader, stdout, copyDone)
+	go copyPipeOutput(stderrReader, stderr, copyDone)
+	closeOutput := func() error {
+		_ = stdoutReader.Close()
+		_ = stderrReader.Close()
+		var copyErr error
+		for range 2 {
+			if err := <-copyDone; err != nil && !isBenignCopyErr(err) && copyErr == nil {
+				copyErr = err
+			}
+		}
+		return copyErr
+	}
+	defer closeOutput()
 
 	// Install forwarding handlers immediately after process start so SIGINT/SIGTERM
 	// cannot race with onStart metadata persistence in caller paths.
@@ -68,6 +104,12 @@ func RunPipe(
 		return RunResult{}, commandRuntimeError("wait for process", command, workingDir, err)
 	}
 	return result, nil
+}
+
+func copyPipeOutput(reader *os.File, writer io.Writer, done chan<- error) {
+	_, err := io.Copy(writer, reader)
+	_ = reader.Close()
+	done <- err
 }
 
 func isBenignCopyErr(err error) bool {

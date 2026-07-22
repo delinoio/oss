@@ -23,7 +23,7 @@
 - Catalog: anonymous public app/meter listing and details, including public effective-dated USD micro-unit prices and their version metadata; no runtime mutation API.
 - Billing: summary, hosted Polar checkout/portal session, overage limit, ledger and usage reads.
 - Usage: reserve, commit, and release with organization/team/meter IDs, signed int64 units, pinned prices, reservation TTL, and service-scoped idempotency.
-- Human requests use Logto user access tokens except for anonymous CatalogService reads, with the canonical audience `https://delibase.deli.dev`. Usage mutations carry Logto M2M authorization and a dedicated redacted forwarded user token. The server owns authorization decisions.
+- Human requests use Logto user access tokens except for anonymous CatalogService reads, with the canonical audience `https://delibase.deli.dev`. Usage mutations carry Logto M2M authorization and the dedicated `x-delibase-forwarded-user-token` Connect metadata key for the forwarded end-user token; servers must redact that metadata value anywhere headers, metadata, or diagnostics are logged. The server owns authorization decisions.
 - Lists use opaque cursor pagination. Preserve released `delibase.v1` additively; breaking changes require `delibase.v2` or later.
 - Persisted entity IDs are UUID v7. Money values are signed int64 USD micro-units; usage values are signed int64 units. Error details use stable enum identifiers.
 
@@ -33,7 +33,7 @@
 
 ## Security
 - Document authentication requirements on every protected RPC. Catalog reads may be anonymous; organization, billing, usage, invitation, onboarding, and account operations are protected.
-- Usage authorization must represent both service identity and forwarded end-user context without exposing the forwarded token.
+- Usage authorization must represent both service identity and forwarded end-user context without exposing the forwarded token. The `x-delibase-forwarded-user-token` metadata value is sensitive credential material and must never appear in logs, traces, errors, or persisted data.
 - Do not make client-provided roles, prices, balances, team access, or overage decisions authoritative.
 
 ## Logging
