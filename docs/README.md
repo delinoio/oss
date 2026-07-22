@@ -78,3 +78,13 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-ttl.md`
 - `docs/cmds-ttl-foundation.md`
 - `docs/cmds-ttl-language-contract.md`
+
+### delidev
+- `docs/project-delidev.md`
+- `docs/apps-delidev-app-foundation.md` (`apps/delidev-app`, future canonical origin `https://deli.dev`, static Cloudflare Pages artifact)
+
+### delibase
+- `docs/project-delibase.md`
+- `docs/servers-delibase-server-foundation.md` (`servers/delibase`, future API origin `https://delibase.deli.dev`)
+- `docs/protos-delibase-api-contract.md` (`protos/delibase/v1`, `delibase.v1`)
+- `docs/servers-internal-foundation.md` (repository-shared `servers/internal` boundary consumed by delibase)

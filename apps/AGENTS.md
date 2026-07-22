@@ -15,6 +15,7 @@
 ### Scope in This Domain
 
 - `apps/mpapp`: Expo React Native mobile app.
+- `apps/delidev-app`: planned React/TypeScript/Rsbuild Cloudflare Pages PWA for project `delidev`.
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
@@ -23,6 +24,16 @@
 
 - `mpapp` must remain Expo-based unless a documented architecture decision changes it.
 - Bluetooth capabilities and permissions must be explicitly documented in `docs/apps-mpapp-foundation.md`.
+
+### DeliDev Rules
+
+- `apps/delidev-app` is owned by project `delidev`; its contract is `docs/apps-delidev-app-foundation.md`.
+- Canonical future origin is `https://deli.dev`; produce only a static artifact under `dist` with SPA fallback. Do not activate or deploy the site in issue #722.
+- Use React, TypeScript, Rsbuild, React Query, and `@connectrpc/connect-query`; consume the versioned `delibase.v1` contract from `protos/delibase/v1`.
+- Stable routes, anonymous catalog boundaries, authenticated organization routes, Logto trust boundary, and the `https://delibase.deli.dev` API origin are defined in the domain contract and must remain synchronized with delibase/proto docs.
+- Cache only versioned static shell and public catalog data. Never cache authenticated organization/team data, balances, ledgers, usage, invitation tokens, or auth tokens; disable server-backed actions offline.
+- Follow Toss Design Guidelines and WCAG 2.2 AA, including focus management, `Esc` dialog closing, keyboard navigation, and screen-reader states.
+- `pnpm --filter delidev-app typecheck`, `pnpm --filter delidev-app lint`, `pnpm --filter delidev-app test`, and `pnpm --filter delidev-app build` are the baseline checks once the app exists, alongside PWA/accessibility/browser validation.
 
 ### binpm-docs Rules
 
