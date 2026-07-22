@@ -22,7 +22,7 @@ This index establishes the documentation and ownership prerequisites for issue [
 ## Cross-Domain Invariants
 - Canonical API origin: `https://delibase.deli.dev`; this is a future canonical origin and must not be represented as an active deployment in this issue.
 - The six Connect services are `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, `BillingService`, and `UsageService`, all under `delibase.v1`.
-- Human APIs use Logto user access tokens. Usage mutations require a Logto M2M token plus a dedicated, redacted forwarded end-user token; delibase validates issuer, audience, expiry, scopes, service allowlists, organization membership, and effective team access.
+- Human APIs use Logto user access tokens except for anonymous `CatalogService` reads. Usage mutations require a Logto M2M token plus a dedicated, redacted forwarded end-user token; delibase validates issuer, audience, expiry, scopes, service allowlists, organization membership, and effective team access.
 - Delibase owns local user profiles, organizations, memberships, roles, teams, invitations, catalog configuration, billing ledger, reservations, and audit records. Logto owns identity authentication; Polar owns payment settlement and invoices.
 - Persisted entity IDs use UUID v7. Money is signed 64-bit USD micro-units; meter usage is signed 64-bit integer units. Overflow, negative reservations, and invalid precision are rejected.
 - PostgreSQL transactions and row locks enforce append-only ledger behavior and prevent concurrent reservations from exceeding available credits plus the configured overage allowance.
