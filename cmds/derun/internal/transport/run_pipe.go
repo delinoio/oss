@@ -88,8 +88,16 @@ func RunPipe(
 		}
 	}()
 
+	// Reap the direct child before waiting for pipe readers. A child can exit
+	// while a background descendant still holds an inherited pipe writer open;
+	// Cmd.Wait closes the parent pipe ends after reaping the child so the readers
+	// can finish in that case.
+	waitErrCh := make(chan error, 1)
+	go func() {
+		waitErrCh <- cmd.Wait()
+	}()
+	waitErr := <-waitErrCh
 	wg.Wait()
-	waitErr := cmd.Wait()
 	close(copyErr)
 	for err := range copyErr {
 		if err != nil {
