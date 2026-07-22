@@ -23,7 +23,7 @@
 - `/apps` and `/apps/:appSlug` are public. Organization context, billing, usage, invitation acceptance, onboarding, and account management require authentication.
 - Consume the five human-facing `delibase.v1` Connect services: `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, and `BillingService`. `UsageService` is server-to-server; the browser must not issue its reserve, commit, or release mutations or hold M2M credentials.
 - Logto browser authentication supplies user identity; delibase decides local profile, organization, team, billing, and authorization state. The browser never handles card data; Polar-hosted Checkout and Customer Portal own payment UI.
-- On first authenticated entry, require organization name and globally unique user-selected slug before allowing entry. Use the same transaction for every additional organization: create the organization, Owner membership, protected `General` team, and creator Team Admin membership together.
+- On first authenticated entry, require organization name and globally unique user-selected slug before allowing entry. In the same transaction, create the local user keyed by the unique Logto `sub`, then create the default organization, Owner membership, protected `General` team, and creator Team Admin membership exactly once. Use the same organization transaction for every additional organization.
 - Support multiple organizations, changeable globally unique slugs with retained aliases/old-slug redirects, nested teams up to five levels, invitations, and role-aware pages according to the delibase contract.
 
 ## Storage

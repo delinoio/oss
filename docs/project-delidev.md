@@ -21,7 +21,7 @@ This index records the prerequisites for issue [#722](https://github.com/delinoi
 - Stable route IDs are `/`, `/apps`, `/apps/:appSlug`, `/auth/callback`, `/onboarding`, `/invite/:token`, `/o/:orgSlug/apps`, `/o/:orgSlug/members`, `/o/:orgSlug/teams`, `/o/:orgSlug/billing`, `/o/:orgSlug/usage`, `/o/:orgSlug/settings`, and `/account`.
 - Public catalog metadata and pricing are anonymous; organization, billing, usage, invitation acceptance, onboarding, and account operations require authentication.
 - The app consumes the versioned `delibase.v1` Connect contract and must update with its owning proto contract for any interface change.
-- Logto is the authentication provider. Delibase is authoritative for local profiles, organizations, memberships, roles, teams, and billing ownership.
+- Logto is the authentication provider. Delibase is authoritative for local profiles keyed by unique Logto `sub` values, organizations, memberships, roles, teams, and billing ownership.
 - The PWA may cache only versioned static shell and public catalog data; authenticated organization, team, balance, ledger, usage, and token data are excluded.
 - PWA output is an artifact-only Cloudflare Pages deliverable. This project must not activate or deploy the site as part of issue #722.
 
