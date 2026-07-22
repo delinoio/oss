@@ -88,8 +88,8 @@ func RunPipe(
 		}
 	}()
 
-	waitErr := cmd.Wait()
 	wg.Wait()
+	waitErr := cmd.Wait()
 	close(copyErr)
 	for err := range copyErr {
 		if err != nil {
