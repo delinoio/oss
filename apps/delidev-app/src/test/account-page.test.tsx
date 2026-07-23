@@ -111,6 +111,80 @@ describe("account organization creation", () => {
 });
 
 describe("account deletion", () => {
+  it("keeps the dialog and replay key active while deletion is pending", async () => {
+    let resolveDeletion: ((response: Response) => void) | undefined;
+    const pendingDeletion = new Promise<Response>((resolve) => {
+      resolveDeletion = resolve;
+    });
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/GetAccountState")) {
+        return connectJsonResponse({
+          account: { displayName: "Deli Developer" },
+          organizations: [],
+        });
+      }
+      if (url.endsWith("/GetAccountDeletionImpact")) {
+        return connectJsonResponse({ blockers: [], canDelete: true });
+      }
+      return pendingDeletion;
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/account"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <Routes>
+              <Route path="/account" element={<AccountPage />} />
+            </Routes>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review deletion" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Delete account" }),
+    );
+
+    expect(screen.getByRole("button", { name: "Keep account" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: "Delete your DeliDev account?" }),
+    ).toBeVisible();
+
+    resolveDeletion?.(
+      connectJsonResponse(
+        { code: "unavailable", message: "The response was lost." },
+        503,
+      ),
+    );
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: "Keep account" })).toBeEnabled();
+  });
+
   it("reuses the pending key across retries and resets it on cancellation", async () => {
     const idempotencyKeys: string[] = [];
     let deleteAttempt = 0;

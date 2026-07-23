@@ -67,6 +67,7 @@ export function AccountPage() {
     { transport: auth.transport },
   );
   const closeDeleteDialog = () => {
+    if (remove.isPending) return;
     accountDeletionIdempotencyKey.current = undefined;
     remove.reset();
     setDeleteDialogOpen(false);
@@ -288,6 +289,7 @@ export function AccountPage() {
           <div className="dialog-actions">
             <button
               className="button secondary"
+              disabled={remove.isPending}
               onClick={closeDeleteDialog}
               type="button"
             >

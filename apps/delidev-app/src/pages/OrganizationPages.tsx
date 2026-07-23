@@ -671,6 +671,9 @@ export function TeamsPage() {
   useDocumentMetadata("Teams", "Manage nested organization teams.");
   const { callerRole, organization, transport } = useOrganization();
   const online = useOnline();
+  const [deletedTeamIds, setDeletedTeamIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const teams = useInfiniteQuery(
     TeamService.method.listTeams,
     {
@@ -690,10 +693,18 @@ export function TeamsPage() {
       transport,
     },
   );
-  const teamRows = teams.data?.pages.flatMap((page) => page.teams) ?? [];
+  const loadedTeamRows =
+    teams.data?.pages.flatMap((page) => page.teams) ?? [];
+  const teamRows = loadedTeamRows.filter(
+    (team) => !deletedTeamIds.has(team.teamId?.value ?? ""),
+  );
   const canManage = canManageOrganization(callerRole);
   const refreshTeams = async () => {
     await teams.refetch();
+  };
+  const hideDeletedSubtree = (teamId: string) => {
+    const subtreeIds = getTeamSubtreeIds(teamId, loadedTeamRows);
+    setDeletedTeamIds((current) => new Set([...current, ...subtreeIds]));
   };
   return (
     <>
@@ -743,6 +754,7 @@ export function TeamsPage() {
                 {canManage && !team.protectedGeneral ? (
                   <TeamActions
                     allTeamsLoaded={!teams.hasNextPage}
+                    onDeleted={hideDeletedSubtree}
                     onUpdated={refreshTeams}
                     online={online}
                     team={team}
@@ -931,15 +943,39 @@ export function canUseTeamAsParent(
   return candidate.depth + 1 + subtreeHeight < maximumTeamLevels;
 }
 
+export function getTeamSubtreeIds(teamId: string, teams: Team[]): Set<string> {
+  const subtreeIds = new Set([teamId]);
+  let foundDescendant = true;
+  while (foundDescendant) {
+    foundDescendant = false;
+    for (const team of teams) {
+      const id = team.teamId?.value;
+      const parentId = team.parentTeamId?.value;
+      if (
+        id &&
+        parentId &&
+        subtreeIds.has(parentId) &&
+        !subtreeIds.has(id)
+      ) {
+        subtreeIds.add(id);
+        foundDescendant = true;
+      }
+    }
+  }
+  return subtreeIds;
+}
+
 function TeamActions({
   allTeamsLoaded,
   online,
+  onDeleted,
   onUpdated,
   team,
   teams,
 }: {
   allTeamsLoaded: boolean;
   online: boolean;
+  onDeleted: (teamId: string) => void;
   onUpdated: () => Promise<void>;
   team: Team;
   teams: Team[];
@@ -1029,9 +1065,10 @@ function TeamActions({
         organizationId: organization.organizationId,
         teamId: uuid(teamId),
       });
-      await onUpdated();
+      onDeleted(teamId);
       deletionKey.current = undefined;
       setOpen(false);
+      void onUpdated();
     } catch (error) {
       setFormError(
         error instanceof Error ? error.message : "The team could not be deleted.",
@@ -1175,6 +1212,9 @@ export function BillingPage() {
     BillingService.method.createBillingPortalSession,
     { transport },
   );
+  const checkoutIdempotencyKey = useRef<
+    { key: string } | undefined
+  >(undefined);
   const editableOverageLimit = summary.data?.summary
     ? getEditableOverageLimit(
         summary.data.summary.overageLimitConfigured,
@@ -1183,10 +1223,11 @@ export function BillingPage() {
     : undefined;
 
   const openCheckout = () => {
+    checkoutIdempotencyKey.current ??= createIdempotencyKey();
     checkout.mutate(
       {
         cancelUrl: window.location.href,
-        idempotency: createIdempotencyKey(),
+        idempotency: checkoutIdempotencyKey.current,
         organizationId: organization.organizationId,
         successUrl: window.location.href,
       },
@@ -1415,14 +1456,10 @@ function BillingLedger({
                       )}
                     </td>
                     <td>
-                      {entry.amount
-                        ? formatUsdMicros(entry.amount.value)
-                        : "—"}
+                      {formatOptionalUsdMicros(entry.amount?.value)}
                     </td>
                     <td>
-                      {entry.balanceAfter
-                        ? formatUsdMicros(entry.balanceAfter.value)
-                        : "—"}
+                      {formatOptionalUsdMicros(entry.balanceAfter?.value)}
                     </td>
                     <td>{entry.teamNameSnapshot || "—"}</td>
                   </tr>

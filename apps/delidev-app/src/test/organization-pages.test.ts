@@ -12,6 +12,7 @@ import {
   formatOverageLimit,
   formatUsageCost,
   formatUsageUnits,
+  getTeamSubtreeIds,
   getEditableOverageLimit,
   parseUsdMicros,
 } from "../pages/OrganizationPages";
@@ -113,5 +114,21 @@ describe("team hierarchy controls", () => {
     expect(canUseTeamAsParent(moving, root, teams)).toBe(true);
     expect(canUseTeamAsParent(moving, levelThree, teams)).toBe(false);
     expect(canUseTeamAsParent(moving, levelFour, teams)).toBe(false);
+  });
+
+  it("finds every loaded descendant for optimistic subtree deletion", () => {
+    const parent = team("parent");
+    const child = team("child", "parent");
+    const grandchild = team("grandchild", "child");
+    const sibling = team("sibling");
+
+    expect(
+      getTeamSubtreeIds("parent", [
+        grandchild,
+        sibling,
+        child,
+        parent,
+      ]),
+    ).toEqual(new Set(["parent", "child", "grandchild"]));
   });
 });
