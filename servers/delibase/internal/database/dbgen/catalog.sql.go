@@ -34,7 +34,6 @@ UPDATE catalog_price_versions
 SET effective_until = $2
 WHERE id = $1
   AND effective_until IS NULL
-  AND $2 IS NOT NULL
 `
 
 type CloseCatalogPriceVersionParams struct {
