@@ -644,6 +644,7 @@ func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) 
 
 	const (
 		accountID      = "0198a000-0000-7000-8000-000000000501"
+		ownerAccountID = "0198a000-0000-7000-8000-000000000510"
 		organizationID = "0198a000-0000-7000-8000-000000000502"
 		teamID         = "0198a000-0000-7000-8000-000000000503"
 		appID          = "0198a000-0000-7000-8000-000000000504"
@@ -655,8 +656,10 @@ func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) 
 	)
 	if _, err := store.pool.Exec(
 		ctx,
-		"INSERT INTO accounts (id, logto_subject) VALUES ($1, 'reservation-lock-user')",
+		`INSERT INTO accounts (id, logto_subject)
+		VALUES ($1, 'reservation-lock-user'), ($2, 'reservation-lock-owner')`,
 		accountID,
+		ownerAccountID,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -667,12 +670,16 @@ func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) 
 		organizationID,
 		"Reservation Locks",
 		"reservation-locks",
-		accountID,
+		ownerAccountID,
 	)
 	setup := []struct {
 		statement string
 		arguments []any
 	}{
+		{
+			"INSERT INTO organization_memberships (organization_id, account_id, role) VALUES ($1, $2, 'member')",
+			[]any{organizationID, accountID},
+		},
 		{
 			"INSERT INTO teams (id, organization_id, name) VALUES ($1, $2, 'Locked Team')",
 			[]any{teamID, organizationID},
