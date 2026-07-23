@@ -872,6 +872,7 @@ jobs:
     needs:
       - go-quality
       - go-test
+      - delibase-server
       - proto-delibase
       - rust-fmt
       - rust-clippy
