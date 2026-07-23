@@ -91,7 +91,7 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.DEVHUD_APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.DEVHUD_APPLE_TEAM_ID }}
         run: >-
-          pnpm --dir apps/devhud gate:macos --
+          pnpm --dir apps/devhud gate:macos
           --target ${{ matrix.target }}
           --evidence gate-evidence/macos-${{ matrix.architecture }}.json
 
