@@ -204,6 +204,11 @@ BEGIN
     ORDER BY id
     FOR UPDATE;
 
+    IF NEW.parent_team_id = NEW.id THEN
+        RAISE EXCEPTION 'team hierarchy cannot contain a cycle'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
     IF NEW.parent_team_id IS NOT NULL THEN
         WITH RECURSIVE ancestors AS (
             SELECT
@@ -353,6 +358,39 @@ CREATE INDEX organization_invitations_active_idx
     ON organization_invitations(organization_id, expires_at)
     WHERE revoked_at IS NULL;
 
+CREATE FUNCTION preserve_organization_invitation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
+       OR NEW.token_hash IS DISTINCT FROM OLD.token_hash
+       OR NEW.organization_role IS DISTINCT FROM OLD.organization_role
+       OR NEW.target_team_id IS DISTINCT FROM OLD.target_team_id
+       OR NEW.team_role IS DISTINCT FROM OLD.team_role
+       OR NEW.created_by_account_id IS DISTINCT FROM OLD.created_by_account_id
+       OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at
+       OR (
+           OLD.revoked_at IS NOT NULL
+           AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at
+       ) THEN
+        RAISE EXCEPTION 'organization invitation terms are immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL THEN
+        NEW.revoked_at := transaction_timestamp();
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER organization_invitations_preserve_terms
+BEFORE UPDATE ON organization_invitations
+FOR EACH ROW EXECUTE FUNCTION preserve_organization_invitation();
+
 CREATE TABLE organization_invitation_acceptances (
     invitation_id uuid NOT NULL REFERENCES organization_invitations(id) ON DELETE CASCADE,
     account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -365,11 +403,12 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
+    invitation_created_at timestamptz;
     invitation_expires_at timestamptz;
     invitation_revoked_at timestamptz;
 BEGIN
-    SELECT expires_at, revoked_at
-    INTO invitation_expires_at, invitation_revoked_at
+    SELECT created_at, expires_at, revoked_at
+    INTO invitation_created_at, invitation_expires_at, invitation_revoked_at
     FROM organization_invitations
     WHERE id = NEW.invitation_id
     FOR UPDATE;
@@ -380,6 +419,7 @@ BEGIN
 
     NEW.accepted_at := transaction_timestamp();
     IF invitation_revoked_at IS NOT NULL
+       OR NEW.accepted_at < invitation_created_at
        OR invitation_expires_at <= NEW.accepted_at THEN
         RAISE EXCEPTION 'invitation is no longer valid'
             USING ERRCODE = 'check_violation';

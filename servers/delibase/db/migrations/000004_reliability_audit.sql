@@ -79,9 +79,17 @@ CREATE TABLE deletion_jobs (
     safe_error_class text,
     CHECK (is_uuid_v7(id)),
     CHECK (
-        (job_type = 'account' AND account_id IS NOT NULL)
+        (
+            job_type = 'account'
+            AND account_id IS NOT NULL
+            AND organization_id IS NULL
+        )
         OR
-        (job_type = 'organization' AND organization_id IS NOT NULL)
+        (
+            job_type = 'organization'
+            AND organization_id IS NOT NULL
+            AND account_id IS NULL
+        )
     )
 );
 

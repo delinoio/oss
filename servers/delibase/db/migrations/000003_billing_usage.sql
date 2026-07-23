@@ -83,6 +83,20 @@ CREATE TABLE ledger_entries (
     ),
     CHECK (usage_record_id IS NULL OR reservation_id IS NOT NULL),
     CHECK (
+        (
+            entry_type IN ('credit_grant', 'credit_release', 'overage_release')
+            AND amount_micros > 0
+        )
+        OR
+        (
+            entry_type IN (
+                'credit_reversal', 'credit_hold', 'credit_commit',
+                'overage_hold', 'overage_commit', 'credit_forfeiture'
+            )
+            AND amount_micros < 0
+        )
+    ),
+    CHECK (
         actor_reference = ''
         OR actor_reference ~ '^actor:v1:[0-9a-f]{32}$'
     ),
@@ -187,6 +201,8 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     locked_team_name text;
+    locked_organization_role text;
+    locked_access_team_id uuid;
     locked_price_micros bigint;
     price_effective_from timestamptz;
     price_effective_until timestamptz;
@@ -225,7 +241,7 @@ BEGIN
     FROM teams
     WHERE organization_id = NEW.organization_id
       AND id = NEW.team_id
-    FOR KEY SHARE;
+    FOR SHARE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'reservation team does not belong to organization'
             USING ERRCODE = 'foreign_key_violation';
@@ -249,7 +265,7 @@ BEGIN
     JOIN catalog_meters AS meter ON meter.id = price.meter_id
     WHERE price.meter_id = NEW.meter_id
       AND price.id = NEW.price_version_id
-    FOR KEY SHARE OF price, meter;
+    FOR SHARE OF price, meter;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'reservation price does not belong to meter'
             USING ERRCODE = 'foreign_key_violation';
@@ -273,39 +289,46 @@ BEGIN
     END IF;
 
     IF NEW.status = 'held' THEN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM organization_memberships AS organization_membership
-            WHERE organization_membership.organization_id = NEW.organization_id
-              AND organization_membership.account_id = NEW.account_id
-              AND (
-                  organization_membership.role IN ('owner', 'admin')
-                  OR EXISTS (
-                      WITH RECURSIVE team_and_ancestors AS (
-                          SELECT team.id, team.parent_team_id
-                          FROM teams AS team
-                          WHERE team.organization_id = NEW.organization_id
-                            AND team.id = NEW.team_id
-
-                          UNION ALL
-
-                          SELECT parent.id, parent.parent_team_id
-                          FROM teams AS parent
-                          JOIN team_and_ancestors AS child
-                            ON child.parent_team_id = parent.id
-                          WHERE parent.organization_id = NEW.organization_id
-                      )
-                      SELECT 1
-                      FROM team_and_ancestors AS allowed_team
-                      JOIN team_memberships AS team_membership
-                        ON team_membership.organization_id = NEW.organization_id
-                       AND team_membership.team_id = allowed_team.id
-                       AND team_membership.account_id = NEW.account_id
-                  )
-              )
-        ) THEN
+        SELECT role
+        INTO locked_organization_role
+        FROM organization_memberships
+        WHERE organization_id = NEW.organization_id
+          AND account_id = NEW.account_id
+        FOR SHARE;
+        IF NOT FOUND THEN
             RAISE EXCEPTION 'reservation account cannot access team'
                 USING ERRCODE = 'check_violation';
+        END IF;
+
+        IF locked_organization_role NOT IN ('owner', 'admin') THEN
+            WITH RECURSIVE team_and_ancestors AS (
+                SELECT team.id, team.parent_team_id
+                FROM teams AS team
+                WHERE team.organization_id = NEW.organization_id
+                  AND team.id = NEW.team_id
+
+                UNION ALL
+
+                SELECT parent.id, parent.parent_team_id
+                FROM teams AS parent
+                JOIN team_and_ancestors AS child
+                  ON child.parent_team_id = parent.id
+                WHERE parent.organization_id = NEW.organization_id
+            )
+            SELECT team_membership.team_id
+            INTO locked_access_team_id
+            FROM team_memberships AS team_membership
+            JOIN team_and_ancestors AS allowed_team
+              ON allowed_team.id = team_membership.team_id
+            WHERE team_membership.organization_id = NEW.organization_id
+              AND team_membership.account_id = NEW.account_id
+            ORDER BY team_membership.team_id
+            LIMIT 1
+            FOR SHARE OF team_membership;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'reservation account cannot access team'
+                    USING ERRCODE = 'check_violation';
+            END IF;
         END IF;
 
         PERFORM 1
@@ -320,7 +343,7 @@ BEGIN
           AND service.enabled
           AND meter.enabled
           AND app.enabled
-        FOR KEY SHARE OF allowlist, service, meter, app;
+        FOR SHARE OF allowlist, service, meter, app;
         IF NOT FOUND THEN
             RAISE EXCEPTION 'reservation service is not allowed for meter'
                 USING ERRCODE = 'foreign_key_violation';
@@ -369,9 +392,13 @@ BEGIN
               AND period.starts_at <= NEW.created_at
               AND period.ends_at > NEW.created_at
               AND subscription.status = 'active'
-            FOR KEY SHARE OF period, subscription;
+            FOR SHARE OF period, subscription;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'reservation has no current billing period'
+                    USING ERRCODE = 'check_violation';
+            END IF;
+            IF NEW.expires_at > period_ends_at THEN
+                RAISE EXCEPTION 'overage reservation cannot outlive billing period'
                     USING ERRCODE = 'check_violation';
             END IF;
 

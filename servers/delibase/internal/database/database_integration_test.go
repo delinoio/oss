@@ -551,6 +551,170 @@ func TestPostgreSQLSerializesConcurrentTeamMoves(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	store, err := Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	const (
+		accountID      = "0198a000-0000-7000-8000-000000000501"
+		organizationID = "0198a000-0000-7000-8000-000000000502"
+		teamID         = "0198a000-0000-7000-8000-000000000503"
+		appID          = "0198a000-0000-7000-8000-000000000504"
+		meterID        = "0198a000-0000-7000-8000-000000000505"
+		priceID        = "0198a000-0000-7000-8000-000000000506"
+		serviceID      = "0198a000-0000-7000-8000-000000000507"
+		reservationID  = "0198a000-0000-7000-8000-000000000508"
+		ledgerID       = "0198a000-0000-7000-8000-000000000509"
+	)
+	setup := []struct {
+		statement string
+		arguments []any
+	}{
+		{
+			"INSERT INTO accounts (id, logto_subject) VALUES ($1, 'reservation-lock-user')",
+			[]any{accountID},
+		},
+		{
+			"INSERT INTO organizations (id, name, slug) VALUES ($1, 'Reservation Locks', 'reservation-locks')",
+			[]any{organizationID},
+		},
+		{
+			"INSERT INTO organization_memberships (organization_id, account_id, role) VALUES ($1, $2, 'member')",
+			[]any{organizationID, accountID},
+		},
+		{
+			"INSERT INTO teams (id, organization_id, name) VALUES ($1, $2, 'Locked Team')",
+			[]any{teamID, organizationID},
+		},
+		{
+			"INSERT INTO team_memberships (organization_id, team_id, account_id, role) VALUES ($1, $2, $3, 'member')",
+			[]any{organizationID, teamID, accountID},
+		},
+		{
+			"INSERT INTO catalog_apps (id, slug, name, enabled) VALUES ($1, 'reservation-lock-app', 'Reservation Lock App', true)",
+			[]any{appID},
+		},
+		{
+			"INSERT INTO catalog_meters (id, app_id, meter_key, name, unit_name, reservation_ttl_seconds, enabled) VALUES ($1, $2, 'requests', 'Requests', 'request', 60, true)",
+			[]any{meterID, appID},
+		},
+		{
+			"INSERT INTO catalog_price_versions (id, meter_id, usd_micros_per_unit, effective_from) VALUES ($1, $2, 1, transaction_timestamp() - interval '1 day')",
+			[]any{priceID, meterID},
+		},
+		{
+			"INSERT INTO service_identities (id, logto_client_id, name) VALUES ($1, 'reservation-lock-service', 'Reservation Lock Service')",
+			[]any{serviceID},
+		},
+		{
+			"INSERT INTO service_meter_allowlists (service_identity_id, meter_id) VALUES ($1, $2)",
+			[]any{serviceID, meterID},
+		},
+		{
+			"INSERT INTO ledger_entries (id, organization_id, entry_type, amount_micros, balance_after_micros, source_reference) VALUES ($1, $2, 'credit_grant', 1, 1, 'reservation-lock-credit')",
+			[]any{ledgerID, organizationID},
+		},
+	}
+	for _, item := range setup {
+		if _, err := store.pool.Exec(ctx, item.statement, item.arguments...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reservation, err := store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reservation.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := reservation.Exec(ctx, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
+			$1, $2, $3, 'Locked Team', $4, $5, $6, $7,
+			1, 1, 1, 1, 0, 'reservation-lock',
+			transaction_timestamp() + interval '1 minute'
+		)
+	`, reservationID, organizationID, teamID, meterID, priceID, accountID, serviceID); err != nil {
+		t.Fatal(err)
+	}
+
+	updates := []struct {
+		name      string
+		statement string
+		arguments []any
+	}{
+		{
+			name:      "team name",
+			statement: "UPDATE teams SET name = 'Renamed Team' WHERE id = $1",
+			arguments: []any{teamID},
+		},
+		{
+			name:      "team access",
+			statement: "DELETE FROM team_memberships WHERE team_id = $1 AND account_id = $2",
+			arguments: []any{teamID, accountID},
+		},
+		{
+			name:      "catalog enabled state",
+			statement: "UPDATE service_identities SET enabled = false WHERE id = $1",
+			arguments: []any{serviceID},
+		},
+		{
+			name:      "catalog price window",
+			statement: "UPDATE catalog_price_versions SET effective_until = transaction_timestamp() WHERE id = $1",
+			arguments: []any{priceID},
+		},
+		{
+			name:      "catalog meter TTL",
+			statement: "UPDATE catalog_meters SET reservation_ttl_seconds = 120 WHERE id = $1",
+			arguments: []any{meterID},
+		},
+	}
+	type updateResult struct {
+		name string
+		err  error
+	}
+	results := make(chan updateResult, len(updates))
+	for _, update := range updates {
+		update := update
+		go func() {
+			_, err := store.pool.Exec(ctx, update.statement, update.arguments...)
+			results <- updateResult{name: update.name, err: err}
+		}()
+	}
+
+	select {
+	case result := <-results:
+		t.Fatalf("%s mutation did not serialize with reservation: %v", result.name, result.err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := reservation.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for range updates {
+		select {
+		case result := <-results:
+			if result.err != nil {
+				t.Fatalf("%s mutation after reservation commit: %v", result.name, result.err)
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+}
+
 func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -679,6 +843,15 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		"INSERT INTO teams (id, organization_id, name) VALUES ('0198a000-0000-7000-8000-000000000026', $1, 'A')",
 		orgA,
 	)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO teams (id, organization_id, parent_team_id, name)
+		VALUES (
+			'0198a000-0000-7000-8000-000000000027',
+			$1,
+			'0198a000-0000-7000-8000-000000000027',
+			'Self parent'
+		)
+	`, orgA)
 	deferredCycle, err := transaction.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -781,6 +954,26 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organization_invitations (
+			id, organization_id, token_hash, organization_role,
+			created_by_account_id, created_at, expires_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000142',
+			$1,
+			decode(repeat('fa', 32), 'hex'),
+			'admin',
+			$2,
+			transaction_timestamp() + interval '1 day',
+			transaction_timestamp() + interval '2 days'
+		)
+	`, orgA, accountA); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO organization_invitation_acceptances (invitation_id, account_id)
+		VALUES ('0198a000-0000-7000-8000-000000000142', $1)
+	`, accountB)
+	if _, err := transaction.Exec(ctx, `
 		INSERT INTO organization_invitation_acceptances (
 			invitation_id, account_id, accepted_at
 		) VALUES ($1, $2, '2000-01-01T00:00:00Z')
@@ -803,6 +996,16 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE organization_invitations
+		SET revoked_at = NULL
+		WHERE id = $1
+	`, deletionInvite)
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE organization_invitations
+		SET expires_at = expires_at + interval '1 hour'
+		WHERE id = $1
+	`, deletionInvite)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO organization_invitation_acceptances (invitation_id, account_id)
 		VALUES ($1, $2)
@@ -863,30 +1066,53 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			'credit_grant', 1, 1, 'raw-ledger-actor', 'raw-logto-subject'
 		)
 	`, orgA, periodA)
-	ledgerOperations := []string{
-		"credit_grant",
-		"credit_reversal",
-		"credit_hold",
-		"credit_commit",
-		"credit_release",
-		"overage_hold",
-		"overage_commit",
-		"overage_release",
-		"credit_forfeiture",
+	ledgerOperations := []struct {
+		name   string
+		amount int64
+	}{
+		{name: "credit_grant", amount: 7},
+		{name: "credit_reversal", amount: -1},
+		{name: "credit_hold", amount: -1},
+		{name: "credit_commit", amount: -1},
+		{name: "credit_release", amount: 4},
+		{name: "overage_hold", amount: -1},
+		{name: "overage_commit", amount: -1},
+		{name: "overage_release", amount: 4},
+		{name: "credit_forfeiture", amount: -1},
 	}
+	var ledgerBalance int64
 	for index, operation := range ledgerOperations {
+		ledgerBalance += operation.amount
 		if _, err := transaction.Exec(ctx, `
 			INSERT INTO ledger_entries (
 				id, organization_id, billing_period_id, entry_type,
 				amount_micros, balance_after_micros, source_reference
 			) VALUES (
 				('0198a000-0000-7000-8000-' || lpad(($1 + 80)::text, 12, '0'))::uuid,
-				$2, $3, $4, 1, $1 + 1, $4
+				$2, $3, $4, $5, $6, $4
 			)
-		`, index, orgA, periodA, operation); err != nil {
+		`, index, orgA, periodA, operation.name, operation.amount, ledgerBalance); err != nil {
 			t.Fatal(err)
 		}
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO ledger_entries (
+			id, organization_id, billing_period_id, entry_type,
+			amount_micros, balance_after_micros, source_reference
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000143', $1, $2,
+			'credit_commit', 1, 10, 'positive-credit-commit'
+		)
+	`, orgA, periodA)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO ledger_entries (
+			id, organization_id, billing_period_id, entry_type,
+			amount_micros, balance_after_micros, source_reference
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000144', $1, $2,
+			'credit_forfeiture', 1, 10, 'positive-credit-forfeiture'
+		)
+	`, orgA, periodA)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO ledger_entries (
 			id, organization_id, billing_period_id, entry_type,
@@ -961,6 +1187,25 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, subA); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		WITH shortened_period AS (
+			UPDATE billing_periods
+			SET ends_at = transaction_timestamp() + interval '30 seconds'
+			WHERE id = '0198a000-0000-7000-8000-000000000121'
+			RETURNING id
+		)
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		)
+		SELECT
+			'0198a000-0000-7000-8000-000000000145', $1, $2, 'A', $3,
+			$4, $5, $6, 5, 1, 5, 4, 1, 'period-rollover',
+			transaction_timestamp() + interval '1 minute'
+		FROM shortened_period
+	`, orgA, teamA, meterID, priceID, accountA, serviceID)
 	if _, err := transaction.Exec(
 		ctx,
 		"UPDATE subscriptions SET status = 'past_due' WHERE id = $1",
@@ -1448,6 +1693,16 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO deletion_jobs (
+			id, account_id, organization_id, job_type
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000146',
+			$1,
+			$2,
+			'account'
+		)
+	`, accountC, orgA)
 	if _, err := transaction.Exec(ctx, "DELETE FROM accounts WHERE id = $1", accountC); err != nil {
 		t.Fatal(err)
 	}
@@ -1479,6 +1734,16 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO deletion_jobs (
+			id, account_id, organization_id, job_type
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000147',
+			$1,
+			$2,
+			'organization'
+		)
+	`, accountA, orgC)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO ledger_entries (
 			id, organization_id, entry_type, amount_micros,
