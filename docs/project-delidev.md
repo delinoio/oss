@@ -3,7 +3,7 @@
 ## Goal
 Provide an English, responsive developer-tools PWA where anonymous visitors can browse a mini-app catalog and authenticated organization users can manage teams, billing, usage, and account settings.
 
-This index records the prerequisites for issue [#722](https://github.com/delinoio/oss/issues/722). It does not claim that the app or its runtime behavior is implemented or publicly available.
+This index records the repository implementation for issue [#722](https://github.com/delinoio/oss/issues/722). The static app artifact is implemented and validated; it is not publicly activated or deployed by this issue.
 
 ## Project ID
 `delidev`
@@ -24,6 +24,8 @@ This index records the prerequisites for issue [#722](https://github.com/delinoi
 - Logto is the authentication provider. Delibase is authoritative for local profiles keyed by unique Logto `sub` values, organizations, memberships, roles, teams, and billing ownership.
 - The PWA may cache only versioned static shell and public catalog data; authenticated organization, team, balance, ledger, usage, and token data are excluded.
 - PWA output is an artifact-only Cloudflare Pages deliverable. This project must not activate or deploy the site as part of issue #722.
+- The generated `dist` artifact includes an installable manifest, simple `D` lettermark icons, `_redirects`, `404.html`, `_headers`, and a versioned service worker. Its cache policy is an explicit allowlist rather than a sensitive-data denylist.
+- Protected Connect requests obtain Logto tokens on demand for the canonical audience, while anonymous catalog requests use a transport that has no token getter or authorization interceptor.
 
 ## Change Policy
 - Route, authentication, cache, UI-state, or Pages artifact changes update this index and [apps-delidev-app-foundation](apps-delidev-app-foundation.md).

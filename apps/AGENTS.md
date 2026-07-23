@@ -15,7 +15,7 @@
 ### Scope in This Domain
 
 - `apps/mpapp`: Expo React Native mobile app.
-- `apps/delidev-app`: planned React/TypeScript/Rsbuild Cloudflare Pages PWA for project `delidev`.
+- `apps/delidev-app`: React/TypeScript/Rsbuild Cloudflare Pages PWA for project `delidev`.
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
@@ -34,6 +34,8 @@
 - Cache only versioned static shell and public catalog data. Never cache authenticated organization/team data, balances, ledgers, usage, invitation tokens, or auth tokens; disable server-backed actions offline.
 - Follow Toss Design Guidelines and WCAG 2.2 AA, including focus management, `Esc` dialog closing, keyboard navigation, and screen-reader states.
 - `pnpm --filter delidev-app typecheck`, `pnpm --filter delidev-app lint`, `pnpm --filter delidev-app test`, and `pnpm --filter delidev-app build` are the baseline checks once the app exists, alongside PWA/accessibility/browser validation.
+- `apps/delidev-app/scripts/postbuild.mjs` owns deterministic SPA fallback and versioned service-worker generation. `pnpm --filter delidev-app test:pwa` validates the generated artifact and sensitive-cache boundary.
+- Cloudflare Pages configuration is artifact-only in `apps/delidev-app/wrangler.jsonc`; changing it must not activate, create, or deploy a Pages project.
 
 ### binpm-docs Rules
 

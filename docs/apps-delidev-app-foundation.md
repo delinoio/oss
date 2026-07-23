@@ -45,7 +45,8 @@
 ## Build and Test
 - Shared client checks are `pnpm check:proto` and `pnpm --filter @delinoio/delibase-connect typecheck`. Required local checks once the app exists are `pnpm --filter delidev-app typecheck`, `pnpm --filter delidev-app lint`, `pnpm --filter delidev-app test`, `pnpm --filter delidev-app build`, plus PWA, accessibility, and browser smoke validation.
 - CI must validate the production static artifact, SPA fallback, manifest/service worker, sensitive-cache exclusions, responsive accessibility, and Connect client generation compatibility.
-- These are validation prerequisites; this documentation change does not create or run an app runtime.
+- `pnpm --filter delidev-app test:pwa` validates the installable manifest, generated SPA fallback, versioned shell, canonical metadata, and allow/deny cache rules. `pnpm --filter delidev-app test:browser` covers Chromium, Edge, Firefox, WebKit, and representative mobile Chromium/WebKit viewports.
+- Rsbuild writes the static app to `apps/delidev-app/dist`; `scripts/postbuild.mjs` copies `index.html` to `404.html` and produces `sw.js` from the exact generated shell file set. Cloudflare Pages `_redirects` provides the primary SPA fallback.
 
 ## Dependencies and Integrations
 - Depends on `protos/delibase/v1` and the generated TypeScript Connect client.
@@ -56,7 +57,14 @@
 - Update this document and [project-delidev](project-delidev.md) for route, PWA, cache, UI, build, origin, or configuration changes.
 - Update [project-delibase](project-delibase.md), [servers-delibase-server-foundation](servers-delibase-server-foundation.md), and [protos-delibase-api-contract](protos-delibase-api-contract.md) for API or domain semantic changes.
 - Update `apps/AGENTS.md`, CI docs/workflows, and release docs when validation, artifact, or deployment policy changes.
-- This documentation prerequisite change does not create or run the app runtime. Issue #722's app implementation, static artifact, and validation deliverables remain in scope; public activation/deployment, a complete brand system, and server-side background or production operations remain out of scope.
+- The issue #722 app artifact is implemented in this repository. Public activation/deployment, a complete brand system, and server-side background or production operations remain out of scope.
+
+## Implemented Client Boundaries
+- Public pages use a dedicated anonymous Connect transport for `CatalogService`. Protected routes use a separate transport interceptor that requests a Logto access token for exactly `https://delibase.deli.dev`, attaches it only to the current request, and sends `Cache-Control: no-store`.
+- React Query state is memory-only. Public catalog requests may be served by the service worker; protected account, organization, invitation, team, billing, ledger, and usage queries have no persistent browser cache.
+- The service worker recognizes only the four checked-in `CatalogService` read method names, requires an absent `Authorization` header, and keys cached POST responses through a synthetic body digest. Every other RPC is network-only.
+- Missing or invalid public configuration fails closed: public catalog requests show a dependency error and Logto controls remain disabled. The environment contract remains browser-safe and contains no provider secret.
+- Service-worker updates wait for user confirmation, activate through `SKIP_WAITING`, reload on controller change, remove prior version caches, and retain only the new versioned shell and public catalog cache.
 
 ## References
 - [Project delidev](project-delidev.md)
