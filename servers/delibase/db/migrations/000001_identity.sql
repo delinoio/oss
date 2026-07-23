@@ -233,6 +233,14 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    IF TG_OP = 'UPDATE'
+       AND (
+           NEW.organization_id IS DISTINCT FROM OLD.organization_id
+           OR NEW.account_id IS DISTINCT FROM OLD.account_id
+       ) THEN
+        RAISE EXCEPTION 'organization membership identity is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
     IF OLD.role <> 'owner' THEN
         RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     END IF;

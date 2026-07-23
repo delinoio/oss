@@ -95,6 +95,23 @@ CREATE TABLE subscriptions (
     )
 );
 
+CREATE FUNCTION preserve_polar_subscription_identifier()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.polar_subscription_id IS DISTINCT FROM OLD.polar_subscription_id THEN
+        RAISE EXCEPTION 'Polar subscription identifier is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER subscriptions_preserve_polar_identifier
+BEFORE UPDATE OF polar_subscription_id ON subscriptions
+FOR EACH ROW EXECUTE FUNCTION preserve_polar_subscription_identifier();
+
 CREATE TABLE billing_periods (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -631,6 +648,8 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     reservation usage_reservations%ROWTYPE;
+    locked_organization_role text;
+    locked_access_team_id uuid;
     expected_credit_micros bigint;
     expected_overage_micros bigint;
 BEGIN
@@ -659,14 +678,47 @@ BEGIN
         RAISE EXCEPTION 'usage record does not match reservation'
             USING ERRCODE = 'foreign_key_violation';
     END IF;
-    PERFORM 1
-    FROM accounts
-    WHERE id = NEW.account_id
-      AND status = 'active'
-    FOR SHARE;
+    SELECT membership.role
+    INTO locked_organization_role
+    FROM organization_memberships AS membership
+    JOIN accounts AS account ON account.id = membership.account_id
+    WHERE membership.organization_id = NEW.organization_id
+      AND membership.account_id = NEW.account_id
+      AND account.status = 'active'
+    FOR SHARE OF membership, account;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'usage record account is unavailable'
             USING ERRCODE = 'check_violation';
+    END IF;
+    IF locked_organization_role NOT IN ('owner', 'admin') THEN
+        WITH RECURSIVE team_and_ancestors AS (
+            SELECT team.id, team.parent_team_id
+            FROM teams AS team
+            WHERE team.organization_id = NEW.organization_id
+              AND team.id = NEW.team_id
+
+            UNION ALL
+
+            SELECT parent.id, parent.parent_team_id
+            FROM teams AS parent
+            JOIN team_and_ancestors AS child
+              ON child.parent_team_id = parent.id
+            WHERE parent.organization_id = NEW.organization_id
+        )
+        SELECT team_membership.team_id
+        INTO locked_access_team_id
+        FROM team_memberships AS team_membership
+        JOIN team_and_ancestors AS allowed_team
+          ON allowed_team.id = team_membership.team_id
+        WHERE team_membership.organization_id = NEW.organization_id
+          AND team_membership.account_id = NEW.account_id
+        ORDER BY team_membership.team_id
+        LIMIT 1
+        FOR SHARE OF team_membership;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'usage record account cannot access team'
+                USING ERRCODE = 'check_violation';
+        END IF;
     END IF;
     IF reservation.status <> 'held' THEN
         RAISE EXCEPTION 'reservation is already finalized'
@@ -732,8 +784,11 @@ DECLARE
     linked_reservation_id uuid;
     linked_team_id uuid;
     linked_team_name text;
+    linked_usage_committed_at timestamptz;
     linked_credit_applied_micros bigint;
     linked_overage_applied_micros bigint;
+    linked_period_starts_at timestamptz;
+    linked_period_ends_at timestamptz;
     current_balance_micros numeric;
 BEGIN
     PERFORM 1
@@ -756,7 +811,8 @@ BEGIN
     END IF;
 
     IF NEW.billing_period_id IS NOT NULL THEN
-        PERFORM 1
+        SELECT starts_at, ends_at
+        INTO linked_period_starts_at, linked_period_ends_at
         FROM billing_periods
         WHERE id = NEW.billing_period_id
           AND organization_id = NEW.organization_id
@@ -790,12 +846,14 @@ BEGIN
             reservation_id,
             team_id,
             team_name_snapshot,
+            committed_at,
             credit_applied_micros,
             overage_applied_micros
         INTO
             linked_reservation_id,
             linked_team_id,
             linked_team_name,
+            linked_usage_committed_at,
             linked_credit_applied_micros,
             linked_overage_applied_micros
         FROM usage_records
@@ -810,6 +868,15 @@ BEGIN
            OR NEW.team_id_snapshot IS DISTINCT FROM linked_team_id
            OR NEW.team_name_snapshot IS DISTINCT FROM linked_team_name THEN
             RAISE EXCEPTION 'ledger links do not match usage record'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.entry_type IN ('credit_commit', 'overage_commit')
+           AND NEW.billing_period_id IS NOT NULL
+           AND (
+               linked_usage_committed_at < linked_period_starts_at
+               OR linked_usage_committed_at >= linked_period_ends_at
+           ) THEN
+            RAISE EXCEPTION 'usage settlement does not belong to billing period'
                 USING ERRCODE = 'check_violation';
         END IF;
         IF NEW.entry_type = 'credit_commit'

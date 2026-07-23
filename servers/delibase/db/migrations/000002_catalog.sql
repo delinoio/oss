@@ -65,6 +65,23 @@ CREATE TABLE service_identities (
     CHECK (length(name) BETWEEN 1 AND 120)
 );
 
+CREATE FUNCTION preserve_service_identity_client()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.logto_client_id IS DISTINCT FROM OLD.logto_client_id THEN
+        RAISE EXCEPTION 'service identity Logto client is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER service_identities_preserve_client
+BEFORE UPDATE OF logto_client_id ON service_identities
+FOR EACH ROW EXECUTE FUNCTION preserve_service_identity_client();
+
 CREATE TABLE service_meter_allowlists (
     service_identity_id uuid NOT NULL REFERENCES service_identities(id) ON DELETE CASCADE,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE CASCADE,

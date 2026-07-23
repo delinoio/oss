@@ -988,6 +988,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		subB           = "0198a000-0000-7000-8000-000000000062"
 		periodA        = "0198a000-0000-7000-8000-000000000071"
 		periodB        = "0198a000-0000-7000-8000-000000000072"
+		pastPeriodA    = "0198a000-0000-7000-8000-000000000221"
 		linkedLedger   = "0198a000-0000-7000-8000-000000000077"
 		retainedLedger = "0198a000-0000-7000-8000-000000000078"
 		historyReserve = "0198a000-0000-7000-8000-000000000113"
@@ -1018,7 +1019,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		{"INSERT INTO polar_meter_mappings (meter_id, polar_meter_id) VALUES ($1, 'schema-meter-a'), ($2, 'schema-meter-b')", []any{meterID, meterB}},
 		{"INSERT INTO polar_customers (organization_id, polar_customer_id) VALUES ($1, 'schema-customer-a'), ($2, 'schema-customer-b'), ($3, 'schema-customer-c')", []any{orgA, orgB, orgC}},
 		{"INSERT INTO subscriptions (id, organization_id, polar_subscription_id, status) VALUES ($1, $2, 'polar-a', 'active'), ($3, $4, 'polar-b', 'active')", []any{subA, orgA, subB, orgB}},
-		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, '2026-01-01', '2026-02-01'), ($4, $5, $6, '2026-01-01', '2026-02-01')", []any{periodA, orgA, subA, periodB, orgB, subB}},
+		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, transaction_timestamp() - interval '1 day', transaction_timestamp() + interval '1 day'), ($4, $2, $3, transaction_timestamp() - interval '3 days', transaction_timestamp() - interval '2 days'), ($5, $6, $7, '2026-01-01', '2026-02-01')", []any{periodA, orgA, subA, pastPeriodA, periodB, orgB, subB}},
 	}
 	for _, item := range setup {
 		if _, err := transaction.Exec(ctx, item.statement, item.arguments...); err != nil {
@@ -1036,6 +1037,22 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE polar_customers SET polar_customer_id = 'rewritten-customer' WHERE organization_id = $1",
 		orgA,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE subscriptions SET polar_subscription_id = 'rewritten-subscription' WHERE id = $1",
+		subA,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE service_identities SET logto_client_id = 'rewritten-service' WHERE id = $1",
+		serviceID,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE organization_memberships SET account_id = $1 WHERE organization_id = $2 AND account_id = $3",
+		accountB, orgA, accountC,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE organization_memberships SET organization_id = $1 WHERE organization_id = $2 AND account_id = $3",
+		orgB, orgA, accountC,
 	)
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE organization_memberships SET role = 'admin' WHERE organization_id = $1 AND account_id = $2",
@@ -1303,7 +1320,8 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, organization_id, subscription_id, starts_at, ends_at
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000073', $1, $2,
-			'2026-01-15', '2026-02-15'
+			transaction_timestamp() - interval '12 hours',
+			transaction_timestamp() + interval '2 days'
 		)
 	`, orgA, subA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1808,6 +1826,24 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		t.Fatal(err)
 	}
 	requireConstraintFailure(t, ctx, transaction, `
+		WITH removed_access AS (
+			DELETE FROM team_memberships
+			WHERE organization_id = $3
+			  AND team_id = $4
+			  AND account_id = $6
+			RETURNING organization_id
+		)
+		INSERT INTO usage_records (
+			id, reservation_id, organization_id, team_id, team_name_snapshot,
+			meter_id, account_id, service_identity_id, committed_units,
+			total_cost_micros, credit_applied_micros, overage_applied_micros
+		)
+		SELECT
+			$1, $2, removed_access.organization_id, $4, 'A',
+			$5, $6, $7, 1, 1, 1, 0
+		FROM removed_access
+	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceID)
+	requireConstraintFailure(t, ctx, transaction, `
 		WITH started_deletion AS (
 			UPDATE organizations
 			SET deleted_at = transaction_timestamp()
@@ -2036,6 +2072,18 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		SET status = 'committed'
 		WHERE id = $1
 	`, reserveID)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO ledger_entries (
+			id, organization_id, billing_period_id, entry_type,
+			amount_micros, balance_after_micros, reservation_id,
+			usage_record_id, team_id_snapshot, team_name_snapshot,
+			source_reference
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000222',
+			$1, $2, 'credit_commit', -1, 8, $3, $4, $5, 'A',
+			'wrong-usage-period'
+		)
+	`, orgA, pastPeriodA, reserveID, recordID, teamA)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO ledger_entries (
 			id, organization_id, billing_period_id, entry_type,
@@ -2188,6 +2236,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, accountJob); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM deletion_jobs WHERE id = $1",
+		accountJob,
+	)
 	if _, err := transaction.Exec(ctx, `
 		UPDATE deletion_jobs
 		SET status = 'completed',
@@ -2433,6 +2485,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		DELETE FROM integration_outbox
+		WHERE id = '0198a000-0000-7000-8000-000000000207'
+	`)
 	if _, err := transaction.Exec(ctx, `
 		UPDATE integration_outbox
 		SET delivered_at = transaction_timestamp()

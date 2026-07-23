@@ -77,6 +77,10 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'integration outbox events cannot be deleted'
+            USING ERRCODE = 'check_violation';
+    END IF;
     IF NEW.id IS DISTINCT FROM OLD.id
        OR NEW.integration IS DISTINCT FROM OLD.integration
        OR NEW.operation IS DISTINCT FROM OLD.operation
@@ -96,7 +100,7 @@ END;
 $$;
 
 CREATE TRIGGER integration_outbox_preserve_event
-BEFORE UPDATE ON integration_outbox
+BEFORE UPDATE OR DELETE ON integration_outbox
 FOR EACH ROW EXECUTE FUNCTION preserve_integration_outbox_event();
 
 CREATE TABLE deletion_jobs (
@@ -137,6 +141,10 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'deletion jobs cannot be deleted'
+            USING ERRCODE = 'check_violation';
+    END IF;
     IF NEW.id IS DISTINCT FROM OLD.id
        OR NEW.account_id IS DISTINCT FROM OLD.account_id
        OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
@@ -159,7 +167,7 @@ END;
 $$;
 
 CREATE TRIGGER deletion_jobs_preserve_target
-BEFORE UPDATE ON deletion_jobs
+BEFORE UPDATE OR DELETE ON deletion_jobs
 FOR EACH ROW EXECUTE FUNCTION preserve_deletion_job_target();
 
 CREATE TABLE idempotency_records (
