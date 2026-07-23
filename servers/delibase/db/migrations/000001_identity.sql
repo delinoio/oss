@@ -527,6 +527,25 @@ CREATE TABLE team_memberships (
         REFERENCES organization_memberships(organization_id, account_id) ON DELETE CASCADE
 );
 
+CREATE FUNCTION preserve_team_membership_identity()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.organization_id IS DISTINCT FROM OLD.organization_id
+       OR NEW.team_id IS DISTINCT FROM OLD.team_id
+       OR NEW.account_id IS DISTINCT FROM OLD.account_id THEN
+        RAISE EXCEPTION 'team membership identity is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER team_memberships_preserve_identity
+BEFORE UPDATE OF organization_id, team_id, account_id ON team_memberships
+FOR EACH ROW EXECUTE FUNCTION preserve_team_membership_identity();
+
 CREATE INDEX team_memberships_account_idx
     ON team_memberships(account_id, organization_id, team_id);
 

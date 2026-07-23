@@ -85,7 +85,6 @@ CREATE TABLE subscriptions (
     current_period_ends_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    UNIQUE (organization_id),
     UNIQUE (organization_id, id),
     CHECK (is_uuid_v7(id)),
     CHECK (
@@ -94,6 +93,10 @@ CREATE TABLE subscriptions (
         OR current_period_ends_at > current_period_starts_at
     )
 );
+
+CREATE UNIQUE INDEX subscriptions_one_active_per_organization_idx
+    ON subscriptions(organization_id)
+    WHERE status = 'active';
 
 CREATE FUNCTION preserve_polar_subscription_identifier()
 RETURNS trigger
@@ -137,6 +140,8 @@ CREATE TABLE ledger_entries (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL,
     billing_period_id uuid,
+    billing_period_starts_at_snapshot timestamptz,
+    billing_period_ends_at_snapshot timestamptz,
     entry_type text NOT NULL
         CHECK (entry_type IN (
             'credit_grant', 'credit_reversal', 'credit_hold',
@@ -155,6 +160,20 @@ CREATE TABLE ledger_entries (
     UNIQUE (organization_id, entry_type, source_reference),
     CHECK (is_uuid_v7(id)),
     CHECK (billing_period_id IS NULL OR is_uuid_v7(billing_period_id)),
+    CHECK (
+        (
+            billing_period_id IS NULL
+            AND billing_period_starts_at_snapshot IS NULL
+            AND billing_period_ends_at_snapshot IS NULL
+        )
+        OR
+        (
+            billing_period_id IS NOT NULL
+            AND billing_period_starts_at_snapshot IS NOT NULL
+            AND billing_period_ends_at_snapshot
+                > billing_period_starts_at_snapshot
+        )
+    ),
     CHECK (reservation_id IS NULL OR is_uuid_v7(reservation_id)),
     CHECK (usage_record_id IS NULL OR is_uuid_v7(usage_record_id)),
     CHECK (team_id_snapshot IS NULL OR is_uuid_v7(team_id_snapshot)),
@@ -193,6 +212,10 @@ CREATE TABLE ledger_entries (
     CHECK (
         entry_type NOT IN ('credit_commit', 'overage_commit')
         OR usage_record_id IS NOT NULL
+    ),
+    CHECK (
+        entry_type NOT IN ('credit_commit', 'overage_commit')
+        OR billing_period_id IS NOT NULL
     )
 );
 
@@ -560,6 +583,35 @@ BEGIN
                  ), 0) = usage.overage_applied_micros::numeric
            )
        )
+       OR (
+           NEW.status IN ('released', 'expired')
+           AND (
+               COALESCE(-(
+                   SELECT sum(entry.amount_micros)
+                   FROM ledger_entries AS entry
+                   WHERE entry.reservation_id = OLD.id
+                     AND entry.entry_type = 'credit_hold'
+               ), 0) <> OLD.held_credit_micros::numeric
+               OR COALESCE(-(
+                   SELECT sum(entry.amount_micros)
+                   FROM ledger_entries AS entry
+                   WHERE entry.reservation_id = OLD.id
+                     AND entry.entry_type = 'overage_hold'
+               ), 0) <> OLD.held_overage_micros::numeric
+               OR COALESCE((
+                   SELECT sum(entry.amount_micros)
+                   FROM ledger_entries AS entry
+                   WHERE entry.reservation_id = OLD.id
+                     AND entry.entry_type = 'credit_release'
+               ), 0) <> OLD.held_credit_micros::numeric
+               OR COALESCE((
+                   SELECT sum(entry.amount_micros)
+                   FROM ledger_entries AS entry
+                   WHERE entry.reservation_id = OLD.id
+                     AND entry.entry_type = 'overage_release'
+               ), 0) <> OLD.held_overage_micros::numeric
+           )
+       )
        OR NEW.id IS DISTINCT FROM OLD.id
        OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
        OR NEW.team_id IS DISTINCT FROM OLD.team_id
@@ -652,6 +704,13 @@ DECLARE
     locked_access_team_id uuid;
     expected_credit_micros bigint;
     expected_overage_micros bigint;
+    settled_credit_micros numeric;
+    active_credit_micros numeric;
+    period_starts_at timestamptz;
+    period_ends_at timestamptz;
+    period_overage_limit_micros numeric;
+    committed_overage_micros numeric;
+    active_overage_micros numeric;
 BEGIN
     PERFORM 1
     FROM organizations
@@ -753,6 +812,68 @@ BEGIN
     END IF;
 
     NEW.committed_at := transaction_timestamp();
+
+    SELECT COALESCE(sum(amount_micros), 0)
+    INTO settled_credit_micros
+    FROM ledger_entries
+    WHERE organization_id = NEW.organization_id
+      AND entry_type IN (
+          'credit_grant',
+          'credit_reversal',
+          'credit_commit',
+          'credit_forfeiture'
+      );
+    SELECT COALESCE(sum(held_credit_micros), 0)
+    INTO active_credit_micros
+    FROM usage_reservations
+    WHERE organization_id = NEW.organization_id
+      AND status = 'held';
+    IF settled_credit_micros < active_credit_micros THEN
+        RAISE EXCEPTION 'reservation credit capacity is no longer available'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF reservation.held_overage_micros > 0 THEN
+        SELECT period.starts_at, period.ends_at, period.overage_limit_micros
+        INTO period_starts_at, period_ends_at, period_overage_limit_micros
+        FROM billing_periods AS period
+        JOIN subscriptions AS subscription
+          ON subscription.organization_id = period.organization_id
+         AND subscription.id = period.subscription_id
+        WHERE period.organization_id = NEW.organization_id
+          AND period.starts_at <= NEW.committed_at
+          AND period.ends_at > NEW.committed_at
+          AND period.starts_at <= reservation.created_at
+          AND period.ends_at >= reservation.expires_at
+          AND subscription.status = 'active'
+          AND subscription.current_period_starts_at = period.starts_at
+          AND subscription.current_period_ends_at = period.ends_at
+        FOR SHARE OF period, subscription;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'reservation has no current billing capacity'
+                USING ERRCODE = 'check_violation';
+        END IF;
+
+        SELECT COALESCE(sum(overage_applied_micros), 0)
+        INTO committed_overage_micros
+        FROM usage_records
+        WHERE organization_id = NEW.organization_id
+          AND committed_at >= period_starts_at
+          AND committed_at < period_ends_at;
+        SELECT COALESCE(sum(held_overage_micros), 0)
+        INTO active_overage_micros
+        FROM usage_reservations
+        WHERE organization_id = NEW.organization_id
+          AND status = 'held'
+          AND created_at >= period_starts_at
+          AND created_at < period_ends_at;
+
+        IF committed_overage_micros + active_overage_micros
+           > period_overage_limit_micros THEN
+            RAISE EXCEPTION 'reservation overage capacity is no longer available'
+                USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
     RETURN NEW;
 END;
 $$;
@@ -782,8 +903,11 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     linked_reservation_id uuid;
+    linked_reservation_status text;
     linked_team_id uuid;
     linked_team_name text;
+    linked_held_credit_micros bigint;
+    linked_held_overage_micros bigint;
     linked_usage_committed_at timestamptz;
     linked_credit_applied_micros bigint;
     linked_overage_applied_micros bigint;
@@ -821,11 +945,26 @@ BEGIN
             RAISE EXCEPTION 'ledger billing period does not belong to organization'
                 USING ERRCODE = 'foreign_key_violation';
         END IF;
+        NEW.billing_period_starts_at_snapshot := linked_period_starts_at;
+        NEW.billing_period_ends_at_snapshot := linked_period_ends_at;
+    ELSE
+        NEW.billing_period_starts_at_snapshot := NULL;
+        NEW.billing_period_ends_at_snapshot := NULL;
     END IF;
 
     IF NEW.reservation_id IS NOT NULL THEN
-        SELECT team_id, team_name_snapshot
-        INTO linked_team_id, linked_team_name
+        SELECT
+            team_id,
+            team_name_snapshot,
+            status,
+            held_credit_micros,
+            held_overage_micros
+        INTO
+            linked_team_id,
+            linked_team_name,
+            linked_reservation_status,
+            linked_held_credit_micros,
+            linked_held_overage_micros
         FROM usage_reservations
         WHERE id = NEW.reservation_id
           AND organization_id = NEW.organization_id
@@ -837,6 +976,59 @@ BEGIN
         IF NEW.team_id_snapshot IS DISTINCT FROM linked_team_id
            OR NEW.team_name_snapshot IS DISTINCT FROM linked_team_name THEN
             RAISE EXCEPTION 'ledger team snapshot does not match reservation'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.entry_type IN (
+            'credit_hold',
+            'credit_release',
+            'overage_hold',
+            'overage_release'
+        ) AND linked_reservation_status <> 'held' THEN
+            RAISE EXCEPTION 'finalized reservation holds cannot change'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.entry_type = 'credit_hold'
+           AND COALESCE((
+               SELECT -sum(amount_micros)
+               FROM ledger_entries
+               WHERE reservation_id = NEW.reservation_id
+                 AND entry_type = 'credit_hold'
+           ), 0) - NEW.amount_micros::numeric
+               > linked_held_credit_micros::numeric THEN
+            RAISE EXCEPTION 'credit hold exceeds reservation'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.entry_type = 'credit_release'
+           AND COALESCE((
+               SELECT sum(amount_micros)
+               FROM ledger_entries
+               WHERE reservation_id = NEW.reservation_id
+                 AND entry_type = 'credit_release'
+           ), 0) + NEW.amount_micros::numeric
+               > linked_held_credit_micros::numeric THEN
+            RAISE EXCEPTION 'credit release exceeds reservation hold'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.entry_type = 'overage_hold'
+           AND COALESCE((
+               SELECT -sum(amount_micros)
+               FROM ledger_entries
+               WHERE reservation_id = NEW.reservation_id
+                 AND entry_type = 'overage_hold'
+           ), 0) - NEW.amount_micros::numeric
+               > linked_held_overage_micros::numeric THEN
+            RAISE EXCEPTION 'overage hold exceeds reservation'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.entry_type = 'overage_release'
+           AND COALESCE((
+               SELECT sum(amount_micros)
+               FROM ledger_entries
+               WHERE reservation_id = NEW.reservation_id
+                 AND entry_type = 'overage_release'
+           ), 0) + NEW.amount_micros::numeric
+               > linked_held_overage_micros::numeric THEN
+            RAISE EXCEPTION 'overage release exceeds reservation hold'
                 USING ERRCODE = 'check_violation';
         END IF;
     END IF;
@@ -871,7 +1063,6 @@ BEGIN
                 USING ERRCODE = 'check_violation';
         END IF;
         IF NEW.entry_type IN ('credit_commit', 'overage_commit')
-           AND NEW.billing_period_id IS NOT NULL
            AND (
                linked_usage_committed_at < linked_period_starts_at
                OR linked_usage_committed_at >= linked_period_ends_at
