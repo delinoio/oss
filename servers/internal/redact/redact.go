@@ -109,6 +109,9 @@ func valueAtDepth(key string, value any, depth int) any {
 	if IsSensitiveKey(key) {
 		return Replacement
 	}
+	if value == nil {
+		return nil
+	}
 	switch typed := value.(type) {
 	case string:
 		return Text(typed)

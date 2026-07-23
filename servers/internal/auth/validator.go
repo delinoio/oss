@@ -172,6 +172,9 @@ func (v *Validator) validate(ctx context.Context, serialized string, scopes []st
 	if err != nil || token == nil || !token.Valid {
 		return nil, TokenTypeUnknown, classifyJWTError(err)
 	}
+	if len(claims.Audience) != 1 || claims.Audience[0] != v.audience {
+		return nil, TokenTypeUnknown, authError(ErrorAudience)
+	}
 	if claims.Subject == "" || claims.ClientID == "" {
 		return nil, TokenTypeUnknown, authError(ErrorMalformedToken)
 	}

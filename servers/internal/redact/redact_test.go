@@ -69,3 +69,14 @@ func TestValueRedactsTypedDiagnosticContainers(t *testing.T) {
 		t.Fatalf("typed slice leaked sensitive data: %#v", nested)
 	}
 }
+
+func TestValuePreservesNilDiagnosticValues(t *testing.T) {
+	t.Parallel()
+	if safe := Value("metadata", nil); safe != nil {
+		t.Fatalf("nil diagnostic = %#v", safe)
+	}
+	safe := Value("metadata", []any{nil}).([]any)
+	if safe[0] != nil {
+		t.Fatalf("nil diagnostic element = %#v", safe)
+	}
+}

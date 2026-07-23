@@ -177,10 +177,24 @@ func HTTP(handler HTTPHandler) http.Handler {
 	})
 }
 
-// Connect maps an arbitrary server error to a safe Connect error.
+// Connect maps an arbitrary server error to a safe Connect error. Intentional
+// Connect errors retain their code, metadata, and machine-readable details
+// while their source message is replaced.
 func Connect(err error) error {
 	if err == nil {
 		return nil
+	}
+	var connectFailure *connect.Error
+	if errors.As(err, &connectFailure) {
+		class := classForConnectCode(connectFailure.Code())
+		mapped := connect.NewError(connectFailure.Code(), errors.New(messageFor(class)))
+		for key, values := range connectFailure.Meta() {
+			mapped.Meta()[key] = append([]string(nil), values...)
+		}
+		for _, detail := range connectFailure.Details() {
+			mapped.AddDetail(detail)
+		}
+		return mapped
 	}
 	class := Classify(err)
 	return connect.NewError(connectCode(class), errors.New(messageFor(class)))

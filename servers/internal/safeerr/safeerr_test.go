@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
 	"github.com/delinoio/oss/servers/internal/auth"
 )
 
@@ -33,6 +34,47 @@ func TestHTTPAndConnectNeverExposeSourceErrors(t *testing.T) {
 	if connectFailure.Code() != connect.CodePermissionDenied ||
 		strings.Contains(mapped.Error(), "super-secret-token") {
 		t.Fatalf("mapped Connect error = %v", mapped)
+	}
+}
+
+func TestConnectPreservesSafeDetailsMetadataAndCode(t *testing.T) {
+	t.Parallel()
+	source := connect.NewError(connect.CodeAlreadyExists, errors.New("database slug conflict"))
+	source.Meta().Set("X-Request-Id", "request-1")
+	detail, err := connect.NewErrorDetail(&delibasev1.ErrorDetail{
+		Reason:  delibasev1.ErrorReason_ERROR_REASON_SLUG_CONFLICT,
+		Message: "slug is unavailable",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.AddDetail(detail)
+
+	mapped := Connect(source)
+	var connectFailure *connect.Error
+	if !errors.As(mapped, &connectFailure) {
+		t.Fatalf("Connect() error = %T", mapped)
+	}
+	if connectFailure.Code() != connect.CodeAlreadyExists {
+		t.Fatalf("Connect() code = %s", connectFailure.Code())
+	}
+	if connectFailure.Meta().Get("X-Request-Id") != "request-1" {
+		t.Fatalf("Connect() metadata = %#v", connectFailure.Meta())
+	}
+	if strings.Contains(connectFailure.Message(), "database slug conflict") {
+		t.Fatalf("Connect() leaked source message: %v", connectFailure)
+	}
+	details := connectFailure.Details()
+	if len(details) != 1 {
+		t.Fatalf("Connect() details = %#v", details)
+	}
+	value, err := details[0].Value()
+	if err != nil {
+		t.Fatal(err)
+	}
+	errorDetail, ok := value.(*delibasev1.ErrorDetail)
+	if !ok || errorDetail.Reason != delibasev1.ErrorReason_ERROR_REASON_SLUG_CONFLICT {
+		t.Fatalf("Connect() detail = %#v", value)
 	}
 }
 

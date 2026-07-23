@@ -93,6 +93,18 @@ func TestValidatorRejectsInvalidClaims(t *testing.T) {
 			want: ErrorAudience,
 		},
 		{
+			name: "multiple audiences",
+			claims: map[string]any{
+				"aud": []string{Audience, "https://other.example"},
+			},
+			key: key,
+			call: func(token string) error {
+				_, err := validator.ValidateUser(context.Background(), token)
+				return err
+			},
+			want: ErrorAudience,
+		},
+		{
 			name:   "expiry",
 			claims: map[string]any{"exp": now.Add(-time.Minute).Unix()},
 			key:    key,
