@@ -73,6 +73,26 @@ self.addEventListener("fetch", (event) => {
 
   if (
     request.method === "GET" &&
+    request.mode === "navigate" &&
+    url.origin === self.location.origin
+  ) {
+    event.respondWith(
+      fetch(request).catch(async () => {
+        const shell = await caches.match("/index.html");
+        return (
+          shell ||
+          new Response("DeliDev is unavailable offline.", {
+            status: 503,
+            headers: { "content-type": "text/plain" },
+          })
+        );
+      }),
+    );
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
     url.origin === self.location.origin &&
     SHELL_PATHS.has(url.pathname)
   ) {

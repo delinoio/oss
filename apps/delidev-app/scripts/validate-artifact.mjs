@@ -50,6 +50,7 @@ if (
 }
 if (
   !serviceWorker.includes("CatalogService") ||
+  !serviceWorker.includes('caches.match("/index.html")') ||
   serviceWorker.includes("BillingService") ||
   serviceWorker.includes("UsageService")
 ) {
