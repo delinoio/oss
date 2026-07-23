@@ -30,6 +30,10 @@ type KeySource interface {
 	Key(context.Context, string, string) (any, error)
 }
 
+// ErrKeyUnavailable indicates that a key source could not determine whether a
+// signing key exists because its backing provider is unavailable.
+var ErrKeyUnavailable = errors.New("auth: signing keys unavailable")
+
 // Config defines strict Logto access-token validation.
 type Config struct {
 	Issuer             string
@@ -165,7 +169,10 @@ func (v *Validator) validate(ctx context.Context, serialized string, scopes []st
 		}
 		key, keyErr := v.keys.Key(ctx, keyID, token.Method.Alg())
 		if keyErr != nil {
-			return nil, errKeyLookup
+			if errors.Is(keyErr, ErrKeyUnavailable) {
+				return nil, errKeyUnavailable
+			}
+			return nil, errInvalidKey
 		}
 		return key, nil
 	})
@@ -193,7 +200,8 @@ func (v *Validator) validate(ctx context.Context, serialized string, scopes []st
 var (
 	errInvalidHeaderType = errors.New("invalid JWT header type")
 	errMissingKeyID      = errors.New("missing JWT key id")
-	errKeyLookup         = errors.New("JWT key lookup failed")
+	errInvalidKey        = errors.New("invalid JWT signing key")
+	errKeyUnavailable    = errors.New("JWT key source unavailable")
 )
 
 func classifyTokenType(claims *rawClaims) TokenType {
@@ -211,8 +219,10 @@ func classifyTokenType(claims *rawClaims) TokenType {
 
 func classifyJWTError(err error) error {
 	switch {
-	case errors.Is(err, errKeyLookup):
+	case errors.Is(err, errKeyUnavailable):
 		return authError(ErrorKeyUnavailable)
+	case errors.Is(err, errInvalidKey):
+		return authError(ErrorSignature)
 	case errors.Is(err, errInvalidHeaderType):
 		return authError(ErrorTokenType)
 	case errors.Is(err, jwt.ErrTokenExpired):

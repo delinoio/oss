@@ -208,6 +208,43 @@ func TestValidatorConfigurationFailsClosed(t *testing.T) {
 	}
 }
 
+func TestValidatorClassifiesKeySourceErrors(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.July, 23, 12, 0, 0, 0, time.UTC)
+	key := mustRSAKey(t)
+	token := signToken(t, key, now, map[string]any{})
+
+	tests := []struct {
+		name string
+		err  error
+		want ErrorKind
+	}{
+		{name: "provider unavailable", err: ErrKeyUnavailable, want: ErrorKeyUnavailable},
+		{name: "key not found", err: errors.New("key not found"), want: ErrorSignature},
+		{name: "key algorithm mismatch", err: errors.New("key algorithm mismatch"), want: ErrorSignature},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			validator, err := NewValidator(Config{
+				Issuer:    "https://tenant.logto.app/oidc",
+				Audience:  Audience,
+				KeySource: staticKeySource{err: test.err},
+				Clock:     ClockFunc(func() time.Time { return now }),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = validator.ValidateUser(context.Background(), token)
+			var authFailure *Error
+			if !errors.As(err, &authFailure) || authFailure.Kind != test.want {
+				t.Fatalf("error = %v, want auth kind %s", err, test.want)
+			}
+		})
+	}
+}
+
 func mustValidator(t *testing.T, now time.Time, key *rsa.PublicKey) *Validator {
 	t.Helper()
 	validator, err := NewValidator(Config{

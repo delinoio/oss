@@ -43,9 +43,11 @@ type JWKS struct {
 	maxStale time.Duration
 	maxBytes int64
 
-	mu        sync.Mutex
-	keys      map[string]jwkEntry
-	fetchedAt time.Time
+	refreshMu  sync.Mutex
+	mu         sync.RWMutex
+	keys       map[string]jwkEntry
+	fetchedAt  time.Time
+	generation uint64
 }
 
 type jwkEntry struct {
@@ -91,20 +93,17 @@ func (s *JWKS) Key(ctx context.Context, keyID, algorithm string) (any, error) {
 		return nil, errors.New("auth: invalid key lookup")
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	now := s.clock.Now()
-	entry, found := s.keys[keyID]
-	fresh := !s.fetchedAt.IsZero() && now.Sub(s.fetchedAt) < s.ttl
+	entry, found, fetchedAt, generation := s.snapshot(keyID)
+	fresh := !fetchedAt.IsZero() && now.Sub(fetchedAt) < s.ttl
 	if found && fresh {
 		return matchAlgorithm(entry, algorithm)
 	}
 
 	// An unknown kid always forces a refresh, even while the cache is fresh.
-	refreshErr := s.refresh(ctx, now)
+	refreshErr := s.refresh(ctx, now, generation)
 	if refreshErr == nil {
-		entry, found = s.keys[keyID]
+		entry, found, _, _ = s.snapshot(keyID)
 		if !found {
 			return nil, errors.New("auth: signing key not found")
 		}
@@ -113,46 +112,74 @@ func (s *JWKS) Key(ctx context.Context, keyID, algorithm string) (any, error) {
 
 	// A known public key can remain usable briefly during a provider outage.
 	// Unknown keys and keys beyond MaxStale always fail closed.
-	if found && s.maxStale > 0 && now.Sub(s.fetchedAt) <= s.ttl+s.maxStale {
+	if found && s.maxStale > 0 && now.Sub(fetchedAt) <= s.ttl+s.maxStale {
 		return matchAlgorithm(entry, algorithm)
 	}
-	return nil, errors.New("auth: signing keys unavailable")
+	return nil, ErrKeyUnavailable
 }
 
-func (s *JWKS) refresh(ctx context.Context, now time.Time) error {
+func (s *JWKS) snapshot(keyID string) (jwkEntry, bool, time.Time, uint64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entry, found := s.keys[keyID]
+	return entry, found, s.fetchedAt, s.generation
+}
+
+func (s *JWKS) refresh(ctx context.Context, now time.Time, observedGeneration uint64) error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	s.mu.RLock()
+	currentGeneration := s.generation
+	s.mu.RUnlock()
+	if currentGeneration != observedGeneration {
+		return nil
+	}
+
+	keys, err := s.fetch(ctx)
+	if err != nil {
+		return ErrKeyUnavailable
+	}
+	s.mu.Lock()
+	s.keys = keys
+	s.fetchedAt = now
+	s.generation++
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *JWKS) fetch(ctx context.Context) (map[string]jwkEntry, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url, nil)
 	if err != nil {
-		return errors.New("auth: could not create JWKS request")
+		return nil, errors.New("auth: could not create JWKS request")
 	}
 	request.Header.Set("Accept", "application/json")
 	response, err := s.client.Do(request)
 	if err != nil {
-		return errors.New("auth: JWKS request failed")
+		return nil, errors.New("auth: JWKS request failed")
 	}
 	defer response.Body.Close()
 	if response.Request == nil || !validJWKSURL(response.Request.URL) {
-		return errors.New("auth: JWKS endpoint redirected to an unsafe URL")
+		return nil, errors.New("auth: JWKS endpoint redirected to an unsafe URL")
 	}
 	if response.StatusCode != http.StatusOK {
-		return errors.New("auth: JWKS endpoint returned an error")
+		return nil, errors.New("auth: JWKS endpoint returned an error")
 	}
 
 	limited := io.LimitReader(response.Body, s.maxBytes+1)
 	body, err := io.ReadAll(limited)
 	if err != nil || int64(len(body)) > s.maxBytes {
-		return errors.New("auth: invalid JWKS response")
+		return nil, errors.New("auth: invalid JWKS response")
 	}
 	var document jwksDocument
 	if err := json.Unmarshal(body, &document); err != nil {
-		return errors.New("auth: invalid JWKS response")
+		return nil, errors.New("auth: invalid JWKS response")
 	}
 	keys, err := parseJWKS(document)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	s.keys = keys
-	s.fetchedAt = now
-	return nil
+	return keys, nil
 }
 
 func validJWKSURL(candidate *url.URL) bool {
@@ -168,19 +195,36 @@ func matchAlgorithm(entry jwkEntry, algorithm string) (any, error) {
 	if entry.alg != "" && entry.alg != algorithm {
 		return nil, errors.New("auth: signing key algorithm mismatch")
 	}
-	switch entry.key.(type) {
+	switch key := entry.key.(type) {
 	case *rsa.PublicKey:
 		if algorithm != "RS256" && algorithm != "RS384" && algorithm != "RS512" {
 			return nil, errors.New("auth: signing key type mismatch")
 		}
 	case *ecdsa.PublicKey:
-		if algorithm != "ES256" && algorithm != "ES384" && algorithm != "ES512" {
+		if !matchesECDSACurve(key, algorithm) {
 			return nil, errors.New("auth: signing key type mismatch")
 		}
 	default:
 		return nil, errors.New("auth: unsupported signing key")
 	}
 	return entry.key, nil
+}
+
+func matchesECDSACurve(key *ecdsa.PublicKey, algorithm string) bool {
+	if key == nil || key.Curve == nil || key.Curve.Params() == nil {
+		return false
+	}
+	params := key.Curve.Params()
+	switch algorithm {
+	case "ES256":
+		return params.Name == "P-256" && params.BitSize == 256
+	case "ES384":
+		return params.Name == "P-384" && params.BitSize == 384
+	case "ES512":
+		return params.Name == "P-521" && params.BitSize == 521
+	default:
+		return false
+	}
 }
 
 type jwksDocument struct {

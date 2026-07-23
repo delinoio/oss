@@ -1,10 +1,15 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +18,12 @@ import (
 	"testing"
 	"time"
 )
+
+type httpClientFunc func(*http.Request) (*http.Response, error)
+
+func (f httpClientFunc) Do(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 type mutableClock struct {
 	mu  sync.Mutex
@@ -104,6 +115,97 @@ func TestJWKSRejectsAlgorithmMismatchAndUnsafeURL(t *testing.T) {
 	entry := jwkEntry{key: &rsa.PublicKey{N: big.NewInt(17), E: 65537}, alg: "RS256"}
 	if _, err := matchAlgorithm(entry, "ES256"); err == nil {
 		t.Fatal("matchAlgorithm() accepted mismatched algorithm")
+	}
+
+	ecTests := []struct {
+		name      string
+		curve     elliptic.Curve
+		algorithm string
+		wantError bool
+	}{
+		{name: "P-256 with ES256", curve: elliptic.P256(), algorithm: "ES256"},
+		{name: "P-384 with ES384", curve: elliptic.P384(), algorithm: "ES384"},
+		{name: "P-521 with ES512", curve: elliptic.P521(), algorithm: "ES512"},
+		{name: "P-256 with ES384", curve: elliptic.P256(), algorithm: "ES384", wantError: true},
+		{name: "P-384 with ES512", curve: elliptic.P384(), algorithm: "ES512", wantError: true},
+		{name: "P-521 with ES256", curve: elliptic.P521(), algorithm: "ES256", wantError: true},
+	}
+	for _, test := range ecTests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := matchAlgorithm(jwkEntry{key: &ecdsa.PublicKey{Curve: test.curve}}, test.algorithm)
+			if (err != nil) != test.wantError {
+				t.Fatalf("matchAlgorithm() error = %v, wantError %v", err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestJWKSRefreshDoesNotBlockFreshCachedKeys(t *testing.T) {
+	t.Parallel()
+	key := mustRSAKey(t)
+	document := jwksJSON(t, "key-1", &key.PublicKey)
+	refreshStarted := make(chan struct{})
+	releaseRefresh := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseRefresh) })
+	}
+	defer release()
+
+	var requests atomic.Int64
+	client := httpClientFunc(func(request *http.Request) (*http.Response, error) {
+		if requests.Add(1) == 2 {
+			close(refreshStarted)
+			<-releaseRefresh
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(document)),
+			Request:    request,
+		}, nil
+	})
+	source, err := NewJWKS(JWKSConfig{
+		URL:      "https://tenant.example/jwks",
+		Client:   client,
+		CacheTTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := source.Key(context.Background(), "key-1", "RS256"); err != nil {
+		t.Fatalf("initial key lookup: %v", err)
+	}
+
+	unknownDone := make(chan error, 1)
+	go func() {
+		_, err := source.Key(context.Background(), "unknown", "RS256")
+		unknownDone <- err
+	}()
+	select {
+	case <-refreshStarted:
+	case <-time.After(time.Second):
+		t.Fatal("unknown-key refresh did not start")
+	}
+
+	knownDone := make(chan error, 1)
+	go func() {
+		_, err := source.Key(context.Background(), "key-1", "RS256")
+		knownDone <- err
+	}()
+	select {
+	case err := <-knownDone:
+		if err != nil {
+			t.Fatalf("fresh cached key lookup: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fresh cached key lookup blocked on refresh")
+	}
+
+	release()
+	if err := <-unknownDone; err == nil || errors.Is(err, ErrKeyUnavailable) {
+		t.Fatalf("unknown key error = %v, want invalid credential error", err)
 	}
 }
 
