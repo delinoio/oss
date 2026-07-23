@@ -103,6 +103,7 @@ function passingDriver(
       ]);
       return {
         fatalKinds: kinds,
+        immediateExitKinds: kinds,
         automaticRestartCount: 0,
       };
     },
@@ -156,6 +157,11 @@ describe("probe harness", () => {
       packageFormats: [PackageFormat.AppImage, PackageFormat.Deb],
     },
     {
+      platform: DesktopPlatform.Linux,
+      displayProtocol: DisplayProtocol.XWayland,
+      packageFormats: [PackageFormat.AppImage, PackageFormat.Deb],
+    },
+    {
       platform: DesktopPlatform.MacOS,
       displayProtocol: DisplayProtocol.NotApplicable,
       packageFormats: [PackageFormat.Dmg],
@@ -174,6 +180,36 @@ describe("probe harness", () => {
       );
 
       expect(report.passed).toBe(true);
+    },
+  );
+
+  it.each([
+    {
+      platform: DesktopPlatform.Linux,
+      displayProtocol: DisplayProtocol.NotApplicable,
+    },
+    {
+      platform: DesktopPlatform.MacOS,
+      displayProtocol: DisplayProtocol.X11,
+    },
+    {
+      platform: DesktopPlatform.Windows,
+      displayProtocol: DisplayProtocol.XWayland,
+    },
+  ])(
+    "rejects invalid $platform and $displayProtocol target combinations",
+    async ({ platform, displayProtocol }) => {
+      const calls: ProbeId[] = [];
+
+      await expect(
+        runProbeHarness(
+          { ...target, platform, displayProtocol },
+          passingDriver(calls),
+        ),
+      ).rejects.toThrow(
+        `Invalid probe target: ${platform} does not support display protocol ${displayProtocol}`,
+      );
+      expect(calls).toEqual([]);
     },
   );
 
@@ -237,6 +273,16 @@ describe("probe harness", () => {
             opened: true,
             capabilityBoundaryPreserved: true,
             remoteNavigationDenied: false,
+          });
+        },
+      ],
+      [
+        ProbeId.RuntimeFailure,
+        (driver) => {
+          driver.runtimeFailure = async (kinds) => ({
+            fatalKinds: kinds,
+            immediateExitKinds: [RuntimeFailureKind.CefInitialization],
+            automaticRestartCount: 0,
           });
         },
       ],

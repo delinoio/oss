@@ -1,5 +1,6 @@
 import {
   DesktopPlatform,
+  DisplayProtocol,
   PackageFormat,
   ProbeId,
   RuntimeFailureKind,
@@ -93,6 +94,17 @@ const packageFormatsByPlatform = Object.freeze({
   [DesktopPlatform.Windows]: Object.freeze([PackageFormat.Nsis]),
 }) satisfies Readonly<Record<DesktopPlatform, readonly PackageFormat[]>>;
 
+const displayProtocolsByPlatform: Readonly<
+  Record<DesktopPlatform, readonly DisplayProtocol[]>
+> = Object.freeze({
+  [DesktopPlatform.Linux]: Object.freeze([
+    DisplayProtocol.X11,
+    DisplayProtocol.XWayland,
+  ]),
+  [DesktopPlatform.MacOS]: Object.freeze([DisplayProtocol.NotApplicable]),
+  [DesktopPlatform.Windows]: Object.freeze([DisplayProtocol.NotApplicable]),
+});
+
 const bundledOrigins = Object.freeze([
   "tauri://localhost",
   "http://tauri.localhost",
@@ -113,6 +125,18 @@ function arraysEqual<T>(actual: readonly T[], expected: readonly T[]): boolean {
     actual.length === expected.length &&
     actual.every((value, index) => value === expected[index])
   );
+}
+
+function validateTarget(target: ProbeTarget): void {
+  if (
+    !displayProtocolsByPlatform[target.platform].includes(
+      target.displayProtocol,
+    )
+  ) {
+    throw new Error(
+      `Invalid probe target: ${target.platform} does not support display protocol ${target.displayProtocol}`,
+    );
+  }
 }
 
 export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
@@ -180,6 +204,7 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
     (driver) => driver.runtimeFailure(requiredRuntimeFailureKinds),
     (evidence) =>
       arraysEqual(evidence.fatalKinds, requiredRuntimeFailureKinds) &&
+      arraysEqual(evidence.immediateExitKinds, requiredRuntimeFailureKinds) &&
       evidence.automaticRestartCount === 0,
   ),
   defineScenario(
@@ -221,6 +246,8 @@ export async function runProbeHarness(
   target: ProbeTarget,
   driver: ProbeDriver,
 ): Promise<ProbeReport> {
+  validateTarget(target);
+
   const results: ProbeResult[] = [];
 
   for (const scenario of probeScenarios) {

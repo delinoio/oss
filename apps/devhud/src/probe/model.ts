@@ -100,6 +100,7 @@ export interface ShutdownEvidence {
 
 export interface RuntimeFailureEvidence {
   fatalKinds: readonly RuntimeFailureKind[];
+  immediateExitKinds: readonly RuntimeFailureKind[];
   automaticRestartCount: 0;
 }
 

@@ -67,7 +67,7 @@ const timeout = setTimeout(() => {
 
 const exitCode = await new Promise((resolveExit, reject) => {
   child.once("error", reject);
-  child.once("exit", (code) => resolveExit(code));
+  child.once("close", (code) => resolveExit(code));
 });
 clearTimeout(timeout);
 
