@@ -22,6 +22,23 @@ CREATE TABLE accounts (
     CHECK (length(logto_subject) BETWEEN 1 AND 255)
 );
 
+CREATE FUNCTION preserve_account_logto_subject()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.logto_subject IS DISTINCT FROM OLD.logto_subject THEN
+        RAISE EXCEPTION 'account Logto subject is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER accounts_preserve_logto_subject
+BEFORE UPDATE OF logto_subject ON accounts
+FOR EACH ROW EXECUTE FUNCTION preserve_account_logto_subject();
+
 CREATE TABLE organizations (
     id uuid PRIMARY KEY,
     name text NOT NULL,
@@ -34,6 +51,24 @@ CREATE TABLE organizations (
     CHECK (length(name) BETWEEN 1 AND 120),
     CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$')
 );
+
+CREATE FUNCTION preserve_organization_deletion()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF OLD.deleted_at IS NOT NULL
+       AND NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
+        RAISE EXCEPTION 'organization deletion cannot be cleared or rewritten'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER organizations_preserve_deletion
+BEFORE UPDATE OF deleted_at ON organizations
+FOR EACH ROW EXECUTE FUNCTION preserve_organization_deletion();
 
 CREATE TABLE organization_slug_aliases (
     slug text PRIMARY KEY,
@@ -48,6 +83,27 @@ CREATE TABLE organization_slug_registry (
     CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$')
 );
 
+CREATE FUNCTION reserve_organization_slug(value text, owner_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO organization_slug_registry (slug, organization_id)
+    VALUES (value, owner_id)
+    ON CONFLICT (slug) DO NOTHING;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM organization_slug_registry
+        WHERE slug = value
+          AND organization_id = owner_id
+    ) THEN
+        RAISE EXCEPTION 'organization slug is already reserved'
+            USING ERRCODE = 'unique_violation';
+    END IF;
+END;
+$$;
+
 CREATE FUNCTION register_current_organization_slug()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -59,13 +115,12 @@ BEGIN
         END IF;
         DELETE FROM organization_slug_registry
         WHERE slug = OLD.slug AND organization_id = OLD.id;
-        DELETE FROM organization_slug_aliases
-        WHERE slug = NEW.slug AND organization_id = NEW.id;
         INSERT INTO organization_slug_aliases (slug, organization_id)
-        VALUES (OLD.slug, OLD.id);
+        VALUES (OLD.slug, OLD.id)
+        ON CONFLICT (slug) DO NOTHING;
+        PERFORM reserve_organization_slug(OLD.slug, OLD.id);
     END IF;
-    INSERT INTO organization_slug_registry (slug, organization_id)
-    VALUES (NEW.slug, NEW.id);
+    PERFORM reserve_organization_slug(NEW.slug, NEW.id);
     RETURN NEW;
 END;
 $$;
@@ -79,34 +134,37 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    IF TG_OP = 'UPDATE' THEN
-        DELETE FROM organization_slug_registry
-        WHERE slug = OLD.slug AND organization_id = OLD.organization_id;
-    END IF;
-    INSERT INTO organization_slug_registry (slug, organization_id)
-    VALUES (NEW.slug, NEW.organization_id);
+    PERFORM reserve_organization_slug(NEW.slug, NEW.organization_id);
     RETURN NEW;
 END;
 $$;
 
 CREATE TRIGGER organization_slug_aliases_register_slug
-AFTER INSERT OR UPDATE OF slug, organization_id ON organization_slug_aliases
+AFTER INSERT ON organization_slug_aliases
 FOR EACH ROW EXECUTE FUNCTION register_organization_slug_alias();
 
-CREATE FUNCTION unregister_organization_slug_alias()
+CREATE FUNCTION preserve_organization_slug_alias()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    DELETE FROM organization_slug_registry
-    WHERE slug = OLD.slug AND organization_id = OLD.organization_id;
-    RETURN OLD;
+    IF TG_OP = 'DELETE'
+       AND NOT EXISTS (
+           SELECT 1
+           FROM organizations
+           WHERE id = OLD.organization_id
+       ) THEN
+        -- The parent organization deletion owns the alias and registry cascade.
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'organization slug aliases are immutable'
+        USING ERRCODE = 'check_violation';
 END;
 $$;
 
-CREATE TRIGGER organization_slug_aliases_unregister_slug
-AFTER DELETE ON organization_slug_aliases
-FOR EACH ROW EXECUTE FUNCTION unregister_organization_slug_alias();
+CREATE TRIGGER organization_slug_aliases_preserve
+BEFORE UPDATE OR DELETE ON organization_slug_aliases
+FOR EACH ROW EXECUTE FUNCTION preserve_organization_slug_alias();
 
 CREATE TABLE organization_memberships (
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -131,9 +189,11 @@ BEGIN
         WHERE id = NEW.id
     ) AND NOT EXISTS (
         SELECT 1
-        FROM organization_memberships
-        WHERE organization_id = NEW.id
-          AND role = 'owner'
+        FROM organization_memberships AS membership
+        JOIN accounts AS account ON account.id = membership.account_id
+        WHERE membership.organization_id = NEW.id
+          AND membership.role = 'owner'
+          AND account.status = 'active'
     ) THEN
         RAISE EXCEPTION 'organization must have at least one owner'
             USING ERRCODE = 'check_violation';
@@ -157,6 +217,7 @@ BEGIN
     END IF;
     IF TG_OP = 'UPDATE'
        AND NEW.organization_id = OLD.organization_id
+       AND NEW.account_id = OLD.account_id
        AND NEW.role = 'owner' THEN
         RETURN NEW;
     END IF;
@@ -174,10 +235,12 @@ BEGIN
 
     IF NOT EXISTS (
         SELECT 1
-        FROM organization_memberships
-        WHERE organization_id = OLD.organization_id
-          AND role = 'owner'
-          AND account_id <> OLD.account_id
+        FROM organization_memberships AS membership
+        JOIN accounts AS account ON account.id = membership.account_id
+        WHERE membership.organization_id = OLD.organization_id
+          AND membership.role = 'owner'
+          AND membership.account_id <> OLD.account_id
+          AND account.status = 'active'
     ) THEN
         RAISE EXCEPTION 'organization must retain at least one owner'
             USING ERRCODE = 'check_violation';
@@ -190,6 +253,49 @@ CREATE TRIGGER organization_memberships_preserve_owner
 BEFORE DELETE OR UPDATE OF organization_id, account_id, role
 ON organization_memberships
 FOR EACH ROW EXECUTE FUNCTION preserve_organization_owner();
+
+CREATE FUNCTION preserve_active_organization_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM organization.id
+    FROM organizations AS organization
+    JOIN organization_memberships AS membership
+      ON membership.organization_id = organization.id
+    WHERE membership.account_id = NEW.id
+      AND membership.role = 'owner'
+    ORDER BY organization.id
+    FOR UPDATE OF organization;
+
+    IF EXISTS (
+        SELECT 1
+        FROM organization_memberships AS affected_membership
+        JOIN organizations AS organization
+          ON organization.id = affected_membership.organization_id
+        WHERE affected_membership.account_id = NEW.id
+          AND affected_membership.role = 'owner'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM organization_memberships AS owner_membership
+              JOIN accounts AS owner_account
+                ON owner_account.id = owner_membership.account_id
+              WHERE owner_membership.organization_id = organization.id
+                AND owner_membership.role = 'owner'
+                AND owner_account.status = 'active'
+          )
+    ) THEN
+        RAISE EXCEPTION 'organization must retain at least one active owner'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER accounts_preserve_active_organization_owner
+AFTER UPDATE OF status ON accounts
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION preserve_active_organization_owner();
 
 CREATE TABLE teams (
     id uuid PRIMARY KEY,

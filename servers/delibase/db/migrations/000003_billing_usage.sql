@@ -6,6 +6,58 @@ CREATE TABLE polar_customers (
     CHECK (length(polar_customer_id) BETWEEN 1 AND 255)
 );
 
+CREATE FUNCTION require_organization_polar_customer()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM organizations
+        WHERE id = NEW.id
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM polar_customers
+        WHERE organization_id = NEW.id
+    ) THEN
+        RAISE EXCEPTION 'organization must have a Polar customer'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER organizations_require_polar_customer
+AFTER INSERT ON organizations
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION require_organization_polar_customer();
+
+CREATE FUNCTION preserve_organization_polar_customer()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM organizations
+        WHERE id = OLD.organization_id
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM polar_customers
+        WHERE organization_id = OLD.organization_id
+    ) THEN
+        RAISE EXCEPTION 'organization must retain its Polar customer'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER polar_customers_preserve_organization_customer
+AFTER DELETE OR UPDATE OF organization_id ON polar_customers
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION preserve_organization_polar_customer();
+
 CREATE TABLE subscriptions (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -589,6 +641,15 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION 'usage record does not match reservation'
             USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    PERFORM 1
+    FROM accounts
+    WHERE id = NEW.account_id
+      AND status = 'active'
+    FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'usage record account is unavailable'
+            USING ERRCODE = 'check_violation';
     END IF;
     IF reservation.status <> 'held' THEN
         RAISE EXCEPTION 'reservation is already finalized'

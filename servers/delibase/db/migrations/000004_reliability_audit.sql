@@ -26,6 +26,10 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'webhook inbox events cannot be deleted'
+            USING ERRCODE = 'check_violation';
+    END IF;
     IF NEW.id IS DISTINCT FROM OLD.id
        OR NEW.provider IS DISTINCT FROM OLD.provider
        OR NEW.provider_event_id IS DISTINCT FROM OLD.provider_event_id
@@ -41,7 +45,7 @@ END;
 $$;
 
 CREATE TRIGGER webhook_inbox_preserve_event
-BEFORE UPDATE ON webhook_inbox
+BEFORE UPDATE OR DELETE ON webhook_inbox
 FOR EACH ROW EXECUTE FUNCTION preserve_webhook_inbox_event();
 
 CREATE TABLE integration_outbox (
@@ -227,6 +231,12 @@ AS $$
                 jsonb_typeof(value -> 'request_id') = 'string'
                 AND value ->> 'request_id'
                     ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+                AND value ->> 'request_id'
+                    !~* '(authorization|token|secret|password|passwd|api[-_]?key|x-delibase-forwarded-user-token):'
+                AND value ->> 'request_id'
+                    !~ 'eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}'
+                AND value ->> 'request_id'
+                    !~ '([0-9]-?){12,18}[0-9]'
             )
         )
         AND (

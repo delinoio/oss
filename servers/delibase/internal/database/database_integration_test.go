@@ -358,8 +358,10 @@ func TestPostgreSQLRequiresOrganizationFoundationAtCommit(t *testing.T) {
 	defer store.Close()
 
 	const (
-		accountID = "0198a000-0000-7000-8000-000000000390"
-		orgID     = "0198a000-0000-7000-8000-000000000391"
+		accountID  = "0198a000-0000-7000-8000-000000000390"
+		orgID      = "0198a000-0000-7000-8000-000000000391"
+		generalID  = "0198a000-0000-7000-8000-000000000392"
+		customerID = "foundation-polar-customer"
 	)
 	transaction, err := store.pool.Begin(ctx)
 	if err != nil {
@@ -369,6 +371,18 @@ func TestPostgreSQLRequiresOrganizationFoundationAtCommit(t *testing.T) {
 		INSERT INTO organizations (id, name, slug)
 		VALUES ($1, 'Owner Required', 'owner-required')
 	`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO teams (id, organization_id, name, protected_general)
+		VALUES ($1, $2, 'General', true)
+	`, generalID, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO polar_customers (organization_id, polar_customer_id)
+		VALUES ($1, $2)
+	`, orgID, customerID); err != nil {
 		t.Fatal(err)
 	}
 	if err := transaction.Commit(ctx); err == nil {
@@ -397,8 +411,86 @@ func TestPostgreSQLRequiresOrganizationFoundationAtCommit(t *testing.T) {
 	`, orgID, accountID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO polar_customers (organization_id, polar_customer_id)
+		VALUES ($1, $2)
+	`, orgID, customerID); err != nil {
+		t.Fatal(err)
+	}
 	if err := transaction.Commit(ctx); err == nil {
 		t.Fatal("organization without a protected General team committed")
+	}
+
+	transaction, err = store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organizations (id, name, slug)
+		VALUES ($1, 'Polar Customer Required', 'polar-customer-required')
+	`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organization_memberships (organization_id, account_id, role)
+		VALUES ($1, $2, 'owner')
+	`, orgID, accountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO teams (id, organization_id, name, protected_general)
+		VALUES ($1, $2, 'General', true)
+	`, generalID, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.Commit(ctx); err == nil {
+		t.Fatal("organization without a Polar customer committed")
+	}
+
+	if _, err := store.pool.Exec(
+		ctx,
+		"UPDATE accounts SET status = 'disabled' WHERE id = $1",
+		accountID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	transaction, err = store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organizations (id, name, slug)
+		VALUES ($1, 'Active Owner Required', 'active-owner-required')
+	`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organization_memberships (organization_id, account_id, role)
+		VALUES ($1, $2, 'owner')
+	`, orgID, accountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO teams (id, organization_id, name, protected_general)
+		VALUES ($1, $2, 'General', true)
+	`, generalID, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO polar_customers (organization_id, polar_customer_id)
+		VALUES ($1, $2)
+	`, orgID, customerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.Commit(ctx); err == nil {
+		t.Fatal("organization with only a disabled owner committed")
+	}
+	if _, err := store.pool.Exec(
+		ctx,
+		"UPDATE accounts SET status = 'active' WHERE id = $1",
+		accountID,
+	); err != nil {
+		t.Fatal(err)
 	}
 
 	createTestOrganization(
@@ -410,6 +502,20 @@ func TestPostgreSQLRequiresOrganizationFoundationAtCommit(t *testing.T) {
 		"owner-required",
 		accountID,
 	)
+	if _, err := store.pool.Exec(
+		ctx,
+		"UPDATE accounts SET status = 'disabled' WHERE id = $1",
+		accountID,
+	); err == nil {
+		t.Fatal("last active organization owner was disabled")
+	}
+	if _, err := store.pool.Exec(
+		ctx,
+		"DELETE FROM polar_customers WHERE organization_id = $1",
+		orgID,
+	); err == nil {
+		t.Fatal("committed organization lost its Polar customer")
+	}
 	defer func() {
 		cleanupCtx := context.WithoutCancel(ctx)
 		_, _ = store.pool.Exec(
@@ -910,6 +1016,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		{"INSERT INTO service_identities (id, logto_client_id, name) VALUES ($1, 'schema-service', 'Schema Service'), ($2, 'schema-service-b', 'Schema Service B')", []any{serviceID, serviceB}},
 		{"INSERT INTO service_meter_allowlists (service_identity_id, meter_id) VALUES ($1, $2)", []any{serviceID, meterID}},
 		{"INSERT INTO polar_meter_mappings (meter_id, polar_meter_id) VALUES ($1, 'schema-meter-a'), ($2, 'schema-meter-b')", []any{meterID, meterB}},
+		{"INSERT INTO polar_customers (organization_id, polar_customer_id) VALUES ($1, 'schema-customer-a'), ($2, 'schema-customer-b'), ($3, 'schema-customer-c')", []any{orgA, orgB, orgC}},
 		{"INSERT INTO subscriptions (id, organization_id, polar_subscription_id, status) VALUES ($1, $2, 'polar-a', 'active'), ($3, $4, 'polar-b', 'active')", []any{subA, orgA, subB, orgB}},
 		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, '2026-01-01', '2026-02-01'), ($4, $5, $6, '2026-01-01', '2026-02-01')", []any{periodA, orgA, subA, periodB, orgB, subB}},
 	}
@@ -921,6 +1028,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 
 	requireConstraintFailure(t, ctx, transaction,
 		"INSERT INTO accounts (id, logto_subject) VALUES ('550e8400-e29b-41d4-a716-446655440000', 'not-uuid-v7')",
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE accounts SET logto_subject = 'reassigned-subject' WHERE id = $1",
+		accountC,
 	)
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE organization_memberships SET role = 'admin' WHERE organization_id = $1 AND account_id = $2",
@@ -963,6 +1074,19 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		)
 	`, orgA).Scan(&retainedSlugAlias); err != nil || !retainedSlugAlias {
 		t.Fatalf("previous organization slug retained = %t, %v", retainedSlugAlias, err)
+	}
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM organization_slug_aliases WHERE slug = 'schema-a'",
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE organization_slug_aliases SET slug = 'rewritten-alias' WHERE slug = 'schema-a'",
+	)
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE organizations SET slug = 'schema-a' WHERE id = $1",
+		orgA,
+	); err != nil {
+		t.Fatal(err)
 	}
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE organizations SET slug = 'schema-a' WHERE id = $1",
@@ -1288,6 +1412,14 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE organizations SET deleted_at = NULL WHERE id = $1",
+		orgB,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE organizations SET deleted_at = deleted_at + interval '1 second' WHERE id = $1",
+		orgB,
+	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
 			id, organization_id, team_id, team_name_snapshot, meter_id,
@@ -1639,6 +1771,30 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		reserveID,
 	).Scan(&reservationUsesStorageTime); err != nil || !reservationUsesStorageTime {
 		t.Fatalf("reservation storage creation timestamp = %t, %v", reservationUsesStorageTime, err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE accounts SET status = 'disabled' WHERE id = $1",
+		historyUser,
+	); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_records (
+			id, reservation_id, organization_id, team_id, team_name_snapshot,
+			meter_id, account_id, service_identity_id, committed_units,
+			total_cost_micros, credit_applied_micros, overage_applied_micros
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000214',
+			$1, $2, $3, 'A', $4, $5, $6, 1, 1, 1, 0
+		)
+	`, reserveID, orgA, teamA, meterID, historyUser, serviceID)
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE accounts SET status = 'active' WHERE id = $1",
+		historyUser,
+	); err != nil {
+		t.Fatal(err)
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		WITH started_deletion AS (
@@ -2186,6 +2342,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		WHERE provider = 'polar' AND provider_event_id = 'event-1'
 	`)
 	requireConstraintFailure(t, ctx, transaction, `
+		DELETE FROM webhook_inbox
+		WHERE provider = 'polar' AND provider_event_id = 'event-1'
+	`)
+	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO webhook_inbox (
 			id, provider, provider_event_id, event_type, payload, payload_sha256
 		) VALUES (
@@ -2264,6 +2424,18 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			'raw-logto-subject',
 			$1,
 			'success'
+		)
+	`, orgA)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO audit_events (
+			id, event_type, actor_reference, organization_id, result, metadata
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000215',
+			'schema.audit',
+			'',
+			$1,
+			'success',
+			'{"request_id":"token:abc123"}'
 		)
 	`, orgA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -2399,6 +2571,12 @@ func createTestOrganization(
 		INSERT INTO teams (id, organization_id, name, protected_general)
 		VALUES ($1, $2, 'General', true)
 	`, generalTeamID.String(), organizationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO polar_customers (organization_id, polar_customer_id)
+		VALUES ($1, $2)
+	`, organizationID, "test-"+organizationID); err != nil {
 		t.Fatal(err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
