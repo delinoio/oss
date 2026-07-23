@@ -92,16 +92,33 @@ jobs:
         env:
           APPLE_API_ISSUER: ${{ secrets.DEVHUD_APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.DEVHUD_APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ secrets.DEVHUD_APPLE_API_KEY_PATH }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.DEVHUD_APPLE_API_PRIVATE_KEY }}
           APPLE_CERTIFICATE: ${{ secrets.DEVHUD_MACOS_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.DEVHUD_MACOS_CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.DEVHUD_APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.DEVHUD_APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.DEVHUD_APPLE_TEAM_ID }}
-        run: >-
-          pnpm --dir apps/devhud gate:macos
-          --target ${{ matrix.target }}
-          --evidence gate-evidence/macos-${{ matrix.architecture }}.json
+        run: |
+          set -euo pipefail
+          app_store_connect_key_path=""
+          cleanup_app_store_connect_key() {
+            if [[ -n "${app_store_connect_key_path}" ]]; then
+              rm -f -- "${app_store_connect_key_path}"
+            fi
+          }
+          trap cleanup_app_store_connect_key EXIT
+
+          if [[ -n "${APPLE_API_PRIVATE_KEY:-}" ]]; then
+            app_store_connect_key_path="${RUNNER_TEMP}/devhud-app-store-connect-${{ matrix.architecture }}.p8"
+            umask 077
+            printf '%s' "${APPLE_API_PRIVATE_KEY}" > "${app_store_connect_key_path}"
+            export APPLE_API_KEY_PATH="${app_store_connect_key_path}"
+          fi
+          unset APPLE_API_PRIVATE_KEY
+
+          pnpm --dir apps/devhud gate:macos \
+            --target ${{ matrix.target }} \
+            --evidence gate-evidence/macos-${{ matrix.architecture }}.json
 
       - name: Upload safe gate evidence
         uses: actions/upload-artifact@v6

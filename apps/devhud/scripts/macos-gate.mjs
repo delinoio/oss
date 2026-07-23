@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
+import { pathToFileURL } from "node:url";
 
 import {
   assertSafeDiagnostics,
@@ -92,7 +93,7 @@ function signingEnvironment(extra) {
   return environment;
 }
 
-function execute(command, args, options = {}) {
+export function execute(command, args, options = {}) {
   const {
     cwd = repositoryRoot,
     env = process.env,
@@ -108,28 +109,52 @@ function execute(command, args, options = {}) {
     });
     let output = "";
     let actionChain = Promise.resolve();
+    let settled = false;
     const timeout = setTimeout(() => {
       child.kill("SIGKILL");
     }, timeoutMs);
 
+    const rejectAction = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      try {
+        child.kill("SIGKILL");
+      } finally {
+        rejectExecution(error);
+      }
+    };
+
     const receive = (chunk) => {
       const text = chunk.toString("utf8");
       output += text;
-      if (onData) {
+      if (onData && !settled) {
         actionChain = actionChain.then(() => onData(text, output, child));
+        void actionChain.catch(rejectAction);
       }
     };
     child.stdout.on("data", receive);
     child.stderr.on("data", receive);
     child.once("error", (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       clearTimeout(timeout);
       rejectExecution(error);
     });
     child.once("close", (code, signal) => {
       clearTimeout(timeout);
       void actionChain.then(
-        () => resolveExecution({ code, output, signal }),
-        rejectExecution,
+        () => {
+          if (!settled) {
+            settled = true;
+            resolveExecution({ code, output, signal });
+          }
+        },
+        rejectAction,
       );
     });
   });
@@ -209,15 +234,15 @@ async function helperProcesses(appPath) {
   );
 }
 
-function structuredDiagnostics(output) {
+export function structuredDiagnostics(output) {
   return output
     .split(/\r?\n/u)
     .flatMap((line) => {
       try {
         const value = JSON.parse(line);
-        return typeof value.event === "string" &&
-          value.event.startsWith("devhud.probe.")
-          ? [value]
+        return typeof value.fields?.event === "string" &&
+          value.fields.event.startsWith("devhud.probe.")
+          ? [value.fields]
           : [];
       } catch {
         return [];
@@ -225,7 +250,7 @@ function structuredDiagnostics(output) {
     });
 }
 
-function eventNames(diagnostics) {
+export function eventNames(diagnostics) {
   return new Set(diagnostics.map(({ event }) => event));
 }
 
@@ -814,14 +839,19 @@ async function main() {
   }
 }
 
-try {
-  await main();
-} catch {
-  console.error(
-    JSON.stringify({
-      event: "devhud.gate.failed",
-      classification: "gate-failure",
-    }),
-  );
-  process.exitCode = 1;
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+) {
+  try {
+    await main();
+  } catch {
+    console.error(
+      JSON.stringify({
+        event: "devhud.gate.failed",
+        classification: "gate-failure",
+      }),
+    );
+    process.exitCode = 1;
+  }
 }

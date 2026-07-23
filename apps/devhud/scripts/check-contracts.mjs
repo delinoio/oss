@@ -191,6 +191,18 @@ requireCondition(
   "pull requests and unprotected refs must run the macOS gate without signing credentials",
 );
 requireCondition(
+  macosWorkflow.includes(
+    "APPLE_API_PRIVATE_KEY: ${{ secrets.DEVHUD_APPLE_API_PRIVATE_KEY }}",
+  ) &&
+    macosWorkflow.includes(
+      'export APPLE_API_KEY_PATH="${app_store_connect_key_path}"',
+    ) &&
+    !macosWorkflow.includes(
+      "APPLE_API_KEY_PATH: ${{ secrets.",
+    ),
+  "protected signing must materialize the App Store Connect private key before exporting its path",
+);
+requireCondition(
   packageJson.scripts?.["gate:macos"] ===
     "node scripts/macos-gate.mjs" &&
     packageJson.scripts?.["test:macos-gate-contract"] ===

@@ -8,6 +8,11 @@ import {
   safeFailureSummary,
   validateSafeEvidence,
 } from "./macos-gate-contract.mjs";
+import {
+  eventNames,
+  execute,
+  structuredDiagnostics,
+} from "./macos-gate.mjs";
 
 function passingEvidence() {
   return {
@@ -88,6 +93,45 @@ test("defines native macOS 14+ targets for x64 and ARM64", () => {
 test("requires all safe runtime event identifiers", () => {
   assert.equal(requiredRuntimeEvents.length, new Set(requiredRuntimeEvents).size);
   assert.ok(requiredRuntimeEvents.every((event) => event.startsWith("devhud.probe.")));
+});
+
+test("parses probe events from tracing JSON fields", () => {
+  const diagnostic = {
+    level: "INFO",
+    fields: {
+      message: "feasibility probe window created",
+      event: "devhud.probe.window_created",
+      runtime: "cef",
+    },
+  };
+  const parsed = structuredDiagnostics(
+    `${JSON.stringify(diagnostic)}\n{"event":"devhud.probe.ignored"}\n`,
+  );
+
+  assert.deepEqual(parsed, [diagnostic.fields]);
+  assert.deepEqual(eventNames(parsed), new Set(["devhud.probe.window_created"]));
+});
+
+test("stops a child when an output action fails", async () => {
+  const startedAt = Date.now();
+  await assert.rejects(
+    execute(
+      process.execPath,
+      [
+        "-e",
+        'process.stdout.write("ready"); setInterval(() => {}, 1_000);',
+      ],
+      {
+        timeoutMs: 2_000,
+        onData() {
+          throw new Error("output action failed");
+        },
+      },
+    ),
+    /output action failed/u,
+  );
+
+  assert.ok(Date.now() - startedAt < 1_000);
 });
 
 test("rejects excluded values in captured diagnostics", () => {
