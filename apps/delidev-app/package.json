@@ -8,6 +8,7 @@
     "dev": "rsbuild dev",
     "icons": "node scripts/generate-icons.mjs",
     "lint": "eslint . --max-warnings 0",
+    "prebuild": "pnpm --filter @delinoio/delibase-connect build",
     "preview": "rsbuild preview",
     "pretest": "pnpm --filter @delinoio/delibase-connect build",
     "test": "vitest run",

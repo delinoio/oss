@@ -2,6 +2,7 @@ import { createClient } from "@connectrpc/connect";
 import {
   OrganizationRole,
   OrganizationService,
+  TeamRole,
   type GetOrganizationInvitationResponse,
 } from "@delinoio/delibase-connect";
 import { useEffect, useMemo, useState } from "react";
@@ -155,23 +156,30 @@ export function InvitePage() {
       </div>
     );
   }
+  const invitationDetails = currentInvitation.data.invitation;
+  const organizationRole = formatEnumLabel(
+    OrganizationRole[
+      invitationDetails?.organizationRole ?? OrganizationRole.MEMBER
+    ] ?? "member",
+  );
+  const hasTeamAssignment = Boolean(invitationDetails?.teamId?.value);
+  const teamRole = formatEnumLabel(
+    TeamRole[invitationDetails?.teamRole ?? TeamRole.MEMBER] ?? "member",
+  );
 
   return (
     <div className="page narrow">
       <section className="invite-card">
         <span className="eyebrow">You’re invited</span>
         <h1>Join {currentInvitation.data.organizationName}</h1>
-        <p>
-          You’ll join the <strong>{currentInvitation.data.teamName}</strong>{" "}
-          team as{" "}
-          {formatEnumLabel(
-            OrganizationRole[
-              currentInvitation.data.invitation?.organizationRole ??
-                OrganizationRole.MEMBER
-            ] ?? "member",
-          )}
-          .
-        </p>
+        <p>Your organization role will be {organizationRole}.</p>
+        {hasTeamAssignment ? (
+          <p>
+            You’ll join the{" "}
+            <strong>{currentInvitation.data.teamName || "assigned"}</strong>{" "}
+            team as {teamRole}.
+          </p>
+        ) : null}
         {acceptance.status === "error" ? (
           <p className="inline-error" role="alert">
             {errorMessage(acceptance.error)}

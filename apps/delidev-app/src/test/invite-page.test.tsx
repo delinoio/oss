@@ -32,6 +32,8 @@ describe("organization invitation", () => {
         return connectJsonResponse({
           invitation: {
             organizationRole: "ORGANIZATION_ROLE_MEMBER",
+            teamId: { value: "01912345-0000-7000-8000-000000000001" },
+            teamRole: "TEAM_ROLE_ADMIN",
           },
           organizationName: "Acme",
           teamName: "General",
@@ -69,12 +71,55 @@ describe("organization invitation", () => {
     expect(
       await screen.findByRole("heading", { name: "Join Acme" }),
     ).toBeVisible();
-    expect(screen.getByText(/team as Member\./)).toBeVisible();
+    expect(
+      screen.getByText("Your organization role will be Member."),
+    ).toBeVisible();
+    expect(screen.getByText(/team as Admin\./)).toBeVisible();
 
     await userEvent.click(
       screen.getByRole("button", { name: "Accept invitation" }),
     );
     expect(await screen.findByText("Organization apps")).toBeVisible();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not show an empty team assignment for organization-only invitations", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      connectJsonResponse({
+        invitation: {
+          organizationRole: "ORGANIZATION_ROLE_ADMIN",
+        },
+        organizationName: "Acme",
+        teamName: "",
+      }),
+    );
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/invite/organization-admin-token"]}>
+        <AuthSessionProvider
+          value={{
+            signIn: async () => undefined,
+            signOut: async () => undefined,
+            status: AuthStatus.SignedIn,
+            transport,
+          }}
+        >
+          <Routes>
+            <Route path="/invite/:token" element={<InvitePage />} />
+          </Routes>
+        </AuthSessionProvider>
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText("Your organization role will be Admin."),
+    ).toBeVisible();
+    expect(screen.queryByText(/team as/)).not.toBeInTheDocument();
   });
 });

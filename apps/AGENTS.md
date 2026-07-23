@@ -35,7 +35,7 @@
 - Keep Logto access, refresh, and ID tokens in memory only. PKCE state and non-sensitive one-shot protected return paths may use same-tab `sessionStorage` solely across the Logto redirect; consume the return path on callback and never place it in `localStorage`, React Query, the service worker, logs, or diagnostics. Invitation return handoffs must not serialize raw bearer tokens and must be bound to the matching OIDC callback state.
 - Follow Toss Design Guidelines and WCAG 2.2 AA, including focus management, `Esc` dialog closing, keyboard navigation, and screen-reader states.
 - `pnpm --filter delidev-app typecheck`, `pnpm --filter delidev-app lint`, `pnpm --filter delidev-app test`, and `pnpm --filter delidev-app build` are the baseline checks once the app exists, alongside PWA/accessibility/browser validation.
-- `apps/delidev-app/scripts/postbuild.mjs` owns deterministic SPA fallback and versioned service-worker generation. `pnpm --filter delidev-app test:pwa` validates the generated artifact and sensitive-cache boundary.
+- `apps/delidev-app/scripts/postbuild.mjs` owns deterministic SPA fallback and versioned service-worker generation. The app build must build the generated Connect client first. `pnpm --filter delidev-app test:pwa` validates the generated artifact and sensitive-cache boundary, and CI must reject a deterministic rebuild that changes the checked-in `dist` artifact.
 - Cloudflare Pages configuration is artifact-only in `apps/delidev-app/wrangler.jsonc`; changing it must not activate, create, or deploy a Pages project.
 
 ### binpm-docs Rules

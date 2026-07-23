@@ -4,7 +4,7 @@ import {
   OrganizationRole,
   OrganizationService,
 } from "@delinoio/delibase-connect";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
@@ -32,6 +32,9 @@ export function AccountPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [organizationError, setOrganizationError] = useState("");
+  const organizationIdempotencyKey = useRef<
+    { key: string } | undefined
+  >(undefined);
   const account = useQuery(
     AccountService.method.getAccountState,
     {},
@@ -76,15 +79,17 @@ export function AccountPage() {
       );
       return;
     }
+    organizationIdempotencyKey.current ??= createIdempotencyKey();
     createOrganization.mutate(
       {
-        idempotency: createIdempotencyKey(),
+        idempotency: organizationIdempotencyKey.current,
         name,
         slug,
       },
       {
         onError: (error) => setOrganizationError(error.message),
         onSuccess: (data) => {
+          organizationIdempotencyKey.current = undefined;
           void navigate(`/o/${data.organization?.slug ?? slug}/apps`);
         },
       },
@@ -167,7 +172,10 @@ export function AccountPage() {
           <input
             autoComplete="organization"
             maxLength={120}
-            onChange={(event) => setOrganizationName(event.target.value)}
+            onChange={(event) => {
+              organizationIdempotencyKey.current = undefined;
+              setOrganizationName(event.target.value);
+            }}
             required
             value={organizationName}
           />
@@ -181,7 +189,10 @@ export function AccountPage() {
               autoCapitalize="none"
               autoCorrect="off"
               maxLength={63}
-              onChange={(event) => setOrganizationSlug(event.target.value)}
+              onChange={(event) => {
+                organizationIdempotencyKey.current = undefined;
+                setOrganizationSlug(event.target.value);
+              }}
               pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
               required
               spellCheck={false}

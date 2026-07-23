@@ -860,6 +860,7 @@ jobs:
         run: |
           pnpm --filter delidev-app build
           pnpm --filter delidev-app test:pwa
+          git diff --exit-code -- apps/delidev-app/dist
 
       - name: Install browser engines
         if: ${{ steps.gate.outputs.run == 'true' }}
