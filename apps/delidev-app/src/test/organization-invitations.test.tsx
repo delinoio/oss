@@ -20,6 +20,8 @@ describe("organization invitation management", () => {
     const createRequests: Record<string, unknown>[] = [];
     let revokeAttempt = 0;
     let activeInvitation = true;
+    let failInvitationRefresh = false;
+    let invitationRefreshFailures = 0;
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
       const url = String(request);
       const body = (await new Response(
@@ -40,6 +42,14 @@ describe("organization invitation management", () => {
         });
       }
       if (url.endsWith("/ListOrganizationInvitations")) {
+        if (failInvitationRefresh) {
+          failInvitationRefresh = false;
+          invitationRefreshFailures += 1;
+          return connectJsonResponse(
+            { code: "unavailable", message: "The refresh failed." },
+            503,
+          );
+        }
         return connectJsonResponse({
           invitations: activeInvitation
             ? [
@@ -81,6 +91,9 @@ describe("organization invitation management", () => {
           );
         }
         activeInvitation = false;
+        if (revokeAttempt === 2) {
+          failInvitationRefresh = true;
+        }
         return connectJsonResponse({
           invitation: {
             invitationId: { value: "invitation-id" },
@@ -160,8 +173,12 @@ describe("organization invitation management", () => {
     await screen.findByRole("alert");
     await user.click(screen.getByRole("button", { name: "Revoke" }));
 
-    await waitFor(() => expect(revocationKeys).toHaveLength(2));
+    await waitFor(() => expect(invitationRefreshFailures).toBe(1));
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => expect(revocationKeys).toHaveLength(3));
     expect(revocationKeys[1]).toBe(revocationKeys[0]);
+    expect(revocationKeys[2]).toBe(revocationKeys[0]);
     await waitFor(() =>
       expect(
         screen.getByText("There are no active invitations."),

@@ -9,6 +9,7 @@ import {
   canManageOrganization,
   canUseTeamAsParent,
   formatOptionalUsdMicros,
+  formatOverageLimit,
   formatUsageCost,
   formatUsageUnits,
   getEditableOverageLimit,
@@ -73,6 +74,12 @@ describe("organization billing inputs", () => {
   it("distinguishes missing billing balances from explicit zero values", () => {
     expect(formatOptionalUsdMicros(undefined)).toBe("Unavailable");
     expect(formatOptionalUsdMicros(0n)).toBe("$0.0000");
+  });
+
+  it("distinguishes absent configured overage limits from zero", () => {
+    expect(formatOverageLimit(false, undefined)).toBe("Not set");
+    expect(formatOverageLimit(true, undefined)).toBe("Unavailable");
+    expect(formatOverageLimit(true, 0n)).toBe("$0.0000");
   });
 });
 

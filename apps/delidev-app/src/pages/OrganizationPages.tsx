@@ -85,6 +85,13 @@ export function formatOptionalUsdMicros(value: bigint | undefined): string {
   return value === undefined ? "Unavailable" : formatUsdMicros(value);
 }
 
+export function formatOverageLimit(
+  configured: boolean,
+  value: bigint | undefined,
+): string {
+  return configured ? formatOptionalUsdMicros(value) : "Not set";
+}
+
 export function canManageOrganization(role: OrganizationRole): boolean {
   return (
     role === OrganizationRole.OWNER ||
@@ -430,8 +437,16 @@ export function OrganizationInvitationManagement({
         invitationId: invitation.invitationId,
         organizationId: organization.organizationId,
       });
-      revocationKeys.current.delete(invitationId);
-      await invitations.refetch();
+      const refreshedInvitations = await invitations.refetch();
+      const invitationStillActive = refreshedInvitations.data?.pages.some(
+        (page) =>
+          page.invitations.some(
+            (item) => item.invitationId?.value === invitationId,
+          ),
+      );
+      if (refreshedInvitations.isSuccess && !invitationStillActive) {
+        revocationKeys.current.delete(invitationId);
+      }
     } catch (error) {
       setRevokeError(
         error instanceof Error
@@ -1233,11 +1248,10 @@ export function BillingPage() {
             <article>
               <span>Monthly overage limit</span>
               <strong>
-                {summary.data.summary.overageLimitConfigured
-                  ? formatUsdMicros(
-                      summary.data.summary.monthlyOverageLimit?.value,
-                    )
-                  : "Not set"}
+                {formatOverageLimit(
+                  summary.data.summary.overageLimitConfigured,
+                  summary.data.summary.monthlyOverageLimit?.value,
+                )}
               </strong>
             </article>
           </div>
