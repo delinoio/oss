@@ -71,6 +71,20 @@ CREATE TABLE ledger_entries (
 CREATE INDEX ledger_entries_organization_idx
     ON ledger_entries(organization_id, created_at, id);
 
+CREATE FUNCTION reject_ledger_entry_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'ledger entries are append-only'
+        USING ERRCODE = 'check_violation';
+END;
+$$;
+
+CREATE TRIGGER ledger_entries_append_only
+BEFORE UPDATE OR DELETE ON ledger_entries
+FOR EACH ROW EXECUTE FUNCTION reject_ledger_entry_mutation();
+
 CREATE TABLE usage_reservations (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
@@ -94,7 +108,14 @@ CREATE TABLE usage_reservations (
     expires_at timestamptz NOT NULL,
     finalized_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    UNIQUE (id, organization_id, team_id),
+    UNIQUE (
+        id,
+        organization_id,
+        team_id,
+        meter_id,
+        account_id,
+        service_identity_id
+    ),
     FOREIGN KEY (organization_id, active_team_id)
         REFERENCES teams(organization_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (meter_id, price_version_id)
@@ -131,8 +152,21 @@ CREATE TABLE usage_records (
     credit_applied_micros bigint NOT NULL CHECK (credit_applied_micros >= 0),
     overage_applied_micros bigint NOT NULL CHECK (overage_applied_micros >= 0),
     committed_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    FOREIGN KEY (reservation_id, organization_id, team_id)
-        REFERENCES usage_reservations(id, organization_id, team_id) ON DELETE RESTRICT,
+    FOREIGN KEY (
+        reservation_id,
+        organization_id,
+        team_id,
+        meter_id,
+        account_id,
+        service_identity_id
+    ) REFERENCES usage_reservations(
+        id,
+        organization_id,
+        team_id,
+        meter_id,
+        account_id,
+        service_identity_id
+    ) ON DELETE RESTRICT,
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
     CHECK (credit_applied_micros + overage_applied_micros = total_cost_micros)
 );
@@ -152,7 +186,10 @@ BEGIN
     FROM usage_reservations
     WHERE id = NEW.reservation_id
       AND organization_id = NEW.organization_id
-      AND team_id = NEW.team_id;
+      AND team_id = NEW.team_id
+      AND meter_id = NEW.meter_id
+      AND account_id = NEW.account_id
+      AND service_identity_id = NEW.service_identity_id;
 
     IF FOUND AND NEW.committed_units > reserved_maximum_units THEN
         RAISE EXCEPTION 'committed usage exceeds reservation maximum'

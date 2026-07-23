@@ -280,7 +280,7 @@ type WebhookInbox struct {
 	Provider        string
 	ProviderEventID string
 	EventType       string
-	Payload         []byte
+	PayloadSha256   []byte
 	ReceivedAt      pgtype.Timestamptz
 	ProcessedAt     pgtype.Timestamptz
 	AttemptCount    int32

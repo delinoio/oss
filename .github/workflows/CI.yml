@@ -239,6 +239,10 @@ jobs:
           DELIBASE_TEST_DATABASE_URL: postgres://delibase:delibase_test@127.0.0.1:5432/delibase?sslmode=disable
         run: go test -count=1 ./servers/delibase/...
 
+      - name: Validate delibase image
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: servers/delibase/scripts/test-image.sh
+
   proto-delibase:
     name: Delibase Protobuf
     runs-on: ubuntu-latest

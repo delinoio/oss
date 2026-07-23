@@ -6,8 +6,11 @@ import (
 	"errors"
 
 	"github.com/delinoio/oss/servers/delibase/db/migrations"
+	"github.com/delinoio/oss/servers/delibase/internal/catalog"
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -85,6 +88,165 @@ func (store *Store) WithinTransaction(
 		return errors.New("database: transaction commit failed")
 	}
 	return nil
+}
+
+// SyncCatalog applies a validated checked-in catalog as one transaction.
+// Entries omitted from the current file are disabled, while immutable price
+// versions remain retained for reservations and historical usage.
+func (store *Store) SyncCatalog(
+	ctx context.Context,
+	specification catalog.Specification,
+) error {
+	err := store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if err := queries.ClearServiceMeterAllowlists(ctx); err != nil {
+			return err
+		}
+		if err := queries.ClearPolarMeterMappings(ctx); err != nil {
+			return err
+		}
+		if err := queries.DisableCatalogMeters(ctx); err != nil {
+			return err
+		}
+		if err := queries.DisableCatalogApps(ctx); err != nil {
+			return err
+		}
+		if err := queries.DisableServiceIdentities(ctx); err != nil {
+			return err
+		}
+		for _, app := range specification.Apps {
+			id, err := catalogUUID(app.ID)
+			if err != nil {
+				return err
+			}
+			if err := queries.UpsertCatalogApp(ctx, dbgen.UpsertCatalogAppParams{
+				ID:          id,
+				Slug:        app.Slug,
+				Name:        app.Name,
+				Summary:     app.Summary,
+				Description: app.Description,
+				IconUrl:     app.IconURL,
+				Enabled:     *app.Enabled,
+			}); err != nil {
+				return err
+			}
+		}
+		for _, meter := range specification.Meters {
+			id, err := catalogUUID(meter.ID)
+			if err != nil {
+				return err
+			}
+			appID, err := catalogUUID(meter.AppID)
+			if err != nil {
+				return err
+			}
+			if err := queries.UpsertCatalogMeter(ctx, dbgen.UpsertCatalogMeterParams{
+				ID:                    id,
+				AppID:                 appID,
+				MeterKey:              meter.Key,
+				Name:                  meter.Name,
+				Description:           meter.Description,
+				UnitName:              meter.UnitName,
+				UnitPrecision:         int32(*meter.UnitPrecision),
+				ReservationTtlSeconds: meter.ReservationTTLSeconds,
+				Enabled:               *meter.Enabled,
+			}); err != nil {
+				return err
+			}
+		}
+		for _, price := range specification.Prices {
+			id, err := catalogUUID(price.ID)
+			if err != nil {
+				return err
+			}
+			meterID, err := catalogUUID(price.MeterID)
+			if err != nil {
+				return err
+			}
+			effectiveUntil := pgtype.Timestamptz{}
+			if price.EffectiveUntil != nil {
+				effectiveUntil = pgtype.Timestamptz{
+					Time:  *price.EffectiveUntil,
+					Valid: true,
+				}
+			}
+			affected, err := queries.EnsureCatalogPriceVersion(
+				ctx,
+				dbgen.EnsureCatalogPriceVersionParams{
+					ID:               id,
+					MeterID:          meterID,
+					UsdMicrosPerUnit: price.USDMicrosPerUnit,
+					EffectiveFrom: pgtype.Timestamptz{
+						Time:  price.EffectiveFrom,
+						Valid: true,
+					},
+					EffectiveUntil: effectiveUntil,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			if affected != 1 {
+				return errors.New("database: catalog price version conflict")
+			}
+		}
+		for _, service := range specification.Services {
+			id, err := catalogUUID(service.ID)
+			if err != nil {
+				return err
+			}
+			if err := queries.UpsertServiceIdentity(ctx, dbgen.UpsertServiceIdentityParams{
+				ID:            id,
+				LogtoClientID: service.LogtoClientID,
+				Name:          service.Name,
+				Enabled:       *service.Enabled,
+			}); err != nil {
+				return err
+			}
+			for _, allowedMeterID := range service.AllowedMeterIDs {
+				meterID, err := catalogUUID(allowedMeterID)
+				if err != nil {
+					return err
+				}
+				if err := queries.CreateServiceMeterAllowlist(
+					ctx,
+					dbgen.CreateServiceMeterAllowlistParams{
+						ServiceIdentityID: id,
+						MeterID:           meterID,
+					},
+				); err != nil {
+					return err
+				}
+			}
+		}
+		for _, mapping := range specification.PolarMeters {
+			meterID, err := catalogUUID(mapping.MeterID)
+			if err != nil {
+				return err
+			}
+			if err := queries.CreatePolarMeterMapping(
+				ctx,
+				dbgen.CreatePolarMeterMappingParams{
+					MeterID:      meterID,
+					PolarMeterID: mapping.PolarMeterID,
+				},
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return errors.New("database: catalog synchronization failed")
+	}
+	return nil
+}
+
+func catalogUUID(value string) (pgtype.UUID, error) {
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		return pgtype.UUID{}, errors.New("database: invalid catalog identifier")
+	}
+	return pgtype.UUID{Bytes: [16]byte(parsed), Valid: true}, nil
 }
 
 // Close releases all pooled connections.

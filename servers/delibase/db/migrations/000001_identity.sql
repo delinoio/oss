@@ -101,6 +101,50 @@ CREATE TABLE organization_memberships (
 CREATE INDEX organization_memberships_account_idx
     ON organization_memberships(account_id, organization_id);
 
+CREATE FUNCTION preserve_organization_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF OLD.role <> 'owner' THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+    IF TG_OP = 'UPDATE'
+       AND NEW.organization_id = OLD.organization_id
+       AND NEW.role = 'owner' THEN
+        RETURN NEW;
+    END IF;
+
+    -- Serialize owner removal for one organization so concurrent demotions
+    -- cannot both observe another owner and leave the organization ownerless.
+    PERFORM 1
+    FROM organizations
+    WHERE id = OLD.organization_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        -- Organization deletion intentionally cascades its memberships.
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM organization_memberships
+        WHERE organization_id = OLD.organization_id
+          AND role = 'owner'
+          AND account_id <> OLD.account_id
+    ) THEN
+        RAISE EXCEPTION 'organization must retain at least one owner'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+CREATE TRIGGER organization_memberships_preserve_owner
+BEFORE DELETE OR UPDATE OF organization_id, account_id, role
+ON organization_memberships
+FOR EACH ROW EXECUTE FUNCTION preserve_organization_owner();
+
 CREATE TABLE teams (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -115,12 +159,126 @@ CREATE TABLE teams (
         REFERENCES teams(organization_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
     CHECK (length(name) BETWEEN 1 AND 120),
-    CHECK (NOT protected_general OR parent_team_id IS NULL)
+    CHECK (
+        NOT protected_general
+        OR (parent_team_id IS NULL AND name = 'General')
+    )
 );
 
 CREATE UNIQUE INDEX teams_one_general_per_organization_idx
     ON teams(organization_id) WHERE protected_general;
 CREATE INDEX teams_parent_idx ON teams(organization_id, parent_team_id);
+
+CREATE FUNCTION enforce_team_hierarchy()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    parent_depth integer := 0;
+    subtree_height integer := 1;
+    creates_cycle boolean := false;
+BEGIN
+    IF NEW.parent_team_id IS NOT NULL THEN
+        WITH RECURSIVE ancestors AS (
+            SELECT
+                team.id,
+                team.parent_team_id,
+                1 AS depth,
+                ARRAY[team.id] AS path
+            FROM teams AS team
+            WHERE team.organization_id = NEW.organization_id
+              AND team.id = NEW.parent_team_id
+
+            UNION ALL
+
+            SELECT
+                parent.id,
+                parent.parent_team_id,
+                ancestors.depth + 1,
+                ancestors.path || parent.id
+            FROM teams AS parent
+            JOIN ancestors ON parent.id = ancestors.parent_team_id
+            WHERE parent.organization_id = NEW.organization_id
+              AND NOT parent.id = ANY(ancestors.path)
+        )
+        SELECT
+            COALESCE(max(depth), 0),
+            COALESCE(bool_or(id = NEW.id), false)
+        INTO parent_depth, creates_cycle
+        FROM ancestors;
+
+        IF creates_cycle THEN
+            RAISE EXCEPTION 'team hierarchy cannot contain a cycle'
+                USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
+
+    IF TG_OP = 'UPDATE' THEN
+        WITH RECURSIVE descendants AS (
+            SELECT team.id, 1 AS depth
+            FROM teams AS team
+            WHERE team.organization_id = OLD.organization_id
+              AND team.id = OLD.id
+
+            UNION ALL
+
+            SELECT child.id, descendants.depth + 1
+            FROM teams AS child
+            JOIN descendants ON child.parent_team_id = descendants.id
+            WHERE child.organization_id = OLD.organization_id
+        )
+        SELECT COALESCE(max(depth), 1)
+        INTO subtree_height
+        FROM descendants;
+    END IF;
+
+    IF parent_depth + subtree_height > 5 THEN
+        RAISE EXCEPTION 'team hierarchy exceeds five levels'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER teams_enforce_hierarchy
+BEFORE INSERT OR UPDATE OF organization_id, parent_team_id
+ON teams
+FOR EACH ROW EXECUTE FUNCTION enforce_team_hierarchy();
+
+CREATE FUNCTION protect_general_team()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NOT OLD.protected_general THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        IF EXISTS (
+            SELECT 1 FROM organizations WHERE id = OLD.organization_id
+        ) THEN
+            RAISE EXCEPTION 'protected General team cannot be deleted'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    IF NOT NEW.protected_general
+       OR NEW.id <> OLD.id
+       OR NEW.organization_id <> OLD.organization_id
+       OR NEW.parent_team_id IS DISTINCT FROM OLD.parent_team_id
+       OR NEW.name <> OLD.name THEN
+        RAISE EXCEPTION 'protected General team cannot be renamed or unprotected'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER teams_protect_general
+BEFORE UPDATE OR DELETE ON teams
+FOR EACH ROW EXECUTE FUNCTION protect_general_team();
 
 CREATE TABLE team_memberships (
     organization_id uuid NOT NULL,
@@ -158,6 +316,10 @@ CREATE TABLE organization_invitations (
         (organization_role = 'admin' AND target_team_id IS NULL AND team_role IS NULL)
         OR
         (organization_role = 'member' AND target_team_id IS NOT NULL AND team_role IS NOT NULL)
+    ),
+    CHECK (
+        expires_at > created_at
+        AND expires_at <= created_at + interval '7 days'
     )
 );
 

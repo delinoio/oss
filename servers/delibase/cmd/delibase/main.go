@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/servers/delibase/internal/api"
+	"github.com/delinoio/oss/servers/delibase/internal/catalog"
 	"github.com/delinoio/oss/servers/delibase/internal/config"
 	"github.com/delinoio/oss/servers/delibase/internal/database"
 	"github.com/delinoio/oss/servers/delibase/internal/logging"
@@ -26,6 +27,7 @@ type startupStage string
 
 const (
 	stageConfiguration  startupStage = "configuration"
+	stageCatalog        startupStage = "catalog"
 	stageLogging        startupStage = "logging"
 	stageDatabase       startupStage = "database"
 	stageAuthentication startupStage = "authentication"
@@ -77,13 +79,25 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if _, err := safelog.NewPseudonymizer(configuration.LogPseudonymKey); err != nil {
 		return &startupError{stage: stageLogging}
 	}
+	catalogSpecification, err := catalog.Load(configuration.CatalogPath)
+	if err != nil {
+		return &startupError{
+			stage:      stageCatalog,
+			safeDetail: err.Error(),
+		}
+	}
 	databaseCtx, cancelDatabase := context.WithTimeout(ctx, databaseStartupTimeout)
 	store, err := database.Open(databaseCtx, configuration.DatabaseURL)
-	cancelDatabase()
 	if err != nil {
+		cancelDatabase()
 		return &startupError{stage: stageDatabase}
 	}
 	defer store.Close()
+	if err := store.SyncCatalog(databaseCtx, catalogSpecification); err != nil {
+		cancelDatabase()
+		return &startupError{stage: stageCatalog}
+	}
+	cancelDatabase()
 
 	keys, err := auth.NewJWKS(auth.JWKSConfig{URL: configuration.LogtoJWKSURL})
 	if err != nil {

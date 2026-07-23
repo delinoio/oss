@@ -34,6 +34,11 @@ The canonical API origin and Logto audience are both
 `https://delibase.deli.dev`. Configuration errors identify variable names but
 never include configured values.
 
+`DELIBASE_CATALOG_PATH` points to a strict versioned JSON catalog. The checked-in
+`catalog.json` is intentionally empty for this foundation. Startup validates the
+complete document and transactionally synchronizes apps, meters, price versions,
+service allowlists, and Polar meter mappings before readiness is exposed.
+
 Browser configuration belongs to DeliDev, is non-secret, and is not consumed
 by this process:
 
@@ -59,6 +64,13 @@ transaction is rolled back:
 
 ```sh
 servers/delibase/scripts/test-postgres.sh
+```
+
+With PostgreSQL listening on port 5432, validate the minimal non-root image and
+its live health/readiness endpoints:
+
+```sh
+servers/delibase/scripts/test-image.sh
 ```
 
 The operational endpoints are `GET /healthz` for process liveness and

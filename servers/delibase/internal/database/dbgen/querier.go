@@ -11,10 +11,21 @@ import (
 )
 
 type Querier interface {
+	ClearPolarMeterMappings(ctx context.Context) error
+	ClearServiceMeterAllowlists(ctx context.Context) error
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
+	CreatePolarMeterMapping(ctx context.Context, arg CreatePolarMeterMappingParams) error
+	CreateServiceMeterAllowlist(ctx context.Context, arg CreateServiceMeterAllowlistParams) error
+	DisableCatalogApps(ctx context.Context) error
+	DisableCatalogMeters(ctx context.Context) error
+	DisableServiceIdentities(ctx context.Context) error
+	EnsureCatalogPriceVersion(ctx context.Context, arg EnsureCatalogPriceVersionParams) (int64, error)
 	GetAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	Ping(ctx context.Context) (int64, error)
+	UpsertCatalogApp(ctx context.Context, arg UpsertCatalogAppParams) error
+	UpsertCatalogMeter(ctx context.Context, arg UpsertCatalogMeterParams) error
+	UpsertServiceIdentity(ctx context.Context, arg UpsertServiceIdentityParams) error
 }
 
 var _ Querier = (*Queries)(nil)
