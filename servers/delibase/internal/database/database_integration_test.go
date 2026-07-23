@@ -127,6 +127,35 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 	if err := store.SyncCatalog(ctx, specification); err != nil {
 		t.Fatal(err)
 	}
+	priceChangeAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	specification.Prices[0].EffectiveUntil = &priceChangeAt
+	specification.Prices = append(specification.Prices, catalog.Price{
+		ID:               "0198a000-0000-7000-8000-000000000305",
+		MeterID:          "0198a000-0000-7000-8000-000000000302",
+		USDMicrosPerUnit: 2,
+		EffectiveFrom:    priceChangeAt,
+	})
+	if err := store.SyncCatalog(ctx, specification); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SyncCatalog(ctx, specification); err != nil {
+		t.Fatal(err)
+	}
+	var closedAt time.Time
+	var priceVersions int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT effective_until FROM catalog_price_versions WHERE id = $1),
+			(SELECT count(*) FROM catalog_price_versions WHERE meter_id = $2)
+	`, specification.Prices[0].ID, specification.Meters[0].ID).Scan(
+		&closedAt,
+		&priceVersions,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !closedAt.Equal(priceChangeAt) || priceVersions != 2 {
+		t.Fatalf("price rollover = closed at %v with %d versions", closedAt, priceVersions)
+	}
 	var activeMeters int
 	if err := store.pool.QueryRow(
 		ctx,

@@ -29,6 +29,24 @@ func (q *Queries) ClearServiceMeterAllowlists(ctx context.Context) error {
 	return err
 }
 
+const closeCatalogPriceVersion = `-- name: CloseCatalogPriceVersion :exec
+UPDATE catalog_price_versions
+SET effective_until = $2
+WHERE id = $1
+  AND effective_until IS NULL
+  AND $2 IS NOT NULL
+`
+
+type CloseCatalogPriceVersionParams struct {
+	ID             pgtype.UUID
+	EffectiveUntil pgtype.Timestamptz
+}
+
+func (q *Queries) CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalogPriceVersionParams) error {
+	_, err := q.db.Exec(ctx, closeCatalogPriceVersion, arg.ID, arg.EffectiveUntil)
+	return err
+}
+
 const createPolarMeterMapping = `-- name: CreatePolarMeterMapping :exec
 INSERT INTO polar_meter_mappings (meter_id, polar_meter_id)
 VALUES ($1, $2)

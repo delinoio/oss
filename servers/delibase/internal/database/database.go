@@ -154,6 +154,27 @@ func (store *Store) SyncCatalog(
 			}
 		}
 		for _, price := range specification.Prices {
+			if price.EffectiveUntil == nil {
+				continue
+			}
+			id, err := catalogUUID(price.ID)
+			if err != nil {
+				return err
+			}
+			if err := queries.CloseCatalogPriceVersion(
+				ctx,
+				dbgen.CloseCatalogPriceVersionParams{
+					ID: id,
+					EffectiveUntil: pgtype.Timestamptz{
+						Time:  *price.EffectiveUntil,
+						Valid: true,
+					},
+				},
+			); err != nil {
+				return err
+			}
+		}
+		for _, price := range specification.Prices {
 			id, err := catalogUUID(price.ID)
 			if err != nil {
 				return err

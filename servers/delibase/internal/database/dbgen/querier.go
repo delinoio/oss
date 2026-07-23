@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	ClearPolarMeterMappings(ctx context.Context) error
 	ClearServiceMeterAllowlists(ctx context.Context) error
+	CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalogPriceVersionParams) error
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreatePolarMeterMapping(ctx context.Context, arg CreatePolarMeterMappingParams) error
 	CreateServiceMeterAllowlist(ctx context.Context, arg CreateServiceMeterAllowlistParams) error
