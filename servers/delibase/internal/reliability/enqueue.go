@@ -77,7 +77,7 @@ func EnqueueOutbox(
 	if queries == nil || !validUUIDv7(input.ID) || !validUUIDv7(input.AggregateID) ||
 		outboxHandler(input.Integration, input.Operation) == "" ||
 		!validAggregate(input.AggregateType, input.Integration, input.Operation) ||
-		!safeExternalID.MatchString(input.IdempotencyKey) ||
+		!validIdempotencyKey(input.IdempotencyKey) ||
 		!validActor(string(input.Actor)) {
 		return uuid.Nil, ErrInvalidInput
 	}
@@ -112,7 +112,7 @@ func EnqueueDeletion(
 	input DeletionInput,
 ) (uuid.UUID, error) {
 	if queries == nil || !validUUIDv7(input.ID) ||
-		!safeExternalID.MatchString(input.IdempotencyKey) ||
+		!validIdempotencyKey(input.IdempotencyKey) ||
 		!validActor(string(input.Actor)) {
 		return uuid.Nil, ErrInvalidInput
 	}
@@ -231,6 +231,9 @@ func payloadValueIsSafe(key string, value any, depth int) bool {
 			return true
 		}
 		return len(typed) <= maximumPayloadBytes && redact.Text(typed) == typed
+	case json.Number:
+		number := typed.String()
+		return redact.Text(number) == number
 	case map[string]any:
 		for childKey, child := range typed {
 			childPath := childKey
@@ -249,6 +252,10 @@ func payloadValueIsSafe(key string, value any, depth int) bool {
 		}
 	}
 	return true
+}
+
+func validIdempotencyKey(value string) bool {
+	return safeExternalID.MatchString(value) && redact.Text(value) == value
 }
 
 func deletionTargetConflict(err error) bool {

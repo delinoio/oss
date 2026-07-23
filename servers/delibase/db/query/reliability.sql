@@ -67,7 +67,7 @@ INSERT INTO deletion_jobs (
     sqlc.arg(idempotency_key),
     sqlc.arg(actor_reference)
 )
-ON CONFLICT (job_type, idempotency_key) DO UPDATE
+ON CONFLICT (job_type, actor_reference, idempotency_key) DO UPDATE
 SET idempotency_key = EXCLUDED.idempotency_key
 WHERE deletion_jobs.account_id IS NOT DISTINCT FROM EXCLUDED.account_id
   AND deletion_jobs.organization_id IS NOT DISTINCT FROM EXCLUDED.organization_id

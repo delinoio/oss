@@ -290,7 +290,7 @@ WHERE idempotency_key IS NULL;
 ALTER TABLE deletion_jobs
     ALTER COLUMN idempotency_key SET NOT NULL,
     ADD CONSTRAINT deletion_jobs_idempotency_unique
-        UNIQUE (job_type, idempotency_key);
+        UNIQUE (job_type, actor_reference, idempotency_key);
 
 DROP INDEX deletion_jobs_pending_idx;
 CREATE INDEX deletion_jobs_pending_idx

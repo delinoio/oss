@@ -259,6 +259,7 @@ func TestPayloadValidationRejectsCredentialsCardsAndBillingPII(t *testing.T) {
 		`{"authorization":"Bearer secret-value"}`,
 		`{"nested":{"x_delibase_forwarded_user_token":"secret"}}`,
 		`{"value":"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature"}`,
+		`{"value":4242424242424242}`,
 		`{"card_number":"4242 4242 4242 4242"}`,
 		`{"customer_email":"owner@example.com"}`,
 		`{"billing_name":"Raw Customer"}`,
@@ -283,6 +284,28 @@ func TestPayloadValidationRejectsCredentialsCardsAndBillingPII(t *testing.T) {
 	}
 	if string(safe) != `{"organization_id":"0198a000-0000-7000-8000-000000000821","units":42}` {
 		t.Fatalf("canonical payload = %s", safe)
+	}
+}
+
+func TestIdempotencyKeyValidationRejectsCredentials(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		value string
+		valid bool
+	}{
+		{value: "delete-account-1", valid: true},
+		{value: "token:raw-secret"},
+		{value: "authorization:raw-secret"},
+		{value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature"},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.value, func(t *testing.T) {
+			t.Parallel()
+			if got := validIdempotencyKey(test.value); got != test.valid {
+				t.Fatalf("validIdempotencyKey(%q) = %t, want %t", test.value, got, test.valid)
+			}
+		})
 	}
 }
 

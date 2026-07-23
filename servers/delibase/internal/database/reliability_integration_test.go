@@ -110,6 +110,15 @@ func TestPostgreSQLReliabilityEnqueueClaimsRetriesAndAudit(t *testing.T) {
 	if duplicateDeletionID != firstDeletionID {
 		t.Fatalf("duplicate deletion ID = %s, want %s", duplicateDeletionID, firstDeletionID)
 	}
+	otherCallerDeletion := deletion
+	otherCallerDeletion.ID = testReliabilityUUID(124)
+	otherCallerDeletion.AccountID = testReliabilityUUID(125)
+	otherCallerDeletion.Actor = safelog.ActorPseudonym(
+		"actor:v1:fedcba9876543210fedcba9876543210",
+	)
+	if _, err := reliability.EnqueueDeletion(ctx, queries, otherCallerDeletion); err != nil {
+		t.Fatalf("other caller deletion with reused key: %v", err)
+	}
 	deletion.ID = testReliabilityUUID(17)
 	deletion.IdempotencyKey = "delete-account-2"
 	if _, err := reliability.EnqueueDeletion(ctx, queries, deletion); !errors.Is(
