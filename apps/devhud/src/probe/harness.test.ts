@@ -268,6 +268,16 @@ describe("probe harness", () => {
         },
       ],
       [
+        ProbeId.BundledAssetStartup,
+        (driver) => {
+          driver.bundledAssetStartup = async () => ({
+            origin: "tauri://localhost",
+            sandboxEnabled: true,
+            remoteRequestCount: 0,
+          });
+        },
+      ],
+      [
         ProbeId.IpcCapabilityDenial,
         (driver) => {
           driver.ipcCapabilityDenial = async () => ({

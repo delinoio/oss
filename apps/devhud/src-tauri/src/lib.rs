@@ -62,11 +62,13 @@ enum ProbeCommandError {
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn is_bundled_url(url: &Url) -> bool {
-    url.port().is_none()
-        && matches!(
-            (url.scheme(), url.host_str()),
-            ("tauri", Some("localhost")) | ("http", Some("tauri.localhost"))
-        )
+    let (scheme, host) = if cfg!(all(feature = "mobile-system-webview", target_os = "ios")) {
+        ("tauri", "localhost")
+    } else {
+        ("http", "tauri.localhost")
+    };
+
+    url.port().is_none() && url.scheme() == scheme && url.host_str() == Some(host)
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -258,14 +260,22 @@ mod tests {
 
     #[test]
     fn permits_only_bundled_application_origins() {
-        for allowed in [
-            "tauri://localhost/index.html",
-            "http://tauri.localhost/index.html",
-        ] {
-            assert!(is_bundled_url(&allowed.parse().unwrap()), "{allowed}");
-        }
+        let (allowed, inactive_runtime_origin) =
+            if cfg!(all(feature = "mobile-system-webview", target_os = "ios")) {
+                (
+                    "tauri://localhost/index.html",
+                    "http://tauri.localhost/index.html",
+                )
+            } else {
+                (
+                    "http://tauri.localhost/index.html",
+                    "tauri://localhost/index.html",
+                )
+            };
+        assert!(is_bundled_url(&allowed.parse().unwrap()), "{allowed}");
 
         for denied in [
+            inactive_runtime_origin,
             "https://example.com/",
             "http://localhost:4173/",
             "https://tauri.localhost/index.html",

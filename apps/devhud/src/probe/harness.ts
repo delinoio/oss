@@ -105,10 +105,7 @@ const displayProtocolsByPlatform: Readonly<
   [DesktopPlatform.Windows]: Object.freeze([DisplayProtocol.NotApplicable]),
 });
 
-const bundledOrigins = Object.freeze([
-  "tauri://localhost",
-  "http://tauri.localhost",
-]);
+const bundledOrigin = "http://tauri.localhost";
 const requiredThemeModes = Object.freeze([
   ThemeMode.System,
   ThemeMode.Light,
@@ -143,7 +140,7 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
     ProbeId.BundledAssetStartup,
     (driver) => driver.bundledAssetStartup(),
     (evidence) =>
-      bundledOrigins.includes(evidence.origin) &&
+      evidence.origin === bundledOrigin &&
       evidence.sandboxEnabled === true &&
       evidence.remoteRequestCount === 0,
   ),
