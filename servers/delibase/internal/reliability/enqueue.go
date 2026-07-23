@@ -27,8 +27,9 @@ const (
 )
 
 var (
-	safeExternalID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$`)
-	actorPattern   = regexp.MustCompile(`^(|actor:v1:[0-9a-f]{32})$`)
+	safeExternalID  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$`)
+	idempotencyUUID = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	actorPattern    = regexp.MustCompile(`^(|actor:v1:[0-9a-f]{32})$`)
 )
 
 // EnqueueWebhook persists a verified webhook idempotently. Call it with the
@@ -255,7 +256,14 @@ func payloadValueIsSafe(key string, value any, depth int) bool {
 }
 
 func validIdempotencyKey(value string) bool {
-	return safeExternalID.MatchString(value) && redact.Text(value) == value
+	if !safeExternalID.MatchString(value) {
+		return false
+	}
+	// Canonical UUID segments are safe identifiers, but their numeric tails can
+	// match the shared card-number detector. Mask them before checking the
+	// remaining key for credential and billing-data shapes.
+	withoutUUIDs := idempotencyUUID.ReplaceAllString(value, "uuid")
+	return redact.Text(withoutUUIDs) == withoutUUIDs
 }
 
 func deletionTargetConflict(err error) bool {

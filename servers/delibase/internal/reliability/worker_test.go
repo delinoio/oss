@@ -294,6 +294,10 @@ func TestIdempotencyKeyValidationRejectsCredentials(t *testing.T) {
 		valid bool
 	}{
 		{value: "delete-account-1", valid: true},
+		{
+			value: "concurrent-0198a000-0000-7000-8000-000000000914",
+			valid: true,
+		},
 		{value: "token:raw-secret"},
 		{value: "authorization:raw-secret"},
 		{value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature"},
