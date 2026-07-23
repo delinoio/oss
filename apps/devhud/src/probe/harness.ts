@@ -210,7 +210,9 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
   defineScenario(
     ProbeId.HelperProcessCleanup,
     (driver) => driver.helperProcessCleanup(),
-    (evidence) => evidence.helperProcessCountAfterShutdown === 0,
+    (evidence) =>
+      evidence.helperProcessCountBeforeShutdown > 0 &&
+      evidence.helperProcessCountAfterShutdown === 0,
   ),
   defineScenario(
     ProbeId.Packaging,

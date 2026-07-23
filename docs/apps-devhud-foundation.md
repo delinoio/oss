@@ -28,7 +28,7 @@ The CEF gate is a prerequisite, not an implementation claim. It has no calendar 
 - Tray/menu-bar lifecycle, global shortcuts, launch-at-login integration, theme handling, DevTools, explicit process shutdown, and clean helper-process cleanup.
 - Signed or sign-ready DMG, NSIS, AppImage, and deb packaging.
 - Tauri updater compatibility and signed updater bundles.
-- No orphaned CEF processes after normal shutdown.
+- No orphaned CEF processes after normal shutdown. Cleanup evidence must observe at least one CEF helper before shutdown and zero helpers afterward.
 - Ubuntu 24.04 operation under both X11 and Wayland through XWayland.
 
 DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source patches to the upstream runtime. If any required behavior cannot be achieved without a fork or patch, or any gate condition fails, stop product-foundation and release work, document the blocker, and require a separate architecture decision. The current documentation change does not claim that the gate has passed.

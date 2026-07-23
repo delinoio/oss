@@ -287,6 +287,15 @@ describe("probe harness", () => {
         },
       ],
       [
+        ProbeId.HelperProcessCleanup,
+        (driver) => {
+          driver.helperProcessCleanup = async () => ({
+            helperProcessCountBeforeShutdown: 0,
+            helperProcessCountAfterShutdown: 0,
+          });
+        },
+      ],
+      [
         ProbeId.Packaging,
         (driver) => {
           driver.packaging = async (formats) => ({
