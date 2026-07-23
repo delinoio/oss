@@ -190,6 +190,20 @@ DECLARE
     subtree_height integer := 1;
     creates_cycle boolean := false;
 BEGIN
+    -- Serialize hierarchy validation for one organization so concurrent moves
+    -- cannot each validate against the other's previous parent.
+    PERFORM 1
+    FROM organizations
+    WHERE id IN (
+        NEW.organization_id,
+        CASE
+            WHEN TG_OP = 'UPDATE' THEN OLD.organization_id
+            ELSE NEW.organization_id
+        END
+    )
+    ORDER BY id
+    FOR UPDATE;
+
     IF NEW.parent_team_id IS NOT NULL THEN
         WITH RECURSIVE ancestors AS (
             SELECT

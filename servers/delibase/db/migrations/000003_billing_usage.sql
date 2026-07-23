@@ -111,7 +111,7 @@ FOR EACH ROW EXECUTE FUNCTION reject_ledger_entry_mutation();
 
 CREATE TABLE usage_reservations (
     id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+    organization_id uuid NOT NULL,
     team_id uuid NOT NULL,
     team_name_snapshot text NOT NULL,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE RESTRICT,
@@ -126,6 +126,9 @@ CREATE TABLE usage_reservations (
     client_reference text NOT NULL,
     status text NOT NULL DEFAULT 'held'
         CHECK (status IN ('held', 'committed', 'released', 'expired')),
+    active_organization_id uuid GENERATED ALWAYS AS (
+        CASE WHEN status = 'held' THEN organization_id ELSE NULL END
+    ) STORED,
     active_team_id uuid GENERATED ALWAYS AS (
         CASE WHEN status = 'held' THEN team_id ELSE NULL END
     ) STORED,
@@ -149,10 +152,13 @@ CREATE TABLE usage_reservations (
         account_id,
         service_identity_id
     ),
+    FOREIGN KEY (active_organization_id)
+        REFERENCES organizations(id) ON DELETE RESTRICT,
     FOREIGN KEY (organization_id, active_team_id)
         REFERENCES teams(organization_id, id) ON DELETE RESTRICT,
-    FOREIGN KEY (active_account_id)
-        REFERENCES accounts(id) ON DELETE RESTRICT,
+    FOREIGN KEY (active_organization_id, active_account_id)
+        REFERENCES organization_memberships(organization_id, account_id)
+        ON DELETE RESTRICT,
     FOREIGN KEY (active_service_identity_id, active_meter_id)
         REFERENCES service_meter_allowlists(service_identity_id, meter_id)
         ON DELETE RESTRICT,
@@ -175,8 +181,15 @@ CREATE FUNCTION validate_usage_reservation_references()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    locked_team_name text;
+    locked_price_micros bigint;
+    price_effective_from timestamptz;
+    price_effective_until timestamptz;
+    reservation_ttl_seconds bigint;
 BEGIN
-    PERFORM 1
+    SELECT name
+    INTO locked_team_name
     FROM teams
     WHERE organization_id = NEW.organization_id
       AND id = NEW.team_id
@@ -185,13 +198,62 @@ BEGIN
         RAISE EXCEPTION 'reservation team does not belong to organization'
             USING ERRCODE = 'foreign_key_violation';
     END IF;
+    IF NEW.team_name_snapshot <> locked_team_name THEN
+        RAISE EXCEPTION 'reservation team snapshot does not match team'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    SELECT
+        price.usd_micros_per_unit,
+        price.effective_from,
+        price.effective_until,
+        meter.reservation_ttl_seconds
+    INTO
+        locked_price_micros,
+        price_effective_from,
+        price_effective_until,
+        reservation_ttl_seconds
+    FROM catalog_price_versions AS price
+    JOIN catalog_meters AS meter ON meter.id = price.meter_id
+    WHERE price.meter_id = NEW.meter_id
+      AND price.id = NEW.price_version_id
+    FOR KEY SHARE OF price, meter;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'reservation price does not belong to meter'
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    IF NEW.usd_micros_per_unit <> locked_price_micros THEN
+        RAISE EXCEPTION 'reservation price snapshot does not match catalog'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.created_at < price_effective_from
+       OR (
+           price_effective_until IS NOT NULL
+           AND NEW.created_at >= price_effective_until
+       ) THEN
+        RAISE EXCEPTION 'reservation price is not effective at creation'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.expires_at
+       <> NEW.created_at + reservation_ttl_seconds * interval '1 second' THEN
+        RAISE EXCEPTION 'reservation expiry does not match meter TTL'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
     IF NEW.status = 'held' THEN
         PERFORM 1
-        FROM service_meter_allowlists
-        WHERE service_identity_id = NEW.service_identity_id
-          AND meter_id = NEW.meter_id
-          AND enabled
-        FOR KEY SHARE;
+        FROM service_meter_allowlists AS allowlist
+        JOIN service_identities AS service
+          ON service.id = allowlist.service_identity_id
+        JOIN catalog_meters AS meter ON meter.id = allowlist.meter_id
+        JOIN catalog_apps AS app ON app.id = meter.app_id
+        WHERE allowlist.service_identity_id = NEW.service_identity_id
+          AND allowlist.meter_id = NEW.meter_id
+          AND allowlist.enabled
+          AND service.enabled
+          AND meter.enabled
+          AND app.enabled
+        FOR KEY SHARE OF allowlist, service, meter, app;
         IF NOT FOUND THEN
             RAISE EXCEPTION 'reservation service is not allowed for meter'
                 USING ERRCODE = 'foreign_key_violation';
@@ -202,10 +264,44 @@ END;
 $$;
 
 CREATE TRIGGER usage_reservations_validate_references
-BEFORE INSERT OR UPDATE OF
-    organization_id, team_id, service_identity_id, meter_id, status
+BEFORE INSERT
 ON usage_reservations
 FOR EACH ROW EXECUTE FUNCTION validate_usage_reservation_references();
+
+CREATE FUNCTION enforce_usage_reservation_transition()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    NEW.finalized_at := transaction_timestamp();
+    IF OLD.status <> 'held'
+       OR NEW.status NOT IN ('committed', 'released', 'expired')
+       OR NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
+       OR NEW.team_id IS DISTINCT FROM OLD.team_id
+       OR NEW.team_name_snapshot IS DISTINCT FROM OLD.team_name_snapshot
+       OR NEW.meter_id IS DISTINCT FROM OLD.meter_id
+       OR NEW.price_version_id IS DISTINCT FROM OLD.price_version_id
+       OR NEW.account_id IS DISTINCT FROM OLD.account_id
+       OR NEW.service_identity_id IS DISTINCT FROM OLD.service_identity_id
+       OR NEW.maximum_units IS DISTINCT FROM OLD.maximum_units
+       OR NEW.usd_micros_per_unit IS DISTINCT FROM OLD.usd_micros_per_unit
+       OR NEW.maximum_cost_micros IS DISTINCT FROM OLD.maximum_cost_micros
+       OR NEW.held_credit_micros IS DISTINCT FROM OLD.held_credit_micros
+       OR NEW.held_overage_micros IS DISTINCT FROM OLD.held_overage_micros
+       OR NEW.client_reference IS DISTINCT FROM OLD.client_reference
+       OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+        RAISE EXCEPTION 'usage reservation transition is invalid'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER usage_reservations_enforce_transition
+BEFORE UPDATE ON usage_reservations
+FOR EACH ROW EXECUTE FUNCTION enforce_usage_reservation_transition();
 
 CREATE INDEX usage_reservations_active_org_idx
     ON usage_reservations(organization_id, expires_at) WHERE status = 'held';
@@ -215,7 +311,7 @@ CREATE INDEX usage_reservations_active_team_idx
 CREATE TABLE usage_records (
     id uuid PRIMARY KEY,
     reservation_id uuid NOT NULL UNIQUE,
-    organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+    organization_id uuid NOT NULL,
     team_id uuid NOT NULL,
     team_name_snapshot text NOT NULL,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE RESTRICT,
@@ -254,6 +350,8 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     reservation usage_reservations%ROWTYPE;
+    expected_credit_micros bigint;
+    expected_overage_micros bigint;
 BEGIN
     SELECT *
     INTO reservation
@@ -282,9 +380,23 @@ BEGIN
         RAISE EXCEPTION 'committed usage exceeds reservation maximum'
             USING ERRCODE = 'check_violation';
     END IF;
+    IF NEW.team_name_snapshot <> reservation.team_name_snapshot THEN
+        RAISE EXCEPTION 'usage team snapshot does not match reservation'
+            USING ERRCODE = 'check_violation';
+    END IF;
     IF NEW.total_cost_micros::numeric
        <> NEW.committed_units::numeric * reservation.usd_micros_per_unit::numeric THEN
         RAISE EXCEPTION 'committed usage cost does not match reservation price'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    expected_credit_micros := LEAST(
+        NEW.total_cost_micros,
+        reservation.held_credit_micros
+    );
+    expected_overage_micros := NEW.total_cost_micros - expected_credit_micros;
+    IF NEW.credit_applied_micros <> expected_credit_micros
+       OR NEW.overage_applied_micros <> expected_overage_micros THEN
+        RAISE EXCEPTION 'committed usage split does not match reservation holds'
             USING ERRCODE = 'check_violation';
     END IF;
 
@@ -293,6 +405,7 @@ BEGIN
         finalized_at = transaction_timestamp()
     WHERE id = reservation.id;
 
+    NEW.committed_at := transaction_timestamp();
     RETURN NEW;
 END;
 $$;
@@ -324,14 +437,25 @@ DECLARE
     linked_reservation_id uuid;
     linked_team_id uuid;
     linked_team_name text;
+    current_balance_micros numeric;
 BEGIN
     PERFORM 1
     FROM organizations
     WHERE id = NEW.organization_id
-    FOR KEY SHARE;
+    FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'ledger organization does not exist'
             USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
+    SELECT COALESCE(sum(amount_micros), 0)
+    INTO current_balance_micros
+    FROM ledger_entries
+    WHERE organization_id = NEW.organization_id;
+    IF NEW.balance_after_micros::numeric
+       <> current_balance_micros + NEW.amount_micros::numeric THEN
+        RAISE EXCEPTION 'ledger balance does not match prior balance and amount'
+            USING ERRCODE = 'check_violation';
     END IF;
 
     IF NEW.billing_period_id IS NOT NULL THEN

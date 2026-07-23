@@ -275,6 +275,7 @@ type UsageReservation struct {
 	HeldOverageMicros       int64
 	ClientReference         string
 	Status                  string
+	ActiveOrganizationID    pgtype.UUID
 	ActiveTeamID            pgtype.UUID
 	ActiveAccountID         pgtype.UUID
 	ActiveServiceIdentityID pgtype.UUID

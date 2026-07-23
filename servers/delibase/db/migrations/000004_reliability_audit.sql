@@ -130,3 +130,17 @@ CREATE INDEX audit_events_organization_idx
     ON audit_events(organization_id, occurred_at, id);
 CREATE INDEX audit_events_reservation_idx
     ON audit_events(reservation_id) WHERE reservation_id IS NOT NULL;
+
+CREATE FUNCTION reject_audit_event_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'audit events are append-only'
+        USING ERRCODE = 'check_violation';
+END;
+$$;
+
+CREATE TRIGGER audit_events_append_only
+BEFORE UPDATE OR DELETE ON audit_events
+FOR EACH ROW EXECUTE FUNCTION reject_audit_event_mutation();
