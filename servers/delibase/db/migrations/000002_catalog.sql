@@ -79,3 +79,20 @@ CREATE TABLE polar_meter_mappings (
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     CHECK (length(polar_meter_id) BETWEEN 1 AND 255)
 );
+
+CREATE FUNCTION preserve_polar_meter_identifier()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.polar_meter_id IS DISTINCT FROM OLD.polar_meter_id THEN
+        RAISE EXCEPTION 'Polar meter identifier is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER polar_meter_mappings_preserve_identifier
+BEFORE UPDATE OF polar_meter_id ON polar_meter_mappings
+FOR EACH ROW EXECUTE FUNCTION preserve_polar_meter_identifier();

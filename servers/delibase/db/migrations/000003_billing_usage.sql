@@ -6,6 +6,23 @@ CREATE TABLE polar_customers (
     CHECK (length(polar_customer_id) BETWEEN 1 AND 255)
 );
 
+CREATE FUNCTION preserve_polar_customer_identifier()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.polar_customer_id IS DISTINCT FROM OLD.polar_customer_id THEN
+        RAISE EXCEPTION 'Polar customer identifier is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER polar_customers_preserve_identifier
+BEFORE UPDATE OF polar_customer_id ON polar_customers
+FOR EACH ROW EXECUTE FUNCTION preserve_polar_customer_identifier();
+
 CREATE FUNCTION require_organization_polar_customer()
 RETURNS trigger
 LANGUAGE plpgsql

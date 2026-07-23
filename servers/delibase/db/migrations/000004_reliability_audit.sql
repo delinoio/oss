@@ -40,6 +40,10 @@ BEGIN
         RAISE EXCEPTION 'webhook inbox event is immutable'
             USING ERRCODE = 'check_violation';
     END IF;
+    IF OLD.processed_at IS NOT NULL AND NEW.processed_at IS NULL THEN
+        RAISE EXCEPTION 'webhook inbox processing cannot return to pending'
+            USING ERRCODE = 'check_violation';
+    END IF;
     RETURN NEW;
 END;
 $$;
@@ -81,6 +85,10 @@ BEGIN
        OR NEW.payload IS DISTINCT FROM OLD.payload
        OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
         RAISE EXCEPTION 'integration outbox event is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.delivered_at IS NOT NULL AND NEW.delivered_at IS NULL THEN
+        RAISE EXCEPTION 'integration outbox delivery cannot return to pending'
             USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;
@@ -135,6 +143,15 @@ BEGIN
        OR NEW.job_type IS DISTINCT FROM OLD.job_type
        OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
         RAISE EXCEPTION 'deletion job target is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.status = 'completed' AND NEW.status <> 'completed' THEN
+        RAISE EXCEPTION 'deletion job completion is terminal'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.completed_at IS NOT NULL
+       AND NEW.completed_at IS DISTINCT FROM OLD.completed_at THEN
+        RAISE EXCEPTION 'deletion job completion timestamp is immutable'
             USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;

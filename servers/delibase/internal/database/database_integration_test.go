@@ -1034,6 +1034,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		accountC,
 	)
 	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE polar_customers SET polar_customer_id = 'rewritten-customer' WHERE organization_id = $1",
+		orgA,
+	)
+	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE organization_memberships SET role = 'admin' WHERE organization_id = $1 AND account_id = $2",
 		orgA, accountA,
 	)
@@ -1080,6 +1084,13 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	)
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE organization_slug_aliases SET slug = 'rewritten-alias' WHERE slug = 'schema-a'",
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM organization_slug_registry WHERE slug = 'schema-a'",
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE organization_slug_registry SET organization_id = $1 WHERE slug = 'schema-a'",
+		orgB,
 	)
 	if _, err := transaction.Exec(
 		ctx,
@@ -1843,6 +1854,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		"DELETE FROM polar_meter_mappings WHERE meter_id = $1",
 		meterID,
 	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE polar_meter_mappings SET polar_meter_id = 'rewritten-meter' WHERE meter_id = $1",
+		meterID,
+	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
 			id, organization_id, team_id, team_name_snapshot, meter_id,
@@ -2173,6 +2188,20 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, accountJob); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE deletion_jobs
+		SET status = 'completed',
+		    completed_at = transaction_timestamp()
+		WHERE id = $1
+	`, accountJob); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE deletion_jobs
+		SET status = 'pending',
+		    completed_at = NULL
+		WHERE id = $1
+	`, accountJob)
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE deletion_jobs SET account_id = $1 WHERE id = $2",
 		accountA, accountJob,
@@ -2336,6 +2365,18 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE webhook_inbox
+		SET processed_at = transaction_timestamp()
+		WHERE provider = 'polar' AND provider_event_id = 'event-1'
+	`); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE webhook_inbox
+		SET processed_at = NULL
+		WHERE provider = 'polar' AND provider_event_id = 'event-1'
+	`)
 	requireConstraintFailure(t, ctx, transaction, `
 		UPDATE webhook_inbox
 		SET payload = '{"data":{"id":"rewritten"}}'
@@ -2392,6 +2433,18 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE integration_outbox
+		SET delivered_at = transaction_timestamp()
+		WHERE id = '0198a000-0000-7000-8000-000000000207'
+	`); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE integration_outbox
+		SET delivered_at = NULL
+		WHERE id = '0198a000-0000-7000-8000-000000000207'
+	`)
 	requireConstraintFailure(t, ctx, transaction, `
 		UPDATE integration_outbox
 		SET integration = 'logto',

@@ -83,6 +83,29 @@ CREATE TABLE organization_slug_registry (
     CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$')
 );
 
+CREATE FUNCTION preserve_organization_slug_registry()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE'
+       AND NOT EXISTS (
+           SELECT 1
+           FROM organizations
+           WHERE id = OLD.organization_id
+       ) THEN
+        -- The parent organization deletion owns the registry cascade.
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'organization slug registry rows are immutable'
+        USING ERRCODE = 'check_violation';
+END;
+$$;
+
+CREATE TRIGGER organization_slug_registry_preserve
+BEFORE UPDATE OR DELETE ON organization_slug_registry
+FOR EACH ROW EXECUTE FUNCTION preserve_organization_slug_registry();
+
 CREATE FUNCTION reserve_organization_slug(value text, owner_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -113,8 +136,6 @@ BEGIN
         IF NEW.slug = OLD.slug THEN
             RETURN NEW;
         END IF;
-        DELETE FROM organization_slug_registry
-        WHERE slug = OLD.slug AND organization_id = OLD.id;
         INSERT INTO organization_slug_aliases (slug, organization_id)
         VALUES (OLD.slug, OLD.id)
         ON CONFLICT (slug) DO NOTHING;
