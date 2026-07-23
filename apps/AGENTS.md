@@ -16,6 +16,7 @@
 
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/delidev-app`: React/TypeScript/Rsbuild Cloudflare Pages PWA for project `delidev`.
+- `apps/devhud`: planned local-only React/TypeScript/Rsbuild plus Tauri desktop/mobile app for project `devhud`; the sole canonical DevHud implementation path.
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
@@ -24,6 +25,17 @@
 
 - `mpapp` must remain Expo-based unless a documented architecture decision changes it.
 - Bluetooth capabilities and permissions must be explicitly documented in `docs/apps-mpapp-foundation.md`.
+
+### DevHud Rules
+
+- `apps/devhud` is the sole canonical implementation path for `devhud`. Keep it independent from `apps/delidev-app`, DeliDev accounts, catalog, billing, APIs, routes, contracts, and authentication.
+- DevHud's foundation is documentation-first. Do not add runtime, package, workspace, CI, release, publisher, or support automation until `docs/project-devhud.md` and `docs/apps-devhud-foundation.md` are synchronized with this file and root `AGENTS.md`.
+- The future package must use React, TypeScript, Rsbuild, and Tauri; desktop uses the pinned upstream CEF runtime and mobile uses standard iOS/Android system webviews. Do not create Tauri/WRY/`cef-rs` forks or local runtime patches. A failed CEF feasibility gate stops product-foundation and release work pending a separate architecture decision.
+- Preserve the exact DevHud identifiers `dev.deli.devhud`, `devhud.settings.v1`, `devhud.widget-configuration.v1`, `group.dev.deli.devhud`, and `dev.deli.devhud.widget`.
+- Production tools and user-visible widgets remain empty in `0.1.0`. Compile-only WidgetKit and Android AppWidget foundations must not be embedded or manifest-registered, and no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or DeliDev integration is authorized.
+- The only network exception is unauthenticated GitHub Releases update discovery/download for compatible signed `devhud@v*` releases. Never add GitHub tokens, remote configuration, telemetry, or another service dependency.
+- When implementation begins, package-local tasks must cover development, deterministic frontend build, typecheck, lint, tests, accessibility, desktop smoke, mobile build, widget build, and release validation; CI must also cover supported CEF desktop targets, mobile/widget compile checks, signatures, updater, SBOM, provenance, and measurements as defined in `docs/apps-devhud-foundation.md`.
+- Release publication requires the documented signing and publisher prerequisites, architecture-specific desktop artifacts, TestFlight/Google Play beta builds, and the documented manual rollback/upstream-pin/support runbooks. Missing credentials block publication. No runtime or release automation exists from this documentation-only change.
 
 ### DeliDev Rules
 
@@ -92,4 +104,5 @@
 - If `apps/binpm-docs` changes, run `pnpm --filter binpm-docs test` before finishing.
 - If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
+- If `apps/devhud` changes after implementation begins, run its documented typecheck, lint, unit/accessibility, desktop/mobile/widget, and release-validation tasks; frontend changes also require the repository frontend test baseline.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.

@@ -66,6 +66,8 @@
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `docs/apps-nodeup-docs-foundation.md`: Nodeup Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
+- `docs/project-devhud.md`: DevHud local-only project index and ownership contract.
+- `docs/apps-devhud-foundation.md`: DevHud React/TypeScript/Rsbuild plus Tauri desktop CEF, mobile webview, widget-boundary, security, diagnostics, CI, support, and release foundation contract.
 ### Project Identifier Contract
 
 Treat project IDs as stable enum-style values:
@@ -85,6 +87,7 @@ enum ProjectId {
   PublicDocs = "public-docs",
   DeliDev = "delidev",
   Delibase = "delibase",
+  DevHud = "devhud",
 }
 ```
 
@@ -103,6 +106,7 @@ enum ProjectId {
 - `public-docs` -> `apps/public-docs`
 - `delidev` -> `apps/delidev-app`
 - `delibase` -> `servers/delibase`, `protos/delibase`
+- `devhud` -> `apps/devhud` (sole canonical implementation path)
 - `servers/internal` -> repository-shared Go infrastructure consumed by `delibase`; it is not assigned to an unrelated project.
 
 ### DeliDev and delibase Contract Boundary
@@ -117,6 +121,14 @@ enum ProjectId {
 - Invitation acceptance and revocation use distinct stable `IdempotentOperation` values; invitation creation does not carry idempotency fields.
 - `servers/internal` owns reusable Go authentication, Connect, request/trace, redaction, HTTP, logging, and UUID v7 infrastructure only; it must not own delibase business rules.
 - Changes to routes, RPCs, roles, team hierarchy, invitations, billing, usage, authentication, generated clients, shared packages, validation commands, Pages scope, or GHCR scope require synchronized project/domain docs and the relevant `AGENTS.md` files.
+
+### DevHud and DeliDev Contract Boundary
+
+- `devhud` is a local-only project for individual developers and is independent from `delidev` and `delibase`.
+- `apps/devhud` is DevHud's sole canonical implementation path. Do not place DevHud runtime, native widget, backend, API, or shared contract code in another path.
+- DevHud must not consume or expose DeliDev accounts, catalog, billing, APIs, routes, contracts, organizations, or authentication. It has no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or cloud synchronization.
+- Production tools and user-visible widgets remain empty in `0.1.0`. The complete desktop/mobile, CEF-gate, identifier, security, diagnostic, GitHub-only updater, CI, beta-release, signing, support, performance, upstream-pin, rollback, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
+- This documentation-first registration does not create runtime, workspace membership, CI, release automation, or support artifacts. Runtime implementation may begin only after the project and domain contracts remain synchronized with root/app policies.
 
 ### Repository Default Technology Choices
 
