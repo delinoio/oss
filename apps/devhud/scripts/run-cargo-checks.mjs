@@ -1,10 +1,12 @@
 import { resolve } from "node:path";
 
-import { run } from "./process.mjs";
+import { run, runPackageManager } from "./process.mjs";
 
+const appRoot = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(import.meta.dirname, "../../..");
 const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
 
+await runPackageManager(["run", "build"], { cwd: appRoot });
 await run(cargo, ["fmt", "--all", "--", "--check"], {
   cwd: repositoryRoot,
 });

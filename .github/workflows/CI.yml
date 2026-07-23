@@ -399,6 +399,28 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
 
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build DevHud frontend
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter devhud build
+
       - name: Install DevHud Linux dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
