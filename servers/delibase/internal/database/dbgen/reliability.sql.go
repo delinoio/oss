@@ -101,10 +101,13 @@ WITH candidate AS (
     FROM deletion_jobs
     WHERE status IN ('pending', 'processing', 'failed')
       AND next_attempt_at <= $2
-      AND (claim_token IS NULL OR claim_expires_at <= $2)
       AND (
-          (dead_lettered_at IS NULL AND attempt_count < 12)
-          OR dead_lettered_at IS NOT NULL
+          (
+              dead_lettered_at IS NULL
+              AND attempt_count < 12
+              AND (claim_token IS NULL OR claim_expires_at <= $2)
+          )
+          OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
     ORDER BY next_attempt_at, created_at, id
     FOR UPDATE SKIP LOCKED
@@ -161,10 +164,13 @@ WITH candidate AS (
     FROM integration_outbox
     WHERE delivered_at IS NULL
       AND next_attempt_at <= $2
-      AND (claim_token IS NULL OR claim_expires_at <= $2)
       AND (
-          (dead_lettered_at IS NULL AND attempt_count < 12)
-          OR dead_lettered_at IS NOT NULL
+          (
+              dead_lettered_at IS NULL
+              AND attempt_count < 12
+              AND (claim_token IS NULL OR claim_expires_at <= $2)
+          )
+          OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
     ORDER BY next_attempt_at, created_at, id
     FOR UPDATE SKIP LOCKED
@@ -221,10 +227,13 @@ WITH candidate AS (
     FROM webhook_inbox
     WHERE processed_at IS NULL
       AND next_attempt_at <= $2
-      AND (claim_token IS NULL OR claim_expires_at <= $2)
       AND (
-          (dead_lettered_at IS NULL AND attempt_count < 12)
-          OR dead_lettered_at IS NOT NULL
+          (
+              dead_lettered_at IS NULL
+              AND attempt_count < 12
+              AND (claim_token IS NULL OR claim_expires_at <= $2)
+          )
+          OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
     ORDER BY next_attempt_at, received_at, id
     FOR UPDATE SKIP LOCKED
@@ -802,14 +811,13 @@ func (q *Queries) GetWebhookInbox(ctx context.Context, id pgtype.UUID) (WebhookI
 const recoverExhaustedDeletionJobs = `-- name: RecoverExhaustedDeletionJobs :execrows
 UPDATE deletion_jobs
 SET status = 'failed',
-    dead_lettered_at = claim_expires_at,
+    dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
     next_attempt_at = claim_expires_at + interval '24 hours',
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE status = 'processing'
-  AND dead_lettered_at IS NULL
   AND attempt_count = 12
   AND claim_expires_at <= $1
 `
@@ -824,14 +832,13 @@ func (q *Queries) RecoverExhaustedDeletionJobs(ctx context.Context, now pgtype.T
 
 const recoverExhaustedIntegrationOutbox = `-- name: RecoverExhaustedIntegrationOutbox :execrows
 UPDATE integration_outbox
-SET dead_lettered_at = claim_expires_at,
+SET dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
     next_attempt_at = claim_expires_at + interval '24 hours',
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE delivered_at IS NULL
-  AND dead_lettered_at IS NULL
   AND attempt_count = 12
   AND claim_expires_at <= $1
 `
@@ -846,14 +853,13 @@ func (q *Queries) RecoverExhaustedIntegrationOutbox(ctx context.Context, now pgt
 
 const recoverExhaustedWebhookInbox = `-- name: RecoverExhaustedWebhookInbox :execrows
 UPDATE webhook_inbox
-SET dead_lettered_at = claim_expires_at,
+SET dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
     next_attempt_at = claim_expires_at + interval '24 hours',
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE processed_at IS NULL
-  AND dead_lettered_at IS NULL
   AND attempt_count = 12
   AND claim_expires_at <= $1
 `

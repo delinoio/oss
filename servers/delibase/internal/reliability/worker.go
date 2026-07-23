@@ -145,12 +145,13 @@ func (worker *Worker) RunOnce(ctx context.Context) (int, error) {
 			)
 			return processed, err
 		}
+		claimAt := worker.clock.Now().UTC()
 		item, ok, err := worker.storage.Claim(
 			ctx,
 			queue,
 			claimToken,
-			now,
-			now.Add(worker.leaseDuration),
+			claimAt,
+			claimAt.Add(worker.leaseDuration),
 		)
 		if err != nil {
 			worker.record(

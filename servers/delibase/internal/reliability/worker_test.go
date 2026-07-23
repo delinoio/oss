@@ -104,6 +104,52 @@ func TestWorkerTwelfthFailureAndDailyDeadLetterRetry(t *testing.T) {
 	}
 }
 
+func TestWorkerRefreshesLeaseClockBeforeEachQueueClaim(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	clock := &fixedClock{now: now}
+	storage := &fakeStorage{items: []Item{
+		{
+			ID:        uuid.MustParse("0198a000-0000-7000-8000-000000000804"),
+			Queue:     QueueWebhookInbox,
+			HandlerID: HandlerPolarOrderPaid,
+		},
+		{
+			ID:        uuid.MustParse("0198a000-0000-7000-8000-000000000805"),
+			Queue:     QueueIntegrationOutbox,
+			HandlerID: HandlerPolarReportUsage,
+		},
+	}}
+	registry := NewRegistry()
+	if err := registry.Register(
+		HandlerPolarOrderPaid,
+		func(context.Context, Item) error {
+			clock.now = now.Add(2 * time.Minute)
+			return nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(
+		HandlerPolarReportUsage,
+		func(context.Context, Item) error { return nil },
+	); err != nil {
+		t.Fatal(err)
+	}
+	worker := testWorker(t, storage, registry, clock, &fixedRandom{value: 0.5})
+	if count, err := worker.RunOnce(context.Background()); err != nil || count != 2 {
+		t.Fatalf("RunOnce() = %d, %v", count, err)
+	}
+	if len(storage.claims) != 3 {
+		t.Fatalf("claim count = %d", len(storage.claims))
+	}
+	outboxClaim := storage.claims[1]
+	if !outboxClaim.claimedAt.Equal(clock.now) ||
+		!outboxClaim.expiresAt.Equal(clock.now.Add(time.Minute)) {
+		t.Fatalf("outbox claim lease = %#v", outboxClaim)
+	}
+}
+
 func TestWorkerCompletesDeadLetterRecoveryAndDoesNotLogHandlerSecrets(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
@@ -288,10 +334,17 @@ type recordedFailure struct {
 	class      safeerr.Class
 }
 
+type recordedClaim struct {
+	queue     Queue
+	claimedAt time.Time
+	expiresAt time.Time
+}
+
 type fakeStorage struct {
 	items     []Item
 	completed []Item
 	failures  []recordedFailure
+	claims    []recordedClaim
 	recovered int
 }
 
@@ -304,9 +357,14 @@ func (storage *fakeStorage) Claim(
 	_ context.Context,
 	queue Queue,
 	claimToken uuid.UUID,
-	_ time.Time,
-	_ time.Time,
+	claimedAt time.Time,
+	expiresAt time.Time,
 ) (Item, bool, error) {
+	storage.claims = append(storage.claims, recordedClaim{
+		queue:     queue,
+		claimedAt: claimedAt,
+		expiresAt: expiresAt,
+	})
 	for index, item := range storage.items {
 		if item.Queue != queue {
 			continue

@@ -293,7 +293,7 @@ func testReliabilityCrashAndDailyRecovery(
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC().Add(2 * time.Second)
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(2 * time.Second)
 	lease := time.Minute
 	item, ok, err := storage.Claim(
 		ctx,
@@ -388,12 +388,54 @@ func testReliabilityCrashAndDailyRecovery(
 		item.DeadLetterAttemptCount != 1 {
 		t.Fatalf("daily claim = %#v, %t, %v", item, ok, err)
 	}
-	nextDaily := daily.Add(reliability.DeadLetterInterval)
+	deadLetterExpiredAt := daily.Add(lease)
+	if _, ok, err := storage.Claim(
+		ctx,
+		reliability.QueueIntegrationOutbox,
+		testReliabilityUUID(112),
+		deadLetterExpiredAt,
+		deadLetterExpiredAt.Add(lease),
+	); err != nil || ok {
+		t.Fatalf("expired crashed dead-letter claim = %t, %v", ok, err)
+	}
+	if err := storage.RecoverExhausted(ctx, deadLetterExpiredAt); err != nil {
+		t.Fatal(err)
+	}
+	row, err = queries.GetIntegrationOutbox(ctx, pgUUIDForTest(eventID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !row.DeadLetteredAt.Valid || row.ClaimToken.Valid ||
+		!row.NextAttemptAt.Time.Equal(deadLetterExpiredAt.Add(reliability.DeadLetterInterval)) {
+		t.Fatalf("crashed dead-letter attempt state = %#v", row)
+	}
+	if _, ok, err := storage.Claim(
+		ctx,
+		reliability.QueueIntegrationOutbox,
+		testReliabilityUUID(113),
+		deadLetterExpiredAt.Add(reliability.DeadLetterInterval-time.Second),
+		deadLetterExpiredAt.Add(reliability.DeadLetterInterval+lease),
+	); err != nil || ok {
+		t.Fatalf("early crashed dead-letter claim = %t, %v", ok, err)
+	}
+
+	nextDaily := deadLetterExpiredAt.Add(reliability.DeadLetterInterval)
+	item, ok, err = storage.Claim(
+		ctx,
+		reliability.QueueIntegrationOutbox,
+		testReliabilityUUID(114),
+		nextDaily,
+		nextDaily.Add(lease),
+	)
+	if err != nil || !ok || item.DeadLetterAttemptCount != 2 {
+		t.Fatalf("second daily claim = %#v, %t, %v", item, ok, err)
+	}
+	thirdDaily := nextDaily.Add(reliability.DeadLetterInterval)
 	if err := storage.Fail(
 		ctx,
 		item,
-		daily,
 		nextDaily,
+		thirdDaily,
 		false,
 		safeerr.ClassDependency,
 	); err != nil {
@@ -402,17 +444,17 @@ func testReliabilityCrashAndDailyRecovery(
 	item, ok, err = storage.Claim(
 		ctx,
 		reliability.QueueIntegrationOutbox,
-		testReliabilityUUID(112),
-		nextDaily,
-		nextDaily.Add(lease),
+		testReliabilityUUID(115),
+		thirdDaily,
+		thirdDaily.Add(lease),
 	)
-	if err != nil || !ok || item.DeadLetterAttemptCount != 2 {
-		t.Fatalf("second daily claim = %#v, %t, %v", item, ok, err)
+	if err != nil || !ok || item.DeadLetterAttemptCount != 3 {
+		t.Fatalf("third daily claim = %#v, %t, %v", item, ok, err)
 	}
-	if err := storage.Complete(ctx, item, nextDaily.Add(time.Second)); err != nil {
+	if err := storage.Complete(ctx, item, thirdDaily.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if err := storage.Complete(ctx, item, nextDaily.Add(2*time.Second)); !errors.Is(
+	if err := storage.Complete(ctx, item, thirdDaily.Add(2*time.Second)); !errors.Is(
 		err,
 		reliability.ErrStaleClaim,
 	) {
@@ -421,8 +463,8 @@ func testReliabilityCrashAndDailyRecovery(
 	if err := storage.Fail(
 		ctx,
 		item,
-		nextDaily.Add(2*time.Second),
-		nextDaily.Add(3*time.Second),
+		thirdDaily.Add(2*time.Second),
+		thirdDaily.Add(3*time.Second),
 		false,
 		safeerr.ClassInternal,
 	); !errors.Is(err, reliability.ErrStaleClaim) {
