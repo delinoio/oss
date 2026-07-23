@@ -25,5 +25,18 @@ describe("runtime configuration", () => {
       "https://deli.dev",
     );
     expect(invalid.issues).toHaveLength(4);
+
+    const wrongApiOrigin = readRuntimeConfig(
+      {
+        PUBLIC_DELIBASE_API_ORIGIN: "https://staging.example",
+        PUBLIC_LOGTO_APP_ID: "spa-id",
+        PUBLIC_LOGTO_AUDIENCE: canonicalAudience,
+        PUBLIC_LOGTO_ENDPOINT: "https://tenant.logto.app",
+      },
+      "https://deli.dev",
+    );
+    expect(wrongApiOrigin.issues).toEqual([
+      `PUBLIC_DELIBASE_API_ORIGIN must be ${canonicalAudience}.`,
+    ]);
   });
 });

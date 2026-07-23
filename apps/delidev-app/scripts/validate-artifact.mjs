@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { dirname } from "node:path";
@@ -47,6 +48,26 @@ if (
   serviceWorker.includes("__SHELL_FILES__")
 ) {
   throw new Error("Service worker placeholders were not replaced.");
+}
+const shellVersion = serviceWorker.match(
+  /const SHELL_VERSION = "([a-f0-9]+)";/,
+)?.[1];
+const serializedShellFiles = serviceWorker.match(
+  /const SHELL_FILES = (\[.*\]);/,
+)?.[1];
+if (!shellVersion || !serializedShellFiles) {
+  throw new Error("Service worker shell metadata is invalid.");
+}
+const shellFiles = JSON.parse(serializedShellFiles);
+const shellHash = createHash("sha256");
+for (const path of shellFiles) {
+  shellHash.update(path);
+  if (path !== "/") {
+    shellHash.update(await readFile(join(dist, path.slice(1))));
+  }
+}
+if (shellVersion !== shellHash.digest("hex").slice(0, 12)) {
+  throw new Error("Service worker version does not fingerprint shell contents.");
 }
 if (
   !serviceWorker.includes("CatalogService") ||

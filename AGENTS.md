@@ -343,13 +343,15 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `node-delidev-app`: runs `pnpm --filter @delinoio/delibase-connect build`, the DeliDev `typecheck`, `lint`, `test`, `build`, `test:pwa`, and `test:browser` scripts, and installs the required Playwright browser engines before browser smoke tests.
 - `proto-delibase`: runs `pnpm check:proto`, `go test ./protos/delibase/...`, `go vet ./protos/delibase/...`, and `pnpm --filter @delinoio/delibase-connect typecheck` on delibase Protobuf and generation changes.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
 Change-scoped execution rules:
 - CI jobs perform self-gating (there is no standalone `detect-changes` job).
 - Go and Rust jobs use in-job path-based change detection via `dorny/paths-filter`.
-- Node jobs use in-job Turbo affected detection via `pnpm dlx turbo@2.9.14 query affected --packages <workspace>`.
+- Existing Node workspace test/lint jobs use in-job Turbo affected detection via `pnpm dlx turbo@2.9.14 query affected --packages <workspace>`.
+- `node-delidev-app` uses in-job `dorny/paths-filter` gating across its app, delibase client, workspace, app-domain policy, and CI workflow inputs.
 - Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.

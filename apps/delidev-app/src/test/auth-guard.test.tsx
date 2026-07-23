@@ -6,14 +6,17 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AuthSessionProvider,
   AuthStatus,
+  safeReturnPath,
   type AuthSessionValue,
 } from "../auth/AuthSession";
 import { ProtectedRoute } from "../components/ProtectedRoute";
-import { safeReturnPath } from "../pages/AuthCallbackPage";
 
-function renderGuard(value: AuthSessionValue) {
+function renderGuard(
+  value: AuthSessionValue,
+  initialEntry = "/account?from=test",
+) {
   return render(
-    <MemoryRouter initialEntries={["/account?from=test"]}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <AuthSessionProvider value={value}>
         <Routes>
           <Route
@@ -21,6 +24,14 @@ function renderGuard(value: AuthSessionValue) {
             element={
               <ProtectedRoute>
                 <p>Private account</p>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invite/:token"
+            element={
+              <ProtectedRoute checkOnboarding={false}>
+                <p>Private invitation</p>
               </ProtectedRoute>
             }
           />
@@ -58,8 +69,25 @@ describe("protected route guard", () => {
     ).toBeDisabled();
   });
 
+  it("does not retain an invitation bearer token for sign-in", async () => {
+    const signIn = vi.fn(async () => undefined);
+    renderGuard(
+      {
+        signIn,
+        signOut: async () => undefined,
+        status: AuthStatus.SignedOut,
+      },
+      "/invite/secret-bearer-token",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Sign in with Logto" }),
+    );
+    expect(signIn).toHaveBeenCalledWith("/account");
+  });
+
   it("accepts only internal callback return paths", () => {
     expect(safeReturnPath("/o/acme/apps")).toBe("/o/acme/apps");
+    expect(safeReturnPath("/invite/secret-bearer-token")).toBe("/account");
     expect(safeReturnPath("//attacker.example")).toBe("/account");
     expect(safeReturnPath("https://attacker.example")).toBe("/account");
   });

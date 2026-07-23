@@ -1,9 +1,13 @@
 import { useQuery } from "@connectrpc/connect-query";
 import { AccountService } from "@delinoio/delibase-connect";
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
-import { AuthStatus, useAuthSession } from "../auth/AuthSession";
+import {
+  AuthStatus,
+  safeReturnPath,
+  useAuthSession,
+} from "../auth/AuthSession";
 import { useOnline } from "../hooks/useOnline";
 import { ErrorState, LoadingState } from "./States";
 
@@ -17,15 +21,9 @@ export function ProtectedRoute({
   const auth = useAuthSession();
   const location = useLocation();
   const online = useOnline();
-
-  useEffect(() => {
-    if (auth.status === AuthStatus.SignedOut) {
-      sessionStorage.setItem(
-        "delidev:return-to",
-        `${location.pathname}${location.search}`,
-      );
-    }
-  }, [auth.status, location.pathname, location.search]);
+  const returnTo = safeReturnPath(
+    `${location.pathname}${location.search}`,
+  );
 
   if (auth.status === AuthStatus.Loading) {
     return (
@@ -52,9 +50,7 @@ export function ProtectedRoute({
             className="button primary"
             disabled={!online || auth.status === AuthStatus.Unavailable}
             type="button"
-            onClick={() =>
-              void auth.signIn(`${location.pathname}${location.search}`)
-            }
+            onClick={() => void auth.signIn(returnTo)}
           >
             Sign in with Logto
           </button>

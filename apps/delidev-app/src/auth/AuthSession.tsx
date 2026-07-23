@@ -28,6 +28,19 @@ export interface AuthSessionValue {
 
 const AuthSessionContext = createContext<AuthSessionValue | undefined>(undefined);
 
+export function safeReturnPath(value: string | null | undefined): string {
+  const containsInvitationToken =
+    value === "/invite" || value?.startsWith("/invite/");
+  if (
+    value?.startsWith("/") &&
+    !value.startsWith("//") &&
+    !containsInvitationToken
+  ) {
+    return value;
+  }
+  return "/account";
+}
+
 export function useAuthSession(): AuthSessionValue {
   const session = use(AuthSessionContext);
   if (!session) {
@@ -68,7 +81,7 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
 
   const startSignIn = useCallback(
     async (returnTo = window.location.pathname + window.location.search) => {
-      sessionStorage.setItem("delidev:return-to", returnTo);
+      sessionStorage.setItem("delidev:return-to", safeReturnPath(returnTo));
       await signIn(`${runtimeConfig.appOrigin}/auth/callback`);
     },
     [signIn],

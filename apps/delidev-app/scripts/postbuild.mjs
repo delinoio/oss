@@ -35,10 +35,14 @@ const shellFiles = files
   .sort();
 
 shellFiles.unshift("/");
-const shellFingerprint = createHash("sha256")
-  .update(shellFiles.join("\n"))
-  .digest("hex")
-  .slice(0, 12);
+const shellHash = createHash("sha256");
+for (const path of shellFiles) {
+  shellHash.update(path);
+  if (path !== "/") {
+    shellHash.update(await readFile(join(distRoot, path.slice(1))));
+  }
+}
+const shellFingerprint = shellHash.digest("hex").slice(0, 12);
 const template = await readFile(join(appRoot, "src/pwa/service-worker-template.js"), "utf8");
 const serviceWorker = template
   .replace("__SHELL_VERSION__", shellFingerprint)

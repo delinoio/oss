@@ -2,11 +2,8 @@ import { useHandleSignInCallback } from "@logto/react";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { safeReturnPath } from "../auth/AuthSession";
 import { ErrorState, LoadingState } from "../components/States";
-
-function safeReturnPath(value: string | null): string {
-  return value?.startsWith("/") && !value.startsWith("//") ? value : "/account";
-}
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
@@ -53,5 +50,3 @@ export function UnavailableCallbackPage() {
     </div>
   );
 }
-
-export { safeReturnPath };

@@ -8,7 +8,13 @@ interface PublicEnvironment {
   readonly PUBLIC_LOGTO_AUDIENCE?: string;
 }
 
-const publicEnvironment = import.meta.env as PublicEnvironment;
+const publicEnvironment: PublicEnvironment = {
+  PUBLIC_DELIBASE_API_ORIGIN:
+    import.meta.env.PUBLIC_DELIBASE_API_ORIGIN,
+  PUBLIC_LOGTO_ENDPOINT: import.meta.env.PUBLIC_LOGTO_ENDPOINT,
+  PUBLIC_LOGTO_APP_ID: import.meta.env.PUBLIC_LOGTO_APP_ID,
+  PUBLIC_LOGTO_AUDIENCE: import.meta.env.PUBLIC_LOGTO_AUDIENCE,
+};
 
 export interface RuntimeConfig {
   apiOrigin: string;
@@ -40,8 +46,10 @@ export function readRuntimeConfig(
   const audience = environment.PUBLIC_LOGTO_AUDIENCE?.trim() ?? "";
   const issues: string[] = [];
 
-  if (!validHttpsUrl(apiOrigin)) {
-    issues.push("PUBLIC_DELIBASE_API_ORIGIN must be an HTTPS URL.");
+  if (apiOrigin !== CANONICAL_AUDIENCE) {
+    issues.push(
+      `PUBLIC_DELIBASE_API_ORIGIN must be ${CANONICAL_AUDIENCE}.`,
+    );
   }
   if (!validHttpsUrl(endpoint)) {
     issues.push("PUBLIC_LOGTO_ENDPOINT must be an HTTPS URL.");
