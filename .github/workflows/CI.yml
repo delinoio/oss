@@ -156,6 +156,93 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: go test ./...
 
+  delibase-server:
+    name: Delibase Server
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: delibase
+          POSTGRES_PASSWORD: delibase_test
+          POSTGRES_DB: delibase
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U delibase -d delibase"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            delibase:
+              - .github/workflows/CI.yml
+              - go.mod
+              - go.sum
+              - protos/delibase/gen/go/**
+              - servers/delibase/**
+              - servers/internal/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DELIBASE_CHANGED: ${{ steps.filter.outputs.delibase }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DELIBASE_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (no delibase server changes)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping delibase server checks: no relevant changes"
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install sqlc
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+
+      - name: Check sqlc generated output
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          set -euo pipefail
+
+          servers/delibase/scripts/generate-sqlc.sh
+          git diff --exit-code -- servers/delibase/internal/database/dbgen
+
+      - name: Run delibase PostgreSQL tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DELIBASE_TEST_DATABASE_URL: postgres://delibase:delibase_test@127.0.0.1:5432/delibase?sslmode=disable
+        run: go test -count=1 ./servers/delibase/...
+
+      - name: Validate delibase image
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: servers/delibase/scripts/test-image.sh
+
   proto-delibase:
     name: Delibase Protobuf
     runs-on: ubuntu-latest
@@ -882,6 +969,7 @@ jobs:
     needs:
       - go-quality
       - go-test
+      - delibase-server
       - proto-delibase
       - rust-fmt
       - rust-clippy

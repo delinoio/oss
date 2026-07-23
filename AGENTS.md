@@ -113,7 +113,7 @@ enum ProjectId {
 
 - Canonical future origins are `https://deli.dev` for DeliDev and `https://delibase.deli.dev` for delibase. Documentation must not imply either service is activated or deployed by issue #722.
 - `apps/delidev-app` owns the React/TypeScript/Rsbuild PWA, stable routes, browser-safe configuration, static Pages artifact, and sensitive-cache exclusions.
-- `servers/delibase` owns Go/PostgreSQL/sqlc persistence, organization/team/invitation policy, append-only billing and reservation invariants, provider integrations, server configuration, and future GHCR artifacts.
+- `servers/delibase` owns Go/PostgreSQL/sqlc persistence, organization/team/invitation policy, immutable organization/team-membership and provider identities, historical subscription and billing-period snapshots, append-only billing and reservation invariants, provider integrations, server configuration, and future GHCR artifacts.
 - `protos/delibase/v1` owns the versioned `delibase.v1` source contract and generation boundary for exactly six Connect services: `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, `BillingService`, and `UsageService`.
 - `protos/delibase/gen/go`, `protos/delibase/gen/ts`, and the workspace package `@delinoio/delibase-connect` are reproducible derived views of that source. Root `pnpm generate:proto` generates both runtimes and builds the package's loadable `dist` exports; `pnpm check:proto` validates compatibility and reproducibility.
 - Inbound authentication accepts Logto user or M2M bearer access tokens, never raw client secrets. Authenticated invitation preview and acceptance use the invitation bearer token without requiring pre-existing organization membership or team access.
@@ -355,6 +355,7 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `delibase-server`: runs sqlc reproducibility checks, the delibase Go test suite against PostgreSQL 17, and the non-root Docker image health/readiness validation on delibase server, generated Go API, or shared server infrastructure changes.
 - `node-delidev-app`: runs `pnpm --filter @delinoio/delibase-connect build`, the DeliDev `typecheck`, `lint`, `test`, `build`, `test:pwa`, and `test:browser` scripts, rejects deterministic rebuild changes to the checked-in `dist` artifact, and installs the required Playwright browser engines before browser smoke tests.
 - `proto-delibase`: runs `pnpm check:proto`, `go test ./protos/delibase/...`, `go vet ./protos/delibase/...`, and `pnpm --filter @delinoio/delibase-connect typecheck` on delibase Protobuf and generation changes.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
