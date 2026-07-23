@@ -1480,7 +1480,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		name   string
 		amount int64
 	}{
-		{name: "credit_grant", amount: 11},
+		{name: "credit_grant", amount: 6},
 		{name: "credit_reversal", amount: -1},
 		{name: "credit_forfeiture", amount: -1},
 	}
@@ -1521,7 +1521,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000136', $1, $2,
-			'credit_commit', -1, 8, 'unlinked-credit-commit'
+			'credit_commit', -1, 3, 'unlinked-credit-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1530,7 +1530,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000137', $1, $2,
-			'overage_commit', -1, 8, 'unlinked-overage-commit'
+			'overage_commit', -1, 3, 'unlinked-overage-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1539,7 +1539,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000143', $1, $2,
-			'credit_commit', 1, 10, 'positive-credit-commit'
+			'credit_commit', 1, 5, 'positive-credit-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1548,7 +1548,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000144', $1, $2,
-			'credit_forfeiture', 1, 10, 'positive-credit-forfeiture'
+			'credit_forfeiture', 1, 5, 'positive-credit-forfeiture'
 		)
 	`, orgA, periodA)
 	if _, err := transaction.Exec(ctx, `
@@ -1619,6 +1619,20 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			transaction_timestamp() + interval '1 minute'
 		)
 	`, orgA, teamA, meterID, priceID, accountA, serviceID)
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, entry_type, amount_micros,
+			balance_after_micros, source_reference
+		)
+		SELECT
+			'0198a000-0000-7000-8000-000000000151',
+			$1, 'credit_grant', 5, COALESCE(sum(amount_micros), 0) + 5,
+			'post-unfunded-credit'
+		FROM ledger_entries
+		WHERE organization_id = $1
+	`, orgA); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO billing_periods (
 			id, organization_id, subscription_id, starts_at, ends_at,
