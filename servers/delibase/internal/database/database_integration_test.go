@@ -2754,6 +2754,19 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, entry_type, amount_micros,
+			balance_after_micros, reservation_id, team_id_snapshot,
+			team_name_snapshot, source_reference
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000327',
+			$1, 'credit_hold', -1, 0, $2, $3, 'General',
+			'retained-organization-hold'
+		)
+	`, orgC, historyReserve, generalC); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_records (
 			id, reservation_id, organization_id, team_id, team_name_snapshot,
 			meter_id, account_id, service_identity_id, committed_units,
@@ -2770,7 +2783,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000210',
-			$1, $2, 'credit_commit', -1, 0, $3, $4, $5, 'General',
+			$1, $2, 'credit_commit', -1, -1, $3, $4, $5, 'General',
 			'retained-organization-usage'
 		)
 	`, orgC, periodC, historyReserve, historyRecord, generalC); err != nil {
