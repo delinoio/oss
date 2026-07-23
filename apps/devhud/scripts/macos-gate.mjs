@@ -248,6 +248,7 @@ async function runAppScenario({
   let sandboxEnabled = false;
   let systemThemeHandled = false;
   let rendererHandled = false;
+  let shortcutRequestsHandled = 0;
 
   const result = await execute(
     executable,
@@ -285,6 +286,22 @@ async function runAppScenario({
             throw new Error("macOS gate renderer helper was not observed");
           }
           process.kill(renderer.pid, "SIGKILL");
+        }
+
+        const shortcutRequests =
+          output.match(/devhud\.probe\.global_shortcut_ready/gu)?.length ?? 0;
+        while (shortcutRequestsHandled < shortcutRequests) {
+          shortcutRequestsHandled += 1;
+          await requireSuccess(
+            "osascript",
+            [
+              "-e",
+              'tell application "System Events" to key code 79 using {control down, option down, shift down}',
+            ],
+            {
+              timeoutMs: 30_000,
+            },
+          );
         }
       },
     },
@@ -632,7 +649,8 @@ async function main() {
     });
     if (
       !rendererResult.events.has("devhud.probe.renderer_termination") ||
-      !rendererResult.events.has("devhud.probe.renderer_termination_ready")
+      !rendererResult.events.has("devhud.probe.renderer_termination_ready") ||
+      rendererResult.helpersAfter !== 0
     ) {
       throw new Error("macOS renderer termination was not fatal");
     }

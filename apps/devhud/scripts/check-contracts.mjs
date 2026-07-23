@@ -164,6 +164,7 @@ requireCondition(
     capabilityJson.permissions?.includes(
       "allow-probe-macos-gate-renderer-ready",
     ) &&
+    capabilityJson.permissions?.includes("allow-probe-gate-failure") &&
     !capabilityJson.permissions?.includes("allow-probe-forbidden"),
   "the capability must allow only the scoped probe commands and deny the forbidden command",
 );
@@ -179,6 +180,15 @@ requireCondition(
     macosWorkflow.includes("target: aarch64-apple-darwin") &&
     macosWorkflow.includes("pnpm --dir apps/devhud gate:macos"),
   "the isolated macOS gate must cover native x64 and ARM64 runners",
+);
+requireCondition(
+  macosWorkflow.includes(
+    "github.event_name == 'pull_request' || ! github.ref_protected",
+  ) &&
+    macosWorkflow.includes(
+      "github.event_name != 'pull_request' && github.ref_protected",
+    ),
+  "pull requests and unprotected refs must run the macOS gate without signing credentials",
 );
 requireCondition(
   packageJson.scripts?.["gate:macos"] ===

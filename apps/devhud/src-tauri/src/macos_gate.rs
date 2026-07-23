@@ -23,10 +23,12 @@ const MENU_SETTINGS: &str = "settings";
 const MENU_CHECK_FOR_UPDATES: &str = "check-for-updates";
 const MENU_OPEN_DEVTOOLS: &str = "open-devtools";
 const MENU_QUIT: &str = "quit";
+const SHORTCUT_EVENT_TIMEOUT: Duration = Duration::from_secs(20);
 const SYSTEM_THEME_TIMEOUT: Duration = Duration::from_secs(20);
 const STATE_SETTLE_DELAY: Duration = Duration::from_millis(250);
 
 static DOCK_HIDDEN: AtomicBool = AtomicBool::new(false);
+static SHORTCUT_EVENT_OBSERVED: AtomicBool = AtomicBool::new(false);
 static SHORTCUT_REGISTERED: AtomicBool = AtomicBool::new(false);
 static SYSTEM_THEME_CHANGED: AtomicBool = AtomicBool::new(false);
 static TRAY_CREATED: AtomicBool = AtomicBool::new(false);
@@ -130,15 +132,20 @@ pub(super) fn setup(app: &mut App<ActiveRuntime>) -> Result<(), Box<dyn std::err
     SHORTCUT_REGISTERED.store(true, Ordering::Release);
     let app_handle = app.handle().clone();
     GlobalHotKeyEvent::set_event_handler(Some(move |event| {
-        if event.id == shortcut.id()
-            && event.state == HotKeyState::Pressed
-            && toggle_probe_window(&app_handle).is_err()
-        {
-            tracing::error!(
-                event = "devhud.probe.global_shortcut_failure",
-                classification = "shortcut-registration",
-                "registered shortcut could not toggle the probe window"
-            );
+        if event.id == shortcut.id() && event.state == HotKeyState::Pressed {
+            if toggle_probe_window(&app_handle).is_ok() {
+                SHORTCUT_EVENT_OBSERVED.store(true, Ordering::Release);
+                tracing::info!(
+                    event = "devhud.probe.global_shortcut_observed",
+                    "registered shortcut toggled the probe window"
+                );
+            } else {
+                tracing::error!(
+                    event = "devhud.probe.global_shortcut_failure",
+                    classification = "shortcut-registration",
+                    "registered shortcut could not toggle the probe window"
+                );
+            }
         }
     }));
     app.manage(GateShortcutManager(shortcut_manager));
@@ -187,6 +194,33 @@ fn require(condition: bool, error: ProbeCommandError) -> Result<(), ProbeCommand
     condition.then_some(()).ok_or(error)
 }
 
+fn exercise_registered_shortcut(
+    window: &WebviewWindow<ActiveRuntime>,
+    expected_visibility: bool,
+) -> Result<(), ProbeCommandError> {
+    SHORTCUT_EVENT_OBSERVED.store(false, Ordering::Release);
+    tracing::info!(
+        event = "devhud.probe.global_shortcut_ready",
+        "probe is ready to observe the registered shortcut"
+    );
+
+    let deadline = Instant::now() + SHORTCUT_EVENT_TIMEOUT;
+    while !SHORTCUT_EVENT_OBSERVED.load(Ordering::Acquire) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(100));
+    }
+    require(
+        SHORTCUT_EVENT_OBSERVED.load(Ordering::Acquire),
+        ProbeCommandError::GateShortcut,
+    )?;
+    require(
+        window
+            .is_visible()
+            .map_err(|_| ProbeCommandError::GateShortcut)?
+            == expected_visibility,
+        ProbeCommandError::GateShortcut,
+    )
+}
+
 fn run_window_lifecycle(window: &WebviewWindow<ActiveRuntime>) -> Result<(), ProbeCommandError> {
     window
         .close()
@@ -198,23 +232,44 @@ fn run_window_lifecycle(window: &WebviewWindow<ActiveRuntime>) -> Result<(), Pro
             .map_err(|_| ProbeCommandError::GateWindowLifecycle)?,
         ProbeCommandError::GateWindowLifecycle,
     )?;
+    require(
+        DOCK_HIDDEN.load(Ordering::Acquire),
+        ProbeCommandError::GateDockPolicy,
+    )?;
 
     window
         .show()
         .map_err(|_| ProbeCommandError::GateWindowLifecycle)?;
-    toggle_probe_window(window.app_handle())?;
+    exercise_registered_shortcut(window, false)?;
+    exercise_registered_shortcut(window, true)
+}
+
+fn run_autostart_checks(autolaunch: &AutoLaunch) -> Result<(), ProbeCommandError> {
     require(
-        !window
-            .is_visible()
-            .map_err(|_| ProbeCommandError::GateWindowLifecycle)?,
-        ProbeCommandError::GateWindowLifecycle,
+        !autolaunch
+            .is_enabled()
+            .map_err(|_| ProbeCommandError::GateAutostart)?,
+        ProbeCommandError::GateAutostart,
     )?;
-    toggle_probe_window(window.app_handle())?;
+    autolaunch
+        .enable()
+        .map_err(|_| ProbeCommandError::GateAutostart)?;
+
+    let enabled_result = autolaunch
+        .is_enabled()
+        .map_err(|_| ProbeCommandError::GateAutostart)
+        .and_then(|enabled| require(enabled, ProbeCommandError::GateAutostart));
+    let disable_result = autolaunch
+        .disable()
+        .map_err(|_| ProbeCommandError::GateAutostart);
+
+    enabled_result?;
+    disable_result?;
     require(
-        window
-            .is_visible()
-            .map_err(|_| ProbeCommandError::GateWindowLifecycle)?,
-        ProbeCommandError::GateWindowLifecycle,
+        !autolaunch
+            .is_enabled()
+            .map_err(|_| ProbeCommandError::GateAutostart)?,
+        ProbeCommandError::GateAutostart,
     )
 }
 
@@ -300,30 +355,7 @@ pub(super) fn run(app: AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError
         .0
         .lock()
         .map_err(|_| ProbeCommandError::GateAutostart)?;
-    require(
-        !autolaunch
-            .is_enabled()
-            .map_err(|_| ProbeCommandError::GateAutostart)?,
-        ProbeCommandError::GateAutostart,
-    )?;
-    autolaunch
-        .enable()
-        .map_err(|_| ProbeCommandError::GateAutostart)?;
-    require(
-        autolaunch
-            .is_enabled()
-            .map_err(|_| ProbeCommandError::GateAutostart)?,
-        ProbeCommandError::GateAutostart,
-    )?;
-    autolaunch
-        .disable()
-        .map_err(|_| ProbeCommandError::GateAutostart)?;
-    require(
-        !autolaunch
-            .is_enabled()
-            .map_err(|_| ProbeCommandError::GateAutostart)?,
-        ProbeCommandError::GateAutostart,
-    )?;
+    run_autostart_checks(&autolaunch)?;
 
     run_window_lifecycle(&window)?;
     run_theme_checks(&window)?;
@@ -336,30 +368,54 @@ pub(super) fn run(app: AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError
     Ok(())
 }
 
-pub(super) fn complete(app: AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError> {
-    let shortcut = gate_shortcut();
-    let shortcut_manager = app.state::<GateShortcutManager>().0.clone();
-    let (sender, receiver) = std::sync::mpsc::channel();
-    app.run_on_main_thread(move || {
-        let _ = sender.send(shortcut_manager.unregister(shortcut));
-    })
-    .map_err(|_| ProbeCommandError::GateShortcut)?;
-    receiver
-        .recv()
-        .map_err(|_| ProbeCommandError::GateShortcut)?
-        .map_err(|_| ProbeCommandError::GateShortcut)?;
-    SHORTCUT_REGISTERED.store(false, Ordering::Release);
-    require(
-        !SHORTCUT_REGISTERED.load(Ordering::Acquire),
-        ProbeCommandError::GateShortcut,
-    )?;
-    if let Ok(autolaunch) = app.state::<GateAutostart>().0.lock() {
-        let _ = autolaunch.disable();
-    }
+fn cleanup(app: &AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError> {
+    let shortcut_result = if SHORTCUT_REGISTERED.load(Ordering::Acquire) {
+        let shortcut = gate_shortcut();
+        let shortcut_manager = app.state::<GateShortcutManager>().0.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || {
+            let _ = sender.send(shortcut_manager.unregister(shortcut));
+        })
+        .map_err(|_| ProbeCommandError::GateShortcut)
+        .and_then(|()| {
+            receiver
+                .recv()
+                .map_err(|_| ProbeCommandError::GateShortcut)?
+                .map_err(|_| ProbeCommandError::GateShortcut)
+        })
+        .inspect(|()| SHORTCUT_REGISTERED.store(false, Ordering::Release))
+    } else {
+        Ok(())
+    };
 
+    let autostart_result = app
+        .state::<GateAutostart>()
+        .0
+        .lock()
+        .map_err(|_| ProbeCommandError::GateAutostart)
+        .and_then(|autolaunch| {
+            autolaunch
+                .disable()
+                .map_err(|_| ProbeCommandError::GateAutostart)
+        });
+
+    shortcut_result?;
+    autostart_result
+}
+
+pub(super) fn complete(app: AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError> {
+    cleanup(&app)?;
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(150));
         request_explicit_exit(&app);
     });
     Ok(())
+}
+
+pub(super) fn fail(app: AppHandle<ActiveRuntime>) {
+    let _ = cleanup(&app);
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(150));
+        app.exit(72);
+    });
 }

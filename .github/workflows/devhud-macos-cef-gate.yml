@@ -80,7 +80,15 @@ jobs:
           pnpm --dir apps/devhud check:contracts
           pnpm --dir apps/devhud check:locks
 
-      - name: Run native CEF gate
+      - name: Run native CEF gate without signing credentials
+        if: ${{ github.event_name == 'pull_request' || ! github.ref_protected }}
+        run: >-
+          pnpm --dir apps/devhud gate:macos
+          --target ${{ matrix.target }}
+          --evidence gate-evidence/macos-${{ matrix.architecture }}.json
+
+      - name: Run native CEF gate with protected signing credentials
+        if: ${{ github.event_name != 'pull_request' && github.ref_protected }}
         env:
           APPLE_API_ISSUER: ${{ secrets.DEVHUD_APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.DEVHUD_APPLE_API_KEY }}

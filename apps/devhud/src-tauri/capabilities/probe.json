@@ -10,6 +10,7 @@
     "allow-probe-gate-mode",
     "allow-probe-macos-gate-run",
     "allow-probe-macos-gate-complete",
-    "allow-probe-macos-gate-renderer-ready"
+    "allow-probe-macos-gate-renderer-ready",
+    "allow-probe-gate-failure"
   ]
 }

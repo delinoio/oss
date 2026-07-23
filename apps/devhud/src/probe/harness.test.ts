@@ -311,6 +311,30 @@ describe("probe harness", () => {
         },
       ],
       [
+        ProbeId.TrayLifecycle,
+        (driver) => {
+          driver.trayLifecycle = async () => ({
+            created: true,
+            remainsResidentAfterWindowClose: true,
+            dockHidden: false,
+            dockPolicyPersistsAfterWindowClose: true,
+            quitTerminates: true,
+          });
+        },
+      ],
+      [
+        ProbeId.TrayLifecycle,
+        (driver) => {
+          driver.trayLifecycle = async () => ({
+            created: true,
+            remainsResidentAfterWindowClose: true,
+            dockHidden: true,
+            dockPolicyPersistsAfterWindowClose: false,
+            quitTerminates: true,
+          });
+        },
+      ],
+      [
         ProbeId.DevTools,
         (driver) => {
           driver.devTools = async () => ({

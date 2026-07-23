@@ -247,6 +247,24 @@ fn probe_macos_gate_renderer_ready() -> Result<(), ProbeCommandError> {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn probe_gate_failure(app: AppHandle<ActiveRuntime>) {
+    tracing::error!(
+        event = "devhud.probe.gate_command_failure",
+        classification = "gate-command",
+        "platform gate command failed; exiting without waiting for a timeout"
+    );
+    #[cfg(all(feature = "macos-gate", target_os = "macos"))]
+    {
+        macos_gate::fail(app);
+    }
+    #[cfg(not(all(feature = "macos-gate", target_os = "macos")))]
+    {
+        app.exit(72);
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
     let builder = builder
         .invoke_handler(tauri::generate_handler![
@@ -257,6 +275,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             probe_macos_gate_run,
             probe_macos_gate_complete,
             probe_macos_gate_renderer_ready,
+            probe_gate_failure,
         ])
         .on_window_event(|window, event| {
             #[cfg(all(feature = "macos-gate", target_os = "macos"))]

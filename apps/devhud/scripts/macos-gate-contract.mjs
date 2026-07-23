@@ -13,6 +13,7 @@ export const requiredRuntimeEvents = Object.freeze([
   "devhud.probe.bundled_asset_ready",
   "devhud.probe.capability_denial_observed",
   "devhud.probe.macos_resident_shell_ready",
+  "devhud.probe.global_shortcut_observed",
   "devhud.probe.window_close_hidden",
   "devhud.probe.system_theme_change_ready",
   "devhud.probe.macos_gate_conditions_passed",

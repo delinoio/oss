@@ -18,22 +18,22 @@ export function App() {
   useEffect(() => {
     let active = true;
 
-    void runBundledStartupHandshake(tauriProbeBridge).then(
-      async (handshake) => {
+    void (async () => {
+      try {
+        const handshake = await runBundledStartupHandshake(tauriProbeBridge);
+        await runPlatformGateIfEnabled(tauriProbeBridge);
         if (active) {
           setState({ status: "passed", handshake });
         }
-        await runPlatformGateIfEnabled(tauriProbeBridge);
-      },
-      () => {
+      } catch {
         if (active) {
           setState({
             status: "failed",
-            message: "The bundled startup or capability-denial probe failed.",
+            message: "The bundled startup or platform gate probe failed.",
           });
         }
-      },
-    );
+      }
+    })();
 
     return () => {
       active = false;

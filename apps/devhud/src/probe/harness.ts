@@ -168,6 +168,8 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
     (evidence) =>
       evidence.created === true &&
       evidence.remainsResidentAfterWindowClose === true &&
+      evidence.dockHidden === true &&
+      evidence.dockPolicyPersistsAfterWindowClose === true &&
       evidence.quitTerminates === true,
   ),
   defineScenario(

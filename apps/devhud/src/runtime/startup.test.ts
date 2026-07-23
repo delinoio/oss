@@ -140,4 +140,27 @@ describe("platform gate routing", () => {
       "probe_macos_gate_renderer_ready",
     ]);
   });
+
+  it("reports a gate command failure before rejecting", async () => {
+    const calls: string[] = [];
+    const bridge = bridgeWith(async (command) => {
+      calls.push(command);
+      if (command === "probe_gate_mode") {
+        return "normal" as never;
+      }
+      if (command === "probe_macos_gate_run") {
+        throw new Error("autostart probe failed");
+      }
+      return null;
+    });
+
+    await expect(runPlatformGateIfEnabled(bridge)).rejects.toThrow(
+      "autostart probe failed",
+    );
+    expect(calls).toEqual([
+      "probe_gate_mode",
+      "probe_macos_gate_run",
+      "probe_gate_failure",
+    ]);
+  });
 });

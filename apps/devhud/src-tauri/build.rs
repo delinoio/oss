@@ -6,6 +6,7 @@ const COMMANDS: &[&str] = &[
     "probe_macos_gate_run",
     "probe_macos_gate_complete",
     "probe_macos_gate_renderer_ready",
+    "probe_gate_failure",
 ];
 
 fn main() {
