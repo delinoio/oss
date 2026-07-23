@@ -1620,20 +1620,6 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		)
 	`, orgA, teamA, meterID, priceID, accountA, serviceID)
 	if _, err := transaction.Exec(ctx, `
-		INSERT INTO ledger_entries (
-			id, organization_id, entry_type, amount_micros,
-			balance_after_micros, source_reference
-		)
-		SELECT
-			'0198a000-0000-7000-8000-000000000151',
-			$1, 'credit_grant', 5, COALESCE(sum(amount_micros), 0) + 5,
-			'post-unfunded-credit'
-		FROM ledger_entries
-		WHERE organization_id = $1
-	`, orgA); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := transaction.Exec(ctx, `
 		INSERT INTO billing_periods (
 			id, organization_id, subscription_id, starts_at, ends_at,
 			overage_limit_micros
@@ -1796,6 +1782,20 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		)
 	`, orgA, teamA, meterID, accountA, serviceID)
 	if err := overageCapacity.Rollback(context.WithoutCancel(ctx)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, entry_type, amount_micros,
+			balance_after_micros, source_reference
+		)
+		SELECT
+			'0198a000-0000-7000-8000-000000000151',
+			$1, 'credit_grant', 5, COALESCE(sum(amount_micros), 0) + 5,
+			'post-overage-capacity-credit'
+		FROM ledger_entries
+		WHERE organization_id = $1
+	`, orgA); err != nil {
 		t.Fatal(err)
 	}
 	requireConstraintFailure(t, ctx, transaction, `
