@@ -10,6 +10,7 @@ import {
   canUseTeamAsParent,
   formatUsageCost,
   formatUsageUnits,
+  getEditableOverageLimit,
   parseUsdMicros,
 } from "../pages/OrganizationPages";
 
@@ -60,6 +61,12 @@ describe("organization billing inputs", () => {
     expect(formatUsageCost(undefined)).toBe("Unavailable");
     expect(formatUsageUnits(0n)).toBe("0");
     expect(formatUsageCost(0n)).toBe("$0.0000");
+  });
+
+  it("does not edit a configured overage limit when its wrapper is missing", () => {
+    expect(getEditableOverageLimit(true, undefined)).toBeUndefined();
+    expect(getEditableOverageLimit(true, 0n)).toBe(0n);
+    expect(getEditableOverageLimit(false, undefined)).toBe(0n);
   });
 });
 

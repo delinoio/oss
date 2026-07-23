@@ -69,7 +69,7 @@
 - Public catalog, organization member, team hierarchy, and usage-record lists use opaque cursor pagination with explicit load-more actions.
 - The account surface creates additional organizations through the same atomic organization transaction used by onboarding and then enters the returned canonical slug.
 - Organization settings expose the name and changeable-slug RPCs, refresh server-authoritative shell data after successful name updates (including a partial save when the following slug update fails), and follow the returned canonical slug after slug changes.
-- The organization shell loads the server-authoritative caller role. Team hierarchy creation, rename, move, and confirmed subtree deletion controls render only for Owners and Admins. Subscription, billing-portal, overage-limit, and complete ledger controls follow the same role boundary; overage limits retain exact USD micro-unit handling and ledger reads use opaque cursor pagination.
+- The organization shell loads the server-authoritative caller role. Team hierarchy creation, rename, move, and confirmed subtree deletion controls render only for Owners and Admins. Subscription, billing-portal, overage-limit, and complete ledger controls follow the same role boundary; overage limits retain exact USD micro-unit handling, a configured limit with a missing value wrapper renders as unavailable instead of becoming editable zero, and ledger reads use opaque cursor pagination.
 
 ## References
 - [Project delidev](project-delidev.md)

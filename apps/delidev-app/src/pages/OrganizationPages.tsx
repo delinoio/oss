@@ -59,13 +59,20 @@ export function parseUsdMicros(value: string): bigint | undefined {
   return micros <= maxSignedInt64 ? micros : undefined;
 }
 
-function formatUsdMicrosInput(value = 0n): string {
+function formatUsdMicrosInput(value: bigint): string {
   const whole = value / 1_000_000n;
   const fraction = (value % 1_000_000n)
     .toString()
     .padStart(6, "0")
     .replace(/0+$/, "");
   return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+export function getEditableOverageLimit(
+  configured: boolean,
+  value: bigint | undefined,
+): bigint | undefined {
+  return configured ? value : 0n;
 }
 
 export function canManageOrganization(role: OrganizationRole): boolean {
@@ -743,6 +750,12 @@ export function BillingPage() {
     BillingService.method.createBillingPortalSession,
     { transport },
   );
+  const editableOverageLimit = summary.data?.summary
+    ? getEditableOverageLimit(
+        summary.data.summary.overageLimitConfigured,
+        summary.data.summary.monthlyOverageLimit?.value,
+      )
+    : undefined;
 
   const openCheckout = () => {
     checkout.mutate(
@@ -855,14 +868,22 @@ export function BillingPage() {
                 ) : null}
                 {!online ? <OfflineActionHint /> : null}
               </section>
-              <OverageLimitForm
-                initialLimit={
-                  summary.data.summary.overageLimitConfigured
-                    ? summary.data.summary.monthlyOverageLimit?.value
-                    : 0n
-                }
-                onUpdated={() => void summary.refetch()}
-              />
+              {editableOverageLimit === undefined ? (
+                <ErrorState
+                  error={
+                    new Error(
+                      "The configured limit was missing from the billing summary.",
+                    )
+                  }
+                  onRetry={() => void summary.refetch()}
+                  title="Overage limit unavailable"
+                />
+              ) : (
+                <OverageLimitForm
+                  initialLimit={editableOverageLimit}
+                  onUpdated={() => void summary.refetch()}
+                />
+              )}
             </>
           ) : (
             <p className="muted">
@@ -1012,7 +1033,7 @@ function OverageLimitForm({
   initialLimit,
   onUpdated,
 }: {
-  initialLimit?: bigint;
+  initialLimit: bigint;
   onUpdated: () => void;
 }) {
   const { organization, transport } = useOrganization();
