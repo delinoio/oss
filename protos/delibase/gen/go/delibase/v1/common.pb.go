@@ -1365,8 +1365,9 @@ func (x *PageResponse) GetNextCursor() string {
 	return ""
 }
 
-// IdempotencyKey scopes a caller-selected key to the authenticated service identity
-// and concrete operation. key is opaque and must not contain credentials.
+// IdempotencyKey scopes a caller-selected key to the authenticated caller identity
+// and concrete operation. The caller is the user subject for human RPCs and the
+// service identity for M2M RPCs. key is opaque and must not contain credentials.
 type IdempotencyKey struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`

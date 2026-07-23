@@ -1,18 +1,19 @@
 # delibase authentication metadata and scopes
 
-Logto access tokens and client secrets never appear in protobuf messages. They
-travel only in Connect HTTP metadata and are validated by delibase for the Logto
-audience `https://delibase.deli.dev`. Invitation bearer tokens are the sole
-protobuf-body credential exception; clients and servers must treat request
-payloads containing them as sensitive and must never log or persist the raw
-token.
+Logto user and M2M access tokens never appear in protobuf messages. They travel
+only in Connect HTTP metadata and are validated by delibase for the Logto
+audience `https://delibase.deli.dev`. Raw Logto client secrets are provider-side
+credentials used to obtain access tokens and must never be sent to delibase.
+Invitation bearer tokens are the sole protobuf-body credential exception;
+clients and servers must treat request payloads containing them as sensitive and
+must never log or persist the raw token.
 
 ## Human and public RPCs
 
 Human RPCs use the standard `Authorization: Bearer <user-access-token>` header.
 Enabled `CatalogService` reads are public and require no scope. All other human
-RPCs require the following user scope; role, organization membership, and team
-access checks still apply independently.
+RPCs require the following user scope. Role, organization membership, and team
+access checks also apply when the target resource requires them.
 
 | RPC group | Required user scope |
 | --- | --- |
@@ -26,8 +27,10 @@ access checks still apply independently.
 | `BillingService` checkout, portal, and overage-limit mutations | `delibase:billing:write` |
 
 Invitation preview and acceptance require an authenticated user token even
-though the invitation URL also contains a bearer token. Invitation bearer tokens
-are request data, are stored by the server only as hashes, and are never logged.
+though the invitation URL also contains a bearer token. A valid invitation bearer
+token authorizes these two RPCs without pre-existing organization membership or
+team access. Invitation bearer tokens are request data, are stored by the server
+only as hashes, and are never logged.
 
 ## Usage RPCs
 
