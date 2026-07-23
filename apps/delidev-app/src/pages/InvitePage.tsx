@@ -5,7 +5,7 @@ import {
   TeamRole,
   type GetOrganizationInvitationResponse,
 } from "@delinoio/delibase-connect";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
@@ -66,6 +66,9 @@ export function InvitePage() {
   const [acceptance, setAcceptance] = useState<AcceptanceState>({
     status: "idle",
   });
+  const acceptanceKey = useRef<
+    { idempotency: { key: string }; token: string } | undefined
+  >(undefined);
   const currentInvitation =
     invitation.token === token && invitation.attempt === loadAttempt
       ? invitation
@@ -97,12 +100,21 @@ export function InvitePage() {
 
   const acceptInvitation = async () => {
     if (!client) return;
+    const pendingAcceptance =
+      acceptanceKey.current?.token === token
+        ? acceptanceKey.current
+        : {
+            idempotency: createIdempotencyKey(),
+            token,
+          };
+    acceptanceKey.current = pendingAcceptance;
     setAcceptance({ status: "pending" });
     try {
       const response = await client.acceptOrganizationInvitation({
         bearerToken: { token },
-        idempotency: createIdempotencyKey(),
+        idempotency: pendingAcceptance.idempotency,
       });
+      acceptanceKey.current = undefined;
       navigate(`/o/${response.organization?.slug ?? ""}/apps`, {
         replace: true,
       });

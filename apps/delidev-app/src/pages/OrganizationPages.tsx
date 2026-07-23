@@ -1154,8 +1154,8 @@ export function UsagePage() {
                 {usageRows.map((record) => (
                   <tr key={record.usageRecordId?.value}>
                     <td>{record.teamNameSnapshot}</td>
-                    <td>{record.units?.value.toString() ?? "0"}</td>
-                    <td>{formatUsdMicros(record.totalCost?.value)}</td>
+                    <td>{formatUsageUnits(record.units?.value)}</td>
+                    <td>{formatUsageCost(record.totalCost?.value)}</td>
                     <td>{record.clientReference || "—"}</td>
                   </tr>
                 ))}
@@ -1185,6 +1185,14 @@ export function UsagePage() {
       ) : null}
     </>
   );
+}
+
+export function formatUsageUnits(value: bigint | undefined): string {
+  return value === undefined ? "Unavailable" : value.toString();
+}
+
+export function formatUsageCost(value: bigint | undefined): string {
+  return value === undefined ? "Unavailable" : formatUsdMicros(value);
 }
 
 export function OrganizationSettingsPage() {

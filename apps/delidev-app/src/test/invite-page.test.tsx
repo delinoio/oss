@@ -122,4 +122,76 @@ describe("organization invitation", () => {
     ).toBeVisible();
     expect(screen.queryByText(/team as/)).not.toBeInTheDocument();
   });
+
+  it("reuses the acceptance idempotency key after a lost response", async () => {
+    const idempotencyKeys: string[] = [];
+    let acceptanceAttempt = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
+      const url = String(request);
+      if (url.endsWith("/GetOrganizationInvitation")) {
+        return connectJsonResponse({
+          invitation: {
+            organizationRole: "ORGANIZATION_ROLE_MEMBER",
+          },
+          organizationName: "Acme",
+        });
+      }
+      const body = await new Response(
+        init?.body ?? (request instanceof Request ? request.clone().body : null),
+      ).json();
+      idempotencyKeys.push(body.idempotency.key);
+      acceptanceAttempt += 1;
+      if (acceptanceAttempt === 1) {
+        return new Response(
+          JSON.stringify({
+            code: "unavailable",
+            message: "The response was lost.",
+          }),
+          {
+            headers: { "content-type": "application/json" },
+            status: 503,
+          },
+        );
+      }
+      return connectJsonResponse({
+        organization: { name: "Acme", slug: "acme" },
+      });
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter initialEntries={["/invite/retry-token"]}>
+        <AuthSessionProvider
+          value={{
+            signIn: async () => undefined,
+            signOut: async () => undefined,
+            status: AuthStatus.SignedIn,
+            transport,
+          }}
+        >
+          <Routes>
+            <Route path="/invite/:token" element={<InvitePage />} />
+            <Route path="/o/acme/apps" element={<p>Organization apps</p>} />
+          </Routes>
+        </AuthSessionProvider>
+      </MemoryRouter>,
+    );
+
+    const accept = await screen.findByRole("button", {
+      name: "Accept invitation",
+    });
+    await user.click(accept);
+    await screen.findByRole("alert");
+    await user.click(accept);
+
+    expect(await screen.findByText("Organization apps")).toBeVisible();
+    expect(idempotencyKeys).toHaveLength(2);
+    expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
+  });
 });

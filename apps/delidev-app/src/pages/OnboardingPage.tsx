@@ -1,6 +1,6 @@
 import { useMutation } from "@connectrpc/connect-query";
 import { AccountService } from "@delinoio/delibase-connect";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
@@ -23,6 +23,7 @@ export function OnboardingPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [formError, setFormError] = useState("");
+  const idempotencyKey = useRef<{ key: string } | undefined>(undefined);
   const complete = useMutation(AccountService.method.completeOnboarding, {
     transport,
   });
@@ -41,16 +42,20 @@ export function OnboardingPage() {
       );
       return;
     }
+    idempotencyKey.current ??= createIdempotencyKey();
     complete.mutate(
       {
         displayName: displayName.trim(),
-        idempotency: createIdempotencyKey(),
+        idempotency: idempotencyKey.current,
         organizationName: organizationName.trim(),
         organizationSlug: normalizedSlug,
       },
       {
         onError: (error) => setFormError(error.message),
-        onSuccess: () => navigate(`/o/${normalizedSlug}/apps`, { replace: true }),
+        onSuccess: () => {
+          idempotencyKey.current = undefined;
+          navigate(`/o/${normalizedSlug}/apps`, { replace: true });
+        },
       },
     );
   };
@@ -74,7 +79,10 @@ export function OnboardingPage() {
             // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             maxLength={120}
-            onChange={(event) => setDisplayName(event.target.value)}
+            onChange={(event) => {
+              idempotencyKey.current = undefined;
+              setDisplayName(event.target.value);
+            }}
             required
             value={displayName}
           />
@@ -84,7 +92,10 @@ export function OnboardingPage() {
           <input
             autoComplete="organization"
             maxLength={120}
-            onChange={(event) => setOrganizationName(event.target.value)}
+            onChange={(event) => {
+              idempotencyKey.current = undefined;
+              setOrganizationName(event.target.value);
+            }}
             required
             value={organizationName}
           />
@@ -98,7 +109,10 @@ export function OnboardingPage() {
               autoCapitalize="none"
               autoComplete="off"
               maxLength={63}
-              onChange={(event) => setOrganizationSlug(event.target.value)}
+              onChange={(event) => {
+                idempotencyKey.current = undefined;
+                setOrganizationSlug(event.target.value);
+              }}
               pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
               required
               spellCheck={false}

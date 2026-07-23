@@ -130,5 +130,11 @@ function OnboardingGate({
   ) {
     return <Navigate replace to="/onboarding" />;
   }
+  if (
+    !account.data.onboardingRequired &&
+    location.pathname === "/onboarding"
+  ) {
+    return <Navigate replace to="/account" />;
+  }
   return children;
 }

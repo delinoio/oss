@@ -30,7 +30,7 @@ export function App({ callbackPage }: { callbackPage: ReactNode }) {
         <Route
           path="/onboarding"
           element={
-            <ProtectedRoute checkOnboarding={false}>
+            <ProtectedRoute>
               <OnboardingPage />
             </ProtectedRoute>
           }

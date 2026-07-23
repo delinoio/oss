@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import {
   canManageOrganization,
   canUseTeamAsParent,
+  formatUsageCost,
+  formatUsageUnits,
   parseUsdMicros,
 } from "../pages/OrganizationPages";
 
@@ -46,6 +48,13 @@ describe("organization billing inputs", () => {
     expect(canManageOrganization(OrganizationRole.ADMIN)).toBe(true);
     expect(canManageOrganization(OrganizationRole.MEMBER)).toBe(false);
     expect(canManageOrganization(OrganizationRole.UNSPECIFIED)).toBe(false);
+  });
+
+  it("distinguishes missing usage wrappers from explicit zero values", () => {
+    expect(formatUsageUnits(undefined)).toBe("Unavailable");
+    expect(formatUsageCost(undefined)).toBe("Unavailable");
+    expect(formatUsageUnits(0n)).toBe("0");
+    expect(formatUsageCost(0n)).toBe("$0.0000");
   });
 });
 

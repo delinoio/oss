@@ -1,8 +1,10 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
+import { createAuthenticatedTransport } from "../api/transports";
 import {
   AuthSessionProvider,
   AuthStatus,
@@ -10,6 +12,7 @@ import {
   type AuthSessionValue,
 } from "../auth/AuthSession";
 import { ProtectedRoute } from "../components/ProtectedRoute";
+import { canonicalAudience } from "../config";
 
 function renderGuard(
   value: AuthSessionValue,
@@ -83,6 +86,58 @@ describe("protected route guard", () => {
       screen.getByRole("button", { name: "Sign in with Logto" }),
     );
     expect(signIn).toHaveBeenCalledWith("/invite/secret-bearer-token");
+  });
+
+  it("redirects completed accounts away from onboarding", async () => {
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            onboardingRequired: false,
+            organizations: [{ name: "Acme", slug: "acme" }],
+          }),
+          {
+            headers: { "content-type": "application/json" },
+            status: 200,
+          },
+        ),
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/onboarding"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <Routes>
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute>
+                    <p>Onboarding form</p>
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/account" element={<p>Account destination</p>} />
+            </Routes>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Account destination")).toBeVisible();
+    expect(screen.queryByText("Onboarding form")).not.toBeInTheDocument();
   });
 
   it("accepts only internal callback return paths", () => {
