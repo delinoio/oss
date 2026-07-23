@@ -215,6 +215,33 @@ CREATE UNIQUE INDEX teams_one_general_per_organization_idx
     ON teams(organization_id) WHERE protected_general;
 CREATE INDEX teams_parent_idx ON teams(organization_id, parent_team_id);
 
+CREATE FUNCTION require_organization_general_team()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM organizations
+        WHERE id = NEW.id
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM teams
+        WHERE organization_id = NEW.id
+          AND protected_general
+    ) THEN
+        RAISE EXCEPTION 'organization must have a protected General team'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER organizations_require_general_team
+AFTER INSERT ON organizations
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION require_organization_general_team();
+
 CREATE FUNCTION enforce_team_hierarchy()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -224,6 +251,12 @@ DECLARE
     subtree_height integer := 1;
     creates_cycle boolean := false;
 BEGIN
+    IF TG_OP = 'UPDATE'
+       AND NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+        RAISE EXCEPTION 'teams cannot move between organizations'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
     -- Serialize hierarchy validation for one organization so concurrent moves
     -- cannot each validate against the other's previous parent.
     PERFORM 1

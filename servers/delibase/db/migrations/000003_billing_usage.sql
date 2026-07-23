@@ -224,13 +224,11 @@ DECLARE
     committed_overage_micros numeric;
     active_overage_micros numeric;
 BEGIN
-    IF NEW.status = 'committed' THEN
-        RAISE EXCEPTION 'committed reservations must originate from usage records'
+    IF NEW.status <> 'held' THEN
+        RAISE EXCEPTION 'usage reservations must be inserted as held'
             USING ERRCODE = 'check_violation';
     END IF;
-    IF NEW.status = 'held' THEN
-        NEW.created_at := transaction_timestamp();
-    END IF;
+    NEW.created_at := transaction_timestamp();
 
     PERFORM 1
     FROM organizations
@@ -567,6 +565,16 @@ DECLARE
     expected_credit_micros bigint;
     expected_overage_micros bigint;
 BEGIN
+    PERFORM 1
+    FROM organizations
+    WHERE id = NEW.organization_id
+      AND deleted_at IS NULL
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'usage record organization is unavailable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
     SELECT *
     INTO reservation
     FROM usage_reservations

@@ -343,7 +343,7 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 	}
 }
 
-func TestPostgreSQLRequiresOrganizationOwnerAtCommit(t *testing.T) {
+func TestPostgreSQLRequiresOrganizationFoundationAtCommit(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
@@ -381,6 +381,26 @@ func TestPostgreSQLRequiresOrganizationOwnerAtCommit(t *testing.T) {
 	`, accountID); err != nil {
 		t.Fatal(err)
 	}
+	transaction, err = store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organizations (id, name, slug)
+		VALUES ($1, 'General Required', 'general-required')
+	`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organization_memberships (organization_id, account_id, role)
+		VALUES ($1, $2, 'owner')
+	`, orgID, accountID); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.Commit(ctx); err == nil {
+		t.Fatal("organization without a protected General team committed")
+	}
+
 	createTestOrganization(
 		t,
 		ctx,
@@ -840,6 +860,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		activeTeam     = "0198a000-0000-7000-8000-000000000023"
 		generalA       = "0198a000-0000-7000-8000-000000000024"
 		generalC       = "0198a000-0000-7000-8000-000000000025"
+		generalB       = "0198a000-0000-7000-8000-000000000220"
 		inheritedTeam  = "0198a000-0000-7000-8000-000000000140"
 		appID          = "0198a000-0000-7000-8000-000000000031"
 		meterID        = "0198a000-0000-7000-8000-000000000032"
@@ -879,7 +900,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		{"INSERT INTO organization_memberships (organization_id, account_id, role) VALUES ($1, $2, 'member'), ($1, $3, 'member')", []any{orgA, historyUser, accountC}},
 		{"INSERT INTO teams (id, organization_id, name) VALUES ($1, $2, 'A'), ($3, $4, 'B'), ($5, $2, 'Active')", []any{teamA, orgA, teamB, orgB, activeTeam}},
 		{"INSERT INTO teams (id, organization_id, parent_team_id, name) VALUES ($1, $2, $3, 'Inherited')", []any{inheritedTeam, orgA, teamA}},
-		{"INSERT INTO teams (id, organization_id, name, protected_general) VALUES ($1, $2, 'General', true), ($3, $4, 'General', true)", []any{generalA, orgA, generalC, orgC}},
+		{"INSERT INTO teams (id, organization_id, name, protected_general) VALUES ($1, $2, 'General', true), ($3, $4, 'General', true), ($5, $6, 'General', true)", []any{generalA, orgA, generalC, orgC, generalB, orgB}},
 		{"INSERT INTO team_memberships (organization_id, team_id, account_id, role) VALUES ($1, $2, $3, 'member')", []any{orgA, teamA, historyUser}},
 		{"INSERT INTO organization_invitations (id, organization_id, token_hash, organization_role, created_by_account_id, expires_at) VALUES ($1, $2, decode(repeat('12', 32), 'hex'), 'admin', $3, transaction_timestamp() + interval '1 day')", []any{deletionInvite, orgA, accountC}},
 		{"INSERT INTO catalog_apps (id, slug, name, enabled) VALUES ($1, 'schema-app', 'Schema App', true)", []any{appID}},
@@ -958,6 +979,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	requireConstraintFailure(t, ctx, transaction,
 		"INSERT INTO teams (id, organization_id, name) VALUES ('0198a000-0000-7000-8000-000000000026', $1, 'A')",
 		orgA,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE teams SET organization_id = $1 WHERE id = $2",
+		orgA, teamB,
 	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO teams (id, organization_id, parent_team_id, name)
@@ -1615,6 +1640,23 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	).Scan(&reservationUsesStorageTime); err != nil || !reservationUsesStorageTime {
 		t.Fatalf("reservation storage creation timestamp = %t, %v", reservationUsesStorageTime, err)
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		WITH started_deletion AS (
+			UPDATE organizations
+			SET deleted_at = transaction_timestamp()
+			WHERE id = $3
+			RETURNING id
+		)
+		INSERT INTO usage_records (
+			id, reservation_id, organization_id, team_id, team_name_snapshot,
+			meter_id, account_id, service_identity_id, committed_units,
+			total_cost_micros, credit_applied_micros, overage_applied_micros
+		)
+		SELECT
+			$1, $2, started_deletion.id, $4, 'A',
+			$5, $6, $7, 1, 1, 1, 0
+		FROM started_deletion
+	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceID)
 	requireConstraintFailure(t, ctx, transaction,
 		"DELETE FROM usage_reservations WHERE id = $1",
 		reserveID,
@@ -1645,17 +1687,32 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		"DELETE FROM polar_meter_mappings WHERE meter_id = $1",
 		meterID,
 	)
-	if _, err := transaction.Exec(ctx, `
+	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, status, expires_at, finalized_at
 		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'released', 'released', transaction_timestamp() + interval '1 minute', transaction_timestamp())
+	`, releasedHold, orgA, teamA, meterID, priceID, historyUser, serviceID)
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'released', transaction_timestamp() + interval '1 minute')
 	`, releasedHold, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, `
+		UPDATE usage_reservations
+		SET status = 'released'
+		WHERE id = $1
+	`, releasedHold); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
@@ -1669,9 +1726,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			transaction_timestamp() - interval '1 minute',
 			transaction_timestamp() - interval '1 minute'
 		)
-	`, expiredHold, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
-		t.Fatal(err)
-	}
+	`, expiredHold, orgA, teamA, meterID, priceID, historyUser, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		UPDATE usage_reservations
 		SET client_reference = 'rewritten'
@@ -1747,13 +1802,6 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			total_cost_micros, credit_applied_micros, overage_applied_micros
 		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
 	`, recordID, releasedHold, orgA, teamA, meterID, historyUser, serviceID)
-	requireConstraintFailure(t, ctx, transaction, `
-		INSERT INTO usage_records (
-			id, reservation_id, organization_id, team_id, team_name_snapshot,
-			meter_id, account_id, service_identity_id, committed_units,
-			total_cost_micros, credit_applied_micros, overage_applied_micros
-		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
-		`, recordID, expiredHold, orgA, teamA, meterID, historyUser, serviceID)
 	unsettledUsage, err := transaction.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -2341,6 +2389,16 @@ func createTestOrganization(
 		INSERT INTO organization_memberships (organization_id, account_id, role)
 		VALUES ($1, $2, 'owner')
 	`, organizationID, ownerAccountID); err != nil {
+		t.Fatal(err)
+	}
+	generalTeamID, err := uuidv7.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO teams (id, organization_id, name, protected_general)
+		VALUES ($1, $2, 'General', true)
+	`, generalTeamID.String(), organizationID); err != nil {
 		t.Fatal(err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
