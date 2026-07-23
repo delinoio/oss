@@ -25,7 +25,7 @@
 - Consume protobuf-es v2 messages and `GenService` descriptors through the workspace package `@delinoio/delibase-connect`; Connect Query remains responsible for browser transport/query integration.
 - Logto browser authentication supplies user identity; delibase decides local profile, organization, team, billing, and authorization state. The browser never handles card data; Polar-hosted Checkout and Customer Portal own payment UI.
 - On first authenticated entry, require organization name and globally unique user-selected slug before allowing entry. In the same transaction, create the local user keyed by the unique Logto `sub`, then create the default organization, Owner membership, protected `General` team, and creator Team Admin membership exactly once. Use the same organization transaction for every additional organization.
-- Support multiple organizations, changeable globally unique slugs with retained aliases/old-slug redirects, nested teams up to five levels, invitations, and role-aware pages according to the delibase contract.
+- Support multiple organizations, changeable globally unique slugs with retained aliases/old-slug redirects, nested teams up to five levels, invitations with replay-safe acceptance/revocation results, and role-aware pages according to the delibase contract.
 
 ## Storage
 - Cloudflare Pages serves a static artifact with SPA fallback; no server-side app runtime is activated by this issue.

@@ -63,6 +63,25 @@ func TestCanonicalScalarWrappers(t *testing.T) {
 	}
 }
 
+func TestInvitationIdempotencyOperations(t *testing.T) {
+	t.Parallel()
+
+	operations := []delibasev1.IdempotentOperation{
+		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_ACCEPT_INVITATION,
+		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_REVOKE_INVITATION,
+	}
+	seen := make(map[delibasev1.IdempotentOperation]struct{}, len(operations))
+	for _, operation := range operations {
+		if operation == delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_UNSPECIFIED {
+			t.Fatal("an invitation idempotency operation resolved to unspecified")
+		}
+		if _, duplicate := seen[operation]; duplicate {
+			t.Fatalf("duplicate invitation idempotency operation %d", operation)
+		}
+		seen[operation] = struct{}{}
+	}
+}
+
 func TestStableErrorCategories(t *testing.T) {
 	t.Parallel()
 

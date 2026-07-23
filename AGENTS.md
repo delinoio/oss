@@ -111,7 +111,8 @@ enum ProjectId {
 - `apps/delidev-app` owns the React/TypeScript/Rsbuild PWA, stable routes, browser-safe configuration, static Pages artifact, and sensitive-cache exclusions.
 - `servers/delibase` owns Go/PostgreSQL/sqlc persistence, organization/team/invitation policy, append-only billing and reservation invariants, provider integrations, server configuration, and future GHCR artifacts.
 - `protos/delibase/v1` owns the versioned `delibase.v1` source contract and generation boundary for exactly six Connect services: `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, `BillingService`, and `UsageService`.
-- `protos/delibase/gen/go`, `protos/delibase/gen/ts`, and the workspace package `@delinoio/delibase-connect` are reproducible derived views of that source. Root entrypoints are `pnpm generate:proto` and `pnpm check:proto`.
+- `protos/delibase/gen/go`, `protos/delibase/gen/ts`, and the workspace package `@delinoio/delibase-connect` are reproducible derived views of that source. Root `pnpm generate:proto` generates both runtimes and builds the package's loadable `dist` exports; `pnpm check:proto` validates compatibility and reproducibility.
+- Invitation acceptance and revocation use distinct stable `IdempotentOperation` values; invitation creation does not carry idempotency fields.
 - `servers/internal` owns reusable Go authentication, Connect, request/trace, redaction, HTTP, logging, and UUID v7 infrastructure only; it must not own delibase business rules.
 - Changes to routes, RPCs, roles, team hierarchy, invitations, billing, usage, authentication, generated clients, shared packages, validation commands, Pages scope, or GHCR scope require synchronized project/domain docs and the relevant `AGENTS.md` files.
 
@@ -340,6 +341,7 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `proto-delibase`: runs `pnpm check:proto`, `go test ./protos/delibase/...`, `go vet ./protos/delibase/...`, and `pnpm --filter @delinoio/delibase-connect typecheck` on delibase Protobuf and generation changes.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
 Change-scoped execution rules:

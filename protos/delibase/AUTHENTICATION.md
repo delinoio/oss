@@ -1,8 +1,11 @@
 # delibase authentication metadata and scopes
 
-The protobuf messages never contain access tokens or client secrets. Credentials
+Logto access tokens and client secrets never appear in protobuf messages. They
 travel only in Connect HTTP metadata and are validated by delibase for the Logto
-audience `https://delibase.deli.dev`.
+audience `https://delibase.deli.dev`. Invitation bearer tokens are the sole
+protobuf-body credential exception; clients and servers must treat request
+payloads containing them as sensitive and must never log or persist the raw
+token.
 
 ## Human and public RPCs
 

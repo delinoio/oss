@@ -19,7 +19,7 @@
 - Exactly six Connect services: `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, `BillingService`, and `UsageService`.
 - Stable route/API origin pairing: browser `https://deli.dev`; future API `https://delibase.deli.dev`.
 - Account: authenticated account state, mandatory first-organization onboarding that atomically establishes the unique Logto-`sub` local user and default organization memberships, and account deletion/blockers.
-- Organization: CRUD, globally unique changeable slugs/aliases, member roles, invitations, acceptance, and revocation.
+- Organization: CRUD, globally unique changeable slugs/aliases, member roles, invitations, and idempotent acceptance and revocation.
 - Team: nullable-parent hierarchy, depth/cycle-safe moves, confirmed non-`General` subtree deletion, memberships, and effective downward access.
 - Catalog: anonymous public app/meter listing and details, including public effective-dated USD micro-unit prices and their version metadata; no runtime mutation API.
 - Billing: summary, hosted Polar checkout/portal session, overage limit, ledger and usage reads.
@@ -27,7 +27,7 @@
 - Human requests use Logto user access tokens except for anonymous CatalogService reads, with the canonical audience `https://delibase.deli.dev`. Usage mutations carry Logto M2M authorization and the dedicated `x-delibase-forwarded-user-token` Connect metadata key for the forwarded end-user token; servers must redact that metadata value anywhere headers, metadata, or diagnostics are logged. The server owns authorization decisions.
 - Lists use opaque cursor pagination. Preserve released `delibase.v1` additively; breaking changes require `delibase.v2` or later.
 - Persisted entity IDs are UUID v7. Money values are signed int64 USD micro-units; usage values are signed int64 units. Error details use stable enum identifiers.
-- The wire wrappers are `UuidV7`, `UsdMicros`, and `UsageUnits`; protobuf-es represents both signed-int64 values as TypeScript `bigint`, while generated Go uses `int64`. Usage mutations carry `IdempotencyKey` and return `IdempotencyResult` alongside the original typed result so exact-payload replays are observable without changing the result.
+- The wire wrappers are `UuidV7`, `UsdMicros`, and `UsageUnits`; protobuf-es represents both signed-int64 values as TypeScript `bigint`, while generated Go uses `int64`. Idempotent mutations carry `IdempotencyKey` and return `IdempotencyResult` alongside the original typed result so exact-payload replays are observable without changing the result. Invitation acceptance and revocation have distinct `IdempotentOperation` values; invitation creation does not carry idempotency fields.
 - The complete stable `ErrorReason` taxonomy covers missing/invalid/expired/issuer/audience/scope authentication, forwarded-user token failures, permission/organization/team/service-meter authorization, resource/slug/member conflicts, invitation state/roles, hierarchy depth/cycles/cross-organization/protected-team/active-reservation state, subscription/overage/price/overflow/precision state, reservation expiry/finalization/unit limits, deletion blockers, and idempotency conflicts. It is carried in `ErrorDetail` on non-OK Connect responses.
 
 ## Storage
@@ -44,7 +44,7 @@
 - Connect status and stable error details must permit safe user-facing classification for auth, authorization, slug, invitation, team, subscription, overage, reservation, idempotency, deletion, and resource-state failures.
 
 ## Build and Test
-- Canonical validation: `pnpm generate:proto`, `pnpm check:proto`, `go test ./protos/delibase/...`, `go vet ./protos/delibase/...`, and `pnpm --filter @delinoio/delibase-connect typecheck`. The check entrypoint runs Buf lint, compares against the checked-in initial `delibase.v1` descriptor baseline, regenerates, and rejects a generated diff.
+- Canonical validation: `pnpm generate:proto`, `pnpm check:proto`, `go test ./protos/delibase/...`, `go vet ./protos/delibase/...`, and `pnpm --filter @delinoio/delibase-connect typecheck`. Generation also builds the package `dist` output referenced by workspace exports. The check entrypoint runs Buf lint, compares against the checked-in initial `delibase.v1` descriptor baseline, regenerates, and rejects a generated diff. The change-scoped `proto-delibase` CI job runs the check, Go test/vet, and TypeScript typecheck commands.
 - CI must fail on stale generated output, incompatible released-field changes, service-name drift, or missing cross-consumer generation.
 - No runtime activation, API deployment, or generated-client publication is part of issue #722.
 

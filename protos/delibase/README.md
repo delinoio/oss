@@ -25,10 +25,12 @@ package exports all v1 messages and descriptors from its root and also exposes
   TypeScript represents both values as `bigint`; Go represents them as `int64`.
 - Lists use `PageRequest.cursor` and `PageResponse.next_cursor`. Cursor contents
   are opaque to callers.
-- Usage idempotency is scoped by authenticated service identity and
-  `IdempotentOperation`. A replay with the same payload returns the stored
-  original response and marks `IdempotencyResult.replayed`; a different payload
-  returns `ERROR_REASON_IDEMPOTENCY_CONFLICT`.
+- Mutation idempotency is scoped by authenticated identity and
+  `IdempotentOperation`. Invitation acceptance and revocation have distinct
+  operation values; invitation creation is not idempotent. A replay with the
+  same payload returns the stored original response and marks
+  `IdempotencyResult.replayed`; a different payload returns
+  `ERROR_REASON_IDEMPOTENCY_CONFLICT`.
 - Non-OK Connect responses carry `delibase.v1.ErrorDetail`. Consumers switch on
   `ErrorReason`, never the human-readable message.
 
@@ -49,6 +51,8 @@ go test ./protos/delibase/...
 initial v1 descriptor baseline, regenerates artifacts, and rejects a generation
 diff. Generator versions come from `go.mod`, `scripts/lib/go-proto-tools.sh`,
 `protos/delibase/package.json`, and `pnpm-lock.yaml`.
+`pnpm generate:proto` also builds the package `dist` output referenced by its
+workspace exports.
 
 ## Compatibility
 
