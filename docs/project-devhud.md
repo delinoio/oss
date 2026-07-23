@@ -4,7 +4,7 @@
 
 Define the documentation-first foundation for DevHud, a local-only developer-tool shell for individual developers. The project is intentionally independent from the DeliDev web platform and establishes the desktop, mobile, widget-boundary, security, diagnostic, support, CI, and release contracts before runtime implementation begins.
 
-This issue does not create an application, package, CI job, release workflow, or user-visible tool. `0.1.0` is the target foundation preview: production tools and user-visible widgets remain empty.
+This documentation-first change does not create an application, package, CI job, release workflow, or user-visible tool. `0.1.0` is the target foundation preview: production tools and user-visible widgets remain empty.
 
 ## Project ID
 
