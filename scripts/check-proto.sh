@@ -4,12 +4,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-BASELINE="${REPO_ROOT}/protos/delibase/delibase.v1.binpb"
+BASELINE="${DELIBASE_PROTO_BASELINE:-${REPO_ROOT}/protos/delibase/delibase.v1.binpb}"
 SNAPSHOT_DIR=""
 # shellcheck source=./lib/go-proto-tools.sh
 source "${REPO_ROOT}/scripts/lib/go-proto-tools.sh"
 
 main() {
+	if [ ! -f "${BASELINE}" ]; then
+		printf 'delibase Protobuf baseline does not exist: %s\n' "${BASELINE}" >&2
+		exit 1
+	fi
+
 	go_proto_install_tools "${REPO_ROOT}" "check-proto"
 	SNAPSHOT_DIR="$(mktemp -d)"
 	trap 'rm -rf -- "${SNAPSHOT_DIR}"' EXIT

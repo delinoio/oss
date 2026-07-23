@@ -207,6 +207,29 @@ jobs:
         run: |
           echo "Skipping delibase Protobuf checks: no relevant changes"
 
+      - name: Resolve delibase Protobuf compatibility baseline
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        shell: bash
+        env:
+          BASELINE_COMMIT: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          set -euo pipefail
+
+          baseline_path="protos/delibase/delibase.v1.binpb"
+          if [ -z "${BASELINE_COMMIT}" ] || [[ "${BASELINE_COMMIT}" =~ ^0+$ ]]; then
+            echo "No prior event commit is available; using the checked-in initial baseline"
+          elif ! git cat-file -e "${BASELINE_COMMIT}^{commit}"; then
+            echo "The prior event commit is not available: ${BASELINE_COMMIT}" >&2
+            exit 1
+          elif git cat-file -e "${BASELINE_COMMIT}:${baseline_path}"; then
+            immutable_baseline="${RUNNER_TEMP}/delibase.v1.binpb"
+            git show "${BASELINE_COMMIT}:${baseline_path}" > "${immutable_baseline}"
+            echo "DELIBASE_PROTO_BASELINE=${immutable_baseline}" >> "${GITHUB_ENV}"
+            echo "Using the delibase v1 baseline from ${BASELINE_COMMIT}"
+          else
+            echo "The prior event commit has no delibase v1 baseline; using the checked-in initial baseline"
+          fi
+
       - name: Setup pnpm
         if: ${{ steps.gate.outputs.run == 'true' }}
         uses: pnpm/action-setup@v5
