@@ -11,16 +11,16 @@ import (
 )
 
 type Querier interface {
-	ClearPolarMeterMappings(ctx context.Context) error
 	CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalogPriceVersionParams) error
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
-	CreatePolarMeterMapping(ctx context.Context, arg CreatePolarMeterMappingParams) error
 	DeleteDisabledServiceMeterAllowlists(ctx context.Context) error
+	DeleteUnusedPolarMeterMappings(ctx context.Context) error
 	DisableCatalogApps(ctx context.Context) error
 	DisableCatalogMeters(ctx context.Context) error
 	DisableServiceIdentities(ctx context.Context) error
 	DisableServiceMeterAllowlists(ctx context.Context) error
 	EnsureCatalogPriceVersion(ctx context.Context, arg EnsureCatalogPriceVersionParams) (int64, error)
+	EnsurePolarMeterMapping(ctx context.Context, arg EnsurePolarMeterMappingParams) (int64, error)
 	GetAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	Ping(ctx context.Context) (int64, error)

@@ -101,7 +101,7 @@ func (store *Store) SyncCatalog(
 		if err := queries.DisableServiceMeterAllowlists(ctx); err != nil {
 			return err
 		}
-		if err := queries.ClearPolarMeterMappings(ctx); err != nil {
+		if err := queries.DeleteUnusedPolarMeterMappings(ctx); err != nil {
 			return err
 		}
 		if err := queries.DisableCatalogMeters(ctx); err != nil {
@@ -247,14 +247,18 @@ func (store *Store) SyncCatalog(
 			if err != nil {
 				return err
 			}
-			if err := queries.CreatePolarMeterMapping(
+			affected, err := queries.EnsurePolarMeterMapping(
 				ctx,
-				dbgen.CreatePolarMeterMappingParams{
+				dbgen.EnsurePolarMeterMappingParams{
 					MeterID:      meterID,
 					PolarMeterID: mapping.PolarMeterID,
 				},
-			); err != nil {
+			)
+			if err != nil {
 				return err
+			}
+			if affected != 1 {
+				return errors.New("database: active Polar meter mapping conflict")
 			}
 		}
 		return nil

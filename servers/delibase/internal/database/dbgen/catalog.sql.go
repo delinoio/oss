@@ -11,15 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const clearPolarMeterMappings = `-- name: ClearPolarMeterMappings :exec
-DELETE FROM polar_meter_mappings
-`
-
-func (q *Queries) ClearPolarMeterMappings(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, clearPolarMeterMappings)
-	return err
-}
-
 const closeCatalogPriceVersion = `-- name: CloseCatalogPriceVersion :exec
 UPDATE catalog_price_versions
 SET effective_until = $2
@@ -37,21 +28,6 @@ func (q *Queries) CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalog
 	return err
 }
 
-const createPolarMeterMapping = `-- name: CreatePolarMeterMapping :exec
-INSERT INTO polar_meter_mappings (meter_id, polar_meter_id)
-VALUES ($1, $2)
-`
-
-type CreatePolarMeterMappingParams struct {
-	MeterID      pgtype.UUID
-	PolarMeterID string
-}
-
-func (q *Queries) CreatePolarMeterMapping(ctx context.Context, arg CreatePolarMeterMappingParams) error {
-	_, err := q.db.Exec(ctx, createPolarMeterMapping, arg.MeterID, arg.PolarMeterID)
-	return err
-}
-
 const deleteDisabledServiceMeterAllowlists = `-- name: DeleteDisabledServiceMeterAllowlists :exec
 DELETE FROM service_meter_allowlists AS allowlist
 WHERE NOT allowlist.enabled
@@ -65,6 +41,20 @@ WHERE NOT allowlist.enabled
 
 func (q *Queries) DeleteDisabledServiceMeterAllowlists(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteDisabledServiceMeterAllowlists)
+	return err
+}
+
+const deleteUnusedPolarMeterMappings = `-- name: DeleteUnusedPolarMeterMappings :exec
+DELETE FROM polar_meter_mappings AS mapping
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM usage_reservations AS reservation
+    WHERE reservation.active_meter_id = mapping.meter_id
+)
+`
+
+func (q *Queries) DeleteUnusedPolarMeterMappings(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteUnusedPolarMeterMappings)
 	return err
 }
 
@@ -147,6 +137,27 @@ func (q *Queries) EnsureCatalogPriceVersion(ctx context.Context, arg EnsureCatal
 		arg.EffectiveFrom,
 		arg.EffectiveUntil,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const ensurePolarMeterMapping = `-- name: EnsurePolarMeterMapping :execrows
+INSERT INTO polar_meter_mappings (meter_id, polar_meter_id)
+VALUES ($1, $2)
+ON CONFLICT (meter_id) DO UPDATE
+SET meter_id = EXCLUDED.meter_id
+WHERE polar_meter_mappings.polar_meter_id = EXCLUDED.polar_meter_id
+`
+
+type EnsurePolarMeterMappingParams struct {
+	MeterID      pgtype.UUID
+	PolarMeterID string
+}
+
+func (q *Queries) EnsurePolarMeterMapping(ctx context.Context, arg EnsurePolarMeterMappingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, ensurePolarMeterMapping, arg.MeterID, arg.PolarMeterID)
 	if err != nil {
 		return 0, err
 	}

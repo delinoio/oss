@@ -187,7 +187,26 @@ DECLARE
     price_effective_from timestamptz;
     price_effective_until timestamptz;
     reservation_ttl_seconds bigint;
+    settled_credit_micros numeric;
+    active_credit_micros numeric;
+    available_credit_micros numeric;
+    expected_credit_micros numeric;
+    expected_overage_micros numeric;
+    period_starts_at timestamptz;
+    period_ends_at timestamptz;
+    period_overage_limit_micros numeric;
+    committed_overage_micros numeric;
+    active_overage_micros numeric;
 BEGIN
+    PERFORM 1
+    FROM organizations
+    WHERE id = NEW.organization_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'reservation organization does not exist'
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
     SELECT name
     INTO locked_team_name
     FROM teams
@@ -258,6 +277,74 @@ BEGIN
             RAISE EXCEPTION 'reservation service is not allowed for meter'
                 USING ERRCODE = 'foreign_key_violation';
         END IF;
+
+        SELECT COALESCE(sum(amount_micros), 0)
+        INTO settled_credit_micros
+        FROM ledger_entries
+        WHERE organization_id = NEW.organization_id
+          AND entry_type IN (
+              'credit_grant',
+              'credit_reversal',
+              'credit_commit',
+              'credit_forfeiture'
+          );
+        SELECT COALESCE(sum(held_credit_micros), 0)
+        INTO active_credit_micros
+        FROM usage_reservations
+        WHERE organization_id = NEW.organization_id
+          AND status = 'held';
+
+        available_credit_micros := GREATEST(
+            settled_credit_micros - active_credit_micros,
+            0
+        );
+        expected_credit_micros := LEAST(
+            NEW.maximum_cost_micros::numeric,
+            available_credit_micros
+        );
+        expected_overage_micros :=
+            NEW.maximum_cost_micros::numeric - expected_credit_micros;
+        IF NEW.held_credit_micros::numeric <> expected_credit_micros
+           OR NEW.held_overage_micros::numeric <> expected_overage_micros THEN
+            RAISE EXCEPTION 'reservation hold split does not match available credit'
+                USING ERRCODE = 'check_violation';
+        END IF;
+
+        IF expected_overage_micros > 0 THEN
+            SELECT starts_at, ends_at, overage_limit_micros
+            INTO period_starts_at, period_ends_at, period_overage_limit_micros
+            FROM billing_periods
+            WHERE organization_id = NEW.organization_id
+              AND starts_at <= NEW.created_at
+              AND ends_at > NEW.created_at
+            FOR KEY SHARE;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'reservation has no current billing period'
+                    USING ERRCODE = 'check_violation';
+            END IF;
+
+            SELECT COALESCE(sum(overage_applied_micros), 0)
+            INTO committed_overage_micros
+            FROM usage_records
+            WHERE organization_id = NEW.organization_id
+              AND committed_at >= period_starts_at
+              AND committed_at < period_ends_at;
+            SELECT COALESCE(sum(held_overage_micros), 0)
+            INTO active_overage_micros
+            FROM usage_reservations
+            WHERE organization_id = NEW.organization_id
+              AND status = 'held'
+              AND created_at >= period_starts_at
+              AND created_at < period_ends_at;
+
+            IF committed_overage_micros
+               + active_overage_micros
+               + expected_overage_micros
+               > period_overage_limit_micros THEN
+                RAISE EXCEPTION 'reservation exceeds current overage limit'
+                    USING ERRCODE = 'check_violation';
+            END IF;
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -276,6 +363,14 @@ BEGIN
     NEW.finalized_at := transaction_timestamp();
     IF OLD.status <> 'held'
        OR NEW.status NOT IN ('committed', 'released', 'expired')
+       OR (
+           NEW.status = 'committed'
+           AND NOT EXISTS (
+               SELECT 1
+               FROM usage_records
+               WHERE reservation_id = OLD.id
+           )
+       )
        OR NEW.id IS DISTINCT FROM OLD.id
        OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
        OR NEW.team_id IS DISTINCT FROM OLD.team_id
@@ -344,7 +439,7 @@ CREATE TABLE usage_records (
 CREATE INDEX usage_records_organization_idx
     ON usage_records(organization_id, committed_at, id);
 
-CREATE FUNCTION commit_usage_record_reservation()
+CREATE FUNCTION validate_usage_record_reservation()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -400,20 +495,36 @@ BEGIN
             USING ERRCODE = 'check_violation';
     END IF;
 
-    UPDATE usage_reservations
-    SET status = 'committed',
-        finalized_at = transaction_timestamp()
-    WHERE id = reservation.id;
-
     NEW.committed_at := transaction_timestamp();
     RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER usage_records_commit_reservation
+CREATE TRIGGER usage_records_validate_reservation
 BEFORE INSERT
 ON usage_records
-FOR EACH ROW EXECUTE FUNCTION commit_usage_record_reservation();
+FOR EACH ROW EXECUTE FUNCTION validate_usage_record_reservation();
+
+CREATE FUNCTION mark_usage_record_reservation_committed()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE usage_reservations
+    SET status = 'committed'
+    WHERE id = NEW.reservation_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'usage record reservation could not be committed'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER usage_records_commit_reservation
+AFTER INSERT
+ON usage_records
+FOR EACH ROW EXECUTE FUNCTION mark_usage_record_reservation_committed();
 
 CREATE FUNCTION reject_usage_record_mutation()
 RETURNS trigger

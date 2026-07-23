@@ -359,3 +359,35 @@ CREATE TABLE organization_invitation_acceptances (
     accepted_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     PRIMARY KEY (invitation_id, account_id)
 );
+
+CREATE FUNCTION validate_organization_invitation_acceptance()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    invitation_expires_at timestamptz;
+    invitation_revoked_at timestamptz;
+BEGIN
+    SELECT expires_at, revoked_at
+    INTO invitation_expires_at, invitation_revoked_at
+    FROM organization_invitations
+    WHERE id = NEW.invitation_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'invitation does not exist'
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
+    NEW.accepted_at := transaction_timestamp();
+    IF invitation_revoked_at IS NOT NULL
+       OR invitation_expires_at <= NEW.accepted_at THEN
+        RAISE EXCEPTION 'invitation is no longer valid'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER organization_invitation_acceptances_validate
+BEFORE INSERT ON organization_invitation_acceptances
+FOR EACH ROW EXECUTE FUNCTION validate_organization_invitation_acceptance();

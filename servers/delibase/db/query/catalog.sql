@@ -31,8 +31,13 @@ WHERE NOT allowlist.enabled
         AND reservation.active_meter_id = allowlist.meter_id
   );
 
--- name: ClearPolarMeterMappings :exec
-DELETE FROM polar_meter_mappings;
+-- name: DeleteUnusedPolarMeterMappings :exec
+DELETE FROM polar_meter_mappings AS mapping
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM usage_reservations AS reservation
+    WHERE reservation.active_meter_id = mapping.meter_id
+);
 
 -- name: UpsertCatalogApp :exec
 INSERT INTO catalog_apps (
@@ -116,6 +121,9 @@ VALUES ($1, $2, true)
 ON CONFLICT (service_identity_id, meter_id) DO UPDATE
 SET enabled = true;
 
--- name: CreatePolarMeterMapping :exec
+-- name: EnsurePolarMeterMapping :execrows
 INSERT INTO polar_meter_mappings (meter_id, polar_meter_id)
-VALUES ($1, $2);
+VALUES ($1, $2)
+ON CONFLICT (meter_id) DO UPDATE
+SET meter_id = EXCLUDED.meter_id
+WHERE polar_meter_mappings.polar_meter_id = EXCLUDED.polar_meter_id;
