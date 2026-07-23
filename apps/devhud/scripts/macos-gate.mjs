@@ -18,6 +18,7 @@ import {
   assertSafeDiagnostics,
   gateTargets,
   requiredRuntimeEvents,
+  safeFailureSummary,
   validateSafeEvidence,
 } from "./macos-gate-contract.mjs";
 
@@ -137,6 +138,13 @@ function execute(command, args, options = {}) {
 async function requireSuccess(command, args, options) {
   const result = await execute(command, args, options);
   if (result.code !== 0) {
+    console.error(
+      JSON.stringify({
+        event: "devhud.gate.subprocess_failure",
+        classification: "subprocess-failure",
+        summary: safeFailureSummary(result.output),
+      }),
+    );
     throw new Error("macOS gate subprocess failed");
   }
   return result;

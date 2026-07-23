@@ -5,6 +5,7 @@ import {
   assertSafeDiagnostics,
   gateTargets,
   requiredRuntimeEvents,
+  safeFailureSummary,
   validateSafeEvidence,
 } from "./macos-gate-contract.mjs";
 
@@ -95,6 +96,16 @@ test("rejects excluded values in captured diagnostics", () => {
     /redaction/u,
   );
   assert.doesNotThrow(() => assertSafeDiagnostics("safe-event", ["excluded"]));
+});
+
+test("summarizes subprocess failures without sensitive values", () => {
+  const summary = safeFailureSummary(
+    "error: failed at /Users/example/private/project/file.rs with " +
+      "Control+Alt+Shift+F18 and A".repeat(80),
+  ).join("\n");
+
+  assert.match(summary, /error: failed/u);
+  assert.doesNotMatch(summary, /Users|project|F18|A{48}/u);
 });
 
 test("accepts only passing path-free evidence", () => {

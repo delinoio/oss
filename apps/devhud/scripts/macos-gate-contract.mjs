@@ -38,6 +38,34 @@ export function assertSafeDiagnostics(text, excludedValues) {
   }
 }
 
+export function safeFailureSummary(text) {
+  const pathPattern =
+    /(?:[A-Za-z]:)?[/\\](?:[^/\\\s:'"=]+[/\\])*[^/\\\s:'"=]*/gu;
+  const sensitivePattern =
+    /\b(?:[A-Za-z0-9+/]{64,}={0,2}|[A-Fa-f0-9]{48,})\b/gu;
+  const shortcutPattern =
+    /\b(?:control|ctrl|alt|option|shift|F18)(?:[+\s-]*(?:control|ctrl|alt|option|shift|F18))*\b/giu;
+  const relevant = text
+    .split(/\r?\n/u)
+    .filter((line) =>
+      /\b(?:caused by|error|expected|failed|failure|found|unsupported)\b/iu.test(
+        line,
+      ),
+    )
+    .slice(-24)
+    .map((line) =>
+      line
+        .replace(pathPattern, "<path>")
+        .replace(sensitivePattern, "<sensitive>")
+        .replace(shortcutPattern, "<shortcut>")
+        .trim()
+        .slice(0, 400),
+    )
+    .filter(Boolean);
+
+  return relevant.length > 0 ? relevant : ["subprocess-failure"];
+}
+
 export function validateSafeEvidence(evidence) {
   if (
     Object.keys(evidence).join(",") !== requiredTopLevelEvidenceKeys.join(",") ||
