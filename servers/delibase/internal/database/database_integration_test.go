@@ -3035,7 +3035,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, event_type, actor_reference, organization_id, result, metadata
 		) VALUES (
 			$1,
-			'schema.audit',
+			'authorization.decision',
 			'actor:v1:00000000000000000000000000000000',
 			$2,
 			'success',
@@ -3049,7 +3049,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, event_type, actor_reference, organization_id, result
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000128',
-			'schema.audit',
+			'authorization.decision',
 			'raw-logto-subject',
 			$1,
 			'success'
@@ -3060,7 +3060,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, event_type, actor_reference, organization_id, result, metadata
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000215',
-			'schema.audit',
+			'authorization.decision',
 			'',
 			$1,
 			'success',
@@ -3072,7 +3072,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, event_type, actor_reference, organization_id, result, metadata
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000129',
-			'schema.audit',
+			'authorization.decision',
 			'',
 			$1,
 			'success',
