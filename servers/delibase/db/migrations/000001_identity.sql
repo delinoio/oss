@@ -62,6 +62,17 @@ BEGIN
         RAISE EXCEPTION 'organization deletion cannot be cleared or rewritten'
             USING ERRCODE = 'check_violation';
     END IF;
+    IF OLD.deleted_at IS NULL
+       AND NEW.deleted_at IS NOT NULL
+       AND EXISTS (
+           SELECT 1
+           FROM usage_reservations
+           WHERE organization_id = OLD.id
+             AND status = 'held'
+       ) THEN
+        RAISE EXCEPTION 'organization deletion requires finalized reservations'
+            USING ERRCODE = 'check_violation';
+    END IF;
     RETURN NEW;
 END;
 $$;

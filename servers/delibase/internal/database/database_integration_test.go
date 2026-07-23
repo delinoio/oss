@@ -1015,6 +1015,8 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		subB           = "0198a000-0000-7000-8000-000000000062"
 		subC           = "0198a000-0000-7000-8000-000000000063"
 		replacementSub = "0198a000-0000-7000-8000-000000000064"
+		pendingSub     = "0198a000-0000-7000-8000-000000000065"
+		rewrittenSub   = "0198a000-0000-7000-8000-000000000066"
 		periodA        = "0198a000-0000-7000-8000-000000000071"
 		periodB        = "0198a000-0000-7000-8000-000000000072"
 		periodC        = "0198a000-0000-7000-8000-000000000075"
@@ -1072,6 +1074,21 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE subscriptions SET polar_subscription_id = 'rewritten-subscription' WHERE id = $1",
 		subA,
+	)
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO subscriptions (
+			id, organization_id, polar_subscription_id, status
+		) VALUES ($1, $2, 'pending-identity', 'pending')
+	`, pendingSub, orgA); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE subscriptions SET organization_id = $1 WHERE id = $2",
+		orgB, pendingSub,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE subscriptions SET id = $1 WHERE id = $2",
+		rewrittenSub, pendingSub,
 	)
 	requireConstraintFailure(t, ctx, transaction,
 		"INSERT INTO subscriptions (id, organization_id, polar_subscription_id, status) VALUES ($1, $2, 'second-active', 'active')",
@@ -2009,6 +2026,65 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, inheritedHold); err != nil {
 		t.Fatal(err)
 	}
+	missingHold, err := transaction.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := missingHold.Exec(ctx, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000324',
+			$1, $2, 'A', $3, $4, $5, $6,
+			1, 1, 1, 1, 0, 'missing-hold',
+			transaction_timestamp() + interval '1 minute'
+		)
+	`, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
+		_ = missingHold.Rollback(context.WithoutCancel(ctx))
+		t.Fatal(err)
+	}
+	if _, err := missingHold.Exec(ctx, `
+		INSERT INTO usage_records (
+			id, reservation_id, organization_id, team_id, team_name_snapshot,
+			meter_id, account_id, service_identity_id, committed_units,
+			total_cost_micros, credit_applied_micros, overage_applied_micros
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000325',
+			'0198a000-0000-7000-8000-000000000324',
+			$1, $2, 'A', $3, $4, $5, 0, 0, 0, 0
+		)
+	`, orgA, teamA, meterID, historyUser, serviceID); err != nil {
+		_ = missingHold.Rollback(context.WithoutCancel(ctx))
+		t.Fatal(err)
+	}
+	if _, err := missingHold.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, entry_type, amount_micros,
+			balance_after_micros, reservation_id, team_id_snapshot,
+			team_name_snapshot, source_reference
+		)
+		SELECT
+			'0198a000-0000-7000-8000-000000000326',
+			$1, 'credit_release', 1, COALESCE(sum(amount_micros), 0) + 1,
+			'0198a000-0000-7000-8000-000000000324',
+			$2, 'A', 'missing-hold-release'
+		FROM ledger_entries
+		WHERE organization_id = $1
+	`, orgA, teamA); err != nil {
+		_ = missingHold.Rollback(context.WithoutCancel(ctx))
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, missingHold, `
+		UPDATE usage_reservations
+		SET status = 'committed'
+		WHERE id = '0198a000-0000-7000-8000-000000000324'
+	`)
+	if err := missingHold.Rollback(context.WithoutCancel(ctx)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_reservations (
 			id, organization_id, team_id, team_name_snapshot, meter_id,
@@ -2127,6 +2203,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, activeHold, orgA, activeTeam, meterID, priceID, accountA, serviceID); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE organizations SET deleted_at = transaction_timestamp() WHERE id = $1",
+		orgA,
+	)
 	requireConstraintFailure(t, ctx, transaction,
 		"DELETE FROM polar_meter_mappings WHERE meter_id = $1",
 		meterID,

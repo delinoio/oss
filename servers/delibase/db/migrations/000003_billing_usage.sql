@@ -98,22 +98,24 @@ CREATE UNIQUE INDEX subscriptions_one_active_per_organization_idx
     ON subscriptions(organization_id)
     WHERE status = 'active';
 
-CREATE FUNCTION preserve_polar_subscription_identifier()
+CREATE FUNCTION preserve_subscription_identity()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    IF NEW.polar_subscription_id IS DISTINCT FROM OLD.polar_subscription_id THEN
-        RAISE EXCEPTION 'Polar subscription identifier is immutable'
+    IF NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
+       OR NEW.polar_subscription_id IS DISTINCT FROM OLD.polar_subscription_id THEN
+        RAISE EXCEPTION 'subscription identity is immutable'
             USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER subscriptions_preserve_polar_identifier
-BEFORE UPDATE OF polar_subscription_id ON subscriptions
-FOR EACH ROW EXECUTE FUNCTION preserve_polar_subscription_identifier();
+CREATE TRIGGER subscriptions_preserve_identity
+BEFORE UPDATE OF id, organization_id, polar_subscription_id ON subscriptions
+FOR EACH ROW EXECUTE FUNCTION preserve_subscription_identity();
 
 CREATE FUNCTION preserve_terminal_subscription()
 RETURNS trigger
@@ -608,6 +610,18 @@ BEGIN
                SELECT 1
                FROM usage_records AS usage
                WHERE usage.reservation_id = OLD.id
+                 AND COALESCE(-(
+                     SELECT sum(entry.amount_micros)
+                     FROM ledger_entries AS entry
+                     WHERE entry.reservation_id = OLD.id
+                       AND entry.entry_type = 'credit_hold'
+                 ), 0) = OLD.held_credit_micros::numeric
+                 AND COALESCE(-(
+                     SELECT sum(entry.amount_micros)
+                     FROM ledger_entries AS entry
+                     WHERE entry.reservation_id = OLD.id
+                       AND entry.entry_type = 'overage_hold'
+                 ), 0) = OLD.held_overage_micros::numeric
                  AND COALESCE((
                      SELECT -sum(entry.amount_micros)
                      FROM ledger_entries AS entry
