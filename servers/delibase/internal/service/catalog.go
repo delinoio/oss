@@ -36,8 +36,8 @@ func (service *Catalog) ListCatalogApps(ctx context.Context, request *connect.Re
 	}
 	response := &delibasev1.ListCatalogAppsResponse{Page: &delibasev1.PageResponse{}}
 	if int32(len(rows)) > size {
-		response.Page.NextCursor = encodeCatalogCursor(rows[size].ID)
 		rows = rows[:size]
+		response.Page.NextCursor = encodeCatalogCursor(rows[len(rows)-1].ID)
 	}
 	for _, row := range rows {
 		response.Apps = append(response.Apps, catalogApp(row))
@@ -61,13 +61,19 @@ func (service *Catalog) GetCatalogApp(ctx context.Context, request *connect.Requ
 	if err != nil {
 		return nil, catalogStorageError(err)
 	}
-	meters, err := queries.ListPublicCatalogMeters(ctx, dbgen.ListPublicCatalogMetersParams{AppID: app.ID, ID: zeroCatalogID(), Limit: detailCatalogLimit})
-	if err != nil {
-		return nil, catalogStorageError(err)
-	}
 	response := &delibasev1.GetCatalogAppResponse{App: catalogAppFromDetail(app)}
-	for _, meter := range meters {
-		response.Meters = append(response.Meters, catalogMeter(meter))
+	for cursor := zeroCatalogID(); ; {
+		meters, err := queries.ListPublicCatalogMeters(ctx, dbgen.ListPublicCatalogMetersParams{AppID: app.ID, ID: cursor, Limit: detailCatalogLimit})
+		if err != nil {
+			return nil, catalogStorageError(err)
+		}
+		for _, meter := range meters {
+			response.Meters = append(response.Meters, catalogMeter(meter))
+		}
+		if int32(len(meters)) < detailCatalogLimit {
+			break
+		}
+		cursor = meters[len(meters)-1].ID
 	}
 	return connect.NewResponse(response), nil
 }
@@ -92,8 +98,8 @@ func (service *Catalog) ListCatalogMeters(ctx context.Context, request *connect.
 	}
 	response := &delibasev1.ListCatalogMetersResponse{Page: &delibasev1.PageResponse{}}
 	if int32(len(rows)) > size {
-		response.Page.NextCursor = encodeCatalogCursor(rows[size].ID)
 		rows = rows[:size]
+		response.Page.NextCursor = encodeCatalogCursor(rows[len(rows)-1].ID)
 	}
 	for _, row := range rows {
 		response.Meters = append(response.Meters, catalogMeter(row))
@@ -175,7 +181,14 @@ func invalidCatalogRequest(message string) error {
 	return connect.NewError(connect.CodeInvalidArgument, errors.New(message))
 }
 func catalogNotFound() error {
-	return connect.NewError(connect.CodeNotFound, errors.New("catalog resource not found"))
+	failure := connect.NewError(connect.CodeNotFound, errors.New("catalog resource not found"))
+	detail, err := connect.NewErrorDetail(&delibasev1.ErrorDetail{
+		Reason: delibasev1.ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND,
+	})
+	if err == nil {
+		failure.AddDetail(detail)
+	}
+	return failure
 }
 func catalogStorageError(error) error {
 	return connect.NewError(connect.CodeUnavailable, errors.New("catalog is unavailable"))
