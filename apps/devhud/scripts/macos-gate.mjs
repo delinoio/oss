@@ -796,4 +796,14 @@ async function main() {
   }
 }
 
-await main();
+try {
+  await main();
+} catch {
+  console.error(
+    JSON.stringify({
+      event: "devhud.gate.failed",
+      classification: "gate-failure",
+    }),
+  );
+  process.exitCode = 1;
+}

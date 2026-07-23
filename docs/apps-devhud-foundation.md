@@ -4,7 +4,7 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: the isolated macOS CEF gate is implemented; the complete feasibility gate remains blocked on Windows/Linux. `apps/devhud` contains only the non-product probe package and no product, mobile/widget, production packaging, release, publisher, or public support implementation.
+- Status: the isolated macOS CEF gate automation is implemented but cannot compile against the pinned upstream `tauri-runtime-cef`; the complete feasibility gate remains blocked on every desktop platform. `apps/devhud` contains only the non-product probe package and no product, mobile/widget, production packaging, release, publisher, or public support implementation.
 - This document covers the future deployable package. The current scaffold is limited to the shared bundled-asset frontend probe, `src-tauri` runtime-selection boundary, typed gate harness, deterministic validation commands, and private macOS gate automation.
 
 ## Runtime and Language
@@ -46,15 +46,22 @@ The package's `macos-gate` feature and `.github/workflows/devhud-macos-cef-gate.
 
 The gate creates an ephemeral updater key only within the runner and suppresses raw subprocess output. It uploads only the safe evidence JSON for a short retention period; it does not upload or publish DMGs, updater bundles, keys, or signing inputs. The exact upstream Tauri revision and `@tauri-apps/cli-cef` version remain unchanged, with no Cargo patches or local upstream source changes.
 
-### Current gate blocker
+Execution stops during the native Rust build before any runtime or packaging condition can be claimed. The blocker below requires an upstream source correction, so none of the macOS evidence booleans may be recorded as passing.
+
+### Current gate blockers
 
 The gate is blocked at the required upstream commit:
+
+- On macOS, `tauri-runtime-cef` applies its Linux/BSD target guard only to the `TerminationSignals` struct, while the following `impl TerminationSignals` remains unconditional. The macOS build therefore resolves neither the guarded type nor the `libc` symbols used by its unconditional implementation.
+- The crate also declares `libc` only in its Linux/BSD target dependency table. Adding a downstream `libc` dependency would not restore the configured-out upstream type and would be an impermissible shim instead of a source fix.
+- Native ARM64 and x64 gate execution both stop while compiling the pinned upstream crate. Correcting the target guard or dependency placement requires modifying upstream `tauri-runtime-cef`, which this task forbids.
+- Native evidence: [macOS gate run 30048828046](https://github.com/delinoio/oss/actions/runs/30048828046) failed on both `macos-15` ARM64 and `macos-15-intel` x64 with the same configured-out-item note, unresolved `libc` errors (`E0433`), and missing-type explanation (`E0425`). Deterministic probe checks passed first on both jobs.
 
 - Tauri's public `Builder::on_web_content_process_terminate` API is compiled only for macOS and iOS. It is unavailable to a Windows or Linux DevHud application.
 - `tauri-runtime-cef` receives CEF's `on_render_process_terminated` callback internally, but its webview construction takes the termination handler only on macOS/iOS and explicitly assigns `None` on other targets.
 - Therefore the required fatal renderer-termination diagnostic and immediate shutdown cannot be installed or proved on Windows or Ubuntu through the public pinned API. Fixing this at the pinned revision requires changing upstream Tauri/`tauri-runtime-cef` source, which this project forbids.
 
-This is the cross-platform CEF stop condition. The macOS probe integrations and private validation packages are gate-only evidence, not product or release implementation. Product UI, mobile/widget work, production packaging/updater integration, signing, publishing, and release work remain blocked pending a separate architecture decision. Evidence: [public hook target guard](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri/src/app.rs#L1884-L1898) and [CEF handler discarded on Windows/Linux](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri-runtime-cef/src/webview.rs#L354-L360).
+These are cross-platform CEF stop conditions. The macOS probe integrations are unexecuted gate code, not product or release implementation. No macOS DMG, updater, signature, runtime, lifecycle, failure-mode, or process-cleanup condition has passed. Product UI, mobile/widget work, production packaging/updater integration, signing, publishing, and release work remain blocked pending a separate architecture decision. Evidence: [mis-scoped macOS signal implementation](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri-runtime-cef/src/runtime.rs#L1219-L1270), [Linux/BSD-only `libc` dependency](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri-runtime-cef/Cargo.toml#L88-L92), [public hook target guard](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri/src/app.rs#L1884-L1898), and [CEF handler discarded on Windows/Linux](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri-runtime-cef/src/webview.rs#L354-L360).
 
 ## Users and Operators
 
@@ -153,7 +160,7 @@ Required validation coverage is:
 - Installer, signature, updater, SBOM, and provenance validation.
 - Performance measurements must record HUD display latency, cold startup, package size, and idle memory per supported desktop platform, plus mobile startup time. Publish these measurements with the release; `0.1.0` defines no numeric pass threshold.
 
-The isolated DevHud macOS CEF workflow is the only DevHud-specific CI job. It is a feasibility gate and artifact validator, not a release job. A future architecture decision must explicitly unblock the remaining platform and product tasks without weakening existing repository checks.
+The isolated DevHud macOS CEF workflow is the only DevHud-specific CI job. It currently records the upstream native compilation failure and cannot reach artifact validation; it is not a release job. A future architecture decision must explicitly resolve the upstream blockers before unblocking any platform or product task.
 
 ## Dependencies and Integrations
 

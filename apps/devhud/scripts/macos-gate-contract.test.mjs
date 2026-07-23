@@ -100,11 +100,12 @@ test("rejects excluded values in captured diagnostics", () => {
 
 test("summarizes subprocess failures without sensitive values", () => {
   const summary = safeFailureSummary(
-    "error: failed at /Users/example/private/project/file.rs with " +
+    "\u001b[1m\u001b[91merror: failed\u001b[0m at /Users/example/private/project/file.rs with " +
       "Control+Alt+Shift+F18 and A".repeat(80),
   ).join("\n");
 
   assert.match(summary, /error: failed/u);
+  assert.equal(summary.includes("\u001b"), false);
   assert.doesNotMatch(summary, /Users|project|F18|A{48}/u);
 });
 

@@ -38,6 +38,25 @@ export function assertSafeDiagnostics(text, excludedValues) {
   }
 }
 
+function stripAnsi(text) {
+  let output = "";
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) !== 27 || text[index + 1] !== "[") {
+      output += text[index];
+      continue;
+    }
+
+    index += 2;
+    while (
+      index < text.length &&
+      (text.charCodeAt(index) < 0x40 || text.charCodeAt(index) > 0x7e)
+    ) {
+      index += 1;
+    }
+  }
+  return output;
+}
+
 export function safeFailureSummary(text) {
   const pathPattern =
     /(?:[A-Za-z]:)?[/\\](?:[^/\\\s:'"=]+[/\\])*[^/\\\s:'"=]*/gu;
@@ -54,7 +73,7 @@ export function safeFailureSummary(text) {
     )
     .slice(-24)
     .map((line) =>
-      line
+      stripAnsi(line)
         .replace(pathPattern, "<path>")
         .replace(sensitivePattern, "<sensitive>")
         .replace(shortcutPattern, "<shortcut>")
