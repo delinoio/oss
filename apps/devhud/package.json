@@ -9,10 +9,12 @@
     "check:contracts": "node scripts/check-contracts.mjs",
     "check:locks": "node scripts/check-lockfiles.mjs",
     "check:rust": "node scripts/run-cargo-checks.mjs",
+    "gate:macos": "node scripts/macos-gate.mjs",
     "lint": "eslint . --max-warnings 0",
     "smoke:desktop": "node scripts/smoke-desktop.mjs",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/macos-gate-contract.test.mjs",
     "test:build": "node scripts/check-build-reproducibility.mjs",
+    "test:macos-gate-contract": "node --test scripts/macos-gate-contract.test.mjs",
     "test:probe": "vitest run src/probe src/runtime",
     "typecheck": "tsc --noEmit"
   },

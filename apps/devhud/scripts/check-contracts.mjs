@@ -10,6 +10,11 @@ const paths = {
   cargoLock: resolve(repositoryRoot, "Cargo.lock"),
   cargoManifest: resolve(appRoot, "src-tauri/Cargo.toml"),
   capability: resolve(appRoot, "src-tauri/capabilities/probe.json"),
+  infoPlist: resolve(appRoot, "src-tauri/Info.plist"),
+  macosWorkflow: resolve(
+    repositoryRoot,
+    ".github/workflows/devhud-macos-cef-gate.yml",
+  ),
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
   rootCargoManifest: resolve(repositoryRoot, "Cargo.toml"),
@@ -20,6 +25,8 @@ const [
   cargoLock,
   cargoManifest,
   capability,
+  infoPlist,
+  macosWorkflow,
   packageLock,
   packageManifest,
   rootCargoManifest,
@@ -28,6 +35,8 @@ const [
   readFile(paths.cargoLock, "utf8"),
   readFile(paths.cargoManifest, "utf8"),
   readFile(paths.capability, "utf8"),
+  readFile(paths.infoPlist, "utf8"),
+  readFile(paths.macosWorkflow, "utf8"),
   readFile(paths.packageLock, "utf8"),
   readFile(paths.packageManifest, "utf8"),
   readFile(paths.rootCargoManifest, "utf8"),
@@ -94,8 +103,20 @@ requireCondition(
   cargoManifest.includes(
     'desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef"]',
   ) &&
+    cargoManifest.includes('"desktop-cef",') &&
+    cargoManifest.includes('"dep:auto-launch",') &&
+    cargoManifest.includes('"dep:global-hotkey",') &&
     cargoManifest.includes('mobile-system-webview = ["dep:tauri"]'),
-  "Cargo features must keep desktop CEF and mobile system webviews mutually selectable",
+  "Cargo features must isolate the macOS gate and keep mobile system webviews selectable",
+);
+requireCondition(
+  /auto-launch\s*=\s*\{\s*version\s*=\s*"=0\.5\.0",\s*optional\s*=\s*true\s*\}/u.test(
+    cargoManifest,
+  ) &&
+    /global-hotkey\s*=\s*\{\s*version\s*=\s*"=0\.8\.0",\s*optional\s*=\s*true\s*\}/u.test(
+      cargoManifest,
+    ),
+  "macOS native integration crates must remain exact, optional target dependencies",
 );
 requireCondition(
   rootCargoManifest.includes('"apps/devhud/src-tauri"'),
@@ -137,8 +158,34 @@ requireCondition(
 requireCondition(
   capabilityJson.permissions?.includes("allow-probe-bundled-asset-ready") &&
     capabilityJson.permissions?.includes("allow-probe-denial-observed") &&
+    capabilityJson.permissions?.includes("allow-probe-gate-mode") &&
+    capabilityJson.permissions?.includes("allow-probe-macos-gate-run") &&
+    capabilityJson.permissions?.includes("allow-probe-macos-gate-complete") &&
+    capabilityJson.permissions?.includes(
+      "allow-probe-macos-gate-renderer-ready",
+    ) &&
     !capabilityJson.permissions?.includes("allow-probe-forbidden"),
-  "the capability must allow the handshake and deny the forbidden command",
+  "the capability must allow only the scoped probe commands and deny the forbidden command",
+);
+requireCondition(
+  infoPlist.includes("<key>LSUIElement</key>") &&
+    infoPlist.includes("<true/>"),
+  "the macOS probe must declare persistent hidden-Dock behavior",
+);
+requireCondition(
+  macosWorkflow.includes("runner: macos-15-intel") &&
+    macosWorkflow.includes("target: x86_64-apple-darwin") &&
+    macosWorkflow.includes("runner: macos-15") &&
+    macosWorkflow.includes("target: aarch64-apple-darwin") &&
+    macosWorkflow.includes("pnpm --dir apps/devhud gate:macos"),
+  "the isolated macOS gate must cover native x64 and ARM64 runners",
+);
+requireCondition(
+  packageJson.scripts?.["gate:macos"] ===
+    "node scripts/macos-gate.mjs" &&
+    packageJson.scripts?.["test:macos-gate-contract"] ===
+      "node --test scripts/macos-gate-contract.test.mjs",
+  "the package must expose the macOS gate and its deterministic contract tests",
 );
 
 if (failures.length > 0) {

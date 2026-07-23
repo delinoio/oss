@@ -1,0 +1,104 @@
+name: DevHud macOS CEF Gate
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/CI.yml
+      - .github/workflows/devhud-macos-cef-gate.yml
+      - Cargo.lock
+      - Cargo.toml
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - rust-toolchain
+      - apps/devhud/**
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devhud-macos-cef-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: macOS 14+ ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - architecture: arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          targets: ${{ matrix.target }}
+          components: clippy,rustfmt
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install updater signature verifier
+        run: brew install minisign
+
+      - name: Run deterministic probe checks
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/devhud typecheck
+          pnpm --dir apps/devhud lint
+          pnpm --dir apps/devhud test
+          pnpm --dir apps/devhud check:contracts
+          pnpm --dir apps/devhud check:locks
+
+      - name: Run native CEF gate
+        env:
+          APPLE_API_ISSUER: ${{ secrets.DEVHUD_APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.DEVHUD_APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ secrets.DEVHUD_APPLE_API_KEY_PATH }}
+          APPLE_CERTIFICATE: ${{ secrets.DEVHUD_MACOS_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.DEVHUD_MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.DEVHUD_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.DEVHUD_APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.DEVHUD_APPLE_TEAM_ID }}
+        run: >-
+          pnpm --dir apps/devhud gate:macos --
+          --target ${{ matrix.target }}
+          --evidence gate-evidence/macos-${{ matrix.architecture }}.json
+
+      - name: Upload safe gate evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: devhud-macos-cef-gate-${{ matrix.architecture }}
+          path: apps/devhud/gate-evidence/macos-${{ matrix.architecture }}.json
+          if-no-files-found: error
+          retention-days: 7

@@ -66,13 +66,21 @@ enum ProbeCommandError {
     NonBundledAsset,
     ForbiddenCommandReached,
     UnsupportedGate,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     GateWindowUnavailable,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     GateWindowLifecycle,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     GateTray,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     GateDockPolicy,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     GateShortcut,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     GateAutostart,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     GateTheme,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     GateDevTools,
 }
 
@@ -81,7 +89,9 @@ enum ProbeCommandError {
 #[serde(rename_all = "kebab-case")]
 enum GateMode {
     Disabled,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     Normal,
+    #[cfg(any(all(feature = "macos-gate", target_os = "macos"), test))]
     RendererTermination,
 }
 
