@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
-import { packageManagerCommand, runPackageManager } from "./process.mjs";
+import { runPackageManager } from "./process.mjs";
 
 const appRoot = resolve(import.meta.dirname, "..");
+const repositoryRoot = resolve(appRoot, "../..");
 const supportedHosts = new Set(["darwin", "linux", "win32"]);
 
 if (!supportedHosts.has(process.platform)) {
@@ -16,8 +17,6 @@ if (!supportedHosts.has(process.platform)) {
   );
   process.exit(0);
 }
-
-await runPackageManager(["run", "build"], { cwd: appRoot });
 
 if (
   process.platform === "linux" &&
@@ -34,13 +33,19 @@ if (
   process.exit(0);
 }
 
-const invocation = packageManagerCommand(
-  ["exec", "tauri", "dev", "--no-watch", "--features", "desktop-cef"],
-  { cwd: appRoot },
+await runPackageManager(["run", "build:desktop"], { cwd: appRoot });
+
+const binaryName =
+  process.platform === "win32" ? "devhud-probe.exe" : "devhud-probe";
+const binaryPath = resolve(
+  repositoryRoot,
+  "target",
+  "debug",
+  binaryName,
 );
 const output = [];
-const child = spawn(invocation.command, invocation.args, {
-  ...invocation.options,
+const child = spawn(binaryPath, [], {
+  cwd: appRoot,
   env: {
     ...process.env,
     DEVHUD_PROBE_SMOKE: "1",

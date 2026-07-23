@@ -15,6 +15,8 @@ await run(
     "-p",
     "devhud-probe",
     "--all-targets",
+    "--features",
+    "desktop-cef",
     "--locked",
     "--",
     "-D",

@@ -215,4 +215,56 @@ describe("probe harness", () => {
     });
     expect(calls.at(-1)).toBe(ProbeId.SignedUpdater);
   });
+
+  it("rejects evidence that does not satisfy required gate conditions", async () => {
+    const invalidCases: readonly [
+      ProbeId,
+      (driver: ProbeDriver) => void,
+    ][] = [
+      [
+        ProbeId.IpcCapabilityDenial,
+        (driver) => {
+          driver.ipcCapabilityDenial = async () => ({
+            allowedCommandCompleted: true,
+            undeclaredCommandDenied: false,
+          });
+        },
+      ],
+      [
+        ProbeId.DevTools,
+        (driver) => {
+          driver.devTools = async () => ({
+            opened: true,
+            capabilityBoundaryPreserved: true,
+            remoteNavigationDenied: false,
+          });
+        },
+      ],
+      [
+        ProbeId.Packaging,
+        (driver) => {
+          driver.packaging = async (formats) => ({
+            checkedFormats: formats,
+            bundledAssetsPresent: true,
+            cefHelpersPresent: true,
+            signReady: false,
+          });
+        },
+      ],
+    ];
+
+    for (const [id, invalidate] of invalidCases) {
+      const driver = passingDriver([]);
+      invalidate(driver);
+
+      const report = await runProbeHarness(target, driver);
+
+      expect(report.results).toContainEqual({
+        id,
+        status: "failed",
+        reason: `Probe ${id} returned evidence that does not satisfy its gate conditions`,
+      });
+      expect(report.passed).toBe(false);
+    }
+  });
 });

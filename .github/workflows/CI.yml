@@ -399,11 +399,22 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
 
+      - name: Install DevHud Linux dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev
+
       - name: Run clippy
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           cargo clippy --workspace --all-targets --all-features --exclude devhud-probe -- -D warnings
-          cargo clippy -p devhud-probe --all-targets --locked -- -D warnings
+          cargo clippy -p devhud-probe --all-targets --features desktop-cef --locked -- -D warnings
 
   rust-test:
     name: Rust test

@@ -65,8 +65,23 @@ function defineScenario<K extends ProbeId>(
     driver: ProbeDriver,
     target: ProbeTarget,
   ) => Promise<ProbeEvidenceMap[K]>,
+  validates: (
+    evidence: ProbeEvidenceMap[K],
+    target: ProbeTarget,
+  ) => boolean,
 ): ProbeScenario<K> {
-  return Object.freeze({ id, run });
+  return Object.freeze({
+    id,
+    async run(driver: ProbeDriver, target: ProbeTarget) {
+      const evidence = await run(driver, target);
+      if (!validates(evidence, target)) {
+        throw new Error(
+          `Probe ${id} returned evidence that does not satisfy its gate conditions`,
+        );
+      }
+      return evidence;
+    },
+  });
 }
 
 const packageFormatsByPlatform = Object.freeze({
@@ -78,36 +93,121 @@ const packageFormatsByPlatform = Object.freeze({
   [DesktopPlatform.Windows]: Object.freeze([PackageFormat.Nsis]),
 }) satisfies Readonly<Record<DesktopPlatform, readonly PackageFormat[]>>;
 
+const bundledOrigins = Object.freeze([
+  "tauri://localhost",
+  "http://tauri.localhost",
+  "https://tauri.localhost",
+]);
+const requiredThemeModes = Object.freeze([
+  ThemeMode.System,
+  ThemeMode.Light,
+  ThemeMode.Dark,
+]);
+const requiredRuntimeFailureKinds = Object.freeze([
+  RuntimeFailureKind.CefInitialization,
+  RuntimeFailureKind.RendererTermination,
+]);
+
+function arraysEqual<T>(actual: readonly T[], expected: readonly T[]): boolean {
+  return (
+    actual.length === expected.length &&
+    actual.every((value, index) => value === expected[index])
+  );
+}
+
 export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
-  defineScenario(ProbeId.BundledAssetStartup, (driver) =>
-    driver.bundledAssetStartup(),
+  defineScenario(
+    ProbeId.BundledAssetStartup,
+    (driver) => driver.bundledAssetStartup(),
+    (evidence) =>
+      bundledOrigins.includes(evidence.origin) &&
+      evidence.sandboxEnabled === true &&
+      evidence.remoteRequestCount === 0,
   ),
-  defineScenario(ProbeId.IpcCapabilityDenial, (driver) =>
-    driver.ipcCapabilityDenial(),
+  defineScenario(
+    ProbeId.IpcCapabilityDenial,
+    (driver) => driver.ipcCapabilityDenial(),
+    (evidence) =>
+      evidence.allowedCommandCompleted === true &&
+      evidence.undeclaredCommandDenied === true,
   ),
-  defineScenario(ProbeId.TrayLifecycle, (driver) => driver.trayLifecycle()),
-  defineScenario(ProbeId.GlobalShortcut, (driver) => driver.globalShortcut()),
-  defineScenario(ProbeId.Autostart, (driver) => driver.autostart()),
-  defineScenario(ProbeId.Theme, (driver) =>
-    driver.theme([ThemeMode.System, ThemeMode.Light, ThemeMode.Dark]),
+  defineScenario(
+    ProbeId.TrayLifecycle,
+    (driver) => driver.trayLifecycle(),
+    (evidence) =>
+      evidence.created === true &&
+      evidence.remainsResidentAfterWindowClose === true &&
+      evidence.quitTerminates === true,
   ),
-  defineScenario(ProbeId.DevTools, (driver) => driver.devTools()),
-  defineScenario(ProbeId.ExplicitShutdown, (driver) =>
-    driver.explicitShutdown(),
+  defineScenario(
+    ProbeId.GlobalShortcut,
+    (driver) => driver.globalShortcut(),
+    (evidence) =>
+      evidence.registered === true &&
+      evidence.togglesProbeWindow === true &&
+      evidence.releasedOnShutdown === true,
   ),
-  defineScenario(ProbeId.RuntimeFailure, (driver) =>
-    driver.runtimeFailure([
-      RuntimeFailureKind.CefInitialization,
-      RuntimeFailureKind.RendererTermination,
-    ]),
+  defineScenario(
+    ProbeId.Autostart,
+    (driver) => driver.autostart(),
+    (evidence) =>
+      evidence.disabledByDefault === true &&
+      evidence.enableDisableRoundTrip === true,
   ),
-  defineScenario(ProbeId.HelperProcessCleanup, (driver) =>
-    driver.helperProcessCleanup(),
+  defineScenario(
+    ProbeId.Theme,
+    (driver) => driver.theme(requiredThemeModes),
+    (evidence) =>
+      arraysEqual(evidence.observedModes, requiredThemeModes) &&
+      evidence.systemChangeObserved === true,
   ),
-  defineScenario(ProbeId.Packaging, (driver, target) =>
-    driver.packaging(packageFormatsByPlatform[target.platform]),
+  defineScenario(
+    ProbeId.DevTools,
+    (driver) => driver.devTools(),
+    (evidence) =>
+      evidence.opened === true &&
+      evidence.capabilityBoundaryPreserved === true &&
+      evidence.remoteNavigationDenied === true,
   ),
-  defineScenario(ProbeId.SignedUpdater, (driver) => driver.signedUpdater()),
+  defineScenario(
+    ProbeId.ExplicitShutdown,
+    (driver) => driver.explicitShutdown(),
+    (evidence) =>
+      evidence.requestedExplicitly === true && evidence.exitCode === 0,
+  ),
+  defineScenario(
+    ProbeId.RuntimeFailure,
+    (driver) => driver.runtimeFailure(requiredRuntimeFailureKinds),
+    (evidence) =>
+      arraysEqual(evidence.fatalKinds, requiredRuntimeFailureKinds) &&
+      evidence.automaticRestartCount === 0,
+  ),
+  defineScenario(
+    ProbeId.HelperProcessCleanup,
+    (driver) => driver.helperProcessCleanup(),
+    (evidence) => evidence.helperProcessCountAfterShutdown === 0,
+  ),
+  defineScenario(
+    ProbeId.Packaging,
+    (driver, target) =>
+      driver.packaging(packageFormatsByPlatform[target.platform]),
+    (evidence, target) =>
+      arraysEqual(
+        evidence.checkedFormats,
+        packageFormatsByPlatform[target.platform],
+      ) &&
+      evidence.bundledAssetsPresent === true &&
+      evidence.cefHelpersPresent === true &&
+      evidence.signReady === true,
+  ),
+  defineScenario(
+    ProbeId.SignedUpdater,
+    (driver) => driver.signedUpdater(),
+    (evidence) =>
+      evidence.signedBundleCreated === true &&
+      evidence.validSignatureAccepted === true &&
+      evidence.invalidSignatureRejected === true,
+  ),
 ]);
 
 function failureReason(error: unknown): string {
