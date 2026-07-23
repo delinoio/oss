@@ -88,3 +88,9 @@ Each project must have one project index document and one or more domain contrac
 - `docs/servers-delibase-server-foundation.md` (`servers/delibase`, future API origin `https://delibase.deli.dev`)
 - `docs/protos-delibase-api-contract.md` (`protos/delibase/v1`, `delibase.v1`)
 - `docs/servers-internal-foundation.md` (repository-shared `servers/internal` boundary consumed by delibase)
+
+### devhud
+- `docs/project-devhud.md`
+- `docs/apps-devhud-foundation.md` (`apps/devhud`, sole canonical implementation path; documentation-first planned foundation)
+
+DevHud is local-only and independent from DeliDev. Its contract must not add or imply DeliDev accounts, catalog, billing, APIs, routes, contracts, or other integrations. Production tools and user-visible widgets remain empty in `0.1.0`; no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or runtime implementation is authorized by this documentation entry.
