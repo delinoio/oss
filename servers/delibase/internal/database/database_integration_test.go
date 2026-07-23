@@ -988,7 +988,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		subB           = "0198a000-0000-7000-8000-000000000062"
 		periodA        = "0198a000-0000-7000-8000-000000000071"
 		periodB        = "0198a000-0000-7000-8000-000000000072"
-		pastPeriodA    = "0198a000-0000-7000-8000-000000000221"
+		currentPeriodA = "0198a000-0000-7000-8000-000000000121"
 		linkedLedger   = "0198a000-0000-7000-8000-000000000077"
 		retainedLedger = "0198a000-0000-7000-8000-000000000078"
 		historyReserve = "0198a000-0000-7000-8000-000000000113"
@@ -1019,7 +1019,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		{"INSERT INTO polar_meter_mappings (meter_id, polar_meter_id) VALUES ($1, 'schema-meter-a'), ($2, 'schema-meter-b')", []any{meterID, meterB}},
 		{"INSERT INTO polar_customers (organization_id, polar_customer_id) VALUES ($1, 'schema-customer-a'), ($2, 'schema-customer-b'), ($3, 'schema-customer-c')", []any{orgA, orgB, orgC}},
 		{"INSERT INTO subscriptions (id, organization_id, polar_subscription_id, status) VALUES ($1, $2, 'polar-a', 'active'), ($3, $4, 'polar-b', 'active')", []any{subA, orgA, subB, orgB}},
-		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, transaction_timestamp() - interval '1 day', transaction_timestamp() + interval '1 day'), ($4, $2, $3, transaction_timestamp() - interval '3 days', transaction_timestamp() - interval '2 days'), ($5, $6, $7, '2026-01-01', '2026-02-01')", []any{periodA, orgA, subA, pastPeriodA, periodB, orgB, subB}},
+		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, '2026-01-01', '2026-02-01'), ($4, $5, $6, '2026-01-01', '2026-02-01')", []any{periodA, orgA, subA, periodB, orgB, subB}},
 	}
 	for _, item := range setup {
 		if _, err := transaction.Exec(ctx, item.statement, item.arguments...); err != nil {
@@ -1320,8 +1320,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, organization_id, subscription_id, starts_at, ends_at
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000073', $1, $2,
-			transaction_timestamp() - interval '12 hours',
-			transaction_timestamp() + interval '2 days'
+			'2026-01-15', '2026-02-15'
 		)
 	`, orgA, subA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1496,13 +1495,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, organization_id, subscription_id, starts_at, ends_at,
 			overage_limit_micros
 		) VALUES (
-			'0198a000-0000-7000-8000-000000000121',
-			$1, $2,
+			$1, $2, $3,
 			transaction_timestamp() - interval '1 day',
 			transaction_timestamp() + interval '1 day',
 			10
 		)
-		`, orgA, subA); err != nil {
+		`, currentPeriodA, orgA, subA); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, `
@@ -2083,7 +2081,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			$1, $2, 'credit_commit', -1, 8, $3, $4, $5, 'A',
 			'wrong-usage-period'
 		)
-	`, orgA, pastPeriodA, reserveID, recordID, teamA)
+	`, orgA, periodA, reserveID, recordID, teamA)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO ledger_entries (
 			id, organization_id, billing_period_id, entry_type,
@@ -2094,7 +2092,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			$1, $2, $3, 'credit_commit', -1, 8, $4, $5, $6, 'A',
 			'linked-usage', 'actor:v1:00000000000000000000000000000000'
 		)
-	`, linkedLedger, orgA, periodA, reserveID, recordID, teamA); err != nil {
+	`, linkedLedger, orgA, currentPeriodA, reserveID, recordID, teamA); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, `
