@@ -39,6 +39,23 @@ CREATE TRIGGER accounts_preserve_logto_subject
 BEFORE UPDATE OF logto_subject ON accounts
 FOR EACH ROW EXECUTE FUNCTION preserve_account_logto_subject();
 
+CREATE FUNCTION preserve_deleted_account_status()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF OLD.status = 'deleted' AND NEW.status <> 'deleted' THEN
+        RAISE EXCEPTION 'deleted account status is terminal'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER accounts_preserve_deleted_status
+BEFORE UPDATE OF status ON accounts
+FOR EACH ROW EXECUTE FUNCTION preserve_deleted_account_status();
+
 CREATE TABLE organizations (
     id uuid PRIMARY KEY,
     name text NOT NULL,

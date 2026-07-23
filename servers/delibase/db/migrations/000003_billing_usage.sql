@@ -58,21 +58,16 @@ BEGIN
         SELECT 1
         FROM organizations
         WHERE id = OLD.organization_id
-    ) AND NOT EXISTS (
-        SELECT 1
-        FROM polar_customers
-        WHERE organization_id = OLD.organization_id
     ) THEN
-        RAISE EXCEPTION 'organization must retain its Polar customer'
+        RAISE EXCEPTION 'organization Polar customer binding is immutable'
             USING ERRCODE = 'check_violation';
     END IF;
-    RETURN NULL;
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 END;
 $$;
 
-CREATE CONSTRAINT TRIGGER polar_customers_preserve_organization_customer
-AFTER DELETE OR UPDATE OF organization_id ON polar_customers
-DEFERRABLE INITIALLY DEFERRED
+CREATE TRIGGER polar_customers_preserve_organization_customer
+BEFORE DELETE OR UPDATE OF organization_id ON polar_customers
 FOR EACH ROW EXECUTE FUNCTION preserve_organization_polar_customer();
 
 CREATE TABLE subscriptions (
@@ -378,7 +373,7 @@ BEGIN
         RAISE EXCEPTION 'usage reservations must be inserted as held'
             USING ERRCODE = 'check_violation';
     END IF;
-    NEW.created_at := transaction_timestamp();
+    NEW.created_at := statement_timestamp();
 
     PERFORM 1
     FROM organizations
@@ -639,17 +634,13 @@ BEGIN
                      FROM ledger_entries AS entry
                      WHERE entry.reservation_id = OLD.id
                        AND entry.entry_type = 'credit_release'
-                 ), 0) = (
-                     OLD.held_credit_micros - usage.credit_applied_micros
-                 )::numeric
+                 ), 0) = OLD.held_credit_micros::numeric
                  AND COALESCE((
                      SELECT sum(entry.amount_micros)
                      FROM ledger_entries AS entry
                      WHERE entry.reservation_id = OLD.id
                        AND entry.entry_type = 'overage_release'
-                 ), 0) = (
-                     OLD.held_overage_micros - usage.overage_applied_micros
-                 )::numeric
+                 ), 0) = OLD.held_overage_micros::numeric
            )
        )
        OR (
