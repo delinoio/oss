@@ -111,6 +111,7 @@ enum ProjectId {
 - `apps/delidev-app` owns the React/TypeScript/Rsbuild PWA, stable routes, browser-safe configuration, static Pages artifact, and sensitive-cache exclusions.
 - `servers/delibase` owns Go/PostgreSQL/sqlc persistence, organization/team/invitation policy, append-only billing and reservation invariants, provider integrations, server configuration, and future GHCR artifacts.
 - `protos/delibase/v1` owns the versioned `delibase.v1` source contract and generation boundary for exactly six Connect services: `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, `BillingService`, and `UsageService`.
+- `protos/delibase/gen/go`, `protos/delibase/gen/ts`, and the workspace package `@delinoio/delibase-connect` are reproducible derived views of that source. Root entrypoints are `pnpm generate:proto` and `pnpm check:proto`.
 - `servers/internal` owns reusable Go authentication, Connect, request/trace, redaction, HTTP, logging, and UUID v7 infrastructure only; it must not own delibase business rules.
 - Changes to routes, RPCs, roles, team hierarchy, invitations, billing, usage, authentication, generated clients, shared packages, validation commands, Pages scope, or GHCR scope require synchronized project/domain docs and the relevant `AGENTS.md` files.
 

@@ -1,0 +1,36 @@
+{
+  "name": "@delinoio/delibase-connect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./delibase/v1/*": {
+      "types": "./dist/gen/ts/delibase/v1/*.d.ts",
+      "import": "./dist/gen/ts/delibase/v1/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "v1"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:api": "../../scripts/generate-delibase-proto.sh && tsc -p tsconfig.json",
+    "generate": "../../scripts/generate-delibase-proto.sh",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.13.0",
+    "@connectrpc/connect": "2.1.2"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.13.0",
+    "typescript": "5.9.3"
+  }
+}

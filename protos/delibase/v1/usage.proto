@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package delibase.v1;
+
+import "delibase/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1";
+
+message UsageReservation {
+  UuidV7 reservation_id = 1;
+  UuidV7 organization_id = 2;
+  UuidV7 team_id = 3;
+  string team_name_snapshot = 4;
+  UuidV7 meter_id = 5;
+  UuidV7 price_version_id = 6;
+  UuidV7 user_account_id = 7;
+  UuidV7 service_identity_id = 8;
+  UsageUnits maximum_units = 9;
+  UsdMicros usd_micros_per_unit = 10;
+  UsdMicros maximum_cost = 11;
+  UsdMicros held_credit = 12;
+  UsdMicros held_overage = 13;
+  string client_reference = 14;
+  ReservationStatus status = 15;
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp expires_at = 17;
+  google.protobuf.Timestamp finalized_at = 18;
+}
+
+message UsageCommit {
+  UuidV7 usage_record_id = 1;
+  UuidV7 reservation_id = 2;
+  UsageUnits committed_units = 3;
+  UsdMicros total_cost = 4;
+  UsdMicros credit_applied = 5;
+  UsdMicros overage_applied = 6;
+  UsdMicros credit_hold_released = 7;
+  UsdMicros overage_hold_released = 8;
+  google.protobuf.Timestamp committed_at = 9;
+}
+
+message UsageRelease {
+  UuidV7 reservation_id = 1;
+  UsdMicros credit_hold_released = 2;
+  UsdMicros overage_hold_released = 3;
+  ReservationStatus reservation_status = 4;
+  google.protobuf.Timestamp finalized_at = 5;
+}
+
+message ReserveUsageRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+  UuidV7 meter_id = 3;
+  UsageUnits maximum_units = 4;
+  string client_reference = 5;
+  IdempotencyKey idempotency = 6;
+}
+
+message ReserveUsageResponse {
+  UsageReservation reservation = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message CommitUsageRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 reservation_id = 2;
+  UsageUnits actual_units = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message CommitUsageResponse {
+  UsageReservation reservation = 1;
+  UsageCommit commit = 2;
+  IdempotencyResult idempotency = 3;
+}
+
+message ReleaseUsageRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 reservation_id = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message ReleaseUsageResponse {
+  UsageReservation reservation = 1;
+  UsageRelease release = 2;
+  IdempotencyResult idempotency = 3;
+}
+
+// UsageService is server-to-server only. Every RPC requires a Logto M2M bearer
+// token and a Logto user token in x-delibase-forwarded-user-token. Both values
+// are credentials and must be redacted from logs, traces, errors, and storage.
+service UsageService {
+  // Requires M2M delibase:usage:reserve and forwarded-user delibase:usage:execute.
+  rpc ReserveUsage(ReserveUsageRequest) returns (ReserveUsageResponse);
+  // Requires M2M delibase:usage:commit and forwarded-user delibase:usage:execute.
+  rpc CommitUsage(CommitUsageRequest) returns (CommitUsageResponse);
+  // Requires M2M delibase:usage:release and forwarded-user delibase:usage:execute.
+  rpc ReleaseUsage(ReleaseUsageRequest) returns (ReleaseUsageResponse);
+}

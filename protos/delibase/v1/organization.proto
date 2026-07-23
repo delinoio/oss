@@ -1,0 +1,248 @@
+syntax = "proto3";
+
+package delibase.v1;
+
+import "delibase/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1";
+
+message Organization {
+  UuidV7 organization_id = 1;
+  string name = 2;
+  string slug = 3;
+  OrganizationStatus status = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message OrganizationMember {
+  UuidV7 account_id = 1;
+  string display_name = 2;
+  OrganizationRole role = 3;
+  google.protobuf.Timestamp joined_at = 4;
+}
+
+message OrganizationInvitation {
+  UuidV7 invitation_id = 1;
+  UuidV7 organization_id = 2;
+  OrganizationRole organization_role = 3;
+  UuidV7 team_id = 4;
+  TeamRole team_role = 5;
+  InvitationStatus status = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  google.protobuf.Timestamp revoked_at = 9;
+}
+
+message InvitationBearerToken {
+  string token = 1;
+}
+
+message ListOrganizationsRequest {
+  PageRequest page = 1;
+}
+
+message ListOrganizationsResponse {
+  repeated Organization organizations = 1;
+  PageResponse page = 2;
+}
+
+message GetOrganizationRequest {
+  UuidV7 organization_id = 1;
+}
+
+message GetOrganizationResponse {
+  Organization organization = 1;
+  OrganizationRole caller_role = 2;
+}
+
+message ResolveOrganizationSlugRequest {
+  string slug = 1;
+}
+
+message ResolveOrganizationSlugResponse {
+  Organization organization = 1;
+  bool matched_alias = 2;
+}
+
+message CreateOrganizationRequest {
+  string name = 1;
+  string slug = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message CreateOrganizationResponse {
+  Organization organization = 1;
+  UuidV7 general_team_id = 2;
+  IdempotencyResult idempotency = 3;
+}
+
+message UpdateOrganizationRequest {
+  UuidV7 organization_id = 1;
+  string name = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message UpdateOrganizationResponse {
+  Organization organization = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message UpdateOrganizationSlugRequest {
+  UuidV7 organization_id = 1;
+  string slug = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message UpdateOrganizationSlugResponse {
+  Organization organization = 1;
+  string previous_slug = 2;
+  IdempotencyResult idempotency = 3;
+}
+
+message DeleteOrganizationRequest {
+  UuidV7 organization_id = 1;
+  bool confirm = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message DeleteOrganizationResponse {
+  UuidV7 deletion_id = 1;
+  DeletionStatus status = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  IdempotencyResult idempotency = 4;
+}
+
+message ListOrganizationMembersRequest {
+  UuidV7 organization_id = 1;
+  PageRequest page = 2;
+}
+
+message ListOrganizationMembersResponse {
+  repeated OrganizationMember members = 1;
+  PageResponse page = 2;
+}
+
+message UpdateOrganizationMemberRoleRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 account_id = 2;
+  OrganizationRole role = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message UpdateOrganizationMemberRoleResponse {
+  OrganizationMember member = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message RemoveOrganizationMemberRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 account_id = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message RemoveOrganizationMemberResponse {
+  IdempotencyResult idempotency = 1;
+}
+
+message LeaveOrganizationRequest {
+  UuidV7 organization_id = 1;
+  IdempotencyKey idempotency = 2;
+}
+
+message LeaveOrganizationResponse {
+  IdempotencyResult idempotency = 1;
+}
+
+message CreateOrganizationInvitationRequest {
+  UuidV7 organization_id = 1;
+  OrganizationRole organization_role = 2;
+  UuidV7 team_id = 3;
+  TeamRole team_role = 4;
+}
+
+message CreateOrganizationInvitationResponse {
+  OrganizationInvitation invitation = 1;
+  // This bearer token is returned only on creation and must be handled as a secret.
+  InvitationBearerToken bearer_token = 2;
+}
+
+message GetOrganizationInvitationRequest {
+  InvitationBearerToken bearer_token = 1;
+}
+
+message GetOrganizationInvitationResponse {
+  OrganizationInvitation invitation = 1;
+  string organization_name = 2;
+  string team_name = 3;
+}
+
+message ListOrganizationInvitationsRequest {
+  UuidV7 organization_id = 1;
+  InvitationStatus status = 2;
+  PageRequest page = 3;
+}
+
+message ListOrganizationInvitationsResponse {
+  repeated OrganizationInvitation invitations = 1;
+  PageResponse page = 2;
+}
+
+message AcceptOrganizationInvitationRequest {
+  InvitationBearerToken bearer_token = 1;
+  IdempotencyKey idempotency = 2;
+}
+
+message AcceptOrganizationInvitationResponse {
+  Organization organization = 1;
+  OrganizationMember member = 2;
+  IdempotencyResult idempotency = 3;
+}
+
+message RevokeOrganizationInvitationRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 invitation_id = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message RevokeOrganizationInvitationResponse {
+  OrganizationInvitation invitation = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+// OrganizationService requires a Logto user token on every RPC.
+service OrganizationService {
+  // Requires delibase:organizations:read.
+  rpc ListOrganizations(ListOrganizationsRequest) returns (ListOrganizationsResponse);
+  // Requires delibase:organizations:read.
+  rpc GetOrganization(GetOrganizationRequest) returns (GetOrganizationResponse);
+  // Requires delibase:organizations:read.
+  rpc ResolveOrganizationSlug(ResolveOrganizationSlugRequest) returns (ResolveOrganizationSlugResponse);
+  // Requires delibase:organizations:write.
+  rpc CreateOrganization(CreateOrganizationRequest) returns (CreateOrganizationResponse);
+  // Requires delibase:organizations:write.
+  rpc UpdateOrganization(UpdateOrganizationRequest) returns (UpdateOrganizationResponse);
+  // Requires delibase:organizations:write.
+  rpc UpdateOrganizationSlug(UpdateOrganizationSlugRequest) returns (UpdateOrganizationSlugResponse);
+  // Requires delibase:organizations:write and an Owner role.
+  rpc DeleteOrganization(DeleteOrganizationRequest) returns (DeleteOrganizationResponse);
+  // Requires delibase:organizations:read.
+  rpc ListOrganizationMembers(ListOrganizationMembersRequest) returns (ListOrganizationMembersResponse);
+  // Requires delibase:organizations:write.
+  rpc UpdateOrganizationMemberRole(UpdateOrganizationMemberRoleRequest) returns (UpdateOrganizationMemberRoleResponse);
+  // Requires delibase:organizations:write.
+  rpc RemoveOrganizationMember(RemoveOrganizationMemberRequest) returns (RemoveOrganizationMemberResponse);
+  // Requires delibase:organizations:write.
+  rpc LeaveOrganization(LeaveOrganizationRequest) returns (LeaveOrganizationResponse);
+  // Requires delibase:organizations:write.
+  rpc CreateOrganizationInvitation(CreateOrganizationInvitationRequest) returns (CreateOrganizationInvitationResponse);
+  // Requires delibase:organizations:read and an authenticated user; the bearer token is secret input.
+  rpc GetOrganizationInvitation(GetOrganizationInvitationRequest) returns (GetOrganizationInvitationResponse);
+  // Requires delibase:organizations:read and an Owner or Admin role.
+  rpc ListOrganizationInvitations(ListOrganizationInvitationsRequest) returns (ListOrganizationInvitationsResponse);
+  // Requires delibase:organizations:write and an authenticated user; the bearer token is secret input.
+  rpc AcceptOrganizationInvitation(AcceptOrganizationInvitationRequest) returns (AcceptOrganizationInvitationResponse);
+  // Requires delibase:organizations:write.
+  rpc RevokeOrganizationInvitation(RevokeOrganizationInvitationRequest) returns (RevokeOrganizationInvitationResponse);
+}

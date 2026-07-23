@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package delibase.v1;
+
+import "delibase/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1";
+
+message Team {
+  UuidV7 team_id = 1;
+  UuidV7 organization_id = 2;
+  UuidV7 parent_team_id = 3;
+  string name = 4;
+  int32 depth = 5;
+  bool protected_general = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message TeamMembership {
+  UuidV7 team_id = 1;
+  UuidV7 account_id = 2;
+  string display_name = 3;
+  TeamRole role = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message EffectiveTeamAccess {
+  UuidV7 team_id = 1;
+  UuidV7 account_id = 2;
+  TeamRole effective_role = 3;
+  TeamAccessSource source = 4;
+  UuidV7 source_team_id = 5;
+  OrganizationRole organization_role = 6;
+}
+
+message ListTeamsRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 parent_team_id = 2;
+  bool include_descendants = 3;
+  PageRequest page = 4;
+}
+
+message ListTeamsResponse {
+  repeated Team teams = 1;
+  PageResponse page = 2;
+}
+
+message GetTeamRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+}
+
+message GetTeamResponse {
+  Team team = 1;
+  EffectiveTeamAccess caller_access = 2;
+}
+
+message CreateTeamRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 parent_team_id = 2;
+  string name = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message CreateTeamResponse {
+  Team team = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message UpdateTeamRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+  string name = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message UpdateTeamResponse {
+  Team team = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message MoveTeamRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+  UuidV7 new_parent_team_id = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message MoveTeamResponse {
+  Team team = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message DeleteTeamSubtreeRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+  bool confirm_subtree = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message DeleteTeamSubtreeResponse {
+  repeated UuidV7 deleted_team_ids = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message ListTeamMembershipsRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+  PageRequest page = 3;
+}
+
+message ListTeamMembershipsResponse {
+  repeated TeamMembership memberships = 1;
+  PageResponse page = 2;
+}
+
+message SetTeamMembershipRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+  UuidV7 account_id = 3;
+  TeamRole role = 4;
+  IdempotencyKey idempotency = 5;
+}
+
+message SetTeamMembershipResponse {
+  TeamMembership membership = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message RemoveTeamMembershipRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+  UuidV7 account_id = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message RemoveTeamMembershipResponse {
+  IdempotencyResult idempotency = 1;
+}
+
+message ListEffectiveTeamAccessRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 account_id = 2;
+  PageRequest page = 3;
+}
+
+message ListEffectiveTeamAccessResponse {
+  repeated EffectiveTeamAccess access = 1;
+  PageResponse page = 2;
+}
+
+// TeamService requires a Logto user token and organization membership on every RPC.
+service TeamService {
+  // Requires delibase:teams:read.
+  rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse);
+  // Requires delibase:teams:read.
+  rpc GetTeam(GetTeamRequest) returns (GetTeamResponse);
+  // Requires delibase:teams:write.
+  rpc CreateTeam(CreateTeamRequest) returns (CreateTeamResponse);
+  // Requires delibase:teams:write.
+  rpc UpdateTeam(UpdateTeamRequest) returns (UpdateTeamResponse);
+  // Requires delibase:teams:write.
+  rpc MoveTeam(MoveTeamRequest) returns (MoveTeamResponse);
+  // Requires delibase:teams:write and explicit subtree confirmation.
+  rpc DeleteTeamSubtree(DeleteTeamSubtreeRequest) returns (DeleteTeamSubtreeResponse);
+  // Requires delibase:teams:read.
+  rpc ListTeamMemberships(ListTeamMembershipsRequest) returns (ListTeamMembershipsResponse);
+  // Requires delibase:teams:write.
+  rpc SetTeamMembership(SetTeamMembershipRequest) returns (SetTeamMembershipResponse);
+  // Requires delibase:teams:write.
+  rpc RemoveTeamMembership(RemoveTeamMembershipRequest) returns (RemoveTeamMembershipResponse);
+  // Requires delibase:teams:read. Members may read only their own effective access.
+  rpc ListEffectiveTeamAccess(ListEffectiveTeamAccessRequest) returns (ListEffectiveTeamAccessResponse);
+}

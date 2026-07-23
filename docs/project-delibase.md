@@ -28,6 +28,7 @@ This index establishes the documentation and ownership prerequisites for issue [
 - PostgreSQL transactions and row locks enforce append-only ledger behavior and prevent concurrent reservations from exceeding available credits plus the configured overage allowance.
 - Organization, team (including confirmed non-`General` subtree deletion and Admin organization-deletion exclusion), invitation, account-deletion, credit, reservation, settlement, refund, cancellation, and webhook semantics are defined in the server and proto contracts and must remain additive/versioned.
 - Root Protobuf sources live at `protos/delibase/v1/`; generated artifacts are derived and must not become a second source of truth.
+- Reproducible generated consumers live at `protos/delibase/gen/go` and `protos/delibase/gen/ts`; the latter is the private workspace package `@delinoio/delibase-connect`. Root `pnpm generate:proto` and `pnpm check:proto` are the canonical generation and compatibility entrypoints.
 - The issue scope is artifact-only: validate/build the app, validate/generate the API, test/build the server artifacts, and publish only the specified tagged GHCR images later. Do not activate or deploy either service.
 
 ## Change Policy

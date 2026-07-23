@@ -9,6 +9,7 @@
 - Source format: versioned Protobuf.
 - Generated consumers: Connect-compatible Go server/client artifacts and TypeScript browser client artifacts.
 - Protobuf source is authoritative; generated output is derived and must not be edited as a second contract.
+- Checked-in Go output is `protos/delibase/gen/go`; protobuf-es v2 output is `protos/delibase/gen/ts` and is exposed to workspace consumers as `@delinoio/delibase-connect`. Connect 2 consumes the `GenService` descriptors emitted in the generated `*_pb.ts` modules.
 
 ## Users and Operators
 - DeliDev browser client, delibase service, authenticated human users, and authenticated mini-app backend services.
@@ -26,6 +27,8 @@
 - Human requests use Logto user access tokens except for anonymous CatalogService reads, with the canonical audience `https://delibase.deli.dev`. Usage mutations carry Logto M2M authorization and the dedicated `x-delibase-forwarded-user-token` Connect metadata key for the forwarded end-user token; servers must redact that metadata value anywhere headers, metadata, or diagnostics are logged. The server owns authorization decisions.
 - Lists use opaque cursor pagination. Preserve released `delibase.v1` additively; breaking changes require `delibase.v2` or later.
 - Persisted entity IDs are UUID v7. Money values are signed int64 USD micro-units; usage values are signed int64 units. Error details use stable enum identifiers.
+- The wire wrappers are `UuidV7`, `UsdMicros`, and `UsageUnits`; protobuf-es represents both signed-int64 values as TypeScript `bigint`, while generated Go uses `int64`. Usage mutations carry `IdempotencyKey` and return `IdempotencyResult` alongside the original typed result so exact-payload replays are observable without changing the result.
+- The complete stable `ErrorReason` taxonomy covers missing/invalid/expired/issuer/audience/scope authentication, forwarded-user token failures, permission/organization/team/service-meter authorization, resource/slug/member conflicts, invitation state/roles, hierarchy depth/cycles/cross-organization/protected-team/active-reservation state, subscription/overage/price/overflow/precision state, reservation expiry/finalization/unit limits, deletion blockers, and idempotency conflicts. It is carried in `ErrorDetail` on non-OK Connect responses.
 
 ## Storage
 - Protobuf defines transport messages only; PostgreSQL schema, append-only ledger, reservations, Polar inbox/outbox, and seven-year pseudonymized retention are owned by the server contract.
@@ -41,7 +44,7 @@
 - Connect status and stable error details must permit safe user-facing classification for auth, authorization, slug, invitation, team, subscription, overage, reservation, idempotency, deletion, and resource-state failures.
 
 ## Build and Test
-- Canonical validation: Protobuf lint and breaking checks, generation from `protos/delibase/v1`, generated Go formatting/vet/tests, and TypeScript type checks used by `apps/delidev-app`.
+- Canonical validation: `pnpm generate:proto`, `pnpm check:proto`, `go test ./protos/delibase/...`, `go vet ./protos/delibase/...`, and `pnpm --filter @delinoio/delibase-connect typecheck`. The check entrypoint runs Buf lint, compares against the checked-in initial `delibase.v1` descriptor baseline, regenerates, and rejects a generated diff.
 - CI must fail on stale generated output, incompatible released-field changes, service-name drift, or missing cross-consumer generation.
 - No runtime activation, API deployment, or generated-client publication is part of issue #722.
 
