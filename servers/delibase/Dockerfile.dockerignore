@@ -1,0 +1,10 @@
+**
+!go.mod
+!go.sum
+!protos/
+!protos/delibase/
+!protos/delibase/gen/
+!protos/delibase/gen/go/
+!protos/delibase/gen/go/**
+!servers/
+!servers/**

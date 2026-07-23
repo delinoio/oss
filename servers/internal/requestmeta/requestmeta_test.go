@@ -130,6 +130,34 @@ func TestConnectPropagatesRequestID(t *testing.T) {
 	}
 }
 
+func TestConnectReusesHTTPMiddlewareMetadata(t *testing.T) {
+	t.Parallel()
+	metadata := Metadata{
+		RequestID: "http-request-1",
+		TraceID:   "4bf92f3577b34da6a3ce929d0e0e4736",
+	}
+	request := connect.NewRequest(&emptypb.Empty{})
+	next := func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+		got, ok := FromContext(ctx)
+		if !ok || got != metadata {
+			t.Fatalf("metadata = %#v, %v", got, ok)
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	_, err := (Interceptor{Generator: &fixedGenerator{}}).WrapUnary(next)(
+		WithMetadata(context.Background(), metadata),
+		request,
+	)
+	var connectFailure *connect.Error
+	if !errors.As(err, &connectFailure) {
+		t.Fatalf("error = %T", err)
+	}
+	if connectFailure.Meta().Get(RequestIDHeader) != metadata.RequestID ||
+		connectFailure.Meta().Get(TraceIDHeader) != metadata.TraceID {
+		t.Fatalf("error metadata = %#v", connectFailure.Meta())
+	}
+}
+
 func TestConnectPropagatesRequestIDOnError(t *testing.T) {
 	t.Parallel()
 	request := connect.NewRequest(&emptypb.Empty{})
@@ -144,6 +172,25 @@ func TestConnectPropagatesRequestIDOnError(t *testing.T) {
 		t.Fatalf("error = %T", err)
 	}
 	if connectFailure.Meta().Get(RequestIDHeader) != "connect-error-request" {
+		t.Fatalf("error request ID = %q", connectFailure.Meta().Get(RequestIDHeader))
+	}
+}
+
+func TestConnectHandlesTypedNilResponseOnError(t *testing.T) {
+	t.Parallel()
+	request := connect.NewRequest(&emptypb.Empty{})
+	request.Header().Set(RequestIDHeader, "connect-typed-nil-request")
+	request.Header().Set(TraceIDHeader, "4bf92f3577b34da6a3ce929d0e0e4736")
+	next := func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		var response *connect.Response[emptypb.Empty]
+		return response, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+	}
+	_, err := (Interceptor{}).WrapUnary(next)(context.Background(), request)
+	var connectFailure *connect.Error
+	if !errors.As(err, &connectFailure) {
+		t.Fatalf("error = %T", err)
+	}
+	if connectFailure.Meta().Get(RequestIDHeader) != "connect-typed-nil-request" {
 		t.Fatalf("error request ID = %q", connectFailure.Meta().Get(RequestIDHeader))
 	}
 }
