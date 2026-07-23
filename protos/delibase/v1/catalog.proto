@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package delibase.v1;
+
+import "delibase/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1";
+
+message CatalogApp {
+  UuidV7 app_id = 1;
+  string slug = 2;
+  string name = 3;
+  string summary = 4;
+  string description = 5;
+  string icon_url = 6;
+  bool enabled = 7;
+}
+
+message CatalogPrice {
+  UuidV7 price_version_id = 1;
+  UsdMicros usd_micros_per_unit = 2;
+  google.protobuf.Timestamp effective_from = 3;
+  google.protobuf.Timestamp effective_until = 4;
+}
+
+message CatalogMeter {
+  UuidV7 meter_id = 1;
+  UuidV7 app_id = 2;
+  string key = 3;
+  string name = 4;
+  string description = 5;
+  string unit_name = 6;
+  int32 unit_precision = 7;
+  int64 reservation_ttl_seconds = 8;
+  CatalogPrice current_price = 9;
+  bool enabled = 10;
+}
+
+message ListCatalogAppsRequest {
+  PageRequest page = 1;
+}
+
+message ListCatalogAppsResponse {
+  repeated CatalogApp apps = 1;
+  PageResponse page = 2;
+}
+
+message GetCatalogAppRequest {
+  string app_slug = 1;
+}
+
+message GetCatalogAppResponse {
+  CatalogApp app = 1;
+  repeated CatalogMeter meters = 2;
+}
+
+message ListCatalogMetersRequest {
+  UuidV7 app_id = 1;
+  PageRequest page = 2;
+}
+
+message ListCatalogMetersResponse {
+  repeated CatalogMeter meters = 1;
+  PageResponse page = 2;
+}
+
+message GetCatalogMeterRequest {
+  UuidV7 meter_id = 1;
+}
+
+message GetCatalogMeterResponse {
+  CatalogMeter meter = 1;
+}
+
+// CatalogService exposes enabled public catalog data without authentication.
+// It intentionally has no catalog mutation methods.
+service CatalogService {
+  rpc ListCatalogApps(ListCatalogAppsRequest) returns (ListCatalogAppsResponse);
+  rpc GetCatalogApp(GetCatalogAppRequest) returns (GetCatalogAppResponse);
+  rpc ListCatalogMeters(ListCatalogMetersRequest) returns (ListCatalogMetersResponse);
+  rpc GetCatalogMeter(GetCatalogMeterRequest) returns (GetCatalogMeterResponse);
+}

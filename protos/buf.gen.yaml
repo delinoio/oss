@@ -1,0 +1,17 @@
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: protos/delibase/gen/go
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-connect-go
+    out: protos/delibase/gen/go
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-es
+    out: protos/delibase/gen/ts
+    opt:
+      - target=ts
+      - import_extension=js
+inputs:
+  - directory: protos
