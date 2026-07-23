@@ -44,7 +44,35 @@ describe("Logto callback page", () => {
     expect(sessionStorage.getItem("delidev:return-to")).toBeNull();
   });
 
+  it("resumes an invitation and consumes its one-shot return path", async () => {
+    sessionStorage.setItem(
+      "delidev:return-to",
+      "/invite/secret-bearer-token",
+    );
+    render(
+      <MemoryRouter initialEntries={["/auth/callback"]}>
+        <Routes>
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route
+            path="/invite/:token"
+            element={<h1>Invitation destination</h1>}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Invitation destination" }),
+      ).toBeVisible(),
+    );
+    expect(sessionStorage.getItem("delidev:return-to")).toBeNull();
+  });
+
   it("renders a safe error state when Logto rejects the callback", () => {
+    sessionStorage.setItem(
+      "delidev:return-to",
+      "/invite/secret-bearer-token",
+    );
     callbackState.error = new Error("Invalid sign-in state.");
     callbackState.isAuthenticated = false;
     render(
@@ -60,5 +88,6 @@ describe("Logto callback page", () => {
       }),
     ).toBeVisible();
     expect(screen.getByText("Invalid sign-in state.")).toBeVisible();
+    expect(sessionStorage.getItem("delidev:return-to")).toBeNull();
   });
 });

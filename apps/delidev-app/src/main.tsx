@@ -11,6 +11,7 @@ import {
   LogtoAuthBridge,
   UnavailableAuthBridge,
 } from "./auth/AuthSession";
+import { VolatileLogtoClient } from "./auth/VolatileLogtoClient";
 import { canonicalAudience, runtimeConfig } from "./config";
 import {
   AuthCallbackPage,
@@ -61,7 +62,10 @@ function Providers({
     ],
   };
   return (
-    <LogtoProvider config={logtoConfig}>
+    <LogtoProvider
+      config={logtoConfig}
+      LogtoClientClass={VolatileLogtoClient}
+    >
       <LogtoAuthBridge>{children}</LogtoAuthBridge>
     </LogtoProvider>
   );

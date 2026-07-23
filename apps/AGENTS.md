@@ -32,6 +32,7 @@
 - Use React, TypeScript, Rsbuild, React Query, and `@connectrpc/connect-query`; consume the versioned `delibase.v1` contract from `protos/delibase/v1`.
 - Stable routes, anonymous catalog boundaries, authenticated organization routes, Logto trust boundary, unique Logto-`sub` onboarding identity, and the `https://delibase.deli.dev` API origin/audience are defined in the domain contract and must remain synchronized with delibase/proto docs.
 - Cache only versioned static shell and public catalog data. Never cache authenticated organization/team data, balances, ledgers, usage, invitation tokens, or auth tokens; disable server-backed actions offline.
+- Keep Logto access, refresh, and ID tokens in memory only. PKCE state and a one-shot protected return path may use same-tab `sessionStorage` solely across the Logto redirect; consume the return path on callback and never place it in `localStorage`, React Query, the service worker, logs, or diagnostics.
 - Follow Toss Design Guidelines and WCAG 2.2 AA, including focus management, `Esc` dialog closing, keyboard navigation, and screen-reader states.
 - `pnpm --filter delidev-app typecheck`, `pnpm --filter delidev-app lint`, `pnpm --filter delidev-app test`, and `pnpm --filter delidev-app build` are the baseline checks once the app exists, alongside PWA/accessibility/browser validation.
 - `apps/delidev-app/scripts/postbuild.mjs` owns deterministic SPA fallback and versioned service-worker generation. `pnpm --filter delidev-app test:pwa` validates the generated artifact and sensitive-cache boundary.

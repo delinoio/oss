@@ -32,6 +32,10 @@ The production output is `dist`. Public catalog reads use the anonymous
 `https://delibase.deli.dev`; `UsageService` is intentionally absent from the
 browser application.
 
+Logto access, refresh, and ID tokens remain in memory. Same-tab session storage
+is limited to PKCE state and the one-shot protected return path consumed by the
+authentication callback.
+
 The service worker stores only its generated, versioned shell allowlist and
 anonymous public catalog responses. It does not persist account, invitation,
 organization, team, balance, ledger, usage, or token data.

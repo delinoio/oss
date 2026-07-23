@@ -27,18 +27,19 @@ export interface AuthSessionValue {
 }
 
 const AuthSessionContext = createContext<AuthSessionValue | undefined>(undefined);
+const signInReturnPathKey = "delidev:return-to";
 
 export function safeReturnPath(value: string | null | undefined): string {
-  const containsInvitationToken =
-    value === "/invite" || value?.startsWith("/invite/");
-  if (
-    value?.startsWith("/") &&
-    !value.startsWith("//") &&
-    !containsInvitationToken
-  ) {
+  if (value?.startsWith("/") && !value.startsWith("//")) {
     return value;
   }
   return "/account";
+}
+
+export function consumeSignInReturnPath(): string {
+  const returnTo = sessionStorage.getItem(signInReturnPathKey);
+  sessionStorage.removeItem(signInReturnPathKey);
+  return safeReturnPath(returnTo);
 }
 
 export function useAuthSession(): AuthSessionValue {
@@ -81,8 +82,13 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
 
   const startSignIn = useCallback(
     async (returnTo = window.location.pathname + window.location.search) => {
-      sessionStorage.setItem("delidev:return-to", safeReturnPath(returnTo));
-      await signIn(`${runtimeConfig.appOrigin}/auth/callback`);
+      sessionStorage.setItem(signInReturnPathKey, safeReturnPath(returnTo));
+      try {
+        await signIn(`${runtimeConfig.appOrigin}/auth/callback`);
+      } catch (error) {
+        sessionStorage.removeItem(signInReturnPathKey);
+        throw error;
+      }
     },
     [signIn],
   );

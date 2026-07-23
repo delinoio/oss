@@ -69,7 +69,7 @@ describe("protected route guard", () => {
     ).toBeDisabled();
   });
 
-  it("does not retain an invitation bearer token for sign-in", async () => {
+  it("retains an invitation route for the one-shot sign-in handoff", async () => {
     const signIn = vi.fn(async () => undefined);
     renderGuard(
       {
@@ -82,12 +82,14 @@ describe("protected route guard", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Sign in with Logto" }),
     );
-    expect(signIn).toHaveBeenCalledWith("/account");
+    expect(signIn).toHaveBeenCalledWith("/invite/secret-bearer-token");
   });
 
   it("accepts only internal callback return paths", () => {
     expect(safeReturnPath("/o/acme/apps")).toBe("/o/acme/apps");
-    expect(safeReturnPath("/invite/secret-bearer-token")).toBe("/account");
+    expect(safeReturnPath("/invite/secret-bearer-token")).toBe(
+      "/invite/secret-bearer-token",
+    );
     expect(safeReturnPath("//attacker.example")).toBe("/account");
     expect(safeReturnPath("https://attacker.example")).toBe("/account");
   });

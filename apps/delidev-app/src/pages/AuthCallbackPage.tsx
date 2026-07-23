@@ -1,21 +1,22 @@
 import { useHandleSignInCallback } from "@logto/react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { safeReturnPath } from "../auth/AuthSession";
+import { consumeSignInReturnPath } from "../auth/AuthSession";
 import { ErrorState, LoadingState } from "../components/States";
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const callback = useHandleSignInCallback();
+  const handled = useRef(false);
 
   useEffect(() => {
-    if (!callback.isLoading && callback.isAuthenticated && !callback.error) {
-      const returnTo = safeReturnPath(
-        sessionStorage.getItem("delidev:return-to"),
-      );
-      sessionStorage.removeItem("delidev:return-to");
-      navigate(returnTo, { replace: true });
+    if (!callback.isLoading && !handled.current) {
+      handled.current = true;
+      const returnTo = consumeSignInReturnPath();
+      if (!callback.error && callback.isAuthenticated) {
+        navigate(returnTo, { replace: true });
+      }
     }
   }, [
     callback.error,

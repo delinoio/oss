@@ -950,6 +950,12 @@ main {
   overflow-x: auto;
 }
 
+.pagination-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -1095,6 +1101,18 @@ tr:last-child td {
 
 .billing-plan h2 {
   font-size: 28px;
+}
+
+.billing-limit-form {
+  margin-top: 18px;
+}
+
+.billing-limit-form h2 {
+  margin: 5px 0 8px;
+}
+
+.billing-limit-form > .button {
+  justify-self: start;
 }
 
 .button-row,

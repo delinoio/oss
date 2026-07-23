@@ -22,6 +22,7 @@
     "@connectrpc/connect-query": "2.2.0",
     "@connectrpc/connect-web": "2.1.2",
     "@delinoio/delibase-connect": "workspace:*",
+    "@logto/browser": "3.0.13",
     "@logto/react": "4.0.14",
     "@tanstack/react-query": "5.101.4",
     "react": "19.2.3",

@@ -1,4 +1,8 @@
-import { useMutation, useQuery } from "@connectrpc/connect-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+} from "@connectrpc/connect-query";
 import {
   BillingService,
   CatalogService,
@@ -8,6 +12,7 @@ import {
   TeamService,
 } from "@delinoio/delibase-connect";
 import { useState, type CSSProperties, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { usePublicTransport } from "../api/ApiContext";
 import { CatalogCard } from "../components/CatalogCard";
@@ -28,6 +33,29 @@ import { useOrganization } from "./OrganizationShell";
 
 function uuid(value: string | undefined) {
   return value ? { value } : undefined;
+}
+
+const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const maxSignedInt64 = 9_223_372_036_854_775_807n;
+
+export function parseUsdMicros(value: string): bigint | undefined {
+  if (!/^\d+(?:\.\d{1,6})?$/.test(value)) return undefined;
+  const parts = value.split(".");
+  const whole = parts[0]!;
+  const fraction = parts[1] ?? "";
+  const micros =
+    BigInt(whole) * 1_000_000n +
+    BigInt(fraction.padEnd(6, "0"));
+  return micros <= maxSignedInt64 ? micros : undefined;
+}
+
+function formatUsdMicrosInput(value = 0n): string {
+  const whole = value / 1_000_000n;
+  const fraction = (value % 1_000_000n)
+    .toString()
+    .padStart(6, "0")
+    .replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
 function OrganizationPageHeading({
@@ -92,11 +120,26 @@ export function OrganizationAppsPage() {
 export function MembersPage() {
   useDocumentMetadata("Members", "Manage organization members and roles.");
   const { organization, transport } = useOrganization();
-  const members = useQuery(
+  const members = useInfiniteQuery(
     OrganizationService.method.listOrganizationMembers,
-    { organizationId: organization.organizationId, page: { pageSize: 100 } },
-    { gcTime: 0, retry: false, staleTime: 0, transport },
+    {
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+    },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
   );
+  const memberRows =
+    members.data?.pages.flatMap((page) => page.members) ?? [];
   return (
     <>
       <OrganizationPageHeading
@@ -104,58 +147,79 @@ export function MembersPage() {
         title="Members"
       />
       {members.isPending ? <LoadingState label="Loading members" /> : null}
-      {members.isError ? (
+      {members.isError && !members.data ? (
         <ErrorState
           error={members.error}
           onRetry={() => void members.refetch()}
           title="Members unavailable"
         />
       ) : null}
-      {members.data?.members.length === 0 ? (
+      {memberRows.length === 0 && members.data ? (
         <EmptyState
           description="Invite someone to start collaborating."
           title="No members found"
         />
       ) : null}
-      {members.data?.members.length ? (
-        <div className="table-card">
-          <table>
-            <caption className="sr-only">Organization members</caption>
-            <thead>
-              <tr>
-                <th scope="col">Member</th>
-                <th scope="col">Role</th>
-                <th scope="col">Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.data.members.map((member) => (
-                <tr key={member.accountId?.value}>
-                  <td>
-                    <span className="avatar" aria-hidden="true">
-                      {member.displayName.slice(0, 1)}
-                    </span>
-                    <strong>{member.displayName}</strong>
-                  </td>
-                  <td>
-                    <span className="badge">
-                      {formatEnumLabel(
-                        OrganizationRole[member.role] ?? member.role,
-                      )}
-                    </span>
-                  </td>
-                  <td>
-                    {member.joinedAt
-                      ? new Date(
-                          Number(member.joinedAt.seconds) * 1000,
-                        ).toLocaleDateString("en-US")
-                      : "—"}
-                  </td>
+      {memberRows.length ? (
+        <>
+          <div className="table-card">
+            <table>
+              <caption className="sr-only">Organization members</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Member</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Joined</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {memberRows.map((member) => (
+                  <tr key={member.accountId?.value}>
+                    <td>
+                      <span className="avatar" aria-hidden="true">
+                        {member.displayName.slice(0, 1)}
+                      </span>
+                      <strong>{member.displayName}</strong>
+                    </td>
+                    <td>
+                      <span className="badge">
+                        {formatEnumLabel(
+                          OrganizationRole[member.role] ?? member.role,
+                        )}
+                      </span>
+                    </td>
+                    <td>
+                      {member.joinedAt
+                        ? new Date(
+                            Number(member.joinedAt.seconds) * 1000,
+                          ).toLocaleDateString("en-US")
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {members.isFetchNextPageError ? (
+            <p className="inline-error" role="alert">
+              {members.error.message}
+            </p>
+          ) : null}
+          {members.hasNextPage ? (
+            <div className="pagination-actions">
+              <button
+                className="button secondary"
+                disabled={members.isFetchingNextPage}
+                onClick={() => void members.fetchNextPage()}
+                type="button"
+              >
+                {members.isFetchingNextPage
+                  ? "Loading more…"
+                  : "Load more members"}
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </>
   );
@@ -345,9 +409,108 @@ export function BillingPage() {
             ) : null}
             {!online ? <OfflineActionHint /> : null}
           </section>
+          <OverageLimitForm
+            initialLimit={
+              summary.data.summary.overageLimitConfigured
+                ? summary.data.summary.monthlyOverageLimit?.value
+                : 0n
+            }
+            onUpdated={() => void summary.refetch()}
+          />
         </>
       ) : null}
     </>
+  );
+}
+
+function OverageLimitForm({
+  initialLimit,
+  onUpdated,
+}: {
+  initialLimit?: bigint;
+  onUpdated: () => void;
+}) {
+  const { organization, transport } = useOrganization();
+  const online = useOnline();
+  const [monthlyLimit, setMonthlyLimit] = useState(() =>
+    formatUsdMicrosInput(initialLimit),
+  );
+  const [message, setMessage] = useState("");
+  const [formError, setFormError] = useState("");
+  const update = useMutation(BillingService.method.updateOverageLimit, {
+    transport,
+  });
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage("");
+    setFormError("");
+    const micros = parseUsdMicros(monthlyLimit.trim());
+    if (micros === undefined) {
+      setFormError(
+        "Enter a non-negative USD amount with up to six decimals.",
+      );
+      return;
+    }
+    update.mutate(
+      {
+        idempotency: createIdempotencyKey(),
+        monthlyLimit: { value: micros },
+        organizationId: organization.organizationId,
+      },
+      {
+        onError: (error) => setFormError(error.message),
+        onSuccess: () => {
+          setMessage("Monthly overage limit updated.");
+          onUpdated();
+        },
+      },
+    );
+  };
+
+  return (
+    <form className="form-card billing-limit-form" onSubmit={submit}>
+      <div>
+        <span className="eyebrow">Metered usage</span>
+        <h2>Monthly overage limit</h2>
+        <p className="muted">
+          Set zero to block new overage after available credits are used.
+        </p>
+      </div>
+      <label>
+        Limit in USD
+        <input
+          // This is the single critical input in the overage form.
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          inputMode="decimal"
+          min="0"
+          onChange={(event) => setMonthlyLimit(event.target.value)}
+          required
+          step="0.000001"
+          type="number"
+          value={monthlyLimit}
+        />
+      </label>
+      {formError ? (
+        <p className="inline-error" role="alert">
+          {formError}
+        </p>
+      ) : null}
+      {message ? (
+        <p className="inline-success" role="status">
+          {message}
+        </p>
+      ) : null}
+      <button
+        className="button primary"
+        disabled={!online || update.isPending}
+        type="submit"
+      >
+        {update.isPending ? "Updating…" : "Update overage limit"}
+      </button>
+      {!online ? <OfflineActionHint /> : null}
+    </form>
   );
 }
 
@@ -411,29 +574,72 @@ export function UsagePage() {
 export function OrganizationSettingsPage() {
   useDocumentMetadata("Organization settings", "Update organization settings.");
   const { organization, transport } = useOrganization();
+  const navigate = useNavigate();
   const online = useOnline();
   const [name, setName] = useState(organization.name);
+  const [slug, setSlug] = useState(organization.slug);
   const [message, setMessage] = useState("");
-  const update = useMutation(
+  const [formError, setFormError] = useState("");
+  const updateName = useMutation(
     OrganizationService.method.updateOrganization,
     { transport },
   );
+  const updateSlug = useMutation(
+    OrganizationService.method.updateOrganizationSlug,
+    { transport },
+  );
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage("");
-    update.mutate(
-      {
-        idempotency: createIdempotencyKey(),
-        name: name.trim(),
-        organizationId: uuid(organization.organizationId?.value),
-      },
-      {
-        onError: (error) => setMessage(error.message),
-        onSuccess: () => setMessage("Organization name updated."),
-      },
-    );
+    setFormError("");
+    const normalizedName = name.trim();
+    const normalizedSlug = slug.trim().toLowerCase();
+    if (!normalizedName) {
+      setFormError("Enter an organization name.");
+      return;
+    }
+    if (!slugPattern.test(normalizedSlug)) {
+      setFormError(
+        "Use lowercase letters, numbers, and single hyphens for the slug.",
+      );
+      return;
+    }
+
+    try {
+      if (normalizedName !== organization.name) {
+        await updateName.mutateAsync({
+          idempotency: createIdempotencyKey(),
+          name: normalizedName,
+          organizationId: uuid(organization.organizationId?.value),
+        });
+      }
+      if (normalizedSlug !== organization.slug) {
+        const response = await updateSlug.mutateAsync({
+          idempotency: createIdempotencyKey(),
+          organizationId: uuid(organization.organizationId?.value),
+          slug: normalizedSlug,
+        });
+        navigate(
+          `/o/${response.organization?.slug ?? normalizedSlug}/settings`,
+          { replace: true },
+        );
+        return;
+      }
+      setMessage(
+        normalizedName === organization.name
+          ? "No organization changes to save."
+          : "Organization settings updated.",
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "Organization settings could not be updated.",
+      );
+    }
   };
+  const isPending = updateName.isPending || updateSlug.isPending;
 
   return (
     <>
@@ -453,23 +659,41 @@ export function OrganizationSettingsPage() {
           />
         </label>
         <label>
-          Current organization URL
-          <input disabled value={`deli.dev/o/${organization.slug}`} />
+          Organization URL
+          <span className="slug-input">
+            <span aria-hidden="true">deli.dev/o/</span>
+            <input
+              aria-describedby="organization-slug-help"
+              autoCapitalize="none"
+              autoComplete="off"
+              maxLength={63}
+              onChange={(event) => setSlug(event.target.value)}
+              pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+              required
+              spellCheck={false}
+              value={slug}
+            />
+          </span>
+          <span className="field-hint" id="organization-slug-help">
+            Old links continue to redirect after a slug change.
+          </span>
         </label>
+        {formError ? (
+          <p className="inline-error" role="alert">
+            {formError}
+          </p>
+        ) : null}
         {message ? (
-          <p
-            className={update.isError ? "inline-error" : "inline-success"}
-            role="status"
-          >
+          <p className="inline-success" role="status">
             {message}
           </p>
         ) : null}
         <button
           className="button primary"
-          disabled={!online || update.isPending || !name.trim()}
+          disabled={!online || isPending || !name.trim() || !slug.trim()}
           type="submit"
         >
-          {update.isPending ? "Saving…" : "Save changes"}
+          {isPending ? "Saving…" : "Save changes"}
         </button>
         {!online ? <OfflineActionHint /> : null}
       </form>
