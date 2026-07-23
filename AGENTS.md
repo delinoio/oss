@@ -128,7 +128,7 @@ enum ProjectId {
 - `apps/devhud` is DevHud's sole canonical implementation path. Do not place DevHud runtime, native widget, backend, API, or shared contract code in another path.
 - DevHud must not consume or expose DeliDev accounts, catalog, billing, APIs, routes, contracts, organizations, or authentication. It has no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or cloud synchronization.
 - Production tools and user-visible widgets remain empty in `0.1.0`. The complete desktop/mobile, CEF-gate, identifier, security, diagnostic, GitHub-only updater, CI, beta-release, signing, support, performance, upstream-pin, rollback, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
-- This documentation-first registration does not create runtime, workspace membership, CI, release automation, or support artifacts. Runtime implementation may begin only after the project and domain contracts remain synchronized with root/app policies.
+- `apps/devhud` contains only the common non-product feasibility package and Cargo workspace member. At the pinned revision, renderer termination is not observable through Tauri's public API on Windows/Linux without an upstream source change, so the gate is blocked. Do not add product, mobile/widget, CI, packaging, release, publisher, or support work until a separate architecture decision resolves the documented blocker.
 
 ### Repository Default Technology Choices
 

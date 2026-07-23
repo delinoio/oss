@@ -4,8 +4,8 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: documentation-first planned foundation; no DevHud runtime, package, CI task, release workflow, or public support file is created by this contract change.
-- This document covers one deployable package containing the shared frontend, `src-tauri` Rust application, desktop CEF shell, mobile system-webview shell, and compile-tested native widget foundation sources.
+- Status: CEF feasibility gate blocked; `apps/devhud` contains only the common non-product probe package and no CI, product, mobile/widget, packaging, release, publisher, or public support implementation.
+- This document covers the future deployable package. The current scaffold is limited to the shared bundled-asset frontend probe, `src-tauri` runtime-selection boundary, typed gate harness, and deterministic local validation commands.
 
 ## Runtime and Language
 
@@ -32,6 +32,16 @@ The CEF gate is a prerequisite, not an implementation claim. It has no calendar 
 - Ubuntu 24.04 operation under both X11 and Wayland through XWayland.
 
 DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source patches to the upstream runtime. If any required behavior cannot be achieved without a fork or patch, or any gate condition fails, stop product-foundation and release work, document the blocker, and require a separate architecture decision. The current documentation change does not claim that the gate has passed.
+
+### Current gate blocker
+
+The gate is blocked at the required upstream commit:
+
+- Tauri's public `Builder::on_web_content_process_terminate` API is compiled only for macOS and iOS. It is unavailable to a Windows or Linux DevHud application.
+- `tauri-runtime-cef` receives CEF's `on_render_process_terminated` callback internally, but its webview construction takes the termination handler only on macOS/iOS and explicitly assigns `None` on other targets.
+- Therefore the required fatal renderer-termination diagnostic and immediate shutdown cannot be installed or proved on Windows or Ubuntu through the public pinned API. Fixing this at the pinned revision requires changing upstream Tauri/`tauri-runtime-cef` source, which this project forbids.
+
+This is the CEF stop condition. The common probe and typed evidence harness remain useful for architecture evaluation, but product UI, tray/global-shortcut/autostart implementation, mobile/widget work, packaging, updater implementation, CI expansion, signing, publishing, and release work are blocked pending a separate architecture decision. Evidence: [public hook target guard](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri/src/app.rs#L1884-L1898) and [CEF handler discarded on Windows/Linux](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri-runtime-cef/src/webview.rs#L354-L360).
 
 ## Users and Operators
 
@@ -119,7 +129,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The following are required package-local tasks when `apps/devhud` is implemented: `dev`, `build`, `typecheck`, `lint`, `test`, accessibility validation, desktop smoke tests, mobile build, widget build, and release validation. Deterministic frontend tasks must declare outputs in Turborepo; native build, signing, store submission, and release tasks are non-cacheable. Root scripts remain delegators and committed scripts/CI use `turbo run` with affected execution where applicable.
+The common scaffold provides package-local `build`, `typecheck`, `lint`, `test`, `test:probe`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. The future product tasks for development, accessibility, the complete desktop matrix, mobile build, widget build, packaging, and release validation remain blocked and are not stubbed as passing commands.
 
 Required validation coverage is:
 
@@ -130,13 +140,13 @@ Required validation coverage is:
 - Installer, signature, updater, SBOM, and provenance validation.
 - Performance measurements must record HUD display latency, cold startup, package size, and idle memory per supported desktop platform, plus mobile startup time. Publish these measurements with the release; `0.1.0` defines no numeric pass threshold.
 
-No DevHud package task or CI job exists as a result of this documentation-only change. When implementation begins, the root CI contract must add change-scoped DevHud tasks without weakening existing repository checks.
+No DevHud CI or release job exists. The current package commands are local feasibility checks only. A future architecture decision must explicitly unblock change-scoped CI and the remaining platform tasks without weakening existing repository checks.
 
 ## Dependencies and Integrations
 
 ### Upstream and project boundaries
 
-- Pin the Tauri `feat/cef` commit and `@tauri-apps/cli-cef` version exactly in lockfiles. Do not maintain a Tauri, WRY, or `cef-rs` fork or local patch.
+- Tauri, `tauri-build`, and the directly selected desktop `tauri-runtime-cef` sandbox dependency are pinned to commit `649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769`; `@tauri-apps/cli-cef` is pinned to `3.0.0-alpha.6`. Do not maintain a Tauri, WRY, or `cef-rs` fork or local patch, and do not replace the revision with `feat/cef` or another moving branch.
 - DevHud is a local-only app for individual developers. It must remain independent from DeliDev and must not consume DeliDev accounts, catalog, billing, APIs, routes, or contracts. It has no dependency on delibase, Logto, Connect RPC, or any DeliDev service.
 - The only runtime network dependency is GitHub Releases for the updater exception defined in Security. No backend, API origin, remote configuration, or online operational service is allowed.
 

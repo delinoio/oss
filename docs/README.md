@@ -91,6 +91,6 @@ Each project must have one project index document and one or more domain contrac
 
 ### devhud
 - `docs/project-devhud.md`
-- `docs/apps-devhud-foundation.md` (`apps/devhud`, sole canonical implementation path; documentation-first planned foundation)
+- `docs/apps-devhud-foundation.md` (`apps/devhud`, sole canonical implementation path; common CEF feasibility scaffold with a blocked gate)
 
-DevHud is local-only and independent from DeliDev. Its contract must not add or imply DeliDev accounts, catalog, billing, APIs, routes, contracts, or other integrations. Production tools and user-visible widgets remain empty in `0.1.0`; no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or runtime implementation is authorized by this documentation entry.
+DevHud is local-only and independent from DeliDev. `apps/devhud` contains only the common bundled-asset and typed CEF feasibility probe; it is not a production application. The gate is blocked because the pinned upstream revision does not expose renderer-termination observation on Windows or Linux without an upstream source change. Product, mobile/widget, CI, packaging, publishing, and release work remain blocked pending a separate architecture decision. Production tools and user-visible widgets remain empty; no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or DeliDev integration is authorized.

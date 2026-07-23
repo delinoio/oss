@@ -1,0 +1,41 @@
+{
+  "name": "devhud",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "rsbuild build",
+    "build:desktop": "pnpm run build && tauri build --debug --no-bundle --features desktop-cef",
+    "check:contracts": "node scripts/check-contracts.mjs",
+    "check:locks": "node scripts/check-lockfiles.mjs",
+    "check:rust": "node scripts/run-cargo-checks.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "smoke:desktop": "node scripts/smoke-desktop.mjs",
+    "test": "vitest run",
+    "test:build": "node scripts/check-build-reproducibility.mjs",
+    "test:probe": "vitest run src/probe src/runtime",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@rsbuild/core": "2.1.7",
+    "@rsbuild/plugin-react": "2.1.0",
+    "@tauri-apps/cli-cef": "3.0.0-alpha.6",
+    "@types/node": "24.10.9",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@typescript-eslint/eslint-plugin": "8.53.1",
+    "@typescript-eslint/parser": "8.53.1",
+    "eslint": "9.39.2",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "globals": "17.4.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.0"
+  }
+}
