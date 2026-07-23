@@ -269,6 +269,7 @@ type UsageReservation struct {
 	HeldOverageMicros int64
 	ClientReference   string
 	Status            string
+	ActiveTeamID      pgtype.UUID
 	ExpiresAt         pgtype.Timestamptz
 	FinalizedAt       pgtype.Timestamptz
 	CreatedAt         pgtype.Timestamptz

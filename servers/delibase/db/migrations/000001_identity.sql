@@ -110,7 +110,7 @@ CREATE TABLE teams (
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     UNIQUE (organization_id, id),
-    UNIQUE (organization_id, parent_team_id, name),
+    UNIQUE NULLS NOT DISTINCT (organization_id, parent_team_id, name),
     FOREIGN KEY (organization_id, parent_team_id)
         REFERENCES teams(organization_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),

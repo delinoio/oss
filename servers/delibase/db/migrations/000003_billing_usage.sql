@@ -8,7 +8,7 @@ CREATE TABLE polar_customers (
 
 CREATE TABLE subscriptions (
     id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL UNIQUE REFERENCES organizations(id) ON DELETE CASCADE,
+    organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     polar_subscription_id text NOT NULL UNIQUE,
     status text NOT NULL
         CHECK (status IN ('pending', 'active', 'past_due', 'canceled', 'revoked')),
@@ -16,6 +16,8 @@ CREATE TABLE subscriptions (
     current_period_ends_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    UNIQUE (organization_id),
+    UNIQUE (organization_id, id),
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
     CHECK (
         current_period_starts_at IS NULL
@@ -27,30 +29,42 @@ CREATE TABLE subscriptions (
 CREATE TABLE billing_periods (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    subscription_id uuid REFERENCES subscriptions(id) ON DELETE SET NULL,
+    subscription_id uuid,
     starts_at timestamptz NOT NULL,
     ends_at timestamptz NOT NULL,
     overage_limit_micros bigint NOT NULL DEFAULT 0 CHECK (overage_limit_micros >= 0),
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     UNIQUE (organization_id, starts_at),
+    UNIQUE (organization_id, id),
+    FOREIGN KEY (organization_id, subscription_id)
+        REFERENCES subscriptions(organization_id, id)
+        ON DELETE SET NULL (subscription_id),
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
-    CHECK (ends_at > starts_at)
+    CHECK (ends_at > starts_at),
+    EXCLUDE USING gist (
+        organization_id WITH =,
+        tstzrange(starts_at, ends_at, '[)') WITH &&
+    )
 );
 
 CREATE TABLE ledger_entries (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-    billing_period_id uuid REFERENCES billing_periods(id) ON DELETE SET NULL,
+    billing_period_id uuid,
     entry_type text NOT NULL
         CHECK (entry_type IN (
-            'credit_grant', 'credit_reversal', 'credit_commit',
-            'credit_forfeit', 'overage_commit', 'adjustment'
+            'credit_grant', 'credit_reversal', 'credit_hold',
+            'credit_commit', 'credit_release', 'overage_hold',
+            'overage_commit', 'overage_release', 'credit_forfeiture'
         )),
     amount_micros bigint NOT NULL CHECK (amount_micros <> 0),
     source_reference text NOT NULL,
     actor_reference text NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     UNIQUE (organization_id, entry_type, source_reference),
+    FOREIGN KEY (organization_id, billing_period_id)
+        REFERENCES billing_periods(organization_id, id)
+        ON DELETE SET NULL (billing_period_id),
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
 );
 
@@ -63,7 +77,7 @@ CREATE TABLE usage_reservations (
     team_id uuid NOT NULL,
     team_name_snapshot text NOT NULL,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE RESTRICT,
-    price_version_id uuid NOT NULL REFERENCES catalog_price_versions(id) ON DELETE RESTRICT,
+    price_version_id uuid NOT NULL,
     account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
     service_identity_id uuid NOT NULL REFERENCES service_identities(id) ON DELETE RESTRICT,
     maximum_units bigint NOT NULL CHECK (maximum_units > 0),
@@ -74,13 +88,22 @@ CREATE TABLE usage_reservations (
     client_reference text NOT NULL,
     status text NOT NULL DEFAULT 'held'
         CHECK (status IN ('held', 'committed', 'released', 'expired')),
+    active_team_id uuid GENERATED ALWAYS AS (
+        CASE WHEN status = 'held' THEN team_id ELSE NULL END
+    ) STORED,
     expires_at timestamptz NOT NULL,
     finalized_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     UNIQUE (id, organization_id, team_id),
-    FOREIGN KEY (organization_id, team_id)
+    FOREIGN KEY (organization_id, active_team_id)
         REFERENCES teams(organization_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (meter_id, price_version_id)
+        REFERENCES catalog_price_versions(meter_id, id) ON DELETE RESTRICT,
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (
+        maximum_cost_micros::numeric
+        = maximum_units::numeric * usd_micros_per_unit::numeric
+    ),
     CHECK (held_credit_micros + held_overage_micros = maximum_cost_micros),
     CHECK (
         (status = 'held' AND finalized_at IS NULL)
@@ -108,8 +131,6 @@ CREATE TABLE usage_records (
     credit_applied_micros bigint NOT NULL CHECK (credit_applied_micros >= 0),
     overage_applied_micros bigint NOT NULL CHECK (overage_applied_micros >= 0),
     committed_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    FOREIGN KEY (organization_id, team_id)
-        REFERENCES teams(organization_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (reservation_id, organization_id, team_id)
         REFERENCES usage_reservations(id, organization_id, team_id) ON DELETE RESTRICT,
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
@@ -118,3 +139,30 @@ CREATE TABLE usage_records (
 
 CREATE INDEX usage_records_organization_idx
     ON usage_records(organization_id, committed_at, id);
+
+CREATE FUNCTION enforce_usage_record_reservation_limit()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    reserved_maximum_units bigint;
+BEGIN
+    SELECT maximum_units
+    INTO reserved_maximum_units
+    FROM usage_reservations
+    WHERE id = NEW.reservation_id
+      AND organization_id = NEW.organization_id
+      AND team_id = NEW.team_id;
+
+    IF FOUND AND NEW.committed_units > reserved_maximum_units THEN
+        RAISE EXCEPTION 'committed usage exceeds reservation maximum'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER usage_records_enforce_reservation_limit
+BEFORE INSERT OR UPDATE OF reservation_id, organization_id, team_id, committed_units
+ON usage_records
+FOR EACH ROW EXECUTE FUNCTION enforce_usage_record_reservation_limit();

@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 CREATE TABLE catalog_apps (
     id uuid PRIMARY KEY,
     slug text NOT NULL UNIQUE,
@@ -39,9 +41,13 @@ CREATE TABLE catalog_price_versions (
     effective_from timestamptz NOT NULL,
     effective_until timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    UNIQUE (meter_id, effective_from),
+    UNIQUE (meter_id, id),
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
-    CHECK (effective_until IS NULL OR effective_until > effective_from)
+    CHECK (effective_until IS NULL OR effective_until > effective_from),
+    EXCLUDE USING gist (
+        meter_id WITH =,
+        tstzrange(effective_from, effective_until, '[)') WITH &&
+    )
 );
 
 CREATE UNIQUE INDEX catalog_price_versions_current_idx
