@@ -22,6 +22,12 @@ type Querier interface {
 	EnsureCatalogPriceVersion(ctx context.Context, arg EnsureCatalogPriceVersionParams) (int64, error)
 	EnsurePolarMeterMapping(ctx context.Context, arg EnsurePolarMeterMappingParams) (int64, error)
 	GetAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
+	GetPublicCatalogAppBySlug(ctx context.Context, slug string) (GetPublicCatalogAppBySlugRow, error)
+	GetPublicCatalogMeter(ctx context.Context, id pgtype.UUID) (GetPublicCatalogMeterRow, error)
+	// Public catalog reads intentionally select only enabled entries. The lateral
+	// price lookup exposes the exact effective version a later reservation pins.
+	ListPublicCatalogApps(ctx context.Context, arg ListPublicCatalogAppsParams) ([]ListPublicCatalogAppsRow, error)
+	ListPublicCatalogMeters(ctx context.Context, arg ListPublicCatalogMetersParams) ([]ListPublicCatalogMetersRow, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	Ping(ctx context.Context) (int64, error)
 	UpsertCatalogApp(ctx context.Context, arg UpsertCatalogAppParams) error

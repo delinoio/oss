@@ -164,6 +164,230 @@ func (q *Queries) EnsurePolarMeterMapping(ctx context.Context, arg EnsurePolarMe
 	return result.RowsAffected(), nil
 }
 
+const getPublicCatalogAppBySlug = `-- name: GetPublicCatalogAppBySlug :one
+SELECT id, slug, name, summary, description, icon_url, enabled
+FROM catalog_apps
+WHERE slug = $1
+  AND enabled
+`
+
+type GetPublicCatalogAppBySlugRow struct {
+	ID          pgtype.UUID
+	Slug        string
+	Name        string
+	Summary     string
+	Description string
+	IconUrl     string
+	Enabled     bool
+}
+
+func (q *Queries) GetPublicCatalogAppBySlug(ctx context.Context, slug string) (GetPublicCatalogAppBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getPublicCatalogAppBySlug, slug)
+	var i GetPublicCatalogAppBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Summary,
+		&i.Description,
+		&i.IconUrl,
+		&i.Enabled,
+	)
+	return i, err
+}
+
+const getPublicCatalogMeter = `-- name: GetPublicCatalogMeter :one
+SELECT
+    meter.id, meter.app_id, meter.meter_key, meter.name, meter.description,
+    meter.unit_name, meter.unit_precision, meter.reservation_ttl_seconds,
+    meter.enabled, price.id AS price_version_id, price.usd_micros_per_unit,
+    price.effective_from, price.effective_until
+FROM catalog_meters AS meter
+JOIN catalog_apps AS app ON app.id = meter.app_id AND app.enabled
+JOIN LATERAL (
+    SELECT id, usd_micros_per_unit, effective_from, effective_until
+    FROM catalog_price_versions
+    WHERE meter_id = meter.id
+      AND effective_from <= statement_timestamp()
+      AND (effective_until IS NULL OR statement_timestamp() < effective_until)
+    ORDER BY effective_from DESC
+    LIMIT 1
+) AS price ON true
+WHERE meter.id = $1
+  AND meter.enabled
+`
+
+type GetPublicCatalogMeterRow struct {
+	ID                    pgtype.UUID
+	AppID                 pgtype.UUID
+	MeterKey              string
+	Name                  string
+	Description           string
+	UnitName              string
+	UnitPrecision         int32
+	ReservationTtlSeconds int64
+	Enabled               bool
+	PriceVersionID        pgtype.UUID
+	UsdMicrosPerUnit      int64
+	EffectiveFrom         pgtype.Timestamptz
+	EffectiveUntil        pgtype.Timestamptz
+}
+
+func (q *Queries) GetPublicCatalogMeter(ctx context.Context, id pgtype.UUID) (GetPublicCatalogMeterRow, error) {
+	row := q.db.QueryRow(ctx, getPublicCatalogMeter, id)
+	var i GetPublicCatalogMeterRow
+	err := row.Scan(
+		&i.ID,
+		&i.AppID,
+		&i.MeterKey,
+		&i.Name,
+		&i.Description,
+		&i.UnitName,
+		&i.UnitPrecision,
+		&i.ReservationTtlSeconds,
+		&i.Enabled,
+		&i.PriceVersionID,
+		&i.UsdMicrosPerUnit,
+		&i.EffectiveFrom,
+		&i.EffectiveUntil,
+	)
+	return i, err
+}
+
+const listPublicCatalogApps = `-- name: ListPublicCatalogApps :many
+SELECT id, slug, name, summary, description, icon_url, enabled
+FROM catalog_apps
+WHERE enabled
+  AND id > $1
+ORDER BY id
+LIMIT $2
+`
+
+type ListPublicCatalogAppsParams struct {
+	ID    pgtype.UUID
+	Limit int32
+}
+
+type ListPublicCatalogAppsRow struct {
+	ID          pgtype.UUID
+	Slug        string
+	Name        string
+	Summary     string
+	Description string
+	IconUrl     string
+	Enabled     bool
+}
+
+// Public catalog reads intentionally select only enabled entries. The lateral
+// price lookup exposes the exact effective version a later reservation pins.
+func (q *Queries) ListPublicCatalogApps(ctx context.Context, arg ListPublicCatalogAppsParams) ([]ListPublicCatalogAppsRow, error) {
+	rows, err := q.db.Query(ctx, listPublicCatalogApps, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPublicCatalogAppsRow{}
+	for rows.Next() {
+		var i ListPublicCatalogAppsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Summary,
+			&i.Description,
+			&i.IconUrl,
+			&i.Enabled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicCatalogMeters = `-- name: ListPublicCatalogMeters :many
+SELECT
+    meter.id, meter.app_id, meter.meter_key, meter.name, meter.description,
+    meter.unit_name, meter.unit_precision, meter.reservation_ttl_seconds,
+    meter.enabled, price.id AS price_version_id, price.usd_micros_per_unit,
+    price.effective_from, price.effective_until
+FROM catalog_meters AS meter
+JOIN catalog_apps AS app ON app.id = meter.app_id AND app.enabled
+JOIN LATERAL (
+    SELECT id, usd_micros_per_unit, effective_from, effective_until
+    FROM catalog_price_versions
+    WHERE meter_id = meter.id
+      AND effective_from <= statement_timestamp()
+      AND (effective_until IS NULL OR statement_timestamp() < effective_until)
+    ORDER BY effective_from DESC
+    LIMIT 1
+) AS price ON true
+WHERE meter.enabled
+  AND meter.app_id = $1
+  AND meter.id > $2
+ORDER BY meter.id
+LIMIT $3
+`
+
+type ListPublicCatalogMetersParams struct {
+	AppID pgtype.UUID
+	ID    pgtype.UUID
+	Limit int32
+}
+
+type ListPublicCatalogMetersRow struct {
+	ID                    pgtype.UUID
+	AppID                 pgtype.UUID
+	MeterKey              string
+	Name                  string
+	Description           string
+	UnitName              string
+	UnitPrecision         int32
+	ReservationTtlSeconds int64
+	Enabled               bool
+	PriceVersionID        pgtype.UUID
+	UsdMicrosPerUnit      int64
+	EffectiveFrom         pgtype.Timestamptz
+	EffectiveUntil        pgtype.Timestamptz
+}
+
+func (q *Queries) ListPublicCatalogMeters(ctx context.Context, arg ListPublicCatalogMetersParams) ([]ListPublicCatalogMetersRow, error) {
+	rows, err := q.db.Query(ctx, listPublicCatalogMeters, arg.AppID, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPublicCatalogMetersRow{}
+	for rows.Next() {
+		var i ListPublicCatalogMetersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AppID,
+			&i.MeterKey,
+			&i.Name,
+			&i.Description,
+			&i.UnitName,
+			&i.UnitPrecision,
+			&i.ReservationTtlSeconds,
+			&i.Enabled,
+			&i.PriceVersionID,
+			&i.UsdMicrosPerUnit,
+			&i.EffectiveFrom,
+			&i.EffectiveUntil,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertCatalogApp = `-- name: UpsertCatalogApp :exec
 INSERT INTO catalog_apps (
     id,
