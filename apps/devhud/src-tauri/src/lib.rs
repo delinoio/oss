@@ -5,6 +5,8 @@ use url::Url;
 
 #[cfg(all(feature = "desktop-cef", feature = "mobile-system-webview"))]
 compile_error!("select exactly one DevHud runtime feature");
+#[cfg(all(feature = "macos-gate", not(target_os = "macos")))]
+compile_error!("macos-gate can only be built for macOS targets");
 #[cfg(all(feature = "desktop-cef", any(target_os = "android", target_os = "ios")))]
 compile_error!("desktop-cef cannot be used for iOS or Android");
 #[cfg(all(
@@ -16,12 +18,17 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use std::time::Duration;
 
+#[cfg(all(feature = "desktop-cef", target_os = "macos"))]
+use tauri::Manager;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use tauri::{
     AppHandle, Webview, WebviewUrl,
     http::{HeaderName, HeaderValue},
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
+
+#[cfg(all(feature = "macos-gate", target_os = "macos"))]
+mod macos_gate;
 
 #[cfg(all(
     feature = "desktop-cef",
@@ -52,12 +59,30 @@ struct StartupReceipt {
     sandbox_enabled: bool,
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum ProbeCommandError {
     NonBundledAsset,
     ForbiddenCommandReached,
+    UnsupportedGate,
+    GateWindowUnavailable,
+    GateWindowLifecycle,
+    GateTray,
+    GateDockPolicy,
+    GateShortcut,
+    GateAutostart,
+    GateTheme,
+    GateDevTools,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum GateMode {
+    Disabled,
+    Normal,
+    RendererTermination,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -148,41 +173,134 @@ fn probe_forbidden() -> Result<(), ProbeCommandError> {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn probe_gate_mode() -> GateMode {
+    #[cfg(all(feature = "macos-gate", target_os = "macos"))]
+    {
+        if std::env::args().any(|argument| argument == "--devhud-gate-normal") {
+            return GateMode::Normal;
+        }
+        if std::env::args().any(|argument| argument == "--devhud-gate-renderer") {
+            return GateMode::RendererTermination;
+        }
+    }
+
+    GateMode::Disabled
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+async fn probe_macos_gate_run(app: AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError> {
+    #[cfg(all(feature = "macos-gate", target_os = "macos"))]
+    {
+        return tauri::async_runtime::spawn_blocking(move || macos_gate::run(app))
+            .await
+            .map_err(|_| ProbeCommandError::UnsupportedGate)?;
+    }
+
+    #[cfg(not(all(feature = "macos-gate", target_os = "macos")))]
+    {
+        let _ = app;
+        Err(ProbeCommandError::UnsupportedGate)
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn probe_macos_gate_complete(app: AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError> {
+    #[cfg(all(feature = "macos-gate", target_os = "macos"))]
+    {
+        return macos_gate::complete(app);
+    }
+
+    #[cfg(not(all(feature = "macos-gate", target_os = "macos")))]
+    {
+        let _ = app;
+        Err(ProbeCommandError::UnsupportedGate)
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn probe_macos_gate_renderer_ready() -> Result<(), ProbeCommandError> {
+    #[cfg(all(feature = "macos-gate", target_os = "macos"))]
+    {
+        tracing::info!(
+            event = "devhud.probe.renderer_termination_ready",
+            "probe is ready for renderer termination"
+        );
+        return Ok(());
+    }
+
+    #[cfg(not(all(feature = "macos-gate", target_os = "macos")))]
+    Err(ProbeCommandError::UnsupportedGate)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
-    builder
+    let builder = builder
         .invoke_handler(tauri::generate_handler![
             probe_bundled_asset_ready,
             probe_denial_observed,
             probe_forbidden,
+            probe_gate_mode,
+            probe_macos_gate_run,
+            probe_macos_gate_complete,
+            probe_macos_gate_renderer_ready,
         ])
-        .setup(|app| {
-            WebviewWindowBuilder::new(
-                app,
-                PROBE_WINDOW_LABEL,
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("DevHud feasibility probe")
-            .inner_size(720.0, 520.0)
-            .devtools(true)
-            .disable_drag_drop_handler()
-            .on_navigation(is_bundled_url)
-            .on_new_window(|_, _| NewWindowResponse::Deny)
-            .on_download(|_, _| false)
-            .on_web_resource_request(|_, response| {
-                response.headers_mut().insert(
-                    HeaderName::from_static("permissions-policy"),
-                    HeaderValue::from_static(PERMISSIONS_POLICY),
-                );
-            })
-            .build()?;
+        .on_window_event(|window, event| {
+            #[cfg(all(feature = "macos-gate", target_os = "macos"))]
+            {
+                macos_gate::observe_window_event(event);
+                macos_gate::prevent_probe_window_close(window, event);
+            }
+            #[cfg(not(all(feature = "macos-gate", target_os = "macos")))]
+            {
+                let _ = (window, event);
+            }
+        });
 
-            tracing::info!(
-                event = "devhud.probe.window_created",
-                runtime = runtime_name(),
-                "feasibility probe window created"
+    #[cfg(all(feature = "desktop-cef", target_os = "macos"))]
+    let builder = builder.on_web_content_process_terminate(|webview| {
+        tracing::error!(
+            event = "devhud.probe.renderer_termination",
+            classification = "renderer-termination",
+            "CEF renderer terminated; exiting without restart"
+        );
+        webview.app_handle().exit(71);
+    });
+
+    builder.setup(|app| {
+        let _window = WebviewWindowBuilder::new(
+            app,
+            PROBE_WINDOW_LABEL,
+            WebviewUrl::App("index.html".into()),
+        )
+        .title("DevHud feasibility probe")
+        .inner_size(720.0, 520.0)
+        .devtools(true)
+        .disable_drag_drop_handler()
+        .on_navigation(is_bundled_url)
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .on_download(|_, _| false)
+        .on_web_resource_request(|_, response| {
+            response.headers_mut().insert(
+                HeaderName::from_static("permissions-policy"),
+                HeaderValue::from_static(PERMISSIONS_POLICY),
             );
-            Ok(())
         })
+        .build()?;
+
+        #[cfg(all(feature = "macos-gate", target_os = "macos"))]
+        macos_gate::setup(app)?;
+
+        tracing::info!(
+            event = "devhud.probe.window_created",
+            runtime = runtime_name(),
+            "feasibility probe window created"
+        );
+        Ok(())
+    })
 }
 
 #[cfg(all(
@@ -226,6 +344,15 @@ fn run_app() -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn log_initialization_failure() {
+    tracing::error!(
+        event = "devhud.probe.cef_initialization_failure",
+        classification = "cef-initialization",
+        "runtime initialization failed"
+    );
+}
+
 #[cfg_attr(
     all(
         feature = "desktop-cef",
@@ -243,13 +370,15 @@ fn run_app() -> tauri::Result<()> {
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 pub fn run() {
     initialize_logging();
+    std::panic::set_hook(Box::new(|_| {
+        log_initialization_failure();
+    }));
 
-    if run_app().is_err() {
-        tracing::error!(
-            event = "devhud.probe.cef_initialization_failure",
-            classification = "cef-initialization",
-            "runtime initialization failed"
-        );
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run_app));
+    if !matches!(result, Ok(Ok(()))) {
+        if matches!(result, Ok(Err(_))) {
+            log_initialization_failure();
+        }
         std::process::exit(70);
     }
 }
@@ -308,5 +437,35 @@ mod tests {
         for directive in ["camera=()", "microphone=()", "display-capture=()"] {
             assert!(PERMISSIONS_POLICY.contains(directive));
         }
+    }
+
+    #[test]
+    fn gate_diagnostics_use_stable_classifications() {
+        let modes = [
+            GateMode::Disabled,
+            GateMode::Normal,
+            GateMode::RendererTermination,
+        ];
+        assert_eq!(
+            serde_json::to_value(modes).unwrap(),
+            serde_json::json!(["disabled", "normal", "renderer-termination"])
+        );
+        let errors = [
+            ProbeCommandError::NonBundledAsset,
+            ProbeCommandError::ForbiddenCommandReached,
+            ProbeCommandError::UnsupportedGate,
+            ProbeCommandError::GateWindowUnavailable,
+            ProbeCommandError::GateWindowLifecycle,
+            ProbeCommandError::GateTray,
+            ProbeCommandError::GateDockPolicy,
+            ProbeCommandError::GateShortcut,
+            ProbeCommandError::GateAutostart,
+            ProbeCommandError::GateTheme,
+            ProbeCommandError::GateDevTools,
+        ];
+        assert_eq!(
+            serde_json::to_value(errors).unwrap()[7],
+            serde_json::json!("gateShortcut")
+        );
     }
 }

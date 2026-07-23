@@ -7,8 +7,10 @@ export enum ProbeId {
   Theme = "theme",
   DevTools = "devtools",
   ExplicitShutdown = "explicit-shutdown",
+  RepeatedLifecycle = "repeated-lifecycle",
   RuntimeFailure = "runtime-failure",
   HelperProcessCleanup = "helper-process-cleanup",
+  DiagnosticSafety = "diagnostic-safety",
   Packaging = "packaging",
   SignedUpdater = "signed-updater",
 }
@@ -48,6 +50,11 @@ export enum ThemeMode {
   System = "system",
 }
 
+export enum MacOSSigningMode {
+  DeveloperId = "developer-id",
+  SignReady = "sign-ready",
+}
+
 export interface ProbeTarget {
   platform: DesktopPlatform;
   architecture: Architecture;
@@ -68,6 +75,8 @@ export interface IpcCapabilityEvidence {
 export interface TrayLifecycleEvidence {
   created: boolean;
   remainsResidentAfterWindowClose: boolean;
+  dockHidden: boolean;
+  dockPolicyPersistsAfterWindowClose: boolean;
   quitTerminates: boolean;
 }
 
@@ -98,6 +107,12 @@ export interface ShutdownEvidence {
   exitCode: 0;
 }
 
+export interface RepeatedLifecycleEvidence {
+  completedCycles: number;
+  cleanShutdownCycles: number;
+  orphanFreeCycles: number;
+}
+
 export interface RuntimeFailureEvidence {
   fatalKinds: readonly RuntimeFailureKind[];
   immediateExitKinds: readonly RuntimeFailureKind[];
@@ -109,14 +124,25 @@ export interface HelperCleanupEvidence {
   helperProcessCountAfterShutdown: 0;
 }
 
+export interface DiagnosticSafetyEvidence {
+  shortcutValueAbsent: boolean;
+  arbitraryPathAbsent: boolean;
+  environmentValueAbsent: boolean;
+  signingMaterialAbsent: boolean;
+}
+
 export interface PackagingEvidence {
+  architecture: Architecture;
   checkedFormats: readonly PackageFormat[];
   bundledAssetsPresent: boolean;
   cefHelpersPresent: boolean;
+  signingMode: MacOSSigningMode;
   signReady: boolean;
 }
 
 export interface SignedUpdaterEvidence {
+  architecture: Architecture;
+  updaterFormatCompatible: boolean;
   signedBundleCreated: boolean;
   validSignatureAccepted: boolean;
   invalidSignatureRejected: boolean;
@@ -131,8 +157,10 @@ export interface ProbeEvidenceMap {
   [ProbeId.Theme]: ThemeEvidence;
   [ProbeId.DevTools]: DevToolsEvidence;
   [ProbeId.ExplicitShutdown]: ShutdownEvidence;
+  [ProbeId.RepeatedLifecycle]: RepeatedLifecycleEvidence;
   [ProbeId.RuntimeFailure]: RuntimeFailureEvidence;
   [ProbeId.HelperProcessCleanup]: HelperCleanupEvidence;
+  [ProbeId.DiagnosticSafety]: DiagnosticSafetyEvidence;
   [ProbeId.Packaging]: PackagingEvidence;
   [ProbeId.SignedUpdater]: SignedUpdaterEvidence;
 }

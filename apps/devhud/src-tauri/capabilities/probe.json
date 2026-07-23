@@ -6,6 +6,10 @@
   "windows": ["probe"],
   "permissions": [
     "allow-probe-bundled-asset-ready",
-    "allow-probe-denial-observed"
+    "allow-probe-denial-observed",
+    "allow-probe-gate-mode",
+    "allow-probe-macos-gate-run",
+    "allow-probe-macos-gate-complete",
+    "allow-probe-macos-gate-renderer-ready"
   ]
 }

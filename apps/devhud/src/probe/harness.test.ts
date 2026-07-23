@@ -10,6 +10,7 @@ import {
   Architecture,
   DesktopPlatform,
   DisplayProtocol,
+  MacOSSigningMode,
   PackageFormat,
   ProbeId,
   RuntimeFailureKind,
@@ -50,6 +51,8 @@ function passingDriver(
       return {
         created: true,
         remainsResidentAfterWindowClose: true,
+        dockHidden: true,
+        dockPolicyPersistsAfterWindowClose: true,
         quitTerminates: true,
       };
     },
@@ -95,6 +98,14 @@ function passingDriver(
         exitCode: 0,
       };
     },
+    async repeatedLifecycle(cycles) {
+      calls.push(ProbeId.RepeatedLifecycle);
+      return {
+        completedCycles: cycles,
+        cleanShutdownCycles: cycles,
+        orphanFreeCycles: cycles,
+      };
+    },
     async runtimeFailure(kinds) {
       calls.push(ProbeId.RuntimeFailure);
       expect(kinds).toEqual([
@@ -114,19 +125,32 @@ function passingDriver(
         helperProcessCountAfterShutdown: 0,
       };
     },
-    async packaging(formats) {
+    async diagnosticSafety() {
+      calls.push(ProbeId.DiagnosticSafety);
+      return {
+        shortcutValueAbsent: true,
+        arbitraryPathAbsent: true,
+        environmentValueAbsent: true,
+        signingMaterialAbsent: true,
+      };
+    },
+    async packaging(formats, architecture) {
       calls.push(ProbeId.Packaging);
       expect(formats).toEqual(expectedPackageFormats);
       return {
+        architecture,
         checkedFormats: formats,
         bundledAssetsPresent: true,
         cefHelpersPresent: true,
+        signingMode: MacOSSigningMode.SignReady,
         signReady: true,
       };
     },
-    async signedUpdater() {
+    async signedUpdater(architecture) {
       calls.push(ProbeId.SignedUpdater);
       return {
+        architecture,
+        updaterFormatCompatible: true,
         signedBundleCreated: true,
         validSignatureAccepted: true,
         invalidSignatureRejected: true,
@@ -316,13 +340,48 @@ describe("probe harness", () => {
         },
       ],
       [
+        ProbeId.RepeatedLifecycle,
+        (driver) => {
+          driver.repeatedLifecycle = async () => ({
+            completedCycles: 2,
+            cleanShutdownCycles: 2,
+            orphanFreeCycles: 2,
+          });
+        },
+      ],
+      [
+        ProbeId.DiagnosticSafety,
+        (driver) => {
+          driver.diagnosticSafety = async () => ({
+            shortcutValueAbsent: true,
+            arbitraryPathAbsent: false,
+            environmentValueAbsent: true,
+            signingMaterialAbsent: true,
+          });
+        },
+      ],
+      [
         ProbeId.Packaging,
         (driver) => {
           driver.packaging = async (formats) => ({
+            architecture: Architecture.X64,
             checkedFormats: formats,
             bundledAssetsPresent: true,
             cefHelpersPresent: true,
+            signingMode: MacOSSigningMode.SignReady,
             signReady: false,
+          });
+        },
+      ],
+      [
+        ProbeId.SignedUpdater,
+        (driver) => {
+          driver.signedUpdater = async (architecture) => ({
+            architecture,
+            updaterFormatCompatible: true,
+            signedBundleCreated: true,
+            validSignatureAccepted: false,
+            invalidSignatureRejected: true,
           });
         },
       ],

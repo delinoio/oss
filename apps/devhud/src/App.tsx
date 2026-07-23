@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import {
   runBundledStartupHandshake,
+  runPlatformGateIfEnabled,
   tauriProbeBridge,
   type StartupHandshake,
 } from "./runtime/startup";
@@ -18,10 +19,11 @@ export function App() {
     let active = true;
 
     void runBundledStartupHandshake(tauriProbeBridge).then(
-      (handshake) => {
+      async (handshake) => {
         if (active) {
           setState({ status: "passed", handshake });
         }
+        await runPlatformGateIfEnabled(tauriProbeBridge);
       },
       () => {
         if (active) {

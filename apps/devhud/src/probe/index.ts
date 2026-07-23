@@ -8,6 +8,7 @@ export {
   Architecture,
   DesktopPlatform,
   DisplayProtocol,
+  MacOSSigningMode,
   PackageFormat,
   ProbeId,
   RuntimeFailureKind,

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   isCapabilityDenial,
   runBundledStartupHandshake,
+  runPlatformGateIfEnabled,
   type ProbeBridge,
   type StartupReceipt,
 } from "./startup";
@@ -91,5 +92,52 @@ describe("capability denial classification", () => {
 
   it("rejects unrelated failures", () => {
     expect(isCapabilityDenial(new Error("renderer disconnected"))).toBe(false);
+  });
+});
+
+describe("platform gate routing", () => {
+  it("does not invoke macOS-only commands when the gate is disabled", async () => {
+    const calls: string[] = [];
+    const bridge = bridgeWith(async (command) => {
+      calls.push(command);
+      return "disabled" as never;
+    });
+
+    await expect(runPlatformGateIfEnabled(bridge)).resolves.toBe("disabled");
+    expect(calls).toEqual(["probe_gate_mode"]);
+  });
+
+  it("completes the normal macOS gate explicitly", async () => {
+    const calls: string[] = [];
+    const bridge = bridgeWith(async (command) => {
+      calls.push(command);
+      return (command === "probe_gate_mode" ? "normal" : null) as never;
+    });
+
+    await expect(runPlatformGateIfEnabled(bridge)).resolves.toBe("normal");
+    expect(calls).toEqual([
+      "probe_gate_mode",
+      "probe_macos_gate_run",
+      "probe_macos_gate_complete",
+    ]);
+  });
+
+  it("waits for external renderer termination without normal shutdown", async () => {
+    const calls: string[] = [];
+    const bridge = bridgeWith(async (command) => {
+      calls.push(command);
+      return (command === "probe_gate_mode"
+        ? "renderer-termination"
+        : null) as never;
+    });
+
+    await expect(runPlatformGateIfEnabled(bridge)).resolves.toBe(
+      "renderer-termination",
+    );
+    expect(calls).toEqual([
+      "probe_gate_mode",
+      "probe_macos_gate_run",
+      "probe_macos_gate_renderer_ready",
+    ]);
   });
 });

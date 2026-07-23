@@ -2,6 +2,10 @@ const COMMANDS: &[&str] = &[
     "probe_bundled_asset_ready",
     "probe_denial_observed",
     "probe_forbidden",
+    "probe_gate_mode",
+    "probe_macos_gate_run",
+    "probe_macos_gate_complete",
+    "probe_macos_gate_renderer_ready",
 ];
 
 fn main() {

@@ -11,7 +11,13 @@ interface NativeCommandResults {
   probe_bundled_asset_ready: StartupReceipt;
   probe_denial_observed: null;
   probe_forbidden: never;
+  probe_gate_mode: GateMode;
+  probe_macos_gate_run: null;
+  probe_macos_gate_complete: null;
+  probe_macos_gate_renderer_ready: null;
 }
+
+export type GateMode = "disabled" | "normal" | "renderer-termination";
 
 export interface ProbeBridge {
   invoke<K extends keyof NativeCommandResults>(
@@ -60,4 +66,22 @@ export async function runBundledStartupHandshake(
   }
 
   throw new Error("Forbidden probe command unexpectedly passed capability enforcement");
+}
+
+export async function runPlatformGateIfEnabled(
+  bridge: ProbeBridge,
+): Promise<GateMode> {
+  const mode = await bridge.invoke("probe_gate_mode");
+  if (mode === "disabled") {
+    return mode;
+  }
+
+  await bridge.invoke("probe_macos_gate_run");
+  if (mode === "renderer-termination") {
+    await bridge.invoke("probe_macos_gate_renderer_ready");
+    return mode;
+  }
+
+  await bridge.invoke("probe_macos_gate_complete");
+  return mode;
 }
