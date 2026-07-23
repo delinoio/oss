@@ -20,15 +20,6 @@ func (q *Queries) ClearPolarMeterMappings(ctx context.Context) error {
 	return err
 }
 
-const clearServiceMeterAllowlists = `-- name: ClearServiceMeterAllowlists :exec
-DELETE FROM service_meter_allowlists
-`
-
-func (q *Queries) ClearServiceMeterAllowlists(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, clearServiceMeterAllowlists)
-	return err
-}
-
 const closeCatalogPriceVersion = `-- name: CloseCatalogPriceVersion :exec
 UPDATE catalog_price_versions
 SET effective_until = $2
@@ -61,18 +52,19 @@ func (q *Queries) CreatePolarMeterMapping(ctx context.Context, arg CreatePolarMe
 	return err
 }
 
-const createServiceMeterAllowlist = `-- name: CreateServiceMeterAllowlist :exec
-INSERT INTO service_meter_allowlists (service_identity_id, meter_id)
-VALUES ($1, $2)
+const deleteDisabledServiceMeterAllowlists = `-- name: DeleteDisabledServiceMeterAllowlists :exec
+DELETE FROM service_meter_allowlists AS allowlist
+WHERE NOT allowlist.enabled
+  AND NOT EXISTS (
+      SELECT 1
+      FROM usage_reservations AS reservation
+      WHERE reservation.active_service_identity_id = allowlist.service_identity_id
+        AND reservation.active_meter_id = allowlist.meter_id
+  )
 `
 
-type CreateServiceMeterAllowlistParams struct {
-	ServiceIdentityID pgtype.UUID
-	MeterID           pgtype.UUID
-}
-
-func (q *Queries) CreateServiceMeterAllowlist(ctx context.Context, arg CreateServiceMeterAllowlistParams) error {
-	_, err := q.db.Exec(ctx, createServiceMeterAllowlist, arg.ServiceIdentityID, arg.MeterID)
+func (q *Queries) DeleteDisabledServiceMeterAllowlists(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteDisabledServiceMeterAllowlists)
 	return err
 }
 
@@ -109,6 +101,17 @@ WHERE enabled
 
 func (q *Queries) DisableServiceIdentities(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, disableServiceIdentities)
+	return err
+}
+
+const disableServiceMeterAllowlists = `-- name: DisableServiceMeterAllowlists :exec
+UPDATE service_meter_allowlists
+SET enabled = false
+WHERE enabled
+`
+
+func (q *Queries) DisableServiceMeterAllowlists(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, disableServiceMeterAllowlists)
 	return err
 }
 
@@ -272,5 +275,22 @@ func (q *Queries) UpsertServiceIdentity(ctx context.Context, arg UpsertServiceId
 		arg.Name,
 		arg.Enabled,
 	)
+	return err
+}
+
+const upsertServiceMeterAllowlist = `-- name: UpsertServiceMeterAllowlist :exec
+INSERT INTO service_meter_allowlists (service_identity_id, meter_id, enabled)
+VALUES ($1, $2, true)
+ON CONFLICT (service_identity_id, meter_id) DO UPDATE
+SET enabled = true
+`
+
+type UpsertServiceMeterAllowlistParams struct {
+	ServiceIdentityID pgtype.UUID
+	MeterID           pgtype.UUID
+}
+
+func (q *Queries) UpsertServiceMeterAllowlist(ctx context.Context, arg UpsertServiceMeterAllowlistParams) error {
+	_, err := q.db.Exec(ctx, upsertServiceMeterAllowlist, arg.ServiceIdentityID, arg.MeterID)
 	return err
 }

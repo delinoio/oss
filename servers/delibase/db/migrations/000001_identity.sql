@@ -168,7 +168,7 @@ CREATE TABLE teams (
     UNIQUE (organization_id, id),
     UNIQUE NULLS NOT DISTINCT (organization_id, parent_team_id, name),
     FOREIGN KEY (organization_id, parent_team_id)
-        REFERENCES teams(organization_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
+        REFERENCES teams(organization_id, id) ON DELETE CASCADE,
     CHECK (is_uuid_v7(id)),
     CHECK (length(name) BETWEEN 1 AND 120),
     CHECK (
@@ -316,7 +316,7 @@ CREATE TABLE organization_invitations (
     organization_role text NOT NULL CHECK (organization_role IN ('admin', 'member')),
     target_team_id uuid,
     team_role text CHECK (team_role IN ('admin', 'member')),
-    created_by_account_id uuid NOT NULL REFERENCES accounts(id),
+    created_by_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     expires_at timestamptz NOT NULL,
     revoked_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),

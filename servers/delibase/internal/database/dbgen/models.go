@@ -121,14 +121,19 @@ type IntegrationOutbox struct {
 }
 
 type LedgerEntry struct {
-	ID              pgtype.UUID
-	OrganizationID  pgtype.UUID
-	BillingPeriodID pgtype.UUID
-	EntryType       string
-	AmountMicros    int64
-	SourceReference string
-	ActorReference  string
-	CreatedAt       pgtype.Timestamptz
+	ID                 pgtype.UUID
+	OrganizationID     pgtype.UUID
+	BillingPeriodID    pgtype.UUID
+	EntryType          string
+	AmountMicros       int64
+	BalanceAfterMicros int64
+	ReservationID      pgtype.UUID
+	UsageRecordID      pgtype.UUID
+	TeamIDSnapshot     pgtype.UUID
+	TeamNameSnapshot   pgtype.Text
+	SourceReference    string
+	ActorReference     string
+	CreatedAt          pgtype.Timestamptz
 }
 
 type Organization struct {
@@ -204,6 +209,7 @@ type ServiceIdentity struct {
 type ServiceMeterAllowlist struct {
 	ServiceIdentityID pgtype.UUID
 	MeterID           pgtype.UUID
+	Enabled           bool
 	CreatedAt         pgtype.Timestamptz
 }
 

@@ -68,6 +68,7 @@ CREATE TABLE service_identities (
 CREATE TABLE service_meter_allowlists (
     service_identity_id uuid NOT NULL REFERENCES service_identities(id) ON DELETE CASCADE,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE CASCADE,
+    enabled boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     PRIMARY KEY (service_identity_id, meter_id)
 );

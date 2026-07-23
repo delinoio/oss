@@ -16,8 +16,20 @@ SET enabled = false,
     updated_at = transaction_timestamp()
 WHERE enabled;
 
--- name: ClearServiceMeterAllowlists :exec
-DELETE FROM service_meter_allowlists;
+-- name: DisableServiceMeterAllowlists :exec
+UPDATE service_meter_allowlists
+SET enabled = false
+WHERE enabled;
+
+-- name: DeleteDisabledServiceMeterAllowlists :exec
+DELETE FROM service_meter_allowlists AS allowlist
+WHERE NOT allowlist.enabled
+  AND NOT EXISTS (
+      SELECT 1
+      FROM usage_reservations AS reservation
+      WHERE reservation.active_service_identity_id = allowlist.service_identity_id
+        AND reservation.active_meter_id = allowlist.meter_id
+  );
 
 -- name: ClearPolarMeterMappings :exec
 DELETE FROM polar_meter_mappings;
@@ -98,9 +110,11 @@ SET logto_client_id = EXCLUDED.logto_client_id,
     enabled = EXCLUDED.enabled,
     updated_at = transaction_timestamp();
 
--- name: CreateServiceMeterAllowlist :exec
-INSERT INTO service_meter_allowlists (service_identity_id, meter_id)
-VALUES ($1, $2);
+-- name: UpsertServiceMeterAllowlist :exec
+INSERT INTO service_meter_allowlists (service_identity_id, meter_id, enabled)
+VALUES ($1, $2, true)
+ON CONFLICT (service_identity_id, meter_id) DO UPDATE
+SET enabled = true;
 
 -- name: CreatePolarMeterMapping :exec
 INSERT INTO polar_meter_mappings (meter_id, polar_meter_id)

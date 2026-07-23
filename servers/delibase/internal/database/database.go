@@ -98,7 +98,7 @@ func (store *Store) SyncCatalog(
 	specification catalog.Specification,
 ) error {
 	err := store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-		if err := queries.ClearServiceMeterAllowlists(ctx); err != nil {
+		if err := queries.DisableServiceMeterAllowlists(ctx); err != nil {
 			return err
 		}
 		if err := queries.ClearPolarMeterMappings(ctx); err != nil {
@@ -228,9 +228,9 @@ func (store *Store) SyncCatalog(
 				if err != nil {
 					return err
 				}
-				if err := queries.CreateServiceMeterAllowlist(
+				if err := queries.UpsertServiceMeterAllowlist(
 					ctx,
-					dbgen.CreateServiceMeterAllowlistParams{
+					dbgen.UpsertServiceMeterAllowlistParams{
 						ServiceIdentityID: id,
 						MeterID:           meterID,
 					},
@@ -238,6 +238,9 @@ func (store *Store) SyncCatalog(
 					return err
 				}
 			}
+		}
+		if err := queries.DeleteDisabledServiceMeterAllowlists(ctx); err != nil {
+			return err
 		}
 		for _, mapping := range specification.PolarMeters {
 			meterID, err := catalogUUID(mapping.MeterID)

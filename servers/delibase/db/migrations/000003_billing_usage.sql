@@ -49,7 +49,7 @@ CREATE TABLE billing_periods (
 
 CREATE TABLE ledger_entries (
     id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+    organization_id uuid NOT NULL,
     billing_period_id uuid,
     entry_type text NOT NULL
         CHECK (entry_type IN (
@@ -58,18 +58,42 @@ CREATE TABLE ledger_entries (
             'overage_commit', 'overage_release', 'credit_forfeiture'
         )),
     amount_micros bigint NOT NULL CHECK (amount_micros <> 0),
+    balance_after_micros bigint NOT NULL,
+    reservation_id uuid,
+    usage_record_id uuid,
+    team_id_snapshot uuid,
+    team_name_snapshot text,
     source_reference text NOT NULL,
     actor_reference text NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     UNIQUE (organization_id, entry_type, source_reference),
-    FOREIGN KEY (organization_id, billing_period_id)
-        REFERENCES billing_periods(organization_id, id)
-        ON DELETE SET NULL (billing_period_id),
-    CHECK (is_uuid_v7(id))
+    CHECK (is_uuid_v7(id)),
+    CHECK (billing_period_id IS NULL OR is_uuid_v7(billing_period_id)),
+    CHECK (reservation_id IS NULL OR is_uuid_v7(reservation_id)),
+    CHECK (usage_record_id IS NULL OR is_uuid_v7(usage_record_id)),
+    CHECK (team_id_snapshot IS NULL OR is_uuid_v7(team_id_snapshot)),
+    CHECK (
+        (team_id_snapshot IS NULL AND team_name_snapshot IS NULL)
+        OR
+        (
+            team_id_snapshot IS NOT NULL
+            AND team_name_snapshot IS NOT NULL
+            AND length(team_name_snapshot) BETWEEN 1 AND 120
+        )
+    ),
+    CHECK (usage_record_id IS NULL OR reservation_id IS NOT NULL),
+    CHECK (
+        reservation_id IS NULL
+        OR (team_id_snapshot IS NOT NULL AND team_name_snapshot IS NOT NULL)
+    )
 );
 
 CREATE INDEX ledger_entries_organization_idx
     ON ledger_entries(organization_id, created_at, id);
+CREATE INDEX ledger_entries_reservation_idx
+    ON ledger_entries(reservation_id) WHERE reservation_id IS NOT NULL;
+CREATE INDEX ledger_entries_usage_record_idx
+    ON ledger_entries(usage_record_id) WHERE usage_record_id IS NOT NULL;
 
 CREATE FUNCTION reject_ledger_entry_mutation()
 RETURNS trigger
@@ -147,7 +171,7 @@ CREATE TABLE usage_reservations (
     )
 );
 
-CREATE FUNCTION validate_usage_reservation_team()
+CREATE FUNCTION validate_usage_reservation_references()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -161,14 +185,27 @@ BEGIN
         RAISE EXCEPTION 'reservation team does not belong to organization'
             USING ERRCODE = 'foreign_key_violation';
     END IF;
+    IF NEW.status = 'held' THEN
+        PERFORM 1
+        FROM service_meter_allowlists
+        WHERE service_identity_id = NEW.service_identity_id
+          AND meter_id = NEW.meter_id
+          AND enabled
+        FOR KEY SHARE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'reservation service is not allowed for meter'
+                USING ERRCODE = 'foreign_key_violation';
+        END IF;
+    END IF;
     RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER usage_reservations_validate_team
-BEFORE INSERT OR UPDATE OF organization_id, team_id
+CREATE TRIGGER usage_reservations_validate_references
+BEFORE INSERT OR UPDATE OF
+    organization_id, team_id, service_identity_id, meter_id, status
 ON usage_reservations
-FOR EACH ROW EXECUTE FUNCTION validate_usage_reservation_team();
+FOR EACH ROW EXECUTE FUNCTION validate_usage_reservation_references();
 
 CREATE INDEX usage_reservations_active_org_idx
     ON usage_reservations(organization_id, expires_at) WHERE status = 'held';
@@ -278,3 +315,77 @@ $$;
 CREATE TRIGGER usage_records_immutable
 BEFORE UPDATE OR DELETE ON usage_records
 FOR EACH ROW EXECUTE FUNCTION reject_usage_record_mutation();
+
+CREATE FUNCTION validate_ledger_entry_links()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    linked_reservation_id uuid;
+    linked_team_id uuid;
+    linked_team_name text;
+BEGIN
+    PERFORM 1
+    FROM organizations
+    WHERE id = NEW.organization_id
+    FOR KEY SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ledger organization does not exist'
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
+    IF NEW.billing_period_id IS NOT NULL THEN
+        PERFORM 1
+        FROM billing_periods
+        WHERE id = NEW.billing_period_id
+          AND organization_id = NEW.organization_id
+        FOR KEY SHARE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'ledger billing period does not belong to organization'
+                USING ERRCODE = 'foreign_key_violation';
+        END IF;
+    END IF;
+
+    IF NEW.reservation_id IS NOT NULL THEN
+        SELECT team_id, team_name_snapshot
+        INTO linked_team_id, linked_team_name
+        FROM usage_reservations
+        WHERE id = NEW.reservation_id
+          AND organization_id = NEW.organization_id
+        FOR KEY SHARE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'ledger reservation does not belong to organization'
+                USING ERRCODE = 'foreign_key_violation';
+        END IF;
+        IF NEW.team_id_snapshot IS DISTINCT FROM linked_team_id
+           OR NEW.team_name_snapshot IS DISTINCT FROM linked_team_name THEN
+            RAISE EXCEPTION 'ledger team snapshot does not match reservation'
+                USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
+
+    IF NEW.usage_record_id IS NOT NULL THEN
+        SELECT reservation_id, team_id, team_name_snapshot
+        INTO linked_reservation_id, linked_team_id, linked_team_name
+        FROM usage_records
+        WHERE id = NEW.usage_record_id
+          AND organization_id = NEW.organization_id
+        FOR KEY SHARE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'ledger usage record does not belong to organization'
+                USING ERRCODE = 'foreign_key_violation';
+        END IF;
+        IF NEW.reservation_id IS DISTINCT FROM linked_reservation_id
+           OR NEW.team_id_snapshot IS DISTINCT FROM linked_team_id
+           OR NEW.team_name_snapshot IS DISTINCT FROM linked_team_name THEN
+            RAISE EXCEPTION 'ledger links do not match usage record'
+                USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER ledger_entries_validate_links
+BEFORE INSERT ON ledger_entries
+FOR EACH ROW EXECUTE FUNCTION validate_ledger_entry_links();

@@ -12,14 +12,14 @@ import (
 
 type Querier interface {
 	ClearPolarMeterMappings(ctx context.Context) error
-	ClearServiceMeterAllowlists(ctx context.Context) error
 	CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalogPriceVersionParams) error
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreatePolarMeterMapping(ctx context.Context, arg CreatePolarMeterMappingParams) error
-	CreateServiceMeterAllowlist(ctx context.Context, arg CreateServiceMeterAllowlistParams) error
+	DeleteDisabledServiceMeterAllowlists(ctx context.Context) error
 	DisableCatalogApps(ctx context.Context) error
 	DisableCatalogMeters(ctx context.Context) error
 	DisableServiceIdentities(ctx context.Context) error
+	DisableServiceMeterAllowlists(ctx context.Context) error
 	EnsureCatalogPriceVersion(ctx context.Context, arg EnsureCatalogPriceVersionParams) (int64, error)
 	GetAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
@@ -27,6 +27,7 @@ type Querier interface {
 	UpsertCatalogApp(ctx context.Context, arg UpsertCatalogAppParams) error
 	UpsertCatalogMeter(ctx context.Context, arg UpsertCatalogMeterParams) error
 	UpsertServiceIdentity(ctx context.Context, arg UpsertServiceIdentityParams) error
+	UpsertServiceMeterAllowlist(ctx context.Context, arg UpsertServiceMeterAllowlistParams) error
 }
 
 var _ Querier = (*Queries)(nil)
