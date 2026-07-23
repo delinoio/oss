@@ -64,6 +64,29 @@ CREATE INDEX integration_outbox_pending_idx
     ON integration_outbox(next_attempt_at)
     WHERE delivered_at IS NULL;
 
+CREATE FUNCTION preserve_integration_outbox_event()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.integration IS DISTINCT FROM OLD.integration
+       OR NEW.operation IS DISTINCT FROM OLD.operation
+       OR NEW.aggregate_type IS DISTINCT FROM OLD.aggregate_type
+       OR NEW.aggregate_id IS DISTINCT FROM OLD.aggregate_id
+       OR NEW.payload IS DISTINCT FROM OLD.payload
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+        RAISE EXCEPTION 'integration outbox event is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER integration_outbox_preserve_event
+BEFORE UPDATE ON integration_outbox
+FOR EACH ROW EXECUTE FUNCTION preserve_integration_outbox_event();
+
 CREATE TABLE deletion_jobs (
     id uuid PRIMARY KEY,
     account_id uuid,
@@ -96,6 +119,27 @@ CREATE TABLE deletion_jobs (
 CREATE INDEX deletion_jobs_pending_idx
     ON deletion_jobs(next_attempt_at)
     WHERE status IN ('pending', 'failed');
+
+CREATE FUNCTION preserve_deletion_job_target()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.account_id IS DISTINCT FROM OLD.account_id
+       OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
+       OR NEW.job_type IS DISTINCT FROM OLD.job_type
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+        RAISE EXCEPTION 'deletion job target is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER deletion_jobs_preserve_target
+BEFORE UPDATE ON deletion_jobs
+FOR EACH ROW EXECUTE FUNCTION preserve_deletion_job_target();
 
 CREATE TABLE idempotency_records (
     id uuid PRIMARY KEY,

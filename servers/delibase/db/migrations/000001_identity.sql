@@ -113,6 +113,33 @@ CREATE TABLE organization_memberships (
 CREATE INDEX organization_memberships_account_idx
     ON organization_memberships(account_id, organization_id);
 
+CREATE FUNCTION require_organization_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM organizations
+        WHERE id = NEW.id
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM organization_memberships
+        WHERE organization_id = NEW.id
+          AND role = 'owner'
+    ) THEN
+        RAISE EXCEPTION 'organization must have at least one owner'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER organizations_require_owner
+AFTER INSERT ON organizations
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION require_organization_owner();
+
 CREATE FUNCTION preserve_organization_owner()
 RETURNS trigger
 LANGUAGE plpgsql

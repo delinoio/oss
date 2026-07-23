@@ -154,18 +154,15 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 	`, holdAccount); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.pool.Exec(ctx, `
-		INSERT INTO organizations (id, name, slug)
-		VALUES ($1, 'Catalog Sync Hold', 'catalog-sync-hold')
-	`, holdOrg); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.pool.Exec(ctx, `
-		INSERT INTO organization_memberships (organization_id, account_id, role)
-		VALUES ($1, $2, 'owner')
-	`, holdOrg, holdAccount); err != nil {
-		t.Fatal(err)
-	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		holdOrg,
+		"Catalog Sync Hold",
+		"catalog-sync-hold",
+		holdAccount,
+	)
 	if _, err := store.pool.Exec(ctx, `
 		INSERT INTO teams (id, organization_id, name)
 		VALUES ($1, $2, 'Catalog Sync Team')
@@ -346,6 +343,68 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLRequiresOrganizationOwnerAtCommit(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	store, err := Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	const (
+		accountID = "0198a000-0000-7000-8000-000000000390"
+		orgID     = "0198a000-0000-7000-8000-000000000391"
+	)
+	transaction, err := store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organizations (id, name, slug)
+		VALUES ($1, 'Owner Required', 'owner-required')
+	`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.Commit(ctx); err == nil {
+		t.Fatal("ownerless organization committed")
+	}
+
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO accounts (id, logto_subject)
+		VALUES ($1, 'owner-required')
+	`, accountID); err != nil {
+		t.Fatal(err)
+	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		orgID,
+		"Owner Required",
+		"owner-required",
+		accountID,
+	)
+	defer func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM organizations WHERE id = $1",
+			orgID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM accounts WHERE id = $1",
+			accountID,
+		)
+	}()
+}
+
 func TestPostgreSQLSerializesConcurrentOwnerRemoval(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -371,16 +430,19 @@ func TestPostgreSQLSerializesConcurrentOwnerRemoval(t *testing.T) {
 	`, accountA, accountB); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.pool.Exec(ctx, `
-		INSERT INTO organizations (id, name, slug)
-		VALUES ($1, 'Concurrent Owners', 'concurrent-owners')
-	`, orgID); err != nil {
-		t.Fatal(err)
-	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		orgID,
+		"Concurrent Owners",
+		"concurrent-owners",
+		accountA,
+	)
 	if _, err := store.pool.Exec(ctx, `
 		INSERT INTO organization_memberships (organization_id, account_id, role)
-		VALUES ($1, $2, 'owner'), ($1, $3, 'owner')
-	`, orgID, accountA, accountB); err != nil {
+		VALUES ($1, $2, 'owner')
+	`, orgID, accountB); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
@@ -476,16 +538,26 @@ func TestPostgreSQLSerializesConcurrentTeamMoves(t *testing.T) {
 	defer store.Close()
 
 	const (
-		orgID = "0198a000-0000-7000-8000-000000000411"
-		teamA = "0198a000-0000-7000-8000-000000000412"
-		teamB = "0198a000-0000-7000-8000-000000000413"
+		accountID = "0198a000-0000-7000-8000-000000000410"
+		orgID     = "0198a000-0000-7000-8000-000000000411"
+		teamA     = "0198a000-0000-7000-8000-000000000412"
+		teamB     = "0198a000-0000-7000-8000-000000000413"
 	)
 	if _, err := store.pool.Exec(ctx, `
-		INSERT INTO organizations (id, name, slug)
-		VALUES ($1, 'Concurrent Team Moves', 'concurrent-team-moves')
-	`, orgID); err != nil {
+		INSERT INTO accounts (id, logto_subject)
+		VALUES ($1, 'concurrent-team-owner')
+	`, accountID); err != nil {
 		t.Fatal(err)
 	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		orgID,
+		"Concurrent Team Moves",
+		"concurrent-team-moves",
+		accountID,
+	)
 	if _, err := store.pool.Exec(ctx, `
 		INSERT INTO teams (id, organization_id, name)
 		VALUES ($1, $3, 'A'), ($2, $3, 'B')
@@ -497,6 +569,11 @@ func TestPostgreSQLSerializesConcurrentTeamMoves(t *testing.T) {
 			context.WithoutCancel(ctx),
 			"DELETE FROM organizations WHERE id = $1",
 			orgID,
+		)
+		_, _ = store.pool.Exec(
+			context.WithoutCancel(ctx),
+			"DELETE FROM accounts WHERE id = $1",
+			accountID,
 		)
 	}()
 
@@ -576,22 +653,26 @@ func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) 
 		reservationID  = "0198a000-0000-7000-8000-000000000508"
 		ledgerID       = "0198a000-0000-7000-8000-000000000509"
 	)
+	if _, err := store.pool.Exec(
+		ctx,
+		"INSERT INTO accounts (id, logto_subject) VALUES ($1, 'reservation-lock-user')",
+		accountID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		organizationID,
+		"Reservation Locks",
+		"reservation-locks",
+		accountID,
+	)
 	setup := []struct {
 		statement string
 		arguments []any
 	}{
-		{
-			"INSERT INTO accounts (id, logto_subject) VALUES ($1, 'reservation-lock-user')",
-			[]any{accountID},
-		},
-		{
-			"INSERT INTO organizations (id, name, slug) VALUES ($1, 'Reservation Locks', 'reservation-locks')",
-			[]any{organizationID},
-		},
-		{
-			"INSERT INTO organization_memberships (organization_id, account_id, role) VALUES ($1, $2, 'member')",
-			[]any{organizationID, accountID},
-		},
 		{
 			"INSERT INTO teams (id, organization_id, name) VALUES ($1, $2, 'Locked Team')",
 			[]any{teamID, organizationID},
@@ -1693,6 +1774,20 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE deletion_jobs
+		SET status = 'failed',
+		    attempt_count = attempt_count + 1,
+		    next_attempt_at = transaction_timestamp() + interval '1 minute',
+		    safe_error_class = 'provider_unavailable'
+		WHERE id = $1
+	`, accountJob); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE deletion_jobs SET account_id = $1 WHERE id = $2",
+		accountA, accountJob,
+	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO deletion_jobs (
 			id, account_id, organization_id, job_type
@@ -1734,6 +1829,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE deletion_jobs SET organization_id = $1 WHERE id = $2",
+		orgA, orgJob,
+	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO deletion_jobs (
 			id, account_id, organization_id, job_type
@@ -1858,6 +1957,38 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		)
 	`)
 	if _, err := transaction.Exec(ctx, `
+		INSERT INTO integration_outbox (
+			id, integration, operation, aggregate_type, aggregate_id, payload
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000207',
+			'polar',
+			'send_usage',
+			'usage_record',
+			$1,
+			'{"units":1}'
+		)
+	`, recordID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE integration_outbox
+		SET attempt_count = attempt_count + 1,
+		    next_attempt_at = transaction_timestamp() + interval '1 minute',
+		    safe_error_class = 'provider_unavailable'
+		WHERE id = '0198a000-0000-7000-8000-000000000207'
+	`); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE integration_outbox
+		SET integration = 'logto',
+		    operation = 'delete_user',
+		    aggregate_type = 'account',
+		    aggregate_id = $1,
+		    payload = '{"subject":"rewritten"}'
+		WHERE id = '0198a000-0000-7000-8000-000000000207'
+	`, accountA)
+	if _, err := transaction.Exec(ctx, `
 		INSERT INTO audit_events (
 			id, event_type, actor_reference, organization_id, result, metadata
 		) VALUES (
@@ -1976,6 +2107,38 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		DELETE FROM idempotency_records
 		WHERE id = '0198a000-0000-7000-8000-000000000206'
 	`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func createTestOrganization(
+	t *testing.T,
+	ctx context.Context,
+	store *Store,
+	organizationID string,
+	name string,
+	slug string,
+	ownerAccountID string,
+) {
+	t.Helper()
+	transaction, err := store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organizations (id, name, slug)
+		VALUES ($1, $2, $3)
+	`, organizationID, name, slug); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organization_memberships (organization_id, account_id, role)
+		VALUES ($1, $2, 'owner')
+	`, organizationID, ownerAccountID); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
