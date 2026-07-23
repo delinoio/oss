@@ -1,0 +1,25 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "public/**",
+        "src/**",
+        "package.json",
+        "rsbuild.config.ts",
+        "tsconfig.json"
+      ],
+      "outputs": ["dist/**"]
+    },
+    "build:desktop": {
+      "cache": false
+    },
+    "check:rust": {
+      "cache": false
+    },
+    "smoke:desktop": {
+      "cache": false
+    }
+  }
+}

@@ -16,7 +16,7 @@
 
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/delidev-app`: React/TypeScript/Rsbuild Cloudflare Pages PWA for project `delidev`.
-- `apps/devhud`: planned local-only React/TypeScript/Rsbuild plus Tauri desktop/mobile app for project `devhud`; the sole canonical DevHud implementation path.
+- `apps/devhud`: local-only React/TypeScript/Rsbuild plus Tauri common feasibility scaffold for project `devhud`; the sole canonical DevHud implementation path and currently gate-blocked.
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
@@ -29,13 +29,14 @@
 ### DevHud Rules
 
 - `apps/devhud` is the sole canonical implementation path for `devhud`. Keep it independent from `apps/delidev-app`, DeliDev accounts, catalog, billing, APIs, routes, contracts, and authentication.
-- DevHud's foundation is documentation-first. Do not add runtime, package, workspace, CI, release, publisher, or support automation until `docs/project-devhud.md` and `docs/apps-devhud-foundation.md` are synchronized with this file and root `AGENTS.md`.
-- The future package must use React, TypeScript, Rsbuild, and Tauri; desktop uses the pinned upstream CEF runtime and mobile uses standard iOS/Android system webviews. Do not create Tauri/WRY/`cef-rs` forks or local runtime patches. A failed CEF feasibility gate stops product-foundation and release work pending a separate architecture decision.
+- The common feasibility package and Rust workspace member are present. It must remain a non-product bundled-asset probe with package-local deterministic checks; do not add product, mobile/widget, CI, packaging, release, publisher, or support work while the gate is blocked.
+- Desktop uses the pinned upstream CEF runtime and sandbox directly; target-specific dependencies reserve standard Tauri iOS/Android system webviews for later work from the same package. Do not create Tauri/WRY/`cef-rs` forks or local runtime patches, and never follow the moving `feat/cef` branch.
+- The pinned upstream revision exposes renderer-termination callbacks publicly only on macOS/iOS and discards the CEF handler on Windows/Linux. This failed gate stops product-foundation and release work pending a separate architecture decision.
 - Preserve the exact DevHud identifiers `dev.deli.devhud`, `devhud.settings.v1`, `devhud.widget-configuration.v1`, `group.dev.deli.devhud`, and `dev.deli.devhud.widget`.
 - Production tools and user-visible widgets remain empty in `0.1.0`. Compile-only WidgetKit and Android AppWidget foundations must not be embedded or manifest-registered, and no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or DeliDev integration is authorized.
 - The only network exception is unauthenticated GitHub Releases update discovery/download for compatible signed `devhud@v*` releases. Never add GitHub tokens, remote configuration, telemetry, or another service dependency.
-- When implementation begins, package-local tasks must cover development, deterministic frontend build, typecheck, lint, tests, accessibility, desktop smoke, mobile build, widget build, and release validation; CI must also cover supported CEF desktop targets, mobile/widget compile checks, signatures, updater, SBOM, provenance, and measurements as defined in `docs/apps-devhud-foundation.md`.
-- Release publication requires the documented signing and publisher prerequisites, architecture-specific desktop artifacts, TestFlight/Google Play beta builds, and the documented manual rollback/upstream-pin/support runbooks. Missing credentials block publication. No runtime or release automation exists from this documentation-only change.
+- The scaffold's package-local tasks cover deterministic frontend build/rebuild, typecheck, lint, unit probes, contract/pin checks, lockfile checks, Rust checks, a debug desktop build, and host-appropriate smoke startup. Accessibility, full desktop-matrix, mobile/widget, packaging, updater, signature, release, SBOM, provenance, and measurement tasks remain blocked and must not be represented by passing placeholders.
+- Release publication requires the documented signing and publisher prerequisites, architecture-specific desktop artifacts, TestFlight/Google Play beta builds, and the documented manual rollback/upstream-pin/support runbooks. Missing credentials or the unresolved CEF gate blocks publication. No release automation exists.
 
 ### DeliDev Rules
 
