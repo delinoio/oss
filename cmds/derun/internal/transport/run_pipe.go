@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -58,8 +59,9 @@ func RunPipe(
 	_ = stderrWriter.Close()
 
 	copyDone := make(chan error, 2)
-	go copyPipeOutput(stdoutReader, stdout, copyDone)
-	go copyPipeOutput(stderrReader, stderr, copyDone)
+	copyStates := [2]*pipeCopyState{newPipeCopyState(), newPipeCopyState()}
+	go copyPipeOutput(stdoutReader, stdout, copyStates[0], copyDone)
+	go copyPipeOutput(stderrReader, stderr, copyStates[1], copyDone)
 	outputClosed := false
 	closeOutput := func() error {
 		defer func() {
@@ -73,6 +75,28 @@ func RunPipe(
 		defer drainTimer.Stop()
 		for completed < 2 {
 			select {
+			case <-copyStates[0].activity:
+				if copyStates[0].isPending() || copyStates[1].isPending() {
+					if !drainTimer.Stop() {
+						select {
+						case <-drainTimer.C:
+						default:
+						}
+					}
+				} else {
+					drainTimer.Reset(pipeOutputDrainTimeout)
+				}
+			case <-copyStates[1].activity:
+				if copyStates[0].isPending() || copyStates[1].isPending() {
+					if !drainTimer.Stop() {
+						select {
+						case <-drainTimer.C:
+						default:
+						}
+					}
+				} else {
+					drainTimer.Reset(pipeOutputDrainTimeout)
+				}
 			case err := <-copyDone:
 				completed++
 				if err != nil && !isBenignCopyErr(err) {
@@ -86,7 +110,9 @@ func RunPipe(
 				}
 			case <-drainTimer.C:
 				// A descendant may inherit the pipe descriptors and keep them open.
-				// Give direct-child output time to drain, then break that wait.
+				// Only force-close after both copy loops have been idle. A pending
+				// write means direct-child output has already been read and must be
+				// allowed to reach the sink, even when that sink is slow.
 				_ = stdoutReader.Close()
 				_ = stderrReader.Close()
 			}
@@ -140,10 +166,49 @@ func RunPipe(
 	return result, nil
 }
 
-func copyPipeOutput(reader *os.File, writer io.Writer, done chan<- error) {
-	_, err := io.Copy(writer, reader)
+type pipeCopyState struct {
+	mu       sync.Mutex
+	pending  bool
+	activity chan struct{}
+}
+
+func newPipeCopyState() *pipeCopyState {
+	return &pipeCopyState{activity: make(chan struct{}, 1)}
+}
+
+func (s *pipeCopyState) setPending(pending bool) {
+	s.mu.Lock()
+	s.pending = pending
+	s.mu.Unlock()
+	select {
+	case s.activity <- struct{}{}:
+	default:
+	}
+}
+
+func (s *pipeCopyState) isPending() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pending
+}
+
+func copyPipeOutput(reader *os.File, writer io.Writer, state *pipeCopyState, done chan<- error) {
+	trackingWriter := pipeCopyWriter{writer: writer, state: state}
+	_, err := io.Copy(trackingWriter, reader)
 	_ = reader.Close()
 	done <- err
+}
+
+type pipeCopyWriter struct {
+	writer io.Writer
+	state  *pipeCopyState
+}
+
+func (w pipeCopyWriter) Write(p []byte) (int, error) {
+	w.state.setPending(true)
+	n, err := w.writer.Write(p)
+	w.state.setPending(false)
+	return n, err
 }
 
 func isBenignCopyErr(err error) bool {
