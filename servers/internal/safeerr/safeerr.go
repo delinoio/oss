@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
+	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
 	"github.com/delinoio/oss/servers/internal/auth"
 )
 
@@ -178,8 +179,9 @@ func HTTP(handler HTTPHandler) http.Handler {
 }
 
 // Connect maps an arbitrary server error to a safe Connect error. Intentional
-// Connect errors retain their code, metadata, and machine-readable details
-// while their source message is replaced.
+// Connect errors retain their code and vetted machine-readable reason while
+// source messages, metadata, free-form detail fields, and unrecognized details
+// are discarded.
 func Connect(err error) error {
 	if err == nil {
 		return nil
@@ -188,11 +190,22 @@ func Connect(err error) error {
 	if errors.As(err, &connectFailure) {
 		class := classForConnectCode(connectFailure.Code())
 		mapped := connect.NewError(connectFailure.Code(), errors.New(messageFor(class)))
-		for key, values := range connectFailure.Meta() {
-			mapped.Meta()[key] = append([]string(nil), values...)
-		}
 		for _, detail := range connectFailure.Details() {
-			mapped.AddDetail(detail)
+			value, detailErr := detail.Value()
+			if detailErr != nil {
+				continue
+			}
+			source, ok := value.(*delibasev1.ErrorDetail)
+			if !ok || source.Reason == delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED {
+				continue
+			}
+			if _, known := delibasev1.ErrorReason_name[int32(source.Reason)]; !known {
+				continue
+			}
+			safe, detailErr := connect.NewErrorDetail(&delibasev1.ErrorDetail{Reason: source.Reason})
+			if detailErr == nil {
+				mapped.AddDetail(safe)
+			}
 		}
 		return mapped
 	}

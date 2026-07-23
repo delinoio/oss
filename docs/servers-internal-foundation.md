@@ -40,7 +40,7 @@
 
 ### JWKS Contract
 - `auth.JWKS` accepts an injected `HTTPClient`, clock, cache TTL, maximum stale duration, and maximum response size. `KeySource` remains independently injectable for unit tests or non-HTTP sources.
-- The JWKS URL must be HTTPS and contain no user information, query, or fragment. The default client timeout is five seconds, default cache TTL is 15 minutes, and default response limit is 1 MiB.
+- The configured JWKS URL and the final response URL after redirects must be HTTPS and contain no user information, query, or fragment. The default client timeout is five seconds, default cache TTL is 15 minutes, and default response limit is 1 MiB.
 - Cached keys are reused within the TTL. An unknown `kid` forces one immediate refresh even while the cache is fresh so normal Logto signing-key rotation can converge promptly.
 - A successful refresh atomically replaces the key set. Duplicate key IDs, empty signing sets, unsupported key types/curves, algorithm/key mismatches, oversized/invalid responses, and unknown keys fail closed.
 - Stale use is disabled by default. A consumer may explicitly configure a bounded `MaxStale` window for already-known public keys during a provider outage; an unknown key is never accepted from stale state.
@@ -50,7 +50,7 @@
 - Usage routes use `ModeM2MWithForwardedUser`: the bearer token authenticates the service and the raw dedicated header authenticates the end user. Both may have route-specific Logto scopes. Delibase must still enforce service-to-meter allowlists, organization membership, and effective team access.
 - Public routes do not turn supplied credentials into identity context and still strip credential headers.
 - `requestmeta` accepts only bounded, printable request IDs and 32-lowercase-hex trace IDs; malformed inbound values are replaced. Response headers carry the effective IDs for both HTTP and Connect calls, and `requestmeta.Propagate` plus the Connect client path copy only those IDs into downstream requests.
-- `safeerr` returns only stable classes/messages. Authentication maps to HTTP 401/Connect `Unauthenticated`; authorization maps to 403/`PermissionDenied`; unexpected errors and panics map to a generic internal response without retaining arbitrary source text.
+- `safeerr` returns only stable classes/messages. Authentication maps to HTTP 401/Connect `Unauthenticated`; authorization maps to 403/`PermissionDenied`; unexpected errors and panics map to a generic internal response without retaining arbitrary source text. Intentional Connect errors retain their exact status code and only a recognized `delibase.v1.ErrorDetail.reason`; arbitrary response metadata, unrecognized protobuf details, and every free-form detail field are discarded. The outer `requestmeta` interceptor adds validated request and trace IDs after safe mapping.
 - Compose Connect server interceptors with `requestmeta.Interceptor` outermost, then `safeerr.Interceptor`, then `authmiddleware.ConnectInterceptor`. This preserves safe IDs on successful and failed responses while ensuring authentication and application failures pass through safe mapping.
 
 ### HTTP Defaults

@@ -56,8 +56,7 @@ type jwkEntry struct {
 // NewJWKS creates a remote key source without performing network I/O.
 func NewJWKS(config JWKSConfig) (*JWKS, error) {
 	parsed, err := url.Parse(config.URL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
-		parsed.RawQuery != "" || parsed.Fragment != "" {
+	if err != nil || !validJWKSURL(parsed) {
 		return nil, errors.New("auth: JWKS URL must be an HTTPS URL without credentials, query, or fragment")
 	}
 	if config.Client == nil {
@@ -131,6 +130,9 @@ func (s *JWKS) refresh(ctx context.Context, now time.Time) error {
 		return errors.New("auth: JWKS request failed")
 	}
 	defer response.Body.Close()
+	if response.Request == nil || !validJWKSURL(response.Request.URL) {
+		return errors.New("auth: JWKS endpoint redirected to an unsafe URL")
+	}
 	if response.StatusCode != http.StatusOK {
 		return errors.New("auth: JWKS endpoint returned an error")
 	}
@@ -151,6 +153,15 @@ func (s *JWKS) refresh(ctx context.Context, now time.Time) error {
 	s.keys = keys
 	s.fetchedAt = now
 	return nil
+}
+
+func validJWKSURL(candidate *url.URL) bool {
+	return candidate != nil &&
+		candidate.Scheme == "https" &&
+		candidate.Host != "" &&
+		candidate.User == nil &&
+		candidate.RawQuery == "" &&
+		candidate.Fragment == ""
 }
 
 func matchAlgorithm(entry jwkEntry, algorithm string) (any, error) {

@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
 	"github.com/delinoio/oss/servers/internal/auth"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestHTTPAndConnectNeverExposeSourceErrors(t *testing.T) {
@@ -37,18 +38,31 @@ func TestHTTPAndConnectNeverExposeSourceErrors(t *testing.T) {
 	}
 }
 
-func TestConnectPreservesSafeDetailsMetadataAndCode(t *testing.T) {
+func TestConnectPreservesOnlyVettedReasonAndCode(t *testing.T) {
 	t.Parallel()
 	source := connect.NewError(connect.CodeAlreadyExists, errors.New("database slug conflict"))
 	source.Meta().Set("X-Request-Id", "request-1")
+	source.Meta().Set("Authorization", "Bearer response-secret")
 	detail, err := connect.NewErrorDetail(&delibasev1.ErrorDetail{
 		Reason:  delibasev1.ErrorReason_ERROR_REASON_SLUG_CONFLICT,
-		Message: "slug is unavailable",
+		Message: "slug is unavailable Bearer detail-secret",
+		Metadata: map[string]string{
+			"token": "metadata-secret",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	source.AddDetail(detail)
+	unvetted, err := connect.NewErrorDetail(&structpb.Struct{
+		Fields: map[string]*structpb.Value{
+			"debug": structpb.NewStringValue("debug-secret"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.AddDetail(unvetted)
 
 	mapped := Connect(source)
 	var connectFailure *connect.Error
@@ -58,8 +72,8 @@ func TestConnectPreservesSafeDetailsMetadataAndCode(t *testing.T) {
 	if connectFailure.Code() != connect.CodeAlreadyExists {
 		t.Fatalf("Connect() code = %s", connectFailure.Code())
 	}
-	if connectFailure.Meta().Get("X-Request-Id") != "request-1" {
-		t.Fatalf("Connect() metadata = %#v", connectFailure.Meta())
+	if len(connectFailure.Meta()) != 0 {
+		t.Fatalf("Connect() retained unvetted metadata = %#v", connectFailure.Meta())
 	}
 	if strings.Contains(connectFailure.Message(), "database slug conflict") {
 		t.Fatalf("Connect() leaked source message: %v", connectFailure)
@@ -75,6 +89,9 @@ func TestConnectPreservesSafeDetailsMetadataAndCode(t *testing.T) {
 	errorDetail, ok := value.(*delibasev1.ErrorDetail)
 	if !ok || errorDetail.Reason != delibasev1.ErrorReason_ERROR_REASON_SLUG_CONFLICT {
 		t.Fatalf("Connect() detail = %#v", value)
+	}
+	if errorDetail.Message != "" || len(errorDetail.Metadata) != 0 {
+		t.Fatalf("Connect() retained free-form detail fields = %#v", errorDetail)
 	}
 }
 

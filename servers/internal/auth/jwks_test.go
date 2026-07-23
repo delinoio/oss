@@ -90,13 +90,46 @@ func TestJWKSCacheAndRotation(t *testing.T) {
 
 func TestJWKSRejectsAlgorithmMismatchAndUnsafeURL(t *testing.T) {
 	t.Parallel()
-	if _, err := NewJWKS(JWKSConfig{URL: "http://tenant.example/jwks"}); err == nil {
-		t.Fatal("NewJWKS() accepted non-HTTPS URL")
+	for _, rawURL := range []string{
+		"http://tenant.example/jwks",
+		"https://user@tenant.example/jwks",
+		"https://tenant.example/jwks?token=secret",
+		"https://tenant.example/jwks#fragment",
+	} {
+		if _, err := NewJWKS(JWKSConfig{URL: rawURL}); err == nil {
+			t.Fatalf("NewJWKS() accepted unsafe URL %q", rawURL)
+		}
 	}
 
 	entry := jwkEntry{key: &rsa.PublicKey{N: big.NewInt(17), E: 65537}, alg: "RS256"}
 	if _, err := matchAlgorithm(entry, "ES256"); err == nil {
 		t.Fatal("matchAlgorithm() accepted mismatched algorithm")
+	}
+}
+
+func TestJWKSRejectsHTTPSRedirectToHTTP(t *testing.T) {
+	t.Parallel()
+	key := mustRSAKey(t)
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(jwksJSON(t, "key-1", &key.PublicKey))
+	}))
+	defer target.Close()
+
+	redirect := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, target.URL, http.StatusFound)
+	}))
+	defer redirect.Close()
+
+	source, err := NewJWKS(JWKSConfig{
+		URL:    redirect.URL,
+		Client: redirect.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := source.Key(context.Background(), "key-1", "RS256"); err == nil {
+		t.Fatal("Key() accepted signing keys loaded through an HTTP redirect")
 	}
 }
 
