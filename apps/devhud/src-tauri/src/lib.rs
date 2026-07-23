@@ -62,12 +62,13 @@ enum ProbeCommandError {
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn is_bundled_url(url: &Url) -> bool {
-    matches!(
-        (url.scheme(), url.host_str()),
-        ("tauri", Some("localhost"))
-            | ("http", Some("tauri.localhost"))
-            | ("https", Some("tauri.localhost"))
-    )
+    url.port().is_none()
+        && matches!(
+            (url.scheme(), url.host_str()),
+            ("tauri", Some("localhost"))
+                | ("http", Some("tauri.localhost"))
+                | ("https", Some("tauri.localhost"))
+        )
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -270,6 +271,7 @@ mod tests {
         for denied in [
             "https://example.com/",
             "http://localhost:4173/",
+            "https://tauri.localhost:8080/index.html",
             "file:///tmp/index.html",
             "data:text/html,probe",
             "about:blank",

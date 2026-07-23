@@ -1,4 +1,5 @@
 import {
+  DesktopPlatform,
   PackageFormat,
   ProbeId,
   RuntimeFailureKind,
@@ -50,17 +51,32 @@ export class ProbeBlockedError extends Error {
 
 interface ProbeScenario<K extends ProbeId> {
   readonly id: K;
-  run(driver: ProbeDriver): Promise<ProbeEvidenceMap[K]>;
+  run(
+    driver: ProbeDriver,
+    target: ProbeTarget,
+  ): Promise<ProbeEvidenceMap[K]>;
 }
 
 type RunnableScenario = ProbeScenario<ProbeId>;
 
 function defineScenario<K extends ProbeId>(
   id: K,
-  run: (driver: ProbeDriver) => Promise<ProbeEvidenceMap[K]>,
+  run: (
+    driver: ProbeDriver,
+    target: ProbeTarget,
+  ) => Promise<ProbeEvidenceMap[K]>,
 ): ProbeScenario<K> {
   return Object.freeze({ id, run });
 }
+
+const packageFormatsByPlatform = Object.freeze({
+  [DesktopPlatform.Linux]: Object.freeze([
+    PackageFormat.AppImage,
+    PackageFormat.Deb,
+  ]),
+  [DesktopPlatform.MacOS]: Object.freeze([PackageFormat.Dmg]),
+  [DesktopPlatform.Windows]: Object.freeze([PackageFormat.Nsis]),
+}) satisfies Readonly<Record<DesktopPlatform, readonly PackageFormat[]>>;
 
 export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
   defineScenario(ProbeId.BundledAssetStartup, (driver) =>
@@ -88,13 +104,8 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
   defineScenario(ProbeId.HelperProcessCleanup, (driver) =>
     driver.helperProcessCleanup(),
   ),
-  defineScenario(ProbeId.Packaging, (driver) =>
-    driver.packaging([
-      PackageFormat.Dmg,
-      PackageFormat.Nsis,
-      PackageFormat.AppImage,
-      PackageFormat.Deb,
-    ]),
+  defineScenario(ProbeId.Packaging, (driver, target) =>
+    driver.packaging(packageFormatsByPlatform[target.platform]),
   ),
   defineScenario(ProbeId.SignedUpdater, (driver) => driver.signedUpdater()),
 ]);
@@ -114,7 +125,7 @@ export async function runProbeHarness(
 
   for (const scenario of probeScenarios) {
     try {
-      const evidence = await scenario.run(driver);
+      const evidence = await scenario.run(driver, target);
       results.push({
         id: scenario.id,
         status: "passed",

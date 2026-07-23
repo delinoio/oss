@@ -10,6 +10,7 @@ import {
   Architecture,
   DesktopPlatform,
   DisplayProtocol,
+  PackageFormat,
   ProbeId,
   RuntimeFailureKind,
   ThemeMode,
@@ -21,7 +22,13 @@ const target = {
   displayProtocol: DisplayProtocol.X11,
 } as const;
 
-function passingDriver(calls: ProbeId[]): ProbeDriver {
+function passingDriver(
+  calls: ProbeId[],
+  expectedPackageFormats: readonly PackageFormat[] = [
+    PackageFormat.AppImage,
+    PackageFormat.Deb,
+  ],
+): ProbeDriver {
   return {
     async bundledAssetStartup() {
       calls.push(ProbeId.BundledAssetStartup);
@@ -108,6 +115,7 @@ function passingDriver(calls: ProbeId[]): ProbeDriver {
     },
     async packaging(formats) {
       calls.push(ProbeId.Packaging);
+      expect(formats).toEqual(expectedPackageFormats);
       return {
         checkedFormats: formats,
         bundledAssetsPresent: true,
@@ -140,6 +148,34 @@ describe("probe harness", () => {
     expect(report.results).toHaveLength(Object.values(ProbeId).length);
     expect(report.passed).toBe(true);
   });
+
+  it.each([
+    {
+      platform: DesktopPlatform.Linux,
+      displayProtocol: DisplayProtocol.X11,
+      packageFormats: [PackageFormat.AppImage, PackageFormat.Deb],
+    },
+    {
+      platform: DesktopPlatform.MacOS,
+      displayProtocol: DisplayProtocol.NotApplicable,
+      packageFormats: [PackageFormat.Dmg],
+    },
+    {
+      platform: DesktopPlatform.Windows,
+      displayProtocol: DisplayProtocol.NotApplicable,
+      packageFormats: [PackageFormat.Nsis],
+    },
+  ])(
+    "requests only $platform packaging formats",
+    async ({ platform, displayProtocol, packageFormats }) => {
+      const report = await runProbeHarness(
+        { ...target, platform, displayProtocol },
+        passingDriver([], packageFormats),
+      );
+
+      expect(report.passed).toBe(true);
+    },
+  );
 
   it("preserves an actionable upstream blocker", async () => {
     const driver = passingDriver([]);

@@ -297,6 +297,8 @@ jobs:
               - '**/rust-toolchain'
               - '**/rust-toolchain.toml'
               - '**/*.rs'
+              - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/tauri.conf.json
               - crates/**
 
       - name: Determine whether to run
@@ -361,6 +363,8 @@ jobs:
               - '**/rust-toolchain'
               - '**/rust-toolchain.toml'
               - '**/*.rs'
+              - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/tauri.conf.json
               - crates/**
 
       - name: Determine whether to run
@@ -397,7 +401,9 @@ jobs:
 
       - name: Run clippy
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: |
+          cargo clippy --workspace --all-targets --all-features --exclude devhud-probe -- -D warnings
+          cargo clippy -p devhud-probe --all-targets --locked -- -D warnings
 
   rust-test:
     name: Rust test
@@ -425,6 +431,8 @@ jobs:
               - '**/rust-toolchain'
               - '**/rust-toolchain.toml'
               - '**/*.rs'
+              - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/tauri.conf.json
               - crates/**
 
       - name: Determine whether to run

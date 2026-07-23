@@ -348,7 +348,7 @@ Coverage expectations:
 - `go-quality`: runs `go fmt ./...` (fails if formatting changes are applied) and `go vet ./...` on Ubuntu.
 - `go-test`: runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
-- `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
+- `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features --exclude devhud-probe -- -D warnings`, then lints the mutually exclusive DevHud runtime scaffold with `cargo clippy -p devhud-probe --all-targets --locked -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
