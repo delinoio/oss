@@ -8,6 +8,7 @@ import {
   canCreateChildTeam,
   canManageOrganization,
   canUseTeamAsParent,
+  formatOptionalUsdMicros,
   formatUsageCost,
   formatUsageUnits,
   getEditableOverageLimit,
@@ -68,6 +69,11 @@ describe("organization billing inputs", () => {
     expect(getEditableOverageLimit(true, 0n)).toBe(0n);
     expect(getEditableOverageLimit(false, undefined)).toBe(0n);
   });
+
+  it("distinguishes missing billing balances from explicit zero values", () => {
+    expect(formatOptionalUsdMicros(undefined)).toBe("Unavailable");
+    expect(formatOptionalUsdMicros(0n)).toBe("$0.0000");
+  });
 });
 
 describe("team hierarchy controls", () => {
@@ -86,5 +92,19 @@ describe("team hierarchy controls", () => {
     expect(canUseTeamAsParent(parent, parent, teams)).toBe(false);
     expect(canUseTeamAsParent(parent, grandchild, teams)).toBe(false);
     expect(canUseTeamAsParent(parent, sibling, teams)).toBe(true);
+  });
+
+  it("excludes move targets that would make the subtree too deep", () => {
+    const root = team("root");
+    const moving = team("moving");
+    const child = team("child", "moving", 1);
+    const grandchild = team("grandchild", "child", 2);
+    const levelThree = team("level-three", "root", 2);
+    const levelFour = team("level-four", "level-three", 3);
+    const teams = [root, moving, child, grandchild, levelThree, levelFour];
+
+    expect(canUseTeamAsParent(moving, root, teams)).toBe(true);
+    expect(canUseTeamAsParent(moving, levelThree, teams)).toBe(false);
+    expect(canUseTeamAsParent(moving, levelFour, teams)).toBe(false);
   });
 });

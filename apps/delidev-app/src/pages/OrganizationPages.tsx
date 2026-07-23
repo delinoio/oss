@@ -3,18 +3,24 @@ import {
   useMutation,
   useQuery,
 } from "@connectrpc/connect-query";
+import { createClient, type Transport } from "@connectrpc/connect";
 import {
   BillingService,
   CatalogService,
+  InvitationStatus,
   LedgerOperation,
   OrganizationRole,
   OrganizationService,
   SubscriptionStatus,
   TeamService,
+  TeamRole,
   type LedgerEntry,
+  type Organization,
+  type OrganizationInvitation,
   type Team,
 } from "@delinoio/delibase-connect";
 import {
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -73,6 +79,10 @@ export function getEditableOverageLimit(
   value: bigint | undefined,
 ): bigint | undefined {
   return configured ? value : 0n;
+}
+
+export function formatOptionalUsdMicros(value: bigint | undefined): string {
+  return value === undefined ? "Unavailable" : formatUsdMicros(value);
 }
 
 export function canManageOrganization(role: OrganizationRole): boolean {
@@ -169,8 +179,11 @@ export function OrganizationAppsPage() {
 }
 
 export function MembersPage() {
-  useDocumentMetadata("Members", "View organization members and roles.");
-  const { organization, transport } = useOrganization();
+  useDocumentMetadata(
+    "Members",
+    "View organization members and manage invitations.",
+  );
+  const { callerRole, organization, transport } = useOrganization();
   const members = useInfiniteQuery(
     OrganizationService.method.listOrganizationMembers,
     {
@@ -194,9 +207,15 @@ export function MembersPage() {
   return (
     <>
       <OrganizationPageHeading
-        description="View organization members and their assigned roles."
+        description="View organization members, roles, and active invitations."
         title="Members"
       />
+      {canManageOrganization(callerRole) ? (
+        <OrganizationInvitationManagement
+          organization={organization}
+          transport={transport}
+        />
+      ) : null}
       {members.isPending ? <LoadingState label="Loading members" /> : null}
       {members.isError && !members.data ? (
         <ErrorState
@@ -276,6 +295,363 @@ export function MembersPage() {
   );
 }
 
+type InvitationCreationState =
+  | { status: "idle" }
+  | { status: "pending" }
+  | { error: string; status: "error" }
+  | { invitationUrl: string; status: "success" };
+
+export function OrganizationInvitationManagement({
+  organization,
+  transport,
+}: {
+  organization: Organization;
+  transport: Transport;
+}) {
+  const online = useOnline();
+  const client = useMemo(
+    () => createClient(OrganizationService, transport),
+    [transport],
+  );
+  const [organizationRole, setOrganizationRole] = useState(
+    OrganizationRole.MEMBER,
+  );
+  const [teamId, setTeamId] = useState("");
+  const [teamRole, setTeamRole] = useState(TeamRole.MEMBER);
+  const [creation, setCreation] = useState<InvitationCreationState>({
+    status: "idle",
+  });
+  const [revokingInvitationId, setRevokingInvitationId] = useState("");
+  const [revokeError, setRevokeError] = useState("");
+  const revocationKeys = useRef(new Map<string, { key: string }>());
+  const teams = useInfiniteQuery(
+    TeamService.method.listTeams,
+    {
+      includeDescendants: true,
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+    },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
+  );
+  const invitations = useInfiniteQuery(
+    OrganizationService.method.listOrganizationInvitations,
+    {
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+      status: InvitationStatus.ACTIVE,
+    },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
+  );
+  const revokeInvitation = useMutation(
+    OrganizationService.method.revokeOrganizationInvitation,
+    { transport },
+  );
+  const teamRows = teams.data?.pages.flatMap((page) => page.teams) ?? [];
+  const invitationRows =
+    invitations.data?.pages.flatMap((page) => page.invitations) ?? [];
+  const teamsById = new Map(
+    teamRows.flatMap((team) =>
+      team.teamId?.value ? [[team.teamId.value, team] as const] : [],
+    ),
+  );
+  const isMemberInvitation = organizationRole === OrganizationRole.MEMBER;
+  const resetCreatedLink = () => setCreation({ status: "idle" });
+
+  const submitInvitation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isMemberInvitation && !teamId) {
+      setCreation({
+        error: "Choose a team for this Member invitation.",
+        status: "error",
+      });
+      return;
+    }
+    setCreation({ status: "pending" });
+    try {
+      // The creation response contains the only copy of a bearer token, so it
+      // intentionally bypasses React Query and remains in component memory.
+      const response = await client.createOrganizationInvitation({
+        organizationId: organization.organizationId,
+        organizationRole,
+        teamId: isMemberInvitation ? uuid(teamId) : undefined,
+        teamRole: isMemberInvitation ? teamRole : TeamRole.UNSPECIFIED,
+      });
+      const token = response.bearerToken?.token;
+      if (!token) {
+        throw new Error("The invitation was created without a bearer link.");
+      }
+      setCreation({
+        invitationUrl: `${window.location.origin}/invite/${encodeURIComponent(token)}`,
+        status: "success",
+      });
+      void invitations.refetch();
+    } catch (error) {
+      setCreation({
+        error:
+          error instanceof Error
+            ? error.message
+            : "The invitation could not be created.",
+        status: "error",
+      });
+    }
+  };
+
+  const revoke = async (invitation: OrganizationInvitation) => {
+    const invitationId = invitation.invitationId?.value;
+    if (!invitationId) return;
+    const idempotency =
+      revocationKeys.current.get(invitationId) ?? createIdempotencyKey();
+    revocationKeys.current.set(invitationId, idempotency);
+    setRevokeError("");
+    setRevokingInvitationId(invitationId);
+    try {
+      await revokeInvitation.mutateAsync({
+        idempotency,
+        invitationId: invitation.invitationId,
+        organizationId: organization.organizationId,
+      });
+      revocationKeys.current.delete(invitationId);
+      await invitations.refetch();
+    } catch (error) {
+      setRevokeError(
+        error instanceof Error
+          ? error.message
+          : "The invitation could not be revoked.",
+      );
+    } finally {
+      setRevokingInvitationId("");
+    }
+  };
+
+  return (
+    <section className="invitation-management" aria-labelledby="invite-heading">
+      <form className="form-card" onSubmit={submitInvitation}>
+        <div>
+          <span className="eyebrow">Invitation management</span>
+          <h2 id="invite-heading">Create an invitation</h2>
+          <p>
+            Invitation links are reusable until they expire or are revoked.
+            Share each bearer link only with its intended recipients.
+          </p>
+        </div>
+        <div className="invitation-form-fields">
+          <label>
+            Organization role
+            <select
+              onChange={(event) => {
+                resetCreatedLink();
+                setOrganizationRole(
+                  Number(event.target.value) as OrganizationRole,
+                );
+              }}
+              value={organizationRole}
+            >
+              <option value={OrganizationRole.MEMBER}>Member</option>
+              <option value={OrganizationRole.ADMIN}>Admin</option>
+            </select>
+          </label>
+          {isMemberInvitation ? (
+            <>
+              <label>
+                Team
+                <select
+                  onChange={(event) => {
+                    resetCreatedLink();
+                    setTeamId(event.target.value);
+                  }}
+                  required
+                  value={teamId}
+                >
+                  <option value="">Choose a team</option>
+                  {teamRows.map((team) => (
+                    <option key={team.teamId?.value} value={team.teamId?.value}>
+                      {team.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Team role
+                <select
+                  onChange={(event) => {
+                    resetCreatedLink();
+                    setTeamRole(Number(event.target.value) as TeamRole);
+                  }}
+                  value={teamRole}
+                >
+                  <option value={TeamRole.MEMBER}>Member</option>
+                  <option value={TeamRole.ADMIN}>Admin</option>
+                </select>
+              </label>
+            </>
+          ) : null}
+        </div>
+        {teams.isError ? (
+          <p className="inline-error" role="alert">
+            {teams.error.message}
+          </p>
+        ) : null}
+        {teams.hasNextPage ? (
+          <button
+            className="button secondary"
+            disabled={teams.isFetchingNextPage}
+            onClick={() => void teams.fetchNextPage()}
+            type="button"
+          >
+            {teams.isFetchingNextPage ? "Loading teams…" : "Load more teams"}
+          </button>
+        ) : null}
+        {creation.status === "error" ? (
+          <p className="inline-error" role="alert">
+            {creation.error}
+          </p>
+        ) : null}
+        {creation.status === "success" ? (
+          <label>
+            Invitation link
+            <input
+              onFocus={(event) => event.currentTarget.select()}
+              readOnly
+              value={creation.invitationUrl}
+            />
+            <span className="field-help">
+              This secret link is shown only for this in-memory session.
+            </span>
+          </label>
+        ) : null}
+        <button
+          className="button primary"
+          disabled={!online || creation.status === "pending"}
+          type="submit"
+        >
+          {creation.status === "pending"
+            ? "Creating invitation…"
+            : "Create invitation"}
+        </button>
+        {!online ? <OfflineActionHint /> : null}
+      </form>
+
+      <h2>Active invitations</h2>
+      {invitations.isPending ? (
+        <LoadingState label="Loading invitations" />
+      ) : null}
+      {invitations.isError && !invitations.data ? (
+        <ErrorState
+          error={invitations.error}
+          onRetry={() => void invitations.refetch()}
+          title="Invitations unavailable"
+        />
+      ) : null}
+      {invitationRows.length === 0 && invitations.data ? (
+        <p className="content-card">There are no active invitations.</p>
+      ) : null}
+      {invitationRows.length ? (
+        <div className="table-card">
+          <table>
+            <caption className="sr-only">Active organization invitations</caption>
+            <thead>
+              <tr>
+                <th scope="col">Organization role</th>
+                <th scope="col">Team assignment</th>
+                <th scope="col">Expires</th>
+                <th scope="col">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invitationRows.map((invitation) => {
+                const invitationId = invitation.invitationId?.value ?? "";
+                const team = teamsById.get(invitation.teamId?.value ?? "");
+                return (
+                  <tr key={invitationId}>
+                    <td>
+                      {formatEnumLabel(
+                        OrganizationRole[invitation.organizationRole] ??
+                          invitation.organizationRole,
+                      )}
+                    </td>
+                    <td>
+                      {invitation.teamId
+                        ? `${team?.name ?? invitation.teamId.value} · ${formatEnumLabel(
+                            TeamRole[invitation.teamRole] ?? invitation.teamRole,
+                          )}`
+                        : "All teams"}
+                    </td>
+                    <td>
+                      {invitation.expiresAt
+                        ? new Date(
+                            Number(invitation.expiresAt.seconds) * 1000,
+                          ).toLocaleDateString("en-US")
+                        : "Unavailable"}
+                    </td>
+                    <td>
+                      <button
+                        className="button danger compact-button"
+                        disabled={
+                          !online || Boolean(revokingInvitationId)
+                        }
+                        onClick={() => void revoke(invitation)}
+                        type="button"
+                      >
+                        {revokingInvitationId === invitationId
+                          ? "Revoking…"
+                          : "Revoke"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {revokeError ? (
+        <p className="inline-error" role="alert">
+          {revokeError}
+        </p>
+      ) : null}
+      {invitations.isFetchNextPageError ? (
+        <p className="inline-error" role="alert">
+          {invitations.error.message}
+        </p>
+      ) : null}
+      {invitations.hasNextPage ? (
+        <div className="pagination-actions">
+          <button
+            className="button secondary"
+            disabled={invitations.isFetchingNextPage}
+            onClick={() => void invitations.fetchNextPage()}
+            type="button"
+          >
+            {invitations.isFetchingNextPage
+              ? "Loading more…"
+              : "Load more invitations"}
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function TeamsPage() {
   useDocumentMetadata("Teams", "Manage nested organization teams.");
   const { callerRole, organization, transport } = useOrganization();
@@ -351,6 +727,7 @@ export function TeamsPage() {
                 </div>
                 {canManage && !team.protectedGeneral ? (
                   <TeamActions
+                    allTeamsLoaded={!teams.hasNextPage}
                     onUpdated={refreshTeams}
                     online={online}
                     team={team}
@@ -513,6 +890,21 @@ export function canUseTeamAsParent(
       item.teamId?.value ? [[item.teamId.value, item] as const] : [],
     ),
   );
+  let subtreeHeight = 0;
+  for (const item of teams) {
+    let parentId = item.parentTeamId?.value;
+    let relativeDepth = 0;
+    const descendantPath = new Set<string>();
+    while (parentId && !descendantPath.has(parentId)) {
+      relativeDepth += 1;
+      if (parentId === teamId) {
+        subtreeHeight = Math.max(subtreeHeight, relativeDepth);
+        break;
+      }
+      descendantPath.add(parentId);
+      parentId = teamsById.get(parentId)?.parentTeamId?.value;
+    }
+  }
   const visited = new Set<string>();
   while (candidateId && !visited.has(candidateId)) {
     if (candidateId === teamId) {
@@ -521,15 +913,17 @@ export function canUseTeamAsParent(
     visited.add(candidateId);
     candidateId = teamsById.get(candidateId)?.parentTeamId?.value;
   }
-  return true;
+  return candidate.depth + 1 + subtreeHeight < maximumTeamLevels;
 }
 
 function TeamActions({
+  allTeamsLoaded,
   online,
   onUpdated,
   team,
   teams,
 }: {
+  allTeamsLoaded: boolean;
   online: boolean;
   onUpdated: () => Promise<void>;
   team: Team;
@@ -542,6 +936,7 @@ function TeamActions({
     team.parentTeamId?.value ?? "",
   );
   const [formError, setFormError] = useState("");
+  const deletionKey = useRef<{ key: string } | undefined>(undefined);
   const updateTeam = useMutation(TeamService.method.updateTeam, { transport });
   const moveTeam = useMutation(TeamService.method.moveTeam, { transport });
   const deleteTeam = useMutation(TeamService.method.deleteTeamSubtree, {
@@ -557,6 +952,7 @@ function TeamActions({
   );
 
   const showDialog = () => {
+    deletionKey.current = undefined;
     setName(team.name);
     setParentTeamId(team.parentTeamId?.value ?? "");
     setFormError("");
@@ -610,20 +1006,27 @@ function TeamActions({
   };
   const remove = async () => {
     setFormError("");
+    deletionKey.current ??= createIdempotencyKey();
     try {
       await deleteTeam.mutateAsync({
         confirmSubtree: true,
-        idempotency: createIdempotencyKey(),
+        idempotency: deletionKey.current,
         organizationId: organization.organizationId,
         teamId: uuid(teamId),
       });
       await onUpdated();
+      deletionKey.current = undefined;
       setOpen(false);
     } catch (error) {
       setFormError(
         error instanceof Error ? error.message : "The team could not be deleted.",
       );
     }
+  };
+  const closeDialog = () => {
+    if (isPending) return;
+    deletionKey.current = undefined;
+    setOpen(false);
   };
 
   return (
@@ -638,7 +1041,7 @@ function TeamActions({
       {open ? (
         <Dialog
           descriptionId={descriptionId}
-          onClose={() => setOpen(false)}
+          onClose={closeDialog}
           titleId={titleId}
         >
           <h2 id={titleId}>Manage {team.name}</h2>
@@ -659,6 +1062,7 @@ function TeamActions({
             <label>
               Parent team
               <select
+                disabled={!allTeamsLoaded}
                 onChange={(event) => setParentTeamId(event.target.value)}
                 value={parentTeamId}
               >
@@ -670,8 +1074,13 @@ function TeamActions({
                   >
                     {candidate.name}
                   </option>
-                ))}
+                  ))}
               </select>
+              {!allTeamsLoaded ? (
+                <span className="field-help">
+                  Load all team pages before moving this subtree.
+                </span>
+              ) : null}
             </label>
             {formError ? (
               <p className="inline-error" role="alert">
@@ -689,7 +1098,8 @@ function TeamActions({
               </button>
               <button
                 className="button secondary"
-                onClick={() => setOpen(false)}
+                disabled={isPending}
+                onClick={closeDialog}
                 type="button"
               >
                 Cancel
@@ -807,7 +1217,7 @@ export function BillingPage() {
             <article>
               <span>Available credit</span>
               <strong>
-                {formatUsdMicros(
+                {formatOptionalUsdMicros(
                   summary.data.summary.availableCredit?.value,
                 )}
               </strong>
@@ -815,7 +1225,9 @@ export function BillingPage() {
             <article>
               <span>Held credit</span>
               <strong>
-                {formatUsdMicros(summary.data.summary.heldCredit?.value)}
+                {formatOptionalUsdMicros(
+                  summary.data.summary.heldCredit?.value,
+                )}
               </strong>
             </article>
             <article>

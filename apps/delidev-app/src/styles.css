@@ -970,6 +970,27 @@ main {
   margin-top: 18px;
 }
 
+.invitation-management {
+  display: grid;
+  gap: 24px;
+  margin-bottom: 34px;
+}
+
+.invitation-management h2,
+.invitation-management p {
+  margin: 0;
+}
+
+.invitation-form-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.invitation-management .form-card > .button {
+  justify-self: start;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -1511,6 +1532,7 @@ tr:last-child td {
     padding: 24px;
   }
 
+  .invitation-form-fields,
   .team-form-fields {
     grid-template-columns: 1fr;
   }

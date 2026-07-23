@@ -806,7 +806,11 @@ jobs:
               - turbo.json
               - apps/AGENTS.md
               - apps/delidev-app/**
+              - protos/buf.gen.yaml
+              - protos/buf.yaml
               - protos/delibase/**
+              - scripts/generate-delibase-proto.sh
+              - scripts/lib/go-proto-tools.sh
 
       - name: Determine whether to run
         id: gate
