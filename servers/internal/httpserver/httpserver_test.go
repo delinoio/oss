@@ -62,6 +62,15 @@ func TestServerAndTimeoutDefaults(t *testing.T) {
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("timeout status = %d, body = %s", response.Code, response.Body)
 	}
+
+	server = Server(":8080", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+	}), Defaults{HandlerTimeout: time.Millisecond})
+	response = httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("server handler timeout status = %d, body = %s", response.Code, response.Body)
+	}
 }
 
 func TestServerFillsPartialDefaultsFromBaseline(t *testing.T) {

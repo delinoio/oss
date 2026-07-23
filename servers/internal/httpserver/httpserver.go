@@ -39,12 +39,15 @@ func DefaultTimeouts() Defaults {
 	}
 }
 
-// Server applies the baseline transport timeouts to an http.Server.
+// Server applies the baseline transport and handler timeouts to an http.Server.
 func Server(address string, handler http.Handler, defaults Defaults) *http.Server {
 	defaults = defaults.withBaseline()
+	if handler == nil {
+		handler = http.DefaultServeMux
+	}
 	return &http.Server{
 		Addr:              address,
-		Handler:           handler,
+		Handler:           Timeout(handler, defaults.HandlerTimeout),
 		ReadHeaderTimeout: defaults.ReadHeaderTimeout,
 		ReadTimeout:       defaults.ReadTimeout,
 		WriteTimeout:      defaults.WriteTimeout,

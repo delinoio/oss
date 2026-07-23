@@ -176,6 +176,12 @@ func (i Interceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) con
 		}
 		connection.ResponseHeader().Set(RequestIDHeader, metadata.RequestID)
 		connection.ResponseHeader().Set(TraceIDHeader, metadata.TraceID)
-		return next(WithMetadata(ctx, metadata), connection)
+		err = next(WithMetadata(ctx, metadata), connection)
+		var connectFailure *connect.Error
+		if errors.As(err, &connectFailure) {
+			connectFailure.Meta().Set(RequestIDHeader, metadata.RequestID)
+			connectFailure.Meta().Set(TraceIDHeader, metadata.TraceID)
+		}
+		return err
 	}
 }

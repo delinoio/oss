@@ -7,6 +7,14 @@ import (
 	"testing"
 )
 
+type diagnosticError struct {
+	message string
+}
+
+func (e *diagnosticError) Error() string {
+	return e.message
+}
+
 func TestHeadersRedactsAuthorizationAndForwardedUserToken(t *testing.T) {
 	t.Parallel()
 	headers := make(http.Header)
@@ -78,5 +86,13 @@ func TestValuePreservesNilDiagnosticValues(t *testing.T) {
 	safe := Value("metadata", []any{nil}).([]any)
 	if safe[0] != nil {
 		t.Fatalf("nil diagnostic element = %#v", safe)
+	}
+
+	var typedNil *diagnosticError
+	if safe := Error(typedNil); safe != nil {
+		t.Fatalf("typed nil error = %#v", safe)
+	}
+	if safe := Value("metadata", typedNil); safe != nil {
+		t.Fatalf("typed nil diagnostic error = %#v", safe)
 	}
 }

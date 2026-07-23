@@ -158,7 +158,7 @@ func authenticate(
 			return principal, err
 		}
 		principal.User, err = validator.ValidateUser(ctx, forwarded, requirement.UserScopes...)
-		return principal, err
+		return principal, forwardedUserError(err)
 	default:
 		return principal, safeerr.New(safeerr.ClassInternal)
 	}
@@ -179,13 +179,30 @@ func bearerToken(headers http.Header) (string, error) {
 func forwardedUserToken(headers http.Header) (string, error) {
 	values := headers.Values(auth.ForwardedUserTokenHeader)
 	if len(values) != 1 {
-		return "", &auth.Error{Kind: auth.ErrorMissingToken}
+		return "", &auth.Error{
+			Kind:       auth.ErrorMissingToken,
+			Credential: auth.CredentialForwardedUser,
+		}
 	}
 	token := strings.TrimSpace(values[0])
 	if token == "" || strings.ContainsAny(token, " \t\r\n") {
-		return "", &auth.Error{Kind: auth.ErrorMalformedToken}
+		return "", &auth.Error{
+			Kind:       auth.ErrorMalformedToken,
+			Credential: auth.CredentialForwardedUser,
+		}
 	}
 	return token, nil
+}
+
+func forwardedUserError(err error) error {
+	var failure *auth.Error
+	if !errors.As(err, &failure) || failure == nil {
+		return err
+	}
+	return &auth.Error{
+		Kind:       failure.Kind,
+		Credential: auth.CredentialForwardedUser,
+	}
 }
 
 func stripCredentials(headers http.Header) {

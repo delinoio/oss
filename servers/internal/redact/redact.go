@@ -94,7 +94,7 @@ func Text(value string) string {
 // Error creates an unwrapped diagnostic error so unsafe values cannot be
 // recovered by traversing an error chain.
 func Error(err error) error {
-	if err == nil {
+	if err == nil || isNilValue(err) {
 		return nil
 	}
 	return errors.New(Text(err.Error()))
@@ -116,6 +116,9 @@ func valueAtDepth(key string, value any, depth int) any {
 	case string:
 		return Text(typed)
 	case error:
+		if isNilValue(typed) {
+			return nil
+		}
 		return Text(typed.Error())
 	case http.Header:
 		return Headers(typed)
@@ -184,6 +187,16 @@ func valueAtDepth(key string, value any, depth int) any {
 		default:
 			return typed
 		}
+	}
+}
+
+func isNilValue(value any) bool {
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
 	}
 }
 

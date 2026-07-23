@@ -79,6 +79,9 @@ func Classify(err error) Class {
 	}
 	var authFailure *auth.Error
 	if errors.As(err, &authFailure) {
+		if authFailure != nil && authFailure.Kind == auth.ErrorKeyUnavailable {
+			return ClassDependency
+		}
 		return ClassAuthentication
 	}
 	var safe *Error
@@ -210,7 +213,52 @@ func Connect(err error) error {
 		return mapped
 	}
 	class := Classify(err)
-	return connect.NewError(connectCode(class), errors.New(messageFor(class)))
+	mapped := connect.NewError(connectCode(class), errors.New(messageFor(class)))
+	var authFailure *auth.Error
+	if errors.As(err, &authFailure) && authFailure != nil {
+		addReason(mapped, authenticationReason(authFailure))
+	}
+	return mapped
+}
+
+func authenticationReason(failure *auth.Error) delibasev1.ErrorReason {
+	if failure.Kind == auth.ErrorKeyUnavailable {
+		return delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED
+	}
+	if failure.Credential == auth.CredentialForwardedUser {
+		switch failure.Kind {
+		case auth.ErrorMissingToken:
+			return delibasev1.ErrorReason_ERROR_REASON_FORWARDED_USER_TOKEN_REQUIRED
+		case auth.ErrorExpired:
+			return delibasev1.ErrorReason_ERROR_REASON_FORWARDED_USER_TOKEN_EXPIRED
+		default:
+			return delibasev1.ErrorReason_ERROR_REASON_FORWARDED_USER_TOKEN_INVALID
+		}
+	}
+	switch failure.Kind {
+	case auth.ErrorMissingToken:
+		return delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_REQUIRED
+	case auth.ErrorExpired:
+		return delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_EXPIRED
+	case auth.ErrorIssuer:
+		return delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_ISSUER_MISMATCH
+	case auth.ErrorAudience:
+		return delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_AUDIENCE_MISMATCH
+	case auth.ErrorScope:
+		return delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_SCOPE_MISSING
+	default:
+		return delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_INVALID
+	}
+}
+
+func addReason(mapped *connect.Error, reason delibasev1.ErrorReason) {
+	if reason == delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED {
+		return
+	}
+	detail, err := connect.NewErrorDetail(&delibasev1.ErrorDetail{Reason: reason})
+	if err == nil {
+		mapped.AddDetail(detail)
+	}
 }
 
 func connectCode(class Class) connect.Code {

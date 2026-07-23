@@ -18,6 +18,14 @@ const (
 	ErrorKeyUnavailable
 )
 
+// Credential identifies which inbound credential failed validation.
+type Credential uint8
+
+const (
+	CredentialBearer Credential = iota
+	CredentialForwardedUser
+)
+
 func (k ErrorKind) String() string {
 	switch k {
 	case ErrorMissingToken:
@@ -46,7 +54,8 @@ func (k ErrorKind) String() string {
 // Error intentionally stores no token, provider response, or wrapped error.
 // It is safe to return through HTTP/Connect mappings and structured logs.
 type Error struct {
-	Kind ErrorKind
+	Kind       ErrorKind
+	Credential Credential
 }
 
 func (e *Error) Error() string {

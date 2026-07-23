@@ -2,12 +2,14 @@ package authmiddleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
+	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -180,5 +182,38 @@ func TestConnectZeroRequirementFailsClosed(t *testing.T) {
 	)
 	if connect.CodeOf(err) != connect.CodeInternal {
 		t.Fatalf("Connect code = %v, error = %v", connect.CodeOf(err), err)
+	}
+}
+
+func TestConnectForwardedUserFailureHasStableReason(t *testing.T) {
+	t.Parallel()
+	interceptor, err := NewConnect(&fakeValidator{}, func(string) Requirement {
+		return Requirement{Mode: ModeM2MWithForwardedUser}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := connect.NewRequest(&emptypb.Empty{})
+	request.Header().Set("Authorization", "Bearer m2m-token")
+	next := func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		t.Fatal("handler ran without a forwarded user token")
+		return nil, nil
+	}
+	_, err = interceptor.WrapUnary(next)(context.Background(), request)
+	var connectFailure *connect.Error
+	if !errors.As(err, &connectFailure) {
+		t.Fatalf("error = %T", err)
+	}
+	details := connectFailure.Details()
+	if len(details) != 1 {
+		t.Fatalf("details = %#v", details)
+	}
+	value, detailErr := details[0].Value()
+	if detailErr != nil {
+		t.Fatal(detailErr)
+	}
+	detail, ok := value.(*delibasev1.ErrorDetail)
+	if !ok || detail.Reason != delibasev1.ErrorReason_ERROR_REASON_FORWARDED_USER_TOKEN_REQUIRED {
+		t.Fatalf("detail = %#v", value)
 	}
 }

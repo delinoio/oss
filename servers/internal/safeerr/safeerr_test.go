@@ -100,8 +100,96 @@ func TestAuthenticationAndContextClassification(t *testing.T) {
 	if got := Classify(&auth.Error{Kind: auth.ErrorExpired}); got != ClassAuthentication {
 		t.Fatalf("auth class = %s", got)
 	}
+	if got := Classify(&auth.Error{Kind: auth.ErrorKeyUnavailable}); got != ClassDependency {
+		t.Fatalf("key unavailable class = %s", got)
+	}
 	if got := Classify(context.DeadlineExceeded); got != ClassTimeout {
 		t.Fatalf("deadline class = %s", got)
+	}
+}
+
+func TestConnectAuthenticationReasons(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		kind       auth.ErrorKind
+		credential auth.Credential
+		reason     delibasev1.ErrorReason
+	}{
+		{
+			name:   "missing bearer",
+			kind:   auth.ErrorMissingToken,
+			reason: delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_REQUIRED,
+		},
+		{
+			name:   "expired bearer",
+			kind:   auth.ErrorExpired,
+			reason: delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_EXPIRED,
+		},
+		{
+			name:   "missing scope",
+			kind:   auth.ErrorScope,
+			reason: delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_SCOPE_MISSING,
+		},
+		{
+			name:       "missing forwarded user",
+			kind:       auth.ErrorMissingToken,
+			credential: auth.CredentialForwardedUser,
+			reason:     delibasev1.ErrorReason_ERROR_REASON_FORWARDED_USER_TOKEN_REQUIRED,
+		},
+		{
+			name:       "expired forwarded user",
+			kind:       auth.ErrorExpired,
+			credential: auth.CredentialForwardedUser,
+			reason:     delibasev1.ErrorReason_ERROR_REASON_FORWARDED_USER_TOKEN_EXPIRED,
+		},
+		{
+			name:       "invalid forwarded user",
+			kind:       auth.ErrorSignature,
+			credential: auth.CredentialForwardedUser,
+			reason:     delibasev1.ErrorReason_ERROR_REASON_FORWARDED_USER_TOKEN_INVALID,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			mapped := Connect(&auth.Error{Kind: test.kind, Credential: test.credential})
+			var connectFailure *connect.Error
+			if !errors.As(mapped, &connectFailure) {
+				t.Fatalf("Connect() error = %T", mapped)
+			}
+			if connectFailure.Code() != connect.CodeUnauthenticated {
+				t.Fatalf("Connect() code = %s", connectFailure.Code())
+			}
+			details := connectFailure.Details()
+			if len(details) != 1 {
+				t.Fatalf("Connect() details = %#v", details)
+			}
+			value, err := details[0].Value()
+			if err != nil {
+				t.Fatal(err)
+			}
+			detail, ok := value.(*delibasev1.ErrorDetail)
+			if !ok || detail.Reason != test.reason {
+				t.Fatalf("Connect() detail = %#v, want reason %s", value, test.reason)
+			}
+		})
+	}
+}
+
+func TestConnectMapsKeyUnavailableToDependency(t *testing.T) {
+	t.Parallel()
+	mapped := Connect(&auth.Error{Kind: auth.ErrorKeyUnavailable})
+	var connectFailure *connect.Error
+	if !errors.As(mapped, &connectFailure) {
+		t.Fatalf("Connect() error = %T", mapped)
+	}
+	if connectFailure.Code() != connect.CodeUnavailable {
+		t.Fatalf("Connect() code = %s", connectFailure.Code())
+	}
+	if len(connectFailure.Details()) != 0 {
+		t.Fatalf("Connect() attached an authentication detail = %#v", connectFailure.Details())
 	}
 }
 

@@ -22,6 +22,29 @@ func (g *fixedGenerator) New() (uuid.UUID, error) {
 	return id, nil
 }
 
+type testStreamingHandlerConn struct {
+	requestHeader   http.Header
+	responseHeader  http.Header
+	responseTrailer http.Header
+}
+
+func (c *testStreamingHandlerConn) Spec() connect.Spec {
+	return connect.Spec{Procedure: "/delibase.v1.UsageService/ReserveUsage"}
+}
+
+func (c *testStreamingHandlerConn) Peer() connect.Peer { return connect.Peer{} }
+func (c *testStreamingHandlerConn) Receive(any) error  { return nil }
+func (c *testStreamingHandlerConn) Send(any) error     { return nil }
+func (c *testStreamingHandlerConn) RequestHeader() http.Header {
+	return c.requestHeader
+}
+func (c *testStreamingHandlerConn) ResponseHeader() http.Header {
+	return c.responseHeader
+}
+func (c *testStreamingHandlerConn) ResponseTrailer() http.Header {
+	return c.responseTrailer
+}
+
 func TestHTTPPropagatesSafeRequestAndTraceIDs(t *testing.T) {
 	t.Parallel()
 	handler := Middleware(nil)(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -122,5 +145,31 @@ func TestConnectPropagatesRequestIDOnError(t *testing.T) {
 	}
 	if connectFailure.Meta().Get(RequestIDHeader) != "connect-error-request" {
 		t.Fatalf("error request ID = %q", connectFailure.Meta().Get(RequestIDHeader))
+	}
+}
+
+func TestConnectStreamingPropagatesRequestIDOnError(t *testing.T) {
+	t.Parallel()
+	connection := &testStreamingHandlerConn{
+		requestHeader: http.Header{
+			RequestIDHeader: {"connect-stream-error-request"},
+			TraceIDHeader:   {"4bf92f3577b34da6a3ce929d0e0e4736"},
+		},
+		responseHeader:  make(http.Header),
+		responseTrailer: make(http.Header),
+	}
+	next := func(context.Context, connect.StreamingHandlerConn) error {
+		return connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	err := (Interceptor{}).WrapStreamingHandler(next)(context.Background(), connection)
+	var connectFailure *connect.Error
+	if !errors.As(err, &connectFailure) {
+		t.Fatalf("error = %T", err)
+	}
+	if connectFailure.Meta().Get(RequestIDHeader) != "connect-stream-error-request" {
+		t.Fatalf("error request ID = %q", connectFailure.Meta().Get(RequestIDHeader))
+	}
+	if connectFailure.Meta().Get(TraceIDHeader) != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("error trace ID = %q", connectFailure.Meta().Get(TraceIDHeader))
 	}
 }
