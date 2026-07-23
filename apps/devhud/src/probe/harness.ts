@@ -108,7 +108,6 @@ const displayProtocolsByPlatform: Readonly<
 const bundledOrigins = Object.freeze([
   "tauri://localhost",
   "http://tauri.localhost",
-  "https://tauri.localhost",
 ]);
 const requiredThemeModes = Object.freeze([
   ThemeMode.System,

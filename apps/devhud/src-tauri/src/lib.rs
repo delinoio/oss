@@ -65,9 +65,7 @@ fn is_bundled_url(url: &Url) -> bool {
     url.port().is_none()
         && matches!(
             (url.scheme(), url.host_str()),
-            ("tauri", Some("localhost"))
-                | ("http", Some("tauri.localhost"))
-                | ("https", Some("tauri.localhost"))
+            ("tauri", Some("localhost")) | ("http", Some("tauri.localhost"))
         )
 }
 
@@ -263,7 +261,6 @@ mod tests {
         for allowed in [
             "tauri://localhost/index.html",
             "http://tauri.localhost/index.html",
-            "https://tauri.localhost/index.html",
         ] {
             assert!(is_bundled_url(&allowed.parse().unwrap()), "{allowed}");
         }
@@ -271,6 +268,7 @@ mod tests {
         for denied in [
             "https://example.com/",
             "http://localhost:4173/",
+            "https://tauri.localhost/index.html",
             "https://tauri.localhost:8080/index.html",
             "file:///tmp/index.html",
             "data:text/html,probe",
