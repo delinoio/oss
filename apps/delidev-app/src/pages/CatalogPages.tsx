@@ -8,6 +8,12 @@ import { EmptyState, ErrorState, LoadingState } from "../components/States";
 import { useDocumentMetadata } from "../hooks/useDocumentMetadata";
 import { formatUsdMicros } from "../utils/format";
 
+export function formatCatalogPrice(value: bigint | undefined): string {
+  return value === undefined
+    ? "Price unavailable"
+    : formatUsdMicros(value);
+}
+
 export function CatalogPage() {
   useDocumentMetadata(
     "App catalog",
@@ -155,7 +161,7 @@ export function CatalogDetailPage() {
                       </div>
                       <p className="meter-price">
                         <strong>
-                          {formatUsdMicros(
+                          {formatCatalogPrice(
                             meter.currentPrice?.usdMicrosPerUnit?.value,
                           )}
                         </strong>

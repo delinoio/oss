@@ -6,16 +6,20 @@ import {
 import {
   BillingService,
   CatalogService,
+  LedgerOperation,
   OrganizationRole,
   OrganizationService,
   SubscriptionStatus,
   TeamService,
+  type LedgerEntry,
+  type Team,
 } from "@delinoio/delibase-connect";
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { usePublicTransport } from "../api/ApiContext";
 import { CatalogCard } from "../components/CatalogCard";
+import { Dialog } from "../components/Dialog";
 import {
   EmptyState,
   ErrorState,
@@ -260,8 +264,9 @@ export function MembersPage() {
 }
 
 export function TeamsPage() {
-  useDocumentMetadata("Teams", "View nested organization teams.");
-  const { organization, transport } = useOrganization();
+  useDocumentMetadata("Teams", "Manage nested organization teams.");
+  const { callerRole, organization, transport } = useOrganization();
+  const online = useOnline();
   const teams = useInfiniteQuery(
     TeamService.method.listTeams,
     {
@@ -282,12 +287,23 @@ export function TeamsPage() {
     },
   );
   const teamRows = teams.data?.pages.flatMap((page) => page.teams) ?? [];
+  const canManage = canManageOrganization(callerRole);
+  const refreshTeams = async () => {
+    await teams.refetch();
+  };
   return (
     <>
       <OrganizationPageHeading
-        description="Access granted to a parent team flows down to its descendants."
+        description="Create and organize teams. Access granted to a parent flows down to its descendants."
         title="Teams"
       />
+      {canManage ? (
+        <CreateTeamForm
+          onUpdated={refreshTeams}
+          online={online}
+          teams={teamRows}
+        />
+      ) : null}
       {teams.isPending ? <LoadingState label="Loading teams" /> : null}
       {teams.isError && !teams.data ? (
         <ErrorState
@@ -313,13 +329,21 @@ export function TeamsPage() {
                 <span className="team-icon" aria-hidden="true">
                   {team.protectedGeneral ? "G" : "T"}
                 </span>
-                <div>
+                <div className="team-summary">
                   <strong>{team.name}</strong>
                   <small>
                     Level {team.depth + 1}
                     {team.protectedGeneral ? " · Protected" : ""}
                   </small>
                 </div>
+                {canManage && !team.protectedGeneral ? (
+                  <TeamActions
+                    onUpdated={refreshTeams}
+                    online={online}
+                    team={team}
+                    teams={teamRows}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>
@@ -348,6 +372,317 @@ export function TeamsPage() {
   );
 }
 
+function CreateTeamForm({
+  online,
+  onUpdated,
+  teams,
+}: {
+  online: boolean;
+  onUpdated: () => Promise<void>;
+  teams: Team[];
+}) {
+  const { organization, transport } = useOrganization();
+  const [name, setName] = useState("");
+  const [parentTeamId, setParentTeamId] = useState("");
+  const [message, setMessage] = useState("");
+  const [formError, setFormError] = useState("");
+  const createTeam = useMutation(TeamService.method.createTeam, { transport });
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage("");
+    setFormError("");
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      setFormError("Enter a team name.");
+      return;
+    }
+    createTeam.mutate(
+      {
+        idempotency: createIdempotencyKey(),
+        name: normalizedName,
+        organizationId: organization.organizationId,
+        parentTeamId: uuid(parentTeamId),
+      },
+      {
+        onError: (error) => setFormError(error.message),
+        onSuccess: () => {
+          setName("");
+          setParentTeamId("");
+          setMessage("Team created.");
+          void onUpdated();
+        },
+      },
+    );
+  };
+
+  return (
+    <form className="form-card team-create-form" onSubmit={submit}>
+      <div>
+        <span className="eyebrow">Team hierarchy</span>
+        <h2>Create a team</h2>
+      </div>
+      <div className="team-form-fields">
+        <label>
+          Team name
+          <input
+            maxLength={120}
+            onChange={(event) => setName(event.target.value)}
+            required
+            value={name}
+          />
+        </label>
+        <label>
+          Parent team
+          <select
+            onChange={(event) => setParentTeamId(event.target.value)}
+            value={parentTeamId}
+          >
+            <option value="">Top level</option>
+            {teams.map((team) => (
+              <option key={team.teamId?.value} value={team.teamId?.value}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {formError ? (
+        <p className="inline-error" role="alert">
+          {formError}
+        </p>
+      ) : null}
+      {message ? (
+        <p className="inline-success" role="status">
+          {message}
+        </p>
+      ) : null}
+      <button
+        className="button primary"
+        disabled={!online || createTeam.isPending}
+        type="submit"
+      >
+        {createTeam.isPending ? "Creating team…" : "Create team"}
+      </button>
+      {!online ? <OfflineActionHint /> : null}
+    </form>
+  );
+}
+
+export function canUseTeamAsParent(
+  team: Team,
+  candidate: Team,
+  teams: Team[],
+): boolean {
+  const teamId = team.teamId?.value;
+  let candidateId = candidate.teamId?.value;
+  if (!teamId || !candidateId || teamId === candidateId) {
+    return false;
+  }
+  const teamsById = new Map(
+    teams.flatMap((item) =>
+      item.teamId?.value ? [[item.teamId.value, item] as const] : [],
+    ),
+  );
+  const visited = new Set<string>();
+  while (candidateId && !visited.has(candidateId)) {
+    if (candidateId === teamId) {
+      return false;
+    }
+    visited.add(candidateId);
+    candidateId = teamsById.get(candidateId)?.parentTeamId?.value;
+  }
+  return true;
+}
+
+function TeamActions({
+  online,
+  onUpdated,
+  team,
+  teams,
+}: {
+  online: boolean;
+  onUpdated: () => Promise<void>;
+  team: Team;
+  teams: Team[];
+}) {
+  const { organization, transport } = useOrganization();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(team.name);
+  const [parentTeamId, setParentTeamId] = useState(
+    team.parentTeamId?.value ?? "",
+  );
+  const [formError, setFormError] = useState("");
+  const updateTeam = useMutation(TeamService.method.updateTeam, { transport });
+  const moveTeam = useMutation(TeamService.method.moveTeam, { transport });
+  const deleteTeam = useMutation(TeamService.method.deleteTeamSubtree, {
+    transport,
+  });
+  const teamId = team.teamId?.value ?? "";
+  const titleId = `manage-team-${teamId}`;
+  const descriptionId = `manage-team-description-${teamId}`;
+  const isPending =
+    updateTeam.isPending || moveTeam.isPending || deleteTeam.isPending;
+  const parentOptions = teams.filter((candidate) =>
+    canUseTeamAsParent(team, candidate, teams),
+  );
+
+  const showDialog = () => {
+    setName(team.name);
+    setParentTeamId(team.parentTeamId?.value ?? "");
+    setFormError("");
+    setOpen(true);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      setFormError("Enter a team name.");
+      return;
+    }
+    const currentParentTeamId = team.parentTeamId?.value ?? "";
+    const nameChanged = normalizedName !== team.name;
+    const parentChanged = parentTeamId !== currentParentTeamId;
+    if (!nameChanged && !parentChanged) {
+      setFormError("Change the team name or parent before saving.");
+      return;
+    }
+    let mutationSucceeded = false;
+    try {
+      if (nameChanged) {
+        await updateTeam.mutateAsync({
+          idempotency: createIdempotencyKey(),
+          name: normalizedName,
+          organizationId: organization.organizationId,
+          teamId: uuid(teamId),
+        });
+        mutationSucceeded = true;
+      }
+      if (parentChanged) {
+        await moveTeam.mutateAsync({
+          idempotency: createIdempotencyKey(),
+          newParentTeamId: uuid(parentTeamId),
+          organizationId: organization.organizationId,
+          teamId: uuid(teamId),
+        });
+        mutationSucceeded = true;
+      }
+      await onUpdated();
+      setOpen(false);
+    } catch (error) {
+      if (mutationSucceeded) {
+        await onUpdated();
+      }
+      setFormError(
+        error instanceof Error ? error.message : "The team could not be updated.",
+      );
+    }
+  };
+  const remove = async () => {
+    setFormError("");
+    try {
+      await deleteTeam.mutateAsync({
+        confirmSubtree: true,
+        idempotency: createIdempotencyKey(),
+        organizationId: organization.organizationId,
+        teamId: uuid(teamId),
+      });
+      await onUpdated();
+      setOpen(false);
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "The team could not be deleted.",
+      );
+    }
+  };
+
+  return (
+    <>
+      <button
+        className="button secondary compact-button"
+        onClick={showDialog}
+        type="button"
+      >
+        Manage
+      </button>
+      {open ? (
+        <Dialog
+          descriptionId={descriptionId}
+          onClose={() => setOpen(false)}
+          titleId={titleId}
+        >
+          <h2 id={titleId}>Manage {team.name}</h2>
+          <p id={descriptionId}>
+            Rename this team, move its subtree, or permanently delete the
+            subtree.
+          </p>
+          <form className="team-dialog-form" onSubmit={submit}>
+            <label>
+              Team name
+              <input
+                maxLength={120}
+                onChange={(event) => setName(event.target.value)}
+                required
+                value={name}
+              />
+            </label>
+            <label>
+              Parent team
+              <select
+                onChange={(event) => setParentTeamId(event.target.value)}
+                value={parentTeamId}
+              >
+                <option value="">Top level</option>
+                {parentOptions.map((candidate) => (
+                  <option
+                    key={candidate.teamId?.value}
+                    value={candidate.teamId?.value}
+                  >
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {formError ? (
+              <p className="inline-error" role="alert">
+                {formError}
+              </p>
+            ) : null}
+            <div className="dialog-actions">
+              <button
+                className="button danger"
+                disabled={!online || isPending}
+                onClick={() => void remove()}
+                type="button"
+              >
+                {deleteTeam.isPending ? "Deleting…" : "Delete subtree"}
+              </button>
+              <button
+                className="button secondary"
+                onClick={() => setOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="button primary"
+                disabled={!online || isPending}
+                type="submit"
+              >
+                {updateTeam.isPending || moveTeam.isPending
+                  ? "Saving…"
+                  : "Save changes"}
+              </button>
+            </div>
+            {!online ? <OfflineActionHint /> : null}
+          </form>
+        </Dialog>
+      ) : null}
+    </>
+  );
+}
+
 export function BillingPage() {
   useDocumentMetadata("Billing", "View organization balance and subscription.");
   const { callerRole, organization, transport } = useOrganization();
@@ -357,6 +692,26 @@ export function BillingPage() {
     BillingService.method.getBillingSummary,
     { organizationId: organization.organizationId },
     { gcTime: 0, retry: false, staleTime: 0, transport },
+  );
+  const ledger = useInfiniteQuery(
+    BillingService.method.listLedgerEntries,
+    {
+      operation: LedgerOperation.UNSPECIFIED,
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+    },
+    {
+      enabled: showBillingActions,
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
   );
   const checkout = useMutation(
     BillingService.method.createSubscriptionCheckout,
@@ -495,7 +850,139 @@ export function BillingPage() {
           )}
         </>
       ) : null}
+      {showBillingActions ? (
+        <BillingLedger
+          entries={
+            ledger.data?.pages.flatMap((page) => page.entries) ?? []
+          }
+          error={ledger.error}
+          hasData={Boolean(ledger.data)}
+          hasNextPage={ledger.hasNextPage}
+          isFetchNextPageError={ledger.isFetchNextPageError}
+          isFetchingNextPage={ledger.isFetchingNextPage}
+          isPending={ledger.isPending}
+          onLoadMore={() => void ledger.fetchNextPage()}
+          onRetry={() => void ledger.refetch()}
+        />
+      ) : null}
     </>
+  );
+}
+
+function BillingLedger({
+  entries,
+  error,
+  hasData,
+  hasNextPage,
+  isFetchNextPageError,
+  isFetchingNextPage,
+  isPending,
+  onLoadMore,
+  onRetry,
+}: {
+  entries: LedgerEntry[];
+  error: Error | null;
+  hasData: boolean;
+  hasNextPage: boolean;
+  isFetchNextPageError: boolean;
+  isFetchingNextPage: boolean;
+  isPending: boolean;
+  onLoadMore: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <section className="billing-ledger" aria-labelledby="billing-ledger-title">
+      <div className="card-heading">
+        <div>
+          <span className="eyebrow">Audit trail</span>
+          <h2 id="billing-ledger-title">Credit ledger</h2>
+        </div>
+      </div>
+      {isPending ? <LoadingState label="Loading ledger" /> : null}
+      {error && !hasData ? (
+        <ErrorState
+          error={error}
+          onRetry={onRetry}
+          title="Ledger unavailable"
+        />
+      ) : null}
+      {entries.length === 0 && hasData ? (
+        <EmptyState
+          description="Credit grants, holds, charges, and releases will appear here."
+          title="No ledger entries yet"
+        />
+      ) : null}
+      {entries.length ? (
+        <>
+          <div className="table-card">
+            <table>
+              <caption className="sr-only">Organization credit ledger</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Operation</th>
+                  <th scope="col">Amount</th>
+                  <th scope="col">Balance after</th>
+                  <th scope="col">Team</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.ledgerEntryId?.value}>
+                    <td>
+                      {entry.createdAt
+                        ? new Date(
+                            Number(entry.createdAt.seconds) * 1000 +
+                              entry.createdAt.nanos / 1_000_000,
+                          ).toLocaleString("en-US", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })
+                        : "—"}
+                    </td>
+                    <td>
+                      {formatEnumLabel(
+                        LedgerOperation[entry.operation] ?? entry.operation,
+                      )}
+                    </td>
+                    <td>
+                      {entry.amount
+                        ? formatUsdMicros(entry.amount.value)
+                        : "—"}
+                    </td>
+                    <td>
+                      {entry.balanceAfter
+                        ? formatUsdMicros(entry.balanceAfter.value)
+                        : "—"}
+                    </td>
+                    <td>{entry.teamNameSnapshot || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {isFetchNextPageError && error ? (
+            <p className="inline-error" role="alert">
+              {error.message}
+            </p>
+          ) : null}
+          {hasNextPage ? (
+            <div className="pagination-actions">
+              <button
+                className="button secondary"
+                disabled={isFetchingNextPage}
+                onClick={onLoadMore}
+                type="button"
+              >
+                {isFetchingNextPage
+                  ? "Loading more…"
+                  : "Load more ledger entries"}
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -685,7 +1172,12 @@ export function UsagePage() {
 
 export function OrganizationSettingsPage() {
   useDocumentMetadata("Organization settings", "Update organization settings.");
-  const { callerRole, organization, transport } = useOrganization();
+  const {
+    callerRole,
+    organization,
+    refreshOrganization,
+    transport,
+  } = useOrganization();
   const navigate = useNavigate();
   const online = useOnline();
   const [name, setName] = useState(organization.name);
@@ -737,6 +1229,9 @@ export function OrganizationSettingsPage() {
           { replace: true },
         );
         return;
+      }
+      if (normalizedName !== organization.name) {
+        await refreshOrganization();
       }
       setMessage(
         normalizedName === organization.name

@@ -32,8 +32,10 @@ const queryClient = new QueryClient({
   },
 });
 
+const configurationValid = runtimeConfig.issues.length === 0;
 const publicTransport = createPublicTransport({
   baseUrl: runtimeConfig.apiOrigin,
+  configurationValid,
 });
 
 function Providers({
@@ -71,17 +73,15 @@ function Providers({
   );
 }
 
-const authConfigured = runtimeConfig.issues.length === 0;
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <PublicTransportProvider transport={publicTransport}>
-          <Providers authConfigured={authConfigured}>
+          <Providers authConfigured={configurationValid}>
             <App
               callbackPage={
-                authConfigured ? (
+                configurationValid ? (
                   <AuthCallbackPage />
                 ) : (
                   <UnavailableCallbackPage />

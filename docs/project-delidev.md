@@ -26,6 +26,7 @@ This index records the repository implementation for issue [#722](https://github
 - PWA output is an artifact-only Cloudflare Pages deliverable. This project must not activate or deploy the site as part of issue #722.
 - The generated `dist` artifact includes an installable manifest, simple `D` lettermark icons, `_redirects`, `404.html`, `_headers`, and a versioned service worker. Its cache policy is an explicit allowlist rather than a sensitive-data denylist; initial service-worker control does not reload the page, while accepted updates reload after controller change.
 - Protected Connect requests obtain memory-only Logto tokens on demand for the canonical audience, while anonymous catalog requests use a transport that has no token getter or authorization interceptor. PKCE state and non-sensitive one-shot protected return paths may cross the redirect in same-tab session storage and are consumed on callback; invitation returns use a state-bound sealed handoff so the bearer token is never serialized in plaintext.
+- The authenticated account surface supports creating and switching among organizations. Owner/Admin organization surfaces manage nested team creation, rename, move, and confirmed subtree deletion, and expose the complete paginated billing ledger; Member visibility remains restricted by the server-authoritative caller role.
 
 ## Change Policy
 - Route, authentication, cache, UI-state, or Pages artifact changes update this index and [apps-delidev-app-foundation](apps-delidev-app-foundation.md).

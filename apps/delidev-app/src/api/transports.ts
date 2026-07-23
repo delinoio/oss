@@ -12,16 +12,18 @@ interface TransportOptions {
 
 export function createPublicTransport({
   baseUrl,
+  configurationValid = true,
   fetch,
-}: TransportOptions): Transport {
-  const configured = baseUrl === canonicalAudience;
+}: TransportOptions & { configurationValid?: boolean }): Transport {
+  const configured =
+    configurationValid && baseUrl === canonicalAudience;
   return createConnectTransport({
     baseUrl: configured ? baseUrl : canonicalAudience,
     fetch: configured
       ? fetch
       : async () => {
           throw new Error(
-            `Public catalog requests require PUBLIC_DELIBASE_API_ORIGIN=${canonicalAudience}.`,
+            `Public catalog requests require valid public configuration and PUBLIC_DELIBASE_API_ORIGIN=${canonicalAudience}.`,
           );
         },
     useBinaryFormat: false,

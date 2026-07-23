@@ -13,6 +13,7 @@ import { ErrorState, LoadingState } from "../components/States";
 interface OrganizationContextValue {
   callerRole: OrganizationRole;
   organization: Organization;
+  refreshOrganization: () => Promise<void>;
   transport: NonNullable<ReturnType<typeof useAuthSession>["transport"]>;
 }
 
@@ -108,6 +109,9 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
       value={{
         callerRole: details.data.callerRole,
         organization: details.data.organization,
+        refreshOrganization: async () => {
+          await Promise.all([resolved.refetch(), details.refetch()]);
+        },
         transport,
       }}
     >
@@ -115,10 +119,10 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
         <aside className="organization-sidebar">
           <div className="organization-name">
             <span aria-hidden="true">
-              {resolved.data.organization.name.slice(0, 1)}
+              {details.data.organization.name.slice(0, 1)}
             </span>
             <div>
-              <strong>{resolved.data.organization.name}</strong>
+              <strong>{details.data.organization.name}</strong>
               <small>Organization</small>
             </div>
           </div>

@@ -67,7 +67,9 @@
 - Initial service-worker control does not reload the page. Later updates wait for user confirmation, activate through `SKIP_WAITING`, reload on controller change, remove prior version caches, and retain only the new versioned shell and public catalog cache.
 - Logto uses an injected browser client whose access, refresh, and ID token state is memory-only and which removes legacy state for the configured app from local storage. Its PKCE sign-in session and non-sensitive protected return path use same-tab session storage. Invitation return paths are sealed with a key derived from the high-entropy OIDC state, restored only by the matching callback, and removed from storage immediately; abandoned sealed handoffs are discarded on the next same-origin load.
 - Public catalog, organization member, team hierarchy, and usage-record lists use opaque cursor pagination with explicit load-more actions.
-- Organization settings expose the changeable slug RPC and follow the returned canonical slug. The organization shell loads the server-authoritative caller role, and subscription, billing-portal, and overage-limit mutations render only for Owners and Admins; overage limits retain exact USD micro-unit handling.
+- The account surface creates additional organizations through the same atomic organization transaction used by onboarding and then enters the returned canonical slug.
+- Organization settings expose the name and changeable-slug RPCs, refresh server-authoritative shell data after name-only updates, and follow the returned canonical slug after slug changes.
+- The organization shell loads the server-authoritative caller role. Team hierarchy creation, rename, move, and confirmed subtree deletion controls render only for Owners and Admins. Subscription, billing-portal, overage-limit, and complete ledger controls follow the same role boundary; overage limits retain exact USD micro-unit handling and ledger reads use opaque cursor pagination.
 
 ## References
 - [Project delidev](project-delidev.md)

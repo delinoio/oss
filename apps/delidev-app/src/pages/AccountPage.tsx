@@ -1,7 +1,11 @@
 import { useMutation, useQuery } from "@connectrpc/connect-query";
-import { AccountService, OrganizationRole } from "@delinoio/delibase-connect";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import {
+  AccountService,
+  OrganizationRole,
+  OrganizationService,
+} from "@delinoio/delibase-connect";
+import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
 import { Dialog } from "../components/Dialog";
@@ -17,11 +21,17 @@ import {
   formatEnumLabel,
 } from "../utils/format";
 
+const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 export function AccountPage() {
   useDocumentMetadata("Account", "Manage your DeliDev account.");
   const auth = useAuthSession();
+  const navigate = useNavigate();
   const online = useOnline();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [organizationName, setOrganizationName] = useState("");
+  const [organizationSlug, setOrganizationSlug] = useState("");
+  const [organizationError, setOrganizationError] = useState("");
   const account = useQuery(
     AccountService.method.getAccountState,
     {},
@@ -46,6 +56,40 @@ export function AccountPage() {
   const remove = useMutation(AccountService.method.deleteAccount, {
     transport: auth.transport,
   });
+  const createOrganization = useMutation(
+    OrganizationService.method.createOrganization,
+    { transport: auth.transport },
+  );
+
+  const submitOrganization = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setOrganizationError("");
+    const name = organizationName.trim();
+    const slug = organizationSlug.trim().toLowerCase();
+    if (!name) {
+      setOrganizationError("Enter an organization name.");
+      return;
+    }
+    if (!slugPattern.test(slug)) {
+      setOrganizationError(
+        "Use lowercase letters, numbers, and single hyphens for the slug.",
+      );
+      return;
+    }
+    createOrganization.mutate(
+      {
+        idempotency: createIdempotencyKey(),
+        name,
+        slug,
+      },
+      {
+        onError: (error) => setOrganizationError(error.message),
+        onSuccess: (data) => {
+          void navigate(`/o/${data.organization?.slug ?? slug}/apps`);
+        },
+      },
+    );
+  };
 
   if (account.isPending) {
     return (
@@ -106,6 +150,64 @@ export function AccountPage() {
           <p className="muted">No organizations found.</p>
         )}
       </section>
+      <form
+        className="form-card account-organization-form"
+        onSubmit={submitOrganization}
+      >
+        <div>
+          <span className="eyebrow">New workspace</span>
+          <h2>Create another organization</h2>
+          <p className="muted">
+            Each organization starts with you as Owner and a protected General
+            team.
+          </p>
+        </div>
+        <label>
+          Organization name
+          <input
+            autoComplete="organization"
+            maxLength={120}
+            onChange={(event) => setOrganizationName(event.target.value)}
+            required
+            value={organizationName}
+          />
+        </label>
+        <label>
+          Organization URL
+          <span className="slug-input">
+            <span aria-hidden="true">deli.dev/o/</span>
+            <input
+              aria-describedby="new-organization-slug-help"
+              autoCapitalize="none"
+              autoCorrect="off"
+              maxLength={63}
+              onChange={(event) => setOrganizationSlug(event.target.value)}
+              pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+              required
+              spellCheck={false}
+              value={organizationSlug}
+            />
+          </span>
+        </label>
+        <small className="field-help" id="new-organization-slug-help">
+          Use lowercase letters, numbers, and single hyphens.
+        </small>
+        {organizationError ? (
+          <p className="inline-error" role="alert">
+            {organizationError}
+          </p>
+        ) : null}
+        <button
+          className="button primary"
+          disabled={!online || createOrganization.isPending}
+          type="submit"
+        >
+          {createOrganization.isPending
+            ? "Creating organization…"
+            : "Create organization"}
+        </button>
+        {!online ? <OfflineActionHint /> : null}
+      </form>
       <section className="content-card danger-zone">
         <div>
           <h2>Delete account</h2>

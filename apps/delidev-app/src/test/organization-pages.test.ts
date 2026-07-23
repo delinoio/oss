@@ -1,10 +1,30 @@
-import { OrganizationRole } from "@delinoio/delibase-connect";
+import {
+  OrganizationRole,
+  type Team,
+} from "@delinoio/delibase-connect";
 import { describe, expect, it } from "vitest";
 
 import {
   canManageOrganization,
+  canUseTeamAsParent,
   parseUsdMicros,
 } from "../pages/OrganizationPages";
+
+function team(id: string, parentId?: string): Team {
+  return {
+    $typeName: "delibase.v1.Team",
+    createdAt: undefined,
+    depth: parentId ? 1 : 0,
+    name: id,
+    organizationId: { $typeName: "delibase.v1.UuidV7", value: "org" },
+    parentTeamId: parentId
+      ? { $typeName: "delibase.v1.UuidV7", value: parentId }
+      : undefined,
+    protectedGeneral: false,
+    teamId: { $typeName: "delibase.v1.UuidV7", value: id },
+    updatedAt: undefined,
+  };
+}
 
 describe("organization billing inputs", () => {
   it("converts exact USD input to signed 64-bit micro-units", () => {
@@ -26,5 +46,19 @@ describe("organization billing inputs", () => {
     expect(canManageOrganization(OrganizationRole.ADMIN)).toBe(true);
     expect(canManageOrganization(OrganizationRole.MEMBER)).toBe(false);
     expect(canManageOrganization(OrganizationRole.UNSPECIFIED)).toBe(false);
+  });
+});
+
+describe("team hierarchy controls", () => {
+  it("excludes the current team and descendants from move targets", () => {
+    const parent = team("parent");
+    const child = team("child", "parent");
+    const grandchild = team("grandchild", "child");
+    const sibling = team("sibling");
+    const teams = [parent, child, grandchild, sibling];
+
+    expect(canUseTeamAsParent(parent, parent, teams)).toBe(false);
+    expect(canUseTeamAsParent(parent, grandchild, teams)).toBe(false);
+    expect(canUseTeamAsParent(parent, sibling, teams)).toBe(true);
   });
 });

@@ -70,6 +70,23 @@ describe("delibase browser transports", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("fails closed when another required public setting is invalid", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const client = createClient(
+      CatalogService,
+      createPublicTransport({
+        baseUrl: canonicalAudience,
+        configurationValid: false,
+        fetch: fetchMock,
+      }),
+    );
+
+    await expect(client.listCatalogApps({})).rejects.toThrow(
+      "valid public configuration",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("requests the canonical Logto audience for protected calls", async () => {
     const tokenGetter = vi.fn(async () => "test-access-token");
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
