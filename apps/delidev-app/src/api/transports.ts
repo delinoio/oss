@@ -1,6 +1,8 @@
 import type { Interceptor, Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 
+import { canonicalAudience } from "../config";
+
 export type AccessTokenGetter = (audience: string) => Promise<string | undefined>;
 
 interface TransportOptions {
@@ -12,9 +14,16 @@ export function createPublicTransport({
   baseUrl,
   fetch,
 }: TransportOptions): Transport {
+  const configured = baseUrl === canonicalAudience;
   return createConnectTransport({
-    baseUrl,
-    fetch,
+    baseUrl: configured ? baseUrl : canonicalAudience,
+    fetch: configured
+      ? fetch
+      : async () => {
+          throw new Error(
+            `Public catalog requests require PUBLIC_DELIBASE_API_ORIGIN=${canonicalAudience}.`,
+          );
+        },
     useBinaryFormat: false,
   });
 }

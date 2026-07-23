@@ -2,7 +2,7 @@ import { OrganizationRole } from "@delinoio/delibase-connect";
 import { describe, expect, it } from "vitest";
 
 import {
-  canManageBilling,
+  canManageOrganization,
   parseUsdMicros,
 } from "../pages/OrganizationPages";
 
@@ -21,10 +21,10 @@ describe("organization billing inputs", () => {
     expect(parseUsdMicros("9223372036854.775808")).toBeUndefined();
   });
 
-  it("limits billing mutations to organization owners and admins", () => {
-    expect(canManageBilling(OrganizationRole.OWNER)).toBe(true);
-    expect(canManageBilling(OrganizationRole.ADMIN)).toBe(true);
-    expect(canManageBilling(OrganizationRole.MEMBER)).toBe(false);
-    expect(canManageBilling(OrganizationRole.UNSPECIFIED)).toBe(false);
+  it("limits organization management to owners and admins", () => {
+    expect(canManageOrganization(OrganizationRole.OWNER)).toBe(true);
+    expect(canManageOrganization(OrganizationRole.ADMIN)).toBe(true);
+    expect(canManageOrganization(OrganizationRole.MEMBER)).toBe(false);
+    expect(canManageOrganization(OrganizationRole.UNSPECIFIED)).toBe(false);
   });
 });

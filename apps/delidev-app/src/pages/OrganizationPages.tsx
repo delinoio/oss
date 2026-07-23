@@ -58,7 +58,7 @@ function formatUsdMicrosInput(value = 0n): string {
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
-export function canManageBilling(role: OrganizationRole): boolean {
+export function canManageOrganization(role: OrganizationRole): boolean {
   return (
     role === OrganizationRole.OWNER ||
     role === OrganizationRole.ADMIN
@@ -83,16 +83,22 @@ function OrganizationPageHeading({
 export function OrganizationAppsPage() {
   useDocumentMetadata("Organization apps", "Browse apps for your organization.");
   const transport = usePublicTransport();
-  const catalog = useQuery(
+  const catalog = useInfiniteQuery(
     CatalogService.method.listCatalogApps,
-    { page: { pageSize: 50 } },
+    { page: { cursor: "", pageSize: 50 } },
     {
       gcTime: 15 * 60 * 1000,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 50 } : undefined;
+      },
       networkMode: "always",
+      pageParamKey: "page",
       staleTime: 5 * 60 * 1000,
       transport,
     },
   );
+  const apps = catalog.data?.pages.flatMap((page) => page.apps) ?? [];
   return (
     <>
       <OrganizationPageHeading
@@ -100,32 +106,53 @@ export function OrganizationAppsPage() {
         title="Apps"
       />
       {catalog.isPending ? <LoadingState label="Loading apps" /> : null}
-      {catalog.isError ? (
+      {catalog.isError && !catalog.data ? (
         <ErrorState
           error={catalog.error}
           onRetry={() => void catalog.refetch()}
           title="Apps unavailable"
         />
       ) : null}
-      {catalog.data?.apps.length === 0 ? (
+      {catalog.data && apps.length === 0 ? (
         <EmptyState
           description="There are no enabled apps in the public catalog."
           title="No apps yet"
         />
       ) : null}
-      {catalog.data?.apps.length ? (
-        <div className="catalog-grid compact-grid">
-          {catalog.data.apps.map((app) => (
-            <CatalogCard app={app} key={app.slug} />
-          ))}
-        </div>
+      {apps.length ? (
+        <>
+          <div className="catalog-grid compact-grid">
+            {apps.map((app) => (
+              <CatalogCard app={app} key={app.slug} />
+            ))}
+          </div>
+          {catalog.isFetchNextPageError ? (
+            <p className="inline-error" role="alert">
+              {catalog.error.message}
+            </p>
+          ) : null}
+          {catalog.hasNextPage ? (
+            <div className="pagination-actions">
+              <button
+                className="button secondary"
+                disabled={catalog.isFetchingNextPage}
+                onClick={() => void catalog.fetchNextPage()}
+                type="button"
+              >
+                {catalog.isFetchingNextPage
+                  ? "Loading more…"
+                  : "Load more apps"}
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </>
   );
 }
 
 export function MembersPage() {
-  useDocumentMetadata("Members", "Manage organization members and roles.");
+  useDocumentMetadata("Members", "View organization members and roles.");
   const { organization, transport } = useOrganization();
   const members = useInfiniteQuery(
     OrganizationService.method.listOrganizationMembers,
@@ -150,7 +177,7 @@ export function MembersPage() {
   return (
     <>
       <OrganizationPageHeading
-        description="Owners and admins can manage roles and team access."
+        description="View organization members and their assigned roles."
         title="Members"
       />
       {members.isPending ? <LoadingState label="Loading members" /> : null}
@@ -163,7 +190,7 @@ export function MembersPage() {
       ) : null}
       {memberRows.length === 0 && members.data ? (
         <EmptyState
-          description="Invite someone to start collaborating."
+          description="No additional organization members are listed."
           title="No members found"
         />
       ) : null}
@@ -325,7 +352,7 @@ export function BillingPage() {
   useDocumentMetadata("Billing", "View organization balance and subscription.");
   const { callerRole, organization, transport } = useOrganization();
   const online = useOnline();
-  const showBillingActions = canManageBilling(callerRole);
+  const showBillingActions = canManageOrganization(callerRole);
   const summary = useQuery(
     BillingService.method.getBillingSummary,
     { organizationId: organization.organizationId },
@@ -658,7 +685,7 @@ export function UsagePage() {
 
 export function OrganizationSettingsPage() {
   useDocumentMetadata("Organization settings", "Update organization settings.");
-  const { organization, transport } = useOrganization();
+  const { callerRole, organization, transport } = useOrganization();
   const navigate = useNavigate();
   const online = useOnline();
   const [name, setName] = useState(organization.name);
@@ -725,6 +752,7 @@ export function OrganizationSettingsPage() {
     }
   };
   const isPending = updateName.isPending || updateSlug.isPending;
+  const canManage = canManageOrganization(callerRole);
 
   return (
     <>
@@ -732,56 +760,62 @@ export function OrganizationSettingsPage() {
         description="Owners and admins can update organization details."
         title="Settings"
       />
-      <form className="form-card" onSubmit={submit}>
-        <label>
-          Organization name
-          <input
-            autoComplete="organization"
-            maxLength={120}
-            onChange={(event) => setName(event.target.value)}
-            required
-            value={name}
-          />
-        </label>
-        <label>
-          Organization URL
-          <span className="slug-input">
-            <span aria-hidden="true">deli.dev/o/</span>
+      {canManage ? (
+        <form className="form-card" onSubmit={submit}>
+          <label>
+            Organization name
             <input
-              aria-describedby="organization-slug-help"
-              autoCapitalize="none"
-              autoComplete="off"
-              maxLength={63}
-              onChange={(event) => setSlug(event.target.value)}
-              pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+              autoComplete="organization"
+              maxLength={120}
+              onChange={(event) => setName(event.target.value)}
               required
-              spellCheck={false}
-              value={slug}
+              value={name}
             />
-          </span>
-          <span className="field-hint" id="organization-slug-help">
-            Old links continue to redirect after a slug change.
-          </span>
-        </label>
-        {formError ? (
-          <p className="inline-error" role="alert">
-            {formError}
-          </p>
-        ) : null}
-        {message ? (
-          <p className="inline-success" role="status">
-            {message}
-          </p>
-        ) : null}
-        <button
-          className="button primary"
-          disabled={!online || isPending || !name.trim() || !slug.trim()}
-          type="submit"
-        >
-          {isPending ? "Saving…" : "Save changes"}
-        </button>
-        {!online ? <OfflineActionHint /> : null}
-      </form>
+          </label>
+          <label>
+            Organization URL
+            <span className="slug-input">
+              <span aria-hidden="true">deli.dev/o/</span>
+              <input
+                aria-describedby="organization-slug-help"
+                autoCapitalize="none"
+                autoComplete="off"
+                maxLength={63}
+                onChange={(event) => setSlug(event.target.value)}
+                pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                required
+                spellCheck={false}
+                value={slug}
+              />
+            </span>
+            <span className="field-hint" id="organization-slug-help">
+              Old links continue to redirect after a slug change.
+            </span>
+          </label>
+          {formError ? (
+            <p className="inline-error" role="alert">
+              {formError}
+            </p>
+          ) : null}
+          {message ? (
+            <p className="inline-success" role="status">
+              {message}
+            </p>
+          ) : null}
+          <button
+            className="button primary"
+            disabled={!online || isPending || !name.trim() || !slug.trim()}
+            type="submit"
+          >
+            {isPending ? "Saving…" : "Save changes"}
+          </button>
+          {!online ? <OfflineActionHint /> : null}
+        </form>
+      ) : (
+        <p className="muted">
+          An organization owner or admin can update organization details.
+        </p>
+      )}
     </>
   );
 }

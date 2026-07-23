@@ -54,6 +54,22 @@ describe("delibase browser transports", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("fails closed before public requests can reach a non-canonical origin", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const client = createClient(
+      CatalogService,
+      createPublicTransport({
+        baseUrl: "https://typo.example",
+        fetch: fetchMock,
+      }),
+    );
+
+    await expect(client.listCatalogApps({})).rejects.toThrow(
+      `PUBLIC_DELIBASE_API_ORIGIN=${canonicalAudience}`,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("requests the canonical Logto audience for protected calls", async () => {
     const tokenGetter = vi.fn(async () => "test-access-token");
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {

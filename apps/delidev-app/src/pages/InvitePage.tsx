@@ -1,5 +1,10 @@
-import { useMutation, useQuery } from "@connectrpc/connect-query";
-import { OrganizationService } from "@delinoio/delibase-connect";
+import { createClient } from "@connectrpc/connect";
+import {
+  OrganizationRole,
+  OrganizationService,
+  type GetOrganizationInvitationResponse,
+} from "@delinoio/delibase-connect";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
@@ -7,6 +12,36 @@ import { ErrorState, LoadingState, OfflineActionHint } from "../components/State
 import { useDocumentMetadata } from "../hooks/useDocumentMetadata";
 import { useOnline } from "../hooks/useOnline";
 import { createIdempotencyKey, formatEnumLabel } from "../utils/format";
+
+type InvitationRequestState =
+  | {
+      attempt: number;
+      status: "pending";
+      token: string;
+    }
+  | {
+      attempt: number;
+      data: GetOrganizationInvitationResponse;
+      status: "success";
+      token: string;
+    }
+  | {
+      attempt: number;
+      error: unknown;
+      status: "error";
+      token: string;
+    };
+
+type AcceptanceState =
+  | { status: "idle" }
+  | { status: "pending" }
+  | { error: unknown; status: "error" };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "The request could not be completed. Please try again.";
+}
 
 export function InvitePage() {
   useDocumentMetadata(
@@ -17,21 +52,78 @@ export function InvitePage() {
   const { transport } = useAuthSession();
   const online = useOnline();
   const navigate = useNavigate();
-  const invitation = useQuery(
-    OrganizationService.method.getOrganizationInvitation,
-    { bearerToken: { token } },
-    {
-      enabled: online && Boolean(token),
-      gcTime: 0,
-      retry: false,
-      staleTime: 0,
-      transport,
-    },
+  const client = useMemo(
+    () => (transport ? createClient(OrganizationService, transport) : undefined),
+    [transport],
   );
-  const accept = useMutation(
-    OrganizationService.method.acceptOrganizationInvitation,
-    { transport },
-  );
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [invitation, setInvitation] = useState<InvitationRequestState>({
+    attempt: 0,
+    status: "pending",
+    token,
+  });
+  const [acceptance, setAcceptance] = useState<AcceptanceState>({
+    status: "idle",
+  });
+  const currentInvitation =
+    invitation.token === token && invitation.attempt === loadAttempt
+      ? invitation
+      : ({ attempt: loadAttempt, status: "pending", token } as const);
+
+  useEffect(() => {
+    if (!client || !online || !token) return;
+    const controller = new AbortController();
+    const attempt = loadAttempt;
+
+    void client
+      .getOrganizationInvitation(
+        { bearerToken: { token } },
+        { signal: controller.signal },
+      )
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setInvitation({ attempt, data, status: "success", token });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setInvitation({ attempt, error, status: "error", token });
+        }
+      });
+
+    return () => controller.abort();
+  }, [client, loadAttempt, online, token]);
+
+  const acceptInvitation = async () => {
+    if (!client) return;
+    setAcceptance({ status: "pending" });
+    try {
+      const response = await client.acceptOrganizationInvitation({
+        bearerToken: { token },
+        idempotency: createIdempotencyKey(),
+      });
+      navigate(`/o/${response.organization?.slug ?? ""}/apps`, {
+        replace: true,
+      });
+    } catch (error) {
+      setAcceptance({ error, status: "error" });
+    }
+  };
+
+  const dependencyError =
+    !token
+      ? new Error("This invitation link is missing its bearer token.")
+      : !client
+        ? new Error("An authenticated connection is required.")
+        : undefined;
+
+  if (dependencyError) {
+    return (
+      <div className="page narrow">
+        <ErrorState error={dependencyError} title="Invitation unavailable" />
+      </div>
+    );
+  }
 
   if (!online) {
     return (
@@ -45,19 +137,19 @@ export function InvitePage() {
       </div>
     );
   }
-  if (invitation.isPending) {
+  if (currentInvitation.status === "pending") {
     return (
       <div className="page narrow">
         <LoadingState label="Checking invitation" />
       </div>
     );
   }
-  if (invitation.isError) {
+  if (currentInvitation.status === "error") {
     return (
       <div className="page narrow">
         <ErrorState
-          error={invitation.error}
-          onRetry={() => void invitation.refetch()}
+          error={currentInvitation.error}
+          onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
           title="This invitation isn’t available"
         />
       </div>
@@ -68,39 +160,32 @@ export function InvitePage() {
     <div className="page narrow">
       <section className="invite-card">
         <span className="eyebrow">You’re invited</span>
-        <h1>Join {invitation.data.organizationName}</h1>
+        <h1>Join {currentInvitation.data.organizationName}</h1>
         <p>
-          You’ll join the <strong>{invitation.data.teamName}</strong> team as{" "}
+          You’ll join the <strong>{currentInvitation.data.teamName}</strong>{" "}
+          team as{" "}
           {formatEnumLabel(
-            invitation.data.invitation?.organizationRole ?? "member",
+            OrganizationRole[
+              currentInvitation.data.invitation?.organizationRole ??
+                OrganizationRole.MEMBER
+            ] ?? "member",
           )}
           .
         </p>
-        {accept.error ? (
+        {acceptance.status === "error" ? (
           <p className="inline-error" role="alert">
-            {accept.error.message}
+            {errorMessage(acceptance.error)}
           </p>
         ) : null}
         <button
           className="button primary full"
-          disabled={!online || accept.isPending}
+          disabled={!online || acceptance.status === "pending"}
           type="button"
-          onClick={() =>
-            accept.mutate(
-              {
-                bearerToken: { token },
-                idempotency: createIdempotencyKey(),
-              },
-              {
-                onSuccess: (response) =>
-                  navigate(`/o/${response.organization?.slug ?? ""}/apps`, {
-                    replace: true,
-                  }),
-              },
-            )
-          }
+          onClick={() => void acceptInvitation()}
         >
-          {accept.isPending ? "Joining…" : "Accept invitation"}
+          {acceptance.status === "pending"
+            ? "Joining…"
+            : "Accept invitation"}
         </button>
         {!online ? <OfflineActionHint /> : null}
       </section>

@@ -33,7 +33,7 @@ const queryClient = new QueryClient({
 });
 
 const publicTransport = createPublicTransport({
-  baseUrl: runtimeConfig.apiOrigin || window.location.origin,
+  baseUrl: runtimeConfig.apiOrigin,
 });
 
 function Providers({
