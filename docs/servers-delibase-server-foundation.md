@@ -10,6 +10,7 @@
 - Persistence: PostgreSQL with ordered migrations and sqlc for all queries
 - API: `delibase.v1` Connect RPC, with signed Polar webhook REST as the explicit non-Connect exception.
 - Stateful structure must provide explicit service, contracts, logging, database, generation, and configuration boundaries before runtime rollout.
+- The runnable foundation lives at `servers/delibase/cmd/delibase`, registers all six generated handlers, exposes `/healthz` and PostgreSQL-backed `/readyz`, and shuts down gracefully. Until business transactions are implemented, generated service methods return typed Connect `Unimplemented` errors and never placeholder successes.
 
 ## Users and Operators
 - DeliDev users and organization Owners, Admins, Members, Team Admins, and Team Members.
@@ -50,6 +51,8 @@
 
 ## Build and Test
 - Shared-contract checks are `pnpm check:proto`, `go test ./protos/delibase/...`, and `go vet ./protos/delibase/...`. Once server implementation exists, also run `gofmt -w`/format check, `go vet ./...`, `go test ./servers/delibase/...`, sqlc generation/checks, PostgreSQL integration/concurrency tests, migration checks, and Docker build validation. The Docker check must validate a minimal multi-stage image that runs as non-root and exposes working health/readiness behavior.
+- Current server checks include `servers/delibase/scripts/generate-sqlc.sh` followed by a clean generated diff and `servers/delibase/scripts/test-postgres.sh` for ephemeral PostgreSQL migration/idempotency, readiness, and rollback validation.
+- CI runs the same sqlc reproducibility check and delibase test suite against an ephemeral PostgreSQL 17 service whenever the delibase server, generated Go API, or shared server infrastructure changes.
 - CI must test duplicate/reordered webhooks, idempotency, concurrent reservations, account/organization/team rules, five-level/cycle constraints, invitation role boundaries, protected-team deletion, catalog validation with fixtures covering at least two apps and meters with required reservation TTLs, billing state, outages, and deletion retention behavior.
 - Release CI must add `release-delibase.yml`, trigger only on `delibase@v*` tag pushes, and publish only signed `ghcr.io/delinoio/delibase:vX.Y.Z` and `:latest` multi-architecture (`linux/amd64`, `linux/arm64`) images with SPDX SBOM, provenance, and health/readiness plus non-root validation; no `edge`, SHA, or main-branch images.
 - This documentation change does not activate a service, deploy an API, or publish an image; the release workflow and artifacts are issue #722 implementation deliverables.

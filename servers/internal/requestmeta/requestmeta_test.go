@@ -148,6 +148,25 @@ func TestConnectPropagatesRequestIDOnError(t *testing.T) {
 	}
 }
 
+func TestConnectHandlesTypedNilResponseOnError(t *testing.T) {
+	t.Parallel()
+	request := connect.NewRequest(&emptypb.Empty{})
+	request.Header().Set(RequestIDHeader, "connect-typed-nil-request")
+	request.Header().Set(TraceIDHeader, "4bf92f3577b34da6a3ce929d0e0e4736")
+	next := func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		var response *connect.Response[emptypb.Empty]
+		return response, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+	}
+	_, err := (Interceptor{}).WrapUnary(next)(context.Background(), request)
+	var connectFailure *connect.Error
+	if !errors.As(err, &connectFailure) {
+		t.Fatalf("error = %T", err)
+	}
+	if connectFailure.Meta().Get(RequestIDHeader) != "connect-typed-nil-request" {
+		t.Fatalf("error request ID = %q", connectFailure.Meta().Get(RequestIDHeader))
+	}
+}
+
 func TestConnectStreamingPropagatesRequestIDOnError(t *testing.T) {
 	t.Parallel()
 	connection := &testStreamingHandlerConn{

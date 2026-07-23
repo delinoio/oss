@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -147,7 +148,10 @@ func (i Interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		response, err := next(WithMetadata(ctx, metadata), request)
-		if response != nil {
+		// Generic Connect handlers return a typed nil *connect.Response inside
+		// the AnyResponse interface on failures. Check the dynamic value before
+		// accessing headers so error responses cannot panic.
+		if response != nil && !reflect.ValueOf(response).IsNil() {
 			response.Header().Set(RequestIDHeader, metadata.RequestID)
 			response.Header().Set(TraceIDHeader, metadata.TraceID)
 		}
