@@ -49,3 +49,23 @@ func TestTextErrorsAndDiagnosticsRedactSensitiveData(t *testing.T) {
 		t.Fatalf("diagnostic leaked secret: %#v", diagnostic)
 	}
 }
+
+func TestValueRedactsTypedDiagnosticContainers(t *testing.T) {
+	t.Parallel()
+	type metadata map[string]string
+	safe := Value("metadata", metadata{
+		"authorization": "Bearer typed-secret",
+		"owner":         "owner@example.com",
+	}).(map[string]any)
+	if safe["authorization"] != Replacement || safe["owner"] != Replacement {
+		t.Fatalf("typed map leaked sensitive data: %#v", safe)
+	}
+
+	nested := Value("metadata", map[string][]string{
+		"values": {"Bearer nested-secret", "safe"},
+	}).(map[string]any)
+	values := nested["values"].([]any)
+	if values[0] != Replacement || values[1] != "safe" {
+		t.Fatalf("typed slice leaked sensitive data: %#v", nested)
+	}
+}

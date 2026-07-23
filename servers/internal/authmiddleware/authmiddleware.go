@@ -18,7 +18,8 @@ import (
 type Mode uint8
 
 const (
-	ModePublic Mode = iota
+	ModeInvalid Mode = iota
+	ModePublic
 	ModeUser
 	ModeM2M
 	ModeM2MWithForwardedUser
@@ -159,7 +160,7 @@ func authenticate(
 		principal.User, err = validator.ValidateUser(ctx, forwarded, requirement.UserScopes...)
 		return principal, err
 	default:
-		return principal, &auth.Error{Kind: auth.ErrorTokenType}
+		return principal, safeerr.New(safeerr.ClassInternal)
 	}
 }
 

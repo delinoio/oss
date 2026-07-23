@@ -11,7 +11,6 @@ import (
 	"errors"
 	"log/slog"
 	"regexp"
-	"strings"
 
 	"github.com/delinoio/oss/servers/internal/redact"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
@@ -68,7 +67,10 @@ type Fields struct {
 	IncludeErrorClass bool
 }
 
-var safeValuePattern = regexp.MustCompile(`^[A-Za-z0-9/][A-Za-z0-9._:/-]{0,127}$`)
+var (
+	safeValuePattern      = regexp.MustCompile(`^[A-Za-z0-9/][A-Za-z0-9._:/-]{0,127}$`)
+	actorPseudonymPattern = regexp.MustCompile(`^actor:v1:[0-9a-f]{32}$`)
+)
 
 // Record writes one allowlisted operational event.
 func Record(ctx context.Context, logger *slog.Logger, level slog.Level, event Event, fields Fields) {
@@ -86,7 +88,7 @@ func Record(ctx context.Context, logger *slog.Logger, level slog.Level, event Ev
 	}
 	attributes = appendSafe(attributes, "request_method", fields.Method)
 	attributes = appendSafe(attributes, "request_procedure", fields.Procedure)
-	if actor := string(fields.Actor); strings.HasPrefix(actor, "actor:v1:") {
+	if actor := string(fields.Actor); actorPseudonymPattern.MatchString(actor) {
 		attributes = appendSafe(attributes, "actor", actor)
 	}
 	attributes = appendSafe(attributes, "organization_id", fields.OrganizationID)

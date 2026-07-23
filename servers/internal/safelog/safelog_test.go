@@ -21,6 +21,7 @@ func TestRedactingHandlerRemovesCredentialsAndPII(t *testing.T) {
 		"client_secret", "configuration-secret",
 		"card", "4242 4242 4242 4242",
 		"nested", slog.GroupValue(slog.String("forwarded_token", "forwarded-secret")),
+		"metadata", map[string]string{"authorization": "Bearer typed-map-secret"},
 	)
 	logged := output.String()
 	for _, forbidden := range []string{
@@ -30,6 +31,7 @@ func TestRedactingHandlerRemovesCredentialsAndPII(t *testing.T) {
 		"configuration-secret",
 		"4242 4242 4242 4242",
 		"forwarded-secret",
+		"typed-map-secret",
 	} {
 		if strings.Contains(logged, forbidden) {
 			t.Fatalf("log leaked %q: %s", forbidden, logged)
@@ -96,12 +98,12 @@ func TestRecordDropsUnsafeIdentifierShape(t *testing.T) {
 	logger := slog.New(NewRedactingHandler(slog.NewJSONHandler(&output, nil)))
 	Record(context.Background(), logger, slog.LevelInfo, EventRequest, Fields{
 		ServiceID: "eyJhbGciOiJSUzI1NiJ9.payload.signature123",
-		Actor:     ActorPseudonym("raw-user-id"),
+		Actor:     ActorPseudonym("actor:v1:raw-user-id"),
 	})
 	if strings.Contains(output.String(), "eyJhbGci") {
 		t.Fatalf("Record logged JWT-shaped value: %s", output.String())
 	}
-	if strings.Contains(output.String(), "raw-user-id") {
+	if strings.Contains(output.String(), "actor:v1:raw-user-id") {
 		t.Fatalf("Record logged non-pseudonymous actor: %s", output.String())
 	}
 }

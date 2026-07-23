@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 )
 
 const Replacement = "[REDACTED]"
+
+// maxValueDepth bounds recursive traversal of cyclic diagnostic containers.
+const maxValueDepth = 32
 
 var normalizedSensitiveKeys = []string{
 	"authorization",
@@ -98,6 +102,10 @@ func Error(err error) error {
 
 // Value recursively sanitizes common diagnostic structures.
 func Value(key string, value any) any {
+	return valueAtDepth(key, value, 0)
+}
+
+func valueAtDepth(key string, value any, depth int) any {
 	if IsSensitiveKey(key) {
 		return Replacement
 	}
@@ -109,19 +117,70 @@ func Value(key string, value any) any {
 	case http.Header:
 		return Headers(typed)
 	case map[string]any:
+		if depth >= maxValueDepth {
+			return Replacement
+		}
 		safe := make(map[string]any, len(typed))
 		for childKey, childValue := range typed {
-			safe[childKey] = Value(childKey, childValue)
+			safe[childKey] = valueAtDepth(childKey, childValue, depth+1)
 		}
 		return safe
 	case []any:
+		if depth >= maxValueDepth {
+			return Replacement
+		}
 		safe := make([]any, len(typed))
 		for index, childValue := range typed {
-			safe[index] = Value(key, childValue)
+			safe[index] = valueAtDepth(key, childValue, depth+1)
 		}
 		return safe
 	default:
-		return typed
+		reflected := reflect.ValueOf(typed)
+		switch reflected.Kind() {
+		case reflect.String:
+			return Text(reflected.String())
+		case reflect.Map:
+			if reflected.Type().Key().Kind() != reflect.String {
+				return typed
+			}
+			if reflected.IsNil() {
+				return nil
+			}
+			if depth >= maxValueDepth {
+				return Replacement
+			}
+			safe := make(map[string]any, reflected.Len())
+			iterator := reflected.MapRange()
+			for iterator.Next() {
+				childKey := iterator.Key().String()
+				childValue := iterator.Value()
+				if !childValue.CanInterface() {
+					safe[childKey] = Replacement
+					continue
+				}
+				safe[childKey] = valueAtDepth(childKey, childValue.Interface(), depth+1)
+			}
+			return safe
+		case reflect.Array, reflect.Slice:
+			if reflected.Kind() == reflect.Slice && reflected.IsNil() {
+				return nil
+			}
+			if depth >= maxValueDepth {
+				return Replacement
+			}
+			safe := make([]any, reflected.Len())
+			for index := range reflected.Len() {
+				childValue := reflected.Index(index)
+				if !childValue.CanInterface() {
+					safe[index] = Replacement
+					continue
+				}
+				safe[index] = valueAtDepth(key, childValue.Interface(), depth+1)
+			}
+			return safe
+		default:
+			return typed
+		}
 	}
 }
 

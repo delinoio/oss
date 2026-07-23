@@ -41,9 +41,7 @@ func DefaultTimeouts() Defaults {
 
 // Server applies the baseline transport timeouts to an http.Server.
 func Server(address string, handler http.Handler, defaults Defaults) *http.Server {
-	if defaults == (Defaults{}) {
-		defaults = DefaultTimeouts()
-	}
+	defaults = defaults.withBaseline()
 	return &http.Server{
 		Addr:              address,
 		Handler:           handler,
@@ -53,6 +51,29 @@ func Server(address string, handler http.Handler, defaults Defaults) *http.Serve
 		IdleTimeout:       defaults.IdleTimeout,
 		MaxHeaderBytes:    defaults.MaxHeaderBytes,
 	}
+}
+
+func (defaults Defaults) withBaseline() Defaults {
+	baseline := DefaultTimeouts()
+	if defaults.ReadHeaderTimeout <= 0 {
+		defaults.ReadHeaderTimeout = baseline.ReadHeaderTimeout
+	}
+	if defaults.ReadTimeout <= 0 {
+		defaults.ReadTimeout = baseline.ReadTimeout
+	}
+	if defaults.WriteTimeout <= 0 {
+		defaults.WriteTimeout = baseline.WriteTimeout
+	}
+	if defaults.IdleTimeout <= 0 {
+		defaults.IdleTimeout = baseline.IdleTimeout
+	}
+	if defaults.HandlerTimeout <= 0 {
+		defaults.HandlerTimeout = baseline.HandlerTimeout
+	}
+	if defaults.MaxHeaderBytes <= 0 {
+		defaults.MaxHeaderBytes = baseline.MaxHeaderBytes
+	}
+	return defaults
 }
 
 // Timeout bounds handler execution with a credential-free response.
@@ -85,6 +106,8 @@ func DefaultCORSConfig() CORSConfig {
 			"Authorization",
 			"Content-Type",
 			"Connect-Protocol-Version",
+			"Connect-Timeout-Ms",
+			"X-User-Agent",
 			auth.ForwardedUserTokenHeader,
 			requestmeta.RequestIDHeader,
 			requestmeta.TraceIDHeader,

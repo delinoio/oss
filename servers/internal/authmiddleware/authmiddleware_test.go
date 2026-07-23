@@ -97,6 +97,45 @@ func TestHTTPAuthenticationFailureIsSafe(t *testing.T) {
 	}
 }
 
+func TestHTTPZeroRequirementFailsClosed(t *testing.T) {
+	t.Parallel()
+	middleware, err := HTTP(&fakeValidator{}, func(*http.Request) Requirement {
+		return Requirement{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler ran with an invalid authentication requirement")
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+}
+
+func TestHTTPPublicRequirementIsExplicit(t *testing.T) {
+	t.Parallel()
+	middleware, err := HTTP(&fakeValidator{}, func(*http.Request) Requirement {
+		return Requirement{Mode: ModePublic}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := middleware(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if _, ok := auth.PrincipalFromContext(request.Context()); ok {
+			t.Fatal("public route attached an authentication principal")
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+}
+
 func TestConnectAuthenticationContextAndCredentialStripping(t *testing.T) {
 	t.Parallel()
 	validator := &fakeValidator{}
@@ -120,5 +159,26 @@ func TestConnectAuthenticationContextAndCredentialStripping(t *testing.T) {
 	}
 	if _, err := interceptor.WrapUnary(next)(context.Background(), request); err != nil {
 		t.Fatalf("Connect interceptor error = %v", err)
+	}
+}
+
+func TestConnectZeroRequirementFailsClosed(t *testing.T) {
+	t.Parallel()
+	interceptor, err := NewConnect(&fakeValidator{}, func(string) Requirement {
+		return Requirement{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		t.Fatal("handler ran with an invalid authentication requirement")
+		return nil, nil
+	}
+	_, err = interceptor.WrapUnary(next)(
+		context.Background(),
+		connect.NewRequest(&emptypb.Empty{}),
+	)
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("Connect code = %v, error = %v", connect.CodeOf(err), err)
 	}
 }

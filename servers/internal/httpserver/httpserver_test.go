@@ -3,6 +3,7 @@ package httpserver
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,6 +26,12 @@ func TestCORSAllowsOnlyConfiguredOrigin(t *testing.T) {
 	if allowedResponse.Code != http.StatusNoContent ||
 		allowedResponse.Header().Get("Access-Control-Allow-Origin") != DeliDevOrigin {
 		t.Fatalf("allowed preflight = %d %#v", allowedResponse.Code, allowedResponse.Header())
+	}
+	allowedHeaders := allowedResponse.Header().Get("Access-Control-Allow-Headers")
+	for _, required := range []string{"Connect-Timeout-Ms", "X-User-Agent"} {
+		if !strings.Contains(allowedHeaders, required) {
+			t.Fatalf("allowed headers missing %q: %s", required, allowedHeaders)
+		}
 	}
 
 	rejected := httptest.NewRequest(http.MethodOptions, "/", nil)
@@ -54,6 +61,21 @@ func TestServerAndTimeoutDefaults(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("timeout status = %d, body = %s", response.Code, response.Body)
+	}
+}
+
+func TestServerFillsPartialDefaultsFromBaseline(t *testing.T) {
+	t.Parallel()
+	baseline := DefaultTimeouts()
+	server := Server(":8080", http.NotFoundHandler(), Defaults{
+		WriteTimeout: time.Minute,
+	})
+	if server.ReadHeaderTimeout != baseline.ReadHeaderTimeout ||
+		server.ReadTimeout != baseline.ReadTimeout ||
+		server.WriteTimeout != time.Minute ||
+		server.IdleTimeout != baseline.IdleTimeout ||
+		server.MaxHeaderBytes != baseline.MaxHeaderBytes {
+		t.Fatalf("partial defaults produced unsafe server: %#v", server)
 	}
 }
 
