@@ -174,6 +174,11 @@ type OrganizationSlugAlias struct {
 	CreatedAt      pgtype.Timestamptz
 }
 
+type OrganizationSlugRegistry struct {
+	Slug           string
+	OrganizationID pgtype.UUID
+}
+
 type PolarCustomer struct {
 	OrganizationID  pgtype.UUID
 	PolarCustomerID string
@@ -224,11 +229,12 @@ type Team struct {
 }
 
 type TeamMembership struct {
-	TeamID    pgtype.UUID
-	AccountID pgtype.UUID
-	Role      string
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	OrganizationID pgtype.UUID
+	TeamID         pgtype.UUID
+	AccountID      pgtype.UUID
+	Role           string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
 }
 
 type UsageRecord struct {

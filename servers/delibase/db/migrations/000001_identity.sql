@@ -30,6 +30,65 @@ CREATE TABLE organization_slug_aliases (
     CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$')
 );
 
+CREATE TABLE organization_slug_registry (
+    slug text PRIMARY KEY,
+    organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$')
+);
+
+CREATE FUNCTION register_current_organization_slug()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        DELETE FROM organization_slug_registry
+        WHERE slug = OLD.slug AND organization_id = OLD.id;
+    END IF;
+    INSERT INTO organization_slug_registry (slug, organization_id)
+    VALUES (NEW.slug, NEW.id);
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER organizations_register_slug
+AFTER INSERT OR UPDATE OF slug ON organizations
+FOR EACH ROW EXECUTE FUNCTION register_current_organization_slug();
+
+CREATE FUNCTION register_organization_slug_alias()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        DELETE FROM organization_slug_registry
+        WHERE slug = OLD.slug AND organization_id = OLD.organization_id;
+    END IF;
+    INSERT INTO organization_slug_registry (slug, organization_id)
+    VALUES (NEW.slug, NEW.organization_id);
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER organization_slug_aliases_register_slug
+AFTER INSERT OR UPDATE OF slug, organization_id ON organization_slug_aliases
+FOR EACH ROW EXECUTE FUNCTION register_organization_slug_alias();
+
+CREATE FUNCTION unregister_organization_slug_alias()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    DELETE FROM organization_slug_registry
+    WHERE slug = OLD.slug AND organization_id = OLD.organization_id;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER organization_slug_aliases_unregister_slug
+AFTER DELETE ON organization_slug_aliases
+FOR EACH ROW EXECUTE FUNCTION unregister_organization_slug_alias();
+
 CREATE TABLE organization_memberships (
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -64,27 +123,35 @@ CREATE UNIQUE INDEX teams_one_general_per_organization_idx
 CREATE INDEX teams_parent_idx ON teams(organization_id, parent_team_id);
 
 CREATE TABLE team_memberships (
-    team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-    account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    organization_id uuid NOT NULL,
+    team_id uuid NOT NULL,
+    account_id uuid NOT NULL,
     role text NOT NULL CHECK (role IN ('admin', 'member')),
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    PRIMARY KEY (team_id, account_id)
+    PRIMARY KEY (team_id, account_id),
+    FOREIGN KEY (organization_id, team_id)
+        REFERENCES teams(organization_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id, account_id)
+        REFERENCES organization_memberships(organization_id, account_id) ON DELETE CASCADE
 );
 
-CREATE INDEX team_memberships_account_idx ON team_memberships(account_id, team_id);
+CREATE INDEX team_memberships_account_idx
+    ON team_memberships(account_id, organization_id, team_id);
 
 CREATE TABLE organization_invitations (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     token_hash bytea NOT NULL UNIQUE,
     organization_role text NOT NULL CHECK (organization_role IN ('admin', 'member')),
-    target_team_id uuid REFERENCES teams(id) ON DELETE CASCADE,
+    target_team_id uuid,
     team_role text CHECK (team_role IN ('admin', 'member')),
     created_by_account_id uuid NOT NULL REFERENCES accounts(id),
     expires_at timestamptz NOT NULL,
     revoked_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    FOREIGN KEY (organization_id, target_team_id)
+        REFERENCES teams(organization_id, id) ON DELETE CASCADE,
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
     CHECK (octet_length(token_hash) >= 32),
     CHECK (

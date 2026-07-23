@@ -60,7 +60,7 @@ CREATE INDEX ledger_entries_organization_idx
 CREATE TABLE usage_reservations (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-    team_id uuid NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,
+    team_id uuid NOT NULL,
     team_name_snapshot text NOT NULL,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE RESTRICT,
     price_version_id uuid NOT NULL REFERENCES catalog_price_versions(id) ON DELETE RESTRICT,
@@ -77,6 +77,9 @@ CREATE TABLE usage_reservations (
     expires_at timestamptz NOT NULL,
     finalized_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    UNIQUE (id, organization_id, team_id),
+    FOREIGN KEY (organization_id, team_id)
+        REFERENCES teams(organization_id, id) ON DELETE RESTRICT,
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
     CHECK (held_credit_micros + held_overage_micros = maximum_cost_micros),
     CHECK (
@@ -93,9 +96,9 @@ CREATE INDEX usage_reservations_active_team_idx
 
 CREATE TABLE usage_records (
     id uuid PRIMARY KEY,
-    reservation_id uuid NOT NULL UNIQUE REFERENCES usage_reservations(id) ON DELETE RESTRICT,
+    reservation_id uuid NOT NULL UNIQUE,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-    team_id uuid NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,
+    team_id uuid NOT NULL,
     team_name_snapshot text NOT NULL,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE RESTRICT,
     account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -105,6 +108,10 @@ CREATE TABLE usage_records (
     credit_applied_micros bigint NOT NULL CHECK (credit_applied_micros >= 0),
     overage_applied_micros bigint NOT NULL CHECK (overage_applied_micros >= 0),
     committed_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    FOREIGN KEY (organization_id, team_id)
+        REFERENCES teams(organization_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (reservation_id, organization_id, team_id)
+        REFERENCES usage_reservations(id, organization_id, team_id) ON DELETE RESTRICT,
     CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
     CHECK (credit_applied_micros + overage_applied_micros = total_cost_micros)
 );

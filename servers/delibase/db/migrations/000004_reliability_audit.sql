@@ -40,8 +40,8 @@ CREATE INDEX integration_outbox_pending_idx
 
 CREATE TABLE deletion_jobs (
     id uuid PRIMARY KEY,
-    account_id uuid REFERENCES accounts(id) ON DELETE SET NULL,
-    organization_id uuid REFERENCES organizations(id) ON DELETE SET NULL,
+    account_id uuid,
+    organization_id uuid,
     job_type text NOT NULL CHECK (job_type IN ('account', 'organization')),
     status text NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'processing', 'completed', 'failed')),

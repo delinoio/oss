@@ -35,7 +35,8 @@ const (
 )
 
 type startupError struct {
-	stage startupStage
+	stage      startupStage
+	safeDetail string
 }
 
 func (failure *startupError) Error() string { return "delibase startup failed" }
@@ -46,14 +47,20 @@ func main() {
 	defer stop()
 	if err := run(ctx, os.LookupEnv, logger); err != nil {
 		stage := startupStage("unknown")
+		attributes := []any{
+			"event", "startup_failure",
+		}
 		var failure *startupError
 		if errors.As(err, &failure) {
 			stage = failure.stage
+			if failure.safeDetail != "" {
+				attributes = append(attributes, "error_detail", failure.safeDetail)
+			}
 		}
+		attributes = append(attributes, "failure_stage", string(stage))
 		logger.Error(
 			"delibase startup failed",
-			"event", "startup_failure",
-			"failure_stage", string(stage),
+			attributes...,
 		)
 		os.Exit(1)
 	}
@@ -62,7 +69,10 @@ func main() {
 func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) error {
 	configuration, err := config.Load(lookup)
 	if err != nil {
-		return &startupError{stage: stageConfiguration}
+		return &startupError{
+			stage:      stageConfiguration,
+			safeDetail: err.Error(),
+		}
 	}
 	if _, err := safelog.NewPseudonymizer(configuration.LogPseudonymKey); err != nil {
 		return &startupError{stage: stageLogging}

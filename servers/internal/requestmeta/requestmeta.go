@@ -96,6 +96,20 @@ func New(headers http.Header, generator IDGenerator) (Metadata, error) {
 	return Metadata{RequestID: requestID, TraceID: traceID}, nil
 }
 
+func inboundMetadata(
+	ctx context.Context,
+	headers http.Header,
+	generator IDGenerator,
+) (Metadata, error) {
+	if metadata, ok := FromContext(ctx); ok &&
+		requestIDPattern.MatchString(metadata.RequestID) &&
+		traceIDPattern.MatchString(metadata.TraceID) &&
+		metadata.TraceID != strings.Repeat("0", 32) {
+		return metadata, nil
+	}
+	return New(headers, generator)
+}
+
 func traceIDFromTraceparent(value string) string {
 	parts := strings.Split(value, "-")
 	if len(parts) != 4 || len(parts[0]) != 2 || len(parts[2]) != 16 || len(parts[3]) != 2 {
@@ -143,7 +157,7 @@ func (i Interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 			}
 			return next(ctx, request)
 		}
-		metadata, err := New(request.Header(), i.Generator)
+		metadata, err := inboundMetadata(ctx, request.Header(), i.Generator)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -174,7 +188,7 @@ func (i Interceptor) WrapStreamingClient(next connect.StreamingClientFunc) conne
 
 func (i Interceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, connection connect.StreamingHandlerConn) error {
-		metadata, err := New(connection.RequestHeader(), i.Generator)
+		metadata, err := inboundMetadata(ctx, connection.RequestHeader(), i.Generator)
 		if err != nil {
 			return connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}

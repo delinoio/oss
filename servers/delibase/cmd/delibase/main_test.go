@@ -21,4 +21,7 @@ func TestRunFailsAtConfigurationBeforeStartingDependencies(t *testing.T) {
 	if failure.stage != stageConfiguration {
 		t.Fatalf("startup stage = %q", failure.stage)
 	}
+	if failure.safeDetail != "config: DELIBASE_API_ORIGIN is required" {
+		t.Fatalf("safe startup detail = %q", failure.safeDetail)
+	}
 }
