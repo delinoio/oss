@@ -36,6 +36,7 @@
     },
     "build":{
       "dependsOn": [
+        "^build",
         "build:api"
       ],
       "inputs": [

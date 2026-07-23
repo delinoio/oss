@@ -3,7 +3,7 @@
 ## Goal
 Provide an English, responsive developer-tools PWA where anonymous visitors can browse a mini-app catalog and authenticated organization users can manage teams, billing, usage, and account settings.
 
-This index records the prerequisites for issue [#722](https://github.com/delinoio/oss/issues/722). It does not claim that the app or its runtime behavior is implemented or publicly available.
+This index records the repository implementation for issue [#722](https://github.com/delinoio/oss/issues/722). The static app artifact is implemented and validated; it is not publicly activated or deployed by this issue.
 
 ## Project ID
 `delidev`
@@ -24,6 +24,10 @@ This index records the prerequisites for issue [#722](https://github.com/delinoi
 - Logto is the authentication provider. Delibase is authoritative for local profiles keyed by unique Logto `sub` values, organizations, memberships, roles, teams, and billing ownership.
 - The PWA may cache only versioned static shell and public catalog data; authenticated organization, team, balance, ledger, usage, and token data are excluded.
 - PWA output is an artifact-only Cloudflare Pages deliverable. This project must not activate or deploy the site as part of issue #722.
+- The generated `dist` artifact includes an installable manifest, simple `D` lettermark icons, `_redirects`, `404.html`, `_headers`, and a versioned service worker. Its cache policy is an explicit allowlist rather than a sensitive-data denylist; initial service-worker control does not reload the page, while accepted updates reload after controller change. CI rebuilds this deterministic checked-in artifact and rejects any resulting diff.
+- Protected Connect requests obtain memory-only Logto tokens on demand for the canonical audience, while anonymous catalog requests use a transport that has no token getter or authorization interceptor. PKCE state and non-sensitive one-shot protected return paths may cross the redirect in same-tab session storage and are consumed on callback; invitation returns use a state-bound sealed handoff so the bearer token is never serialized in plaintext.
+- The onboarding route admits only accounts whose server-authoritative state requires onboarding and refreshes that account state before entering the created organization. Onboarding and invitation-acceptance retries retain their pending idempotency keys until success or their operation inputs change; account-deletion retries retain the pending key until success or cancellation.
+- The authenticated account surface supports creating and switching among organizations. Owner/Admin organization surfaces manage invitation creation, active-invitation listing and revocation, nested team creation, rename, depth-safe move, and confirmed subtree deletion, and expose the complete paginated billing ledger; sensitive creation tokens remain memory-only, absent balance wrappers remain visibly unavailable, replay-sensitive destructive retries retain their pending keys, and Member visibility remains restricted by the server-authoritative caller role.
 
 ## Change Policy
 - Route, authentication, cache, UI-state, or Pages artifact changes update this index and [apps-delidev-app-foundation](apps-delidev-app-foundation.md).

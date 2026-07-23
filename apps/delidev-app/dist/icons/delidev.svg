@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">DeliDev D lettermark</title>
+  <rect width="512" height="512" rx="120" fill="#1b64da"/>
+  <path fill="#fff" d="M145 112h103c91 0 151 55 151 144s-60 144-151 144H145V112Zm96 221c46 0 76-28 76-77s-30-77-76-77h-18v154h18Z"/>
+</svg>

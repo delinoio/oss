@@ -139,6 +139,8 @@ next-env.d.ts
 # Nuxt.js build / generate output
 .nuxt
 dist
+!apps/delidev-app/dist/
+!apps/delidev-app/dist/**
 .output
 
 # Gatsby files
