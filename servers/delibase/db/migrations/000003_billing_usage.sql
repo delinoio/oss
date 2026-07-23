@@ -198,9 +198,18 @@ DECLARE
     committed_overage_micros numeric;
     active_overage_micros numeric;
 BEGIN
+    IF NEW.status = 'committed' THEN
+        RAISE EXCEPTION 'committed reservations must originate from usage records'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.status = 'held' THEN
+        NEW.created_at := transaction_timestamp();
+    END IF;
+
     PERFORM 1
     FROM organizations
     WHERE id = NEW.organization_id
+      AND deleted_at IS NULL
     FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'reservation organization does not exist'
@@ -311,13 +320,17 @@ BEGIN
         END IF;
 
         IF expected_overage_micros > 0 THEN
-            SELECT starts_at, ends_at, overage_limit_micros
+            SELECT period.starts_at, period.ends_at, period.overage_limit_micros
             INTO period_starts_at, period_ends_at, period_overage_limit_micros
-            FROM billing_periods
-            WHERE organization_id = NEW.organization_id
-              AND starts_at <= NEW.created_at
-              AND ends_at > NEW.created_at
-            FOR KEY SHARE;
+            FROM billing_periods AS period
+            JOIN subscriptions AS subscription
+              ON subscription.organization_id = period.organization_id
+             AND subscription.id = period.subscription_id
+            WHERE period.organization_id = NEW.organization_id
+              AND period.starts_at <= NEW.created_at
+              AND period.ends_at > NEW.created_at
+              AND subscription.status = 'active'
+            FOR KEY SHARE OF period, subscription;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'reservation has no current billing period'
                     USING ERRCODE = 'check_violation';
@@ -397,6 +410,20 @@ $$;
 CREATE TRIGGER usage_reservations_enforce_transition
 BEFORE UPDATE ON usage_reservations
 FOR EACH ROW EXECUTE FUNCTION enforce_usage_reservation_transition();
+
+CREATE FUNCTION reject_usage_reservation_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'usage reservations are append-only'
+        USING ERRCODE = 'check_violation';
+END;
+$$;
+
+CREATE TRIGGER usage_reservations_reject_delete
+BEFORE DELETE ON usage_reservations
+FOR EACH ROW EXECUTE FUNCTION reject_usage_reservation_delete();
 
 CREATE INDEX usage_reservations_active_org_idx
     ON usage_reservations(organization_id, expires_at) WHERE status = 'held';

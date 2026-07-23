@@ -3,6 +3,7 @@ CREATE TABLE webhook_inbox (
     provider text NOT NULL CHECK (provider = 'polar'),
     provider_event_id text NOT NULL,
     event_type text NOT NULL,
+    payload jsonb NOT NULL,
     payload_sha256 bytea NOT NULL CHECK (octet_length(payload_sha256) = 32),
     received_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     processed_at timestamptz,
@@ -11,7 +12,9 @@ CREATE TABLE webhook_inbox (
     dead_lettered_at timestamptz,
     safe_error_class text,
     UNIQUE (provider, provider_event_id),
-    CHECK (is_uuid_v7(id))
+    CHECK (is_uuid_v7(id)),
+    CHECK (jsonb_typeof(payload) = 'object'),
+    CHECK (pg_column_size(payload) <= 1048576)
 );
 
 CREATE INDEX webhook_inbox_pending_idx
@@ -107,6 +110,55 @@ CREATE TABLE idempotency_records (
 
 CREATE INDEX idempotency_records_expiry_idx ON idempotency_records(expires_at);
 
+CREATE FUNCTION audit_metadata_is_safe(value jsonb)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT
+        jsonb_typeof(value) = 'object'
+        AND value - ARRAY[
+            'request_id',
+            'trace_id',
+            'request_method',
+            'request_procedure'
+        ] = '{}'::jsonb
+        AND (
+            NOT (value ? 'request_id')
+            OR (
+                jsonb_typeof(value -> 'request_id') = 'string'
+                AND value ->> 'request_id'
+                    ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+            )
+        )
+        AND (
+            NOT (value ? 'trace_id')
+            OR (
+                jsonb_typeof(value -> 'trace_id') = 'string'
+                AND value ->> 'trace_id' ~ '^[0-9a-f]{32}$'
+                AND value ->> 'trace_id' <> repeat('0', 32)
+            )
+        )
+        AND (
+            NOT (value ? 'request_method')
+            OR (
+                jsonb_typeof(value -> 'request_method') = 'string'
+                AND value ->> 'request_method' ~ '^[A-Z]{1,16}$'
+            )
+        )
+        AND (
+            NOT (value ? 'request_procedure')
+            OR (
+                jsonb_typeof(value -> 'request_procedure') = 'string'
+                AND value ->> 'request_procedure'
+                    ~ '^/[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$'
+            )
+        )
+        AND pg_column_size(value) <= 2048
+$$;
+
 CREATE TABLE audit_events (
     id uuid PRIMARY KEY,
     occurred_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
@@ -123,7 +175,11 @@ CREATE TABLE audit_events (
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
     CHECK (is_uuid_v7(id)),
     CHECK (length(event_type) BETWEEN 1 AND 128),
-    CHECK (length(actor_reference) <= 255)
+    CHECK (
+        actor_reference = ''
+        OR actor_reference ~ '^actor:v1:[0-9a-f]{32}$'
+    ),
+    CHECK (audit_metadata_is_safe(metadata))
 );
 
 CREATE INDEX audit_events_organization_idx

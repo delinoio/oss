@@ -343,6 +343,7 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `delibase-server`: runs sqlc reproducibility checks, the delibase Go test suite against PostgreSQL 17, and the non-root Docker image health/readiness validation on delibase server, generated Go API, or shared server infrastructure changes.
 - `proto-delibase`: runs `pnpm check:proto`, `go test ./protos/delibase/...`, `go vet ./protos/delibase/...`, and `pnpm --filter @delinoio/delibase-connect typecheck` on delibase Protobuf and generation changes.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 

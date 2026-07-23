@@ -873,6 +873,36 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			t.Fatal(err)
 		}
 	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, billing_period_id, entry_type,
+			amount_micros, balance_after_micros, source_reference
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000124', $1, $2,
+			'credit_grant', 1, 1, 'deleted-organization-credit'
+		)
+	`, orgB, periodB); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE organizations SET deleted_at = transaction_timestamp() WHERE id = $1",
+		orgB,
+	); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000125', $1, $2, 'B', $3,
+			$4, $5, $6, 1, 1, 1, 1, 0, 'deleting-organization',
+			transaction_timestamp() + interval '1 minute'
+		)
+	`, orgB, teamB, meterID, priceID, accountB, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO ledger_entries (
 			id, organization_id, billing_period_id, entry_type,
@@ -912,9 +942,16 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			$1, $2,
 			transaction_timestamp() - interval '1 day',
 			transaction_timestamp() + interval '1 day',
-			0
+			10
 		)
 	`, orgA, subA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE subscriptions SET status = 'past_due' WHERE id = $1",
+		subA,
+	); err != nil {
 		t.Fatal(err)
 	}
 	requireConstraintFailure(t, ctx, transaction, `
@@ -925,6 +962,31 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			held_overage_micros, client_reference, expires_at
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000122', $1, $2, 'A', $3,
+			$4, $5, $6, 5, 1, 5, 4, 1, 'inactive-subscription',
+			transaction_timestamp() + interval '1 minute'
+		)
+	`, orgA, teamA, meterID, priceID, accountA, serviceID)
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE subscriptions SET status = 'active' WHERE id = $1",
+		subA,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE billing_periods SET overage_limit_micros = 0
+		WHERE id = '0198a000-0000-7000-8000-000000000121'
+	`); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000123', $1, $2, 'A', $3,
 			$4, $5, $6, 5, 1, 5, 4, 1, 'over-limit',
 			transaction_timestamp() + interval '1 minute'
 		)
@@ -949,6 +1011,18 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			transaction_timestamp() + interval '1 minute', transaction_timestamp()
 		)
 	`, orgA, teamB, meterID, priceID, accountA, serviceID)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, status, expires_at, finalized_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000126', $1, $2, 'A', $3,
+			$4, $5, $6, 1, 1, 1, 1, 0, 'direct-committed', 'committed',
+			transaction_timestamp() + interval '1 minute', transaction_timestamp()
+		)
+	`, orgA, teamA, meterID, priceID, historyUser, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
 			id, organization_id, team_id, team_name_snapshot, meter_id,
@@ -1038,11 +1112,23 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
-			held_overage_micros, client_reference, expires_at
-		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'valid', transaction_timestamp() + interval '1 minute')
+			held_overage_micros, client_reference, created_at, expires_at
+		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'valid', '2099-01-01', transaction_timestamp() + interval '1 minute')
 	`, reserveID, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
+	var reservationUsesStorageTime bool
+	if err := transaction.QueryRow(
+		ctx,
+		"SELECT created_at = transaction_timestamp() FROM usage_reservations WHERE id = $1",
+		reserveID,
+	).Scan(&reservationUsesStorageTime); err != nil || !reservationUsesStorageTime {
+		t.Fatalf("reservation storage creation timestamp = %t, %v", reservationUsesStorageTime, err)
+	}
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM usage_reservations WHERE id = $1",
+		reserveID,
+	)
 	requireConstraintFailure(t, ctx, transaction, `
 		UPDATE usage_reservations
 		SET status = 'committed',
@@ -1074,10 +1160,13 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
-			held_overage_micros, client_reference, created_at, expires_at
+			held_overage_micros, client_reference, status, created_at, expires_at,
+			finalized_at
 		) VALUES (
 			$1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'expired',
+			'expired',
 			transaction_timestamp() - interval '2 minutes',
+			transaction_timestamp() - interval '1 minute',
 			transaction_timestamp() - interval '1 minute'
 		)
 	`, expiredHold, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
@@ -1165,13 +1254,6 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			total_cost_micros, credit_applied_micros, overage_applied_micros
 		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
 	`, recordID, expiredHold, orgA, teamA, meterID, historyUser, serviceID)
-	if _, err := transaction.Exec(ctx, `
-		UPDATE usage_reservations
-		SET status = 'expired', finalized_at = transaction_timestamp()
-		WHERE id = $1
-	`, expiredHold); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_records (
 			id, reservation_id, organization_id, team_id, team_name_snapshot,
@@ -1406,24 +1488,79 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO webhook_inbox (
-			id, provider, provider_event_id, event_type, payload_sha256
+			id, provider, provider_event_id, event_type, payload, payload_sha256
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000201',
 			'polar',
 			'event-1',
 			'subscription.updated',
+			'{"data":{"id":"subscription-1"}}',
 			decode(repeat('aa', 32), 'hex')
 		)
 	`); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO webhook_inbox (
+			id, provider, provider_event_id, event_type, payload, payload_sha256
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000127',
+			'polar',
+			'event-scalar',
+			'subscription.updated',
+			'"not-an-object"',
+			decode(repeat('ab', 32), 'hex')
+		)
+	`)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO webhook_inbox (
+			id, provider, provider_event_id, event_type, payload, payload_sha256
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000130',
+			'polar',
+			'event-oversized',
+			'subscription.updated',
+			jsonb_build_object('data', repeat('a', 1048576)),
+			decode(repeat('ac', 32), 'hex')
+		)
+	`)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO audit_events (
-			id, event_type, actor_reference, organization_id, result
-		) VALUES ($1, 'schema.audit', 'actor:v1:00000000000000000000000000000000', $2, 'success')
+			id, event_type, actor_reference, organization_id, result, metadata
+		) VALUES (
+			$1,
+			'schema.audit',
+			'actor:v1:00000000000000000000000000000000',
+			$2,
+			'success',
+			'{"request_id":"request-1","trace_id":"0123456789abcdef0123456789abcdef","request_method":"POST","request_procedure":"/delibase.v1.UsageService/ReserveUsage"}'
+		)
 	`, auditID, orgA); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO audit_events (
+			id, event_type, actor_reference, organization_id, result
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000128',
+			'schema.audit',
+			'raw-logto-subject',
+			$1,
+			'success'
+		)
+	`, orgA)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO audit_events (
+			id, event_type, actor_reference, organization_id, result, metadata
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000129',
+			'schema.audit',
+			'',
+			$1,
+			'success',
+			'{"authorization":"Bearer secret"}'
+		)
+	`, orgA)
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE audit_events SET result = 'failure' WHERE id = $1",
 		auditID,
