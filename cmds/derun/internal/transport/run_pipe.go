@@ -9,7 +9,10 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
+
+const pipeOutputDrainTimeout = time.Second
 
 func RunPipe(
 	ctx context.Context,
@@ -57,18 +60,44 @@ func RunPipe(
 	copyDone := make(chan error, 2)
 	go copyPipeOutput(stdoutReader, stdout, copyDone)
 	go copyPipeOutput(stderrReader, stderr, copyDone)
+	outputClosed := false
 	closeOutput := func() error {
-		_ = stdoutReader.Close()
-		_ = stderrReader.Close()
+		defer func() {
+			_ = stdoutReader.Close()
+			_ = stderrReader.Close()
+		}()
+
 		var copyErr error
-		for range 2 {
-			if err := <-copyDone; err != nil && !isBenignCopyErr(err) && copyErr == nil {
-				copyErr = err
+		completed := 0
+		drainTimer := time.NewTimer(pipeOutputDrainTimeout)
+		defer drainTimer.Stop()
+		for completed < 2 {
+			select {
+			case err := <-copyDone:
+				completed++
+				if err != nil && !isBenignCopyErr(err) {
+					if copyErr == nil {
+						copyErr = err
+					}
+					// A failed output sink cannot drain the other reader. Close both
+					// readers so cleanup remains bounded and the error is returned.
+					_ = stdoutReader.Close()
+					_ = stderrReader.Close()
+				}
+			case <-drainTimer.C:
+				// A descendant may inherit the pipe descriptors and keep them open.
+				// Give direct-child output time to drain, then break that wait.
+				_ = stdoutReader.Close()
+				_ = stderrReader.Close()
 			}
 		}
 		return copyErr
 	}
-	defer closeOutput()
+	defer func() {
+		if !outputClosed {
+			_ = closeOutput()
+		}
+	}()
 
 	// Install forwarding handlers immediately after process start so SIGINT/SIGTERM
 	// cannot race with onStart metadata persistence in caller paths.
@@ -102,6 +131,11 @@ func RunPipe(
 	result, err := decodeExit(waitErr)
 	if err != nil {
 		return RunResult{}, commandRuntimeError("wait for process", command, workingDir, err)
+	}
+	copyErr := closeOutput()
+	outputClosed = true
+	if copyErr != nil {
+		return RunResult{}, commandRuntimeError("copy pipe output", command, workingDir, copyErr)
 	}
 	return result, nil
 }
