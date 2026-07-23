@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 GO_OUT="${REPO_ROOT}/protos/delibase/gen/go"
 TS_OUT="${REPO_ROOT}/protos/delibase/gen/ts"
+DESCRIPTOR_OUT="${REPO_ROOT}/protos/delibase/delibase.v1.binpb"
 TS_TOOL_BIN="${REPO_ROOT}/protos/delibase/node_modules/.bin"
 # shellcheck source=./lib/go-proto-tools.sh
 source "${REPO_ROOT}/scripts/lib/go-proto-tools.sh"
@@ -31,6 +32,7 @@ main() {
 	(
 		cd "${REPO_ROOT}"
 		buf generate --template protos/buf.gen.yaml
+		buf build protos --path protos/delibase/v1 --exclude-source-info --output "${DESCRIPTOR_OUT}"
 	)
 
 	find "${GO_OUT}" -type f -name '*.go' -exec gofmt -w {} +

@@ -47,12 +47,14 @@ pnpm --filter @delinoio/delibase-connect typecheck
 go test ./protos/delibase/...
 ```
 
-`pnpm check:proto` lints the module, checks the source against the checked-in
-initial v1 descriptor baseline, regenerates artifacts, and rejects a generation
-diff. Generator versions come from `go.mod`, `scripts/lib/go-proto-tools.sh`,
-`protos/delibase/package.json`, and `pnpm-lock.yaml`.
-`pnpm generate:proto` also builds the package `dist` output referenced by its
-workspace exports.
+`pnpm check:proto` lints the module, checks the source against the checked-in v1
+descriptor baseline, regenerates artifacts and the descriptor, and rejects a
+generation diff. CI supplies the immutable descriptor from the pull request
+base or pre-push commit for the compatibility check. Generator versions come
+from `go.mod`, `scripts/lib/go-proto-tools.sh`,
+`protos/delibase/package.json`, and `pnpm-lock.yaml`. `pnpm generate:proto`
+refreshes the descriptor and also builds the package `dist` output referenced
+by its workspace exports.
 
 ## Compatibility
 
