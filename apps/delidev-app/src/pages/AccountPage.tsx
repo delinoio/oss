@@ -32,6 +32,9 @@ export function AccountPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [organizationError, setOrganizationError] = useState("");
+  const accountDeletionIdempotencyKey = useRef<
+    { key: string } | undefined
+  >(undefined);
   const organizationIdempotencyKey = useRef<
     { key: string } | undefined
   >(undefined);
@@ -63,6 +66,11 @@ export function AccountPage() {
     OrganizationService.method.createOrganization,
     { transport: auth.transport },
   );
+  const closeDeleteDialog = () => {
+    accountDeletionIdempotencyKey.current = undefined;
+    remove.reset();
+    setDeleteDialogOpen(false);
+  };
 
   const submitOrganization = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -240,7 +248,7 @@ export function AccountPage() {
       {deleteDialogOpen ? (
         <Dialog
           descriptionId="delete-description"
-          onClose={() => setDeleteDialogOpen(false)}
+          onClose={closeDeleteDialog}
           titleId="delete-title"
         >
           <h2 id="delete-title">Delete your DeliDev account?</h2>
@@ -280,7 +288,7 @@ export function AccountPage() {
           <div className="dialog-actions">
             <button
               className="button secondary"
-              onClick={() => setDeleteDialogOpen(false)}
+              onClick={closeDeleteDialog}
               type="button"
             >
               Keep account
@@ -290,15 +298,22 @@ export function AccountPage() {
               disabled={
                 !impact.data?.canDelete || !online || remove.isPending
               }
-              onClick={() =>
+              onClick={() => {
+                accountDeletionIdempotencyKey.current ??=
+                  createIdempotencyKey();
                 remove.mutate(
                   {
                     confirm: true,
-                    idempotency: createIdempotencyKey(),
+                    idempotency: accountDeletionIdempotencyKey.current,
                   },
-                  { onSuccess: () => void auth.signOut() },
-                )
-              }
+                  {
+                    onSuccess: () => {
+                      accountDeletionIdempotencyKey.current = undefined;
+                      void auth.signOut();
+                    },
+                  },
+                );
+              }}
               type="button"
             >
               {remove.isPending ? "Deleting…" : "Delete account"}

@@ -48,6 +48,7 @@ export function InvitePage() {
   useDocumentMetadata(
     "Organization invitation",
     "Review and accept a private DeliDev organization invitation.",
+    { canonicalPath: "/invite" },
   );
   const { token = "" } = useParams();
   const { transport } = useAuthSession();

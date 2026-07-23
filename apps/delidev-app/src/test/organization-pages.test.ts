@@ -5,6 +5,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  canCreateChildTeam,
   canManageOrganization,
   canUseTeamAsParent,
   formatUsageCost,
@@ -12,11 +13,15 @@ import {
   parseUsdMicros,
 } from "../pages/OrganizationPages";
 
-function team(id: string, parentId?: string): Team {
+function team(
+  id: string,
+  parentId?: string,
+  depth = parentId ? 1 : 0,
+): Team {
   return {
     $typeName: "delibase.v1.Team",
     createdAt: undefined,
-    depth: parentId ? 1 : 0,
+    depth,
     name: id,
     organizationId: { $typeName: "delibase.v1.UuidV7", value: "org" },
     parentTeamId: parentId
@@ -59,6 +64,11 @@ describe("organization billing inputs", () => {
 });
 
 describe("team hierarchy controls", () => {
+  it("excludes level-five teams from create-team parent choices", () => {
+    expect(canCreateChildTeam(team("level-four", "parent", 3))).toBe(true);
+    expect(canCreateChildTeam(team("level-five", "parent", 4))).toBe(false);
+  });
+
   it("excludes the current team and descendants from move targets", () => {
     const parent = team("parent");
     const child = team("child", "parent");

@@ -11,6 +11,7 @@
     "prebuild": "pnpm --filter @delinoio/delibase-connect build",
     "preview": "rsbuild preview",
     "pretest": "pnpm --filter @delinoio/delibase-connect build",
+    "pretypecheck": "pnpm --filter @delinoio/delibase-connect build",
     "test": "vitest run",
     "test:a11y": "vitest run src/test/accessibility.test.tsx",
     "test:browser": "playwright test",

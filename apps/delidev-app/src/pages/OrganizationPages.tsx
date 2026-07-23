@@ -46,6 +46,7 @@ function uuid(value: string | undefined) {
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const maxSignedInt64 = 9_223_372_036_854_775_807n;
+const maximumTeamLevels = 5;
 
 export function parseUsdMicros(value: string): bigint | undefined {
   if (!/^\d+(?:\.\d{1,6})?$/.test(value)) return undefined;
@@ -456,7 +457,7 @@ function CreateTeamForm({
             value={parentTeamId}
           >
             <option value="">Top level</option>
-            {teams.map((team) => (
+            {teams.filter(canCreateChildTeam).map((team) => (
               <option key={team.teamId?.value} value={team.teamId?.value}>
                 {team.name}
               </option>
@@ -484,6 +485,10 @@ function CreateTeamForm({
       {!online ? <OfflineActionHint /> : null}
     </form>
   );
+}
+
+export function canCreateChildTeam(team: Team): boolean {
+  return team.depth < maximumTeamLevels - 1;
 }
 
 export function canUseTeamAsParent(

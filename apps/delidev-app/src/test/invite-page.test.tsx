@@ -8,7 +8,7 @@ import {
   AuthSessionProvider,
   AuthStatus,
 } from "../auth/AuthSession";
-import { canonicalAudience } from "../config";
+import { canonicalAudience, canonicalOrigin } from "../config";
 import { InvitePage } from "../pages/InvitePage";
 
 function connectJsonResponse(body: unknown): Response {
@@ -21,6 +21,9 @@ function connectJsonResponse(body: unknown): Response {
 describe("organization invitation", () => {
   it("keeps the bearer token out of React Query and formats the generated role", async () => {
     const token = "secret-invitation-token";
+    const canonical = document.createElement("link");
+    canonical.rel = "canonical";
+    document.head.append(canonical);
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
       const url = String(request);
       const body = await new Response(
@@ -75,12 +78,15 @@ describe("organization invitation", () => {
       screen.getByText("Your organization role will be Member."),
     ).toBeVisible();
     expect(screen.getByText(/team as Admin\./)).toBeVisible();
+    expect(canonical.href).toBe(new URL("/invite", canonicalOrigin).href);
+    expect(canonical.href).not.toContain(token);
 
     await userEvent.click(
       screen.getByRole("button", { name: "Accept invitation" }),
     );
     expect(await screen.findByText("Organization apps")).toBeVisible();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    canonical.remove();
   });
 
   it("does not show an empty team assignment for organization-only invitations", async () => {

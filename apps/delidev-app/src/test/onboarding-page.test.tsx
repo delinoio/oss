@@ -9,6 +9,7 @@ import {
   AuthSessionProvider,
   AuthStatus,
 } from "../auth/AuthSession";
+import { ProtectedRoute } from "../components/ProtectedRoute";
 import { canonicalAudience } from "../config";
 import { OnboardingPage } from "../pages/OnboardingPage";
 
@@ -103,5 +104,94 @@ describe("account onboarding", () => {
     expect(idempotencyKeys).toHaveLength(3);
     expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
     expect(idempotencyKeys[2]).not.toBe(idempotencyKeys[1]);
+  });
+
+  it("refreshes account state before entering the new organization", async () => {
+    let onboardingCompleted = false;
+    let accountStateRequests = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/GetAccountState")) {
+        accountStateRequests += 1;
+        return connectJsonResponse({
+          onboardingRequired: !onboardingCompleted,
+          organizations: onboardingCompleted
+            ? [{ name: "Acme", slug: "acme" }]
+            : [],
+        });
+      }
+      onboardingCompleted = true;
+      return connectJsonResponse({
+        organizationId: {
+          value: "01912345-0000-7000-8000-000000000001",
+        },
+      });
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/onboarding"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <Routes>
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute>
+                    <OnboardingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/o/acme/apps"
+                element={
+                  <ProtectedRoute>
+                    <p>Acme apps</p>
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.type(
+      await screen.findByRole("textbox", { name: "Your name" }),
+      "Deli Developer",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Organization name" }),
+      "Acme",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: /^Organization URL/ }),
+      "acme",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Create workspace" }),
+    );
+
+    expect(await screen.findByText("Acme apps")).toBeVisible();
+    expect(accountStateRequests).toBe(2);
   });
 });

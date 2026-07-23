@@ -1,5 +1,9 @@
-import { useMutation } from "@connectrpc/connect-query";
+import {
+  createConnectQueryKey,
+  useMutation,
+} from "@connectrpc/connect-query";
 import { AccountService } from "@delinoio/delibase-connect";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -19,6 +23,7 @@ export function OnboardingPage() {
   const { transport } = useAuthSession();
   const navigate = useNavigate();
   const online = useOnline();
+  const queryClient = useQueryClient();
   const [displayName, setDisplayName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
@@ -52,8 +57,17 @@ export function OnboardingPage() {
       },
       {
         onError: (error) => setFormError(error.message),
-        onSuccess: () => {
+        onSuccess: async () => {
           idempotencyKey.current = undefined;
+          await queryClient.invalidateQueries({
+            exact: true,
+            queryKey: createConnectQueryKey({
+              cardinality: "finite",
+              input: {},
+              schema: AccountService.method.getAccountState,
+              transport,
+            }),
+          });
           navigate(`/o/${normalizedSlug}/apps`, { replace: true });
         },
       },

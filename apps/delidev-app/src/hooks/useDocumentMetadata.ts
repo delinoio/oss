@@ -2,7 +2,11 @@ import { useEffect } from "react";
 
 import { canonicalOrigin } from "../config";
 
-export function useDocumentMetadata(title: string, description: string): void {
+export function useDocumentMetadata(
+  title: string,
+  description: string,
+  { canonicalPath }: { canonicalPath?: string } = {},
+): void {
   useEffect(() => {
     document.title = `${title} — DeliDev`;
     const descriptionElement = document.querySelector<HTMLMetaElement>(
@@ -15,7 +19,7 @@ export function useDocumentMetadata(title: string, description: string): void {
     );
     canonical?.setAttribute(
       "href",
-      new URL(window.location.pathname, canonicalOrigin).href,
+      new URL(canonicalPath ?? window.location.pathname, canonicalOrigin).href,
     );
-  }, [description, title]);
+  }, [canonicalPath, description, title]);
 }
