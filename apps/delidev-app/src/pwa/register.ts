@@ -16,8 +16,14 @@ export async function registerServiceWorker(): Promise<void> {
   };
 
   announceWaitingWorker();
+  let activeController = navigator.serviceWorker.controller;
   let refreshing = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
+    const nextController = navigator.serviceWorker.controller;
+    if (!activeController || activeController === nextController) {
+      activeController = nextController;
+      return;
+    }
     if (!refreshing) {
       refreshing = true;
       window.location.reload();

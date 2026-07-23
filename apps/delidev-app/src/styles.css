@@ -1239,7 +1239,7 @@ tr:last-child td {
 .site-footer .legal {
   grid-column: 1 / -1;
   margin: 20px 0 0;
-  color: var(--gray-400);
+  color: var(--gray-600);
   font-size: 12px;
 }
 

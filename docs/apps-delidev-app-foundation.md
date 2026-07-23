@@ -64,7 +64,7 @@
 - React Query state is memory-only. Public catalog requests may be served by the service worker; protected account, organization, invitation, team, billing, ledger, and usage queries have no persistent browser cache.
 - The service worker recognizes only the four checked-in `CatalogService` read method names, requires an absent `Authorization` header, and keys cached POST responses through a synthetic body digest. Every other RPC is network-only.
 - Missing or invalid public configuration fails closed: public catalog requests show a dependency error and Logto controls remain disabled. The environment contract remains browser-safe and contains no provider secret.
-- Service-worker updates wait for user confirmation, activate through `SKIP_WAITING`, reload on controller change, remove prior version caches, and retain only the new versioned shell and public catalog cache.
+- Initial service-worker control does not reload the page. Later updates wait for user confirmation, activate through `SKIP_WAITING`, reload on controller change, remove prior version caches, and retain only the new versioned shell and public catalog cache.
 
 ## References
 - [Project delidev](project-delidev.md)
