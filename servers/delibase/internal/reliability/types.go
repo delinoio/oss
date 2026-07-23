@@ -230,7 +230,7 @@ type TokenGenerator interface {
 }
 
 type Storage interface {
-	RecoverExhausted(context.Context, time.Time) error
+	RecoverExpired(context.Context, time.Time, time.Duration, time.Duration, float64) error
 	Claim(context.Context, Queue, uuid.UUID, time.Time, time.Time) (Item, bool, error)
 	Complete(context.Context, Item, time.Time) error
 	Fail(context.Context, Item, time.Time, time.Time, bool, safeerr.Class) error

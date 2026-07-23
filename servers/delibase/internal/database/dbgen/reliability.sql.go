@@ -105,7 +105,7 @@ WITH candidate AS (
           (
               dead_lettered_at IS NULL
               AND attempt_count < 12
-              AND (claim_token IS NULL OR claim_expires_at <= $2)
+              AND claim_token IS NULL
           )
           OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
@@ -168,7 +168,7 @@ WITH candidate AS (
           (
               dead_lettered_at IS NULL
               AND attempt_count < 12
-              AND (claim_token IS NULL OR claim_expires_at <= $2)
+              AND claim_token IS NULL
           )
           OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
@@ -231,7 +231,7 @@ WITH candidate AS (
           (
               dead_lettered_at IS NULL
               AND attempt_count < 12
-              AND (claim_token IS NULL OR claim_expires_at <= $2)
+              AND claim_token IS NULL
           )
           OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
@@ -447,7 +447,7 @@ INSERT INTO integration_outbox (
     $7,
     $8
 )
-ON CONFLICT (integration, operation, idempotency_key) DO UPDATE
+ON CONFLICT (integration, operation, actor_reference, idempotency_key) DO UPDATE
 SET idempotency_key = EXCLUDED.idempotency_key
 WHERE integration_outbox.aggregate_type = EXCLUDED.aggregate_type
   AND integration_outbox.aggregate_id = EXCLUDED.aggregate_id
@@ -808,64 +808,151 @@ func (q *Queries) GetWebhookInbox(ctx context.Context, id pgtype.UUID) (WebhookI
 	return i, err
 }
 
-const recoverExhaustedDeletionJobs = `-- name: RecoverExhaustedDeletionJobs :execrows
+const recoverExpiredDeletionJobs = `-- name: RecoverExpiredDeletionJobs :execrows
 UPDATE deletion_jobs
 SET status = 'failed',
-    dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
-    next_attempt_at = claim_expires_at + interval '24 hours',
+    dead_lettered_at = CASE
+        WHEN attempt_count = 12
+            THEN COALESCE(dead_lettered_at, claim_expires_at)
+        ELSE dead_lettered_at
+    END,
+    next_attempt_at = CASE
+        WHEN dead_lettered_at IS NULL AND attempt_count < 12 THEN
+            claim_expires_at + (
+                LEAST(
+                    $1::double precision,
+                    LEAST(
+                        $1::double precision,
+                        $2::double precision
+                            * power(2.0, LEAST(attempt_count - 1, 62))
+                    ) * $3::double precision
+                ) * interval '1 second' / 1000000000.0
+            )
+        ELSE claim_expires_at + interval '24 hours'
+    END,
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE status = 'processing'
-  AND attempt_count = 12
-  AND claim_expires_at <= $1
+  AND claim_token IS NOT NULL
+  AND claim_expires_at <= $4
 `
 
-func (q *Queries) RecoverExhaustedDeletionJobs(ctx context.Context, now pgtype.Timestamptz) (int64, error) {
-	result, err := q.db.Exec(ctx, recoverExhaustedDeletionJobs, now)
+type RecoverExpiredDeletionJobsParams struct {
+	MaxBackoffNanoseconds  float64
+	BaseBackoffNanoseconds float64
+	JitterMultiplier       float64
+	Now                    pgtype.Timestamptz
+}
+
+func (q *Queries) RecoverExpiredDeletionJobs(ctx context.Context, arg RecoverExpiredDeletionJobsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recoverExpiredDeletionJobs,
+		arg.MaxBackoffNanoseconds,
+		arg.BaseBackoffNanoseconds,
+		arg.JitterMultiplier,
+		arg.Now,
+	)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
 }
 
-const recoverExhaustedIntegrationOutbox = `-- name: RecoverExhaustedIntegrationOutbox :execrows
+const recoverExpiredIntegrationOutbox = `-- name: RecoverExpiredIntegrationOutbox :execrows
 UPDATE integration_outbox
-SET dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
-    next_attempt_at = claim_expires_at + interval '24 hours',
+SET dead_lettered_at = CASE
+        WHEN attempt_count = 12
+            THEN COALESCE(dead_lettered_at, claim_expires_at)
+        ELSE dead_lettered_at
+    END,
+    next_attempt_at = CASE
+        WHEN dead_lettered_at IS NULL AND attempt_count < 12 THEN
+            claim_expires_at + (
+                LEAST(
+                    $1::double precision,
+                    LEAST(
+                        $1::double precision,
+                        $2::double precision
+                            * power(2.0, LEAST(attempt_count - 1, 62))
+                    ) * $3::double precision
+                ) * interval '1 second' / 1000000000.0
+            )
+        ELSE claim_expires_at + interval '24 hours'
+    END,
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE delivered_at IS NULL
-  AND attempt_count = 12
-  AND claim_expires_at <= $1
+  AND claim_token IS NOT NULL
+  AND claim_expires_at <= $4
 `
 
-func (q *Queries) RecoverExhaustedIntegrationOutbox(ctx context.Context, now pgtype.Timestamptz) (int64, error) {
-	result, err := q.db.Exec(ctx, recoverExhaustedIntegrationOutbox, now)
+type RecoverExpiredIntegrationOutboxParams struct {
+	MaxBackoffNanoseconds  float64
+	BaseBackoffNanoseconds float64
+	JitterMultiplier       float64
+	Now                    pgtype.Timestamptz
+}
+
+func (q *Queries) RecoverExpiredIntegrationOutbox(ctx context.Context, arg RecoverExpiredIntegrationOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recoverExpiredIntegrationOutbox,
+		arg.MaxBackoffNanoseconds,
+		arg.BaseBackoffNanoseconds,
+		arg.JitterMultiplier,
+		arg.Now,
+	)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
 }
 
-const recoverExhaustedWebhookInbox = `-- name: RecoverExhaustedWebhookInbox :execrows
+const recoverExpiredWebhookInbox = `-- name: RecoverExpiredWebhookInbox :execrows
 UPDATE webhook_inbox
-SET dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
-    next_attempt_at = claim_expires_at + interval '24 hours',
+SET dead_lettered_at = CASE
+        WHEN attempt_count = 12
+            THEN COALESCE(dead_lettered_at, claim_expires_at)
+        ELSE dead_lettered_at
+    END,
+    next_attempt_at = CASE
+        WHEN dead_lettered_at IS NULL AND attempt_count < 12 THEN
+            claim_expires_at + (
+                LEAST(
+                    $1::double precision,
+                    LEAST(
+                        $1::double precision,
+                        $2::double precision
+                            * power(2.0, LEAST(attempt_count - 1, 62))
+                    ) * $3::double precision
+                ) * interval '1 second' / 1000000000.0
+            )
+        ELSE claim_expires_at + interval '24 hours'
+    END,
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE processed_at IS NULL
-  AND attempt_count = 12
-  AND claim_expires_at <= $1
+  AND claim_token IS NOT NULL
+  AND claim_expires_at <= $4
 `
 
-func (q *Queries) RecoverExhaustedWebhookInbox(ctx context.Context, now pgtype.Timestamptz) (int64, error) {
-	result, err := q.db.Exec(ctx, recoverExhaustedWebhookInbox, now)
+type RecoverExpiredWebhookInboxParams struct {
+	MaxBackoffNanoseconds  float64
+	BaseBackoffNanoseconds float64
+	JitterMultiplier       float64
+	Now                    pgtype.Timestamptz
+}
+
+func (q *Queries) RecoverExpiredWebhookInbox(ctx context.Context, arg RecoverExpiredWebhookInboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recoverExpiredWebhookInbox,
+		arg.MaxBackoffNanoseconds,
+		arg.BaseBackoffNanoseconds,
+		arg.JitterMultiplier,
+		arg.Now,
+	)
 	if err != nil {
 		return 0, err
 	}

@@ -90,6 +90,15 @@ func TestPostgreSQLReliabilityEnqueueClaimsRetriesAndAudit(t *testing.T) {
 	) {
 		t.Fatalf("changed duplicate outbox error = %v", err)
 	}
+	otherCallerOutbox := outbox
+	otherCallerOutbox.ID = testReliabilityUUID(126)
+	otherCallerOutbox.AggregateID = testReliabilityUUID(127)
+	otherCallerOutbox.Actor = safelog.ActorPseudonym(
+		"actor:v1:fedcba9876543210fedcba9876543210",
+	)
+	if _, err := reliability.EnqueueOutbox(ctx, queries, otherCallerOutbox); err != nil {
+		t.Fatalf("other caller outbox with reused key: %v", err)
+	}
 
 	deletion := reliability.DeletionInput{
 		ID:             testReliabilityUUID(6),
@@ -340,7 +349,26 @@ func testReliabilityCrashAndDailyRecovery(
 		t.Fatalf("claim before lease expiry = %t, %v", ok, err)
 	}
 
-	cursor := now.Add(lease)
+	firstExpiredAt := now.Add(lease)
+	if err := storage.RecoverExpired(
+		ctx,
+		firstExpiredAt,
+		time.Second,
+		time.Hour,
+		1,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := storage.Claim(
+		ctx,
+		reliability.QueueIntegrationOutbox,
+		testReliabilityUUID(84),
+		firstExpiredAt,
+		firstExpiredAt.Add(lease),
+	); err != nil || ok {
+		t.Fatalf("claim before crashed-attempt backoff = %t, %v", ok, err)
+	}
+	cursor := firstExpiredAt.Add(time.Second)
 	item, ok, err = storage.Claim(
 		ctx,
 		reliability.QueueIntegrationOutbox,
@@ -380,7 +408,13 @@ func testReliabilityCrashAndDailyRecovery(
 	}
 
 	expiredAt := cursor.Add(lease)
-	if err := storage.RecoverExhausted(ctx, expiredAt); err != nil {
+	if err := storage.RecoverExpired(
+		ctx,
+		expiredAt,
+		time.Second,
+		time.Hour,
+		1,
+	); err != nil {
 		t.Fatal(err)
 	}
 	row, err := queries.GetIntegrationOutbox(ctx, pgUUIDForTest(eventID))
@@ -423,7 +457,13 @@ func testReliabilityCrashAndDailyRecovery(
 	); err != nil || ok {
 		t.Fatalf("expired crashed dead-letter claim = %t, %v", ok, err)
 	}
-	if err := storage.RecoverExhausted(ctx, deadLetterExpiredAt); err != nil {
+	if err := storage.RecoverExpired(
+		ctx,
+		deadLetterExpiredAt,
+		time.Second,
+		time.Hour,
+		1,
+	); err != nil {
 		t.Fatal(err)
 	}
 	row, err = queries.GetIntegrationOutbox(ctx, pgUUIDForTest(eventID))

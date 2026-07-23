@@ -108,14 +108,21 @@ func NewWorker(config WorkerConfig) (*Worker, error) {
 	}, nil
 }
 
-// RunOnce recovers expired twelfth claims and offers one due item from every
-// queue to its registered handler. It returns the number of claimed items.
+// RunOnce recovers expired claims with their normal or dead-letter delay and
+// offers one due item from every queue to its registered handler. It returns
+// the number of claimed items.
 func (worker *Worker) RunOnce(ctx context.Context) (int, error) {
 	if worker == nil {
 		return 0, ErrInvalidInput
 	}
 	now := worker.clock.Now().UTC()
-	if err := worker.storage.RecoverExhausted(ctx, now); err != nil {
+	if err := worker.storage.RecoverExpired(
+		ctx,
+		now,
+		worker.baseBackoff,
+		worker.maxBackoff,
+		jitterMultiplier(worker.random.Float64()),
+	); err != nil {
 		worker.record(
 			ctx,
 			Item{},
@@ -292,6 +299,17 @@ func backoff(
 	if delay > float64(cap) {
 		delay = float64(cap)
 	}
+	delay *= jitterMultiplier(random)
+	if delay > float64(cap) {
+		delay = float64(cap)
+	}
+	if delay < 1 {
+		delay = 1
+	}
+	return time.Duration(delay)
+}
+
+func jitterMultiplier(random float64) float64 {
 	if random < 0 {
 		random = 0
 	}
@@ -301,14 +319,7 @@ func backoff(
 	if random >= 1 {
 		random = math.Nextafter(1, 0)
 	}
-	delay *= 0.5 + random
-	if delay > float64(cap) {
-		delay = float64(cap)
-	}
-	if delay < 1 {
-		delay = 1
-	}
-	return time.Duration(delay)
+	return 0.5 + random
 }
 
 func (worker *Worker) record(

@@ -3,6 +3,7 @@ package reliability
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
@@ -26,24 +27,51 @@ func NewPostgreSQLStorage(queries dbgen.Querier) (*PostgreSQLStorage, error) {
 	return &PostgreSQLStorage{queries: queries}, nil
 }
 
-func (storage *PostgreSQLStorage) RecoverExhausted(
+func (storage *PostgreSQLStorage) RecoverExpired(
 	ctx context.Context,
 	now time.Time,
+	baseBackoff time.Duration,
+	maxBackoff time.Duration,
+	jitterMultiplier float64,
 ) error {
-	if storage == nil || storage.queries == nil || now.IsZero() {
+	if storage == nil || storage.queries == nil || now.IsZero() ||
+		baseBackoff <= 0 || maxBackoff < baseBackoff ||
+		math.IsNaN(jitterMultiplier) ||
+		jitterMultiplier < 0.5 || jitterMultiplier >= 1.5 {
 		return ErrInvalidInput
 	}
-	timestamp := pgTime(now)
-	if _, err := storage.queries.RecoverExhaustedWebhookInbox(ctx, timestamp); err != nil {
+	parameters := commonRecoveryParameters{
+		MaxBackoffNanoseconds:  float64(maxBackoff.Nanoseconds()),
+		BaseBackoffNanoseconds: float64(baseBackoff.Nanoseconds()),
+		JitterMultiplier:       jitterMultiplier,
+		Now:                    pgTime(now),
+	}
+	if _, err := storage.queries.RecoverExpiredWebhookInbox(
+		ctx,
+		dbgen.RecoverExpiredWebhookInboxParams(parameters),
+	); err != nil {
 		return err
 	}
-	if _, err := storage.queries.RecoverExhaustedIntegrationOutbox(ctx, timestamp); err != nil {
+	if _, err := storage.queries.RecoverExpiredIntegrationOutbox(
+		ctx,
+		dbgen.RecoverExpiredIntegrationOutboxParams(parameters),
+	); err != nil {
 		return err
 	}
-	if _, err := storage.queries.RecoverExhaustedDeletionJobs(ctx, timestamp); err != nil {
+	if _, err := storage.queries.RecoverExpiredDeletionJobs(
+		ctx,
+		dbgen.RecoverExpiredDeletionJobsParams(parameters),
+	); err != nil {
 		return err
 	}
 	return nil
+}
+
+type commonRecoveryParameters struct {
+	MaxBackoffNanoseconds  float64
+	BaseBackoffNanoseconds float64
+	JitterMultiplier       float64
+	Now                    pgtype.Timestamptz
 }
 
 func (storage *PostgreSQLStorage) Claim(

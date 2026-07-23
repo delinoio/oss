@@ -298,6 +298,10 @@ func TestIdempotencyKeyValidationRejectsCredentials(t *testing.T) {
 			value: "concurrent-0198a000-0000-7000-8000-000000000914",
 			valid: true,
 		},
+		{
+			value: "reserve_0198a000-0000-7000-8000-000000000914",
+			valid: true,
+		},
 		{value: "token:raw-secret"},
 		{value: "authorization:raw-secret"},
 		{value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature"},
@@ -310,6 +314,18 @@ func TestIdempotencyKeyValidationRejectsCredentials(t *testing.T) {
 				t.Fatalf("validIdempotencyKey(%q) = %t, want %t", test.value, got, test.valid)
 			}
 		})
+	}
+}
+
+func TestAuditMetadataAllowsCanonicalUUIDRequestID(t *testing.T) {
+	t.Parallel()
+	const requestID = "0198a000-0000-7000-8000-000000000914"
+	metadata, err := marshalAuditMetadata(AuditMetadata{RequestID: requestID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(metadata) != `{"request_id":"`+requestID+`"}` {
+		t.Fatalf("audit metadata = %s", metadata)
 	}
 }
 
@@ -459,7 +475,13 @@ type fakeStorage struct {
 	recovered int
 }
 
-func (storage *fakeStorage) RecoverExhausted(context.Context, time.Time) error {
+func (storage *fakeStorage) RecoverExpired(
+	context.Context,
+	time.Time,
+	time.Duration,
+	time.Duration,
+	float64,
+) error {
 	storage.recovered++
 	return nil
 }

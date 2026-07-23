@@ -28,7 +28,7 @@ const (
 
 var (
 	safeExternalID  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$`)
-	idempotencyUUID = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	idempotencyUUID = regexp.MustCompile(`(?i)(^|[^a-z0-9])([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})([^a-z0-9]|$)`)
 	actorPattern    = regexp.MustCompile(`^(|actor:v1:[0-9a-f]{32})$`)
 )
 
@@ -262,8 +262,18 @@ func validIdempotencyKey(value string) bool {
 	// Canonical UUID segments are safe identifiers, but their numeric tails can
 	// match the shared card-number detector. Mask them before checking the
 	// remaining key for credential and billing-data shapes.
-	withoutUUIDs := idempotencyUUID.ReplaceAllString(value, "uuid")
+	withoutUUIDs := maskIdempotencyUUIDs(value)
 	return redact.Text(withoutUUIDs) == withoutUUIDs
+}
+
+func maskIdempotencyUUIDs(value string) string {
+	for {
+		masked := idempotencyUUID.ReplaceAllString(value, "${1}uuid${3}")
+		if masked == value {
+			return value
+		}
+		value = masked
+	}
 }
 
 func deletionTargetConflict(err error) bool {
@@ -315,7 +325,8 @@ func marshalAuditMetadata(metadata AuditMetadata) ([]byte, error) {
 		if item == "" {
 			continue
 		}
-		if redact.Text(item) != item {
+		if !(key == "request_id" && canonicalUUID(item)) &&
+			redact.Text(item) != item {
 			return nil, ErrInvalidInput
 		}
 		value[key] = item
@@ -325,6 +336,11 @@ func marshalAuditMetadata(metadata AuditMetadata) ([]byte, error) {
 		return nil, ErrInvalidInput
 	}
 	return encoded, nil
+}
+
+func canonicalUUID(value string) bool {
+	id, err := uuid.Parse(value)
+	return err == nil && strings.EqualFold(id.String(), value)
 }
 
 func validActor(actor string) bool { return actorPattern.MatchString(actor) }

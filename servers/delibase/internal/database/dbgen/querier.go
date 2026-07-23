@@ -41,9 +41,9 @@ type Querier interface {
 	GetWebhookInbox(ctx context.Context, id pgtype.UUID) (WebhookInbox, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	Ping(ctx context.Context) (int64, error)
-	RecoverExhaustedDeletionJobs(ctx context.Context, now pgtype.Timestamptz) (int64, error)
-	RecoverExhaustedIntegrationOutbox(ctx context.Context, now pgtype.Timestamptz) (int64, error)
-	RecoverExhaustedWebhookInbox(ctx context.Context, now pgtype.Timestamptz) (int64, error)
+	RecoverExpiredDeletionJobs(ctx context.Context, arg RecoverExpiredDeletionJobsParams) (int64, error)
+	RecoverExpiredIntegrationOutbox(ctx context.Context, arg RecoverExpiredIntegrationOutboxParams) (int64, error)
+	RecoverExpiredWebhookInbox(ctx context.Context, arg RecoverExpiredWebhookInboxParams) (int64, error)
 	UpsertCatalogApp(ctx context.Context, arg UpsertCatalogAppParams) error
 	UpsertCatalogMeter(ctx context.Context, arg UpsertCatalogMeterParams) error
 	UpsertServiceIdentity(ctx context.Context, arg UpsertServiceIdentityParams) error

@@ -186,7 +186,7 @@ WHERE idempotency_key IS NULL;
 ALTER TABLE integration_outbox
     ALTER COLUMN idempotency_key SET NOT NULL,
     ADD CONSTRAINT integration_outbox_idempotency_unique
-        UNIQUE (integration, operation, idempotency_key);
+        UNIQUE (integration, operation, actor_reference, idempotency_key);
 
 DROP INDEX integration_outbox_pending_idx;
 CREATE INDEX integration_outbox_pending_idx

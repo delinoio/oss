@@ -43,7 +43,7 @@ INSERT INTO integration_outbox (
     sqlc.arg(idempotency_key),
     sqlc.arg(actor_reference)
 )
-ON CONFLICT (integration, operation, idempotency_key) DO UPDATE
+ON CONFLICT (integration, operation, actor_reference, idempotency_key) DO UPDATE
 SET idempotency_key = EXCLUDED.idempotency_key
 WHERE integration_outbox.aggregate_type = EXCLUDED.aggregate_type
   AND integration_outbox.aggregate_id = EXCLUDED.aggregate_id
@@ -116,7 +116,7 @@ WITH candidate AS (
           (
               dead_lettered_at IS NULL
               AND attempt_count < 12
-              AND (claim_token IS NULL OR claim_expires_at <= sqlc.arg(now))
+              AND claim_token IS NULL
           )
           OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
@@ -165,16 +165,33 @@ WHERE id = sqlc.arg(id)
   AND processed_at IS NULL
 RETURNING id;
 
--- name: RecoverExhaustedWebhookInbox :execrows
+-- name: RecoverExpiredWebhookInbox :execrows
 UPDATE webhook_inbox
-SET dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
-    next_attempt_at = claim_expires_at + interval '24 hours',
+SET dead_lettered_at = CASE
+        WHEN attempt_count = 12
+            THEN COALESCE(dead_lettered_at, claim_expires_at)
+        ELSE dead_lettered_at
+    END,
+    next_attempt_at = CASE
+        WHEN dead_lettered_at IS NULL AND attempt_count < 12 THEN
+            claim_expires_at + (
+                LEAST(
+                    sqlc.arg(max_backoff_nanoseconds)::double precision,
+                    LEAST(
+                        sqlc.arg(max_backoff_nanoseconds)::double precision,
+                        sqlc.arg(base_backoff_nanoseconds)::double precision
+                            * power(2.0, LEAST(attempt_count - 1, 62))
+                    ) * sqlc.arg(jitter_multiplier)::double precision
+                ) * interval '1 second' / 1000000000.0
+            )
+        ELSE claim_expires_at + interval '24 hours'
+    END,
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE processed_at IS NULL
-  AND attempt_count = 12
+  AND claim_token IS NOT NULL
   AND claim_expires_at <= sqlc.arg(now);
 
 -- name: ClaimIntegrationOutbox :one
@@ -187,7 +204,7 @@ WITH candidate AS (
           (
               dead_lettered_at IS NULL
               AND attempt_count < 12
-              AND (claim_token IS NULL OR claim_expires_at <= sqlc.arg(now))
+              AND claim_token IS NULL
           )
           OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
@@ -236,16 +253,33 @@ WHERE id = sqlc.arg(id)
   AND delivered_at IS NULL
 RETURNING id;
 
--- name: RecoverExhaustedIntegrationOutbox :execrows
+-- name: RecoverExpiredIntegrationOutbox :execrows
 UPDATE integration_outbox
-SET dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
-    next_attempt_at = claim_expires_at + interval '24 hours',
+SET dead_lettered_at = CASE
+        WHEN attempt_count = 12
+            THEN COALESCE(dead_lettered_at, claim_expires_at)
+        ELSE dead_lettered_at
+    END,
+    next_attempt_at = CASE
+        WHEN dead_lettered_at IS NULL AND attempt_count < 12 THEN
+            claim_expires_at + (
+                LEAST(
+                    sqlc.arg(max_backoff_nanoseconds)::double precision,
+                    LEAST(
+                        sqlc.arg(max_backoff_nanoseconds)::double precision,
+                        sqlc.arg(base_backoff_nanoseconds)::double precision
+                            * power(2.0, LEAST(attempt_count - 1, 62))
+                    ) * sqlc.arg(jitter_multiplier)::double precision
+                ) * interval '1 second' / 1000000000.0
+            )
+        ELSE claim_expires_at + interval '24 hours'
+    END,
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE delivered_at IS NULL
-  AND attempt_count = 12
+  AND claim_token IS NOT NULL
   AND claim_expires_at <= sqlc.arg(now);
 
 -- name: ClaimDeletionJob :one
@@ -258,7 +292,7 @@ WITH candidate AS (
           (
               dead_lettered_at IS NULL
               AND attempt_count < 12
-              AND (claim_token IS NULL OR claim_expires_at <= sqlc.arg(now))
+              AND claim_token IS NULL
           )
           OR (dead_lettered_at IS NOT NULL AND claim_token IS NULL)
       )
@@ -310,17 +344,34 @@ WHERE id = sqlc.arg(id)
   AND status = 'processing'
 RETURNING id;
 
--- name: RecoverExhaustedDeletionJobs :execrows
+-- name: RecoverExpiredDeletionJobs :execrows
 UPDATE deletion_jobs
 SET status = 'failed',
-    dead_lettered_at = COALESCE(dead_lettered_at, claim_expires_at),
-    next_attempt_at = claim_expires_at + interval '24 hours',
+    dead_lettered_at = CASE
+        WHEN attempt_count = 12
+            THEN COALESCE(dead_lettered_at, claim_expires_at)
+        ELSE dead_lettered_at
+    END,
+    next_attempt_at = CASE
+        WHEN dead_lettered_at IS NULL AND attempt_count < 12 THEN
+            claim_expires_at + (
+                LEAST(
+                    sqlc.arg(max_backoff_nanoseconds)::double precision,
+                    LEAST(
+                        sqlc.arg(max_backoff_nanoseconds)::double precision,
+                        sqlc.arg(base_backoff_nanoseconds)::double precision
+                            * power(2.0, LEAST(attempt_count - 1, 62))
+                    ) * sqlc.arg(jitter_multiplier)::double precision
+                ) * interval '1 second' / 1000000000.0
+            )
+        ELSE claim_expires_at + interval '24 hours'
+    END,
     safe_error_class = 'worker_crash',
     claim_token = NULL,
     claimed_at = NULL,
     claim_expires_at = NULL
 WHERE status = 'processing'
-  AND attempt_count = 12
+  AND claim_token IS NOT NULL
   AND claim_expires_at <= sqlc.arg(now);
 
 -- name: GetWebhookInbox :one
