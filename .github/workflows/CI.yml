@@ -869,6 +869,99 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter public-docs test
 
+  node-delidev-app:
+    name: Node DeliDev app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            delidev:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - apps/AGENTS.md
+              - apps/delidev-app/**
+              - protos/buf.gen.yaml
+              - protos/buf.yaml
+              - protos/delibase/**
+              - scripts/generate-delibase-proto.sh
+              - scripts/lib/go-proto-tools.sh
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DELIDEV_CHANGED: ${{ steps.filter.outputs.delidev }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DELIDEV_CHANGED}" = "true" ]; then
+            run=true
+          fi
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (DeliDev unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping DeliDev app checks: no relevant changes"
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build generated delibase client
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter @delinoio/delibase-connect build
+
+      - name: Validate types, lint, and components
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm --filter delidev-app typecheck
+          pnpm --filter delidev-app lint
+          pnpm --filter delidev-app test
+
+      - name: Build and validate PWA artifact
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm --filter delidev-app build
+          pnpm --filter delidev-app test:pwa
+          git diff --exit-code -- apps/delidev-app/dist
+
+      - name: Install browser engines
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter delidev-app exec playwright install --with-deps chromium firefox webkit msedge
+
+      - name: Run responsive browser smoke tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter delidev-app test:browser
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
@@ -886,6 +979,7 @@ jobs:
       - node-binpm-docs-test
       - node-nodeup-docs-test
       - node-public-docs-test
+      - node-delidev-app
     steps:
       - run: exit 1
         if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
