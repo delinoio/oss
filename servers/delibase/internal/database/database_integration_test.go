@@ -2314,7 +2314,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		)
 		SELECT
 			'0198a000-0000-7000-8000-000000000321',
-			$1, 'credit_reversal', -3, COALESCE(sum(amount_micros), 0) - 3,
+			$1, 'credit_reversal', -6, COALESCE(sum(amount_micros), 0) - 6,
 			'commit-credit-capacity'
 		FROM ledger_entries
 		WHERE organization_id = $1
