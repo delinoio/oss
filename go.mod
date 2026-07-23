@@ -5,6 +5,7 @@ go 1.25.7
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/creack/pty v1.1.24
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	golang.org/x/sys v0.42.0
 	google.golang.org/protobuf v1.36.11

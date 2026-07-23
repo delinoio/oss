@@ -1,0 +1,60 @@
+package safeerr
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"connectrpc.com/connect"
+	"github.com/delinoio/oss/servers/internal/auth"
+)
+
+func TestHTTPAndConnectNeverExposeSourceErrors(t *testing.T) {
+	t.Parallel()
+	raw := errors.New("database failed Authorization: Bearer super-secret-token")
+	response := httptest.NewRecorder()
+	WriteHTTP(response, raw)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("HTTP status = %d", response.Code)
+	}
+	if strings.Contains(response.Body.String(), "super-secret-token") ||
+		strings.Contains(response.Body.String(), "database failed") {
+		t.Fatalf("HTTP error leaked source: %s", response.Body)
+	}
+
+	mapped := Connect(connect.NewError(connect.CodePermissionDenied, raw))
+	var connectFailure *connect.Error
+	if !errors.As(mapped, &connectFailure) {
+		t.Fatalf("Connect() error = %T", mapped)
+	}
+	if connectFailure.Code() != connect.CodePermissionDenied ||
+		strings.Contains(mapped.Error(), "super-secret-token") {
+		t.Fatalf("mapped Connect error = %v", mapped)
+	}
+}
+
+func TestAuthenticationAndContextClassification(t *testing.T) {
+	t.Parallel()
+	if got := Classify(&auth.Error{Kind: auth.ErrorExpired}); got != ClassAuthentication {
+		t.Fatalf("auth class = %s", got)
+	}
+	if got := Classify(context.DeadlineExceeded); got != ClassTimeout {
+		t.Fatalf("deadline class = %s", got)
+	}
+}
+
+func TestHTTPRecoversPanicSafely(t *testing.T) {
+	t.Parallel()
+	handler := HTTP(func(http.ResponseWriter, *http.Request) error {
+		panic("Bearer panic-secret")
+	})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code != http.StatusInternalServerError ||
+		strings.Contains(response.Body.String(), "panic-secret") {
+		t.Fatalf("panic response = %d %s", response.Code, response.Body)
+	}
+}
