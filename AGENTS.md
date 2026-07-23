@@ -83,6 +83,8 @@ enum ProjectId {
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
   PublicDocs = "public-docs",
+  DeliDev = "delidev",
+  Delibase = "delibase",
 }
 ```
 
@@ -99,6 +101,18 @@ enum ProjectId {
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
+- `delidev` -> `apps/delidev-app`
+- `delibase` -> `servers/delibase`, `protos/delibase`
+- `servers/internal` -> repository-shared Go infrastructure consumed by `delibase`; it is not assigned to an unrelated project.
+
+### DeliDev and delibase Contract Boundary
+
+- Canonical future origins are `https://deli.dev` for DeliDev and `https://delibase.deli.dev` for delibase. Documentation must not imply either service is activated or deployed by issue #722.
+- `apps/delidev-app` owns the React/TypeScript/Rsbuild PWA, stable routes, browser-safe configuration, static Pages artifact, and sensitive-cache exclusions.
+- `servers/delibase` owns Go/PostgreSQL/sqlc persistence, organization/team/invitation policy, append-only billing and reservation invariants, provider integrations, server configuration, and future GHCR artifacts.
+- `protos/delibase/v1` owns the versioned `delibase.v1` source contract and generation boundary for exactly six Connect services: `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, `BillingService`, and `UsageService`.
+- `servers/internal` owns reusable Go authentication, Connect, request/trace, redaction, HTTP, logging, and UUID v7 infrastructure only; it must not own delibase business rules.
+- Changes to routes, RPCs, roles, team hierarchy, invitations, billing, usage, authentication, generated clients, shared packages, validation commands, Pages scope, or GHCR scope require synchronized project/domain docs and the relevant `AGENTS.md` files.
 
 ### Repository Default Technology Choices
 

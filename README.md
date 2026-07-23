@@ -27,6 +27,8 @@ This repository hosts multiple products and shared tooling across apps, CLIs, se
 | `serde-feather` | Size-first serialization contract split between runtime core and derive-macro crates. | `crates/serde-feather`<br>`crates/serde-feather-macros` | `active` | [project-serde-feather](docs/project-serde-feather.md), [crates-serde-feather-core-foundation](docs/crates-serde-feather-core-foundation.md), [crates-serde-feather-macros-foundation](docs/crates-serde-feather-macros-foundation.md) |
 | `rustia` | Serde-based LLM JSON parsing and function-calling tool adapter utilities split across runtime, aisdk adapter, and macro crates. | `crates/rustia`<br>`crates/rustia-llm`<br>`crates/rustia-macros` | `active` | [project-rustia](docs/project-rustia.md), [crates-rustia-core-foundation](docs/crates-rustia-core-foundation.md), [crates-rustia-llm-foundation](docs/crates-rustia-llm-foundation.md), [crates-rustia-macros-foundation](docs/crates-rustia-macros-foundation.md) |
 | `public-docs` | Rspress-based public documentation site for user-facing product and platform content. | `apps/public-docs` | `active` | [project-public-docs](docs/project-public-docs.md), [apps-public-docs-foundation](docs/apps-public-docs-foundation.md) |
+| `delidev` | Planned React/TypeScript/Rsbuild Cloudflare Pages PWA for the DeliDev developer-tools catalog and organization UI. | `apps/delidev-app` | `planned` | [project-delidev](docs/project-delidev.md), [apps-delidev-app-foundation](docs/apps-delidev-app-foundation.md) |
+| `delibase` | Planned reusable Go/PostgreSQL/sqlc organization, billing, and metered-usage service with a shared versioned Connect API. | `servers/delibase`<br>`protos/delibase` | `planned` | [project-delibase](docs/project-delibase.md), [servers-delibase-server-foundation](docs/servers-delibase-server-foundation.md), [protos-delibase-api-contract](docs/protos-delibase-api-contract.md) |
 
 ## Documentation Contract
 
@@ -34,3 +36,4 @@ This repository hosts multiple products and shared tooling across apps, CLIs, se
 - Every project is defined by `docs/project-<id>.md` plus one or more domain contract documents.
 - When ownership, interfaces, or runtime behavior changes, update the relevant `docs/` contracts in the same change.
 - Start from [docs/README.md](docs/README.md) for the canonical documentation catalog.
+- `servers/internal` is repository-shared Go infrastructure consumed by `delibase` and is intentionally not a project catalog entry.

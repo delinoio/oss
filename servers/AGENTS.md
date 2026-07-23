@@ -8,6 +8,8 @@
 ### Scope in This Domain
 
 - `servers/thenv`: Backend for secure environment sharing.
+- `servers/delibase`: Planned Go/PostgreSQL/sqlc organization, billing, and usage service owned by project `delibase`.
+- `servers/internal`: Repository-shared Go package boundary consumed by delibase; not a project-owned delibase subcomponent or an unrelated project.
 
 ### Server Language and Data Rules
 
@@ -43,6 +45,17 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
 - Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
+
+### Delibase Rules
+
+- Follow `docs/project-delibase.md`, `docs/servers-delibase-server-foundation.md`, `docs/protos-delibase-api-contract.md`, and `docs/servers-internal-foundation.md` before implementation.
+- The canonical future API origin is `https://delibase.deli.dev`; do not activate or deploy a runtime for issue #722.
+- Use PostgreSQL and sqlc for persistence, UUID v7 for persisted IDs, signed int64 USD micro-units for money, signed int64 units for usage, and transactional/locked append-only ledger/reservation invariants.
+- Keep Logto identity validation separate from delibase authorization; validate the canonical `https://delibase.deli.dev` audience, require confirmation for non-`General` subtree deletion, and exclude organization deletion from Admin permissions. Polar owns payment settlement/invoices, while delibase owns local users keyed by Logto `sub`, organization, team, membership, ledger, reservation, and audit state.
+- The six Connect services are `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, `BillingService`, and `UsageService`. Human calls use user tokens except for anonymous `CatalogService` reads; usage mutations validate M2M and the `x-delibase-forwarded-user-token` forwarded end-user context, whose value is always redacted.
+- Shared reusable auth/JWKS, Connect interceptors, redaction, request/trace IDs, HTTP defaults, structured logging, and UUID v7 code belongs under `servers/internal`; business policy remains in delibase.
+- Required checks once code exists include `gofmt`, `go vet ./...`, `go test ./servers/delibase/...`, sqlc/migration checks, Protobuf generation/compatibility, PostgreSQL concurrency tests, and Docker validation.
+- Issue #722 artifact scope excludes public activation/deployment, production SLO/RPM controls, dashboards/alerts, kill switches, feature flags, operator RPCs, and manual replay tooling. Future GHCR release scope is signed `delibase@v*` multi-architecture `vX.Y.Z` and `latest` only.
 
 ### Multi-Component Contract Sync
 
