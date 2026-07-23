@@ -1014,6 +1014,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - devhud-macos-cef-gate
       - go-quality
       - go-test
       - delibase-server

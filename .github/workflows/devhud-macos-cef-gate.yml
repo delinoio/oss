@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/CI.yml
       - .github/workflows/devhud-macos-cef-gate.yml
+      - .nvmrc
       - Cargo.lock
       - Cargo.toml
       - package.json

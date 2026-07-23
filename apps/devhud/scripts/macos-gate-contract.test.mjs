@@ -11,6 +11,7 @@ import {
 import {
   eventNames,
   execute,
+  sanitizedRuntimeEnvironment,
   structuredDiagnostics,
 } from "./macos-gate.mjs";
 
@@ -140,6 +141,32 @@ test("rejects excluded values in captured diagnostics", () => {
     /redaction/u,
   );
   assert.doesNotThrow(() => assertSafeDiagnostics("safe-event", ["excluded"]));
+});
+
+test("rejects JSON-escaped multiline values in captured diagnostics", () => {
+  const privateKey =
+    '-----BEGIN PRIVATE KEY-----\n"private-key"\n-----END PRIVATE KEY-----';
+  const diagnostics = JSON.stringify({ message: privateKey });
+
+  assert.throws(
+    () => assertSafeDiagnostics(diagnostics, [privateKey]),
+    /redaction/u,
+  );
+});
+
+test("scrubs App Store Connect private keys from the app environment", () => {
+  const originalPrivateKey = process.env.APPLE_API_PRIVATE_KEY;
+  process.env.APPLE_API_PRIVATE_KEY = "private-key";
+  try {
+    const environment = sanitizedRuntimeEnvironment("sentinel");
+    assert.equal(environment.APPLE_API_PRIVATE_KEY, undefined);
+  } finally {
+    if (originalPrivateKey === undefined) {
+      delete process.env.APPLE_API_PRIVATE_KEY;
+    } else {
+      process.env.APPLE_API_PRIVATE_KEY = originalPrivateKey;
+    }
+  }
 });
 
 test("summarizes subprocess failures without sensitive values", () => {

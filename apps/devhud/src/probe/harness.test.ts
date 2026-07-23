@@ -142,7 +142,9 @@ function passingDriver(
         checkedFormats: formats,
         bundledAssetsPresent: true,
         cefHelpersPresent: true,
-        signingMode: MacOSSigningMode.SignReady,
+        ...(formats.includes(PackageFormat.Dmg)
+          ? { signingMode: MacOSSigningMode.SignReady }
+          : {}),
         signReady: true,
       };
     },
@@ -206,6 +208,27 @@ describe("probe harness", () => {
       expect(report.passed).toBe(true);
     },
   );
+
+  it("rejects macOS signing evidence for non-macOS packages", async () => {
+    const driver = passingDriver([]);
+    driver.packaging = async (formats, architecture) => ({
+      architecture,
+      checkedFormats: formats,
+      bundledAssetsPresent: true,
+      cefHelpersPresent: true,
+      signingMode: MacOSSigningMode.SignReady,
+      signReady: true,
+    });
+
+    const report = await runProbeHarness(target, driver);
+
+    expect(report.results).toContainEqual({
+      id: ProbeId.Packaging,
+      status: "failed",
+      reason:
+        "Probe packaging returned evidence that does not satisfy its gate conditions",
+    });
+  });
 
   it.each([
     {

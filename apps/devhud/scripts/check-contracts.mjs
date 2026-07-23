@@ -18,6 +18,7 @@ const paths = {
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
   rootCargoManifest: resolve(repositoryRoot, "Cargo.toml"),
+  rootWorkflow: resolve(repositoryRoot, ".github/workflows/CI.yml"),
   tauriConfig: resolve(appRoot, "src-tauri/tauri.conf.json"),
 };
 
@@ -30,6 +31,7 @@ const [
   packageLock,
   packageManifest,
   rootCargoManifest,
+  rootWorkflow,
   tauriConfig,
 ] = await Promise.all([
   readFile(paths.cargoLock, "utf8"),
@@ -40,6 +42,7 @@ const [
   readFile(paths.packageLock, "utf8"),
   readFile(paths.packageManifest, "utf8"),
   readFile(paths.rootCargoManifest, "utf8"),
+  readFile(paths.rootWorkflow, "utf8"),
   readFile(paths.tauriConfig, "utf8"),
 ]);
 
@@ -180,6 +183,16 @@ requireCondition(
     macosWorkflow.includes("target: aarch64-apple-darwin") &&
     macosWorkflow.includes("pnpm --dir apps/devhud gate:macos"),
   "the isolated macOS gate must cover native x64 and ARM64 runners",
+);
+requireCondition(
+  macosWorkflow.includes("      - .nvmrc"),
+  "the isolated macOS gate must run when the pinned Node.js runtime changes",
+);
+requireCondition(
+  /ci-result:[\s\S]*needs:[\s\S]*- devhud-macos-cef-gate/u.test(
+    rootWorkflow,
+  ),
+  "the root CI aggregate must include the manually dispatched macOS gate",
 );
 requireCondition(
   macosWorkflow.includes(

@@ -33,7 +33,11 @@ const requiredTopLevelEvidenceKeys = Object.freeze([
 
 export function assertSafeDiagnostics(text, excludedValues) {
   for (const value of excludedValues) {
-    if (value && text.includes(value)) {
+    if (!value) {
+      continue;
+    }
+    const jsonEscapedValue = JSON.stringify(value).slice(1, -1);
+    if (text.includes(value) || text.includes(jsonEscapedValue)) {
       throw new Error("macOS gate diagnostic redaction failed");
     }
   }

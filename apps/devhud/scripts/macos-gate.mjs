@@ -41,6 +41,7 @@ const secretEnvironmentNames = Object.freeze([
   "APPLE_API_ISSUER",
   "APPLE_API_KEY",
   "APPLE_API_KEY_PATH",
+  "APPLE_API_PRIVATE_KEY",
   "APPLE_CERTIFICATE",
   "APPLE_CERTIFICATE_PASSWORD",
   "APPLE_ID",
@@ -72,7 +73,7 @@ function parseArguments(argv) {
   return { evidencePath, target };
 }
 
-function sanitizedRuntimeEnvironment(environmentSentinel) {
+export function sanitizedRuntimeEnvironment(environmentSentinel) {
   const environment = {
     ...process.env,
     DEVHUD_GATE_ENV_SENTINEL: environmentSentinel,
@@ -744,6 +745,7 @@ async function main() {
       updaterPassword,
       privateKey,
       publicKey,
+      process.env.APPLE_API_PRIVATE_KEY,
       process.env.APPLE_CERTIFICATE,
       process.env.APPLE_CERTIFICATE_PASSWORD,
       ...shortcutDiagnosticForms,

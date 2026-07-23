@@ -136,7 +136,7 @@ export interface PackagingEvidence {
   checkedFormats: readonly PackageFormat[];
   bundledAssetsPresent: boolean;
   cefHelpersPresent: boolean;
-  signingMode: MacOSSigningMode;
+  signingMode?: MacOSSigningMode;
   signReady: boolean;
 }
 

@@ -255,7 +255,11 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
       ) &&
       evidence.bundledAssetsPresent === true &&
       evidence.cefHelpersPresent === true &&
-      Object.values(MacOSSigningMode).includes(evidence.signingMode) &&
+      (target.platform === DesktopPlatform.MacOS
+        ? Object.values(MacOSSigningMode).some(
+            (signingMode) => signingMode === evidence.signingMode,
+          )
+        : evidence.signingMode === undefined) &&
       evidence.signReady === true,
   ),
   defineScenario(
