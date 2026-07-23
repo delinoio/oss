@@ -115,6 +115,36 @@ CREATE TRIGGER subscriptions_preserve_polar_identifier
 BEFORE UPDATE OF polar_subscription_id ON subscriptions
 FOR EACH ROW EXECUTE FUNCTION preserve_polar_subscription_identifier();
 
+CREATE FUNCTION preserve_terminal_subscription()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF OLD.status IN ('canceled', 'revoked')
+           AND EXISTS (
+               SELECT 1
+               FROM organizations
+               WHERE id = OLD.organization_id
+           ) THEN
+            RAISE EXCEPTION 'terminal subscription history is immutable'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    IF OLD.status IN ('canceled', 'revoked') THEN
+        RAISE EXCEPTION 'terminal subscription history is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER subscriptions_preserve_terminal_history
+BEFORE UPDATE OR DELETE ON subscriptions
+FOR EACH ROW EXECUTE FUNCTION preserve_terminal_subscription();
+
 CREATE TABLE billing_periods (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -208,6 +238,15 @@ CREATE TABLE ledger_entries (
     CHECK (
         reservation_id IS NULL
         OR (team_id_snapshot IS NOT NULL AND team_name_snapshot IS NOT NULL)
+    ),
+    CHECK (
+        entry_type NOT IN (
+            'credit_hold',
+            'credit_release',
+            'overage_hold',
+            'overage_release'
+        )
+        OR reservation_id IS NOT NULL
     ),
     CHECK (
         entry_type NOT IN ('credit_commit', 'overage_commit')
@@ -556,12 +595,12 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    NEW.finalized_at := transaction_timestamp();
+    NEW.finalized_at := statement_timestamp();
     IF OLD.status <> 'held'
        OR NEW.status NOT IN ('committed', 'released', 'expired')
        OR (
            NEW.status = 'expired'
-           AND OLD.expires_at > transaction_timestamp()
+           AND OLD.expires_at > statement_timestamp()
        )
        OR (
            NEW.status = 'committed'
@@ -581,6 +620,22 @@ BEGIN
                      WHERE entry.usage_record_id = usage.id
                        AND entry.entry_type = 'overage_commit'
                  ), 0) = usage.overage_applied_micros::numeric
+                 AND COALESCE((
+                     SELECT sum(entry.amount_micros)
+                     FROM ledger_entries AS entry
+                     WHERE entry.reservation_id = OLD.id
+                       AND entry.entry_type = 'credit_release'
+                 ), 0) = (
+                     OLD.held_credit_micros - usage.credit_applied_micros
+                 )::numeric
+                 AND COALESCE((
+                     SELECT sum(entry.amount_micros)
+                     FROM ledger_entries AS entry
+                     WHERE entry.reservation_id = OLD.id
+                       AND entry.entry_type = 'overage_release'
+                 ), 0) = (
+                     OLD.held_overage_micros - usage.overage_applied_micros
+                 )::numeric
            )
        )
        OR (
@@ -671,7 +726,7 @@ CREATE TABLE usage_records (
     total_cost_micros bigint NOT NULL CHECK (total_cost_micros >= 0),
     credit_applied_micros bigint NOT NULL CHECK (credit_applied_micros >= 0),
     overage_applied_micros bigint NOT NULL CHECK (overage_applied_micros >= 0),
-    committed_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    committed_at timestamptz NOT NULL DEFAULT statement_timestamp(),
     FOREIGN KEY (
         reservation_id,
         organization_id,
@@ -783,7 +838,7 @@ BEGIN
         RAISE EXCEPTION 'reservation is already finalized'
             USING ERRCODE = 'check_violation';
     END IF;
-    IF reservation.expires_at <= transaction_timestamp() THEN
+    IF reservation.expires_at <= statement_timestamp() THEN
         RAISE EXCEPTION 'reservation has expired'
             USING ERRCODE = 'check_violation';
     END IF;
@@ -811,7 +866,7 @@ BEGIN
             USING ERRCODE = 'check_violation';
     END IF;
 
-    NEW.committed_at := transaction_timestamp();
+    NEW.committed_at := statement_timestamp();
 
     SELECT COALESCE(sum(amount_micros), 0)
     INTO settled_credit_micros

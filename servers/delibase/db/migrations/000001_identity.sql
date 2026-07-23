@@ -615,7 +615,7 @@ FOR EACH ROW EXECUTE FUNCTION preserve_organization_invitation();
 CREATE TABLE organization_invitation_acceptances (
     invitation_id uuid NOT NULL REFERENCES organization_invitations(id) ON DELETE CASCADE,
     account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    accepted_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    accepted_at timestamptz NOT NULL DEFAULT statement_timestamp(),
     PRIMARY KEY (invitation_id, account_id)
 );
 
@@ -638,7 +638,7 @@ BEGIN
             USING ERRCODE = 'foreign_key_violation';
     END IF;
 
-    NEW.accepted_at := transaction_timestamp();
+    NEW.accepted_at := statement_timestamp();
     IF invitation_revoked_at IS NOT NULL
        OR NEW.accepted_at < invitation_created_at
        OR invitation_expires_at <= NEW.accepted_at THEN

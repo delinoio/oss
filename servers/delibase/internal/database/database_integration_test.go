@@ -1010,6 +1010,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		expiredHold    = "0198a000-0000-7000-8000-000000000048"
 		inheritedHold  = "0198a000-0000-7000-8000-000000000141"
 		deletionInvite = "0198a000-0000-7000-8000-000000000053"
+		expiredInvite  = "0198a000-0000-7000-8000-000000000148"
 		subA           = "0198a000-0000-7000-8000-000000000061"
 		subB           = "0198a000-0000-7000-8000-000000000062"
 		subC           = "0198a000-0000-7000-8000-000000000063"
@@ -1083,6 +1084,14 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE subscriptions SET status = 'active' WHERE id = $1",
+		subB,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM subscriptions WHERE id = $1",
+		subB,
+	)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO subscriptions (
 			id, organization_id, polar_subscription_id, status
@@ -1341,22 +1350,35 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		INSERT INTO organization_invitation_acceptances (invitation_id, account_id)
 		VALUES ('0198a000-0000-7000-8000-000000000142', $1)
 	`, accountB)
-	if _, err := transaction.Exec(ctx, `
-		INSERT INTO organization_invitation_acceptances (
-			invitation_id, account_id, accepted_at
-		) VALUES ($1, $2, '2000-01-01T00:00:00Z')
-	`, deletionInvite, accountA); err != nil {
-		t.Fatal(err)
-	}
 	var acceptanceUsesStorageTime bool
 	if err := transaction.QueryRow(ctx, `
-		SELECT accepted_at = transaction_timestamp()
-		FROM organization_invitation_acceptances
-		WHERE invitation_id = $1 AND account_id = $2
+		WITH acceptance AS (
+			INSERT INTO organization_invitation_acceptances (
+				invitation_id, account_id, accepted_at
+			) VALUES ($1, $2, '2000-01-01T00:00:00Z')
+			RETURNING accepted_at
+		)
+		SELECT accepted_at = statement_timestamp()
+		FROM acceptance
 	`, deletionInvite, accountA).Scan(&acceptanceUsesStorageTime); err != nil ||
 		!acceptanceUsesStorageTime {
 		t.Fatalf("invitation acceptance storage timestamp = %t, %v", acceptanceUsesStorageTime, err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO organization_invitations (
+			id, organization_id, token_hash, organization_role,
+			created_by_account_id, expires_at
+		) VALUES (
+			$1, $2, decode(repeat('fb', 32), 'hex'), 'admin', $3,
+			statement_timestamp()
+		)
+	`, expiredInvite, orgA, accountA); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO organization_invitation_acceptances (invitation_id, account_id)
+		VALUES ($1, $2)
+	`, expiredInvite, accountB)
 	if _, err := transaction.Exec(
 		ctx,
 		"UPDATE organization_invitations SET revoked_at = transaction_timestamp() WHERE id = $1",
@@ -1434,16 +1456,32 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			'credit_grant', 1, 1, 'raw-ledger-actor', 'raw-logto-subject'
 		)
 	`, orgA, periodA)
+	orphanReservationOperations := []struct {
+		name   string
+		amount int64
+	}{
+		{name: "credit_hold", amount: -2},
+		{name: "credit_release", amount: 4},
+		{name: "overage_hold", amount: -1},
+		{name: "overage_release", amount: 4},
+	}
+	for index, operation := range orphanReservationOperations {
+		requireConstraintFailure(t, ctx, transaction, `
+			INSERT INTO ledger_entries (
+				id, organization_id, billing_period_id, entry_type,
+				amount_micros, balance_after_micros, source_reference
+			) VALUES (
+				('0198a000-0000-7000-8000-' || lpad(($1 + 340)::text, 12, '0'))::uuid,
+				$2, $3, $4, $5, $5, $4
+			)
+		`, index, orgA, periodA, operation.name, operation.amount)
+	}
 	ledgerOperations := []struct {
 		name   string
 		amount int64
 	}{
 		{name: "credit_grant", amount: 6},
 		{name: "credit_reversal", amount: -1},
-		{name: "credit_hold", amount: -2},
-		{name: "credit_release", amount: 4},
-		{name: "overage_hold", amount: -1},
-		{name: "overage_release", amount: 4},
 		{name: "credit_forfeiture", amount: -1},
 	}
 	var ledgerBalance int64
@@ -1483,7 +1521,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000136', $1, $2,
-			'credit_commit', -1, 8, 'unlinked-credit-commit'
+			'credit_commit', -1, 3, 'unlinked-credit-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1492,7 +1530,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000137', $1, $2,
-			'overage_commit', -1, 8, 'unlinked-overage-commit'
+			'overage_commit', -1, 3, 'unlinked-overage-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1501,7 +1539,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000143', $1, $2,
-			'credit_commit', 1, 10, 'positive-credit-commit'
+			'credit_commit', 1, 5, 'positive-credit-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1510,7 +1548,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000144', $1, $2,
-			'credit_forfeiture', 1, 10, 'positive-credit-forfeiture'
+			'credit_forfeiture', 1, 5, 'positive-credit-forfeiture'
 		)
 	`, orgA, periodA)
 	if _, err := transaction.Exec(ctx, `
@@ -1963,7 +2001,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, created_at, expires_at
-		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'valid', '2099-01-01', transaction_timestamp() + interval '1 minute')
+		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 3, 1, 3, 3, 0, 'valid', '2099-01-01', transaction_timestamp() + interval '1 minute')
 	`, reserveID, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
@@ -1974,6 +2012,21 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		reserveID,
 	).Scan(&reservationUsesStorageTime); err != nil || !reservationUsesStorageTime {
 		t.Fatalf("reservation storage creation timestamp = %t, %v", reservationUsesStorageTime, err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, entry_type, amount_micros,
+			balance_after_micros, reservation_id, team_id_snapshot,
+			team_name_snapshot, source_reference
+		)
+		SELECT
+			'0198a000-0000-7000-8000-000000000149',
+			$1, 'credit_hold', -3, COALESCE(sum(amount_micros), 0) - 3,
+			$2, $3, 'A', 'partial-commit-credit-hold'
+		FROM ledger_entries
+		WHERE organization_id = $1
+	`, orgA, reserveID, teamA); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(
 		ctx,
@@ -2197,7 +2250,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, reservation_id, organization_id, team_id, team_name_snapshot,
 			meter_id, account_id, service_identity_id, committed_units,
 			total_cost_micros, credit_applied_micros, overage_applied_micros
-		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 2, 2, 2, 0)
+		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 4, 4, 3, 1)
 	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_records (
@@ -2265,40 +2318,33 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	if err := creditCapacity.Rollback(context.WithoutCancel(ctx)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := transaction.Exec(ctx, `
-		INSERT INTO usage_records (
-			id, reservation_id, organization_id, team_id, team_name_snapshot,
-			meter_id, account_id, service_identity_id, committed_units,
-			total_cost_micros, credit_applied_micros, overage_applied_micros,
-			committed_at
-		) VALUES (
-			$1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0,
-			'2000-01-01T00:00:00Z'
+	var storageCommittedAt bool
+	if err := transaction.QueryRow(ctx, `
+		WITH usage AS (
+			INSERT INTO usage_records (
+				id, reservation_id, organization_id, team_id, team_name_snapshot,
+				meter_id, account_id, service_identity_id, committed_units,
+				total_cost_micros, credit_applied_micros, overage_applied_micros,
+				committed_at
+			) VALUES (
+				$1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0,
+				'2000-01-01T00:00:00Z'
+			)
+			RETURNING committed_at
 		)
-	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceID); err != nil {
-		t.Fatal(err)
+		SELECT committed_at = statement_timestamp()
+		FROM usage
+	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceID).
+		Scan(&storageCommittedAt); err != nil || !storageCommittedAt {
+		t.Fatalf("usage storage commit timestamp = %t, %v", storageCommittedAt, err)
 	}
-	var (
-		reservationStatus  string
-		storageCommittedAt bool
-	)
+	var reservationStatus string
 	if err := transaction.QueryRow(
 		ctx,
-		`SELECT
-			reservation.status,
-			usage.committed_at = transaction_timestamp()
-		FROM usage_reservations AS reservation
-		JOIN usage_records AS usage ON usage.reservation_id = reservation.id
-		WHERE reservation.id = $1`,
+		"SELECT status FROM usage_reservations WHERE id = $1",
 		reserveID,
-	).Scan(&reservationStatus, &storageCommittedAt); err != nil ||
-		reservationStatus != "held" || !storageCommittedAt {
-		t.Fatalf(
-			"reservation status = %q, storage commit timestamp = %t, %v",
-			reservationStatus,
-			storageCommittedAt,
-			err,
-		)
+	).Scan(&reservationStatus); err != nil || reservationStatus != "held" {
+		t.Fatalf("reservation status = %q, %v", reservationStatus, err)
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		UPDATE usage_reservations
@@ -2334,19 +2380,53 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, reservation_id,
 			usage_record_id, team_id_snapshot, team_name_snapshot,
 			source_reference, actor_reference
-		) VALUES (
-			$1, $2, $3, 'credit_commit', -1, 8, $4, $5, $6, 'A',
-			'linked-usage', 'actor:v1:00000000000000000000000000000000'
 		)
+		SELECT
+			$1, $2, $3, 'credit_commit', -1,
+			COALESCE(sum(amount_micros), 0) - 1, $4, $5, $6, 'A',
+			'linked-usage', 'actor:v1:00000000000000000000000000000000'
+		FROM ledger_entries
+		WHERE organization_id = $2
 	`, linkedLedger, orgA, currentPeriodA, reserveID, recordID, teamA); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := transaction.Exec(ctx, `
+	requireConstraintFailure(t, ctx, transaction, `
 		UPDATE usage_reservations
 		SET status = 'committed'
 		WHERE id = $1
-	`, reserveID); err != nil {
+	`, reserveID)
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, entry_type, amount_micros,
+			balance_after_micros, reservation_id, team_id_snapshot,
+			team_name_snapshot, source_reference
+		)
+		SELECT
+			'0198a000-0000-7000-8000-000000000150',
+			$1, 'credit_release', 2, COALESCE(sum(amount_micros), 0) + 2,
+			$2, $3, 'A', 'partial-commit-credit-release'
+		FROM ledger_entries
+		WHERE organization_id = $1
+	`, orgA, reserveID, teamA); err != nil {
 		t.Fatal(err)
+	}
+	var finalizationUsesStatementTime bool
+	if err := transaction.QueryRow(ctx, `
+		WITH finalized AS (
+			UPDATE usage_reservations
+			SET status = 'committed'
+			WHERE id = $1
+			RETURNING finalized_at
+		)
+		SELECT finalized_at = statement_timestamp()
+		FROM finalized
+	`, reserveID).Scan(&finalizationUsesStatementTime); err != nil ||
+		!finalizationUsesStatementTime {
+		t.Fatalf(
+			"reservation finalization storage timestamp = %t, %v",
+			finalizationUsesStatementTime,
+			err,
+		)
 	}
 	if err := transaction.QueryRow(
 		ctx,
@@ -2362,7 +2442,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			team_id_snapshot, team_name_snapshot, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000211',
-			$1, 'credit_commit', -1, 7, $2, $3, $4, 'A',
+			$1, 'credit_commit', -1, 1, $2, $3, $4, 'A',
 			'excess-linked-usage'
 		)
 	`, orgA, reserveID, recordID, teamA)
@@ -2385,7 +2465,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			team_id_snapshot, team_name_snapshot, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000079',
-			$1, 'credit_commit', -1, 7, $2, $3, $4, 'Wrong team',
+			$1, 'credit_commit', -1, 1, $2, $3, $4, 'Wrong team',
 			'mismatched-linked-usage'
 		)
 	`, orgA, reserveID, recordID, teamA)
@@ -2452,7 +2532,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		retainedLedgerUsage != recordID ||
 		retainedLedgerTeam != teamA ||
 		retainedLedgerTeamName != "A" ||
-		retainedLedgerBalance != 8 {
+		retainedLedgerBalance != 0 {
 		t.Fatalf(
 			"retained ledger links = reservation:%q usage:%q team:%q/%q balance:%d",
 			retainedLedgerReservation,
@@ -2607,6 +2687,13 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		SET status = 'committed'
 		WHERE id = $1
 	`, historyReserve); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE subscriptions SET status = 'canceled' WHERE id = $1",
+		subC,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, "DELETE FROM organizations WHERE id = $1", orgC); err != nil {
