@@ -33,6 +33,15 @@ describe("service worker cache policy", () => {
         shellPaths,
       ),
     ).toBe(CacheTarget.None);
+    expect(
+      classifyCacheRequest(
+        {
+          method: "POST",
+          url: "https://untrusted.example/delibase.v1.CatalogService/ListCatalogApps",
+        },
+        shellPaths,
+      ),
+    ).toBe(CacheTarget.None);
   });
 
   it.each([

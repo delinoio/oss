@@ -2,6 +2,7 @@
 const SHELL_VERSION = "__SHELL_VERSION__";
 const SHELL_CACHE = `delidev-shell-${SHELL_VERSION}`;
 const PUBLIC_CATALOG_CACHE = `delidev-public-catalog-${SHELL_VERSION}`;
+const PUBLIC_CATALOG_ORIGIN = "https://delibase.deli.dev";
 const SHELL_FILES = __SHELL_FILES__;
 const SHELL_PATHS = new Set(SHELL_FILES.map((path) => new URL(path, self.location.origin).pathname));
 const PUBLIC_CATALOG_METHODS = new Set([
@@ -13,7 +14,10 @@ const PUBLIC_CATALOG_METHODS = new Set([
 
 function publicCatalogMethod(url) {
   const prefix = "/delibase.v1.CatalogService/";
-  if (!url.pathname.startsWith(prefix)) {
+  if (
+    url.origin !== PUBLIC_CATALOG_ORIGIN ||
+    !url.pathname.startsWith(prefix)
+  ) {
     return undefined;
   }
   const method = url.pathname.slice(prefix.length);

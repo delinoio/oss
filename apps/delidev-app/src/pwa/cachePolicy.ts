@@ -4,6 +4,7 @@ export const PUBLIC_CATALOG_METHODS = new Set([
   "ListCatalogMeters",
   "GetCatalogMeter",
 ]);
+const PUBLIC_CATALOG_ORIGIN = "https://delibase.deli.dev";
 
 export enum CacheTarget {
   None = "none",
@@ -37,6 +38,7 @@ export function classifyCacheRequest(
     : "";
   if (
     request.method === "POST" &&
+    url.origin === PUBLIC_CATALOG_ORIGIN &&
     !request.authorization &&
     PUBLIC_CATALOG_METHODS.has(catalogMethod)
   ) {

@@ -2,6 +2,7 @@
 const SHELL_VERSION = "63af4620df53";
 const SHELL_CACHE = `delidev-shell-${SHELL_VERSION}`;
 const PUBLIC_CATALOG_CACHE = `delidev-public-catalog-${SHELL_VERSION}`;
+const PUBLIC_CATALOG_ORIGIN = "https://delibase.deli.dev";
 const SHELL_FILES = ["/","/icons/delidev-192.png","/icons/delidev-512.png","/icons/delidev-maskable-512.png","/icons/delidev.svg","/index.html","/manifest.webmanifest","/static/css/index.494f825e68.css","/static/js/641.0aace7fd21.js","/static/js/641.0aace7fd21.js.LICENSE.txt","/static/js/index.51122ae10b.js","/static/js/lib-react.2f531ee03e.js","/static/js/lib-react.2f531ee03e.js.LICENSE.txt","/static/js/lib-router.a751045bad.js","/static/js/lib-router.a751045bad.js.LICENSE.txt"];
 const SHELL_PATHS = new Set(SHELL_FILES.map((path) => new URL(path, self.location.origin).pathname));
 const PUBLIC_CATALOG_METHODS = new Set([
@@ -13,7 +14,10 @@ const PUBLIC_CATALOG_METHODS = new Set([
 
 function publicCatalogMethod(url) {
   const prefix = "/delibase.v1.CatalogService/";
-  if (!url.pathname.startsWith(prefix)) {
+  if (
+    url.origin !== PUBLIC_CATALOG_ORIGIN ||
+    !url.pathname.startsWith(prefix)
+  ) {
     return undefined;
   }
   const method = url.pathname.slice(prefix.length);
