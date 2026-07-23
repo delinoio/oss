@@ -802,6 +802,7 @@ jobs:
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
+              - turbo.json
               - apps/AGENTS.md
               - apps/delidev-app/**
               - protos/delibase/**

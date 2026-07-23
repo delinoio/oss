@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import { usePublicTransport } from "../api/ApiContext";
 import { CatalogCard } from "../components/CatalogCard";
+import { ErrorState } from "../components/States";
 import { useDocumentMetadata } from "../hooks/useDocumentMetadata";
 
 export function HomePage() {
@@ -78,6 +79,12 @@ export function HomePage() {
               <CatalogCard app={app} key={app.slug} />
             ))}
           </div>
+        ) : catalog.isError ? (
+          <ErrorState
+            error={catalog.error}
+            onRetry={() => void catalog.refetch()}
+            title="Catalog unavailable"
+          />
         ) : (
           <div className="catalog-placeholder" role="status">
             <p>

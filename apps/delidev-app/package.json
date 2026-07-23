@@ -9,6 +9,7 @@
     "icons": "node scripts/generate-icons.mjs",
     "lint": "eslint . --max-warnings 0",
     "preview": "rsbuild preview",
+    "pretest": "pnpm --filter @delinoio/delibase-connect build",
     "test": "vitest run",
     "test:a11y": "vitest run src/test/accessibility.test.tsx",
     "test:browser": "playwright test",

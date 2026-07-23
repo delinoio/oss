@@ -14,7 +14,12 @@ import {
   type LedgerEntry,
   type Team,
 } from "@delinoio/delibase-connect";
-import { useState, type CSSProperties, type FormEvent } from "react";
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
 import { usePublicTransport } from "../api/ApiContext";
@@ -386,6 +391,7 @@ function CreateTeamForm({
   const [parentTeamId, setParentTeamId] = useState("");
   const [message, setMessage] = useState("");
   const [formError, setFormError] = useState("");
+  const idempotencyKey = useRef<{ key: string } | undefined>(undefined);
   const createTeam = useMutation(TeamService.method.createTeam, { transport });
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -397,9 +403,10 @@ function CreateTeamForm({
       setFormError("Enter a team name.");
       return;
     }
+    idempotencyKey.current ??= createIdempotencyKey();
     createTeam.mutate(
       {
-        idempotency: createIdempotencyKey(),
+        idempotency: idempotencyKey.current,
         name: normalizedName,
         organizationId: organization.organizationId,
         parentTeamId: uuid(parentTeamId),
@@ -407,6 +414,7 @@ function CreateTeamForm({
       {
         onError: (error) => setFormError(error.message),
         onSuccess: () => {
+          idempotencyKey.current = undefined;
           setName("");
           setParentTeamId("");
           setMessage("Team created.");
@@ -426,8 +434,14 @@ function CreateTeamForm({
         <label>
           Team name
           <input
+            // This is the single critical input in the create-team form.
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
             maxLength={120}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              idempotencyKey.current = undefined;
+              setName(event.target.value);
+            }}
             required
             value={name}
           />
@@ -435,7 +449,10 @@ function CreateTeamForm({
         <label>
           Parent team
           <select
-            onChange={(event) => setParentTeamId(event.target.value)}
+            onChange={(event) => {
+              idempotencyKey.current = undefined;
+              setParentTeamId(event.target.value);
+            }}
             value={parentTeamId}
           >
             <option value="">Top level</option>
@@ -1210,6 +1227,7 @@ export function OrganizationSettingsPage() {
       return;
     }
 
+    let nameUpdated = false;
     try {
       if (normalizedName !== organization.name) {
         await updateName.mutateAsync({
@@ -1217,6 +1235,7 @@ export function OrganizationSettingsPage() {
           name: normalizedName,
           organizationId: uuid(organization.organizationId?.value),
         });
+        nameUpdated = true;
       }
       if (normalizedSlug !== organization.slug) {
         const response = await updateSlug.mutateAsync({
@@ -1239,11 +1258,21 @@ export function OrganizationSettingsPage() {
           : "Organization settings updated.",
       );
     } catch (error) {
-      setFormError(
+      const mutationError =
         error instanceof Error
           ? error.message
-          : "Organization settings could not be updated.",
-      );
+          : "Organization settings could not be updated.";
+      if (nameUpdated) {
+        try {
+          await refreshOrganization();
+        } catch {
+          setFormError(
+            `${mutationError} The organization name was saved, but current organization data could not be refreshed.`,
+          );
+          return;
+        }
+      }
+      setFormError(mutationError);
     }
   };
   const isPending = updateName.isPending || updateSlug.isPending;

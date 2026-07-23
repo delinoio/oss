@@ -25,7 +25,7 @@
 - Consume protobuf-es v2 messages and `GenService` descriptors through the workspace package `@delinoio/delibase-connect`; Connect Query remains responsible for browser transport/query integration.
 - Logto browser authentication supplies user identity; delibase decides local profile, organization, team, billing, and authorization state. The browser never handles card data; Polar-hosted Checkout and Customer Portal own payment UI.
 - On first authenticated entry, require organization name and globally unique user-selected slug before allowing entry. In the same transaction, create the local user keyed by the unique Logto `sub`, then create the default organization, Owner membership, protected `General` team, and creator Team Admin membership exactly once. Use the same organization transaction for every additional organization.
-- Support multiple organizations, changeable globally unique slugs with retained aliases/old-slug redirects, nested teams up to five levels, invitations with replay-safe acceptance/revocation results, and role-aware pages according to the delibase contract. Human idempotency keys are scoped to the authenticated user subject and operation.
+- Support multiple organizations, changeable globally unique slugs with retained aliases/old-slug redirects, nested teams up to five levels, invitations with replay-safe acceptance/revocation results, and role-aware pages according to the delibase contract. Human idempotency keys are scoped to the authenticated user subject and operation. Create-team retries reuse the pending operation key until the request succeeds or its inputs change.
 
 ## Storage
 - Cloudflare Pages serves a static artifact with SPA fallback; no server-side app runtime is activated by this issue.
@@ -43,7 +43,7 @@
 - Keep dependency and offline errors distinguishable from authorization errors in UI states; do not claim an unavailable backend is operational.
 
 ## Build and Test
-- Shared client checks are `pnpm check:proto` and `pnpm --filter @delinoio/delibase-connect typecheck`. Required local checks once the app exists are `pnpm --filter delidev-app typecheck`, `pnpm --filter delidev-app lint`, `pnpm --filter delidev-app test`, `pnpm --filter delidev-app build`, plus PWA, accessibility, and browser smoke validation.
+- Shared client checks are `pnpm check:proto` and `pnpm --filter @delinoio/delibase-connect typecheck`. Required local checks once the app exists are `pnpm --filter delidev-app typecheck`, `pnpm --filter delidev-app lint`, `pnpm --filter delidev-app test`, `pnpm --filter delidev-app build`, plus PWA, accessibility, and browser smoke validation. The app test command builds the generated Connect client first so it works from a clean checkout.
 - CI must validate the production static artifact, SPA fallback, manifest/service worker, sensitive-cache exclusions, responsive accessibility, and Connect client generation compatibility.
 - `pnpm --filter delidev-app test:pwa` validates the installable manifest, generated SPA fallback, versioned shell, canonical metadata, and allow/deny cache rules. `pnpm --filter delidev-app test:browser` covers Chromium, Edge, Firefox, WebKit, and representative mobile Chromium/WebKit viewports.
 - Rsbuild writes the static app to `apps/delidev-app/dist`; `scripts/postbuild.mjs` copies `index.html` to `404.html` and produces `sw.js` from the exact generated shell file set. Cloudflare Pages `_redirects` provides the primary SPA fallback.
@@ -68,7 +68,7 @@
 - Logto uses an injected browser client whose access, refresh, and ID token state is memory-only and which removes legacy state for the configured app from local storage. Its PKCE sign-in session and non-sensitive protected return path use same-tab session storage. Invitation return paths are sealed with a key derived from the high-entropy OIDC state, restored only by the matching callback, and removed from storage immediately; abandoned sealed handoffs are discarded on the next same-origin load.
 - Public catalog, organization member, team hierarchy, and usage-record lists use opaque cursor pagination with explicit load-more actions.
 - The account surface creates additional organizations through the same atomic organization transaction used by onboarding and then enters the returned canonical slug.
-- Organization settings expose the name and changeable-slug RPCs, refresh server-authoritative shell data after name-only updates, and follow the returned canonical slug after slug changes.
+- Organization settings expose the name and changeable-slug RPCs, refresh server-authoritative shell data after successful name updates (including a partial save when the following slug update fails), and follow the returned canonical slug after slug changes.
 - The organization shell loads the server-authoritative caller role. Team hierarchy creation, rename, move, and confirmed subtree deletion controls render only for Owners and Admins. Subscription, billing-portal, overage-limit, and complete ledger controls follow the same role boundary; overage limits retain exact USD micro-unit handling and ledger reads use opaque cursor pagination.
 
 ## References
