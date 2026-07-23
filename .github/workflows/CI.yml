@@ -822,7 +822,8 @@ jobs:
 
       - name: Skip (DeliDev unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
-        run: echo "Skipping DeliDev app checks: no relevant changes"
+        run: |
+          echo "Skipping DeliDev app checks: no relevant changes"
 
       - name: Setup pnpm
         if: ${{ steps.gate.outputs.run == 'true' }}
