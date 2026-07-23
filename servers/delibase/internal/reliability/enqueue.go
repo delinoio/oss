@@ -15,10 +15,16 @@ import (
 	"github.com/delinoio/oss/servers/internal/redact"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const maximumPayloadBytes = 1 << 20
+
+const (
+	deletionAccountTargetConstraint      = "deletion_jobs_account_target_unique"
+	deletionOrganizationTargetConstraint = "deletion_jobs_organization_target_unique"
+)
 
 var (
 	safeExternalID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$`)
@@ -135,7 +141,7 @@ func EnqueueDeletion(
 		ActorReference: string(input.Actor),
 	})
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == pgx.ErrNoRows || deletionTargetConflict(err) {
 			return uuid.Nil, ErrIdempotencyConflict
 		}
 		return uuid.Nil, err
@@ -227,7 +233,11 @@ func payloadValueIsSafe(key string, value any, depth int) bool {
 		return len(typed) <= maximumPayloadBytes && redact.Text(typed) == typed
 	case map[string]any:
 		for childKey, child := range typed {
-			if !payloadValueIsSafe(childKey, child, depth+1) {
+			childPath := childKey
+			if key != "" {
+				childPath = key + "." + childKey
+			}
+			if !payloadValueIsSafe(childPath, child, depth+1) {
 				return false
 			}
 		}
@@ -239,6 +249,19 @@ func payloadValueIsSafe(key string, value any, depth int) bool {
 		}
 	}
 	return true
+}
+
+func deletionTargetConflict(err error) bool {
+	var postgresError *pgconn.PgError
+	if !errors.As(err, &postgresError) || postgresError.Code != "23505" {
+		return false
+	}
+	switch postgresError.ConstraintName {
+	case deletionAccountTargetConstraint, deletionOrganizationTargetConstraint:
+		return true
+	default:
+		return false
+	}
 }
 
 func billingPIIKey(key string) bool {

@@ -110,6 +110,14 @@ func TestPostgreSQLReliabilityEnqueueClaimsRetriesAndAudit(t *testing.T) {
 	if duplicateDeletionID != firstDeletionID {
 		t.Fatalf("duplicate deletion ID = %s, want %s", duplicateDeletionID, firstDeletionID)
 	}
+	deletion.ID = testReliabilityUUID(17)
+	deletion.IdempotencyKey = "delete-account-2"
+	if _, err := reliability.EnqueueDeletion(ctx, queries, deletion); !errors.Is(
+		err,
+		reliability.ErrIdempotencyConflict,
+	) {
+		t.Fatalf("duplicate account target error = %v", err)
+	}
 	organizationDeletion := reliability.DeletionInput{
 		ID:             testReliabilityUUID(12),
 		Type:           reliability.DeletionOrganization,
@@ -119,6 +127,14 @@ func TestPostgreSQLReliabilityEnqueueClaimsRetriesAndAudit(t *testing.T) {
 	}
 	if _, err := reliability.EnqueueDeletion(ctx, queries, organizationDeletion); err != nil {
 		t.Fatal(err)
+	}
+	organizationDeletion.ID = testReliabilityUUID(18)
+	organizationDeletion.IdempotencyKey = "delete-organization-2"
+	if _, err := reliability.EnqueueDeletion(ctx, queries, organizationDeletion); !errors.Is(
+		err,
+		reliability.ErrIdempotencyConflict,
+	) {
+		t.Fatalf("duplicate organization target error = %v", err)
 	}
 
 	rollbackID := testReliabilityUUID(9)

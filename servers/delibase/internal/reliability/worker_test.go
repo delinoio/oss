@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/internal/safeerr"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestBackoffIsCappedExponentialWithDeterministicJitter(t *testing.T) {
@@ -188,11 +190,15 @@ func TestWorkerCompletesDeadLetterRecoveryAndDoesNotLogHandlerSecrets(t *testing
 		`"entity_id":"0198a000-0000-7000-8000-000000000812"`,
 		`"actor":"actor:v1:0123456789abcdef0123456789abcdef"`,
 		`"dead_letter_attempt":3`,
+		`"transition":"complete"`,
 		`"result":"success"`,
 	} {
 		if !strings.Contains(logged, expected) {
 			t.Fatalf("worker log missing %s: %s", expected, logged)
 		}
+	}
+	if strings.Contains(logged, `"decision":`) {
+		t.Fatalf("worker log used reserved decision field: %s", logged)
 	}
 }
 
@@ -256,6 +262,8 @@ func TestPayloadValidationRejectsCredentialsCardsAndBillingPII(t *testing.T) {
 		`{"card_number":"4242 4242 4242 4242"}`,
 		`{"customer_email":"owner@example.com"}`,
 		`{"billing_name":"Raw Customer"}`,
+		`{"customer":{"name":"Raw Customer"}}`,
+		`{"billing":{"name":"Raw Customer"}}`,
 		`{"payment_method":{"id":"pm_secret"}}`,
 	}
 	for _, raw := range tests {
@@ -275,6 +283,70 @@ func TestPayloadValidationRejectsCredentialsCardsAndBillingPII(t *testing.T) {
 	}
 	if string(safe) != `{"organization_id":"0198a000-0000-7000-8000-000000000821","units":42}` {
 		t.Fatalf("canonical payload = %s", safe)
+	}
+}
+
+func TestDeletionTargetConflictsReturnStableError(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		constraint string
+		input      DeletionInput
+		wantStable bool
+	}{
+		{
+			name:       "account target",
+			constraint: deletionAccountTargetConstraint,
+			input: DeletionInput{
+				ID:             uuid.MustParse("0198a000-0000-7000-8000-000000000831"),
+				Type:           DeletionAccount,
+				AccountID:      uuid.MustParse("0198a000-0000-7000-8000-000000000832"),
+				IdempotencyKey: "delete-account",
+			},
+			wantStable: true,
+		},
+		{
+			name:       "organization target",
+			constraint: deletionOrganizationTargetConstraint,
+			input: DeletionInput{
+				ID:             uuid.MustParse("0198a000-0000-7000-8000-000000000833"),
+				Type:           DeletionOrganization,
+				OrganizationID: uuid.MustParse("0198a000-0000-7000-8000-000000000834"),
+				IdempotencyKey: "delete-organization",
+			},
+			wantStable: true,
+		},
+		{
+			name:       "unrelated unique constraint",
+			constraint: "unrelated_unique",
+			input: DeletionInput{
+				ID:             uuid.MustParse("0198a000-0000-7000-8000-000000000835"),
+				Type:           DeletionAccount,
+				AccountID:      uuid.MustParse("0198a000-0000-7000-8000-000000000836"),
+				IdempotencyKey: "delete-other-account",
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			postgresError := &pgconn.PgError{
+				Code:           "23505",
+				ConstraintName: test.constraint,
+			}
+			queries := &deletionErrorQuerier{err: postgresError}
+			_, err := EnqueueDeletion(context.Background(), queries, test.input)
+			if test.wantStable {
+				if !errors.Is(err, ErrIdempotencyConflict) {
+					t.Fatalf("EnqueueDeletion() error = %v", err)
+				}
+				return
+			}
+			if err != postgresError {
+				t.Fatalf("EnqueueDeletion() error = %v, want original PostgreSQL error", err)
+			}
+		})
 	}
 }
 
@@ -324,6 +396,18 @@ func (generator *fixedTokenGenerator) New() (uuid.UUID, error) {
 	id := uuid.MustParse("0198a000-0000-7000-8000-000000000899")
 	id[15] = generator.next
 	return id, nil
+}
+
+type deletionErrorQuerier struct {
+	dbgen.Querier
+	err error
+}
+
+func (querier *deletionErrorQuerier) EnqueueDeletionJob(
+	context.Context,
+	dbgen.EnqueueDeletionJobParams,
+) (dbgen.DeletionJob, error) {
+	return dbgen.DeletionJob{}, querier.err
 }
 
 type recordedFailure struct {

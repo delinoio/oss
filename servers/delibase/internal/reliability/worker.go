@@ -323,7 +323,6 @@ func (worker *Worker) record(
 		slog.String("event", "reliability_worker"),
 		slog.String("queue", item.Queue.String()),
 		slog.String("transition", string(transition)),
-		slog.String("decision", string(transition)),
 		slog.String("result", string(result)),
 	}
 	if validHandlerID(item.HandlerID) {
