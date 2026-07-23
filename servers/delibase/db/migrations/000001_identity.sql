@@ -1,3 +1,15 @@
+CREATE FUNCTION is_uuid_v7(value uuid)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT
+        substring(value::text FROM 15 FOR 1) = '7'
+        AND substring(value::text FROM 20 FOR 1) IN ('8', '9', 'a', 'b')
+$$;
+
 CREATE TABLE accounts (
     id uuid PRIMARY KEY,
     logto_subject text NOT NULL UNIQUE,
@@ -6,7 +18,7 @@ CREATE TABLE accounts (
         CHECK (status IN ('active', 'disabled', 'deleted')),
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (length(logto_subject) BETWEEN 1 AND 255)
 );
 
@@ -18,7 +30,7 @@ CREATE TABLE organizations (
     deleted_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (length(name) BETWEEN 1 AND 120),
     CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$')
 );
@@ -157,7 +169,7 @@ CREATE TABLE teams (
     UNIQUE NULLS NOT DISTINCT (organization_id, parent_team_id, name),
     FOREIGN KEY (organization_id, parent_team_id)
         REFERENCES teams(organization_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (length(name) BETWEEN 1 AND 120),
     CHECK (
         NOT protected_general
@@ -310,7 +322,7 @@ CREATE TABLE organization_invitations (
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     FOREIGN KEY (organization_id, target_team_id)
         REFERENCES teams(organization_id, id) ON DELETE CASCADE,
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (octet_length(token_hash) >= 32),
     CHECK (
         (organization_role = 'admin' AND target_team_id IS NULL AND team_role IS NULL)

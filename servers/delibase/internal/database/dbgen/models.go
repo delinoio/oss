@@ -254,25 +254,28 @@ type UsageRecord struct {
 }
 
 type UsageReservation struct {
-	ID                pgtype.UUID
-	OrganizationID    pgtype.UUID
-	TeamID            pgtype.UUID
-	TeamNameSnapshot  string
-	MeterID           pgtype.UUID
-	PriceVersionID    pgtype.UUID
-	AccountID         pgtype.UUID
-	ServiceIdentityID pgtype.UUID
-	MaximumUnits      int64
-	UsdMicrosPerUnit  int64
-	MaximumCostMicros int64
-	HeldCreditMicros  int64
-	HeldOverageMicros int64
-	ClientReference   string
-	Status            string
-	ActiveTeamID      pgtype.UUID
-	ExpiresAt         pgtype.Timestamptz
-	FinalizedAt       pgtype.Timestamptz
-	CreatedAt         pgtype.Timestamptz
+	ID                      pgtype.UUID
+	OrganizationID          pgtype.UUID
+	TeamID                  pgtype.UUID
+	TeamNameSnapshot        string
+	MeterID                 pgtype.UUID
+	PriceVersionID          pgtype.UUID
+	AccountID               pgtype.UUID
+	ServiceIdentityID       pgtype.UUID
+	MaximumUnits            int64
+	UsdMicrosPerUnit        int64
+	MaximumCostMicros       int64
+	HeldCreditMicros        int64
+	HeldOverageMicros       int64
+	ClientReference         string
+	Status                  string
+	ActiveTeamID            pgtype.UUID
+	ActiveAccountID         pgtype.UUID
+	ActiveServiceIdentityID pgtype.UUID
+	ActiveMeterID           pgtype.UUID
+	ExpiresAt               pgtype.Timestamptz
+	FinalizedAt             pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
 }
 
 type WebhookInbox struct {

@@ -10,7 +10,7 @@ CREATE TABLE catalog_apps (
     enabled boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (slug ~ '^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$'),
     CHECK (length(name) BETWEEN 1 AND 120)
 );
@@ -28,7 +28,7 @@ CREATE TABLE catalog_meters (
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     UNIQUE (app_id, meter_key),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (meter_key ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
     CHECK (length(name) BETWEEN 1 AND 120),
     CHECK (length(unit_name) BETWEEN 1 AND 64)
@@ -42,7 +42,7 @@ CREATE TABLE catalog_price_versions (
     effective_until timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     UNIQUE (meter_id, id),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (effective_until IS NULL OR effective_until > effective_from),
     EXCLUDE USING gist (
         meter_id WITH =,
@@ -60,7 +60,7 @@ CREATE TABLE service_identities (
     enabled boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (length(logto_client_id) BETWEEN 1 AND 255),
     CHECK (length(name) BETWEEN 1 AND 120)
 );

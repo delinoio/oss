@@ -18,7 +18,7 @@ CREATE TABLE subscriptions (
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     UNIQUE (organization_id),
     UNIQUE (organization_id, id),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (
         current_period_starts_at IS NULL
         OR current_period_ends_at IS NULL
@@ -39,7 +39,7 @@ CREATE TABLE billing_periods (
     FOREIGN KEY (organization_id, subscription_id)
         REFERENCES subscriptions(organization_id, id)
         ON DELETE SET NULL (subscription_id),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (ends_at > starts_at),
     EXCLUDE USING gist (
         organization_id WITH =,
@@ -65,7 +65,7 @@ CREATE TABLE ledger_entries (
     FOREIGN KEY (organization_id, billing_period_id)
         REFERENCES billing_periods(organization_id, id)
         ON DELETE SET NULL (billing_period_id),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
+    CHECK (is_uuid_v7(id))
 );
 
 CREATE INDEX ledger_entries_organization_idx
@@ -92,7 +92,7 @@ CREATE TABLE usage_reservations (
     team_name_snapshot text NOT NULL,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE RESTRICT,
     price_version_id uuid NOT NULL,
-    account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    account_id uuid NOT NULL,
     service_identity_id uuid NOT NULL REFERENCES service_identities(id) ON DELETE RESTRICT,
     maximum_units bigint NOT NULL CHECK (maximum_units > 0),
     usd_micros_per_unit bigint NOT NULL CHECK (usd_micros_per_unit >= 0),
@@ -104,6 +104,15 @@ CREATE TABLE usage_reservations (
         CHECK (status IN ('held', 'committed', 'released', 'expired')),
     active_team_id uuid GENERATED ALWAYS AS (
         CASE WHEN status = 'held' THEN team_id ELSE NULL END
+    ) STORED,
+    active_account_id uuid GENERATED ALWAYS AS (
+        CASE WHEN status = 'held' THEN account_id ELSE NULL END
+    ) STORED,
+    active_service_identity_id uuid GENERATED ALWAYS AS (
+        CASE WHEN status = 'held' THEN service_identity_id ELSE NULL END
+    ) STORED,
+    active_meter_id uuid GENERATED ALWAYS AS (
+        CASE WHEN status = 'held' THEN meter_id ELSE NULL END
     ) STORED,
     expires_at timestamptz NOT NULL,
     finalized_at timestamptz,
@@ -118,9 +127,14 @@ CREATE TABLE usage_reservations (
     ),
     FOREIGN KEY (organization_id, active_team_id)
         REFERENCES teams(organization_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (active_account_id)
+        REFERENCES accounts(id) ON DELETE RESTRICT,
+    FOREIGN KEY (active_service_identity_id, active_meter_id)
+        REFERENCES service_meter_allowlists(service_identity_id, meter_id)
+        ON DELETE RESTRICT,
     FOREIGN KEY (meter_id, price_version_id)
         REFERENCES catalog_price_versions(meter_id, id) ON DELETE RESTRICT,
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (
         maximum_cost_micros::numeric
         = maximum_units::numeric * usd_micros_per_unit::numeric
@@ -132,6 +146,29 @@ CREATE TABLE usage_reservations (
         (status <> 'held' AND finalized_at IS NOT NULL)
     )
 );
+
+CREATE FUNCTION validate_usage_reservation_team()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM 1
+    FROM teams
+    WHERE organization_id = NEW.organization_id
+      AND id = NEW.team_id
+    FOR KEY SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'reservation team does not belong to organization'
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER usage_reservations_validate_team
+BEFORE INSERT OR UPDATE OF organization_id, team_id
+ON usage_reservations
+FOR EACH ROW EXECUTE FUNCTION validate_usage_reservation_team();
 
 CREATE INDEX usage_reservations_active_org_idx
     ON usage_reservations(organization_id, expires_at) WHERE status = 'held';
@@ -145,7 +182,7 @@ CREATE TABLE usage_records (
     team_id uuid NOT NULL,
     team_name_snapshot text NOT NULL,
     meter_id uuid NOT NULL REFERENCES catalog_meters(id) ON DELETE RESTRICT,
-    account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    account_id uuid NOT NULL,
     service_identity_id uuid NOT NULL REFERENCES service_identities(id) ON DELETE RESTRICT,
     committed_units bigint NOT NULL CHECK (committed_units >= 0),
     total_cost_micros bigint NOT NULL CHECK (total_cost_micros >= 0),
@@ -167,39 +204,77 @@ CREATE TABLE usage_records (
         account_id,
         service_identity_id
     ) ON DELETE RESTRICT,
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (credit_applied_micros + overage_applied_micros = total_cost_micros)
 );
 
 CREATE INDEX usage_records_organization_idx
     ON usage_records(organization_id, committed_at, id);
 
-CREATE FUNCTION enforce_usage_record_reservation_limit()
+CREATE FUNCTION commit_usage_record_reservation()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    reserved_maximum_units bigint;
+    reservation usage_reservations%ROWTYPE;
 BEGIN
-    SELECT maximum_units
-    INTO reserved_maximum_units
+    SELECT *
+    INTO reservation
     FROM usage_reservations
     WHERE id = NEW.reservation_id
       AND organization_id = NEW.organization_id
       AND team_id = NEW.team_id
       AND meter_id = NEW.meter_id
       AND account_id = NEW.account_id
-      AND service_identity_id = NEW.service_identity_id;
+      AND service_identity_id = NEW.service_identity_id
+    FOR UPDATE;
 
-    IF FOUND AND NEW.committed_units > reserved_maximum_units THEN
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'usage record does not match reservation'
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    IF reservation.status <> 'held' THEN
+        RAISE EXCEPTION 'reservation is already finalized'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF reservation.expires_at <= transaction_timestamp() THEN
+        RAISE EXCEPTION 'reservation has expired'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.committed_units > reservation.maximum_units THEN
         RAISE EXCEPTION 'committed usage exceeds reservation maximum'
             USING ERRCODE = 'check_violation';
     END IF;
+    IF NEW.total_cost_micros::numeric
+       <> NEW.committed_units::numeric * reservation.usd_micros_per_unit::numeric THEN
+        RAISE EXCEPTION 'committed usage cost does not match reservation price'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    UPDATE usage_reservations
+    SET status = 'committed',
+        finalized_at = transaction_timestamp()
+    WHERE id = reservation.id;
+
     RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER usage_records_enforce_reservation_limit
-BEFORE INSERT OR UPDATE OF reservation_id, organization_id, team_id, committed_units
+CREATE TRIGGER usage_records_commit_reservation
+BEFORE INSERT
 ON usage_records
-FOR EACH ROW EXECUTE FUNCTION enforce_usage_record_reservation_limit();
+FOR EACH ROW EXECUTE FUNCTION commit_usage_record_reservation();
+
+CREATE FUNCTION reject_usage_record_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'usage records are immutable'
+        USING ERRCODE = 'check_violation';
+END;
+$$;
+
+CREATE TRIGGER usage_records_immutable
+BEFORE UPDATE OR DELETE ON usage_records
+FOR EACH ROW EXECUTE FUNCTION reject_usage_record_mutation();

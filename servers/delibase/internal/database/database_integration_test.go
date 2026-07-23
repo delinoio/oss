@@ -308,49 +308,54 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
 
 	const (
-		accountA   = "0198a000-0000-7000-8000-000000000001"
-		accountB   = "0198a000-0000-7000-8000-000000000002"
-		accountC   = "0198a000-0000-7000-8000-000000000003"
-		accountD   = "0198a000-0000-7000-8000-000000000004"
-		orgA       = "0198a000-0000-7000-8000-000000000011"
-		orgB       = "0198a000-0000-7000-8000-000000000012"
-		orgC       = "0198a000-0000-7000-8000-000000000013"
-		teamA      = "0198a000-0000-7000-8000-000000000021"
-		teamB      = "0198a000-0000-7000-8000-000000000022"
-		activeTeam = "0198a000-0000-7000-8000-000000000023"
-		generalA   = "0198a000-0000-7000-8000-000000000024"
-		generalC   = "0198a000-0000-7000-8000-000000000025"
-		appID      = "0198a000-0000-7000-8000-000000000031"
-		meterID    = "0198a000-0000-7000-8000-000000000032"
-		priceID    = "0198a000-0000-7000-8000-000000000033"
-		serviceID  = "0198a000-0000-7000-8000-000000000034"
-		meterB     = "0198a000-0000-7000-8000-000000000035"
-		priceB     = "0198a000-0000-7000-8000-000000000036"
-		serviceB   = "0198a000-0000-7000-8000-000000000037"
-		reserveID  = "0198a000-0000-7000-8000-000000000041"
-		inviteID   = "0198a000-0000-7000-8000-000000000042"
-		recordID   = "0198a000-0000-7000-8000-000000000043"
-		activeHold = "0198a000-0000-7000-8000-000000000044"
-		subA       = "0198a000-0000-7000-8000-000000000061"
-		subB       = "0198a000-0000-7000-8000-000000000062"
-		periodA    = "0198a000-0000-7000-8000-000000000071"
-		periodB    = "0198a000-0000-7000-8000-000000000072"
-		accountJob = "0198a000-0000-7000-8000-000000000051"
-		orgJob     = "0198a000-0000-7000-8000-000000000052"
+		accountA     = "0198a000-0000-7000-8000-000000000001"
+		accountB     = "0198a000-0000-7000-8000-000000000002"
+		accountC     = "0198a000-0000-7000-8000-000000000003"
+		accountD     = "0198a000-0000-7000-8000-000000000004"
+		historyUser  = "0198a000-0000-7000-8000-000000000005"
+		orgA         = "0198a000-0000-7000-8000-000000000011"
+		orgB         = "0198a000-0000-7000-8000-000000000012"
+		orgC         = "0198a000-0000-7000-8000-000000000013"
+		teamA        = "0198a000-0000-7000-8000-000000000021"
+		teamB        = "0198a000-0000-7000-8000-000000000022"
+		activeTeam   = "0198a000-0000-7000-8000-000000000023"
+		generalA     = "0198a000-0000-7000-8000-000000000024"
+		generalC     = "0198a000-0000-7000-8000-000000000025"
+		appID        = "0198a000-0000-7000-8000-000000000031"
+		meterID      = "0198a000-0000-7000-8000-000000000032"
+		priceID      = "0198a000-0000-7000-8000-000000000033"
+		serviceID    = "0198a000-0000-7000-8000-000000000034"
+		meterB       = "0198a000-0000-7000-8000-000000000035"
+		priceB       = "0198a000-0000-7000-8000-000000000036"
+		serviceB     = "0198a000-0000-7000-8000-000000000037"
+		reserveID    = "0198a000-0000-7000-8000-000000000041"
+		inviteID     = "0198a000-0000-7000-8000-000000000042"
+		recordID     = "0198a000-0000-7000-8000-000000000043"
+		activeHold   = "0198a000-0000-7000-8000-000000000044"
+		releasedHold = "0198a000-0000-7000-8000-000000000047"
+		expiredHold  = "0198a000-0000-7000-8000-000000000048"
+		subA         = "0198a000-0000-7000-8000-000000000061"
+		subB         = "0198a000-0000-7000-8000-000000000062"
+		periodA      = "0198a000-0000-7000-8000-000000000071"
+		periodB      = "0198a000-0000-7000-8000-000000000072"
+		accountJob   = "0198a000-0000-7000-8000-000000000051"
+		orgJob       = "0198a000-0000-7000-8000-000000000052"
 	)
 	setup := []struct {
 		statement string
 		arguments []any
 	}{
-		{"INSERT INTO accounts (id, logto_subject) VALUES ($1, 'schema-a'), ($2, 'schema-b'), ($3, 'schema-c'), ($4, 'schema-d')", []any{accountA, accountB, accountC, accountD}},
+		{"INSERT INTO accounts (id, logto_subject) VALUES ($1, 'schema-a'), ($2, 'schema-b'), ($3, 'schema-c'), ($4, 'schema-d'), ($5, 'schema-history')", []any{accountA, accountB, accountC, accountD, historyUser}},
 		{"INSERT INTO organizations (id, name, slug) VALUES ($1, 'A', 'schema-a'), ($2, 'B', 'schema-b'), ($3, 'C', 'schema-c')", []any{orgA, orgB, orgC}},
 		{"INSERT INTO organization_memberships (organization_id, account_id, role) VALUES ($1, $2, 'owner'), ($3, $4, 'owner'), ($5, $6, 'owner')", []any{orgA, accountA, orgB, accountB, orgC, accountD}},
+		{"INSERT INTO organization_memberships (organization_id, account_id, role) VALUES ($1, $2, 'member')", []any{orgA, historyUser}},
 		{"INSERT INTO teams (id, organization_id, name) VALUES ($1, $2, 'A'), ($3, $4, 'B'), ($5, $2, 'Active')", []any{teamA, orgA, teamB, orgB, activeTeam}},
 		{"INSERT INTO teams (id, organization_id, name, protected_general) VALUES ($1, $2, 'General', true), ($3, $4, 'General', true)", []any{generalA, orgA, generalC, orgC}},
 		{"INSERT INTO catalog_apps (id, slug, name) VALUES ($1, 'schema-app', 'Schema App')", []any{appID}},
 		{"INSERT INTO catalog_meters (id, app_id, meter_key, name, unit_name, reservation_ttl_seconds) VALUES ($1, $2, 'requests', 'Requests', 'request', 60), ($3, $2, 'tokens', 'Tokens', 'token', 60)", []any{meterID, appID, meterB}},
 		{"INSERT INTO catalog_price_versions (id, meter_id, usd_micros_per_unit, effective_from) VALUES ($1, $2, 1, '2026-01-01'), ($3, $4, 2, '2026-01-01')", []any{priceID, meterID, priceB, meterB}},
 		{"INSERT INTO service_identities (id, logto_client_id, name) VALUES ($1, 'schema-service', 'Schema Service'), ($2, 'schema-service-b', 'Schema Service B')", []any{serviceID, serviceB}},
+		{"INSERT INTO service_meter_allowlists (service_identity_id, meter_id) VALUES ($1, $2)", []any{serviceID, meterID}},
 		{"INSERT INTO subscriptions (id, organization_id, polar_subscription_id, status) VALUES ($1, $2, 'polar-a', 'active'), ($3, $4, 'polar-b', 'active')", []any{subA, orgA, subB, orgB}},
 		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, '2026-01-01', '2026-02-01'), ($4, $5, $6, '2026-01-01', '2026-02-01')", []any{periodA, orgA, subA, periodB, orgB, subB}},
 	}
@@ -360,6 +365,9 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		}
 	}
 
+	requireConstraintFailure(t, ctx, transaction,
+		"INSERT INTO accounts (id, logto_subject) VALUES ('550e8400-e29b-41d4-a716-446655440000', 'not-uuid-v7')",
+	)
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE organization_memberships SET role = 'admin' WHERE organization_id = $1 AND account_id = $2",
 		orgA, accountA,
@@ -561,6 +569,18 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, status, expires_at, finalized_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000049', $1, $2, 'B', $3,
+			$4, $5, $6, 1, 1, 1, 1, 0, 'finalized-cross-team', 'released',
+			transaction_timestamp() + interval '1 minute', transaction_timestamp()
+		)
+	`, orgA, teamB, meterID, priceID, accountA, serviceID)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000045', $1, $2, 'A', $3,
@@ -580,14 +600,26 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			transaction_timestamp() + interval '1 minute'
 		)
 	`, orgA, teamA, meterID, priceID, accountA, serviceID)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000050', $1, $2, 'A', $3,
+			$4, $5, $6, 1, 1, 1, 1, 0, 'disallowed-service',
+			transaction_timestamp() + interval '1 minute'
+		)
+	`, orgA, teamA, meterID, priceID, accountA, serviceB)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_reservations (
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
-			held_overage_micros, client_reference, status, expires_at, finalized_at
-		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'valid', 'committed', transaction_timestamp() + interval '1 minute', transaction_timestamp())
-	`, reserveID, orgA, teamA, meterID, priceID, accountA, serviceID); err != nil {
+			held_overage_micros, client_reference, expires_at
+		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'valid', transaction_timestamp() + interval '1 minute')
+	`, reserveID, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, `
@@ -598,6 +630,26 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			held_overage_micros, client_reference, expires_at
 		) VALUES ($1, $2, $3, 'Active', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'active', transaction_timestamp() + interval '1 minute')
 	`, activeHold, orgA, activeTeam, meterID, priceID, accountA, serviceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, status, expires_at, finalized_at
+		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'released', 'released', transaction_timestamp() + interval '1 minute', transaction_timestamp())
+	`, releasedHold, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'expired', transaction_timestamp() - interval '1 minute')
+	`, expiredHold, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
 	requireConstraintFailure(t, ctx, transaction, `
@@ -613,37 +665,77 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			meter_id, account_id, service_identity_id, committed_units,
 			total_cost_micros, credit_applied_micros, overage_applied_micros
 		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
-	`, recordID, reserveID, orgA, teamA, meterB, accountA, serviceID)
+	`, recordID, reserveID, orgA, teamA, meterB, historyUser, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_records (
 			id, reservation_id, organization_id, team_id, team_name_snapshot,
 			meter_id, account_id, service_identity_id, committed_units,
 			total_cost_micros, credit_applied_micros, overage_applied_micros
 		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
-	`, recordID, reserveID, orgA, teamA, meterID, accountB, serviceID)
+	`, recordID, reserveID, orgA, teamA, meterID, accountA, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_records (
 			id, reservation_id, organization_id, team_id, team_name_snapshot,
 			meter_id, account_id, service_identity_id, committed_units,
 			total_cost_micros, credit_applied_micros, overage_applied_micros
 		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
-	`, recordID, reserveID, orgA, teamA, meterID, accountA, serviceB)
+	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceB)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_records (
 			id, reservation_id, organization_id, team_id, team_name_snapshot,
 			meter_id, account_id, service_identity_id, committed_units,
 			total_cost_micros, credit_applied_micros, overage_applied_micros
 		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 2, 2, 2, 0)
-	`, recordID, reserveID, orgA, teamA, meterID, accountA, serviceID)
+	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceID)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_records (
+			id, reservation_id, organization_id, team_id, team_name_snapshot,
+			meter_id, account_id, service_identity_id, committed_units,
+			total_cost_micros, credit_applied_micros, overage_applied_micros
+		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 0, 0, 0)
+	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceID)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_records (
+			id, reservation_id, organization_id, team_id, team_name_snapshot,
+			meter_id, account_id, service_identity_id, committed_units,
+			total_cost_micros, credit_applied_micros, overage_applied_micros
+		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
+	`, recordID, releasedHold, orgA, teamA, meterID, historyUser, serviceID)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_records (
+			id, reservation_id, organization_id, team_id, team_name_snapshot,
+			meter_id, account_id, service_identity_id, committed_units,
+			total_cost_micros, credit_applied_micros, overage_applied_micros
+		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
+	`, recordID, expiredHold, orgA, teamA, meterID, historyUser, serviceID)
+	if _, err := transaction.Exec(ctx, `
+		UPDATE usage_reservations
+		SET status = 'expired', finalized_at = transaction_timestamp()
+		WHERE id = $1
+	`, expiredHold); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_records (
 			id, reservation_id, organization_id, team_id, team_name_snapshot,
 			meter_id, account_id, service_identity_id, committed_units,
 			total_cost_micros, credit_applied_micros, overage_applied_micros
 		) VALUES ($1, $2, $3, $4, 'A', $5, $6, $7, 1, 1, 1, 0)
-	`, recordID, reserveID, orgA, teamA, meterID, accountA, serviceID); err != nil {
+	`, recordID, reserveID, orgA, teamA, meterID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
+	var reservationStatus string
+	if err := transaction.QueryRow(
+		ctx,
+		"SELECT status FROM usage_reservations WHERE id = $1",
+		reserveID,
+	).Scan(&reservationStatus); err != nil || reservationStatus != "committed" {
+		t.Fatalf("reservation status = %q, %v", reservationStatus, err)
+	}
+	requireConstraintFailure(t, ctx, transaction,
+		"UPDATE usage_records SET total_cost_micros = 0 WHERE id = $1",
+		recordID,
+	)
 	requireConstraintFailure(t, ctx, transaction, "DELETE FROM teams WHERE id = $1", activeTeam)
 	if _, err := transaction.Exec(ctx, "DELETE FROM teams WHERE id = $1", teamA); err != nil {
 		t.Fatal(err)
@@ -655,6 +747,24 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		recordID,
 	).Scan(&retainedTeamID); err != nil || retainedTeamID != teamA {
 		t.Fatalf("retained historical team = %q, %v", retainedTeamID, err)
+	}
+	if _, err := transaction.Exec(ctx, "DELETE FROM accounts WHERE id = $1", historyUser); err != nil {
+		t.Fatal(err)
+	}
+	var retainedReservationAccount, retainedUsageAccount string
+	if err := transaction.QueryRow(
+		ctx,
+		"SELECT account_id::text FROM usage_reservations WHERE id = $1",
+		reserveID,
+	).Scan(&retainedReservationAccount); err != nil || retainedReservationAccount != historyUser {
+		t.Fatalf("retained reservation account = %q, %v", retainedReservationAccount, err)
+	}
+	if err := transaction.QueryRow(
+		ctx,
+		"SELECT account_id::text FROM usage_records WHERE id = $1",
+		recordID,
+	).Scan(&retainedUsageAccount); err != nil || retainedUsageAccount != historyUser {
+		t.Fatalf("retained usage account = %q, %v", retainedUsageAccount, err)
 	}
 
 	if _, err := transaction.Exec(

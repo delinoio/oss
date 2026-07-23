@@ -11,7 +11,7 @@ CREATE TABLE webhook_inbox (
     dead_lettered_at timestamptz,
     safe_error_class text,
     UNIQUE (provider, provider_event_id),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
+    CHECK (is_uuid_v7(id))
 );
 
 CREATE INDEX webhook_inbox_pending_idx
@@ -31,7 +31,7 @@ CREATE TABLE integration_outbox (
     next_attempt_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     dead_lettered_at timestamptz,
     safe_error_class text,
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
+    CHECK (is_uuid_v7(id))
 );
 
 CREATE INDEX integration_outbox_pending_idx
@@ -51,7 +51,7 @@ CREATE TABLE deletion_jobs (
     next_attempt_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     dead_lettered_at timestamptz,
     safe_error_class text,
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (
         (job_type = 'account' AND account_id IS NOT NULL)
         OR
@@ -99,7 +99,7 @@ CREATE TABLE idempotency_records (
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     expires_at timestamptz NOT NULL,
     UNIQUE (caller_kind, caller_id, operation, idempotency_key),
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (octet_length(request_hash) = 32),
     CHECK (length(idempotency_key) BETWEEN 1 AND 255),
     CHECK (expires_at > created_at)
@@ -121,7 +121,7 @@ CREATE TABLE audit_events (
     result text NOT NULL CHECK (result IN ('success', 'failure', 'noop')),
     safe_error_class text,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-    CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CHECK (is_uuid_v7(id)),
     CHECK (length(event_type) BETWEEN 1 AND 128),
     CHECK (length(actor_reference) <= 255)
 );
