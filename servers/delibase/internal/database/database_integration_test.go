@@ -1480,7 +1480,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		name   string
 		amount int64
 	}{
-		{name: "credit_grant", amount: 6},
+		{name: "credit_grant", amount: 11},
 		{name: "credit_reversal", amount: -1},
 		{name: "credit_forfeiture", amount: -1},
 	}
@@ -1521,7 +1521,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000136', $1, $2,
-			'credit_commit', -1, 3, 'unlinked-credit-commit'
+			'credit_commit', -1, 8, 'unlinked-credit-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1530,7 +1530,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000137', $1, $2,
-			'overage_commit', -1, 3, 'unlinked-overage-commit'
+			'overage_commit', -1, 8, 'unlinked-overage-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1539,7 +1539,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000143', $1, $2,
-			'credit_commit', 1, 5, 'positive-credit-commit'
+			'credit_commit', 1, 10, 'positive-credit-commit'
 		)
 	`, orgA, periodA)
 	requireConstraintFailure(t, ctx, transaction, `
@@ -1548,7 +1548,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			amount_micros, balance_after_micros, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000144', $1, $2,
-			'credit_forfeiture', 1, 5, 'positive-credit-forfeiture'
+			'credit_forfeiture', 1, 10, 'positive-credit-forfeiture'
 		)
 	`, orgA, periodA)
 	if _, err := transaction.Exec(ctx, `
@@ -2358,7 +2358,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			team_id_snapshot, team_name_snapshot, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000320',
-			$1, 'credit_commit', -1, 8, $2, $3, $4, 'A',
+			$1, 'credit_commit', -1, 5, $2, $3, $4, 'A',
 			'missing-usage-period'
 		)
 	`, orgA, reserveID, recordID, teamA)
@@ -2370,7 +2370,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000222',
-			$1, $2, 'credit_commit', -1, 8, $3, $4, $5, 'A',
+			$1, $2, 'credit_commit', -1, 5, $3, $4, $5, 'A',
 			'wrong-usage-period'
 		)
 	`, orgA, periodA, reserveID, recordID, teamA)
@@ -2442,7 +2442,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			team_id_snapshot, team_name_snapshot, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000211',
-			$1, 'credit_commit', -1, 1, $2, $3, $4, 'A',
+			$1, 'credit_commit', -1, 6, $2, $3, $4, 'A',
 			'excess-linked-usage'
 		)
 	`, orgA, reserveID, recordID, teamA)
@@ -2465,7 +2465,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			team_id_snapshot, team_name_snapshot, source_reference
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000079',
-			$1, 'credit_commit', -1, 1, $2, $3, $4, 'Wrong team',
+			$1, 'credit_commit', -1, 6, $2, $3, $4, 'Wrong team',
 			'mismatched-linked-usage'
 		)
 	`, orgA, reserveID, recordID, teamA)
@@ -2532,7 +2532,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		retainedLedgerUsage != recordID ||
 		retainedLedgerTeam != teamA ||
 		retainedLedgerTeamName != "A" ||
-		retainedLedgerBalance != 0 {
+		retainedLedgerBalance != 5 {
 		t.Fatalf(
 			"retained ledger links = reservation:%q usage:%q team:%q/%q balance:%d",
 			retainedLedgerReservation,
