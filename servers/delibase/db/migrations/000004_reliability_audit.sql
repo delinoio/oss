@@ -21,6 +21,29 @@ CREATE INDEX webhook_inbox_pending_idx
     ON webhook_inbox(next_attempt_at)
     WHERE processed_at IS NULL;
 
+CREATE FUNCTION preserve_webhook_inbox_event()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.provider IS DISTINCT FROM OLD.provider
+       OR NEW.provider_event_id IS DISTINCT FROM OLD.provider_event_id
+       OR NEW.event_type IS DISTINCT FROM OLD.event_type
+       OR NEW.payload IS DISTINCT FROM OLD.payload
+       OR NEW.payload_sha256 IS DISTINCT FROM OLD.payload_sha256
+       OR NEW.received_at IS DISTINCT FROM OLD.received_at THEN
+        RAISE EXCEPTION 'webhook inbox event is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER webhook_inbox_preserve_event
+BEFORE UPDATE ON webhook_inbox
+FOR EACH ROW EXECUTE FUNCTION preserve_webhook_inbox_event();
+
 CREATE TABLE integration_outbox (
     id uuid PRIMARY KEY,
     integration text NOT NULL CHECK (integration IN ('polar', 'logto')),
@@ -109,6 +132,27 @@ CREATE TABLE idempotency_records (
 );
 
 CREATE INDEX idempotency_records_expiry_idx ON idempotency_records(expires_at);
+
+CREATE FUNCTION preserve_idempotency_record()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        RAISE EXCEPTION 'idempotency records are immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.expires_at > transaction_timestamp() THEN
+        RAISE EXCEPTION 'unexpired idempotency records cannot be deleted'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER idempotency_records_preserve_result
+BEFORE UPDATE OR DELETE ON idempotency_records
+FOR EACH ROW EXECUTE FUNCTION preserve_idempotency_record();
 
 CREATE FUNCTION audit_metadata_is_safe(value jsonb)
 RETURNS boolean

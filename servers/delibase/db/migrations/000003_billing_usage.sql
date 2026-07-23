@@ -83,6 +83,10 @@ CREATE TABLE ledger_entries (
     ),
     CHECK (usage_record_id IS NULL OR reservation_id IS NOT NULL),
     CHECK (
+        actor_reference = ''
+        OR actor_reference ~ '^actor:v1:[0-9a-f]{32}$'
+    ),
+    CHECK (
         reservation_id IS NULL
         OR (team_id_snapshot IS NOT NULL AND team_name_snapshot IS NOT NULL)
     )
@@ -269,6 +273,41 @@ BEGIN
     END IF;
 
     IF NEW.status = 'held' THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM organization_memberships AS organization_membership
+            WHERE organization_membership.organization_id = NEW.organization_id
+              AND organization_membership.account_id = NEW.account_id
+              AND (
+                  organization_membership.role IN ('owner', 'admin')
+                  OR EXISTS (
+                      WITH RECURSIVE team_and_ancestors AS (
+                          SELECT team.id, team.parent_team_id
+                          FROM teams AS team
+                          WHERE team.organization_id = NEW.organization_id
+                            AND team.id = NEW.team_id
+
+                          UNION ALL
+
+                          SELECT parent.id, parent.parent_team_id
+                          FROM teams AS parent
+                          JOIN team_and_ancestors AS child
+                            ON child.parent_team_id = parent.id
+                          WHERE parent.organization_id = NEW.organization_id
+                      )
+                      SELECT 1
+                      FROM team_and_ancestors AS allowed_team
+                      JOIN team_memberships AS team_membership
+                        ON team_membership.organization_id = NEW.organization_id
+                       AND team_membership.team_id = allowed_team.id
+                       AND team_membership.account_id = NEW.account_id
+                  )
+              )
+        ) THEN
+            RAISE EXCEPTION 'reservation account cannot access team'
+                USING ERRCODE = 'check_violation';
+        END IF;
+
         PERFORM 1
         FROM service_meter_allowlists AS allowlist
         JOIN service_identities AS service
@@ -376,6 +415,10 @@ BEGIN
     NEW.finalized_at := transaction_timestamp();
     IF OLD.status <> 'held'
        OR NEW.status NOT IN ('committed', 'released', 'expired')
+       OR (
+           NEW.status = 'expired'
+           AND OLD.expires_at > transaction_timestamp()
+       )
        OR (
            NEW.status = 'committed'
            AND NOT EXISTS (

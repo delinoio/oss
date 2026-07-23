@@ -584,6 +584,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		activeTeam     = "0198a000-0000-7000-8000-000000000023"
 		generalA       = "0198a000-0000-7000-8000-000000000024"
 		generalC       = "0198a000-0000-7000-8000-000000000025"
+		inheritedTeam  = "0198a000-0000-7000-8000-000000000140"
 		appID          = "0198a000-0000-7000-8000-000000000031"
 		meterID        = "0198a000-0000-7000-8000-000000000032"
 		priceID        = "0198a000-0000-7000-8000-000000000033"
@@ -598,6 +599,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		activeHold     = "0198a000-0000-7000-8000-000000000044"
 		releasedHold   = "0198a000-0000-7000-8000-000000000047"
 		expiredHold    = "0198a000-0000-7000-8000-000000000048"
+		inheritedHold  = "0198a000-0000-7000-8000-000000000141"
 		deletionInvite = "0198a000-0000-7000-8000-000000000053"
 		subA           = "0198a000-0000-7000-8000-000000000061"
 		subB           = "0198a000-0000-7000-8000-000000000062"
@@ -620,7 +622,9 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		{"INSERT INTO organization_memberships (organization_id, account_id, role) VALUES ($1, $2, 'owner'), ($3, $4, 'owner'), ($5, $6, 'owner')", []any{orgA, accountA, orgB, accountB, orgC, accountD}},
 		{"INSERT INTO organization_memberships (organization_id, account_id, role) VALUES ($1, $2, 'member'), ($1, $3, 'member')", []any{orgA, historyUser, accountC}},
 		{"INSERT INTO teams (id, organization_id, name) VALUES ($1, $2, 'A'), ($3, $4, 'B'), ($5, $2, 'Active')", []any{teamA, orgA, teamB, orgB, activeTeam}},
+		{"INSERT INTO teams (id, organization_id, parent_team_id, name) VALUES ($1, $2, $3, 'Inherited')", []any{inheritedTeam, orgA, teamA}},
 		{"INSERT INTO teams (id, organization_id, name, protected_general) VALUES ($1, $2, 'General', true), ($3, $4, 'General', true)", []any{generalA, orgA, generalC, orgC}},
+		{"INSERT INTO team_memberships (organization_id, team_id, account_id, role) VALUES ($1, $2, $3, 'member')", []any{orgA, teamA, historyUser}},
 		{"INSERT INTO organization_invitations (id, organization_id, token_hash, organization_role, created_by_account_id, expires_at) VALUES ($1, $2, decode(repeat('12', 32), 'hex'), 'admin', $3, transaction_timestamp() + interval '1 day')", []any{deletionInvite, orgA, accountC}},
 		{"INSERT INTO catalog_apps (id, slug, name, enabled) VALUES ($1, 'schema-app', 'Schema App', true)", []any{appID}},
 		{"INSERT INTO catalog_meters (id, app_id, meter_key, name, unit_name, reservation_ttl_seconds, enabled) VALUES ($1, $2, 'requests', 'Requests', 'request', 60, true), ($3, $2, 'tokens', 'Tokens', 'token', 60, true)", []any{meterID, appID, meterB}},
@@ -847,6 +851,16 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000076', $1, $2,
 			'adjustment', 1, 1, 'unsupported-operation'
+		)
+	`, orgA, periodA)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO ledger_entries (
+			id, organization_id, billing_period_id, entry_type,
+			amount_micros, balance_after_micros, source_reference,
+			actor_reference
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000131', $1, $2,
+			'credit_grant', 1, 1, 'raw-ledger-actor', 'raw-logto-subject'
 		)
 	`, orgA, periodA)
 	ledgerOperations := []string{
@@ -1102,11 +1116,45 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
 		) VALUES (
+			'0198a000-0000-7000-8000-000000000205', $1, $2, 'A', $3,
+			$4, $5, $6, 1, 1, 1, 1, 0, 'inaccessible-team',
+			transaction_timestamp() + interval '1 minute'
+		)
+	`, orgA, teamA, meterID, priceID, accountC, serviceID)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
 			'0198a000-0000-7000-8000-000000000050', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'disallowed-service',
 			transaction_timestamp() + interval '1 minute'
 		)
 	`, orgA, teamA, meterID, priceID, accountA, serviceB)
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
+			$1, $2, $3, 'Inherited', $4, $5, $6, $7,
+			1, 1, 1, 1, 0, 'inherited-team-access',
+			transaction_timestamp() + interval '1 minute'
+		)
+	`, inheritedHold, orgA, inheritedTeam, meterID, priceID, historyUser, serviceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE usage_reservations
+		SET status = 'released',
+		    finalized_at = transaction_timestamp()
+		WHERE id = $1
+	`, inheritedHold); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_reservations (
 			id, organization_id, team_id, team_name_snapshot, meter_id,
@@ -1132,6 +1180,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	requireConstraintFailure(t, ctx, transaction, `
 		UPDATE usage_reservations
 		SET status = 'committed',
+		    finalized_at = transaction_timestamp()
+		WHERE id = $1
+	`, reserveID)
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE usage_reservations
+		SET status = 'expired',
 		    finalized_at = transaction_timestamp()
 		WHERE id = $1
 	`, reserveID)
@@ -1294,10 +1348,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, organization_id, billing_period_id, entry_type,
 			amount_micros, balance_after_micros, reservation_id,
 			usage_record_id, team_id_snapshot, team_name_snapshot,
-			source_reference
+			source_reference, actor_reference
 		) VALUES (
 			$1, $2, $3, 'credit_commit', -1, 8, $4, $5, $6, 'A',
-			'linked-usage'
+			'linked-usage', 'actor:v1:00000000000000000000000000000000'
 		)
 	`, linkedLedger, orgA, periodA, reserveID, recordID, teamA); err != nil {
 		t.Fatal(err)
@@ -1500,6 +1554,20 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE webhook_inbox
+		SET attempt_count = attempt_count + 1,
+		    next_attempt_at = transaction_timestamp() + interval '1 minute',
+		    safe_error_class = 'provider_unavailable'
+		WHERE provider = 'polar' AND provider_event_id = 'event-1'
+	`); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE webhook_inbox
+		SET payload = '{"data":{"id":"rewritten"}}'
+		WHERE provider = 'polar' AND provider_event_id = 'event-1'
+	`)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO webhook_inbox (
 			id, provider, provider_event_id, event_type, payload, payload_sha256
@@ -1610,6 +1678,38 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			decode(repeat('dd', 32), 'hex'),
 			transaction_timestamp() + interval '1 day'
 		)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, transaction, `
+		UPDATE idempotency_records
+		SET request_hash = decode(repeat('ee', 32), 'hex')
+		WHERE id = '0198a000-0000-7000-8000-000000000204'
+	`)
+	requireConstraintFailure(t, ctx, transaction, `
+		DELETE FROM idempotency_records
+		WHERE id = '0198a000-0000-7000-8000-000000000204'
+	`)
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO idempotency_records (
+			id, caller_kind, caller_id, operation, idempotency_key,
+			request_hash, created_at, expires_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000206',
+			'user',
+			'expired-actor',
+			'create_organization',
+			'expired-key',
+			decode(repeat('ff', 32), 'hex'),
+			'2000-01-01T00:00:00Z',
+			'2000-01-02T00:00:00Z'
+		)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		DELETE FROM idempotency_records
+		WHERE id = '0198a000-0000-7000-8000-000000000206'
 	`); err != nil {
 		t.Fatal(err)
 	}
