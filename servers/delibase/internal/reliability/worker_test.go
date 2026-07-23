@@ -177,7 +177,7 @@ func TestWorkerCompletesDeadLetterRecoveryAndDoesNotLogHandlerSecrets(t *testing
 	}
 	var output bytes.Buffer
 	worker := testWorker(t, storage, registry, clock, &fixedRandom{value: 0.5})
-	worker.logger = slog.New(slog.NewJSONHandler(&output, nil))
+	worker.logger = slog.New(safelog.NewRedactingHandler(slog.NewJSONHandler(&output, nil)))
 	if count, err := worker.RunOnce(context.Background()); err != nil || count != 1 {
 		t.Fatalf("RunOnce() = %d, %v", count, err)
 	}
@@ -187,7 +187,8 @@ func TestWorkerCompletesDeadLetterRecoveryAndDoesNotLogHandlerSecrets(t *testing
 	logged := output.String()
 	for _, expected := range []string{
 		`"handler_id":"polar.outbox.report_usage"`,
-		`"entity_id":"0198a000-0000-7000-8000-000000000812"`,
+		`"event_id":"0198a000000070008000000000000811"`,
+		`"entity_id":"0198a000000070008000000000000812"`,
 		`"actor":"actor:v1:0123456789abcdef0123456789abcdef"`,
 		`"dead_letter_attempt":3`,
 		`"transition":"complete"`,
@@ -317,6 +318,53 @@ func TestIdempotencyKeyValidationRejectsCredentials(t *testing.T) {
 	}
 }
 
+func TestEnqueueRejectsCredentialShapedWebhookIDsAndMissingIdempotencyActors(t *testing.T) {
+	t.Parallel()
+	queries := struct{ dbgen.Querier }{}
+
+	webhook := WebhookInput{
+		ID:              uuid.MustParse("0198a000-0000-7000-8000-000000000917"),
+		Provider:        ProviderPolar,
+		ProviderEventID: "token:raw-secret",
+		EventType:       WebhookOrderPaid,
+		Payload:         []byte(`{"order_id":"0198a000-0000-7000-8000-000000000918"}`),
+	}
+	for _, providerEventID := range []string{
+		"token:raw-secret",
+		"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature",
+	} {
+		webhook.ProviderEventID = providerEventID
+		if _, err := EnqueueWebhook(
+			context.Background(),
+			queries,
+			webhook,
+		); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("EnqueueWebhook(%q) error = %v", providerEventID, err)
+		}
+	}
+
+	if _, err := EnqueueOutbox(context.Background(), queries, OutboxInput{
+		ID:             uuid.MustParse("0198a000-0000-7000-8000-000000000919"),
+		Integration:    IntegrationPolar,
+		Operation:      OperationReportUsage,
+		AggregateType:  AggregateUsageRecord,
+		AggregateID:    uuid.MustParse("0198a000-0000-7000-8000-000000000920"),
+		Payload:        []byte(`{"units":1}`),
+		IdempotencyKey: "usage-record-1",
+	}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("EnqueueOutbox() missing actor error = %v", err)
+	}
+
+	if _, err := EnqueueDeletion(context.Background(), queries, DeletionInput{
+		ID:             uuid.MustParse("0198a000-0000-7000-8000-000000000921"),
+		Type:           DeletionAccount,
+		AccountID:      uuid.MustParse("0198a000-0000-7000-8000-000000000922"),
+		IdempotencyKey: "delete-account-1",
+	}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("EnqueueDeletion() missing actor error = %v", err)
+	}
+}
+
 func TestAuditMetadataAllowsCanonicalUUIDRequestID(t *testing.T) {
 	t.Parallel()
 	const requestID = "0198a000-0000-7000-8000-000000000914"
@@ -374,6 +422,9 @@ func TestDeletionTargetConflictsReturnStableError(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
+			test.input.Actor = safelog.ActorPseudonym(
+				"actor:v1:0123456789abcdef0123456789abcdef",
+			)
 			postgresError := &pgconn.PgError{
 				Code:           "23505",
 				ConstraintName: test.constraint,

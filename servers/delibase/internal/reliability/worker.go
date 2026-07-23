@@ -2,6 +2,7 @@ package reliability
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"math"
@@ -340,10 +341,10 @@ func (worker *Worker) record(
 		attributes = append(attributes, slog.String("handler_id", string(item.HandlerID)))
 	}
 	if item.ID != uuid.Nil {
-		attributes = append(attributes, slog.String("event_id", item.ID.String()))
+		attributes = append(attributes, slog.String("event_id", redactionSafeUUID(item.ID)))
 	}
 	if item.EntityID != uuid.Nil {
-		attributes = append(attributes, slog.String("entity_id", item.EntityID.String()))
+		attributes = append(attributes, slog.String("entity_id", redactionSafeUUID(item.EntityID)))
 	}
 	if item.Actor != "" && validActor(string(item.Actor)) {
 		attributes = append(attributes, slog.String("actor", string(item.Actor)))
@@ -362,6 +363,12 @@ func (worker *Worker) record(
 		attributes = append(attributes, slog.String("error_class", class.String()))
 	}
 	worker.logger.LogAttrs(ctx, slog.LevelInfo, "reliability worker transition", attributes...)
+}
+
+// Canonical UUID numeric tails can resemble card numbers to the mandatory root
+// redactor. Compact hexadecimal remains lossless while avoiding that shape.
+func redactionSafeUUID(id uuid.UUID) string {
+	return hex.EncodeToString(id[:])
 }
 
 type SystemClock struct{}

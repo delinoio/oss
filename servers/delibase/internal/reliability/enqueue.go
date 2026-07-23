@@ -42,7 +42,7 @@ func EnqueueWebhook(
 ) (uuid.UUID, error) {
 	if queries == nil || !validUUIDv7(input.ID) ||
 		input.Provider != ProviderPolar || webhookHandler(input.EventType) == "" ||
-		!safeExternalID.MatchString(input.ProviderEventID) ||
+		!validCredentialFreeExternalID(input.ProviderEventID) ||
 		!validActor(string(input.Actor)) {
 		return uuid.Nil, ErrInvalidInput
 	}
@@ -79,7 +79,7 @@ func EnqueueOutbox(
 		outboxHandler(input.Integration, input.Operation) == "" ||
 		!validAggregate(input.AggregateType, input.Integration, input.Operation) ||
 		!validIdempotencyKey(input.IdempotencyKey) ||
-		!validActor(string(input.Actor)) {
+		!validRequiredActor(string(input.Actor)) {
 		return uuid.Nil, ErrInvalidInput
 	}
 	payload, err := validatePayload(input.Payload)
@@ -114,7 +114,7 @@ func EnqueueDeletion(
 ) (uuid.UUID, error) {
 	if queries == nil || !validUUIDv7(input.ID) ||
 		!validIdempotencyKey(input.IdempotencyKey) ||
-		!validActor(string(input.Actor)) {
+		!validRequiredActor(string(input.Actor)) {
 		return uuid.Nil, ErrInvalidInput
 	}
 	accountID := pgtype.UUID{}
@@ -256,12 +256,16 @@ func payloadValueIsSafe(key string, value any, depth int) bool {
 }
 
 func validIdempotencyKey(value string) bool {
+	return validCredentialFreeExternalID(value)
+}
+
+func validCredentialFreeExternalID(value string) bool {
 	if !safeExternalID.MatchString(value) {
 		return false
 	}
 	// Canonical UUID segments are safe identifiers, but their numeric tails can
 	// match the shared card-number detector. Mask them before checking the
-	// remaining key for credential and billing-data shapes.
+	// remaining identifier for credential and billing-data shapes.
 	withoutUUIDs := maskIdempotencyUUIDs(value)
 	return redact.Text(withoutUUIDs) == withoutUUIDs
 }
@@ -344,6 +348,10 @@ func canonicalUUID(value string) bool {
 }
 
 func validActor(actor string) bool { return actorPattern.MatchString(actor) }
+
+func validRequiredActor(actor string) bool {
+	return actor != "" && validActor(actor)
+}
 
 func validUUIDv7(id uuid.UUID) bool {
 	return id != uuid.Nil && id.Version() == 7 && id.Variant() == uuid.RFC4122
