@@ -103,6 +103,10 @@ CREATE TABLE ledger_entries (
     CHECK (
         reservation_id IS NULL
         OR (team_id_snapshot IS NOT NULL AND team_name_snapshot IS NOT NULL)
+    ),
+    CHECK (
+        entry_type NOT IN ('credit_commit', 'overage_commit')
+        OR usage_record_id IS NOT NULL
     )
 );
 
@@ -180,6 +184,8 @@ CREATE TABLE usage_reservations (
     FOREIGN KEY (active_service_identity_id, active_meter_id)
         REFERENCES service_meter_allowlists(service_identity_id, meter_id)
         ON DELETE RESTRICT,
+    FOREIGN KEY (active_meter_id)
+        REFERENCES polar_meter_mappings(meter_id) ON DELETE RESTRICT,
     FOREIGN KEY (meter_id, price_version_id)
         REFERENCES catalog_price_versions(meter_id, id) ON DELETE RESTRICT,
     CHECK (is_uuid_v7(id)),
@@ -289,12 +295,14 @@ BEGIN
     END IF;
 
     IF NEW.status = 'held' THEN
-        SELECT role
+        SELECT membership.role
         INTO locked_organization_role
-        FROM organization_memberships
-        WHERE organization_id = NEW.organization_id
-          AND account_id = NEW.account_id
-        FOR SHARE;
+        FROM organization_memberships AS membership
+        JOIN accounts AS account ON account.id = membership.account_id
+        WHERE membership.organization_id = NEW.organization_id
+          AND membership.account_id = NEW.account_id
+          AND account.status = 'active'
+        FOR SHARE OF membership, account;
         IF NOT FOUND THEN
             RAISE EXCEPTION 'reservation account cannot access team'
                 USING ERRCODE = 'check_violation';
@@ -392,6 +400,8 @@ BEGIN
               AND period.starts_at <= NEW.created_at
               AND period.ends_at > NEW.created_at
               AND subscription.status = 'active'
+              AND subscription.current_period_starts_at = period.starts_at
+              AND subscription.current_period_ends_at = period.ends_at
             FOR SHARE OF period, subscription;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'reservation has no current billing period'
@@ -450,8 +460,20 @@ BEGIN
            NEW.status = 'committed'
            AND NOT EXISTS (
                SELECT 1
-               FROM usage_records
-               WHERE reservation_id = OLD.id
+               FROM usage_records AS usage
+               WHERE usage.reservation_id = OLD.id
+                 AND COALESCE((
+                     SELECT -sum(entry.amount_micros)
+                     FROM ledger_entries AS entry
+                     WHERE entry.usage_record_id = usage.id
+                       AND entry.entry_type = 'credit_commit'
+                 ), 0) = usage.credit_applied_micros::numeric
+                 AND COALESCE((
+                     SELECT -sum(entry.amount_micros)
+                     FROM ledger_entries AS entry
+                     WHERE entry.usage_record_id = usage.id
+                       AND entry.entry_type = 'overage_commit'
+                 ), 0) = usage.overage_applied_micros::numeric
            )
        )
        OR NEW.id IS DISTINCT FROM OLD.id
@@ -602,27 +624,6 @@ BEFORE INSERT
 ON usage_records
 FOR EACH ROW EXECUTE FUNCTION validate_usage_record_reservation();
 
-CREATE FUNCTION mark_usage_record_reservation_committed()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    UPDATE usage_reservations
-    SET status = 'committed'
-    WHERE id = NEW.reservation_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'usage record reservation could not be committed'
-            USING ERRCODE = 'check_violation';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER usage_records_commit_reservation
-AFTER INSERT
-ON usage_records
-FOR EACH ROW EXECUTE FUNCTION mark_usage_record_reservation_committed();
-
 CREATE FUNCTION reject_usage_record_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -645,6 +646,8 @@ DECLARE
     linked_reservation_id uuid;
     linked_team_id uuid;
     linked_team_name text;
+    linked_credit_applied_micros bigint;
+    linked_overage_applied_micros bigint;
     current_balance_micros numeric;
 BEGIN
     PERFORM 1
@@ -697,8 +700,18 @@ BEGIN
     END IF;
 
     IF NEW.usage_record_id IS NOT NULL THEN
-        SELECT reservation_id, team_id, team_name_snapshot
-        INTO linked_reservation_id, linked_team_id, linked_team_name
+        SELECT
+            reservation_id,
+            team_id,
+            team_name_snapshot,
+            credit_applied_micros,
+            overage_applied_micros
+        INTO
+            linked_reservation_id,
+            linked_team_id,
+            linked_team_name,
+            linked_credit_applied_micros,
+            linked_overage_applied_micros
         FROM usage_records
         WHERE id = NEW.usage_record_id
           AND organization_id = NEW.organization_id
@@ -713,6 +726,28 @@ BEGIN
             RAISE EXCEPTION 'ledger links do not match usage record'
                 USING ERRCODE = 'check_violation';
         END IF;
+        IF NEW.entry_type = 'credit_commit'
+           AND COALESCE((
+               SELECT -sum(amount_micros)
+               FROM ledger_entries
+               WHERE usage_record_id = NEW.usage_record_id
+                 AND entry_type = 'credit_commit'
+           ), 0) - NEW.amount_micros::numeric
+               > linked_credit_applied_micros::numeric THEN
+            RAISE EXCEPTION 'credit commit exceeds usage record settlement'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.entry_type = 'overage_commit'
+           AND COALESCE((
+               SELECT -sum(amount_micros)
+               FROM ledger_entries
+               WHERE usage_record_id = NEW.usage_record_id
+                 AND entry_type = 'overage_commit'
+           ), 0) - NEW.amount_micros::numeric
+               > linked_overage_applied_micros::numeric THEN
+            RAISE EXCEPTION 'overage commit exceeds usage record settlement'
+                USING ERRCODE = 'check_violation';
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -721,3 +756,46 @@ $$;
 CREATE TRIGGER ledger_entries_validate_links
 BEFORE INSERT ON ledger_entries
 FOR EACH ROW EXECUTE FUNCTION validate_ledger_entry_links();
+
+CREATE FUNCTION require_usage_record_ledger_settlement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    committed_credit_micros numeric;
+    committed_overage_micros numeric;
+    reservation_is_committed boolean;
+BEGIN
+    SELECT
+        COALESCE(-sum(amount_micros) FILTER (
+            WHERE entry_type = 'credit_commit'
+        ), 0),
+        COALESCE(-sum(amount_micros) FILTER (
+            WHERE entry_type = 'overage_commit'
+        ), 0)
+    INTO committed_credit_micros, committed_overage_micros
+    FROM ledger_entries
+    WHERE usage_record_id = NEW.id;
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM usage_reservations
+        WHERE id = NEW.reservation_id
+          AND status = 'committed'
+    )
+    INTO reservation_is_committed;
+
+    IF NOT reservation_is_committed
+       OR committed_credit_micros <> NEW.credit_applied_micros::numeric
+       OR committed_overage_micros <> NEW.overage_applied_micros::numeric THEN
+        RAISE EXCEPTION 'usage record ledger settlement does not match committed usage'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER usage_records_require_ledger_settlement
+AFTER INSERT ON usage_records
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION require_usage_record_ledger_settlement();

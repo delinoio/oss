@@ -54,8 +54,15 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     IF TG_OP = 'UPDATE' THEN
+        IF NEW.slug = OLD.slug THEN
+            RETURN NEW;
+        END IF;
         DELETE FROM organization_slug_registry
         WHERE slug = OLD.slug AND organization_id = OLD.id;
+        DELETE FROM organization_slug_aliases
+        WHERE slug = NEW.slug AND organization_id = NEW.id;
+        INSERT INTO organization_slug_aliases (slug, organization_id)
+        VALUES (OLD.slug, OLD.id);
     END IF;
     INSERT INTO organization_slug_registry (slug, organization_id)
     VALUES (NEW.slug, NEW.id);
