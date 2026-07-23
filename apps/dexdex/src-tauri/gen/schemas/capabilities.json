@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capability for the DexDex desktop window.","local":true,"windows":["main"],"permissions":["core:default","log:default","global-shortcut:allow-register","global-shortcut:allow-unregister","global-shortcut:allow-is-registered"]}}
