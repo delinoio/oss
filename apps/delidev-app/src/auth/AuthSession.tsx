@@ -10,6 +10,11 @@ import {
 
 import { runtimeConfig } from "../config";
 import { createAuthenticatedTransport } from "../api/transports";
+import {
+  clearPendingSealedSignInReturnPath,
+  consumeSealedSignInReturnPath,
+  prepareSealedSignInReturnPath,
+} from "./VolatileLogtoClient";
 
 export enum AuthStatus {
   Loading = "loading",
@@ -37,9 +42,14 @@ export function safeReturnPath(value: string | null | undefined): string {
 }
 
 export function consumeSignInReturnPath(): string {
+  const sealedReturnTo = consumeSealedSignInReturnPath();
   const returnTo = sessionStorage.getItem(signInReturnPathKey);
   sessionStorage.removeItem(signInReturnPathKey);
-  return safeReturnPath(returnTo);
+  return safeReturnPath(sealedReturnTo ?? returnTo);
+}
+
+function containsInvitationToken(value: string): boolean {
+  return value.startsWith("/invite/");
 }
 
 export function useAuthSession(): AuthSessionValue {
@@ -82,10 +92,18 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
 
   const startSignIn = useCallback(
     async (returnTo = window.location.pathname + window.location.search) => {
-      sessionStorage.setItem(signInReturnPathKey, safeReturnPath(returnTo));
+      const returnPath = safeReturnPath(returnTo);
+      if (containsInvitationToken(returnPath)) {
+        sessionStorage.removeItem(signInReturnPathKey);
+        prepareSealedSignInReturnPath(returnPath);
+      } else {
+        clearPendingSealedSignInReturnPath();
+        sessionStorage.setItem(signInReturnPathKey, returnPath);
+      }
       try {
         await signIn(`${runtimeConfig.appOrigin}/auth/callback`);
       } catch (error) {
+        clearPendingSealedSignInReturnPath();
         sessionStorage.removeItem(signInReturnPathKey);
         throw error;
       }

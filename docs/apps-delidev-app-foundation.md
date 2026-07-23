@@ -30,7 +30,7 @@
 ## Storage
 - Cloudflare Pages serves a static artifact with SPA fallback; no server-side app runtime is activated by this issue.
 - Service worker/cache may contain only the versioned static shell and anonymous public catalog data. Never cache authenticated organization/team data, balances, ledger, usage, tokens, invitation tokens, or other sensitive data.
-- Show an offline state and disable server-backed actions while offline. Access, refresh, and ID tokens remain memory-only. PKCE state and a one-shot protected return path may use same-tab session storage solely across the Logto redirect and must be consumed on callback; neither may enter local storage, React Query, or the service worker.
+- Show an offline state and disable server-backed actions while offline. Access, refresh, and ID tokens remain memory-only. PKCE state and non-sensitive one-shot protected return paths may use same-tab session storage solely across the Logto redirect and must be consumed on callback; invitation returns use a state-bound sealed handoff that never serializes the bearer token in plaintext. None may enter local storage, React Query, or the service worker.
 
 ## Security
 - Treat Logto as the identity trust boundary and delibase as the application authorization boundary.
@@ -65,8 +65,9 @@
 - The service worker recognizes only the four checked-in `CatalogService` read method names, requires an absent `Authorization` header, and keys cached POST responses through a synthetic body digest. Every other RPC is network-only.
 - Missing or invalid public configuration fails closed: public catalog requests show a dependency error and Logto controls remain disabled. The environment contract remains browser-safe and contains no provider secret.
 - Initial service-worker control does not reload the page. Later updates wait for user confirmation, activate through `SKIP_WAITING`, reload on controller change, remove prior version caches, and retain only the new versioned shell and public catalog cache.
-- Logto uses an injected browser client whose access, refresh, and ID token state is memory-only and which removes legacy state for the configured app from local storage. Its PKCE sign-in session and protected return path use same-tab session storage; the return path supports invitation resumption and is removed on either callback success or failure.
-- Organization members use opaque cursor pagination, organization settings expose the changeable slug RPC and follow the returned canonical slug, and billing exposes the owner/admin monthly overage-limit mutation in exact USD micro-units.
+- Logto uses an injected browser client whose access, refresh, and ID token state is memory-only and which removes legacy state for the configured app from local storage. Its PKCE sign-in session and non-sensitive protected return path use same-tab session storage. Invitation return paths are sealed with a key derived from the high-entropy OIDC state, restored only by the matching callback, and removed from storage immediately; abandoned sealed handoffs are discarded on the next same-origin load.
+- Public catalog, organization member, team hierarchy, and usage-record lists use opaque cursor pagination with explicit load-more actions.
+- Organization settings expose the changeable slug RPC and follow the returned canonical slug. The organization shell loads the server-authoritative caller role, and subscription, billing-portal, and overage-limit mutations render only for Owners and Admins; overage limits retain exact USD micro-unit handling.
 
 ## References
 - [Project delidev](project-delidev.md)

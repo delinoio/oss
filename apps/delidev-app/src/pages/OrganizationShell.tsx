@@ -1,5 +1,6 @@
 import { useQuery } from "@connectrpc/connect-query";
 import {
+  OrganizationRole,
   OrganizationService,
   type Organization,
 } from "@delinoio/delibase-connect";
@@ -10,6 +11,7 @@ import { useAuthSession } from "../auth/AuthSession";
 import { ErrorState, LoadingState } from "../components/States";
 
 interface OrganizationContextValue {
+  callerRole: OrganizationRole;
   organization: Organization;
   transport: NonNullable<ReturnType<typeof useAuthSession>["transport"]>;
 }
@@ -49,20 +51,40 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
       transport,
     },
   );
+  const details = useQuery(
+    OrganizationService.method.getOrganization,
+    { organizationId: resolved.data?.organization?.organizationId },
+    {
+      enabled: Boolean(resolved.data?.organization?.organizationId),
+      gcTime: 0,
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
+  );
 
-  if (resolved.isPending) {
+  if (resolved.isPending || (resolved.data?.organization && details.isPending)) {
     return (
       <div className="page">
         <LoadingState label="Loading organization" />
       </div>
     );
   }
-  if (resolved.isError || !resolved.data.organization || !transport) {
+  if (
+    resolved.isError ||
+    details.isError ||
+    !resolved.data.organization ||
+    !details.data?.organization ||
+    !transport
+  ) {
     return (
       <div className="page">
         <ErrorState
-          error={resolved.error}
-          onRetry={() => void resolved.refetch()}
+          error={resolved.error ?? details.error}
+          onRetry={() => {
+            void resolved.refetch();
+            void details.refetch();
+          }}
           title="Organization unavailable"
         />
       </div>
@@ -83,7 +105,11 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
 
   return (
     <OrganizationContext
-      value={{ organization: resolved.data.organization, transport }}
+      value={{
+        callerRole: details.data.callerRole,
+        organization: details.data.organization,
+        transport,
+      }}
     >
       <div className="organization-layout">
         <aside className="organization-sidebar">

@@ -1,4 +1,4 @@
-import { useQuery } from "@connectrpc/connect-query";
+import { useInfiniteQuery, useQuery } from "@connectrpc/connect-query";
 import { CatalogService } from "@delinoio/delibase-connect";
 import { Link, useParams } from "react-router-dom";
 
@@ -14,17 +14,23 @@ export function CatalogPage() {
     "Browse DeliDev apps and transparent usage-based pricing.",
   );
   const transport = usePublicTransport();
-  const catalog = useQuery(
+  const catalog = useInfiniteQuery(
     CatalogService.method.listCatalogApps,
-    { page: { pageSize: 50 } },
+    { page: { cursor: "", pageSize: 50 } },
     {
       gcTime: 15 * 60 * 1000,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 50 } : undefined;
+      },
       networkMode: "always",
+      pageParamKey: "page",
       retry: 1,
       staleTime: 5 * 60 * 1000,
       transport,
     },
   );
+  const apps = catalog.data?.pages.flatMap((page) => page.apps) ?? [];
 
   return (
     <div className="page">
@@ -34,25 +40,46 @@ export function CatalogPage() {
         <p>Browse every app and its unit price. No account is required.</p>
       </header>
       {catalog.isPending ? <LoadingState label="Loading apps" /> : null}
-      {catalog.isError ? (
+      {catalog.isError && !catalog.data ? (
         <ErrorState
           error={catalog.error}
           onRetry={() => void catalog.refetch()}
           title="The catalog isn’t available"
         />
       ) : null}
-      {catalog.data && catalog.data.apps.length === 0 ? (
+      {catalog.data && apps.length === 0 ? (
         <EmptyState
           description="There are no published apps yet. Check back soon."
           title="The catalog is empty"
         />
       ) : null}
-      {catalog.data?.apps.length ? (
-        <div className="catalog-grid">
-          {catalog.data.apps.map((app) => (
-            <CatalogCard app={app} key={app.slug} />
-          ))}
-        </div>
+      {apps.length ? (
+        <>
+          <div className="catalog-grid">
+            {apps.map((app) => (
+              <CatalogCard app={app} key={app.slug} />
+            ))}
+          </div>
+          {catalog.isFetchNextPageError ? (
+            <p className="inline-error" role="alert">
+              {catalog.error.message}
+            </p>
+          ) : null}
+          {catalog.hasNextPage ? (
+            <div className="pagination-actions">
+              <button
+                className="button secondary"
+                disabled={catalog.isFetchingNextPage}
+                onClick={() => void catalog.fetchNextPage()}
+                type="button"
+              >
+                {catalog.isFetchingNextPage
+                  ? "Loading more…"
+                  : "Load more apps"}
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

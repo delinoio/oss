@@ -58,6 +58,13 @@ function formatUsdMicrosInput(value = 0n): string {
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
+export function canManageBilling(role: OrganizationRole): boolean {
+  return (
+    role === OrganizationRole.OWNER ||
+    role === OrganizationRole.ADMIN
+  );
+}
+
 function OrganizationPageHeading({
   description,
   title,
@@ -228,15 +235,26 @@ export function MembersPage() {
 export function TeamsPage() {
   useDocumentMetadata("Teams", "View nested organization teams.");
   const { organization, transport } = useOrganization();
-  const teams = useQuery(
+  const teams = useInfiniteQuery(
     TeamService.method.listTeams,
     {
       includeDescendants: true,
-      organizationId: organization.organizationId,
-      page: { pageSize: 100 },
+      organizationId: uuid(organization.organizationId?.value),
+      page: { cursor: "", pageSize: 100 },
     },
-    { gcTime: 0, retry: false, staleTime: 0, transport },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
   );
+  const teamRows = teams.data?.pages.flatMap((page) => page.teams) ?? [];
   return (
     <>
       <OrganizationPageHeading
@@ -244,39 +262,60 @@ export function TeamsPage() {
         title="Teams"
       />
       {teams.isPending ? <LoadingState label="Loading teams" /> : null}
-      {teams.isError ? (
+      {teams.isError && !teams.data ? (
         <ErrorState
           error={teams.error}
           onRetry={() => void teams.refetch()}
           title="Teams unavailable"
         />
       ) : null}
-      {teams.data?.teams.length === 0 ? (
+      {teamRows.length === 0 && teams.data ? (
         <EmptyState
           description="Every organization starts with a protected General team."
           title="No teams found"
         />
       ) : null}
-      {teams.data?.teams.length ? (
-        <ul className="team-tree" aria-label="Team hierarchy">
-          {teams.data.teams.map((team) => (
-            <li
-              key={team.teamId?.value}
-              style={{ "--team-depth": team.depth } as CSSProperties}
-            >
-              <span className="team-icon" aria-hidden="true">
-                {team.protectedGeneral ? "G" : "T"}
-              </span>
-              <div>
-                <strong>{team.name}</strong>
-                <small>
-                  Level {team.depth + 1}
-                  {team.protectedGeneral ? " · Protected" : ""}
-                </small>
-              </div>
-            </li>
-          ))}
-        </ul>
+      {teamRows.length ? (
+        <>
+          <ul className="team-tree" aria-label="Team hierarchy">
+            {teamRows.map((team) => (
+              <li
+                key={team.teamId?.value}
+                style={{ "--team-depth": team.depth } as CSSProperties}
+              >
+                <span className="team-icon" aria-hidden="true">
+                  {team.protectedGeneral ? "G" : "T"}
+                </span>
+                <div>
+                  <strong>{team.name}</strong>
+                  <small>
+                    Level {team.depth + 1}
+                    {team.protectedGeneral ? " · Protected" : ""}
+                  </small>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {teams.isFetchNextPageError ? (
+            <p className="inline-error" role="alert">
+              {teams.error.message}
+            </p>
+          ) : null}
+          {teams.hasNextPage ? (
+            <div className="pagination-actions">
+              <button
+                className="button secondary"
+                disabled={teams.isFetchingNextPage}
+                onClick={() => void teams.fetchNextPage()}
+                type="button"
+              >
+                {teams.isFetchingNextPage
+                  ? "Loading more…"
+                  : "Load more teams"}
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </>
   );
@@ -284,8 +323,9 @@ export function TeamsPage() {
 
 export function BillingPage() {
   useDocumentMetadata("Billing", "View organization balance and subscription.");
-  const { organization, transport } = useOrganization();
+  const { callerRole, organization, transport } = useOrganization();
   const online = useOnline();
+  const showBillingActions = canManageBilling(callerRole);
   const summary = useQuery(
     BillingService.method.getBillingSummary,
     { organizationId: organization.organizationId },
@@ -372,51 +412,60 @@ export function BillingPage() {
               </strong>
             </article>
           </div>
-          <section className="content-card billing-plan">
-            <div>
-              <span className="eyebrow">Monthly plan</span>
-              <h2>
-                {formatEnumLabel(
-                  SubscriptionStatus[
-                    summary.data.summary.subscriptionStatus
-                  ] ?? summary.data.summary.subscriptionStatus,
-                )}
-              </h2>
-              <p>$10 monthly includes $10 of credits that never expire.</p>
-            </div>
-            <div className="button-row">
-              <button
-                className="button primary"
-                disabled={!online || checkout.isPending}
-                onClick={openCheckout}
-                type="button"
-              >
-                Start subscription
-              </button>
-              <button
-                className="button secondary"
-                disabled={!online || portal.isPending}
-                onClick={openPortal}
-                type="button"
-              >
-                Manage billing
-              </button>
-            </div>
-            {checkout.error || portal.error ? (
-              <p className="inline-error" role="alert">
-                {(checkout.error ?? portal.error)?.message}
-              </p>
-            ) : null}
-            {!online ? <OfflineActionHint /> : null}
-          </section>
-          <OverageLimitForm
-            initialLimit={
-              summary.data.summary.overageLimitConfigured
-                ? summary.data.summary.monthlyOverageLimit?.value
-                : 0n
-            }
-            onUpdated={() => void summary.refetch()}
-          />
+          {showBillingActions ? (
+            <>
+              <section className="content-card billing-plan">
+                <div>
+                  <span className="eyebrow">Monthly plan</span>
+                  <h2>
+                    {formatEnumLabel(
+                      SubscriptionStatus[
+                        summary.data.summary.subscriptionStatus
+                      ] ?? summary.data.summary.subscriptionStatus,
+                    )}
+                  </h2>
+                  <p>$10 monthly includes $10 of credits that never expire.</p>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="button primary"
+                    disabled={!online || checkout.isPending}
+                    onClick={openCheckout}
+                    type="button"
+                  >
+                    Start subscription
+                  </button>
+                  <button
+                    className="button secondary"
+                    disabled={!online || portal.isPending}
+                    onClick={openPortal}
+                    type="button"
+                  >
+                    Manage billing
+                  </button>
+                </div>
+                {checkout.error || portal.error ? (
+                  <p className="inline-error" role="alert">
+                    {(checkout.error ?? portal.error)?.message}
+                  </p>
+                ) : null}
+                {!online ? <OfflineActionHint /> : null}
+              </section>
+              <OverageLimitForm
+                initialLimit={
+                  summary.data.summary.overageLimitConfigured
+                    ? summary.data.summary.monthlyOverageLimit?.value
+                    : 0n
+                }
+                onUpdated={() => void summary.refetch()}
+              />
+            </>
+          ) : (
+            <p className="muted">
+              An organization owner or admin can change subscription and
+              overage settings.
+            </p>
+          )}
         </>
       ) : null}
     </>
@@ -517,11 +566,26 @@ function OverageLimitForm({
 export function UsagePage() {
   useDocumentMetadata("Usage", "View organization usage records.");
   const { organization, transport } = useOrganization();
-  const usage = useQuery(
+  const usage = useInfiniteQuery(
     BillingService.method.listUsageRecords,
-    { organizationId: organization.organizationId, page: { pageSize: 100 } },
-    { gcTime: 0, retry: false, staleTime: 0, transport },
+    {
+      organizationId: uuid(organization.organizationId?.value),
+      page: { cursor: "", pageSize: 100 },
+    },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
   );
+  const usageRows =
+    usage.data?.pages.flatMap((page) => page.records) ?? [];
   return (
     <>
       <OrganizationPageHeading
@@ -529,43 +593,64 @@ export function UsagePage() {
         title="Usage"
       />
       {usage.isPending ? <LoadingState label="Loading usage" /> : null}
-      {usage.isError ? (
+      {usage.isError && !usage.data ? (
         <ErrorState
           error={usage.error}
           onRetry={() => void usage.refetch()}
           title="Usage unavailable"
         />
       ) : null}
-      {usage.data?.records.length === 0 ? (
+      {usageRows.length === 0 && usage.data ? (
         <EmptyState
           description="Usage will appear here after a mini-app service settles it."
           title="No usage yet"
         />
       ) : null}
-      {usage.data?.records.length ? (
-        <div className="table-card">
-          <table>
-            <caption className="sr-only">Usage records</caption>
-            <thead>
-              <tr>
-                <th scope="col">Team</th>
-                <th scope="col">Units</th>
-                <th scope="col">Cost</th>
-                <th scope="col">Reference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {usage.data.records.map((record) => (
-                <tr key={record.usageRecordId?.value}>
-                  <td>{record.teamNameSnapshot}</td>
-                  <td>{record.units?.value.toString() ?? "0"}</td>
-                  <td>{formatUsdMicros(record.totalCost?.value)}</td>
-                  <td>{record.clientReference || "—"}</td>
+      {usageRows.length ? (
+        <>
+          <div className="table-card">
+            <table>
+              <caption className="sr-only">Usage records</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Team</th>
+                  <th scope="col">Units</th>
+                  <th scope="col">Cost</th>
+                  <th scope="col">Reference</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {usageRows.map((record) => (
+                  <tr key={record.usageRecordId?.value}>
+                    <td>{record.teamNameSnapshot}</td>
+                    <td>{record.units?.value.toString() ?? "0"}</td>
+                    <td>{formatUsdMicros(record.totalCost?.value)}</td>
+                    <td>{record.clientReference || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {usage.isFetchNextPageError ? (
+            <p className="inline-error" role="alert">
+              {usage.error.message}
+            </p>
+          ) : null}
+          {usage.hasNextPage ? (
+            <div className="pagination-actions">
+              <button
+                className="button secondary"
+                disabled={usage.isFetchingNextPage}
+                onClick={() => void usage.fetchNextPage()}
+                type="button"
+              >
+                {usage.isFetchingNextPage
+                  ? "Loading more…"
+                  : "Load more usage"}
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </>
   );

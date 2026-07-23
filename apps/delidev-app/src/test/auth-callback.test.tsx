@@ -1,3 +1,4 @@
+import { PersistKey } from "@logto/browser";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +18,12 @@ vi.mock("@logto/react", async (importOriginal) => {
 });
 
 import { AuthCallbackPage } from "../pages/AuthCallbackPage";
+import {
+  clearPendingSealedSignInReturnPath,
+  consumeSealedSignInReturnPath,
+  prepareSealedSignInReturnPath,
+  VolatileLogtoStorage,
+} from "../auth/VolatileLogtoClient";
 
 describe("Logto callback page", () => {
   beforeEach(() => {
@@ -24,6 +31,9 @@ describe("Logto callback page", () => {
     callbackState.isAuthenticated = true;
     callbackState.isLoading = false;
     sessionStorage.clear();
+    clearPendingSealedSignInReturnPath();
+    consumeSealedSignInReturnPath();
+    window.history.replaceState({}, "", "/");
   });
 
   it("returns to the guarded internal route after a successful callback", async () => {
@@ -44,11 +54,25 @@ describe("Logto callback page", () => {
     expect(sessionStorage.getItem("delidev:return-to")).toBeNull();
   });
 
-  it("resumes an invitation and consumes its one-shot return path", async () => {
-    sessionStorage.setItem(
-      "delidev:return-to",
-      "/invite/secret-bearer-token",
+  it("resumes an invitation from its sealed one-shot handoff", async () => {
+    const storage = new VolatileLogtoStorage("callback-invitation-test");
+    prepareSealedSignInReturnPath("/invite/secret-bearer-token");
+    await storage.setItem(
+      PersistKey.SignInSession,
+      JSON.stringify({
+        codeVerifier: "pkce-code-verifier",
+        redirectUri: "https://deli.dev/auth/callback",
+        state: "invite-state",
+      }),
     );
+    window.history.replaceState(
+      {},
+      "",
+      "/auth/callback?code=authorization-code&state=invite-state",
+    );
+    await storage.getItem(PersistKey.SignInSession);
+    await storage.removeItem(PersistKey.SignInSession);
+
     render(
       <MemoryRouter initialEntries={["/auth/callback"]}>
         <Routes>
@@ -69,10 +93,7 @@ describe("Logto callback page", () => {
   });
 
   it("renders a safe error state when Logto rejects the callback", () => {
-    sessionStorage.setItem(
-      "delidev:return-to",
-      "/invite/secret-bearer-token",
-    );
+    sessionStorage.setItem("delidev:return-to", "/account");
     callbackState.error = new Error("Invalid sign-in state.");
     callbackState.isAuthenticated = false;
     render(
