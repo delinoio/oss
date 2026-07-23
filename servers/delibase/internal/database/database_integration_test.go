@@ -3039,7 +3039,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			'actor:v1:00000000000000000000000000000000',
 			$2,
 			'success',
-			'{"request_id":"request-1","trace_id":"0123456789abcdef0123456789abcdef","request_method":"POST","request_procedure":"/delibase.v1.UsageService/ReserveUsage"}'
+			'{"request_id":"0198a000-0000-7000-8000-000000000914","trace_id":"0123456789abcdef0123456789abcdef","request_method":"POST","request_procedure":"/delibase.v1.UsageService/ReserveUsage"}'
 		)
 	`, auditID, orgA); err != nil {
 		t.Fatal(err)

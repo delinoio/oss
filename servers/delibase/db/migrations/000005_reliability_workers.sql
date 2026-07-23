@@ -343,6 +343,65 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION audit_metadata_is_safe(value jsonb)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT
+        jsonb_typeof(value) = 'object'
+        AND value - ARRAY[
+            'request_id',
+            'trace_id',
+            'request_method',
+            'request_procedure'
+        ] = '{}'::jsonb
+        AND (
+            NOT (value ? 'request_id')
+            OR (
+                jsonb_typeof(value -> 'request_id') = 'string'
+                AND value ->> 'request_id'
+                    ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+                AND value ->> 'request_id'
+                    !~* '(authorization|token|secret|password|passwd|api[-_]?key|x-delibase-forwarded-user-token):'
+                AND value ->> 'request_id'
+                    !~ 'eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}'
+                AND (
+                    value ->> 'request_id'
+                        ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                    OR value ->> 'request_id'
+                        !~ '([0-9]-?){12,18}[0-9]'
+                )
+            )
+        )
+        AND (
+            NOT (value ? 'trace_id')
+            OR (
+                jsonb_typeof(value -> 'trace_id') = 'string'
+                AND value ->> 'trace_id' ~ '^[0-9a-f]{32}$'
+                AND value ->> 'trace_id' <> repeat('0', 32)
+            )
+        )
+        AND (
+            NOT (value ? 'request_method')
+            OR (
+                jsonb_typeof(value -> 'request_method') = 'string'
+                AND value ->> 'request_method' ~ '^[A-Z]{1,16}$'
+            )
+        )
+        AND (
+            NOT (value ? 'request_procedure')
+            OR (
+                jsonb_typeof(value -> 'request_procedure') = 'string'
+                AND value ->> 'request_procedure'
+                    ~ '^/[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$'
+            )
+        )
+        AND pg_column_size(value) <= 2048
+$$;
+
 ALTER TABLE audit_events
     ADD CONSTRAINT audit_events_safe_error_class_check CHECK (
         safe_error_class IS NULL
