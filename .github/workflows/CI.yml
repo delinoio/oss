@@ -156,6 +156,121 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: go test ./...
 
+  proto-delibase:
+    name: Delibase Protobuf
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            proto:
+              - .github/workflows/CI.yml
+              - go.mod
+              - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - protos/buf.gen.yaml
+              - protos/buf.yaml
+              - protos/delibase/**
+              - scripts/check-proto.sh
+              - scripts/generate-delibase-proto.sh
+              - scripts/generate-proto.sh
+              - scripts/lib/go-proto-tools.sh
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PROTO_CHANGED: ${{ steps.filter.outputs.proto }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${PROTO_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (no delibase Protobuf changes)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping delibase Protobuf checks: no relevant changes"
+
+      - name: Resolve delibase Protobuf compatibility baseline
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        shell: bash
+        env:
+          BASELINE_COMMIT: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          set -euo pipefail
+
+          baseline_path="protos/delibase/delibase.v1.binpb"
+          if [ -z "${BASELINE_COMMIT}" ] || [[ "${BASELINE_COMMIT}" =~ ^0+$ ]]; then
+            echo "No prior event commit is available; using the checked-in initial baseline"
+          elif ! git cat-file -e "${BASELINE_COMMIT}^{commit}"; then
+            echo "The prior event commit is not available: ${BASELINE_COMMIT}" >&2
+            exit 1
+          elif git cat-file -e "${BASELINE_COMMIT}:${baseline_path}"; then
+            immutable_baseline="${RUNNER_TEMP}/delibase.v1.binpb"
+            git show "${BASELINE_COMMIT}:${baseline_path}" > "${immutable_baseline}"
+            echo "DELIBASE_PROTO_BASELINE=${immutable_baseline}" >> "${GITHUB_ENV}"
+            echo "Using the delibase v1 baseline from ${BASELINE_COMMIT}"
+          else
+            echo "The prior event commit has no delibase v1 baseline; using the checked-in initial baseline"
+          fi
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Protobuf compatibility and generated output
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm check:proto
+
+      - name: Run delibase Protobuf tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: go test ./protos/delibase/...
+
+      - name: Run delibase Protobuf vet
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: go vet ./protos/delibase/...
+
+      - name: Typecheck delibase TypeScript artifacts
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter @delinoio/delibase-connect typecheck
+
   rust-fmt:
     name: Rust fmt
     runs-on: ubuntu-latest
@@ -674,6 +789,7 @@ jobs:
     needs:
       - go-quality
       - go-test
+      - proto-delibase
       - rust-fmt
       - rust-clippy
       - rust-test

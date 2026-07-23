@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package delibase.v1;
+
+import "delibase/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1";
+
+message BillingPeriod {
+  UuidV7 billing_period_id = 1;
+  BillingPeriodStatus status = 2;
+  google.protobuf.Timestamp starts_at = 3;
+  google.protobuf.Timestamp ends_at = 4;
+}
+
+message BillingSummary {
+  UuidV7 organization_id = 1;
+  SubscriptionStatus subscription_status = 2;
+  BillingPeriod current_period = 3;
+  UsdMicros available_credit = 4;
+  UsdMicros held_credit = 5;
+  UsdMicros committed_overage = 6;
+  UsdMicros held_overage = 7;
+  UsdMicros monthly_overage_limit = 8;
+  bool overage_limit_configured = 9;
+  bool new_overage_allowed = 10;
+}
+
+message LedgerEntry {
+  UuidV7 ledger_entry_id = 1;
+  UuidV7 organization_id = 2;
+  LedgerOperation operation = 3;
+  UsdMicros amount = 4;
+  UsdMicros balance_after = 5;
+  UuidV7 billing_period_id = 6;
+  UuidV7 reservation_id = 7;
+  UuidV7 usage_record_id = 8;
+  UuidV7 team_id_snapshot = 9;
+  string team_name_snapshot = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+message UsageRecord {
+  UuidV7 usage_record_id = 1;
+  UuidV7 organization_id = 2;
+  UuidV7 reservation_id = 3;
+  UuidV7 meter_id = 4;
+  UuidV7 price_version_id = 5;
+  UuidV7 team_id_snapshot = 6;
+  string team_name_snapshot = 7;
+  UuidV7 user_account_id = 8;
+  UuidV7 service_identity_id = 9;
+  UsageUnits units = 10;
+  UsdMicros usd_micros_per_unit = 11;
+  UsdMicros total_cost = 12;
+  UsdMicros credit_applied = 13;
+  UsdMicros overage_applied = 14;
+  string client_reference = 15;
+  UsageRecordStatus status = 16;
+  google.protobuf.Timestamp committed_at = 17;
+}
+
+message GetBillingSummaryRequest {
+  UuidV7 organization_id = 1;
+}
+
+message GetBillingSummaryResponse {
+  BillingSummary summary = 1;
+}
+
+message CreateSubscriptionCheckoutRequest {
+  UuidV7 organization_id = 1;
+  string success_url = 2;
+  string cancel_url = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message CreateSubscriptionCheckoutResponse {
+  string checkout_url = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  IdempotencyResult idempotency = 3;
+}
+
+message CreateBillingPortalSessionRequest {
+  UuidV7 organization_id = 1;
+  string return_url = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message CreateBillingPortalSessionResponse {
+  string portal_url = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  IdempotencyResult idempotency = 3;
+}
+
+message UpdateOverageLimitRequest {
+  UuidV7 organization_id = 1;
+  UsdMicros monthly_limit = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message UpdateOverageLimitResponse {
+  BillingSummary summary = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message ListLedgerEntriesRequest {
+  UuidV7 organization_id = 1;
+  LedgerOperation operation = 2;
+  google.protobuf.Timestamp from_time = 3;
+  google.protobuf.Timestamp to_time = 4;
+  PageRequest page = 5;
+}
+
+message ListLedgerEntriesResponse {
+  repeated LedgerEntry entries = 1;
+  PageResponse page = 2;
+}
+
+message ListUsageRecordsRequest {
+  UuidV7 organization_id = 1;
+  UuidV7 team_id = 2;
+  UuidV7 meter_id = 3;
+  UuidV7 user_account_id = 4;
+  google.protobuf.Timestamp from_time = 5;
+  google.protobuf.Timestamp to_time = 6;
+  PageRequest page = 7;
+}
+
+message ListUsageRecordsResponse {
+  repeated UsageRecord records = 1;
+  PageResponse page = 2;
+}
+
+// BillingService requires a Logto user token on every RPC. Delibase enforces
+// role-specific visibility: Members cannot access invoices, the full ledger,
+// subscription controls, or overage controls.
+service BillingService {
+  // Requires delibase:billing:read.
+  rpc GetBillingSummary(GetBillingSummaryRequest) returns (GetBillingSummaryResponse);
+  // Requires delibase:billing:write and an Owner or Admin role.
+  rpc CreateSubscriptionCheckout(CreateSubscriptionCheckoutRequest) returns (CreateSubscriptionCheckoutResponse);
+  // Requires delibase:billing:write and an Owner or Admin role.
+  rpc CreateBillingPortalSession(CreateBillingPortalSessionRequest) returns (CreateBillingPortalSessionResponse);
+  // Requires delibase:billing:write and an Owner or Admin role.
+  rpc UpdateOverageLimit(UpdateOverageLimitRequest) returns (UpdateOverageLimitResponse);
+  // Requires delibase:billing:read and an Owner or Admin role.
+  rpc ListLedgerEntries(ListLedgerEntriesRequest) returns (ListLedgerEntriesResponse);
+  // Requires delibase:billing:read. Members are limited to personal and effectively accessible team usage.
+  rpc ListUsageRecords(ListUsageRecordsRequest) returns (ListUsageRecordsResponse);
+}

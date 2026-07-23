@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package delibase.v1;
+
+import "delibase/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1";
+
+message Account {
+  UuidV7 account_id = 1;
+  AccountStatus status = 2;
+  string display_name = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message AccountOrganization {
+  UuidV7 organization_id = 1;
+  string name = 2;
+  string slug = 3;
+  OrganizationRole role = 4;
+}
+
+message GetAccountStateRequest {}
+
+message GetAccountStateResponse {
+  Account account = 1;
+  bool onboarding_required = 2;
+  repeated AccountOrganization organizations = 3;
+}
+
+message CompleteOnboardingRequest {
+  string display_name = 1;
+  string organization_name = 2;
+  string organization_slug = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message CompleteOnboardingResponse {
+  Account account = 1;
+  UuidV7 organization_id = 2;
+  UuidV7 general_team_id = 3;
+  IdempotencyResult idempotency = 4;
+}
+
+message GetAccountDeletionImpactRequest {}
+
+message GetAccountDeletionImpactResponse {
+  bool can_delete = 1;
+  repeated DeletionBlocker blockers = 2;
+}
+
+message DeleteAccountRequest {
+  bool confirm = 1;
+  IdempotencyKey idempotency = 2;
+}
+
+message DeleteAccountResponse {
+  UuidV7 deletion_id = 1;
+  DeletionStatus status = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  IdempotencyResult idempotency = 4;
+}
+
+// AccountService requires a Logto user token on every RPC.
+service AccountService {
+  // Requires delibase:account:read.
+  rpc GetAccountState(GetAccountStateRequest) returns (GetAccountStateResponse);
+  // Requires delibase:account:write.
+  rpc CompleteOnboarding(CompleteOnboardingRequest) returns (CompleteOnboardingResponse);
+  // Requires delibase:account:read.
+  rpc GetAccountDeletionImpact(GetAccountDeletionImpactRequest) returns (GetAccountDeletionImpactResponse);
+  // Requires delibase:account:write.
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+}
