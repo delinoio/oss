@@ -240,7 +240,7 @@ func TestPostgreSQLCurrentOrganizationBalanceUsesLedgerTotal(t *testing.T) {
 
 	lowerID := uuidv7.MustNew()
 	higherID := uuidv7.MustNew()
-	createdAt := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	createdAt := time.Now().UTC().Add(-time.Minute)
 	transaction, err := store.pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
