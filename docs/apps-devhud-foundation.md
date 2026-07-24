@@ -4,8 +4,8 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: active foundation; `apps/devhud` contains the common bundled-asset application package and no production tool, mobile/widget, packaging, release, publisher, or public support implementation.
-- This document covers the future deployable package. The current implementation is limited to the shared bundled-asset frontend, `src-tauri` runtime-selection boundary, scoped runtime-information command, and deterministic local validation commands.
+- Status: active foundation; `apps/devhud` contains the common bundled-asset application package, internal empty tool registry, and desktop/mobile empty-state UI. It has no production tool, visible widget, packaging, release, publisher, or public support implementation.
+- This document covers the future deployable package. The current implementation is limited to the shared bundled-asset frontend, provider-owned System/Light/Dark UI state, internal registry filtering, `src-tauri` runtime-selection boundary, scoped runtime-information command, and deterministic local validation commands.
 
 ## Runtime and Language
 
@@ -119,7 +119,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The foundation provides package-local `build`, `typecheck`, `lint`, `test`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. Development, accessibility, complete desktop-matrix, mobile/widget, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
+The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics; full desktop-matrix, mobile/widget compilation, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
 
 Required validation coverage is:
 
