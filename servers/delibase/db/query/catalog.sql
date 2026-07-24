@@ -4,6 +4,65 @@ SET enabled = false,
     updated_at = transaction_timestamp()
 WHERE enabled;
 
+-- Public catalog reads intentionally select only enabled entries. The lateral
+-- price lookup exposes the exact effective version a later reservation pins.
+-- name: ListPublicCatalogApps :many
+SELECT id, slug, name, summary, description, icon_url, enabled
+FROM catalog_apps
+WHERE enabled
+  AND id > $1
+ORDER BY id
+LIMIT $2;
+
+-- name: GetPublicCatalogAppBySlug :one
+SELECT id, slug, name, summary, description, icon_url, enabled
+FROM catalog_apps
+WHERE slug = $1
+  AND enabled;
+
+-- name: ListPublicCatalogMeters :many
+SELECT
+    meter.id, meter.app_id, meter.meter_key, meter.name, meter.description,
+    meter.unit_name, meter.unit_precision, meter.reservation_ttl_seconds,
+    meter.enabled, price.id AS price_version_id, price.usd_micros_per_unit,
+    price.effective_from, price.effective_until
+FROM catalog_meters AS meter
+JOIN catalog_apps AS app ON app.id = meter.app_id AND app.enabled
+JOIN LATERAL (
+    SELECT id, usd_micros_per_unit, effective_from, effective_until
+    FROM catalog_price_versions
+    WHERE meter_id = meter.id
+      AND effective_from <= statement_timestamp()
+      AND (effective_until IS NULL OR statement_timestamp() < effective_until)
+    ORDER BY effective_from DESC
+    LIMIT 1
+) AS price ON true
+WHERE meter.enabled
+  AND meter.app_id = $1
+  AND meter.id > $2
+ORDER BY meter.id
+LIMIT $3;
+
+-- name: GetPublicCatalogMeter :one
+SELECT
+    meter.id, meter.app_id, meter.meter_key, meter.name, meter.description,
+    meter.unit_name, meter.unit_precision, meter.reservation_ttl_seconds,
+    meter.enabled, price.id AS price_version_id, price.usd_micros_per_unit,
+    price.effective_from, price.effective_until
+FROM catalog_meters AS meter
+JOIN catalog_apps AS app ON app.id = meter.app_id AND app.enabled
+JOIN LATERAL (
+    SELECT id, usd_micros_per_unit, effective_from, effective_until
+    FROM catalog_price_versions
+    WHERE meter_id = meter.id
+      AND effective_from <= statement_timestamp()
+      AND (effective_until IS NULL OR statement_timestamp() < effective_until)
+    ORDER BY effective_from DESC
+    LIMIT 1
+) AS price ON true
+WHERE meter.id = $1
+  AND meter.enabled;
+
 -- name: DisableCatalogMeters :exec
 UPDATE catalog_meters
 SET enabled = false,

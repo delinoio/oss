@@ -79,7 +79,7 @@ func TestHealthAndReadiness(t *testing.T) {
 	}
 }
 
-func TestConnectHandlersReturnTypedUnimplementedAndAuthenticationDetails(t *testing.T) {
+func TestConnectHandlersReturnCatalogAvailabilityAndAuthenticationDetails(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(newTestHandler(t, fakeHealth{}, nil))
 	defer server.Close()
@@ -90,12 +90,12 @@ func TestConnectHandlersReturnTypedUnimplementedAndAuthenticationDetails(t *test
 		connect.NewRequest(&delibasev1.ListCatalogAppsRequest{}),
 	)
 	var connectFailure *connect.Error
-	if !errors.As(err, &connectFailure) || connectFailure.Code() != connect.CodeUnimplemented {
+	if !errors.As(err, &connectFailure) || connectFailure.Code() != connect.CodeUnavailable {
 		t.Fatalf("catalog error = %v", err)
 	}
 	if connectFailure.Meta().Get(requestmeta.RequestIDHeader) == "" ||
 		connectFailure.Meta().Get(requestmeta.TraceIDHeader) == "" {
-		t.Fatalf("unimplemented metadata = %#v", connectFailure.Meta())
+		t.Fatalf("catalog availability metadata = %#v", connectFailure.Meta())
 	}
 
 	account := delibasev1connect.NewAccountServiceClient(server.Client(), server.URL)

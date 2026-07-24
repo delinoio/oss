@@ -58,6 +58,8 @@ type Querier interface {
 	GetOrganizationForAccount(ctx context.Context, arg GetOrganizationForAccountParams) (GetOrganizationForAccountRow, error)
 	GetOrganizationMember(ctx context.Context, arg GetOrganizationMemberParams) (GetOrganizationMemberRow, error)
 	GetOrganizationMembership(ctx context.Context, arg GetOrganizationMembershipParams) (OrganizationMembership, error)
+	GetPublicCatalogAppBySlug(ctx context.Context, slug string) (GetPublicCatalogAppBySlugRow, error)
+	GetPublicCatalogMeter(ctx context.Context, id pgtype.UUID) (GetPublicCatalogMeterRow, error)
 	GetWebhookInbox(ctx context.Context, id pgtype.UUID) (WebhookInbox, error)
 	HasAccountOrganization(ctx context.Context, accountID pgtype.UUID) (bool, error)
 	InsertDeletedAccountSubject(ctx context.Context, arg InsertDeletedAccountSubjectParams) (DeletedAccountSubject, error)
@@ -67,6 +69,10 @@ type Querier interface {
 	ListLastOwnerBlockers(ctx context.Context, accountID pgtype.UUID) ([]ListLastOwnerBlockersRow, error)
 	ListOrganizationMembers(ctx context.Context, arg ListOrganizationMembersParams) ([]ListOrganizationMembersRow, error)
 	ListOrganizationsForAccount(ctx context.Context, arg ListOrganizationsForAccountParams) ([]Organization, error)
+	// Public catalog reads intentionally select only enabled entries. The lateral
+	// price lookup exposes the exact effective version a later reservation pins.
+	ListPublicCatalogApps(ctx context.Context, arg ListPublicCatalogAppsParams) ([]ListPublicCatalogAppsRow, error)
+	ListPublicCatalogMeters(ctx context.Context, arg ListPublicCatalogMetersParams) ([]ListPublicCatalogMetersRow, error)
 	LockAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	LockOwnedOrganizations(ctx context.Context, accountID pgtype.UUID) ([]pgtype.UUID, error)
