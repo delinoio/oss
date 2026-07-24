@@ -1,4 +1,10 @@
-const COMMANDS: &[&str] = &["get_runtime_info"];
+const COMMANDS: &[&str] = &[
+    "get_runtime_info",
+    "read_settings",
+    "write_settings",
+    "read_widget_configuration",
+    "write_widget_configuration",
+];
 
 fn main() {
     let runtime_selected = std::env::var_os("CARGO_FEATURE_DESKTOP_CEF").is_some()
