@@ -10,6 +10,7 @@ vi.mock("./runtime/startup", () => ({
 }));
 
 import { App } from "./App";
+import { loadRuntimeInfo } from "./runtime/startup";
 
 afterEach(cleanup);
 
@@ -77,5 +78,11 @@ describe("DevHud application surfaces", () => {
     expect(screen.getByRole("heading", { name: "No widgets available" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Diagnostics" }));
     expect(screen.getByRole("heading", { name: "Diagnostics are unavailable" })).toBeVisible();
+  });
+
+  it("shows a runtime startup failure on the mobile Home screen", async () => {
+    vi.mocked(loadRuntimeInfo).mockRejectedValueOnce(new Error("runtime unavailable"));
+    render(<App platform="mobile" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("DevHud could not initialize its local runtime.");
   });
 });

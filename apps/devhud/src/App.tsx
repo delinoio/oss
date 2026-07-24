@@ -63,7 +63,7 @@ const mobileScreenLabels: Record<MobileScreen, string> = { [MobileScreen.Home]: 
 
 function MobileContent({ runtime }: { runtime: RuntimeState }) {
   const { mobileScreen, openSettings } = useApplication();
-  if (mobileScreen === MobileScreen.Home) return <EmptyTools compact />;
+  if (mobileScreen === MobileScreen.Home) return <>{runtime.status === "loading" ? <p className="runtime-status" role="status">Starting DevHud…</p> : null}{runtime.status === "failed" ? <p className="runtime-status error" role="alert">{runtime.message}</p> : null}<EmptyTools compact /></>;
   if (mobileScreen === MobileScreen.Widgets) return <section className="empty-state compact" aria-labelledby="widgets-title"><p className="eyebrow">Widgets</p><h1 id="widgets-title">No widgets available</h1><p>Visible widgets are not part of this foundation preview.</p></section>;
   if (mobileScreen === MobileScreen.Settings) return <section className="empty-state compact" aria-labelledby="settings-title"><p className="eyebrow">Settings</p><h1 id="settings-title">Choose your appearance</h1><p>Use your device preference, a light theme, or a dark theme.</p><button className="primary-button" onClick={openSettings} type="button">Open settings</button></section>;
   return <section className="empty-state compact" aria-labelledby="diagnostics-title"><p className="eyebrow">Diagnostics</p><h1 id="diagnostics-title">Diagnostics are unavailable</h1>{runtime.status === "loading" ? <p role="status">Loading local diagnostics…</p> : null}{runtime.status === "failed" ? <p role="alert">{runtime.message}</p> : null}{runtime.status === "ready" ? <p>Local diagnostics are not exposed in this foundation preview.</p> : null}</section>;
