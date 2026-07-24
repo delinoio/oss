@@ -88,7 +88,8 @@ INSERT INTO audit_events (
     decision,
     result,
     safe_error_class,
-    metadata
+    metadata,
+    retain_until
 ) VALUES (
     sqlc.arg(id),
     sqlc.arg(occurred_at),
@@ -102,7 +103,8 @@ INSERT INTO audit_events (
     sqlc.arg(decision),
     sqlc.arg(result),
     sqlc.narg(safe_error_class),
-    sqlc.arg(metadata)
+    sqlc.arg(metadata),
+    sqlc.arg(occurred_at)::timestamptz + interval '7 years'
 )
 RETURNING *;
 

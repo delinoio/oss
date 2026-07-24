@@ -59,6 +59,54 @@ func TestRegistryRejectsFreeFormAndDuplicateHandlers(t *testing.T) {
 	}
 }
 
+func TestWorkerProcessesOnlyConfiguredQueues(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	storage := &fakeStorage{items: []Item{
+		{
+			ID:        uuid.MustParse("0198a000-0000-7000-8000-000000000821"),
+			Queue:     QueueWebhookInbox,
+			HandlerID: HandlerPolarOrderPaid,
+		},
+		{
+			ID:        uuid.MustParse("0198a000-0000-7000-8000-000000000822"),
+			Queue:     QueueDeletionJob,
+			HandlerID: HandlerDeleteAccount,
+		},
+	}}
+	registry := NewRegistry()
+	if err := registry.Register(
+		HandlerDeleteAccount,
+		func(context.Context, Item) error { return nil },
+	); err != nil {
+		t.Fatal(err)
+	}
+	worker, err := NewWorker(WorkerConfig{
+		Storage:        storage,
+		Registry:       registry,
+		Clock:          &fixedClock{now: now},
+		Random:         &fixedRandom{value: 0.5},
+		TokenGenerator: &fixedTokenGenerator{},
+		LeaseDuration:  time.Minute,
+		BaseBackoff:    time.Second,
+		MaxBackoff:     time.Hour,
+		PollInterval:   time.Second,
+		Queues:         []Queue{QueueDeletionJob},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, err := worker.RunOnce(context.Background()); err != nil || count != 1 {
+		t.Fatalf("RunOnce() = %d, %v", count, err)
+	}
+	if len(storage.claims) != 1 || storage.claims[0].queue != QueueDeletionJob {
+		t.Fatalf("claims = %#v", storage.claims)
+	}
+	if len(storage.items) != 1 || storage.items[0].Queue != QueueWebhookInbox {
+		t.Fatalf("unclaimed items = %#v", storage.items)
+	}
+}
+
 func TestWorkerTwelfthFailureAndDailyDeadLetterRetry(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)

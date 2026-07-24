@@ -69,6 +69,7 @@ type WorkerConfig struct {
 	BaseBackoff    time.Duration
 	MaxBackoff     time.Duration
 	PollInterval   time.Duration
+	Queues         []Queue
 }
 
 type Worker struct {
@@ -82,6 +83,7 @@ type Worker struct {
 	baseBackoff    time.Duration
 	maxBackoff     time.Duration
 	pollInterval   time.Duration
+	queues         []Queue
 }
 
 func NewWorker(config WorkerConfig) (*Worker, error) {
@@ -95,6 +97,25 @@ func NewWorker(config WorkerConfig) (*Worker, error) {
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.DiscardHandler)
 	}
+	if len(config.Queues) == 0 {
+		config.Queues = []Queue{
+			QueueWebhookInbox,
+			QueueIntegrationOutbox,
+			QueueDeletionJob,
+		}
+	}
+	seenQueues := make(map[Queue]struct{}, len(config.Queues))
+	for _, queue := range config.Queues {
+		if queue != QueueWebhookInbox &&
+			queue != QueueIntegrationOutbox &&
+			queue != QueueDeletionJob {
+			return nil, ErrInvalidInput
+		}
+		if _, duplicate := seenQueues[queue]; duplicate {
+			return nil, ErrInvalidInput
+		}
+		seenQueues[queue] = struct{}{}
+	}
 	return &Worker{
 		storage:        config.Storage,
 		registry:       config.Registry,
@@ -106,6 +127,7 @@ func NewWorker(config WorkerConfig) (*Worker, error) {
 		baseBackoff:    config.BaseBackoff,
 		maxBackoff:     config.MaxBackoff,
 		pollInterval:   config.PollInterval,
+		queues:         append([]Queue(nil), config.Queues...),
 	}, nil
 }
 
@@ -136,11 +158,7 @@ func (worker *Worker) RunOnce(ctx context.Context) (int, error) {
 	}
 
 	processed := 0
-	for _, queue := range []Queue{
-		QueueWebhookInbox,
-		QueueIntegrationOutbox,
-		QueueDeletionJob,
-	} {
+	for _, queue := range worker.queues {
 		claimToken, err := worker.tokenGenerator.New()
 		if err != nil {
 			worker.record(
