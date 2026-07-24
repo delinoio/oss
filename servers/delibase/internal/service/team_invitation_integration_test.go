@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -146,6 +147,39 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 	if levelFive.Depth != 4 {
 		t.Fatalf("level five depth = %d, want 4", levelFive.Depth)
 	}
+	for _, probedTeamID := range []*delibasev1.UuidV7{
+		root.TeamId,
+		{Value: uuidv7.MustNew().String()},
+	} {
+		_, err = teamService.GetTeam(
+			inviteeA.context,
+			connect.NewRequest(&delibasev1.GetTeamRequest{
+				OrganizationId: organizationID,
+				TeamId:         probedTeamID,
+			}),
+		)
+		requireConnectReason(
+			t,
+			err,
+			connect.CodePermissionDenied,
+			delibasev1.ErrorReason_ERROR_REASON_ORGANIZATION_MEMBERSHIP_REQUIRED,
+		)
+	}
+	_, err = teamService.UpdateTeam(
+		inviteeA.context,
+		connect.NewRequest(&delibasev1.UpdateTeamRequest{
+			OrganizationId: organizationID,
+			TeamId:         root.TeamId,
+			Name:           "Unauthorized update " + suffix,
+			Idempotency:    idempotency("unauthorized-update-" + suffix),
+		}),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodePermissionDenied,
+		delibasev1.ErrorReason_ERROR_REASON_ORGANIZATION_MEMBERSHIP_REQUIRED,
+	)
 	_, err = teamService.CreateTeam(
 		ownerContext,
 		connect.NewRequest(&delibasev1.CreateTeamRequest{
@@ -535,7 +569,8 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 		}),
 	)
 	if err != nil || firstTimeAcceptance.Msg.Member.Role !=
-		delibasev1.OrganizationRole_ORGANIZATION_ROLE_MEMBER {
+		delibasev1.OrganizationRole_ORGANIZATION_ROLE_MEMBER ||
+		firstTimeAcceptance.Msg.Member.DisplayName != invitedAccountDisplayName {
 		t.Fatalf("first-time invitation acceptance = %#v, %v", firstTimeAcceptance, err)
 	}
 	firstTimeState, err := accountService.GetAccountState(
@@ -545,6 +580,7 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 	if err != nil || firstTimeState.Msg.Account == nil ||
 		firstTimeState.Msg.Account.Status !=
 			delibasev1.AccountStatus_ACCOUNT_STATUS_ACTIVE ||
+		firstTimeState.Msg.Account.DisplayName != invitedAccountDisplayName ||
 		firstTimeState.Msg.OnboardingRequired ||
 		len(firstTimeState.Msg.Organizations) != 1 {
 		t.Fatalf("first-time invitation account state = %#v, %v", firstTimeState, err)
@@ -572,15 +608,66 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 		delibasev1.OrganizationRole_ORGANIZATION_ROLE_MEMBER {
 		t.Fatalf("invitee B role = %s", accepted.Member.Role)
 	}
+	if _, err = organizationService.RemoveOrganizationMember(
+		ownerContext,
+		connect.NewRequest(&delibasev1.RemoveOrganizationMemberRequest{
+			OrganizationId: organizationID,
+			AccountId:      &delibasev1.UuidV7{Value: inviteeA.id.String()},
+			Idempotency:    idempotency("remove-accepted-invitee-" + suffix),
+		}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	_, err = organizationService.AcceptOrganizationInvitation(
+		inviteeA.context,
+		connect.NewRequest(&delibasev1.AcceptOrganizationInvitationRequest{
+			BearerToken: invitation.Msg.BearerToken,
+			Idempotency: idempotency("reaccept-removed-invitee-" + suffix),
+		}),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeNotFound,
+		delibasev1.ErrorReason_ERROR_REASON_INVITATION_INVALID,
+	)
+	if _, err = store.Queries().GetOrganizationMembership(
+		ctx,
+		dbgen.GetOrganizationMembershipParams{
+			OrganizationID: pgUUID(mustUUID(t, organizationID)),
+			AccountID:      pgUUID(inviteeA.id),
+		},
+	); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("removed invitee organization membership restored: %v", err)
+	}
+	if _, err = store.Queries().GetTeamMembership(
+		ctx,
+		dbgen.GetTeamMembershipParams{
+			OrganizationID: pgUUID(mustUUID(t, organizationID)),
+			TeamID:         pgUUID(mustUUID(t, root.TeamId)),
+			AccountID:      pgUUID(inviteeA.id),
+		},
+	); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("removed invitee team membership restored: %v", err)
+	}
 	if accepted := accept(existingAdmin, "accept-existing"); accepted.Member.Role !=
 		delibasev1.OrganizationRole_ORGANIZATION_ROLE_ADMIN {
 		t.Fatalf("existing role changed to %s", accepted.Member.Role)
 	}
 	setMembership(root.TeamId, existingAdmin, delibasev1.TeamRole_TEAM_ROLE_ADMIN, "existing-direct-admin")
-	if accepted := accept(existingAdmin, "accept-existing-again"); accepted.Member.Role !=
-		delibasev1.OrganizationRole_ORGANIZATION_ROLE_ADMIN {
-		t.Fatalf("existing role changed on repeat to %s", accepted.Member.Role)
-	}
+	_, err = organizationService.AcceptOrganizationInvitation(
+		existingAdmin.context,
+		connect.NewRequest(&delibasev1.AcceptOrganizationInvitationRequest{
+			BearerToken: invitation.Msg.BearerToken,
+			Idempotency: idempotency("accept-existing-again-" + suffix),
+		}),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeNotFound,
+		delibasev1.ErrorReason_ERROR_REASON_INVITATION_INVALID,
+	)
 	direct, err := store.Queries().GetTeamMembership(
 		ctx,
 		dbgen.GetTeamMembershipParams{

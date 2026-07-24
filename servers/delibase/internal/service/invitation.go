@@ -16,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const invitedAccountDisplayName = "Invited user"
+
 func (service *Organization) CreateOrganizationInvitation(
 	ctx context.Context,
 	request *connect.Request[delibasev1.CreateOrganizationInvitationRequest],
@@ -330,6 +332,19 @@ func (service *Organization) AcceptOrganizationInvitation(
 		); transactionErr != nil {
 			return transactionErr
 		}
+		accepted, transactionErr := queries.CreateOrganizationInvitationAcceptance(
+			ctx,
+			dbgen.CreateOrganizationInvitationAcceptanceParams{
+				InvitationID: invitation.ID,
+				AccountID:    account.ID,
+			},
+		)
+		if transactionErr != nil {
+			return invitationAcceptanceError(transactionErr)
+		}
+		if accepted != 1 {
+			return invalidInvitation()
+		}
 		if _, transactionErr = queries.CreateOrganizationMembershipIfAbsent(
 			ctx,
 			dbgen.CreateOrganizationMembershipIfAbsentParams{
@@ -358,15 +373,6 @@ func (service *Organization) AcceptOrganizationInvitation(
 			); transactionErr != nil {
 				return databaseError(transactionErr)
 			}
-		}
-		if _, transactionErr = queries.CreateOrganizationInvitationAcceptance(
-			ctx,
-			dbgen.CreateOrganizationInvitationAcceptanceParams{
-				InvitationID: invitation.ID,
-				AccountID:    account.ID,
-			},
-		); transactionErr != nil {
-			return invitationAcceptanceError(transactionErr)
 		}
 		member, transactionErr := queries.GetOrganizationMember(
 			ctx,
@@ -724,7 +730,7 @@ func ensureInvitationAccount(
 	account, err := queries.EnsureAccount(ctx, dbgen.EnsureAccountParams{
 		ID:           pgUUID(accountID),
 		LogtoSubject: subject,
-		DisplayName:  "",
+		DisplayName:  invitedAccountDisplayName,
 	})
 	if err != nil {
 		return dbgen.Account{}, databaseError(err)

@@ -989,6 +989,16 @@ func readAuthorizedTeamWithLookupError(
 	accountID pgtype.UUID,
 	lookupError func(error) error,
 ) (dbgen.GetTeamInOrganizationRow, dbgen.GetEffectiveTeamAccessRow, error) {
+	if _, err := queries.GetOrganizationMembership(
+		ctx,
+		dbgen.GetOrganizationMembershipParams{
+			OrganizationID: pgUUID(organizationID),
+			AccountID:      accountID,
+		},
+	); err != nil {
+		return dbgen.GetTeamInOrganizationRow{}, dbgen.GetEffectiveTeamAccessRow{},
+			membershipReadError(err)
+	}
 	team, err := queries.GetTeamInOrganization(
 		ctx,
 		dbgen.GetTeamInOrganizationParams{
