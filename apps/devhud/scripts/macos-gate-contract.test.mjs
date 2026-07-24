@@ -156,6 +156,18 @@ test("rejects JSON-escaped multiline values in captured diagnostics", () => {
   );
 });
 
+test("rejects arbitrary paths in captured diagnostics", () => {
+  const diagnostics = JSON.stringify({
+    message:
+      "failure at /Users/runner/private checkout/devhud-probe for an unexpected reason",
+  });
+
+  assert.throws(
+    () => assertSafeDiagnostics(diagnostics, []),
+    /redaction/u,
+  );
+});
+
 test("scrubs App Store Connect private keys from the app environment", () => {
   const originalPrivateKey = process.env.APPLE_API_PRIVATE_KEY;
   process.env.APPLE_API_PRIVATE_KEY = "private-key";
@@ -246,6 +258,15 @@ test("summarizes subprocess failures without sensitive values", () => {
   assert.match(summary, /error: failed/u);
   assert.equal(summary.includes("\u001b"), false);
   assert.doesNotMatch(summary, /Users|project|F18|A{48}/u);
+});
+
+test("redacts whitespace-containing paths from subprocess summaries", () => {
+  const summary = safeFailureSummary(
+    'error: failed at "/Users/example/private checkout/project/file.rs": denied',
+  ).join("\n");
+
+  assert.match(summary, /error: failed/u);
+  assert.doesNotMatch(summary, /Users|private checkout|project|file\.rs/u);
 });
 
 test("redacts short signing credentials from subprocess summaries", () => {

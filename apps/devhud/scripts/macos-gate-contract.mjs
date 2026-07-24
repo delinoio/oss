@@ -41,6 +41,9 @@ export function assertSafeDiagnostics(text, excludedValues) {
       throw new Error("macOS gate diagnostic redaction failed");
     }
   }
+  if (/(?:[A-Za-z]:)?[/\\][^\r\n'"]+/u.test(text)) {
+    throw new Error("macOS gate diagnostic redaction failed");
+  }
 }
 
 function stripAnsi(text) {
@@ -83,7 +86,7 @@ function redactExcludedValues(text, excludedValues) {
 
 export function safeFailureSummary(text, excludedValues = []) {
   const pathPattern =
-    /(?:[A-Za-z]:)?[/\\](?:[^/\\\s:'"=]+[/\\])*[^/\\\s:'"=]*/gu;
+    /(?:[A-Za-z]:)?[/\\][^\r\n'"]+/gu;
   const sensitivePattern =
     /\b(?:[A-Za-z0-9+/]{64,}={0,2}|[A-Fa-f0-9]{48,})\b/gu;
   const shortcutPattern =
