@@ -188,7 +188,7 @@ func (service *Team) CreateTeam(
 			); transactionErr != nil {
 				return transactionErr
 			}
-		} else if _, _, transactionErr = authorizeTeamMutation(
+		} else if _, _, transactionErr = authorizeParentTeamMutation(
 			ctx, queries, organizationID, parentID, account.ID,
 		); transactionErr != nil {
 			return transactionErr
@@ -410,7 +410,7 @@ func (service *Team) MoveTeam(
 			if callerRole != "owner" && callerRole != "admin" {
 				return teamAccessDenied()
 			}
-		} else if _, _, transactionErr = authorizeTeamMutation(
+		} else if _, _, transactionErr = authorizeParentTeamMutation(
 			ctx, queries, organizationID, parentID, account.ID,
 		); transactionErr != nil {
 			return transactionErr
@@ -952,6 +952,43 @@ func readAuthorizedTeam(
 	teamID uuid.UUID,
 	accountID pgtype.UUID,
 ) (dbgen.GetTeamInOrganizationRow, dbgen.GetEffectiveTeamAccessRow, error) {
+	return readAuthorizedTeamWithLookupError(
+		ctx,
+		queries,
+		organizationID,
+		teamID,
+		accountID,
+		teamReadError,
+	)
+}
+
+func readAuthorizedParentTeam(
+	ctx context.Context,
+	queries dbgen.Querier,
+	organizationID uuid.UUID,
+	teamID uuid.UUID,
+	accountID pgtype.UUID,
+) (dbgen.GetTeamInOrganizationRow, dbgen.GetEffectiveTeamAccessRow, error) {
+	return readAuthorizedTeamWithLookupError(
+		ctx,
+		queries,
+		organizationID,
+		teamID,
+		accountID,
+		func(err error) error {
+			return teamLookupError(ctx, queries, organizationID, teamID, err)
+		},
+	)
+}
+
+func readAuthorizedTeamWithLookupError(
+	ctx context.Context,
+	queries dbgen.Querier,
+	organizationID uuid.UUID,
+	teamID uuid.UUID,
+	accountID pgtype.UUID,
+	lookupError func(error) error,
+) (dbgen.GetTeamInOrganizationRow, dbgen.GetEffectiveTeamAccessRow, error) {
 	team, err := queries.GetTeamInOrganization(
 		ctx,
 		dbgen.GetTeamInOrganizationParams{
@@ -960,7 +997,7 @@ func readAuthorizedTeam(
 	)
 	if err != nil {
 		return dbgen.GetTeamInOrganizationRow{}, dbgen.GetEffectiveTeamAccessRow{},
-			teamLookupError(ctx, queries, organizationID, teamID, err)
+			lookupError(err)
 	}
 	access, err := queries.GetEffectiveTeamAccess(
 		ctx,
@@ -987,12 +1024,45 @@ func authorizeTeamMutation(
 	teamID uuid.UUID,
 	accountID pgtype.UUID,
 ) (dbgen.GetTeamInOrganizationRow, string, error) {
+	return authorizeTeamMutationWithReader(
+		ctx, queries, organizationID, teamID, accountID, readAuthorizedTeam,
+	)
+}
+
+func authorizeParentTeamMutation(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	organizationID uuid.UUID,
+	teamID uuid.UUID,
+	accountID pgtype.UUID,
+) (dbgen.GetTeamInOrganizationRow, string, error) {
+	return authorizeTeamMutationWithReader(
+		ctx, queries, organizationID, teamID, accountID, readAuthorizedParentTeam,
+	)
+}
+
+type authorizedTeamReader func(
+	context.Context,
+	dbgen.Querier,
+	uuid.UUID,
+	uuid.UUID,
+	pgtype.UUID,
+) (dbgen.GetTeamInOrganizationRow, dbgen.GetEffectiveTeamAccessRow, error)
+
+func authorizeTeamMutationWithReader(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	organizationID uuid.UUID,
+	teamID uuid.UUID,
+	accountID pgtype.UUID,
+	readTeam authorizedTeamReader,
+) (dbgen.GetTeamInOrganizationRow, string, error) {
 	if _, err := queries.LockOrganizationForMutation(
 		ctx, pgUUID(organizationID),
 	); err != nil {
 		return dbgen.GetTeamInOrganizationRow{}, "", membershipReadError(err)
 	}
-	team, access, err := readAuthorizedTeam(
+	team, access, err := readTeam(
 		ctx, queries, organizationID, teamID, accountID,
 	)
 	if err != nil {
@@ -1002,6 +1072,13 @@ func authorizeTeamMutation(
 		return dbgen.GetTeamInOrganizationRow{}, "", teamAccessDenied()
 	}
 	return team, access.OrganizationRole, nil
+}
+
+func teamReadError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return teamNotFound()
+	}
+	return databaseError(err)
 }
 
 func teamLookupError(

@@ -74,9 +74,7 @@ func (service *Organization) CreateOrganizationInvitation(
 					TeamID:         pgUUID(targetTeamID),
 				},
 			); transactionErr != nil {
-				return teamLookupError(
-					ctx, queries, organizationID, targetTeamID, transactionErr,
-				)
+				return teamReadError(transactionErr)
 			}
 		}
 		teamRoleValue := pgtype.Text{}
@@ -130,7 +128,8 @@ func (service *Organization) GetOrganizationInvitation(
 	ctx context.Context,
 	request *connect.Request[delibasev1.GetOrganizationInvitationRequest],
 ) (*connect.Response[delibasev1.GetOrganizationInvitationResponse], error) {
-	if _, _, err := service.readAccount(ctx); err != nil {
+	subject, err := userSubject(ctx)
+	if err != nil {
 		return nil, err
 	}
 	if request == nil || request.Msg == nil {
@@ -140,12 +139,20 @@ func (service *Organization) GetOrganizationInvitation(
 	if err != nil {
 		return nil, err
 	}
+	if service.dependencies.Store == nil {
+		return nil, serviceError(connect.CodeInternal, 0)
+	}
 	row, err := service.dependencies.Store.Queries().
 		GetOrganizationInvitationByTokenHash(ctx, tokenHash)
 	if err != nil {
 		return nil, invitationLookupError(err)
 	}
 	if err = requireActiveInvitation(row.InvitationStatus); err != nil {
+		return nil, err
+	}
+	if err = requireInvitationAccountEligible(
+		ctx, service.dependencies.Store.Queries(), subject,
+	); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&delibasev1.GetOrganizationInvitationResponse{
@@ -252,11 +259,15 @@ func (service *Organization) AcceptOrganizationInvitation(
 	if err != nil {
 		return nil, err
 	}
+	accountID, err := service.dependencies.IDs.New()
+	if err != nil {
+		return nil, serviceError(connect.CodeInternal, 0)
+	}
 	digest := requestDigest(base64.RawURLEncoding.EncodeToString(tokenHash))
 	var response *delibasev1.AcceptOrganizationInvitationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.AcceptOrganizationInvitationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
+		replayed, completedAt, transactionErr := replay(
 			ctx, queries, subject, "accept_invitation", key, digest, response,
 		)
 		if transactionErr != nil {
@@ -270,6 +281,43 @@ func (service *Organization) AcceptOrganizationInvitation(
 				completedAt,
 			)
 			return nil
+		}
+		candidate, transactionErr := queries.GetOrganizationInvitationByTokenHash(
+			ctx, tokenHash,
+		)
+		if transactionErr != nil {
+			return invitationLookupError(transactionErr)
+		}
+		if transactionErr = requireActiveInvitation(
+			candidate.InvitationStatus,
+		); transactionErr != nil {
+			return transactionErr
+		}
+		account, transactionErr := ensureInvitationAccount(
+			ctx, queries, subject, accountID,
+		)
+		if transactionErr != nil {
+			return transactionErr
+		}
+		replayed, completedAt, transactionErr = replay(
+			ctx, queries, subject, "accept_invitation", key, digest, response,
+		)
+		if transactionErr != nil {
+			return transactionErr
+		}
+		if replayed {
+			setIdempotency(
+				&response.Idempotency,
+				delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_ACCEPT_INVITATION,
+				true,
+				completedAt,
+			)
+			return nil
+		}
+		if _, transactionErr = queries.LockOrganizationForMutation(
+			ctx, candidate.OrganizationID,
+		); transactionErr != nil {
+			return invitationLookupError(transactionErr)
 		}
 		invitation, transactionErr := queries.LockOrganizationInvitationByTokenHash(
 			ctx, tokenHash,
@@ -630,6 +678,64 @@ func invitationLookupError(err error) error {
 		return invalidInvitation()
 	}
 	return databaseError(err)
+}
+
+func requireInvitationAccountEligible(
+	ctx context.Context,
+	queries dbgen.Querier,
+	subject string,
+) error {
+	account, err := queries.GetAccountByLogtoSubject(ctx, subject)
+	if err == nil {
+		if account.Status == "active" {
+			return nil
+		}
+		return serviceError(
+			connect.CodePermissionDenied,
+			delibasev1.ErrorReason_ERROR_REASON_RESOURCE_DELETED,
+		)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return databaseError(err)
+	}
+	if _, err = queries.GetDeletedAccountSubject(
+		ctx, subjectDigest(subject),
+	); err == nil {
+		return serviceError(
+			connect.CodePermissionDenied,
+			delibasev1.ErrorReason_ERROR_REASON_RESOURCE_DELETED,
+		)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return databaseError(err)
+	}
+	return nil
+}
+
+func ensureInvitationAccount(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	subject string,
+	accountID uuid.UUID,
+) (dbgen.Account, error) {
+	if err := requireInvitationAccountEligible(ctx, queries, subject); err != nil {
+		return dbgen.Account{}, err
+	}
+	account, err := queries.EnsureAccount(ctx, dbgen.EnsureAccountParams{
+		ID:           pgUUID(accountID),
+		LogtoSubject: subject,
+		DisplayName:  "",
+	})
+	if err != nil {
+		return dbgen.Account{}, databaseError(err)
+	}
+	if account.Status != "active" {
+		return dbgen.Account{}, serviceError(
+			connect.CodePermissionDenied,
+			delibasev1.ErrorReason_ERROR_REASON_RESOURCE_DELETED,
+		)
+	}
+	return account, nil
 }
 
 func invitationAcceptanceError(err error) error {

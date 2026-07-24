@@ -358,6 +358,19 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 		"Other Team "+suffix,
 		"other-team-create-"+suffix,
 	)
+	_, err = teamService.GetTeam(
+		ownerContext,
+		connect.NewRequest(&delibasev1.GetTeamRequest{
+			OrganizationId: organizationID,
+			TeamId:         otherTeam.TeamId,
+		}),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeNotFound,
+		delibasev1.ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND,
+	)
 	_, err = teamService.MoveTeam(
 		ownerContext,
 		connect.NewRequest(&delibasev1.MoveTeamRequest{
@@ -464,8 +477,8 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 	requireConnectReason(
 		t,
 		err,
-		connect.CodeInvalidArgument,
-		delibasev1.ErrorReason_ERROR_REASON_TEAM_CROSS_ORGANIZATION_PARENT,
+		connect.CodeNotFound,
+		delibasev1.ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND,
 	)
 
 	invitation, err := organizationService.CreateOrganizationInvitation(
@@ -501,6 +514,40 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 		Sub(invitation.Msg.Invitation.CreatedAt.AsTime())
 	if validFor != 7*24*time.Hour {
 		t.Fatalf("invitation validity = %s", validFor)
+	}
+
+	firstTimeSubject := "first-time-invitee-" + testID
+	firstTimeContext := authenticatedContext(ctx, firstTimeSubject)
+	preview, err := organizationService.GetOrganizationInvitation(
+		firstTimeContext,
+		connect.NewRequest(&delibasev1.GetOrganizationInvitationRequest{
+			BearerToken: invitation.Msg.BearerToken,
+		}),
+	)
+	if err != nil || preview.Msg.OrganizationName != "Team Policy Organization" {
+		t.Fatalf("first-time invitation preview = %#v, %v", preview, err)
+	}
+	firstTimeAcceptance, err := organizationService.AcceptOrganizationInvitation(
+		firstTimeContext,
+		connect.NewRequest(&delibasev1.AcceptOrganizationInvitationRequest{
+			BearerToken: invitation.Msg.BearerToken,
+			Idempotency: idempotency("accept-first-time-" + suffix),
+		}),
+	)
+	if err != nil || firstTimeAcceptance.Msg.Member.Role !=
+		delibasev1.OrganizationRole_ORGANIZATION_ROLE_MEMBER {
+		t.Fatalf("first-time invitation acceptance = %#v, %v", firstTimeAcceptance, err)
+	}
+	firstTimeState, err := accountService.GetAccountState(
+		firstTimeContext,
+		connect.NewRequest(&delibasev1.GetAccountStateRequest{}),
+	)
+	if err != nil || firstTimeState.Msg.Account == nil ||
+		firstTimeState.Msg.Account.Status !=
+			delibasev1.AccountStatus_ACCOUNT_STATUS_ACTIVE ||
+		firstTimeState.Msg.OnboardingRequired ||
+		len(firstTimeState.Msg.Organizations) != 1 {
+		t.Fatalf("first-time invitation account state = %#v, %v", firstTimeState, err)
 	}
 
 	accept := func(account seededAccount, key string) *delibasev1.AcceptOrganizationInvitationResponse {
@@ -652,6 +699,68 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 	if err != nil || len(invitationPage.Msg.Invitations) != 1 ||
 		invitationPage.Msg.Page.NextCursor == "" {
 		t.Fatalf("invitation page = %#v, %v", invitationPage, err)
+	}
+
+	deletionRaceInvitation, err := organizationService.CreateOrganizationInvitation(
+		ownerContext,
+		connect.NewRequest(&delibasev1.CreateOrganizationInvitationRequest{
+			OrganizationId:   otherOrganization.Msg.Organization.OrganizationId,
+			OrganizationRole: delibasev1.OrganizationRole_ORGANIZATION_ROLE_ADMIN,
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockingTransaction, err := raw.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = blockingTransaction.Rollback(ctx) }()
+	if _, err = blockingTransaction.Exec(ctx, `
+		SELECT id
+		FROM organizations
+		WHERE id = $1
+		FOR UPDATE
+	`, mustUUID(t, otherOrganization.Msg.Organization.OrganizationId)); err != nil {
+		t.Fatal(err)
+	}
+	raceResult := make(chan error, 1)
+	go func() {
+		_, acceptErr := organizationService.AcceptOrganizationInvitation(
+			authenticatedContext(ctx, "deletion-race-invitee-"+testID),
+			connect.NewRequest(&delibasev1.AcceptOrganizationInvitationRequest{
+				BearerToken: deletionRaceInvitation.Msg.BearerToken,
+				Idempotency: idempotency("accept-deletion-race-" + suffix),
+			}),
+		)
+		raceResult <- acceptErr
+	}()
+	select {
+	case acceptErr := <-raceResult:
+		t.Fatalf("invitation acceptance bypassed organization lock: %v", acceptErr)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if _, err = blockingTransaction.Exec(ctx, `
+		UPDATE organizations
+		SET deleted_at = transaction_timestamp(),
+		    updated_at = transaction_timestamp()
+		WHERE id = $1
+	`, mustUUID(t, otherOrganization.Msg.Organization.OrganizationId)); err != nil {
+		t.Fatal(err)
+	}
+	if err = blockingTransaction.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case acceptErr := <-raceResult:
+		requireConnectReason(
+			t,
+			acceptErr,
+			connect.CodeNotFound,
+			delibasev1.ErrorReason_ERROR_REASON_INVITATION_INVALID,
+		)
+	case <-time.After(5 * time.Second):
+		t.Fatal("invitation acceptance did not resume after organization deletion")
 	}
 	if _, err = raw.Exec(ctx, `
 		UPDATE audit_events
