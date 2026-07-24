@@ -106,3 +106,37 @@ func TestProjectRefundRejectsCentToMicrounitOverflow(t *testing.T) {
 		t.Fatal("overflowing refund was accepted")
 	}
 }
+
+func TestProjectWebhookAcceptsSubscriptionUncanceled(t *testing.T) {
+	t.Parallel()
+	eventType, projected, err := projectWebhook([]byte(`{
+		"type":"subscription.uncanceled",
+		"timestamp":"2026-07-24T12:00:00Z",
+		"data":{
+			"id":"subscription_1",
+			"customer_id":"customer_1",
+			"product_id":"product_1",
+			"status":"active",
+			"current_period_start":"2026-07-01T00:00:00Z",
+			"current_period_end":"2026-08-01T00:00:00Z",
+			"customer":{
+				"id":"customer_1",
+				"external_id":"0198a000-0000-7000-8000-000000000001"
+			}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eventType != reliability.WebhookSubscriptionUncanceled {
+		t.Fatalf("event type = %q", eventType)
+	}
+	var decoded projectedWebhook
+	if err := json.Unmarshal(projected, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.SubscriptionID != "subscription_1" ||
+		decoded.Status != "active" {
+		t.Fatalf("projection = %#v", decoded)
+	}
+}

@@ -288,6 +288,7 @@ func projectWebhook(
 	case reliability.WebhookSubscriptionCreated,
 		reliability.WebhookSubscriptionUpdated,
 		reliability.WebhookSubscriptionActive,
+		reliability.WebhookSubscriptionUncanceled,
 		reliability.WebhookSubscriptionPastDue,
 		reliability.WebhookSubscriptionCanceled,
 		reliability.WebhookSubscriptionRevoked:

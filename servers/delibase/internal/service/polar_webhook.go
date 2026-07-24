@@ -64,6 +64,7 @@ func NewPolarWebhookProcessor(
 				case reliability.WebhookSubscriptionCreated,
 					reliability.WebhookSubscriptionUpdated,
 					reliability.WebhookSubscriptionActive,
+					reliability.WebhookSubscriptionUncanceled,
 					reliability.WebhookSubscriptionPastDue,
 					reliability.WebhookSubscriptionCanceled,
 					reliability.WebhookSubscriptionRevoked:
@@ -496,6 +497,8 @@ func polarSubscriptionStatus(
 	case reliability.WebhookOrderPaid:
 		return "active"
 	case reliability.WebhookSubscriptionActive:
+		return "active"
+	case reliability.WebhookSubscriptionUncanceled:
 		return "active"
 	case reliability.WebhookSubscriptionPastDue:
 		return "past_due"

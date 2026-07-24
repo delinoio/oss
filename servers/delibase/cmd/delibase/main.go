@@ -205,6 +205,7 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		reliability.HandlerPolarSubscriptionCreated,
 		reliability.HandlerPolarSubscriptionUpdated,
 		reliability.HandlerPolarSubscriptionActive,
+		reliability.HandlerPolarSubscriptionUncanceled,
 		reliability.HandlerPolarSubscriptionPastDue,
 		reliability.HandlerPolarSubscriptionCanceled,
 		reliability.HandlerPolarSubscriptionRevoked,

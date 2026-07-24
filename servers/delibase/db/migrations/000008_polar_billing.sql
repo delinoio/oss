@@ -79,6 +79,7 @@ ALTER TABLE webhook_inbox
         'subscription.created',
         'subscription.updated',
         'subscription.active',
+        'subscription.uncanceled',
         'subscription.past_due',
         'subscription.canceled',
         'subscription.revoked',
@@ -187,6 +188,11 @@ BEGIN
     IF NEW.held_overage_micros = 0 THEN
         RETURN NEW;
     END IF;
+
+    PERFORM 1
+    FROM organizations
+    WHERE id = NEW.organization_id
+    FOR UPDATE;
 
     SELECT
         period.starts_at,

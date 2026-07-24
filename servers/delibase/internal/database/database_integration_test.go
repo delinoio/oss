@@ -1165,6 +1165,226 @@ func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) 
 	}
 }
 
+func TestPostgreSQLSerializesRequestedOverageLimitChecks(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	store, err := Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	const (
+		accountID      = "0198a000-0000-7000-8000-000000000521"
+		organizationID = "0198a000-0000-7000-8000-000000000522"
+		teamID         = "0198a000-0000-7000-8000-000000000523"
+		appID          = "0198a000-0000-7000-8000-000000000524"
+		meterID        = "0198a000-0000-7000-8000-000000000525"
+		priceID        = "0198a000-0000-7000-8000-000000000526"
+		serviceID      = "0198a000-0000-7000-8000-000000000527"
+		subscriptionID = "0198a000-0000-7000-8000-000000000528"
+		periodID       = "0198a000-0000-7000-8000-000000000529"
+		firstID        = "0198a000-0000-7000-8000-000000000530"
+		secondID       = "0198a000-0000-7000-8000-000000000531"
+	)
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO accounts (id, logto_subject)
+		VALUES ($1, 'requested-overage-owner')
+	`, accountID); err != nil {
+		t.Fatal(err)
+	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		organizationID,
+		"Requested Overage Serialization",
+		"requested-overage-serialization",
+		accountID,
+	)
+	setup := []struct {
+		statement string
+		arguments []any
+	}{
+		{
+			"INSERT INTO teams (id, organization_id, name) VALUES ($1, $2, 'Overage Team')",
+			[]any{teamID, organizationID},
+		},
+		{
+			"INSERT INTO catalog_apps (id, slug, name, enabled) VALUES ($1, 'requested-overage-app', 'Requested Overage App', true)",
+			[]any{appID},
+		},
+		{
+			"INSERT INTO catalog_meters (id, app_id, meter_key, name, unit_name, reservation_ttl_seconds, enabled) VALUES ($1, $2, 'requests', 'Requests', 'request', 60, true)",
+			[]any{meterID, appID},
+		},
+		{
+			"INSERT INTO catalog_price_versions (id, meter_id, usd_micros_per_unit, effective_from) VALUES ($1, $2, 1, transaction_timestamp() - interval '1 day')",
+			[]any{priceID, meterID},
+		},
+		{
+			"INSERT INTO service_identities (id, logto_client_id, name) VALUES ($1, 'requested-overage-service', 'Requested Overage Service')",
+			[]any{serviceID},
+		},
+		{
+			"INSERT INTO service_meter_allowlists (service_identity_id, meter_id) VALUES ($1, $2)",
+			[]any{serviceID, meterID},
+		},
+		{
+			"INSERT INTO polar_meter_mappings (meter_id, polar_meter_id) VALUES ($1, 'requested-overage-meter')",
+			[]any{meterID},
+		},
+		{
+			`INSERT INTO subscriptions (
+				id, organization_id, polar_subscription_id, status,
+				current_period_starts_at, current_period_ends_at
+			) VALUES (
+				$1, $2, 'requested-overage-subscription', 'active',
+				transaction_timestamp() - interval '1 day',
+				transaction_timestamp() + interval '1 day'
+			)`,
+			[]any{subscriptionID, organizationID},
+		},
+		{
+			`INSERT INTO billing_periods (
+				id, organization_id, subscription_id, starts_at, ends_at,
+				overage_limit_micros, requested_overage_limit_micros
+			)
+			SELECT
+				$1, organization_id, id, current_period_starts_at,
+				current_period_ends_at, 2, 1
+			FROM subscriptions
+			WHERE id = $2`,
+			[]any{periodID, subscriptionID},
+		},
+	}
+	for _, item := range setup {
+		if _, err := store.pool.Exec(ctx, item.statement, item.arguments...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM organizations WHERE id = $1",
+			organizationID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM catalog_price_versions WHERE id = $1",
+			priceID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM catalog_apps WHERE id = $1",
+			appID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM service_identities WHERE id = $1",
+			serviceID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM accounts WHERE id = $1",
+			accountID,
+		)
+	}()
+
+	const insertReservation = `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
+			$1, $2, $3, 'Overage Team', $4, $5, $6, $7,
+			1, 1, 1, 0, 1, $8,
+			statement_timestamp() + interval '1 minute'
+		)
+	`
+	first, err := store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := first.Exec(
+		ctx,
+		insertReservation,
+		firstID,
+		organizationID,
+		teamID,
+		meterID,
+		priceID,
+		accountID,
+		serviceID,
+		"requested-overage-first",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = second.Rollback(context.WithoutCancel(ctx)) }()
+	secondResult := make(chan error, 1)
+	go func() {
+		_, err := second.Exec(
+			ctx,
+			insertReservation,
+			secondID,
+			organizationID,
+			teamID,
+			meterID,
+			priceID,
+			accountID,
+			serviceID,
+			"requested-overage-second",
+		)
+		secondResult <- err
+	}()
+
+	select {
+	case err := <-secondResult:
+		t.Fatalf("second reservation did not serialize: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := first.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-secondResult:
+		if err == nil {
+			t.Fatal("concurrent reservations exceeded the requested overage limit")
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := second.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var heldReservations int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)
+		FROM usage_reservations
+		WHERE organization_id = $1
+		  AND status = 'held'
+	`, organizationID).Scan(&heldReservations); err != nil {
+		t.Fatal(err)
+	}
+	if heldReservations != 1 {
+		t.Fatalf("held reservation count = %d, want 1", heldReservations)
+	}
+}
+
 func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
