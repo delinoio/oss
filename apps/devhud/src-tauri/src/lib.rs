@@ -37,7 +37,7 @@ type ActiveRuntime = tauri::Wry;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const APPLICATION_ID: &str = "dev.deli.devhud";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-const PROBE_WINDOW_LABEL: &str = "probe";
+const MAIN_WINDOW_LABEL: &str = "main";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const PERMISSIONS_POLICY: &str =
     "camera=(), display-capture=(), geolocation=(), microphone=(), usb=()";
@@ -45,7 +45,7 @@ const PERMISSIONS_POLICY: &str =
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct StartupReceipt {
+struct RuntimeInfo {
     application_id: &'static str,
     bundled_origin: String,
     runtime: &'static str,
@@ -55,9 +55,8 @@ struct StartupReceipt {
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-enum ProbeCommandError {
+enum RuntimeCommandError {
     NonBundledAsset,
-    ForbiddenCommandReached,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -97,23 +96,36 @@ const fn runtime_name() -> &'static str {
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 #[tauri::command]
-fn probe_bundled_asset_ready(
+fn get_runtime_info(
     webview: Webview<ActiveRuntime>,
-) -> Result<StartupReceipt, ProbeCommandError> {
+    app: AppHandle<ActiveRuntime>,
+) -> Result<RuntimeInfo, RuntimeCommandError> {
     let url = webview
         .url()
-        .map_err(|_| ProbeCommandError::NonBundledAsset)?;
+        .map_err(|_| RuntimeCommandError::NonBundledAsset)?;
     if !is_bundled_url(&url) {
-        return Err(ProbeCommandError::NonBundledAsset);
+        return Err(RuntimeCommandError::NonBundledAsset);
     }
 
     tracing::info!(
-        event = "devhud.probe.bundled_asset_ready",
+        event = "devhud.runtime.ready",
         runtime = runtime_name(),
-        "bundled asset startup observed"
+        "DevHud runtime is ready"
     );
 
-    Ok(StartupReceipt {
+    if std::env::var_os("DEVHUD_SMOKE").is_some() {
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            // The smoke run has no user-driven event to finish the CEF loop, and
+            // AppHandle::exit can remain pending when requested from this command
+            // thread. Remove this direct exit once the pinned runtime reliably
+            // completes that request after the runtime-ready handshake.
+            app.cleanup_before_exit();
+            std::process::exit(0);
+        });
+    }
+
+    Ok(RuntimeInfo {
         application_id: APPLICATION_ID,
         bundled_origin: bundled_origin(&url),
         runtime: runtime_name(),
@@ -122,64 +134,30 @@ fn probe_bundled_asset_ready(
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-#[tauri::command]
-fn probe_denial_observed(app: AppHandle<ActiveRuntime>) {
-    tracing::info!(
-        event = "devhud.probe.capability_denial_observed",
-        "undeclared command was denied"
-    );
-
-    if std::env::var_os("DEVHUD_PROBE_SMOKE").is_some() {
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(100));
-            app.exit(0);
-        });
-    }
-}
-
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-#[tauri::command]
-fn probe_forbidden() -> Result<(), ProbeCommandError> {
-    tracing::error!(
-        event = "devhud.probe.capability_boundary_failed",
-        "forbidden command reached its handler"
-    );
-    Err(ProbeCommandError::ForbiddenCommandReached)
-}
-
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
     builder
-        .invoke_handler(tauri::generate_handler![
-            probe_bundled_asset_ready,
-            probe_denial_observed,
-            probe_forbidden,
-        ])
+        .invoke_handler(tauri::generate_handler![get_runtime_info])
         .setup(|app| {
-            WebviewWindowBuilder::new(
-                app,
-                PROBE_WINDOW_LABEL,
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("DevHud feasibility probe")
-            .inner_size(720.0, 520.0)
-            .devtools(true)
-            .disable_drag_drop_handler()
-            .on_navigation(is_bundled_url)
-            .on_new_window(|_, _| NewWindowResponse::Deny)
-            .on_download(|_, _| false)
-            .on_web_resource_request(|_, response| {
-                response.headers_mut().insert(
-                    HeaderName::from_static("permissions-policy"),
-                    HeaderValue::from_static(PERMISSIONS_POLICY),
-                );
-            })
-            .build()?;
+            WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
+                .title("DevHud")
+                .inner_size(720.0, 520.0)
+                .devtools(true)
+                .disable_drag_drop_handler()
+                .on_navigation(is_bundled_url)
+                .on_new_window(|_, _| NewWindowResponse::Deny)
+                .on_download(|_, _| false)
+                .on_web_resource_request(|_, response| {
+                    response.headers_mut().insert(
+                        HeaderName::from_static("permissions-policy"),
+                        HeaderValue::from_static(PERMISSIONS_POLICY),
+                    );
+                })
+                .build()?;
 
             tracing::info!(
-                event = "devhud.probe.window_created",
+                event = "devhud.window.created",
                 runtime = runtime_name(),
-                "feasibility probe window created"
+                "DevHud window created"
             );
             Ok(())
         })
@@ -246,7 +224,7 @@ pub fn run() {
 
     if run_app().is_err() {
         tracing::error!(
-            event = "devhud.probe.cef_initialization_failure",
+            event = "devhud.runtime.cef_initialization_failure",
             classification = "cef-initialization",
             "runtime initialization failed"
         );
@@ -281,7 +259,7 @@ mod tests {
             "https://tauri.localhost/index.html",
             "https://tauri.localhost:8080/index.html",
             "file:///tmp/index.html",
-            "data:text/html,probe",
+            "data:text/html,devhud",
             "about:blank",
         ] {
             assert!(!is_bundled_url(&denied.parse().unwrap()), "{denied}");
@@ -289,14 +267,14 @@ mod tests {
     }
 
     #[test]
-    fn receipt_uses_stable_application_id_and_desktop_contract() {
-        let receipt = StartupReceipt {
+    fn runtime_info_uses_stable_application_id_and_desktop_contract() {
+        let runtime_info = RuntimeInfo {
             application_id: APPLICATION_ID,
             bundled_origin: "http://tauri.localhost".to_string(),
             runtime: "cef",
             sandbox_enabled: true,
         };
-        let value = serde_json::to_value(receipt).unwrap();
+        let value = serde_json::to_value(runtime_info).unwrap();
 
         assert_eq!(value["applicationId"], APPLICATION_ID);
         assert_eq!(value["runtime"], "cef");

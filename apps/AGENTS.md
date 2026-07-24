@@ -16,7 +16,7 @@
 
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/delidev-app`: React/TypeScript/Rsbuild Cloudflare Pages PWA for project `delidev`.
-- `apps/devhud`: local-only React/TypeScript/Rsbuild plus Tauri common feasibility scaffold for project `devhud`; the sole canonical DevHud implementation path and currently gate-blocked.
+- `apps/devhud`: local-only React/TypeScript/Rsbuild plus Tauri application foundation for project `devhud`; the sole canonical DevHud implementation path.
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
@@ -29,15 +29,14 @@
 ### DevHud Rules
 
 - `apps/devhud` is the sole canonical implementation path for `devhud`. Keep it independent from `apps/delidev-app`, DeliDev accounts, catalog, billing, APIs, routes, contracts, and authentication.
-- The common feasibility package and Rust workspace member are present. It must remain a non-product bundled-asset probe with package-local deterministic checks; do not add product, mobile/widget, CI, packaging, release, publisher, or support work while the gate is blocked.
+- The application foundation and Rust workspace member are present. Keep bundled assets, scoped runtime information, and package-local deterministic checks while adding product, mobile/widget, CI, packaging, release, publisher, or support work through synchronized contracts and validation.
 - Desktop uses the pinned upstream CEF runtime and sandbox directly; target-specific dependencies reserve standard Tauri iOS/Android system webviews for later work from the same package. Do not create Tauri/WRY/`cef-rs` forks or local runtime patches, and never follow the moving `feat/cef` branch.
 - The exact upstream pin includes the macOS `TerminationSignals` target-guard correction. Do not reintroduce a downstream `libc` shim or local upstream patch.
-- The pinned upstream revision exposes renderer-termination callbacks publicly only on macOS/iOS and discards the CEF handler on Windows/Linux. This failed gate stops product-foundation and release work pending a separate architecture decision.
 - Preserve the exact DevHud identifiers `dev.deli.devhud`, `devhud.settings.v1`, `devhud.widget-configuration.v1`, `group.dev.deli.devhud`, and `dev.deli.devhud.widget`.
 - Production tools and user-visible widgets remain empty in `0.1.0`. Compile-only WidgetKit and Android AppWidget foundations must not be embedded or manifest-registered, and no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or DeliDev integration is authorized.
 - The only network exception is unauthenticated GitHub Releases update discovery/download for compatible signed `devhud@v*` releases. Never add GitHub tokens, remote configuration, telemetry, or another service dependency.
-- The scaffold's package-local tasks cover deterministic frontend build/rebuild, typecheck, lint, unit probes, contract/pin checks, lockfile checks, Rust checks, a debug desktop build, and host-appropriate smoke startup. Accessibility, full desktop-matrix, mobile/widget, packaging, updater, signature, release, SBOM, provenance, and measurement tasks remain blocked and must not be represented by passing placeholders.
-- Release publication requires the documented signing and publisher prerequisites, architecture-specific desktop artifacts, TestFlight/Google Play beta builds, and the documented manual rollback/upstream-pin/support runbooks. Missing credentials or the unresolved CEF gate blocks publication. No release automation exists.
+- The foundation's package-local tasks cover deterministic frontend build/rebuild, typecheck, lint, unit tests, contract/pin checks, lockfile checks, Rust checks, a debug desktop build, and host-appropriate smoke startup. Add accessibility, full desktop-matrix, mobile/widget, packaging, updater, signature, release, SBOM, provenance, and measurement tasks with their corresponding implementations; do not represent missing work with passing placeholders.
+- Release publication requires the documented signing and publisher prerequisites, architecture-specific desktop artifacts, TestFlight/Google Play beta builds, and the documented manual rollback/upstream-pin/support runbooks. Never publish without the required credentials. No release automation exists.
 
 ### DeliDev Rules
 

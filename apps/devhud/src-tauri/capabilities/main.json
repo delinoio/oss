@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Allows the DevHud main window to read its local runtime information.",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-get-runtime-info"]
+}

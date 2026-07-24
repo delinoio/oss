@@ -1131,7 +1131,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "devhud-probe"
+name = "devhud"
 version = "0.0.0"
 dependencies = [
  "serde",

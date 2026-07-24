@@ -4,5 +4,5 @@
 )]
 
 fn main() {
-    devhud_probe::run();
+    devhud::run();
 }

@@ -91,6 +91,6 @@ Each project must have one project index document and one or more domain contrac
 
 ### devhud
 - `docs/project-devhud.md`
-- `docs/apps-devhud-foundation.md` (`apps/devhud`, sole canonical implementation path; common CEF feasibility scaffold with a blocked gate)
+- `docs/apps-devhud-foundation.md` (`apps/devhud`, sole canonical implementation path; active Tauri CEF application foundation)
 
-DevHud is local-only and independent from DeliDev. `apps/devhud` contains only the common bundled-asset and typed CEF feasibility probe; it is not a production application. The exact upstream Tauri pin includes the macOS compilation correction, but the gate remains blocked because renderer termination is not observable on Windows or Linux without an upstream source change. Product, mobile/widget, CI, packaging, publishing, and release work remain blocked pending a separate architecture decision. Production tools and user-visible widgets remain empty; no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or DeliDev integration is authorized.
+DevHud is local-only and independent from DeliDev. `apps/devhud` is the active React/TypeScript/Rsbuild and Tauri application foundation, with the pinned upstream CEF runtime selected directly for desktop builds and standard system webviews reserved for mobile. Production tools and user-visible widgets remain empty; no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or DeliDev integration is authorized.

@@ -15,7 +15,7 @@ await run(
   [
     "clippy",
     "-p",
-    "devhud-probe",
+    "devhud",
     "--all-targets",
     "--features",
     "desktop-cef",
@@ -26,6 +26,6 @@ await run(
   ],
   { cwd: repositoryRoot },
 );
-await run(cargo, ["test", "-p", "devhud-probe", "--locked"], {
+await run(cargo, ["test", "-p", "devhud", "--locked"], {
   cwd: repositoryRoot,
 });

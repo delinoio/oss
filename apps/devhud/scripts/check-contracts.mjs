@@ -9,7 +9,7 @@ const repository = "https://github.com/tauri-apps/tauri";
 const paths = {
   cargoLock: resolve(repositoryRoot, "Cargo.lock"),
   cargoManifest: resolve(appRoot, "src-tauri/Cargo.toml"),
-  capability: resolve(appRoot, "src-tauri/capabilities/probe.json"),
+  capability: resolve(appRoot, "src-tauri/capabilities/main.json"),
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
   rootCargoManifest: resolve(repositoryRoot, "Cargo.toml"),
@@ -119,11 +119,11 @@ requireCondition(
 requireCondition(
   Array.isArray(tauriJson.app?.windows) &&
     tauriJson.app.windows.length === 0,
-  "the probe window must be created with explicit navigation guards",
+  "the main window must be created with explicit navigation guards",
 );
 requireCondition(
   tauriJson.bundle?.active === false,
-  "the common gate scaffold must not enable production bundling",
+  "the foundation must not enable release bundling before packaging is implemented",
 );
 requireCondition(
   tauriJson.plugins === undefined,
@@ -131,25 +131,24 @@ requireCondition(
 );
 requireCondition(
   capabilityJson.windows?.length === 1 &&
-    capabilityJson.windows[0] === "probe",
-  "the probe capability must be window-specific",
+    capabilityJson.windows[0] === "main",
+  "the main capability must be window-specific",
 );
 requireCondition(
-  capabilityJson.permissions?.includes("allow-probe-bundled-asset-ready") &&
-    capabilityJson.permissions?.includes("allow-probe-denial-observed") &&
-    !capabilityJson.permissions?.includes("allow-probe-forbidden"),
-  "the capability must allow the handshake and deny the forbidden command",
+  capabilityJson.permissions?.length === 1 &&
+    capabilityJson.permissions[0] === "allow-get-runtime-info",
+  "the main capability must expose only runtime information",
 );
 
 if (failures.length > 0) {
   throw new Error(
-    `DevHud feasibility contracts failed:\n- ${failures.join("\n- ")}`,
+    `DevHud foundation contracts failed:\n- ${failures.join("\n- ")}`,
   );
 }
 
 console.log(
   JSON.stringify({
-    check: "devhud-feasibility-contracts",
+    check: "devhud-foundation-contracts",
     status: "passed",
     tauriRevision: revision,
     cliCefVersion: "3.0.0-alpha.6",
