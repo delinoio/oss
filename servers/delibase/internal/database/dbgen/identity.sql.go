@@ -196,6 +196,35 @@ func (q *Queries) DeleteDisabledAccount(ctx context.Context, id pgtype.UUID) (in
 	return result.RowsAffected(), nil
 }
 
+const deleteExpiredIdempotencyRecord = `-- name: DeleteExpiredIdempotencyRecord :execrows
+DELETE FROM idempotency_records
+WHERE caller_kind = $1
+  AND caller_id = $2
+  AND operation = $3
+  AND idempotency_key = $4
+  AND expires_at <= transaction_timestamp()
+`
+
+type DeleteExpiredIdempotencyRecordParams struct {
+	CallerKind     string
+	CallerID       string
+	Operation      string
+	IdempotencyKey string
+}
+
+func (q *Queries) DeleteExpiredIdempotencyRecord(ctx context.Context, arg DeleteExpiredIdempotencyRecordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredIdempotencyRecord,
+		arg.CallerKind,
+		arg.CallerID,
+		arg.Operation,
+		arg.IdempotencyKey,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteOrganizationMembership = `-- name: DeleteOrganizationMembership :execrows
 DELETE FROM organization_memberships
 WHERE organization_id = $1
@@ -590,6 +619,22 @@ SELECT EXISTS (
 
 func (q *Queries) HasAccountOrganization(ctx context.Context, accountID pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, hasAccountOrganization, accountID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const hasActiveReservationsForOrganization = `-- name: HasActiveReservationsForOrganization :one
+SELECT EXISTS (
+    SELECT 1
+    FROM usage_reservations
+    WHERE organization_id = $1
+      AND status = 'held'
+)
+`
+
+func (q *Queries) HasActiveReservationsForOrganization(ctx context.Context, organizationID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasActiveReservationsForOrganization, organizationID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

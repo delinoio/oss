@@ -494,6 +494,17 @@ func (service *Organization) DeleteOrganization(
 		); transactionErr != nil {
 			return transactionErr
 		}
+		hasActiveReservations, transactionErr :=
+			queries.HasActiveReservationsForOrganization(
+				ctx,
+				pgUUID(organizationID),
+			)
+		if transactionErr != nil {
+			return databaseError(transactionErr)
+		}
+		if hasActiveReservations {
+			return organizationDeletionBlocked()
+		}
 		if _, transactionErr = queries.MarkOrganizationDeleted(
 			ctx, pgUUID(organizationID),
 		); transactionErr != nil {
@@ -1100,6 +1111,13 @@ func memberHasActiveReservations() error {
 	return serviceError(
 		connect.CodeFailedPrecondition,
 		delibasev1.ErrorReason_ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS,
+	)
+}
+
+func organizationDeletionBlocked() error {
+	return serviceError(
+		connect.CodeFailedPrecondition,
+		delibasev1.ErrorReason_ERROR_REASON_ORGANIZATION_DELETION_BLOCKED,
 	)
 }
 

@@ -297,6 +297,14 @@ SELECT EXISTS (
       AND status = 'held'
 );
 
+-- name: HasActiveReservationsForOrganization :one
+SELECT EXISTS (
+    SELECT 1
+    FROM usage_reservations
+    WHERE organization_id = sqlc.arg(organization_id)
+      AND status = 'held'
+);
+
 -- name: CurrentOrganizationBalance :one
 SELECT COALESCE(sum(amount_micros), 0)::bigint AS balance_micros
 FROM ledger_entries
@@ -361,6 +369,14 @@ WHERE caller_kind = sqlc.arg(caller_kind)
   AND operation = sqlc.arg(operation)
   AND idempotency_key = sqlc.arg(idempotency_key)
   AND expires_at > transaction_timestamp();
+
+-- name: DeleteExpiredIdempotencyRecord :execrows
+DELETE FROM idempotency_records
+WHERE caller_kind = sqlc.arg(caller_kind)
+  AND caller_id = sqlc.arg(caller_id)
+  AND operation = sqlc.arg(operation)
+  AND idempotency_key = sqlc.arg(idempotency_key)
+  AND expires_at <= transaction_timestamp();
 
 -- name: InsertIdempotencyRecord :one
 INSERT INTO idempotency_records (

@@ -29,6 +29,7 @@ type Querier interface {
 	DeleteAccountMemberships(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DeleteDisabledAccount(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteDisabledServiceMeterAllowlists(ctx context.Context) error
+	DeleteExpiredIdempotencyRecord(ctx context.Context, arg DeleteExpiredIdempotencyRecordParams) (int64, error)
 	DeleteOrganizationMembership(ctx context.Context, arg DeleteOrganizationMembershipParams) (int64, error)
 	DeleteOrganizationOperationalData(ctx context.Context, organizationID pgtype.UUID) (bool, error)
 	DeleteUnusedPolarMeterMappings(ctx context.Context) error
@@ -63,6 +64,7 @@ type Querier interface {
 	GetPublicCatalogMeter(ctx context.Context, id pgtype.UUID) (GetPublicCatalogMeterRow, error)
 	GetWebhookInbox(ctx context.Context, id pgtype.UUID) (WebhookInbox, error)
 	HasAccountOrganization(ctx context.Context, accountID pgtype.UUID) (bool, error)
+	HasActiveReservationsForOrganization(ctx context.Context, organizationID pgtype.UUID) (bool, error)
 	HasActiveReservationsForOrganizationMember(ctx context.Context, arg HasActiveReservationsForOrganizationMemberParams) (bool, error)
 	InsertDeletedAccountSubject(ctx context.Context, arg InsertDeletedAccountSubjectParams) (DeletedAccountSubject, error)
 	InsertDeletionTombstone(ctx context.Context, arg InsertDeletionTombstoneParams) (DeletionTombstone, error)

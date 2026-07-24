@@ -248,12 +248,16 @@ func replay(
 	digest []byte,
 	target proto.Message,
 ) (bool, time.Time, error) {
-	record, err := queries.GetIdempotencyRecord(ctx, dbgen.GetIdempotencyRecordParams{
+	scope := dbgen.DeleteExpiredIdempotencyRecordParams{
 		CallerKind:     "user",
 		CallerID:       idempotencyCallerID(subject),
 		Operation:      operation,
 		IdempotencyKey: key,
-	})
+	}
+	if _, err := queries.DeleteExpiredIdempotencyRecord(ctx, scope); err != nil {
+		return false, time.Time{}, databaseError(err)
+	}
+	record, err := queries.GetIdempotencyRecord(ctx, dbgen.GetIdempotencyRecordParams(scope))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, time.Time{}, nil
 	}

@@ -2233,6 +2233,14 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	if err != nil || !hasActiveReservations {
 		t.Fatalf("active member reservation = %t, %v", hasActiveReservations, err)
 	}
+	hasActiveReservations, err = dbgen.New(transaction).
+		HasActiveReservationsForOrganization(
+			ctx,
+			pgtype.UUID{Bytes: uuid.MustParse(orgA), Valid: true},
+		)
+	if err != nil || !hasActiveReservations {
+		t.Fatalf("active organization reservation = %t, %v", hasActiveReservations, err)
+	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO ledger_entries (
 			id, organization_id, entry_type, amount_micros,
@@ -3385,11 +3393,33 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`); err != nil {
 		t.Fatal(err)
 	}
+	deleted, err := dbgen.New(transaction).DeleteExpiredIdempotencyRecord(
+		ctx,
+		dbgen.DeleteExpiredIdempotencyRecordParams{
+			CallerKind:     "user",
+			CallerID:       "expired-actor",
+			Operation:      "create_organization",
+			IdempotencyKey: "expired-key",
+		},
+	)
+	if err != nil || deleted != 1 {
+		t.Fatalf("expired idempotency cleanup = %d, %v", deleted, err)
+	}
 	if _, err := transaction.Exec(ctx, `
-		DELETE FROM idempotency_records
-		WHERE id = '0198a000-0000-7000-8000-000000000206'
+		INSERT INTO idempotency_records (
+			id, caller_kind, caller_id, operation, idempotency_key,
+			request_hash, expires_at
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000207',
+			'user',
+			'expired-actor',
+			'create_organization',
+			'expired-key',
+			decode(repeat('aa', 32), 'hex'),
+			transaction_timestamp() + interval '1 day'
+		)
 	`); err != nil {
-		t.Fatal(err)
+		t.Fatalf("reuse expired idempotency key: %v", err)
 	}
 }
 

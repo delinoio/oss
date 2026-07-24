@@ -108,6 +108,17 @@ func TestMemberHasActiveReservationsReturnsStableReason(t *testing.T) {
 	)
 }
 
+func TestOrganizationDeletionBlockedReturnsStableReason(t *testing.T) {
+	t.Parallel()
+
+	requireConnectReason(
+		t,
+		organizationDeletionBlocked(),
+		connect.CodeFailedPrecondition,
+		delibasev1.ErrorReason_ERROR_REASON_ORGANIZATION_DELETION_BLOCKED,
+	)
+}
+
 type polarSubscriptionQueriesStub struct {
 	subscriptionID string
 	err            error
