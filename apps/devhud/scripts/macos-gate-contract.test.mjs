@@ -11,7 +11,9 @@ import {
 import {
   eventNames,
   execute,
+  hasMacOsCefSandboxEvidence,
   sanitizedRuntimeEnvironment,
+  signingModeForEnvironment,
   structuredDiagnostics,
 } from "./macos-gate.mjs";
 
@@ -169,6 +171,59 @@ test("scrubs App Store Connect private keys from the app environment", () => {
   }
 });
 
+test("requires positive macOS CEF sandbox evidence", () => {
+  assert.equal(
+    hasMacOsCefSandboxEvidence(
+      "/Applications/DevHud.app/Helper --type=renderer --seatbelt-client=17",
+    ),
+    true,
+  );
+  assert.equal(
+    hasMacOsCefSandboxEvidence(
+      "/Applications/DevHud.app/Helper --type=renderer",
+    ),
+    false,
+  );
+  assert.equal(
+    hasMacOsCefSandboxEvidence(
+      "/Applications/DevHud.app/Helper --type=renderer --seatbelt-client=17 --no-sandbox",
+    ),
+    false,
+  );
+});
+
+test("requires notarization credentials for Developer ID mode", () => {
+  assert.equal(signingModeForEnvironment({}), "sign-ready");
+  assert.throws(
+    () =>
+      signingModeForEnvironment({
+        APPLE_CERTIFICATE: "certificate",
+        APPLE_CERTIFICATE_PASSWORD: "password",
+      }),
+    /notarization credentials are incomplete/u,
+  );
+  assert.equal(
+    signingModeForEnvironment({
+      APPLE_API_ISSUER: "issuer",
+      APPLE_API_KEY: "key",
+      APPLE_API_KEY_PATH: "/private/key.p8",
+      APPLE_CERTIFICATE: "certificate",
+      APPLE_CERTIFICATE_PASSWORD: "password",
+    }),
+    "developer-id",
+  );
+  assert.equal(
+    signingModeForEnvironment({
+      APPLE_CERTIFICATE: "certificate",
+      APPLE_CERTIFICATE_PASSWORD: "password",
+      APPLE_ID: "developer@example.com",
+      APPLE_PASSWORD: "password",
+      APPLE_TEAM_ID: "team",
+    }),
+    "developer-id",
+  );
+});
+
 test("summarizes subprocess failures without sensitive values", () => {
   const summary = safeFailureSummary(
     "\u001b[1m\u001b[91merror: failed\u001b[0m at /Users/example/private/project/file.rs with " +
@@ -178,6 +233,16 @@ test("summarizes subprocess failures without sensitive values", () => {
   assert.match(summary, /error: failed/u);
   assert.equal(summary.includes("\u001b"), false);
   assert.doesNotMatch(summary, /Users|project|F18|A{48}/u);
+});
+
+test("redacts short signing credentials from subprocess summaries", () => {
+  const summary = safeFailureSummary(
+    'error: signing failed with "short-password" and short\\nprivate\\nkey',
+    ["short-password", "short\nprivate\nkey"],
+  ).join("\n");
+
+  assert.match(summary, /error: signing failed/u);
+  assert.doesNotMatch(summary, /short-password|short\\nprivate\\nkey/u);
 });
 
 test("accepts only passing path-free evidence", () => {

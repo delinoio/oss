@@ -62,7 +62,26 @@ function stripAnsi(text) {
   return output;
 }
 
-export function safeFailureSummary(text) {
+function redactExcludedValues(text, excludedValues) {
+  const redactions = new Set();
+  for (const value of excludedValues) {
+    if (!value) {
+      continue;
+    }
+    redactions.add(value);
+    redactions.add(JSON.stringify(value).slice(1, -1));
+  }
+
+  let output = text;
+  for (const value of [...redactions].sort(
+    (left, right) => right.length - left.length,
+  )) {
+    output = output.split(value).join("<sensitive>");
+  }
+  return output;
+}
+
+export function safeFailureSummary(text, excludedValues = []) {
   const pathPattern =
     /(?:[A-Za-z]:)?[/\\](?:[^/\\\s:'"=]+[/\\])*[^/\\\s:'"=]*/gu;
   const sensitivePattern =
@@ -78,7 +97,7 @@ export function safeFailureSummary(text) {
     )
     .slice(-24)
     .map((line) =>
-      stripAnsi(line)
+      redactExcludedValues(stripAnsi(line), excludedValues)
         .replace(pathPattern, "<path>")
         .replace(sensitivePattern, "<sensitive>")
         .replace(shortcutPattern, "<shortcut>")

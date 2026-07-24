@@ -50,6 +50,16 @@ const secretEnvironmentNames = Object.freeze([
   "TAURI_SIGNING_PRIVATE_KEY",
   "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
 ]);
+const appStoreConnectCredentialNames = Object.freeze([
+  "APPLE_API_ISSUER",
+  "APPLE_API_KEY",
+  "APPLE_API_KEY_PATH",
+]);
+const appleIdCredentialNames = Object.freeze([
+  "APPLE_ID",
+  "APPLE_PASSWORD",
+  "APPLE_TEAM_ID",
+]);
 
 function parseArguments(argv) {
   let evidencePath;
@@ -82,6 +92,30 @@ export function sanitizedRuntimeEnvironment(environmentSentinel) {
     delete environment[name];
   }
   return environment;
+}
+
+export function signingModeForEnvironment(environment) {
+  const hasCertificate = Boolean(environment.APPLE_CERTIFICATE);
+  const hasCertificatePassword = Boolean(
+    environment.APPLE_CERTIFICATE_PASSWORD,
+  );
+  if (hasCertificate !== hasCertificatePassword) {
+    throw new Error("macOS signing credentials are incomplete");
+  }
+  if (!hasCertificate) {
+    return "sign-ready";
+  }
+
+  const hasAppStoreConnectCredentials = appStoreConnectCredentialNames.every(
+    (name) => Boolean(environment[name]),
+  );
+  const hasAppleIdCredentials = appleIdCredentialNames.every((name) =>
+    Boolean(environment[name]),
+  );
+  if (!hasAppStoreConnectCredentials && !hasAppleIdCredentials) {
+    throw new Error("macOS notarization credentials are incomplete");
+  }
+  return "developer-id";
 }
 
 function signingEnvironment(extra) {
@@ -161,14 +195,19 @@ export function execute(command, args, options = {}) {
   });
 }
 
-async function requireSuccess(command, args, options) {
+async function requireSuccess(command, args, options = {}) {
   const result = await execute(command, args, options);
   if (result.code !== 0) {
+    const environment = options.env ?? process.env;
+    const excludedValues = [
+      ...(options.excludedValues ?? []),
+      ...secretEnvironmentNames.map((name) => environment[name]),
+    ];
     console.error(
       JSON.stringify({
         event: "devhud.gate.subprocess_failure",
         classification: "subprocess-failure",
-        summary: safeFailureSummary(result.output),
+        summary: safeFailureSummary(result.output, excludedValues),
       }),
     );
     throw new Error("macOS gate subprocess failed");
@@ -235,6 +274,13 @@ async function helperProcesses(appPath) {
   );
 }
 
+export function hasMacOsCefSandboxEvidence(command) {
+  return (
+    /(?:^|\s)--seatbelt-client=\d+(?=\s|$)/u.test(command) &&
+    !/(?:^|\s)--no-sandbox(?=\s|$)/u.test(command)
+  );
+}
+
 export function structuredDiagnostics(output) {
   return output
     .split(/\r?\n/u)
@@ -293,8 +339,8 @@ async function runAppScenario({
           helperCount = Math.max(helperCount, helpers.length);
           sandboxEnabled =
             helpers.length > 0 &&
-            helpers.every(
-              ({ command }) => !command.includes("--no-sandbox"),
+            helpers.every(({ command }) =>
+              hasMacOsCefSandboxEvidence(command),
             );
           await toggleSystemAppearance();
         }
@@ -367,6 +413,12 @@ async function verifyCodeSignature(path, signingMode) {
   }
 }
 
+async function verifyNotarization(path, signingMode) {
+  if (signingMode === "developer-id") {
+    await requireSuccess("xcrun", ["stapler", "validate", path]);
+  }
+}
+
 async function verifyUpdaterSignature({
   privatePublicKey,
   signaturePath,
@@ -436,16 +488,8 @@ async function main() {
   const updaterPassword = randomBytes(24).toString("base64url");
   const environmentSentinel = randomBytes(24).toString("hex");
   const runtimeEnvironment = sanitizedRuntimeEnvironment(environmentSentinel);
-  const hasCertificate =
-    Boolean(process.env.APPLE_CERTIFICATE) &&
-    Boolean(process.env.APPLE_CERTIFICATE_PASSWORD);
-  if (
-    Boolean(process.env.APPLE_CERTIFICATE) !==
-    Boolean(process.env.APPLE_CERTIFICATE_PASSWORD)
-  ) {
-    throw new Error("macOS signing credentials are incomplete");
-  }
-  const signingMode = hasCertificate ? "developer-id" : "sign-ready";
+  const signingMode = signingModeForEnvironment(process.env);
+  const hasCertificate = signingMode === "developer-id";
 
   try {
     await requireSuccess(
@@ -460,7 +504,7 @@ async function main() {
         "--force",
         "--ci",
       ],
-      { cwd: appRoot },
+      { cwd: appRoot, excludedValues: [updaterPassword] },
     );
     const publicKey = await readFile(publicKeyPath, "utf8");
     const privateKey = await readFile(privateKeyPath, "utf8");
@@ -607,6 +651,7 @@ async function main() {
       }
     }
     await verifyCodeSignature(appPath, signingMode);
+    await verifyNotarization(appPath, signingMode);
     await verifyCodeSignature(dmgPath, signingMode);
 
     const mountPoint = join(tempRoot, "mounted-dmg");
@@ -630,6 +675,7 @@ async function main() {
         "mounted application bundle",
       );
       await verifyCodeSignature(mountedApp, signingMode);
+      await verifyNotarization(mountedApp, signingMode);
     } finally {
       await requireSuccess("hdiutil", ["detach", mountPoint]);
     }
@@ -745,9 +791,7 @@ async function main() {
       updaterPassword,
       privateKey,
       publicKey,
-      process.env.APPLE_API_PRIVATE_KEY,
-      process.env.APPLE_CERTIFICATE,
-      process.env.APPLE_CERTIFICATE_PASSWORD,
+      ...secretEnvironmentNames.map((name) => process.env[name]),
       ...shortcutDiagnosticForms,
     ]);
 

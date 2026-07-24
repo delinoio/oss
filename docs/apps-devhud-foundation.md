@@ -37,11 +37,11 @@ DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source pa
 
 The package's `macos-gate` feature and `.github/workflows/devhud-macos-cef-gate.yml` implement only the mandatory macOS portion on native x64 and ARM64 macOS 14+ runners. Each job must:
 
-- start sandboxed CEF from bundled assets and prove scoped allowed/denied Tauri IPC;
+- start CEF from bundled assets, require every observed helper to expose Chromium's positive macOS Seatbelt client marker, and prove scoped allowed/denied Tauri IPC;
 - exercise menu-bar residency, hidden persistent Dock behavior, close-to-hide, a structured global shortcut, disabled-by-default launch at login, System/Light/Dark handling, DevTools with navigation denial, and explicit shutdown;
 - run three normal startup/shutdown cycles, make CEF initialization and renderer termination fatal without restart, and observe CEF helpers before shutdown and none afterward;
 - build, mount, and architecture-check a separate DMG and target-specific signed Tauri updater bundle, accept its valid updater signature, and reject a mutated bundle;
-- validate Developer ID signatures when both certificate inputs are available, otherwise validate ad hoc code signatures and sign-ready metadata; and
+- require a complete App Store Connect or Apple ID notarization credential set whenever both Developer ID certificate inputs are available, validate the stapled notarization ticket in the built and mounted application, otherwise validate ad hoc code signatures and sign-ready metadata; and
 - reject any diagnostic or retained evidence containing the shortcut value, arbitrary filesystem paths, environment values, updater keys, certificate data, or passwords.
 
 The gate creates an ephemeral updater key only within the runner and suppresses raw subprocess output. It uploads only the safe evidence JSON for a short retention period; it does not upload or publish DMGs, updater bundles, keys, or signing inputs. The exact upstream Tauri revision and `@tauri-apps/cli-cef` version remain unchanged, with no Cargo patches or local upstream source changes.
