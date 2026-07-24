@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect"
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
+	"github.com/delinoio/oss/servers/delibase/internal/contracts"
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	"github.com/delinoio/oss/servers/internal/auth"
@@ -351,6 +352,7 @@ func createOrganizationBundle(
 	generalTeamID uuid.UUID,
 	name string,
 	slug string,
+	polarCustomerID string,
 ) (dbgen.Organization, error) {
 	organization, err := queries.CreateOrganization(ctx, dbgen.CreateOrganizationParams{
 		ID:   pgUUID(organizationID),
@@ -385,10 +387,38 @@ func createOrganizationBundle(
 	}); err != nil {
 		return dbgen.Organization{}, databaseError(err)
 	}
-	if _, err := queries.CreatePendingPolarCustomer(ctx, organization.ID); err != nil {
+	if _, err := queries.CreatePolarCustomer(ctx, dbgen.CreatePolarCustomerParams{
+		OrganizationID:  organization.ID,
+		PolarCustomerID: polarCustomerID,
+	}); err != nil {
 		return dbgen.Organization{}, databaseError(err)
 	}
 	return organization, nil
+}
+
+func ensurePolarCustomer(
+	ctx context.Context,
+	dependencies Dependencies,
+	organizationID uuid.UUID,
+	name string,
+) (string, error) {
+	if dependencies.PolarCustomers == nil {
+		return "", serviceError(connect.CodeInternal, 0)
+	}
+	customer, err := dependencies.PolarCustomers.EnsureCustomer(
+		ctx,
+		contracts.CustomerRequest{
+			OrganizationID: organizationID.String(),
+			Name:           name,
+		},
+	)
+	if err != nil || customer.ID == "" {
+		return "", serviceError(connect.CodeUnavailable, 0)
+	}
+	if _, err := uuid.Parse(customer.ID); err != nil {
+		return "", serviceError(connect.CodeUnavailable, 0)
+	}
+	return customer.ID, nil
 }
 
 func appendAudit(

@@ -128,7 +128,29 @@ func (service *Account) CompleteOnboarding(
 		ctx,
 		pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			if _, transactionErr := queries.GetDeletedAccountSubject(
+			response = &delibasev1.CompleteOnboardingResponse{}
+			replayed, completedAt, transactionErr := replay(
+				ctx,
+				queries,
+				subject,
+				"complete_onboarding",
+				key,
+				digest,
+				response,
+			)
+			if transactionErr != nil {
+				return transactionErr
+			}
+			if replayed {
+				setIdempotency(
+					&response.Idempotency,
+					delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING,
+					true,
+					completedAt,
+				)
+				return nil
+			}
+			if _, transactionErr = queries.GetDeletedAccountSubject(
 				ctx, subjectDigest(subject),
 			); transactionErr == nil {
 				return serviceError(
@@ -146,8 +168,7 @@ func (service *Account) CompleteOnboarding(
 			if transactionErr != nil {
 				return databaseError(transactionErr)
 			}
-			response = &delibasev1.CompleteOnboardingResponse{}
-			replayed, completedAt, transactionErr := replay(
+			replayed, completedAt, transactionErr = replay(
 				ctx,
 				queries,
 				subject,
@@ -184,6 +205,15 @@ func (service *Account) CompleteOnboarding(
 					delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
 				)
 			}
+			polarCustomerID, transactionErr := ensurePolarCustomer(
+				ctx,
+				service.dependencies,
+				organizationID,
+				organizationName,
+			)
+			if transactionErr != nil {
+				return transactionErr
+			}
 			if account.DisplayName != displayName {
 				account, transactionErr = queries.UpdateAccountDisplayName(
 					ctx,
@@ -204,6 +234,7 @@ func (service *Account) CompleteOnboarding(
 				generalTeamID,
 				organizationName,
 				slug,
+				polarCustomerID,
 			)
 			if transactionErr != nil {
 				return transactionErr

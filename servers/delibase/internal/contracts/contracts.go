@@ -23,6 +23,21 @@ type PolarClient interface {
 	CreatePortalSession(context.Context, PortalRequest) (PortalSession, error)
 }
 
+// PolarCustomerManager creates or retrieves the provider customer bound to a
+// delibase organization before the organization is committed locally.
+type PolarCustomerManager interface {
+	EnsureCustomer(context.Context, CustomerRequest) (Customer, error)
+}
+
+type CustomerRequest struct {
+	OrganizationID string
+	Name           string
+}
+
+type Customer struct {
+	ID string
+}
+
 type CheckoutRequest struct {
 	OrganizationID string
 	ReturnURL      string

@@ -28,6 +28,7 @@ type Dependencies struct {
 	Store           *database.Store
 	Clock           contracts.Clock
 	Polar           contracts.PolarClient
+	PolarCustomers  contracts.PolarCustomerManager
 	IdentityManager contracts.IdentityManager
 	IDs             IDGenerator
 	Pseudonymizer   *safelog.Pseudonymizer

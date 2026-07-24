@@ -141,11 +141,11 @@ VALUES (
 )
 RETURNING *;
 
--- name: CreatePendingPolarCustomer :one
+-- name: CreatePolarCustomer :one
 INSERT INTO polar_customers (organization_id, polar_customer_id)
 VALUES (
     sqlc.arg(organization_id)::uuid,
-    'pending:' || sqlc.arg(organization_id)::text
+    sqlc.arg(polar_customer_id)
 )
 RETURNING *;
 
@@ -211,12 +211,21 @@ WHERE id = sqlc.arg(id)
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: DeleteOrganizationOperationalData :one
+SELECT delete_organization_operational_data(sqlc.arg(organization_id)::uuid);
+
 -- name: GetCancelablePolarSubscriptionForOrganization :one
 SELECT polar_subscription_id
 FROM subscriptions
 WHERE organization_id = sqlc.arg(organization_id)
   AND status IN ('pending', 'active', 'past_due')
-ORDER BY created_at DESC
+ORDER BY
+    CASE status
+        WHEN 'active' THEN 0
+        WHEN 'past_due' THEN 1
+        ELSE 2
+    END,
+    created_at DESC
 LIMIT 1;
 
 -- name: GetOrganizationMembership :one

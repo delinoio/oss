@@ -39,9 +39,11 @@ func TestPostgreSQLAccountOrganizationLifecycleAndRaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	dependencies := Dependencies{
-		Store:         store,
-		Clock:         contracts.SystemClock{},
-		Pseudonymizer: pseudonymizer,
+		Store:          store,
+		Clock:          contracts.SystemClock{},
+		PolarCustomers: &fakePolarCustomers{},
+		IDs:            defaultIDGenerator{},
+		Pseudonymizer:  pseudonymizer,
 	}
 	accountService := NewAccount(dependencies)
 	organizationService := NewOrganization(dependencies)
@@ -295,11 +297,80 @@ func TestPostgreSQLAccountOrganizationLifecycleAndRaces(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("organization deletion handler = %v", err)
 	}
+	retainedOrganization, err = store.Queries().GetOrganizationByID(
+		ctx,
+		pgUUID(mustUUID(t, raceOrganizationID)),
+	)
+	if err != nil || retainedOrganization.Name != "Deleted organization" ||
+		retainedOrganization.OverageLimitMicros != 0 {
+		t.Fatalf("pseudonymized organization = %#v, %v", retainedOrganization, err)
+	}
 	_, err = organizationService.ResolveOrganizationSlug(
 		userContext,
 		connect.NewRequest(&delibasev1.ResolveOrganizationSlugRequest{Slug: raceSlug}),
 	)
 	requireConnectCode(t, err, connect.CodePermissionDenied)
+
+	replaySubject := "service-integration-replay-" + testID
+	replayKey := "deleted-onboarding-" + suffix
+	replayDisplayName := "Deleted Replay"
+	replayOrganizationName := "Deleted Replay Organization"
+	replaySlug := "deleted-replay-" + suffix
+	replayResponse := &delibasev1.CompleteOnboardingResponse{
+		Account: &delibasev1.Account{
+			AccountId:   &delibasev1.UuidV7{Value: uuidv7.MustNew().String()},
+			Status:      delibasev1.AccountStatus_ACCOUNT_STATUS_ACTIVE,
+			DisplayName: replayDisplayName,
+		},
+		OrganizationId: &delibasev1.UuidV7{Value: uuidv7.MustNew().String()},
+		GeneralTeamId:  &delibasev1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	setIdempotency(
+		&replayResponse.Idempotency,
+		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING,
+		false,
+		time.Now().UTC(),
+	)
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		_, transactionErr := persistIdempotency(
+			ctx,
+			dependencies,
+			queries,
+			replaySubject,
+			"complete_onboarding",
+			replayKey,
+			requestDigest(replayDisplayName, replayOrganizationName, replaySlug),
+			replayResponse,
+		)
+		if transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr = queries.InsertDeletedAccountSubject(
+			ctx,
+			dbgen.InsertDeletedAccountSubjectParams{
+				SubjectDigest:  subjectDigest(replaySubject),
+				AccountID:      pgUUID(uuidv7.MustNew()),
+				ActorReference: string(pseudonymizer.Actor(replaySubject)),
+			},
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	postDeletionReplay, err := accountService.CompleteOnboarding(
+		authenticatedContext(ctx, replaySubject),
+		connect.NewRequest(&delibasev1.CompleteOnboardingRequest{
+			DisplayName:      replayDisplayName,
+			OrganizationName: replayOrganizationName,
+			OrganizationSlug: replaySlug,
+			Idempotency:      idempotency(replayKey),
+		}),
+	)
+	if err != nil || !postDeletionReplay.Msg.Idempotency.Replayed ||
+		postDeletionReplay.Msg.OrganizationId.Value != replayResponse.OrganizationId.Value {
+		t.Fatalf("deleted onboarding replay = %#v, %v", postDeletionReplay, err)
+	}
 }
 
 func authenticatedContext(ctx context.Context, subject string) context.Context {
@@ -348,4 +419,13 @@ func (identity *retryIdentity) DeleteUser(context.Context, string) error {
 		return errors.New("temporary Logto failure")
 	}
 	return nil
+}
+
+type fakePolarCustomers struct{}
+
+func (*fakePolarCustomers) EnsureCustomer(
+	_ context.Context,
+	input contracts.CustomerRequest,
+) (contracts.Customer, error) {
+	return contracts.Customer{ID: input.OrganizationID}, nil
 }

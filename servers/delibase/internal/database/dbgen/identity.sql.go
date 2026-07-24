@@ -93,17 +93,22 @@ func (q *Queries) CreateOrganizationMembership(ctx context.Context, arg CreateOr
 	return i, err
 }
 
-const createPendingPolarCustomer = `-- name: CreatePendingPolarCustomer :one
+const createPolarCustomer = `-- name: CreatePolarCustomer :one
 INSERT INTO polar_customers (organization_id, polar_customer_id)
 VALUES (
     $1::uuid,
-    'pending:' || $1::text
+    $2
 )
 RETURNING organization_id, polar_customer_id, created_at, updated_at
 `
 
-func (q *Queries) CreatePendingPolarCustomer(ctx context.Context, organizationID pgtype.UUID) (PolarCustomer, error) {
-	row := q.db.QueryRow(ctx, createPendingPolarCustomer, organizationID)
+type CreatePolarCustomerParams struct {
+	OrganizationID  pgtype.UUID
+	PolarCustomerID string
+}
+
+func (q *Queries) CreatePolarCustomer(ctx context.Context, arg CreatePolarCustomerParams) (PolarCustomer, error) {
+	row := q.db.QueryRow(ctx, createPolarCustomer, arg.OrganizationID, arg.PolarCustomerID)
 	var i PolarCustomer
 	err := row.Scan(
 		&i.OrganizationID,
@@ -212,6 +217,17 @@ func (q *Queries) DeleteOrganizationMembership(ctx context.Context, arg DeleteOr
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteOrganizationOperationalData = `-- name: DeleteOrganizationOperationalData :one
+SELECT delete_organization_operational_data($1::uuid)
+`
+
+func (q *Queries) DeleteOrganizationOperationalData(ctx context.Context, organizationID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, deleteOrganizationOperationalData, organizationID)
+	var delete_organization_operational_data bool
+	err := row.Scan(&delete_organization_operational_data)
+	return delete_organization_operational_data, err
 }
 
 const disableAndEraseAccount = `-- name: DisableAndEraseAccount :one
@@ -350,7 +366,13 @@ SELECT polar_subscription_id
 FROM subscriptions
 WHERE organization_id = $1
   AND status IN ('pending', 'active', 'past_due')
-ORDER BY created_at DESC
+ORDER BY
+    CASE status
+        WHEN 'active' THEN 0
+        WHEN 'past_due' THEN 1
+        ELSE 2
+    END,
+    created_at DESC
 LIMIT 1
 `
 

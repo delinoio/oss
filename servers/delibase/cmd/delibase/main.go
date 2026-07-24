@@ -143,6 +143,7 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	serviceDependencies := service.Dependencies{
 		Store:           store,
 		Clock:           contracts.SystemClock{},
+		PolarCustomers:  polarClient,
 		IdentityManager: identityManager,
 		Pseudonymizer:   pseudonymizer,
 		Logger:          logger,

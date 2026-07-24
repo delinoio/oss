@@ -146,3 +146,70 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION protect_general_team()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NOT OLD.protected_general THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        IF EXISTS (
+            SELECT 1
+            FROM organizations
+            WHERE id = OLD.organization_id
+              AND deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'protected General team cannot be deleted'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    IF NOT NEW.protected_general
+       OR NEW.id <> OLD.id
+       OR NEW.organization_id <> OLD.organization_id
+       OR NEW.parent_team_id IS DISTINCT FROM OLD.parent_team_id
+       OR NEW.name <> OLD.name THEN
+        RAISE EXCEPTION 'protected General team cannot be renamed or unprotected'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION delete_organization_operational_data(target_organization_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM organizations
+        WHERE id = target_organization_id
+          AND deleted_at IS NOT NULL
+    ) THEN
+        RETURN false;
+    END IF;
+
+    DELETE FROM organization_invitations
+    WHERE organization_id = target_organization_id;
+
+    DELETE FROM teams
+    WHERE organization_id = target_organization_id;
+
+    DELETE FROM organization_memberships
+    WHERE organization_id = target_organization_id;
+
+    UPDATE organizations
+    SET name = 'Deleted organization',
+        overage_limit_micros = 0,
+        updated_at = transaction_timestamp()
+    WHERE id = target_organization_id;
+
+    RETURN true;
+END;
+$$;

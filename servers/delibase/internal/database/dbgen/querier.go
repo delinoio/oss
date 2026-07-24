@@ -23,13 +23,14 @@ type Querier interface {
 	CreateGeneralTeam(ctx context.Context, arg CreateGeneralTeamParams) (Team, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
 	CreateOrganizationMembership(ctx context.Context, arg CreateOrganizationMembershipParams) (OrganizationMembership, error)
-	CreatePendingPolarCustomer(ctx context.Context, organizationID pgtype.UUID) (PolarCustomer, error)
+	CreatePolarCustomer(ctx context.Context, arg CreatePolarCustomerParams) (PolarCustomer, error)
 	CreateTeamMembership(ctx context.Context, arg CreateTeamMembershipParams) (TeamMembership, error)
 	CurrentOrganizationBalance(ctx context.Context, organizationID pgtype.UUID) (int64, error)
 	DeleteAccountMemberships(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DeleteDisabledAccount(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteDisabledServiceMeterAllowlists(ctx context.Context) error
 	DeleteOrganizationMembership(ctx context.Context, arg DeleteOrganizationMembershipParams) (int64, error)
+	DeleteOrganizationOperationalData(ctx context.Context, organizationID pgtype.UUID) (bool, error)
 	DeleteUnusedPolarMeterMappings(ctx context.Context) error
 	DisableAndEraseAccount(ctx context.Context, id pgtype.UUID) (Account, error)
 	DisableCatalogApps(ctx context.Context) error

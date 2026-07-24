@@ -193,6 +193,15 @@ func (service *Organization) CreateOrganization(
 			)
 			return nil
 		}
+		polarCustomerID, transactionErr := ensurePolarCustomer(
+			ctx,
+			service.dependencies,
+			organizationID,
+			name,
+		)
+		if transactionErr != nil {
+			return transactionErr
+		}
 		organization, transactionErr := createOrganizationBundle(
 			ctx,
 			queries,
@@ -201,6 +210,7 @@ func (service *Organization) CreateOrganization(
 			generalTeamID,
 			name,
 			slug,
+			polarCustomerID,
 		)
 		if transactionErr != nil {
 			return transactionErr
@@ -1094,6 +1104,16 @@ func NewOrganizationDeletionHandler(
 			return err
 		}
 		if organization.DeletedAt.Valid {
+			deleted, deleteErr := store.Queries().DeleteOrganizationOperationalData(
+				ctx,
+				pgUUID(item.EntityID),
+			)
+			if deleteErr != nil {
+				return deleteErr
+			}
+			if !deleted {
+				return reliability.ErrInvalidInput
+			}
 			return nil
 		}
 		return reliability.ErrInvalidInput
