@@ -1,27 +1,48 @@
 // Package service provides generated delibase.v1 service implementations.
 //
-// The foundation deliberately embeds Connect's generated unimplemented
-// handlers. Every business RPC therefore returns a typed Unimplemented error
-// until its transactional policy is implemented; no placeholder can report a
-// false success.
+// Services embed Connect's generated unimplemented handlers so RPCs outside
+// the implemented transactional slices fail explicitly; no placeholder can
+// report a false success.
 package service
 
 import (
+	"log/slog"
+
 	"github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1/delibasev1connect"
 	"github.com/delinoio/oss/servers/delibase/internal/contracts"
 	"github.com/delinoio/oss/servers/delibase/internal/database"
+	"github.com/delinoio/oss/servers/internal/safelog"
+	"github.com/delinoio/oss/servers/internal/uuidv7"
+	"github.com/google/uuid"
 )
+
+type IDGenerator interface {
+	New() (uuid.UUID, error)
+}
+
+type defaultIDGenerator struct{}
+
+func (defaultIDGenerator) New() (uuid.UUID, error) { return uuidv7.New() }
 
 type Dependencies struct {
 	Store           *database.Store
 	Clock           contracts.Clock
 	Polar           contracts.PolarClient
 	IdentityManager contracts.IdentityManager
+	IDs             IDGenerator
+	Pseudonymizer   *safelog.Pseudonymizer
+	Logger          *slog.Logger
 }
 
 func (dependencies Dependencies) withDefaults() Dependencies {
 	if dependencies.Clock == nil {
 		dependencies.Clock = contracts.SystemClock{}
+	}
+	if dependencies.IDs == nil {
+		dependencies.IDs = defaultIDGenerator{}
+	}
+	if dependencies.Logger == nil {
+		dependencies.Logger = slog.New(slog.DiscardHandler)
 	}
 	return dependencies
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/signal"
@@ -13,12 +14,17 @@ import (
 	"github.com/delinoio/oss/servers/delibase/internal/api"
 	"github.com/delinoio/oss/servers/delibase/internal/catalog"
 	"github.com/delinoio/oss/servers/delibase/internal/config"
+	"github.com/delinoio/oss/servers/delibase/internal/contracts"
 	"github.com/delinoio/oss/servers/delibase/internal/database"
 	"github.com/delinoio/oss/servers/delibase/internal/logging"
+	"github.com/delinoio/oss/servers/delibase/internal/logto"
+	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	serverruntime "github.com/delinoio/oss/servers/delibase/internal/runtime"
 	"github.com/delinoio/oss/servers/delibase/internal/service"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/safelog"
+	"github.com/delinoio/oss/servers/internal/uuidv7"
+	"github.com/google/uuid"
 )
 
 const databaseStartupTimeout = 30 * time.Second
@@ -42,6 +48,14 @@ type startupError struct {
 }
 
 func (failure *startupError) Error() string { return "delibase startup failed" }
+
+type workerRandom struct{}
+
+func (workerRandom) Float64() float64 { return rand.Float64() }
+
+type workerTokenGenerator struct{}
+
+func (workerTokenGenerator) New() (uuid.UUID, error) { return uuidv7.New() }
 
 func main() {
 	logger := logging.New(os.Stderr, slog.LevelInfo)
@@ -76,7 +90,8 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 			safeDetail: err.Error(),
 		}
 	}
-	if _, err := safelog.NewPseudonymizer(configuration.LogPseudonymKey); err != nil {
+	pseudonymizer, err := safelog.NewPseudonymizer(configuration.LogPseudonymKey)
+	if err != nil {
 		return &startupError{stage: stageLogging}
 	}
 	catalogSpecification, err := catalog.Load(configuration.CatalogPath)
@@ -111,10 +126,26 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{stage: stageAuthentication}
 	}
+	identityManager, err := logto.New(
+		configuration.LogtoIssuer,
+		configuration.LogtoM2MClientID,
+		configuration.LogtoM2MClientSecret,
+		nil,
+	)
+	if err != nil {
+		return &startupError{stage: stageAuthentication}
+	}
+	serviceDependencies := service.Dependencies{
+		Store:           store,
+		Clock:           contracts.SystemClock{},
+		IdentityManager: identityManager,
+		Pseudonymizer:   pseudonymizer,
+		Logger:          logger,
+	}
 	handler, err := api.New(api.Dependencies{
 		Authentication: validator,
 		Health:         store,
-		Services:       service.Dependencies{Store: store},
+		Services:       serviceDependencies,
 		CORSOrigins:    configuration.CORSAllowedOrigins,
 		Logger:         logger,
 	})
@@ -125,6 +156,42 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{stage: stageListener}
 	}
+	storage, err := reliability.NewPostgreSQLStorage(store.Queries())
+	if err != nil {
+		return &startupError{stage: stageRuntime}
+	}
+	registry := reliability.NewRegistry()
+	if err := registry.Register(
+		reliability.HandlerDeleteAccount,
+		service.NewAccountDeletionHandler(store, identityManager),
+	); err != nil {
+		return &startupError{stage: stageRuntime}
+	}
+	if err := registry.Register(
+		reliability.HandlerDeleteOrganization,
+		service.NewOrganizationDeletionHandler(store),
+	); err != nil {
+		return &startupError{stage: stageRuntime}
+	}
+	worker, err := reliability.NewWorker(reliability.WorkerConfig{
+		Storage:        storage,
+		Registry:       registry,
+		Clock:          serviceDependencies.Clock,
+		Random:         workerRandom{},
+		TokenGenerator: workerTokenGenerator{},
+		Logger:         logger,
+		LeaseDuration:  time.Minute,
+		BaseBackoff:    time.Second,
+		MaxBackoff:     15 * time.Minute,
+		PollInterval:   time.Second,
+		Queues:         []reliability.Queue{reliability.QueueDeletionJob},
+	})
+	if err != nil {
+		return &startupError{stage: stageRuntime}
+	}
+	go func() {
+		_ = worker.Run(ctx)
+	}()
 	if err := serverruntime.Serve(
 		ctx,
 		listener,

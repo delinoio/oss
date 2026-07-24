@@ -25,7 +25,8 @@ INSERT INTO audit_events (
     decision,
     result,
     safe_error_class,
-    metadata
+    metadata,
+    retain_until
 ) VALUES (
     $1,
     $2,
@@ -39,9 +40,10 @@ INSERT INTO audit_events (
     $10,
     $11,
     $12,
-    $13
+    $13,
+    $2::timestamptz + interval '7 years'
 )
-RETURNING id, occurred_at, event_type, actor_reference, organization_id, team_id, service_identity_id, meter_id, reservation_id, decision, result, safe_error_class, metadata
+RETURNING id, occurred_at, event_type, actor_reference, organization_id, team_id, service_identity_id, meter_id, reservation_id, decision, result, safe_error_class, metadata, retain_until
 `
 
 type AppendAuditEventParams struct {
@@ -91,6 +93,7 @@ func (q *Queries) AppendAuditEvent(ctx context.Context, arg AppendAuditEventPara
 		&i.Result,
 		&i.SafeErrorClass,
 		&i.Metadata,
+		&i.RetainUntil,
 	)
 	return i, err
 }
@@ -696,7 +699,7 @@ func (q *Queries) FailWebhookInbox(ctx context.Context, arg FailWebhookInboxPara
 }
 
 const getAuditEvent = `-- name: GetAuditEvent :one
-SELECT id, occurred_at, event_type, actor_reference, organization_id, team_id, service_identity_id, meter_id, reservation_id, decision, result, safe_error_class, metadata FROM audit_events WHERE id = $1
+SELECT id, occurred_at, event_type, actor_reference, organization_id, team_id, service_identity_id, meter_id, reservation_id, decision, result, safe_error_class, metadata, retain_until FROM audit_events WHERE id = $1
 `
 
 func (q *Queries) GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent, error) {
@@ -716,6 +719,7 @@ func (q *Queries) GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent
 		&i.Result,
 		&i.SafeErrorClass,
 		&i.Metadata,
+		&i.RetainUntil,
 	)
 	return i, err
 }
