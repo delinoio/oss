@@ -195,20 +195,6 @@ func (q *Queries) DeleteDisabledAccount(ctx context.Context, id pgtype.UUID) (in
 	return result.RowsAffected(), nil
 }
 
-const deleteMarkedOrganization = `-- name: DeleteMarkedOrganization :execrows
-DELETE FROM organizations
-WHERE id = $1
-  AND deleted_at IS NOT NULL
-`
-
-func (q *Queries) DeleteMarkedOrganization(ctx context.Context, id pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteMarkedOrganization, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const deleteOrganizationMembership = `-- name: DeleteOrganizationMembership :execrows
 DELETE FROM organization_memberships
 WHERE organization_id = $1
@@ -357,6 +343,22 @@ func (q *Queries) GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, 
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getCancelablePolarSubscriptionForOrganization = `-- name: GetCancelablePolarSubscriptionForOrganization :one
+SELECT polar_subscription_id
+FROM subscriptions
+WHERE organization_id = $1
+  AND status IN ('pending', 'active', 'past_due')
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetCancelablePolarSubscriptionForOrganization(ctx context.Context, organizationID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getCancelablePolarSubscriptionForOrganization, organizationID)
+	var polar_subscription_id string
+	err := row.Scan(&polar_subscription_id)
+	return polar_subscription_id, err
 }
 
 const getDeletedAccountSubject = `-- name: GetDeletedAccountSubject :one
@@ -739,6 +741,55 @@ func (q *Queries) ListAccountOrganizations(ctx context.Context, accountID pgtype
 			&i.Name,
 			&i.Slug,
 			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveReservationBlockersForAccount = `-- name: ListActiveReservationBlockersForAccount :many
+SELECT DISTINCT
+    organization.id,
+    organization.name,
+    team.id AS team_id,
+    team.name AS team_name
+FROM usage_reservations AS reservation
+JOIN organizations AS organization
+  ON organization.id = reservation.organization_id
+JOIN teams AS team
+  ON team.organization_id = reservation.organization_id
+ AND team.id = reservation.team_id
+WHERE reservation.account_id = $1
+  AND reservation.status = 'held'
+ORDER BY organization.id, team.id
+`
+
+type ListActiveReservationBlockersForAccountRow struct {
+	ID       pgtype.UUID
+	Name     string
+	TeamID   pgtype.UUID
+	TeamName string
+}
+
+func (q *Queries) ListActiveReservationBlockersForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListActiveReservationBlockersForAccountRow, error) {
+	rows, err := q.db.Query(ctx, listActiveReservationBlockersForAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveReservationBlockersForAccountRow{}
+	for rows.Next() {
+		var i ListActiveReservationBlockersForAccountRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.TeamID,
+			&i.TeamName,
 		); err != nil {
 			return nil, err
 		}

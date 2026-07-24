@@ -290,9 +290,14 @@ func (service *Account) GetAccountDeletionImpact(
 	if err != nil {
 		return nil, databaseError(err)
 	}
+	reservationBlockers, err := service.dependencies.Store.Queries().
+		ListActiveReservationBlockersForAccount(ctx, account.ID)
+	if err != nil {
+		return nil, databaseError(err)
+	}
 	response := &delibasev1.GetAccountDeletionImpactResponse{
-		CanDelete: len(blockers) == 0,
-		Blockers:  deletionBlockers(blockers),
+		CanDelete: len(blockers) == 0 && len(reservationBlockers) == 0,
+		Blockers:  deletionBlockers(blockers, reservationBlockers),
 	}
 	return connect.NewResponse(response), nil
 }
@@ -403,8 +408,13 @@ func (service *Account) DeleteAccount(
 			if transactionErr != nil {
 				return databaseError(transactionErr)
 			}
-			if len(blockers) > 0 {
-				return accountDeletionBlocked(blockers)
+			reservationBlockers, transactionErr := queries.
+				ListActiveReservationBlockersForAccount(ctx, account.ID)
+			if transactionErr != nil {
+				return databaseError(transactionErr)
+			}
+			if len(blockers) > 0 || len(reservationBlockers) > 0 {
+				return accountDeletionBlocked(blockers, reservationBlockers)
 			}
 			if _, transactionErr = queries.DisableAndEraseAccount(ctx, account.ID); transactionErr != nil {
 				return databaseError(transactionErr)
@@ -488,24 +498,41 @@ func (service *Account) DeleteAccount(
 }
 
 func deletionBlockers(
-	rows []dbgen.ListLastOwnerBlockersRow,
+	ownerRows []dbgen.ListLastOwnerBlockersRow,
+	reservationRows []dbgen.ListActiveReservationBlockersForAccountRow,
 ) []*delibasev1.DeletionBlocker {
-	blockers := make([]*delibasev1.DeletionBlocker, 0, len(rows))
-	for _, row := range rows {
+	blockers := make(
+		[]*delibasev1.DeletionBlocker,
+		0,
+		len(ownerRows)+len(reservationRows),
+	)
+	for _, row := range ownerRows {
 		blockers = append(blockers, &delibasev1.DeletionBlocker{
 			Kind:             delibasev1.DeletionBlockerKind_DELETION_BLOCKER_KIND_LAST_ORGANIZATION_OWNER,
 			OrganizationId:   uuidMessage(row.ID),
 			OrganizationName: row.Name,
 		})
 	}
+	for _, row := range reservationRows {
+		blockers = append(blockers, &delibasev1.DeletionBlocker{
+			Kind:             delibasev1.DeletionBlockerKind_DELETION_BLOCKER_KIND_ACTIVE_USAGE_RESERVATION,
+			OrganizationId:   uuidMessage(row.ID),
+			TeamId:           uuidMessage(row.TeamID),
+			OrganizationName: row.Name,
+			TeamName:         row.TeamName,
+		})
+	}
 	return blockers
 }
 
-func accountDeletionBlocked(rows []dbgen.ListLastOwnerBlockersRow) error {
+func accountDeletionBlocked(
+	ownerRows []dbgen.ListLastOwnerBlockersRow,
+	reservationRows []dbgen.ListActiveReservationBlockersForAccountRow,
+) error {
 	failure := connect.NewError(connect.CodeFailedPrecondition, errors.New("request failed"))
 	detail, err := connect.NewErrorDetail(&delibasev1.ErrorDetail{
 		Reason:           delibasev1.ErrorReason_ERROR_REASON_ACCOUNT_DELETION_BLOCKED,
-		DeletionBlockers: deletionBlockers(rows),
+		DeletionBlockers: deletionBlockers(ownerRows, reservationRows),
 	})
 	if err == nil {
 		failure.AddDetail(detail)

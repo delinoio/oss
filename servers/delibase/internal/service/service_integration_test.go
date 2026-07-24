@@ -282,6 +282,13 @@ func TestPostgreSQLAccountOrganizationLifecycleAndRaces(t *testing.T) {
 	if err != nil || deleted.Msg.DeletionId == nil {
 		t.Fatalf("organization deletion = %#v, %v", deleted, err)
 	}
+	retainedOrganization, err := store.Queries().GetOrganizationByID(
+		ctx,
+		pgUUID(mustUUID(t, raceOrganizationID)),
+	)
+	if err != nil || !retainedOrganization.DeletedAt.Valid {
+		t.Fatalf("retained organization = %#v, %v", retainedOrganization, err)
+	}
 	organizationDeletionHandler := NewOrganizationDeletionHandler(store)
 	if err := organizationDeletionHandler(ctx, reliability.Item{
 		EntityID: mustUUID(t, raceOrganizationID),

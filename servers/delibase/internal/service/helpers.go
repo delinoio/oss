@@ -330,6 +330,12 @@ func setIdempotency(
 	replayed bool,
 	completedAt time.Time,
 ) {
+	if replayed && *result != nil {
+		originallyCompletedAt := (*result).OriginallyCompletedAt
+		if originallyCompletedAt != nil && originallyCompletedAt.IsValid() {
+			completedAt = originallyCompletedAt.AsTime()
+		}
+	}
 	*result = &delibasev1.IdempotencyResult{
 		Replayed:              replayed,
 		Operation:             operation,

@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/servers/delibase/internal/database"
 	"github.com/delinoio/oss/servers/delibase/internal/logging"
 	"github.com/delinoio/oss/servers/delibase/internal/logto"
+	"github.com/delinoio/oss/servers/delibase/internal/polar"
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	serverruntime "github.com/delinoio/oss/servers/delibase/internal/runtime"
 	"github.com/delinoio/oss/servers/delibase/internal/service"
@@ -135,6 +136,10 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{stage: stageAuthentication}
 	}
+	polarClient, err := polar.New(configuration.PolarAccessToken, nil)
+	if err != nil {
+		return &startupError{stage: stageConfiguration}
+	}
 	serviceDependencies := service.Dependencies{
 		Store:           store,
 		Clock:           contracts.SystemClock{},
@@ -173,6 +178,12 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	); err != nil {
 		return &startupError{stage: stageRuntime}
 	}
+	if err := registry.Register(
+		reliability.HandlerPolarCancelSubscription,
+		service.NewPolarCancellationHandler(store.Queries(), polarClient),
+	); err != nil {
+		return &startupError{stage: stageRuntime}
+	}
 	worker, err := reliability.NewWorker(reliability.WorkerConfig{
 		Storage:        storage,
 		Registry:       registry,
@@ -184,7 +195,10 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		BaseBackoff:    time.Second,
 		MaxBackoff:     15 * time.Minute,
 		PollInterval:   time.Second,
-		Queues:         []reliability.Queue{reliability.QueueDeletionJob},
+		Queues: []reliability.Queue{
+			reliability.QueueIntegrationOutbox,
+			reliability.QueueDeletionJob,
+		},
 	})
 	if err != nil {
 		return &startupError{stage: stageRuntime}

@@ -566,18 +566,6 @@ func (service *Organization) DeleteOrganization(
 		); transactionErr != nil {
 			return transactionErr
 		}
-		affected, transactionErr := queries.DeleteMarkedOrganization(
-			ctx, pgUUID(organizationID),
-		)
-		if transactionErr != nil {
-			return databaseError(transactionErr)
-		}
-		if affected != 1 {
-			return serviceError(
-				connect.CodeNotFound,
-				delibasev1.ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND,
-			)
-		}
 		completedAt = service.dependencies.Clock.Now().UTC()
 		response = &delibasev1.DeleteOrganizationResponse{
 			DeletionId: &delibasev1.UuidV7{Value: enqueuedID.String()},
@@ -1098,15 +1086,49 @@ func NewOrganizationDeletionHandler(
 		if store == nil || item.EntityID == uuid.Nil {
 			return reliability.ErrInvalidInput
 		}
-		_, err := store.Queries().GetOrganizationByID(ctx, pgUUID(item.EntityID))
+		organization, err := store.Queries().GetOrganizationByID(ctx, pgUUID(item.EntityID))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		// The deletion event completes only after the transaction has removed
-		// the operational organization row.
+		if organization.DeletedAt.Valid {
+			return nil
+		}
 		return reliability.ErrInvalidInput
+	}
+}
+
+type polarSubscriptionQueries interface {
+	GetCancelablePolarSubscriptionForOrganization(
+		context.Context,
+		pgtype.UUID,
+	) (string, error)
+}
+
+type polarCancellationClient interface {
+	CancelSubscription(context.Context, string) error
+}
+
+func NewPolarCancellationHandler(
+	queries polarSubscriptionQueries,
+	client polarCancellationClient,
+) reliability.Handler {
+	return func(ctx context.Context, item reliability.Item) error {
+		if queries == nil || client == nil || item.EntityID == uuid.Nil {
+			return reliability.ErrInvalidInput
+		}
+		subscriptionID, err := queries.GetCancelablePolarSubscriptionForOrganization(
+			ctx,
+			pgUUID(item.EntityID),
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return client.CancelSubscription(ctx, subscriptionID)
 	}
 }

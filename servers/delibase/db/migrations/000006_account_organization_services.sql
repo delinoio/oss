@@ -58,3 +58,91 @@ CREATE TABLE deleted_account_subjects (
 CREATE TRIGGER deleted_account_subjects_append_only
 BEFORE UPDATE OR DELETE ON deleted_account_subjects
 FOR EACH ROW EXECUTE FUNCTION reject_deletion_tombstone_mutation();
+
+CREATE OR REPLACE FUNCTION preserve_organization_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE'
+       AND (
+           NEW.organization_id IS DISTINCT FROM OLD.organization_id
+           OR NEW.account_id IS DISTINCT FROM OLD.account_id
+       ) THEN
+        RAISE EXCEPTION 'organization membership identity is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.role <> 'owner' THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+    IF TG_OP = 'UPDATE'
+       AND NEW.organization_id = OLD.organization_id
+       AND NEW.account_id = OLD.account_id
+       AND NEW.role = 'owner' THEN
+        RETURN NEW;
+    END IF;
+
+    PERFORM 1
+    FROM organizations
+    WHERE id = OLD.organization_id
+      AND deleted_at IS NULL
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM organization_memberships AS membership
+        JOIN accounts AS account ON account.id = membership.account_id
+        WHERE membership.organization_id = OLD.organization_id
+          AND membership.role = 'owner'
+          AND membership.account_id <> OLD.account_id
+          AND account.status = 'active'
+    ) THEN
+        RAISE EXCEPTION 'organization must retain at least one owner'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION preserve_active_organization_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM organization.id
+    FROM organizations AS organization
+    JOIN organization_memberships AS membership
+      ON membership.organization_id = organization.id
+    WHERE membership.account_id = NEW.id
+      AND membership.role = 'owner'
+      AND organization.deleted_at IS NULL
+    ORDER BY organization.id
+    FOR UPDATE OF organization;
+
+    IF EXISTS (
+        SELECT 1
+        FROM organization_memberships AS affected_membership
+        JOIN organizations AS organization
+          ON organization.id = affected_membership.organization_id
+        WHERE affected_membership.account_id = NEW.id
+          AND affected_membership.role = 'owner'
+          AND organization.deleted_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM organization_memberships AS owner_membership
+              JOIN accounts AS owner_account
+                ON owner_account.id = owner_membership.account_id
+              WHERE owner_membership.organization_id = organization.id
+                AND owner_membership.role = 'owner'
+                AND owner_account.status = 'active'
+          )
+    ) THEN
+        RAISE EXCEPTION 'organization must retain at least one active owner'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;

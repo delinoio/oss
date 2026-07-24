@@ -29,7 +29,6 @@ type Querier interface {
 	DeleteAccountMemberships(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DeleteDisabledAccount(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteDisabledServiceMeterAllowlists(ctx context.Context) error
-	DeleteMarkedOrganization(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteOrganizationMembership(ctx context.Context, arg DeleteOrganizationMembershipParams) (int64, error)
 	DeleteUnusedPolarMeterMappings(ctx context.Context) error
 	DisableAndEraseAccount(ctx context.Context, id pgtype.UUID) (Account, error)
@@ -50,6 +49,7 @@ type Querier interface {
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
 	GetAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
 	GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent, error)
+	GetCancelablePolarSubscriptionForOrganization(ctx context.Context, organizationID pgtype.UUID) (string, error)
 	GetDeletedAccountSubject(ctx context.Context, subjectDigest []byte) (DeletedAccountSubject, error)
 	GetDeletionJob(ctx context.Context, id pgtype.UUID) (DeletionJob, error)
 	GetIdempotencyRecord(ctx context.Context, arg GetIdempotencyRecordParams) (IdempotencyRecord, error)
@@ -66,6 +66,7 @@ type Querier interface {
 	InsertDeletionTombstone(ctx context.Context, arg InsertDeletionTombstoneParams) (DeletionTombstone, error)
 	InsertIdempotencyRecord(ctx context.Context, arg InsertIdempotencyRecordParams) (IdempotencyRecord, error)
 	ListAccountOrganizations(ctx context.Context, accountID pgtype.UUID) ([]ListAccountOrganizationsRow, error)
+	ListActiveReservationBlockersForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListActiveReservationBlockersForAccountRow, error)
 	ListLastOwnerBlockers(ctx context.Context, accountID pgtype.UUID) ([]ListLastOwnerBlockersRow, error)
 	ListOrganizationMembers(ctx context.Context, arg ListOrganizationMembersParams) ([]ListOrganizationMembersRow, error)
 	ListOrganizationsForAccount(ctx context.Context, arg ListOrganizationsForAccountParams) ([]Organization, error)

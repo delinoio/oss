@@ -92,6 +92,22 @@ WHERE membership.account_id = sqlc.arg(account_id)
   )
 ORDER BY organization.id;
 
+-- name: ListActiveReservationBlockersForAccount :many
+SELECT DISTINCT
+    organization.id,
+    organization.name,
+    team.id AS team_id,
+    team.name AS team_name
+FROM usage_reservations AS reservation
+JOIN organizations AS organization
+  ON organization.id = reservation.organization_id
+JOIN teams AS team
+  ON team.organization_id = reservation.organization_id
+ AND team.id = reservation.team_id
+WHERE reservation.account_id = sqlc.arg(account_id)
+  AND reservation.status = 'held'
+ORDER BY organization.id, team.id;
+
 -- name: DeleteAccountMemberships :execrows
 DELETE FROM organization_memberships
 WHERE account_id = sqlc.arg(account_id);
@@ -195,10 +211,13 @@ WHERE id = sqlc.arg(id)
   AND deleted_at IS NULL
 RETURNING *;
 
--- name: DeleteMarkedOrganization :execrows
-DELETE FROM organizations
-WHERE id = sqlc.arg(id)
-  AND deleted_at IS NOT NULL;
+-- name: GetCancelablePolarSubscriptionForOrganization :one
+SELECT polar_subscription_id
+FROM subscriptions
+WHERE organization_id = sqlc.arg(organization_id)
+  AND status IN ('pending', 'active', 'past_due')
+ORDER BY created_at DESC
+LIMIT 1;
 
 -- name: GetOrganizationMembership :one
 SELECT membership.*
