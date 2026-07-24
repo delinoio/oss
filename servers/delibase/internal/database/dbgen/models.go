@@ -31,6 +31,7 @@ type AuditEvent struct {
 	Result            string
 	SafeErrorClass    pgtype.Text
 	Metadata          []byte
+	RetainUntil       pgtype.Timestamptz
 }
 
 type BillingPeriod struct {
@@ -78,6 +79,14 @@ type CatalogPriceVersion struct {
 	CreatedAt        pgtype.Timestamptz
 }
 
+type DeletedAccountSubject struct {
+	SubjectDigest  []byte
+	AccountID      pgtype.UUID
+	ActorReference string
+	DeletedAt      pgtype.Timestamptz
+	RetainUntil    pgtype.Timestamptz
+}
+
 type DeletionJob struct {
 	ID                     pgtype.UUID
 	AccountID              pgtype.UUID
@@ -96,6 +105,14 @@ type DeletionJob struct {
 	ClaimedAt              pgtype.Timestamptz
 	ClaimExpiresAt         pgtype.Timestamptz
 	DeadLetterAttemptCount int32
+}
+
+type DeletionTombstone struct {
+	EntityType     string
+	EntityID       pgtype.UUID
+	ActorReference string
+	DeletedAt      pgtype.Timestamptz
+	RetainUntil    pgtype.Timestamptz
 }
 
 type IdempotencyRecord struct {
@@ -148,6 +165,7 @@ type LedgerEntry struct {
 	SourceReference               string
 	ActorReference                string
 	CreatedAt                     pgtype.Timestamptz
+	RetainUntil                   pgtype.Timestamptz
 }
 
 type Organization struct {
@@ -271,6 +289,7 @@ type UsageRecord struct {
 	CreditAppliedMicros  int64
 	OverageAppliedMicros int64
 	CommittedAt          pgtype.Timestamptz
+	RetainUntil          pgtype.Timestamptz
 }
 
 type UsageReservation struct {

@@ -864,13 +864,14 @@ const (
 	ErrorReason_ERROR_REASON_OWNER_ROLE_REQUIRED              ErrorReason = 24
 	ErrorReason_ERROR_REASON_ADMIN_ROLE_REQUIRED              ErrorReason = 25
 	// General resource and conflict failures.
-	ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND    ErrorReason = 40
-	ErrorReason_ERROR_REASON_RESOURCE_DELETED      ErrorReason = 41
-	ErrorReason_ERROR_REASON_RESOURCE_CONFLICT     ErrorReason = 42
-	ErrorReason_ERROR_REASON_SLUG_CONFLICT         ErrorReason = 43
-	ErrorReason_ERROR_REASON_SLUG_INVALID          ErrorReason = 44
-	ErrorReason_ERROR_REASON_MEMBER_ALREADY_EXISTS ErrorReason = 45
-	ErrorReason_ERROR_REASON_MEMBER_NOT_FOUND      ErrorReason = 46
+	ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND             ErrorReason = 40
+	ErrorReason_ERROR_REASON_RESOURCE_DELETED               ErrorReason = 41
+	ErrorReason_ERROR_REASON_RESOURCE_CONFLICT              ErrorReason = 42
+	ErrorReason_ERROR_REASON_SLUG_CONFLICT                  ErrorReason = 43
+	ErrorReason_ERROR_REASON_SLUG_INVALID                   ErrorReason = 44
+	ErrorReason_ERROR_REASON_MEMBER_ALREADY_EXISTS          ErrorReason = 45
+	ErrorReason_ERROR_REASON_MEMBER_NOT_FOUND               ErrorReason = 46
+	ErrorReason_ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS ErrorReason = 47
 	// Invitation state and role failures.
 	ErrorReason_ERROR_REASON_INVITATION_INVALID         ErrorReason = 60
 	ErrorReason_ERROR_REASON_INVITATION_EXPIRED         ErrorReason = 61
@@ -945,6 +946,7 @@ var (
 		44:  "ERROR_REASON_SLUG_INVALID",
 		45:  "ERROR_REASON_MEMBER_ALREADY_EXISTS",
 		46:  "ERROR_REASON_MEMBER_NOT_FOUND",
+		47:  "ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS",
 		60:  "ERROR_REASON_INVITATION_INVALID",
 		61:  "ERROR_REASON_INVITATION_EXPIRED",
 		62:  "ERROR_REASON_INVITATION_REVOKED",
@@ -1010,6 +1012,7 @@ var (
 		"ERROR_REASON_SLUG_INVALID":                         44,
 		"ERROR_REASON_MEMBER_ALREADY_EXISTS":                45,
 		"ERROR_REASON_MEMBER_NOT_FOUND":                     46,
+		"ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS":       47,
 		"ERROR_REASON_INVITATION_INVALID":                   60,
 		"ERROR_REASON_INVITATION_EXPIRED":                   61,
 		"ERROR_REASON_INVITATION_REVOKED":                   62,
@@ -1777,7 +1780,7 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	"\x1bDELETION_STATUS_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18DELETION_STATUS_ACCEPTED\x10\x01\x12+\n" +
 	"'DELETION_STATUS_EXTERNAL_ACTION_PENDING\x10\x02\x12\x1c\n" +
-	"\x18DELETION_STATUS_COMPLETE\x10\x03*\xb0\x14\n" +
+	"\x18DELETION_STATUS_COMPLETE\x10\x03*\xe1\x14\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12(\n" +
 	"$ERROR_REASON_AUTHENTICATION_REQUIRED\x10\x01\x12'\n" +
@@ -1801,7 +1804,8 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	"\x1aERROR_REASON_SLUG_CONFLICT\x10+\x12\x1d\n" +
 	"\x19ERROR_REASON_SLUG_INVALID\x10,\x12&\n" +
 	"\"ERROR_REASON_MEMBER_ALREADY_EXISTS\x10-\x12!\n" +
-	"\x1dERROR_REASON_MEMBER_NOT_FOUND\x10.\x12#\n" +
+	"\x1dERROR_REASON_MEMBER_NOT_FOUND\x10.\x12/\n" +
+	"+ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS\x10/\x12#\n" +
 	"\x1fERROR_REASON_INVITATION_INVALID\x10<\x12#\n" +
 	"\x1fERROR_REASON_INVITATION_EXPIRED\x10=\x12#\n" +
 	"\x1fERROR_REASON_INVITATION_REVOKED\x10>\x12(\n" +

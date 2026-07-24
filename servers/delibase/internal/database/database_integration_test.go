@@ -10,6 +10,7 @@ import (
 	"github.com/delinoio/oss/servers/delibase/internal/catalog"
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -67,6 +68,211 @@ func TestPostgreSQLMigrationsAndTransactionRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	second.Close()
+}
+
+func TestPostgreSQLOrganizationDeletionCleanupAndLiveSubscriptionSelection(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	store, err := Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	accountID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO accounts (id, logto_subject)
+		VALUES ($1, $2)
+	`, accountID, "deletion-cleanup-"+accountID.String()); err != nil {
+		t.Fatal(err)
+	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		organizationID.String(),
+		"Deletion Cleanup",
+		"deletion-cleanup-"+organizationID.String()[24:],
+		accountID.String(),
+	)
+	activeSubscriptionID := uuidv7.MustNew()
+	pendingSubscriptionID := uuidv7.MustNew()
+	invitationID := uuidv7.MustNew()
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO subscriptions (
+			id,
+			organization_id,
+			polar_subscription_id,
+			status,
+			created_at
+		) VALUES
+			($1, $3, $4, 'active', transaction_timestamp() - interval '1 hour'),
+			($2, $3, $5, 'pending', transaction_timestamp())
+	`,
+		activeSubscriptionID,
+		pendingSubscriptionID,
+		organizationID,
+		"polar-active-"+activeSubscriptionID.String(),
+		"polar-pending-"+pendingSubscriptionID.String(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO organization_invitations (
+			id,
+			organization_id,
+			token_hash,
+			organization_role,
+			created_by_account_id,
+			expires_at
+		) VALUES (
+			$1::uuid,
+			$2::uuid,
+			decode(repeat(replace($1::uuid::text, '-', ''), 2), 'hex'),
+			'admin',
+			$3::uuid,
+			transaction_timestamp() + interval '1 day'
+		)
+	`,
+		invitationID,
+		organizationID,
+		accountID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := store.Queries().GetCancelablePolarSubscriptionForOrganization(
+		ctx,
+		pgtype.UUID{Bytes: organizationID, Valid: true},
+	)
+	if err != nil || selected != "polar-active-"+activeSubscriptionID.String() {
+		t.Fatalf("cancelable subscription = %q, %v", selected, err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE organizations
+		SET deleted_at = transaction_timestamp()
+		WHERE id = $1
+	`, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := store.Queries().DeleteOrganizationOperationalData(
+		ctx,
+		pgtype.UUID{Bytes: organizationID, Valid: true},
+	)
+	if err != nil || !deleted {
+		t.Fatalf("operational deletion = %t, %v", deleted, err)
+	}
+	var teams, memberships, invitations, customers, subscriptions, slugs int
+	var name string
+	err = store.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM teams WHERE organization_id = $1),
+			(SELECT count(*) FROM organization_memberships WHERE organization_id = $1),
+			(SELECT count(*) FROM organization_invitations WHERE organization_id = $1),
+			(SELECT name FROM organizations WHERE id = $1),
+			(SELECT count(*) FROM polar_customers WHERE organization_id = $1),
+			(SELECT count(*) FROM subscriptions WHERE organization_id = $1),
+			(SELECT count(*) FROM organization_slug_registry WHERE organization_id = $1)
+	`, organizationID).Scan(
+		&teams,
+		&memberships,
+		&invitations,
+		&name,
+		&customers,
+		&subscriptions,
+		&slugs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if teams != 0 || memberships != 0 || invitations != 0 ||
+		name != "Deleted organization" || customers != 1 ||
+		subscriptions != 2 || slugs != 1 {
+		t.Fatalf(
+			"cleanup = teams:%d memberships:%d invitations:%d name:%q customers:%d subscriptions:%d slugs:%d",
+			teams,
+			memberships,
+			invitations,
+			name,
+			customers,
+			subscriptions,
+			slugs,
+		)
+	}
+}
+
+func TestPostgreSQLCurrentOrganizationBalanceUsesLedgerTotal(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	store, err := Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	accountID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO accounts (id, logto_subject)
+		VALUES ($1, $2)
+	`, accountID, "ledger-total-"+accountID.String()); err != nil {
+		t.Fatal(err)
+	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		organizationID.String(),
+		"Ledger Total",
+		"ledger-total-"+organizationID.String()[24:],
+		accountID.String(),
+	)
+
+	lowerID := uuidv7.MustNew()
+	higherID := uuidv7.MustNew()
+	createdAt := time.Now().UTC().Add(-time.Minute)
+	transaction, err := store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, entry_type, amount_micros,
+			balance_after_micros, source_reference, created_at
+		) VALUES ($1, $2, 'credit_grant', 7, 7, 'higher-id-first', $3)
+	`, higherID, organizationID, createdAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_entries (
+			id, organization_id, entry_type, amount_micros,
+			balance_after_micros, source_reference, created_at
+		) VALUES ($1, $2, 'credit_grant', 5, 12, 'lower-id-second', $3)
+	`, lowerID, organizationID, createdAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	balance, err := store.Queries().CurrentOrganizationBalance(
+		ctx,
+		pgtype.UUID{Bytes: organizationID, Valid: true},
+	)
+	if err != nil || balance != 12 {
+		t.Fatalf("current organization balance = %d, %v", balance, err)
+	}
 }
 
 func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
@@ -2016,6 +2222,17 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, inheritedHold, orgA, inheritedTeam, meterID, priceID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
+	hasActiveReservations, err := dbgen.New(transaction).
+		HasActiveReservationsForOrganizationMember(
+			ctx,
+			dbgen.HasActiveReservationsForOrganizationMemberParams{
+				OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(orgA), Valid: true},
+				AccountID:      pgtype.UUID{Bytes: uuid.MustParse(historyUser), Valid: true},
+			},
+		)
+	if err != nil || !hasActiveReservations {
+		t.Fatalf("active member reservation = %t, %v", hasActiveReservations, err)
+	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO ledger_entries (
 			id, organization_id, entry_type, amount_micros,
@@ -2058,6 +2275,17 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		WHERE id = $1
 	`, inheritedHold); err != nil {
 		t.Fatal(err)
+	}
+	hasActiveReservations, err = dbgen.New(transaction).
+		HasActiveReservationsForOrganizationMember(
+			ctx,
+			dbgen.HasActiveReservationsForOrganizationMemberParams{
+				OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(orgA), Valid: true},
+				AccountID:      pgtype.UUID{Bytes: uuid.MustParse(historyUser), Valid: true},
+			},
+		)
+	if err != nil || hasActiveReservations {
+		t.Fatalf("released member reservation = %t, %v", hasActiveReservations, err)
 	}
 	missingHold, err := transaction.Begin(ctx)
 	if err != nil {
