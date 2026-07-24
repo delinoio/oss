@@ -38,7 +38,13 @@ type Querier interface {
 	GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent, error)
 	GetDeletionJob(ctx context.Context, id pgtype.UUID) (DeletionJob, error)
 	GetIntegrationOutbox(ctx context.Context, id pgtype.UUID) (IntegrationOutbox, error)
+	GetPublicCatalogAppBySlug(ctx context.Context, slug string) (GetPublicCatalogAppBySlugRow, error)
+	GetPublicCatalogMeter(ctx context.Context, id pgtype.UUID) (GetPublicCatalogMeterRow, error)
 	GetWebhookInbox(ctx context.Context, id pgtype.UUID) (WebhookInbox, error)
+	// Public catalog reads intentionally select only enabled entries. The lateral
+	// price lookup exposes the exact effective version a later reservation pins.
+	ListPublicCatalogApps(ctx context.Context, arg ListPublicCatalogAppsParams) ([]ListPublicCatalogAppsRow, error)
+	ListPublicCatalogMeters(ctx context.Context, arg ListPublicCatalogMetersParams) ([]ListPublicCatalogMetersRow, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	Ping(ctx context.Context) (int64, error)
 	RecoverExpiredDeletionJobs(ctx context.Context, arg RecoverExpiredDeletionJobsParams) (int64, error)
