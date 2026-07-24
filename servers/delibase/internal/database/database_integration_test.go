@@ -2672,7 +2672,9 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 
 	if _, err := transaction.Exec(
 		ctx,
-		"INSERT INTO deletion_jobs (id, account_id, job_type) VALUES ($1, $2, 'account')",
+		`INSERT INTO deletion_jobs (
+			id, account_id, job_type, idempotency_key
+		) VALUES ($1, $2, 'account', 'schema-account-job')`,
 		accountJob, accountC,
 	); err != nil {
 		t.Fatal(err)
@@ -2682,7 +2684,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		SET status = 'failed',
 		    attempt_count = attempt_count + 1,
 		    next_attempt_at = transaction_timestamp() + interval '1 minute',
-		    safe_error_class = 'provider_unavailable'
+		    safe_error_class = 'dependency'
 		WHERE id = $1
 	`, accountJob); err != nil {
 		t.Fatal(err)
@@ -2711,12 +2713,13 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO deletion_jobs (
-			id, account_id, organization_id, job_type
+			id, account_id, organization_id, job_type, idempotency_key
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000146',
 			$1,
 			$2,
-			'account'
+			'account',
+			'invalid-account-job'
 		)
 	`, accountC, orgA)
 	if _, err := transaction.Exec(ctx, "DELETE FROM accounts WHERE id = $1", accountC); err != nil {
@@ -2745,7 +2748,9 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 
 	if _, err := transaction.Exec(
 		ctx,
-		"INSERT INTO deletion_jobs (id, organization_id, job_type) VALUES ($1, $2, 'organization')",
+		`INSERT INTO deletion_jobs (
+			id, organization_id, job_type, idempotency_key
+		) VALUES ($1, $2, 'organization', 'schema-organization-job')`,
 		orgJob, orgC,
 	); err != nil {
 		t.Fatal(err)
@@ -2756,12 +2761,13 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO deletion_jobs (
-			id, account_id, organization_id, job_type
+			id, account_id, organization_id, job_type, idempotency_key
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000147',
 			$1,
 			$2,
-			'organization'
+			'organization',
+			'invalid-organization-job'
 		)
 	`, accountA, orgC)
 	if _, err := transaction.Exec(ctx, `
@@ -2924,7 +2930,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		UPDATE webhook_inbox
 		SET attempt_count = attempt_count + 1,
 		    next_attempt_at = transaction_timestamp() + interval '1 minute',
-		    safe_error_class = 'provider_unavailable'
+		    safe_error_class = 'dependency'
 		WHERE provider = 'polar' AND provider_event_id = 'event-1'
 	`); err != nil {
 		t.Fatal(err)
@@ -2976,14 +2982,16 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO integration_outbox (
-			id, integration, operation, aggregate_type, aggregate_id, payload
+			id, integration, operation, aggregate_type, aggregate_id, payload,
+			idempotency_key
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000207',
 			'polar',
-			'send_usage',
+			'report_usage',
 			'usage_record',
 			$1,
-			'{"units":1}'
+			'{"units":1}',
+			'schema-usage-outbox'
 		)
 	`, recordID); err != nil {
 		t.Fatal(err)
@@ -2992,7 +3000,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		UPDATE integration_outbox
 		SET attempt_count = attempt_count + 1,
 		    next_attempt_at = transaction_timestamp() + interval '1 minute',
-		    safe_error_class = 'provider_unavailable'
+		    safe_error_class = 'dependency'
 		WHERE id = '0198a000-0000-7000-8000-000000000207'
 	`); err != nil {
 		t.Fatal(err)
@@ -3027,11 +3035,11 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, event_type, actor_reference, organization_id, result, metadata
 		) VALUES (
 			$1,
-			'schema.audit',
+			'authorization.decision',
 			'actor:v1:00000000000000000000000000000000',
 			$2,
 			'success',
-			'{"request_id":"request-1","trace_id":"0123456789abcdef0123456789abcdef","request_method":"POST","request_procedure":"/delibase.v1.UsageService/ReserveUsage"}'
+			'{"request_id":"0198a000-0000-7000-8000-000000000914","trace_id":"0123456789abcdef0123456789abcdef","request_method":"POST","request_procedure":"/delibase.v1.UsageService/ReserveUsage"}'
 		)
 	`, auditID, orgA); err != nil {
 		t.Fatal(err)
@@ -3041,7 +3049,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, event_type, actor_reference, organization_id, result
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000128',
-			'schema.audit',
+			'authorization.decision',
 			'raw-logto-subject',
 			$1,
 			'success'
@@ -3052,7 +3060,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, event_type, actor_reference, organization_id, result, metadata
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000215',
-			'schema.audit',
+			'authorization.decision',
 			'',
 			$1,
 			'success',
@@ -3064,7 +3072,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			id, event_type, actor_reference, organization_id, result, metadata
 		) VALUES (
 			'0198a000-0000-7000-8000-000000000129',
-			'schema.audit',
+			'authorization.decision',
 			'',
 			$1,
 			'success',

@@ -152,6 +152,64 @@ importers:
         specifier: 4.1.0
         version: 4.1.0(@types/node@24.10.9)(jsdom@28.0.0)(vite@8.1.5(@types/node@24.10.9)(jiti@2.6.1)(terser@5.46.1))
 
+  apps/devhud:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: 2.11.1
+        version: 2.11.1
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-dom:
+        specifier: 19.2.3
+        version: 19.2.3(react@19.2.3)
+    devDependencies:
+      '@eslint/js':
+        specifier: 9.39.2
+        version: 9.39.2
+      '@rsbuild/core':
+        specifier: 2.1.7
+        version: 2.1.7
+      '@rsbuild/plugin-react':
+        specifier: 2.1.0
+        version: 2.1.0(@rsbuild/core@2.1.7)(@rspack/core@2.1.5(@swc/helpers@0.5.23))
+      '@tauri-apps/cli-cef':
+        specifier: 3.0.0-alpha.6
+        version: 3.0.0-alpha.6
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      '@types/react':
+        specifier: 19.2.14
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.14)
+      '@typescript-eslint/eslint-plugin':
+        specifier: 8.53.1
+        version: 8.53.1(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: 8.53.1
+        version: 8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
+      eslint:
+        specifier: 9.39.2
+        version: 9.39.2(jiti@2.6.1)
+      eslint-plugin-jsx-a11y:
+        specifier: 6.10.2
+        version: 6.10.2(eslint@9.39.2(jiti@2.6.1))
+      eslint-plugin-react-hooks:
+        specifier: 7.0.1
+        version: 7.0.1(eslint@9.39.2(jiti@2.6.1))
+      globals:
+        specifier: 17.4.0
+        version: 17.4.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.0
+        version: 4.1.0(@types/node@24.10.9)(jsdom@28.0.0)(vite@8.1.5(@types/node@24.10.9)(jiti@2.6.1)(terser@5.46.1))
+
   apps/mpapp:
     dependencies:
       '@react-native-async-storage/async-storage':
@@ -1660,6 +1718,80 @@ packages:
     resolution: {integrity: sha512-yRg2pfOCxIs4ZJW3XYYHU/WgtD04FHSnfHlpRT7h7pR77hwkdRG4wxbKe4aq6P0RvXUTBSQpQeadS1SUYUe+KA==}
     peerDependencies:
       react: ^18 || ^19
+
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
+
+  '@tauri-apps/cli-cef-darwin-arm64@3.0.0-alpha.6':
+    resolution: {integrity: sha512-j6XHXCku1q82SXSXlQdzT7MbgOBX/ziOD+Z4c+B5D51zsaP3h6kcefpMzs71n9ZUegdw6AXpZpk+c+knOh2trQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@tauri-apps/cli-cef-darwin-x64@3.0.0-alpha.6':
+    resolution: {integrity: sha512-zBNxrXomAXSZPCYspOjvoi8aVAnJtkSOy3cVD+9aYDpf2zZL4R7VQXcY4M76PvqbGUmCOXT9ztzxV2MyWnBoDQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@tauri-apps/cli-cef-linux-arm-gnueabihf@3.0.0-alpha.6':
+    resolution: {integrity: sha512-EcNXX9xsAZj0BuRXBwliR35XML6B5aIbgH8blbEGAr3pDaSCBnNyS/dpORgSdCKuysLidBT7K8fer5mMtbSoUQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+
+  '@tauri-apps/cli-cef-linux-arm64-gnu@3.0.0-alpha.6':
+    resolution: {integrity: sha512-/AwSRWuE5UKGumrXdpRnIBDWVjFAMEMkSFbB/vpFx9PogQ/A0R+i6+zuBh7JPV7FKmyRzVJuNxZ8EmZ319Ir8g==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@tauri-apps/cli-cef-linux-arm64-musl@3.0.0-alpha.6':
+    resolution: {integrity: sha512-OZ5gjROy4/TlaYQ33roxQYcFIFJH+HZMER9gwTkWxfYUC1gTLLhsBeIYUZzWqm1NQiIc07likg081wsHkCRrWw==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@tauri-apps/cli-cef-linux-riscv64-gnu@3.0.0-alpha.6':
+    resolution: {integrity: sha512-r9TQKmN4KfeXiiusn0cppRxljKsf96vTsC1ehYi4beh+6JlmGR4pK7eb+LuOGJscnjurAA9b153fpeYO/O1PTw==}
+    engines: {node: '>= 10'}
+    cpu: [riscv64]
+    os: [linux]
+
+  '@tauri-apps/cli-cef-linux-x64-gnu@3.0.0-alpha.6':
+    resolution: {integrity: sha512-9rrMBVlqbNlp8nTJuZIDQ7iKFwGaVMRCNPIsUIZ56DiaCLoP4po+yvR48n+TyRPZYp1sb3q2Nr/5/zI2q/jFAQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+
+  '@tauri-apps/cli-cef-linux-x64-musl@3.0.0-alpha.6':
+    resolution: {integrity: sha512-pcFL71xscjEM/03lrH/GiqIr4SwBWlbvaRh8GxDePJqqrQojNn+kTzVvqowaXVbTrNr5rbHbXzY4rC/5/1Tbsw==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+
+  '@tauri-apps/cli-cef-win32-arm64-msvc@3.0.0-alpha.6':
+    resolution: {integrity: sha512-IrMgveBs0HNO7C7BaZCUHGtO9jPbop/iU/5XWNqBx7uYHJL565+yIlpzWPoXhT3qbt8h8FQFO6SU3N+zfvLipA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@tauri-apps/cli-cef-win32-ia32-msvc@3.0.0-alpha.6':
+    resolution: {integrity: sha512-qA/VaRdRwdMt9L2oDGNZPur108mUleKRUSCk6X8sVPcnPjzMfN4/aESeOKsW+zHXN/VhZbV3UieEg4IcYeI2RQ==}
+    engines: {node: '>= 10'}
+    cpu: [ia32]
+    os: [win32]
+
+  '@tauri-apps/cli-cef-win32-x64-msvc@3.0.0-alpha.6':
+    resolution: {integrity: sha512-EzlhstDVyvHy3M5ieSoH3VBlikgqQS99vFEDKFoy16mwIWUrTG1LkoSI0mKbqmO8DWIEzeSV17XiCw2XEcYslQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
+
+  '@tauri-apps/cli-cef@3.0.0-alpha.6':
+    resolution: {integrity: sha512-4Y52FZZuK6rpDDsJgxMp5q85QpQjf7Yo5IvLZs/CUBaIuMkGBDguDRcfkxhMJlu9qM/cLlBRW27OtqNdOW730w==}
+    engines: {node: '>= 10'}
+    hasBin: true
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -8142,6 +8274,55 @@ snapshots:
       '@tanstack/query-core': 5.101.4
       react: 19.2.3
 
+  '@tauri-apps/api@2.11.1': {}
+
+  '@tauri-apps/cli-cef-darwin-arm64@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-darwin-x64@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-linux-arm-gnueabihf@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-linux-arm64-gnu@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-linux-arm64-musl@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-linux-riscv64-gnu@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-linux-x64-gnu@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-linux-x64-musl@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-win32-arm64-msvc@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-win32-ia32-msvc@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef-win32-x64-msvc@3.0.0-alpha.6':
+    optional: true
+
+  '@tauri-apps/cli-cef@3.0.0-alpha.6':
+    optionalDependencies:
+      '@tauri-apps/cli-cef-darwin-arm64': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-darwin-x64': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-linux-arm-gnueabihf': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-linux-arm64-gnu': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-linux-arm64-musl': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-linux-riscv64-gnu': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-linux-x64-gnu': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-linux-x64-musl': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-win32-arm64-msvc': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-win32-ia32-msvc': 3.0.0-alpha.6
+      '@tauri-apps/cli-cef-win32-x64-msvc': 3.0.0-alpha.6
+
   '@testing-library/dom@10.4.1':
     dependencies:
       '@babel/code-frame': 7.29.7
@@ -9589,7 +9770,7 @@ snapshots:
       eslint: 9.39.4(jiti@2.6.1)
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-expo: 0.1.4(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-react: 7.37.5(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-react-hooks: 5.2.0(eslint@9.39.4(jiti@2.6.1))
       globals: 16.5.0
@@ -9618,7 +9799,7 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
@@ -9642,7 +9823,7 @@ snapshots:
       - supports-color
       - typescript
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9

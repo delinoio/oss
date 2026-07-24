@@ -39,6 +39,23 @@ never include configured values.
 complete document and transactionally synchronizes apps, meters, price versions,
 service allowlists, and Polar meter mappings before readiness is exposed.
 
+## Persistence reliability
+
+`internal/reliability` supplies typed transaction-bound enqueue functions for
+the Polar webhook inbox, Polar/Logto integration outbox, account/organization
+deletion jobs, and immutable audit events. Workers register typed handlers and
+use leased skip-locked PostgreSQL claims. Normal failures receive exactly 12
+capped exponential-backoff attempts; retained dead letters are automatically
+eligible every 24 hours until success. Clocks, jitter, and claim tokens are
+injectable in tests. The layer has no manual replay API, operator RPC,
+dashboard, kill switch, or feature-flag surface.
+
+Queue payloads accept bounded JSON objects only and reject credential, token,
+authorization-header, webhook-secret, card, and raw billing-PII shapes.
+Operational worker logs contain only stable handler/queue identifiers, safe
+UUID entity identifiers, pseudonymous actors, attempt/result state, and safe
+error classifications.
+
 Browser configuration belongs to DeliDev, is non-secret, and is not consumed
 by this process:
 
@@ -59,8 +76,9 @@ go vet ./servers/delibase/...
 ```
 
 When Docker is available, the PostgreSQL harness creates an ephemeral database,
-applies the ordered migrations twice, checks readiness, and verifies a failed
-transaction is rolled back:
+applies the ordered migrations twice, and runs transaction, duplicate enqueue,
+concurrent claim, crash/restart, retry/dead-letter, exact transition, immutable
+audit, and credential-rejection integration tests:
 
 ```sh
 servers/delibase/scripts/test-postgres.sh

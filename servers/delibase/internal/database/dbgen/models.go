@@ -79,17 +79,23 @@ type CatalogPriceVersion struct {
 }
 
 type DeletionJob struct {
-	ID             pgtype.UUID
-	AccountID      pgtype.UUID
-	OrganizationID pgtype.UUID
-	JobType        string
-	Status         string
-	CreatedAt      pgtype.Timestamptz
-	CompletedAt    pgtype.Timestamptz
-	AttemptCount   int32
-	NextAttemptAt  pgtype.Timestamptz
-	DeadLetteredAt pgtype.Timestamptz
-	SafeErrorClass pgtype.Text
+	ID                     pgtype.UUID
+	AccountID              pgtype.UUID
+	OrganizationID         pgtype.UUID
+	JobType                string
+	Status                 string
+	CreatedAt              pgtype.Timestamptz
+	CompletedAt            pgtype.Timestamptz
+	AttemptCount           int32
+	NextAttemptAt          pgtype.Timestamptz
+	DeadLetteredAt         pgtype.Timestamptz
+	SafeErrorClass         pgtype.Text
+	IdempotencyKey         string
+	ActorReference         string
+	ClaimToken             pgtype.UUID
+	ClaimedAt              pgtype.Timestamptz
+	ClaimExpiresAt         pgtype.Timestamptz
+	DeadLetterAttemptCount int32
 }
 
 type IdempotencyRecord struct {
@@ -106,18 +112,24 @@ type IdempotencyRecord struct {
 }
 
 type IntegrationOutbox struct {
-	ID             pgtype.UUID
-	Integration    string
-	Operation      string
-	AggregateType  string
-	AggregateID    pgtype.UUID
-	Payload        []byte
-	CreatedAt      pgtype.Timestamptz
-	DeliveredAt    pgtype.Timestamptz
-	AttemptCount   int32
-	NextAttemptAt  pgtype.Timestamptz
-	DeadLetteredAt pgtype.Timestamptz
-	SafeErrorClass pgtype.Text
+	ID                     pgtype.UUID
+	Integration            string
+	Operation              string
+	AggregateType          string
+	AggregateID            pgtype.UUID
+	Payload                []byte
+	CreatedAt              pgtype.Timestamptz
+	DeliveredAt            pgtype.Timestamptz
+	AttemptCount           int32
+	NextAttemptAt          pgtype.Timestamptz
+	DeadLetteredAt         pgtype.Timestamptz
+	SafeErrorClass         pgtype.Text
+	IdempotencyKey         string
+	ActorReference         string
+	ClaimToken             pgtype.UUID
+	ClaimedAt              pgtype.Timestamptz
+	ClaimExpiresAt         pgtype.Timestamptz
+	DeadLetterAttemptCount int32
 }
 
 type LedgerEntry struct {
@@ -288,16 +300,21 @@ type UsageReservation struct {
 }
 
 type WebhookInbox struct {
-	ID              pgtype.UUID
-	Provider        string
-	ProviderEventID string
-	EventType       string
-	Payload         []byte
-	PayloadSha256   []byte
-	ReceivedAt      pgtype.Timestamptz
-	ProcessedAt     pgtype.Timestamptz
-	AttemptCount    int32
-	NextAttemptAt   pgtype.Timestamptz
-	DeadLetteredAt  pgtype.Timestamptz
-	SafeErrorClass  pgtype.Text
+	ID                     pgtype.UUID
+	Provider               string
+	ProviderEventID        string
+	EventType              string
+	Payload                []byte
+	PayloadSha256          []byte
+	ReceivedAt             pgtype.Timestamptz
+	ProcessedAt            pgtype.Timestamptz
+	AttemptCount           int32
+	NextAttemptAt          pgtype.Timestamptz
+	DeadLetteredAt         pgtype.Timestamptz
+	SafeErrorClass         pgtype.Text
+	ActorReference         string
+	ClaimToken             pgtype.UUID
+	ClaimedAt              pgtype.Timestamptz
+	ClaimExpiresAt         pgtype.Timestamptz
+	DeadLetterAttemptCount int32
 }
