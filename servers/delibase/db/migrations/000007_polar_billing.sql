@@ -10,6 +10,32 @@ ALTER TABLE polar_customers
 ALTER TABLE subscriptions
     ADD COLUMN provider_event_at timestamptz NOT NULL DEFAULT '-infinity';
 
+CREATE OR REPLACE FUNCTION preserve_terminal_subscription()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF OLD.status IN ('canceled', 'revoked')
+           AND EXISTS (
+               SELECT 1
+               FROM organizations
+               WHERE id = OLD.organization_id
+           ) THEN
+            RAISE EXCEPTION 'terminal subscription history is immutable'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    IF OLD.status = 'revoked' THEN
+        RAISE EXCEPTION 'revoked subscription history is immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
 ALTER TABLE billing_periods
     ADD COLUMN requested_overage_limit_micros bigint;
 UPDATE billing_periods

@@ -297,6 +297,36 @@ func (q *Queries) GetBillingSummary(ctx context.Context, organizationID pgtype.U
 	return i, err
 }
 
+const getCurrentActiveBillingPeriod = `-- name: GetCurrentActiveBillingPeriod :one
+SELECT period.id, period.organization_id, period.subscription_id, period.starts_at, period.ends_at, period.overage_limit_micros, period.created_at, period.requested_overage_limit_micros
+FROM billing_periods AS period
+JOIN subscriptions AS subscription
+  ON subscription.organization_id = period.organization_id
+ AND subscription.id = period.subscription_id
+WHERE period.organization_id = $1
+  AND period.starts_at <= transaction_timestamp()
+  AND period.ends_at > transaction_timestamp()
+  AND subscription.status = 'active'
+  AND subscription.current_period_starts_at = period.starts_at
+  AND subscription.current_period_ends_at = period.ends_at
+`
+
+func (q *Queries) GetCurrentActiveBillingPeriod(ctx context.Context, organizationID pgtype.UUID) (BillingPeriod, error) {
+	row := q.db.QueryRow(ctx, getCurrentActiveBillingPeriod, organizationID)
+	var i BillingPeriod
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.SubscriptionID,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.OverageLimitMicros,
+		&i.CreatedAt,
+		&i.RequestedOverageLimitMicros,
+	)
+	return i, err
+}
+
 const getPolarCatalogMapping = `-- name: GetPolarCatalogMapping :one
 SELECT singleton, polar_product_id, polar_environment, currency, recurring_interval, price_micros, cycle_grant_micros, updated_at FROM polar_catalog_mappings WHERE singleton
 `
@@ -790,7 +820,7 @@ SET status = $1,
     updated_at = transaction_timestamp()
 WHERE polar_subscription_id = $5
   AND provider_event_at <= $4
-  AND status NOT IN ('canceled', 'revoked')
+  AND status <> 'revoked'
 RETURNING id, organization_id, polar_subscription_id, status, current_period_starts_at, current_period_ends_at, created_at, updated_at, provider_event_at
 `
 

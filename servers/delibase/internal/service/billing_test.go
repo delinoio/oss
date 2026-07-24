@@ -2,10 +2,12 @@ package service
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
+	"github.com/google/uuid"
 )
 
 func TestMemberBillingSummaryExposesOnlySharedAvailableCredit(t *testing.T) {
@@ -46,6 +48,7 @@ func TestPolarSubscriptionStateMappingSupportsPastDueRecoveryAndTerminals(
 		{reliability.WebhookSubscriptionPastDue, "active", "past_due"},
 		{reliability.WebhookSubscriptionActive, "past_due", "active"},
 		{reliability.WebhookSubscriptionUpdated, "active", "active"},
+		{reliability.WebhookSubscriptionUpdated, "unpaid", "revoked"},
 		{reliability.WebhookSubscriptionCanceled, "active", "canceled"},
 		{reliability.WebhookSubscriptionRevoked, "active", "revoked"},
 	}
@@ -53,6 +56,44 @@ func TestPolarSubscriptionStateMappingSupportsPastDueRecoveryAndTerminals(
 		if got := polarSubscriptionStatus(test.event, test.status); got != test.want {
 			t.Errorf("status(%q, %q) = %q, want %q",
 				test.event, test.status, got, test.want)
+		}
+	}
+}
+
+func TestProviderIdempotencyKeyPreservesLocalScope(t *testing.T) {
+	t.Parallel()
+	organizationID := uuid.MustParse("0198a000-0000-7000-8000-000000000001")
+	base := providerIdempotencyKey(
+		"create_subscription_checkout", "user-1", organizationID, "shared-key",
+	)
+	if len(base) != len("delibase:v1:")+64 ||
+		!strings.HasPrefix(base, "delibase:v1:") {
+		t.Fatalf("provider key = %q", base)
+	}
+	if base != providerIdempotencyKey(
+		"create_subscription_checkout", "user-1", organizationID, "shared-key",
+	) {
+		t.Fatal("provider key is not deterministic")
+	}
+	for name, candidate := range map[string]string{
+		"operation": providerIdempotencyKey(
+			"create_billing_portal_session", "user-1", organizationID, "shared-key",
+		),
+		"subject": providerIdempotencyKey(
+			"create_subscription_checkout", "user-2", organizationID, "shared-key",
+		),
+		"organization": providerIdempotencyKey(
+			"create_subscription_checkout",
+			"user-1",
+			uuid.MustParse("0198a000-0000-7000-8000-000000000002"),
+			"shared-key",
+		),
+		"caller key": providerIdempotencyKey(
+			"create_subscription_checkout", "user-1", organizationID, "other-key",
+		),
+	} {
+		if candidate == base {
+			t.Errorf("%s did not change provider key", name)
 		}
 	}
 }

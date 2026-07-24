@@ -211,6 +211,19 @@ WHERE organization_id = sqlc.arg(organization_id)
   AND status = 'active'
 FOR UPDATE;
 
+-- name: GetCurrentActiveBillingPeriod :one
+SELECT period.*
+FROM billing_periods AS period
+JOIN subscriptions AS subscription
+  ON subscription.organization_id = period.organization_id
+ AND subscription.id = period.subscription_id
+WHERE period.organization_id = sqlc.arg(organization_id)
+  AND period.starts_at <= transaction_timestamp()
+  AND period.ends_at > transaction_timestamp()
+  AND subscription.status = 'active'
+  AND subscription.current_period_starts_at = period.starts_at
+  AND subscription.current_period_ends_at = period.ends_at;
+
 -- name: InsertSubscription :one
 INSERT INTO subscriptions (
     id, organization_id, polar_subscription_id, status,
@@ -231,7 +244,7 @@ SET status = sqlc.arg(status),
     updated_at = transaction_timestamp()
 WHERE polar_subscription_id = sqlc.arg(polar_subscription_id)
   AND provider_event_at <= sqlc.arg(provider_event_at)
-  AND status NOT IN ('canceled', 'revoked')
+  AND status <> 'revoked'
 RETURNING *;
 
 -- name: EnsureBillingPeriod :one

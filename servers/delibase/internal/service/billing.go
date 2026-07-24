@@ -126,7 +126,9 @@ func (service *Billing) CreateSubscriptionCheckout(
 			OrganizationID: organizationID.String(),
 			SuccessURL:     request.Msg.SuccessUrl,
 			CancelURL:      request.Msg.CancelUrl,
-			IdempotencyKey: key,
+			IdempotencyKey: providerIdempotencyKey(
+				"create_subscription_checkout", subject, organizationID, key,
+			),
 		},
 	)
 	if err != nil {
@@ -196,7 +198,9 @@ func (service *Billing) CreateBillingPortalSession(
 		contracts.PortalRequest{
 			OrganizationID: organizationID.String(),
 			ReturnURL:      request.Msg.ReturnUrl,
-			IdempotencyKey: key,
+			IdempotencyKey: providerIdempotencyKey(
+				"create_billing_portal_session", subject, organizationID, key,
+			),
 		},
 	)
 	if err != nil {

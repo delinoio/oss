@@ -58,6 +58,7 @@ type Querier interface {
 	GetBillingAccess(ctx context.Context, arg GetBillingAccessParams) (GetBillingAccessRow, error)
 	GetBillingSummary(ctx context.Context, organizationID pgtype.UUID) (GetBillingSummaryRow, error)
 	GetCancelablePolarSubscriptionForOrganization(ctx context.Context, organizationID pgtype.UUID) (string, error)
+	GetCurrentActiveBillingPeriod(ctx context.Context, organizationID pgtype.UUID) (BillingPeriod, error)
 	GetDeletedAccountSubject(ctx context.Context, subjectDigest []byte) (DeletedAccountSubject, error)
 	GetDeletionJob(ctx context.Context, id pgtype.UUID) (DeletionJob, error)
 	GetIdempotencyRecord(ctx context.Context, arg GetIdempotencyRecordParams) (IdempotencyRecord, error)

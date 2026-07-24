@@ -253,7 +253,7 @@ func reconcilePolarSubscription(
 	)
 	if err == nil {
 		if existing.ProviderEventAt.Time.After(event.EventAt) ||
-			existing.Status == "canceled" || existing.Status == "revoked" {
+			existing.Status == "revoked" {
 			return existing, nil
 		}
 		updated, updateErr := queries.UpdateSubscriptionFromPolar(
@@ -432,6 +432,15 @@ func processPolarRefund(
 	shortfallAfter := maxInt64(-nextSettledBalance, 0)
 	newShortfall := shortfallAfter - shortfallBefore
 	if newShortfall > 0 {
+		shortfallPeriodID := cycle.BillingPeriodID
+		currentPeriod, currentPeriodErr := queries.GetCurrentActiveBillingPeriod(
+			ctx, cycle.OrganizationID,
+		)
+		if currentPeriodErr == nil {
+			shortfallPeriodID = currentPeriod.ID
+		} else if !errors.Is(currentPeriodErr, pgx.ErrNoRows) {
+			return currentPeriodErr
+		}
 		shortfallID, idErr := ids.New()
 		if idErr != nil {
 			return idErr
@@ -441,7 +450,7 @@ func processPolarRefund(
 			dbgen.InsertBillingShortfallParams{
 				ID:              pgUUID(shortfallID),
 				OrganizationID:  cycle.OrganizationID,
-				BillingPeriodID: cycle.BillingPeriodID,
+				BillingPeriodID: shortfallPeriodID,
 				PolarRefundID:   event.ObjectID,
 				SourceReference: "polar-event:" + item.ID.String(),
 				AmountMicros:    newShortfall,
@@ -502,7 +511,7 @@ func polarSubscriptionStatus(
 		return "past_due"
 	case "canceled":
 		return "canceled"
-	case "revoked":
+	case "revoked", "unpaid":
 		return "revoked"
 	case "incomplete", "pending":
 		return "pending"
