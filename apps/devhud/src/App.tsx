@@ -38,7 +38,7 @@ function EmptyTools({ compact = false }: { compact?: boolean }) {
   return <section className={compact ? "empty-state compact" : "empty-state"} aria-labelledby="tools-empty-title">
     <p className="eyebrow">Local foundation</p><h2 id="tools-empty-title">No tools yet</h2>
     <p>No tools are available in this foundation preview.</p>
-    <button className="primary-button" onClick={openSettings} type="button">Settings</button>
+    <button className="primary-button" onClick={openSettings} type="button">{compact ? "Open settings" : "Settings"}</button>
   </section>;
 }
 

@@ -6,4 +6,6 @@
 @media (min-width: 48rem) { .desktop-shell { padding:2rem; } }
 
 :root[data-theme="dark"] .eyebrow { color:#9ec5ff; }
+:root[data-theme="dark"] .error { color:#ffb4ab; }
 @media (prefers-color-scheme: dark) { :root[data-theme="system"] .eyebrow { color:#9ec5ff; } }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] .error { color:#ffb4ab; } }

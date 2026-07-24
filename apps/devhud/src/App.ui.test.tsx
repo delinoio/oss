@@ -74,6 +74,7 @@ describe("DevHud application surfaces", () => {
     const user = userEvent.setup();
     render(<App platform="mobile" />);
     expect(screen.getByRole("heading", { name: "No tools yet" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open settings" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Widgets" }));
     expect(screen.getByRole("heading", { name: "No widgets available" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Diagnostics" }));
