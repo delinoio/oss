@@ -60,7 +60,6 @@ func TestProjectWebhookRemovesBillingPIIAndPinsPaidCycleFields(t *testing.T) {
 			},
 			"subscription":{
 				"id":"subscription_1",
-				"status":"active",
 				"current_period_start":"2026-07-01T00:00:00Z",
 				"current_period_end":"2026-08-01T00:00:00Z"
 			}

@@ -42,6 +42,7 @@ func TestPolarSubscriptionStateMappingSupportsPastDueRecoveryAndTerminals(
 		status string
 		want   string
 	}{
+		{reliability.WebhookOrderPaid, "", "active"},
 		{reliability.WebhookSubscriptionPastDue, "active", "past_due"},
 		{reliability.WebhookSubscriptionActive, "past_due", "active"},
 		{reliability.WebhookSubscriptionUpdated, "active", "active"},

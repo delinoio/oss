@@ -280,7 +280,6 @@ func projectWebhook(
 		projected.ExternalID = order.Customer.ExternalID
 		projected.SubscriptionID = order.SubscriptionID
 		projected.ProductID = order.ProductID
-		projected.Status = order.Subscription.Status
 		projected.Currency = strings.ToLower(order.Currency)
 		projected.BillingReason = order.BillingReason
 		projected.Paid = true

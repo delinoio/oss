@@ -232,6 +232,7 @@ type OrganizationSlugRegistry struct {
 type PolarCatalogMapping struct {
 	Singleton         bool
 	PolarProductID    string
+	PolarEnvironment  string
 	Currency          string
 	RecurringInterval string
 	PriceMicros       int64

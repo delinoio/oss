@@ -19,6 +19,14 @@ const (
 	defaultAddress     = ":8080"
 )
 
+// PolarEnvironment identifies the isolated provider API and persisted catalog.
+type PolarEnvironment string
+
+const (
+	PolarEnvironmentProduction PolarEnvironment = "production"
+	PolarEnvironmentSandbox    PolarEnvironment = "sandbox"
+)
+
 // LookupEnv matches os.LookupEnv and makes environment loading deterministic
 // in tests.
 type LookupEnv func(string) (string, bool)
@@ -42,7 +50,7 @@ type Config struct {
 	PolarAccessToken   string
 	PolarWebhookSecret string
 	PolarProductID     string
-	PolarSandbox       bool
+	PolarEnvironment   PolarEnvironment
 	LogPseudonymKey    []byte
 }
 
@@ -131,12 +139,12 @@ func Load(lookup LookupEnv) (Config, error) {
 		strings.ContainsAny(result.PolarProductID, "/\x00\r\n") {
 		return Config{}, errors.New("config: DELIBASE_POLAR_PRODUCT_ID is invalid")
 	}
+	result.PolarEnvironment = PolarEnvironmentProduction
 	if value, ok := lookup("DELIBASE_POLAR_ENVIRONMENT"); ok &&
 		strings.TrimSpace(value) != "" {
-		switch value {
-		case "production":
-		case "sandbox":
-			result.PolarSandbox = true
+		switch PolarEnvironment(value) {
+		case PolarEnvironmentProduction, PolarEnvironmentSandbox:
+			result.PolarEnvironment = PolarEnvironment(value)
 		default:
 			return Config{}, errors.New("config: DELIBASE_POLAR_ENVIRONMENT is invalid")
 		}

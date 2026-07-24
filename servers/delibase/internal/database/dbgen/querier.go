@@ -53,6 +53,7 @@ type Querier interface {
 	ForfeitOrganizationCredit(ctx context.Context, arg ForfeitOrganizationCreditParams) (LedgerEntry, error)
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
 	GetAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
+	GetActiveSubscriptionForOrganization(ctx context.Context, organizationID pgtype.UUID) (Subscription, error)
 	GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent, error)
 	GetBillingAccess(ctx context.Context, arg GetBillingAccessParams) (GetBillingAccessRow, error)
 	GetBillingSummary(ctx context.Context, organizationID pgtype.UUID) (GetBillingSummaryRow, error)
@@ -113,7 +114,7 @@ type Querier interface {
 	UpdateSubscriptionFromPolar(ctx context.Context, arg UpdateSubscriptionFromPolarParams) (Subscription, error)
 	UpsertCatalogApp(ctx context.Context, arg UpsertCatalogAppParams) error
 	UpsertCatalogMeter(ctx context.Context, arg UpsertCatalogMeterParams) error
-	UpsertPolarCatalogMapping(ctx context.Context, polarProductID string) (PolarCatalogMapping, error)
+	UpsertPolarCatalogMapping(ctx context.Context, arg UpsertPolarCatalogMappingParams) (PolarCatalogMapping, error)
 	UpsertPolarRefund(ctx context.Context, arg UpsertPolarRefundParams) (PolarRefund, error)
 	UpsertServiceIdentity(ctx context.Context, arg UpsertServiceIdentityParams) error
 	UpsertServiceMeterAllowlist(ctx context.Context, arg UpsertServiceMeterAllowlistParams) error

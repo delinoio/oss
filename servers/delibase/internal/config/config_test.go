@@ -28,7 +28,8 @@ func TestLoadRequiresExplicitSandboxOptIn(t *testing.T) {
 	values := validEnvironment()
 	values["DELIBASE_POLAR_ENVIRONMENT"] = "sandbox"
 	configuration, err := Load(lookup(values))
-	if err != nil || !configuration.PolarSandbox {
+	if err != nil ||
+		configuration.PolarEnvironment != PolarEnvironmentSandbox {
 		t.Fatalf("sandbox configuration = %#v, %v", configuration, err)
 	}
 	values["DELIBASE_POLAR_ENVIRONMENT"] = "staging"
@@ -52,6 +53,7 @@ func TestLoadValidEnvironment(t *testing.T) {
 	}
 	if configuration.APIOrigin != CanonicalAPIOrigin ||
 		configuration.HTTPAddress != ":8080" ||
+		configuration.PolarEnvironment != PolarEnvironmentProduction ||
 		len(configuration.CORSAllowedOrigins) != 1 {
 		t.Fatalf("configuration = %#v", configuration)
 	}

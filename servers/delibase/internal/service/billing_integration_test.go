@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -74,19 +75,38 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	const productID = "product_monthly_10_usd"
-	if err := store.SyncPolarCatalog(ctx, productID); err != nil {
+	if err := store.SyncPolarCatalog(ctx, productID, "production"); err != nil {
 		t.Fatal(err)
+	}
+	if err := store.SyncPolarCatalog(ctx, productID, "sandbox"); err == nil {
+		t.Fatal("Polar catalog accepted a provider environment change")
 	}
 	ids := defaultIDGenerator{}
 	handler := NewPolarWebhookProcessor(store, ids)
 	periodStart := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	periodEnd := periodStart.Add(31 * 24 * time.Hour)
+	canceledPayload, _ := json.Marshal(polarBillingEvent{
+		Type:       string(reliability.WebhookSubscriptionCanceled),
+		EventAt:    periodStart.Add(2 * time.Minute),
+		ObjectID:   "subscription_1",
+		CustomerID: "customer_" + organizationID.String(),
+		ExternalID: organizationID.String(), SubscriptionID: "subscription_1",
+		ProductID: productID, CurrentPeriodStart: periodStart,
+		CurrentPeriodEnd: periodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarSubscriptionCanceled,
+		Payload:   canceledPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	paidPayload, _ := json.Marshal(polarBillingEvent{
 		Type: string(reliability.WebhookOrderPaid), EventAt: periodStart.Add(time.Minute),
 		ObjectID: "order_1", OrderID: "order_1",
 		CustomerID: "customer_" + organizationID.String(),
 		ExternalID: organizationID.String(), SubscriptionID: "subscription_1",
-		ProductID: productID, Status: "active", Currency: "usd",
+		ProductID: productID, Currency: "usd",
 		BillingReason: "subscription_cycle", Paid: true,
 		CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodEnd,
 	})
@@ -99,6 +119,23 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 	}
 	if err := handler(ctx, paidItem); err != nil {
 		t.Fatal(err)
+	}
+	invalidProductPayload, _ := json.Marshal(polarBillingEvent{
+		Type:               string(reliability.WebhookSubscriptionActive),
+		EventAt:            periodStart.Add(3 * time.Minute),
+		ObjectID:           "subscription_wrong_product",
+		CustomerID:         "customer_" + organizationID.String(),
+		ExternalID:         organizationID.String(),
+		SubscriptionID:     "subscription_wrong_product",
+		ProductID:          "product_other",
+		CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarSubscriptionActive,
+		Payload:   invalidProductPayload,
+	}); !errors.Is(err, reliability.ErrInvalidInput) {
+		t.Fatalf("non-catalog subscription error = %v", err)
 	}
 	summary, err := store.Queries().GetBillingSummary(ctx, pgUUID(organizationID))
 	if err != nil || summary.AvailableCreditMicros != cycleGrantMicros {

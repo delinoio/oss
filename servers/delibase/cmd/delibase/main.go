@@ -114,7 +114,9 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		return &startupError{stage: stageCatalog}
 	}
 	if err := store.SyncPolarCatalog(
-		databaseCtx, configuration.PolarProductID,
+		databaseCtx,
+		configuration.PolarProductID,
+		string(configuration.PolarEnvironment),
 	); err != nil {
 		cancelDatabase()
 		return &startupError{stage: stageCatalog}
@@ -145,7 +147,7 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	polarClient, err := polar.NewBilling(
 		configuration.PolarAccessToken,
 		configuration.PolarProductID,
-		configuration.PolarSandbox,
+		configuration.PolarEnvironment == config.PolarEnvironmentSandbox,
 		nil,
 	)
 	if err != nil {

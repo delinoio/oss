@@ -109,6 +109,11 @@ func (service *Billing) CreateSubscriptionCheckout(
 		)
 		return connect.NewResponse(replayed), nil
 	}
+	if err := service.ensureSubscriptionCheckoutAvailable(
+		ctx, subject, organizationID,
+	); err != nil {
+		return nil, err
+	}
 	if service.dependencies.Polar == nil {
 		return nil, serviceError(
 			connect.CodeUnavailable,
@@ -425,6 +430,44 @@ func (service *Billing) billingReplay(
 		},
 	)
 	return found, databaseError(err)
+}
+
+func (service *Billing) ensureSubscriptionCheckoutAvailable(
+	ctx context.Context,
+	subject string,
+	organizationID uuid.UUID,
+) error {
+	err := service.dependencies.Store.WithinTransaction(
+		ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			account, transactionErr := activeAccount(ctx, queries, subject)
+			if transactionErr != nil {
+				return transactionErr
+			}
+			if _, transactionErr = billingAccess(
+				ctx, queries, organizationID, account.ID, true,
+			); transactionErr != nil {
+				return transactionErr
+			}
+			if _, transactionErr = queries.LockOrganizationForBilling(
+				ctx, pgUUID(organizationID),
+			); transactionErr != nil {
+				return transactionErr
+			}
+			if _, transactionErr = queries.GetActiveSubscriptionForOrganization(
+				ctx, pgUUID(organizationID),
+			); transactionErr == nil {
+				return serviceError(
+					connect.CodeAlreadyExists,
+					delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
+				)
+			} else if !errors.Is(transactionErr, pgx.ErrNoRows) {
+				return transactionErr
+			}
+			return nil
+		},
+	)
+	return databaseError(err)
 }
 
 func (service *Billing) persistBillingMutation(

@@ -63,6 +63,8 @@ ALTER TABLE webhook_inbox
 CREATE TABLE polar_catalog_mappings (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
     polar_product_id text NOT NULL UNIQUE,
+    polar_environment text NOT NULL
+        CHECK (polar_environment IN ('production', 'sandbox')),
     currency text NOT NULL DEFAULT 'usd' CHECK (currency = 'usd'),
     recurring_interval text NOT NULL DEFAULT 'month'
         CHECK (recurring_interval = 'month'),
@@ -219,3 +221,77 @@ $$;
 CREATE TRIGGER usage_reservations_refund_shortfall_capacity
 BEFORE INSERT ON usage_reservations
 FOR EACH ROW EXECUTE FUNCTION enforce_refund_shortfall_overage_limit();
+
+CREATE FUNCTION enforce_refund_shortfall_commit_capacity()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    period_id uuid;
+    period_start timestamptz;
+    period_end timestamptz;
+    period_limit numeric;
+    committed_overage numeric;
+    held_overage numeric;
+    refund_shortfall numeric;
+BEGIN
+    IF NEW.overage_applied_micros = 0 THEN
+        RETURN NEW;
+    END IF;
+
+    PERFORM 1
+    FROM organizations
+    WHERE id = NEW.organization_id
+    FOR UPDATE;
+
+    SELECT period.id, period.starts_at, period.ends_at,
+           period.overage_limit_micros
+    INTO period_id, period_start, period_end, period_limit
+    FROM billing_periods AS period
+    JOIN subscriptions AS subscription
+      ON subscription.organization_id = period.organization_id
+     AND subscription.id = period.subscription_id
+    WHERE period.organization_id = NEW.organization_id
+      AND period.starts_at <= NEW.committed_at
+      AND period.ends_at > NEW.committed_at
+      AND subscription.status = 'active'
+      AND subscription.current_period_starts_at = period.starts_at
+      AND subscription.current_period_ends_at = period.ends_at
+    FOR SHARE OF period, subscription;
+
+    IF NOT FOUND THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT COALESCE(sum(overage_applied_micros), 0)
+    INTO committed_overage
+    FROM usage_records
+    WHERE organization_id = NEW.organization_id
+      AND committed_at >= period_start
+      AND committed_at < period_end;
+
+    SELECT COALESCE(sum(held_overage_micros), 0)
+    INTO held_overage
+    FROM usage_reservations
+    WHERE organization_id = NEW.organization_id
+      AND status = 'held'
+      AND created_at >= period_start
+      AND created_at < period_end;
+
+    SELECT COALESCE(sum(amount_micros), 0)
+    INTO refund_shortfall
+    FROM billing_shortfalls
+    WHERE organization_id = NEW.organization_id
+      AND billing_period_id = period_id;
+
+    IF committed_overage + held_overage + refund_shortfall > period_limit THEN
+        RAISE EXCEPTION 'commit exceeds current overage limit after refund'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER usage_records_validate_shortfall_capacity
+BEFORE INSERT ON usage_records
+FOR EACH ROW EXECUTE FUNCTION enforce_refund_shortfall_commit_capacity();

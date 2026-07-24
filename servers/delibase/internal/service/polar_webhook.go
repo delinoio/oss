@@ -160,12 +160,6 @@ func processPaidCycle(
 	if err != nil {
 		return err
 	}
-	if subscription.Status != "active" {
-		// A paid event older than cancellation/revocation/past-due state never
-		// grants credit. A later active recovery event can establish a new paid
-		// cycle independently.
-		return nil
-	}
 	organizationID := uuid.UUID(subscription.OrganizationID.Bytes)
 	organization, err := queries.LockOrganizationForBilling(
 		ctx, subscription.OrganizationID,
@@ -239,6 +233,13 @@ func reconcilePolarSubscription(
 	event polarBillingEvent,
 ) (dbgen.Subscription, error) {
 	if event.SubscriptionID == "" {
+		return dbgen.Subscription{}, reliability.ErrInvalidInput
+	}
+	mapping, err := queries.GetPolarCatalogMapping(ctx)
+	if err != nil {
+		return dbgen.Subscription{}, err
+	}
+	if event.ProductID != mapping.PolarProductID {
 		return dbgen.Subscription{}, reliability.ErrInvalidInput
 	}
 	status := polarSubscriptionStatus(
@@ -483,6 +484,8 @@ func polarSubscriptionStatus(
 	status string,
 ) string {
 	switch eventType {
+	case reliability.WebhookOrderPaid:
+		return "active"
 	case reliability.WebhookSubscriptionActive:
 		return "active"
 	case reliability.WebhookSubscriptionPastDue:

@@ -104,6 +104,30 @@ func (q *Queries) EnsureBillingPeriod(ctx context.Context, arg EnsureBillingPeri
 	return i, err
 }
 
+const getActiveSubscriptionForOrganization = `-- name: GetActiveSubscriptionForOrganization :one
+SELECT id, organization_id, polar_subscription_id, status, current_period_starts_at, current_period_ends_at, created_at, updated_at, provider_event_at FROM subscriptions
+WHERE organization_id = $1
+  AND status = 'active'
+FOR UPDATE
+`
+
+func (q *Queries) GetActiveSubscriptionForOrganization(ctx context.Context, organizationID pgtype.UUID) (Subscription, error) {
+	row := q.db.QueryRow(ctx, getActiveSubscriptionForOrganization, organizationID)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.PolarSubscriptionID,
+		&i.Status,
+		&i.CurrentPeriodStartsAt,
+		&i.CurrentPeriodEndsAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProviderEventAt,
+	)
+	return i, err
+}
+
 const getBillingAccess = `-- name: GetBillingAccess :one
 SELECT
     organization.id AS organization_id,
@@ -274,7 +298,7 @@ func (q *Queries) GetBillingSummary(ctx context.Context, organizationID pgtype.U
 }
 
 const getPolarCatalogMapping = `-- name: GetPolarCatalogMapping :one
-SELECT singleton, polar_product_id, currency, recurring_interval, price_micros, cycle_grant_micros, updated_at FROM polar_catalog_mappings WHERE singleton
+SELECT singleton, polar_product_id, polar_environment, currency, recurring_interval, price_micros, cycle_grant_micros, updated_at FROM polar_catalog_mappings WHERE singleton
 `
 
 func (q *Queries) GetPolarCatalogMapping(ctx context.Context) (PolarCatalogMapping, error) {
@@ -283,6 +307,7 @@ func (q *Queries) GetPolarCatalogMapping(ctx context.Context) (PolarCatalogMappi
 	err := row.Scan(
 		&i.Singleton,
 		&i.PolarProductID,
+		&i.PolarEnvironment,
 		&i.Currency,
 		&i.RecurringInterval,
 		&i.PriceMicros,
@@ -801,21 +826,33 @@ func (q *Queries) UpdateSubscriptionFromPolar(ctx context.Context, arg UpdateSub
 }
 
 const upsertPolarCatalogMapping = `-- name: UpsertPolarCatalogMapping :one
-INSERT INTO polar_catalog_mappings (singleton, polar_product_id)
-VALUES (true, $1)
+INSERT INTO polar_catalog_mappings (
+    singleton, polar_product_id, polar_environment
+)
+VALUES (
+    true, $1, $2
+)
 ON CONFLICT (singleton) DO UPDATE
 SET polar_product_id = EXCLUDED.polar_product_id,
+    polar_environment = EXCLUDED.polar_environment,
     updated_at = transaction_timestamp()
 WHERE polar_catalog_mappings.polar_product_id = EXCLUDED.polar_product_id
-RETURNING singleton, polar_product_id, currency, recurring_interval, price_micros, cycle_grant_micros, updated_at
+  AND polar_catalog_mappings.polar_environment = EXCLUDED.polar_environment
+RETURNING singleton, polar_product_id, polar_environment, currency, recurring_interval, price_micros, cycle_grant_micros, updated_at
 `
 
-func (q *Queries) UpsertPolarCatalogMapping(ctx context.Context, polarProductID string) (PolarCatalogMapping, error) {
-	row := q.db.QueryRow(ctx, upsertPolarCatalogMapping, polarProductID)
+type UpsertPolarCatalogMappingParams struct {
+	PolarProductID   string
+	PolarEnvironment string
+}
+
+func (q *Queries) UpsertPolarCatalogMapping(ctx context.Context, arg UpsertPolarCatalogMappingParams) (PolarCatalogMapping, error) {
+	row := q.db.QueryRow(ctx, upsertPolarCatalogMapping, arg.PolarProductID, arg.PolarEnvironment)
 	var i PolarCatalogMapping
 	err := row.Scan(
 		&i.Singleton,
 		&i.PolarProductID,
+		&i.PolarEnvironment,
 		&i.Currency,
 		&i.RecurringInterval,
 		&i.PriceMicros,

@@ -1,10 +1,16 @@
 -- name: UpsertPolarCatalogMapping :one
-INSERT INTO polar_catalog_mappings (singleton, polar_product_id)
-VALUES (true, sqlc.arg(polar_product_id))
+INSERT INTO polar_catalog_mappings (
+    singleton, polar_product_id, polar_environment
+)
+VALUES (
+    true, sqlc.arg(polar_product_id), sqlc.arg(polar_environment)
+)
 ON CONFLICT (singleton) DO UPDATE
 SET polar_product_id = EXCLUDED.polar_product_id,
+    polar_environment = EXCLUDED.polar_environment,
     updated_at = transaction_timestamp()
 WHERE polar_catalog_mappings.polar_product_id = EXCLUDED.polar_product_id
+  AND polar_catalog_mappings.polar_environment = EXCLUDED.polar_environment
 RETURNING *;
 
 -- name: GetPolarCatalogMapping :one
@@ -198,6 +204,12 @@ WHERE organization_id = sqlc.arg(organization_id)
 
 -- name: GetSubscriptionByPolarID :one
 SELECT * FROM subscriptions WHERE polar_subscription_id = sqlc.arg(polar_subscription_id);
+
+-- name: GetActiveSubscriptionForOrganization :one
+SELECT * FROM subscriptions
+WHERE organization_id = sqlc.arg(organization_id)
+  AND status = 'active'
+FOR UPDATE;
 
 -- name: InsertSubscription :one
 INSERT INTO subscriptions (

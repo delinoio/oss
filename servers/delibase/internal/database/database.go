@@ -63,13 +63,24 @@ func (store *Store) Queries() dbgen.Querier {
 	return store.queries
 }
 
-// SyncPolarCatalog pins the sole provider product to the database-enforced
-// USD $10 monthly price and $10 cycle grant contract.
-func (store *Store) SyncPolarCatalog(ctx context.Context, productID string) error {
-	if store == nil || store.queries == nil || productID == "" {
+// SyncPolarCatalog pins the provider environment and sole product to the
+// database-enforced USD $10 monthly price and $10 cycle grant contract.
+func (store *Store) SyncPolarCatalog(
+	ctx context.Context,
+	productID string,
+	environment string,
+) error {
+	if store == nil || store.queries == nil || productID == "" ||
+		(environment != "production" && environment != "sandbox") {
 		return errors.New("database: Polar catalog configuration is required")
 	}
-	_, err := store.queries.UpsertPolarCatalogMapping(ctx, productID)
+	_, err := store.queries.UpsertPolarCatalogMapping(
+		ctx,
+		dbgen.UpsertPolarCatalogMappingParams{
+			PolarProductID:   productID,
+			PolarEnvironment: environment,
+		},
+	)
 	if err != nil {
 		return errors.New("database: Polar catalog synchronization failed")
 	}
