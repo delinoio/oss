@@ -759,7 +759,7 @@ jobs:
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
       - name: Skip (DevHud unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
-        run: echo "Skipping DevHud frontend checks: no relevant changes"
+        run: 'echo "Skipping DevHud frontend checks: no relevant changes"'
       - name: Setup pnpm
         if: ${{ steps.gate.outputs.run == 'true' }}
         uses: pnpm/action-setup@v5
