@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import axe from "axe-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
@@ -45,6 +46,27 @@ describe("DevHud application surfaces", () => {
     expect(theme).toHaveValue("system");
     await user.selectOptions(theme, "dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(theme).toHaveFocus();
+  });
+
+  it("hides the application shell from assistive technology while settings is open", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const settings = screen.getAllByRole("button", { name: "Settings" })[0];
+    if (settings === undefined) throw new Error("Settings trigger is missing");
+    await user.click(settings);
+    expect(settings.closest("div[aria-hidden]")).toHaveAttribute("aria-hidden", "true");
+    expect(settings.closest("div[inert]")).toHaveAttribute("inert");
+  });
+
+  it("has no automated accessibility violations", async () => {
+    const { container } = render(<App />);
+    const results = await axe.run(container, {
+      rules: {
+        "color-contrast": { enabled: false },
+      },
+    });
+    expect(results.violations).toEqual([]);
   });
 
   it("provides explicit mobile content states without visible widgets", async () => {

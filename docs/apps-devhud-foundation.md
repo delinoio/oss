@@ -119,7 +119,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics; full desktop-matrix, mobile/widget compilation, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
+The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics plus automated WCAG checks with `axe-core`; full desktop-matrix, mobile/widget compilation, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
 
 Required validation coverage is:
 

@@ -85,7 +85,7 @@ function ApplicationSurface({
   const [runtime, setRuntime] = useState<RuntimeState>({ status: "loading" });
   useEffect(() => { let active = true; void loadRuntimeInfo(tauriRuntimeBridge).then((runtimeInfo) => { if (active) { setRuntime({ status: "ready", runtimeInfo }); if (synchronizePlatform) setPlatform(platformForRuntime(runtimeInfo.runtime)); } }, () => { if (active) setRuntime({ status: "failed", message: "DevHud could not initialize its local runtime." }); }); return () => { active = false; }; }, [synchronizePlatform]);
   const { settingsOpen } = useApplication();
-  return <>{platform === "desktop" ? <DesktopHud runtime={runtime} /> : <MobileShell runtime={runtime} />}{settingsOpen ? <SettingsDialog /> : null}</>;
+  return <><div aria-hidden={settingsOpen} inert={settingsOpen}>{platform === "desktop" ? <DesktopHud runtime={runtime} /> : <MobileShell runtime={runtime} />}</div>{settingsOpen ? <SettingsDialog /> : null}</>;
 }
 
 export function App({ platform }: { platform?: ApplicationPlatform }) {

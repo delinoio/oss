@@ -1,4 +1,4 @@
-import { createContext, use, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 export enum ThemePreference {
   System = "system",
@@ -37,6 +37,9 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+
   const value = useMemo(
     () => ({
       theme,
@@ -44,10 +47,10 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       settingsOpen,
       setTheme,
       setMobileScreen,
-      openSettings: () => setSettingsOpen(true),
-      closeSettings: () => setSettingsOpen(false),
+      openSettings,
+      closeSettings,
     }),
-    [mobileScreen, settingsOpen, theme],
+    [closeSettings, mobileScreen, openSettings, settingsOpen, theme],
   );
 
   return <ApplicationContext value={value}>{children}</ApplicationContext>;
