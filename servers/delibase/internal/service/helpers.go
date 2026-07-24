@@ -108,6 +108,54 @@ func organizationRoleName(value delibasev1.OrganizationRole) (string, bool) {
 	}
 }
 
+func teamRole(value string) delibasev1.TeamRole {
+	switch value {
+	case "admin":
+		return delibasev1.TeamRole_TEAM_ROLE_ADMIN
+	case "member":
+		return delibasev1.TeamRole_TEAM_ROLE_MEMBER
+	default:
+		return delibasev1.TeamRole_TEAM_ROLE_UNSPECIFIED
+	}
+}
+
+func teamRoleName(value delibasev1.TeamRole) (string, bool) {
+	switch value {
+	case delibasev1.TeamRole_TEAM_ROLE_ADMIN:
+		return "admin", true
+	case delibasev1.TeamRole_TEAM_ROLE_MEMBER:
+		return "member", true
+	default:
+		return "", false
+	}
+}
+
+func teamAccessSource(value string) delibasev1.TeamAccessSource {
+	switch value {
+	case "organization_role":
+		return delibasev1.TeamAccessSource_TEAM_ACCESS_SOURCE_ORGANIZATION_ROLE
+	case "direct_membership":
+		return delibasev1.TeamAccessSource_TEAM_ACCESS_SOURCE_DIRECT_MEMBERSHIP
+	case "ancestor_membership":
+		return delibasev1.TeamAccessSource_TEAM_ACCESS_SOURCE_ANCESTOR_MEMBERSHIP
+	default:
+		return delibasev1.TeamAccessSource_TEAM_ACCESS_SOURCE_UNSPECIFIED
+	}
+}
+
+func invitationStatus(value string) delibasev1.InvitationStatus {
+	switch value {
+	case "active":
+		return delibasev1.InvitationStatus_INVITATION_STATUS_ACTIVE
+	case "revoked":
+		return delibasev1.InvitationStatus_INVITATION_STATUS_REVOKED
+	case "expired":
+		return delibasev1.InvitationStatus_INVITATION_STATUS_EXPIRED
+	default:
+		return delibasev1.InvitationStatus_INVITATION_STATUS_UNSPECIFIED
+	}
+}
+
 func accountStatus(value string) delibasev1.AccountStatus {
 	switch value {
 	case "active":
@@ -157,6 +205,90 @@ func memberMessage(
 		DisplayName: displayName,
 		Role:        organizationRole(role),
 		JoinedAt:    timestamp(joinedAt),
+	}
+}
+
+func teamMessage(
+	id pgtype.UUID,
+	organizationID pgtype.UUID,
+	parentTeamID pgtype.UUID,
+	name string,
+	depth int32,
+	protectedGeneral bool,
+	createdAt pgtype.Timestamptz,
+	updatedAt pgtype.Timestamptz,
+) *delibasev1.Team {
+	return &delibasev1.Team{
+		TeamId:           uuidMessage(id),
+		OrganizationId:   uuidMessage(organizationID),
+		ParentTeamId:     uuidMessage(parentTeamID),
+		Name:             name,
+		Depth:            depth,
+		ProtectedGeneral: protectedGeneral,
+		CreatedAt:        timestamp(createdAt),
+		UpdatedAt:        timestamp(updatedAt),
+	}
+}
+
+func teamMembershipMessage(
+	teamID pgtype.UUID,
+	accountID pgtype.UUID,
+	displayName string,
+	role string,
+	createdAt pgtype.Timestamptz,
+) *delibasev1.TeamMembership {
+	return &delibasev1.TeamMembership{
+		TeamId:      uuidMessage(teamID),
+		AccountId:   uuidMessage(accountID),
+		DisplayName: displayName,
+		Role:        teamRole(role),
+		CreatedAt:   timestamp(createdAt),
+	}
+}
+
+func effectiveTeamAccessMessage(
+	teamID pgtype.UUID,
+	accountID pgtype.UUID,
+	effectiveRole string,
+	source string,
+	sourceTeamID pgtype.UUID,
+	organizationRoleValue string,
+) *delibasev1.EffectiveTeamAccess {
+	return &delibasev1.EffectiveTeamAccess{
+		TeamId:           uuidMessage(teamID),
+		AccountId:        uuidMessage(accountID),
+		EffectiveRole:    teamRole(effectiveRole),
+		Source:           teamAccessSource(source),
+		SourceTeamId:     uuidMessage(sourceTeamID),
+		OrganizationRole: organizationRole(organizationRoleValue),
+	}
+}
+
+func invitationMessage(
+	id pgtype.UUID,
+	organizationID pgtype.UUID,
+	organizationRoleValue string,
+	targetTeamID pgtype.UUID,
+	teamRoleValue pgtype.Text,
+	status string,
+	createdAt pgtype.Timestamptz,
+	expiresAt pgtype.Timestamptz,
+	revokedAt pgtype.Timestamptz,
+) *delibasev1.OrganizationInvitation {
+	teamRoleName := ""
+	if teamRoleValue.Valid {
+		teamRoleName = teamRoleValue.String
+	}
+	return &delibasev1.OrganizationInvitation{
+		InvitationId:     uuidMessage(id),
+		OrganizationId:   uuidMessage(organizationID),
+		OrganizationRole: organizationRole(organizationRoleValue),
+		TeamId:           uuidMessage(targetTeamID),
+		TeamRole:         teamRole(teamRoleName),
+		Status:           invitationStatus(status),
+		CreatedAt:        timestamp(createdAt),
+		ExpiresAt:        timestamp(expiresAt),
+		RevokedAt:        timestamp(revokedAt),
 	}
 }
 
@@ -485,6 +617,44 @@ func appendAudit(
 	return nil
 }
 
+func appendTeamAudit(
+	ctx context.Context,
+	dependencies Dependencies,
+	queries *dbgen.Queries,
+	event reliability.AuditEventType,
+	actor safelog.ActorPseudonym,
+	organizationID uuid.UUID,
+	teamID uuid.UUID,
+) error {
+	team, err := queries.GetTeamByID(ctx, pgUUID(teamID))
+	if err != nil {
+		return databaseError(err)
+	}
+	id, err := dependencies.IDs.New()
+	if err != nil {
+		return serviceError(connect.CodeInternal, 0)
+	}
+	metadata, _ := requestmeta.FromContext(ctx)
+	_, err = reliability.AppendAudit(ctx, queries, reliability.AuditInput{
+		ID:               id,
+		OccurredAt:       dependencies.Clock.Now().UTC(),
+		EventType:        event,
+		Actor:            actor,
+		OrganizationID:   organizationID,
+		TeamID:           teamID,
+		TeamNameSnapshot: team.Name,
+		Result:           safelog.ResultSuccess,
+		Metadata: reliability.AuditMetadata{
+			RequestID: metadata.RequestID,
+			TraceID:   metadata.TraceID,
+		},
+	})
+	if err != nil {
+		return databaseError(err)
+	}
+	return nil
+}
+
 func actorFor(dependencies Dependencies, subject string) (safelog.ActorPseudonym, error) {
 	if dependencies.Pseudonymizer == nil {
 		return "", serviceError(connect.CodeInternal, 0)
@@ -587,6 +757,18 @@ func databaseError(err error) error {
 					connect.CodeFailedPrecondition,
 					delibasev1.ErrorReason_ERROR_REASON_ORGANIZATION_DELETION_BLOCKED,
 				)
+			case strings.Contains(postgres.Message, "five levels"):
+				return serviceError(
+					connect.CodeFailedPrecondition,
+					delibasev1.ErrorReason_ERROR_REASON_TEAM_DEPTH_EXCEEDED,
+				)
+			case strings.Contains(postgres.Message, "cycle"):
+				return serviceError(
+					connect.CodeFailedPrecondition,
+					delibasev1.ErrorReason_ERROR_REASON_TEAM_CYCLE,
+				)
+			case strings.Contains(postgres.Message, "General team"):
+				return generalTeamProtected()
 			}
 			return invalidArgument()
 		case "23503":

@@ -19,6 +19,7 @@ INSERT INTO audit_events (
     actor_reference,
     organization_id,
     team_id,
+    team_name_snapshot,
     service_identity_id,
     meter_id,
     reservation_id,
@@ -41,9 +42,10 @@ INSERT INTO audit_events (
     $11,
     $12,
     $13,
+    $14,
     $2::timestamptz + interval '7 years'
 )
-RETURNING id, occurred_at, event_type, actor_reference, organization_id, team_id, service_identity_id, meter_id, reservation_id, decision, result, safe_error_class, metadata, retain_until
+RETURNING id, occurred_at, event_type, actor_reference, organization_id, team_id, service_identity_id, meter_id, reservation_id, decision, result, safe_error_class, metadata, retain_until, team_name_snapshot
 `
 
 type AppendAuditEventParams struct {
@@ -53,6 +55,7 @@ type AppendAuditEventParams struct {
 	ActorReference    string
 	OrganizationID    pgtype.UUID
 	TeamID            pgtype.UUID
+	TeamNameSnapshot  pgtype.Text
 	ServiceIdentityID pgtype.UUID
 	MeterID           pgtype.UUID
 	ReservationID     pgtype.UUID
@@ -70,6 +73,7 @@ func (q *Queries) AppendAuditEvent(ctx context.Context, arg AppendAuditEventPara
 		arg.ActorReference,
 		arg.OrganizationID,
 		arg.TeamID,
+		arg.TeamNameSnapshot,
 		arg.ServiceIdentityID,
 		arg.MeterID,
 		arg.ReservationID,
@@ -94,6 +98,7 @@ func (q *Queries) AppendAuditEvent(ctx context.Context, arg AppendAuditEventPara
 		&i.SafeErrorClass,
 		&i.Metadata,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -699,7 +704,7 @@ func (q *Queries) FailWebhookInbox(ctx context.Context, arg FailWebhookInboxPara
 }
 
 const getAuditEvent = `-- name: GetAuditEvent :one
-SELECT id, occurred_at, event_type, actor_reference, organization_id, team_id, service_identity_id, meter_id, reservation_id, decision, result, safe_error_class, metadata, retain_until FROM audit_events WHERE id = $1
+SELECT id, occurred_at, event_type, actor_reference, organization_id, team_id, service_identity_id, meter_id, reservation_id, decision, result, safe_error_class, metadata, retain_until, team_name_snapshot FROM audit_events WHERE id = $1
 `
 
 func (q *Queries) GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent, error) {
@@ -720,6 +725,7 @@ func (q *Queries) GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent
 		&i.SafeErrorClass,
 		&i.Metadata,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }

@@ -6,6 +6,8 @@
 package service
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"log/slog"
 
 	"github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1/delibasev1connect"
@@ -24,15 +26,30 @@ type defaultIDGenerator struct{}
 
 func (defaultIDGenerator) New() (uuid.UUID, error) { return uuidv7.New() }
 
+type InvitationTokenGenerator interface {
+	NewToken() (string, error)
+}
+
+type secureInvitationTokenGenerator struct{}
+
+func (secureInvitationTokenGenerator) NewToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
 type Dependencies struct {
-	Store           *database.Store
-	Clock           contracts.Clock
-	Polar           contracts.PolarClient
-	PolarCustomers  contracts.PolarCustomerManager
-	IdentityManager contracts.IdentityManager
-	IDs             IDGenerator
-	Pseudonymizer   *safelog.Pseudonymizer
-	Logger          *slog.Logger
+	Store            *database.Store
+	Clock            contracts.Clock
+	Polar            contracts.PolarClient
+	PolarCustomers   contracts.PolarCustomerManager
+	IdentityManager  contracts.IdentityManager
+	IDs              IDGenerator
+	InvitationTokens InvitationTokenGenerator
+	Pseudonymizer    *safelog.Pseudonymizer
+	Logger           *slog.Logger
 }
 
 func (dependencies Dependencies) withDefaults() Dependencies {
@@ -41,6 +58,9 @@ func (dependencies Dependencies) withDefaults() Dependencies {
 	}
 	if dependencies.IDs == nil {
 		dependencies.IDs = defaultIDGenerator{}
+	}
+	if dependencies.InvitationTokens == nil {
+		dependencies.InvitationTokens = secureInvitationTokenGenerator{}
 	}
 	if dependencies.Logger == nil {
 		dependencies.Logger = slog.New(slog.DiscardHandler)

@@ -116,7 +116,8 @@ enum ProjectId {
 - `servers/delibase` owns Go/PostgreSQL/sqlc persistence, organization/team/invitation policy, immutable organization/team-membership and provider identities, historical subscription and billing-period snapshots, append-only billing and reservation invariants, provider integrations, server configuration, and future GHCR artifacts.
 - `protos/delibase/v1` owns the versioned `delibase.v1` source contract and generation boundary for exactly six Connect services: `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, `BillingService`, and `UsageService`.
 - `protos/delibase/gen/go`, `protos/delibase/gen/ts`, and the workspace package `@delinoio/delibase-connect` are reproducible derived views of that source. Root `pnpm generate:proto` generates both runtimes and builds the package's loadable `dist` exports; `pnpm check:proto` validates compatibility and reproducibility.
-- Inbound authentication accepts Logto user or M2M bearer access tokens, never raw client secrets. Authenticated invitation preview and acceptance use the invitation bearer token without requiring pre-existing organization membership or team access.
+- Inbound authentication accepts Logto user or M2M bearer access tokens, never raw client secrets. Authenticated invitation preview and acceptance use the invitation bearer token without requiring a pre-existing local account, organization membership, or team access; acceptance creates the active local account with a privacy-safe non-empty placeholder display name when needed, and each account may consume an invitation only once.
+- Team RPCs require organization membership before resolving a requested team identity so non-members cannot probe team existence.
 - Idempotency keys are scoped to the authenticated user subject and operation for human RPCs, or the authenticated service identity and operation for M2M RPCs.
 - Invitation acceptance and revocation use distinct stable `IdempotentOperation` values; invitation creation does not carry idempotency fields.
 - `servers/internal` owns reusable Go authentication, Connect, request/trace, redaction, HTTP, logging, and UUID v7 infrastructure only; it must not own delibase business rules.
@@ -127,8 +128,8 @@ enum ProjectId {
 - `devhud` is a local-only project for individual developers and is independent from `delidev` and `delibase`.
 - `apps/devhud` is DevHud's sole canonical implementation path. Do not place DevHud runtime, native widget, backend, API, or shared contract code in another path.
 - DevHud must not consume or expose DeliDev accounts, catalog, billing, APIs, routes, contracts, organizations, or authentication. It has no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or cloud synchronization.
-- Production tools and user-visible widgets remain empty in `0.1.0`. The complete desktop/mobile, CEF runtime, identifier, security, diagnostic, GitHub-only updater, CI, beta-release, signing, support, performance, upstream-pin, rollback, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
-- `apps/devhud` contains the active application foundation and Cargo workspace member. Desktop builds use the exact pinned upstream Tauri CEF runtime and sandbox directly; product, mobile/widget, packaging, release, publisher, and support work may proceed only with synchronized implementation, validation, and contract updates.
+- Production tools and user-visible widgets remain empty in `0.1.0`. The active foundation includes a closed internal tool registry plus desktop/mobile empty-state UI, provider-owned theme/navigation state, and `test:a11y`; the complete runtime, identifier, security, diagnostic, CI, release, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
+- `apps/devhud` contains the active application foundation and Cargo workspace member. Desktop builds use the exact pinned upstream Tauri CEF runtime and sandbox directly; mobile builds use their native empty-state shell. Product, mobile/widget, packaging, release, publisher, and support work may proceed only with synchronized implementation, validation, and contract updates.
 
 ### Repository Default Technology Choices
 
@@ -352,6 +353,7 @@ Coverage expectations:
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
+- `node-devhud`: runs `pnpm install --frozen-lockfile` and DevHud `typecheck`, `lint`, unit, accessibility, and build commands.
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.

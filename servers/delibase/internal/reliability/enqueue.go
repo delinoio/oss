@@ -161,6 +161,10 @@ func AppendAudit(
 		!validDecision(input.Decision) || !validResult(input.Result) ||
 		!validOptionalUUIDv7(input.OrganizationID) ||
 		!validOptionalUUIDv7(input.TeamID) ||
+		(input.TeamNameSnapshot != "" &&
+			(input.TeamID == uuid.Nil ||
+				len([]rune(input.TeamNameSnapshot)) > 120 ||
+				strings.ContainsAny(input.TeamNameSnapshot, "\x00\r\n"))) ||
 		!validOptionalUUIDv7(input.ServiceIdentityID) ||
 		!validOptionalUUIDv7(input.MeterID) ||
 		!validOptionalUUIDv7(input.ReservationID) {
@@ -177,6 +181,13 @@ func AppendAudit(
 	if input.IncludeErrorClass {
 		errorClass = pgtype.Text{String: input.ErrorClass.String(), Valid: true}
 	}
+	teamNameSnapshot := pgtype.Text{}
+	if input.TeamNameSnapshot != "" {
+		teamNameSnapshot = pgtype.Text{
+			String: input.TeamNameSnapshot,
+			Valid:  true,
+		}
+	}
 	row, err := queries.AppendAuditEvent(ctx, dbgen.AppendAuditEventParams{
 		ID:                pgUUID(input.ID),
 		OccurredAt:        pgTime(input.OccurredAt),
@@ -184,6 +195,7 @@ func AppendAudit(
 		ActorReference:    string(input.Actor),
 		OrganizationID:    optionalUUID(input.OrganizationID),
 		TeamID:            optionalUUID(input.TeamID),
+		TeamNameSnapshot:  teamNameSnapshot,
 		ServiceIdentityID: optionalUUID(input.ServiceIdentityID),
 		MeterID:           optionalUUID(input.MeterID),
 		ReservationID:     optionalUUID(input.ReservationID),
