@@ -1,9 +1,11 @@
 # delibase server foundation
 
 This directory contains the runnable, artifact-only delibase server foundation.
-It does not deploy or activate `https://delibase.deli.dev`. Business RPCs are
-registered from the generated `delibase.v1` packages and deliberately return
-Connect `Unimplemented` until their transactional policies are implemented.
+It does not deploy or activate `https://delibase.deli.dev`. Authenticated
+`AccountService` and core non-invitation `OrganizationService` RPCs are backed
+by PostgreSQL/sqlc transactions. Invitation and hierarchy/billing/usage RPCs
+outside this implementation slice return Connect `Unimplemented`; none return
+placeholder success.
 
 ## Configuration categories
 
@@ -56,6 +58,14 @@ Operational worker logs contain only stable handler/queue identifiers, safe
 UUID entity identifiers, pseudonymous actors, attempt/result state, and safe
 error classifications.
 
+Account deletion immediately disables local access, erases the operational
+profile and memberships, and queues a Logto Management API deletion. The
+deletion worker retries through the shared durable queue. After provider
+success, it removes the raw Logto subject while a digest-only tombstone prevents
+re-onboarding with an unexpired token. Account/organization tombstones and
+financial/audit snapshots carry an explicit minimum seven-year retention
+boundary.
+
 Browser configuration belongs to DeliDev, is non-secret, and is not consumed
 by this process:
 
@@ -78,7 +88,8 @@ go vet ./servers/delibase/...
 When Docker is available, the PostgreSQL harness creates an ephemeral database,
 applies the ordered migrations twice, and runs transaction, duplicate enqueue,
 concurrent claim, crash/restart, retry/dead-letter, exact transition, immutable
-audit, and credential-rejection integration tests:
+audit, credential-rejection, authenticated onboarding/organization race,
+multiple-owner, slug-alias, and retention-safe deletion integration tests:
 
 ```sh
 servers/delibase/scripts/test-postgres.sh
