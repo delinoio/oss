@@ -1340,6 +1340,20 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE subscriptions SET status = 'active' WHERE id = $1",
+		subB,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE subscriptions SET status = 'revoked' WHERE id = $1",
+		subB,
+	); err != nil {
+		t.Fatal(err)
+	}
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE subscriptions SET status = 'active' WHERE id = $1",
 		subB,
