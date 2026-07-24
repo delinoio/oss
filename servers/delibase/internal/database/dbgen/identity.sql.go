@@ -40,7 +40,7 @@ func (q *Queries) CreateGeneralTeam(ctx context.Context, arg CreateGeneralTeamPa
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (id, name, slug)
 VALUES ($1, $2, $3)
-RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 `
 
 type CreateOrganizationParams struct {
@@ -60,6 +60,7 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }
@@ -99,7 +100,7 @@ VALUES (
     $1::uuid,
     $2
 )
-RETURNING organization_id, polar_customer_id, created_at, updated_at
+RETURNING organization_id, polar_customer_id, created_at, updated_at, external_id
 `
 
 type CreatePolarCustomerParams struct {
@@ -115,6 +116,7 @@ func (q *Queries) CreatePolarCustomer(ctx context.Context, arg CreatePolarCustom
 		&i.PolarCustomerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -468,7 +470,7 @@ func (q *Queries) GetIdempotencyRecord(ctx context.Context, arg GetIdempotencyRe
 }
 
 const getOrganizationByID = `-- name: GetOrganizationByID :one
-SELECT id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+SELECT id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 FROM organizations
 WHERE id = $1
 `
@@ -484,12 +486,13 @@ func (q *Queries) GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Orga
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }
 
 const getOrganizationForAccount = `-- name: GetOrganizationForAccount :one
-SELECT organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at, membership.role AS caller_role
+SELECT organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at, organization.overage_limit_configured, membership.role AS caller_role
 FROM organizations AS organization
 JOIN organization_memberships AS membership
   ON membership.organization_id = organization.id
@@ -504,14 +507,15 @@ type GetOrganizationForAccountParams struct {
 }
 
 type GetOrganizationForAccountRow struct {
-	ID                 pgtype.UUID
-	Name               string
-	Slug               string
-	OverageLimitMicros int64
-	DeletedAt          pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	CallerRole         string
+	ID                     pgtype.UUID
+	Name                   string
+	Slug                   string
+	OverageLimitMicros     int64
+	DeletedAt              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	OverageLimitConfigured bool
+	CallerRole             string
 }
 
 func (q *Queries) GetOrganizationForAccount(ctx context.Context, arg GetOrganizationForAccountParams) (GetOrganizationForAccountRow, error) {
@@ -525,6 +529,7 @@ func (q *Queries) GetOrganizationForAccount(ctx context.Context, arg GetOrganiza
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 		&i.CallerRole,
 	)
 	return i, err
@@ -995,7 +1000,7 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, arg ListOrganizat
 }
 
 const listOrganizationsForAccount = `-- name: ListOrganizationsForAccount :many
-SELECT organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at
+SELECT organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at, organization.overage_limit_configured
 FROM organizations AS organization
 JOIN organization_memberships AS membership
   ON membership.organization_id = organization.id
@@ -1029,6 +1034,7 @@ func (q *Queries) ListOrganizationsForAccount(ctx context.Context, arg ListOrgan
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OverageLimitConfigured,
 		); err != nil {
 			return nil, err
 		}
@@ -1099,7 +1105,7 @@ SET deleted_at = transaction_timestamp(),
     updated_at = transaction_timestamp()
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 `
 
 func (q *Queries) MarkOrganizationDeleted(ctx context.Context, id pgtype.UUID) (Organization, error) {
@@ -1113,13 +1119,14 @@ func (q *Queries) MarkOrganizationDeleted(ctx context.Context, id pgtype.UUID) (
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }
 
 const resolveOrganizationSlugForAccount = `-- name: ResolveOrganizationSlugForAccount :one
 SELECT
-    organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at,
+    organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at, organization.overage_limit_configured,
     (organization.slug <> $1)::boolean AS matched_alias
 FROM organization_slug_registry AS registry
 JOIN organizations AS organization
@@ -1137,14 +1144,15 @@ type ResolveOrganizationSlugForAccountParams struct {
 }
 
 type ResolveOrganizationSlugForAccountRow struct {
-	ID                 pgtype.UUID
-	Name               string
-	Slug               string
-	OverageLimitMicros int64
-	DeletedAt          pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	MatchedAlias       bool
+	ID                     pgtype.UUID
+	Name                   string
+	Slug                   string
+	OverageLimitMicros     int64
+	DeletedAt              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	OverageLimitConfigured bool
+	MatchedAlias           bool
 }
 
 func (q *Queries) ResolveOrganizationSlugForAccount(ctx context.Context, arg ResolveOrganizationSlugForAccountParams) (ResolveOrganizationSlugForAccountRow, error) {
@@ -1158,6 +1166,7 @@ func (q *Queries) ResolveOrganizationSlugForAccount(ctx context.Context, arg Res
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 		&i.MatchedAlias,
 	)
 	return i, err
@@ -1225,7 +1234,7 @@ SET name = $1,
     updated_at = transaction_timestamp()
 WHERE id = $2
   AND deleted_at IS NULL
-RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 `
 
 type UpdateOrganizationNameParams struct {
@@ -1244,6 +1253,7 @@ func (q *Queries) UpdateOrganizationName(ctx context.Context, arg UpdateOrganiza
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }
@@ -1254,7 +1264,7 @@ SET slug = $1,
     updated_at = transaction_timestamp()
 WHERE id = $2
   AND deleted_at IS NULL
-RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 `
 
 type UpdateOrganizationSlugParams struct {
@@ -1273,6 +1283,7 @@ func (q *Queries) UpdateOrganizationSlug(ctx context.Context, arg UpdateOrganiza
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }

@@ -41,6 +41,8 @@ type Config struct {
 
 	PolarAccessToken   string
 	PolarWebhookSecret string
+	PolarProductID     string
+	PolarSandbox       bool
 	LogPseudonymKey    []byte
 }
 
@@ -115,6 +117,29 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	if result.PolarWebhookSecret, err = required("DELIBASE_POLAR_WEBHOOK_SECRET"); err != nil {
 		return Config{}, err
+	}
+	if len(result.PolarWebhookSecret) < 16 ||
+		strings.TrimSpace(result.PolarWebhookSecret) != result.PolarWebhookSecret ||
+		strings.ContainsAny(result.PolarWebhookSecret, "\x00\r\n") {
+		return Config{}, errors.New("config: DELIBASE_POLAR_WEBHOOK_SECRET is invalid")
+	}
+	if result.PolarProductID, err = required("DELIBASE_POLAR_PRODUCT_ID"); err != nil {
+		return Config{}, err
+	}
+	if strings.TrimSpace(result.PolarProductID) != result.PolarProductID ||
+		len(result.PolarProductID) > 255 ||
+		strings.ContainsAny(result.PolarProductID, "/\x00\r\n") {
+		return Config{}, errors.New("config: DELIBASE_POLAR_PRODUCT_ID is invalid")
+	}
+	if value, ok := lookup("DELIBASE_POLAR_ENVIRONMENT"); ok &&
+		strings.TrimSpace(value) != "" {
+		switch value {
+		case "production":
+		case "sandbox":
+			result.PolarSandbox = true
+		default:
+			return Config{}, errors.New("config: DELIBASE_POLAR_ENVIRONMENT is invalid")
+		}
 	}
 	pseudonymKey, err := required("DELIBASE_LOG_PSEUDONYM_KEY")
 	if err != nil {

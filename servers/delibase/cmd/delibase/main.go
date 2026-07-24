@@ -113,6 +113,12 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		cancelDatabase()
 		return &startupError{stage: stageCatalog}
 	}
+	if err := store.SyncPolarCatalog(
+		databaseCtx, configuration.PolarProductID,
+	); err != nil {
+		cancelDatabase()
+		return &startupError{stage: stageCatalog}
+	}
 	cancelDatabase()
 
 	keys, err := auth.NewJWKS(auth.JWKSConfig{URL: configuration.LogtoJWKSURL})
@@ -136,13 +142,28 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{stage: stageAuthentication}
 	}
-	polarClient, err := polar.New(configuration.PolarAccessToken, nil)
+	polarClient, err := polar.NewBilling(
+		configuration.PolarAccessToken,
+		configuration.PolarProductID,
+		configuration.PolarSandbox,
+		nil,
+	)
+	if err != nil {
+		return &startupError{stage: stageConfiguration}
+	}
+	polarWebhook, err := polar.NewWebhookHandler(
+		store,
+		configuration.PolarWebhookSecret,
+		contracts.SystemClock{},
+		workerTokenGenerator{},
+	)
 	if err != nil {
 		return &startupError{stage: stageConfiguration}
 	}
 	serviceDependencies := service.Dependencies{
 		Store:           store,
 		Clock:           contracts.SystemClock{},
+		Polar:           polarClient,
 		PolarCustomers:  polarClient,
 		IdentityManager: identityManager,
 		Pseudonymizer:   pseudonymizer,
@@ -152,6 +173,7 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		Authentication: validator,
 		Health:         store,
 		Services:       serviceDependencies,
+		PolarWebhook:   polarWebhook,
 		CORSOrigins:    configuration.CORSAllowedOrigins,
 		Logger:         logger,
 	})
@@ -173,6 +195,24 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	); err != nil {
 		return &startupError{stage: stageRuntime}
 	}
+	polarWebhookProcessor := service.NewPolarWebhookProcessor(
+		store, workerTokenGenerator{},
+	)
+	for _, handlerID := range []reliability.HandlerID{
+		reliability.HandlerPolarOrderPaid,
+		reliability.HandlerPolarSubscriptionCreated,
+		reliability.HandlerPolarSubscriptionUpdated,
+		reliability.HandlerPolarSubscriptionActive,
+		reliability.HandlerPolarSubscriptionPastDue,
+		reliability.HandlerPolarSubscriptionCanceled,
+		reliability.HandlerPolarSubscriptionRevoked,
+		reliability.HandlerPolarRefundCreated,
+		reliability.HandlerPolarRefundUpdated,
+	} {
+		if err := registry.Register(handlerID, polarWebhookProcessor); err != nil {
+			return &startupError{stage: stageRuntime}
+		}
+	}
 	if err := registry.Register(
 		reliability.HandlerDeleteOrganization,
 		service.NewOrganizationDeletionHandler(store),
@@ -182,6 +222,12 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err := registry.Register(
 		reliability.HandlerPolarCancelSubscription,
 		service.NewPolarCancellationHandler(store.Queries(), polarClient),
+	); err != nil {
+		return &startupError{stage: stageRuntime}
+	}
+	if err := registry.Register(
+		reliability.HandlerPolarReportUsage,
+		service.NewPolarUsageHandler(polarClient),
 	); err != nil {
 		return &startupError{stage: stageRuntime}
 	}
@@ -197,6 +243,7 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		MaxBackoff:     15 * time.Minute,
 		PollInterval:   time.Second,
 		Queues: []reliability.Queue{
+			reliability.QueueWebhookInbox,
 			reliability.QueueIntegrationOutbox,
 			reliability.QueueDeletionJob,
 		},

@@ -10,6 +10,10 @@ func webhookHandler(eventType WebhookEventType) HandlerID {
 		return HandlerPolarSubscriptionCreated
 	case WebhookSubscriptionUpdated:
 		return HandlerPolarSubscriptionUpdated
+	case WebhookSubscriptionActive:
+		return HandlerPolarSubscriptionActive
+	case WebhookSubscriptionPastDue:
+		return HandlerPolarSubscriptionPastDue
 	case WebhookSubscriptionCanceled:
 		return HandlerPolarSubscriptionCanceled
 	case WebhookSubscriptionRevoked:
@@ -52,6 +56,8 @@ func validHandlerID(id HandlerID) bool {
 	case HandlerPolarOrderPaid,
 		HandlerPolarSubscriptionCreated,
 		HandlerPolarSubscriptionUpdated,
+		HandlerPolarSubscriptionActive,
+		HandlerPolarSubscriptionPastDue,
 		HandlerPolarSubscriptionCanceled,
 		HandlerPolarSubscriptionRevoked,
 		HandlerPolarRefundCreated,

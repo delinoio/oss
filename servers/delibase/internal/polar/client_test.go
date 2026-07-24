@@ -8,9 +8,79 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/servers/delibase/internal/contracts"
 )
+
+func TestCreateHostedCheckoutAndPortalSession(t *testing.T) {
+	t.Parallel()
+	const organizationID = "0198a000-0000-7000-8000-000000000005"
+	expiresAt := time.Date(2026, 7, 24, 13, 0, 0, 0, time.UTC)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		if request.Header.Get("Idempotency-Key") != "billing-key" {
+			t.Error("missing provider idempotency key")
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if payload["external_customer_id"] != organizationID {
+			t.Errorf("external customer = %#v", payload["external_customer_id"])
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		switch request.URL.Path {
+		case "/v1/checkouts":
+			_, _ = io.WriteString(writer,
+				`{"id":"checkout_1","url":"https://polar.sh/checkout/1","expires_at":"`+
+					expiresAt.Format(time.RFC3339)+`"}`,
+			)
+		case "/v1/customer-sessions":
+			_, _ = io.WriteString(writer,
+				`{"customer_portal_url":"https://polar.sh/portal/1","expires_at":"`+
+					expiresAt.Format(time.RFC3339)+`"}`,
+			)
+		default:
+			t.Errorf("unexpected path %q", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := newClient(server.URL+"/v1", "polar-access-token", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.productID = "product_1"
+	checkout, err := client.CreateCheckout(
+		context.Background(),
+		contracts.CheckoutRequest{
+			OrganizationID: organizationID,
+			SuccessURL:     "https://deli.dev/success",
+			CancelURL:      "https://deli.dev/cancel",
+			IdempotencyKey: "billing-key",
+		},
+	)
+	if err != nil || checkout.URL != "https://polar.sh/checkout/1" ||
+		!checkout.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("checkout = %#v, %v", checkout, err)
+	}
+	session, err := client.CreatePortalSession(
+		context.Background(),
+		contracts.PortalRequest{
+			OrganizationID: organizationID,
+			ReturnURL:      "https://deli.dev/billing",
+			IdempotencyKey: "billing-key",
+		},
+	)
+	if err != nil || session.URL != "https://polar.sh/portal/1" ||
+		!session.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("portal = %#v, %v", session, err)
+	}
+}
 
 func TestCancelSubscriptionRequestsPeriodEndCancellation(t *testing.T) {
 	t.Parallel()

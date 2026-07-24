@@ -2,10 +2,11 @@
 
 This directory contains the runnable, artifact-only delibase server foundation.
 It does not deploy or activate `https://delibase.deli.dev`. Authenticated
-`AccountService` and core non-invitation `OrganizationService` RPCs are backed
-by PostgreSQL/sqlc transactions. Invitation and hierarchy/billing/usage RPCs
-outside this implementation slice return Connect `Unimplemented`; none return
-placeholder success.
+`AccountService`, core non-invitation `OrganizationService` RPCs, and the
+billing summary, Checkout, Customer Portal, overage-limit, and ledger RPCs are
+backed by PostgreSQL/sqlc transactions. Invitation, hierarchy, and remaining
+usage RPCs outside this implementation slice return Connect `Unimplemented`;
+none return placeholder success.
 
 ## Configuration categories
 
@@ -22,6 +23,9 @@ Non-secret server configuration:
 - `DELIBASE_LOGTO_ISSUER`
 - `DELIBASE_LOGTO_AUDIENCE`
 - `DELIBASE_LOGTO_JWKS_URL`
+- `DELIBASE_POLAR_PRODUCT_ID`
+- `DELIBASE_POLAR_ENVIRONMENT` (`production` by default; set to `sandbox` only
+  for the opt-in Polar sandbox checkout path)
 
 Secret configuration:
 

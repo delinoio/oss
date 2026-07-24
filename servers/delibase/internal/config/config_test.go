@@ -17,8 +17,23 @@ func validEnvironment() map[string]string {
 		"DELIBASE_LOGTO_M2M_CLIENT_ID":     "service-client",
 		"DELIBASE_LOGTO_M2M_CLIENT_SECRET": "logto-secret",
 		"DELIBASE_POLAR_ACCESS_TOKEN":      "polar-token",
-		"DELIBASE_POLAR_WEBHOOK_SECRET":    "webhook-secret",
+		"DELIBASE_POLAR_WEBHOOK_SECRET":    "webhook-secret-0123456789",
+		"DELIBASE_POLAR_PRODUCT_ID":        "polar-product",
 		"DELIBASE_LOG_PSEUDONYM_KEY":       strings.Repeat("k", 32),
+	}
+}
+
+func TestLoadRequiresExplicitSandboxOptIn(t *testing.T) {
+	t.Parallel()
+	values := validEnvironment()
+	values["DELIBASE_POLAR_ENVIRONMENT"] = "sandbox"
+	configuration, err := Load(lookup(values))
+	if err != nil || !configuration.PolarSandbox {
+		t.Fatalf("sandbox configuration = %#v, %v", configuration, err)
+	}
+	values["DELIBASE_POLAR_ENVIRONMENT"] = "staging"
+	if _, err := Load(lookup(values)); err == nil {
+		t.Fatal("unsupported Polar environment was accepted")
 	}
 }
 

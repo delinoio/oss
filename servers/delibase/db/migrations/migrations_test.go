@@ -11,8 +11,8 @@ func TestEmbeddedMigrationsAreOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ordered) != 6 {
-		t.Fatalf("migration count = %d, want 6", len(ordered))
+	if len(ordered) != 7 {
+		t.Fatalf("migration count = %d, want 7", len(ordered))
 	}
 	for index, item := range ordered {
 		want := int64(index + 1)
