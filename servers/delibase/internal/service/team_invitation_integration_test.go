@@ -711,6 +711,24 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deletionRaceMembershipParams := dbgen.ListTeamMembershipsParams{
+		OrganizationID: pgUUID(mustUUID(
+			t, otherOrganization.Msg.Organization.OrganizationId,
+		)),
+		TeamID:    pgUUID(mustUUID(t, otherOrganization.Msg.GeneralTeamId)),
+		AfterID:   pgUUID(uuid.Nil),
+		PageLimit: 2,
+	}
+	deletionRaceMemberships, err := store.Queries().ListTeamMemberships(
+		ctx, deletionRaceMembershipParams,
+	)
+	if err != nil || len(deletionRaceMemberships) == 0 {
+		t.Fatalf(
+			"memberships before organization deletion = %#v, %v",
+			deletionRaceMemberships,
+			err,
+		)
+	}
 	blockingTransaction, err := raw.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -750,6 +768,16 @@ func TestPostgreSQLTeamAndInvitationPolicies(t *testing.T) {
 	}
 	if err = blockingTransaction.Commit(ctx); err != nil {
 		t.Fatal(err)
+	}
+	deletionRaceMemberships, err = store.Queries().ListTeamMemberships(
+		ctx, deletionRaceMembershipParams,
+	)
+	if err != nil || len(deletionRaceMemberships) != 0 {
+		t.Fatalf(
+			"memberships after organization deletion = %#v, %v",
+			deletionRaceMemberships,
+			err,
+		)
 	}
 	select {
 	case acceptErr := <-raceResult:

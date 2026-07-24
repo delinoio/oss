@@ -389,10 +389,12 @@ SELECT
     membership.updated_at
 FROM team_memberships AS membership
 JOIN accounts AS account ON account.id = membership.account_id
+JOIN organizations AS organization ON organization.id = membership.organization_id
 WHERE membership.organization_id = $1
   AND membership.team_id = $2
   AND membership.account_id > $3
   AND account.status = 'active'
+  AND organization.deleted_at IS NULL
 ORDER BY membership.account_id
 LIMIT $4
 `

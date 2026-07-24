@@ -176,10 +176,12 @@ SELECT
     membership.updated_at
 FROM team_memberships AS membership
 JOIN accounts AS account ON account.id = membership.account_id
+JOIN organizations AS organization ON organization.id = membership.organization_id
 WHERE membership.organization_id = sqlc.arg(organization_id)
   AND membership.team_id = sqlc.arg(team_id)
   AND membership.account_id > sqlc.arg(after_id)
   AND account.status = 'active'
+  AND organization.deleted_at IS NULL
 ORDER BY membership.account_id
 LIMIT sqlc.arg(page_limit);
 
