@@ -1,8 +1,4 @@
-const COMMANDS: &[&str] = &[
-    "probe_bundled_asset_ready",
-    "probe_denial_observed",
-    "probe_forbidden",
-];
+const COMMANDS: &[&str] = &["get_runtime_info"];
 
 fn main() {
     let runtime_selected = std::env::var_os("CARGO_FEATURE_DESKTOP_CEF").is_some()
@@ -18,5 +14,5 @@ fn main() {
             .codegen(tauri_build::CodegenContext::new())
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
     )
-    .expect("failed to build the DevHud feasibility probe");
+    .expect("failed to build DevHud");
 }

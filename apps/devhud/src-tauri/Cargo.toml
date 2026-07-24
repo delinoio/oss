@@ -1,18 +1,18 @@
 [package]
-name = "devhud-probe"
+name = "devhud"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
 publish = false
-description = "Non-product Tauri CEF feasibility probe for DevHud"
+description = "Tauri CEF application foundation for DevHud"
 
 [lib]
-name = "devhud_probe"
+name = "devhud"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "devhud-probe"
+name = "devhud"
 path = "src/main.rs"
 required-features = ["desktop-cef"]
 
@@ -33,7 +33,7 @@ tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba575545
 tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["sandbox"], optional = true }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["wry"], optional = true }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["tray-icon", "devtools", "cef", "wry"], optional = true }
 
 [features]
 default = []

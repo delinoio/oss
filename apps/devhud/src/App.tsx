@@ -1,33 +1,33 @@
 import { useEffect, useState } from "react";
 
 import {
-  runBundledStartupHandshake,
-  tauriProbeBridge,
-  type StartupHandshake,
+  loadRuntimeInfo,
+  tauriRuntimeBridge,
+  type RuntimeInfo,
 } from "./runtime/startup";
 
 type ViewState =
-  | { status: "checking" }
+  | { status: "loading" }
   | { status: "failed"; message: string }
-  | { status: "passed"; handshake: StartupHandshake };
+  | { status: "ready"; runtimeInfo: RuntimeInfo };
 
 export function App() {
-  const [state, setState] = useState<ViewState>({ status: "checking" });
+  const [state, setState] = useState<ViewState>({ status: "loading" });
 
   useEffect(() => {
     let active = true;
 
-    void runBundledStartupHandshake(tauriProbeBridge).then(
-      (handshake) => {
+    void loadRuntimeInfo(tauriRuntimeBridge).then(
+      (runtimeInfo) => {
         if (active) {
-          setState({ status: "passed", handshake });
+          setState({ status: "ready", runtimeInfo });
         }
       },
       () => {
         if (active) {
           setState({
             status: "failed",
-            message: "The bundled startup or capability-denial probe failed.",
+            message: "DevHud could not initialize its local runtime.",
           });
         }
       },
@@ -40,36 +40,37 @@ export function App() {
 
   return (
     <main>
-      <p className="eyebrow">Local-only feasibility gate</p>
-      <h1>DevHud bundled-asset probe</h1>
-      {state.status === "checking" ? (
-        <p role="status">Checking bundled startup and Tauri capability denial…</p>
+      <p className="eyebrow">Local-only developer tool</p>
+      <h1>DevHud</h1>
+      {state.status === "loading" ? (
+        <p role="status">Starting DevHud…</p>
       ) : null}
       {state.status === "failed" ? (
         <p role="alert">{state.message}</p>
       ) : null}
-      {state.status === "passed" ? (
-        <section aria-labelledby="probe-result">
-          <h2 id="probe-result">Common startup probe passed</h2>
+      {state.status === "ready" ? (
+        <section aria-labelledby="runtime-status">
+          <h2 id="runtime-status">DevHud is ready</h2>
           <dl>
             <div>
               <dt>Runtime</dt>
-              <dd>{state.handshake.receipt.runtime}</dd>
+              <dd>{state.runtimeInfo.runtime}</dd>
             </div>
             <div>
               <dt>Bundled origin</dt>
-              <dd>{state.handshake.receipt.bundledOrigin}</dd>
+              <dd>{state.runtimeInfo.bundledOrigin}</dd>
             </div>
             <div>
-              <dt>Capability denial</dt>
-              <dd>{state.handshake.capabilityDenied ? "Observed" : "Missing"}</dd>
+              <dt>CEF sandbox</dt>
+              <dd>
+                {state.runtimeInfo.sandboxEnabled ? "Enabled" : "Not applicable"}
+              </dd>
             </div>
           </dl>
         </section>
       ) : null}
       <p className="scope">
-        This diagnostic shell contains no production developer tool and makes no
-        network requests.
+        No tools are available in this foundation preview.
       </p>
     </main>
   );

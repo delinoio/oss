@@ -4,8 +4,8 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: CEF feasibility gate blocked; `apps/devhud` contains only the common non-product probe package and no CI, product, mobile/widget, packaging, release, publisher, or public support implementation.
-- This document covers the future deployable package. The current scaffold is limited to the shared bundled-asset frontend probe, `src-tauri` runtime-selection boundary, typed gate harness, and deterministic local validation commands.
+- Status: active foundation; `apps/devhud` contains the common bundled-asset application package and no production tool, mobile/widget, packaging, release, publisher, or public support implementation.
+- This document covers the future deployable package. The current implementation is limited to the shared bundled-asset frontend, `src-tauri` runtime-selection boundary, scoped runtime-information command, and deterministic local validation commands.
 
 ## Runtime and Language
 
@@ -19,9 +19,9 @@
 - Mobile operating systems: iOS 17 or newer and Android 10/API 29 or newer. Production device architectures and x64 emulator targets required for CI must be documented by the eventual package manifest.
 - UX baseline: English-only, System/Light/Dark themes with System initially selected, Toss Design Guidelines, and WCAG 2.2 AA. The product uses the DevHud wordmark and minimal `DH` lettermark; a complete brand system is out of scope.
 
-### CEF feasibility stop condition
+### CEF desktop runtime
 
-The CEF gate is a prerequisite, not an implementation claim. It has no calendar timebox. Before shared app, mobile foundation, or publishing work continues, the gate must prove all of the following on macOS, Windows, and Ubuntu, for x64 and ARM64 where supported:
+DevHud uses Tauri's pinned CEF runtime directly for desktop builds. Desktop implementation and release validation covers the following behavior on macOS, Windows, and Ubuntu, for x64 and ARM64 where supported:
 
 - CEF sandbox startup using only bundled frontend assets.
 - Tauri IPC and capability enforcement.
@@ -31,17 +31,7 @@ The CEF gate is a prerequisite, not an implementation claim. It has no calendar 
 - No orphaned CEF processes after normal shutdown. Cleanup evidence must observe at least one CEF helper before shutdown and zero helpers afterward.
 - Ubuntu 24.04 operation under both X11 and Wayland through XWayland.
 
-DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source patches to the upstream runtime. If any required behavior cannot be achieved without a fork or patch, or any gate condition fails, stop product-foundation and release work, document the blocker, and require a separate architecture decision. The current documentation change does not claim that the gate has passed.
-
-### Current gate blocker
-
-The exact Tauri pin includes the upstream correction for the earlier macOS `TerminationSignals` target-guard regression. Compilation alone does not satisfy the gate, which remains blocked at the required upstream commit:
-
-- Tauri's public `Builder::on_web_content_process_terminate` API is compiled only for macOS and iOS. It is unavailable to a Windows or Linux DevHud application.
-- `tauri-runtime-cef` receives CEF's `on_render_process_terminated` callback internally, but its webview construction takes the termination handler only on macOS/iOS and explicitly assigns `None` on other targets.
-- Therefore the required fatal renderer-termination diagnostic and immediate shutdown cannot be installed or proved on Windows or Ubuntu through the public pinned API. Fixing this at the pinned revision requires changing upstream Tauri/`tauri-runtime-cef` source, which this project forbids.
-
-This is the CEF stop condition. The common probe and typed evidence harness remain useful for architecture evaluation, but product UI, tray/global-shortcut/autostart implementation, mobile/widget work, packaging, updater implementation, CI expansion, signing, publishing, and release work are blocked pending a separate architecture decision. Evidence: [macOS target-guard correction](https://github.com/tauri-apps/tauri/commit/f49ebda2fdba5755456b0f049e32593ca0ea331a), [public hook target guard](https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri/src/app.rs#L1884-L1898), and [CEF handler discarded on Windows/Linux](https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri-runtime-cef/src/webview.rs#L354-L360).
+DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source patches to the upstream runtime. Runtime, product, mobile, packaging, and release work may proceed against the exact pinned dependency while preserving these upstream-only dependency boundaries.
 
 ## Users and Operators
 
@@ -64,12 +54,12 @@ The registry is an internal, closed contract, not a plugin interface. `ToolDefin
 
 Tools may support a subset of platforms. Each shell exposes only tools supported by the current platform and granted capabilities. Capability values are closed and enum-backed; a new capability is introduced only with the tool that needs it. Production registration is empty in `0.1.0`; tests may use fixture definitions. No external plugin authors, remote tools, user-authored scripts, runtime code downloads, or plugin SDK are authorized.
 
-The native boundary exposes only scoped Tauri/plugin commands required for settings, window lifecycle, diagnostics, updates, and native widget state. It must not expose a CLI, localhost API, public API, Connect RPC service, webhook, public route, custom URL scheme, universal link, app link, or deep link. Native errors are stable enum-backed classifications, including invalid or conflicting shortcuts, shortcut registration failure, unsupported display server, CEF initialization or termination, corrupt state, widget bridge failure, updater unavailability or rate limiting, invalid signature, and installation failure.
+The native boundary exposes only scoped Tauri/plugin commands required for settings, window lifecycle, diagnostics, updates, and native widget state. It must not expose a CLI, localhost API, public API, Connect RPC service, webhook, public route, custom URL scheme, universal link, app link, or deep link. Native errors are stable enum-backed classifications, including invalid or conflicting shortcuts, shortcut registration failure, unsupported display server, CEF initialization, corrupt state, widget bridge failure, updater unavailability or rate limiting, invalid signature, and installation failure.
 
 ### Desktop HUD and tray behavior
 
 - Run as a tray/menu-bar resident application without a persistent Dock or taskbar icon.
-- Closing the HUD or settings window hides it while the process remains resident. Only the tray `Quit` action terminates the app, except a fatal CEF initialization or renderer termination failure, which logs and exits immediately without automatic renderer restart.
+- Closing the HUD or settings window hides it while the process remains resident. Only the tray `Quit` action terminates the app, except a fatal CEF initialization failure, which logs and exits immediately.
 - Tray actions are `Open DevHud`, `Settings`, `Check for Updates`, `Open DevTools`, and `Quit`.
 - Show a skippable first-run settings window that captures and validates a global shortcut. Tray access remains available until a shortcut is configured.
 - Launch-at-login is disabled by default and has an explicit settings toggle.
@@ -123,13 +113,13 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 - Use structured local logs for troubleshooting. Retain at most seven days and 20 MB with rotation.
 - Safe log fields may include application/build versions, OS/architecture, upstream Tauri/CEF versions, safe event IDs, timestamps, duration measurements, and enum error classifications.
 - Never log search text, clipboard contents, user files, arbitrary filesystem paths, shortcut keys, credentials, signing data, raw process environment values, invitation/account data, or tokens.
-- CEF initialization failure and renderer termination are fatal structured diagnostics followed by immediate process exit; do not enter an automatic restart loop.
+- CEF initialization failure produces a fatal structured diagnostic followed by immediate process exit.
 - Diagnostics export occurs only after explicit user action to a user-selected destination. Redaction tests must prevent excluded values from logs and release bundles.
 - Public English `PRIVACY.md` and `SUPPORT.md` files at stable GitHub paths, plus a DevHud GitHub issue template without default metadata, are required support material when the app is implemented. Their absence today is not an implementation claim.
 
 ## Build and Test
 
-The common scaffold provides package-local `build`, `typecheck`, `lint`, `test`, `test:probe`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. The future product tasks for development, accessibility, the complete desktop matrix, mobile build, widget build, packaging, and release validation remain blocked and are not stubbed as passing commands.
+The foundation provides package-local `build`, `typecheck`, `lint`, `test`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. Development, accessibility, complete desktop-matrix, mobile/widget, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
 
 Required validation coverage is:
 
@@ -140,7 +130,7 @@ Required validation coverage is:
 - Installer, signature, updater, SBOM, and provenance validation.
 - Performance measurements must record HUD display latency, cold startup, package size, and idle memory per supported desktop platform, plus mobile startup time. Publish these measurements with the release; `0.1.0` defines no numeric pass threshold.
 
-No DevHud CI or release job exists. The current package commands are local feasibility checks only. A future architecture decision must explicitly unblock change-scoped CI and the remaining platform tasks without weakening existing repository checks.
+DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. No dedicated DevHud release job exists; additional platform tasks must be added without weakening existing repository checks when their implementations are introduced.
 
 ## Dependencies and Integrations
 
@@ -155,7 +145,7 @@ No DevHud CI or release job exists. The current package commands are local feasi
 - Trigger the target release from `devhud@v0.1.0`. Publish it as a regular GitHub Release, not a prerelease, after privately building and validating every platform.
 - Publish separate x64 and ARM64 macOS DMGs; separate x64 and ARM64 Windows NSIS installers; separate x64 and ARM64 Ubuntu AppImage and deb packages; target-specific signed Tauri updater bundles and manifest; `SHA256SUMS`; platform signatures; SPDX SBOMs; and GitHub artifact provenance.
 - Produce signed iOS and Android builds for TestFlight and Google Play beta channels, with minimal `DH` store assets in the corresponding listing material. Open the GitHub Release, TestFlight external group, and Google Play open-testing release in the same release window after private validation. If external beta review rejects the empty mobile foundation, use TestFlight internal testing and Google Play closed testing without adding a sample tool.
-- Publication is blocked when any signing or publisher prerequisite is absent; never publish an unsigned public release. Required protected secrets/variables are the Tauri updater signing key and password, macOS Developer ID certificate and password, Windows signing certificate and password, Apple team ID, App Store Connect issuer/key IDs and private key, iOS distribution certificate/password/provisioning profile, Android keystore/store password/key alias/key password, and Google Play service-account credentials.
+- Publishing requires every signing and publisher prerequisite; never publish an unsigned public release. Required protected secrets/variables are the Tauri updater signing key and password, macOS Developer ID certificate and password, Windows signing certificate and password, Apple team ID, App Store Connect issuer/key IDs and private key, iOS distribution certificate/password/provisioning profile, Android keystore/store password/key alias/key password, and Google Play service-account credentials.
 - On a broken desktop release, withdraw it from update discovery, annotate the release, and direct users to manually reinstall the previous signed installer. Do not implement automatic downgrade. Mobile updates remain managed by normal TestFlight and Google Play beta channels.
 - Track the pinned upstream `feat/cef` commit monthly and perform an urgent `0.1.x` update when a high-risk Chromium/CEF security fix affects DevHud.
 - Required operator runbooks are release, signing, updater withdrawal, manual rollback, store submission, CEF pin update, diagnostics, and support. No dedicated DevHud website or documentation deployment is part of this contract.

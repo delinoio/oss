@@ -127,8 +127,8 @@ enum ProjectId {
 - `devhud` is a local-only project for individual developers and is independent from `delidev` and `delibase`.
 - `apps/devhud` is DevHud's sole canonical implementation path. Do not place DevHud runtime, native widget, backend, API, or shared contract code in another path.
 - DevHud must not consume or expose DeliDev accounts, catalog, billing, APIs, routes, contracts, organizations, or authentication. It has no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or cloud synchronization.
-- Production tools and user-visible widgets remain empty in `0.1.0`. The complete desktop/mobile, CEF-gate, identifier, security, diagnostic, GitHub-only updater, CI, beta-release, signing, support, performance, upstream-pin, rollback, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
-- `apps/devhud` contains only the common non-product feasibility package and Cargo workspace member. The exact Tauri pin includes the upstream macOS compilation correction, but renderer termination remains unobservable through Tauri's public API on Windows/Linux without an upstream source change, so the gate is blocked. Do not add product, mobile/widget, CI, packaging, release, publisher, or support work until a separate architecture decision resolves the documented blocker.
+- Production tools and user-visible widgets remain empty in `0.1.0`. The complete desktop/mobile, CEF runtime, identifier, security, diagnostic, GitHub-only updater, CI, beta-release, signing, support, performance, upstream-pin, rollback, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
+- `apps/devhud` contains the active application foundation and Cargo workspace member. Desktop builds use the exact pinned upstream Tauri CEF runtime and sandbox directly; product, mobile/widget, packaging, release, publisher, and support work may proceed only with synchronized implementation, validation, and contract updates.
 
 ### Repository Default Technology Choices
 
@@ -348,7 +348,7 @@ Coverage expectations:
 - `go-quality`: runs `go fmt ./...` (fails if formatting changes are applied) and `go vet ./...` on Ubuntu.
 - `go-test`: runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
-- `rust-clippy`: builds the DevHud frontend, installs its Linux desktop prerequisites, runs `cargo clippy --workspace --all-targets --all-features --exclude devhud-probe -- -D warnings`, then lints the mutually exclusive DevHud runtime scaffold with `cargo clippy -p devhud-probe --all-targets --features desktop-cef --locked -- -D warnings`.
+- `rust-clippy`: builds the DevHud frontend, installs its Linux desktop prerequisites, runs `cargo clippy --workspace --all-targets --all-features --exclude devhud -- -D warnings`, then lints the mutually exclusive DevHud runtime foundation with `cargo clippy -p devhud --all-targets --features desktop-cef --locked -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.

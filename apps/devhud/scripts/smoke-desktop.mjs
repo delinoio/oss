@@ -33,22 +33,54 @@ if (
   process.exit(0);
 }
 
-await runPackageManager(["run", "build:desktop"], { cwd: appRoot });
+let binaryPath;
 
-const binaryName =
-  process.platform === "win32" ? "devhud-probe.exe" : "devhud-probe";
-const binaryPath = resolve(
-  repositoryRoot,
-  "target",
-  "debug",
-  binaryName,
-);
+if (process.platform === "darwin") {
+  // CEF resolves its macOS framework relative to the .app bundle, so the raw
+  // target/debug binary cannot represent a valid desktop startup.
+  await runPackageManager(["run", "build"], { cwd: appRoot });
+  await runPackageManager(
+    [
+      "exec",
+      "tauri",
+      "build",
+      "--debug",
+      "--bundles",
+      "app",
+      "--features",
+      "desktop-cef",
+      "--config",
+      '{"bundle":{"active":true}}',
+      "--no-sign",
+    ],
+    { cwd: appRoot },
+  );
+  binaryPath = resolve(
+    repositoryRoot,
+    "target",
+    "debug",
+    "bundle",
+    "macos",
+    "DevHud.app",
+    "Contents",
+    "MacOS",
+    "devhud",
+  );
+} else {
+  await runPackageManager(["run", "build:desktop"], { cwd: appRoot });
+  binaryPath = resolve(
+    repositoryRoot,
+    "target",
+    "debug",
+    process.platform === "win32" ? "devhud.exe" : "devhud",
+  );
+}
 const output = [];
 const child = spawn(binaryPath, [], {
   cwd: appRoot,
   env: {
     ...process.env,
-    DEVHUD_PROBE_SMOKE: "1",
+    DEVHUD_SMOKE: "1",
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -74,10 +106,10 @@ clearTimeout(timeout);
 const combinedOutput = output.join("");
 if (
   exitCode !== 0 ||
-  !combinedOutput.includes("devhud.probe.capability_denial_observed")
+  !combinedOutput.includes("devhud.runtime.ready")
 ) {
   throw new Error(
-    `desktop smoke did not complete the bundled IPC handshake (exit ${exitCode ?? "signal"})`,
+    `desktop smoke did not observe the ready runtime (exit ${exitCode ?? "signal"})`,
   );
 }
 

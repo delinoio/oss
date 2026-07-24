@@ -1,8 +1,8 @@
-# DevHud feasibility gate
+# DevHud
 
-This package is only the common, non-product probe for the DevHud CEF feasibility gate. It contains no production tool, release automation, mobile shell, widget registration, updater implementation, public API, CLI, or deep link.
+This package is the local DevHud application foundation. Desktop builds use the exact pinned upstream Tauri CEF runtime with its sandbox enabled; future iOS and Android targets use Tauri's standard system webviews from the same Rust crate.
 
-The frontend exercises bundled-asset startup and an allowed/denied Tauri IPC pair. The typed harness in `src/probe` is reusable by platform drivers for the remaining gate scenarios. Desktop builds select the pinned upstream CEF runtime with its sandbox feature; future iOS and Android targets select Tauri's standard WRY-backed system webviews from this same Rust crate.
+The frontend loads only bundled assets and reads runtime information through the scoped `get_runtime_info` command. External navigation, popups, downloads, remote frontend resources, undeclared native commands, and broad application capabilities remain disabled.
 
 Package-local deterministic checks:
 
@@ -16,4 +16,4 @@ Package-local deterministic checks:
 - `pnpm check:rust`
 - `pnpm smoke:desktop`
 
-The gate is not a production application and is not a claim that the cross-platform matrix has passed. The exact upstream revision includes Tauri's macOS `TerminationSignals` target-guard correction, while fatal renderer-termination observation remains blocked on Windows and Linux; see `docs/apps-devhud-foundation.md`.
+The current foundation contains no production tool, release automation, mobile shell, widget registration, updater implementation, public API, CLI, or deep link. See `docs/apps-devhud-foundation.md` for the complete contract.
