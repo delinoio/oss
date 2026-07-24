@@ -132,11 +132,11 @@ func TestPostgreSQLOrganizationDeletionCleanupAndLiveSubscriptionSelection(
 			created_by_account_id,
 			expires_at
 		) VALUES (
-			$1,
-			$2,
-			decode(repeat(replace($1::text, '-', ''), 2), 'hex'),
+			$1::uuid,
+			$2::uuid,
+			decode(repeat(replace($1::uuid::text, '-', ''), 2), 'hex'),
 			'admin',
-			$3,
+			$3::uuid,
 			transaction_timestamp() + interval '1 day'
 		)
 	`,
