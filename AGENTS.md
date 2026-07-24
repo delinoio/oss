@@ -127,8 +127,8 @@ enum ProjectId {
 - `devhud` is a local-only project for individual developers and is independent from `delidev` and `delibase`.
 - `apps/devhud` is DevHud's sole canonical implementation path. Do not place DevHud runtime, native widget, backend, API, or shared contract code in another path.
 - DevHud must not consume or expose DeliDev accounts, catalog, billing, APIs, routes, contracts, organizations, or authentication. It has no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or cloud synchronization.
-- Production tools and user-visible widgets remain empty in `0.1.0`. The complete desktop/mobile, CEF runtime, identifier, security, diagnostic, GitHub-only updater, CI, beta-release, signing, support, performance, upstream-pin, rollback, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
-- `apps/devhud` contains the active application foundation and Cargo workspace member. Desktop builds use the exact pinned upstream Tauri CEF runtime and sandbox directly; product, mobile/widget, packaging, release, publisher, and support work may proceed only with synchronized implementation, validation, and contract updates.
+- Production tools and user-visible widgets remain empty in `0.1.0`. The active foundation includes a closed internal tool registry plus desktop/mobile empty-state UI, provider-owned theme/navigation state, and `test:a11y`; the complete runtime, identifier, security, diagnostic, CI, release, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
+- `apps/devhud` contains the active application foundation and Cargo workspace member. Desktop builds use the exact pinned upstream Tauri CEF runtime and sandbox directly; mobile builds use their native empty-state shell. Product, mobile/widget, packaging, release, publisher, and support work may proceed only with synchronized implementation, validation, and contract updates.
 
 ### Repository Default Technology Choices
 
@@ -352,6 +352,7 @@ Coverage expectations:
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
+- `node-devhud`: runs `pnpm install --frozen-lockfile` and DevHud `typecheck`, `lint`, unit, accessibility, and build commands.
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.

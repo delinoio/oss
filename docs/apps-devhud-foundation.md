@@ -4,8 +4,8 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: active foundation; `apps/devhud` contains the common bundled-asset application package and no production tool, mobile/widget, packaging, release, publisher, or public support implementation.
-- This document covers the future deployable package. The current implementation is limited to the shared bundled-asset frontend, `src-tauri` runtime-selection boundary, scoped runtime-information command, and deterministic local validation commands.
+- Status: active foundation; `apps/devhud` contains the common bundled-asset application package, internal empty tool registry, and desktop/mobile empty-state UI. It has no production tool, visible widget, packaging, release, publisher, or public support implementation.
+- This document covers the future deployable package. The current implementation is limited to the shared bundled-asset frontend, provider-owned System/Light/Dark UI state, internal registry filtering, `src-tauri` runtime-selection boundary, scoped runtime-information command, and deterministic local validation commands.
 
 ## Runtime and Language
 
@@ -71,7 +71,7 @@ The native boundary exposes only scoped Tauri/plugin commands required for setti
 
 ### Mobile screens and widget boundary
 
-The app provides stable internal screens for `Home`, `Widgets`, `Settings`, and `Diagnostics`, with explicit empty states because no production tool or visible widget ships in `0.1.0`.
+The app provides stable internal screens for `Home`, `Widgets`, `Settings`, and `Diagnostics`, with explicit empty states because no production tool or visible widget ships in `0.1.0`. The frontend may select an initial shell from the user agent, but must reconcile it to the authoritative native `system-webview` runtime result so iPadOS desktop-content mode remains mobile.
 
 The implementation must compile and test an iOS WidgetKit extension, an Android `AppWidgetProvider`, a shared data adapter, and a refresh bridge using fixtures. The WidgetKit extension must not be embedded in the distributed iOS app, and the `AppWidgetProvider` must not be registered in the Android manifest. Therefore no widget appears in either platform's widget gallery for this issue. Widget configuration and refresh are test fixtures only; no sample product tool is exposed.
 
@@ -119,7 +119,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The foundation provides package-local `build`, `typecheck`, `lint`, `test`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. Development, accessibility, complete desktop-matrix, mobile/widget, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
+The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics plus automated WCAG checks with `axe-core`; full desktop-matrix, mobile/widget compilation, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
 
 Required validation coverage is:
 
@@ -130,7 +130,7 @@ Required validation coverage is:
 - Installer, signature, updater, SBOM, and provenance validation.
 - Performance measurements must record HUD display latency, cold startup, package size, and idle memory per supported desktop platform, plus mobile startup time. Publish these measurements with the release; `0.1.0` defines no numeric pass threshold.
 
-DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. No dedicated DevHud release job exists; additional platform tasks must be added without weakening existing repository checks when their implementations are introduced.
+DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. The `node-devhud` CI job runs the frontend typecheck, lint, unit, accessibility, and build commands when DevHud inputs change. No dedicated DevHud release job exists; additional platform tasks must be added without weakening existing repository checks when their implementations are introduced.
 
 ## Dependencies and Integrations
 

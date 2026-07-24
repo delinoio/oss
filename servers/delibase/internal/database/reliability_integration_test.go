@@ -215,7 +215,7 @@ func TestPostgreSQLReliabilityEnqueueClaimsRetriesAndAudit(t *testing.T) {
 	}
 
 	testConcurrentReliabilityClaims(t, ctx, queries, actor)
-	testReliabilityCrashAndDailyRecovery(t, ctx, queries, actor)
+	testReliabilityCrashAndDailyRecovery(t, ctx, store, actor)
 	testImmutableAuditAndSensitiveRejection(t, ctx, store, actor)
 }
 
@@ -305,10 +305,11 @@ func testConcurrentReliabilityClaims(
 func testReliabilityCrashAndDailyRecovery(
 	t *testing.T,
 	ctx context.Context,
-	queries dbgen.Querier,
+	store *Store,
 	actor safelog.ActorPseudonym,
 ) {
 	t.Helper()
+	queries := store.Queries()
 	eventID := testReliabilityUUID(80)
 	_, err := reliability.EnqueueOutbox(ctx, queries, reliability.OutboxInput{
 		ID:             eventID,
@@ -321,6 +322,16 @@ func testReliabilityCrashAndDailyRecovery(
 		Actor:          actor,
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	// Other integration tests share this ephemeral database. Make this event the
+	// next queue candidate so the recovery assertions below cannot claim an
+	// unrelated pending outbox event.
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE integration_outbox
+		SET next_attempt_at = '2000-01-01T00:00:00Z'
+		WHERE id = $1
+	`, eventID); err != nil {
 		t.Fatal(err)
 	}
 	storage, err := reliability.NewPostgreSQLStorage(queries)

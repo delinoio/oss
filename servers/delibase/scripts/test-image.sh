@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 image="${DELIBASE_TEST_IMAGE:-delibase:test}"
 container="delibase-test-image-$$"
-port="${DELIBASE_TEST_IMAGE_PORT:-58080}"
+port="${DELIBASE_TEST_IMAGE_PORT:-}"
 database_url="${DELIBASE_IMAGE_TEST_DATABASE_URL:-postgres://delibase:delibase_test@host.docker.internal:5432/delibase?sslmode=disable}"
 
 cleanup() {
@@ -24,10 +24,15 @@ if [ "$image_user" != "65532:65532" ]; then
   exit 1
 fi
 
+port_mapping="127.0.0.1::8080"
+if [ -n "$port" ]; then
+  port_mapping="127.0.0.1:${port}:8080"
+fi
+
 docker run --rm -d \
   --name "$container" \
   --add-host host.docker.internal:host-gateway \
-  -p "127.0.0.1:${port}:8080" \
+  -p "$port_mapping" \
   -e DELIBASE_API_ORIGIN=https://delibase.deli.dev \
   -e DELIBASE_CORS_ALLOWED_ORIGINS=https://deli.dev \
   -e DELIBASE_CATALOG_PATH=/etc/delibase/catalog.json \
@@ -41,6 +46,10 @@ docker run --rm -d \
   -e DELIBASE_POLAR_WEBHOOK_SECRET=image-test-webhook-secret \
   -e DELIBASE_LOG_PSEUDONYM_KEY=0123456789abcdef0123456789abcdef \
   "$image" >/dev/null
+
+if [ -z "$port" ]; then
+  port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostPort}}' "$container")"
+fi
 
 for _ in $(seq 1 30); do
   if curl --fail --silent "http://127.0.0.1:${port}/healthz" >/dev/null &&
