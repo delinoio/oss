@@ -112,6 +112,13 @@ export function signingModeForEnvironment(environment) {
   const hasAppleIdCredentials = appleIdCredentialNames.every((name) =>
     Boolean(environment[name]),
   );
+  if (
+    environment.APPLE_ID &&
+    environment.APPLE_PASSWORD &&
+    !environment.APPLE_TEAM_ID
+  ) {
+    throw new Error("macOS notarization credentials are incomplete");
+  }
   if (!hasAppStoreConnectCredentials && !hasAppleIdCredentials) {
     throw new Error("macOS notarization credentials are incomplete");
   }

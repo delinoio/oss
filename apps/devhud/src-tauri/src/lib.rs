@@ -290,13 +290,15 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
         });
 
     #[cfg(all(feature = "desktop-cef", target_os = "macos"))]
-    let builder = builder.on_web_content_process_terminate(|webview| {
+    let builder = builder.on_web_content_process_terminate(|_| {
         tracing::error!(
             event = "devhud.probe.renderer_termination",
             classification = "renderer-termination",
             "CEF renderer terminated; exiting without restart"
         );
-        webview.app_handle().exit(71);
+        // The pinned CEF runtime's `run_return` discards requested exit codes
+        // and always returns zero. Exit directly until upstream propagates them.
+        std::process::exit(71);
     });
 
     builder.setup(|app| {

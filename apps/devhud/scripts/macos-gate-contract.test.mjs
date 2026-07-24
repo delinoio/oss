@@ -212,6 +212,19 @@ test("requires notarization credentials for Developer ID mode", () => {
     }),
     "developer-id",
   );
+  assert.throws(
+    () =>
+      signingModeForEnvironment({
+        APPLE_API_ISSUER: "issuer",
+        APPLE_API_KEY: "key",
+        APPLE_API_KEY_PATH: "/private/key.p8",
+        APPLE_CERTIFICATE: "certificate",
+        APPLE_CERTIFICATE_PASSWORD: "password",
+        APPLE_ID: "developer@example.com",
+        APPLE_PASSWORD: "password",
+      }),
+    /notarization credentials are incomplete/u,
+  );
   assert.equal(
     signingModeForEnvironment({
       APPLE_CERTIFICATE: "certificate",
