@@ -34,7 +34,7 @@ func TestImplementedAccountMethodsRequireAuthentication(t *testing.T) {
 	}
 }
 
-func TestOutOfScopeInvitationMethodsRemainTypedUnimplemented(t *testing.T) {
+func TestInvitationMethodsRequireAuthentication(t *testing.T) {
 	t.Parallel()
 	response, err := NewOrganization(Dependencies{}).CreateOrganizationInvitation(
 		context.Background(),
@@ -47,8 +47,8 @@ func TestOutOfScopeInvitationMethodsRemainTypedUnimplemented(t *testing.T) {
 	if !errors.As(err, &connectFailure) {
 		t.Fatalf("error = %T, want *connect.Error", err)
 	}
-	if connectFailure.Code() != connect.CodeUnimplemented {
-		t.Fatalf("code = %s, want %s", connectFailure.Code(), connect.CodeUnimplemented)
+	if connectFailure.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("code = %s, want %s", connectFailure.Code(), connect.CodeUnauthenticated)
 	}
 }
 
@@ -106,6 +106,41 @@ func TestMemberHasActiveReservationsReturnsStableReason(t *testing.T) {
 		connect.CodeFailedPrecondition,
 		delibasev1.ErrorReason_ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS,
 	)
+}
+
+func TestTeamSubtreeReservationBlockerFailsClosed(t *testing.T) {
+	t.Parallel()
+	blocker := &fakeTeamReservationBlocker{blocked: true}
+	err := requireTeamSubtreeWithoutActiveReservations(
+		context.Background(),
+		blocker,
+		dbgen.HasActiveReservationsForTeamSubtreeParams{},
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeFailedPrecondition,
+		delibasev1.ErrorReason_ERROR_REASON_TEAM_SUBTREE_HAS_ACTIVE_RESERVATIONS,
+	)
+	blocker.err = errors.New("database unavailable")
+	err = requireTeamSubtreeWithoutActiveReservations(
+		context.Background(),
+		blocker,
+		dbgen.HasActiveReservationsForTeamSubtreeParams{},
+	)
+	requireConnectCode(t, err, connect.CodeInternal)
+}
+
+type fakeTeamReservationBlocker struct {
+	blocked bool
+	err     error
+}
+
+func (blocker *fakeTeamReservationBlocker) HasActiveReservationsForTeamSubtree(
+	context.Context,
+	dbgen.HasActiveReservationsForTeamSubtreeParams,
+) (bool, error) {
+	return blocker.blocked, blocker.err
 }
 
 func TestOrganizationDeletionBlockedReturnsStableReason(t *testing.T) {

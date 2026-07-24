@@ -191,6 +191,7 @@ type AuditInput struct {
 	Actor             safelog.ActorPseudonym
 	OrganizationID    uuid.UUID
 	TeamID            uuid.UUID
+	TeamNameSnapshot  string
 	ServiceIdentityID uuid.UUID
 	MeterID           uuid.UUID
 	ReservationID     uuid.UUID
