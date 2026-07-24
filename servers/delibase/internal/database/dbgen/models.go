@@ -32,6 +32,7 @@ type AuditEvent struct {
 	SafeErrorClass    pgtype.Text
 	Metadata          []byte
 	RetainUntil       pgtype.Timestamptz
+	TeamNameSnapshot  pgtype.Text
 }
 
 type BillingPeriod struct {

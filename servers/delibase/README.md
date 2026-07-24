@@ -2,8 +2,8 @@
 
 This directory contains the runnable, artifact-only delibase server foundation.
 It does not deploy or activate `https://delibase.deli.dev`. Authenticated
-`AccountService` and core non-invitation `OrganizationService` RPCs are backed
-by PostgreSQL/sqlc transactions. Invitation and hierarchy/billing/usage RPCs
+`AccountService`, `TeamService`, and `OrganizationService` RPCs (including
+invitations) are backed by PostgreSQL/sqlc transactions. Billing and usage RPCs
 outside this implementation slice return Connect `Unimplemented`; none return
 placeholder success.
 
@@ -89,7 +89,10 @@ When Docker is available, the PostgreSQL harness creates an ephemeral database,
 applies the ordered migrations twice, and runs transaction, duplicate enqueue,
 concurrent claim, crash/restart, retry/dead-letter, exact transition, immutable
 audit, credential-rejection, authenticated onboarding/organization race,
-multiple-owner, slug-alias, and retention-safe deletion integration tests:
+multiple-owner, slug-alias, five-level/cycle-safe team hierarchy,
+downward-only effective access, protected/subtree deletion, hashed reusable
+invitations, revocation/expiration, and retention-safe deletion integration
+tests:
 
 ```sh
 servers/delibase/scripts/test-postgres.sh
