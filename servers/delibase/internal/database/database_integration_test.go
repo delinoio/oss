@@ -2019,28 +2019,35 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := overageCapacity.Exec(ctx, `
-		INSERT INTO polar_paid_cycles (
-			polar_order_id, organization_id, subscription_id,
-			billing_period_id, grant_micros, paid_at
-		) VALUES (
-			'order_commit_shortfall', $1, $2, $3, 10000000,
-			statement_timestamp()
-		);
-		INSERT INTO polar_refunds (
-			polar_refund_id, polar_order_id, status, requested_micros,
-			reversed_micros, provider_event_at
-		) VALUES (
-			'refund_commit_shortfall', 'order_commit_shortfall',
-			'succeeded', 10, 10, statement_timestamp()
-		);
+		WITH paid_cycle AS (
+			INSERT INTO polar_paid_cycles (
+				polar_order_id, organization_id, subscription_id,
+				billing_period_id, grant_micros, paid_at
+			) VALUES (
+				'order_commit_shortfall', $1, $2, $3, 10000000,
+				statement_timestamp()
+			)
+			RETURNING polar_order_id
+		), refund AS (
+			INSERT INTO polar_refunds (
+				polar_refund_id, polar_order_id, status, requested_micros,
+				reversed_micros, provider_event_at
+			)
+			SELECT
+				'refund_commit_shortfall', polar_order_id,
+				'succeeded', 10, 10, statement_timestamp()
+			FROM paid_cycle
+			RETURNING polar_refund_id
+		)
 		INSERT INTO billing_shortfalls (
 			id, organization_id, billing_period_id, polar_refund_id,
 			source_reference, amount_micros
-		) VALUES (
-			'0198a000-0000-7000-8000-000000000324',
-			$1, $3, 'refund_commit_shortfall',
-			'refund-shortfall-before-commit', 10
 		)
+		SELECT
+			'0198a000-0000-7000-8000-000000000324',
+			$1, $3, polar_refund_id,
+			'refund-shortfall-before-commit', 10
+		FROM refund
 	`, orgA, subA, currentPeriodA); err != nil {
 		_ = overageCapacity.Rollback(context.WithoutCancel(ctx))
 		t.Fatal(err)
