@@ -4,7 +4,7 @@
 
 Define the foundation contract and CEF feasibility gate for DevHud, a local-only developer-tool shell for individual developers. The project is intentionally independent from the DeliDev web platform.
 
-`apps/devhud` now contains one common, non-product feasibility package: a minimal React/TypeScript/Rsbuild bundled-asset probe, a target-selecting Tauri Rust crate, and a reusable typed gate harness. It does not create a production tool, mobile/widget foundation, CI job, packaging or release workflow, or support/publisher artifact. The gate is blocked at the pinned upstream Tauri revision, so `0.1.0` product and release work must not proceed.
+`apps/devhud` now contains one common, non-product feasibility package: a minimal React/TypeScript/Rsbuild bundled-asset probe, a target-selecting Tauri Rust crate, and a reusable typed gate harness. Its exact upstream Tauri pin includes the macOS compilation correction. It does not create a production tool, mobile/widget foundation, CI job, packaging or release workflow, or support/publisher artifact. The gate remains blocked at the pinned revision, so `0.1.0` product and release work must not proceed.
 
 ## Project ID
 
@@ -26,7 +26,7 @@ No other repository path may implement DevHud. `servers/`, `protos/`, `crates/`,
 - The common gate is one pnpm package: a React and TypeScript frontend built with Rsbuild and a Tauri Rust crate under `src-tauri`. Root package scripts remain delegators; deterministic probe tasks are package-local.
 - Desktop uses Tauri's pinned upstream CEF runtime. Mobile uses standard Tauri iOS WKWebView and Android WebView runtimes. Desktop and mobile must not silently substitute one another's runtime model.
 - The CEF feasibility gate must pass on macOS, Windows, and Ubuntu for x64 and ARM64 before product-foundation and release work proceeds. A required fork, local runtime patch, or failed gate stops the work and requires a separate architecture decision.
-- The gate is currently blocked: at commit `649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769`, Tauri's public web-content-process termination hook is macOS/iOS-only and `tauri-runtime-cef` discards its renderer-termination handler on Windows/Linux. Fatal renderer termination cannot be proved there without changing upstream source.
+- The gate is currently blocked: at commit `f49ebda2fdba5755456b0f049e32593ca0ea331a`, Tauri's public web-content-process termination hook is macOS/iOS-only and `tauri-runtime-cef` discards its renderer-termination handler on Windows/Linux. Fatal renderer termination cannot be proved there without changing upstream source. This exact pin includes the upstream macOS `TerminationSignals` target-guard correction.
 - The exact identifiers are immutable contracts: application ID `dev.deli.devhud`, settings key `devhud.settings.v1`, widget configuration key `devhud.widget-configuration.v1`, iOS App Group `group.dev.deli.devhud`, and build-only widget identifier `dev.deli.devhud.widget`.
 - Production tool registration and user-visible mobile widgets are empty in `0.1.0`; fixture tools and fixture widget state may exist only in tests.
 - DevHud has no CLI, backend, public API, Connect RPC service, route, deep link, plugin SDK, remote plugin surface, telemetry, account system, cloud synchronization, or DeliDev integration. In particular, it must not consume DeliDev accounts, catalog, billing, APIs, routes, or contracts.

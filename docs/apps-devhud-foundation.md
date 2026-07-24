@@ -11,7 +11,7 @@
 
 - Frontend runtime: React with TypeScript, built by Rsbuild.
 - Native runtime: Tauri Rust application under `src-tauri`.
-- Desktop runtime: Tauri's upstream CEF runtime from the `feat/cef` line, pinned exactly to commit `649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769` with `@tauri-apps/cli-cef` `3.0.0-alpha.6` in lockfiles. The implementation must not build from a moving branch.
+- Desktop runtime: Tauri's upstream CEF runtime from the `feat/cef` line, pinned exactly to commit `f49ebda2fdba5755456b0f049e32593ca0ea331a` with `@tauri-apps/cli-cef` `3.0.0-alpha.6` in lockfiles. The implementation must not build from a moving branch.
 - Mobile runtime: standard Tauri iOS WKWebView and Android WebView. Mobile must not use the desktop CEF runtime.
 - Desktop operating systems: macOS 14 or newer, Windows 11, and Ubuntu 24.04 LTS.
 - Desktop architectures: separate x64 and ARM64 builds for each supported desktop operating system.
@@ -35,13 +35,13 @@ DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source pa
 
 ### Current gate blocker
 
-The gate is blocked at the required upstream commit:
+The exact Tauri pin includes the upstream correction for the earlier macOS `TerminationSignals` target-guard regression. Compilation alone does not satisfy the gate, which remains blocked at the required upstream commit:
 
 - Tauri's public `Builder::on_web_content_process_terminate` API is compiled only for macOS and iOS. It is unavailable to a Windows or Linux DevHud application.
 - `tauri-runtime-cef` receives CEF's `on_render_process_terminated` callback internally, but its webview construction takes the termination handler only on macOS/iOS and explicitly assigns `None` on other targets.
 - Therefore the required fatal renderer-termination diagnostic and immediate shutdown cannot be installed or proved on Windows or Ubuntu through the public pinned API. Fixing this at the pinned revision requires changing upstream Tauri/`tauri-runtime-cef` source, which this project forbids.
 
-This is the CEF stop condition. The common probe and typed evidence harness remain useful for architecture evaluation, but product UI, tray/global-shortcut/autostart implementation, mobile/widget work, packaging, updater implementation, CI expansion, signing, publishing, and release work are blocked pending a separate architecture decision. Evidence: [public hook target guard](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri/src/app.rs#L1884-L1898) and [CEF handler discarded on Windows/Linux](https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri-runtime-cef/src/webview.rs#L354-L360).
+This is the CEF stop condition. The common probe and typed evidence harness remain useful for architecture evaluation, but product UI, tray/global-shortcut/autostart implementation, mobile/widget work, packaging, updater implementation, CI expansion, signing, publishing, and release work are blocked pending a separate architecture decision. Evidence: [macOS target-guard correction](https://github.com/tauri-apps/tauri/commit/f49ebda2fdba5755456b0f049e32593ca0ea331a), [public hook target guard](https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri/src/app.rs#L1884-L1898), and [CEF handler discarded on Windows/Linux](https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri-runtime-cef/src/webview.rs#L354-L360).
 
 ## Users and Operators
 
@@ -146,7 +146,7 @@ No DevHud CI or release job exists. The current package commands are local feasi
 
 ### Upstream and project boundaries
 
-- Tauri, `tauri-build`, and the directly selected desktop `tauri-runtime-cef` sandbox dependency are pinned to commit `649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769`; `@tauri-apps/cli-cef` is pinned to `3.0.0-alpha.6`. Do not maintain a Tauri, WRY, or `cef-rs` fork or local patch, and do not replace the revision with `feat/cef` or another moving branch.
+- Tauri, `tauri-build`, and the directly selected desktop `tauri-runtime-cef` sandbox dependency are pinned to commit `f49ebda2fdba5755456b0f049e32593ca0ea331a`; `@tauri-apps/cli-cef` is pinned to `3.0.0-alpha.6`. Do not maintain a Tauri, WRY, or `cef-rs` fork or local patch, and do not replace the revision with `feat/cef` or another moving branch.
 - DevHud is a local-only app for individual developers. It must remain independent from DeliDev and must not consume DeliDev accounts, catalog, billing, APIs, routes, or contracts. It has no dependency on delibase, Logto, Connect RPC, or any DeliDev service.
 - The only runtime network dependency is GitHub Releases for the updater exception defined in Security. No backend, API origin, remote configuration, or online operational service is allowed.
 
@@ -176,7 +176,7 @@ No DevHud CI or release job exists. The current package commands are local feasi
 - [Documentation catalog](README.md)
 - [Issue #729](https://github.com/delinoio/oss/issues/729)
 - [Tauri CEF branch](https://github.com/tauri-apps/tauri/tree/feat/cef)
-- [Pinned Tauri commit](https://github.com/tauri-apps/tauri/commit/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769)
+- [Pinned Tauri commit](https://github.com/tauri-apps/tauri/commit/f49ebda2fdba5755456b0f049e32593ca0ea331a)
 - [Tauri system tray](https://v2.tauri.app/learn/system-tray/)
 - [Tauri global shortcut](https://v2.tauri.app/plugin/global-shortcut/)
 - [Tauri mobile plugins](https://v2.tauri.app/develop/plugins/develop-mobile/)

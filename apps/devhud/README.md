@@ -16,4 +16,4 @@ Package-local deterministic checks:
 - `pnpm check:rust`
 - `pnpm smoke:desktop`
 
-The gate is not a production application and is not a claim that the cross-platform matrix has passed. The pinned upstream revision currently blocks fatal renderer-termination observation on Windows and Linux; see `docs/apps-devhud-foundation.md`.
+The gate is not a production application and is not a claim that the cross-platform matrix has passed. The exact upstream revision includes Tauri's macOS `TerminationSignals` target-guard correction, while fatal renderer-termination observation remains blocked on Windows and Linux; see `docs/apps-devhud-foundation.md`.
