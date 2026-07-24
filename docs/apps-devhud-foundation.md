@@ -130,7 +130,7 @@ Required validation coverage is:
 - Installer, signature, updater, SBOM, and provenance validation.
 - Performance measurements must record HUD display latency, cold startup, package size, and idle memory per supported desktop platform, plus mobile startup time. Publish these measurements with the release; `0.1.0` defines no numeric pass threshold.
 
-DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. No dedicated DevHud release job exists; additional platform tasks must be added without weakening existing repository checks when their implementations are introduced.
+DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. The `node-devhud` CI job runs the frontend typecheck, lint, unit, accessibility, and build commands when DevHud inputs change. No dedicated DevHud release job exists; additional platform tasks must be added without weakening existing repository checks when their implementations are introduced.
 
 ## Dependencies and Integrations
 

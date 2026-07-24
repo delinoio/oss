@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { loadRuntimeInfo, tauriRuntimeBridge, type RuntimeInfo } from "./runtime/startup";
+import type { ApplicationPlatform } from "./runtime/platform";
 import { Dialog } from "./ui/Dialog";
 import { ApplicationProvider, MobileScreen, ThemePreference, useApplication } from "./ui/state";
 
@@ -69,13 +70,13 @@ function MobileShell({ runtime }: { runtime: RuntimeState }) {
   return <main className="mobile-shell"><header className="app-header"><Wordmark /></header><MobileContent runtime={runtime} /><nav aria-label="Mobile navigation" className="mobile-nav">{Object.values(MobileScreen).map((screen) => <button aria-current={mobileScreen === screen ? "page" : undefined} key={screen} onClick={() => setMobileScreen(screen)} type="button">{mobileScreenLabels[screen]}</button>)}</nav></main>;
 }
 
-function ApplicationSurface({ platform }: { platform: "desktop" | "mobile" }) {
+function ApplicationSurface({ platform }: { platform: ApplicationPlatform }) {
   const [runtime, setRuntime] = useState<RuntimeState>({ status: "loading" });
   useEffect(() => { let active = true; void loadRuntimeInfo(tauriRuntimeBridge).then((runtimeInfo) => { if (active) setRuntime({ status: "ready", runtimeInfo }); }, () => { if (active) setRuntime({ status: "failed", message: "DevHud could not initialize its local runtime." }); }); return () => { active = false; }; }, []);
   const { settingsOpen } = useApplication();
   return <>{platform === "desktop" ? <DesktopHud runtime={runtime} /> : <MobileShell runtime={runtime} />}{settingsOpen ? <SettingsDialog /> : null}</>;
 }
 
-export function App({ platform = "desktop" }: { platform?: "desktop" | "mobile" }) {
+export function App({ platform = "desktop" }: { platform?: ApplicationPlatform }) {
   return <ApplicationProvider><ApplicationSurface platform={platform} /></ApplicationProvider>;
 }
