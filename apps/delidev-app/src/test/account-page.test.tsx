@@ -11,6 +11,7 @@ import {
 } from "../auth/AuthSession";
 import { canonicalAudience } from "../config";
 import { AccountPage } from "../pages/AccountPage";
+import { TestAccountStateProvider } from "./TestAccountStateProvider";
 
 function connectJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -71,10 +72,12 @@ describe("account organization creation", () => {
               transport,
             }}
           >
-            <Routes>
-              <Route path="/account" element={<AccountPage />} />
-              <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
-            </Routes>
+            <TestAccountStateProvider organizations={[]}>
+              <Routes>
+                <Route path="/account" element={<AccountPage />} />
+                <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -154,9 +157,11 @@ describe("account deletion", () => {
               transport,
             }}
           >
-            <Routes>
-              <Route path="/account" element={<AccountPage />} />
-            </Routes>
+            <TestAccountStateProvider organizations={[]}>
+              <Routes>
+                <Route path="/account" element={<AccountPage />} />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -238,9 +243,11 @@ describe("account deletion", () => {
               transport,
             }}
           >
-            <Routes>
-              <Route path="/account" element={<AccountPage />} />
-            </Routes>
+            <TestAccountStateProvider organizations={[]}>
+              <Routes>
+                <Route path="/account" element={<AccountPage />} />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,

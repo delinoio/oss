@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canCreateChildTeam,
+  canManageMember,
   canManageOrganization,
   canUseTeamAsParent,
   formatOptionalUsdMicros,
@@ -57,6 +58,24 @@ describe("organization billing inputs", () => {
     expect(canManageOrganization(OrganizationRole.ADMIN)).toBe(true);
     expect(canManageOrganization(OrganizationRole.MEMBER)).toBe(false);
     expect(canManageOrganization(OrganizationRole.UNSPECIFIED)).toBe(false);
+  });
+
+  it("keeps Owner management unavailable to Admins", () => {
+    expect(
+      canManageMember(OrganizationRole.OWNER, OrganizationRole.OWNER),
+    ).toBe(true);
+    expect(
+      canManageMember(OrganizationRole.ADMIN, OrganizationRole.ADMIN),
+    ).toBe(true);
+    expect(
+      canManageMember(OrganizationRole.ADMIN, OrganizationRole.MEMBER),
+    ).toBe(true);
+    expect(
+      canManageMember(OrganizationRole.ADMIN, OrganizationRole.OWNER),
+    ).toBe(false);
+    expect(
+      canManageMember(OrganizationRole.MEMBER, OrganizationRole.MEMBER),
+    ).toBe(false);
   });
 
   it("distinguishes missing usage wrappers from explicit zero values", () => {

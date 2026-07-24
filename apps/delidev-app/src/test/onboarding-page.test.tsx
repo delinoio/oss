@@ -12,6 +12,7 @@ import {
 import { ProtectedRoute } from "../components/ProtectedRoute";
 import { canonicalAudience } from "../config";
 import { OnboardingPage } from "../pages/OnboardingPage";
+import { TestAccountStateProvider } from "./TestAccountStateProvider";
 
 function connectJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -67,10 +68,12 @@ describe("account onboarding", () => {
               transport,
             }}
           >
-            <Routes>
-              <Route path="/onboarding" element={<OnboardingPage />} />
-              <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
-            </Routes>
+            <TestAccountStateProvider onboardingRequired organizations={[]}>
+              <Routes>
+                <Route path="/onboarding" element={<OnboardingPage />} />
+                <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,

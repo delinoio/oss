@@ -24,6 +24,7 @@ function DialogHarness({ onClose }: { onClose: () => void }) {
           <h2 id="dialog-title">Delete account?</h2>
           <p id="dialog-description">This action is permanent.</p>
           <button type="button">Keep account</button>
+          <button type="button">Delete account</button>
         </Dialog>
       ) : null}
     </>
@@ -34,12 +35,20 @@ describe("dialog", () => {
   it("focuses its first action, closes on Escape, and restores focus", async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
-    render(<DialogHarness onClose={onClose} />);
+    const { container } = render(<DialogHarness onClose={onClose} />);
     const trigger = screen.getByRole("button", { name: "Review deletion" });
     await user.click(trigger);
-    expect(screen.getByRole("button", { name: "Keep account" })).toHaveFocus();
+    const keep = screen.getByRole("button", { name: "Keep account" });
+    const remove = screen.getByRole("button", { name: "Delete account" });
+    expect(keep).toHaveFocus();
+    expect(container.inert).toBe(true);
+    await user.tab({ shift: true });
+    expect(remove).toHaveFocus();
+    await user.tab();
+    expect(keep).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledOnce();
+    expect(container.inert).not.toBe(true);
     expect(trigger).toHaveFocus();
   });
 });

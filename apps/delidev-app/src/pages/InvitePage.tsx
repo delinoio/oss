@@ -1,5 +1,6 @@
 import { createClient } from "@connectrpc/connect";
 import {
+  ErrorReason,
   OrganizationRole,
   OrganizationService,
   TeamRole,
@@ -9,6 +10,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
+import {
+  describeDelibaseError,
+  getDelibaseError,
+} from "../api/errors";
 import { ErrorState, LoadingState, OfflineActionHint } from "../components/States";
 import { useDocumentMetadata } from "../hooks/useDocumentMetadata";
 import { useOnline } from "../hooks/useOnline";
@@ -38,10 +43,17 @@ type AcceptanceState =
   | { status: "pending" }
   | { error: unknown; status: "error" };
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "The request could not be completed. Please try again.";
+function invitationErrorTitle(error: unknown): string {
+  switch (getDelibaseError(error).reason) {
+    case ErrorReason.INVITATION_EXPIRED:
+      return "This invitation expired";
+    case ErrorReason.INVITATION_REVOKED:
+      return "This invitation was revoked";
+    case ErrorReason.INVITATION_INVALID:
+      return "This invitation link is invalid";
+    default:
+      return "This invitation isn’t available";
+  }
 }
 
 export function InvitePage() {
@@ -164,7 +176,7 @@ export function InvitePage() {
         <ErrorState
           error={currentInvitation.error}
           onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
-          title="This invitation isn’t available"
+          title={invitationErrorTitle(currentInvitation.error)}
         />
       </div>
     );
@@ -193,9 +205,14 @@ export function InvitePage() {
             team as {teamRole}.
           </p>
         ) : null}
+        <p className="muted">
+          This link can be used by multiple people until it expires or is
+          revoked. If you already belong to this organization, your existing
+          organization role will not change.
+        </p>
         {acceptance.status === "error" ? (
           <p className="inline-error" role="alert">
-            {errorMessage(acceptance.error)}
+            {describeDelibaseError(acceptance.error)}
           </p>
         ) : null}
         <button

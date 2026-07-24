@@ -1,13 +1,11 @@
-import {
-  createConnectQueryKey,
-  useMutation,
-} from "@connectrpc/connect-query";
+import { useMutation } from "@connectrpc/connect-query";
 import { AccountService } from "@delinoio/delibase-connect";
-import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { describeDelibaseError } from "../api/errors";
 import { useAuthSession } from "../auth/AuthSession";
+import { useAccountState } from "../components/ProtectedRoute";
 import { OfflineActionHint } from "../components/States";
 import { useDocumentMetadata } from "../hooks/useDocumentMetadata";
 import { useOnline } from "../hooks/useOnline";
@@ -21,9 +19,9 @@ export function OnboardingPage() {
     "Set up your DeliDev profile and first organization.",
   );
   const { transport } = useAuthSession();
+  const { refreshAccountState } = useAccountState();
   const navigate = useNavigate();
   const online = useOnline();
-  const queryClient = useQueryClient();
   const [displayName, setDisplayName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
@@ -56,19 +54,17 @@ export function OnboardingPage() {
         organizationSlug: normalizedSlug,
       },
       {
-        onError: (error) => setFormError(error.message),
+        onError: (error) => setFormError(describeDelibaseError(error)),
         onSuccess: async () => {
-          idempotencyKey.current = undefined;
-          await queryClient.invalidateQueries({
-            exact: true,
-            queryKey: createConnectQueryKey({
-              cardinality: "finite",
-              input: {},
-              schema: AccountService.method.getAccountState,
-              transport,
-            }),
-          });
-          navigate(`/o/${normalizedSlug}/apps`, { replace: true });
+          try {
+            await refreshAccountState();
+            idempotencyKey.current = undefined;
+            navigate(`/o/${normalizedSlug}/apps`, { replace: true });
+          } catch {
+            setFormError(
+              "Your workspace was created, but account refresh failed. Submit again to safely resume.",
+            );
+          }
         },
       },
     );

@@ -12,12 +12,16 @@ import {
   OrganizationRole,
   OrganizationService,
   SubscriptionStatus,
+  TeamAccessSource,
   TeamService,
   TeamRole,
+  type EffectiveTeamAccess,
   type LedgerEntry,
   type Organization,
   type OrganizationInvitation,
+  type OrganizationMember,
   type Team,
+  type TeamMembership,
 } from "@delinoio/delibase-connect";
 import {
   useMemo,
@@ -29,8 +33,10 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import { usePublicTransport } from "../api/ApiContext";
+import { describeDelibaseError } from "../api/errors";
 import { CatalogCard } from "../components/CatalogCard";
 import { Dialog } from "../components/Dialog";
+import { useAccountState } from "../components/ProtectedRoute";
 import {
   EmptyState,
   ErrorState,
@@ -190,7 +196,13 @@ export function MembersPage() {
     "Members",
     "View organization members and manage invitations.",
   );
-  const { callerRole, organization, transport } = useOrganization();
+  const {
+    callerRole,
+    organization,
+    refreshOrganization,
+    transport,
+  } = useOrganization();
+  const { accountState, refreshAccountState } = useAccountState();
   const members = useInfiniteQuery(
     OrganizationService.method.listOrganizationMembers,
     {
@@ -217,6 +229,11 @@ export function MembersPage() {
         description="View organization members, roles, and active invitations."
         title="Members"
       />
+      <p className="muted">
+        Organizations may have multiple Owners. The server blocks any role
+        change, removal, departure, or account deletion that would remove the
+        last Owner.
+      </p>
       {canManageOrganization(callerRole) ? (
         <OrganizationInvitationManagement
           organization={organization}
@@ -247,6 +264,9 @@ export function MembersPage() {
                   <th scope="col">Member</th>
                   <th scope="col">Role</th>
                   <th scope="col">Joined</th>
+                  {canManageOrganization(callerRole) ? (
+                    <th scope="col">Actions</th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -272,6 +292,26 @@ export function MembersPage() {
                           ).toLocaleDateString("en-US")
                         : "—"}
                     </td>
+                    {canManageOrganization(callerRole) ? (
+                      <td>
+                        <MemberActions
+                          callerAccountId={
+                            accountState.account?.accountId?.value ?? ""
+                          }
+                          callerRole={callerRole}
+                          member={member}
+                          onUpdated={async () => {
+                            await Promise.all([
+                              members.refetch(),
+                              refreshAccountState(),
+                              refreshOrganization(),
+                            ]);
+                          }}
+                          organization={organization}
+                          transport={transport}
+                        />
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -297,6 +337,204 @@ export function MembersPage() {
             </div>
           ) : null}
         </>
+      ) : null}
+    </>
+  );
+}
+
+export function canManageMember(
+  callerRole: OrganizationRole,
+  targetRole: OrganizationRole,
+): boolean {
+  return (
+    callerRole === OrganizationRole.OWNER ||
+    (callerRole === OrganizationRole.ADMIN &&
+      targetRole !== OrganizationRole.OWNER)
+  );
+}
+
+function MemberActions({
+  callerAccountId,
+  callerRole,
+  member,
+  onUpdated,
+  organization,
+  transport,
+}: {
+  callerAccountId: string;
+  callerRole: OrganizationRole;
+  member: OrganizationMember;
+  onUpdated: () => Promise<void>;
+  organization: Organization;
+  transport: Transport;
+}) {
+  const navigate = useNavigate();
+  const online = useOnline();
+  const [open, setOpen] = useState(false);
+  const [role, setRole] = useState(member.role);
+  const [formError, setFormError] = useState("");
+  const updateKey = useRef<{ key: string } | undefined>(undefined);
+  const removalKey = useRef<{ key: string } | undefined>(undefined);
+  const updateRole = useMutation(
+    OrganizationService.method.updateOrganizationMemberRole,
+    { transport },
+  );
+  const removeMember = useMutation(
+    OrganizationService.method.removeOrganizationMember,
+    { transport },
+  );
+  const leaveOrganization = useMutation(
+    OrganizationService.method.leaveOrganization,
+    { transport },
+  );
+  const accountId = member.accountId?.value ?? "";
+  const isCurrentMember = accountId === callerAccountId;
+  const isPending =
+    updateRole.isPending ||
+    removeMember.isPending ||
+    leaveOrganization.isPending;
+  const close = () => {
+    if (isPending) return;
+    updateKey.current = undefined;
+    removalKey.current = undefined;
+    setOpen(false);
+  };
+
+  if (!canManageMember(callerRole, member.role)) {
+    return <span className="muted">Owner-managed</span>;
+  }
+
+  const saveRole = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    if (role === member.role) {
+      setFormError("Choose a different organization role.");
+      return;
+    }
+    updateKey.current ??= createIdempotencyKey();
+    try {
+      await updateRole.mutateAsync({
+        accountId: member.accountId,
+        idempotency: updateKey.current,
+        organizationId: organization.organizationId,
+        role,
+      });
+      updateKey.current = undefined;
+      await onUpdated();
+      setOpen(false);
+    } catch (error) {
+      setFormError(describeDelibaseError(error));
+    }
+  };
+
+  const remove = async () => {
+    setFormError("");
+    removalKey.current ??= createIdempotencyKey();
+    try {
+      if (isCurrentMember) {
+        await leaveOrganization.mutateAsync({
+          idempotency: removalKey.current,
+          organizationId: organization.organizationId,
+        });
+        removalKey.current = undefined;
+        navigate("/account", { replace: true });
+        return;
+      }
+      await removeMember.mutateAsync({
+        accountId: member.accountId,
+        idempotency: removalKey.current,
+        organizationId: organization.organizationId,
+      });
+      removalKey.current = undefined;
+      await onUpdated();
+      setOpen(false);
+    } catch (error) {
+      setFormError(describeDelibaseError(error));
+    }
+  };
+
+  return (
+    <>
+      <button
+        className="button secondary compact-button"
+        onClick={() => {
+          setRole(member.role);
+          setFormError("");
+          setOpen(true);
+        }}
+        type="button"
+      >
+        Manage {member.displayName}
+      </button>
+      {open ? (
+        <Dialog
+          descriptionId={`member-description-${accountId}`}
+          onClose={close}
+          titleId={`member-title-${accountId}`}
+        >
+          <h2 id={`member-title-${accountId}`}>
+            Manage {member.displayName}
+          </h2>
+          <p id={`member-description-${accountId}`}>
+            Owners can manage every role. Admins cannot promote, demote, or
+            remove an Owner.
+          </p>
+          <form onSubmit={(event) => void saveRole(event)}>
+            <label>
+              Organization role
+              <select
+                onChange={(event) => {
+                  updateKey.current = undefined;
+                  setRole(Number(event.target.value) as OrganizationRole);
+                }}
+                value={role}
+              >
+                {callerRole === OrganizationRole.OWNER ? (
+                  <option value={OrganizationRole.OWNER}>Owner</option>
+                ) : null}
+                <option value={OrganizationRole.ADMIN}>Admin</option>
+                <option value={OrganizationRole.MEMBER}>Member</option>
+              </select>
+            </label>
+            {formError ? (
+              <p className="inline-error" role="alert">
+                {formError}
+              </p>
+            ) : null}
+            <div className="dialog-actions">
+              <button
+                className="button danger"
+                disabled={!online || isPending}
+                onClick={() => void remove()}
+                type="button"
+              >
+                {isCurrentMember
+                  ? leaveOrganization.isPending
+                    ? "Leaving…"
+                    : "Leave organization"
+                  : removeMember.isPending
+                    ? "Removing…"
+                    : "Remove member"}
+              </button>
+              <button
+                className="button secondary"
+                disabled={isPending}
+                onClick={close}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="button primary"
+                disabled={!online || isPending || role === member.role}
+                type="submit"
+              >
+                {updateRole.isPending ? "Saving role…" : "Save role"}
+              </button>
+            </div>
+            {!online ? <OfflineActionHint /> : null}
+          </form>
+        </Dialog>
       ) : null}
     </>
   );
@@ -414,10 +652,7 @@ export function OrganizationInvitationManagement({
       void invitations.refetch();
     } catch (error) {
       setCreation({
-        error:
-          error instanceof Error
-            ? error.message
-            : "The invitation could not be created.",
+        error: describeDelibaseError(error),
         status: "error",
       });
     }
@@ -448,11 +683,7 @@ export function OrganizationInvitationManagement({
         revocationKeys.current.delete(invitationId);
       }
     } catch (error) {
-      setRevokeError(
-        error instanceof Error
-          ? error.message
-          : "The invitation could not be revoked.",
-      );
+      setRevokeError(describeDelibaseError(error));
     } finally {
       setRevokingInvitationId("");
     }
@@ -670,6 +901,7 @@ export function OrganizationInvitationManagement({
 export function TeamsPage() {
   useDocumentMetadata("Teams", "Manage nested organization teams.");
   const { callerRole, organization, transport } = useOrganization();
+  const { accountState } = useAccountState();
   const online = useOnline();
   const [deletedTeamIds, setDeletedTeamIds] = useState<Set<string>>(
     () => new Set(),
@@ -693,12 +925,44 @@ export function TeamsPage() {
       transport,
     },
   );
+  const organizationManager = canManageOrganization(callerRole);
+  const effectiveAccess = useInfiniteQuery(
+    TeamService.method.listEffectiveTeamAccess,
+    {
+      accountId: accountState.account?.accountId,
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+    },
+    {
+      enabled:
+        !organizationManager &&
+        Boolean(accountState.account?.accountId?.value),
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
+  );
   const loadedTeamRows =
     teams.data?.pages.flatMap((page) => page.teams) ?? [];
   const teamRows = loadedTeamRows.filter(
     (team) => !deletedTeamIds.has(team.teamId?.value ?? ""),
   );
-  const canManage = canManageOrganization(callerRole);
+  const effectiveAccessRows =
+    effectiveAccess.data?.pages.flatMap((page) => page.access) ?? [];
+  const adminTeamIds = new Set(
+    effectiveAccessRows.flatMap((access) =>
+      access.effectiveRole === TeamRole.ADMIN && access.teamId?.value
+        ? [access.teamId.value]
+        : [],
+    ),
+  );
+  const canCreateTeam = organizationManager || adminTeamIds.size > 0;
   const refreshTeams = async () => {
     await teams.refetch();
   };
@@ -712,14 +976,21 @@ export function TeamsPage() {
         description="Create and organize teams. Access granted to a parent flows down to its descendants."
         title="Teams"
       />
-      {canManage ? (
+      {canCreateTeam ? (
         <CreateTeamForm
+          allowTopLevel={organizationManager}
+          manageableParentIds={
+            organizationManager ? undefined : adminTeamIds
+          }
           onUpdated={refreshTeams}
           online={online}
           teams={teamRows}
         />
       ) : null}
       {teams.isPending ? <LoadingState label="Loading teams" /> : null}
+      {!organizationManager && teams.data && effectiveAccess.isPending ? (
+        <LoadingState label="Loading team capabilities" />
+      ) : null}
       {teams.isError && !teams.data ? (
         <ErrorState
           error={teams.error}
@@ -750,10 +1021,25 @@ export function TeamsPage() {
                     Level {team.depth + 1}
                     {team.protectedGeneral ? " · Protected" : ""}
                   </small>
+                  {!organizationManager ? (
+                    <TeamAccessLabel
+                      access={effectiveAccessRows.find(
+                        (item) =>
+                          item.teamId?.value === team.teamId?.value,
+                      )}
+                    />
+                  ) : (
+                    <small>Team Admin · organization role</small>
+                  )}
                 </div>
-                {canManage && !team.protectedGeneral ? (
+                {(organizationManager ||
+                  adminTeamIds.has(team.teamId?.value ?? "")) ? (
                   <TeamActions
+                    allowTopLevel={organizationManager}
                     allTeamsLoaded={!teams.hasNextPage}
+                    manageableParentIds={
+                      organizationManager ? undefined : adminTeamIds
+                    }
                     onDeleted={hideDeletedSubtree}
                     onUpdated={refreshTeams}
                     online={online}
@@ -785,15 +1071,61 @@ export function TeamsPage() {
           ) : null}
         </>
       ) : null}
+      {effectiveAccess.isError ? (
+        <ErrorState
+          error={effectiveAccess.error}
+          onRetry={() => void effectiveAccess.refetch()}
+          title="Team capabilities unavailable"
+        />
+      ) : null}
+      {effectiveAccess.hasNextPage ? (
+        <div className="pagination-actions">
+          <button
+            className="button secondary"
+            disabled={effectiveAccess.isFetchingNextPage}
+            onClick={() => void effectiveAccess.fetchNextPage()}
+            type="button"
+          >
+            {effectiveAccess.isFetchingNextPage
+              ? "Loading capabilities…"
+              : "Load more team capabilities"}
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }
 
+function TeamAccessLabel({
+  access,
+}: {
+  access: EffectiveTeamAccess | undefined;
+}) {
+  if (!access) {
+    return <small>Access details unavailable</small>;
+  }
+  const source = formatEnumLabel(
+    TeamAccessSource[access.source] ?? access.source,
+  );
+  const role = formatEnumLabel(
+    TeamRole[access.effectiveRole] ?? access.effectiveRole,
+  );
+  return (
+    <small>
+      Team {role} · {source}
+    </small>
+  );
+}
+
 function CreateTeamForm({
+  allowTopLevel,
+  manageableParentIds,
   online,
   onUpdated,
   teams,
 }: {
+  allowTopLevel: boolean;
+  manageableParentIds?: Set<string>;
   online: boolean;
   onUpdated: () => Promise<void>;
   teams: Team[];
@@ -824,7 +1156,8 @@ function CreateTeamForm({
         parentTeamId: uuid(parentTeamId),
       },
       {
-        onError: (error) => setFormError(error.message),
+        onError: (error) =>
+          setFormError(describeDelibaseError(error)),
         onSuccess: () => {
           idempotencyKey.current = undefined;
           setName("");
@@ -867,12 +1200,22 @@ function CreateTeamForm({
             }}
             value={parentTeamId}
           >
-            <option value="">Top level</option>
-            {teams.filter(canCreateChildTeam).map((team) => (
+            {allowTopLevel ? <option value="">Top level</option> : null}
+            {!allowTopLevel && !parentTeamId ? (
+              <option value="">Choose a Team Admin parent</option>
+            ) : null}
+            {teams
+              .filter(canCreateChildTeam)
+              .filter(
+                (team) =>
+                  !manageableParentIds ||
+                  manageableParentIds.has(team.teamId?.value ?? ""),
+              )
+              .map((team) => (
               <option key={team.teamId?.value} value={team.teamId?.value}>
                 {team.name}
               </option>
-            ))}
+              ))}
           </select>
         </label>
       </div>
@@ -888,7 +1231,11 @@ function CreateTeamForm({
       ) : null}
       <button
         className="button primary"
-        disabled={!online || createTeam.isPending}
+        disabled={
+          !online ||
+          createTeam.isPending ||
+          (!allowTopLevel && !parentTeamId)
+        }
         type="submit"
       >
         {createTeam.isPending ? "Creating team…" : "Create team"}
@@ -966,14 +1313,18 @@ export function getTeamSubtreeIds(teamId: string, teams: Team[]): Set<string> {
 }
 
 function TeamActions({
+  allowTopLevel,
   allTeamsLoaded,
+  manageableParentIds,
   online,
   onDeleted,
   onUpdated,
   team,
   teams,
 }: {
+  allowTopLevel: boolean;
   allTeamsLoaded: boolean;
+  manageableParentIds?: Set<string>;
   online: boolean;
   onDeleted: (teamId: string) => void;
   onUpdated: () => Promise<void>;
@@ -986,6 +1337,7 @@ function TeamActions({
   const [parentTeamId, setParentTeamId] = useState(
     team.parentTeamId?.value ?? "",
   );
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
   const [formError, setFormError] = useState("");
   const deletionKey = useRef<{ key: string } | undefined>(undefined);
   const updateTeam = useMutation(TeamService.method.updateTeam, { transport });
@@ -1000,12 +1352,17 @@ function TeamActions({
     updateTeam.isPending || moveTeam.isPending || deleteTeam.isPending;
   const parentOptions = teams.filter((candidate) =>
     canUseTeamAsParent(team, candidate, teams),
+  ).filter(
+    (candidate) =>
+      !manageableParentIds ||
+      manageableParentIds.has(candidate.teamId?.value ?? ""),
   );
 
   const showDialog = () => {
     deletionKey.current = undefined;
     setName(team.name);
     setParentTeamId(team.parentTeamId?.value ?? "");
+    setDeleteConfirmed(false);
     setFormError("");
     setOpen(true);
   };
@@ -1051,11 +1408,17 @@ function TeamActions({
         await onUpdated();
       }
       setFormError(
-        error instanceof Error ? error.message : "The team could not be updated.",
+        describeDelibaseError(error),
       );
     }
   };
   const remove = async () => {
+    if (!deleteConfirmed) {
+      setFormError(
+        "Confirm that you understand the full team subtree will be deleted.",
+      );
+      return;
+    }
     setFormError("");
     deletionKey.current ??= createIdempotencyKey();
     try {
@@ -1071,7 +1434,7 @@ function TeamActions({
       void onUpdated();
     } catch (error) {
       setFormError(
-        error instanceof Error ? error.message : "The team could not be deleted.",
+        describeDelibaseError(error),
       );
     }
   };
@@ -1088,7 +1451,7 @@ function TeamActions({
         onClick={showDialog}
         type="button"
       >
-        Manage
+        Manage {team.name}
       </button>
       {open ? (
         <Dialog
@@ -1098,79 +1461,357 @@ function TeamActions({
         >
           <h2 id={titleId}>Manage {team.name}</h2>
           <p id={descriptionId}>
-            Rename this team, move its subtree, or permanently delete the
-            subtree.
+            {team.protectedGeneral
+              ? "Manage direct membership. General is protected from rename, move, and deletion."
+              : "Manage direct membership, rename or move the team, or permanently delete its subtree."}
           </p>
-          <form className="team-dialog-form" onSubmit={submit}>
-            <label>
-              Team name
-              <input
-                maxLength={120}
-                onChange={(event) => setName(event.target.value)}
-                required
-                value={name}
-              />
-            </label>
-            <label>
-              Parent team
-              <select
-                disabled={!allTeamsLoaded}
-                onChange={(event) => setParentTeamId(event.target.value)}
-                value={parentTeamId}
-              >
-                <option value="">Top level</option>
-                {parentOptions.map((candidate) => (
-                  <option
-                    key={candidate.teamId?.value}
-                    value={candidate.teamId?.value}
-                  >
-                    {candidate.name}
-                  </option>
+          {!team.protectedGeneral ? (
+            <form className="team-dialog-form" onSubmit={submit}>
+              <label>
+                Team name
+                <input
+                  maxLength={120}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                  value={name}
+                />
+              </label>
+              <label>
+                Parent team
+                <select
+                  disabled={!allTeamsLoaded}
+                  onChange={(event) => setParentTeamId(event.target.value)}
+                  value={parentTeamId}
+                >
+                  {allowTopLevel ? <option value="">Top level</option> : null}
+                  {!allowTopLevel && !team.parentTeamId?.value ? (
+                    <option disabled value="">
+                      Top level (unchanged)
+                    </option>
+                  ) : null}
+                  {parentOptions.map((candidate) => (
+                    <option
+                      key={candidate.teamId?.value}
+                      value={candidate.teamId?.value}
+                    >
+                      {candidate.name}
+                    </option>
                   ))}
-              </select>
-              {!allTeamsLoaded ? (
-                <span className="field-help">
-                  Load all team pages before moving this subtree.
-                </span>
+                </select>
+                {!allTeamsLoaded ? (
+                  <span className="field-help">
+                    Load all team pages before moving this subtree.
+                  </span>
+                ) : null}
+              </label>
+              {formError ? (
+                <p className="inline-error" role="alert">
+                  {formError}
+                </p>
               ) : null}
-            </label>
-            {formError ? (
-              <p className="inline-error" role="alert">
-                {formError}
-              </p>
-            ) : null}
-            <div className="dialog-actions">
-              <button
-                className="button danger"
-                disabled={!online || isPending}
-                onClick={() => void remove()}
-                type="button"
-              >
-                {deleteTeam.isPending ? "Deleting…" : "Delete subtree"}
-              </button>
-              <button
-                className="button secondary"
-                disabled={isPending}
-                onClick={closeDialog}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="button primary"
-                disabled={!online || isPending}
-                type="submit"
-              >
-                {updateTeam.isPending || moveTeam.isPending
-                  ? "Saving…"
-                  : "Save changes"}
-              </button>
-            </div>
-            {!online ? <OfflineActionHint /> : null}
-          </form>
+              <label className="confirmation-check">
+                <input
+                  checked={deleteConfirmed}
+                  onChange={(event) =>
+                    setDeleteConfirmed(event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                I understand that deleting this team also deletes every
+                descendant team and direct membership.
+              </label>
+              <div className="dialog-actions">
+                <button
+                  className="button danger"
+                  disabled={!online || isPending || !deleteConfirmed}
+                  onClick={() => void remove()}
+                  type="button"
+                >
+                  {deleteTeam.isPending ? "Deleting…" : "Delete subtree"}
+                </button>
+                <button
+                  className="button primary"
+                  disabled={!online || isPending}
+                  type="submit"
+                >
+                  {updateTeam.isPending || moveTeam.isPending
+                    ? "Saving…"
+                    : "Save team"}
+                </button>
+              </div>
+              {!online ? <OfflineActionHint /> : null}
+            </form>
+          ) : null}
+          <TeamMembershipManagement
+            online={online}
+            team={team}
+            transport={transport}
+          />
+          {team.protectedGeneral && formError ? (
+            <p className="inline-error" role="alert">
+              {formError}
+            </p>
+          ) : null}
+          <div className="dialog-actions">
+            <button
+              className="button secondary"
+              disabled={isPending}
+              onClick={closeDialog}
+              type="button"
+            >
+              Close
+            </button>
+          </div>
         </Dialog>
       ) : null}
     </>
+  );
+}
+
+function TeamMembershipManagement({
+  online,
+  team,
+  transport,
+}: {
+  online: boolean;
+  team: Team;
+  transport: Transport;
+}) {
+  const { organization } = useOrganization();
+  const [accountId, setAccountId] = useState("");
+  const [role, setRole] = useState(TeamRole.MEMBER);
+  const [formError, setFormError] = useState("");
+  const [message, setMessage] = useState("");
+  const setKey = useRef<{ key: string } | undefined>(undefined);
+  const removalKeys = useRef(new Map<string, { key: string }>());
+  const memberships = useInfiniteQuery(
+    TeamService.method.listTeamMemberships,
+    {
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+      teamId: team.teamId,
+    },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
+  );
+  const members = useInfiniteQuery(
+    OrganizationService.method.listOrganizationMembers,
+    {
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+    },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
+  );
+  const setMembership = useMutation(TeamService.method.setTeamMembership, {
+    transport,
+  });
+  const removeMembership = useMutation(
+    TeamService.method.removeTeamMembership,
+    { transport },
+  );
+  const directMemberships =
+    memberships.data?.pages.flatMap((page) => page.memberships) ?? [];
+  const organizationMembers =
+    members.data?.pages.flatMap((page) => page.members) ?? [];
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    setMessage("");
+    if (!accountId) {
+      setFormError("Choose an organization member.");
+      return;
+    }
+    setKey.current ??= createIdempotencyKey();
+    try {
+      await setMembership.mutateAsync({
+        accountId: uuid(accountId),
+        idempotency: setKey.current,
+        organizationId: organization.organizationId,
+        role,
+        teamId: team.teamId,
+      });
+      setKey.current = undefined;
+      setAccountId("");
+      setMessage("Direct team membership updated.");
+      await memberships.refetch();
+    } catch (error) {
+      setFormError(describeDelibaseError(error));
+    }
+  };
+
+  const remove = async (membership: TeamMembership) => {
+    const targetAccountId = membership.accountId?.value;
+    if (!targetAccountId) return;
+    setFormError("");
+    setMessage("");
+    const idempotency =
+      removalKeys.current.get(targetAccountId) ?? createIdempotencyKey();
+    removalKeys.current.set(targetAccountId, idempotency);
+    try {
+      await removeMembership.mutateAsync({
+        accountId: membership.accountId,
+        idempotency,
+        organizationId: organization.organizationId,
+        teamId: team.teamId,
+      });
+      removalKeys.current.delete(targetAccountId);
+      setMessage("Direct team membership removed.");
+      await memberships.refetch();
+    } catch (error) {
+      setFormError(describeDelibaseError(error));
+    }
+  };
+
+  return (
+    <section
+      className="team-membership-management"
+      aria-labelledby={`team-memberships-${team.teamId?.value}`}
+    >
+      <h3 id={`team-memberships-${team.teamId?.value}`}>
+        Direct team membership
+      </h3>
+      <p className="muted">
+        Parent Team Admin and Member access is inherited downward. Removing a
+        direct membership does not remove access inherited from an ancestor.
+      </p>
+      <form className="team-membership-form" onSubmit={(event) => void submit(event)}>
+        <label>
+          Organization member
+          <select
+            onChange={(event) => {
+              setKey.current = undefined;
+              setAccountId(event.target.value);
+            }}
+            required
+            value={accountId}
+          >
+            <option value="">Choose a member</option>
+            {organizationMembers.map((member) => (
+              <option
+                key={member.accountId?.value}
+                value={member.accountId?.value}
+              >
+                {member.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Team role
+          <select
+            onChange={(event) => {
+              setKey.current = undefined;
+              setRole(Number(event.target.value) as TeamRole);
+            }}
+            value={role}
+          >
+            <option value={TeamRole.MEMBER}>Team Member</option>
+            <option value={TeamRole.ADMIN}>Team Admin</option>
+          </select>
+        </label>
+        <button
+          className="button primary"
+          disabled={!online || setMembership.isPending || !accountId}
+          type="submit"
+        >
+          {setMembership.isPending ? "Updating access…" : "Set team access"}
+        </button>
+      </form>
+      {members.isError || memberships.isError ? (
+        <ErrorState
+          error={members.error ?? memberships.error}
+          onRetry={() => {
+            void members.refetch();
+            void memberships.refetch();
+          }}
+          title="Team membership unavailable"
+        />
+      ) : null}
+      {members.hasNextPage ? (
+        <button
+          className="button secondary compact-button"
+          disabled={members.isFetchingNextPage}
+          onClick={() => void members.fetchNextPage()}
+          type="button"
+        >
+          {members.isFetchingNextPage
+            ? "Loading members…"
+            : "Load more organization members"}
+        </button>
+      ) : null}
+      {directMemberships.length ? (
+        <ul className="direct-membership-list">
+          {directMemberships.map((membership) => (
+            <li key={membership.accountId?.value}>
+              <span>
+                <strong>{membership.displayName}</strong>
+                <small>
+                  Team{" "}
+                  {formatEnumLabel(
+                    TeamRole[membership.role] ?? membership.role,
+                  )}
+                </small>
+              </span>
+              <button
+                className="button danger compact-button"
+                disabled={!online || removeMembership.isPending}
+                onClick={() => void remove(membership)}
+                type="button"
+              >
+                Remove direct access
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : memberships.data ? (
+        <p className="muted">No direct memberships are listed.</p>
+      ) : (
+        <LoadingState label="Loading direct memberships" />
+      )}
+      {memberships.hasNextPage ? (
+        <button
+          className="button secondary compact-button"
+          disabled={memberships.isFetchingNextPage}
+          onClick={() => void memberships.fetchNextPage()}
+          type="button"
+        >
+          {memberships.isFetchingNextPage
+            ? "Loading access…"
+            : "Load more direct memberships"}
+        </button>
+      ) : null}
+      {formError ? (
+        <p className="inline-error" role="alert">
+          {formError}
+        </p>
+      ) : null}
+      {message ? (
+        <p className="inline-success" role="status">
+          {message}
+        </p>
+      ) : null}
+      {!online ? <OfflineActionHint /> : null}
+    </section>
   );
 }
 
@@ -1528,7 +2169,8 @@ function OverageLimitForm({
         organizationId: organization.organizationId,
       },
       {
-        onError: (error) => setFormError(error.message),
+        onError: (error) =>
+          setFormError(describeDelibaseError(error)),
         onSuccess: () => {
           setMessage("Monthly overage limit updated.");
           onUpdated();
@@ -1692,6 +2334,7 @@ export function OrganizationSettingsPage() {
     refreshOrganization,
     transport,
   } = useOrganization();
+  const { refreshAccountState } = useAccountState();
   const navigate = useNavigate();
   const online = useOnline();
   const [name, setName] = useState(organization.name);
@@ -1740,6 +2383,7 @@ export function OrganizationSettingsPage() {
           organizationId: uuid(organization.organizationId?.value),
           slug: normalizedSlug,
         });
+        await refreshAccountState().catch(() => undefined);
         navigate(
           `/o/${response.organization?.slug ?? normalizedSlug}/settings`,
           { replace: true },
@@ -1747,7 +2391,10 @@ export function OrganizationSettingsPage() {
         return;
       }
       if (normalizedName !== organization.name) {
-        await refreshOrganization();
+        await Promise.all([
+          refreshAccountState(),
+          refreshOrganization(),
+        ]);
       }
       setMessage(
         normalizedName === organization.name
@@ -1755,13 +2402,13 @@ export function OrganizationSettingsPage() {
           : "Organization settings updated.",
       );
     } catch (error) {
-      const mutationError =
-        error instanceof Error
-          ? error.message
-          : "Organization settings could not be updated.";
+      const mutationError = describeDelibaseError(error);
       if (nameUpdated) {
         try {
-          await refreshOrganization();
+          await Promise.all([
+            refreshAccountState(),
+            refreshOrganization(),
+          ]);
         } catch {
           setFormError(
             `${mutationError} The organization name was saved, but current organization data could not be refreshed.`,
@@ -1837,6 +2484,218 @@ export function OrganizationSettingsPage() {
           An organization owner or admin can update organization details.
         </p>
       )}
+      <OrganizationLifecycleActions
+        callerRole={callerRole}
+        onOrganizationRemoved={async () => {
+          await refreshAccountState().catch(() => undefined);
+          navigate("/account", { replace: true });
+        }}
+        organization={organization}
+        transport={transport}
+      />
     </>
+  );
+}
+
+type OrganizationLifecycleDialog = "delete" | "leave";
+
+function OrganizationLifecycleActions({
+  callerRole,
+  onOrganizationRemoved,
+  organization,
+  transport,
+}: {
+  callerRole: OrganizationRole;
+  onOrganizationRemoved: () => Promise<void>;
+  organization: Organization;
+  transport: Transport;
+}) {
+  const online = useOnline();
+  const [dialog, setDialog] = useState<
+    OrganizationLifecycleDialog | undefined
+  >(undefined);
+  const [confirmation, setConfirmation] = useState("");
+  const [formError, setFormError] = useState("");
+  const leaveKey = useRef<{ key: string } | undefined>(undefined);
+  const deleteKey = useRef<{ key: string } | undefined>(undefined);
+  const leave = useMutation(OrganizationService.method.leaveOrganization, {
+    transport,
+  });
+  const remove = useMutation(OrganizationService.method.deleteOrganization, {
+    transport,
+  });
+  const isPending = leave.isPending || remove.isPending;
+  const close = () => {
+    if (isPending) return;
+    leaveKey.current = undefined;
+    deleteKey.current = undefined;
+    setDialog(undefined);
+    setConfirmation("");
+    setFormError("");
+  };
+  const leaveOrganization = async () => {
+    setFormError("");
+    leaveKey.current ??= createIdempotencyKey();
+    try {
+      await leave.mutateAsync({
+        idempotency: leaveKey.current,
+        organizationId: organization.organizationId,
+      });
+      leaveKey.current = undefined;
+      await onOrganizationRemoved();
+    } catch (error) {
+      setFormError(describeDelibaseError(error));
+    }
+  };
+  const deleteOrganization = async () => {
+    setFormError("");
+    if (confirmation !== organization.name) {
+      setFormError(`Enter ${organization.name} to confirm deletion.`);
+      return;
+    }
+    deleteKey.current ??= createIdempotencyKey();
+    try {
+      await remove.mutateAsync({
+        confirm: true,
+        idempotency: deleteKey.current,
+        organizationId: organization.organizationId,
+      });
+      deleteKey.current = undefined;
+      await onOrganizationRemoved();
+    } catch (error) {
+      setFormError(describeDelibaseError(error));
+    }
+  };
+
+  return (
+    <section className="content-card danger-zone">
+      <div>
+        <h2>Organization access</h2>
+        <p>
+          Leaving is blocked for the last Owner and while you have active
+          usage reservations.
+        </p>
+      </div>
+      <div className="button-row">
+        <button
+          className="button secondary"
+          disabled={!online}
+          onClick={() => setDialog("leave")}
+          type="button"
+        >
+          Leave organization
+        </button>
+        {callerRole === OrganizationRole.OWNER ? (
+          <button
+            className="button danger"
+            disabled={!online}
+            onClick={() => setDialog("delete")}
+            type="button"
+          >
+            Delete organization
+          </button>
+        ) : null}
+      </div>
+      {callerRole === OrganizationRole.ADMIN ? (
+        <p className="field-hint">
+          Admins can update settings but cannot delete the organization.
+        </p>
+      ) : null}
+      {!online ? <OfflineActionHint /> : null}
+      {dialog === "leave" ? (
+        <Dialog
+          descriptionId="leave-organization-description"
+          onClose={close}
+          titleId="leave-organization-title"
+        >
+          <h2 id="leave-organization-title">
+            Leave {organization.name}?
+          </h2>
+          <p id="leave-organization-description">
+            Your organization and direct team memberships will be removed.
+            Access inherited through this organization ends immediately.
+          </p>
+          {formError ? (
+            <p className="inline-error" role="alert">
+              {formError}
+            </p>
+          ) : null}
+          <div className="dialog-actions">
+            <button
+              className="button secondary"
+              disabled={isPending}
+              onClick={close}
+              type="button"
+            >
+              Keep membership
+            </button>
+            <button
+              className="button danger"
+              disabled={!online || isPending}
+              onClick={() => void leaveOrganization()}
+              type="button"
+            >
+              {leave.isPending ? "Leaving…" : "Leave organization"}
+            </button>
+          </div>
+        </Dialog>
+      ) : null}
+      {dialog === "delete" ? (
+        <Dialog
+          descriptionId="delete-organization-description"
+          onClose={close}
+          titleId="delete-organization-title"
+        >
+          <h2 id="delete-organization-title">
+            Delete {organization.name}?
+          </h2>
+          <p id="delete-organization-description">
+            This immediately removes operational access, forfeits remaining
+            credits, and queues subscription cancellation. Active usage
+            reservations block deletion.
+          </p>
+          <label>
+            Enter {organization.name} to confirm
+            <input
+              autoComplete="off"
+              onChange={(event) => {
+                deleteKey.current = undefined;
+                setConfirmation(event.target.value);
+              }}
+              value={confirmation}
+            />
+          </label>
+          {formError ? (
+            <p className="inline-error" role="alert">
+              {formError}
+            </p>
+          ) : null}
+          <div className="dialog-actions">
+            <button
+              className="button secondary"
+              disabled={isPending}
+              onClick={close}
+              type="button"
+            >
+              Keep organization
+            </button>
+            <button
+              className="button danger"
+              disabled={
+                !online ||
+                isPending ||
+                confirmation !== organization.name
+              }
+              onClick={() => void deleteOrganization()}
+              type="button"
+            >
+              {remove.isPending
+                ? "Deleting organization…"
+                : "Delete organization"}
+            </button>
+          </div>
+        </Dialog>
+      ) : null}
+    </section>
   );
 }
