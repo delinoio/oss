@@ -16,4 +16,6 @@ Package-local deterministic checks:
 - `pnpm check:rust`
 - `pnpm smoke:desktop`
 
-The current foundation contains no production tool, release automation, mobile shell, widget registration, updater implementation, public API, CLI, or deep link. See `docs/apps-devhud-foundation.md` for the complete contract.
+The current foundation has an internal typed tool registry with an empty production registration. Its desktop HUD and mobile Home, Widgets, Settings, and Diagnostics surfaces provide accessible empty, loading, and error states; fixture tools exist only in tests. The package includes `pnpm dev` and `pnpm test:a11y` for local development and component/accessibility validation.
+
+No production tool, visible widget, release automation, updater implementation, public API, CLI, or deep link is included. See `docs/apps-devhud-foundation.md` for the complete contract.

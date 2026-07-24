@@ -4,7 +4,7 @@
 
 Define the foundation contract for DevHud, a local-only developer-tool shell for individual developers. The project is intentionally independent from the DeliDev web platform.
 
-`apps/devhud` contains one active foundation package: a minimal React/TypeScript/Rsbuild bundled-asset application and a target-selecting Tauri Rust crate. Desktop builds use the exact pinned upstream CEF runtime directly; mobile targets reserve Tauri's standard system webviews. The current implementation does not create a production tool, mobile/widget foundation, packaging or release workflow, or support/publisher artifact.
+`apps/devhud` contains one active foundation package: a React/TypeScript/Rsbuild bundled-asset application and a target-selecting Tauri Rust crate. Desktop builds use the exact pinned upstream CEF runtime directly; mobile targets reserve Tauri's standard system webviews. The implemented UI foundation includes provider-owned theme/navigation state, empty desktop HUD/settings and mobile content surfaces, and a closed internal tool registry. It does not create a production tool, visible widget, packaging or release workflow, or support/publisher artifact.
 
 ## Project ID
 
