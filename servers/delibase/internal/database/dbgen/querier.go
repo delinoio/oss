@@ -11,7 +11,14 @@ import (
 )
 
 type Querier interface {
+	AppendAuditEvent(ctx context.Context, arg AppendAuditEventParams) (AuditEvent, error)
+	ClaimDeletionJob(ctx context.Context, arg ClaimDeletionJobParams) (DeletionJob, error)
+	ClaimIntegrationOutbox(ctx context.Context, arg ClaimIntegrationOutboxParams) (IntegrationOutbox, error)
+	ClaimWebhookInbox(ctx context.Context, arg ClaimWebhookInboxParams) (WebhookInbox, error)
 	CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalogPriceVersionParams) error
+	CompleteDeletionJob(ctx context.Context, arg CompleteDeletionJobParams) (pgtype.UUID, error)
+	CompleteIntegrationOutbox(ctx context.Context, arg CompleteIntegrationOutboxParams) (pgtype.UUID, error)
+	CompleteWebhookInbox(ctx context.Context, arg CompleteWebhookInboxParams) (pgtype.UUID, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	DeleteDisabledServiceMeterAllowlists(ctx context.Context) error
 	DeleteUnusedPolarMeterMappings(ctx context.Context) error
@@ -19,11 +26,24 @@ type Querier interface {
 	DisableCatalogMeters(ctx context.Context) error
 	DisableServiceIdentities(ctx context.Context) error
 	DisableServiceMeterAllowlists(ctx context.Context) error
+	EnqueueDeletionJob(ctx context.Context, arg EnqueueDeletionJobParams) (DeletionJob, error)
+	EnqueueIntegrationOutbox(ctx context.Context, arg EnqueueIntegrationOutboxParams) (IntegrationOutbox, error)
+	EnqueueWebhookInbox(ctx context.Context, arg EnqueueWebhookInboxParams) (WebhookInbox, error)
 	EnsureCatalogPriceVersion(ctx context.Context, arg EnsureCatalogPriceVersionParams) (int64, error)
 	EnsurePolarMeterMapping(ctx context.Context, arg EnsurePolarMeterMappingParams) (int64, error)
+	FailDeletionJob(ctx context.Context, arg FailDeletionJobParams) (pgtype.UUID, error)
+	FailIntegrationOutbox(ctx context.Context, arg FailIntegrationOutboxParams) (pgtype.UUID, error)
+	FailWebhookInbox(ctx context.Context, arg FailWebhookInboxParams) (pgtype.UUID, error)
 	GetAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
+	GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent, error)
+	GetDeletionJob(ctx context.Context, id pgtype.UUID) (DeletionJob, error)
+	GetIntegrationOutbox(ctx context.Context, id pgtype.UUID) (IntegrationOutbox, error)
+	GetWebhookInbox(ctx context.Context, id pgtype.UUID) (WebhookInbox, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	Ping(ctx context.Context) (int64, error)
+	RecoverExpiredDeletionJobs(ctx context.Context, arg RecoverExpiredDeletionJobsParams) (int64, error)
+	RecoverExpiredIntegrationOutbox(ctx context.Context, arg RecoverExpiredIntegrationOutboxParams) (int64, error)
+	RecoverExpiredWebhookInbox(ctx context.Context, arg RecoverExpiredWebhookInboxParams) (int64, error)
 	UpsertCatalogApp(ctx context.Context, arg UpsertCatalogAppParams) error
 	UpsertCatalogMeter(ctx context.Context, arg UpsertCatalogMeterParams) error
 	UpsertServiceIdentity(ctx context.Context, arg UpsertServiceIdentityParams) error
