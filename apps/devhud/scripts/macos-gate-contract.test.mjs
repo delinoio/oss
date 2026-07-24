@@ -224,19 +224,6 @@ test("requires notarization credentials for Developer ID mode", () => {
     }),
     "developer-id",
   );
-  assert.throws(
-    () =>
-      signingModeForEnvironment({
-        APPLE_API_ISSUER: "issuer",
-        APPLE_API_KEY: "key",
-        APPLE_API_KEY_PATH: "/private/key.p8",
-        APPLE_CERTIFICATE: "certificate",
-        APPLE_CERTIFICATE_PASSWORD: "password",
-        APPLE_ID: "developer@example.com",
-        APPLE_PASSWORD: "password",
-      }),
-    /notarization credentials are incomplete/u,
-  );
   assert.equal(
     signingModeForEnvironment({
       APPLE_CERTIFICATE: "certificate",
@@ -247,6 +234,38 @@ test("requires notarization credentials for Developer ID mode", () => {
     }),
     "developer-id",
   );
+
+  const certificate = {
+    APPLE_CERTIFICATE: "certificate",
+    APPLE_CERTIFICATE_PASSWORD: "password",
+  };
+  const appStoreConnect = {
+    APPLE_API_ISSUER: "issuer",
+    APPLE_API_KEY: "key",
+    APPLE_API_KEY_PATH: "/private/key.p8",
+  };
+  const appleId = {
+    APPLE_ID: "developer@example.com",
+    APPLE_PASSWORD: "password",
+    APPLE_TEAM_ID: "team",
+  };
+  for (const credentials of [appStoreConnect, appleId]) {
+    const entries = Object.entries(credentials);
+    for (let mask = 1; mask < 2 ** entries.length - 1; mask += 1) {
+      const partialCredentials = Object.fromEntries(
+        entries.filter((_, index) => mask & (1 << index)),
+      );
+      assert.throws(
+        () =>
+          signingModeForEnvironment({
+            ...certificate,
+            ...(credentials === appStoreConnect ? appleId : appStoreConnect),
+            ...partialCredentials,
+          }),
+        /notarization credentials are incomplete/u,
+      );
+    }
+  }
 });
 
 test("summarizes subprocess failures without sensitive values", () => {

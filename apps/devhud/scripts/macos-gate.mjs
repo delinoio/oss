@@ -109,13 +109,18 @@ export function signingModeForEnvironment(environment) {
   const hasAppStoreConnectCredentials = appStoreConnectCredentialNames.every(
     (name) => Boolean(environment[name]),
   );
+  const hasAnyAppStoreConnectCredentials = appStoreConnectCredentialNames.some(
+    (name) => Boolean(environment[name]),
+  );
   const hasAppleIdCredentials = appleIdCredentialNames.every((name) =>
     Boolean(environment[name]),
   );
+  const hasAnyAppleIdCredentials = appleIdCredentialNames.some((name) =>
+    Boolean(environment[name]),
+  );
   if (
-    environment.APPLE_ID &&
-    environment.APPLE_PASSWORD &&
-    !environment.APPLE_TEAM_ID
+    (hasAnyAppStoreConnectCredentials && !hasAppStoreConnectCredentials) ||
+    (hasAnyAppleIdCredentials && !hasAppleIdCredentials)
   ) {
     throw new Error("macOS notarization credentials are incomplete");
   }
@@ -259,6 +264,78 @@ function one(items, classification) {
 async function architectureOf(path) {
   const result = await requireSuccess("lipo", ["-archs", path]);
   return result.output.trim().split(/\s+/u);
+}
+
+async function applicationBundleIn(root, classification) {
+  return one(
+    (await listDirectories(root)).filter(
+      (path) =>
+        path.endsWith(".app") &&
+        !path.slice(root.length + 1, -4).includes(".app/"),
+    ),
+    classification,
+  );
+}
+
+async function verifyApplicationContents(appPath, targetContract) {
+  const executable = join(appPath, "Contents/MacOS/devhud-probe");
+  const executableArchitectures = await architectureOf(executable);
+  if (
+    executableArchitectures.length !== 1 ||
+    executableArchitectures[0] !== targetContract.executableArchitecture
+  ) {
+    throw new Error("macOS application has an unexpected architecture");
+  }
+
+  const infoPlist = join(appPath, "Contents/Info.plist");
+  const minimumVersion = await requireSuccess("plutil", [
+    "-extract",
+    "LSMinimumSystemVersion",
+    "raw",
+    infoPlist,
+  ]);
+  const dockMetadata = await requireSuccess("plutil", [
+    "-extract",
+    "LSUIElement",
+    "raw",
+    infoPlist,
+  ]);
+  if (
+    minimumVersion.output.trim() !== minimumSystemVersion ||
+    !["1", "true", "YES"].includes(dockMetadata.output.trim())
+  ) {
+    throw new Error("macOS bundle metadata failed the gate");
+  }
+
+  const frameworkRoot = join(appPath, "Contents/Frameworks");
+  const frameworkDirectories = await listDirectories(frameworkRoot);
+  const helperApps = frameworkDirectories.filter(
+    (path) => path.endsWith(".app") && basename(path).includes("Helper"),
+  );
+  if (
+    helperApps.length < 4 ||
+    !frameworkDirectories.some((path) =>
+      path.endsWith("Chromium Embedded Framework.framework"),
+    )
+  ) {
+    throw new Error("macOS CEF helpers are incomplete");
+  }
+  for (const helperApp of helperApps) {
+    const helperName = basename(helperApp, ".app");
+    const helperExecutable = join(
+      helperApp,
+      "Contents",
+      "MacOS",
+      helperName,
+    );
+    const architectures = await architectureOf(helperExecutable);
+    if (
+      architectures.length !== 1 ||
+      architectures[0] !== targetContract.executableArchitecture
+    ) {
+      throw new Error("macOS CEF helper has an unexpected architecture");
+    }
+  }
 }
 
 async function processSnapshot() {
@@ -576,13 +653,8 @@ async function main() {
     );
 
     const bundleFiles = await listFiles(bundleRoot);
-    const bundleDirectories = await listDirectories(bundleRoot);
-    const appPath = one(
-      bundleDirectories.filter(
-        (path) =>
-          path.endsWith(".app") &&
-          !path.slice(0, -4).includes(".app/"),
-      ),
+    const appPath = await applicationBundleIn(
+      bundleRoot,
       "application bundle",
     );
     const dmgPath = one(
@@ -598,65 +670,7 @@ async function main() {
       "updater signature",
     );
 
-    const executable = join(appPath, "Contents/MacOS/devhud-probe");
-    const executableArchitectures = await architectureOf(executable);
-    if (
-      executableArchitectures.length !== 1 ||
-      executableArchitectures[0] !== targetContract.executableArchitecture
-    ) {
-      throw new Error("macOS application has an unexpected architecture");
-    }
-    const infoPlist = join(appPath, "Contents/Info.plist");
-    const minimumVersion = await requireSuccess("plutil", [
-      "-extract",
-      "LSMinimumSystemVersion",
-      "raw",
-      infoPlist,
-    ]);
-    const dockMetadata = await requireSuccess("plutil", [
-      "-extract",
-      "LSUIElement",
-      "raw",
-      infoPlist,
-    ]);
-    if (
-      minimumVersion.output.trim() !== minimumSystemVersion ||
-      !["1", "true", "YES"].includes(dockMetadata.output.trim())
-    ) {
-      throw new Error("macOS bundle metadata failed the gate");
-    }
-
-    const frameworkRoot = join(appPath, "Contents/Frameworks");
-    const frameworkDirectories = await listDirectories(frameworkRoot);
-    const helperApps = frameworkDirectories.filter(
-      (path) =>
-        path.endsWith(".app") &&
-        basename(path).includes("Helper"),
-    );
-    if (
-      helperApps.length < 4 ||
-      !frameworkDirectories.some((path) =>
-        path.endsWith("Chromium Embedded Framework.framework"),
-      )
-    ) {
-      throw new Error("macOS CEF helpers are incomplete");
-    }
-    for (const helperApp of helperApps) {
-      const helperName = basename(helperApp, ".app");
-      const helperExecutable = join(
-        helperApp,
-        "Contents",
-        "MacOS",
-        helperName,
-      );
-      const architectures = await architectureOf(helperExecutable);
-      if (
-        architectures.length !== 1 ||
-        architectures[0] !== targetContract.executableArchitecture
-      ) {
-        throw new Error("macOS CEF helper has an unexpected architecture");
-      }
-    }
+    await verifyApplicationContents(appPath, targetContract);
     await verifyCodeSignature(appPath, signingMode);
     await verifyNotarization(appPath, signingMode);
     await verifyCodeSignature(dmgPath, signingMode);
@@ -672,15 +686,11 @@ async function main() {
       dmgPath,
     ]);
     try {
-      const mountedDirectories = await listDirectories(mountPoint);
-      const mountedApp = one(
-        mountedDirectories.filter(
-          (path) =>
-            path.endsWith(".app") &&
-            !path.slice(mountPoint.length + 1, -4).includes(".app/"),
-        ),
+      const mountedApp = await applicationBundleIn(
+        mountPoint,
         "mounted application bundle",
       );
+      await verifyApplicationContents(mountedApp, targetContract);
       await verifyCodeSignature(mountedApp, signingMode);
       await verifyNotarization(mountedApp, signingMode);
     } finally {
@@ -693,6 +703,14 @@ async function main() {
       tempRoot,
       updaterPath,
     });
+    const updaterRoot = join(tempRoot, "updater-archive");
+    await mkdir(updaterRoot);
+    await requireSuccess("tar", ["-xzf", updaterPath, "-C", updaterRoot]);
+    const updaterApp = await applicationBundleIn(
+      updaterRoot,
+      "updater application bundle",
+    );
+    await verifyApplicationContents(updaterApp, targetContract);
 
     const sensitiveAppPath = join(
       tempRoot,
