@@ -39,7 +39,7 @@ docker run --rm -d \
   -e DELIBASE_LOGTO_M2M_CLIENT_SECRET=image-test-secret \
   -e DELIBASE_POLAR_ACCESS_TOKEN=image-test-token \
   -e DELIBASE_POLAR_WEBHOOK_SECRET=image-test-webhook-secret \
-  -e DELIBASE_POLAR_PRODUCT_ID=image-test-product \
+  -e DELIBASE_POLAR_PRODUCT_ID=product_monthly_10_usd \
   -e DELIBASE_LOG_PSEUDONYM_KEY=0123456789abcdef0123456789abcdef \
   "$image" >/dev/null
 
