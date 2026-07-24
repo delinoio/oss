@@ -9,3 +9,10 @@ const MOBILE_USER_AGENT = /Android|iPhone|iPad|iPod/u;
 export function detectApplicationPlatform(userAgent: string): ApplicationPlatform {
   return MOBILE_USER_AGENT.test(userAgent) ? "mobile" : "desktop";
 }
+
+/** The native runtime is authoritative when a system webview reports after startup. */
+export function platformForRuntime(
+  runtime: "cef" | "system-webview",
+): ApplicationPlatform {
+  return runtime === "system-webview" ? "mobile" : "desktop";
+}

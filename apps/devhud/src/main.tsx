@@ -2,7 +2,6 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
-import { detectApplicationPlatform } from "./runtime/platform";
 import "./styles.css";
 
 const root = document.getElementById("root");
@@ -13,6 +12,6 @@ if (root === null) {
 
 createRoot(root).render(
   <StrictMode>
-    <App platform={detectApplicationPlatform(navigator.userAgent)} />
+    <App />
   </StrictMode>,
 );

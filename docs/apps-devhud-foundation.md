@@ -71,7 +71,7 @@ The native boundary exposes only scoped Tauri/plugin commands required for setti
 
 ### Mobile screens and widget boundary
 
-The app provides stable internal screens for `Home`, `Widgets`, `Settings`, and `Diagnostics`, with explicit empty states because no production tool or visible widget ships in `0.1.0`.
+The app provides stable internal screens for `Home`, `Widgets`, `Settings`, and `Diagnostics`, with explicit empty states because no production tool or visible widget ships in `0.1.0`. The frontend may select an initial shell from the user agent, but must reconcile it to the authoritative native `system-webview` runtime result so iPadOS desktop-content mode remains mobile.
 
 The implementation must compile and test an iOS WidgetKit extension, an Android `AppWidgetProvider`, a shared data adapter, and a refresh bridge using fixtures. The WidgetKit extension must not be embedded in the distributed iOS app, and the `AppWidgetProvider` must not be registered in the Android manifest. Therefore no widget appears in either platform's widget gallery for this issue. Widget configuration and refresh are test fixtures only; no sample product tool is exposed.
 
