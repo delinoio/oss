@@ -13,7 +13,7 @@ use global_hotkey::{
     hotkey::{Code, HotKey as Shortcut, Modifiers},
 };
 use tauri::{
-    App, AppHandle, Manager, Theme, WebviewWindow, menu::MenuBuilder, tray::TrayIconBuilder,
+    App, AppHandle, Manager, Theme, WebviewWindow, Window, menu::MenuBuilder, tray::TrayIconBuilder,
 };
 
 use super::{ActiveRuntime, PROBE_WINDOW_LABEL, ProbeCommandError, is_bundled_url};
@@ -131,7 +131,7 @@ pub(super) fn setup(app: &mut App<ActiveRuntime>) -> Result<(), Box<dyn std::err
     shortcut_manager.register(shortcut)?;
     SHORTCUT_REGISTERED.store(true, Ordering::Release);
     let app_handle = app.handle().clone();
-    GlobalHotKeyEvent::set_event_handler(Some(move |event| {
+    GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
         if event.id == shortcut.id() && event.state == HotKeyState::Pressed {
             if toggle_probe_window(&app_handle).is_ok() {
                 SHORTCUT_EVENT_OBSERVED.store(true, Ordering::Release);
@@ -173,7 +173,7 @@ pub(super) fn observe_window_event(event: &tauri::WindowEvent) {
 }
 
 pub(super) fn prevent_probe_window_close(
-    window: &WebviewWindow<ActiveRuntime>,
+    window: &Window<ActiveRuntime>,
     event: &tauri::WindowEvent,
 ) {
     if window.label() != PROBE_WINDOW_LABEL {

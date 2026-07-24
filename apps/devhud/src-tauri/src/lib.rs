@@ -18,8 +18,6 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use std::time::Duration;
 
-#[cfg(all(feature = "desktop-cef", target_os = "macos"))]
-use tauri::Manager;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use tauri::{
     AppHandle, Webview, WebviewUrl,
@@ -203,9 +201,9 @@ fn probe_gate_mode() -> GateMode {
 async fn probe_macos_gate_run(app: AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError> {
     #[cfg(all(feature = "macos-gate", target_os = "macos"))]
     {
-        return tauri::async_runtime::spawn_blocking(move || macos_gate::run(app))
+        tauri::async_runtime::spawn_blocking(move || macos_gate::run(app))
             .await
-            .map_err(|_| ProbeCommandError::UnsupportedGate)?;
+            .map_err(|_| ProbeCommandError::UnsupportedGate)?
     }
 
     #[cfg(not(all(feature = "macos-gate", target_os = "macos")))]
@@ -220,7 +218,7 @@ async fn probe_macos_gate_run(app: AppHandle<ActiveRuntime>) -> Result<(), Probe
 fn probe_macos_gate_complete(app: AppHandle<ActiveRuntime>) -> Result<(), ProbeCommandError> {
     #[cfg(all(feature = "macos-gate", target_os = "macos"))]
     {
-        return macos_gate::complete(app);
+        macos_gate::complete(app)
     }
 
     #[cfg(not(all(feature = "macos-gate", target_os = "macos")))]
@@ -239,7 +237,7 @@ fn probe_macos_gate_renderer_ready() -> Result<(), ProbeCommandError> {
             event = "devhud.probe.renderer_termination_ready",
             "probe is ready for renderer termination"
         );
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(all(feature = "macos-gate", target_os = "macos")))]

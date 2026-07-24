@@ -26,7 +26,7 @@ function passingEvidence() {
       minimumSystemVersion: "14.0",
     },
     upstream: {
-      tauriRevision: "649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769",
+      tauriRevision: "f49ebda2fdba5755456b0f049e32593ca0ea331a",
       cliCefVersion: "3.0.0-alpha.6",
     },
     runtime: {

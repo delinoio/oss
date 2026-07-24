@@ -30,7 +30,7 @@ const tauri = resolve(
   "node_modules/@tauri-apps/cli-cef/tauri.js",
 );
 const minimumSystemVersion = "14.0";
-const tauriRevision = "649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769";
+const tauriRevision = "f49ebda2fdba5755456b0f049e32593ca0ea331a";
 const cliCefVersion = "3.0.0-alpha.6";
 const shortcutDiagnosticForms = Object.freeze([
   "Control+Alt+Shift+F18",

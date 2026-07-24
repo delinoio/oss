@@ -18,7 +18,7 @@ path = "src/main.rs"
 required-features = ["desktop-cef"]
 
 [build-dependencies]
-tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769", features = ["codegen"] }
+tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", features = ["codegen"] }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -30,11 +30,11 @@ url = "2"
 serde_json = "1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769", default-features = false, features = ["cef", "devtools", "tray-icon"], optional = true }
-tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769", default-features = false, features = ["sandbox"], optional = true }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["cef", "devtools", "tray-icon"], optional = true }
+tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["sandbox"], optional = true }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769", default-features = false, features = ["wry"], optional = true }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["wry"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 auto-launch = { version = "=0.5.0", optional = true }

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const appRoot = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(appRoot, "../..");
-const revision = "649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769";
+const revision = "f49ebda2fdba5755456b0f049e32593ca0ea331a";
 const repository = "https://github.com/tauri-apps/tauri";
 
 const paths = {

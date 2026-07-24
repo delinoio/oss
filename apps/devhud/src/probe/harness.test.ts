@@ -265,7 +265,7 @@ describe("probe harness", () => {
     driver.runtimeFailure = async () => {
       throw new ProbeBlockedError(
         "Renderer termination callback is unavailable on Linux.",
-        "https://github.com/tauri-apps/tauri/blob/649d4e6b0fbfd0b60cb5f2ed8d83ceef648a6769/crates/tauri-runtime-cef/src/webview.rs#L354-L360",
+        "https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri-runtime-cef/src/webview.rs#L354-L360",
       );
     };
 
