@@ -158,6 +158,7 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		configuration.PolarWebhookSecret,
 		contracts.SystemClock{},
 		workerTokenGenerator{},
+		logger,
 	)
 	if err != nil {
 		return &startupError{stage: stageConfiguration}

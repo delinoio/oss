@@ -253,6 +253,13 @@ func reconcilePolarSubscription(
 		ctx, event.SubscriptionID,
 	)
 	if err == nil {
+		customer, customerErr := resolvePolarCustomer(ctx, queries, event)
+		if customerErr != nil {
+			return dbgen.Subscription{}, customerErr
+		}
+		if customer.OrganizationID != existing.OrganizationID {
+			return dbgen.Subscription{}, reliability.ErrInvalidInput
+		}
 		if existing.ProviderEventAt.Time.After(event.EventAt) ||
 			existing.Status == "revoked" {
 			return existing, nil

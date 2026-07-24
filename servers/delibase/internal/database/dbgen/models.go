@@ -279,6 +279,13 @@ type PolarRefund struct {
 	RetainUntil     pgtype.Timestamptz
 }
 
+type PolarSubscriptionCheckout struct {
+	OrganizationID  pgtype.UUID
+	PolarCheckoutID string
+	ExpiresAt       pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
 type ServiceIdentity struct {
 	ID            pgtype.UUID
 	LogtoClientID string

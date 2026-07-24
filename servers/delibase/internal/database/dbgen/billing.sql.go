@@ -104,6 +104,25 @@ func (q *Queries) EnsureBillingPeriod(ctx context.Context, arg EnsureBillingPeri
 	return i, err
 }
 
+const getActivePolarSubscriptionCheckout = `-- name: GetActivePolarSubscriptionCheckout :one
+SELECT organization_id, polar_checkout_id, expires_at, created_at FROM polar_subscription_checkouts
+WHERE organization_id = $1
+  AND expires_at > transaction_timestamp()
+FOR UPDATE
+`
+
+func (q *Queries) GetActivePolarSubscriptionCheckout(ctx context.Context, organizationID pgtype.UUID) (PolarSubscriptionCheckout, error) {
+	row := q.db.QueryRow(ctx, getActivePolarSubscriptionCheckout, organizationID)
+	var i PolarSubscriptionCheckout
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.PolarCheckoutID,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getActiveSubscriptionForOrganization = `-- name: GetActiveSubscriptionForOrganization :one
 SELECT id, organization_id, polar_subscription_id, status, current_period_starts_at, current_period_ends_at, created_at, updated_at, provider_event_at FROM subscriptions
 WHERE organization_id = $1
@@ -249,7 +268,7 @@ SELECT
         selected_subscription.status = 'active'
         AND current_period.id IS NOT NULL
         AND committed.amount + shortfall.amount + active_holds.overage
-            <= current_period.requested_overage_limit_micros
+            < current_period.requested_overage_limit_micros
     )::boolean AS new_overage_allowed
 FROM organizations AS organization
 LEFT JOIN selected_subscription ON true
@@ -944,6 +963,38 @@ func (q *Queries) UpsertPolarRefund(ctx context.Context, arg UpsertPolarRefundPa
 		&i.ProviderEventAt,
 		&i.CreatedAt,
 		&i.RetainUntil,
+	)
+	return i, err
+}
+
+const upsertPolarSubscriptionCheckout = `-- name: UpsertPolarSubscriptionCheckout :one
+INSERT INTO polar_subscription_checkouts (
+    organization_id, polar_checkout_id, expires_at
+) VALUES (
+    $1, $2, $3
+)
+ON CONFLICT (organization_id) DO UPDATE
+SET polar_checkout_id = EXCLUDED.polar_checkout_id,
+    expires_at = EXCLUDED.expires_at,
+    created_at = transaction_timestamp()
+WHERE polar_subscription_checkouts.expires_at <= transaction_timestamp()
+RETURNING organization_id, polar_checkout_id, expires_at, created_at
+`
+
+type UpsertPolarSubscriptionCheckoutParams struct {
+	OrganizationID  pgtype.UUID
+	PolarCheckoutID string
+	ExpiresAt       pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertPolarSubscriptionCheckout(ctx context.Context, arg UpsertPolarSubscriptionCheckoutParams) (PolarSubscriptionCheckout, error) {
+	row := q.db.QueryRow(ctx, upsertPolarSubscriptionCheckout, arg.OrganizationID, arg.PolarCheckoutID, arg.ExpiresAt)
+	var i PolarSubscriptionCheckout
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.PolarCheckoutID,
+		&i.ExpiresAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }

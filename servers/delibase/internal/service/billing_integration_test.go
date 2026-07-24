@@ -1,16 +1,23 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
+	"github.com/delinoio/oss/servers/delibase/internal/contracts"
 	"github.com/delinoio/oss/servers/delibase/internal/database"
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
+	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/jackc/pgx/v5"
 )
@@ -161,6 +168,83 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	otherOrganizationID := uuidv7.MustNew()
+	otherTeamID := uuidv7.MustNew()
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.CreateOrganization(
+			ctx,
+			dbgen.CreateOrganizationParams{
+				ID:   pgUUID(otherOrganizationID),
+				Name: "Other Billing Integration",
+				Slug: "other-billing-" + otherOrganizationID.String()[24:],
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreatePolarCustomer(
+			ctx,
+			dbgen.CreatePolarCustomerParams{
+				OrganizationID:  pgUUID(otherOrganizationID),
+				PolarCustomerID: "customer_" + otherOrganizationID.String(),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateOrganizationMembership(
+			ctx,
+			dbgen.CreateOrganizationMembershipParams{
+				OrganizationID: pgUUID(otherOrganizationID),
+				AccountID:      pgUUID(accountID),
+				Role:           "owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateGeneralTeam(
+			ctx,
+			dbgen.CreateGeneralTeamParams{
+				ID:             pgUUID(otherTeamID),
+				OrganizationID: pgUUID(otherOrganizationID),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := queries.CreateTeamMembership(
+			ctx,
+			dbgen.CreateTeamMembershipParams{
+				OrganizationID: pgUUID(otherOrganizationID),
+				TeamID:         pgUUID(otherTeamID),
+				AccountID:      pgUUID(accountID),
+				Role:           "admin",
+			},
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatchedCustomerPayload, _ := json.Marshal(polarBillingEvent{
+		Type:               string(reliability.WebhookOrderPaid),
+		EventAt:            now,
+		ObjectID:           "order_mismatched_customer",
+		OrderID:            "order_mismatched_customer",
+		CustomerID:         "customer_" + otherOrganizationID.String(),
+		ExternalID:         otherOrganizationID.String(),
+		SubscriptionID:     "subscription_1",
+		ProductID:          productID,
+		Currency:           "usd",
+		BillingReason:      "subscription_cycle",
+		Paid:               true,
+		CurrentPeriodStart: currentPeriodStart,
+		CurrentPeriodEnd:   currentPeriodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarOrderPaid,
+		Payload:   mismatchedCustomerPayload,
+	}); !errors.Is(err, reliability.ErrInvalidInput) {
+		t.Fatalf("mismatched subscription customer error = %v", err)
+	}
 	invalidProductPayload, _ := json.Marshal(polarBillingEvent{
 		Type:               string(reliability.WebhookSubscriptionActive),
 		EventAt:            now,
@@ -229,9 +313,244 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 		summary.BillingPeriodID != currentCycle.BillingPeriodID {
 		t.Fatalf("refund summary = %#v, %v", summary, err)
 	}
+	if _, err = store.Queries().UpdateOrganizationOverageLimit(
+		ctx,
+		dbgen.UpdateOrganizationOverageLimitParams{
+			OverageLimitMicros: cycleGrantMicros / 2,
+			OrganizationID:     pgUUID(organizationID),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Queries().UpdateCurrentBillingPeriodOverageLimit(
+		ctx,
+		dbgen.UpdateCurrentBillingPeriodOverageLimitParams{
+			OverageLimitMicros: cycleGrantMicros / 2,
+			OrganizationID:     pgUUID(organizationID),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	summary, err = store.Queries().GetBillingSummary(ctx, pgUUID(organizationID))
+	if err != nil || summary.NewOverageAllowed {
+		t.Fatalf("exhausted overage summary = %#v, %v", summary, err)
+	}
 	cycle, err := store.Queries().GetPolarPaidCycle(ctx, "order_1")
 	if err != nil || cycle.GrantMicros != cycleGrantMicros ||
 		cycle.ReversedMicros != cycleGrantMicros/2 {
 		t.Fatalf("paid cycle = %#v, %v", cycle, err)
 	}
+}
+
+func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	accountID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
+	subject := "checkout-" + accountID.String()
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.CreateAccount(
+			ctx,
+			dbgen.CreateAccountParams{
+				ID:           pgUUID(accountID),
+				LogtoSubject: subject,
+				DisplayName:  "Checkout Owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateOrganization(
+			ctx,
+			dbgen.CreateOrganizationParams{
+				ID:   pgUUID(organizationID),
+				Name: "Checkout Integration",
+				Slug: "checkout-" + organizationID.String()[24:],
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreatePolarCustomer(
+			ctx,
+			dbgen.CreatePolarCustomerParams{
+				OrganizationID:  pgUUID(organizationID),
+				PolarCustomerID: "customer_" + organizationID.String(),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateOrganizationMembership(
+			ctx,
+			dbgen.CreateOrganizationMembershipParams{
+				OrganizationID: pgUUID(organizationID),
+				AccountID:      pgUUID(accountID),
+				Role:           "owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateGeneralTeam(
+			ctx,
+			dbgen.CreateGeneralTeamParams{
+				ID:             pgUUID(teamID),
+				OrganizationID: pgUUID(organizationID),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := queries.CreateTeamMembership(
+			ctx,
+			dbgen.CreateTeamMembershipParams{
+				OrganizationID: pgUUID(organizationID),
+				TeamID:         pgUUID(teamID),
+				AccountID:      pgUUID(accountID),
+				Role:           "admin",
+			},
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pseudonymizer, err := safelog.NewPseudonymizer(bytes.Repeat([]byte{0x25}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := newBlockingCheckoutPolar()
+	billing := NewBilling(Dependencies{
+		Store:         store,
+		Polar:         provider,
+		IDs:           defaultIDGenerator{},
+		Pseudonymizer: pseudonymizer,
+	})
+	userContext := authenticatedContext(ctx, subject)
+	request := func(key string) *connect.Request[delibasev1.CreateSubscriptionCheckoutRequest] {
+		return connect.NewRequest(&delibasev1.CreateSubscriptionCheckoutRequest{
+			OrganizationId: &delibasev1.UuidV7{Value: organizationID.String()},
+			SuccessUrl:     "https://deli.dev/billing/success",
+			CancelUrl:      "https://deli.dev/billing/cancel",
+			Idempotency:    idempotency(key),
+		})
+	}
+	type checkoutResult struct {
+		response *connect.Response[delibasev1.CreateSubscriptionCheckoutResponse]
+		err      error
+	}
+	results := make(chan checkoutResult, 2)
+	go func() {
+		response, createErr := billing.CreateSubscriptionCheckout(
+			userContext, request("checkout-first"),
+		)
+		results <- checkoutResult{response: response, err: createErr}
+	}()
+	select {
+	case <-provider.started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	go func() {
+		response, createErr := billing.CreateSubscriptionCheckout(
+			userContext, request("checkout-second"),
+		)
+		results <- checkoutResult{response: response, err: createErr}
+	}()
+	close(provider.release)
+
+	first := <-results
+	second := <-results
+	var succeeded *connect.Response[delibasev1.CreateSubscriptionCheckoutResponse]
+	var rejected error
+	for _, result := range []checkoutResult{first, second} {
+		if result.err == nil {
+			if succeeded != nil {
+				t.Fatal("both checkout requests succeeded")
+			}
+			succeeded = result.response
+		} else {
+			rejected = result.err
+		}
+	}
+	if succeeded == nil || rejected == nil {
+		t.Fatalf("checkout results = %#v, %#v", first, second)
+	}
+	requireConnectReason(
+		t,
+		rejected,
+		connect.CodeAlreadyExists,
+		delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
+	)
+	if provider.Calls() != 1 {
+		t.Fatalf("Polar checkout calls = %d, want 1", provider.Calls())
+	}
+
+	replayed, err := billing.CreateSubscriptionCheckout(
+		userContext, request("checkout-first"),
+	)
+	if err != nil || !replayed.Msg.Idempotency.Replayed ||
+		replayed.Msg.CheckoutUrl != succeeded.Msg.CheckoutUrl {
+		t.Fatalf("checkout replay = %#v, %v", replayed, err)
+	}
+	if provider.Calls() != 1 {
+		t.Fatalf("Polar checkout replay calls = %d, want 1", provider.Calls())
+	}
+}
+
+type blockingCheckoutPolar struct {
+	mu      sync.Mutex
+	calls   int
+	started chan struct{}
+	release chan struct{}
+}
+
+func newBlockingCheckoutPolar() *blockingCheckoutPolar {
+	return &blockingCheckoutPolar{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (provider *blockingCheckoutPolar) CreateCheckout(
+	ctx context.Context,
+	_ contracts.CheckoutRequest,
+) (contracts.Checkout, error) {
+	provider.mu.Lock()
+	provider.calls++
+	call := provider.calls
+	if call == 1 {
+		close(provider.started)
+	}
+	provider.mu.Unlock()
+	select {
+	case <-provider.release:
+	case <-ctx.Done():
+		return contracts.Checkout{}, ctx.Err()
+	}
+	return contracts.Checkout{
+		ID:        "checkout_" + strconv.Itoa(call),
+		URL:       "https://polar.sh/checkout/test",
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	}, nil
+}
+
+func (*blockingCheckoutPolar) CreatePortalSession(
+	context.Context,
+	contracts.PortalRequest,
+) (contracts.PortalSession, error) {
+	return contracts.PortalSession{}, errors.New("unexpected portal call")
+}
+
+func (provider *blockingCheckoutPolar) Calls() int {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	return provider.calls
 }

@@ -1,12 +1,14 @@
 package polar
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -17,6 +19,7 @@ import (
 	"github.com/delinoio/oss/servers/delibase/internal/database"
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
+	"github.com/delinoio/oss/servers/internal/safeerr"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -36,10 +39,14 @@ func NewWebhookHandler(
 	secret string,
 	clock contracts.Clock,
 	ids webhookIDGenerator,
+	logger *slog.Logger,
 ) (http.Handler, error) {
 	key, err := webhookSecret(secret)
 	if err != nil || store == nil || clock == nil || ids == nil {
 		return nil, errors.New("polar: invalid webhook configuration")
+	}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Cache-Control", "no-store")
@@ -113,11 +120,25 @@ func NewWebhookHandler(
 			return
 		}
 		if persistErr != nil {
+			logWebhookPersistenceFailure(request.Context(), logger, persistErr)
 			writer.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		writer.WriteHeader(http.StatusNoContent)
 	}), nil
+}
+
+func logWebhookPersistenceFailure(
+	ctx context.Context,
+	logger *slog.Logger,
+	err error,
+) {
+	safelog.Record(ctx, logger, slog.LevelError, safelog.EventIntegration, safelog.Fields{
+		Procedure:         "polar_webhook_persist",
+		Result:            safelog.ResultFailure,
+		ErrorClass:        safeerr.Classify(err),
+		IncludeErrorClass: true,
+	})
 }
 
 func verifyWebhook(

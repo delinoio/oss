@@ -89,68 +89,17 @@ func (service *Billing) CreateSubscriptionCheckout(
 	if err != nil {
 		return nil, err
 	}
-	digest := requestDigest(
-		organizationID.String(), request.Msg.SuccessUrl, request.Msg.CancelUrl,
-	)
-	replayed := &delibasev1.CreateSubscriptionCheckoutResponse{}
-	found, err := service.billingReplay(
-		ctx, subject, organizationID, "create_subscription_checkout",
-		key, digest, replayed,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if found {
-		setIdempotency(
-			&replayed.Idempotency,
-			delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT,
-			true,
-			replayed.Idempotency.GetOriginallyCompletedAt().AsTime(),
-		)
-		return connect.NewResponse(replayed), nil
-	}
-	if err := service.ensureSubscriptionCheckoutAvailable(
-		ctx, subject, organizationID,
-	); err != nil {
-		return nil, err
-	}
-	if service.dependencies.Polar == nil {
-		return nil, serviceError(
-			connect.CodeUnavailable,
-			delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED,
-		)
-	}
-	checkout, err := service.dependencies.Polar.CreateCheckout(
+	return service.createSubscriptionCheckout(
 		ctx,
-		contracts.CheckoutRequest{
-			OrganizationID: organizationID.String(),
-			SuccessURL:     request.Msg.SuccessUrl,
-			CancelURL:      request.Msg.CancelUrl,
-			IdempotencyKey: providerIdempotencyKey(
-				"create_subscription_checkout", subject, organizationID, key,
-			),
-		},
+		subject,
+		organizationID,
+		key,
+		requestDigest(
+			organizationID.String(), request.Msg.SuccessUrl, request.Msg.CancelUrl,
+		),
+		request.Msg.SuccessUrl,
+		request.Msg.CancelUrl,
 	)
-	if err != nil {
-		// No local write occurs before Polar returns a valid hosted checkout.
-		return nil, serviceError(
-			connect.CodeUnavailable,
-			delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED,
-		)
-	}
-	response := &delibasev1.CreateSubscriptionCheckoutResponse{
-		CheckoutUrl: checkout.URL,
-		ExpiresAt:   timestampFromTime(checkout.ExpiresAt),
-	}
-	err = service.persistBillingMutation(
-		ctx, subject, organizationID, "create_subscription_checkout", key, digest,
-		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT,
-		reliability.AuditCheckoutCreated, response, &response.Idempotency,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(response), nil
 }
 
 func (service *Billing) CreateBillingPortalSession(
@@ -436,12 +385,21 @@ func (service *Billing) billingReplay(
 	return found, databaseError(err)
 }
 
-func (service *Billing) ensureSubscriptionCheckoutAvailable(
+func (service *Billing) createSubscriptionCheckout(
 	ctx context.Context,
 	subject string,
 	organizationID uuid.UUID,
-) error {
-	err := service.dependencies.Store.WithinTransaction(
+	key string,
+	digest []byte,
+	successURL string,
+	cancelURL string,
+) (*connect.Response[delibasev1.CreateSubscriptionCheckoutResponse], error) {
+	actor, err := actorFor(service.dependencies, subject)
+	if err != nil {
+		return nil, err
+	}
+	response := &delibasev1.CreateSubscriptionCheckoutResponse{}
+	err = service.dependencies.Store.WithinTransaction(
 		ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			account, transactionErr := activeAccount(ctx, queries, subject)
@@ -458,6 +416,27 @@ func (service *Billing) ensureSubscriptionCheckoutAvailable(
 			); transactionErr != nil {
 				return transactionErr
 			}
+			replayed, completedAt, transactionErr := replay(
+				ctx,
+				queries,
+				subject,
+				"create_subscription_checkout",
+				key,
+				digest,
+				response,
+			)
+			if transactionErr != nil {
+				return transactionErr
+			}
+			if replayed {
+				setIdempotency(
+					&response.Idempotency,
+					delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT,
+					true,
+					completedAt,
+				)
+				return nil
+			}
 			if _, transactionErr = queries.GetActiveSubscriptionForOrganization(
 				ctx, pgUUID(organizationID),
 			); transactionErr == nil {
@@ -468,10 +447,86 @@ func (service *Billing) ensureSubscriptionCheckoutAvailable(
 			} else if !errors.Is(transactionErr, pgx.ErrNoRows) {
 				return transactionErr
 			}
-			return nil
+			if _, transactionErr = queries.GetActivePolarSubscriptionCheckout(
+				ctx, pgUUID(organizationID),
+			); transactionErr == nil {
+				return serviceError(
+					connect.CodeAlreadyExists,
+					delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
+				)
+			} else if !errors.Is(transactionErr, pgx.ErrNoRows) {
+				return transactionErr
+			}
+			if service.dependencies.Polar == nil {
+				return serviceError(
+					connect.CodeUnavailable,
+					delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED,
+				)
+			}
+			checkout, transactionErr := service.dependencies.Polar.CreateCheckout(
+				ctx,
+				contracts.CheckoutRequest{
+					OrganizationID: organizationID.String(),
+					SuccessURL:     successURL,
+					CancelURL:      cancelURL,
+					IdempotencyKey: providerIdempotencyKey(
+						"create_subscription_checkout", subject, organizationID, key,
+					),
+				},
+			)
+			if transactionErr != nil {
+				// The transaction rolls back without a local checkout reservation.
+				return serviceError(
+					connect.CodeUnavailable,
+					delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED,
+				)
+			}
+			if _, transactionErr = queries.UpsertPolarSubscriptionCheckout(
+				ctx,
+				dbgen.UpsertPolarSubscriptionCheckoutParams{
+					OrganizationID:  pgUUID(organizationID),
+					PolarCheckoutID: checkout.ID,
+					ExpiresAt:       pgTimestamp(checkout.ExpiresAt),
+				},
+			); transactionErr != nil {
+				return transactionErr
+			}
+			response.CheckoutUrl = checkout.URL
+			response.ExpiresAt = timestampFromTime(checkout.ExpiresAt)
+			if transactionErr = appendAudit(
+				ctx,
+				service.dependencies,
+				queries,
+				reliability.AuditCheckoutCreated,
+				actor,
+				organizationID,
+			); transactionErr != nil {
+				return transactionErr
+			}
+			completedAt = service.dependencies.Clock.Now().UTC()
+			setIdempotency(
+				&response.Idempotency,
+				delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT,
+				false,
+				completedAt,
+			)
+			_, transactionErr = persistIdempotency(
+				ctx,
+				service.dependencies,
+				queries,
+				subject,
+				"create_subscription_checkout",
+				key,
+				digest,
+				response,
+			)
+			return transactionErr
 		},
 	)
-	return databaseError(err)
+	if err != nil {
+		return nil, databaseError(err)
+	}
+	return connect.NewResponse(response), nil
 }
 
 func (service *Billing) persistBillingMutation(

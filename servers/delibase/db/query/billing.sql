@@ -110,7 +110,7 @@ SELECT
         selected_subscription.status = 'active'
         AND current_period.id IS NOT NULL
         AND committed.amount + shortfall.amount + active_holds.overage
-            <= current_period.requested_overage_limit_micros
+            < current_period.requested_overage_limit_micros
     )::boolean AS new_overage_allowed
 FROM organizations AS organization
 LEFT JOIN selected_subscription ON true
@@ -193,6 +193,25 @@ WHERE polar_customer_id = sqlc.arg(polar_customer_id);
 SELECT * FROM organizations
 WHERE id = sqlc.arg(id) AND deleted_at IS NULL
 FOR UPDATE;
+
+-- name: GetActivePolarSubscriptionCheckout :one
+SELECT * FROM polar_subscription_checkouts
+WHERE organization_id = sqlc.arg(organization_id)
+  AND expires_at > transaction_timestamp()
+FOR UPDATE;
+
+-- name: UpsertPolarSubscriptionCheckout :one
+INSERT INTO polar_subscription_checkouts (
+    organization_id, polar_checkout_id, expires_at
+) VALUES (
+    sqlc.arg(organization_id), sqlc.arg(polar_checkout_id), sqlc.arg(expires_at)
+)
+ON CONFLICT (organization_id) DO UPDATE
+SET polar_checkout_id = EXCLUDED.polar_checkout_id,
+    expires_at = EXCLUDED.expires_at,
+    created_at = transaction_timestamp()
+WHERE polar_subscription_checkouts.expires_at <= transaction_timestamp()
+RETURNING *;
 
 -- name: CurrentSettledCreditBalance :one
 SELECT COALESCE(sum(amount_micros), 0)::bigint AS balance_micros

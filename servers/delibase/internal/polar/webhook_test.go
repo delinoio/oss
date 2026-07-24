@@ -1,10 +1,14 @@
 package polar
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +16,33 @@ import (
 
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 )
+
+func TestWebhookPersistenceFailureLogsSafeStageAndClassification(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+
+	logWebhookPersistenceFailure(
+		context.Background(),
+		logger,
+		errors.New("postgres password=must-not-appear"),
+	)
+
+	logged := output.String()
+	for _, expected := range []string{
+		`"event":"integration"`,
+		`"request_procedure":"polar_webhook_persist"`,
+		`"result":"failure"`,
+		`"error_class":"internal"`,
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log missing %s: %s", expected, logged)
+		}
+	}
+	if strings.Contains(logged, "must-not-appear") {
+		t.Fatalf("log exposed persistence error: %s", logged)
+	}
+}
 
 func TestVerifyWebhookAcceptsCurrentStandardWebhookSignature(t *testing.T) {
 	t.Parallel()
