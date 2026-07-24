@@ -157,13 +157,9 @@ func (q *Queries) CreateTeamMembership(ctx context.Context, arg CreateTeamMember
 }
 
 const currentOrganizationBalance = `-- name: CurrentOrganizationBalance :one
-SELECT COALESCE((
-    SELECT balance_after_micros
-    FROM ledger_entries
-    WHERE organization_id = $1
-    ORDER BY created_at DESC, id DESC
-    LIMIT 1
-), 0)::bigint AS balance_micros
+SELECT COALESCE(sum(amount_micros), 0)::bigint AS balance_micros
+FROM ledger_entries
+WHERE organization_id = $1
 `
 
 func (q *Queries) CurrentOrganizationBalance(ctx context.Context, organizationID pgtype.UUID) (int64, error) {
@@ -594,6 +590,28 @@ SELECT EXISTS (
 
 func (q *Queries) HasAccountOrganization(ctx context.Context, accountID pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, hasAccountOrganization, accountID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const hasActiveReservationsForOrganizationMember = `-- name: HasActiveReservationsForOrganizationMember :one
+SELECT EXISTS (
+    SELECT 1
+    FROM usage_reservations
+    WHERE organization_id = $1
+      AND account_id = $2
+      AND status = 'held'
+)
+`
+
+type HasActiveReservationsForOrganizationMemberParams struct {
+	OrganizationID pgtype.UUID
+	AccountID      pgtype.UUID
+}
+
+func (q *Queries) HasActiveReservationsForOrganizationMember(ctx context.Context, arg HasActiveReservationsForOrganizationMemberParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasActiveReservationsForOrganizationMember, arg.OrganizationID, arg.AccountID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

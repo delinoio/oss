@@ -288,14 +288,19 @@ DELETE FROM organization_memberships
 WHERE organization_id = sqlc.arg(organization_id)
   AND account_id = sqlc.arg(account_id);
 
--- name: CurrentOrganizationBalance :one
-SELECT COALESCE((
-    SELECT balance_after_micros
-    FROM ledger_entries
+-- name: HasActiveReservationsForOrganizationMember :one
+SELECT EXISTS (
+    SELECT 1
+    FROM usage_reservations
     WHERE organization_id = sqlc.arg(organization_id)
-    ORDER BY created_at DESC, id DESC
-    LIMIT 1
-), 0)::bigint AS balance_micros;
+      AND account_id = sqlc.arg(account_id)
+      AND status = 'held'
+);
+
+-- name: CurrentOrganizationBalance :one
+SELECT COALESCE(sum(amount_micros), 0)::bigint AS balance_micros
+FROM ledger_entries
+WHERE organization_id = sqlc.arg(organization_id);
 
 -- name: ForfeitOrganizationCredit :one
 INSERT INTO ledger_entries (

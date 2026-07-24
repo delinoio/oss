@@ -89,6 +89,7 @@ func TestStableErrorCategories(t *testing.T) {
 		delibasev1.ErrorReason_ERROR_REASON_AUTHENTICATION_REQUIRED,
 		delibasev1.ErrorReason_ERROR_REASON_PERMISSION_DENIED,
 		delibasev1.ErrorReason_ERROR_REASON_SLUG_CONFLICT,
+		delibasev1.ErrorReason_ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS,
 		delibasev1.ErrorReason_ERROR_REASON_INVITATION_EXPIRED,
 		delibasev1.ErrorReason_ERROR_REASON_TEAM_DEPTH_EXCEEDED,
 		delibasev1.ErrorReason_ERROR_REASON_SUBSCRIPTION_INACTIVE,

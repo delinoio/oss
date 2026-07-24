@@ -38,10 +38,11 @@ func TestPostgreSQLAccountOrganizationLifecycleAndRaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	polarCustomers := &fakePolarCustomers{}
 	dependencies := Dependencies{
 		Store:          store,
 		Clock:          contracts.SystemClock{},
-		PolarCustomers: &fakePolarCustomers{},
+		PolarCustomers: polarCustomers,
 		IDs:            defaultIDGenerator{},
 		Pseudonymizer:  pseudonymizer,
 	}
@@ -51,6 +52,17 @@ func TestPostgreSQLAccountOrganizationLifecycleAndRaces(t *testing.T) {
 	subject := "service-integration-" + testID
 	userContext := authenticatedContext(ctx, subject)
 	suffix := testID[len(testID)-12:]
+
+	_, err = accountService.GetAccountDeletionImpact(
+		authenticatedContext(ctx, "service-integration-unonboarded-"+testID),
+		connect.NewRequest(&delibasev1.GetAccountDeletionImpactRequest{}),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeNotFound,
+		delibasev1.ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND,
+	)
 
 	onboarding, err := accountService.CompleteOnboarding(
 		userContext,
@@ -120,6 +132,19 @@ func TestPostgreSQLAccountOrganizationLifecycleAndRaces(t *testing.T) {
 		t.Fatalf("creation race did not produce one original and one replay")
 	}
 	raceOrganizationID := first.response.Msg.Organization.OrganizationId
+	polarCalls := polarCustomers.Calls()
+	_, err = organizationService.CreateOrganization(
+		userContext,
+		connect.NewRequest(&delibasev1.CreateOrganizationRequest{
+			Name:        "Rejected Duplicate Organization",
+			Slug:        raceSlug,
+			Idempotency: idempotency("duplicate-slug-" + suffix),
+		}),
+	)
+	requireConnectCode(t, err, connect.CodeAlreadyExists)
+	if polarCustomers.Calls() != polarCalls {
+		t.Fatal("duplicate slug created a Polar customer before local validation")
+	}
 
 	newSlug := "renamed-" + suffix
 	updated, err := organizationService.UpdateOrganizationSlug(
@@ -272,6 +297,18 @@ func TestPostgreSQLAccountOrganizationLifecycleAndRaces(t *testing.T) {
 		deletionReplay.Msg.DeletionId.Value != deletion.Msg.DeletionId.Value {
 		t.Fatalf("post-provider deletion replay = %#v, %v", deletionReplay, err)
 	}
+	roleReplay, err := organizationService.UpdateOrganizationMemberRole(
+		secondContext,
+		connect.NewRequest(&delibasev1.UpdateOrganizationMemberRoleRequest{
+			OrganizationId: onboarding.Msg.OrganizationId,
+			AccountId:      onboarding.Msg.Account.AccountId,
+			Role:           delibasev1.OrganizationRole_ORGANIZATION_ROLE_OWNER,
+			Idempotency:    idempotency("restore-first-" + suffix),
+		}),
+	)
+	if err != nil || !roleReplay.Msg.Idempotency.Replayed {
+		t.Fatalf("post-account-deletion organization replay = %#v, %v", roleReplay, err)
+	}
 
 	deleted, err := organizationService.DeleteOrganization(
 		userContext,
@@ -409,6 +446,29 @@ func requireConnectCode(t *testing.T, err error, code connect.Code) {
 	}
 }
 
+func requireConnectReason(
+	t *testing.T,
+	err error,
+	code connect.Code,
+	reason delibasev1.ErrorReason,
+) {
+	t.Helper()
+	requireConnectCode(t, err, code)
+	var failure *connect.Error
+	_ = errors.As(err, &failure)
+	for _, detail := range failure.Details() {
+		value, detailErr := detail.Value()
+		if detailErr != nil {
+			continue
+		}
+		errorDetail, ok := value.(*delibasev1.ErrorDetail)
+		if ok && errorDetail.Reason == reason {
+			return
+		}
+	}
+	t.Fatalf("error = %v, want reason %s", err, reason)
+}
+
 type retryIdentity struct {
 	failures int
 }
@@ -421,11 +481,23 @@ func (identity *retryIdentity) DeleteUser(context.Context, string) error {
 	return nil
 }
 
-type fakePolarCustomers struct{}
+type fakePolarCustomers struct {
+	mutex sync.Mutex
+	calls int
+}
 
-func (*fakePolarCustomers) EnsureCustomer(
+func (customers *fakePolarCustomers) EnsureCustomer(
 	_ context.Context,
 	input contracts.CustomerRequest,
 ) (contracts.Customer, error) {
+	customers.mutex.Lock()
+	customers.calls++
+	customers.mutex.Unlock()
 	return contracts.Customer{ID: input.OrganizationID}, nil
+}
+
+func (customers *fakePolarCustomers) Calls() int {
+	customers.mutex.Lock()
+	defer customers.mutex.Unlock()
+	return customers.calls
 }

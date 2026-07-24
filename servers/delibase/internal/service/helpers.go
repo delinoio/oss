@@ -281,6 +281,31 @@ func replay(
 	return true, record.CreatedAt.Time.UTC(), nil
 }
 
+func replayWithActiveAccount(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	subject string,
+	operation string,
+	key string,
+	digest []byte,
+	target proto.Message,
+) (dbgen.Account, bool, time.Time, error) {
+	replayed, completedAt, err := replay(
+		ctx, queries, subject, operation, key, digest, target,
+	)
+	if err != nil || replayed {
+		return dbgen.Account{}, replayed, completedAt, err
+	}
+	account, err := activeAccount(ctx, queries, subject)
+	if err != nil {
+		return dbgen.Account{}, false, time.Time{}, err
+	}
+	replayed, completedAt, err = replay(
+		ctx, queries, subject, operation, key, digest, target,
+	)
+	return account, replayed, completedAt, err
+}
+
 func persistIdempotency(
 	ctx context.Context,
 	dependencies Dependencies,
@@ -348,20 +373,10 @@ func createOrganizationBundle(
 	ctx context.Context,
 	queries *dbgen.Queries,
 	accountID pgtype.UUID,
-	organizationID uuid.UUID,
+	organization dbgen.Organization,
 	generalTeamID uuid.UUID,
-	name string,
-	slug string,
 	polarCustomerID string,
-) (dbgen.Organization, error) {
-	organization, err := queries.CreateOrganization(ctx, dbgen.CreateOrganizationParams{
-		ID:   pgUUID(organizationID),
-		Name: name,
-		Slug: slug,
-	})
-	if err != nil {
-		return dbgen.Organization{}, databaseError(err)
-	}
+) error {
 	if _, err := queries.CreateOrganizationMembership(
 		ctx,
 		dbgen.CreateOrganizationMembershipParams{
@@ -370,14 +385,14 @@ func createOrganizationBundle(
 			Role:           "owner",
 		},
 	); err != nil {
-		return dbgen.Organization{}, databaseError(err)
+		return databaseError(err)
 	}
 	team, err := queries.CreateGeneralTeam(ctx, dbgen.CreateGeneralTeamParams{
 		ID:             pgUUID(generalTeamID),
 		OrganizationID: organization.ID,
 	})
 	if err != nil {
-		return dbgen.Organization{}, databaseError(err)
+		return databaseError(err)
 	}
 	if _, err := queries.CreateTeamMembership(ctx, dbgen.CreateTeamMembershipParams{
 		OrganizationID: organization.ID,
@@ -385,15 +400,15 @@ func createOrganizationBundle(
 		AccountID:      accountID,
 		Role:           "admin",
 	}); err != nil {
-		return dbgen.Organization{}, databaseError(err)
+		return databaseError(err)
 	}
 	if _, err := queries.CreatePolarCustomer(ctx, dbgen.CreatePolarCustomerParams{
 		OrganizationID:  organization.ID,
 		PolarCustomerID: polarCustomerID,
 	}); err != nil {
-		return dbgen.Organization{}, databaseError(err)
+		return databaseError(err)
 	}
-	return organization, nil
+	return nil
 }
 
 func ensurePolarCustomer(

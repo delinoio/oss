@@ -205,15 +205,6 @@ func (service *Account) CompleteOnboarding(
 					delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
 				)
 			}
-			polarCustomerID, transactionErr := ensurePolarCustomer(
-				ctx,
-				service.dependencies,
-				organizationID,
-				organizationName,
-			)
-			if transactionErr != nil {
-				return transactionErr
-			}
 			if account.DisplayName != displayName {
 				account, transactionErr = queries.UpdateAccountDisplayName(
 					ctx,
@@ -226,14 +217,32 @@ func (service *Account) CompleteOnboarding(
 					return databaseError(transactionErr)
 				}
 			}
-			organization, transactionErr := createOrganizationBundle(
+			organization, transactionErr := queries.CreateOrganization(
+				ctx,
+				dbgen.CreateOrganizationParams{
+					ID:   pgUUID(organizationID),
+					Name: organizationName,
+					Slug: slug,
+				},
+			)
+			if transactionErr != nil {
+				return databaseError(transactionErr)
+			}
+			polarCustomerID, transactionErr := ensurePolarCustomer(
+				ctx,
+				service.dependencies,
+				organizationID,
+				organizationName,
+			)
+			if transactionErr != nil {
+				return transactionErr
+			}
+			transactionErr = createOrganizationBundle(
 				ctx,
 				queries,
 				account.ID,
-				organizationID,
+				organization,
 				generalTeamID,
-				organizationName,
-				slug,
 				polarCustomerID,
 			)
 			if transactionErr != nil {
@@ -302,10 +311,7 @@ func (service *Account) GetAccountDeletionImpact(
 		} else if !errors.Is(deletedErr, pgx.ErrNoRows) {
 			return nil, databaseError(deletedErr)
 		}
-		return connect.NewResponse(&delibasev1.GetAccountDeletionImpactResponse{
-			CanDelete: true,
-			Blockers:  []*delibasev1.DeletionBlocker{},
-		}), nil
+		return nil, databaseError(err)
 	}
 	if err != nil {
 		return nil, databaseError(err)

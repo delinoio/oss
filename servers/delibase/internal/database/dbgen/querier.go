@@ -63,6 +63,7 @@ type Querier interface {
 	GetPublicCatalogMeter(ctx context.Context, id pgtype.UUID) (GetPublicCatalogMeterRow, error)
 	GetWebhookInbox(ctx context.Context, id pgtype.UUID) (WebhookInbox, error)
 	HasAccountOrganization(ctx context.Context, accountID pgtype.UUID) (bool, error)
+	HasActiveReservationsForOrganizationMember(ctx context.Context, arg HasActiveReservationsForOrganizationMemberParams) (bool, error)
 	InsertDeletedAccountSubject(ctx context.Context, arg InsertDeletedAccountSubjectParams) (DeletedAccountSubject, error)
 	InsertDeletionTombstone(ctx context.Context, arg InsertDeletionTombstoneParams) (DeletionTombstone, error)
 	InsertIdempotencyRecord(ctx context.Context, arg InsertIdempotencyRecordParams) (IdempotencyRecord, error)

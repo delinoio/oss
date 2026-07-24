@@ -97,6 +97,17 @@ func TestDeletionBlockersIncludesActiveReservations(t *testing.T) {
 	}
 }
 
+func TestMemberHasActiveReservationsReturnsStableReason(t *testing.T) {
+	t.Parallel()
+
+	requireConnectReason(
+		t,
+		memberHasActiveReservations(),
+		connect.CodeFailedPrecondition,
+		delibasev1.ErrorReason_ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS,
+	)
+}
+
 type polarSubscriptionQueriesStub struct {
 	subscriptionID string
 	err            error

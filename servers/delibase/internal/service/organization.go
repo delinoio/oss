@@ -173,12 +173,8 @@ func (service *Organization) CreateOrganization(
 	digest := requestDigest(name, slug)
 	var response *delibasev1.CreateOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-		account, transactionErr := activeAccount(ctx, queries, subject)
-		if transactionErr != nil {
-			return transactionErr
-		}
 		response = &delibasev1.CreateOrganizationResponse{}
-		replayed, completedAt, transactionErr := replay(
+		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
 			ctx, queries, subject, "create_organization", key, digest, response,
 		)
 		if transactionErr != nil {
@@ -193,6 +189,17 @@ func (service *Organization) CreateOrganization(
 			)
 			return nil
 		}
+		organization, transactionErr := queries.CreateOrganization(
+			ctx,
+			dbgen.CreateOrganizationParams{
+				ID:   pgUUID(organizationID),
+				Name: name,
+				Slug: slug,
+			},
+		)
+		if transactionErr != nil {
+			return databaseError(transactionErr)
+		}
 		polarCustomerID, transactionErr := ensurePolarCustomer(
 			ctx,
 			service.dependencies,
@@ -202,14 +209,12 @@ func (service *Organization) CreateOrganization(
 		if transactionErr != nil {
 			return transactionErr
 		}
-		organization, transactionErr := createOrganizationBundle(
+		transactionErr = createOrganizationBundle(
 			ctx,
 			queries,
 			account.ID,
-			organizationID,
+			organization,
 			generalTeamID,
-			name,
-			slug,
 			polarCustomerID,
 		)
 		if transactionErr != nil {
@@ -284,12 +289,8 @@ func (service *Organization) UpdateOrganization(
 	digest := requestDigest(organizationID.String(), name)
 	var response *delibasev1.UpdateOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-		account, transactionErr := activeAccount(ctx, queries, subject)
-		if transactionErr != nil {
-			return transactionErr
-		}
 		response = &delibasev1.UpdateOrganizationResponse{}
-		replayed, completedAt, transactionErr := replay(
+		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
 			ctx, queries, subject, "update_organization", key, digest, response,
 		)
 		if transactionErr != nil {
@@ -374,12 +375,8 @@ func (service *Organization) UpdateOrganizationSlug(
 	digest := requestDigest(organizationID.String(), slug)
 	var response *delibasev1.UpdateOrganizationSlugResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-		account, transactionErr := activeAccount(ctx, queries, subject)
-		if transactionErr != nil {
-			return transactionErr
-		}
 		response = &delibasev1.UpdateOrganizationSlugResponse{}
-		replayed, completedAt, transactionErr := replay(
+		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
 			ctx, queries, subject, "update_organization_slug", key, digest, response,
 		)
 		if transactionErr != nil {
@@ -476,12 +473,8 @@ func (service *Organization) DeleteOrganization(
 	digest := requestDigest(organizationID.String(), "confirm")
 	var response *delibasev1.DeleteOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-		account, transactionErr := activeAccount(ctx, queries, subject)
-		if transactionErr != nil {
-			return transactionErr
-		}
 		response = &delibasev1.DeleteOrganizationResponse{}
-		replayed, completedAt, transactionErr := replay(
+		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
 			ctx, queries, subject, "delete_organization", key, digest, response,
 		)
 		if transactionErr != nil {
@@ -690,12 +683,8 @@ func (service *Organization) UpdateOrganizationMemberRole(
 	digest := requestDigest(organizationID.String(), targetAccountID.String(), role)
 	var response *delibasev1.UpdateOrganizationMemberRoleResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-		account, transactionErr := activeAccount(ctx, queries, subject)
-		if transactionErr != nil {
-			return transactionErr
-		}
 		response = &delibasev1.UpdateOrganizationMemberRoleResponse{}
-		replayed, completedAt, transactionErr := replay(
+		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
 			ctx, queries, subject, "update_organization_member_role", key, digest, response,
 		)
 		if transactionErr != nil {
@@ -807,12 +796,8 @@ func (service *Organization) RemoveOrganizationMember(
 	digest := requestDigest(organizationID.String(), targetAccountID.String())
 	var response *delibasev1.RemoveOrganizationMemberResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-		account, transactionErr := activeAccount(ctx, queries, subject)
-		if transactionErr != nil {
-			return transactionErr
-		}
 		response = &delibasev1.RemoveOrganizationMemberResponse{}
-		replayed, completedAt, transactionErr := replay(
+		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
 			ctx, queries, subject, "remove_organization_member", key, digest, response,
 		)
 		if transactionErr != nil {
@@ -848,6 +833,20 @@ func (service *Organization) RemoveOrganizationMember(
 				connect.CodePermissionDenied,
 				delibasev1.ErrorReason_ERROR_REASON_OWNER_ROLE_REQUIRED,
 			)
+		}
+		hasActiveReservations, transactionErr := queries.
+			HasActiveReservationsForOrganizationMember(
+				ctx,
+				dbgen.HasActiveReservationsForOrganizationMemberParams{
+					OrganizationID: pgUUID(organizationID),
+					AccountID:      pgUUID(targetAccountID),
+				},
+			)
+		if transactionErr != nil {
+			return databaseError(transactionErr)
+		}
+		if hasActiveReservations {
+			return memberHasActiveReservations()
 		}
 		affected, transactionErr := queries.DeleteOrganizationMembership(
 			ctx,
@@ -917,12 +916,8 @@ func (service *Organization) LeaveOrganization(
 	digest := requestDigest(organizationID.String())
 	var response *delibasev1.LeaveOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-		account, transactionErr := activeAccount(ctx, queries, subject)
-		if transactionErr != nil {
-			return transactionErr
-		}
 		response = &delibasev1.LeaveOrganizationResponse{}
-		replayed, completedAt, transactionErr := replay(
+		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
 			ctx, queries, subject, "leave_organization", key, digest, response,
 		)
 		if transactionErr != nil {
@@ -950,6 +945,20 @@ func (service *Organization) LeaveOrganization(
 			},
 		); transactionErr != nil {
 			return membershipReadError(transactionErr)
+		}
+		hasActiveReservations, transactionErr := queries.
+			HasActiveReservationsForOrganizationMember(
+				ctx,
+				dbgen.HasActiveReservationsForOrganizationMemberParams{
+					OrganizationID: pgUUID(organizationID),
+					AccountID:      account.ID,
+				},
+			)
+		if transactionErr != nil {
+			return databaseError(transactionErr)
+		}
+		if hasActiveReservations {
+			return memberHasActiveReservations()
 		}
 		affected, transactionErr := queries.DeleteOrganizationMembership(
 			ctx,
@@ -1085,6 +1094,13 @@ func memberError(err error) error {
 		)
 	}
 	return databaseError(err)
+}
+
+func memberHasActiveReservations() error {
+	return serviceError(
+		connect.CodeFailedPrecondition,
+		delibasev1.ErrorReason_ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS,
+	)
 }
 
 func NewOrganizationDeletionHandler(
