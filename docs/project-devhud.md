@@ -4,7 +4,7 @@
 
 Define the foundation contract and CEF feasibility gate for DevHud, a local-only developer-tool shell for individual developers. The project is intentionally independent from the DeliDev web platform.
 
-`apps/devhud` now contains one non-product feasibility package: a minimal React/TypeScript/Rsbuild bundled-asset probe, a target-selecting Tauri Rust crate, a reusable typed gate harness, and isolated native macOS CEF gate automation. Its exact upstream Tauri pin includes the macOS compilation correction, so the native jobs execute the gate before producing runtime or packaging evidence. It does not create a production tool, mobile/widget foundation, release/publication workflow, or support/publisher artifact. The complete cross-platform gate remains blocked, so `0.1.0` product and release work must not proceed.
+`apps/devhud` now contains one common, non-product feasibility package: a minimal React/TypeScript/Rsbuild bundled-asset probe, a target-selecting Tauri Rust crate, and a reusable typed gate harness. Its exact upstream Tauri pin includes the macOS compilation correction. It does not create a production tool, mobile/widget foundation, CI job, packaging or release workflow, or support/publisher artifact. The gate remains blocked at the pinned revision, so `0.1.0` product and release work must not proceed.
 
 ## Project ID
 
@@ -23,11 +23,10 @@ No other repository path may implement DevHud. `servers/`, `protos/`, `crates/`,
 ## Cross-Domain Invariants
 
 - DevHud's stable project identifier is `devhud`; its sole canonical path is `apps/devhud`.
-- The gate is one pnpm package: a React and TypeScript frontend built with Rsbuild and a Tauri Rust crate under `src-tauri`. Root package scripts remain delegators; deterministic probe tasks and the native macOS driver are package-local.
+- The common gate is one pnpm package: a React and TypeScript frontend built with Rsbuild and a Tauri Rust crate under `src-tauri`. Root package scripts remain delegators; deterministic probe tasks are package-local.
 - Desktop uses Tauri's pinned upstream CEF runtime. Mobile uses standard Tauri iOS WKWebView and Android WebView runtimes. Desktop and mobile must not silently substitute one another's runtime model.
 - The CEF feasibility gate must pass on macOS, Windows, and Ubuntu for x64 and ARM64 before product-foundation and release work proceeds. A required fork, local runtime patch, or failed gate stops the work and requires a separate architecture decision.
-- The gate is currently blocked: at commit `f49ebda2fdba5755456b0f049e32593ca0ea331a`, Tauri's public web-content-process termination hook is macOS/iOS-only and `tauri-runtime-cef` discards its renderer-termination handler on Windows/Linux. Fatal renderer termination cannot be proved there without changing upstream source.
-- The macOS portion is isolated in `.github/workflows/devhud-macos-cef-gate.yml` and runs native x64 and ARM64 jobs on macOS 14 or newer. The exact pin includes Tauri's upstream fix for the earlier macOS `TerminationSignals` target-guard regression, so both jobs must execute the native gate before DMG, updater, signing, runtime, or process evidence is accepted.
+- The gate is currently blocked: at commit `f49ebda2fdba5755456b0f049e32593ca0ea331a`, Tauri's public web-content-process termination hook is macOS/iOS-only and `tauri-runtime-cef` discards its renderer-termination handler on Windows/Linux. Fatal renderer termination cannot be proved there without changing upstream source. This exact pin includes the upstream macOS `TerminationSignals` target-guard correction.
 - The exact identifiers are immutable contracts: application ID `dev.deli.devhud`, settings key `devhud.settings.v1`, widget configuration key `devhud.widget-configuration.v1`, iOS App Group `group.dev.deli.devhud`, and build-only widget identifier `dev.deli.devhud.widget`.
 - Production tool registration and user-visible mobile widgets are empty in `0.1.0`; fixture tools and fixture widget state may exist only in tests.
 - DevHud has no CLI, backend, public API, Connect RPC service, route, deep link, plugin SDK, remote plugin surface, telemetry, account system, cloud synchronization, or DeliDev integration. In particular, it must not consume DeliDev accounts, catalog, billing, APIs, routes, or contracts.
@@ -38,7 +37,7 @@ No other repository path may implement DevHud. `servers/`, `protos/`, `crates/`,
 ## Change Policy
 
 - Update this index, [apps-devhud-foundation](apps-devhud-foundation.md), `docs/README.md`, `README.md`, root `AGENTS.md`, and `apps/AGENTS.md` together when DevHud ownership, identifiers, runtime boundaries, supported platforms, security exclusions, or policy changes.
-- The probe package, Cargo workspace membership, deterministic Turborepo output contract, and isolated macOS gate workflow are present. Do not expand this into product behavior, mobile/widget sources, production packaging, release workflows, signing/publisher material, or support material until a separate architecture decision resolves the cross-platform gate blocker.
+- The common probe package, Cargo workspace membership, and deterministic Turborepo output contract are present. Do not add product behavior, mobile/widget sources, CI workflows, packaging, release workflows, signing/publisher material, or support material until a separate architecture decision resolves the gate blocker.
 - Any route, command, API, plugin, account, telemetry, DeliDev, widget-registration, or network exception proposal requires an explicit contract change before implementation; none is authorized by this project index.
 - Changes to the pinned Tauri CEF commit, `@tauri-apps/cli-cef` version, supported OS/architecture matrix, or CEF gate criteria require a separate architecture and release-policy review. Do not track a moving upstream branch or patch Tauri, WRY, or `cef-rs` locally.
 - Changes to release tags, artifacts, beta channels, signing prerequisites, updater selection, rollback, or upstream monitoring must update this index, the app foundation contract, root/app policy, and the relevant workflow or runbook contract together.

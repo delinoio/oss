@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 import {
   runBundledStartupHandshake,
-  runPlatformGateIfEnabled,
   tauriProbeBridge,
   type StartupHandshake,
 } from "./runtime/startup";
@@ -18,22 +17,21 @@ export function App() {
   useEffect(() => {
     let active = true;
 
-    void (async () => {
-      try {
-        const handshake = await runBundledStartupHandshake(tauriProbeBridge);
-        await runPlatformGateIfEnabled(tauriProbeBridge);
+    void runBundledStartupHandshake(tauriProbeBridge).then(
+      (handshake) => {
         if (active) {
           setState({ status: "passed", handshake });
         }
-      } catch {
+      },
+      () => {
         if (active) {
           setState({
             status: "failed",
-            message: "The bundled startup or platform gate probe failed.",
+            message: "The bundled startup or capability-denial probe failed.",
           });
         }
-      }
-    })();
+      },
+    );
 
     return () => {
       active = false;

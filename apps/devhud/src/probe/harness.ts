@@ -1,7 +1,6 @@
 import {
   DesktopPlatform,
   DisplayProtocol,
-  MacOSSigningMode,
   PackageFormat,
   ProbeId,
   RuntimeFailureKind,
@@ -13,7 +12,6 @@ import {
   type HelperCleanupEvidence,
   type IpcCapabilityEvidence,
   type PackagingEvidence,
-  type RepeatedLifecycleEvidence,
   type ProbeEvidenceMap,
   type ProbeReport,
   type ProbeResult,
@@ -21,7 +19,6 @@ import {
   type RuntimeFailureEvidence,
   type ShutdownEvidence,
   type SignedUpdaterEvidence,
-  type DiagnosticSafetyEvidence,
   type ThemeEvidence,
   type TrayLifecycleEvidence,
 } from "./model";
@@ -35,19 +32,12 @@ export interface ProbeDriver {
   theme(modes: readonly ThemeMode[]): Promise<ThemeEvidence>;
   devTools(): Promise<DevToolsEvidence>;
   explicitShutdown(): Promise<ShutdownEvidence>;
-  repeatedLifecycle(cycles: number): Promise<RepeatedLifecycleEvidence>;
   runtimeFailure(
     kinds: readonly RuntimeFailureKind[],
   ): Promise<RuntimeFailureEvidence>;
   helperProcessCleanup(): Promise<HelperCleanupEvidence>;
-  diagnosticSafety(): Promise<DiagnosticSafetyEvidence>;
-  packaging(
-    formats: readonly PackageFormat[],
-    architecture: ProbeTarget["architecture"],
-  ): Promise<PackagingEvidence>;
-  signedUpdater(
-    architecture: ProbeTarget["architecture"],
-  ): Promise<SignedUpdaterEvidence>;
+  packaging(formats: readonly PackageFormat[]): Promise<PackagingEvidence>;
+  signedUpdater(): Promise<SignedUpdaterEvidence>;
 }
 
 export class ProbeBlockedError extends Error {
@@ -125,7 +115,6 @@ const requiredRuntimeFailureKinds = Object.freeze([
   RuntimeFailureKind.CefInitialization,
   RuntimeFailureKind.RendererTermination,
 ]);
-const requiredLifecycleCycles = 3;
 
 function arraysEqual<T>(actual: readonly T[], expected: readonly T[]): boolean {
   return (
@@ -168,8 +157,6 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
     (evidence) =>
       evidence.created === true &&
       evidence.remainsResidentAfterWindowClose === true &&
-      evidence.dockHidden === true &&
-      evidence.dockPolicyPersistsAfterWindowClose === true &&
       evidence.quitTerminates === true,
   ),
   defineScenario(
@@ -209,14 +196,6 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
       evidence.requestedExplicitly === true && evidence.exitCode === 0,
   ),
   defineScenario(
-    ProbeId.RepeatedLifecycle,
-    (driver) => driver.repeatedLifecycle(requiredLifecycleCycles),
-    (evidence) =>
-      evidence.completedCycles >= requiredLifecycleCycles &&
-      evidence.cleanShutdownCycles === evidence.completedCycles &&
-      evidence.orphanFreeCycles === evidence.completedCycles,
-  ),
-  defineScenario(
     ProbeId.RuntimeFailure,
     (driver) => driver.runtimeFailure(requiredRuntimeFailureKinds),
     (evidence) =>
@@ -232,42 +211,22 @@ export const probeScenarios: readonly RunnableScenario[] = Object.freeze([
       evidence.helperProcessCountAfterShutdown === 0,
   ),
   defineScenario(
-    ProbeId.DiagnosticSafety,
-    (driver) => driver.diagnosticSafety(),
-    (evidence) =>
-      evidence.shortcutValueAbsent === true &&
-      evidence.arbitraryPathAbsent === true &&
-      evidence.environmentValueAbsent === true &&
-      evidence.signingMaterialAbsent === true,
-  ),
-  defineScenario(
     ProbeId.Packaging,
     (driver, target) =>
-      driver.packaging(
-        packageFormatsByPlatform[target.platform],
-        target.architecture,
-      ),
+      driver.packaging(packageFormatsByPlatform[target.platform]),
     (evidence, target) =>
-      evidence.architecture === target.architecture &&
       arraysEqual(
         evidence.checkedFormats,
         packageFormatsByPlatform[target.platform],
       ) &&
       evidence.bundledAssetsPresent === true &&
       evidence.cefHelpersPresent === true &&
-      (target.platform === DesktopPlatform.MacOS
-        ? Object.values(MacOSSigningMode).some(
-            (signingMode) => signingMode === evidence.signingMode,
-          )
-        : evidence.signingMode === undefined) &&
       evidence.signReady === true,
   ),
   defineScenario(
     ProbeId.SignedUpdater,
-    (driver, target) => driver.signedUpdater(target.architecture),
-    (evidence, target) =>
-      evidence.architecture === target.architecture &&
-      evidence.updaterFormatCompatible === true &&
+    (driver) => driver.signedUpdater(),
+    (evidence) =>
       evidence.signedBundleCreated === true &&
       evidence.validSignatureAccepted === true &&
       evidence.invalidSignatureRejected === true,

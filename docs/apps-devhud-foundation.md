@@ -4,8 +4,8 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: the isolated macOS CEF gate automation is implemented against an exact upstream pin that includes the macOS compilation correction; the complete feasibility gate remains blocked by the Windows/Linux renderer-termination boundary. `apps/devhud` contains only the non-product probe package and no product, mobile/widget, production packaging, release, publisher, or public support implementation.
-- This document covers the future deployable package. The current scaffold is limited to the shared bundled-asset frontend probe, `src-tauri` runtime-selection boundary, typed gate harness, deterministic validation commands, and private macOS gate automation.
+- Status: CEF feasibility gate blocked; `apps/devhud` contains only the common non-product probe package and no CI, product, mobile/widget, packaging, release, publisher, or public support implementation.
+- This document covers the future deployable package. The current scaffold is limited to the shared bundled-asset frontend probe, `src-tauri` runtime-selection boundary, typed gate harness, and deterministic local validation commands.
 
 ## Runtime and Language
 
@@ -31,32 +31,17 @@ The CEF gate is a prerequisite, not an implementation claim. It has no calendar 
 - No orphaned CEF processes after normal shutdown. Cleanup evidence must observe at least one CEF helper before shutdown and zero helpers afterward.
 - Ubuntu 24.04 operation under both X11 and Wayland through XWayland.
 
-DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source patches to the upstream runtime. If any required behavior cannot be achieved without a fork or patch, or any gate condition fails, stop product-foundation and release work, document the blocker, and require a separate architecture decision.
-
-### Isolated macOS gate
-
-The package's `macos-gate` feature and `.github/workflows/devhud-macos-cef-gate.yml` implement only the mandatory macOS portion on native x64 and ARM64 macOS 14+ runners. Each job must:
-
-- start CEF from bundled assets, require every observed helper to expose Chromium's positive macOS Seatbelt client marker, and prove scoped allowed/denied Tauri IPC;
-- exercise menu-bar residency, hidden persistent Dock behavior, close-to-hide, a structured global shortcut, disabled-by-default launch at login, System/Light/Dark handling, DevTools with navigation denial, and explicit shutdown;
-- run three normal startup/shutdown cycles, make CEF initialization and renderer termination fatal without restart, and observe CEF helpers before shutdown and none afterward;
-- build, mount, and architecture-check a separate DMG and target-specific signed Tauri updater bundle, accept its valid updater signature, and reject a mutated bundle;
-- require a complete App Store Connect or Apple ID notarization credential set whenever both Developer ID certificate inputs are available, validate the stapled notarization ticket in the built and mounted application, otherwise validate ad hoc code signatures and sign-ready metadata; and
-- reject any diagnostic or retained evidence containing the shortcut value, arbitrary filesystem paths, environment values, updater keys, certificate data, or passwords.
-
-The gate creates an ephemeral updater key only within the runner and suppresses raw subprocess output. It uploads only the safe evidence JSON for a short retention period; it does not upload or publish DMGs, updater bundles, keys, or signing inputs. The exact upstream Tauri revision and `@tauri-apps/cli-cef` version remain contract-checked, with no Cargo patches or local upstream source changes.
-
-The exact Tauri pin includes the upstream correction for the earlier macOS `TerminationSignals` target-guard regression. Compilation alone is not gate evidence: every macOS runtime, packaging, signing, updater, diagnostic, and process-cleanup condition must still be proved by the native x64 and ARM64 jobs.
+DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source patches to the upstream runtime. If any required behavior cannot be achieved without a fork or patch, or any gate condition fails, stop product-foundation and release work, document the blocker, and require a separate architecture decision. The current documentation change does not claim that the gate has passed.
 
 ### Current gate blocker
 
-The macOS compilation regression in the previous pin was corrected upstream by [Tauri commit `f49ebda`](https://github.com/tauri-apps/tauri/commit/f49ebda2fdba5755456b0f049e32593ca0ea331a), which applies the Linux/BSD target guard to the `TerminationSignals` implementation. DevHud pins that exact correction rather than adding a downstream dependency shim, Cargo patch, fork, or moving branch.
+The exact Tauri pin includes the upstream correction for the earlier macOS `TerminationSignals` target-guard regression. Compilation alone does not satisfy the gate, which remains blocked at the required upstream commit:
 
 - Tauri's public `Builder::on_web_content_process_terminate` API is compiled only for macOS and iOS. It is unavailable to a Windows or Linux DevHud application.
 - `tauri-runtime-cef` receives CEF's `on_render_process_terminated` callback internally, but its webview construction takes the termination handler only on macOS/iOS and explicitly assigns `None` on other targets.
 - Therefore the required fatal renderer-termination diagnostic and immediate shutdown cannot be installed or proved on Windows or Ubuntu through the public pinned API. Fixing this at the pinned revision requires changing upstream Tauri/`tauri-runtime-cef` source, which this project forbids.
 
-This is a cross-platform CEF stop condition. The macOS probe integrations remain feasibility-gate code, not product or release implementation, and a macOS condition is passing only when the native workflow records safe positive evidence. Product UI, mobile/widget work, production packaging/updater integration, signing, publishing, and release work remain blocked pending a separate architecture decision for Windows/Linux. Evidence: [public hook target guard](https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri/src/app.rs#L1884-L1898) and [CEF handler discarded on Windows/Linux](https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri-runtime-cef/src/webview.rs#L354-L360).
+This is the CEF stop condition. The common probe and typed evidence harness remain useful for architecture evaluation, but product UI, tray/global-shortcut/autostart implementation, mobile/widget work, packaging, updater implementation, CI expansion, signing, publishing, and release work are blocked pending a separate architecture decision. Evidence: [macOS target-guard correction](https://github.com/tauri-apps/tauri/commit/f49ebda2fdba5755456b0f049e32593ca0ea331a), [public hook target guard](https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri/src/app.rs#L1884-L1898), and [CEF handler discarded on Windows/Linux](https://github.com/tauri-apps/tauri/blob/f49ebda2fdba5755456b0f049e32593ca0ea331a/crates/tauri-runtime-cef/src/webview.rs#L354-L360).
 
 ## Users and Operators
 
@@ -144,7 +129,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The scaffold provides package-local `build`, `typecheck`, `lint`, `test`, `test:probe`, `test:macos-gate-contract`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, host-appropriate desktop smoke, and native `gate:macos` commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. The future product tasks for development, accessibility, the complete desktop matrix, mobile build, widget build, production packaging, and release validation remain blocked and are not stubbed as passing commands.
+The common scaffold provides package-local `build`, `typecheck`, `lint`, `test`, `test:probe`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. The future product tasks for development, accessibility, the complete desktop matrix, mobile build, widget build, packaging, and release validation remain blocked and are not stubbed as passing commands.
 
 Required validation coverage is:
 
@@ -155,14 +140,13 @@ Required validation coverage is:
 - Installer, signature, updater, SBOM, and provenance validation.
 - Performance measurements must record HUD display latency, cold startup, package size, and idle memory per supported desktop platform, plus mobile startup time. Publish these measurements with the release; `0.1.0` defines no numeric pass threshold.
 
-The isolated DevHud macOS CEF workflow is the only DevHud-specific CI job. It executes the native runtime, DMG, updater, signing, diagnostic, and process-cleanup gate against the exact corrected pin; it is not a release job. A future architecture decision must explicitly resolve the Windows/Linux blocker before unblocking the complete platform gate or any product task.
+No DevHud CI or release job exists. The current package commands are local feasibility checks only. A future architecture decision must explicitly unblock change-scoped CI and the remaining platform tasks without weakening existing repository checks.
 
 ## Dependencies and Integrations
 
 ### Upstream and project boundaries
 
 - Tauri, `tauri-build`, and the directly selected desktop `tauri-runtime-cef` sandbox dependency are pinned to commit `f49ebda2fdba5755456b0f049e32593ca0ea331a`; `@tauri-apps/cli-cef` is pinned to `3.0.0-alpha.6`. Do not maintain a Tauri, WRY, or `cef-rs` fork or local patch, and do not replace the revision with `feat/cef` or another moving branch.
-- The macOS gate uses exact optional macOS-target dependencies `global-hotkey` `0.8.0` and `auto-launch` `0.5.0` directly behind `macos-gate`. They are probe-only native integrations and do not authorize a product plugin surface.
 - DevHud is a local-only app for individual developers. It must remain independent from DeliDev and must not consume DeliDev accounts, catalog, billing, APIs, routes, or contracts. It has no dependency on delibase, Logto, Connect RPC, or any DeliDev service.
 - The only runtime network dependency is GitHub Releases for the updater exception defined in Security. No backend, API origin, remote configuration, or online operational service is allowed.
 
