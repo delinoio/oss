@@ -1,8 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Allows the DevHud main window to read its local runtime information.",
+  "description": "Allows the DevHud main window to read runtime information and its two versioned local records.",
   "local": true,
   "windows": ["main"],
-  "permissions": ["allow-get-runtime-info"]
+  "permissions": [
+    "allow-get-runtime-info",
+    "allow-read-settings",
+    "allow-write-settings",
+    "allow-read-widget-configuration",
+    "allow-write-widget-configuration"
+  ]
 }

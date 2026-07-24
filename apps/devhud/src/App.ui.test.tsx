@@ -31,7 +31,11 @@ describe("DevHud application surfaces", () => {
     expect(screen.getByRole("dialog", { name: "DevHud settings" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Close settings" })).toHaveFocus();
     await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(screen.getByRole("checkbox", { name: "Launch DevHud at login" })).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
     expect(screen.getByRole("combobox", { name: "Theme preference" })).toHaveFocus();
+    await user.keyboard("{Tab}");
+    expect(screen.getByRole("checkbox", { name: "Launch DevHud at login" })).toHaveFocus();
     await user.keyboard("{Tab}");
     expect(screen.getByRole("button", { name: "Close settings" })).toHaveFocus();
     await user.keyboard("{Escape}");

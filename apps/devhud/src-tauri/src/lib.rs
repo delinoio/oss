@@ -15,10 +15,17 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use std::time::Duration;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+use std::{
+    fs::{self, File},
+    io::{self, Write},
+    path::PathBuf,
+    sync::Mutex,
+};
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use tauri::{
-    AppHandle, Webview, WebviewUrl,
+    AppHandle, Manager, State, Webview, WebviewUrl,
     http::{HeaderName, HeaderValue},
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
@@ -39,6 +46,10 @@ const APPLICATION_ID: &str = "dev.deli.devhud";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 const MAIN_WINDOW_LABEL: &str = "main";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+const SETTINGS_STORAGE_KEY: &str = "devhud.settings.v1";
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+const WIDGET_CONFIGURATION_STORAGE_KEY: &str = "devhud.widget-configuration.v1";
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const PERMISSIONS_POLICY: &str =
     "camera=(), display-capture=(), geolocation=(), microphone=(), usb=()";
 
@@ -57,6 +68,187 @@ struct RuntimeInfo {
 #[serde(rename_all = "camelCase")]
 enum RuntimeCommandError {
     NonBundledAsset,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+struct PersistenceState {
+    directory: PathBuf,
+    write_lock: Mutex<()>,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum PersistenceCommandError {
+    StorageUnavailable,
+    InvalidRecord,
+    WriteFailed,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+impl PersistenceState {
+    fn new(directory: PathBuf) -> io::Result<Self> {
+        fs::create_dir_all(&directory)?;
+        Ok(Self {
+            directory,
+            write_lock: Mutex::new(()),
+        })
+    }
+
+    fn path_for(&self, key: &str) -> PathBuf {
+        self.directory.join(key)
+    }
+
+    fn read(&self, key: &str) -> Result<Option<String>, PersistenceCommandError> {
+        match fs::read_to_string(self.path_for(key)) {
+            Ok(value) => Ok(Some(value)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(PersistenceCommandError::StorageUnavailable),
+        }
+    }
+
+    fn write(&self, key: &str, record: &str) -> Result<(), PersistenceCommandError> {
+        validate_current_record(key, record).ok_or(PersistenceCommandError::InvalidRecord)?;
+        let _guard = self
+            .write_lock
+            .lock()
+            .map_err(|_| PersistenceCommandError::StorageUnavailable)?;
+        write_atomically(&self.path_for(key), record)
+            .map_err(|_| PersistenceCommandError::WriteFailed)
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn validate_current_record(key: &str, record: &str) -> Option<()> {
+    let value: serde_json::Value = serde_json::from_str(record).ok()?;
+    let object = value.as_object()?;
+    (object.get("version")?.as_u64() == Some(1)).then_some(())?;
+    match key {
+        SETTINGS_STORAGE_KEY => validate_settings_record(object),
+        WIDGET_CONFIGURATION_STORAGE_KEY => validate_widget_configuration_record(object),
+        _ => None,
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn validate_settings_record(object: &serde_json::Map<String, serde_json::Value>) -> Option<()> {
+    let settings = object.get("settings")?.as_object()?;
+    matches!(
+        settings.get("theme")?.as_str()?,
+        "system" | "light" | "dark"
+    )
+    .then_some(())?;
+    settings.get("launchAtLogin")?.as_bool()?;
+    match settings.get("shortcut")? {
+        serde_json::Value::Null => Some(()),
+        serde_json::Value::Object(shortcut) => {
+            let modifiers = shortcut.get("modifiers")?.as_array()?;
+            (!modifiers.is_empty()).then_some(())?;
+            let mut unique_modifiers = std::collections::HashSet::new();
+            for modifier in modifiers {
+                let modifier = modifier.as_str()?;
+                matches!(modifier, "control" | "alt" | "shift" | "meta").then_some(())?;
+                unique_modifiers.insert(modifier).then_some(())?;
+            }
+            matches!(
+                shortcut.get("key")?.as_str()?,
+                "a" | "b"
+                    | "c"
+                    | "d"
+                    | "e"
+                    | "f"
+                    | "g"
+                    | "h"
+                    | "i"
+                    | "j"
+                    | "k"
+                    | "l"
+                    | "m"
+                    | "n"
+                    | "o"
+                    | "p"
+                    | "q"
+                    | "r"
+                    | "s"
+                    | "t"
+                    | "u"
+                    | "v"
+                    | "w"
+                    | "x"
+                    | "y"
+                    | "z"
+                    | "0"
+                    | "1"
+                    | "2"
+                    | "3"
+                    | "4"
+                    | "5"
+                    | "6"
+                    | "7"
+                    | "8"
+                    | "9"
+                    | "f1"
+                    | "f2"
+                    | "f3"
+                    | "f4"
+                    | "f5"
+                    | "f6"
+                    | "f7"
+                    | "f8"
+                    | "f9"
+                    | "f10"
+                    | "f11"
+                    | "f12"
+                    | "space"
+                    | "enter"
+            )
+            .then_some(())
+        }
+        _ => None,
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn validate_widget_configuration_record(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<()> {
+    let slots = object.get("configuration")?.get("slots")?.as_array()?;
+    let mut unique_slots = std::collections::HashSet::new();
+    for reference in slots {
+        let reference = reference.as_object()?;
+        let slot = reference.get("slot")?.as_str()?;
+        matches!(slot, "primary" | "secondary" | "tertiary").then_some(())?;
+        unique_slots.insert(slot).then_some(())?;
+        is_stable_tool_id(reference.get("toolId")?.as_str()?).then_some(())?;
+    }
+    Some(())
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn is_stable_tool_id(value: &str) -> bool {
+    let mut segments = value.split('-');
+    matches!(segments.next(), Some(first) if !first.is_empty() && first.bytes().all(|byte| byte.is_ascii_lowercase()))
+        && segments.all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn write_atomically(path: &std::path::Path, record: &str) -> io::Result<()> {
+    let temporary_path = path.with_extension(format!("tmp-{}", std::process::id()));
+    let mut temporary_file = File::create(&temporary_path)?;
+    temporary_file.write_all(record.as_bytes())?;
+    temporary_file.sync_all()?;
+    drop(temporary_file);
+
+    if let Err(error) = fs::rename(&temporary_path, path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -134,10 +326,55 @@ fn get_runtime_info(
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn read_settings(
+    state: State<'_, PersistenceState>,
+) -> Result<Option<String>, PersistenceCommandError> {
+    state.read(SETTINGS_STORAGE_KEY)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn write_settings(
+    record: String,
+    state: State<'_, PersistenceState>,
+) -> Result<(), PersistenceCommandError> {
+    state.write(SETTINGS_STORAGE_KEY, &record)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn read_widget_configuration(
+    state: State<'_, PersistenceState>,
+) -> Result<Option<String>, PersistenceCommandError> {
+    state.read(WIDGET_CONFIGURATION_STORAGE_KEY)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn write_widget_configuration(
+    record: String,
+    state: State<'_, PersistenceState>,
+) -> Result<(), PersistenceCommandError> {
+    state.write(WIDGET_CONFIGURATION_STORAGE_KEY, &record)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
     builder
-        .invoke_handler(tauri::generate_handler![get_runtime_info])
+        .invoke_handler(tauri::generate_handler![
+            get_runtime_info,
+            read_settings,
+            write_settings,
+            read_widget_configuration,
+            write_widget_configuration
+        ])
         .setup(|app| {
+            let persistence_directory = app
+                .path()
+                .app_local_data_dir()
+                .map_err(|_| io::Error::other("DevHud persistence directory is unavailable"))?;
+            app.manage(PersistenceState::new(persistence_directory)?);
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("DevHud")
                 .inner_size(720.0, 520.0)
@@ -286,5 +523,31 @@ mod tests {
         for directive in ["camera=()", "microphone=()", "display-capture=()"] {
             assert!(PERMISSIONS_POLICY.contains(directive));
         }
+    }
+
+    #[test]
+    fn stable_storage_keys_and_current_schema_validation_are_preserved() {
+        assert_eq!(SETTINGS_STORAGE_KEY, "devhud.settings.v1");
+        assert_eq!(
+            WIDGET_CONFIGURATION_STORAGE_KEY,
+            "devhud.widget-configuration.v1"
+        );
+        assert!(validate_current_record(
+            SETTINGS_STORAGE_KEY,
+            r#"{"version":1,"settings":{"theme":"system","launchAtLogin":false,"shortcut":null}}"#
+        )
+        .is_some());
+        assert!(validate_current_record(SETTINGS_STORAGE_KEY, r#"{"version":2}"#).is_none());
+        assert!(validate_current_record(SETTINGS_STORAGE_KEY, "not-json").is_none());
+        assert!(validate_current_record(
+            SETTINGS_STORAGE_KEY,
+            r#"{"version":1,"settings":{"theme":"dark","launchAtLogin":false,"shortcut":{"modifiers":["control","control"],"key":"k"}}}"#
+        )
+        .is_none());
+        assert!(validate_current_record(
+            WIDGET_CONFIGURATION_STORAGE_KEY,
+            r#"{"version":1,"configuration":{"slots":[{"slot":"primary","toolId":"fixture-diagnostics"}]}}"#
+        )
+        .is_some());
     }
 }

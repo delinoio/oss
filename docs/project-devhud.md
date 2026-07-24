@@ -4,7 +4,7 @@
 
 Define the foundation contract for DevHud, a local-only developer-tool shell for individual developers. The project is intentionally independent from the DeliDev web platform.
 
-`apps/devhud` contains one active foundation package: a React/TypeScript/Rsbuild bundled-asset application and a target-selecting Tauri Rust crate. Desktop builds use the exact pinned upstream CEF runtime directly; mobile targets reserve Tauri's standard system webviews. The implemented UI foundation includes provider-owned theme/navigation state, empty desktop HUD/settings and mobile content surfaces, and a closed internal tool registry. It does not create a production tool, visible widget, packaging or release workflow, or support/publisher artifact.
+`apps/devhud` contains one active foundation package: a React/TypeScript/Rsbuild bundled-asset application and a target-selecting Tauri Rust crate. Desktop builds use the exact pinned upstream CEF runtime directly; mobile targets reserve Tauri's standard system webviews. The implemented UI foundation includes provider-owned local settings/widget state, empty desktop HUD/settings and mobile content surfaces, and a closed internal tool registry. It does not create a production tool, visible widget, packaging or release workflow, or support/publisher artifact.
 
 ## Project ID
 
@@ -28,6 +28,7 @@ No other repository path may implement DevHud. `servers/`, `protos/`, `crates/`,
 - Tauri, `tauri-build`, `tauri-runtime-cef`, and `@tauri-apps/cli-cef` use the exact versions defined by the app foundation contract. DevHud must not carry a Tauri, WRY, or `cef-rs` fork or local patch and must not follow a moving upstream branch.
 - Desktop validation covers the CEF sandbox, bundled assets, scoped IPC, lifecycle behavior, package formats, updater artifacts, helper cleanup, supported architectures, and the Linux display matrix.
 - The exact identifiers are immutable contracts: application ID `dev.deli.devhud`, settings key `devhud.settings.v1`, widget configuration key `devhud.widget-configuration.v1`, iOS App Group `group.dev.deli.devhud`, and build-only widget identifier `dev.deli.devhud.widget`.
+- The frontend persistence boundary is limited to record-specific read/write commands for those two keys. Both desktop CEF and standard Tauri mobile runtimes use the same dependency-injected adapter contract; no broad filesystem, default-store, arbitrary-key, account, or remote-storage authority is exposed.
 - Production tool registration and user-visible mobile widgets are empty in `0.1.0`; fixture tools and fixture widget state may exist only in tests.
 - DevHud has no CLI, backend, public API, Connect RPC service, route, deep link, plugin SDK, remote plugin surface, telemetry, account system, cloud synchronization, or DeliDev integration. In particular, it must not consume DeliDev accounts, catalog, billing, APIs, routes, or contracts.
 - The only application network exception is unauthenticated, GitHub Releases-only update discovery and download for compatible `devhud@v*` releases. No GitHub token or other service credential may ship in the app.
