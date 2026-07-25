@@ -172,7 +172,7 @@ func processPaidCycle(
 		return err
 	}
 	organizationID := uuid.UUID(subscription.OrganizationID.Bytes)
-	organization, err := queries.LockOrganizationForBilling(
+	organization, err := queries.LockOrganizationForBillingHistory(
 		ctx, subscription.OrganizationID,
 	)
 	if err != nil {
@@ -232,7 +232,7 @@ func processPaidCycle(
 	if err != nil {
 		return err
 	}
-	_, err = queries.InsertBillingLedgerEntry(
+	if _, err = queries.InsertBillingLedgerEntry(
 		ctx,
 		dbgen.InsertBillingLedgerEntryParams{
 			ID:                 pgUUID(ledgerID),
@@ -242,6 +242,24 @@ func processPaidCycle(
 			AmountMicros:       cycleGrantMicros,
 			BalanceAfterMicros: nextBalance,
 			SourceReference:    "polar-order:" + event.OrderID,
+		},
+	); err != nil {
+		return err
+	}
+	if !organization.DeletedAt.Valid || nextBalance <= 0 {
+		return nil
+	}
+	forfeitureID, err := ids.New()
+	if err != nil {
+		return err
+	}
+	_, err = queries.ForfeitOrganizationCredit(
+		ctx,
+		dbgen.ForfeitOrganizationCreditParams{
+			ID:              pgUUID(forfeitureID),
+			OrganizationID:  subscription.OrganizationID,
+			AmountMicros:    nextBalance,
+			SourceReference: "polar-order-forfeiture:" + event.OrderID,
 		},
 	)
 	return err

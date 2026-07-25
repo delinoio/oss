@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -443,6 +444,65 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 			err,
 		)
 	}
+	deletedOrganizationPaidPayload, _ := json.Marshal(polarBillingEvent{
+		Type: string(reliability.WebhookOrderPaid), EventAt: now.Add(6 * time.Minute),
+		ObjectID: "order_deleted_organization", OrderID: "order_deleted_organization",
+		CustomerID: "customer_" + organizationID.String(),
+		ExternalID: organizationID.String(), SubscriptionID: "subscription_2",
+		ProductID: productID, Currency: "usd",
+		BillingReason: "subscription_cycle", Paid: true,
+		CurrentPeriodStart: replacementPeriodStart,
+		CurrentPeriodEnd:   replacementPeriodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarOrderPaid,
+		Payload:   deletedOrganizationPaidPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Queries().GetPolarPaidCycle(
+		ctx, "order_deleted_organization",
+	); err != nil {
+		t.Fatalf("deleted organization paid cycle was not retained: %v", err)
+	}
+	balance, err := store.Queries().CurrentOrganizationBalance(
+		ctx, pgUUID(organizationID),
+	)
+	if err != nil || balance != 0 {
+		t.Fatalf("deleted organization balance after paid cycle = %d, %v", balance, err)
+	}
+	entries, err := store.Queries().ListLedgerEntries(
+		ctx,
+		dbgen.ListLedgerEntriesParams{
+			OrganizationID: pgUUID(organizationID),
+			FromTime:       pgTimestamp(time.Unix(0, 0)),
+			ToTime:         pgTimestamp(now.Add(24 * time.Hour)),
+			AfterID:        pgUUID(uuid.Nil),
+			PageLimit:      100,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retainedGrant, deletedForfeiture bool
+	for _, entry := range entries {
+		switch entry.SourceReference {
+		case "polar-order:order_deleted_organization":
+			retainedGrant = entry.EntryType == "credit_grant" &&
+				entry.AmountMicros == cycleGrantMicros
+		case "polar-order-forfeiture:order_deleted_organization":
+			deletedForfeiture = entry.EntryType == "credit_forfeiture" &&
+				entry.AmountMicros == -cycleGrantMicros
+		}
+	}
+	if !retainedGrant || !deletedForfeiture {
+		t.Fatalf(
+			"deleted organization settlement ledger = grant %t, forfeiture %t",
+			retainedGrant,
+			deletedForfeiture,
+		)
+	}
 }
 
 func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
@@ -772,7 +832,7 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	}
 }
 
-func TestPostgreSQLPortalPersistenceRevalidatesBillingAccessUnderOrganizationLock(
+func TestPostgreSQLPortalAuthorizationRevalidatesBillingAccessUnderOrganizationLock(
 	t *testing.T,
 ) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
@@ -935,6 +995,97 @@ func TestPostgreSQLPortalPersistenceRevalidatesBillingAccessUnderOrganizationLoc
 	result := <-results
 	if result.response != nil {
 		t.Fatalf("portal response after Admin downgrade = %#v", result.response)
+	}
+	requireConnectReason(
+		t,
+		result.err,
+		connect.CodePermissionDenied,
+		delibasev1.ErrorReason_ERROR_REASON_ADMIN_ROLE_REQUIRED,
+	)
+
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.LockOrganizationForMutation(
+			ctx, pgUUID(organizationID),
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := queries.UpdateOrganizationMembershipRole(
+			ctx,
+			dbgen.UpdateOrganizationMembershipRoleParams{
+				Role:           "admin",
+				OrganizationID: pgUUID(organizationID),
+				AccountID:      pgUUID(adminID),
+			},
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayProvider := &staticPortalPolar{started: make(chan struct{})}
+	replayBilling := NewBilling(Dependencies{
+		Store:         store,
+		Polar:         replayProvider,
+		Pseudonymizer: pseudonymizer,
+	})
+	createReplay := func() (
+		*connect.Response[delibasev1.CreateBillingPortalSessionResponse],
+		error,
+	) {
+		return replayBilling.CreateBillingPortalSession(
+			authenticatedContext(ctx, adminSubject),
+			connect.NewRequest(&delibasev1.CreateBillingPortalSessionRequest{
+				OrganizationId: &delibasev1.UuidV7{Value: organizationID.String()},
+				ReturnUrl:      "https://deli.dev/billing",
+				Idempotency:    idempotency("portal-replay-" + organizationID.String()),
+			}),
+		)
+	}
+	if initial, createErr := createReplay(); createErr != nil || initial == nil {
+		t.Fatalf("initial portal response = %#v, %v", initial, createErr)
+	}
+
+	replayRoleTransaction, err := raw.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replayRoleTransaction.Rollback(context.Background())
+	replayRoleQueries := dbgen.New(replayRoleTransaction)
+	if _, err = replayRoleQueries.LockOrganizationForMutation(
+		ctx, pgUUID(organizationID),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = replayRoleQueries.UpdateOrganizationMembershipRole(
+		ctx,
+		dbgen.UpdateOrganizationMembershipRoleParams{
+			Role:           "member",
+			OrganizationID: pgUUID(organizationID),
+			AccountID:      pgUUID(adminID),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		response, createErr := createReplay()
+		results <- portalResult{response: response, err: createErr}
+	}()
+	select {
+	case replayResult := <-results:
+		t.Fatalf(
+			"portal replay completed before role change released organization lock: %#v",
+			replayResult,
+		)
+	case <-time.After(200 * time.Millisecond):
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err = replayRoleTransaction.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	result = <-results
+	if result.response != nil {
+		t.Fatalf("portal replay after Admin downgrade = %#v", result.response)
 	}
 	requireConnectReason(
 		t,

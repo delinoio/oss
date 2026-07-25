@@ -371,6 +371,11 @@ func (service *Billing) billingReplay(
 			if transactionErr != nil {
 				return transactionErr
 			}
+			if _, transactionErr = queries.LockOrganizationForBilling(
+				ctx, pgUUID(organizationID),
+			); transactionErr != nil {
+				return membershipReadError(transactionErr)
+			}
 			if _, transactionErr = billingAccess(
 				ctx, queries, organizationID, account.ID, true,
 			); transactionErr != nil {

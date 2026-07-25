@@ -1165,7 +1165,7 @@ func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) 
 	}
 }
 
-func TestPostgreSQLSerializesRequestedOverageLimitChecks(t *testing.T) {
+func TestPostgreSQLPreservesAndSerializesRequestedOverageLimitChecks(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
@@ -1257,7 +1257,7 @@ func TestPostgreSQLSerializesRequestedOverageLimitChecks(t *testing.T) {
 			)
 			SELECT
 				$1, organization_id, id, current_period_starts_at,
-				current_period_ends_at, 2, 1
+				current_period_ends_at, 3, 1
 			FROM subscriptions
 			WHERE id = $2`,
 			[]any{periodID, subscriptionID},
@@ -1267,6 +1267,23 @@ func TestPostgreSQLSerializesRequestedOverageLimitChecks(t *testing.T) {
 		if _, err := store.pool.Exec(ctx, item.statement, item.arguments...); err != nil {
 			t.Fatal(err)
 		}
+	}
+	var effectiveLimit, requestedLimit int64
+	if err := store.pool.QueryRow(ctx, `
+		UPDATE billing_periods
+		SET overage_limit_micros = 2,
+		    requested_overage_limit_micros = 1
+		WHERE id = $1
+		RETURNING overage_limit_micros, requested_overage_limit_micros
+	`, periodID).Scan(&effectiveLimit, &requestedLimit); err != nil {
+		t.Fatal(err)
+	}
+	if effectiveLimit != 2 || requestedLimit != 1 {
+		t.Fatalf(
+			"overage limits after explicit update = effective %d, requested %d",
+			effectiveLimit,
+			requestedLimit,
+		)
 	}
 	defer func() {
 		cleanupCtx := context.WithoutCancel(ctx)

@@ -58,9 +58,6 @@ BEGIN
             AND NEW.overage_limit_micros > 0 THEN
             NEW.requested_overage_limit_micros := NEW.overage_limit_micros;
         END IF;
-    ELSIF NEW.overage_limit_micros IS DISTINCT FROM OLD.overage_limit_micros
-        AND NEW.requested_overage_limit_micros IS NOT DISTINCT FROM OLD.requested_overage_limit_micros THEN
-        NEW.requested_overage_limit_micros := NEW.overage_limit_micros;
     END IF;
 
     RETURN NEW;
