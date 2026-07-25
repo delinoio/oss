@@ -34,6 +34,7 @@ import {
 import type { DesktopBridge } from "./runtime/desktop";
 import * as desktopRuntime from "./runtime/desktop";
 import { loadRuntimeInfo } from "./runtime/startup";
+import * as themeRuntime from "./runtime/theme";
 
 afterEach(() => {
   cleanup();
@@ -898,6 +899,27 @@ describe("DevHud application surfaces", () => {
     expect(
       screen.queryByRole("checkbox", { name: "Launch DevHud at login" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("publishes resets when runtime initialization leaves no native bridge", async () => {
+    vi.mocked(loadRuntimeInfo).mockRejectedValueOnce(new Error("runtime unavailable"));
+    const publishReset = vi
+      .spyOn(themeRuntime, "publishPersistenceReset")
+      .mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    renderApp({ platform: "desktop" });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud could not initialize its local runtime.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
+    await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "DevHud local data was reset.",
+    );
+    expect(publishReset).toHaveBeenCalledWith({ status: "complete" });
   });
 
   it("keeps desktop controls out of an open HUD fallback dialog", async () => {

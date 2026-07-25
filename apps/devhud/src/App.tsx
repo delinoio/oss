@@ -19,6 +19,7 @@ import {
   nativeDesktopBridge,
   type DesktopBridge,
 } from "./runtime/desktop";
+import { publishPersistenceReset } from "./runtime/theme";
 import {
   filterTools,
   productionTools,
@@ -757,7 +758,7 @@ function ApplicationSurface({
   const reconcileReset = useCallback((outcome: PersistenceResetOutcome) => {
     clearStartupDiagnostics();
     setSettingsRevision((revision) => revision + 1);
-    bridge?.publishReset(outcome);
+    (bridge?.publishReset ?? publishPersistenceReset)(outcome);
     if (
       outcome.status === "complete" ||
       outcome.status === "cleanup-failed"

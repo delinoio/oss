@@ -1861,7 +1861,8 @@ fn reset_dev_hud(
             autostart::AutostartFailure::OperationFailed,
             None,
         );
-        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+        let shortcut_rollback = shortcuts.rollback(previous_shortcut);
+        if let Err(reason) = shortcut_rollback {
             log_shortcut_integration_failure(
                 "reset-rollback",
                 reason,
@@ -1871,13 +1872,20 @@ fn reset_dev_hud(
                     "not-configured"
                 },
             );
+        }
+        if shortcut_rollback.is_err() {
+            return Ok(PersistenceResetOutcome::IntegrationRollbackFailed {
+                shortcut: shortcuts.active_shortcut(),
+                launch_at_login: None,
+            });
         }
         return Err(PersistenceCommandError::ResetFailed);
     };
     let autostart_outcome = autostart_state.apply(false);
     if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_outcome {
         log_autostart_integration_failure("reset", reason, Some(enabled));
-        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+        let shortcut_rollback = shortcuts.rollback(previous_shortcut);
+        if let Err(reason) = shortcut_rollback {
             log_shortcut_integration_failure(
                 "reset-rollback",
                 reason,
@@ -1887,11 +1895,18 @@ fn reset_dev_hud(
                     "not-configured"
                 },
             );
+        }
+        if shortcut_rollback.is_err() || enabled != previous_autostart {
+            return Ok(PersistenceResetOutcome::IntegrationRollbackFailed {
+                shortcut: shortcuts.active_shortcut(),
+                launch_at_login: Some(enabled),
+            });
         }
         return Err(PersistenceCommandError::ResetFailed);
     } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_outcome {
         log_autostart_integration_failure("reset", reason, None);
-        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+        let shortcut_rollback = shortcuts.rollback(previous_shortcut);
+        if let Err(reason) = shortcut_rollback {
             log_shortcut_integration_failure(
                 "reset-rollback",
                 reason,
@@ -1902,17 +1917,26 @@ fn reset_dev_hud(
                 },
             );
         }
-        return Err(PersistenceCommandError::ResetFailed);
+        return Ok(PersistenceResetOutcome::IntegrationRollbackFailed {
+            shortcut: shortcuts.active_shortcut(),
+            launch_at_login: None,
+        });
     }
 
     if let Err(reason) = clear_local_logs_for_reset() {
         let autostart_rollback = autostart_state.apply(previous_autostart);
+        let autostart_rollback_failed = !matches!(
+            autostart_rollback,
+            autostart::AutostartOutcome::Applied { enabled }
+                if enabled == previous_autostart
+        );
         if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_rollback {
             log_autostart_integration_failure("reset-rollback", reason, Some(enabled));
         } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_rollback {
             log_autostart_integration_failure("reset-rollback", reason, None);
         }
-        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+        let shortcut_rollback = shortcuts.rollback(previous_shortcut);
+        if let Err(reason) = shortcut_rollback {
             log_shortcut_integration_failure(
                 "reset-rollback",
                 reason,
@@ -1922,6 +1946,12 @@ fn reset_dev_hud(
                     "not-configured"
                 },
             );
+        }
+        if autostart_rollback_failed || shortcut_rollback.is_err() {
+            return Ok(PersistenceResetOutcome::IntegrationRollbackFailed {
+                shortcut: shortcuts.active_shortcut(),
+                launch_at_login: autostart_rollback.enabled(),
+            });
         }
         return Err(reason);
     }
