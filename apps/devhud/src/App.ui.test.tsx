@@ -1,23 +1,43 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup } from "@testing-library/react";
 
 vi.mock("./runtime/startup", () => ({
-  loadRuntimeInfo: vi.fn(async () => ({ runtime: "cef" })),
+  loadRuntimeInfo: vi.fn(async () => ({
+    applicationId: "dev.deli.devhud",
+    bundledOrigin: "http://tauri.localhost",
+    operatingSystem: "linux",
+    runtime: "cef",
+    sandboxEnabled: true,
+    updatePolicy: "Desktop updater unavailable",
+  })),
   tauriRuntimeBridge: {},
 }));
 
 import { App } from "./App";
-import type { LocalStorageAdapter } from "./persistence/storage";
+import {
+  MemoryStorageAdapter,
+  type LocalStorageAdapter,
+} from "./persistence/storage";
 import { loadRuntimeInfo } from "./runtime/startup";
 
 afterEach(cleanup);
 
+function renderApp(
+  properties: Omit<ComponentProps<typeof App>, "storage"> & {
+    storage?: LocalStorageAdapter;
+  } = {},
+) {
+  return render(
+    <App storage={properties.storage ?? new MemoryStorageAdapter()} {...properties} />,
+  );
+}
+
 describe("DevHud application surfaces", () => {
   it("focuses the desktop search field and presents the exact empty state", async () => {
-    render(<App />);
+    renderApp();
     const search = screen.getByRole("searchbox", { name: "Search tools" });
     expect(search).toHaveFocus();
     expect(screen.getByText("No tools are available in this foundation preview.")).toBeVisible();
@@ -25,7 +45,7 @@ describe("DevHud application surfaces", () => {
 
   it("traps focus in settings, closes with Escape, and restores focus", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    renderApp();
     const settings = screen.getAllByRole("button", { name: "Settings" })[0];
     if (settings === undefined) throw new Error("Settings trigger is missing");
     await user.click(settings);
@@ -42,7 +62,7 @@ describe("DevHud application surfaces", () => {
 
   it("defaults to System and applies an explicit theme choice", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    renderApp();
     await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
     const theme = screen.getByRole("combobox", { name: "Theme preference" });
     expect(theme).toHaveValue("system");
@@ -53,7 +73,7 @@ describe("DevHud application surfaces", () => {
 
   it("does not expose launch-at-login without the native startup integration", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    renderApp();
     await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
     expect(screen.queryByRole("checkbox", { name: "Launch DevHud at login" })).toBeNull();
   });
@@ -69,7 +89,7 @@ describe("DevHud application surfaces", () => {
       write: async () => undefined,
     };
 
-    render(<App storage={storage} />);
+    renderApp({ storage });
     await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
     const theme = screen.getByRole("combobox", { name: "Theme preference" });
     expect(theme).toBeDisabled();
@@ -79,7 +99,7 @@ describe("DevHud application surfaces", () => {
 
   it("hides the application shell from assistive technology while settings is open", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    renderApp();
     const settings = screen.getAllByRole("button", { name: "Settings" })[0];
     if (settings === undefined) throw new Error("Settings trigger is missing");
     await user.click(settings);
@@ -96,7 +116,7 @@ describe("DevHud application surfaces", () => {
       write: async () => undefined,
     };
 
-    render(<App storage={storage} />);
+    renderApp({ storage });
     const alerts = await screen.findAllByRole("alert");
     await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
     for (const alert of alerts) {
@@ -106,7 +126,7 @@ describe("DevHud application surfaces", () => {
   });
 
   it("has no automated accessibility violations", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     const results = await axe.run(container, {
       rules: {
         "color-contrast": { enabled: false },
@@ -117,18 +137,86 @@ describe("DevHud application surfaces", () => {
 
   it("provides explicit mobile content states without visible widgets", async () => {
     const user = userEvent.setup();
-    render(<App platform="mobile" />);
-    expect(screen.getByRole("heading", { name: "No tools yet" })).toBeVisible();
+    renderApp({ platform: "mobile" });
+    expect(
+      await screen.findByRole("heading", { name: "No tools yet" }),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Open settings" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Widgets" }));
+    expect(screen.getByRole("heading", { name: "Widgets" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "No widgets available" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Diagnostics" }));
-    expect(screen.getByRole("heading", { name: "Diagnostics are unavailable" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Local diagnostics" })).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Runtime details" })).toBeVisible();
+    expect(screen.getByText("dev.deli.devhud")).toBeVisible();
   });
 
   it("shows a runtime startup failure on the mobile Home screen", async () => {
     vi.mocked(loadRuntimeInfo).mockRejectedValueOnce(new Error("runtime unavailable"));
-    render(<App platform="mobile" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("DevHud could not initialize its local runtime.");
+    renderApp({ platform: "mobile" });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud could not initialize its local runtime.",
+    );
+    expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
+  });
+
+  it("shows explicit mobile loading states", async () => {
+    let finishRuntime:
+      | ((value: Awaited<ReturnType<typeof loadRuntimeInfo>>) => void)
+      | undefined;
+    vi.mocked(loadRuntimeInfo).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRuntime = resolve;
+      }),
+    );
+    renderApp({ platform: "mobile" });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading the local application runtime",
+    );
+    finishRuntime?.({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "android",
+      runtime: "system-webview",
+      sandboxEnabled: false,
+      updatePolicy: "Managed by Google Play",
+    });
+    expect(
+      await screen.findByRole("heading", { name: "No tools yet" }),
+    ).toBeVisible();
+  });
+
+  it("persists a mobile theme choice across application mounts", async () => {
+    const user = userEvent.setup();
+    const storage = new MemoryStorageAdapter();
+    const first = renderApp({ platform: "mobile", storage });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const theme = screen.getByRole("combobox", { name: "Theme preference" });
+    await waitFor(() => expect(theme).toBeEnabled());
+    await user.selectOptions(theme, "dark");
+    await waitFor(() =>
+      expect(storage.values.get("devhud.settings.v1")).toContain('"theme":"dark"'),
+    );
+    first.unmount();
+
+    renderApp({ platform: "mobile", storage });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "Theme preference" }),
+      ).toHaveValue("dark"),
+    );
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("has no automated accessibility violations on the mobile shell", async () => {
+    const { container } = renderApp({ platform: "mobile" });
+    await screen.findByRole("heading", { name: "No tools yet" });
+    const results = await axe.run(container, {
+      rules: {
+        "color-contrast": { enabled: false },
+      },
+    });
+    expect(results.violations).toEqual([]);
   });
 });

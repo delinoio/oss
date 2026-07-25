@@ -4,19 +4,19 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: active foundation; `apps/devhud` contains the common bundled-asset application package, internal empty tool registry, and desktop/mobile empty-state UI. It has no production tool, visible widget, packaging, release, publisher, or public support implementation.
-- This document covers the future deployable package. The current implementation is limited to the shared bundled-asset frontend, provider-owned System/Light/Dark UI state, internal registry filtering, `src-tauri` runtime-selection boundary, scoped runtime-information command, and deterministic local validation commands.
+- Status: active foundation; `apps/devhud` contains the common bundled-asset application package, internal empty tool registry, desktop/mobile empty-state UI, and maintained native iOS and Android hosts. It has no production tool, visible widget, packaging, release, publisher, or public support implementation.
+- The current implementation includes the shared bundled-asset frontend, provider-owned persisted System/Light/Dark state, internal registry filtering, target-isolated desktop CEF and mobile system-webview runtimes, scoped native commands, generated native host sources, and deterministic local validation commands.
 
 ## Runtime and Language
 
 - Frontend runtime: React with TypeScript, built by Rsbuild.
 - Native runtime: Tauri Rust application under `src-tauri`.
 - Desktop runtime: Tauri's upstream CEF runtime from the `feat/cef` line, pinned exactly to commit `f49ebda2fdba5755456b0f049e32593ca0ea331a` with `@tauri-apps/cli-cef` `3.0.0-alpha.6` in lockfiles. The implementation must not build from a moving branch.
-- Mobile runtime: standard Tauri iOS WKWebView and Android WebView. Mobile must not use the desktop CEF runtime.
+- Mobile runtime: standard Tauri iOS WKWebView and Android System WebView. Mobile must not compile, link, embed, or launch the desktop CEF runtime.
 - Desktop operating systems: macOS 14 or newer, Windows 11, and Ubuntu 24.04 LTS.
 - Desktop architectures: separate x64 and ARM64 builds for each supported desktop operating system.
 - Linux display support: X11 and Wayland through XWayland. Native Wayland is out of scope.
-- Mobile operating systems: iOS 17 or newer and Android 10/API 29 or newer. Production device architectures and x64 emulator targets required for CI must be documented by the eventual package manifest.
+- Mobile operating systems and architectures: iOS 17.0 or newer on `arm64` production devices and `x86_64` CI simulators; Android 10/API 29 or newer on `arm64-v8a` and `armeabi-v7a` production devices and `x86_64` CI emulators.
 - UX baseline: English-only, System/Light/Dark themes with System initially selected, Toss Design Guidelines, and WCAG 2.2 AA. The product uses the DevHud wordmark and minimal `DH` lettermark; a complete brand system is out of scope.
 
 ### CEF desktop runtime
@@ -37,7 +37,7 @@ DevHud must not fork Tauri, WRY, or `cef-rs`, and must not carry local source pa
 
 - Primary actor: an individual developer using local built-in tools.
 - Secondary actors: DevHud maintainers and release operators.
-- System actors: the desktop tray, global shortcut, launch-at-login and updater facilities; iOS and Android native widget frameworks; GitHub Releases; TestFlight; and Google Play.
+- System actors: the desktop tray, global shortcut, launch-at-login and updater facilities; WKWebView; Android System WebView; GitHub Releases; TestFlight; and Google Play.
 - Explicitly excluded actors: DeliDev users and organizations, remote mini-app publishers, external plugin authors, backend operators, and account administrators.
 
 ## Interfaces and Contracts
@@ -54,7 +54,7 @@ The registry is an internal, closed contract, not a plugin interface. `ToolDefin
 
 Tools may support a subset of platforms. Each shell exposes only tools supported by the current platform and granted capabilities. Capability values are closed and enum-backed; a new capability is introduced only with the tool that needs it. Production registration is empty in `0.1.0`; tests may use fixture definitions. No external plugin authors, remote tools, user-authored scripts, runtime code downloads, or plugin SDK are authorized.
 
-The native boundary exposes only scoped Tauri/plugin commands required for settings, window lifecycle, diagnostics, updates, and native widget state. It must not expose a CLI, localhost API, public API, Connect RPC service, webhook, public route, custom URL scheme, universal link, app link, or deep link. Native errors are stable enum-backed classifications, including invalid or conflicting shortcuts, shortcut registration failure, unsupported display server, CEF initialization, corrupt state, widget bridge failure, updater unavailability or rate limiting, invalid signature, and installation failure.
+The native boundary exposes only scoped Tauri commands required for settings, application lifecycle, diagnostics, updates where supported, and the versioned future widget-state record. It must not expose a CLI, localhost API, public API, Connect RPC service, webhook, public route, custom URL scheme, universal link, app link, or deep link. Native errors are stable enum-backed classifications, including invalid or conflicting shortcuts, shortcut registration failure, unsupported display server, CEF initialization, corrupt state, updater unavailability or rate limiting, invalid signature, and installation failure.
 
 ### Desktop HUD and tray behavior
 
@@ -69,21 +69,19 @@ The native boundary exposes only scoped Tauri/plugin commands required for setti
 - The empty production registry displays the exact message `No tools are available in this foundation preview.` and a Settings action.
 - CEF DevTools are enabled in development and in the signed `0.1.0` technical preview. DevTools must not widen navigation, download, IPC, or filesystem capabilities.
 
-### Mobile screens and widget boundary
+### Mobile screens and native host boundary
 
 The app provides stable internal screens for `Home`, `Widgets`, `Settings`, and `Diagnostics`, with explicit empty states because no production tool or visible widget ships in `0.1.0`. The frontend may select an initial shell from the user agent, but must reconcile it to the authoritative native `system-webview` runtime result so iPadOS desktop-content mode remains mobile.
 
-The implementation must compile and test an iOS WidgetKit extension, an Android `AppWidgetProvider`, a shared data adapter, and a refresh bridge using fixtures. The WidgetKit extension must not be embedded in the distributed iOS app, and the `AppWidgetProvider` must not be registered in the Android manifest. Therefore no widget appears in either platform's widget gallery for this issue. Widget configuration and refresh are test fixtures only; no sample product tool is exposed.
+The checked-in Android Gradle project and canonical iOS XcodeGen project use application identity `dev.deli.devhud`. Package-local generation commands invoke the independently pinned standard Tauri mobile CLI and then enforce this contract. Production commands build device architectures; `:ci` commands build the required x64 simulator or emulator target. iOS generation and builds require macOS, Xcode with the iOS 17 SDK, and XcodeGen.
 
-Use iOS App Group `group.dev.deli.devhud` for the future app/widget shared container, Android DataStore for Android widget state, and build-only widget identifier `dev.deli.devhud.widget`. Do not register custom URL schemes, universal links, app links, or public deep links.
+No WidgetKit extension, Android `AppWidgetProvider`, shared widget container entitlement, widget target, widget embedding, or widget manifest registration is present. No widget appears in either platform's widget gallery. The `Widgets` screen and versioned widget-configuration record remain explicitly empty future-facing application state. Do not register custom URL schemes, universal links, app links, associated domains, browsable activities, or public deep links.
 
 ### Stable application and storage identifiers
 
 - Application ID: `dev.deli.devhud`.
 - Versioned Tauri Store key: `devhud.settings.v1`, containing theme, launch-at-login, and optional structured shortcut settings.
 - Widget configuration key: `devhud.widget-configuration.v1`, containing widget slot references and future stable `toolId` values.
-- iOS App Group: `group.dev.deli.devhud`.
-- Build-only widget identifier: `dev.deli.devhud.widget`.
 
 These identifiers must not be renamed or reused for DeliDev or another project. Production tools and user-visible widgets remain empty in `0.1.0`.
 
@@ -98,7 +96,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 - `Reset DevHud` requires confirmation and clears settings, widget shared state, CEF runtime state, and logs. User-exported diagnostic files remain user-owned.
 - Persist only the minimum CEF profile data required for operation. Disable web downloads, browsing history, cookies, and application web storage; Reset clears all CEF state.
 - Do not implement settings import, settings export, migration from another application, account migration, or cloud synchronization.
-- Android widget state uses Android DataStore; the iOS shared-container boundary uses `group.dev.deli.devhud`. Both are local-only and fixture-tested in the foundation phase.
+- Mobile future widget state uses only the same record-specific local application storage adapter as the frontend. It is not shared with, or readable by, a native widget process because no such target exists.
 - Diagnostic-session correlation IDs are ephemeral UUID v7 values; they are not accounts or persistent user identifiers.
 
 ## Security
@@ -107,7 +105,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 - Block external navigation, popups, downloads, and remote frontend resources.
 - Keep Tauri capabilities window-specific and least-privileged. DevTools in the technical preview does not relax these boundaries.
 - Do not implement authentication, an account system, tenant data, billing, cloud storage, backend services, DeliDev integration, analytics, crash telemetry, remote logs, advertising, or user tracking.
-- The sole network exception is desktop updater discovery and download: use the unauthenticated GitHub Releases API, filter releases to `delinoio/oss` tags beginning with `devhud@v`, ignore drafts, unrelated releases, invalid semantic versions, unsupported targets, and releases without a valid signed DevHud updater manifest, and download manifests/assets only from GitHub Releases. Never ship a GitHub token.
+- The sole network exception is desktop updater discovery and download: use the unauthenticated GitHub Releases API, filter releases to `delinoio/oss` tags beginning with `devhud@v`, ignore drafts, unrelated releases, invalid semantic versions, unsupported targets, and releases without a valid signed DevHud updater manifest, and download manifests/assets only from GitHub Releases. Never ship a GitHub token. The mobile runtime reports updates as unsupported and has no network permission or endpoint.
 - Check for updates at startup and every 24 hours. Offline, unavailable, and rate-limited checks are non-fatal. Require user confirmation before install/restart; invalid updater signatures leave the installed version unchanged.
 - The app has no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, DeliDev integration, localhost service, webhook, route, or remote extension surface.
 
@@ -122,24 +120,25 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics plus automated WCAG checks with `axe-core`; full desktop-matrix, mobile/widget compilation, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
+The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Mobile hosts add `mobile:generate:android`, `mobile:generate:ios`, `build:android`, `build:android:ci`, `build:ios`, `build:ios:ci`, `check:mobile`, `test:mobile`, and `test:android:native`. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics plus automated WCAG checks with `axe-core`.
 
 Required validation coverage is:
 
 - React type checking, linting, unit/component tests, Rsbuild output, keyboard/screen-reader behavior, and WCAG automation.
 - Root Rust formatting, Clippy, and tests including the DevHud Tauri crate once it is added to the workspace.
 - CEF desktop builds and smoke tests on macOS, Windows, and Ubuntu for x64 and ARM64, including X11 and XWayland Linux coverage.
-- iOS and Android Tauri builds; compile-only WidgetKit and `AppWidgetProvider` targets; and shared-state fixture tests.
+- Clean iOS and Android Tauri generation/builds, runtime-feature separation, native architecture declarations, mobile navigation and empty/error/loading states, settings/theme persistence, Diagnostics entry, and accessibility.
+- Static and built-artifact checks for absent deep-link handlers, associated domains, Android network permission, unintended endpoints, native widget targets/registration, production tools, and visible widget state.
 - Installer, signature, updater, SBOM, and provenance validation.
 - Performance measurements must record HUD display latency, cold startup, package size, and idle memory per supported desktop platform, plus mobile startup time. Publish these measurements with the release; `0.1.0` defines no numeric pass threshold.
 
-DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. The `node-devhud` CI job runs the frontend typecheck, lint, unit, accessibility, and build commands when DevHud inputs change. No dedicated DevHud release job exists; additional platform tasks must be added without weakening existing repository checks when their implementations are introduced.
+DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. The `node-devhud` CI job runs the frontend typecheck, lint, unit, accessibility, build, and portable mobile-contract commands when DevHud inputs change. Native Android builds require the documented JDK/SDK/NDK host and iOS builds require macOS/Xcode; no dedicated DevHud release job exists.
 
 ## Dependencies and Integrations
 
 ### Upstream and project boundaries
 
-- Tauri, `tauri-build`, and the directly selected desktop `tauri-runtime-cef` sandbox dependency are pinned to commit `f49ebda2fdba5755456b0f049e32593ca0ea331a`; `@tauri-apps/cli-cef` is pinned to `3.0.0-alpha.6`. Do not maintain a Tauri, WRY, or `cef-rs` fork or local patch, and do not replace the revision with `feat/cef` or another moving branch.
+- Tauri, `tauri-build`, the directly selected desktop `tauri-runtime-cef` sandbox dependency, and the mobile-only `tauri-runtime-wry` dependency are pinned to commit `f49ebda2fdba5755456b0f049e32593ca0ea331a`; `@tauri-apps/cli-cef` is pinned to `3.0.0-alpha.6`, while `@tauri-apps/cli-mobile` aliases the standard Tauri CLI exactly at `2.11.4`. Do not maintain a Tauri, WRY, or `cef-rs` fork or local patch, and do not replace the revision with `feat/cef` or another moving branch.
 - DevHud is a local-only app for individual developers. It must remain independent from DeliDev and must not consume DeliDev accounts, catalog, billing, APIs, routes, or contracts. It has no dependency on delibase, Logto, Connect RPC, or any DeliDev service.
 - The only runtime network dependency is GitHub Releases for the updater exception defined in Security. No backend, API origin, remote configuration, or online operational service is allowed.
 
@@ -173,13 +172,11 @@ DevHud participates in the existing change-scoped Rust formatting, Clippy, and t
 - [Tauri system tray](https://v2.tauri.app/learn/system-tray/)
 - [Tauri global shortcut](https://v2.tauri.app/plugin/global-shortcut/)
 - [Tauri mobile plugins](https://v2.tauri.app/develop/plugins/develop-mobile/)
-- [Apple WidgetKit](https://developer.apple.com/documentation/widgetkit/creating-a-widget-extension/)
-- [Android App Widgets](https://developer.android.com/develop/ui/views/appwidgets)
 
 ## Out of Scope
 
 - Any production developer tool, sample tool, or test tool visible to users; production registration remains empty.
-- Any widget visible in the iOS or Android widget gallery; WidgetKit and `AppWidgetProvider` sources are compile-tested but not embedded or manifest-registered.
+- Any widget visible in the iOS or Android widget gallery, plus any WidgetKit extension or Android `AppWidgetProvider` source, target, embedding, or registration.
 - Live Activities, Control Center controls, watchOS, Wear OS, desktop widgets, and native Wayland.
 - External plugins, remote mini-apps, user-authored scripts, runtime code downloads, and a plugin SDK.
 - DeliDev catalog, accounts, organizations, billing, APIs, routes, contracts, or any other DeliDev integration.
