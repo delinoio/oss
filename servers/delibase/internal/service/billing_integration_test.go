@@ -720,6 +720,7 @@ func TestPostgreSQLCreditGrantCarriesOutstandingRefundShortfall(t *testing.T) {
 
 	accountID := uuidv7.MustNew()
 	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
 	subscriptionID := uuidv7.MustNew()
 	oldPeriodID := uuidv7.MustNew()
 	currentPeriodID := uuidv7.MustNew()
@@ -761,6 +762,15 @@ func TestPostgreSQLCreditGrantCarriesOutstandingRefundShortfall(t *testing.T) {
 				OrganizationID: pgUUID(organizationID),
 				AccountID:      pgUUID(accountID),
 				Role:           "owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateGeneralTeam(
+			ctx,
+			dbgen.CreateGeneralTeamParams{
+				ID:             pgUUID(teamID),
+				OrganizationID: pgUUID(organizationID),
 			},
 		); transactionErr != nil {
 			return transactionErr
