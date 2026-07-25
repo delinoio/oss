@@ -463,13 +463,27 @@ BEGIN
     IF NEW.overage_applied_micros > 0
        AND NOT EXISTS (
            SELECT 1
-           FROM integration_outbox
-           WHERE integration = 'polar'
-             AND operation = 'report_usage'
-             AND aggregate_type = 'usage_record'
-             AND aggregate_id = NEW.id
+           FROM integration_outbox AS outbox
+           WHERE outbox.integration = 'polar'
+             AND outbox.operation = 'report_usage'
+             AND outbox.aggregate_type = 'usage_record'
+             AND outbox.aggregate_id = NEW.id
+             AND outbox.payload -> 'organization_id'
+                 = to_jsonb(NEW.organization_id::text)
+             AND outbox.payload -> 'usage_record_id'
+                 = to_jsonb(NEW.id::text)
+             AND outbox.payload -> 'event_name'
+                 = to_jsonb(NEW.polar_event_name_snapshot)
+             AND outbox.payload -> 'units'
+                 = to_jsonb(NEW.overage_applied_micros)
+             AND jsonb_typeof(outbox.payload -> 'committed_at') = 'string'
+             AND outbox.payload ->> 'committed_at'
+                 ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+             AND (outbox.payload ->> 'committed_at')::timestamptz
+                 = NEW.committed_at
        ) THEN
-        RAISE EXCEPTION 'overage usage record requires a Polar outbox event'
+        RAISE EXCEPTION
+            'overage usage record requires a matching Polar outbox event'
             USING ERRCODE = 'check_violation';
     END IF;
     RETURN NULL;

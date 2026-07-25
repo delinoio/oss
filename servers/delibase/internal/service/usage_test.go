@@ -81,6 +81,23 @@ func TestUsageIntegerArithmeticRejectsNegativeAndOverflow(t *testing.T) {
 	}
 }
 
+func TestDrainExpiredReservationPagesContinuesPastBatchBoundary(t *testing.T) {
+	t.Parallel()
+	pages := []int{int(usageExpirationBatchSize), 1}
+	calls := 0
+	total, err := drainExpiredReservationPages(func() (int, error) {
+		count := pages[calls]
+		calls++
+		return count, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != int(usageExpirationBatchSize)+1 || calls != len(pages) {
+		t.Fatalf("drained reservations = %d across %d pages", total, calls)
+	}
+}
+
 func TestUsageCapacityErrorsHaveStableConnectDetails(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

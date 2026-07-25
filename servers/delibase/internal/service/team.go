@@ -517,9 +517,8 @@ func (service *Team) DeleteTeamSubtree(
 		if current.ProtectedGeneral {
 			return generalTeamProtected()
 		}
-		if _, transactionErr = expireOrganizationReservations(
+		if _, transactionErr = drainExpiredOrganizationReservations(
 			ctx, service.dependencies, queries, organizationID,
-			usageExpirationBatchSize,
 		); transactionErr != nil {
 			return transactionErr
 		}

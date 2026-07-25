@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"os"
@@ -15,6 +16,7 @@ import (
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
 	"github.com/delinoio/oss/servers/delibase/internal/database"
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
+	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
@@ -119,6 +121,245 @@ func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) 
 		}),
 	); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPostgreSQLPolarUsageOutboxPayloadMustMatchRecord(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	dependencies := fixture.dependencies.withDefaults()
+	ownerContext := usageContext(
+		ctx,
+		fixture.serviceClient,
+		fixture.ownerSubject,
+	)
+	actor, err := actorFor(dependencies, fixture.ownerSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reserved, err := fixture.usage.ReserveUsage(
+		ownerContext,
+		usageReserveRequest(
+			fixture,
+			fixture.generalTeamID,
+			fixture.meterID,
+			51,
+			"polar-payload-"+fixture.organizationID.String(),
+			"polar-payload-"+fixture.organizationID.String(),
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservationID, err := uuid.Parse(
+		reserved.Msg.Reservation.ReservationId.Value,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*polarUsagePayload)
+	}{
+		{
+			name: "organization",
+			mutate: func(payload *polarUsagePayload) {
+				payload.OrganizationID = uuidv7.MustNew().String()
+			},
+		},
+		{
+			name: "usage record",
+			mutate: func(payload *polarUsagePayload) {
+				payload.UsageRecordID = uuidv7.MustNew().String()
+			},
+		},
+		{
+			name: "event",
+			mutate: func(payload *polarUsagePayload) {
+				payload.EventName = "mismatched_event"
+			},
+		},
+		{
+			name: "units",
+			mutate: func(payload *polarUsagePayload) {
+				payload.Units++
+			},
+		},
+		{
+			name: "commit timestamp",
+			mutate: func(payload *polarUsagePayload) {
+				payload.CommittedAt = payload.CommittedAt.Add(time.Second)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			connection, connectErr := pgx.Connect(ctx, databaseURL)
+			if connectErr != nil {
+				t.Fatal(connectErr)
+			}
+			defer func() {
+				_ = connection.Close(context.WithoutCancel(ctx))
+			}()
+			usageRecordID := uuidv7.MustNew()
+			transactionErr := pgx.BeginFunc(
+				ctx,
+				connection,
+				func(transaction pgx.Tx) error {
+					queries := dbgen.New(transaction)
+					if _, lockErr := queries.LockOrganizationForBilling(
+						ctx,
+						pgUUID(fixture.organizationID),
+					); lockErr != nil {
+						return lockErr
+					}
+					reservation, lockErr := queries.LockUsageReservation(
+						ctx,
+						dbgen.LockUsageReservationParams{
+							OrganizationID: pgUUID(fixture.organizationID),
+							ReservationID:  pgUUID(reservationID),
+						},
+					)
+					if lockErr != nil {
+						return lockErr
+					}
+					usageRecord, insertErr := queries.InsertUsageRecord(
+						ctx,
+						dbgen.InsertUsageRecordParams{
+							ID:                   pgUUID(usageRecordID),
+							ReservationID:        reservation.ID,
+							OrganizationID:       reservation.OrganizationID,
+							TeamID:               reservation.TeamID,
+							TeamNameSnapshot:     reservation.TeamNameSnapshot,
+							MeterID:              reservation.MeterID,
+							AccountID:            reservation.AccountID,
+							ServiceIdentityID:    reservation.ServiceIdentityID,
+							CommittedUnits:       51,
+							TotalCostMicros:      102,
+							CreditAppliedMicros:  100,
+							OverageAppliedMicros: 2,
+						},
+					)
+					if insertErr != nil {
+						return insertErr
+					}
+					if insertErr = appendUsageLedger(
+						ctx,
+						dependencies,
+						queries,
+						reservation,
+						"credit_commit",
+						-100,
+						usageRecordID,
+						"usage:"+usageRecordID.String()+":credit-commit",
+						actor,
+					); insertErr != nil {
+						return insertErr
+					}
+					if insertErr = appendUsageLedger(
+						ctx,
+						dependencies,
+						queries,
+						reservation,
+						"overage_commit",
+						-2,
+						usageRecordID,
+						"usage:"+usageRecordID.String()+":overage-commit",
+						actor,
+					); insertErr != nil {
+						return insertErr
+					}
+					if insertErr = releaseUsageHolds(
+						ctx,
+						dependencies,
+						queries,
+						reservation,
+						actor,
+					); insertErr != nil {
+						return insertErr
+					}
+					if _, insertErr = queries.FinalizeUsageReservation(
+						ctx,
+						dbgen.FinalizeUsageReservationParams{
+							Status:         "committed",
+							OrganizationID: reservation.OrganizationID,
+							ReservationID:  reservation.ID,
+						},
+					); insertErr != nil {
+						return insertErr
+					}
+					payload, ok := newPolarOveragePayload(
+						usageRecord.PolarEventNameSnapshot,
+						fixture.organizationID,
+						usageRecordID,
+						usageRecord.OverageAppliedMicros,
+						usageRecord.CommittedAt.Time.UTC(),
+					)
+					if !ok {
+						return errors.New("expected overage payload")
+					}
+					test.mutate(&payload)
+					encoded, marshalErr := json.Marshal(payload)
+					if marshalErr != nil {
+						return marshalErr
+					}
+					_, enqueueErr := reliability.EnqueueOutbox(
+						ctx,
+						queries,
+						reliability.OutboxInput{
+							ID:            uuidv7.MustNew(),
+							Integration:   reliability.IntegrationPolar,
+							Operation:     reliability.OperationReportUsage,
+							AggregateType: reliability.AggregateUsageRecord,
+							AggregateID:   usageRecordID,
+							Payload:       encoded,
+							IdempotencyKey: "usage-record:" +
+								usageRecordID.String(),
+							Actor: actor,
+						},
+					)
+					if enqueueErr != nil {
+						return enqueueErr
+					}
+					_, constraintErr := transaction.Exec(
+						ctx,
+						"SET CONSTRAINTS usage_records_require_polar_outbox IMMEDIATE",
+					)
+					return constraintErr
+				},
+			)
+			if transactionErr == nil ||
+				!strings.Contains(
+					transactionErr.Error(),
+					"requires a matching Polar outbox event",
+				) {
+				t.Fatalf(
+					"mismatched Polar payload transaction error = %v",
+					transactionErr,
+				)
+			}
+		})
+	}
+
+	if _, err = fixture.usage.CommitUsage(
+		ownerContext,
+		connect.NewRequest(&delibasev1.CommitUsageRequest{
+			OrganizationId: usageUUID(fixture.organizationID),
+			ReservationId:  reserved.Msg.Reservation.ReservationId,
+			ActualUnits:    &delibasev1.UsageUnits{Value: 51},
+			Idempotency: idempotency(
+				"polar-payload-commit-" + fixture.organizationID.String(),
+			),
+		}),
+	); err != nil {
+		t.Fatalf("matching Polar payload: %v", err)
 	}
 }
 

@@ -494,9 +494,8 @@ func (service *Organization) DeleteOrganization(
 		); transactionErr != nil {
 			return transactionErr
 		}
-		if _, transactionErr = expireOrganizationReservations(
+		if _, transactionErr = drainExpiredOrganizationReservations(
 			ctx, service.dependencies, queries, organizationID,
-			usageExpirationBatchSize,
 		); transactionErr != nil {
 			return transactionErr
 		}
@@ -863,9 +862,8 @@ func (service *Organization) RemoveOrganizationMember(
 				delibasev1.ErrorReason_ERROR_REASON_OWNER_ROLE_REQUIRED,
 			)
 		}
-		if _, transactionErr = expireOrganizationReservations(
+		if _, transactionErr = drainExpiredOrganizationReservations(
 			ctx, service.dependencies, queries, organizationID,
-			usageExpirationBatchSize,
 		); transactionErr != nil {
 			return transactionErr
 		}
@@ -981,9 +979,8 @@ func (service *Organization) LeaveOrganization(
 		); transactionErr != nil {
 			return membershipReadError(transactionErr)
 		}
-		if _, transactionErr = expireOrganizationReservations(
+		if _, transactionErr = drainExpiredOrganizationReservations(
 			ctx, service.dependencies, queries, organizationID,
-			usageExpirationBatchSize,
 		); transactionErr != nil {
 			return transactionErr
 		}

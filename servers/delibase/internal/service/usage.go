@@ -969,6 +969,60 @@ func expireAccountReservations(
 	return expireReservations(ctx, dependencies, queries, reservations)
 }
 
+// Blocker-gated mutations must finalize every relevant ended hold before
+// deleting its live references; the background worker remains page-bounded.
+func drainExpiredOrganizationReservations(
+	ctx context.Context,
+	dependencies Dependencies,
+	queries *dbgen.Queries,
+	organizationID uuid.UUID,
+) (int, error) {
+	return drainExpiredReservationPages(func() (int, error) {
+		return expireOrganizationReservations(
+			ctx,
+			dependencies,
+			queries,
+			organizationID,
+			usageExpirationBatchSize,
+		)
+	})
+}
+
+func drainExpiredAccountReservations(
+	ctx context.Context,
+	dependencies Dependencies,
+	queries *dbgen.Queries,
+	organizationID uuid.UUID,
+	accountID pgtype.UUID,
+) (int, error) {
+	return drainExpiredReservationPages(func() (int, error) {
+		return expireAccountReservations(
+			ctx,
+			dependencies,
+			queries,
+			organizationID,
+			accountID,
+			usageExpirationBatchSize,
+		)
+	})
+}
+
+func drainExpiredReservationPages(
+	expirePage func() (int, error),
+) (int, error) {
+	total := 0
+	for {
+		count, err := expirePage()
+		total += count
+		if err != nil {
+			return total, err
+		}
+		if count < int(usageExpirationBatchSize) {
+			return total, nil
+		}
+	}
+}
+
 func expireReservations(
 	ctx context.Context,
 	dependencies Dependencies,

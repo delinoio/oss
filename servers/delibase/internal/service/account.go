@@ -445,13 +445,12 @@ func (service *Account) DeleteAccount(
 				return databaseError(transactionErr)
 			}
 			for _, organization := range organizations {
-				if _, transactionErr = expireAccountReservations(
+				if _, transactionErr = drainExpiredAccountReservations(
 					ctx,
 					service.dependencies,
 					queries,
 					uuid.UUID(organization.Bytes),
 					account.ID,
-					usageExpirationBatchSize,
 				); transactionErr != nil {
 					return transactionErr
 				}
