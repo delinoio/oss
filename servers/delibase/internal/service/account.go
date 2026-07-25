@@ -371,7 +371,7 @@ func (service *Account) DeleteAccount(
 		ctx,
 		pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			account, transactionErr := queries.LockAccountByLogtoSubject(ctx, subject)
+			account, transactionErr := queries.GetAccountByLogtoSubject(ctx, subject)
 			if errors.Is(transactionErr, pgx.ErrNoRows) {
 				response = &delibasev1.DeleteAccountResponse{}
 				replayed, completedAt, replayErr := replay(
@@ -443,6 +443,44 @@ func (service *Account) DeleteAccount(
 			)
 			if transactionErr != nil {
 				return databaseError(transactionErr)
+			}
+			account, transactionErr = queries.LockAccountByLogtoSubject(ctx, subject)
+			if errors.Is(transactionErr, pgx.ErrNoRows) {
+				return serviceError(
+					connect.CodeFailedPrecondition,
+					delibasev1.ErrorReason_ERROR_REASON_DELETION_ALREADY_PENDING,
+				)
+			}
+			if transactionErr != nil {
+				return databaseError(transactionErr)
+			}
+			response = &delibasev1.DeleteAccountResponse{}
+			replayed, completedAt, transactionErr = replay(
+				ctx,
+				queries,
+				subject,
+				"delete_account",
+				key,
+				digest,
+				response,
+			)
+			if transactionErr != nil {
+				return transactionErr
+			}
+			if replayed {
+				setIdempotency(
+					&response.Idempotency,
+					delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ACCOUNT,
+					true,
+					completedAt,
+				)
+				return nil
+			}
+			if account.Status != "active" {
+				return serviceError(
+					connect.CodeFailedPrecondition,
+					delibasev1.ErrorReason_ERROR_REASON_DELETION_ALREADY_PENDING,
+				)
 			}
 			for _, organization := range organizations {
 				if _, transactionErr = drainExpiredAccountReservations(

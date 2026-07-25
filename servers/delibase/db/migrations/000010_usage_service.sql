@@ -24,9 +24,6 @@ ALTER TABLE usage_reservations
     ADD CONSTRAINT usage_reservations_price_window_snapshot_check CHECK (
         price_effective_until_snapshot IS NULL
         OR price_effective_until_snapshot > price_effective_from_snapshot
-    ),
-    ADD CONSTRAINT usage_reservations_client_reference_check CHECK (
-        client_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$'
     );
 
 -- Snapshot backfill is the only update that may bypass the existing
@@ -34,6 +31,13 @@ ALTER TABLE usage_reservations
 -- migration transaction before runtime writes resume.
 ALTER TABLE usage_reservations
     DISABLE TRIGGER usage_reservations_enforce_transition;
+
+-- Earlier migrations accepted arbitrary nonempty client references. Preserve a
+-- stable per-reservation reference for legacy values that the service no
+-- longer accepts before installing the stricter storage invariant.
+UPDATE usage_reservations
+SET client_reference = 'legacy:' || id::text
+WHERE client_reference !~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$';
 
 UPDATE usage_reservations AS reservation
 SET service_name_snapshot = service.name,
@@ -72,6 +76,9 @@ ALTER TABLE usage_reservations
     ALTER COLUMN user_actor_reference_snapshot DROP DEFAULT;
 
 ALTER TABLE usage_reservations
+    ADD CONSTRAINT usage_reservations_client_reference_check CHECK (
+        client_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$'
+    ),
     ADD CONSTRAINT usage_reservations_overage_period_check CHECK (
         (held_overage_micros = 0 AND overage_billing_period_id IS NULL)
         OR
@@ -91,6 +98,9 @@ ALTER TABLE usage_records
     ADD COLUMN billing_period_id uuid,
     ADD COLUMN billing_period_starts_at_snapshot timestamptz,
     ADD COLUMN billing_period_ends_at_snapshot timestamptz;
+
+ALTER TABLE usage_records
+    DISABLE TRIGGER usage_records_immutable;
 
 UPDATE usage_records AS usage
 SET price_version_id = reservation.price_version_id,
@@ -131,6 +141,9 @@ SET price_version_id = reservation.price_version_id,
     )
 FROM usage_reservations AS reservation
 WHERE reservation.id = usage.reservation_id;
+
+ALTER TABLE usage_records
+    ENABLE TRIGGER usage_records_immutable;
 
 ALTER TABLE usage_records
     ALTER COLUMN price_version_id SET NOT NULL,
@@ -215,6 +228,105 @@ ALTER TABLE ledger_entries
     ADD CONSTRAINT ledger_entries_overage_commit_period_check CHECK (
         entry_type <> 'overage_commit' OR billing_period_id IS NOT NULL
     );
+
+-- Existing chargeable usage predates the deferred outbox invariant below.
+-- Queue each missing event with the same immutable payload used by runtime
+-- commits, then reject any pre-existing event that cannot satisfy that
+-- invariant instead of silently retaining unreportable usage.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM usage_records AS usage
+        JOIN usage_reservations AS reservation
+          ON reservation.id = usage.reservation_id
+        LEFT JOIN polar_meter_mappings AS mapping
+          ON mapping.meter_id = reservation.meter_id
+        WHERE usage.overage_applied_micros > 0
+          AND mapping.meter_id IS NULL
+    ) THEN
+        RAISE EXCEPTION
+            'legacy overage usage requires its retained Polar meter mapping'
+            USING ERRCODE = 'check_violation';
+    END IF;
+END;
+$$;
+
+INSERT INTO integration_outbox (
+    id,
+    integration,
+    operation,
+    aggregate_type,
+    aggregate_id,
+    payload,
+    created_at,
+    idempotency_key,
+    actor_reference
+)
+SELECT
+    usage.id,
+    'polar',
+    'report_usage',
+    'usage_record',
+    usage.id,
+    jsonb_build_object(
+        'event_name', usage.polar_event_name_snapshot,
+        'organization_id', usage.organization_id::text,
+        'usage_record_id', usage.id::text,
+        'units', usage.overage_applied_micros,
+        'committed_at', usage.committed_at
+    ),
+    usage.committed_at,
+    'usage-record:' || usage.id::text,
+    usage.user_actor_reference_snapshot
+FROM usage_records AS usage
+WHERE usage.overage_applied_micros > 0
+  AND NOT EXISTS (
+      SELECT 1
+      FROM integration_outbox AS outbox
+      WHERE outbox.integration = 'polar'
+        AND outbox.operation = 'report_usage'
+        AND outbox.aggregate_type = 'usage_record'
+        AND outbox.aggregate_id = usage.id
+  );
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM usage_records AS usage
+        WHERE usage.overage_applied_micros > 0
+          AND (
+              SELECT count(*)
+              FROM integration_outbox AS outbox
+              WHERE outbox.integration = 'polar'
+                AND outbox.operation = 'report_usage'
+                AND outbox.aggregate_type = 'usage_record'
+                AND outbox.aggregate_id = usage.id
+                AND outbox.payload -> 'organization_id'
+                    = to_jsonb(usage.organization_id::text)
+                AND outbox.payload -> 'usage_record_id'
+                    = to_jsonb(usage.id::text)
+                AND outbox.payload -> 'event_name'
+                    = to_jsonb(usage.polar_event_name_snapshot)
+                AND outbox.payload -> 'units'
+                    = to_jsonb(usage.overage_applied_micros)
+                AND CASE
+                    WHEN jsonb_typeof(outbox.payload -> 'committed_at') = 'string'
+                     AND outbox.payload ->> 'committed_at'
+                         ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+                    THEN (outbox.payload ->> 'committed_at')::timestamptz
+                         = usage.committed_at
+                    ELSE false
+                END
+          ) <> 1
+    ) THEN
+        RAISE EXCEPTION
+            'legacy overage usage requires exactly one matching Polar outbox event'
+            USING ERRCODE = 'check_violation';
+    END IF;
+END;
+$$;
 
 CREATE UNIQUE INDEX usage_reservations_service_client_reference_idx
     ON usage_reservations(service_identity_id, client_reference);

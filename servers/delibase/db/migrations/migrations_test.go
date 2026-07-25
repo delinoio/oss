@@ -128,14 +128,18 @@ func TestPostgreSQLUsageMigrationBackfillsPrunedPolarMapping(t *testing.T) {
 
 	appID := uuidv7.MustNew()
 	meterID := uuidv7.MustNew()
+	usageMeterID := uuidv7.MustNew()
 	priceID := uuidv7.MustNew()
+	usagePriceID := uuidv7.MustNew()
 	serviceID := uuidv7.MustNew()
 	organizationID := uuidv7.MustNew()
 	teamID := uuidv7.MustNew()
 	accountID := uuidv7.MustNew()
 	periodID := uuidv7.MustNew()
 	reservationID := uuidv7.MustNew()
-	createdAt := time.Now().UTC()
+	usageReservationID := uuidv7.MustNew()
+	usageRecordID := uuidv7.MustNew()
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
 		if _, transactionErr := transaction.Exec(
 			ctx,
@@ -161,10 +165,28 @@ func TestPostgreSQLUsageMigrationBackfillsPrunedPolarMapping(t *testing.T) {
 				args: []any{meterID, appID},
 			},
 			{
+				sql: `INSERT INTO catalog_meters (
+						id, app_id, meter_key, name, unit_name,
+						reservation_ttl_seconds
+					) VALUES ($1, $2, 'migration-usage-meter',
+						'Migration Usage Meter', 'unit', 60)`,
+				args: []any{usageMeterID, appID},
+			},
+			{
 				sql: `INSERT INTO catalog_price_versions (
 						id, meter_id, usd_micros_per_unit, effective_from
 					) VALUES ($1, $2, 5, $3)`,
 				args: []any{priceID, meterID, createdAt.Add(-time.Hour)},
+			},
+			{
+				sql: `INSERT INTO catalog_price_versions (
+						id, meter_id, usd_micros_per_unit, effective_from
+					) VALUES ($1, $2, 5, $3)`,
+				args: []any{
+					usagePriceID,
+					usageMeterID,
+					createdAt.Add(-time.Hour),
+				},
 			},
 			{
 				sql: `INSERT INTO service_identities (
@@ -177,6 +199,12 @@ func TestPostgreSQLUsageMigrationBackfillsPrunedPolarMapping(t *testing.T) {
 						meter_id, polar_meter_id
 					) VALUES ($1, 'migration-meter-event')`,
 				args: []any{meterID},
+			},
+			{
+				sql: `INSERT INTO polar_meter_mappings (
+						meter_id, polar_meter_id
+					) VALUES ($1, 'migration-usage-event')`,
+				args: []any{usageMeterID},
 			},
 			{
 				sql: `INSERT INTO billing_periods (
@@ -201,7 +229,7 @@ func TestPostgreSQLUsageMigrationBackfillsPrunedPolarMapping(t *testing.T) {
 						created_at
 					) VALUES (
 						$1, $2, $3, 'General', $4, $5, $6, $7, 1, 5, 5,
-						0, 5, 'migration-reservation', 'released',
+						0, 5, 'migration reservation', 'released',
 						$8, $9, $9
 					)`,
 				args: []any{
@@ -213,6 +241,54 @@ func TestPostgreSQLUsageMigrationBackfillsPrunedPolarMapping(t *testing.T) {
 					accountID,
 					serviceID,
 					createdAt.Add(time.Minute),
+					createdAt,
+				},
+			},
+			{
+				sql: `INSERT INTO usage_reservations (
+						id, organization_id, team_id, team_name_snapshot,
+						meter_id, price_version_id, account_id,
+						service_identity_id, maximum_units,
+						usd_micros_per_unit, maximum_cost_micros,
+						held_credit_micros, held_overage_micros,
+						client_reference, status, expires_at, finalized_at,
+						created_at
+					) VALUES (
+						$1, $2, $3, 'General', $4, $5, $6, $7, 1, 5, 5,
+						0, 5, 'migration-usage-reservation', 'released',
+						$8, $9, $9
+					)`,
+				args: []any{
+					usageReservationID,
+					organizationID,
+					teamID,
+					usageMeterID,
+					usagePriceID,
+					accountID,
+					serviceID,
+					createdAt.Add(time.Minute),
+					createdAt,
+				},
+			},
+			{
+				sql: `INSERT INTO usage_records (
+						id, reservation_id, organization_id, team_id,
+						team_name_snapshot, meter_id, account_id,
+						service_identity_id, committed_units,
+						total_cost_micros, credit_applied_micros,
+						overage_applied_micros, committed_at
+					) VALUES (
+						$1, $2, $3, $4, 'General', $5, $6, $7,
+						1, 5, 0, 5, $8
+					)`,
+				args: []any{
+					usageRecordID,
+					usageReservationID,
+					organizationID,
+					teamID,
+					usageMeterID,
+					accountID,
+					serviceID,
 					createdAt,
 				},
 			},
@@ -240,20 +316,69 @@ func TestPostgreSQLUsageMigrationBackfillsPrunedPolarMapping(t *testing.T) {
 	}
 	var eventName string
 	var backfilledPeriodID uuid.UUID
+	var clientReference string
 	if err = connection.QueryRow(
 		ctx,
-		`SELECT polar_event_name_snapshot, overage_billing_period_id
+		`SELECT polar_event_name_snapshot, overage_billing_period_id,
+		        client_reference
 		 FROM usage_reservations
 		 WHERE id = $1`,
 		reservationID,
-	).Scan(&eventName, &backfilledPeriodID); err != nil {
+	).Scan(&eventName, &backfilledPeriodID, &clientReference); err != nil {
 		t.Fatal(err)
 	}
-	if eventName != "unknown" || backfilledPeriodID != periodID {
+	if eventName != "unknown" || backfilledPeriodID != periodID ||
+		clientReference != "legacy:"+reservationID.String() {
 		t.Fatalf(
-			"backfilled event = %q, period = %v",
+			"backfilled event = %q, period = %v, client reference = %q",
 			eventName,
 			backfilledPeriodID,
+			clientReference,
+		)
+	}
+	var outboxAggregateID uuid.UUID
+	var outboxEventName string
+	var outboxOrganizationID string
+	var outboxUsageRecordID string
+	var outboxUnits int64
+	var outboxCommittedAt time.Time
+	if err = connection.QueryRow(
+		ctx,
+		`SELECT aggregate_id,
+		        payload ->> 'event_name',
+		        payload ->> 'organization_id',
+		        payload ->> 'usage_record_id',
+		        (payload ->> 'units')::bigint,
+		        (payload ->> 'committed_at')::timestamptz
+		 FROM integration_outbox
+		 WHERE integration = 'polar'
+		   AND operation = 'report_usage'
+		   AND aggregate_id = $1`,
+		usageRecordID,
+	).Scan(
+		&outboxAggregateID,
+		&outboxEventName,
+		&outboxOrganizationID,
+		&outboxUsageRecordID,
+		&outboxUnits,
+		&outboxCommittedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if outboxAggregateID != usageRecordID ||
+		outboxEventName != "migration-usage-event" ||
+		outboxOrganizationID != organizationID.String() ||
+		outboxUsageRecordID != usageRecordID.String() ||
+		outboxUnits != 5 ||
+		!outboxCommittedAt.Equal(createdAt) {
+		t.Fatalf(
+			"backfilled Polar outbox = %v %q %q %q %d %s",
+			outboxAggregateID,
+			outboxEventName,
+			outboxOrganizationID,
+			outboxUsageRecordID,
+			outboxUnits,
+			outboxCommittedAt,
 		)
 	}
 }

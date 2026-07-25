@@ -269,6 +269,266 @@ func TestPostgreSQLReserveDrainsExpiredCapacityPastBatchBoundary(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLCommitDrainsExpiredCapacityPastBatchBoundary(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	ownerContext := usageContext(ctx, fixture.serviceClient, fixture.ownerSubject)
+
+	reserved, err := fixture.usage.ReserveUsage(
+		ownerContext,
+		usageReserveRequest(
+			fixture,
+			fixture.generalTeamID,
+			fixture.meterID,
+			1,
+			"commit-after-batch-expiration-"+fixture.organizationID.String(),
+			"commit-after-batch-expiration-"+fixture.organizationID.String(),
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedExpiringCreditReservations(
+		t,
+		ctx,
+		fixture,
+		int(usageExpirationBatchSize)+1,
+		"commit-batch-expiration",
+	)
+	time.Sleep(1100 * time.Millisecond)
+
+	balance, err := fixture.store.Queries().CurrentOrganizationBalance(
+		ctx,
+		pgUUID(fixture.organizationID),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if balance <= 2 {
+		t.Fatalf("settled balance before reversal = %d", balance)
+	}
+	if _, err = fixture.store.Queries().InsertBillingLedgerEntry(
+		ctx,
+		dbgen.InsertBillingLedgerEntryParams{
+			ID:                 pgUUID(uuidv7.MustNew()),
+			OrganizationID:     pgUUID(fixture.organizationID),
+			BillingPeriodID:    pgtype.UUID{},
+			EntryType:          "credit_reversal",
+			AmountMicros:       2 - balance,
+			BalanceAfterMicros: 2,
+			SourceReference: "commit-batch-reversal-" +
+				fixture.organizationID.String(),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	committed, err := fixture.usage.CommitUsage(
+		ownerContext,
+		connect.NewRequest(&delibasev1.CommitUsageRequest{
+			OrganizationId: usageUUID(fixture.organizationID),
+			ReservationId:  reserved.Msg.Reservation.ReservationId,
+			ActualUnits:    &delibasev1.UsageUnits{Value: 1},
+			Idempotency: idempotency(
+				"commit-after-batch-expiration-" +
+					fixture.organizationID.String(),
+			),
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.Msg.Reservation.Status !=
+		delibasev1.ReservationStatus_RESERVATION_STATUS_COMMITTED {
+		t.Fatalf("commit after draining expired holds = %#v", committed.Msg)
+	}
+}
+
+func TestPostgreSQLReleaseExpiresRequestedReservationPastBatchBoundary(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	ownerContext := usageContext(ctx, fixture.serviceClient, fixture.ownerSubject)
+
+	reservationIDs := seedExpiringCreditReservations(
+		t,
+		ctx,
+		fixture,
+		int(usageExpirationBatchSize)+1,
+		"release-batch-expiration",
+	)
+	targetID := reservationIDs[len(reservationIDs)-1]
+	time.Sleep(1100 * time.Millisecond)
+
+	released, err := fixture.usage.ReleaseUsage(
+		ownerContext,
+		connect.NewRequest(&delibasev1.ReleaseUsageRequest{
+			OrganizationId: usageUUID(fixture.organizationID),
+			ReservationId:  usageUUID(targetID),
+			Idempotency: idempotency(
+				"release-after-batch-expiration-" +
+					fixture.organizationID.String(),
+			),
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.Msg.Reservation.Status !=
+		delibasev1.ReservationStatus_RESERVATION_STATUS_EXPIRED ||
+		released.Msg.Release.ReservationStatus !=
+			delibasev1.ReservationStatus_RESERVATION_STATUS_EXPIRED {
+		t.Fatalf("release after TTL = %#v", released.Msg)
+	}
+	var expiredAudits int
+	var releasedAudits int
+	connection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = connection.Close(context.WithoutCancel(ctx))
+	}()
+	if err = connection.QueryRow(
+		ctx,
+		`SELECT
+		     count(*) FILTER (WHERE event_type = 'reservation.expired'),
+		     count(*) FILTER (WHERE event_type = 'reservation.released')
+		 FROM audit_events
+		 WHERE reservation_id = $1`,
+		targetID,
+	).Scan(&expiredAudits, &releasedAudits); err != nil {
+		t.Fatal(err)
+	}
+	if expiredAudits != 1 || releasedAudits != 0 {
+		t.Fatalf(
+			"target reservation audits: expired=%d released=%d",
+			expiredAudits,
+			releasedAudits,
+		)
+	}
+}
+
+func TestPostgreSQLAccountDeletionLocksOrganizationBeforeAccount(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+
+	blockerConnection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = blockerConnection.Close(context.WithoutCancel(ctx))
+	}()
+	blocker, err := blockerConnection.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = blocker.Exec(
+		ctx,
+		"SELECT id FROM accounts WHERE id = $1 FOR UPDATE",
+		fixture.memberID,
+	); err != nil {
+		_ = blocker.Rollback(ctx)
+		t.Fatal(err)
+	}
+
+	type deletionResult struct {
+		response *connect.Response[delibasev1.DeleteAccountResponse]
+		err      error
+	}
+	result := make(chan deletionResult, 1)
+	go func() {
+		response, deleteErr := NewAccount(fixture.dependencies).DeleteAccount(
+			authenticatedContext(ctx, fixture.memberSubject),
+			connect.NewRequest(&delibasev1.DeleteAccountRequest{
+				Confirm: true,
+				Idempotency: idempotency(
+					"organization-first-delete-" +
+						fixture.organizationID.String(),
+				),
+			}),
+		)
+		result <- deletionResult{response: response, err: deleteErr}
+	}()
+
+	probeConnection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		_ = blocker.Rollback(ctx)
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = probeConnection.Close(context.WithoutCancel(ctx))
+	}()
+	organizationLocked := false
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		probe, beginErr := probeConnection.Begin(ctx)
+		if beginErr != nil {
+			_ = blocker.Rollback(ctx)
+			t.Fatal(beginErr)
+		}
+		var unlockedRows int
+		probeErr := probe.QueryRow(
+			ctx,
+			`SELECT count(*)
+			 FROM (
+			     SELECT id
+			     FROM organizations
+			     WHERE id = $1
+			     FOR UPDATE SKIP LOCKED
+			 ) AS unlocked`,
+			fixture.organizationID,
+		).Scan(&unlockedRows)
+		rollbackErr := probe.Rollback(ctx)
+		if probeErr != nil {
+			_ = blocker.Rollback(ctx)
+			t.Fatal(probeErr)
+		}
+		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			_ = blocker.Rollback(ctx)
+			t.Fatal(rollbackErr)
+		}
+		if unlockedRows == 0 {
+			organizationLocked = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err = blocker.Rollback(ctx); err != nil &&
+		!errors.Is(err, pgx.ErrTxClosed) {
+		t.Fatal(err)
+	}
+	deletion := <-result
+	if !organizationLocked {
+		t.Fatal("account deletion did not lock the organization before the account")
+	}
+	if deletion.err != nil ||
+		deletion.response.Msg.Status !=
+			delibasev1.DeletionStatus_DELETION_STATUS_EXTERNAL_ACTION_PENDING {
+		t.Fatalf("account deletion = %#v, %v", deletion.response, deletion.err)
+	}
+}
+
 func TestPostgreSQLCreditOnlyCommitAfterBillingPeriodEnds(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -1666,6 +1926,121 @@ func TestPostgreSQLExpiredReservationsDoNotBlockOrganizationMutations(
 		deleted.Msg.DeletionId == nil {
 		t.Fatalf("delete organization after reservation expiry = %#v, %v", deleted, err)
 	}
+}
+
+func seedExpiringCreditReservations(
+	t *testing.T,
+	ctx context.Context,
+	fixture usageFixture,
+	count int,
+	referencePrefix string,
+) []uuid.UUID {
+	t.Helper()
+	dependencies := fixture.dependencies.withDefaults()
+	actor, err := actorFor(dependencies, fixture.ownerSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservationIDs := make([]uuid.UUID, 0, count)
+	err = fixture.store.WithinTransaction(
+		ctx,
+		pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if _, lockErr := queries.LockOrganizationForBilling(
+				ctx,
+				pgUUID(fixture.organizationID),
+			); lockErr != nil {
+				return lockErr
+			}
+			balance, balanceErr := queries.CurrentOrganizationBalance(
+				ctx,
+				pgUUID(fixture.organizationID),
+			)
+			if balanceErr != nil {
+				return balanceErr
+			}
+			additionalCredit := int64(count) * 2
+			if _, grantErr := queries.InsertBillingLedgerEntry(
+				ctx,
+				dbgen.InsertBillingLedgerEntryParams{
+					ID:                 pgUUID(uuidv7.MustNew()),
+					OrganizationID:     pgUUID(fixture.organizationID),
+					BillingPeriodID:    pgtype.UUID{},
+					EntryType:          "credit_grant",
+					AmountMicros:       additionalCredit,
+					BalanceAfterMicros: balance + additionalCredit,
+					SourceReference: referencePrefix + "-grant-" +
+						fixture.organizationID.String(),
+				},
+			); grantErr != nil {
+				return grantErr
+			}
+			meter, meterErr := queries.GetUsageMeterAuthorization(
+				ctx,
+				dbgen.GetUsageMeterAuthorizationParams{
+					ServiceIdentityID: pgUUID(fixture.serviceID),
+					MeterID:           pgUUID(fixture.shortMeterID),
+				},
+			)
+			if meterErr != nil {
+				return meterErr
+			}
+			for index := 0; index < count; index++ {
+				reservationID, idErr := dependencies.IDs.New()
+				if idErr != nil {
+					return idErr
+				}
+				reservation, insertErr := queries.InsertUsageReservation(
+					ctx,
+					dbgen.InsertUsageReservationParams{
+						ID:                pgUUID(reservationID),
+						OrganizationID:    pgUUID(fixture.organizationID),
+						TeamID:            pgUUID(fixture.generalTeamID),
+						TeamNameSnapshot:  "General",
+						MeterID:           pgUUID(fixture.shortMeterID),
+						PriceVersionID:    meter.PriceVersionID,
+						AccountID:         pgUUID(fixture.ownerID),
+						ServiceIdentityID: pgUUID(fixture.serviceID),
+						MaximumUnits:      1,
+						UsdMicrosPerUnit:  meter.UsdMicrosPerUnit,
+						MaximumCostMicros: 2,
+						HeldCreditMicros:  2,
+						HeldOverageMicros: 0,
+						ClientReference: fmt.Sprintf(
+							"%s-%03d-%s",
+							referencePrefix,
+							index,
+							fixture.organizationID,
+						),
+						ReservationTtlSeconds:      meter.ReservationTtlSeconds,
+						UserActorReferenceSnapshot: string(actor),
+					},
+				)
+				if insertErr != nil {
+					return insertErr
+				}
+				if ledgerErr := appendUsageLedger(
+					ctx,
+					dependencies,
+					queries,
+					reservation,
+					"credit_hold",
+					-2,
+					uuid.Nil,
+					"reservation:"+reservationID.String()+":credit-hold",
+					actor,
+				); ledgerErr != nil {
+					return ledgerErr
+				}
+				reservationIDs = append(reservationIDs, reservationID)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reservationIDs
 }
 
 func newUsageFixture(

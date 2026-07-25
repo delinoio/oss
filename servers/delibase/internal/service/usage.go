@@ -341,9 +341,8 @@ func (service *Usage) CommitUsage(
 				)
 				return nil
 			}
-			if _, transactionErr = expireOrganizationReservations(
+			if _, transactionErr = drainExpiredOrganizationReservations(
 				ctx, service.dependencies, queries, organizationID,
-				usageExpirationBatchSize,
 			); transactionErr != nil {
 				return transactionErr
 			}
@@ -625,9 +624,8 @@ func (service *Usage) ReleaseUsage(
 				)
 				return nil
 			}
-			if _, transactionErr = expireOrganizationReservations(
+			if _, transactionErr = drainExpiredOrganizationReservations(
 				ctx, service.dependencies, queries, organizationID,
-				usageExpirationBatchSize,
 			); transactionErr != nil {
 				return transactionErr
 			}
