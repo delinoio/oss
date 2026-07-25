@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -85,6 +86,62 @@ class WidgetConfigurationTest {
                 }.code,
             )
             assertEquals(valid, adapter.readRawRecord())
+        }
+    }
+
+    @Test
+    fun corruptDataStoreIsPreservedUntilConfirmedReset() = runTest {
+        val directory = Files.createTempDirectory("devhud-widget-corrupt-test")
+        val dataStoreFile = directory.resolve("widget.preferences_pb")
+        val corruptBytes = byteArrayOf(0x0a, 0x7f)
+        Files.write(dataStoreFile, corruptBytes)
+        val dataStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val corruptionHandler = ConfirmedResetCorruptionHandler()
+        val dataStore =
+            PreferenceDataStoreFactory.create(
+                corruptionHandler = corruptionHandler.handler,
+                scope = dataStoreScope,
+            ) {
+                dataStoreFile.toFile()
+            }
+        val adapter =
+            AndroidWidgetSharedDataAdapter(dataStore, corruptionHandler)
+
+        try {
+            val error =
+                assertThrows(WidgetConfigurationException::class.java) {
+                    kotlinx.coroutines.runBlocking {
+                        adapter.readRawRecord()
+                    }
+                }
+
+            assertEquals(
+                WidgetConfigurationErrorCode.STORAGE_UNAVAILABLE,
+                error.code,
+            )
+            assertArrayEquals(corruptBytes, Files.readAllBytes(dataStoreFile))
+
+            val writeError =
+                assertThrows(WidgetConfigurationException::class.java) {
+                    kotlinx.coroutines.runBlocking {
+                        adapter.writeRawRecord(
+                            """{"version":1,"configuration":{"slots":[]}}""",
+                        )
+                    }
+                }
+
+            assertEquals(
+                WidgetConfigurationErrorCode.WRITE_FAILED,
+                writeError.code,
+            )
+            assertArrayEquals(corruptBytes, Files.readAllBytes(dataStoreFile))
+
+            adapter.reset()
+
+            assertNull(adapter.readRawRecord())
+        } finally {
+            dataStoreScope.cancel()
+            directory.toFile().deleteRecursively()
         }
     }
 

@@ -818,6 +818,7 @@ jobs:
               - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/gen/android/**
               - apps/devhud/src-tauri/src/**
+              - apps/devhud/src-tauri/tauri.android.conf.json
               - apps/devhud/src-tauri/widget-bridge/**
       - name: Determine whether to run
         id: gate
@@ -898,6 +899,7 @@ jobs:
               - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/gen/apple/**
               - apps/devhud/src-tauri/src/**
+              - apps/devhud/src-tauri/tauri.ios.conf.json
               - apps/devhud/src-tauri/widget-bridge/**
       - name: Determine whether to run
         id: gate
