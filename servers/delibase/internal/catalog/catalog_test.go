@@ -58,6 +58,10 @@ func TestParseRejectsIncompleteOrUnsafeCatalogs(t *testing.T) {
 		{name: "overlapping price dates", document: strings.Replace(strings.Replace(validCatalog, `"effective_from":"2026-01-01T00:00:00Z","effective_until":null}`, `"effective_from":"2026-01-01T00:00:00Z","effective_until":"2027-01-01T00:00:00Z"}`, 1), `"meter_id":"0198a000-0000-7000-8000-000000000012"`, `"meter_id":"0198a000-0000-7000-8000-000000000011"`, 1)},
 		{name: "missing service mapping", document: strings.Replace(validCatalog, `"allowed_meter_ids":["0198a000-0000-7000-8000-000000000011","0198a000-0000-7000-8000-000000000012"]`, `"allowed_meter_ids":[]`, 1)},
 		{name: "duplicate Polar mapping", document: strings.Replace(validCatalog, `"polar_meter_id":"polar-two"`, `"polar_meter_id":"polar-one"`, 1)},
+		{name: "Polar mapping with surrounding whitespace", document: strings.Replace(validCatalog, `"polar_meter_id":"polar-one"`, `"polar_meter_id":" polar-one"`, 1)},
+		{name: "Polar mapping with slash", document: strings.Replace(validCatalog, `"polar_meter_id":"polar-one"`, `"polar_meter_id":"polar/one"`, 1)},
+		{name: "Polar mapping with newline", document: strings.Replace(validCatalog, `"polar_meter_id":"polar-one"`, `"polar_meter_id":"polar\none"`, 1)},
+		{name: "Polar mapping with NUL", document: strings.Replace(validCatalog, `"polar_meter_id":"polar-one"`, `"polar_meter_id":"polar\u0000one"`, 1)},
 	}
 	for _, test := range tests {
 		test := test

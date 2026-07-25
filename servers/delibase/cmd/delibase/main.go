@@ -270,8 +270,18 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{stage: stageRuntime}
 	}
+	expirationWorker, err := service.NewUsageExpirationWorker(
+		serviceDependencies,
+		time.Second,
+	)
+	if err != nil {
+		return &startupError{stage: stageRuntime}
+	}
 	go func() {
 		_ = worker.Run(ctx)
+	}()
+	go func() {
+		_ = expirationWorker.Run(ctx)
 	}()
 	if err := serverruntime.Serve(
 		ctx,

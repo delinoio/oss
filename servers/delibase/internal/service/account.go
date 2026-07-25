@@ -371,7 +371,7 @@ func (service *Account) DeleteAccount(
 		ctx,
 		pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			account, transactionErr := queries.LockAccountByLogtoSubject(ctx, subject)
+			account, transactionErr := queries.GetAccountByLogtoSubject(ctx, subject)
 			if errors.Is(transactionErr, pgx.ErrNoRows) {
 				response = &delibasev1.DeleteAccountResponse{}
 				replayed, completedAt, replayErr := replay(
@@ -438,8 +438,60 @@ func (service *Account) DeleteAccount(
 					delibasev1.ErrorReason_ERROR_REASON_DELETION_ALREADY_PENDING,
 				)
 			}
-			if _, transactionErr = queries.LockOwnedOrganizations(ctx, account.ID); transactionErr != nil {
+			organizations, transactionErr := queries.LockAccountOrganizations(
+				ctx, account.ID,
+			)
+			if transactionErr != nil {
 				return databaseError(transactionErr)
+			}
+			account, transactionErr = queries.LockAccountByLogtoSubject(ctx, subject)
+			if errors.Is(transactionErr, pgx.ErrNoRows) {
+				return serviceError(
+					connect.CodeFailedPrecondition,
+					delibasev1.ErrorReason_ERROR_REASON_DELETION_ALREADY_PENDING,
+				)
+			}
+			if transactionErr != nil {
+				return databaseError(transactionErr)
+			}
+			response = &delibasev1.DeleteAccountResponse{}
+			replayed, completedAt, transactionErr = replay(
+				ctx,
+				queries,
+				subject,
+				"delete_account",
+				key,
+				digest,
+				response,
+			)
+			if transactionErr != nil {
+				return transactionErr
+			}
+			if replayed {
+				setIdempotency(
+					&response.Idempotency,
+					delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ACCOUNT,
+					true,
+					completedAt,
+				)
+				return nil
+			}
+			if account.Status != "active" {
+				return serviceError(
+					connect.CodeFailedPrecondition,
+					delibasev1.ErrorReason_ERROR_REASON_DELETION_ALREADY_PENDING,
+				)
+			}
+			for _, organization := range organizations {
+				if _, transactionErr = drainExpiredAccountReservations(
+					ctx,
+					service.dependencies,
+					queries,
+					uuid.UUID(organization.Bytes),
+					account.ID,
+				); transactionErr != nil {
+					return transactionErr
+				}
 			}
 			blockers, transactionErr := queries.ListLastOwnerBlockers(ctx, account.ID)
 			if transactionErr != nil {

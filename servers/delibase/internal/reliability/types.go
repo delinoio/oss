@@ -146,6 +146,7 @@ const (
 	AuditReservationCreated          AuditEventType = "reservation.created"
 	AuditReservationCommitted        AuditEventType = "reservation.committed"
 	AuditReservationReleased         AuditEventType = "reservation.released"
+	AuditReservationExpired          AuditEventType = "reservation.expired"
 	AuditSettlementRecorded          AuditEventType = "settlement.recorded"
 	AuditAccountDeletionRequested    AuditEventType = "account.deletion_requested"
 	AuditOrganizationDeletionRequest AuditEventType = "organization.deletion_requested"

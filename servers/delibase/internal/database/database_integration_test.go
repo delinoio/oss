@@ -31,6 +31,22 @@ func TestPostgreSQLMigrationsAndTransactionRollback(t *testing.T) {
 	if err := store.Ping(ctx); err != nil {
 		t.Fatal(err)
 	}
+	var actorSnapshotDefault *string
+	if err := store.pool.QueryRow(ctx, `
+		SELECT column_default
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		  AND table_name = 'usage_reservations'
+		  AND column_name = 'user_actor_reference_snapshot'
+	`).Scan(&actorSnapshotDefault); err != nil {
+		t.Fatal(err)
+	}
+	if actorSnapshotDefault != nil {
+		t.Fatalf(
+			"usage reservation actor snapshot default = %q",
+			*actorSnapshotDefault,
+		)
+	}
 
 	id, err := uuidv7.New()
 	if err != nil {
@@ -390,11 +406,12 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 	}
 	if _, err := store.pool.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			$1, $2, $3, 'Catalog Sync Team', $4, $5, $6, $7,
 			1, 2, 2, 2, 0, 'catalog-sync-active-hold',
 			statement_timestamp() + interval '1 minute'
@@ -423,11 +440,12 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 		t.Helper()
 		if _, err := store.pool.Exec(ctx, `
 			INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 				id, organization_id, team_id, team_name_snapshot, meter_id,
 				price_version_id, account_id, service_identity_id, maximum_units,
 				usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 				held_overage_micros, client_reference, expires_at
-			) VALUES (
+			) VALUES ('actor:v1:11111111111111111111111111111111',
 				$1, $2, $3, 'Catalog Sync Team', $4, $5, $6, $7,
 				1, 2, 2, 2, 0, $8,
 				statement_timestamp() + interval '1 minute'
@@ -523,11 +541,12 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 	}
 	if _, err := store.pool.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000310',
 			$1, $2, 'Catalog Sync Team', $3, $4, $5, $6,
 			1, 2, 2, 2, 0, 'disabled-catalog-mapping',
@@ -1090,11 +1109,12 @@ func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) 
 	defer func() { _ = reservation.Rollback(context.WithoutCancel(ctx)) }()
 	if _, err := reservation.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			$1, $2, $3, 'Locked Team', $4, $5, $6, $7,
 			1, 1, 1, 1, 0, 'reservation-lock',
 			statement_timestamp() + interval '1 minute'
@@ -1318,11 +1338,12 @@ func TestPostgreSQLPreservesAndSerializesRequestedOverageLimitChecks(t *testing.
 
 	const insertReservation = `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			$1, $2, $3, 'Overage Team', $4, $5, $6, $7,
 			1, 1, 1, 0, 1, $8,
 			statement_timestamp() + interval '1 minute'
@@ -2122,11 +2143,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000125', $1, $2, 'B', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'deleting-organization',
 			statement_timestamp() + interval '1 minute'
@@ -2152,11 +2174,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000120', $1, $2, 'A', $3,
 			$4, $5, $6, 5, 1, 5, 5, 0, 'unfunded-credit',
 			statement_timestamp() + interval '1 minute'
@@ -2192,11 +2215,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000138', $1, $2, 'A', $3,
 			$4, $5, $6, 5, 1, 5, 4, 1, 'mismatched-current-period',
 			statement_timestamp() + interval '1 minute'
@@ -2222,12 +2246,14 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			RETURNING id
 		)
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
 		)
 		SELECT
+			'actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000145', $1, $2, 'A', $3,
 			$4, $5, $6, 5, 1, 5, 4, 1, 'period-rollover',
 			statement_timestamp() + interval '1 minute'
@@ -2242,11 +2268,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000122', $1, $2, 'A', $3,
 			$4, $5, $6, 5, 1, 5, 4, 1, 'inactive-subscription',
 			statement_timestamp() + interval '1 minute'
@@ -2269,11 +2296,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000123', $1, $2, 'A', $3,
 			$4, $5, $6, 5, 1, 5, 4, 1, 'over-limit',
 			statement_timestamp() + interval '1 minute'
@@ -2294,11 +2322,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	if _, err := overageCapacity.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000323',
 			$1, $2, 'A', $3, $4, $5, $6,
 			5, 1, 5, 4, 1, 'commit-overage-capacity',
@@ -2394,19 +2423,21 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES ($1, $2, $3, 'B', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'cross-team', statement_timestamp() + interval '1 minute')
+		) VALUES ('actor:v1:11111111111111111111111111111111', $1, $2, $3, 'B', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'cross-team', statement_timestamp() + interval '1 minute')
 	`, reserveID, orgA, teamB, meterID, priceID, accountA, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, status, expires_at, finalized_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000049', $1, $2, 'B', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'finalized-cross-team', 'released',
 			statement_timestamp() + interval '1 minute', transaction_timestamp()
@@ -2414,11 +2445,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamB, meterID, priceID, accountA, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, status, expires_at, finalized_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000126', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'direct-committed', 'committed',
 			statement_timestamp() + interval '1 minute', transaction_timestamp()
@@ -2426,11 +2458,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamA, meterID, priceID, historyUser, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000045', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 2, 2, 2, 0, 'cross-meter',
 			statement_timestamp() + interval '1 minute'
@@ -2438,11 +2471,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamA, meterID, priceB, accountA, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000046', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 0, 0, 0, 0, 'underpriced',
 			statement_timestamp() + interval '1 minute'
@@ -2450,11 +2484,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamA, meterID, priceID, accountA, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000116', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'stale-price',
 			statement_timestamp() + interval '1 minute'
@@ -2462,11 +2497,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamA, meterID, stalePrice, accountA, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000117', $1, $2, 'Wrong team', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'wrong-team-snapshot',
 			statement_timestamp() + interval '1 minute'
@@ -2474,11 +2510,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamA, meterID, priceID, accountA, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000118', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'wrong-expiry',
 			transaction_timestamp() + interval '2 minutes'
@@ -2486,11 +2523,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamA, meterID, priceID, accountA, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000119', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'non-member-actor',
 			statement_timestamp() + interval '1 minute'
@@ -2498,11 +2536,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamA, meterID, priceID, accountB, serviceID)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000205', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'inaccessible-team',
 			statement_timestamp() + interval '1 minute'
@@ -2517,11 +2556,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000139', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'disabled-account',
 			statement_timestamp() + interval '1 minute'
@@ -2536,11 +2576,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000050', $1, $2, 'A', $3,
 			$4, $5, $6, 1, 1, 1, 1, 0, 'disallowed-service',
 			statement_timestamp() + interval '1 minute'
@@ -2548,11 +2589,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgA, teamA, meterID, priceID, accountA, serviceB)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			$1, $2, $3, 'Inherited', $4, $5, $6, $7,
 			1, 1, 1, 1, 0, 'inherited-team-access',
 			statement_timestamp() + interval '1 minute'
@@ -2639,11 +2681,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	if _, err := missingHold.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			'0198a000-0000-7000-8000-000000000324',
 			$1, $2, 'A', $3, $4, $5, $6,
 			1, 1, 1, 1, 0, 'missing-hold',
@@ -2694,11 +2737,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, created_at, expires_at
-		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 3, 1, 3, 3, 0, 'valid', '2099-01-01', statement_timestamp() + interval '1 minute')
+		) VALUES ('actor:v1:11111111111111111111111111111111', $1, $2, $3, 'A', $4, $5, $6, $7, 3, 1, 3, 3, 0, 'valid', '2099-01-01', statement_timestamp() + interval '1 minute')
 	`, reserveID, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
@@ -2802,11 +2846,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, reserveID)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES ($1, $2, $3, 'Active', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'active', statement_timestamp() + interval '1 minute')
+		) VALUES ('actor:v1:11111111111111111111111111111111', $1, $2, $3, 'Active', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'active', statement_timestamp() + interval '1 minute')
 	`, activeHold, orgA, activeTeam, meterID, priceID, accountA, serviceID); err != nil {
 		t.Fatal(err)
 	}
@@ -2824,19 +2869,21 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	)
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, status, expires_at, finalized_at
-		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'released', 'released', statement_timestamp() + interval '1 minute', transaction_timestamp())
+		) VALUES ('actor:v1:11111111111111111111111111111111', $1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'released', 'released', statement_timestamp() + interval '1 minute', transaction_timestamp())
 	`, releasedHold, orgA, teamA, meterID, priceID, historyUser, serviceID)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES ($1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'released', statement_timestamp() + interval '1 minute')
+		) VALUES ('actor:v1:11111111111111111111111111111111', $1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'released', statement_timestamp() + interval '1 minute')
 	`, releasedHold, orgA, teamA, meterID, priceID, historyUser, serviceID); err != nil {
 		t.Fatal(err)
 	}
@@ -2879,12 +2926,13 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, status, created_at, expires_at,
 			finalized_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			$1, $2, $3, 'A', $4, $5, $6, $7, 1, 1, 1, 1, 0, 'expired',
 			'expired',
 			transaction_timestamp() - interval '2 minutes',
@@ -3052,7 +3100,11 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		SET status = 'committed'
 		WHERE id = $1
 	`, reserveID)
-	requireConstraintFailure(t, ctx, transaction, `
+	creditWithoutPeriod, err := transaction.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = creditWithoutPeriod.Exec(ctx, `
 		INSERT INTO ledger_entries (
 			id, organization_id, entry_type, amount_micros,
 			balance_after_micros, reservation_id, usage_record_id,
@@ -3062,7 +3114,13 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			$1, 'credit_commit', -1, 5, $2, $3, $4, 'A',
 			'missing-usage-period'
 		)
-	`, orgA, reserveID, recordID, teamA)
+	`, orgA, reserveID, recordID, teamA); err != nil {
+		_ = creditWithoutPeriod.Rollback(context.WithoutCancel(ctx))
+		t.Fatal(err)
+	}
+	if err = creditWithoutPeriod.Rollback(context.WithoutCancel(ctx)); err != nil {
+		t.Fatal(err)
+	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO ledger_entries (
 			id, organization_id, billing_period_id, entry_type,
@@ -3354,11 +3412,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO usage_reservations (
+			user_actor_reference_snapshot,
 			id, organization_id, team_id, team_name_snapshot, meter_id,
 			price_version_id, account_id, service_identity_id, maximum_units,
 			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
 			held_overage_micros, client_reference, expires_at
-		) VALUES (
+		) VALUES ('actor:v1:11111111111111111111111111111111',
 			$1, $2, $3, 'General', $4, $5, $6, $7,
 			1, 1, 1, 1, 0, 'retained-organization-history',
 			statement_timestamp() + interval '1 minute'

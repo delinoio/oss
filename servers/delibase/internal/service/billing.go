@@ -210,22 +210,20 @@ func (service *Billing) UpdateOverageLimit(
 		ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			response = &delibasev1.UpdateOverageLimitResponse{}
-			account, replayed, completedAt, transactionErr := replayWithActiveAccount(
+			replayed, completedAt, transactionErr := replay(
 				ctx, queries, subject, "update_overage_limit", key, digest, response,
 			)
 			if transactionErr != nil {
 				return transactionErr
 			}
-			if replayed {
-				account, transactionErr = activeAccount(ctx, queries, subject)
-				if transactionErr != nil {
-					return transactionErr
-				}
-			}
 			if _, transactionErr = queries.LockOrganizationForBilling(
 				ctx, pgUUID(organizationID),
 			); transactionErr != nil {
 				return membershipReadError(transactionErr)
+			}
+			account, transactionErr := activeAccount(ctx, queries, subject)
+			if transactionErr != nil {
+				return transactionErr
 			}
 			if _, transactionErr = billingAccess(
 				ctx, queries, organizationID, account.ID, true,
@@ -385,14 +383,14 @@ func (service *Billing) billingReplay(
 	err := service.dependencies.Store.WithinTransaction(
 		ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			account, transactionErr := activeAccount(ctx, queries, subject)
-			if transactionErr != nil {
-				return transactionErr
-			}
-			if _, transactionErr = queries.LockOrganizationForBilling(
+			if _, transactionErr := queries.LockOrganizationForBilling(
 				ctx, pgUUID(organizationID),
 			); transactionErr != nil {
 				return membershipReadError(transactionErr)
+			}
+			account, transactionErr := activeAccount(ctx, queries, subject)
+			if transactionErr != nil {
+				return transactionErr
 			}
 			if _, transactionErr = billingAccess(
 				ctx, queries, organizationID, account.ID, true,
@@ -429,14 +427,14 @@ func (service *Billing) createSubscriptionCheckout(
 	err = service.dependencies.Store.WithinTransaction(
 		ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			account, transactionErr := activeAccount(ctx, queries, subject)
-			if transactionErr != nil {
-				return transactionErr
-			}
-			if _, transactionErr = queries.LockOrganizationForBilling(
+			if _, transactionErr := queries.LockOrganizationForBilling(
 				ctx, pgUUID(organizationID),
 			); transactionErr != nil {
 				return membershipReadError(transactionErr)
+			}
+			account, transactionErr := activeAccount(ctx, queries, subject)
+			if transactionErr != nil {
+				return transactionErr
 			}
 			if _, transactionErr = billingAccess(
 				ctx, queries, organizationID, account.ID, true,
@@ -536,14 +534,14 @@ func (service *Billing) createSubscriptionCheckout(
 	err = service.dependencies.Store.WithinTransaction(
 		completionCtx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			account, transactionErr := activeAccount(completionCtx, queries, subject)
-			if transactionErr != nil {
-				return transactionErr
-			}
-			if _, transactionErr = queries.LockOrganizationForBilling(
+			if _, transactionErr := queries.LockOrganizationForBilling(
 				completionCtx, pgUUID(organizationID),
 			); transactionErr != nil {
 				return membershipReadError(transactionErr)
+			}
+			account, transactionErr := activeAccount(completionCtx, queries, subject)
+			if transactionErr != nil {
+				return transactionErr
 			}
 			if _, transactionErr = billingAccess(
 				completionCtx, queries, organizationID, account.ID, true,
@@ -742,14 +740,14 @@ func (service *Billing) persistBillingMutation(
 	err = service.dependencies.Store.WithinTransaction(
 		ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			account, transactionErr := activeAccount(ctx, queries, subject)
-			if transactionErr != nil {
-				return transactionErr
-			}
-			if _, transactionErr = queries.LockOrganizationForBilling(
+			if _, transactionErr := queries.LockOrganizationForBilling(
 				ctx, pgUUID(organizationID),
 			); transactionErr != nil {
 				return membershipReadError(transactionErr)
+			}
+			account, transactionErr := activeAccount(ctx, queries, subject)
+			if transactionErr != nil {
+				return transactionErr
 			}
 			if _, transactionErr = billingAccess(
 				ctx, queries, organizationID, account.ID, true,

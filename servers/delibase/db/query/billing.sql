@@ -81,6 +81,7 @@ WITH selected_subscription AS (
     LEFT JOIN current_period ON true
     WHERE reservation.organization_id = sqlc.arg(organization_id)
       AND reservation.status = 'held'
+      AND reservation.expires_at > statement_timestamp()
 ), committed AS (
     SELECT COALESCE(sum(record.overage_applied_micros), 0)::bigint AS amount
     FROM usage_records AS record

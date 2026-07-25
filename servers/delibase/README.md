@@ -4,9 +4,12 @@ This directory contains the runnable, artifact-only delibase server foundation.
 It does not deploy or activate `https://delibase.deli.dev`. Authenticated
 `AccountService`, `TeamService`, and `OrganizationService` RPCs (including
 invitations), plus the billing summary, Checkout, Customer Portal,
-overage-limit, and ledger RPCs are backed by PostgreSQL/sqlc transactions.
-Remaining usage RPCs outside this implementation slice return Connect
-`Unimplemented`; none return placeholder success.
+overage-limit, ledger, and role-filtered usage-read RPCs are backed by
+PostgreSQL/sqlc transactions. `UsageService` reserve, commit, and release RPCs
+use the same database-backed authorization, credit/overage, idempotency, and
+durable Polar-outbox boundaries. Polar delivery reports only nonzero locally
+settled overage as chargeable USD micro-units. A local worker expires
+catalog-TTL holds.
 
 ## Configuration categories
 
@@ -101,7 +104,10 @@ audit, credential-rejection, authenticated onboarding/organization race,
 multiple-owner, slug-alias, five-level/cycle-safe team hierarchy,
 downward-only effective access, protected/subtree deletion, hashed reusable
 invitations, revocation/expiration, and retention-safe deletion integration
-tests:
+tests. Usage coverage includes exact-boundary concurrent holds, partial
+commit/release, refund shortfall, expiration and late commits, idempotency,
+role-filtered visibility, immutable snapshots, Polar outage recovery, and
+active-reservation subtree-deletion blocking:
 
 ```sh
 servers/delibase/scripts/test-postgres.sh

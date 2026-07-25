@@ -59,6 +59,11 @@ func (service *Organization) CreateOrganizationInvitation(
 	}
 	var response *delibasev1.CreateOrganizationInvitationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.LockOrganizationForMutation(
+			ctx, pgUUID(organizationID),
+		); transactionErr != nil {
+			return membershipReadError(transactionErr)
+		}
 		account, transactionErr := activeAccount(ctx, queries, subject)
 		if transactionErr != nil {
 			return transactionErr
@@ -295,6 +300,11 @@ func (service *Organization) AcceptOrganizationInvitation(
 		); transactionErr != nil {
 			return transactionErr
 		}
+		if _, transactionErr = queries.LockOrganizationForMutation(
+			ctx, candidate.OrganizationID,
+		); transactionErr != nil {
+			return invitationLookupError(transactionErr)
+		}
 		account, transactionErr := ensureInvitationAccount(
 			ctx, queries, subject, accountID,
 		)
@@ -315,11 +325,6 @@ func (service *Organization) AcceptOrganizationInvitation(
 				completedAt,
 			)
 			return nil
-		}
-		if _, transactionErr = queries.LockOrganizationForMutation(
-			ctx, candidate.OrganizationID,
-		); transactionErr != nil {
-			return invitationLookupError(transactionErr)
 		}
 		invitation, transactionErr := queries.LockOrganizationInvitationByTokenHash(
 			ctx, tokenHash,
@@ -453,9 +458,11 @@ func (service *Organization) RevokeOrganizationInvitation(
 	var response *delibasev1.RevokeOrganizationInvitationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.RevokeOrganizationInvitationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "revoke_invitation", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "revoke_invitation",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}

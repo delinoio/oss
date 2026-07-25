@@ -167,9 +167,11 @@ func (service *Team) CreateTeam(
 	var response *delibasev1.CreateTeamResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.CreateTeamResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "create_team", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "create_team", key, digest,
+				response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -276,9 +278,11 @@ func (service *Team) UpdateTeam(
 	var response *delibasev1.UpdateTeamResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.UpdateTeamResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "update_team", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "update_team", key, digest,
+				response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -382,9 +386,11 @@ func (service *Team) MoveTeam(
 	var response *delibasev1.MoveTeamResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.MoveTeamResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "move_team", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "move_team", key, digest,
+				response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -493,9 +499,11 @@ func (service *Team) DeleteTeamSubtree(
 		response = &delibasev1.DeleteTeamSubtreeResponse{
 			DeletedTeamIds: []*delibasev1.UuidV7{},
 		}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "delete_team_subtree", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "delete_team_subtree",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -516,6 +524,11 @@ func (service *Team) DeleteTeamSubtree(
 		}
 		if current.ProtectedGeneral {
 			return generalTeamProtected()
+		}
+		if _, transactionErr = drainExpiredOrganizationReservations(
+			ctx, service.dependencies, queries, organizationID,
+		); transactionErr != nil {
+			return transactionErr
 		}
 		subtree, transactionErr := queries.ListTeamSubtree(
 			ctx,
@@ -680,9 +693,11 @@ func (service *Team) SetTeamMembership(
 	var response *delibasev1.SetTeamMembershipResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.SetTeamMembershipResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "set_team_membership", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "set_team_membership",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -788,9 +803,11 @@ func (service *Team) RemoveTeamMembership(
 	var response *delibasev1.RemoveTeamMembershipResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.RemoveTeamMembershipResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "remove_team_membership", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "remove_team_membership",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}

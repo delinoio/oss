@@ -61,13 +61,12 @@ SELECT EXISTS (
       AND organization.deleted_at IS NULL
 );
 
--- name: LockOwnedOrganizations :many
+-- name: LockAccountOrganizations :many
 SELECT organization.id
 FROM organizations AS organization
 JOIN organization_memberships AS membership
   ON membership.organization_id = organization.id
 WHERE membership.account_id = sqlc.arg(account_id)
-  AND membership.role = 'owner'
   AND organization.deleted_at IS NULL
 ORDER BY organization.id
 FOR UPDATE OF organization;
@@ -106,6 +105,7 @@ JOIN teams AS team
  AND team.id = reservation.team_id
 WHERE reservation.account_id = sqlc.arg(account_id)
   AND reservation.status = 'held'
+  AND reservation.expires_at > statement_timestamp()
 ORDER BY organization.id, team.id;
 
 -- name: DeleteAccountMemberships :execrows
