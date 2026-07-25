@@ -295,16 +295,25 @@ SET subscription_id = COALESCE(billing_periods.subscription_id, EXCLUDED.subscri
 WHERE billing_periods.ends_at = EXCLUDED.ends_at
 RETURNING *;
 
--- name: CloseInactiveBillingPeriodForReplacement :execrows
+-- name: ReconcileInactiveBillingPeriodForReplacement :execrows
 UPDATE billing_periods AS period
-SET ends_at = sqlc.arg(replacement_starts_at)
+SET subscription_id = CASE
+        WHEN period.starts_at = sqlc.arg(replacement_starts_at)
+            THEN sqlc.arg(replacement_subscription_id)
+        ELSE period.subscription_id
+    END,
+    ends_at = CASE
+        WHEN period.starts_at = sqlc.arg(replacement_starts_at)
+            THEN sqlc.arg(replacement_ends_at)
+        ELSE sqlc.arg(replacement_starts_at)
+    END
 FROM subscriptions AS subscription
 WHERE period.organization_id = sqlc.arg(organization_id)
   AND period.subscription_id = subscription.id
   AND subscription.organization_id = period.organization_id
   AND period.subscription_id <> sqlc.arg(replacement_subscription_id)
   AND subscription.status IN ('past_due', 'canceled', 'revoked')
-  AND period.starts_at < sqlc.arg(replacement_starts_at)
+  AND period.starts_at <= sqlc.arg(replacement_starts_at)
   AND period.ends_at > sqlc.arg(replacement_starts_at);
 
 -- name: GetPolarPaidCycle :one

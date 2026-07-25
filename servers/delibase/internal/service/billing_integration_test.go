@@ -362,8 +362,8 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	replacementPeriodStart := now.Add(-30 * time.Minute)
-	replacementPeriodEnd := replacementPeriodStart.Add(31 * 24 * time.Hour)
+	replacementPeriodStart := currentPeriodStart
+	replacementPeriodEnd := currentPeriodEnd.Add(time.Hour)
 	replacementActivePayload, _ := json.Marshal(polarBillingEvent{
 		Type:       string(reliability.WebhookSubscriptionActive),
 		EventAt:    now.Add(3 * time.Minute),

@@ -36,6 +36,10 @@ func TestLoadRequiresExplicitSandboxOptIn(t *testing.T) {
 	if _, err := Load(lookup(values)); err == nil {
 		t.Fatal("unsupported Polar environment was accepted")
 	}
+	values["DELIBASE_POLAR_ENVIRONMENT"] = " "
+	if _, err := Load(lookup(values)); err == nil {
+		t.Fatal("whitespace-only Polar environment was accepted")
+	}
 }
 
 func lookup(values map[string]string) LookupEnv {

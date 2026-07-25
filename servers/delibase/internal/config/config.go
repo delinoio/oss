@@ -140,8 +140,7 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, errors.New("config: DELIBASE_POLAR_PRODUCT_ID is invalid")
 	}
 	result.PolarEnvironment = PolarEnvironmentProduction
-	if value, ok := lookup("DELIBASE_POLAR_ENVIRONMENT"); ok &&
-		strings.TrimSpace(value) != "" {
+	if value, ok := lookup("DELIBASE_POLAR_ENVIRONMENT"); ok {
 		switch PolarEnvironment(value) {
 		case PolarEnvironmentProduction, PolarEnvironmentSandbox:
 			result.PolarEnvironment = PolarEnvironment(value)

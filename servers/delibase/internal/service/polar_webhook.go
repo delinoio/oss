@@ -178,10 +178,11 @@ func processPaidCycle(
 	if err != nil {
 		return err
 	}
-	if _, err = queries.CloseInactiveBillingPeriodForReplacement(
+	if _, err = queries.ReconcileInactiveBillingPeriodForReplacement(
 		ctx,
-		dbgen.CloseInactiveBillingPeriodForReplacementParams{
+		dbgen.ReconcileInactiveBillingPeriodForReplacementParams{
 			ReplacementStartsAt:       pgTimestamp(event.CurrentPeriodStart),
+			ReplacementEndsAt:         pgTimestamp(event.CurrentPeriodEnd),
 			OrganizationID:            subscription.OrganizationID,
 			ReplacementSubscriptionID: subscription.ID,
 		},

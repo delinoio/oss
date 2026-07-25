@@ -17,7 +17,6 @@ type Querier interface {
 	ClaimIntegrationOutbox(ctx context.Context, arg ClaimIntegrationOutboxParams) (IntegrationOutbox, error)
 	ClaimWebhookInbox(ctx context.Context, arg ClaimWebhookInboxParams) (WebhookInbox, error)
 	CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalogPriceVersionParams) error
-	CloseInactiveBillingPeriodForReplacement(ctx context.Context, arg CloseInactiveBillingPeriodForReplacementParams) (int64, error)
 	CompleteDeletionJob(ctx context.Context, arg CompleteDeletionJobParams) (pgtype.UUID, error)
 	CompleteIntegrationOutbox(ctx context.Context, arg CompleteIntegrationOutboxParams) (pgtype.UUID, error)
 	CompleteWebhookInbox(ctx context.Context, arg CompleteWebhookInboxParams) (pgtype.UUID, error)
@@ -126,6 +125,7 @@ type Querier interface {
 	MarkOrganizationDeleted(ctx context.Context, id pgtype.UUID) (Organization, error)
 	MoveTeam(ctx context.Context, arg MoveTeamParams) (Team, error)
 	Ping(ctx context.Context) (int64, error)
+	ReconcileInactiveBillingPeriodForReplacement(ctx context.Context, arg ReconcileInactiveBillingPeriodForReplacementParams) (int64, error)
 	RecoverExpiredDeletionJobs(ctx context.Context, arg RecoverExpiredDeletionJobsParams) (int64, error)
 	RecoverExpiredIntegrationOutbox(ctx context.Context, arg RecoverExpiredIntegrationOutboxParams) (int64, error)
 	RecoverExpiredWebhookInbox(ctx context.Context, arg RecoverExpiredWebhookInboxParams) (int64, error)

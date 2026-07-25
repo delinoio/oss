@@ -41,33 +41,6 @@ func (q *Queries) AddPolarCycleReversal(ctx context.Context, arg AddPolarCycleRe
 	return i, err
 }
 
-const closeInactiveBillingPeriodForReplacement = `-- name: CloseInactiveBillingPeriodForReplacement :execrows
-UPDATE billing_periods AS period
-SET ends_at = $1
-FROM subscriptions AS subscription
-WHERE period.organization_id = $2
-  AND period.subscription_id = subscription.id
-  AND subscription.organization_id = period.organization_id
-  AND period.subscription_id <> $3
-  AND subscription.status IN ('past_due', 'canceled', 'revoked')
-  AND period.starts_at < $1
-  AND period.ends_at > $1
-`
-
-type CloseInactiveBillingPeriodForReplacementParams struct {
-	ReplacementStartsAt       pgtype.Timestamptz
-	OrganizationID            pgtype.UUID
-	ReplacementSubscriptionID pgtype.UUID
-}
-
-func (q *Queries) CloseInactiveBillingPeriodForReplacement(ctx context.Context, arg CloseInactiveBillingPeriodForReplacementParams) (int64, error) {
-	result, err := q.db.Exec(ctx, closeInactiveBillingPeriodForReplacement, arg.ReplacementStartsAt, arg.OrganizationID, arg.ReplacementSubscriptionID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const currentSettledCreditBalance = `-- name: CurrentSettledCreditBalance :one
 SELECT COALESCE(sum(amount_micros), 0)::bigint AS balance_micros
 FROM ledger_entries
@@ -802,6 +775,48 @@ func (q *Queries) LockOrganizationForBillingHistory(ctx context.Context, id pgty
 		&i.OverageLimitConfigured,
 	)
 	return i, err
+}
+
+const reconcileInactiveBillingPeriodForReplacement = `-- name: ReconcileInactiveBillingPeriodForReplacement :execrows
+UPDATE billing_periods AS period
+SET subscription_id = CASE
+        WHEN period.starts_at = $1
+            THEN $2
+        ELSE period.subscription_id
+    END,
+    ends_at = CASE
+        WHEN period.starts_at = $1
+            THEN $3
+        ELSE $1
+    END
+FROM subscriptions AS subscription
+WHERE period.organization_id = $4
+  AND period.subscription_id = subscription.id
+  AND subscription.organization_id = period.organization_id
+  AND period.subscription_id <> $2
+  AND subscription.status IN ('past_due', 'canceled', 'revoked')
+  AND period.starts_at <= $1
+  AND period.ends_at > $1
+`
+
+type ReconcileInactiveBillingPeriodForReplacementParams struct {
+	ReplacementStartsAt       pgtype.Timestamptz
+	ReplacementSubscriptionID pgtype.UUID
+	ReplacementEndsAt         pgtype.Timestamptz
+	OrganizationID            pgtype.UUID
+}
+
+func (q *Queries) ReconcileInactiveBillingPeriodForReplacement(ctx context.Context, arg ReconcileInactiveBillingPeriodForReplacementParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reconcileInactiveBillingPeriodForReplacement,
+		arg.ReplacementStartsAt,
+		arg.ReplacementSubscriptionID,
+		arg.ReplacementEndsAt,
+		arg.OrganizationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateCurrentBillingPeriodOverageLimit = `-- name: UpdateCurrentBillingPeriodOverageLimit :execrows
