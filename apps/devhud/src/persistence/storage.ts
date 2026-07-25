@@ -21,6 +21,7 @@ export interface LocalStorageAdapter {
 
 export type PersistenceResetOutcome =
   | { readonly status: "complete" }
+  | { readonly status: "partially-retained" }
   | { readonly status: "cleanup-failed" };
 
 export interface TauriPersistenceBridge {
@@ -146,9 +147,14 @@ export class DevHudPersistence {
   async reset(): Promise<PersistenceResetResult> {
     await Promise.allSettled(this.writeTails.values());
     const outcome = await this.storage.reset();
+    return { loaded: await this.reload(), outcome };
+  }
+
+  async reload(): Promise<LoadedPersistence> {
+    await Promise.allSettled(this.writeTails.values());
     this.blockedRecords.clear();
     this.loadPromise = undefined;
-    return { loaded: await this.load(), outcome };
+    return this.load();
   }
 
   private async loadSettings(): Promise<{ value: DevHudSettings; issues: readonly PersistenceIssue[] }> {

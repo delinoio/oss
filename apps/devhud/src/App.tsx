@@ -107,6 +107,7 @@ type ResetStatus =
   | "confirming"
   | "resetting"
   | "failed"
+  | "partially-retained"
   | "cleanup-failed"
   | "complete";
 
@@ -128,7 +129,7 @@ function ResetDevHudControl({
     try {
       const outcome = await resetDevHud();
       onResetComplete?.();
-      setStatus(outcome.status === "complete" ? "complete" : "cleanup-failed");
+      setStatus(outcome.status);
     } catch {
       setStatus("failed");
     }
@@ -184,6 +185,12 @@ function ResetDevHudControl({
         <p className="error" role="alert">
           DevHud cleared local settings, but could not remove temporary reset data.
           Check device storage and try again.
+        </p>
+      ) : null}
+      {status === "partially-retained" ? (
+        <p className="error" role="alert">
+          DevHud reset only some local data. Some saved settings or widget state
+          remain. Check device storage and try again.
         </p>
       ) : null}
     </section>
@@ -698,6 +705,7 @@ function ApplicationSurface({
   const {
     adoptNativeTheme,
     readPersistedTheme,
+    reloadPersistence,
     settingsOpen,
   } = useApplication();
   useEffect(() => {
@@ -720,8 +728,15 @@ function ApplicationSurface({
     bridge,
     readPersistedTheme,
   ]);
+  useEffect(() => {
+    if (bridge === null) return;
+    return bridge.subscribeReset(() => {
+      void reloadPersistence();
+    });
+  }, [bridge, reloadPersistence]);
   const reconcileReset = useCallback(() => {
     clearStartupDiagnostics();
+    bridge?.publishReset();
     bridge?.publishTheme(ThemePreference.System);
   }, [bridge, clearStartupDiagnostics]);
 

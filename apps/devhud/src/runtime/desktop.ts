@@ -5,7 +5,9 @@ import type {
   ThemePreference,
 } from "../persistence/contracts";
 import {
+  publishPersistenceReset,
   publishThemePreference,
+  subscribeToPersistenceReset,
   subscribeToThemePreference,
 } from "./theme";
 
@@ -80,7 +82,9 @@ export interface DesktopBridge {
   setLaunchAtLogin(enabled: boolean): Promise<AutostartOutcome>;
   completeFirstRun(): Promise<FirstRunOutcome>;
   requestUpdateAction(): Promise<UpdateActionOutcome>;
+  publishReset(): void;
   publishTheme(theme: ThemePreference): void;
+  subscribeReset(listener: () => void): () => void;
   subscribeTheme(listener: (theme: ThemePreference) => void): () => void;
 }
 
@@ -96,7 +100,9 @@ export const tauriDesktopBridge: DesktopBridge = {
   completeFirstRun: () => invoke<FirstRunOutcome>("complete_first_run"),
   requestUpdateAction: () =>
     invoke<UpdateActionOutcome>("request_update_action"),
+  publishReset: publishPersistenceReset,
   publishTheme: publishThemePreference,
+  subscribeReset: subscribeToPersistenceReset,
   subscribeTheme: subscribeToThemePreference,
 };
 

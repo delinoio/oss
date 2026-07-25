@@ -266,6 +266,27 @@ describe("DevHud local persistence", () => {
     });
   });
 
+  it("reloads surviving records after a partially retained reset", async () => {
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, "{not-json}");
+    storage.reset = async () => ({ status: "partially-retained" });
+    const persistence = new DevHudPersistence(storage);
+
+    await expect(persistence.reset()).resolves.toEqual({
+      loaded: {
+        settings: defaultSettings,
+        widgetConfiguration: defaultWidgetConfiguration,
+        issues: [
+          expect.objectContaining({
+            key: WIDGET_CONFIGURATION_STORAGE_KEY,
+            kind: "corrupt",
+          }),
+        ],
+      },
+      outcome: { status: "partially-retained" },
+    });
+  });
+
   it("keeps another record's issue after a successful write", async () => {
     const storage = new MemoryStorageAdapter();
     storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, "{not-json}");

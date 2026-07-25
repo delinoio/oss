@@ -22,6 +22,7 @@ import {
   encodeSettings,
   SETTINGS_STORAGE_KEY,
   ThemePreference,
+  WIDGET_CONFIGURATION_STORAGE_KEY,
 } from "./persistence/contracts";
 import {
   MemoryStorageAdapter,
@@ -58,7 +59,9 @@ function desktopBridge(
       status: "unavailable" as const,
       reason: "scoped-updater-unavailable" as const,
     })),
+    publishReset: vi.fn(),
     publishTheme: vi.fn(),
+    subscribeReset: vi.fn(() => () => undefined),
     subscribeTheme: vi.fn(() => () => undefined),
     ...overrides,
   };
@@ -150,6 +153,44 @@ describe("DevHud application surfaces", () => {
     act(() => publishToHud?.(ThemePreference.Dark));
 
     expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("reloads both retained HUD records after a reset is published", async () => {
+    let publishReset: (() => void) | undefined;
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      encodeSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
+    );
+    storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, "{not-json}");
+    const read = vi.spyOn(storage, "read");
+    const bridge = desktopBridge({
+      subscribeReset: vi.fn((listener) => {
+        publishReset = listener;
+        return () => undefined;
+      }),
+    });
+    renderApp({ desktopBridge: bridge, storage });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Reset DevHud");
+    expect(document.documentElement.dataset.theme).toBe(ThemePreference.Dark);
+    const settingsReadsBeforeReset = read.mock.calls.filter(
+      ([key]) => key === SETTINGS_STORAGE_KEY,
+    ).length;
+    const widgetReadsBeforeReset = read.mock.calls.filter(
+      ([key]) => key === WIDGET_CONFIGURATION_STORAGE_KEY,
+    ).length;
+    storage.values.clear();
+    act(() => publishReset?.());
+
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(document.documentElement.dataset.theme).toBe(ThemePreference.System);
+    expect(
+      read.mock.calls.filter(([key]) => key === SETTINGS_STORAGE_KEY),
+    ).toHaveLength(settingsReadsBeforeReset + 1);
+    expect(
+      read.mock.calls.filter(([key]) => key === WIDGET_CONFIGURATION_STORAGE_KEY),
+    ).toHaveLength(widgetReadsBeforeReset + 1);
   });
 
   it("reconciles the retained HUD theme after its native bridge subscribes", async () => {
@@ -583,6 +624,7 @@ describe("DevHud application surfaces", () => {
       }),
     ).not.toBeChecked();
     expect(bridge.publishTheme).toHaveBeenCalledWith(ThemePreference.System);
+    expect(bridge.publishReset).toHaveBeenCalledOnce();
   });
 
   it("adopts cleared settings while reporting reset staging cleanup failure", async () => {
@@ -631,6 +673,31 @@ describe("DevHud application surfaces", () => {
       ThemePreference.System,
     );
     expect(bridge.publishTheme).toHaveBeenCalledWith(ThemePreference.System);
+    expect(bridge.publishReset).toHaveBeenCalledOnce();
+  });
+
+  it("reports a partially retained reset separately from staging cleanup failure", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "settings",
+      firstRun: false,
+    });
+    const storage = new MemoryStorageAdapter();
+    storage.reset = async () => ({ status: "partially-retained" });
+    const user = userEvent.setup();
+    renderApp({ desktopBridge: desktopBridge(), storage });
+
+    await user.click(await screen.findByRole("button", { name: "Reset DevHud" }));
+    await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Some saved settings or widget state remain",
+    );
   });
 
   it("preserves the saved autostart setting when native state is unknown", async () => {

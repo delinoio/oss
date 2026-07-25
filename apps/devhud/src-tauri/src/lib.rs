@@ -270,6 +270,7 @@ enum PersistenceCommandError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PersistenceResetFailure {
     BeforeRecordsRemoved(PersistenceCommandError),
+    PartiallyRetained,
     CleanupFailed,
 }
 
@@ -278,6 +279,7 @@ enum PersistenceResetFailure {
 #[serde(tag = "status", rename_all = "kebab-case")]
 enum PersistenceResetOutcome {
     Complete,
+    PartiallyRetained,
     CleanupFailed,
 }
 
@@ -509,7 +511,7 @@ where
                     }
                 }
                 return Err(if rollback_failed {
-                    PersistenceResetFailure::CleanupFailed
+                    PersistenceResetFailure::PartiallyRetained
                 } else {
                     PersistenceResetFailure::BeforeRecordsRemoved(
                         PersistenceCommandError::ResetFailed,
@@ -1267,8 +1269,12 @@ fn show_hud_internal(app: &AppHandle<ActiveRuntime>, toggle: bool) -> HudActionO
             reason: HudActionFailure::PositionFailed,
         };
     }
-    let _ = window.unminimize();
-    if window.show().and_then(|()| window.set_focus()).is_err() {
+    if window
+        .unminimize()
+        .and_then(|()| window.show())
+        .and_then(|()| window.set_focus())
+        .is_err()
+    {
         return HudActionOutcome::Unchanged {
             reason: HudActionFailure::WindowUnavailable,
         };
@@ -1930,6 +1936,9 @@ fn reset_dev_hud(
             }
             return Err(error);
         }
+        Err(PersistenceResetFailure::PartiallyRetained) => {
+            PersistenceResetOutcome::PartiallyRetained
+        }
         Err(PersistenceResetFailure::CleanupFailed) => PersistenceResetOutcome::CleanupFailed,
     };
 
@@ -1961,6 +1970,9 @@ fn reset_dev_hud(
     let reset_outcome = match state.reset() {
         Ok(()) => PersistenceResetOutcome::Complete,
         Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => return Err(error),
+        Err(PersistenceResetFailure::PartiallyRetained) => {
+            PersistenceResetOutcome::PartiallyRetained
+        }
         Err(PersistenceResetFailure::CleanupFailed) => PersistenceResetOutcome::CleanupFailed,
     };
     if reset_outcome == PersistenceResetOutcome::Complete {
@@ -2625,7 +2637,7 @@ mod tests {
             |path| fs::remove_file(path),
         );
 
-        assert_eq!(result, Err(PersistenceResetFailure::CleanupFailed));
+        assert_eq!(result, Err(PersistenceResetFailure::PartiallyRetained));
         assert!(!settings_path.exists());
         assert!(settings_staged.exists());
         assert!(widget_path.exists());
@@ -2722,6 +2734,10 @@ mod tests {
         assert_eq!(
             serde_json::to_value(PersistenceResetOutcome::Complete).unwrap(),
             serde_json::json!({ "status": "complete" })
+        );
+        assert_eq!(
+            serde_json::to_value(PersistenceResetOutcome::PartiallyRetained).unwrap(),
+            serde_json::json!({ "status": "partially-retained" })
         );
         assert_eq!(
             serde_json::to_value(PersistenceResetOutcome::CleanupFailed).unwrap(),
