@@ -345,46 +345,65 @@ type TeamMembership struct {
 }
 
 type UsageRecord struct {
-	ID                   pgtype.UUID
-	ReservationID        pgtype.UUID
-	OrganizationID       pgtype.UUID
-	TeamID               pgtype.UUID
-	TeamNameSnapshot     string
-	MeterID              pgtype.UUID
-	AccountID            pgtype.UUID
-	ServiceIdentityID    pgtype.UUID
-	CommittedUnits       int64
-	TotalCostMicros      int64
-	CreditAppliedMicros  int64
-	OverageAppliedMicros int64
-	CommittedAt          pgtype.Timestamptz
-	RetainUntil          pgtype.Timestamptz
+	ID                            pgtype.UUID
+	ReservationID                 pgtype.UUID
+	OrganizationID                pgtype.UUID
+	TeamID                        pgtype.UUID
+	TeamNameSnapshot              string
+	MeterID                       pgtype.UUID
+	AccountID                     pgtype.UUID
+	ServiceIdentityID             pgtype.UUID
+	CommittedUnits                int64
+	TotalCostMicros               int64
+	CreditAppliedMicros           int64
+	OverageAppliedMicros          int64
+	CommittedAt                   pgtype.Timestamptz
+	RetainUntil                   pgtype.Timestamptz
+	PriceVersionID                pgtype.UUID
+	UsdMicrosPerUnit              int64
+	ClientReference               string
+	UserActorReferenceSnapshot    string
+	ServiceNameSnapshot           string
+	MeterNameSnapshot             string
+	PolarEventNameSnapshot        string
+	PriceEffectiveFromSnapshot    pgtype.Timestamptz
+	PriceEffectiveUntilSnapshot   pgtype.Timestamptz
+	BillingPeriodID               pgtype.UUID
+	BillingPeriodStartsAtSnapshot pgtype.Timestamptz
+	BillingPeriodEndsAtSnapshot   pgtype.Timestamptz
 }
 
 type UsageReservation struct {
-	ID                      pgtype.UUID
-	OrganizationID          pgtype.UUID
-	TeamID                  pgtype.UUID
-	TeamNameSnapshot        string
-	MeterID                 pgtype.UUID
-	PriceVersionID          pgtype.UUID
-	AccountID               pgtype.UUID
-	ServiceIdentityID       pgtype.UUID
-	MaximumUnits            int64
-	UsdMicrosPerUnit        int64
-	MaximumCostMicros       int64
-	HeldCreditMicros        int64
-	HeldOverageMicros       int64
-	ClientReference         string
-	Status                  string
-	ActiveOrganizationID    pgtype.UUID
-	ActiveTeamID            pgtype.UUID
-	ActiveAccountID         pgtype.UUID
-	ActiveServiceIdentityID pgtype.UUID
-	ActiveMeterID           pgtype.UUID
-	ExpiresAt               pgtype.Timestamptz
-	FinalizedAt             pgtype.Timestamptz
-	CreatedAt               pgtype.Timestamptz
+	ID                          pgtype.UUID
+	OrganizationID              pgtype.UUID
+	TeamID                      pgtype.UUID
+	TeamNameSnapshot            string
+	MeterID                     pgtype.UUID
+	PriceVersionID              pgtype.UUID
+	AccountID                   pgtype.UUID
+	ServiceIdentityID           pgtype.UUID
+	MaximumUnits                int64
+	UsdMicrosPerUnit            int64
+	MaximumCostMicros           int64
+	HeldCreditMicros            int64
+	HeldOverageMicros           int64
+	ClientReference             string
+	Status                      string
+	ActiveOrganizationID        pgtype.UUID
+	ActiveTeamID                pgtype.UUID
+	ActiveAccountID             pgtype.UUID
+	ActiveServiceIdentityID     pgtype.UUID
+	ActiveMeterID               pgtype.UUID
+	ExpiresAt                   pgtype.Timestamptz
+	FinalizedAt                 pgtype.Timestamptz
+	CreatedAt                   pgtype.Timestamptz
+	UserActorReferenceSnapshot  string
+	ServiceNameSnapshot         string
+	MeterNameSnapshot           string
+	PolarEventNameSnapshot      string
+	PriceEffectiveFromSnapshot  pgtype.Timestamptz
+	PriceEffectiveUntilSnapshot pgtype.Timestamptz
+	OverageBillingPeriodID      pgtype.UUID
 }
 
 type WebhookInbox struct {

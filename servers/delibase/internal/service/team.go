@@ -517,6 +517,11 @@ func (service *Team) DeleteTeamSubtree(
 		if current.ProtectedGeneral {
 			return generalTeamProtected()
 		}
+		if _, transactionErr = expireOrganizationReservations(
+			ctx, service.dependencies, queries, organizationID,
+		); transactionErr != nil {
+			return transactionErr
+		}
 		subtree, transactionErr := queries.ListTeamSubtree(
 			ctx,
 			dbgen.ListTeamSubtreeParams{

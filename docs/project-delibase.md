@@ -3,7 +3,7 @@
 ## Goal
 Provide reusable organization, team, catalog, billing, and metered-usage infrastructure for DeliDev and future mini-app services.
 
-This index establishes the documentation and ownership prerequisites for issue [#722](https://github.com/delinoio/oss/issues/722). It is a planned contract, not evidence that a delibase runtime exists, is activated, or is deployed.
+This index establishes the documentation and ownership contract for issue [#722](https://github.com/delinoio/oss/issues/722). The repository contains the delibase Go/PostgreSQL runtime and its tests; this contract is not evidence that the API is publicly activated or deployed.
 
 ## Project ID
 `delibase`

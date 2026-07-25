@@ -375,3 +375,74 @@ func TestEnsureCustomerCreatesAndReusesExternalCustomer(t *testing.T) {
 		}
 	}
 }
+
+func TestReportUsageRetriesOutageWithStableProviderIdentity(t *testing.T) {
+	t.Parallel()
+	const (
+		organizationID = "0198a000-0000-7000-8000-000000000005"
+		usageRecordID  = "0198a000-0000-7000-8000-000000000006"
+	)
+	committedAt := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	calls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		calls++
+		if request.Method != http.MethodPost ||
+			request.URL.Path != "/v1/events/ingest" ||
+			request.Header.Get("Idempotency-Key") != usageRecordID {
+			t.Errorf(
+				"request = %s %s, idempotency = %q",
+				request.Method,
+				request.URL.Path,
+				request.Header.Get("Idempotency-Key"),
+			)
+		}
+		var payload struct {
+			Events []struct {
+				Name               string           `json:"name"`
+				ExternalCustomerID string           `json:"external_customer_id"`
+				ExternalID         string           `json:"external_id"`
+				Timestamp          string           `json:"timestamp"`
+				Metadata           map[string]int64 `json:"metadata"`
+			} `json:"events"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if len(payload.Events) != 1 ||
+			payload.Events[0].Name != "usage_event" ||
+			payload.Events[0].ExternalCustomerID != organizationID ||
+			payload.Events[0].ExternalID != usageRecordID ||
+			payload.Events[0].Timestamp != committedAt.Format(time.RFC3339Nano) ||
+			payload.Events[0].Metadata["units"] != 42 {
+			t.Errorf("usage payload = %#v", payload)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			http.Error(writer, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = io.WriteString(writer, `{"inserted":0,"duplicates":1}`)
+	}))
+	defer server.Close()
+
+	client, err := newClient(server.URL+"/v1", "polar-access-token", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := contracts.UsageEvent{
+		Name: "usage_event", ExternalCustomerID: organizationID,
+		ExternalID: usageRecordID, Units: 42, Timestamp: committedAt,
+	}
+	if err := client.ReportUsage(context.Background(), event); err == nil {
+		t.Fatal("ReportUsage() succeeded during provider outage")
+	}
+	if err := client.ReportUsage(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", calls)
+	}
+}

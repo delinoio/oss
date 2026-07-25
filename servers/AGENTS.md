@@ -8,7 +8,7 @@
 ### Scope in This Domain
 
 - `servers/thenv`: Backend for secure environment sharing.
-- `servers/delibase`: Planned Go/PostgreSQL/sqlc organization, billing, and usage service owned by project `delibase`.
+- `servers/delibase`: Go/PostgreSQL/sqlc organization, billing, and usage service owned by project `delibase`.
 - `servers/internal`: Repository-shared Go package boundary consumed by delibase; not a project-owned delibase subcomponent or an unrelated project.
 
 ### Server Language and Data Rules
