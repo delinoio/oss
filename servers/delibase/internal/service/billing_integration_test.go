@@ -419,10 +419,63 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 			activePeriodErr,
 		)
 	}
+	deletionActor := safelog.ActorPseudonym(
+		"actor:v1:0123456789abcdef0123456789abcdef",
+	)
+	if _, err = reliability.EnqueueDeletion(
+		ctx,
+		store.Queries(),
+		reliability.DeletionInput{
+			ID:             uuidv7.MustNew(),
+			Type:           reliability.DeletionOrganization,
+			OrganizationID: organizationID,
+			IdempotencyKey: "billing-webhook-deletion-" + organizationID.String(),
+			Actor:          deletionActor,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = store.Queries().MarkOrganizationDeleted(
 		ctx, pgUUID(organizationID),
 	); err != nil {
 		t.Fatal(err)
+	}
+	delayedWebhookID := uuidv7.MustNew()
+	delayedSubscriptionPayload, _ := json.Marshal(polarBillingEvent{
+		Type:               string(reliability.WebhookSubscriptionPastDue),
+		EventAt:            now.Add(5 * time.Minute),
+		ObjectID:           "subscription_delayed_after_deletion",
+		CustomerID:         "customer_" + organizationID.String(),
+		ExternalID:         organizationID.String(),
+		SubscriptionID:     "subscription_delayed_after_deletion",
+		ProductID:          productID,
+		CurrentPeriodStart: replacementPeriodStart,
+		CurrentPeriodEnd:   replacementPeriodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        delayedWebhookID,
+		HandlerID: reliability.HandlerPolarSubscriptionPastDue,
+		Payload:   delayedSubscriptionPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	storage, err := reliability.NewPostgreSQLStorage(store.Queries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimAt := time.Now().UTC().Add(time.Second)
+	cancellation, ok, err := storage.Claim(
+		ctx,
+		reliability.QueueIntegrationOutbox,
+		uuidv7.MustNew(),
+		claimAt,
+		claimAt.Add(time.Minute),
+	)
+	if err != nil || !ok ||
+		cancellation.HandlerID != reliability.HandlerPolarCancelSubscription ||
+		cancellation.EntityID != organizationID ||
+		cancellation.Actor != deletionActor {
+		t.Fatalf("delayed subscription cancellation = %#v, %t, %v", cancellation, ok, err)
 	}
 	deletedOrganizationRefundPayload, _ := json.Marshal(polarBillingEvent{
 		Type: string(reliability.WebhookRefundUpdated), EventAt: now.Add(time.Minute),
@@ -935,6 +988,22 @@ func TestPostgreSQLPortalAuthorizationRevalidatesBillingAccessUnderOrganizationL
 		Polar:         provider,
 		Pseudonymizer: pseudonymizer,
 	})
+	updateOverageLimit := func() (
+		*connect.Response[delibasev1.UpdateOverageLimitResponse],
+		error,
+	) {
+		return billing.UpdateOverageLimit(
+			authenticatedContext(ctx, adminSubject),
+			connect.NewRequest(&delibasev1.UpdateOverageLimitRequest{
+				OrganizationId: &delibasev1.UuidV7{Value: organizationID.String()},
+				MonthlyLimit:   &delibasev1.UsdMicros{Value: 1_000_000},
+				Idempotency:    idempotency("overage-replay-" + organizationID.String()),
+			}),
+		)
+	}
+	if initial, updateErr := updateOverageLimit(); updateErr != nil || initial == nil {
+		t.Fatalf("initial overage-limit response = %#v, %v", initial, updateErr)
+	}
 
 	roleTransaction, err := raw.Begin(ctx)
 	if err != nil {
@@ -994,6 +1063,16 @@ func TestPostgreSQLPortalAuthorizationRevalidatesBillingAccessUnderOrganizationL
 	requireConnectReason(
 		t,
 		result.err,
+		connect.CodePermissionDenied,
+		delibasev1.ErrorReason_ERROR_REASON_ADMIN_ROLE_REQUIRED,
+	)
+	overageReplay, replayErr := updateOverageLimit()
+	if overageReplay != nil {
+		t.Fatalf("overage-limit replay after Admin downgrade = %#v", overageReplay)
+	}
+	requireConnectReason(
+		t,
+		replayErr,
 		connect.CodePermissionDenied,
 		delibasev1.ErrorReason_ERROR_REASON_ADMIN_ROLE_REQUIRED,
 	)

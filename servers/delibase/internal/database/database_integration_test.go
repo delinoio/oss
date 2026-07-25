@@ -147,12 +147,14 @@ func TestPostgreSQLOrganizationDeletionCleanupAndLiveSubscriptionSelection(
 	); err != nil {
 		t.Fatal(err)
 	}
-	selected, err := store.Queries().GetCancelablePolarSubscriptionForOrganization(
+	selected, err := store.Queries().ListCancelablePolarSubscriptionsForOrganization(
 		ctx,
 		pgtype.UUID{Bytes: organizationID, Valid: true},
 	)
-	if err != nil || selected != "polar-active-"+activeSubscriptionID.String() {
-		t.Fatalf("cancelable subscription = %q, %v", selected, err)
+	if err != nil || len(selected) != 2 ||
+		selected[0] != "polar-active-"+activeSubscriptionID.String() ||
+		selected[1] != "polar-pending-"+pendingSubscriptionID.String() {
+		t.Fatalf("cancelable subscriptions = %#v, %v", selected, err)
 	}
 	if _, err := store.pool.Exec(ctx, `
 		UPDATE organizations

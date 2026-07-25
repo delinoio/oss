@@ -388,28 +388,6 @@ func (q *Queries) GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, 
 	return i, err
 }
 
-const getCancelablePolarSubscriptionForOrganization = `-- name: GetCancelablePolarSubscriptionForOrganization :one
-SELECT polar_subscription_id
-FROM subscriptions
-WHERE organization_id = $1
-  AND status IN ('pending', 'active', 'past_due')
-ORDER BY
-    CASE status
-        WHEN 'active' THEN 0
-        WHEN 'past_due' THEN 1
-        ELSE 2
-    END,
-    created_at DESC
-LIMIT 1
-`
-
-func (q *Queries) GetCancelablePolarSubscriptionForOrganization(ctx context.Context, organizationID pgtype.UUID) (string, error) {
-	row := q.db.QueryRow(ctx, getCancelablePolarSubscriptionForOrganization, organizationID)
-	var polar_subscription_id string
-	err := row.Scan(&polar_subscription_id)
-	return polar_subscription_id, err
-}
-
 const getDeletedAccountSubject = `-- name: GetDeletedAccountSubject :one
 SELECT subject_digest, account_id, actor_reference, deleted_at, retain_until
 FROM deleted_account_subjects
@@ -884,6 +862,40 @@ func (q *Queries) ListActiveReservationBlockersForAccount(ctx context.Context, a
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCancelablePolarSubscriptionsForOrganization = `-- name: ListCancelablePolarSubscriptionsForOrganization :many
+SELECT polar_subscription_id
+FROM subscriptions
+WHERE organization_id = $1
+  AND status IN ('pending', 'active', 'past_due')
+ORDER BY
+    CASE status
+        WHEN 'active' THEN 0
+        WHEN 'past_due' THEN 1
+        ELSE 2
+    END,
+    created_at DESC
+`
+
+func (q *Queries) ListCancelablePolarSubscriptionsForOrganization(ctx context.Context, organizationID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listCancelablePolarSubscriptionsForOrganization, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var polar_subscription_id string
+		if err := rows.Scan(&polar_subscription_id); err != nil {
+			return nil, err
+		}
+		items = append(items, polar_subscription_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

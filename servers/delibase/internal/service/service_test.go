@@ -11,7 +11,6 @@ import (
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -155,49 +154,54 @@ func TestOrganizationDeletionBlockedReturnsStableReason(t *testing.T) {
 }
 
 type polarSubscriptionQueriesStub struct {
-	subscriptionID string
-	err            error
+	subscriptionIDs []string
+	err             error
 }
 
-func (stub polarSubscriptionQueriesStub) GetCancelablePolarSubscriptionForOrganization(
+func (stub polarSubscriptionQueriesStub) ListCancelablePolarSubscriptionsForOrganization(
 	context.Context,
 	pgtype.UUID,
-) (string, error) {
-	return stub.subscriptionID, stub.err
+) ([]string, error) {
+	return stub.subscriptionIDs, stub.err
 }
 
 type polarCancellationClientStub struct {
-	subscriptionID string
+	subscriptionIDs []string
 }
 
 func (stub *polarCancellationClientStub) CancelSubscription(
 	_ context.Context,
 	subscriptionID string,
 ) error {
-	stub.subscriptionID = subscriptionID
+	stub.subscriptionIDs = append(stub.subscriptionIDs, subscriptionID)
 	return nil
 }
 
-func TestPolarCancellationHandlerDispatchesCancelableSubscription(t *testing.T) {
+func TestPolarCancellationHandlerDispatchesEveryCancelableSubscription(t *testing.T) {
 	t.Parallel()
 	client := &polarCancellationClientStub{}
 	handler := NewPolarCancellationHandler(
-		polarSubscriptionQueriesStub{subscriptionID: "polar-subscription"},
+		polarSubscriptionQueriesStub{
+			subscriptionIDs: []string{"polar-subscription-1", "polar-subscription-2"},
+		},
 		client,
 	)
 
 	err := handler(context.Background(), reliability.Item{
 		EntityID: uuid.MustParse("0198a000-0000-7000-8000-000000000003"),
 	})
-	if err != nil || client.subscriptionID != "polar-subscription" {
-		t.Fatalf("cancellation = %q, %v", client.subscriptionID, err)
+	if err != nil ||
+		len(client.subscriptionIDs) != 2 ||
+		client.subscriptionIDs[0] != "polar-subscription-1" ||
+		client.subscriptionIDs[1] != "polar-subscription-2" {
+		t.Fatalf("cancellations = %#v, %v", client.subscriptionIDs, err)
 	}
 }
 
 func TestPolarCancellationHandlerAcceptsMissingCancelableSubscription(t *testing.T) {
 	t.Parallel()
 	handler := NewPolarCancellationHandler(
-		polarSubscriptionQueriesStub{err: pgx.ErrNoRows},
+		polarSubscriptionQueriesStub{},
 		&polarCancellationClientStub{},
 	)
 

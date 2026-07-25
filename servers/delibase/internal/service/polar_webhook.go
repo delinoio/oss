@@ -58,9 +58,12 @@ func NewPolarWebhookProcessor(
 			ctx, pgx.TxOptions{},
 			func(queries *dbgen.Queries) error {
 				var processErr error
+				var subscription dbgen.Subscription
+				var cancellationRequired bool
 				switch reliability.WebhookEventType(event.Type) {
 				case reliability.WebhookOrderPaid:
 					processErr = processPaidCycle(ctx, queries, ids, event)
+					cancellationRequired = true
 				case reliability.WebhookSubscriptionCreated,
 					reliability.WebhookSubscriptionUpdated,
 					reliability.WebhookSubscriptionActive,
@@ -68,9 +71,10 @@ func NewPolarWebhookProcessor(
 					reliability.WebhookSubscriptionPastDue,
 					reliability.WebhookSubscriptionCanceled,
 					reliability.WebhookSubscriptionRevoked:
-					_, processErr = reconcilePolarSubscription(
+					subscription, processErr = reconcilePolarSubscription(
 						ctx, queries, ids, event,
 					)
+					cancellationRequired = true
 				case reliability.WebhookRefundCreated,
 					reliability.WebhookRefundUpdated:
 					processErr = processPolarRefund(ctx, queries, ids, item, event)
@@ -80,10 +84,72 @@ func NewPolarWebhookProcessor(
 				if processErr != nil {
 					return processErr
 				}
+				if cancellationRequired {
+					if !subscription.ID.Valid {
+						subscription, processErr = queries.GetSubscriptionByPolarID(
+							ctx, event.SubscriptionID,
+						)
+						if processErr != nil {
+							return processErr
+						}
+					}
+					if processErr = enqueueDeletedOrganizationCancellation(
+						ctx, queries, ids, item, subscription,
+					); processErr != nil {
+						return processErr
+					}
+				}
 				return appendPolarBillingAudit(ctx, queries, item, event)
 			},
 		)
 	}
+}
+
+func enqueueDeletedOrganizationCancellation(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	ids IDGenerator,
+	item reliability.Item,
+	subscription dbgen.Subscription,
+) error {
+	if subscription.Status != "pending" &&
+		subscription.Status != "active" &&
+		subscription.Status != "past_due" {
+		return nil
+	}
+	organization, err := queries.GetOrganizationByID(ctx, subscription.OrganizationID)
+	if err != nil {
+		return err
+	}
+	if !organization.DeletedAt.Valid {
+		return nil
+	}
+	actor, err := queries.GetOrganizationDeletionActor(
+		ctx, subscription.OrganizationID,
+	)
+	if err != nil {
+		return err
+	}
+	outboxID, err := ids.New()
+	if err != nil {
+		return err
+	}
+	organizationID := uuid.UUID(subscription.OrganizationID.Bytes)
+	_, err = reliability.EnqueueOutbox(
+		ctx,
+		queries,
+		reliability.OutboxInput{
+			ID:             outboxID,
+			Integration:    reliability.IntegrationPolar,
+			Operation:      reliability.OperationCancelSubscription,
+			AggregateType:  reliability.AggregateOrganization,
+			AggregateID:    organizationID,
+			Payload:        []byte(`{"reason":"organization_deletion"}`),
+			IdempotencyKey: "polar-webhook:" + item.ID.String(),
+			Actor:          safelog.ActorPseudonym(actor),
+		},
+	)
+	return err
 }
 
 func appendPolarBillingAudit(

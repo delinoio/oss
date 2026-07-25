@@ -1155,10 +1155,10 @@ func NewOrganizationDeletionHandler(
 }
 
 type polarSubscriptionQueries interface {
-	GetCancelablePolarSubscriptionForOrganization(
+	ListCancelablePolarSubscriptionsForOrganization(
 		context.Context,
 		pgtype.UUID,
-	) (string, error)
+	) ([]string, error)
 }
 
 type polarCancellationClient interface {
@@ -1173,16 +1173,18 @@ func NewPolarCancellationHandler(
 		if queries == nil || client == nil || item.EntityID == uuid.Nil {
 			return reliability.ErrInvalidInput
 		}
-		subscriptionID, err := queries.GetCancelablePolarSubscriptionForOrganization(
+		subscriptionIDs, err := queries.ListCancelablePolarSubscriptionsForOrganization(
 			ctx,
 			pgUUID(item.EntityID),
 		)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
 		if err != nil {
 			return err
 		}
-		return client.CancelSubscription(ctx, subscriptionID)
+		for _, subscriptionID := range subscriptionIDs {
+			if err = client.CancelSubscription(ctx, subscriptionID); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }

@@ -789,6 +789,20 @@ func (q *Queries) GetIntegrationOutbox(ctx context.Context, id pgtype.UUID) (Int
 	return i, err
 }
 
+const getOrganizationDeletionActor = `-- name: GetOrganizationDeletionActor :one
+SELECT actor_reference
+FROM deletion_jobs
+WHERE job_type = 'organization'
+  AND organization_id = $1
+`
+
+func (q *Queries) GetOrganizationDeletionActor(ctx context.Context, organizationID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getOrganizationDeletionActor, organizationID)
+	var actor_reference string
+	err := row.Scan(&actor_reference)
+	return actor_reference, err
+}
+
 const getWebhookInbox = `-- name: GetWebhookInbox :one
 SELECT id, provider, provider_event_id, event_type, payload, payload_sha256, received_at, processed_at, attempt_count, next_attempt_at, dead_lettered_at, safe_error_class, actor_reference, claim_token, claimed_at, claim_expires_at, dead_letter_attempt_count FROM webhook_inbox WHERE id = $1
 `

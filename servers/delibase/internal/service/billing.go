@@ -211,12 +211,10 @@ func (service *Billing) UpdateOverageLimit(
 				return transactionErr
 			}
 			if replayed {
-				setIdempotency(
-					&response.Idempotency,
-					delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT,
-					true, completedAt,
-				)
-				return nil
+				account, transactionErr = activeAccount(ctx, queries, subject)
+				if transactionErr != nil {
+					return transactionErr
+				}
 			}
 			if _, transactionErr = queries.LockOrganizationForBilling(
 				ctx, pgUUID(organizationID),
@@ -227,6 +225,14 @@ func (service *Billing) UpdateOverageLimit(
 				ctx, queries, organizationID, account.ID, true,
 			); transactionErr != nil {
 				return transactionErr
+			}
+			if replayed {
+				setIdempotency(
+					&response.Idempotency,
+					delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT,
+					true, completedAt,
+				)
+				return nil
 			}
 			if _, transactionErr = queries.UpdateOrganizationOverageLimit(
 				ctx,
