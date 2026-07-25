@@ -841,7 +841,10 @@ jobs:
           node-version-file: .nvmrc
       - name: Install Android API
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        run: |
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
       - name: Compile and test the build-only Android widget foundation
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter devhud test:widget:android

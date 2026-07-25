@@ -90,6 +90,10 @@ enum PersistenceCommandError {
     StorageUnavailable,
     InvalidRecord,
     ResetFailed,
+    #[cfg(all(
+        feature = "mobile-system-webview",
+        any(target_os = "android", target_os = "ios")
+    ))]
     WidgetBridgeFailed,
     WriteFailed,
 }

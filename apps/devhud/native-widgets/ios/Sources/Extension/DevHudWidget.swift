@@ -45,7 +45,7 @@ private struct DevHudWidgetView: View {
 
 @main
 struct DevHudWidget: Widget {
-    var body: some WidgetKit.WidgetConfiguration {
+    var body: some SwiftUI.WidgetConfiguration {
         StaticConfiguration(
             kind: DevHudWidgetContract.extensionIdentifier,
             provider: DevHudWidgetProvider()
