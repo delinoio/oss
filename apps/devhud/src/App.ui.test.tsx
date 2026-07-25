@@ -269,6 +269,28 @@ describe("DevHud application surfaces", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("completes first run from the Done action", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      runtime: "cef",
+      sandboxEnabled: true,
+      surface: "settings",
+      firstRun: true,
+    });
+    const bridge = desktopBridge();
+    const user = userEvent.setup();
+    render(<App desktopBridge={bridge} />);
+
+    await user.click(await screen.findByRole("button", { name: "Done" }));
+
+    expect(bridge.completeFirstRun).toHaveBeenCalledOnce();
+    await waitFor(() => expect(bridge.hideSettings).toHaveBeenCalledOnce());
+    expect(
+      screen.getByRole("heading", { name: "DevHud settings" }),
+    ).toBeVisible();
+  });
+
   it("renders persistence failures in the native settings window", async () => {
     vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
       applicationId: "dev.deli.devhud",

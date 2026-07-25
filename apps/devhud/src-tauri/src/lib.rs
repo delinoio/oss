@@ -103,14 +103,18 @@ struct RuntimeInfo {
     sandbox_enabled: bool,
     surface: RuntimeSurface,
     first_run: bool,
+    #[cfg(any(feature = "desktop-cef", test))]
     shortcut_startup_failure: Option<shortcut::ShortcutFailure>,
+    #[cfg(any(feature = "desktop-cef", test))]
     autostart_startup_outcome: Option<autostart::AutostartOutcome>,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 #[derive(Default)]
 struct StartupDiagnostics {
+    #[cfg(feature = "desktop-cef")]
     shortcut_failure: Option<shortcut::ShortcutFailure>,
+    #[cfg(feature = "desktop-cef")]
     autostart_outcome: Option<autostart::AutostartOutcome>,
 }
 
@@ -573,10 +577,13 @@ fn get_runtime_info(
     ))]
     let surface = RuntimeSurface::Mobile;
     let first_run = matches!(persistence.read(SETTINGS_STORAGE_KEY), Ok(None));
+    #[cfg(feature = "desktop-cef")]
     let (shortcut_startup_failure, autostart_startup_outcome) = startup_diagnostics
         .lock()
         .map(|diagnostics| (diagnostics.shortcut_failure, diagnostics.autostart_outcome))
         .unwrap_or((None, None));
+    #[cfg(feature = "mobile-system-webview")]
+    let _ = startup_diagnostics;
 
     Ok(RuntimeInfo {
         application_id: APPLICATION_ID,
@@ -585,7 +592,9 @@ fn get_runtime_info(
         sandbox_enabled: cfg!(not(any(target_os = "android", target_os = "ios"))),
         surface,
         first_run,
+        #[cfg(feature = "desktop-cef")]
         shortcut_startup_failure,
+        #[cfg(feature = "desktop-cef")]
         autostart_startup_outcome,
     })
 }
@@ -998,7 +1007,7 @@ fn set_launch_at_login(
         let _ = state.apply(previous);
         return autostart::AutostartOutcome::Unchanged {
             enabled: previous,
-            reason: autostart::AutostartFailure::OperationFailed,
+            reason: autostart::AutostartFailure::StorageFailed,
         };
     }
     if matches!(outcome, autostart::AutostartOutcome::Applied { .. })
@@ -1182,25 +1191,32 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                     PersistenceState::unavailable()
                 }
             };
-            let persisted_record = persistence.read(SETTINGS_STORAGE_KEY).ok().flatten();
-            let first_run = persisted_record.is_none();
-            let persisted_settings = native_settings(persisted_record.as_deref());
+            let persisted_record = persistence.read(SETTINGS_STORAGE_KEY);
+            let first_run = matches!(&persisted_record, Ok(None));
+            let persisted_settings = persisted_record
+                .as_ref()
+                .ok()
+                .and_then(|record| native_settings(record.as_deref()));
             app.manage(persistence);
             app.manage(QuittingState(AtomicBool::new(false)));
             app.manage(updater::UpdateActionBoundary);
 
             let autostart = autostart::AutostartState::initialize();
-            let launch_at_login = persisted_settings
-                .as_ref()
-                .is_some_and(|settings| settings.launch_at_login);
+            let launch_at_login = if first_run {
+                Ok(false)
+            } else {
+                persisted_settings
+                    .as_ref()
+                    .map(|settings| settings.launch_at_login)
+                    .ok_or(autostart::AutostartFailure::StorageFailed)
+            };
             // The persisted opt-in is authoritative. In particular, a first
             // run actively clears any stale OS entry using the same app id.
-            let autostart_outcome = autostart.apply(launch_at_login);
+            let autostart_outcome = autostart.restore(launch_at_login);
             app.manage(autostart);
 
             let persisted_shortcut = persisted_settings.and_then(|settings| settings.shortcut);
-            let shortcuts =
-                shortcut::ShortcutState::initialize(app.handle().clone(), persisted_shortcut);
+            let shortcuts = shortcut::ShortcutState::initialize(persisted_shortcut);
             let shortcut_failure = shortcuts.restoration_failure();
             app.manage(Mutex::new(shortcuts));
             app.manage(Mutex::new(StartupDiagnostics {
@@ -1279,6 +1295,12 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 .on_navigation(is_bundled_url)
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .on_download(|_, _| false)
+                .on_web_resource_request(|_, response| {
+                    response.headers_mut().insert(
+                        HeaderName::from_static("permissions-policy"),
+                        HeaderValue::from_static(PERMISSIONS_POLICY),
+                    );
+                })
                 .build()?;
             Ok(())
         })

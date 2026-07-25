@@ -1,14 +1,9 @@
 #[cfg(feature = "desktop-cef")]
-use std::sync::Arc;
-
-#[cfg(feature = "desktop-cef")]
 use global_hotkey::{
     GlobalHotKeyManager,
     hotkey::{Code, HotKey, Modifiers},
 };
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "desktop-cef")]
-use tauri::AppHandle;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -209,37 +204,16 @@ const fn map_backend_error(error: BackendError) -> ShortcutFailure {
 #[cfg(feature = "desktop-cef")]
 struct SendableGlobalHotKeyManager(GlobalHotKeyManager);
 
-// SAFETY: every operation on the wrapped manager is dispatched to Tauri's
-// main thread, matching global-hotkey's Windows and macOS requirements.
+// SAFETY: the manager is created during Tauri setup and is accessed only from
+// setup or synchronous Tauri commands, which execute on the main thread.
+// The outer Mutex satisfies managed state's Sync requirement, but its contents
+// must be Send even though the native manager remains main-thread-affine.
 #[cfg(feature = "desktop-cef")]
 unsafe impl Send for SendableGlobalHotKeyManager {}
-#[cfg(feature = "desktop-cef")]
-unsafe impl Sync for SendableGlobalHotKeyManager {}
 
 #[cfg(feature = "desktop-cef")]
 struct NativeShortcutBackend {
-    app: AppHandle<crate::ActiveRuntime>,
-    manager: Arc<SendableGlobalHotKeyManager>,
-}
-
-#[cfg(feature = "desktop-cef")]
-impl NativeShortcutBackend {
-    fn run_on_main_thread(
-        &self,
-        operation: impl FnOnce(&GlobalHotKeyManager) -> global_hotkey::Result<()> + Send + 'static,
-    ) -> Result<(), BackendError> {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let manager = self.manager.clone();
-        self.app
-            .run_on_main_thread(move || {
-                let _ = sender.send(operation(&manager.0));
-            })
-            .map_err(|_| BackendError::Failed)?;
-        receiver
-            .recv()
-            .map_err(|_| BackendError::Failed)?
-            .map_err(classify_native_error)
-    }
+    manager: SendableGlobalHotKeyManager,
 }
 
 #[cfg(feature = "desktop-cef")]
@@ -260,11 +234,17 @@ impl ShortcutBackend for NativeShortcutBackend {
     }
 
     fn register(&mut self, binding: Self::Binding) -> Result<(), BackendError> {
-        self.run_on_main_thread(move |manager| manager.register(binding))
+        self.manager
+            .0
+            .register(binding)
+            .map_err(classify_native_error)
     }
 
     fn unregister(&mut self, binding: Self::Binding) -> Result<(), BackendError> {
-        self.run_on_main_thread(move |manager| manager.unregister(binding))
+        self.manager
+            .0
+            .unregister(binding)
+            .map_err(classify_native_error)
     }
 
     fn id(binding: Self::Binding) -> u32 {
@@ -350,10 +330,7 @@ pub(crate) struct ShortcutState {
 
 #[cfg(feature = "desktop-cef")]
 impl ShortcutState {
-    pub(crate) fn initialize(
-        app: AppHandle<crate::ActiveRuntime>,
-        restored: Option<StructuredShortcut>,
-    ) -> Self {
+    pub(crate) fn initialize(restored: Option<StructuredShortcut>) -> Self {
         let has_restored_shortcut = restored.is_some();
         #[cfg(target_os = "linux")]
         if std::env::var_os("DISPLAY").is_none_or(|display| display.is_empty()) {
@@ -367,8 +344,9 @@ impl ShortcutState {
 
         match GlobalHotKeyManager::new() {
             Ok(manager) => {
-                let manager = Arc::new(SendableGlobalHotKeyManager(manager));
-                let backend = NativeShortcutBackend { app, manager };
+                let backend = NativeShortcutBackend {
+                    manager: SendableGlobalHotKeyManager(manager),
+                };
                 let mut coordinator = ShortcutCoordinator::new(backend);
                 let mut restoration_failure = None;
                 if let Some(shortcut) = restored

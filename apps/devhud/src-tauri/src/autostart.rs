@@ -5,6 +5,7 @@ use serde::Serialize;
 pub(crate) enum AutostartFailure {
     PermissionDenied,
     OperationFailed,
+    StorageFailed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -35,6 +36,16 @@ struct AutostartCoordinator<B: AutostartBackend> {
 }
 
 impl<B: AutostartBackend> AutostartCoordinator<B> {
+    fn restore(&self, enabled: Result<bool, AutostartFailure>) -> AutostartOutcome {
+        match enabled {
+            Ok(enabled) => self.apply(enabled),
+            Err(reason) => AutostartOutcome::Unchanged {
+                enabled: self.backend.is_enabled().unwrap_or(false),
+                reason,
+            },
+        }
+    }
+
     fn apply(&self, enabled: bool) -> AutostartOutcome {
         let previous = match self.backend.is_enabled() {
             Ok(previous) => previous,
@@ -166,6 +177,22 @@ impl AutostartState {
         }
     }
 
+    pub(crate) fn restore(&self, enabled: Result<bool, AutostartFailure>) -> AutostartOutcome {
+        match (&self.coordinator, enabled) {
+            (Some(coordinator), enabled) => coordinator.restore(enabled),
+            (None, Err(reason)) => AutostartOutcome::Unchanged {
+                enabled: false,
+                reason,
+            },
+            (None, Ok(_)) => AutostartOutcome::Unchanged {
+                enabled: false,
+                reason: self
+                    .unavailable
+                    .unwrap_or(AutostartFailure::OperationFailed),
+            },
+        }
+    }
+
     pub(crate) fn current(&self) -> Option<bool> {
         self.coordinator
             .as_ref()
@@ -243,6 +270,25 @@ mod tests {
             );
             assert!(!coordinator.backend.enabled.get());
         }
+    }
+
+    #[test]
+    fn unreadable_settings_preserve_the_existing_autostart_state() {
+        let coordinator = coordinator(true);
+        coordinator
+            .backend
+            .set_results
+            .borrow_mut()
+            .push_back(Err(BackendError::Failed));
+
+        assert_eq!(
+            coordinator.restore(Err(AutostartFailure::StorageFailed)),
+            AutostartOutcome::Unchanged {
+                enabled: true,
+                reason: AutostartFailure::StorageFailed
+            }
+        );
+        assert_eq!(coordinator.backend.set_results.borrow().len(), 1);
     }
 
     #[test]

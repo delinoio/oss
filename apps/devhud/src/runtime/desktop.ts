@@ -22,7 +22,10 @@ export type ShortcutReplacementOutcome =
   | { readonly status: "unchanged"; readonly reason: ShortcutFailure }
   | { readonly status: "cancelled" };
 
-export type AutostartFailure = "permission-denied" | "operation-failed";
+export type AutostartFailure =
+  | "permission-denied"
+  | "operation-failed"
+  | "storage-failed";
 
 export type AutostartOutcome =
   | { readonly status: "applied"; readonly enabled: boolean }

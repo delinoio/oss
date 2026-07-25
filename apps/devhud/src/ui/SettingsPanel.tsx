@@ -168,6 +168,8 @@ export function SettingsPanel({
           message:
             startupAutostartOutcome.reason === "permission-denied"
               ? "DevHud could not restore launch at login because permission was denied. The actual system setting is shown."
+              : startupAutostartOutcome.reason === "storage-failed"
+                ? "DevHud left launch at login unchanged because local settings are unavailable or invalid. The actual system setting is shown."
               : "DevHud could not restore launch at login. The actual system setting is shown.",
           error: true,
         }
@@ -266,7 +268,7 @@ export function SettingsPanel({
     });
   };
 
-  const skipFirstRun = () => {
+  const completeFirstRun = () => {
     void (bridge?.completeFirstRun() ??
       Promise.resolve({ status: "completed" as const })).then((outcome) => {
       if (outcome.status === "completed") {
@@ -393,11 +395,15 @@ export function SettingsPanel({
       </p>
       <div className="button-row settings-actions">
         {firstRun ? (
-          <button className="text-button" onClick={skipFirstRun} type="button">
+          <button className="text-button" onClick={completeFirstRun} type="button">
             Skip for now
           </button>
         ) : null}
-        <button className="primary-button" onClick={onClose} type="button">
+        <button
+          className="primary-button"
+          onClick={firstRun ? completeFirstRun : onClose}
+          type="button"
+        >
           Done
         </button>
       </div>
