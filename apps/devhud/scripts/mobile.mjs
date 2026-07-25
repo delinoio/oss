@@ -70,7 +70,10 @@ if (platform === "android") {
     { cwd: appRoot },
   );
 } else {
-  const targets = targetSet === "production" ? ["aarch64"] : ["x86_64"];
+  const simulatorTarget =
+    process.arch === "arm64" ? "aarch64-sim" : "x86_64";
+  const targets =
+    targetSet === "production" ? ["aarch64"] : [simulatorTarget];
   const iosGeneratedRoot = resolve(appRoot, "src-tauri/gen/apple");
   await mkdir(resolve(iosGeneratedRoot, "Externals"), { recursive: true });
   await run("xcodegen", ["generate", "--spec", "project.yml"], {
