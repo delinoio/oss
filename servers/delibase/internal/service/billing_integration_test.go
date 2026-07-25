@@ -1006,13 +1006,18 @@ func TestPostgreSQLUpdateOverageLimitReplaysAfterOrganizationLock(t *testing.T) 
 	for {
 		var waiting int
 		if err = observer.QueryRow(ctx, `
-			SELECT count(*)
-			FROM pg_stat_activity
-			WHERE datname = current_database()
-			  AND wait_event_type = 'Lock'
-			  AND query LIKE '%FROM organizations%'
-			  AND query LIKE '%FOR UPDATE%'
-		`).Scan(&waiting); err != nil {
+			WITH RECURSIVE blocked(pid) AS (
+				SELECT pid
+				FROM pg_stat_activity
+				WHERE $1::integer = ANY(pg_blocking_pids(pid))
+				UNION
+				SELECT activity.pid
+				FROM pg_stat_activity AS activity
+				JOIN blocked
+				  ON blocked.pid = ANY(pg_blocking_pids(activity.pid))
+			)
+			SELECT count(*) FROM blocked
+		`, int32(locker.PgConn().PID())).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
 		if waiting >= 2 {
