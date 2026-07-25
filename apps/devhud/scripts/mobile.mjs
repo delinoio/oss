@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { run, runPackageManager } from "./process.mjs";
@@ -70,8 +71,10 @@ if (platform === "android") {
   );
 } else {
   const targets = targetSet === "production" ? ["aarch64"] : ["x86_64"];
+  const iosGeneratedRoot = resolve(appRoot, "src-tauri/gen/apple");
+  await mkdir(resolve(iosGeneratedRoot, "Externals"), { recursive: true });
   await run("xcodegen", ["generate", "--spec", "project.yml"], {
-    cwd: resolve(appRoot, "src-tauri/gen/apple"),
+    cwd: iosGeneratedRoot,
   });
   await run(
     node,
