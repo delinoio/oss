@@ -268,6 +268,46 @@ describe("DevHud application surfaces", () => {
     expect(bridge.replaceGlobalShortcut).toHaveBeenCalledOnce();
   });
 
+  it("adopts the effective shortcut when persistence and rollback fail", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "settings",
+      firstRun: false,
+    });
+    const bridge = desktopBridge({
+      replaceGlobalShortcut: vi.fn(async (shortcut) => {
+        if (shortcut === null) return { status: "cancelled" as const };
+        return {
+          status: "unchanged" as const,
+          reason: "storage-failed" as const,
+          shortcut,
+        };
+      }),
+    });
+    const user = userEvent.setup();
+    renderApp({ desktopBridge: bridge });
+    const record = await screen.findByRole("button", {
+      name: "Record shortcut",
+    });
+    await waitFor(() => expect(record).toBeEnabled());
+    await user.click(record);
+    fireEvent.keyDown(record, {
+      code: "KeyP",
+      key: "p",
+      ctrlKey: true,
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "effective shortcut is shown",
+    );
+    expect(screen.getByText("Ctrl + P")).toBeVisible();
+  });
+
   it("offers a skippable first run while preserving native tray access", async () => {
     vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
       applicationId: "dev.deli.devhud",
@@ -283,6 +323,13 @@ describe("DevHud application surfaces", () => {
     const user = userEvent.setup();
     renderApp({ desktopBridge: bridge });
     expect(await screen.findByRole("heading", { name: "Set up DevHud" })).toBeVisible();
+    const recordShortcut = screen.getByRole("button", {
+      name: "Record shortcut",
+    });
+    await waitFor(() => {
+      expect(recordShortcut).toBeEnabled();
+      expect(recordShortcut).toHaveFocus();
+    });
     expect(
       screen.getByText(/remains available from the tray either way/u),
     ).toBeVisible();
@@ -360,7 +407,7 @@ describe("DevHud application surfaces", () => {
       shortcutStartupFailure: "conflict",
       autostartStartupOutcome: {
         status: "unchanged",
-        enabled: false,
+        enabled: true,
         reason: "permission-denied",
       },
     });
@@ -375,12 +422,9 @@ describe("DevHud application surfaces", () => {
         },
       },
     });
-    const storage: LocalStorageAdapter = {
-      read: async (key) =>
-        key === SETTINGS_STORAGE_KEY ? settingsRecord : null,
-      reset: async () => undefined,
-      write: async () => undefined,
-    };
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(SETTINGS_STORAGE_KEY, settingsRecord);
+    const user = userEvent.setup();
 
     renderApp({ desktopBridge: desktopBridge(), storage });
 
@@ -396,8 +440,23 @@ describe("DevHud application surfaces", () => {
         screen.getByRole("checkbox", {
           name: "Launch DevHud at login",
         }),
-      ).not.toBeChecked(),
+      ).toBeChecked(),
     );
+
+    await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
+    await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+    expect(await screen.findByText("DevHud local data was reset.")).toBeVisible();
+    expect(
+      screen.queryByText(/saved shortcut is already in use/u),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/actual system setting is shown/u),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Launch DevHud at login",
+      }),
+    ).not.toBeChecked();
   });
 
   it("provides explicit mobile content states without visible widgets", async () => {

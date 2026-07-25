@@ -1169,7 +1169,7 @@ fn replace_global_shortcut(
             if let shortcut::ShortcutReplacementOutcome::Replaced { shortcut } = &outcome {
                 let value = serde_json::to_value(shortcut).unwrap_or(serde_json::Value::Null);
                 if persist_settings_field(&persistence, "shortcut", value).is_err() {
-                    if let Err(reason) = state.rollback(previous) {
+                    let rollback_failed = if let Err(reason) = state.rollback(previous) {
                         log_shortcut_integration_failure(
                             "replace-rollback",
                             reason,
@@ -1179,7 +1179,10 @@ fn replace_global_shortcut(
                                 "not-configured"
                             },
                         );
-                    }
+                        true
+                    } else {
+                        false
+                    };
                     log_shortcut_integration_failure(
                         "replace-persist",
                         shortcut::ShortcutFailure::StorageFailed,
@@ -1191,13 +1194,18 @@ fn replace_global_shortcut(
                     );
                     return shortcut::ShortcutReplacementOutcome::Unchanged {
                         reason: shortcut::ShortcutFailure::StorageFailed,
+                        shortcut: if rollback_failed {
+                            state.active_shortcut()
+                        } else {
+                            None
+                        },
                     };
                 }
                 if let Ok(mut diagnostics) = startup_diagnostics.lock() {
                     diagnostics.shortcut_failure = None;
                 }
             }
-            if let shortcut::ShortcutReplacementOutcome::Unchanged { reason } = &outcome {
+            if let shortcut::ShortcutReplacementOutcome::Unchanged { reason, .. } = &outcome {
                 log_shortcut_integration_failure(
                     "replace",
                     *reason,
@@ -1207,7 +1215,10 @@ fn replace_global_shortcut(
                         "not-configured"
                     },
                 );
-                return shortcut::ShortcutReplacementOutcome::Unchanged { reason: *reason };
+                return shortcut::ShortcutReplacementOutcome::Unchanged {
+                    reason: *reason,
+                    shortcut: None,
+                };
             }
             outcome
         }
@@ -1219,6 +1230,7 @@ fn replace_global_shortcut(
             );
             shortcut::ShortcutReplacementOutcome::Unchanged {
                 reason: shortcut::ShortcutFailure::RegistrationFailed,
+                shortcut: None,
             }
         }
     }

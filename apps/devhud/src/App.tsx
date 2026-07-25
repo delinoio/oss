@@ -58,10 +58,12 @@ function PersistenceAlerts() {
 
 function SettingsDialog({
   bridge,
+  onResetComplete,
   showDesktopControls,
   runtimeInfo,
 }: {
   readonly bridge: DesktopBridge | null;
+  readonly onResetComplete: () => void;
   readonly showDesktopControls: boolean;
   readonly runtimeInfo: RuntimeInfo | null;
 }) {
@@ -76,7 +78,7 @@ function SettingsDialog({
         startupAutostartOutcome={runtimeInfo?.autostartStartupOutcome}
         startupShortcutFailure={runtimeInfo?.shortcutStartupFailure}
       />
-      <ResetDevHudControl />
+      <ResetDevHudControl onResetComplete={onResetComplete} />
     </Dialog>
   );
 }
@@ -102,7 +104,11 @@ function ThemeField() {
 
 type ResetStatus = "idle" | "confirming" | "resetting" | "failed" | "complete";
 
-function ResetDevHudControl() {
+function ResetDevHudControl({
+  onResetComplete,
+}: {
+  readonly onResetComplete?: () => void;
+}) {
   const { resetDevHud } = useApplication();
   const [status, setStatus] = useState<ResetStatus>("idle");
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -115,6 +121,7 @@ function ResetDevHudControl() {
     setStatus("resetting");
     try {
       await resetDevHud();
+      onResetComplete?.();
       setStatus("complete");
     } catch {
       setStatus("failed");
@@ -174,11 +181,13 @@ function ResetDevHudControl() {
 function SettingsWindow({
   bridge,
   firstRun,
+  onResetComplete,
   startupAutostartOutcome,
   startupShortcutFailure,
 }: {
   readonly bridge: DesktopBridge | null;
   readonly firstRun: boolean;
+  readonly onResetComplete: () => void;
   readonly startupAutostartOutcome: RuntimeInfo["autostartStartupOutcome"];
   readonly startupShortcutFailure: RuntimeInfo["shortcutStartupFailure"];
 }) {
@@ -197,7 +206,7 @@ function SettingsWindow({
         startupAutostartOutcome={startupAutostartOutcome}
         startupShortcutFailure={startupShortcutFailure}
       />
-      <ResetDevHudControl />
+      <ResetDevHudControl onResetComplete={onResetComplete} />
     </main>
   );
 }
@@ -591,6 +600,20 @@ function ApplicationSurface({
   const [platform, setPlatform] = useState(initialPlatform);
   const [runtime, setRuntime] = useState<RuntimeState>({ status: "loading" });
   const [runtimeAttempt, setRuntimeAttempt] = useState(0);
+  const clearStartupDiagnostics = useCallback(() => {
+    setRuntime((current) =>
+      current.status === "ready"
+        ? {
+            status: "ready",
+            runtimeInfo: {
+              ...current.runtimeInfo,
+              autostartStartupOutcome: null,
+              shortcutStartupFailure: null,
+            },
+          }
+        : current,
+    );
+  }, []);
   const retryRuntime = useCallback(() => {
     setRuntime({ status: "loading" });
     setRuntimeAttempt((attempt) => attempt + 1);
@@ -638,6 +661,7 @@ function ApplicationSurface({
       <SettingsWindow
         bridge={bridge}
         firstRun={runtime.runtimeInfo.firstRun === true}
+        onResetComplete={clearStartupDiagnostics}
         startupAutostartOutcome={runtime.runtimeInfo.autostartStartupOutcome}
         startupShortcutFailure={runtime.runtimeInfo.shortcutStartupFailure}
       />
@@ -661,6 +685,7 @@ function ApplicationSurface({
       {settingsOpen ? (
         <SettingsDialog
           bridge={bridge}
+          onResetComplete={clearStartupDiagnostics}
           runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
           showDesktopControls={platform === "desktop"}
         />

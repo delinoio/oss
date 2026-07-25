@@ -19,7 +19,11 @@ export type ShortcutFailure =
 
 export type ShortcutReplacementOutcome =
   | { readonly status: "replaced"; readonly shortcut: StructuredShortcut }
-  | { readonly status: "unchanged"; readonly reason: ShortcutFailure }
+  | {
+      readonly status: "unchanged";
+      readonly reason: ShortcutFailure;
+      readonly shortcut?: StructuredShortcut;
+    }
   | { readonly status: "cancelled" };
 
 export type AutostartFailure =

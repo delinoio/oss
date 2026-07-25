@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
   ShortcutKey,
@@ -186,6 +186,10 @@ export function SettingsPanel({
       ? startupAutostartOutcome.enabled
       : settings.launchAtLogin;
 
+  useEffect(() => {
+    if (firstRun && persistenceReady) captureRef.current?.focus();
+  }, [firstRun, persistenceReady]);
+
   const beginCapture = () => {
     setCapturing(true);
     setShortcutStatus({
@@ -229,8 +233,15 @@ export function SettingsPanel({
         setShortcutRestoredInSession(true);
         setShortcutStatus({ message: "Shortcut updated.", error: false });
       } else if (outcome.status === "unchanged") {
+        if (outcome.shortcut !== undefined) {
+          adoptNativeShortcut(outcome.shortcut);
+          setShortcutRestoredInSession(true);
+        }
         setShortcutStatus({
-          message: shortcutFailureMessage[outcome.reason],
+          message:
+            outcome.shortcut === undefined
+              ? shortcutFailureMessage[outcome.reason]
+              : "DevHud could not save that shortcut or restore the previous binding. The effective shortcut is shown.",
           error: true,
         });
       } else {

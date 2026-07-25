@@ -135,8 +135,14 @@ impl ShortcutFailure {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub(crate) enum ShortcutReplacementOutcome {
-    Replaced { shortcut: StructuredShortcut },
-    Unchanged { reason: ShortcutFailure },
+    Replaced {
+        shortcut: StructuredShortcut,
+    },
+    Unchanged {
+        reason: ShortcutFailure,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        shortcut: Option<StructuredShortcut>,
+    },
     Cancelled,
 }
 
@@ -171,7 +177,10 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
 
     fn replace(&mut self, shortcut: StructuredShortcut) -> ShortcutReplacementOutcome {
         if let Err(reason) = shortcut.validate() {
-            return ShortcutReplacementOutcome::Unchanged { reason };
+            return ShortcutReplacementOutcome::Unchanged {
+                reason,
+                shortcut: None,
+            };
         }
 
         let candidate = B::binding(&shortcut);
@@ -186,6 +195,7 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
         if let Err(error) = self.backend.register(candidate) {
             return ShortcutReplacementOutcome::Unchanged {
                 reason: map_backend_error(error),
+                shortcut: None,
             };
         }
 
@@ -195,6 +205,7 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
             let _ = self.backend.unregister(candidate);
             return ShortcutReplacementOutcome::Unchanged {
                 reason: ShortcutFailure::RegistrationFailed,
+                shortcut: None,
             };
         }
 
@@ -418,6 +429,7 @@ impl ShortcutState {
             Err(_) => {
                 return ShortcutReplacementOutcome::Unchanged {
                     reason: ShortcutFailure::Malformed,
+                    shortcut: None,
                 };
             }
         };
@@ -427,6 +439,7 @@ impl ShortcutState {
                 reason: self
                     .unavailable
                     .unwrap_or(ShortcutFailure::RegistrationFailed),
+                shortcut: None,
             },
         };
         if matches!(outcome, ShortcutReplacementOutcome::Replaced { .. }) {
@@ -469,7 +482,7 @@ impl ShortcutState {
                 serde_json::to_value(previous).map_err(|_| ShortcutFailure::Malformed)?,
             )) {
                 ShortcutReplacementOutcome::Replaced { .. } => Ok(()),
-                ShortcutReplacementOutcome::Unchanged { reason } => Err(reason),
+                ShortcutReplacementOutcome::Unchanged { reason, .. } => Err(reason),
                 ShortcutReplacementOutcome::Cancelled => Err(ShortcutFailure::RegistrationFailed),
             },
             None => self.clear(),
@@ -540,7 +553,8 @@ mod tests {
                 key: ShortcutKey::P,
             }),
             ShortcutReplacementOutcome::Unchanged {
-                reason: ShortcutFailure::Malformed
+                reason: ShortcutFailure::Malformed,
+                shortcut: None,
             }
         );
         coordinator
@@ -550,7 +564,8 @@ mod tests {
         assert_eq!(
             coordinator.replace(shortcut(ShortcutKey::P)),
             ShortcutReplacementOutcome::Unchanged {
-                reason: ShortcutFailure::Conflict
+                reason: ShortcutFailure::Conflict,
+                shortcut: None,
             }
         );
         assert_eq!(coordinator.active_id(), working_id);
@@ -589,7 +604,8 @@ mod tests {
         assert_eq!(
             coordinator.replace(shortcut(ShortcutKey::P)),
             ShortcutReplacementOutcome::Unchanged {
-                reason: ShortcutFailure::RegistrationFailed
+                reason: ShortcutFailure::RegistrationFailed,
+                shortcut: None,
             }
         );
         assert_eq!(coordinator.active_id(), Some(working_id));
@@ -623,6 +639,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ShortcutReplacementOutcome::Unchanged {
                 reason: ShortcutFailure::UnsupportedDisplay,
+                shortcut: None,
             })
             .unwrap(),
             serde_json::json!({
@@ -633,11 +650,27 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ShortcutReplacementOutcome::Unchanged {
                 reason: ShortcutFailure::StorageFailed,
+                shortcut: None,
             })
             .unwrap(),
             serde_json::json!({
                 "status": "unchanged",
                 "reason": "storage-failed"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(ShortcutReplacementOutcome::Unchanged {
+                reason: ShortcutFailure::StorageFailed,
+                shortcut: Some(shortcut(ShortcutKey::P)),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "status": "unchanged",
+                "reason": "storage-failed",
+                "shortcut": {
+                    "modifiers": ["control", "shift"],
+                    "key": "p"
+                }
             })
         );
     }
