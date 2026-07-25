@@ -358,17 +358,17 @@ where
     // Cleanup is best-effort because a partial unlink can no longer be rolled back.
     for staged_index in staged {
         let (key, _, staged_path) = &paths[staged_index];
-        if let Err(error) = remove_staged_record(staged_path) {
-            if error.kind() != io::ErrorKind::NotFound {
-                tracing::warn!(
-                    event = "devhud.persistence.reset_cleanup_failure",
-                    operation = "reset-cleanup",
-                    record = persistence_record_name(key),
-                    error_kind = ?error.kind(),
-                    classification = "cleanup-failed",
-                    "DevHud reset staging cleanup failed"
-                );
-            }
+        if let Err(error) = remove_staged_record(staged_path)
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                event = "devhud.persistence.reset_cleanup_failure",
+                operation = "reset-cleanup",
+                record = persistence_record_name(key),
+                error_kind = ?error.kind(),
+                classification = "cleanup-failed",
+                "DevHud reset staging cleanup failed"
+            );
         }
     }
     Ok(())
@@ -1767,15 +1767,13 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 .build()?;
             create_tray(app.handle())?;
             install_shortcut_handler(app.handle());
-            if first_run {
-                if build_settings_window(app.handle()).is_err() {
-                    tracing::warn!(
-                        event = "devhud.settings.window_failure",
-                        operation = "first-run",
-                        classification = "window-unavailable",
-                        "DevHud first-run settings window could not be opened"
-                    );
-                }
+            if first_run && build_settings_window(app.handle()).is_err() {
+                tracing::warn!(
+                    event = "devhud.settings.window_failure",
+                    operation = "first-run",
+                    classification = "window-unavailable",
+                    "DevHud first-run settings window could not be opened"
+                );
             }
 
             tracing::info!(
