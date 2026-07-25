@@ -1500,11 +1500,12 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, transaction_timestamp() - interval '1 day', transaction_timestamp() + interval '1 day')", []any{periodC, orgC, subC}},
 		{`INSERT INTO polar_paid_cycles (
 			polar_order_id, organization_id, subscription_id, billing_period_id,
-			period_starts_at, period_ends_at, grant_micros, paid_at
+			period_starts_at, period_ends_at, grant_micros,
+			reversed_micros, paid_at
 		)
 		SELECT
 			'schema-order-a', $1, $2, id, starts_at, ends_at,
-			10000000, transaction_timestamp()
+			10000000, 1000000, transaction_timestamp()
 		FROM billing_periods
 		WHERE id = $3`, []any{orgA, subA, periodA}},
 		{"INSERT INTO polar_refunds (polar_refund_id, polar_order_id, status, requested_micros, reversed_micros, provider_event_at) VALUES ('schema-refund-a', 'schema-order-a', 'succeeded', 1000000, 1000000, transaction_timestamp())", nil},
@@ -2303,11 +2304,11 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			INSERT INTO polar_paid_cycles (
 				polar_order_id, organization_id, subscription_id,
 				billing_period_id, period_starts_at, period_ends_at,
-				grant_micros, paid_at
+				grant_micros, reversed_micros, paid_at
 			)
 			SELECT
 				'order_commit_shortfall', $1, $2, id, starts_at, ends_at,
-				10000000, statement_timestamp()
+				10000000, 10, statement_timestamp()
 			FROM billing_periods
 			WHERE id = $3
 			RETURNING polar_order_id

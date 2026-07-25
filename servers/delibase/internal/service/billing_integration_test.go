@@ -412,6 +412,38 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 	); err == nil {
 		t.Fatal("paid cycle reversal total accepted a decrease")
 	}
+	if _, err = rawPaidCycle.Exec(
+		ctx,
+		`UPDATE polar_paid_cycles
+		 SET reversed_micros = grant_micros
+		 WHERE polar_order_id = 'order_1'`,
+	); err == nil {
+		t.Fatal("paid cycle reversal total accepted an unmatched increase")
+	}
+	if _, err = rawPaidCycle.Exec(
+		ctx,
+		`UPDATE polar_refunds
+		 SET polar_order_id = 'order_2'
+		 WHERE polar_refund_id = 'refund_1'`,
+	); err == nil {
+		t.Fatal("refund snapshot accepted an order reassignment")
+	}
+	if _, err = rawPaidCycle.Exec(
+		ctx,
+		`UPDATE polar_refunds
+		 SET reversed_micros = 0
+		 WHERE polar_refund_id = 'refund_1'`,
+	); err == nil {
+		t.Fatal("refund reversal total accepted a decrease")
+	}
+	if _, err = rawPaidCycle.Exec(
+		ctx,
+		`UPDATE polar_refunds
+		 SET provider_event_at = provider_event_at - interval '1 second'
+		 WHERE polar_refund_id = 'refund_1'`,
+	); err == nil {
+		t.Fatal("refund provider event time accepted a decrease")
+	}
 	pastDuePayload, _ := json.Marshal(polarBillingEvent{
 		Type:       string(reliability.WebhookSubscriptionPastDue),
 		EventAt:    now.Add(2 * time.Minute),

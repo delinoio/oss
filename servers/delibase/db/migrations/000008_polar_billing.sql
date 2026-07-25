@@ -189,6 +189,16 @@ BEGIN
             RAISE EXCEPTION 'paid cycle reversal total cannot decrease'
                 USING ERRCODE = 'check_violation';
         END IF;
+        IF NEW.reversed_micros > OLD.reversed_micros
+           AND NOT EXISTS (
+               SELECT 1
+               FROM polar_refunds
+               WHERE polar_order_id = OLD.polar_order_id
+               HAVING sum(reversed_micros) = NEW.reversed_micros
+           ) THEN
+            RAISE EXCEPTION 'paid cycle reversal total must match retained refunds'
+                USING ERRCODE = 'check_violation';
+        END IF;
         RETURN NEW;
     END IF;
 
@@ -226,6 +236,32 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF ROW(
+            NEW.polar_refund_id,
+            NEW.polar_order_id,
+            NEW.created_at,
+            NEW.retain_until
+        ) IS DISTINCT FROM ROW(
+            OLD.polar_refund_id,
+            OLD.polar_order_id,
+            OLD.created_at,
+            OLD.retain_until
+        ) THEN
+            RAISE EXCEPTION 'refund snapshot is immutable'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.provider_event_at < OLD.provider_event_at THEN
+            RAISE EXCEPTION 'refund provider event time cannot decrease'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.reversed_micros < OLD.reversed_micros THEN
+            RAISE EXCEPTION 'refund reversal total cannot decrease'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        RETURN NEW;
+    END IF;
+
     IF OLD.retain_until > transaction_timestamp() THEN
         RAISE EXCEPTION 'refund retention period has not elapsed'
             USING ERRCODE = 'check_violation';
@@ -235,7 +271,7 @@ END;
 $$;
 
 CREATE TRIGGER polar_refunds_enforce_retention
-BEFORE DELETE ON polar_refunds
+BEFORE UPDATE OR DELETE ON polar_refunds
 FOR EACH ROW EXECUTE FUNCTION enforce_polar_refund_retention();
 
 CREATE TABLE billing_shortfalls (
