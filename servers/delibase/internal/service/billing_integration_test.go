@@ -542,6 +542,7 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	}
 
 	historyOrganizationID := uuidv7.MustNew()
+	historyTeamID := uuidv7.MustNew()
 	pastDueSubscriptionID := uuidv7.MustNew()
 	canceledSubscriptionID := uuidv7.MustNew()
 	now := time.Now().UTC()
@@ -571,6 +572,15 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 				OrganizationID: pgUUID(historyOrganizationID),
 				AccountID:      pgUUID(accountID),
 				Role:           "owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateGeneralTeam(
+			ctx,
+			dbgen.CreateGeneralTeamParams{
+				ID:             pgUUID(historyTeamID),
+				OrganizationID: pgUUID(historyOrganizationID),
 			},
 		); transactionErr != nil {
 			return transactionErr
