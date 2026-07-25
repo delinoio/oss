@@ -190,7 +190,7 @@ describe("account deletion", () => {
     expect(screen.getByRole("button", { name: "Keep account" })).toBeEnabled();
   });
 
-  it("reuses the pending key across retries and resets it on cancellation", async () => {
+  it("preserves retries across cancellation and auth refreshes", async () => {
     const idempotencyKeys: string[] = [];
     let deleteAttempt = 0;
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
@@ -229,20 +229,22 @@ describe("account deletion", () => {
         queries: { retry: false },
       },
     });
-    let signOutAttempt = 0;
-    const signOut = vi.fn(async () => {
-      signOutAttempt += 1;
-      if (signOutAttempt === 1) {
-        throw new Error("Logto is unavailable.");
+    let rejectSignOut: ((reason?: unknown) => void) | undefined;
+    const signOut = vi.fn(() => {
+      if (signOut.mock.calls.length === 1) {
+        return new Promise<void>((_, reject) => {
+          rejectSignOut = reject;
+        });
       }
+      return Promise.resolve();
     });
     const user = userEvent.setup();
-
-    render(
+    const renderAccount = (authError?: string) => (
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={["/account"]}>
           <AuthSessionProvider
             value={{
+              error: authError,
               signIn: async () => undefined,
               signOut,
               status: AuthStatus.SignedIn,
@@ -256,8 +258,10 @@ describe("account deletion", () => {
             </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
-      </QueryClientProvider>,
+      </QueryClientProvider>
     );
+
+    const { rerender } = render(renderAccount());
 
     await screen.findByRole("heading", { name: "Account" });
     await user.click(
@@ -278,6 +282,9 @@ describe("account deletion", () => {
       await screen.findByRole("button", { name: "Delete account" }),
     );
 
+    await vi.waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+    rerender(renderAccount("Logto session refreshed."));
+    rejectSignOut?.(new Error("Logto is unavailable."));
     expect(
       await screen.findByText(
         "Account deletion succeeded, but Logto sign-out failed. Retry sign out.",

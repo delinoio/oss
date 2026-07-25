@@ -81,17 +81,11 @@ export function AccountPage() {
       return;
     }
     lastSignOutAttempt.current = signOutAttempt;
-    let active = true;
     void auth.signOut().catch(() => {
-      if (active) {
-        setSignOutError(
-          "Account deletion succeeded, but Logto sign-out failed. Retry sign out.",
-        );
-      }
+      setSignOutError(
+        "Account deletion succeeded, but Logto sign-out failed. Retry sign out.",
+      );
     });
-    return () => {
-      active = false;
-    };
   }, [auth, deletionAccepted, signOutAttempt]);
 
   const submitOrganization = (event: FormEvent<HTMLFormElement>) => {
