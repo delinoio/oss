@@ -2240,7 +2240,9 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, `
-		UPDATE billing_periods SET overage_limit_micros = 0
+		UPDATE billing_periods
+		SET overage_limit_micros = 0,
+		    requested_overage_limit_micros = 0
 		WHERE id = '0198a000-0000-7000-8000-000000000121'
 	`); err != nil {
 		t.Fatal(err)
@@ -2263,7 +2265,8 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	if _, err := overageCapacity.Exec(ctx, `
 		UPDATE billing_periods
-		SET overage_limit_micros = 10
+		SET overage_limit_micros = 10,
+		    requested_overage_limit_micros = 10
 		WHERE id = $1
 	`, currentPeriodA); err != nil {
 		_ = overageCapacity.Rollback(context.WithoutCancel(ctx))

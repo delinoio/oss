@@ -975,14 +975,9 @@ func TestPostgreSQLPortalAuthorizationRevalidatesBillingAccessUnderOrganizationL
 		results <- portalResult{response: response, err: createErr}
 	}()
 	select {
-	case <-provider.started:
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
-	select {
 	case result := <-results:
 		t.Fatalf(
-			"portal persistence completed before role change released organization lock: %#v",
+			"portal request completed before role change released organization lock: %#v",
 			result,
 		)
 	case <-time.After(200 * time.Millisecond):
