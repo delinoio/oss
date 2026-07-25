@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { LocalStorageAdapter } from "./persistence/storage";
+import type {
+  LocalStorageAdapter,
+  PersistenceResetOutcome,
+} from "./persistence/storage";
 import {
   detectApplicationPlatform,
   platformForRuntime,
@@ -59,11 +62,13 @@ function PersistenceAlerts() {
 function SettingsDialog({
   bridge,
   onResetComplete,
+  settingsRevision,
   showDesktopControls,
   runtimeInfo,
 }: {
   readonly bridge: DesktopBridge | null;
-  readonly onResetComplete: () => void;
+  readonly onResetComplete: (outcome: PersistenceResetOutcome) => void;
+  readonly settingsRevision: number;
   readonly showDesktopControls: boolean;
   readonly runtimeInfo: RuntimeInfo | null;
 }) {
@@ -73,6 +78,7 @@ function SettingsDialog({
       <PersistenceAlerts />
       <SettingsPanel
         bridge={bridge}
+        key={settingsRevision}
         onClose={closeSettings}
         showDesktopControls={showDesktopControls}
         startupAutostartOutcome={runtimeInfo?.autostartStartupOutcome}
@@ -109,12 +115,13 @@ type ResetStatus =
   | "failed"
   | "partially-retained"
   | "cleanup-failed"
+  | "integration-rollback-failed"
   | "complete";
 
 function ResetDevHudControl({
   onResetComplete,
 }: {
-  readonly onResetComplete?: () => void;
+  readonly onResetComplete?: (outcome: PersistenceResetOutcome) => void;
 }) {
   const { resetDevHud } = useApplication();
   const [status, setStatus] = useState<ResetStatus>("idle");
@@ -128,7 +135,7 @@ function ResetDevHudControl({
     setStatus("resetting");
     try {
       const outcome = await resetDevHud();
-      onResetComplete?.();
+      onResetComplete?.(outcome);
       setStatus(outcome.status);
     } catch {
       setStatus("failed");
@@ -193,6 +200,13 @@ function ResetDevHudControl({
           remain. Check device storage and try again.
         </p>
       ) : null}
+      {status === "integration-rollback-failed" ? (
+        <p className="error" role="alert">
+          DevHud could not reset local data or fully restore the previous system
+          integrations. The effective shortcut and launch-at-login settings are
+          shown.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -201,12 +215,14 @@ function SettingsWindow({
   bridge,
   firstRun,
   onResetComplete,
+  settingsRevision,
   startupAutostartOutcome,
   startupShortcutFailure,
 }: {
   readonly bridge: DesktopBridge | null;
   readonly firstRun: boolean;
-  readonly onResetComplete: () => void;
+  readonly onResetComplete: (outcome: PersistenceResetOutcome) => void;
+  readonly settingsRevision: number;
   readonly startupAutostartOutcome: RuntimeInfo["autostartStartupOutcome"];
   readonly startupShortcutFailure: RuntimeInfo["shortcutStartupFailure"];
 }) {
@@ -229,6 +245,7 @@ function SettingsWindow({
       <SettingsPanel
         bridge={bridge}
         firstRun={firstRunActive}
+        key={settingsRevision}
         onClose={close}
         onFirstRunCompleted={() => setFirstRunActive(false)}
         startupAutostartOutcome={startupAutostartOutcome}
@@ -658,6 +675,7 @@ function ApplicationSurface({
   const [platform, setPlatform] = useState(initialPlatform);
   const [runtime, setRuntime] = useState<RuntimeState>({ status: "loading" });
   const [runtimeAttempt, setRuntimeAttempt] = useState(0);
+  const [settingsRevision, setSettingsRevision] = useState(0);
   const clearStartupDiagnostics = useCallback(() => {
     setRuntime((current) =>
       current.status === "ready"
@@ -730,14 +748,22 @@ function ApplicationSurface({
   ]);
   useEffect(() => {
     if (bridge === null) return;
-    return bridge.subscribeReset(() => {
-      void reloadPersistence();
+    return bridge.subscribeReset((outcome) => {
+      clearStartupDiagnostics();
+      setSettingsRevision((revision) => revision + 1);
+      void reloadPersistence(outcome);
     });
-  }, [bridge, reloadPersistence]);
-  const reconcileReset = useCallback(() => {
+  }, [bridge, clearStartupDiagnostics, reloadPersistence]);
+  const reconcileReset = useCallback((outcome: PersistenceResetOutcome) => {
     clearStartupDiagnostics();
-    bridge?.publishReset();
-    bridge?.publishTheme(ThemePreference.System);
+    setSettingsRevision((revision) => revision + 1);
+    bridge?.publishReset(outcome);
+    if (
+      outcome.status === "complete" ||
+      outcome.status === "cleanup-failed"
+    ) {
+      bridge?.publishTheme(ThemePreference.System);
+    }
   }, [bridge, clearStartupDiagnostics]);
 
   if (
@@ -749,6 +775,7 @@ function ApplicationSurface({
         bridge={bridge}
         firstRun={runtime.runtimeInfo.firstRun === true}
         onResetComplete={reconcileReset}
+        settingsRevision={settingsRevision}
         startupAutostartOutcome={runtime.runtimeInfo.autostartStartupOutcome}
         startupShortcutFailure={runtime.runtimeInfo.shortcutStartupFailure}
       />
@@ -774,6 +801,7 @@ function ApplicationSurface({
           bridge={bridge}
           onResetComplete={reconcileReset}
           runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
+          settingsRevision={settingsRevision}
           showDesktopControls={false}
         />
       ) : null}

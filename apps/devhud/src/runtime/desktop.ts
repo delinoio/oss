@@ -1,6 +1,9 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 import type {
+  PersistenceResetOutcome,
+} from "../persistence/storage";
+import type {
   StructuredShortcut,
   ThemePreference,
 } from "../persistence/contracts";
@@ -82,9 +85,9 @@ export interface DesktopBridge {
   setLaunchAtLogin(enabled: boolean): Promise<AutostartOutcome>;
   completeFirstRun(): Promise<FirstRunOutcome>;
   requestUpdateAction(): Promise<UpdateActionOutcome>;
-  publishReset(): void;
+  publishReset(outcome: PersistenceResetOutcome): void;
   publishTheme(theme: ThemePreference): void;
-  subscribeReset(listener: () => void): () => void;
+  subscribeReset(listener: (outcome: PersistenceResetOutcome) => void): () => void;
   subscribeTheme(listener: (theme: ThemePreference) => void): () => void;
 }
 

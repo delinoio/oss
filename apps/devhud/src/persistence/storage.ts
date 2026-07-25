@@ -10,6 +10,7 @@ import {
   type DecodeFailure,
   type DevHudSettings,
   type PersistenceKey,
+  type StructuredShortcut,
   type WidgetConfiguration,
 } from "./contracts";
 
@@ -22,7 +23,12 @@ export interface LocalStorageAdapter {
 export type PersistenceResetOutcome =
   | { readonly status: "complete" }
   | { readonly status: "partially-retained" }
-  | { readonly status: "cleanup-failed" };
+  | { readonly status: "cleanup-failed" }
+  | {
+      readonly status: "integration-rollback-failed";
+      readonly shortcut: StructuredShortcut | null;
+      readonly launchAtLogin: boolean | null;
+    };
 
 export interface TauriPersistenceBridge {
   readSettings(): Promise<string | null>;

@@ -40,7 +40,7 @@ interface ApplicationState {
 
 interface ApplicationActions {
   readPersistedTheme(): Promise<ThemePreference | null>;
-  reloadPersistence(): Promise<void>;
+  reloadPersistence(outcome?: PersistenceResetOutcome): Promise<void>;
   resetDevHud(): Promise<PersistenceResetOutcome>;
   setTheme(theme: ThemePreference): Promise<boolean>;
   setShortcut(shortcut: StructuredShortcut | null): void;
@@ -55,6 +55,18 @@ interface ApplicationActions {
 }
 
 const ApplicationContext = createContext<(ApplicationState & ApplicationActions) | null>(null);
+
+function settingsAfterReset(
+  settings: DevHudSettings,
+  outcome?: PersistenceResetOutcome,
+): DevHudSettings {
+  if (outcome?.status !== "integration-rollback-failed") return settings;
+  return {
+    ...settings,
+    shortcut: outcome.shortcut,
+    launchAtLogin: outcome.launchAtLogin ?? settings.launchAtLogin,
+  };
+}
 
 export function ApplicationProvider({
   children,
@@ -245,9 +257,10 @@ export function ApplicationProvider({
     widgetConfigurationMutation.current += 1;
     try {
       const { loaded, outcome } = await persistence.reset();
-      setSettings(loaded.settings);
+      const effectiveSettings = settingsAfterReset(loaded.settings, outcome);
+      setSettings(effectiveSettings);
       setWidgetConfigurationState(loaded.widgetConfiguration);
-      lastSuccessfulSettings.current = loaded.settings;
+      lastSuccessfulSettings.current = effectiveSettings;
       lastSuccessfulWidgetConfiguration.current = loaded.widgetConfiguration;
       setPersistenceIssues(loaded.issues);
       return outcome;
@@ -257,15 +270,16 @@ export function ApplicationProvider({
       setPersistenceReady(true);
     }
   }, [persistence]);
-  const reloadPersistence = useCallback(async () => {
+  const reloadPersistence = useCallback(async (outcome?: PersistenceResetOutcome) => {
     setPersistenceReady(false);
     settingsMutation.current += 1;
     widgetConfigurationMutation.current += 1;
     try {
       const loaded = await persistence.reload();
-      setSettings(loaded.settings);
+      const effectiveSettings = settingsAfterReset(loaded.settings, outcome);
+      setSettings(effectiveSettings);
       setWidgetConfigurationState(loaded.widgetConfiguration);
-      lastSuccessfulSettings.current = loaded.settings;
+      lastSuccessfulSettings.current = effectiveSettings;
       lastSuccessfulWidgetConfiguration.current = loaded.widgetConfiguration;
       setPersistenceIssues(loaded.issues);
     } finally {

@@ -275,12 +275,24 @@ enum PersistenceResetFailure {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 enum PersistenceResetOutcome {
     Complete,
     PartiallyRetained,
     CleanupFailed,
+    #[cfg(any(
+        all(
+            feature = "desktop-cef",
+            not(any(target_os = "android", target_os = "ios"))
+        ),
+        test
+    ))]
+    IntegrationRollbackFailed {
+        shortcut: Option<shortcut::StructuredShortcut>,
+        #[serde(rename = "launchAtLogin")]
+        launch_at_login: Option<bool>,
+    },
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -1918,12 +1930,18 @@ fn reset_dev_hud(
         Ok(()) => PersistenceResetOutcome::Complete,
         Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => {
             let autostart_rollback = autostart_state.apply(previous_autostart);
+            let autostart_rollback_failed = !matches!(
+                autostart_rollback,
+                autostart::AutostartOutcome::Applied { enabled }
+                    if enabled == previous_autostart
+            );
             if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_rollback {
                 log_autostart_integration_failure("reset-rollback", reason, Some(enabled));
             } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_rollback {
                 log_autostart_integration_failure("reset-rollback", reason, None);
             }
-            if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+            let shortcut_rollback = shortcuts.rollback(previous_shortcut);
+            if let Err(reason) = shortcut_rollback {
                 log_shortcut_integration_failure(
                     "reset-rollback",
                     reason,
@@ -1933,6 +1951,12 @@ fn reset_dev_hud(
                         "not-configured"
                     },
                 );
+            }
+            if autostart_rollback_failed || shortcut_rollback.is_err() {
+                return Ok(PersistenceResetOutcome::IntegrationRollbackFailed {
+                    shortcut: shortcuts.active_shortcut(),
+                    launch_at_login: autostart_rollback.enabled(),
+                });
             }
             return Err(error);
         }
@@ -2742,6 +2766,18 @@ mod tests {
         assert_eq!(
             serde_json::to_value(PersistenceResetOutcome::CleanupFailed).unwrap(),
             serde_json::json!({ "status": "cleanup-failed" })
+        );
+        assert_eq!(
+            serde_json::to_value(PersistenceResetOutcome::IntegrationRollbackFailed {
+                shortcut: None,
+                launch_at_login: Some(true),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "status": "integration-rollback-failed",
+                "shortcut": null,
+                "launchAtLogin": true,
+            })
         );
     }
 

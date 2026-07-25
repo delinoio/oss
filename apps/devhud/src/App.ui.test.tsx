@@ -21,12 +21,15 @@ import {
   defaultSettings,
   encodeSettings,
   SETTINGS_STORAGE_KEY,
+  ShortcutKey,
+  ShortcutModifier,
   ThemePreference,
   WIDGET_CONFIGURATION_STORAGE_KEY,
 } from "./persistence/contracts";
 import {
   MemoryStorageAdapter,
   type LocalStorageAdapter,
+  type PersistenceResetOutcome,
 } from "./persistence/storage";
 import type { DesktopBridge } from "./runtime/desktop";
 import * as desktopRuntime from "./runtime/desktop";
@@ -156,7 +159,9 @@ describe("DevHud application surfaces", () => {
   });
 
   it("reloads both retained HUD records after a reset is published", async () => {
-    let publishReset: (() => void) | undefined;
+    let publishReset:
+      | ((outcome: PersistenceResetOutcome) => void)
+      | undefined;
     const storage = new MemoryStorageAdapter();
     storage.values.set(
       SETTINGS_STORAGE_KEY,
@@ -181,7 +186,7 @@ describe("DevHud application surfaces", () => {
       ([key]) => key === WIDGET_CONFIGURATION_STORAGE_KEY,
     ).length;
     storage.values.clear();
-    act(() => publishReset?.());
+    act(() => publishReset?.({ status: "complete" }));
 
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     expect(document.documentElement.dataset.theme).toBe(ThemePreference.System);
@@ -447,6 +452,48 @@ describe("DevHud application surfaces", () => {
     expect(screen.getByText("Ctrl + P")).toBeVisible();
   });
 
+  it("clears session integration statuses after reset", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "settings",
+      firstRun: false,
+    });
+    const user = userEvent.setup();
+    renderApp({ desktopBridge: desktopBridge() });
+    const record = await screen.findByRole("button", {
+      name: "Record shortcut",
+    });
+    await waitFor(() => expect(record).toBeEnabled());
+    await user.click(record);
+    fireEvent.keyDown(record, {
+      code: "KeyP",
+      key: "p",
+      ctrlKey: true,
+    });
+    expect(await screen.findByText("Shortcut updated.")).toBeVisible();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Launch DevHud at login" }),
+    );
+    expect(
+      await screen.findByText("DevHud will launch at login."),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
+    await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+
+    expect(await screen.findByText("DevHud local data was reset.")).toBeVisible();
+    expect(screen.queryByText("Shortcut updated.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("DevHud will launch at login."),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers a skippable first run while preserving native tray access", async () => {
     vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
       applicationId: "dev.deli.devhud",
@@ -668,12 +715,70 @@ describe("DevHud application surfaces", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "DevHud cleared local settings",
     );
-    expect(launchAtLogin).not.toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Launch DevHud at login" }),
+    ).not.toBeChecked();
     expect(screen.getByRole("combobox", { name: "Theme preference" })).toHaveValue(
       ThemePreference.System,
     );
     expect(bridge.publishTheme).toHaveBeenCalledWith(ThemePreference.System);
     expect(bridge.publishReset).toHaveBeenCalledOnce();
+  });
+
+  it("adopts effective integrations when reset rollback fails", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "settings",
+      firstRun: false,
+    });
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      encodeSettings({
+        ...defaultSettings,
+        launchAtLogin: true,
+        shortcut: {
+          modifiers: [ShortcutModifier.Control],
+          key: ShortcutKey.K,
+        },
+      }),
+    );
+    const outcome = {
+      status: "integration-rollback-failed" as const,
+      shortcut: {
+        modifiers: [ShortcutModifier.Control],
+        key: ShortcutKey.P,
+      },
+      launchAtLogin: false,
+    };
+    storage.reset = async () => outcome;
+    const bridge = desktopBridge();
+    const user = userEvent.setup();
+    renderApp({ desktopBridge: bridge, storage });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: "Launch DevHud at login" }),
+      ).toBeChecked(),
+    );
+    expect(screen.getByText("Ctrl + K")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
+    await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "effective shortcut and launch-at-login settings are shown",
+    );
+    expect(screen.getByText("Ctrl + P")).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", { name: "Launch DevHud at login" }),
+    ).not.toBeChecked();
+    expect(bridge.publishReset).toHaveBeenCalledWith(outcome);
+    expect(bridge.publishTheme).not.toHaveBeenCalled();
   });
 
   it("reports a partially retained reset separately from staging cleanup failure", async () => {

@@ -216,12 +216,16 @@ async function runSmokeIteration(iteration) {
   const timeout = setTimeout(() => {
     child.kill();
   }, 2 * 60 * 1000);
-  const exitCode = await new Promise((resolveExit, reject) => {
-    child.once("error", reject);
-    child.once("close", (code) => resolveExit(code));
-  });
-  clearInterval(observeHelpers);
-  clearTimeout(timeout);
+  let exitCode;
+  try {
+    exitCode = await new Promise((resolveExit, reject) => {
+      child.once("error", reject);
+      child.once("close", (code) => resolveExit(code));
+    });
+  } finally {
+    clearInterval(observeHelpers);
+    clearTimeout(timeout);
+  }
 
   const combinedOutput = output.join("");
   const observedReady =
