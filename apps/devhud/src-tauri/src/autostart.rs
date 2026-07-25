@@ -20,6 +20,14 @@ pub(crate) enum AutostartOutcome {
     },
 }
 
+impl AutostartOutcome {
+    pub(crate) const fn enabled(self) -> bool {
+        match self {
+            Self::Applied { enabled } | Self::Unchanged { enabled, .. } => enabled,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BackendError {
     PermissionDenied,
@@ -303,5 +311,29 @@ mod tests {
             }
         );
         assert!(!coordinator.backend.enabled.get());
+    }
+
+    #[test]
+    fn failed_rollbacks_report_the_effective_requested_state() {
+        let coordinator = coordinator(false);
+        assert_eq!(
+            coordinator.apply(true),
+            AutostartOutcome::Applied { enabled: true }
+        );
+        coordinator
+            .backend
+            .set_results
+            .borrow_mut()
+            .push_back(Err(BackendError::PermissionDenied));
+
+        let rollback = coordinator.apply(false);
+        assert_eq!(
+            rollback,
+            AutostartOutcome::Unchanged {
+                enabled: true,
+                reason: AutostartFailure::PermissionDenied
+            }
+        );
+        assert!(rollback.enabled());
     }
 }

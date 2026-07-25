@@ -54,9 +54,11 @@ function PersistenceAlerts() {
 
 function SettingsDialog({
   bridge,
+  showDesktopControls,
   runtimeInfo,
 }: {
   readonly bridge: DesktopBridge | null;
+  readonly showDesktopControls: boolean;
   readonly runtimeInfo: RuntimeInfo | null;
 }) {
   const { closeSettings } = useApplication();
@@ -66,6 +68,7 @@ function SettingsDialog({
       <SettingsPanel
         bridge={bridge}
         onClose={closeSettings}
+        showDesktopControls={showDesktopControls}
         startupAutostartOutcome={runtimeInfo?.autostartStartupOutcome}
         startupShortcutFailure={runtimeInfo?.shortcutStartupFailure}
       />
@@ -400,6 +403,7 @@ function ApplicationSurface({
         <SettingsDialog
           bridge={bridge}
           runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
+          showDesktopControls={platform === "desktop"}
         />
       ) : null}
     </>

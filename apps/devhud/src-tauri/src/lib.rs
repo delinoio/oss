@@ -743,8 +743,13 @@ fn show_hud_internal(app: &AppHandle<ActiveRuntime>, toggle: bool) -> HudActionO
         };
     };
     if toggle && window.is_visible().unwrap_or(false) {
-        let _ = window.hide();
-        return HudActionOutcome::Hidden;
+        return if window.hide().is_ok() {
+            HudActionOutcome::Hidden
+        } else {
+            HudActionOutcome::Unchanged {
+                reason: HudActionFailure::WindowUnavailable,
+            }
+        };
     }
 
     let pointer = match app.cursor_position() {
@@ -1004,9 +1009,9 @@ fn set_launch_at_login(
         )
         .is_err()
     {
-        let _ = state.apply(previous);
+        let rollback = state.apply(previous);
         return autostart::AutostartOutcome::Unchanged {
-            enabled: previous,
+            enabled: rollback.enabled(),
             reason: autostart::AutostartFailure::StorageFailed,
         };
     }

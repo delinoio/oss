@@ -368,6 +368,16 @@ describe("DevHud application surfaces", () => {
     render(<App platform="mobile" />);
     expect(screen.getByRole("heading", { name: "No tools yet" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open settings" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Global shortcut" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Launch DevHud at login" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Widgets" }));
     expect(screen.getByRole("heading", { name: "No widgets available" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Diagnostics" }));

@@ -125,6 +125,7 @@ export function SettingsPanel({
   firstRun = false,
   onClose,
   onFirstRunCompleted,
+  showDesktopControls = true,
   startupAutostartOutcome,
   startupShortcutFailure,
 }: {
@@ -132,6 +133,7 @@ export function SettingsPanel({
   readonly firstRun?: boolean;
   readonly onClose: () => void;
   readonly onFirstRunCompleted?: () => void;
+  readonly showDesktopControls?: boolean;
   readonly startupAutostartOutcome?: AutostartOutcome | null;
   readonly startupShortcutFailure?: ShortcutFailure | null;
 }) {
@@ -306,65 +308,71 @@ export function SettingsPanel({
         </p>
       ) : null}
 
-      <section className="settings-section" aria-labelledby="shortcut-heading">
-        <h2 id="shortcut-heading">Global shortcut</h2>
-        <p className="setting-value">
-          Current shortcut: <kbd>{shortcutLabel(settings.shortcut)}</kbd>
-        </p>
-        <div className="button-row">
-          <button
-            aria-pressed={capturing}
-            className="secondary-button"
-            disabled={!persistenceReady}
-            onClick={beginCapture}
-            onKeyDown={onShortcutKeyDown}
-            ref={captureRef}
-            type="button"
-          >
-            {capturing ? "Press shortcut…" : "Record shortcut"}
-          </button>
-          {capturing ? (
-            <button
-              className="text-button"
-              onClick={() => {
-                setCapturing(false);
-                setShortcutStatus({
-                  message:
-                    "Shortcut capture cancelled. The previous shortcut is still active.",
-                  error: false,
-                });
-              }}
-              type="button"
-            >
-              Cancel
-            </button>
-          ) : null}
-        </div>
-        {displayedShortcutStatus ? (
-          <p role={displayedShortcutStatus.error ? "alert" : "status"}>
-            {displayedShortcutStatus.message}
-          </p>
-        ) : null}
-      </section>
+      {showDesktopControls ? (
+        <>
+          <section className="settings-section" aria-labelledby="shortcut-heading">
+            <h2 id="shortcut-heading">Global shortcut</h2>
+            <p className="setting-value">
+              Current shortcut: <kbd>{shortcutLabel(settings.shortcut)}</kbd>
+            </p>
+            <div className="button-row">
+              <button
+                aria-pressed={capturing}
+                className="secondary-button"
+                disabled={!persistenceReady}
+                onClick={beginCapture}
+                onKeyDown={onShortcutKeyDown}
+                ref={captureRef}
+                type="button"
+              >
+                {capturing ? "Press shortcut…" : "Record shortcut"}
+              </button>
+              {capturing ? (
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    setCapturing(false);
+                    setShortcutStatus({
+                      message:
+                        "Shortcut capture cancelled. The previous shortcut is still active.",
+                      error: false,
+                    });
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+            {displayedShortcutStatus ? (
+              <p role={displayedShortcutStatus.error ? "alert" : "status"}>
+                {displayedShortcutStatus.message}
+              </p>
+            ) : null}
+          </section>
 
-      <section className="settings-section" aria-labelledby="startup-heading">
-        <h2 id="startup-heading">Startup</h2>
-        <label className="check-field">
-          <input
-            checked={displayedLaunchAtLogin}
-            disabled={!persistenceReady}
-            onChange={(event) => changeAutostart(event.target.checked)}
-            type="checkbox"
-          />
-          Launch DevHud at login
-        </label>
-        <p className="muted">Disabled by default. DevHud starts in the tray when enabled.</p>
-        {displayedAutostartStatus ? (
-          <p role={displayedAutostartStatus.error ? "alert" : "status"}>
-            {displayedAutostartStatus.message}
-          </p>
-        ) : null}
-      </section>
+          <section className="settings-section" aria-labelledby="startup-heading">
+            <h2 id="startup-heading">Startup</h2>
+            <label className="check-field">
+              <input
+                checked={displayedLaunchAtLogin}
+                disabled={!persistenceReady}
+                onChange={(event) => changeAutostart(event.target.checked)}
+                type="checkbox"
+              />
+              Launch DevHud at login
+            </label>
+            <p className="muted">
+              Disabled by default. DevHud starts in the tray when enabled.
+            </p>
+            {displayedAutostartStatus ? (
+              <p role={displayedAutostartStatus.error ? "alert" : "status"}>
+                {displayedAutostartStatus.message}
+              </p>
+            ) : null}
+          </section>
+        </>
+      ) : null}
 
       <section className="settings-section" aria-labelledby="appearance-heading">
         <h2 id="appearance-heading">Appearance</h2>
