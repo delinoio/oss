@@ -313,7 +313,16 @@ func TestPostgreSQLCreditOnlyCommitAfterBillingPeriodEnds(t *testing.T) {
 		SET status = 'canceled',
 		    current_period_ends_at = $2,
 		    provider_event_at = statement_timestamp()
-		WHERE organization_id = $1;
+		WHERE organization_id = $1
+		`,
+		fixture.organizationID,
+		periodEndedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(
+		ctx,
+		`
 		UPDATE billing_periods
 		SET ends_at = $2
 		WHERE organization_id = $1
