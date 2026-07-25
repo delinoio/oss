@@ -70,6 +70,9 @@ if (platform === "android") {
   );
 } else {
   const targets = targetSet === "production" ? ["aarch64"] : ["x86_64"];
+  await run("xcodegen", ["generate", "--spec", "project.yml"], {
+    cwd: resolve(appRoot, "src-tauri/gen/apple"),
+  });
   await run(
     node,
     [
