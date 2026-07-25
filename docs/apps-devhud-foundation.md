@@ -62,7 +62,7 @@ The native boundary exposes only scoped Tauri/plugin commands required for setti
 - Closing the HUD or settings window hides it while the process remains resident. Only the tray `Quit` action terminates the app, except a fatal CEF initialization failure, which logs and exits immediately.
 - Tray actions are `Open DevHud`, `Settings`, `Check for Updates`, `Open DevTools`, and `Quit`.
 - Show a skippable first-run settings window that captures and validates a global shortcut. Tray access remains available until a shortcut is configured.
-- Launch-at-login is disabled by default and has an explicit settings toggle.
+- Launch-at-login is disabled by default. Its persisted setting is reserved for the native desktop integration; do not expose a settings toggle until that integration can apply changes and roll back failures.
 - Store shortcuts as structured modifier and key values, never as an unchecked free-form string. A malformed, conflicting, permission-denied, or failed registration preserves the previous valid binding.
 - Display the always-on-top HUD centered on the monitor containing the mouse pointer and focus the search input immediately.
 - Repeating the global shortcut toggles the HUD. `Esc` or focus loss hides it immediately.
@@ -89,8 +89,11 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Storage
 
-- Local writes are atomic and use last-successful-write-wins behavior.
-- Unsupported future schema versions are rejected without overwriting the stored data. Corrupt or incompatible data surfaces reset guidance.
+- `devhud.settings.v1` has schema version `1` and contains only a System/Light/Dark theme enum, reserved launch-at-login boolean, and optional structured shortcut. A shortcut contains one or more unique modifier enum values and a key enum; unchecked shortcut strings are invalid.
+- `devhud.widget-configuration.v1` has schema version `1` and contains only unique widget slot enum references and validated stable lowercase-kebab-case `toolId` values. It remains local fixture state while visible widgets are out of scope.
+- The frontend uses a dependency-injected two-record storage adapter on desktop CEF and standard Tauri mobile runtimes. Native IPC exposes only record-specific read/write commands, not filesystem paths, a default store, arbitrary keys, or generic value operations.
+- Local writes are atomic and serialize each record so call order yields last-successful-write-wins behavior. A failed write leaves the previous valid record intact and restores the provider-owned state to that value.
+- Unsupported future schema versions are rejected without reading them into state or overwriting stored data. Corrupt, incompatible, or unreadable data surfaces actionable confirmed-reset guidance without raw stored data in UI, errors, or logs. An unreadable record remains write-blocked until it can be read successfully or the user completes Reset DevHud.
 - Local state is retained until the user chooses `Reset DevHud` or uninstalls the app.
 - `Reset DevHud` requires confirmation and clears settings, widget shared state, CEF runtime state, and logs. User-exported diagnostic files remain user-owned.
 - Persist only the minimum CEF profile data required for operation. Disable web downloads, browsing history, cookies, and application web storage; Reset clears all CEF state.

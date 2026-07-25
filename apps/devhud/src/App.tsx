@@ -8,6 +8,7 @@ import {
 } from "./runtime/platform";
 import { Dialog } from "./ui/Dialog";
 import { ApplicationProvider, MobileScreen, ThemePreference, useApplication } from "./ui/state";
+import { MemoryStorageAdapter, type LocalStorageAdapter } from "./persistence/storage";
 
 type RuntimeState =
   | { status: "loading" }
@@ -19,15 +20,16 @@ function Wordmark() {
 }
 
 function SettingsDialog() {
-  const { closeSettings, setTheme, theme } = useApplication();
+  const { closeSettings, persistenceReady, setTheme, settings } = useApplication();
   return (
     <Dialog title="DevHud settings" onClose={closeSettings}>
       <div className="dialog-heading"><div><p className="eyebrow">Settings</p><h2>Appearance</h2></div><button aria-label="Close settings" className="icon-button" onClick={closeSettings} type="button">×</button></div>
       <label className="field" htmlFor="theme-preference">Theme preference
-        <select id="theme-preference" onChange={(event) => setTheme(event.target.value as ThemePreference)} value={theme}>
+        <select disabled={!persistenceReady} id="theme-preference" onChange={(event) => setTheme(event.target.value as ThemePreference)} value={settings.theme}>
           <option value={ThemePreference.System}>System</option><option value={ThemePreference.Light}>Light</option><option value={ThemePreference.Dark}>Dark</option>
         </select>
       </label>
+      {!persistenceReady ? <p className="muted" role="status">Loading local settings…</p> : null}
       <p className="muted">Settings stay on this device. No account or cloud sync is available.</p>
     </Dialog>
   );
@@ -84,12 +86,18 @@ function ApplicationSurface({
   const [platform, setPlatform] = useState(initialPlatform);
   const [runtime, setRuntime] = useState<RuntimeState>({ status: "loading" });
   useEffect(() => { let active = true; void loadRuntimeInfo(tauriRuntimeBridge).then((runtimeInfo) => { if (active) { setRuntime({ status: "ready", runtimeInfo }); if (synchronizePlatform) setPlatform(platformForRuntime(runtimeInfo.runtime)); } }, () => { if (active) setRuntime({ status: "failed", message: "DevHud could not initialize its local runtime." }); }); return () => { active = false; }; }, [synchronizePlatform]);
-  const { settingsOpen } = useApplication();
-  return <><div aria-hidden={settingsOpen} inert={settingsOpen}>{platform === "desktop" ? <DesktopHud runtime={runtime} /> : <MobileShell runtime={runtime} />}</div>{settingsOpen ? <SettingsDialog /> : null}</>;
+  const { persistenceIssues, settingsOpen } = useApplication();
+  return <><div aria-hidden={settingsOpen} inert={settingsOpen}>{persistenceIssues.map((issue) => <p className="runtime-status error" key={issue.key} role="alert">{issue.guidance}</p>)}{platform === "desktop" ? <DesktopHud runtime={runtime} /> : <MobileShell runtime={runtime} />}</div>{settingsOpen ? <SettingsDialog /> : null}</>;
 }
 
-export function App({ platform }: { platform?: ApplicationPlatform }) {
+export function App({
+  platform,
+  storage = new MemoryStorageAdapter(),
+}: {
+  platform?: ApplicationPlatform;
+  storage?: LocalStorageAdapter;
+}) {
   const synchronizePlatform = platform === undefined;
   const initialPlatform = platform ?? detectApplicationPlatform(navigator.userAgent);
-  return <ApplicationProvider><ApplicationSurface initialPlatform={initialPlatform} synchronizePlatform={synchronizePlatform} /></ApplicationProvider>;
+  return <ApplicationProvider storage={storage}><ApplicationSurface initialPlatform={initialPlatform} synchronizePlatform={synchronizePlatform} /></ApplicationProvider>;
 }

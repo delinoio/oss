@@ -135,9 +135,15 @@ requireCondition(
   "the main capability must be window-specific",
 );
 requireCondition(
-  capabilityJson.permissions?.length === 1 &&
-    capabilityJson.permissions[0] === "allow-get-runtime-info",
-  "the main capability must expose only runtime information",
+  JSON.stringify(capabilityJson.permissions) ===
+    JSON.stringify([
+      "allow-get-runtime-info",
+      "allow-read-settings",
+      "allow-write-settings",
+      "allow-read-widget-configuration",
+      "allow-write-widget-configuration",
+    ]),
+  "the main capability must expose only runtime information and the two scoped persistence records",
 );
 
 if (failures.length > 0) {

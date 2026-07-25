@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ vi.mock("./runtime/startup", () => ({
 }));
 
 import { App } from "./App";
+import type { LocalStorageAdapter } from "./persistence/storage";
 import { loadRuntimeInfo } from "./runtime/startup";
 
 afterEach(cleanup);
@@ -50,6 +51,32 @@ describe("DevHud application surfaces", () => {
     expect(theme).toHaveFocus();
   });
 
+  it("does not expose launch-at-login without the native startup integration", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
+    expect(screen.queryByRole("checkbox", { name: "Launch DevHud at login" })).toBeNull();
+  });
+
+  it("holds setting changes until local persistence finishes loading", async () => {
+    const user = userEvent.setup();
+    let completeRead: ((value: string | null) => void) | undefined;
+    const pendingRead = new Promise<string | null>((resolve) => {
+      completeRead = resolve;
+    });
+    const storage: LocalStorageAdapter = {
+      read: async () => pendingRead,
+      write: async () => undefined,
+    };
+
+    render(<App storage={storage} />);
+    await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
+    const theme = screen.getByRole("combobox", { name: "Theme preference" });
+    expect(theme).toBeDisabled();
+    completeRead?.(null);
+    await waitFor(() => expect(theme).toBeEnabled());
+  });
+
   it("hides the application shell from assistive technology while settings is open", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -58,6 +85,24 @@ describe("DevHud application surfaces", () => {
     await user.click(settings);
     expect(settings.closest("div[aria-hidden]")).toHaveAttribute("aria-hidden", "true");
     expect(settings.closest("div[inert]")).toHaveAttribute("inert");
+  });
+
+  it("hides persistence alerts from assistive technology while settings is open", async () => {
+    const user = userEvent.setup();
+    const storage: LocalStorageAdapter = {
+      read: async () => {
+        throw new Error("storage unavailable");
+      },
+      write: async () => undefined,
+    };
+
+    render(<App storage={storage} />);
+    const alerts = await screen.findAllByRole("alert");
+    await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
+    for (const alert of alerts) {
+      expect(alert.closest("div[aria-hidden]")).toHaveAttribute("aria-hidden", "true");
+      expect(alert.closest("div[inert]")).toHaveAttribute("inert");
+    }
   });
 
   it("has no automated accessibility violations", async () => {
