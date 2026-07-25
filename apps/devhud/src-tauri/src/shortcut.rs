@@ -165,6 +165,7 @@ trait ShortcutBackend {
 struct ShortcutCoordinator<B: ShortcutBackend> {
     backend: B,
     active: Option<(StructuredShortcut, B::Binding)>,
+    pending_cleanup: Vec<B::Binding>,
 }
 
 impl<B: ShortcutBackend> ShortcutCoordinator<B> {
@@ -172,11 +173,19 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
         Self {
             backend,
             active: None,
+            pending_cleanup: Vec::new(),
         }
     }
 
     fn replace(&mut self, shortcut: StructuredShortcut) -> ShortcutReplacementOutcome {
         if let Err(reason) = shortcut.validate() {
+            return ShortcutReplacementOutcome::Unchanged {
+                reason,
+                shortcut: None,
+            };
+        }
+
+        if let Err(reason) = self.cleanup_pending() {
             return ShortcutReplacementOutcome::Unchanged {
                 reason,
                 shortcut: None,
@@ -202,7 +211,13 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
         if let Some((_, previous)) = self.active.as_ref()
             && self.backend.unregister(*previous).is_err()
         {
-            let _ = self.backend.unregister(candidate);
+            if let Err(error) = self.backend.unregister(candidate) {
+                self.pending_cleanup.push(candidate);
+                return ShortcutReplacementOutcome::Unchanged {
+                    reason: map_backend_error(error),
+                    shortcut: None,
+                };
+            }
             return ShortcutReplacementOutcome::Unchanged {
                 reason: ShortcutFailure::RegistrationFailed,
                 shortcut: None,
@@ -218,6 +233,7 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
     }
 
     fn clear(&mut self) -> Result<(), ShortcutFailure> {
+        self.cleanup_pending()?;
         let Some((_, binding)) = self.active.as_ref() else {
             return Ok(());
         };
@@ -225,6 +241,16 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
             .unregister(*binding)
             .map_err(map_backend_error)?;
         self.active = None;
+        Ok(())
+    }
+
+    fn cleanup_pending(&mut self) -> Result<(), ShortcutFailure> {
+        while let Some(binding) = self.pending_cleanup.pop() {
+            if let Err(error) = self.backend.unregister(binding) {
+                self.pending_cleanup.push(binding);
+                return Err(map_backend_error(error));
+            }
+        }
         Ok(())
     }
 }
@@ -610,6 +636,40 @@ mod tests {
         );
         assert_eq!(coordinator.active_id(), Some(working_id));
         assert_eq!(coordinator.backend.registered, vec![working_id]);
+    }
+
+    #[test]
+    fn failed_candidate_cleanup_is_tracked_and_retried() {
+        let mut coordinator = ShortcutCoordinator::new(FakeBackend::default());
+        coordinator.replace(shortcut(ShortcutKey::K));
+        let working_id = coordinator.active_id().unwrap();
+        coordinator.backend.unregister_results.extend([
+            Err(BackendError::Failed),
+            Err(BackendError::PermissionDenied),
+        ]);
+
+        assert_eq!(
+            coordinator.replace(shortcut(ShortcutKey::P)),
+            ShortcutReplacementOutcome::Unchanged {
+                reason: ShortcutFailure::PermissionDenied,
+                shortcut: None,
+            }
+        );
+        assert_eq!(coordinator.active_id(), Some(working_id));
+        assert_eq!(coordinator.pending_cleanup.len(), 1);
+        assert_eq!(coordinator.backend.registered.len(), 2);
+
+        assert_eq!(
+            coordinator.replace(shortcut(ShortcutKey::P)),
+            ShortcutReplacementOutcome::Replaced {
+                shortcut: shortcut(ShortcutKey::P),
+            }
+        );
+        assert!(coordinator.pending_cleanup.is_empty());
+        assert_eq!(
+            coordinator.backend.registered,
+            vec![coordinator.active_id().unwrap()]
+        );
     }
 
     #[test]

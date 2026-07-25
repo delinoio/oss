@@ -424,9 +424,10 @@ describe("DevHud application surfaces", () => {
     });
     const storage = new MemoryStorageAdapter();
     storage.values.set(SETTINGS_STORAGE_KEY, settingsRecord);
+    const bridge = desktopBridge();
     const user = userEvent.setup();
 
-    renderApp({ desktopBridge: desktopBridge(), storage });
+    renderApp({ desktopBridge: bridge, storage });
 
     expect(
       await screen.findByText(/saved shortcut is already in use/u),
@@ -457,6 +458,7 @@ describe("DevHud application surfaces", () => {
         name: "Launch DevHud at login",
       }),
     ).not.toBeChecked();
+    expect(bridge.publishTheme).toHaveBeenCalledWith(ThemePreference.System);
   });
 
   it("provides explicit mobile content states without visible widgets", async () => {

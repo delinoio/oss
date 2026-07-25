@@ -652,6 +652,10 @@ function ApplicationSurface({
     adoptNativeTheme,
     bridge,
   ]);
+  const reconcileReset = useCallback(() => {
+    clearStartupDiagnostics();
+    bridge?.publishTheme(ThemePreference.System);
+  }, [bridge, clearStartupDiagnostics]);
 
   if (
     runtime.status === "ready" &&
@@ -661,7 +665,7 @@ function ApplicationSurface({
       <SettingsWindow
         bridge={bridge}
         firstRun={runtime.runtimeInfo.firstRun === true}
-        onResetComplete={clearStartupDiagnostics}
+        onResetComplete={reconcileReset}
         startupAutostartOutcome={runtime.runtimeInfo.autostartStartupOutcome}
         startupShortcutFailure={runtime.runtimeInfo.shortcutStartupFailure}
       />
@@ -685,7 +689,7 @@ function ApplicationSurface({
       {settingsOpen ? (
         <SettingsDialog
           bridge={bridge}
-          onResetComplete={clearStartupDiagnostics}
+          onResetComplete={reconcileReset}
           runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
           showDesktopControls={platform === "desktop"}
         />

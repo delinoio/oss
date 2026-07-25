@@ -66,34 +66,54 @@ impl<B: AutostartBackend> AutostartCoordinator<B> {
     }
 
     fn apply(&self, enabled: bool) -> AutostartOutcome {
+        self.apply_with_previous(enabled).1
+    }
+
+    fn apply_with_previous(&self, enabled: bool) -> (Option<bool>, AutostartOutcome) {
         let previous = match self.backend.is_enabled() {
             Ok(previous) => previous,
             Err(error) => {
-                return AutostartOutcome::Unchanged {
-                    enabled: false,
-                    reason: map_error(error),
-                };
+                return (
+                    None,
+                    AutostartOutcome::Unchanged {
+                        enabled: false,
+                        reason: map_error(error),
+                    },
+                );
             }
         };
         if previous == enabled {
-            return AutostartOutcome::Applied { enabled };
+            return (Some(previous), AutostartOutcome::Applied { enabled });
         }
         if let Err(error) = self.backend.set_enabled(enabled) {
-            return AutostartOutcome::Unchanged {
-                enabled: previous,
-                reason: map_error(error),
-            };
-        }
-        match self.backend.is_enabled() {
-            Ok(actual) if actual == enabled => AutostartOutcome::Applied { enabled },
-            _ => {
-                let _ = self.backend.set_enabled(previous);
+            return (
+                Some(previous),
                 AutostartOutcome::Unchanged {
                     enabled: previous,
-                    reason: AutostartFailure::OperationFailed,
+                    reason: map_error(error),
+                },
+            );
+        }
+        let outcome = match self.backend.is_enabled() {
+            Ok(actual) if actual == enabled => AutostartOutcome::Applied { enabled },
+            _ => {
+                let rollback_error = self.backend.set_enabled(previous).err();
+                let effective = self.backend.is_enabled().unwrap_or_else(|_| {
+                    if rollback_error.is_none() {
+                        previous
+                    } else {
+                        enabled
+                    }
+                });
+                AutostartOutcome::Unchanged {
+                    enabled: effective,
+                    reason: rollback_error
+                        .map(map_error)
+                        .unwrap_or(AutostartFailure::OperationFailed),
                 }
             }
-        }
+        };
+        (Some(previous), outcome)
     }
 }
 
@@ -185,14 +205,21 @@ impl AutostartState {
     }
 
     pub(crate) fn apply(&self, enabled: bool) -> AutostartOutcome {
+        self.apply_with_previous(enabled).1
+    }
+
+    pub(crate) fn apply_with_previous(&self, enabled: bool) -> (Option<bool>, AutostartOutcome) {
         match &self.coordinator {
-            Some(coordinator) => coordinator.apply(enabled),
-            None => AutostartOutcome::Unchanged {
-                enabled: false,
-                reason: self
-                    .unavailable
-                    .unwrap_or(AutostartFailure::OperationFailed),
-            },
+            Some(coordinator) => coordinator.apply_with_previous(enabled),
+            None => (
+                None,
+                AutostartOutcome::Unchanged {
+                    enabled: false,
+                    reason: self
+                        .unavailable
+                        .unwrap_or(AutostartFailure::OperationFailed),
+                },
+            ),
         }
     }
 
@@ -227,13 +254,17 @@ mod tests {
 
     struct FakeBackend {
         enabled: Cell<bool>,
+        read_results: std::cell::RefCell<VecDeque<Result<bool, BackendError>>>,
         set_results: std::cell::RefCell<VecDeque<Result<(), BackendError>>>,
         lie_after_write: Cell<bool>,
     }
 
     impl AutostartBackend for FakeBackend {
         fn is_enabled(&self) -> Result<bool, BackendError> {
-            Ok(self.enabled.get())
+            self.read_results
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_else(|| Ok(self.enabled.get()))
         }
 
         fn set_enabled(&self, enabled: bool) -> Result<(), BackendError> {
@@ -249,6 +280,7 @@ mod tests {
         AutostartCoordinator {
             backend: FakeBackend {
                 enabled: Cell::new(enabled),
+                read_results: std::cell::RefCell::new(VecDeque::new()),
                 set_results: std::cell::RefCell::new(VecDeque::new()),
                 lie_after_write: Cell::new(false),
             },
@@ -346,5 +378,38 @@ mod tests {
             }
         );
         assert!(rollback.enabled());
+    }
+
+    #[test]
+    fn failed_verification_rollbacks_report_the_verified_effective_state() {
+        let coordinator = coordinator(false);
+        coordinator.backend.read_results.borrow_mut().extend([
+            Ok(false),
+            Err(BackendError::Failed),
+            Ok(true),
+        ]);
+        coordinator
+            .backend
+            .set_results
+            .borrow_mut()
+            .extend([Ok(()), Err(BackendError::PermissionDenied)]);
+
+        assert_eq!(
+            coordinator.apply(true),
+            AutostartOutcome::Unchanged {
+                enabled: true,
+                reason: AutostartFailure::PermissionDenied
+            }
+        );
+    }
+
+    #[test]
+    fn applying_returns_the_verified_pre_change_state() {
+        let coordinator = coordinator(true);
+
+        assert_eq!(
+            coordinator.apply_with_previous(false),
+            (Some(true), AutostartOutcome::Applied { enabled: false })
+        );
     }
 }

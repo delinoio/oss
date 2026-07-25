@@ -840,6 +840,20 @@ enum HudActionFailure {
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+impl HudActionFailure {
+    const fn classification(self) -> &'static str {
+        match self {
+            Self::UnsupportedDisplay => "unsupported-display",
+            Self::WindowUnavailable => "window-unavailable",
+            Self::PositionFailed => "position-failed",
+        }
+    }
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 enum HudActionOutcome {
@@ -1155,6 +1169,19 @@ fn log_autostart_integration_failure(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+fn log_window_action_failure(operation: &'static str, reason: HudActionFailure) {
+    tracing::warn!(
+        event = "devhud.window.action_failure",
+        operation,
+        classification = reason.classification(),
+        "DevHud window action failed"
+    );
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 #[tauri::command]
 fn replace_global_shortcut(
     candidate: Option<serde_json::Value>,
@@ -1247,8 +1274,7 @@ fn set_launch_at_login(
     persistence: State<'_, PersistenceState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> autostart::AutostartOutcome {
-    let previous = state.current().unwrap_or(false);
-    let outcome = state.apply(enabled);
+    let (previous, outcome) = state.apply_with_previous(enabled);
     if matches!(outcome, autostart::AutostartOutcome::Applied { .. })
         && persist_settings_field(
             &persistence,
@@ -1257,7 +1283,13 @@ fn set_launch_at_login(
         )
         .is_err()
     {
-        let rollback = state.apply(previous);
+        let rollback = previous.map_or(
+            autostart::AutostartOutcome::Unchanged {
+                enabled: outcome.enabled(),
+                reason: autostart::AutostartFailure::OperationFailed,
+            },
+            |previous| state.apply(previous),
+        );
         if let autostart::AutostartOutcome::Unchanged { enabled, reason } = rollback {
             log_autostart_integration_failure("change-rollback", reason, enabled);
         }
@@ -1354,10 +1386,14 @@ fn create_tray(app: &AppHandle<ActiveRuntime>) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open-devhud" => {
-                let _ = show_hud_internal(app, false);
+                if let HudActionOutcome::Unchanged { reason } = show_hud_internal(app, false) {
+                    log_window_action_failure("tray-open-devhud", reason);
+                }
             }
             "settings" => {
-                let _ = show_settings_internal(app);
+                if let Err(reason) = show_settings_internal(app) {
+                    log_window_action_failure("tray-open-settings", reason);
+                }
             }
             "check-for-updates" => {
                 let outcome = app.state::<updater::UpdateActionBoundary>().request();
