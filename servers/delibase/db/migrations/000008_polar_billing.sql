@@ -187,6 +187,23 @@ CREATE TABLE polar_refunds (
     CHECK (retain_until >= created_at + interval '7 years')
 );
 
+CREATE FUNCTION enforce_polar_refund_retention()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF OLD.retain_until > transaction_timestamp() THEN
+        RAISE EXCEPTION 'refund retention period has not elapsed'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER polar_refunds_enforce_retention
+BEFORE DELETE ON polar_refunds
+FOR EACH ROW EXECUTE FUNCTION enforce_polar_refund_retention();
+
 CREATE TABLE billing_shortfalls (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL,

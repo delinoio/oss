@@ -130,6 +130,11 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 	if err := handler(ctx, paidItem); err != nil {
 		t.Fatal(err)
 	}
+	paidAudit, err := store.Queries().GetAuditEvent(ctx, pgUUID(paidItem.ID))
+	if err != nil ||
+		paidAudit.EventType != string(reliability.AuditSettlementRecorded) {
+		t.Fatalf("stable paid-cycle audit = %#v, %v", paidAudit, err)
+	}
 	uncanceledPayload, _ := json.Marshal(polarBillingEvent{
 		Type:       string(reliability.WebhookSubscriptionUpdated),
 		EventAt:    now.Add(-2 * time.Hour),
@@ -358,8 +363,28 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 	}
 	replacementPeriodStart := now.Add(-30 * time.Minute)
 	replacementPeriodEnd := replacementPeriodStart.Add(31 * 24 * time.Hour)
+	replacementActivePayload, _ := json.Marshal(polarBillingEvent{
+		Type:       string(reliability.WebhookSubscriptionActive),
+		EventAt:    now.Add(3 * time.Minute),
+		ObjectID:   "subscription_2",
+		CustomerID: "customer_" + organizationID.String(),
+		ExternalID: organizationID.String(), SubscriptionID: "subscription_2",
+		ProductID: productID, CurrentPeriodStart: replacementPeriodStart,
+		CurrentPeriodEnd: replacementPeriodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarSubscriptionActive,
+		Payload:   replacementActivePayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	summary, err = store.Queries().GetBillingSummary(ctx, pgUUID(organizationID))
+	if err != nil || summary.BillingPeriodID.Valid || summary.NewOverageAllowed {
+		t.Fatalf("replacement without paid period summary = %#v, %v", summary, err)
+	}
 	replacementPayload, _ := json.Marshal(polarBillingEvent{
-		Type: string(reliability.WebhookOrderPaid), EventAt: now.Add(3 * time.Minute),
+		Type: string(reliability.WebhookOrderPaid), EventAt: now.Add(4 * time.Minute),
 		ObjectID: "order_replacement", OrderID: "order_replacement",
 		CustomerID: "customer_" + organizationID.String(),
 		ExternalID: organizationID.String(), SubscriptionID: "subscription_2",

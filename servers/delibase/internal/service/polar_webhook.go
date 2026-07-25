@@ -80,7 +80,7 @@ func NewPolarWebhookProcessor(
 				if processErr != nil {
 					return processErr
 				}
-				return appendPolarBillingAudit(ctx, queries, ids, event)
+				return appendPolarBillingAudit(ctx, queries, item, event)
 			},
 		)
 	}
@@ -89,7 +89,7 @@ func NewPolarWebhookProcessor(
 func appendPolarBillingAudit(
 	ctx context.Context,
 	queries *dbgen.Queries,
-	ids IDGenerator,
+	item reliability.Item,
 	event polarBillingEvent,
 ) error {
 	eventType := polarBillingAuditEventType(
@@ -112,15 +112,24 @@ func appendPolarBillingAudit(
 	if err != nil {
 		return err
 	}
-	auditID, err := ids.New()
-	if err != nil {
+	existing, err := queries.GetAuditEvent(ctx, pgUUID(item.ID))
+	if err == nil {
+		if existing.EventType != string(eventType) ||
+			!existing.OrganizationID.Valid ||
+			existing.OrganizationID.Bytes != organizationID.Bytes ||
+			existing.Result != string(safelog.ResultSuccess) {
+			return reliability.ErrIdempotencyConflict
+		}
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
 	_, err = reliability.AppendAudit(
 		ctx,
 		queries,
 		reliability.AuditInput{
-			ID:             auditID,
+			ID:             item.ID,
 			OccurredAt:     event.EventAt,
 			EventType:      eventType,
 			OrganizationID: uuid.UUID(organizationID.Bytes),

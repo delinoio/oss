@@ -52,8 +52,13 @@ WITH selected_subscription AS (
       AND expires_at > transaction_timestamp()
 ), current_period AS (
     SELECT period.*
-    FROM billing_periods AS period
-    WHERE period.organization_id = sqlc.arg(organization_id)
+    FROM selected_subscription AS subscription
+    JOIN billing_periods AS period
+      ON period.organization_id = subscription.organization_id
+     AND period.subscription_id = subscription.id
+     AND period.starts_at = subscription.current_period_starts_at
+     AND period.ends_at = subscription.current_period_ends_at
+    WHERE subscription.status = 'active'
       AND period.starts_at <= transaction_timestamp()
       AND period.ends_at > transaction_timestamp()
     LIMIT 1
