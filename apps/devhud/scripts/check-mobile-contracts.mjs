@@ -169,9 +169,13 @@ requireCondition(
   "the distributed Android manifest must not grant network access or register deep links",
 );
 requireCondition(
-  !/<receiver\b/u.test(androidManifest) &&
+  androidManifest.includes(
+    'xmlns:tools="http://schemas.android.com/tools"',
+  ) &&
+    androidManifest.includes('<receiver tools:node="removeAll" />') &&
+    (androidManifest.match(/<receiver\b/gu) ?? []).length === 1 &&
     !androidManifest.includes("AppWidgetProvider"),
-  "the distributed Android manifest must not register an AppWidgetProvider",
+  "the distributed Android manifest must remove dependency receivers and not register an AppWidgetProvider",
 );
 requireCondition(
   androidManifest.includes('android:allowBackup="false"') &&

@@ -101,6 +101,18 @@ if (platform === "android") {
         "\n",
       )
       .replace(/\s*<provider[\s\S]*?<\/provider>\s*/u, "\n");
+    if (!updated.includes('xmlns:tools="http://schemas.android.com/tools"')) {
+      updated = updated.replace(
+        'xmlns:android="http://schemas.android.com/apk/res/android"',
+        'xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"',
+      );
+    }
+    if (!updated.includes('<receiver tools:node="removeAll" />')) {
+      updated = updated.replace(
+        /(<application\b[^>]*>)/su,
+        '$1\n        <!-- The distributed application intentionally exposes no broadcast receivers. -->\n        <receiver tools:node="removeAll" />',
+      );
+    }
     for (const [attribute, value] of [
       ["allowBackup", "false"],
       ["dataExtractionRules", "@xml/data_extraction_rules"],

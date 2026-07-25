@@ -159,8 +159,18 @@ requireCondition(
   "the distributed iOS project must contain exactly one application target",
 );
 
+requireCondition(
+  androidAppManifest.includes(
+    'xmlns:tools="http://schemas.android.com/tools"',
+  ) &&
+    androidAppManifest.includes('<receiver tools:node="removeAll" />') &&
+    (androidAppManifest.match(/<receiver\b/gu) ?? []).length === 1 &&
+    !/(APPWIDGET_UPDATE|android\.appwidget\.provider|AppWidgetProvider)/u.test(
+      androidAppManifest,
+    ),
+  "the distributed Android manifest must remove dependency receivers without registering an app-widget receiver",
+);
 for (const [name, manifest] of [
-  ["distributed Android", androidAppManifest],
   ["private Android plugin", androidPluginManifest],
   ["build-only Android foundation", androidFoundationManifest],
 ]) {
@@ -270,14 +280,22 @@ function inspectAndroidManifest(source, path) {
     `distributed Android artifact contains a prohibited release surface: ${path}`,
   );
   const application = source.match(/<application\b[^>]*>/su)?.[0] ?? "";
+  const dataExtractionRules =
+    application.match(
+      /android:dataExtractionRules\s*=\s*["']([^"']+)["']/u,
+    )?.[1] ?? "";
+  const fullBackupContent =
+    application.match(
+      /android:fullBackupContent\s*=\s*["']([^"']+)["']/u,
+    )?.[1] ?? "";
+  const compiledReference = /^@ref\/0x[0-9a-f]+$/iu;
+  const isApk = extname(path).toLowerCase() === ".apk";
   requireCondition(
     /android:allowBackup\s*=\s*["']false["']/u.test(application) &&
-      /android:dataExtractionRules\s*=\s*["'](?:@xml\/data_extraction_rules|@ref\/0x[0-9a-f]+)["']/iu.test(
-        application,
-      ) &&
-      /android:fullBackupContent\s*=\s*["'](?:@xml\/backup_rules|@ref\/0x[0-9a-f]+)["']/iu.test(
-        application,
-      ),
+      (dataExtractionRules === "@xml/data_extraction_rules" ||
+        (isApk && compiledReference.test(dataExtractionRules))) &&
+      (fullBackupContent === "@xml/backup_rules" ||
+        (isApk && compiledReference.test(fullBackupContent))),
     `distributed Android artifact does not preserve backup exclusions: ${path}`,
   );
 }
