@@ -512,8 +512,7 @@ func validExternalID(value string) bool {
 }
 
 func validProviderID(value string) bool {
-	return value != "" && value == strings.TrimSpace(value) && len(value) <= 255 &&
-		!strings.ContainsAny(value, "/\x00\r\n")
+	return contracts.ValidPolarProviderID(value)
 }
 
 func validIdempotencyKey(value string) bool {

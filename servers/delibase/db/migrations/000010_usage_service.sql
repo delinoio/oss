@@ -29,10 +29,20 @@ ALTER TABLE usage_reservations
         client_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$'
     );
 
+-- Snapshot backfill is the only update that may bypass the existing
+-- held-to-finalized transition guard. The trigger is re-enabled in this same
+-- migration transaction before runtime writes resume.
+ALTER TABLE usage_reservations
+    DISABLE TRIGGER usage_reservations_enforce_transition;
+
 UPDATE usage_reservations AS reservation
 SET service_name_snapshot = service.name,
     meter_name_snapshot = meter.name,
-    polar_event_name_snapshot = mapping.polar_meter_id,
+    polar_event_name_snapshot = COALESCE((
+        SELECT mapping.polar_meter_id
+        FROM polar_meter_mappings AS mapping
+        WHERE mapping.meter_id = reservation.meter_id
+    ), 'unknown'),
     price_effective_from_snapshot = price.effective_from,
     price_effective_until_snapshot = price.effective_until,
     overage_billing_period_id = CASE
@@ -49,13 +59,14 @@ SET service_name_snapshot = service.name,
     END
 FROM service_identities AS service,
      catalog_meters AS meter,
-     polar_meter_mappings AS mapping,
      catalog_price_versions AS price
 WHERE service.id = reservation.service_identity_id
   AND meter.id = reservation.meter_id
-  AND mapping.meter_id = reservation.meter_id
   AND price.id = reservation.price_version_id
   AND price.meter_id = reservation.meter_id;
+
+ALTER TABLE usage_reservations
+    ENABLE TRIGGER usage_reservations_enforce_transition;
 
 ALTER TABLE usage_reservations
     ALTER COLUMN user_actor_reference_snapshot DROP DEFAULT;
@@ -527,3 +538,45 @@ CREATE CONSTRAINT TRIGGER usage_records_require_polar_outbox
 AFTER INSERT ON usage_records
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION require_usage_record_polar_outbox();
+
+CREATE FUNCTION validate_polar_usage_outbox_record()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.integration = 'polar'
+       AND NEW.operation = 'report_usage'
+       AND (
+           NEW.aggregate_type <> 'usage_record'
+           OR NOT EXISTS (
+               SELECT 1
+               FROM usage_records AS record
+               WHERE record.id = NEW.aggregate_id
+                 AND record.overage_applied_micros > 0
+                 AND NEW.payload -> 'organization_id'
+                     = to_jsonb(record.organization_id::text)
+                 AND NEW.payload -> 'usage_record_id'
+                     = to_jsonb(record.id::text)
+                 AND NEW.payload -> 'event_name'
+                     = to_jsonb(record.polar_event_name_snapshot)
+                 AND NEW.payload -> 'units'
+                     = to_jsonb(record.overage_applied_micros)
+                 AND jsonb_typeof(NEW.payload -> 'committed_at') = 'string'
+                 AND NEW.payload ->> 'committed_at'
+                     ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+                 AND (NEW.payload ->> 'committed_at')::timestamptz
+                     = record.committed_at
+           )
+       ) THEN
+        RAISE EXCEPTION
+            'Polar usage outbox requires a matching overage usage record'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER integration_outbox_validate_polar_usage_record
+AFTER INSERT ON integration_outbox
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION validate_polar_usage_outbox_record();

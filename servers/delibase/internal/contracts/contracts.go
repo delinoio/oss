@@ -4,6 +4,7 @@ package contracts
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -11,6 +12,13 @@ import (
 // checkout exists. Unmarked provider errors are treated as ambiguous so the
 // same idempotency scope can recover them without admitting a distinct checkout.
 var ErrCheckoutNotCreated = errors.New("contracts: checkout was not created")
+
+// ValidPolarProviderID reports whether value is accepted by Polar identifier
+// fields used across catalog configuration and provider requests.
+func ValidPolarProviderID(value string) bool {
+	return value != "" && value == strings.TrimSpace(value) && len(value) <= 255 &&
+		!strings.ContainsAny(value, "/\x00\r\n")
+}
 
 // Clock keeps time-dependent business rules deterministic in tests.
 type Clock interface {

@@ -64,8 +64,8 @@ func TestPostgreSQLReliabilityEnqueueClaimsRetriesAndAudit(t *testing.T) {
 	outbox := reliability.OutboxInput{
 		ID:             testReliabilityUUID(3),
 		Integration:    reliability.IntegrationPolar,
-		Operation:      reliability.OperationReportUsage,
-		AggregateType:  reliability.AggregateUsageRecord,
+		Operation:      reliability.OperationCancelSubscription,
+		AggregateType:  reliability.AggregateOrganization,
 		AggregateID:    testReliabilityUUID(4),
 		Payload:        []byte(`{"units":12}`),
 		IdempotencyKey: "usage-record-1",
@@ -253,8 +253,8 @@ func testConcurrentReliabilityClaims(
 		_, err := reliability.EnqueueOutbox(ctx, queries, reliability.OutboxInput{
 			ID:             testReliabilityUUID(index),
 			Integration:    reliability.IntegrationPolar,
-			Operation:      reliability.OperationReportUsage,
-			AggregateType:  reliability.AggregateUsageRecord,
+			Operation:      reliability.OperationCancelSubscription,
+			AggregateType:  reliability.AggregateOrganization,
 			AggregateID:    testReliabilityUUID(index + 20),
 			Payload:        []byte(`{"units":1}`),
 			IdempotencyKey: "concurrent-" + testReliabilityUUID(index).String(),

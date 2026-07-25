@@ -205,10 +205,18 @@ LIMIT sqlc.arg(page_limit)
 FOR UPDATE;
 
 -- name: ListExpiredUsageReservationCandidates :many
+WITH organization_candidates AS (
+    SELECT DISTINCT ON (reservation.organization_id)
+        reservation.id,
+        reservation.organization_id,
+        reservation.expires_at
+    FROM usage_reservations AS reservation
+    WHERE reservation.status = 'held'
+      AND reservation.expires_at <= statement_timestamp()
+    ORDER BY reservation.organization_id, reservation.expires_at, reservation.id
+)
 SELECT id, organization_id
-FROM usage_reservations
-WHERE status = 'held'
-  AND expires_at <= statement_timestamp()
+FROM organization_candidates
 ORDER BY expires_at, id
 LIMIT sqlc.arg(page_limit);
 

@@ -836,6 +836,7 @@ JOIN teams AS team
  AND team.id = reservation.team_id
 WHERE reservation.account_id = $1
   AND reservation.status = 'held'
+  AND reservation.expires_at > statement_timestamp()
 ORDER BY organization.id, team.id
 `
 
