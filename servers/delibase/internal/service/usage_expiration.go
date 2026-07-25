@@ -81,6 +81,7 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 		return 0, err
 	}
 	processed := 0
+	var batchErr error
 	seenOrganizations := make(map[uuid.UUID]struct{}, len(candidates))
 	for _, candidate := range candidates {
 		if processed >= int(usageExpirationBatchSize) {
@@ -91,6 +92,7 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 			continue
 		}
 		seenOrganizations[organizationID] = struct{}{}
+		organizationProcessed := 0
 		err = worker.dependencies.Store.WithinTransaction(
 			ctx,
 			pgx.TxOptions{},
@@ -107,13 +109,29 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 					ctx, worker.dependencies, queries, organizationID,
 					usageExpirationBatchSize-int32(processed),
 				)
-				processed += count
+				if expirationErr == nil {
+					organizationProcessed = count
+				}
 				return expirationErr
 			},
 		)
 		if err != nil {
-			return processed, err
+			batchErr = errors.Join(batchErr, err)
+			safelog.Record(
+				ctx,
+				worker.dependencies.Logger,
+				slog.LevelError,
+				safelog.EventReservation,
+				safelog.Fields{
+					OrganizationID:    organizationID.String(),
+					Result:            safelog.ResultFailure,
+					ErrorClass:        safeerr.Classify(err),
+					IncludeErrorClass: true,
+				},
+			)
+			continue
 		}
+		processed += organizationProcessed
 	}
-	return processed, nil
+	return processed, batchErr
 }

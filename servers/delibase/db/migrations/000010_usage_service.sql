@@ -172,6 +172,39 @@ ALTER TABLE usage_records
         )
     );
 
+-- Credit remains usable after a subscription's last billing period ends.
+-- Only provider-billed overage settlement requires a containing period.
+DO $$
+DECLARE
+    settlement_period_constraint name;
+BEGIN
+    SELECT candidate.conname
+    INTO settlement_period_constraint
+    FROM pg_constraint AS candidate
+    WHERE candidate.conrelid = 'ledger_entries'::regclass
+      AND candidate.contype = 'c'
+      AND pg_get_constraintdef(candidate.oid) LIKE '%credit_commit%'
+      AND pg_get_constraintdef(candidate.oid) LIKE '%overage_commit%'
+      AND pg_get_constraintdef(candidate.oid) LIKE '%billing_period_id IS NOT NULL%'
+    LIMIT 1;
+
+    IF settlement_period_constraint IS NULL THEN
+        RAISE EXCEPTION
+            'ledger usage-settlement billing-period constraint is unavailable';
+    END IF;
+
+    EXECUTE format(
+        'ALTER TABLE ledger_entries DROP CONSTRAINT %I',
+        settlement_period_constraint
+    );
+END;
+$$;
+
+ALTER TABLE ledger_entries
+    ADD CONSTRAINT ledger_entries_overage_commit_period_check CHECK (
+        entry_type <> 'overage_commit' OR billing_period_id IS NOT NULL
+    );
+
 CREATE UNIQUE INDEX usage_reservations_service_client_reference_idx
     ON usage_reservations(service_identity_id, client_reference);
 
@@ -390,7 +423,7 @@ BEGIN
         NEW.billing_period_id := NULL;
         NEW.billing_period_starts_at_snapshot := NULL;
         NEW.billing_period_ends_at_snapshot := NULL;
-        IF NEW.total_cost_micros > 0 THEN
+        IF NEW.overage_applied_micros > 0 THEN
             RAISE EXCEPTION 'usage record has no containing billing period'
                 USING ERRCODE = 'check_violation';
         END IF;

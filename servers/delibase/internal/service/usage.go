@@ -132,9 +132,8 @@ func (service *Usage) ReserveUsage(
 				)
 				return nil
 			}
-			if _, transactionErr = expireOrganizationReservations(
+			if _, transactionErr = drainExpiredOrganizationReservations(
 				ctx, service.dependencies, queries, organizationID,
-				usageExpirationBatchSize,
 			); transactionErr != nil {
 				return transactionErr
 			}

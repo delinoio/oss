@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"strings"
@@ -121,6 +122,374 @@ func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) 
 		}),
 	); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPostgreSQLReserveDrainsExpiredCapacityPastBatchBoundary(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	dependencies := fixture.dependencies.withDefaults()
+	actor, err := actorFor(dependencies, fixture.ownerSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = fixture.store.WithinTransaction(
+		ctx,
+		pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if _, lockErr := queries.LockOrganizationForBilling(
+				ctx,
+				pgUUID(fixture.organizationID),
+			); lockErr != nil {
+				return lockErr
+			}
+			balance, balanceErr := queries.CurrentOrganizationBalance(
+				ctx,
+				pgUUID(fixture.organizationID),
+			)
+			if balanceErr != nil {
+				return balanceErr
+			}
+			if _, grantErr := queries.InsertBillingLedgerEntry(
+				ctx,
+				dbgen.InsertBillingLedgerEntryParams{
+					ID:                 pgUUID(uuidv7.MustNew()),
+					OrganizationID:     pgUUID(fixture.organizationID),
+					BillingPeriodID:    pgtype.UUID{},
+					EntryType:          "credit_grant",
+					AmountMicros:       104,
+					BalanceAfterMicros: balance + 104,
+					SourceReference: "batch-expiration-grant-" +
+						fixture.organizationID.String(),
+				},
+			); grantErr != nil {
+				return grantErr
+			}
+			meter, meterErr := queries.GetUsageMeterAuthorization(
+				ctx,
+				dbgen.GetUsageMeterAuthorizationParams{
+					ServiceIdentityID: pgUUID(fixture.serviceID),
+					MeterID:           pgUUID(fixture.shortMeterID),
+				},
+			)
+			if meterErr != nil {
+				return meterErr
+			}
+			for index := 0; index <= int(usageExpirationBatchSize); index++ {
+				reservationID, idErr := dependencies.IDs.New()
+				if idErr != nil {
+					return idErr
+				}
+				reservation, insertErr := queries.InsertUsageReservation(
+					ctx,
+					dbgen.InsertUsageReservationParams{
+						ID:                pgUUID(reservationID),
+						OrganizationID:    pgUUID(fixture.organizationID),
+						TeamID:            pgUUID(fixture.generalTeamID),
+						TeamNameSnapshot:  "General",
+						MeterID:           pgUUID(fixture.shortMeterID),
+						PriceVersionID:    meter.PriceVersionID,
+						AccountID:         pgUUID(fixture.ownerID),
+						ServiceIdentityID: pgUUID(fixture.serviceID),
+						MaximumUnits:      1,
+						UsdMicrosPerUnit:  meter.UsdMicrosPerUnit,
+						MaximumCostMicros: 2,
+						HeldCreditMicros:  2,
+						HeldOverageMicros: 0,
+						ClientReference: fmt.Sprintf(
+							"batch-expiration-%03d-%s",
+							index,
+							fixture.organizationID,
+						),
+						ReservationTtlSeconds:      meter.ReservationTtlSeconds,
+						UserActorReferenceSnapshot: string(actor),
+					},
+				)
+				if insertErr != nil {
+					return insertErr
+				}
+				if ledgerErr := appendUsageLedger(
+					ctx,
+					dependencies,
+					queries,
+					reservation,
+					"credit_hold",
+					-2,
+					uuid.Nil,
+					"reservation:"+reservationID.String()+":credit-hold",
+					actor,
+				); ledgerErr != nil {
+					return ledgerErr
+				}
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+
+	reserved, err := fixture.usage.ReserveUsage(
+		usageContext(ctx, fixture.serviceClient, fixture.ownerSubject),
+		usageReserveRequest(
+			fixture,
+			fixture.generalTeamID,
+			fixture.shortMeterID,
+			152,
+			"after-batch-expiration-"+fixture.organizationID.String(),
+			"after-batch-expiration-"+fixture.organizationID.String(),
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reserved.Msg.Reservation.HeldCredit.Value != 204 ||
+		reserved.Msg.Reservation.HeldOverage.Value != 100 {
+		t.Fatalf("reservation after draining expired holds = %#v", reserved.Msg.Reservation)
+	}
+	if _, err = fixture.usage.ReleaseUsage(
+		usageContext(ctx, fixture.serviceClient, fixture.ownerSubject),
+		connect.NewRequest(&delibasev1.ReleaseUsageRequest{
+			OrganizationId: usageUUID(fixture.organizationID),
+			ReservationId:  reserved.Msg.Reservation.ReservationId,
+			Idempotency: idempotency(
+				"after-batch-expiration-release-" + fixture.organizationID.String(),
+			),
+		}),
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPostgreSQLCreditOnlyCommitAfterBillingPeriodEnds(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	ownerContext := usageContext(ctx, fixture.serviceClient, fixture.ownerSubject)
+
+	reserved, err := fixture.usage.ReserveUsage(
+		ownerContext,
+		usageReserveRequest(
+			fixture,
+			fixture.generalTeamID,
+			fixture.meterID,
+			1,
+			"credit-after-period-"+fixture.organizationID.String(),
+			"credit-after-period-"+fixture.organizationID.String(),
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reserved.Msg.Reservation.HeldCredit.Value != 2 ||
+		reserved.Msg.Reservation.HeldOverage.Value != 0 {
+		t.Fatalf("credit-only reservation = %#v", reserved.Msg.Reservation)
+	}
+	connection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = connection.Close(context.WithoutCancel(ctx))
+	}()
+	periodEndedAt := time.Now().UTC().Add(-time.Second)
+	if _, err = connection.Exec(
+		ctx,
+		`
+		UPDATE subscriptions
+		SET status = 'canceled',
+		    current_period_ends_at = $2,
+		    provider_event_at = statement_timestamp()
+		WHERE organization_id = $1;
+		UPDATE billing_periods
+		SET ends_at = $2
+		WHERE organization_id = $1
+		`,
+		fixture.organizationID,
+		periodEndedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	committed, err := fixture.usage.CommitUsage(
+		ownerContext,
+		connect.NewRequest(&delibasev1.CommitUsageRequest{
+			OrganizationId: usageUUID(fixture.organizationID),
+			ReservationId:  reserved.Msg.Reservation.ReservationId,
+			ActualUnits:    &delibasev1.UsageUnits{Value: 1},
+			Idempotency: idempotency(
+				"credit-after-period-commit-" + fixture.organizationID.String(),
+			),
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.Msg.Commit.CreditApplied.Value != 2 ||
+		committed.Msg.Commit.OverageApplied.Value != 0 {
+		t.Fatalf("credit-only commit = %#v", committed.Msg.Commit)
+	}
+	reservationID, err := uuid.Parse(reserved.Msg.Reservation.ReservationId.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := fixture.store.Queries().GetUsageRecordByReservation(
+		ctx,
+		dbgen.GetUsageRecordByReservationParams{
+			OrganizationID: pgUUID(fixture.organizationID),
+			ReservationID:  pgUUID(reservationID),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.BillingPeriodID.Valid {
+		t.Fatalf("credit-only commit billing period = %v", record.BillingPeriodID)
+	}
+}
+
+func TestPostgreSQLExpirationContinuesAfterOrganizationFailure(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	poisonFixture := newUsageFixture(t, ctx, databaseURL)
+	defer poisonFixture.store.Close()
+	healthyFixture := newUsageFixture(t, ctx, databaseURL)
+	defer healthyFixture.store.Close()
+	dependencies := poisonFixture.dependencies.withDefaults()
+	actor, err := actorFor(dependencies, poisonFixture.ownerSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poisonReservationID, err := dependencies.IDs.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = poisonFixture.store.WithinTransaction(
+		ctx,
+		pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			meter, meterErr := queries.GetUsageMeterAuthorization(
+				ctx,
+				dbgen.GetUsageMeterAuthorizationParams{
+					ServiceIdentityID: pgUUID(poisonFixture.serviceID),
+					MeterID:           pgUUID(poisonFixture.shortMeterID),
+				},
+			)
+			if meterErr != nil {
+				return meterErr
+			}
+			_, insertErr := queries.InsertUsageReservation(
+				ctx,
+				dbgen.InsertUsageReservationParams{
+					ID:                pgUUID(poisonReservationID),
+					OrganizationID:    pgUUID(poisonFixture.organizationID),
+					TeamID:            pgUUID(poisonFixture.generalTeamID),
+					TeamNameSnapshot:  "General",
+					MeterID:           pgUUID(poisonFixture.shortMeterID),
+					PriceVersionID:    meter.PriceVersionID,
+					AccountID:         pgUUID(poisonFixture.ownerID),
+					ServiceIdentityID: pgUUID(poisonFixture.serviceID),
+					MaximumUnits:      1,
+					UsdMicrosPerUnit:  meter.UsdMicrosPerUnit,
+					MaximumCostMicros: 2,
+					HeldCreditMicros:  2,
+					HeldOverageMicros: 0,
+					ClientReference: "poison-expiration-" +
+						poisonFixture.organizationID.String(),
+					ReservationTtlSeconds:      meter.ReservationTtlSeconds,
+					UserActorReferenceSnapshot: string(actor),
+				},
+			)
+			return insertErr
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+
+	healthyReservation, err := healthyFixture.usage.ReserveUsage(
+		usageContext(
+			ctx,
+			healthyFixture.serviceClient,
+			healthyFixture.ownerSubject,
+		),
+		usageReserveRequest(
+			healthyFixture,
+			healthyFixture.generalTeamID,
+			healthyFixture.shortMeterID,
+			1,
+			"healthy-expiration-"+healthyFixture.organizationID.String(),
+			"healthy-expiration-"+healthyFixture.organizationID.String(),
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthyReservationID, err := uuid.Parse(
+		healthyReservation.Msg.Reservation.ReservationId.Value,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+
+	worker, err := NewUsageExpirationWorker(
+		poisonFixture.dependencies,
+		time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	processed, batchErr := worker.ProcessBatch(ctx)
+	if batchErr == nil {
+		t.Fatal("expiration batch succeeded despite poison reservation")
+	}
+	if processed < 1 {
+		t.Fatalf("expiration processed = %d, %v", processed, batchErr)
+	}
+	healthyStored, err := healthyFixture.store.Queries().LockUsageReservation(
+		ctx,
+		dbgen.LockUsageReservationParams{
+			OrganizationID: pgUUID(healthyFixture.organizationID),
+			ReservationID:  pgUUID(healthyReservationID),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if healthyStored.Status != "expired" {
+		t.Fatalf("healthy reservation status = %q", healthyStored.Status)
+	}
+	poisonStored, err := poisonFixture.store.Queries().LockUsageReservation(
+		ctx,
+		dbgen.LockUsageReservationParams{
+			OrganizationID: pgUUID(poisonFixture.organizationID),
+			ReservationID:  pgUUID(poisonReservationID),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if poisonStored.Status != "held" {
+		t.Fatalf("poison reservation status = %q", poisonStored.Status)
 	}
 }
 

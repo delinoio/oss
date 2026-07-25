@@ -51,7 +51,7 @@ func NewPolarUsageHandler(
 		}
 		var payload polarUsagePayload
 		if json.Unmarshal(item.Payload, &payload) != nil ||
-			payload.EventName == "" || payload.Units < 0 ||
+			payload.EventName == "" || payload.Units <= 0 ||
 			payload.CommittedAt.IsZero() {
 			return reliability.ErrInvalidInput
 		}
