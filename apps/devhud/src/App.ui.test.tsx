@@ -26,6 +26,7 @@ import {
   type LocalStorageAdapter,
 } from "./persistence/storage";
 import type { DesktopBridge } from "./runtime/desktop";
+import * as desktopRuntime from "./runtime/desktop";
 import { loadRuntimeInfo } from "./runtime/startup";
 
 afterEach(cleanup);
@@ -235,6 +236,22 @@ describe("DevHud application surfaces", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.blur(window);
     expect(bridge.hideHud).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces failures when the HUD cannot open native settings", async () => {
+    const bridge = desktopBridge({
+      showSettings: vi.fn(async () => {
+        throw new Error("window unavailable");
+      }),
+    });
+    const user = userEvent.setup();
+    renderApp({ desktopBridge: bridge });
+
+    await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud could not open Settings",
+    );
   });
 
   it("preserves the previous shortcut after conflict and cancellation", async () => {
@@ -470,6 +487,50 @@ describe("DevHud application surfaces", () => {
     expect(bridge.publishTheme).toHaveBeenCalledWith(ThemePreference.System);
   });
 
+  it("preserves the saved autostart setting when native state is unknown", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "settings",
+      firstRun: false,
+    });
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        settings: {
+          theme: "system",
+          launchAtLogin: true,
+          shortcut: null,
+        },
+      }),
+    );
+    const bridge = desktopBridge({
+      setLaunchAtLogin: vi.fn(async () => ({
+        status: "unknown" as const,
+        reason: "permission-denied" as const,
+      })),
+    });
+    const user = userEvent.setup();
+    renderApp({ desktopBridge: bridge, storage });
+    const launchAtLogin = await screen.findByRole("checkbox", {
+      name: "Launch DevHud at login",
+    });
+    await waitFor(() => expect(launchAtLogin).toBeChecked());
+
+    await user.click(launchAtLogin);
+
+    expect(launchAtLogin).toBeChecked();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "saved setting is still shown",
+    );
+  });
+
   it("provides explicit mobile content states without visible widgets", async () => {
     const user = userEvent.setup();
     renderApp({ platform: "mobile" });
@@ -519,6 +580,45 @@ describe("DevHud application surfaces", () => {
     expect(
       screen.queryByRole("checkbox", { name: "Launch DevHud at login" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps desktop controls out of an open HUD fallback dialog", async () => {
+    let finishRuntime:
+      | ((value: Awaited<ReturnType<typeof loadRuntimeInfo>>) => void)
+      | undefined;
+    vi.mocked(loadRuntimeInfo).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRuntime = resolve;
+      }),
+    );
+    const bridge = desktopBridge();
+    const nativeBridge = vi
+      .spyOn(desktopRuntime, "nativeDesktopBridge")
+      .mockReturnValue(bridge);
+    const user = userEvent.setup();
+    renderApp({ platform: "desktop" });
+    await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
+
+    finishRuntime?.({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "hud",
+      firstRun: false,
+    });
+    await waitFor(() => expect(nativeBridge).toHaveBeenCalledWith("cef"));
+
+    expect(screen.getByRole("dialog", { name: "DevHud settings" })).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Global shortcut" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Launch DevHud at login" }),
+    ).not.toBeInTheDocument();
+    nativeBridge.mockRestore();
   });
 
   it("shows explicit mobile loading states", async () => {

@@ -29,12 +29,16 @@ pub(crate) enum AutostartOutcome {
         enabled: bool,
         reason: AutostartFailure,
     },
+    Unknown {
+        reason: AutostartFailure,
+    },
 }
 
 impl AutostartOutcome {
-    pub(crate) const fn enabled(self) -> bool {
+    pub(crate) const fn enabled(self) -> Option<bool> {
         match self {
-            Self::Applied { enabled } | Self::Unchanged { enabled, .. } => enabled,
+            Self::Applied { enabled } | Self::Unchanged { enabled, .. } => Some(enabled),
+            Self::Unknown { .. } => None,
         }
     }
 }
@@ -58,9 +62,9 @@ impl<B: AutostartBackend> AutostartCoordinator<B> {
     fn restore(&self, enabled: Result<bool, AutostartFailure>) -> AutostartOutcome {
         match enabled {
             Ok(enabled) => self.apply(enabled),
-            Err(reason) => AutostartOutcome::Unchanged {
-                enabled: self.backend.is_enabled().unwrap_or(false),
-                reason,
+            Err(reason) => match self.backend.is_enabled() {
+                Ok(enabled) => AutostartOutcome::Unchanged { enabled, reason },
+                Err(_) => AutostartOutcome::Unknown { reason },
             },
         }
     }
@@ -75,8 +79,7 @@ impl<B: AutostartBackend> AutostartCoordinator<B> {
             Err(error) => {
                 return (
                     None,
-                    AutostartOutcome::Unchanged {
-                        enabled: false,
+                    AutostartOutcome::Unknown {
                         reason: map_error(error),
                     },
                 );
@@ -230,8 +233,7 @@ impl AutostartState {
             Some(coordinator) => coordinator.apply_with_previous(enabled),
             None => (
                 None,
-                AutostartOutcome::Unchanged {
-                    enabled: false,
+                AutostartOutcome::Unknown {
                     reason: self
                         .unavailable
                         .unwrap_or(AutostartFailure::OperationFailed),
@@ -243,12 +245,8 @@ impl AutostartState {
     pub(crate) fn restore(&self, enabled: Result<bool, AutostartFailure>) -> AutostartOutcome {
         match (&self.coordinator, enabled) {
             (Some(coordinator), enabled) => coordinator.restore(enabled),
-            (None, Err(reason)) => AutostartOutcome::Unchanged {
-                enabled: false,
-                reason,
-            },
-            (None, Ok(_)) => AutostartOutcome::Unchanged {
-                enabled: false,
+            (None, Err(reason)) => AutostartOutcome::Unknown { reason },
+            (None, Ok(_)) => AutostartOutcome::Unknown {
                 reason: self
                     .unavailable
                     .unwrap_or(AutostartFailure::OperationFailed),
@@ -343,6 +341,24 @@ mod tests {
     }
 
     #[test]
+    fn failed_initial_snapshot_reports_an_unknown_effective_state() {
+        let coordinator = coordinator(true);
+        coordinator
+            .backend
+            .read_results
+            .borrow_mut()
+            .push_back(Err(BackendError::PermissionDenied));
+
+        assert_eq!(
+            coordinator.apply(false),
+            AutostartOutcome::Unknown {
+                reason: AutostartFailure::PermissionDenied
+            }
+        );
+        assert!(coordinator.backend.enabled.get());
+    }
+
+    #[test]
     fn unreadable_settings_preserve_the_existing_autostart_state() {
         let coordinator = coordinator(true);
         coordinator
@@ -396,7 +412,7 @@ mod tests {
                 reason: AutostartFailure::PermissionDenied
             }
         );
-        assert!(rollback.enabled());
+        assert_eq!(rollback.enabled(), Some(true));
     }
 
     #[test]

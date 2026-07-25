@@ -167,10 +167,13 @@ export function SettingsPanel({
           error: true,
         });
   const startupAutostartStatus =
-    startupAutostartOutcome?.status === "unchanged"
+    startupAutostartOutcome?.status === "unchanged" ||
+    startupAutostartOutcome?.status === "unknown"
       ? {
           message:
-            startupAutostartOutcome.reason === "permission-denied"
+            startupAutostartOutcome.status === "unknown"
+              ? "DevHud could not verify the launch-at-login system setting. The saved setting is shown."
+              : startupAutostartOutcome.reason === "permission-denied"
               ? "DevHud could not restore launch at login because permission was denied. The actual system setting is shown."
               : startupAutostartOutcome.reason === "storage-failed"
                 ? "DevHud left launch at login unchanged because local settings are unavailable or invalid. The actual system setting is shown."
@@ -267,11 +270,16 @@ export function SettingsPanel({
           error: false,
         });
       } else {
-        adoptNativeLaunchAtLogin(outcome.enabled);
+        if (outcome.status === "unchanged") {
+          adoptNativeLaunchAtLogin(outcome.enabled);
+        }
         setAutostartStatus({
-          message: outcome.reason === "permission-denied"
-            ? "Permission was denied. The previous launch-at-login setting was kept."
-            : "DevHud could not change launch at login. The previous setting was kept.",
+          message:
+            outcome.status === "unknown"
+              ? "DevHud could not verify launch at login. The saved setting is still shown."
+              : outcome.reason === "permission-denied"
+                ? "Permission was denied. The previous launch-at-login setting was kept."
+                : "DevHud could not change launch at login. The previous setting was kept.",
           error: true,
         });
       }

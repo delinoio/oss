@@ -10,6 +10,14 @@ mod autostart;
 mod local_log;
 #[cfg(any(feature = "desktop-cef", test))]
 mod shortcut;
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+mod single_instance;
 #[cfg(any(feature = "desktop-cef", test))]
 mod updater;
 
@@ -197,6 +205,31 @@ enum PersistenceCommandError {
     WriteFailed,
 }
 
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PersistenceResetFailure {
+    BeforeRecordsRemoved(PersistenceCommandError),
+    CleanupFailed,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+impl PersistenceResetFailure {
+    #[cfg_attr(
+        not(any(feature = "desktop-cef", feature = "mobile-system-webview")),
+        allow(dead_code)
+    )]
+    const fn command_error(self) -> PersistenceCommandError {
+        match self {
+            Self::BeforeRecordsRemoved(error) => error,
+            Self::CleanupFailed => PersistenceCommandError::ResetFailed,
+        }
+    }
+
+    const fn should_restore_integrations(self) -> bool {
+        matches!(self, Self::BeforeRecordsRemoved(_))
+    }
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 impl PersistenceState {
     fn new(directory: PathBuf) -> io::Result<Self> {
@@ -299,21 +332,23 @@ impl PersistenceState {
         self.write_without_lock(SETTINGS_STORAGE_KEY, &record)
     }
 
-    fn reset(&self) -> Result<(), PersistenceCommandError> {
+    fn reset(&self) -> Result<(), PersistenceResetFailure> {
         let _guard = self.write_lock.lock().map_err(|_| {
             tracing::warn!(
                 event = "devhud.persistence.reset_failure",
                 classification = "reset-failed",
                 "DevHud local data reset failed"
             );
-            PersistenceCommandError::ResetFailed
+            PersistenceResetFailure::BeforeRecordsRemoved(PersistenceCommandError::ResetFailed)
         })?;
         let paths = [
             (
                 SETTINGS_STORAGE_KEY,
                 self.path_for(SETTINGS_STORAGE_KEY).ok_or_else(|| {
                     log_persistence_unavailable("reset", SETTINGS_STORAGE_KEY);
-                    PersistenceCommandError::StorageUnavailable
+                    PersistenceResetFailure::BeforeRecordsRemoved(
+                        PersistenceCommandError::StorageUnavailable,
+                    )
                 })?,
             ),
             (
@@ -321,7 +356,9 @@ impl PersistenceState {
                 self.path_for(WIDGET_CONFIGURATION_STORAGE_KEY)
                     .ok_or_else(|| {
                         log_persistence_unavailable("reset", WIDGET_CONFIGURATION_STORAGE_KEY);
-                        PersistenceCommandError::StorageUnavailable
+                        PersistenceResetFailure::BeforeRecordsRemoved(
+                            PersistenceCommandError::StorageUnavailable,
+                        )
                     })?,
             ),
         ];
@@ -349,7 +386,7 @@ fn reset_persisted_records<S, R>(
     paths: &[(&str, PathBuf, PathBuf)],
     mut stage_record: S,
     mut remove_staged_record: R,
-) -> Result<(), PersistenceCommandError>
+) -> Result<(), PersistenceResetFailure>
 where
     S: FnMut(&Path, &Path) -> io::Result<()>,
     R: FnMut(&Path) -> io::Result<()>,
@@ -367,7 +404,9 @@ where
                         log_persistence_io_failure("reset-rollback", staged_key, &rollback_error);
                     }
                 }
-                return Err(PersistenceCommandError::ResetFailed);
+                return Err(PersistenceResetFailure::BeforeRecordsRemoved(
+                    PersistenceCommandError::ResetFailed,
+                ));
             }
         }
     }
@@ -392,7 +431,7 @@ where
         }
     }
     if cleanup_failed {
-        Err(PersistenceCommandError::ResetFailed)
+        Err(PersistenceResetFailure::CleanupFailed)
     } else {
         Ok(())
     }
@@ -1196,7 +1235,11 @@ fn show_settings_internal(app: &AppHandle<ActiveRuntime>) -> Result<(), HudActio
 ))]
 #[tauri::command]
 fn show_settings(app: AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> {
-    show_settings_internal(&app)
+    let result = show_settings_internal(&app);
+    if let Err(reason) = result {
+        log_window_action_failure("hud-open-settings", reason);
+    }
+    result
 }
 
 #[cfg(all(
@@ -1256,13 +1299,18 @@ fn log_shortcut_integration_failure(
 fn log_autostart_integration_failure(
     operation: &'static str,
     reason: autostart::AutostartFailure,
-    effective_enabled: bool,
+    effective_enabled: Option<bool>,
 ) {
+    let effective_state = match effective_enabled {
+        Some(true) => "enabled",
+        Some(false) => "disabled",
+        None => "unknown",
+    };
     tracing::warn!(
         event = "devhud.autostart.integration_failure",
         operation,
         classification = reason.classification(),
-        effective_enabled,
+        effective_state,
         "DevHud launch-at-login integration failed"
     );
 }
@@ -1385,24 +1433,30 @@ fn set_launch_at_login(
         )
         .is_err()
     {
-        let rollback = previous.map_or(
-            autostart::AutostartOutcome::Unchanged {
-                enabled: outcome.enabled(),
+        let rollback = previous.map_or_else(
+            || autostart::AutostartOutcome::Unknown {
                 reason: autostart::AutostartFailure::OperationFailed,
             },
             |previous| state.apply(previous),
         );
         if let autostart::AutostartOutcome::Unchanged { enabled, reason } = rollback {
-            log_autostart_integration_failure("change-rollback", reason, enabled);
+            log_autostart_integration_failure("change-rollback", reason, Some(enabled));
+        } else if let autostart::AutostartOutcome::Unknown { reason } = rollback {
+            log_autostart_integration_failure("change-rollback", reason, None);
         }
         log_autostart_integration_failure(
             "change-persist",
             autostart::AutostartFailure::StorageFailed,
             rollback.enabled(),
         );
-        return autostart::AutostartOutcome::Unchanged {
-            enabled: rollback.enabled(),
-            reason: autostart::AutostartFailure::StorageFailed,
+        return match rollback.enabled() {
+            Some(enabled) => autostart::AutostartOutcome::Unchanged {
+                enabled,
+                reason: autostart::AutostartFailure::StorageFailed,
+            },
+            None => autostart::AutostartOutcome::Unknown {
+                reason: autostart::AutostartFailure::StorageFailed,
+            },
         };
     }
     if matches!(outcome, autostart::AutostartOutcome::Applied { .. })
@@ -1411,7 +1465,9 @@ fn set_launch_at_login(
         diagnostics.autostart_outcome = None;
     }
     if let autostart::AutostartOutcome::Unchanged { enabled, reason } = outcome {
-        log_autostart_integration_failure("change", reason, enabled);
+        log_autostart_integration_failure("change", reason, Some(enabled));
+    } else if let autostart::AutostartOutcome::Unknown { reason } = outcome {
+        log_autostart_integration_failure("change", reason, None);
     }
     outcome
 }
@@ -1561,17 +1617,42 @@ fn install_shortcut_handler(app: &AppHandle<ActiveRuntime>) {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn browsing_data_reset_failure() -> PersistenceCommandError {
+    tracing::warn!(
+        event = "devhud.persistence.reset_failure",
+        classification = "reset-failed",
+        "DevHud application browsing data reset failed"
+    );
+    PersistenceCommandError::ResetFailed
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn clear_browsing_data_for_reset(
+    app: &AppHandle<ActiveRuntime>,
+) -> Result<(), PersistenceCommandError> {
+    for label in [MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL] {
+        if let Some(window) = app.get_webview_window(label) {
+            window
+                .clear_all_browsing_data()
+                .map_err(|_| browsing_data_reset_failure())?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
 fn clear_browsing_data_for_reset(
     webview: Webview<ActiveRuntime>,
 ) -> Result<(), PersistenceCommandError> {
-    webview.clear_all_browsing_data().map_err(|_| {
-        tracing::warn!(
-            event = "devhud.persistence.reset_failure",
-            classification = "reset-failed",
-            "DevHud application browsing data reset failed"
-        );
-        PersistenceCommandError::ResetFailed
-    })
+    webview
+        .clear_all_browsing_data()
+        .map_err(|_| browsing_data_reset_failure())
 }
 
 #[cfg(all(
@@ -1600,13 +1681,13 @@ fn clear_local_logs_for_reset() -> Result<(), PersistenceCommandError> {
 ))]
 #[tauri::command]
 fn reset_dev_hud(
-    webview: Webview<ActiveRuntime>,
+    app: AppHandle<ActiveRuntime>,
     persistence: State<'_, PersistenceState>,
     shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<(), PersistenceCommandError> {
-    clear_browsing_data_for_reset(webview)?;
+    clear_browsing_data_for_reset(&app)?;
     let mut shortcuts = shortcut_state.lock().map_err(|_| {
         log_shortcut_integration_failure(
             "reset",
@@ -1625,7 +1706,7 @@ fn reset_dev_hud(
         log_autostart_integration_failure(
             "reset-snapshot",
             autostart::AutostartFailure::OperationFailed,
-            false,
+            None,
         );
         if let Err(reason) = shortcuts.rollback(previous_shortcut) {
             log_shortcut_integration_failure(
@@ -1642,7 +1723,21 @@ fn reset_dev_hud(
     };
     let autostart_outcome = autostart_state.apply(false);
     if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_outcome {
-        log_autostart_integration_failure("reset", reason, enabled);
+        log_autostart_integration_failure("reset", reason, Some(enabled));
+        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+            log_shortcut_integration_failure(
+                "reset-rollback",
+                reason,
+                if shortcuts.active_shortcut().is_some() {
+                    "configured"
+                } else {
+                    "not-configured"
+                },
+            );
+        }
+        return Err(PersistenceCommandError::ResetFailed);
+    } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_outcome {
+        log_autostart_integration_failure("reset", reason, None);
         if let Err(reason) = shortcuts.rollback(previous_shortcut) {
             log_shortcut_integration_failure(
                 "reset-rollback",
@@ -1660,7 +1755,9 @@ fn reset_dev_hud(
     if let Err(reason) = clear_local_logs_for_reset() {
         let autostart_rollback = autostart_state.apply(previous_autostart);
         if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_rollback {
-            log_autostart_integration_failure("reset-rollback", reason, enabled);
+            log_autostart_integration_failure("reset-rollback", reason, Some(enabled));
+        } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_rollback {
+            log_autostart_integration_failure("reset-rollback", reason, None);
         }
         if let Err(reason) = shortcuts.rollback(previous_shortcut) {
             log_shortcut_integration_failure(
@@ -1676,23 +1773,27 @@ fn reset_dev_hud(
         return Err(reason);
     }
 
-    if let Err(reason) = persistence.reset() {
-        let autostart_rollback = autostart_state.apply(previous_autostart);
-        if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_rollback {
-            log_autostart_integration_failure("reset-rollback", reason, enabled);
+    if let Err(failure) = persistence.reset() {
+        if failure.should_restore_integrations() {
+            let autostart_rollback = autostart_state.apply(previous_autostart);
+            if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_rollback {
+                log_autostart_integration_failure("reset-rollback", reason, Some(enabled));
+            } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_rollback {
+                log_autostart_integration_failure("reset-rollback", reason, None);
+            }
+            if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+                log_shortcut_integration_failure(
+                    "reset-rollback",
+                    reason,
+                    if shortcuts.active_shortcut().is_some() {
+                        "configured"
+                    } else {
+                        "not-configured"
+                    },
+                );
+            }
         }
-        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
-            log_shortcut_integration_failure(
-                "reset-rollback",
-                reason,
-                if shortcuts.active_shortcut().is_some() {
-                    "configured"
-                } else {
-                    "not-configured"
-                },
-            );
-        }
-        return Err(reason);
+        return Err(failure.command_error());
     }
 
     if let Ok(mut diagnostics) = startup_diagnostics.lock() {
@@ -1718,7 +1819,9 @@ fn reset_dev_hud(
     state: State<'_, PersistenceState>,
 ) -> Result<(), PersistenceCommandError> {
     clear_browsing_data_for_reset(webview)?;
-    state.reset()?;
+    state
+        .reset()
+        .map_err(PersistenceResetFailure::command_error)?;
     tracing::info!(
         event = "devhud.persistence.reset",
         "DevHud local data was reset"
@@ -1791,7 +1894,9 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             // run actively clears any stale OS entry using the same app id.
             let autostart_outcome = autostart.restore(launch_at_login);
             if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_outcome {
-                log_autostart_integration_failure("startup-restore", reason, enabled);
+                log_autostart_integration_failure("startup-restore", reason, Some(enabled));
+            } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_outcome {
+                log_autostart_integration_failure("startup-restore", reason, None);
             }
             app.manage(autostart);
 
@@ -1815,6 +1920,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 autostart_outcome: matches!(
                     autostart_outcome,
                     autostart::AutostartOutcome::Unchanged { .. }
+                        | autostart::AutostartOutcome::Unknown { .. }
                 )
                 .then_some(autostart_outcome),
             }));
@@ -1880,9 +1986,23 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
         ])
         .setup(|app| {
             let persistence = match app.path().app_local_data_dir() {
-                Ok(directory) => PersistenceState::new(directory)
-                    .unwrap_or_else(|_| PersistenceState::unavailable()),
-                Err(_) => PersistenceState::unavailable(),
+                Ok(directory) => match PersistenceState::new(directory) {
+                    Ok(state) => state,
+                    Err(error) => {
+                        log_persistence_io_failure("initialize", "persistence", &error);
+                        PersistenceState::unavailable()
+                    }
+                },
+                Err(_) => {
+                    tracing::warn!(
+                        event = "devhud.persistence.unavailable",
+                        operation = "initialize",
+                        record = "persistence",
+                        classification = "storage-unavailable",
+                        "DevHud persistence is unavailable"
+                    );
+                    PersistenceState::unavailable()
+                }
             };
             app.manage(persistence);
             app.manage(Mutex::new(StartupDiagnostics::default()));
@@ -1958,6 +2078,27 @@ fn initialize_logging() {
     not(any(target_os = "android", target_os = "ios"))
 ))]
 fn run_app() -> tauri::Result<()> {
+    let _instance_guard = match single_instance::InstanceGuard::acquire(APPLICATION_ID) {
+        Ok(guard) => guard,
+        Err(single_instance::InstanceGuardError::AlreadyRunning) => {
+            tracing::info!(
+                event = "devhud.runtime.duplicate_instance",
+                classification = "already-running",
+                "A resident DevHud instance is already running"
+            );
+            return Ok(());
+        }
+        Err(single_instance::InstanceGuardError::Unavailable(error)) => {
+            tracing::error!(
+                event = "devhud.runtime.instance_guard_failure",
+                error_kind = ?error.kind(),
+                classification = "instance-guard-unavailable",
+                fatal = true,
+                "DevHud could not acquire its desktop instance guard"
+            );
+            return Err(error.into());
+        }
+    };
     let app = configure_builder(platform_builder()).build(tauri::generate_context!())?;
     app.run(|app, event| match event {
         tauri::RunEvent::WindowEvent {
@@ -1979,7 +2120,9 @@ fn run_app() -> tauri::Result<()> {
             event: WindowEvent::Focused(false),
             ..
         } if label == MAIN_WINDOW_LABEL => {
-            let _ = hide_hud_internal(app);
+            if let HudActionOutcome::Unchanged { reason } = hide_hud_internal(app) {
+                log_window_action_failure("window-focus-loss-hud", reason);
+            }
         }
         tauri::RunEvent::ExitRequested { api, .. }
             if !app.state::<QuittingState>().0.load(Ordering::Acquire) =>
@@ -2285,7 +2428,12 @@ mod tests {
             |path| fs::remove_file(path),
         );
 
-        assert_eq!(result, Err(PersistenceCommandError::ResetFailed));
+        assert_eq!(
+            result,
+            Err(PersistenceResetFailure::BeforeRecordsRemoved(
+                PersistenceCommandError::ResetFailed
+            ))
+        );
         assert_eq!(fs::read(settings_path).unwrap(), settings);
         assert_eq!(fs::read(widget_path).unwrap(), widgets);
         fs::remove_dir_all(directory).unwrap();
@@ -2315,7 +2463,8 @@ mod tests {
             },
         );
 
-        assert_eq!(result, Err(PersistenceCommandError::ResetFailed));
+        assert_eq!(result, Err(PersistenceResetFailure::CleanupFailed));
+        assert!(!result.unwrap_err().should_restore_integrations());
         assert!(staged_path.exists());
         fs::remove_dir_all(directory).unwrap();
     }

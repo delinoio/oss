@@ -212,11 +212,11 @@ function SettingsWindow({
 }
 
 function EmptyTools({
-  bridge = null,
   compact = false,
+  onOpenSettings,
 }: {
-  readonly bridge?: DesktopBridge | null;
   readonly compact?: boolean;
+  readonly onOpenSettings?: () => void;
 }) {
   const { openSettings, setMobileScreen } = useApplication();
   const showSettings = () => {
@@ -224,8 +224,7 @@ function EmptyTools({
       setMobileScreen(MobileScreen.Settings);
       return;
     }
-    if (bridge === null) openSettings();
-    else void bridge.showSettings();
+    (onOpenSettings ?? openSettings)();
   };
   return (
     <section
@@ -264,15 +263,17 @@ function RuntimeFailure({
 const NO_TOOL_CAPABILITIES: ReadonlySet<ToolCapability> = new Set();
 
 function ProductionToolSurface({
-  bridge,
+  onOpenSettings,
 }: {
-  readonly bridge: DesktopBridge | null;
+  readonly onOpenSettings: () => void;
 }) {
   const availableTools = filterTools(productionTools, {
     platform: ToolPlatform.Desktop,
     grantedCapabilities: NO_TOOL_CAPABILITIES,
   });
-  if (availableTools.length === 0) return <EmptyTools bridge={bridge} />;
+  if (availableTools.length === 0) {
+    return <EmptyTools onOpenSettings={onOpenSettings} />;
+  }
   return (
     <section aria-labelledby="available-tools-title">
       <h2 id="available-tools-title">Available tools</h2>
@@ -293,6 +294,7 @@ function DesktopHud({
   readonly runtime: RuntimeState;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
+  const [settingsFailure, setSettingsFailure] = useState(false);
   const { openSettings } = useApplication();
   useEffect(() => {
     const focusSearch = () => searchRef.current?.focus();
@@ -318,7 +320,10 @@ function DesktopHud({
 
   const showSettings = () => {
     if (bridge === null) openSettings();
-    else void bridge.showSettings();
+    else {
+      setSettingsFailure(false);
+      void bridge.showSettings().catch(() => setSettingsFailure(true));
+    }
   };
   return (
     <main className="desktop-shell">
@@ -339,6 +344,11 @@ function DesktopHud({
           placeholder="Search available tools"
           type="search"
         />
+        {settingsFailure ? (
+          <p className="runtime-status error" role="alert">
+            DevHud could not open Settings. Try again from the tray.
+          </p>
+        ) : null}
         {runtime.status === "loading" ? (
           <p className="runtime-status" role="status">
             Starting DevHud…
@@ -347,7 +357,7 @@ function DesktopHud({
         {runtime.status === "failed" ? (
           <RuntimeFailure message={runtime.message} onRetry={retryRuntime} />
         ) : (
-          <ProductionToolSurface bridge={bridge} />
+          <ProductionToolSurface onOpenSettings={showSettings} />
         )}
       </section>
     </main>
@@ -691,7 +701,7 @@ function ApplicationSurface({
           bridge={bridge}
           onResetComplete={reconcileReset}
           runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
-          showDesktopControls={platform === "desktop" && bridge !== null}
+          showDesktopControls={false}
         />
       ) : null}
     </>

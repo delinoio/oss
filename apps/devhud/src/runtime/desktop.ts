@@ -37,6 +37,10 @@ export type AutostartOutcome =
       readonly status: "unchanged";
       readonly enabled: boolean;
       readonly reason: AutostartFailure;
+    }
+  | {
+      readonly status: "unknown";
+      readonly reason: AutostartFailure;
     };
 
 export type HudActionOutcome =
