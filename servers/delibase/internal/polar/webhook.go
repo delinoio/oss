@@ -292,7 +292,8 @@ func projectWebhook(
 		if json.Unmarshal(envelope.Data, &order) != nil || !order.Paid ||
 			!validProviderID(order.ID) ||
 			!validProviderID(order.SubscriptionID) ||
-			!validProviderID(order.CustomerID) {
+			!validProviderID(order.CustomerID) ||
+			order.Subscription.ID != order.SubscriptionID {
 			return "", nil, errors.New("invalid paid order")
 		}
 		projected.ObjectID = order.ID

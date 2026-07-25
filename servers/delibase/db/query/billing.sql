@@ -391,10 +391,11 @@ RETURNING *;
 
 -- name: UpsertPolarRefund :one
 INSERT INTO polar_refunds (
-    polar_refund_id, polar_order_id, status, requested_micros,
+    polar_refund_id, organization_id, polar_order_id, status, requested_micros,
     reversed_micros, chargeback, provider_event_at
 ) VALUES (
-    sqlc.arg(polar_refund_id), sqlc.arg(polar_order_id), sqlc.arg(status),
+    sqlc.arg(polar_refund_id), sqlc.arg(organization_id),
+    sqlc.arg(polar_order_id), sqlc.arg(status),
     sqlc.arg(requested_micros), sqlc.arg(reversed_micros),
     sqlc.arg(chargeback), sqlc.arg(provider_event_at)
 )
@@ -405,6 +406,7 @@ SET status = EXCLUDED.status,
     chargeback = EXCLUDED.chargeback,
     provider_event_at = EXCLUDED.provider_event_at
 WHERE polar_refunds.polar_order_id = EXCLUDED.polar_order_id
+  AND polar_refunds.organization_id = EXCLUDED.organization_id
   AND polar_refunds.provider_event_at <= EXCLUDED.provider_event_at
   AND polar_refunds.reversed_micros <= EXCLUDED.reversed_micros
 RETURNING *;

@@ -550,7 +550,7 @@ func (q *Queries) GetPolarPaidCycleBinding(ctx context.Context, polarOrderID str
 }
 
 const getPolarRefund = `-- name: GetPolarRefund :one
-SELECT polar_refund_id, polar_order_id, status, requested_micros, reversed_micros, chargeback, provider_event_at, created_at, retain_until FROM polar_refunds WHERE polar_refund_id = $1
+SELECT polar_refund_id, organization_id, polar_order_id, status, requested_micros, reversed_micros, chargeback, provider_event_at, created_at, retain_until FROM polar_refunds WHERE polar_refund_id = $1
 `
 
 func (q *Queries) GetPolarRefund(ctx context.Context, polarRefundID string) (PolarRefund, error) {
@@ -558,6 +558,7 @@ func (q *Queries) GetPolarRefund(ctx context.Context, polarRefundID string) (Pol
 	var i PolarRefund
 	err := row.Scan(
 		&i.PolarRefundID,
+		&i.OrganizationID,
 		&i.PolarOrderID,
 		&i.Status,
 		&i.RequestedMicros,
@@ -1113,12 +1114,13 @@ func (q *Queries) UpsertPolarCatalogMapping(ctx context.Context, arg UpsertPolar
 
 const upsertPolarRefund = `-- name: UpsertPolarRefund :one
 INSERT INTO polar_refunds (
-    polar_refund_id, polar_order_id, status, requested_micros,
+    polar_refund_id, organization_id, polar_order_id, status, requested_micros,
     reversed_micros, chargeback, provider_event_at
 ) VALUES (
-    $1, $2, $3,
-    $4, $5,
-    $6, $7
+    $1, $2,
+    $3, $4,
+    $5, $6,
+    $7, $8
 )
 ON CONFLICT (polar_refund_id) DO UPDATE
 SET status = EXCLUDED.status,
@@ -1127,13 +1129,15 @@ SET status = EXCLUDED.status,
     chargeback = EXCLUDED.chargeback,
     provider_event_at = EXCLUDED.provider_event_at
 WHERE polar_refunds.polar_order_id = EXCLUDED.polar_order_id
+  AND polar_refunds.organization_id = EXCLUDED.organization_id
   AND polar_refunds.provider_event_at <= EXCLUDED.provider_event_at
   AND polar_refunds.reversed_micros <= EXCLUDED.reversed_micros
-RETURNING polar_refund_id, polar_order_id, status, requested_micros, reversed_micros, chargeback, provider_event_at, created_at, retain_until
+RETURNING polar_refund_id, organization_id, polar_order_id, status, requested_micros, reversed_micros, chargeback, provider_event_at, created_at, retain_until
 `
 
 type UpsertPolarRefundParams struct {
 	PolarRefundID   string
+	OrganizationID  pgtype.UUID
 	PolarOrderID    string
 	Status          string
 	RequestedMicros int64
@@ -1145,6 +1149,7 @@ type UpsertPolarRefundParams struct {
 func (q *Queries) UpsertPolarRefund(ctx context.Context, arg UpsertPolarRefundParams) (PolarRefund, error) {
 	row := q.db.QueryRow(ctx, upsertPolarRefund,
 		arg.PolarRefundID,
+		arg.OrganizationID,
 		arg.PolarOrderID,
 		arg.Status,
 		arg.RequestedMicros,
@@ -1155,6 +1160,7 @@ func (q *Queries) UpsertPolarRefund(ctx context.Context, arg UpsertPolarRefundPa
 	var i PolarRefund
 	err := row.Scan(
 		&i.PolarRefundID,
+		&i.OrganizationID,
 		&i.PolarOrderID,
 		&i.Status,
 		&i.RequestedMicros,

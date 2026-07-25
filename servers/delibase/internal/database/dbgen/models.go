@@ -271,6 +271,7 @@ type PolarPaidCycle struct {
 
 type PolarRefund struct {
 	PolarRefundID   string
+	OrganizationID  pgtype.UUID
 	PolarOrderID    string
 	Status          string
 	RequestedMicros int64

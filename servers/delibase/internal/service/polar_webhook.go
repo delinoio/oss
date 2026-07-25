@@ -528,6 +528,7 @@ func processPolarRefund(
 		ctx,
 		dbgen.UpsertPolarRefundParams{
 			PolarRefundID:   event.ObjectID,
+			OrganizationID:  cycle.OrganizationID,
 			PolarOrderID:    event.OrderID,
 			Status:          status,
 			RequestedMicros: requestedMicros,

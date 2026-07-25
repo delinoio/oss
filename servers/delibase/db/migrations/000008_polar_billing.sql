@@ -216,8 +216,8 @@ FOR EACH ROW EXECUTE FUNCTION enforce_polar_paid_cycle_retention();
 
 CREATE TABLE polar_refunds (
     polar_refund_id text PRIMARY KEY,
-    polar_order_id text NOT NULL REFERENCES polar_paid_cycles(polar_order_id)
-        ON DELETE CASCADE,
+    organization_id uuid NOT NULL,
+    polar_order_id text NOT NULL,
     status text NOT NULL CHECK (status IN ('pending', 'succeeded', 'failed', 'canceled')),
     requested_micros bigint NOT NULL CHECK (requested_micros >= 0),
     reversed_micros bigint NOT NULL DEFAULT 0 CHECK (reversed_micros >= 0),
@@ -226,6 +226,10 @@ CREATE TABLE polar_refunds (
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     retain_until timestamptz NOT NULL
         DEFAULT (transaction_timestamp() + interval '7 years'),
+    UNIQUE (organization_id, polar_refund_id),
+    FOREIGN KEY (organization_id, polar_order_id)
+        REFERENCES polar_paid_cycles(organization_id, polar_order_id)
+        ON DELETE CASCADE,
     CHECK (length(polar_refund_id) BETWEEN 1 AND 255),
     CHECK (reversed_micros <= requested_micros),
     CHECK (retain_until >= created_at + interval '7 years')
@@ -239,11 +243,13 @@ BEGIN
     IF TG_OP = 'UPDATE' THEN
         IF ROW(
             NEW.polar_refund_id,
+            NEW.organization_id,
             NEW.polar_order_id,
             NEW.created_at,
             NEW.retain_until
         ) IS DISTINCT FROM ROW(
             OLD.polar_refund_id,
+            OLD.organization_id,
             OLD.polar_order_id,
             OLD.created_at,
             OLD.retain_until
@@ -317,15 +323,17 @@ CREATE TABLE billing_shortfalls (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL,
     billing_period_id uuid NOT NULL,
-    polar_refund_id text NOT NULL REFERENCES polar_refunds(polar_refund_id)
-        ON DELETE CASCADE,
+    polar_refund_id text NOT NULL,
     source_reference text NOT NULL UNIQUE,
-    amount_micros bigint NOT NULL CHECK (amount_micros > 0),
+    amount_micros bigint NOT NULL CHECK (amount_micros <> 0),
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     retain_until timestamptz NOT NULL
         DEFAULT (transaction_timestamp() + interval '7 years'),
     FOREIGN KEY (organization_id, billing_period_id)
         REFERENCES billing_periods(organization_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id, polar_refund_id)
+        REFERENCES polar_refunds(organization_id, polar_refund_id)
+        ON DELETE CASCADE,
     CHECK (is_uuid_v7(id)),
     CHECK (length(source_reference) BETWEEN 1 AND 255),
     CHECK (retain_until >= created_at + interval '7 years')
@@ -352,8 +360,9 @@ AS $$
 DECLARE
     settled_balance numeric;
     recorded_shortfall numeric;
-    carry_amount numeric;
+    shortfall_adjustment numeric;
     source_refund_id text;
+    target_period_id uuid;
 BEGIN
     IF NEW.entry_type <> 'credit_grant' OR NEW.billing_period_id IS NULL THEN
         RETURN NEW;
@@ -367,18 +376,32 @@ BEGIN
           'credit_grant', 'credit_reversal', 'credit_commit', 'credit_forfeiture'
       );
 
-    IF settled_balance >= 0 THEN
-        RETURN NEW;
+    SELECT period.id
+    INTO target_period_id
+    FROM billing_periods AS period
+    JOIN subscriptions AS subscription
+      ON subscription.organization_id = period.organization_id
+     AND subscription.id = period.subscription_id
+    WHERE period.organization_id = NEW.organization_id
+      AND period.starts_at <= statement_timestamp()
+      AND period.ends_at > statement_timestamp()
+      AND subscription.status = 'active'
+      AND subscription.current_period_starts_at = period.starts_at
+      AND subscription.current_period_ends_at = period.ends_at;
+
+    IF NOT FOUND THEN
+        target_period_id := NEW.billing_period_id;
     END IF;
 
     SELECT COALESCE(sum(amount_micros), 0)
     INTO recorded_shortfall
     FROM billing_shortfalls
     WHERE organization_id = NEW.organization_id
-      AND billing_period_id = NEW.billing_period_id;
+      AND billing_period_id = target_period_id;
 
-    carry_amount := -settled_balance - recorded_shortfall;
-    IF carry_amount <= 0 THEN
+    shortfall_adjustment :=
+        GREATEST(-settled_balance, 0) - recorded_shortfall;
+    IF shortfall_adjustment = 0 THEN
         RETURN NEW;
     END IF;
 
@@ -397,8 +420,8 @@ BEGIN
         id, organization_id, billing_period_id, polar_refund_id,
         source_reference, amount_micros
     ) VALUES (
-        NEW.id, NEW.organization_id, NEW.billing_period_id, source_refund_id,
-        'credit-grant-shortfall:' || NEW.id::text, carry_amount
+        NEW.id, NEW.organization_id, target_period_id, source_refund_id,
+        'credit-grant-shortfall:' || NEW.id::text, shortfall_adjustment
     );
     RETURN NEW;
 END;

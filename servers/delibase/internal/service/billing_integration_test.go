@@ -883,6 +883,7 @@ func TestPostgreSQLCreditGrantCarriesOutstandingRefundShortfall(t *testing.T) {
 				ctx,
 				dbgen.UpsertPolarRefundParams{
 					PolarRefundID:   refundID,
+					OrganizationID:  pgUUID(organizationID),
 					PolarOrderID:    orderID,
 					Status:          "succeeded",
 					RequestedMicros: cycleGrantMicros,
@@ -955,6 +956,47 @@ func TestPostgreSQLCreditGrantCarriesOutstandingRefundShortfall(t *testing.T) {
 		summary.CommittedOverageMicros != cycleGrantMicros ||
 		summary.NewOverageAllowed {
 		t.Fatalf("renewed shortfall summary = %#v, %v", summary, err)
+	}
+
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.InsertPolarPaidCycle(
+			ctx,
+			dbgen.InsertPolarPaidCycleParams{
+				PolarOrderID:    "order_shortfall_delayed",
+				OrganizationID:  pgUUID(organizationID),
+				SubscriptionID:  pgUUID(subscriptionID),
+				BillingPeriodID: pgUUID(oldPeriodID),
+				PeriodStartsAt:  pgTimestamp(oldPeriodStart),
+				PeriodEndsAt:    pgTimestamp(oldPeriodEnd),
+				PaidAt:          pgTimestamp(now.Add(-24 * time.Hour)),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := queries.InsertBillingLedgerEntry(
+			ctx,
+			dbgen.InsertBillingLedgerEntryParams{
+				ID:                 pgUUID(uuidv7.MustNew()),
+				OrganizationID:     pgUUID(organizationID),
+				BillingPeriodID:    pgUUID(oldPeriodID),
+				EntryType:          "credit_grant",
+				AmountMicros:       cycleGrantMicros,
+				BalanceAfterMicros: 0,
+				SourceReference:    "polar-order:order_shortfall_delayed",
+			},
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err = store.Queries().GetBillingSummary(ctx, pgUUID(organizationID))
+	if err != nil || summary.BillingPeriodID != pgUUID(currentPeriodID) ||
+		summary.AvailableCreditMicros != 0 ||
+		summary.CommittedOverageMicros != 0 ||
+		!summary.NewOverageAllowed {
+		t.Fatalf("reconciled shortfall summary = %#v, %v", summary, err)
 	}
 }
 

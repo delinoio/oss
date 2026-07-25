@@ -1508,7 +1508,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			10000000, 1000000, transaction_timestamp()
 		FROM billing_periods
 		WHERE id = $3`, []any{orgA, subA, periodA}},
-		{"INSERT INTO polar_refunds (polar_refund_id, polar_order_id, status, requested_micros, reversed_micros, provider_event_at) VALUES ('schema-refund-a', 'schema-order-a', 'succeeded', 1000000, 1000000, transaction_timestamp())", nil},
+		{"INSERT INTO polar_refunds (polar_refund_id, organization_id, polar_order_id, status, requested_micros, reversed_micros, provider_event_at) VALUES ('schema-refund-a', $1, 'schema-order-a', 'succeeded', 1000000, 1000000, transaction_timestamp())", []any{orgA}},
 	}
 	for _, item := range setup {
 		if _, err := transaction.Exec(ctx, item.statement, item.arguments...); err != nil {
@@ -1545,6 +1545,15 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		"UPDATE polar_customers SET polar_customer_id = 'rewritten-customer' WHERE organization_id = $1",
 		orgA,
 	)
+	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO billing_shortfalls (
+			id, organization_id, billing_period_id, polar_refund_id,
+			source_reference, amount_micros
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000330',
+			$1, $2, 'schema-refund-a', 'cross-organization-shortfall', 1
+		)
+	`, orgB, periodB)
 	requireConstraintFailure(t, ctx, transaction, `
 		WITH removed_customer AS (
 			DELETE FROM polar_customers
@@ -2311,14 +2320,14 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 				10000000, 10, statement_timestamp()
 			FROM billing_periods
 			WHERE id = $3
-			RETURNING polar_order_id
+			RETURNING polar_order_id, organization_id
 		), refund AS (
 			INSERT INTO polar_refunds (
-				polar_refund_id, polar_order_id, status, requested_micros,
-				reversed_micros, provider_event_at
+				polar_refund_id, organization_id, polar_order_id, status,
+				requested_micros, reversed_micros, provider_event_at
 			)
 			SELECT
-				'refund_commit_shortfall', polar_order_id,
+				'refund_commit_shortfall', organization_id, polar_order_id,
 				'succeeded', 10, 10, statement_timestamp()
 			FROM paid_cycle
 			RETURNING polar_refund_id

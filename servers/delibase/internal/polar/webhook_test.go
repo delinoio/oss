@@ -120,6 +120,35 @@ func TestProjectWebhookRemovesBillingPIIAndPinsPaidCycleFields(t *testing.T) {
 	}
 }
 
+func TestProjectPaidOrderRejectsMismatchedExpandedSubscription(t *testing.T) {
+	t.Parallel()
+	_, _, err := projectWebhook([]byte(`{
+		"type":"order.paid",
+		"timestamp":"2026-07-24T12:00:00Z",
+		"data":{
+			"id":"order_1",
+			"paid":true,
+			"currency":"USD",
+			"billing_reason":"subscription_cycle",
+			"customer_id":"customer_1",
+			"product_id":"product_1",
+			"subscription_id":"subscription_1",
+			"customer":{
+				"id":"customer_1",
+				"external_id":"0198a000-0000-7000-8000-000000000001"
+			},
+			"subscription":{
+				"id":"subscription_2",
+				"current_period_start":"2026-07-01T00:00:00Z",
+				"current_period_end":"2026-08-01T00:00:00Z"
+			}
+		}
+	}`))
+	if err == nil {
+		t.Fatal("paid order accepted a mismatched expanded subscription")
+	}
+}
+
 func TestProjectRefundRejectsCentToMicrounitOverflow(t *testing.T) {
 	t.Parallel()
 	_, _, err := projectWebhook([]byte(`{
