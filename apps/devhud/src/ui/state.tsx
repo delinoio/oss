@@ -1,6 +1,7 @@
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
+  decodeSettings,
   defaultSettings,
   defaultWidgetConfiguration,
   SETTINGS_STORAGE_KEY,
@@ -38,6 +39,7 @@ interface ApplicationState {
 }
 
 interface ApplicationActions {
+  readPersistedTheme(): Promise<ThemePreference | null>;
   resetDevHud(): Promise<PersistenceResetOutcome>;
   setTheme(theme: ThemePreference): Promise<boolean>;
   setShortcut(shortcut: StructuredShortcut | null): void;
@@ -167,6 +169,16 @@ export function ApplicationProvider({
     },
     [],
   );
+  const readPersistedTheme = useCallback(async () => {
+    try {
+      const record = await storage.read(SETTINGS_STORAGE_KEY);
+      if (record === null) return defaultSettings.theme;
+      const decoded = decodeSettings(record);
+      return decoded.ok ? decoded.value.theme : null;
+    } catch {
+      return null;
+    }
+  }, [storage]);
   const adoptNativeShortcut = useCallback(
     (shortcut: StructuredShortcut) => {
       setSettings((current) => {
@@ -254,6 +266,7 @@ export function ApplicationProvider({
       widgetConfiguration,
       persistenceIssues,
       persistenceReady,
+      readPersistedTheme,
       resetDevHud,
       setTheme,
       setShortcut,
@@ -277,6 +290,7 @@ export function ApplicationProvider({
       openSettings,
       persistenceIssues,
       persistenceReady,
+      readPersistedTheme,
       resetDevHud,
       setShortcut,
       setLaunchAtLogin,

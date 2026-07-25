@@ -203,7 +203,7 @@ enum RuntimeInitializationFailure {
         ),
         test
     ))]
-    RuntimeInitialization,
+    CefInitialization,
     #[cfg(any(
         all(
             feature = "mobile-system-webview",
@@ -233,7 +233,7 @@ impl RuntimeInitializationFailure {
                 ),
                 test
             ))]
-            Self::RuntimeInitialization => "runtime-initialization",
+            Self::CefInitialization => "cef-initialization",
             #[cfg(any(
                 all(
                     feature = "mobile-system-webview",
@@ -413,6 +413,22 @@ impl PersistenceState {
                     })?,
             ),
         ];
+        let directory =
+            self.directory
+                .as_deref()
+                .ok_or(PersistenceResetFailure::BeforeRecordsRemoved(
+                    PersistenceCommandError::StorageUnavailable,
+                ))?;
+        let previously_staged = pending_reset_stage_paths(directory, &paths).map_err(|error| {
+            tracing::warn!(
+                event = "devhud.persistence.reset_failure",
+                operation = "reset-scan",
+                error_kind = ?error.kind(),
+                classification = "reset-failed",
+                "DevHud could not inspect retained reset staging records"
+            );
+            PersistenceResetFailure::BeforeRecordsRemoved(PersistenceCommandError::ResetFailed)
+        })?;
         let transaction_id = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -426,6 +442,7 @@ impl PersistenceState {
         });
         reset_persisted_records(
             &staged_paths,
+            &previously_staged,
             |source, destination| fs::rename(source, destination),
             |path| fs::remove_file(path),
         )
@@ -433,8 +450,42 @@ impl PersistenceState {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn pending_reset_stage_paths<'a>(
+    directory: &Path,
+    paths: &[(&'a str, PathBuf)],
+) -> io::Result<Vec<(&'a str, PathBuf)>> {
+    let mut staged = Vec::new();
+    for entry in fs::read_dir(directory)? {
+        let candidate = entry?.path();
+        let Some(extension) = candidate.extension().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let Some(transaction) = extension.strip_prefix("reset-") else {
+            continue;
+        };
+        let mut identifiers = transaction.split('-');
+        let managed = identifiers.next().is_some_and(|value| {
+            !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+        }) && identifiers.next().is_some_and(|value| {
+            !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+        }) && identifiers.next().is_none();
+        if !managed {
+            continue;
+        }
+        if let Some((key, _)) = paths
+            .iter()
+            .find(|(_, stable)| stable.file_stem() == candidate.file_stem())
+        {
+            staged.push((*key, candidate));
+        }
+    }
+    Ok(staged)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn reset_persisted_records<S, R>(
     paths: &[(&str, PathBuf, PathBuf)],
+    previously_staged: &[(&str, PathBuf)],
     mut stage_record: S,
     mut remove_staged_record: R,
 ) -> Result<(), PersistenceResetFailure>
@@ -449,15 +500,21 @@ where
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
                 log_persistence_io_failure("reset", key, &error);
+                let mut rollback_failed = false;
                 for staged_index in staged.into_iter().rev() {
                     let (staged_key, original_path, rollback_path) = &paths[staged_index];
                     if let Err(rollback_error) = stage_record(rollback_path, original_path) {
+                        rollback_failed = true;
                         log_persistence_io_failure("reset-rollback", staged_key, &rollback_error);
                     }
                 }
-                return Err(PersistenceResetFailure::BeforeRecordsRemoved(
-                    PersistenceCommandError::ResetFailed,
-                ));
+                return Err(if rollback_failed {
+                    PersistenceResetFailure::CleanupFailed
+                } else {
+                    PersistenceResetFailure::BeforeRecordsRemoved(
+                        PersistenceCommandError::ResetFailed,
+                    )
+                });
             }
         }
     }
@@ -465,6 +522,21 @@ where
     // Once all records are staged, every stable key is absent. A partial unlink
     // can no longer be rolled back, but it must still report an incomplete reset.
     let mut cleanup_failed = false;
+    for (key, staged_path) in previously_staged {
+        if let Err(error) = remove_staged_record(staged_path)
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            cleanup_failed = true;
+            tracing::warn!(
+                event = "devhud.persistence.reset_cleanup_failure",
+                operation = "reset-cleanup",
+                record = persistence_record_name(key),
+                error_kind = ?error.kind(),
+                classification = "cleanup-failed",
+                "DevHud retained reset staging cleanup failed"
+            );
+        }
+    }
     for staged_index in staged {
         let (key, _, staged_path) = &paths[staged_index];
         if let Err(error) = remove_staged_record(staged_path)
@@ -888,7 +960,7 @@ const fn update_policy() -> &'static str {
 #[tauri::command]
 fn get_runtime_info(
     webview: Webview<ActiveRuntime>,
-    app: AppHandle<ActiveRuntime>,
+    _app: AppHandle<ActiveRuntime>,
     persistence: State<'_, PersistenceState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<RuntimeInfo, RuntimeCommandError> {
@@ -905,7 +977,9 @@ fn get_runtime_info(
         "DevHud runtime is ready"
     );
 
-    if std::env::var_os("DEVHUD_SMOKE").is_some() {
+    #[cfg(debug_assertions)]
+    if std::env::var_os("DEVHUD_SMOKE").is_some_and(|value| value == "1") {
+        let app = _app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(1));
             #[cfg(all(
@@ -1231,7 +1305,11 @@ fn show_hud(app: AppHandle<ActiveRuntime>) -> HudActionOutcome {
 ))]
 #[tauri::command]
 fn hide_hud(app: AppHandle<ActiveRuntime>) -> HudActionOutcome {
-    hide_hud_internal(&app)
+    let outcome = hide_hud_internal(&app);
+    if let HudActionOutcome::Unchanged { reason } = outcome {
+        log_window_action_failure("hud-hide", reason);
+    }
+    outcome
 }
 
 #[cfg(all(
@@ -2166,7 +2244,7 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
     };
     let app = configure_builder(platform_builder())
         .build(tauri::generate_context!())
-        .map_err(|_| RuntimeInitializationFailure::RuntimeInitialization)?;
+        .map_err(|_| RuntimeInitializationFailure::CefInitialization)?;
     app.run(|app, event| match event {
         tauri::RunEvent::WindowEvent {
             label,
@@ -2480,6 +2558,7 @@ mod tests {
 
         let result = reset_persisted_records(
             &paths,
+            &[],
             |source, destination| {
                 if source == widget_path {
                     Err(io::Error::new(
@@ -2505,6 +2584,55 @@ mod tests {
     }
 
     #[test]
+    fn failed_staging_rollback_reports_an_incomplete_reset() {
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-reset-rollback-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let settings_path = directory.join(SETTINGS_STORAGE_KEY);
+        let widget_path = directory.join(WIDGET_CONFIGURATION_STORAGE_KEY);
+        let settings_staged = directory.join("settings-staged");
+        fs::write(&settings_path, b"settings").unwrap();
+        fs::write(&widget_path, b"widgets").unwrap();
+        let paths = [
+            (
+                SETTINGS_STORAGE_KEY,
+                settings_path.clone(),
+                settings_staged.clone(),
+            ),
+            (
+                WIDGET_CONFIGURATION_STORAGE_KEY,
+                widget_path.clone(),
+                directory.join("widgets-staged"),
+            ),
+        ];
+
+        let result = reset_persisted_records(
+            &paths,
+            &[],
+            |source, destination| {
+                if source == widget_path || source == settings_staged {
+                    Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "injected staging or rollback failure",
+                    ))
+                } else {
+                    fs::rename(source, destination)
+                }
+            },
+            |path| fs::remove_file(path),
+        );
+
+        assert_eq!(result, Err(PersistenceResetFailure::CleanupFailed));
+        assert!(!settings_path.exists());
+        assert!(settings_staged.exists());
+        assert!(widget_path.exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn failed_staged_record_cleanup_reports_an_incomplete_reset() {
         let directory = std::env::temp_dir().join(format!(
             "devhud-reset-cleanup-test-{}-{:?}",
@@ -2519,6 +2647,7 @@ mod tests {
 
         let result = reset_persisted_records(
             &paths,
+            &[],
             |source, destination| fs::rename(source, destination),
             |_| {
                 Err(io::Error::new(
@@ -2534,14 +2663,57 @@ mod tests {
     }
 
     #[test]
+    fn reset_retry_removes_retained_transaction_stages() {
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-reset-retry-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let settings_path = directory.join(SETTINGS_STORAGE_KEY);
+        let widget_path = directory.join(WIDGET_CONFIGURATION_STORAGE_KEY);
+        let paths = [
+            (SETTINGS_STORAGE_KEY, settings_path.clone()),
+            (WIDGET_CONFIGURATION_STORAGE_KEY, widget_path.clone()),
+        ];
+        let staged_path = settings_path.with_extension("reset-123-456");
+        fs::write(&staged_path, b"settings").unwrap();
+        let previously_staged = pending_reset_stage_paths(&directory, &paths).unwrap();
+        let staged_paths = [
+            (
+                SETTINGS_STORAGE_KEY,
+                settings_path,
+                directory.join("settings-staged"),
+            ),
+            (
+                WIDGET_CONFIGURATION_STORAGE_KEY,
+                widget_path,
+                directory.join("widgets-staged"),
+            ),
+        ];
+
+        assert_eq!(
+            reset_persisted_records(
+                &staged_paths,
+                &previously_staged,
+                |source, destination| fs::rename(source, destination),
+                |path| fs::remove_file(path),
+            ),
+            Ok(())
+        );
+        assert!(!staged_path.exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn runtime_and_partial_reset_classifications_remain_distinct() {
         assert_eq!(
             RuntimeInitializationFailure::InstanceGuardUnavailable.classification(),
             "instance-guard-unavailable"
         );
         assert_eq!(
-            RuntimeInitializationFailure::RuntimeInitialization.classification(),
-            "runtime-initialization"
+            RuntimeInitializationFailure::CefInitialization.classification(),
+            "cef-initialization"
         );
         assert_eq!(
             RuntimeInitializationFailure::SystemWebviewInitialization.classification(),

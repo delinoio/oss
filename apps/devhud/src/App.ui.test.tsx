@@ -18,6 +18,8 @@ vi.mock("./runtime/startup", () => ({
 
 import { App } from "./App";
 import {
+  defaultSettings,
+  encodeSettings,
   SETTINGS_STORAGE_KEY,
   ThemePreference,
 } from "./persistence/contracts";
@@ -29,7 +31,10 @@ import type { DesktopBridge } from "./runtime/desktop";
 import * as desktopRuntime from "./runtime/desktop";
 import { loadRuntimeInfo } from "./runtime/startup";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 function desktopBridge(
   overrides: Partial<DesktopBridge> = {},
@@ -147,6 +152,42 @@ describe("DevHud application surfaces", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
+  it("reconciles the retained HUD theme after its native bridge subscribes", async () => {
+    let resolveRuntime: ((runtime: Awaited<ReturnType<typeof loadRuntimeInfo>>) => void) | undefined;
+    vi.mocked(loadRuntimeInfo).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRuntime = resolve;
+      }),
+    );
+    const storage = new MemoryStorageAdapter();
+    const read = vi.spyOn(storage, "read");
+    const bridge = desktopBridge();
+    vi.spyOn(desktopRuntime, "nativeDesktopBridge").mockReturnValue(bridge);
+    renderApp({ storage });
+    await waitFor(() =>
+      expect(read).toHaveBeenCalledWith(SETTINGS_STORAGE_KEY),
+    );
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      encodeSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
+    );
+
+    resolveRuntime?.({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "hud",
+      firstRun: true,
+    });
+
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("dark"),
+    );
+  });
+
   it("keeps launch-at-login disabled until the user explicitly enables it", async () => {
     vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
       applicationId: "dev.deli.devhud",
@@ -236,6 +277,37 @@ describe("DevHud application surfaces", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.blur(window);
     expect(bridge.hideHud).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces unchanged outcomes when Escape cannot hide the native HUD", async () => {
+    const bridge = desktopBridge({
+      hideHud: vi.fn(async () => ({
+        status: "unchanged" as const,
+        reason: "window-unavailable" as const,
+      })),
+    });
+    renderApp({ desktopBridge: bridge });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud could not hide this window",
+    );
+  });
+
+  it("surfaces rejected native HUD hide invocations", async () => {
+    const bridge = desktopBridge({
+      hideHud: vi.fn(async () => {
+        throw new Error("window unavailable");
+      }),
+    });
+    renderApp({ desktopBridge: bridge });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud could not hide this window",
+    );
   });
 
   it("surfaces failures when the HUD cannot open native settings", async () => {

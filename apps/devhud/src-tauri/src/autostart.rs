@@ -101,18 +101,15 @@ impl<B: AutostartBackend> AutostartCoordinator<B> {
             Ok(actual) if actual == enabled => AutostartOutcome::Applied { enabled },
             _ => {
                 let rollback_error = self.backend.set_enabled(previous).err();
-                let effective = self.backend.is_enabled().unwrap_or_else(|_| {
-                    if rollback_error.is_none() {
-                        previous
-                    } else {
-                        enabled
-                    }
-                });
-                AutostartOutcome::Unchanged {
-                    enabled: effective,
-                    reason: rollback_error
-                        .map(map_error)
-                        .unwrap_or(AutostartFailure::OperationFailed),
+                let rollback_reason = rollback_error.map(map_error);
+                match self.backend.is_enabled() {
+                    Ok(effective) => AutostartOutcome::Unchanged {
+                        enabled: effective,
+                        reason: rollback_reason.unwrap_or(AutostartFailure::OperationFailed),
+                    },
+                    Err(error) => AutostartOutcome::Unknown {
+                        reason: rollback_reason.unwrap_or_else(|| map_error(error)),
+                    },
                 }
             }
         };
@@ -434,6 +431,23 @@ mod tests {
             AutostartOutcome::Unchanged {
                 enabled: true,
                 reason: AutostartFailure::PermissionDenied
+            }
+        );
+    }
+
+    #[test]
+    fn failed_verification_reads_report_an_unknown_effective_state() {
+        let coordinator = coordinator(false);
+        coordinator.backend.read_results.borrow_mut().extend([
+            Ok(false),
+            Err(BackendError::Failed),
+            Err(BackendError::Failed),
+        ]);
+
+        assert_eq!(
+            coordinator.apply(true),
+            AutostartOutcome::Unknown {
+                reason: AutostartFailure::OperationFailed
             }
         );
     }

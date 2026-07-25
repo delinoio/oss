@@ -315,24 +315,39 @@ function DesktopHud({
   readonly runtime: RuntimeState;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
+  const [hideFailure, setHideFailure] = useState(false);
   const [settingsFailure, setSettingsFailure] = useState(false);
   const { openSettings } = useApplication();
   useEffect(() => {
+    let active = true;
     const focusSearch = () => searchRef.current?.focus();
     focusSearch();
     window.addEventListener("devhud:shown", focusSearch);
+    const hideHud = () => {
+      if (bridge === null) return;
+      setHideFailure(false);
+      void bridge.hideHud().then(
+        (outcome) => {
+          if (active && outcome.status === "unchanged") setHideFailure(true);
+        },
+        () => {
+          if (active) setHideFailure(true);
+        },
+      );
+    };
     const hideForBlur = () => {
-      void bridge?.hideHud();
+      hideHud();
     };
     const hideForEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        void bridge?.hideHud();
+        hideHud();
       }
     };
     window.addEventListener("blur", hideForBlur);
     document.addEventListener("keydown", hideForEscape);
     return () => {
+      active = false;
       window.removeEventListener("devhud:shown", focusSearch);
       window.removeEventListener("blur", hideForBlur);
       document.removeEventListener("keydown", hideForEscape);
@@ -368,6 +383,11 @@ function DesktopHud({
         {settingsFailure ? (
           <p className="runtime-status error" role="alert">
             DevHud could not open Settings. Try again from the tray.
+          </p>
+        ) : null}
+        {hideFailure ? (
+          <p className="runtime-status error" role="alert">
+            DevHud could not hide this window. Try again or use the tray Quit action.
           </p>
         ) : null}
         {runtime.status === "loading" ? (
@@ -677,11 +697,28 @@ function ApplicationSurface({
   );
   const {
     adoptNativeTheme,
+    readPersistedTheme,
     settingsOpen,
   } = useApplication();
-  useEffect(() => bridge?.subscribeTheme(adoptNativeTheme), [
+  useEffect(() => {
+    if (bridge === null) return;
+    let themePublished = false;
+    let active = true;
+    const unsubscribe = bridge.subscribeTheme((theme) => {
+      themePublished = true;
+      adoptNativeTheme(theme);
+    });
+    void readPersistedTheme().then((theme) => {
+      if (active && !themePublished && theme !== null) adoptNativeTheme(theme);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [
     adoptNativeTheme,
     bridge,
+    readPersistedTheme,
   ]);
   const reconcileReset = useCallback(() => {
     clearStartupDiagnostics();
