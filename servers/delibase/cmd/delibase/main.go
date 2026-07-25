@@ -113,12 +113,22 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		cancelDatabase()
 		return &startupError{stage: stageCatalog}
 	}
-	polarClient, err := polar.NewBilling(
-		configuration.PolarAccessToken,
-		configuration.PolarProductID,
-		configuration.PolarEnvironment == config.PolarEnvironmentSandbox,
-		nil,
-	)
+	var polarClient *polar.Client
+	if configuration.PolarAPIURL == "" {
+		polarClient, err = polar.NewBilling(
+			configuration.PolarAccessToken,
+			configuration.PolarProductID,
+			configuration.PolarEnvironment == config.PolarEnvironmentSandbox,
+			nil,
+		)
+	} else {
+		polarClient, err = polar.NewBillingAt(
+			configuration.PolarAPIURL,
+			configuration.PolarAccessToken,
+			configuration.PolarProductID,
+			nil,
+		)
+	}
 	if err != nil {
 		cancelDatabase()
 		return &startupError{stage: stageConfiguration}

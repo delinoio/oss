@@ -24,6 +24,8 @@ Non-secret server configuration:
 - `DELIBASE_LOGTO_AUDIENCE`
 - `DELIBASE_LOGTO_JWKS_URL`
 - `DELIBASE_POLAR_PRODUCT_ID`
+- `DELIBASE_POLAR_API_URL` (optional compatible HTTPS endpoint; the selected
+  official production or sandbox API is the default)
 - `DELIBASE_POLAR_ENVIRONMENT` (`production` by default; set to `sandbox` only
   for the opt-in Polar sandbox checkout path)
 

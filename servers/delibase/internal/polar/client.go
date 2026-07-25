@@ -50,6 +50,18 @@ func NewBilling(
 	if sandbox {
 		baseURL = sandboxAPIURL
 	}
+	return NewBillingAt(baseURL, accessToken, productID, httpClient)
+}
+
+// NewBillingAt creates a billing client for an explicit validated HTTPS Polar
+// API endpoint. Production uses NewBilling; this seam supports compatible
+// private proxies and hermetic image validation.
+func NewBillingAt(
+	baseURL string,
+	accessToken string,
+	productID string,
+	httpClient *http.Client,
+) (*Client, error) {
 	client, err := newClient(baseURL, accessToken, httpClient)
 	if err != nil || !validProviderID(productID) {
 		return nil, errors.New("polar: invalid billing configuration")

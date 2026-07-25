@@ -51,6 +51,7 @@ type Config struct {
 	PolarWebhookSecret string
 	PolarProductID     string
 	PolarEnvironment   PolarEnvironment
+	PolarAPIURL        string
 	LogPseudonymKey    []byte
 }
 
@@ -147,6 +148,12 @@ func Load(lookup LookupEnv) (Config, error) {
 		default:
 			return Config{}, errors.New("config: DELIBASE_POLAR_ENVIRONMENT is invalid")
 		}
+	}
+	if value, ok := lookup("DELIBASE_POLAR_API_URL"); ok {
+		if !validHTTPSURL(value) {
+			return Config{}, errors.New("config: DELIBASE_POLAR_API_URL is invalid")
+		}
+		result.PolarAPIURL = value
 	}
 	pseudonymKey, err := required("DELIBASE_LOG_PSEUDONYM_KEY")
 	if err != nil {

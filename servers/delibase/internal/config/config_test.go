@@ -42,6 +42,19 @@ func TestLoadRequiresExplicitSandboxOptIn(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsExplicitPolarAPIURL(t *testing.T) {
+	t.Parallel()
+	values := validEnvironment()
+	values["DELIBASE_POLAR_API_URL"] = "https://polar-proxy.example.com/v1"
+	configuration, err := Load(lookup(values))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuration.PolarAPIURL != values["DELIBASE_POLAR_API_URL"] {
+		t.Fatalf("PolarAPIURL = %q", configuration.PolarAPIURL)
+	}
+}
+
 func lookup(values map[string]string) LookupEnv {
 	return func(name string) (string, bool) {
 		value, ok := values[name]
@@ -93,6 +106,7 @@ func TestLoadRejectsInvalidValuesWithoutLeakingThem(t *testing.T) {
 		{name: "pseudonym key", variable: "DELIBASE_LOG_PSEUDONYM_KEY", value: "short-secret"},
 		{name: "address", variable: "DELIBASE_HTTP_ADDRESS", value: "bad-address"},
 		{name: "shutdown", variable: "DELIBASE_SHUTDOWN_TIMEOUT", value: "forever"},
+		{name: "polar api", variable: "DELIBASE_POLAR_API_URL", value: "http://polar.example.com/v1"},
 	}
 	for _, test := range tests {
 		test := test
