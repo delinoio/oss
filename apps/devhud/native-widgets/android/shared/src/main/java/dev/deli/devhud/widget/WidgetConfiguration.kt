@@ -7,7 +7,8 @@ import org.json.JSONObject
 object DevHudWidgetContract {
     const val EXTENSION_IDENTIFIER = "dev.deli.devhud.widget"
     const val STORAGE_KEY = "devhud.widget-configuration.v1"
-    const val DATASTORE_FILE = "devhud-widget-state.preferences_pb"
+    const val DATASTORE_NAME = "devhud-widget-state"
+    const val DATASTORE_FILE = "$DATASTORE_NAME.preferences_pb"
     const val SCHEMA_VERSION = 1
 }
 

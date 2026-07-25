@@ -118,7 +118,9 @@ requireCondition(
   swiftConfigurationSource.includes('"devhud.widget-configuration.v1"') &&
     swiftConfigurationSource.includes('"group.dev.deli.devhud"') &&
     kotlinConfigurationSource.includes('"devhud.widget-configuration.v1"') &&
-    kotlinConfigurationSource.includes("DATASTORE_FILE") &&
+    kotlinConfigurationSource.includes(
+      'DATASTORE_NAME = "devhud-widget-state"',
+    ) &&
     JSON.stringify(JSON.parse(fixtureSource)) ===
       JSON.stringify({
         version: 1,

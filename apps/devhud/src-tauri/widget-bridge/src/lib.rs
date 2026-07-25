@@ -10,7 +10,7 @@ mod models;
 #[cfg(mobile)]
 mod mobile;
 
-pub use error::{Error, Result};
+pub use error::{Error, Result, WidgetBridgeErrorCode};
 #[cfg(mobile)]
 pub use mobile::DevHudWidgetBridge;
 pub use models::*;

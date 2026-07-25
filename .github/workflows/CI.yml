@@ -802,6 +802,14 @@ jobs:
           filters: |
             widget:
               - .github/workflows/CI.yml
+              - .nvmrc
+              - Cargo.lock
+              - Cargo.toml
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+              - rust-toolchain.toml
               - apps/devhud/native-widgets/**
               - apps/devhud/package.json
               - apps/devhud/scripts/check-widget-artifacts.mjs
@@ -872,6 +880,14 @@ jobs:
           filters: |
             widget:
               - .github/workflows/CI.yml
+              - .nvmrc
+              - Cargo.lock
+              - Cargo.toml
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+              - rust-toolchain.toml
               - apps/devhud/native-widgets/**
               - apps/devhud/package.json
               - apps/devhud/scripts/check-widget-artifacts.mjs

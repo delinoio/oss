@@ -278,4 +278,30 @@ describe("DevHud local persistence", () => {
     expect(bridge.readWidgetConfiguration).not.toHaveBeenCalled();
     expect(bridge.writeSettings).not.toHaveBeenCalled();
   });
+
+  it.each(["corrupt", "future-version", "incompatible"] as const)(
+    "preserves the native %s widget-record classification",
+    async (kind) => {
+      const bridge = {
+        readSettings: vi.fn(async () => null),
+        resetDevHud: vi.fn(async () => undefined),
+        writeSettings: vi.fn(async () => undefined),
+        readWidgetConfiguration: vi.fn(async () => Promise.reject(kind)),
+        writeWidgetConfiguration: vi.fn(async () => undefined),
+      };
+      const persistence = new DevHudPersistence(createTauriPersistenceAdapter(bridge));
+
+      await expect(persistence.load()).resolves.toMatchObject({
+        widgetConfiguration: defaultWidgetConfiguration,
+        issues: [expect.objectContaining({ key: WIDGET_CONFIGURATION_STORAGE_KEY, kind })],
+      });
+      await expect(
+        persistence.saveWidgetConfiguration(defaultWidgetConfiguration),
+      ).rejects.toMatchObject({
+        name: "RejectedRecordWriteBlockedError",
+        key: WIDGET_CONFIGURATION_STORAGE_KEY,
+      });
+      expect(bridge.writeWidgetConfiguration).not.toHaveBeenCalled();
+    },
+  );
 });

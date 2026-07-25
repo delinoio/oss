@@ -33,7 +33,9 @@ use tauri::{
     feature = "mobile-system-webview",
     any(target_os = "android", target_os = "ios")
 ))]
-use tauri_plugin_devhud_widget::DevHudWidgetBridgeExt;
+use tauri_plugin_devhud_widget::{
+    DevHudWidgetBridgeExt, Error as WidgetBridgeError, WidgetBridgeErrorCode,
+};
 
 #[cfg(all(
     feature = "desktop-cef",
@@ -95,6 +97,21 @@ enum PersistenceCommandError {
         any(target_os = "android", target_os = "ios")
     ))]
     WidgetBridgeFailed,
+    #[cfg(all(
+        feature = "mobile-system-webview",
+        any(target_os = "android", target_os = "ios")
+    ))]
+    Corrupt,
+    #[cfg(all(
+        feature = "mobile-system-webview",
+        any(target_os = "android", target_os = "ios")
+    ))]
+    FutureVersion,
+    #[cfg(all(
+        feature = "mobile-system-webview",
+        any(target_os = "android", target_os = "ios")
+    ))]
+    Incompatible,
     WriteFailed,
 }
 
@@ -245,14 +262,23 @@ fn log_persistence_unavailable(operation: &'static str, key: &str) {
     feature = "mobile-system-webview",
     any(target_os = "android", target_os = "ios")
 ))]
-fn widget_bridge_failure(operation: &'static str) -> PersistenceCommandError {
+fn widget_bridge_failure(
+    operation: &'static str,
+    error: &WidgetBridgeError,
+) -> PersistenceCommandError {
+    let failure = match error.code() {
+        Some(WidgetBridgeErrorCode::Corrupt) => PersistenceCommandError::Corrupt,
+        Some(WidgetBridgeErrorCode::FutureVersion) => PersistenceCommandError::FutureVersion,
+        Some(WidgetBridgeErrorCode::Incompatible) => PersistenceCommandError::Incompatible,
+        _ => PersistenceCommandError::WidgetBridgeFailed,
+    };
     tracing::warn!(
         event = "devhud.widget_bridge.failure",
         operation,
-        classification = "widget-bridge-failed",
+        classification = ?error.code(),
         "DevHud native widget bridge operation failed"
     );
-    PersistenceCommandError::WidgetBridgeFailed
+    failure
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -589,7 +615,7 @@ fn read_widget_configuration(
 ) -> Result<Option<String>, PersistenceCommandError> {
     app.devhud_widget_bridge()
         .read_configuration()
-        .map_err(|_| widget_bridge_failure("read"))
+        .map_err(|error| widget_bridge_failure("read", &error))
 }
 
 #[cfg(all(
@@ -615,10 +641,14 @@ fn write_widget_configuration(
 ) -> Result<(), PersistenceCommandError> {
     validate_current_record(WIDGET_CONFIGURATION_STORAGE_KEY, &record)
         .ok_or(PersistenceCommandError::InvalidRecord)?;
-    app.devhud_widget_bridge()
-        .write_configuration(record)
-        .map(|_| ())
-        .map_err(|_| widget_bridge_failure("write-and-refresh"))
+    match app.devhud_widget_bridge().write_configuration(record) {
+        Ok(_) => Ok(()),
+        Err(error) if error.code() == Some(WidgetBridgeErrorCode::RefreshFailed) => {
+            widget_bridge_failure("write-refresh", &error);
+            Ok(())
+        }
+        Err(error) => Err(widget_bridge_failure("write", &error)),
+    }
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -641,9 +671,13 @@ fn reset_dev_hud(
         feature = "mobile-system-webview",
         any(target_os = "android", target_os = "ios")
     ))]
-    app.devhud_widget_bridge()
-        .reset_configuration()
-        .map_err(|_| widget_bridge_failure("reset-and-refresh"))?;
+    match app.devhud_widget_bridge().reset_configuration() {
+        Ok(_) => {}
+        Err(error) if error.code() == Some(WidgetBridgeErrorCode::RefreshFailed) => {
+            widget_bridge_failure("reset-refresh", &error);
+        }
+        Err(error) => return Err(widget_bridge_failure("reset", &error)),
+    }
     #[cfg(all(
         feature = "desktop-cef",
         not(any(target_os = "android", target_os = "ios"))

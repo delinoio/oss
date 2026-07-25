@@ -24,7 +24,7 @@ class AndroidWidgetSharedDataAdapter(
                         ?: AndroidWidgetSharedDataAdapter(
                             PreferenceDataStoreFactory.create {
                                 context.applicationContext.preferencesDataStoreFile(
-                                    DevHudWidgetContract.DATASTORE_FILE,
+                                    DevHudWidgetContract.DATASTORE_NAME,
                                 )
                             },
                         ).also { liveInstance = it }

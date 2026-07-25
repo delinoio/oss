@@ -17,6 +17,15 @@ import org.junit.Test
 
 class WidgetConfigurationTest {
     @Test
+    fun dataStoreNameResolvesToTheContractedFile() {
+        assertEquals("devhud-widget-state", DevHudWidgetContract.DATASTORE_NAME)
+        assertEquals(
+            "devhud-widget-state.preferences_pb",
+            DevHudWidgetContract.DATASTORE_FILE,
+        )
+    }
+
+    @Test
     fun fixtureRoundTripsThroughTypedDataStoreAdapter() = runTest {
         withAdapter { adapter, _ ->
             val raw =
