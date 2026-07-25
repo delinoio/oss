@@ -514,6 +514,29 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 		_, transactionErr := transaction.Exec(
 			ctx,
 			`UPDATE polar_meter_mappings
+			 SET polar_meter_id = $2
+			 WHERE meter_id = $1`,
+			usageMeterID,
+			"\u202fmigration-usage-event",
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = apply(ctx, connection, ordered[len(ordered)-1]); err == nil {
+		t.Fatal("usage migration accepted Unicode edge whitespace in a Polar mapping")
+	}
+	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
+		if _, transactionErr := transaction.Exec(
+			ctx,
+			"SET LOCAL session_replication_role = replica",
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := transaction.Exec(
+			ctx,
+			`UPDATE polar_meter_mappings
 			 SET polar_meter_id = 'migration-usage-event'
 			 WHERE meter_id = $1`,
 			usageMeterID,

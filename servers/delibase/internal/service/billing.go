@@ -534,14 +534,14 @@ func (service *Billing) createSubscriptionCheckout(
 	err = service.dependencies.Store.WithinTransaction(
 		completionCtx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			account, transactionErr := activeAccount(completionCtx, queries, subject)
-			if transactionErr != nil {
-				return transactionErr
-			}
-			if _, transactionErr = queries.LockOrganizationForBilling(
+			if _, transactionErr := queries.LockOrganizationForBilling(
 				completionCtx, pgUUID(organizationID),
 			); transactionErr != nil {
 				return membershipReadError(transactionErr)
+			}
+			account, transactionErr := activeAccount(completionCtx, queries, subject)
+			if transactionErr != nil {
+				return transactionErr
 			}
 			if _, transactionErr = billingAccess(
 				completionCtx, queries, organizationID, account.ID, true,
