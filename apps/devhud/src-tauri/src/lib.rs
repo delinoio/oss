@@ -23,17 +23,19 @@ compile_error!("desktop-cef cannot be used for iOS or Android");
 compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-use std::time::Duration;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-use std::{
-    fs::{self, File},
-    io::{self, Write},
-    path::{Path, PathBuf},
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+use std::sync::{
+    Mutex,
+    atomic::{AtomicBool, Ordering},
 };
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+use std::time::Duration;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+use std::{fs::File, io::Write};
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use tauri::{
@@ -288,21 +290,88 @@ impl PersistenceState {
             );
             PersistenceCommandError::ResetFailed
         })?;
-        for key in [SETTINGS_STORAGE_KEY, WIDGET_CONFIGURATION_STORAGE_KEY] {
-            let Some(path) = self.path_for(key) else {
-                log_persistence_unavailable("reset", key);
-                return Err(PersistenceCommandError::StorageUnavailable);
-            };
-            if let Err(error) = fs::remove_file(path) {
-                if error.kind() == io::ErrorKind::NotFound {
-                    continue;
-                }
+        let paths = [
+            (
+                SETTINGS_STORAGE_KEY,
+                self.path_for(SETTINGS_STORAGE_KEY).ok_or_else(|| {
+                    log_persistence_unavailable("reset", SETTINGS_STORAGE_KEY);
+                    PersistenceCommandError::StorageUnavailable
+                })?,
+            ),
+            (
+                WIDGET_CONFIGURATION_STORAGE_KEY,
+                self.path_for(WIDGET_CONFIGURATION_STORAGE_KEY)
+                    .ok_or_else(|| {
+                        log_persistence_unavailable("reset", WIDGET_CONFIGURATION_STORAGE_KEY);
+                        PersistenceCommandError::StorageUnavailable
+                    })?,
+            ),
+        ];
+        let transaction_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        // Stage both stable records before unlinking either one so a staging
+        // failure can restore the complete pre-reset persistence state.
+        let staged_paths = paths.map(|(key, path)| {
+            let staged_path =
+                path.with_extension(format!("reset-{}-{transaction_id}", std::process::id()));
+            (key, path, staged_path)
+        });
+        reset_persisted_records(
+            &staged_paths,
+            |source, destination| fs::rename(source, destination),
+            |path| fs::remove_file(path),
+        )
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn reset_persisted_records<S, R>(
+    paths: &[(&str, PathBuf, PathBuf)],
+    mut stage_record: S,
+    mut remove_staged_record: R,
+) -> Result<(), PersistenceCommandError>
+where
+    S: FnMut(&Path, &Path) -> io::Result<()>,
+    R: FnMut(&Path) -> io::Result<()>,
+{
+    let mut staged = Vec::with_capacity(paths.len());
+    for (index, (key, path, staged_path)) in paths.iter().enumerate() {
+        match stage_record(path, staged_path) {
+            Ok(()) => staged.push(index),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
                 log_persistence_io_failure("reset", key, &error);
+                for staged_index in staged.into_iter().rev() {
+                    let (staged_key, original_path, rollback_path) = &paths[staged_index];
+                    if let Err(rollback_error) = stage_record(rollback_path, original_path) {
+                        log_persistence_io_failure("reset-rollback", staged_key, &rollback_error);
+                    }
+                }
                 return Err(PersistenceCommandError::ResetFailed);
             }
         }
-        Ok(())
     }
+
+    // Once all records are staged, every stable key is absent.
+    // Cleanup is best-effort because a partial unlink can no longer be rolled back.
+    for staged_index in staged {
+        let (key, _, staged_path) = &paths[staged_index];
+        if let Err(error) = remove_staged_record(staged_path) {
+            if error.kind() != io::ErrorKind::NotFound {
+                tracing::warn!(
+                    event = "devhud.persistence.reset_cleanup_failure",
+                    operation = "reset-cleanup",
+                    record = persistence_record_name(key),
+                    error_kind = ?error.kind(),
+                    classification = "cleanup-failed",
+                    "DevHud reset staging cleanup failed"
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -331,7 +400,7 @@ fn exclude_ios_persistence_from_backup(directory: &Path) -> io::Result<()> {
     .map_err(|_| io::Error::other("failed to exclude DevHud persistence from iOS backup"))
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn persistence_record_name(key: &str) -> &'static str {
     match key {
         SETTINGS_STORAGE_KEY => "settings",
@@ -341,7 +410,7 @@ fn persistence_record_name(key: &str) -> &'static str {
     }
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn log_persistence_io_failure(operation: &'static str, key: &str, error: &io::Error) {
     tracing::warn!(
         event = "devhud.persistence.io_failure",
@@ -1067,6 +1136,7 @@ fn build_settings_window(
     .center()
     .skip_taskbar(true)
     .devtools(true)
+    .incognito(true)
     .disable_drag_drop_handler()
     .on_navigation(is_bundled_url)
     .on_new_window(|_, _| NewWindowResponse::Deny)
@@ -1683,6 +1753,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 .visible(false)
                 .focused(false)
                 .devtools(true)
+                .incognito(true)
                 .disable_drag_drop_handler()
                 .on_navigation(is_bundled_url)
                 .on_new_window(|_, _| NewWindowResponse::Deny)
@@ -1697,7 +1768,14 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             create_tray(app.handle())?;
             install_shortcut_handler(app.handle());
             if first_run {
-                build_settings_window(app.handle())?;
+                if build_settings_window(app.handle()).is_err() {
+                    tracing::warn!(
+                        event = "devhud.settings.window_failure",
+                        operation = "first-run",
+                        classification = "window-unavailable",
+                        "DevHud first-run settings window could not be opened"
+                    );
+                }
             }
 
             tracing::info!(
@@ -2068,6 +2146,55 @@ mod tests {
                 "key": "k"
             })
         );
+    }
+
+    #[test]
+    fn failed_record_reset_restores_previously_deleted_records() {
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-reset-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let settings_path = directory.join(SETTINGS_STORAGE_KEY);
+        let widget_path = directory.join(WIDGET_CONFIGURATION_STORAGE_KEY);
+        let settings =
+            br#"{"version":1,"settings":{"theme":"system","launchAtLogin":false,"shortcut":null}}"#;
+        let widgets = br#"{"version":1,"configuration":{"slots":[]}}"#;
+        fs::write(&settings_path, settings).unwrap();
+        fs::write(&widget_path, widgets).unwrap();
+        let paths = [
+            (
+                SETTINGS_STORAGE_KEY,
+                settings_path.clone(),
+                directory.join("settings-staged"),
+            ),
+            (
+                WIDGET_CONFIGURATION_STORAGE_KEY,
+                widget_path.clone(),
+                directory.join("widgets-staged"),
+            ),
+        ];
+
+        let result = reset_persisted_records(
+            &paths,
+            |source, destination| {
+                if source == widget_path {
+                    Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "injected reset failure",
+                    ))
+                } else {
+                    fs::rename(source, destination)
+                }
+            },
+            |path| fs::remove_file(path),
+        );
+
+        assert_eq!(result, Err(PersistenceCommandError::ResetFailed));
+        assert_eq!(fs::read(settings_path).unwrap(), settings);
+        assert_eq!(fs::read(widget_path).unwrap(), widgets);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

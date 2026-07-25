@@ -133,6 +133,7 @@ pub(crate) struct NativeAutostart {
 impl NativeAutostart {
     pub(crate) fn for_current_executable() -> Result<Self, AutostartFailure> {
         let executable = std::env::current_exe().map_err(|_| AutostartFailure::OperationFailed)?;
+        let executable = select_autostart_executable(executable, std::env::var_os("APPIMAGE"));
         let Some(executable) = executable.to_str() else {
             return Err(AutostartFailure::OperationFailed);
         };
@@ -147,6 +148,22 @@ impl NativeAutostart {
             .map_err(classify_native_error)?;
         Ok(Self { inner })
     }
+}
+
+#[cfg(any(feature = "desktop-cef", test))]
+fn select_autostart_executable(
+    current_executable: std::path::PathBuf,
+    appimage: Option<std::ffi::OsString>,
+) -> std::path::PathBuf {
+    #[cfg(target_os = "linux")]
+    if let Some(appimage) = appimage.filter(|path| !path.is_empty()) {
+        return appimage.into();
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    let _ = appimage;
+
+    current_executable
 }
 
 #[cfg(feature = "desktop-cef")]
@@ -248,7 +265,9 @@ impl AutostartState {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::Cell, collections::VecDeque};
+    #[cfg(target_os = "linux")]
+    use std::ffi::OsString;
+    use std::{cell::Cell, collections::VecDeque, path::PathBuf};
 
     use super::*;
 
@@ -410,6 +429,25 @@ mod tests {
         assert_eq!(
             coordinator.apply_with_previous(false),
             (Some(true), AutostartOutcome::Applied { enabled: false })
+        );
+    }
+
+    #[test]
+    fn current_executable_is_used_without_an_appimage_path() {
+        let current = PathBuf::from("/tmp/.mount_devhud/devhud");
+
+        assert_eq!(select_autostart_executable(current.clone(), None), current);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn persistent_appimage_path_is_used_for_linux_autostart() {
+        assert_eq!(
+            select_autostart_executable(
+                PathBuf::from("/tmp/.mount_devhud/devhud"),
+                Some(OsString::from("/opt/DevHud.AppImage")),
+            ),
+            PathBuf::from("/opt/DevHud.AppImage")
         );
     }
 }

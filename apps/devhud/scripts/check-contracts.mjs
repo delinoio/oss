@@ -233,6 +233,15 @@ requireCondition(
   "the desktop HUD must be hidden, always-on-top, taskbar-free, and menu-bar resident",
 );
 requireCondition(
+  rustShell.match(/\.incognito\(true\)/gu)?.length === 2,
+  "both desktop CEF webviews must use off-the-record profiles",
+);
+requireCondition(
+  rustShell.includes('event = "devhud.settings.window_failure"') &&
+    !rustShell.includes("build_settings_window(app.handle())?;"),
+  "first-run settings failure must keep the tray-resident process alive",
+);
+requireCondition(
   !updaterBoundary.includes("reqwest") &&
     !updaterBoundary.includes("ureq") &&
     !updaterBoundary.includes("github.com") &&
