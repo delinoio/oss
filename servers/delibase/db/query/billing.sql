@@ -319,6 +319,20 @@ WHERE period.organization_id = sqlc.arg(organization_id)
 -- name: GetPolarPaidCycle :one
 SELECT * FROM polar_paid_cycles WHERE polar_order_id = sqlc.arg(polar_order_id);
 
+-- name: GetPolarPaidCycleBinding :one
+SELECT cycle.organization_id,
+       subscription.polar_subscription_id,
+       period.starts_at,
+       period.ends_at
+FROM polar_paid_cycles AS cycle
+JOIN subscriptions AS subscription
+  ON subscription.organization_id = cycle.organization_id
+ AND subscription.id = cycle.subscription_id
+JOIN billing_periods AS period
+  ON period.organization_id = cycle.organization_id
+ AND period.id = cycle.billing_period_id
+WHERE cycle.polar_order_id = sqlc.arg(polar_order_id);
+
 -- name: InsertPolarPaidCycle :one
 INSERT INTO polar_paid_cycles (
     polar_order_id, organization_id, subscription_id, billing_period_id,

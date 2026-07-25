@@ -229,6 +229,38 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	otherSubscriptionPayload, _ := json.Marshal(polarBillingEvent{
+		Type:       string(reliability.WebhookSubscriptionActive),
+		EventAt:    now,
+		ObjectID:   "subscription_other",
+		CustomerID: "customer_" + otherOrganizationID.String(),
+		ExternalID: otherOrganizationID.String(), SubscriptionID: "subscription_other",
+		ProductID: productID, CurrentPeriodStart: currentPeriodStart,
+		CurrentPeriodEnd: currentPeriodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarSubscriptionActive,
+		Payload:   otherSubscriptionPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reboundPaidPayload, _ := json.Marshal(polarBillingEvent{
+		Type: string(reliability.WebhookOrderPaid), EventAt: now,
+		ObjectID: "order_1", OrderID: "order_1",
+		CustomerID: "customer_" + otherOrganizationID.String(),
+		ExternalID: otherOrganizationID.String(), SubscriptionID: "subscription_other",
+		ProductID: productID, Currency: "usd",
+		BillingReason: "subscription_cycle", Paid: true,
+		CurrentPeriodStart: previousPeriodStart, CurrentPeriodEnd: previousPeriodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarOrderPaid,
+		Payload:   reboundPaidPayload,
+	}); !errors.Is(err, reliability.ErrInvalidInput) {
+		t.Fatalf("rebound paid-cycle error = %v", err)
+	}
 	mismatchedCustomerPayload, _ := json.Marshal(polarBillingEvent{
 		Type:               string(reliability.WebhookOrderPaid),
 		EventAt:            now,

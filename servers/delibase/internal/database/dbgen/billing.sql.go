@@ -432,6 +432,40 @@ func (q *Queries) GetPolarPaidCycle(ctx context.Context, polarOrderID string) (P
 	return i, err
 }
 
+const getPolarPaidCycleBinding = `-- name: GetPolarPaidCycleBinding :one
+SELECT cycle.organization_id,
+       subscription.polar_subscription_id,
+       period.starts_at,
+       period.ends_at
+FROM polar_paid_cycles AS cycle
+JOIN subscriptions AS subscription
+  ON subscription.organization_id = cycle.organization_id
+ AND subscription.id = cycle.subscription_id
+JOIN billing_periods AS period
+  ON period.organization_id = cycle.organization_id
+ AND period.id = cycle.billing_period_id
+WHERE cycle.polar_order_id = $1
+`
+
+type GetPolarPaidCycleBindingRow struct {
+	OrganizationID      pgtype.UUID
+	PolarSubscriptionID string
+	StartsAt            pgtype.Timestamptz
+	EndsAt              pgtype.Timestamptz
+}
+
+func (q *Queries) GetPolarPaidCycleBinding(ctx context.Context, polarOrderID string) (GetPolarPaidCycleBindingRow, error) {
+	row := q.db.QueryRow(ctx, getPolarPaidCycleBinding, polarOrderID)
+	var i GetPolarPaidCycleBindingRow
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.PolarSubscriptionID,
+		&i.StartsAt,
+		&i.EndsAt,
+	)
+	return i, err
+}
+
 const getPolarRefund = `-- name: GetPolarRefund :one
 SELECT polar_refund_id, polar_order_id, status, requested_micros, reversed_micros, chargeback, provider_event_at, created_at, retain_until FROM polar_refunds WHERE polar_refund_id = $1
 `

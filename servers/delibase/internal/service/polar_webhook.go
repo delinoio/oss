@@ -228,7 +228,18 @@ func processPaidCycle(
 		mapping.Currency != "usd" || mapping.RecurringInterval != "month" {
 		return reliability.ErrInvalidInput
 	}
-	if _, err = queries.GetPolarPaidCycle(ctx, event.OrderID); err == nil {
+	existing, err := queries.GetPolarPaidCycleBinding(ctx, event.OrderID)
+	if err == nil {
+		customer, customerErr := resolvePolarCustomer(ctx, queries, event)
+		if customerErr != nil {
+			return customerErr
+		}
+		if customer.OrganizationID != existing.OrganizationID ||
+			existing.PolarSubscriptionID != event.SubscriptionID ||
+			!existing.StartsAt.Time.Equal(event.CurrentPeriodStart) ||
+			!existing.EndsAt.Time.Equal(event.CurrentPeriodEnd) {
+			return reliability.ErrInvalidInput
+		}
 		return nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return err

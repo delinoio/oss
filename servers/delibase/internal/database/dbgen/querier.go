@@ -81,6 +81,7 @@ type Querier interface {
 	GetPolarCustomerByExternalID(ctx context.Context, externalID pgtype.UUID) (PolarCustomer, error)
 	GetPolarCustomerByProviderID(ctx context.Context, polarCustomerID string) (PolarCustomer, error)
 	GetPolarPaidCycle(ctx context.Context, polarOrderID string) (PolarPaidCycle, error)
+	GetPolarPaidCycleBinding(ctx context.Context, polarOrderID string) (GetPolarPaidCycleBindingRow, error)
 	GetPolarRefund(ctx context.Context, polarRefundID string) (PolarRefund, error)
 	GetPublicCatalogAppBySlug(ctx context.Context, slug string) (GetPublicCatalogAppBySlugRow, error)
 	GetPublicCatalogMeter(ctx context.Context, id pgtype.UUID) (GetPublicCatalogMeterRow, error)
