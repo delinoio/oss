@@ -39,6 +39,9 @@ interface ApplicationState {
 interface ApplicationActions {
   setTheme(theme: ThemePreference): void;
   setShortcut(shortcut: StructuredShortcut | null): void;
+  setLaunchAtLogin(enabled: boolean): void;
+  adoptNativeShortcut(shortcut: StructuredShortcut): void;
+  adoptNativeLaunchAtLogin(enabled: boolean): void;
   setWidgetConfiguration(configuration: WidgetConfiguration): void;
   setMobileScreen(screen: MobileScreen): void;
   openSettings(): void;
@@ -141,6 +144,30 @@ export function ApplicationProvider({
     (shortcut: StructuredShortcut | null) => persistSettings({ ...settings, shortcut }),
     [persistSettings, settings],
   );
+  const setLaunchAtLogin = useCallback(
+    (launchAtLogin: boolean) => persistSettings({ ...settings, launchAtLogin }),
+    [persistSettings, settings],
+  );
+  const adoptNativeShortcut = useCallback(
+    (shortcut: StructuredShortcut) => {
+      setSettings((current) => {
+        const nextSettings = { ...current, shortcut };
+        lastSuccessfulSettings.current = nextSettings;
+        return nextSettings;
+      });
+    },
+    [],
+  );
+  const adoptNativeLaunchAtLogin = useCallback(
+    (launchAtLogin: boolean) => {
+      setSettings((current) => {
+        const nextSettings = { ...current, launchAtLogin };
+        lastSuccessfulSettings.current = nextSettings;
+        return nextSettings;
+      });
+    },
+    [],
+  );
   const setWidgetConfiguration = useCallback(
     (configuration: WidgetConfiguration) => {
       if (!persistenceReady) return;
@@ -191,6 +218,9 @@ export function ApplicationProvider({
       persistenceReady,
       setTheme,
       setShortcut,
+      setLaunchAtLogin,
+      adoptNativeShortcut,
+      adoptNativeLaunchAtLogin,
       setWidgetConfiguration,
       mobileScreen,
       settingsOpen,
@@ -199,12 +229,15 @@ export function ApplicationProvider({
       closeSettings,
     }),
     [
+      adoptNativeLaunchAtLogin,
+      adoptNativeShortcut,
       closeSettings,
       mobileScreen,
       openSettings,
       persistenceIssues,
       persistenceReady,
       setShortcut,
+      setLaunchAtLogin,
       setTheme,
       setWidgetConfiguration,
       settings,

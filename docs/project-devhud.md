@@ -2,9 +2,9 @@
 
 ## Goal
 
-Define the foundation contract for DevHud, a local-only developer-tool shell for individual developers. The project is intentionally independent from the DeliDev web platform.
+Define the application contract for DevHud, a local-only developer-tool shell for individual developers. The project is intentionally independent from the DeliDev web platform.
 
-`apps/devhud` contains one active foundation package: a React/TypeScript/Rsbuild bundled-asset application and a target-selecting Tauri Rust crate. Desktop builds use the exact pinned upstream CEF runtime directly; mobile targets reserve Tauri's standard system webviews. The implemented UI foundation includes provider-owned local settings/widget state, empty desktop HUD/settings and mobile content surfaces, and a closed internal tool registry. It does not create a production tool, visible widget, packaging or release workflow, or support/publisher artifact.
+`apps/devhud` contains one active package: a React/TypeScript/Rsbuild bundled-asset application and a target-selecting Tauri Rust crate. Desktop builds use the exact pinned upstream CEF runtime directly and implement the production tray, window, shortcut, autostart, empty HUD, settings, DevTools, and sign-ready preview bundle shell; mobile targets reserve Tauri's standard system webviews. It does not create a production tool, visible widget, updater network implementation, published release workflow, or support/publisher artifact.
 
 ## Project ID
 
@@ -38,7 +38,7 @@ No other repository path may implement DevHud. `servers/`, `protos/`, `crates/`,
 ## Change Policy
 
 - Update this index, [apps-devhud-foundation](apps-devhud-foundation.md), `docs/README.md`, `README.md`, root `AGENTS.md`, and `apps/AGENTS.md` together when DevHud ownership, identifiers, runtime boundaries, supported platforms, security exclusions, or policy changes.
-- The application package, Cargo workspace membership, and deterministic Turborepo output contract are present. Add product behavior, mobile/widget sources, CI workflows, packaging, release workflows, signing/publisher material, and support material only with their corresponding documented contracts and validation.
+- The application package, production desktop shell, sign-ready bundle configuration, Cargo workspace membership, and deterministic Turborepo output contract are present. Add product behavior, mobile/widget sources, full matrix CI, updater networking, release workflows, signing/publisher material, and support material only with their corresponding documented contracts and validation.
 - Any route, command, API, plugin, account, telemetry, DeliDev, widget-registration, or network exception proposal requires an explicit contract change before implementation; none is authorized by this project index.
 - Changes to the pinned Tauri CEF commit, `@tauri-apps/cli-cef` version, or supported OS/architecture matrix require architecture and release-policy review. Do not track a moving upstream branch or patch Tauri, WRY, or `cef-rs` locally.
 - Changes to release tags, artifacts, beta channels, signing prerequisites, updater selection, rollback, or upstream monitoring must update this index, the app foundation contract, root/app policy, and the relevant workflow or runbook contract together.

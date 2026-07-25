@@ -1,7 +1,7 @@
-:root { color: #1d1d1f; background: #f7f7f8; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+:root { color: #1d1d1f; background: #f7f7f8; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color-scheme:light; }
 :root[data-theme="dark"] { color: #f5f5f7; background: #171719; color-scheme: dark; }
 @media (prefers-color-scheme: dark) { :root[data-theme="system"] { color: #f5f5f7; background: #171719; color-scheme: dark; } }
-* { box-sizing: border-box; } body { min-width: 20rem; min-height: 100vh; margin: 0; background: inherit; color: inherit; } button, input, select { font: inherit; } button { cursor: pointer; } button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #2b70e8; outline-offset: 2px; }
+* { box-sizing: border-box; } body { min-width: 20rem; min-height: 100vh; margin: 0; background: inherit; color: inherit; } button, input, select { font: inherit; } button { cursor: pointer; } button:disabled, input:disabled, select:disabled { cursor:not-allowed; opacity:.6; } button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #2b70e8; outline-offset: 2px; }
 .desktop-shell, .mobile-shell { width: min(100%, 50rem); min-height: 100vh; margin: 0 auto; padding: 1.25rem; }.app-header { display:flex; align-items:center; justify-content:space-between; min-height:3rem; }.wordmark { display:flex; gap:.55rem; align-items:center; font-size:1.1rem; }.wordmark span { display:grid; place-items:center; width:2rem; height:2rem; border-radius:.5rem; background:#2b70e8; color:#fff; font-weight:800; letter-spacing:-.06em; }.wordmark strong { letter-spacing:-.03em; }.hud-panel { margin-top:clamp(3rem,12vh,7rem); }.hud-panel h1 { max-width:35rem; margin:0 0 2rem; font-size:clamp(2rem,7vw,4rem); letter-spacing:-.05em; line-height:1.02; }.search-label { display:block; margin-bottom:.5rem; font-weight:700; }.hud-panel input, select { width:100%; padding:.8rem .9rem; border:1px solid #767680; border-radius:.65rem; background:#fff; color:#1d1d1f; }.empty-state { margin-top:2rem; padding:1.5rem; border:1px solid #d1d1d6; border-radius:1rem; background:#fff; }.empty-state h1, .empty-state h2 { margin:.15rem 0 .6rem; letter-spacing:-.03em; }.empty-state p { margin:.4rem 0 1rem; line-height:1.5; }.compact { margin-top:2rem; }.eyebrow { margin:0; color:#245ebf; font-size:.78rem; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }.primary-button, .text-button, .mobile-nav button, .icon-button { border:0; border-radius:.6rem; padding:.65rem .85rem; }.primary-button { background:#2869dc; color:white; font-weight:700; }.text-button, .mobile-nav button, .icon-button { background:transparent; color:inherit; }.runtime-status { margin-top:1rem; }.error { color:#b42318; }.mobile-shell { display:flex; flex-direction:column; }.mobile-nav { display:grid; grid-template-columns:repeat(4,1fr); gap:.25rem; margin-top:auto; padding-top:1rem; border-top:1px solid #d1d1d6; }.mobile-nav button[aria-current="page"] { background:#dce9ff; color:#164a9b; font-weight:700; }.dialog-backdrop { position:fixed; inset:0; display:grid; place-items:center; padding:1rem; background:rgb(0 0 0 / 45%); }.dialog { width:min(100%,28rem); padding:1.25rem; border-radius:1rem; background:#fff; color:#1d1d1f; box-shadow:0 12px 40px rgb(0 0 0 / 25%); }.dialog-heading { display:flex; justify-content:space-between; align-items:start; }.dialog h2 { margin:.2rem 0 1.25rem; }.field { display:grid; gap:.5rem; font-weight:700; }.muted { color:#5c5c66; line-height:1.5; } :root[data-theme="dark"] .empty-state, :root[data-theme="dark"] .hud-panel input { background:#252529; color:#f5f5f7; border-color:#777780; } :root[data-theme="dark"] .mobile-nav { border-color:#55555c; } :root[data-theme="dark"] .mobile-nav button[aria-current="page"] { background:#243d6b; color:#e5edff; } @media (prefers-color-scheme: dark) { :root[data-theme="system"] .empty-state, :root[data-theme="system"] .hud-panel input { background:#252529; color:#f5f5f7; border-color:#777780; } :root[data-theme="system"] .mobile-nav { border-color:#55555c; } :root[data-theme="system"] .mobile-nav button[aria-current="page"] { background:#243d6b; color:#e5edff; } }
 @media (min-width: 48rem) { .desktop-shell { padding:2rem; } }
 
@@ -9,3 +9,27 @@
 :root[data-theme="dark"] .error { color:#ffb4ab; }
 @media (prefers-color-scheme: dark) { :root[data-theme="system"] .eyebrow { color:#9ec5ff; } }
 @media (prefers-color-scheme: dark) { :root[data-theme="system"] .error { color:#ffb4ab; } }
+
+.secondary-button { border:1px solid #7b7b84; border-radius:.6rem; padding:.65rem .85rem; background:#fff; color:inherit; font-weight:700; }
+.settings-shell { width:min(100%,38rem); min-height:100vh; margin:0 auto; padding:1.5rem; }
+.settings-section { padding:1.1rem 0; border-top:1px solid #d1d1d6; }
+.settings-section h2 { margin:0 0 .8rem; font-size:1.05rem; }
+.dialog { width:min(100%,32rem); max-height:calc(100vh - 2rem); overflow:auto; }
+.dialog-heading { gap:1rem; }
+.dialog-heading h1 { margin:.2rem 0 .75rem; font-size:1.6rem; }
+.setting-value { margin:.2rem 0 1rem; }
+kbd { display:inline-block; padding:.25rem .45rem; border:1px solid #a1a1aa; border-bottom-width:2px; border-radius:.35rem; background:#fff; font:inherit; font-weight:700; }
+.button-row { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
+.settings-actions { justify-content:flex-end; margin-top:1.25rem; }
+.check-field { display:flex; gap:.65rem; align-items:center; min-height:2.5rem; font-weight:700; }
+.check-field input { width:1.15rem; height:1.15rem; }
+:root[data-theme="dark"] .dialog, :root[data-theme="dark"] .secondary-button, :root[data-theme="dark"] kbd { background:#252529; color:#f5f5f7; border-color:#777780; }
+:root[data-theme="dark"] .muted { color:#b8b8c0; }
+:root[data-theme="dark"] .settings-section { border-color:#55555c; }
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .dialog,
+  :root[data-theme="system"] .secondary-button,
+  :root[data-theme="system"] kbd { background:#252529; color:#f5f5f7; border-color:#777780; }
+  :root[data-theme="system"] .muted { color:#b8b8c0; }
+  :root[data-theme="system"] .settings-section { border-color:#55555c; }
+}

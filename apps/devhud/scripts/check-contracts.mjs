@@ -13,7 +13,9 @@ const paths = {
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
   rootCargoManifest: resolve(repositoryRoot, "Cargo.toml"),
+  rustShell: resolve(appRoot, "src-tauri/src/lib.rs"),
   tauriConfig: resolve(appRoot, "src-tauri/tauri.conf.json"),
+  updaterBoundary: resolve(appRoot, "src-tauri/src/updater.rs"),
 };
 
 const [
@@ -23,7 +25,9 @@ const [
   packageLock,
   packageManifest,
   rootCargoManifest,
+  rustShell,
   tauriConfig,
+  updaterBoundary,
 ] = await Promise.all([
   readFile(paths.cargoLock, "utf8"),
   readFile(paths.cargoManifest, "utf8"),
@@ -31,7 +35,9 @@ const [
   readFile(paths.packageLock, "utf8"),
   readFile(paths.packageManifest, "utf8"),
   readFile(paths.rootCargoManifest, "utf8"),
+  readFile(paths.rustShell, "utf8"),
   readFile(paths.tauriConfig, "utf8"),
+  readFile(paths.updaterBoundary, "utf8"),
 ]);
 
 const packageJson = JSON.parse(packageManifest);
@@ -49,6 +55,10 @@ requireCondition(
   packageJson.devDependencies?.["@tauri-apps/cli-cef"] ===
     "3.0.0-alpha.6",
   "@tauri-apps/cli-cef must be pinned exactly to 3.0.0-alpha.6",
+);
+requireCondition(
+  packageJson.version === "0.1.0" && tauriJson.version === "0.1.0",
+  "the production preview manifests must identify version 0.1.0",
 );
 requireCondition(
   packageLock.includes("specifier: 3.0.0-alpha.6") &&
@@ -122,28 +132,65 @@ requireCondition(
   "the main window must be created with explicit navigation guards",
 );
 requireCondition(
-  tauriJson.bundle?.active === false,
-  "the foundation must not enable release bundling before packaging is implemented",
+  tauriJson.bundle?.active === true &&
+    tauriJson.bundle?.targets === "all" &&
+    tauriJson.bundle?.createUpdaterArtifacts === true &&
+    tauriJson.bundle?.macOS?.minimumSystemVersion === "14.0",
+  "the 0.1.0 preview must enable host bundles, updater artifacts, and macOS 14+",
 );
 requireCondition(
   tauriJson.plugins === undefined,
   "the common scaffold must not expose plugin, updater, or deep-link configuration",
 );
 requireCondition(
-  capabilityJson.windows?.length === 1 &&
-    capabilityJson.windows[0] === "main",
-  "the main capability must be window-specific",
+  JSON.stringify(capabilityJson.windows) === JSON.stringify(["main", "settings"]),
+  "the production capability must be limited to the HUD and settings windows",
 );
+const expectedPermissions = [
+  "allow-get-runtime-info",
+  "allow-read-settings",
+  "allow-write-settings",
+  "allow-read-widget-configuration",
+  "allow-write-widget-configuration",
+  "allow-show-hud",
+  "allow-hide-hud",
+  "allow-show-settings",
+  "allow-hide-settings",
+  "allow-replace-global-shortcut",
+  "allow-set-launch-at-login",
+  "allow-complete-first-run",
+  "allow-request-update-action",
+];
 requireCondition(
   JSON.stringify(capabilityJson.permissions) ===
-    JSON.stringify([
-      "allow-get-runtime-info",
-      "allow-read-settings",
-      "allow-write-settings",
-      "allow-read-widget-configuration",
-      "allow-write-widget-configuration",
-    ]),
-  "the main capability must expose only runtime information and the two scoped persistence records",
+    JSON.stringify(expectedPermissions),
+  "the production capability must expose only scoped shell and persistence commands",
+);
+for (const action of [
+  "Open DevHud",
+  "Settings",
+  "Check for Updates",
+  "Open DevTools",
+  "Quit",
+]) {
+  requireCondition(
+    rustShell.includes(`"${action}"`),
+    `the tray must include ${action}`,
+  );
+}
+requireCondition(
+  rustShell.includes(".visible(false)") &&
+    rustShell.includes(".always_on_top(true)") &&
+    rustShell.includes(".skip_taskbar(true)") &&
+    rustShell.includes("ActivationPolicy::Accessory"),
+  "the desktop HUD must be hidden, always-on-top, taskbar-free, and menu-bar resident",
+);
+requireCondition(
+  !updaterBoundary.includes("reqwest") &&
+    !updaterBoundary.includes("ureq") &&
+    !updaterBoundary.includes("github.com") &&
+    updaterBoundary.includes("ScopedUpdaterUnavailable"),
+  "the typed preview updater boundary must perform no network access",
 );
 
 if (failures.length > 0) {

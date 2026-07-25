@@ -5,6 +5,8 @@ export interface RuntimeInfo {
   bundledOrigin: string;
   runtime: "cef" | "system-webview";
   sandboxEnabled: boolean;
+  surface?: "hud" | "settings" | "mobile";
+  firstRun?: boolean;
 }
 
 interface NativeCommandResults {

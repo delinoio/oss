@@ -1,14 +1,33 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { loadRuntimeInfo, tauriRuntimeBridge, type RuntimeInfo } from "./runtime/startup";
+import { MemoryStorageAdapter, type LocalStorageAdapter } from "./persistence/storage";
 import {
   detectApplicationPlatform,
   platformForRuntime,
   type ApplicationPlatform,
 } from "./runtime/platform";
+import {
+  loadRuntimeInfo,
+  tauriRuntimeBridge,
+  type RuntimeInfo,
+} from "./runtime/startup";
+import {
+  nativeDesktopBridge,
+  type DesktopBridge,
+} from "./runtime/desktop";
+import {
+  filterTools,
+  productionTools,
+  type ToolCapability,
+  ToolPlatform,
+} from "./tools/registry";
 import { Dialog } from "./ui/Dialog";
-import { ApplicationProvider, MobileScreen, ThemePreference, useApplication } from "./ui/state";
-import { MemoryStorageAdapter, type LocalStorageAdapter } from "./persistence/storage";
+import { SettingsPanel } from "./ui/SettingsPanel";
+import {
+  ApplicationProvider,
+  MobileScreen,
+  useApplication,
+} from "./ui/state";
 
 type RuntimeState =
   | { status: "loading" }
@@ -16,88 +35,351 @@ type RuntimeState =
   | { status: "ready"; runtimeInfo: RuntimeInfo };
 
 function Wordmark() {
-  return <div aria-label="DevHud" className="wordmark"><span aria-hidden="true">DH</span><strong>DevHud</strong></div>;
+  return (
+    <div aria-label="DevHud" className="wordmark">
+      <span aria-hidden="true">DH</span>
+      <strong>DevHud</strong>
+    </div>
+  );
 }
 
-function SettingsDialog() {
-  const { closeSettings, persistenceReady, setTheme, settings } = useApplication();
+function SettingsDialog({ bridge }: { readonly bridge: DesktopBridge | null }) {
+  const { closeSettings } = useApplication();
   return (
     <Dialog title="DevHud settings" onClose={closeSettings}>
-      <div className="dialog-heading"><div><p className="eyebrow">Settings</p><h2>Appearance</h2></div><button aria-label="Close settings" className="icon-button" onClick={closeSettings} type="button">×</button></div>
-      <label className="field" htmlFor="theme-preference">Theme preference
-        <select disabled={!persistenceReady} id="theme-preference" onChange={(event) => setTheme(event.target.value as ThemePreference)} value={settings.theme}>
-          <option value={ThemePreference.System}>System</option><option value={ThemePreference.Light}>Light</option><option value={ThemePreference.Dark}>Dark</option>
-        </select>
-      </label>
-      {!persistenceReady ? <p className="muted" role="status">Loading local settings…</p> : null}
-      <p className="muted">Settings stay on this device. No account or cloud sync is available.</p>
+      <SettingsPanel bridge={bridge} onClose={closeSettings} />
     </Dialog>
   );
 }
 
-function EmptyTools({ compact = false }: { compact?: boolean }) {
-  const { openSettings } = useApplication();
-  return <section className={compact ? "empty-state compact" : "empty-state"} aria-labelledby="tools-empty-title">
-    <p className="eyebrow">Local foundation</p><h2 id="tools-empty-title">No tools yet</h2>
-    <p>No tools are available in this foundation preview.</p>
-    <button className="primary-button" onClick={openSettings} type="button">{compact ? "Open settings" : "Settings"}</button>
-  </section>;
+function SettingsWindow({
+  bridge,
+  firstRun,
+}: {
+  readonly bridge: DesktopBridge | null;
+  readonly firstRun: boolean;
+}) {
+  const close = () => {
+    void bridge?.hideSettings();
+  };
+  return (
+    <main className="settings-shell">
+      <SettingsPanel bridge={bridge} firstRun={firstRun} onClose={close} />
+    </main>
+  );
 }
 
-function DesktopHud({ runtime }: { runtime: RuntimeState }) {
+function EmptyTools({
+  bridge,
+  compact = false,
+}: {
+  readonly bridge: DesktopBridge | null;
+  readonly compact?: boolean;
+}) {
+  const { openSettings } = useApplication();
+  const showSettings = () => {
+    if (bridge === null) openSettings();
+    else void bridge.showSettings();
+  };
+  return (
+    <section
+      className={compact ? "empty-state compact" : "empty-state"}
+      aria-labelledby="tools-empty-title"
+    >
+      <p className="eyebrow">Local foundation</p>
+      <h2 id="tools-empty-title">No tools yet</h2>
+      <p>No tools are available in this foundation preview.</p>
+      <button className="primary-button" onClick={showSettings} type="button">
+        {compact ? "Open settings" : "Settings"}
+      </button>
+    </section>
+  );
+}
+
+const NO_TOOL_CAPABILITIES: ReadonlySet<ToolCapability> = new Set();
+
+function ProductionToolSurface({
+  bridge,
+}: {
+  readonly bridge: DesktopBridge | null;
+}) {
+  const availableTools = filterTools(productionTools, {
+    platform: ToolPlatform.Desktop,
+    grantedCapabilities: NO_TOOL_CAPABILITIES,
+  });
+  if (availableTools.length === 0) return <EmptyTools bridge={bridge} />;
+  return (
+    <section aria-labelledby="available-tools-title">
+      <h2 id="available-tools-title">Available tools</h2>
+      {availableTools.map(({ EntryPoint, toolId }) => (
+        <EntryPoint key={toolId} />
+      ))}
+    </section>
+  );
+}
+
+function DesktopHud({
+  bridge,
+  runtime,
+}: {
+  readonly bridge: DesktopBridge | null;
+  readonly runtime: RuntimeState;
+}) {
   const searchRef = useRef<HTMLInputElement>(null);
   const { openSettings } = useApplication();
-  useEffect(() => { searchRef.current?.focus(); }, []);
-  return <main className="desktop-shell">
-    <header className="app-header"><Wordmark /><button className="text-button" onClick={openSettings} type="button">Settings</button></header>
-    <section className="hud-panel" aria-labelledby="hud-title">
-      <h1 id="hud-title">Developer tools, kept local.</h1>
-      <label className="search-label" htmlFor="tool-search">Search tools</label>
-      <input ref={searchRef} id="tool-search" placeholder="Search available tools" type="search" />
-      {runtime.status === "loading" ? <p className="runtime-status" role="status">Starting DevHud…</p> : null}
-      {runtime.status === "failed" ? <p className="runtime-status error" role="alert">{runtime.message}</p> : null}
-      <EmptyTools />
-    </section>
-  </main>;
+  useEffect(() => {
+    const focusSearch = () => searchRef.current?.focus();
+    focusSearch();
+    window.addEventListener("devhud:shown", focusSearch);
+    const hideForBlur = () => {
+      void bridge?.hideHud();
+    };
+    const hideForEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        void bridge?.hideHud();
+      }
+    };
+    window.addEventListener("blur", hideForBlur);
+    document.addEventListener("keydown", hideForEscape);
+    return () => {
+      window.removeEventListener("devhud:shown", focusSearch);
+      window.removeEventListener("blur", hideForBlur);
+      document.removeEventListener("keydown", hideForEscape);
+    };
+  }, [bridge]);
+
+  const showSettings = () => {
+    if (bridge === null) openSettings();
+    else void bridge.showSettings();
+  };
+  return (
+    <main className="desktop-shell">
+      <header className="app-header">
+        <Wordmark />
+        <button className="text-button" onClick={showSettings} type="button">
+          Settings
+        </button>
+      </header>
+      <section className="hud-panel" aria-labelledby="hud-title">
+        <h1 id="hud-title">Developer tools, kept local.</h1>
+        <label className="search-label" htmlFor="tool-search">
+          Search tools
+        </label>
+        <input
+          ref={searchRef}
+          id="tool-search"
+          placeholder="Search available tools"
+          type="search"
+        />
+        {runtime.status === "loading" ? (
+          <p className="runtime-status" role="status">
+            Starting DevHud…
+          </p>
+        ) : null}
+        {runtime.status === "failed" ? (
+          <p className="runtime-status error" role="alert">
+            {runtime.message}
+          </p>
+        ) : null}
+        <ProductionToolSurface bridge={bridge} />
+      </section>
+    </main>
+  );
 }
 
-const mobileScreenLabels: Record<MobileScreen, string> = { [MobileScreen.Home]: "Home", [MobileScreen.Widgets]: "Widgets", [MobileScreen.Settings]: "Settings", [MobileScreen.Diagnostics]: "Diagnostics" };
+const mobileScreenLabels: Record<MobileScreen, string> = {
+  [MobileScreen.Home]: "Home",
+  [MobileScreen.Widgets]: "Widgets",
+  [MobileScreen.Settings]: "Settings",
+  [MobileScreen.Diagnostics]: "Diagnostics",
+};
 
-function MobileContent({ runtime }: { runtime: RuntimeState }) {
+function MobileContent({ runtime }: { readonly runtime: RuntimeState }) {
   const { mobileScreen, openSettings } = useApplication();
-  if (mobileScreen === MobileScreen.Home) return <>{runtime.status === "loading" ? <p className="runtime-status" role="status">Starting DevHud…</p> : null}{runtime.status === "failed" ? <p className="runtime-status error" role="alert">{runtime.message}</p> : null}<EmptyTools compact /></>;
-  if (mobileScreen === MobileScreen.Widgets) return <section className="empty-state compact" aria-labelledby="widgets-title"><p className="eyebrow">Widgets</p><h1 id="widgets-title">No widgets available</h1><p>Visible widgets are not part of this foundation preview.</p></section>;
-  if (mobileScreen === MobileScreen.Settings) return <section className="empty-state compact" aria-labelledby="settings-title"><p className="eyebrow">Settings</p><h1 id="settings-title">Choose your appearance</h1><p>Use your device preference, a light theme, or a dark theme.</p><button className="primary-button" onClick={openSettings} type="button">Open settings</button></section>;
-  return <section className="empty-state compact" aria-labelledby="diagnostics-title"><p className="eyebrow">Diagnostics</p><h1 id="diagnostics-title">Diagnostics are unavailable</h1>{runtime.status === "loading" ? <p role="status">Loading local diagnostics…</p> : null}{runtime.status === "failed" ? <p role="alert">{runtime.message}</p> : null}{runtime.status === "ready" ? <p>Local diagnostics are not exposed in this foundation preview.</p> : null}</section>;
+  if (mobileScreen === MobileScreen.Home) {
+    return (
+      <>
+        {runtime.status === "loading" ? (
+          <p className="runtime-status" role="status">
+            Starting DevHud…
+          </p>
+        ) : null}
+        {runtime.status === "failed" ? (
+          <p className="runtime-status error" role="alert">
+            {runtime.message}
+          </p>
+        ) : null}
+        <EmptyTools bridge={null} compact />
+      </>
+    );
+  }
+  if (mobileScreen === MobileScreen.Widgets) {
+    return (
+      <section
+        className="empty-state compact"
+        aria-labelledby="widgets-title"
+      >
+        <p className="eyebrow">Widgets</p>
+        <h1 id="widgets-title">No widgets available</h1>
+        <p>Visible widgets are not part of this foundation preview.</p>
+      </section>
+    );
+  }
+  if (mobileScreen === MobileScreen.Settings) {
+    return (
+      <section
+        className="empty-state compact"
+        aria-labelledby="settings-title"
+      >
+        <p className="eyebrow">Settings</p>
+        <h1 id="settings-title">Choose your appearance</h1>
+        <p>Use your device preference, a light theme, or a dark theme.</p>
+        <button className="primary-button" onClick={openSettings} type="button">
+          Open settings
+        </button>
+      </section>
+    );
+  }
+  return (
+    <section
+      className="empty-state compact"
+      aria-labelledby="diagnostics-title"
+    >
+      <p className="eyebrow">Diagnostics</p>
+      <h1 id="diagnostics-title">Diagnostics are unavailable</h1>
+      {runtime.status === "loading" ? (
+        <p role="status">Loading local diagnostics…</p>
+      ) : null}
+      {runtime.status === "failed" ? (
+        <p role="alert">{runtime.message}</p>
+      ) : null}
+      {runtime.status === "ready" ? (
+        <p>Local diagnostics are not exposed in this foundation preview.</p>
+      ) : null}
+    </section>
+  );
 }
 
-function MobileShell({ runtime }: { runtime: RuntimeState }) {
+function MobileShell({ runtime }: { readonly runtime: RuntimeState }) {
   const { mobileScreen, setMobileScreen } = useApplication();
-  return <main className="mobile-shell"><header className="app-header"><Wordmark /></header><MobileContent runtime={runtime} /><nav aria-label="Mobile navigation" className="mobile-nav">{Object.values(MobileScreen).map((screen) => <button aria-current={mobileScreen === screen ? "page" : undefined} key={screen} onClick={() => setMobileScreen(screen)} type="button">{mobileScreenLabels[screen]}</button>)}</nav></main>;
+  return (
+    <main className="mobile-shell">
+      <header className="app-header">
+        <Wordmark />
+      </header>
+      <MobileContent runtime={runtime} />
+      <nav aria-label="Mobile navigation" className="mobile-nav">
+        {Object.values(MobileScreen).map((screen) => (
+          <button
+            aria-current={mobileScreen === screen ? "page" : undefined}
+            key={screen}
+            onClick={() => setMobileScreen(screen)}
+            type="button"
+          >
+            {mobileScreenLabels[screen]}
+          </button>
+        ))}
+      </nav>
+    </main>
+  );
 }
 
 function ApplicationSurface({
+  bridge,
   initialPlatform,
   synchronizePlatform,
 }: {
-  initialPlatform: ApplicationPlatform;
-  synchronizePlatform: boolean;
+  readonly bridge: DesktopBridge | null;
+  readonly initialPlatform: ApplicationPlatform;
+  readonly synchronizePlatform: boolean;
 }) {
   const [platform, setPlatform] = useState(initialPlatform);
   const [runtime, setRuntime] = useState<RuntimeState>({ status: "loading" });
-  useEffect(() => { let active = true; void loadRuntimeInfo(tauriRuntimeBridge).then((runtimeInfo) => { if (active) { setRuntime({ status: "ready", runtimeInfo }); if (synchronizePlatform) setPlatform(platformForRuntime(runtimeInfo.runtime)); } }, () => { if (active) setRuntime({ status: "failed", message: "DevHud could not initialize its local runtime." }); }); return () => { active = false; }; }, [synchronizePlatform]);
+  useEffect(() => {
+    let active = true;
+    void loadRuntimeInfo(tauriRuntimeBridge).then(
+      (runtimeInfo) => {
+        if (active) {
+          setRuntime({ status: "ready", runtimeInfo });
+          if (synchronizePlatform) {
+            setPlatform(platformForRuntime(runtimeInfo.runtime));
+          }
+        }
+      },
+      () => {
+        if (active) {
+          setRuntime({
+            status: "failed",
+            message: "DevHud could not initialize its local runtime.",
+          });
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [synchronizePlatform]);
   const { persistenceIssues, settingsOpen } = useApplication();
-  return <><div aria-hidden={settingsOpen} inert={settingsOpen}>{persistenceIssues.map((issue) => <p className="runtime-status error" key={issue.key} role="alert">{issue.guidance}</p>)}{platform === "desktop" ? <DesktopHud runtime={runtime} /> : <MobileShell runtime={runtime} />}</div>{settingsOpen ? <SettingsDialog /> : null}</>;
+
+  if (
+    runtime.status === "ready" &&
+    runtime.runtimeInfo.surface === "settings"
+  ) {
+    return (
+      <SettingsWindow
+        bridge={bridge}
+        firstRun={runtime.runtimeInfo.firstRun === true}
+      />
+    );
+  }
+
+  return (
+    <>
+      <div aria-hidden={settingsOpen} inert={settingsOpen}>
+        {persistenceIssues.map((issue) => (
+          <p
+            className="runtime-status error"
+            key={issue.key}
+            role="alert"
+          >
+            {issue.guidance}
+          </p>
+        ))}
+        {platform === "desktop" ? (
+          <DesktopHud bridge={bridge} runtime={runtime} />
+        ) : (
+          <MobileShell runtime={runtime} />
+        )}
+      </div>
+      {settingsOpen ? <SettingsDialog bridge={bridge} /> : null}
+    </>
+  );
 }
 
 export function App({
+  desktopBridge,
   platform,
   storage = new MemoryStorageAdapter(),
 }: {
-  platform?: ApplicationPlatform;
-  storage?: LocalStorageAdapter;
+  readonly desktopBridge?: DesktopBridge | null;
+  readonly platform?: ApplicationPlatform;
+  readonly storage?: LocalStorageAdapter;
 }) {
+  const bridge = useMemo(
+    () => desktopBridge === undefined ? nativeDesktopBridge() : desktopBridge,
+    [desktopBridge],
+  );
   const synchronizePlatform = platform === undefined;
-  const initialPlatform = platform ?? detectApplicationPlatform(navigator.userAgent);
-  return <ApplicationProvider storage={storage}><ApplicationSurface initialPlatform={initialPlatform} synchronizePlatform={synchronizePlatform} /></ApplicationProvider>;
+  const initialPlatform =
+    platform ?? detectApplicationPlatform(navigator.userAgent);
+  return (
+    <ApplicationProvider storage={storage}>
+      <ApplicationSurface
+        bridge={bridge}
+        initialPlatform={initialPlatform}
+        synchronizePlatform={synchronizePlatform}
+      />
+    </ApplicationProvider>
+  );
 }

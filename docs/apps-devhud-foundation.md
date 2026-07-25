@@ -4,8 +4,8 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: active foundation; `apps/devhud` contains the common bundled-asset application package, internal empty tool registry, and desktop/mobile empty-state UI. It has no production tool, visible widget, packaging, release, publisher, or public support implementation.
-- This document covers the future deployable package. The current implementation is limited to the shared bundled-asset frontend, provider-owned System/Light/Dark UI state, internal registry filtering, `src-tauri` runtime-selection boundary, scoped runtime-information command, and deterministic local validation commands.
+- Status: active application; `apps/devhud` contains the bundled-asset package, internal empty tool registry, production desktop shell, sign-ready desktop bundle configuration, and mobile empty-state foundation. It has no production tool, visible widget, scoped updater network implementation, published release, publisher automation, or public support implementation.
+- The current desktop implementation includes tray-resident window lifecycle, transactional global shortcuts, explicit autostart, pointer-monitor HUD placement, preview DevTools, typed local update action, scoped persistence/runtime IPC, and deterministic local and host smoke validation.
 
 ## Runtime and Language
 
@@ -62,7 +62,7 @@ The native boundary exposes only scoped Tauri/plugin commands required for setti
 - Closing the HUD or settings window hides it while the process remains resident. Only the tray `Quit` action terminates the app, except a fatal CEF initialization failure, which logs and exits immediately.
 - Tray actions are `Open DevHud`, `Settings`, `Check for Updates`, `Open DevTools`, and `Quit`.
 - Show a skippable first-run settings window that captures and validates a global shortcut. Tray access remains available until a shortcut is configured.
-- Launch-at-login is disabled by default. Its persisted setting is reserved for the native desktop integration; do not expose a settings toggle until that integration can apply changes and roll back failures.
+- Launch-at-login is disabled by default and has an explicit settings toggle. The native desktop integration verifies changes and reports a stable typed failure while preserving the previous setting.
 - Store shortcuts as structured modifier and key values, never as an unchecked free-form string. A malformed, conflicting, permission-denied, or failed registration preserves the previous valid binding.
 - Display the always-on-top HUD centered on the monitor containing the mouse pointer and focus the search input immediately.
 - Repeating the global shortcut toggles the HUD. `Esc` or focus loss hides it immediately.
@@ -122,7 +122,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics plus automated WCAG checks with `axe-core`; full desktop-matrix, mobile/widget compilation, packaging, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
+The package provides local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop, sign-ready preview bundle, and host-appropriate repeated desktop lifecycle smoke commands. Its deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics plus automated WCAG checks with `axe-core`; the full desktop OS/architecture/display matrix, mobile/widget compilation, signature validation, and release-validation tasks must be added when their corresponding implementations are introduced and must not be represented by passing placeholders.
 
 Required validation coverage is:
 

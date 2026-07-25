@@ -1,3 +1,12 @@
+#[cfg(any(feature = "desktop-cef", test))]
+mod autostart;
+#[cfg(any(feature = "desktop-cef", test))]
+mod shortcut;
+#[cfg(any(feature = "desktop-cef", test))]
+mod updater;
+
+#[cfg(feature = "desktop-cef")]
+use serde::Deserialize;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use serde::Serialize;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -20,7 +29,10 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     path::PathBuf,
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -28,6 +40,15 @@ use tauri::{
     AppHandle, Manager, State, Webview, WebviewUrl,
     http::{HeaderName, HeaderValue},
     webview::{NewWindowResponse, WebviewWindowBuilder},
+};
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+use tauri::{
+    PhysicalPosition, WindowEvent,
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
 };
 
 #[cfg(all(
@@ -45,6 +66,25 @@ type ActiveRuntime = tauri::Wry;
 const APPLICATION_ID: &str = "dev.deli.devhud";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 const MAIN_WINDOW_LABEL: &str = "main";
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+const SETTINGS_WINDOW_LABEL: &str = "settings";
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+const TRAY_ACTIONS: [(&str, &str); 5] = [
+    ("open-devhud", "Open DevHud"),
+    ("settings", "Settings"),
+    ("check-for-updates", "Check for Updates"),
+    ("open-devtools", "Open DevTools"),
+    ("quit", "Quit"),
+];
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const SETTINGS_STORAGE_KEY: &str = "devhud.settings.v1";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -61,6 +101,38 @@ struct RuntimeInfo {
     bundled_origin: String,
     runtime: &'static str,
     sandbox_enabled: bool,
+    surface: RuntimeSurface,
+    first_run: bool,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum RuntimeSurface {
+    #[cfg(any(
+        all(
+            feature = "desktop-cef",
+            not(any(target_os = "android", target_os = "ios"))
+        ),
+        test
+    ))]
+    Hud,
+    #[cfg(any(
+        all(
+            feature = "desktop-cef",
+            not(any(target_os = "android", target_os = "ios"))
+        ),
+        test
+    ))]
+    Settings,
+    #[cfg(any(
+        all(
+            feature = "mobile-system-webview",
+            any(target_os = "android", target_os = "ios")
+        ),
+        test
+    ))]
+    Mobile,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -77,7 +149,7 @@ struct PersistenceState {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum PersistenceCommandError {
     StorageUnavailable,
@@ -275,6 +347,38 @@ fn validate_settings_record(object: &serde_json::Map<String, serde_json::Value>)
     }
 }
 
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[derive(Deserialize)]
+struct NativeSettingsRecord {
+    version: u8,
+    settings: NativeSettings,
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeSettings {
+    launch_at_login: bool,
+    shortcut: Option<shortcut::StructuredShortcut>,
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn native_settings(record: Option<&str>) -> Option<NativeSettings> {
+    let record = record?;
+    validate_current_record(SETTINGS_STORAGE_KEY, record)?;
+    let record = serde_json::from_str::<NativeSettingsRecord>(record).ok()?;
+    (record.version == 1).then_some(record.settings)
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn validate_widget_configuration_record(
     object: &serde_json::Map<String, serde_json::Value>,
@@ -413,6 +517,7 @@ const fn runtime_name() -> &'static str {
 fn get_runtime_info(
     webview: Webview<ActiveRuntime>,
     app: AppHandle<ActiveRuntime>,
+    persistence: State<'_, PersistenceState>,
 ) -> Result<RuntimeInfo, RuntimeCommandError> {
     let url = webview
         .url()
@@ -429,21 +534,43 @@ fn get_runtime_info(
 
     if std::env::var_os("DEVHUD_SMOKE").is_some() {
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(100));
-            // The smoke run has no user-driven event to finish the CEF loop, and
-            // AppHandle::exit can remain pending when requested from this command
-            // thread. Remove this direct exit once the pinned runtime reliably
-            // completes that request after the runtime-ready handshake.
-            app.cleanup_before_exit();
-            std::process::exit(0);
+            std::thread::sleep(Duration::from_secs(1));
+            #[cfg(all(
+                feature = "desktop-cef",
+                not(any(target_os = "android", target_os = "ios"))
+            ))]
+            request_quit(&app);
+            #[cfg(not(all(
+                feature = "desktop-cef",
+                not(any(target_os = "android", target_os = "ios"))
+            )))]
+            app.exit(0);
         });
     }
+
+    #[cfg(all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    let surface = if webview.label() == SETTINGS_WINDOW_LABEL {
+        RuntimeSurface::Settings
+    } else {
+        RuntimeSurface::Hud
+    };
+    #[cfg(all(
+        feature = "mobile-system-webview",
+        any(target_os = "android", target_os = "ios")
+    ))]
+    let surface = RuntimeSurface::Mobile;
+    let first_run = matches!(persistence.read(SETTINGS_STORAGE_KEY), Ok(None));
 
     Ok(RuntimeInfo {
         application_id: APPLICATION_ID,
         bundled_origin: bundled_origin(&url),
         runtime: runtime_name(),
         sandbox_enabled: cfg!(not(any(target_os = "android", target_os = "ios"))),
+        surface,
+        first_run,
     })
 }
 
@@ -481,7 +608,523 @@ fn write_widget_configuration(
     state.write(WIDGET_CONFIGURATION_STORAGE_KEY, &record)
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+struct QuittingState(AtomicBool);
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum HudActionFailure {
+    UnsupportedDisplay,
+    WindowUnavailable,
+    PositionFailed,
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+enum HudActionOutcome {
+    Shown,
+    Hidden,
+    Unchanged { reason: HudActionFailure },
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DisplayArea {
+    bounds_x: i32,
+    bounds_y: i32,
+    bounds_width: u32,
+    bounds_height: u32,
+    work_x: i32,
+    work_y: i32,
+    work_width: u32,
+    work_height: u32,
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn centered_hud_position(
+    pointer: (f64, f64),
+    displays: &[DisplayArea],
+    hud_size: (u32, u32),
+) -> Option<(i32, i32)> {
+    let display = displays.iter().find(|display| {
+        pointer.0 >= f64::from(display.bounds_x)
+            && pointer.0 < f64::from(display.bounds_x) + f64::from(display.bounds_width)
+            && pointer.1 >= f64::from(display.bounds_y)
+            && pointer.1 < f64::from(display.bounds_y) + f64::from(display.bounds_height)
+    })?;
+    let available_x = display.work_width.saturating_sub(hud_size.0) / 2;
+    let available_y = display.work_height.saturating_sub(hud_size.1) / 2;
+    Some((
+        display
+            .work_x
+            .saturating_add(i32::try_from(available_x).unwrap_or(i32::MAX)),
+        display
+            .work_y
+            .saturating_add(i32::try_from(available_y).unwrap_or(i32::MAX)),
+    ))
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn display_server_supported() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var_os("DISPLAY").is_some_and(|display| !display.is_empty())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn show_hud_internal(app: &AppHandle<ActiveRuntime>, toggle: bool) -> HudActionOutcome {
+    if !display_server_supported() {
+        return HudActionOutcome::Unchanged {
+            reason: HudActionFailure::UnsupportedDisplay,
+        };
+    }
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return HudActionOutcome::Unchanged {
+            reason: HudActionFailure::WindowUnavailable,
+        };
+    };
+    if toggle && window.is_visible().unwrap_or(false) {
+        let _ = window.hide();
+        return HudActionOutcome::Hidden;
+    }
+
+    let pointer = match app.cursor_position() {
+        Ok(pointer) => pointer,
+        Err(_) => {
+            return HudActionOutcome::Unchanged {
+                reason: HudActionFailure::UnsupportedDisplay,
+            };
+        }
+    };
+    let displays = match app.available_monitors() {
+        Ok(monitors) => monitors
+            .iter()
+            .map(|monitor| {
+                let work_area = monitor.work_area();
+                let bounds = monitor.position();
+                let size = monitor.size();
+                DisplayArea {
+                    bounds_x: bounds.x,
+                    bounds_y: bounds.y,
+                    bounds_width: size.width,
+                    bounds_height: size.height,
+                    work_x: work_area.position.x,
+                    work_y: work_area.position.y,
+                    work_width: work_area.size.width,
+                    work_height: work_area.size.height,
+                }
+            })
+            .collect::<Vec<_>>(),
+        Err(_) => {
+            return HudActionOutcome::Unchanged {
+                reason: HudActionFailure::UnsupportedDisplay,
+            };
+        }
+    };
+    let size = match window.outer_size() {
+        Ok(size) => size,
+        Err(_) => {
+            return HudActionOutcome::Unchanged {
+                reason: HudActionFailure::PositionFailed,
+            };
+        }
+    };
+    let Some((x, y)) =
+        centered_hud_position((pointer.x, pointer.y), &displays, (size.width, size.height))
+    else {
+        return HudActionOutcome::Unchanged {
+            reason: HudActionFailure::UnsupportedDisplay,
+        };
+    };
+    if window
+        .set_position(PhysicalPosition::new(x, y))
+        .and_then(|()| window.set_always_on_top(true))
+        .is_err()
+    {
+        return HudActionOutcome::Unchanged {
+            reason: HudActionFailure::PositionFailed,
+        };
+    }
+    let _ = window.unminimize();
+    if window.show().and_then(|()| window.set_focus()).is_err() {
+        return HudActionOutcome::Unchanged {
+            reason: HudActionFailure::WindowUnavailable,
+        };
+    }
+    let _ = window.eval("window.dispatchEvent(new Event('devhud:shown'))");
+    HudActionOutcome::Shown
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn hide_hud_internal(app: &AppHandle<ActiveRuntime>) -> HudActionOutcome {
+    match app.get_webview_window(MAIN_WINDOW_LABEL) {
+        Some(window) if window.hide().is_ok() => HudActionOutcome::Hidden,
+        _ => HudActionOutcome::Unchanged {
+            reason: HudActionFailure::WindowUnavailable,
+        },
+    }
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn show_hud(app: AppHandle<ActiveRuntime>) -> HudActionOutcome {
+    show_hud_internal(&app, false)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn hide_hud(app: AppHandle<ActiveRuntime>) -> HudActionOutcome {
+    hide_hud_internal(&app)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn build_settings_window(
+    app: &AppHandle<ActiveRuntime>,
+) -> tauri::Result<tauri::WebviewWindow<ActiveRuntime>> {
+    WebviewWindowBuilder::new(
+        app,
+        SETTINGS_WINDOW_LABEL,
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("DevHud Settings")
+    .inner_size(560.0, 680.0)
+    .min_inner_size(420.0, 540.0)
+    .center()
+    .skip_taskbar(true)
+    .devtools(true)
+    .disable_drag_drop_handler()
+    .on_navigation(is_bundled_url)
+    .on_new_window(|_, _| NewWindowResponse::Deny)
+    .on_download(|_, _| false)
+    .on_web_resource_request(|_, response| {
+        response.headers_mut().insert(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static(PERMISSIONS_POLICY),
+        );
+    })
+    .build()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn show_settings_internal(app: &AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> {
+    let window = match app.get_webview_window(SETTINGS_WINDOW_LABEL) {
+        Some(window) => window,
+        None => build_settings_window(app).map_err(|_| HudActionFailure::WindowUnavailable)?,
+    };
+    window
+        .unminimize()
+        .and_then(|()| window.show())
+        .and_then(|()| window.set_focus())
+        .map_err(|_| HudActionFailure::WindowUnavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn show_settings(app: AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> {
+    show_settings_internal(&app)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn hide_settings(app: AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> {
+    app.get_webview_window(SETTINGS_WINDOW_LABEL)
+        .ok_or(HudActionFailure::WindowUnavailable)?
+        .hide()
+        .map_err(|_| HudActionFailure::WindowUnavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn persist_settings_field(
+    persistence: &PersistenceState,
+    field: &str,
+    value: serde_json::Value,
+) -> Result<(), PersistenceCommandError> {
+    let mut record = match persistence.read(SETTINGS_STORAGE_KEY)? {
+        Some(record) => {
+            validate_current_record(SETTINGS_STORAGE_KEY, &record)
+                .ok_or(PersistenceCommandError::InvalidRecord)?;
+            serde_json::from_str::<serde_json::Value>(&record)
+                .map_err(|_| PersistenceCommandError::InvalidRecord)?
+        }
+        None => serde_json::json!({
+            "version": 1,
+            "settings": {
+                "theme": "system",
+                "launchAtLogin": false,
+                "shortcut": null
+            }
+        }),
+    };
+    let settings = record
+        .get_mut("settings")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or(PersistenceCommandError::InvalidRecord)?;
+    settings.insert(field.to_string(), value);
+    let record =
+        serde_json::to_string(&record).map_err(|_| PersistenceCommandError::InvalidRecord)?;
+    persistence.write(SETTINGS_STORAGE_KEY, &record)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn replace_global_shortcut(
+    candidate: Option<serde_json::Value>,
+    state: State<'_, Mutex<shortcut::ShortcutState>>,
+    persistence: State<'_, PersistenceState>,
+) -> shortcut::ShortcutReplacementOutcome {
+    match state.lock() {
+        Ok(mut state) => {
+            let previous = state.active_shortcut();
+            let outcome = state.replace(candidate);
+            if let shortcut::ShortcutReplacementOutcome::Replaced { shortcut } = &outcome {
+                let value = serde_json::to_value(shortcut).unwrap_or(serde_json::Value::Null);
+                if persist_settings_field(&persistence, "shortcut", value).is_err() {
+                    state.rollback(previous);
+                    return shortcut::ShortcutReplacementOutcome::Unchanged {
+                        reason: shortcut::ShortcutFailure::StorageFailed,
+                    };
+                }
+            }
+            outcome
+        }
+        Err(_) => shortcut::ShortcutReplacementOutcome::Unchanged {
+            reason: shortcut::ShortcutFailure::RegistrationFailed,
+        },
+    }
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn set_launch_at_login(
+    enabled: bool,
+    state: State<'_, autostart::AutostartState>,
+    persistence: State<'_, PersistenceState>,
+) -> autostart::AutostartOutcome {
+    let previous = state.current().unwrap_or(false);
+    let outcome = state.apply(enabled);
+    if matches!(outcome, autostart::AutostartOutcome::Applied { .. })
+        && persist_settings_field(
+            &persistence,
+            "launchAtLogin",
+            serde_json::Value::Bool(enabled),
+        )
+        .is_err()
+    {
+        let _ = state.apply(previous);
+        return autostart::AutostartOutcome::Unchanged {
+            enabled: previous,
+            reason: autostart::AutostartFailure::OperationFailed,
+        };
+    }
+    outcome
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+enum FirstRunOutcome {
+    Completed,
+    Unchanged { reason: PersistenceCommandError },
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn complete_first_run(
+    app: AppHandle<ActiveRuntime>,
+    persistence: State<'_, PersistenceState>,
+) -> FirstRunOutcome {
+    match persistence.read(SETTINGS_STORAGE_KEY) {
+        Ok(None) => {
+            let record = r#"{"version":1,"settings":{"theme":"system","launchAtLogin":false,"shortcut":null}}"#;
+            if let Err(reason) = persistence.write(SETTINGS_STORAGE_KEY, record) {
+                return FirstRunOutcome::Unchanged { reason };
+            }
+        }
+        Ok(Some(_)) => {}
+        Err(reason) => return FirstRunOutcome::Unchanged { reason },
+    }
+    let _ = app
+        .get_webview_window(SETTINGS_WINDOW_LABEL)
+        .map(|window| window.hide());
+    FirstRunOutcome::Completed
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn request_update_action(
+    boundary: State<'_, updater::UpdateActionBoundary>,
+) -> updater::UpdateActionOutcome {
+    boundary.request()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn request_quit(app: &AppHandle<ActiveRuntime>) {
+    app.state::<QuittingState>()
+        .0
+        .store(true, Ordering::Release);
+    app.exit(0);
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn create_tray(app: &AppHandle<ActiveRuntime>) -> tauri::Result<()> {
+    let items = TRAY_ACTIONS
+        .iter()
+        .map(|(id, title)| MenuItem::with_id(app, *id, *title, true, None::<&str>))
+        .collect::<tauri::Result<Vec<_>>>()?;
+    let item_refs = items
+        .iter()
+        .map(|item| item as &dyn tauri::menu::IsMenuItem<ActiveRuntime>)
+        .collect::<Vec<_>>();
+    let menu = Menu::with_items(app, &item_refs)?;
+    let mut tray = TrayIconBuilder::with_id("devhud")
+        .tooltip("DevHud")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "open-devhud" => {
+                let _ = show_hud_internal(app, false);
+            }
+            "settings" => {
+                let _ = show_settings_internal(app);
+            }
+            "check-for-updates" => {
+                let outcome = app.state::<updater::UpdateActionBoundary>().request();
+                tracing::info!(
+                    event = "devhud.update.action",
+                    classification = ?outcome,
+                    "DevHud update action completed"
+                );
+            }
+            "open-devtools" => {
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                    window.open_devtools();
+                }
+            }
+            "quit" => request_quit(app),
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        tray = tray.icon_as_template(true);
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn install_shortcut_handler(app: &AppHandle<ActiveRuntime>) {
+    use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
+
+    let app = app.clone();
+    GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
+        if event.state != HotKeyState::Pressed {
+            return;
+        }
+        let is_active = app
+            .state::<Mutex<shortcut::ShortcutState>>()
+            .lock()
+            .ok()
+            .and_then(|state| state.active_id())
+            == Some(event.id);
+        if is_active {
+            let dispatch = app.clone();
+            let action = dispatch.clone();
+            let _ = dispatch.run_on_main_thread(move || {
+                let _ = show_hud_internal(&action, true);
+            });
+        }
+    }));
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
     builder
         .invoke_handler(tauri::generate_handler![
@@ -489,7 +1132,15 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             read_settings,
             write_settings,
             read_widget_configuration,
-            write_widget_configuration
+            write_widget_configuration,
+            show_hud,
+            hide_hud,
+            show_settings,
+            hide_settings,
+            replace_global_shortcut,
+            set_launch_at_login,
+            complete_first_run,
+            request_update_action
         ])
         .setup(|app| {
             let persistence = match app.path().app_local_data_dir() {
@@ -511,10 +1162,39 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                     PersistenceState::unavailable()
                 }
             };
+            let persisted_record = persistence.read(SETTINGS_STORAGE_KEY).ok().flatten();
+            let first_run = persisted_record.is_none();
+            let persisted_settings = native_settings(persisted_record.as_deref());
             app.manage(persistence);
+            app.manage(QuittingState(AtomicBool::new(false)));
+            app.manage(updater::UpdateActionBoundary);
+
+            let autostart = autostart::AutostartState::initialize();
+            let launch_at_login = persisted_settings
+                .as_ref()
+                .is_some_and(|settings| settings.launch_at_login);
+            // The persisted opt-in is authoritative. In particular, a first
+            // run actively clears any stale OS entry using the same app id.
+            let _ = autostart.apply(launch_at_login);
+            app.manage(autostart);
+
+            let persisted_shortcut = persisted_settings.and_then(|settings| settings.shortcut);
+            let shortcuts =
+                shortcut::ShortcutState::initialize(app.handle().clone(), persisted_shortcut);
+            app.manage(Mutex::new(shortcuts));
+
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("DevHud")
                 .inner_size(720.0, 520.0)
+                .resizable(false)
+                .decorations(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .visible(false)
+                .focused(false)
                 .devtools(true)
                 .disable_drag_drop_handler()
                 .on_navigation(is_bundled_url)
@@ -527,12 +1207,49 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                     );
                 })
                 .build()?;
+            create_tray(app.handle())?;
+            install_shortcut_handler(app.handle());
+            if first_run {
+                build_settings_window(app.handle())?;
+            }
 
             tracing::info!(
                 event = "devhud.window.created",
                 runtime = runtime_name(),
                 "DevHud window created"
             );
+            Ok(())
+        })
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
+    builder
+        .invoke_handler(tauri::generate_handler![
+            get_runtime_info,
+            read_settings,
+            write_settings,
+            read_widget_configuration,
+            write_widget_configuration
+        ])
+        .setup(|app| {
+            let persistence = match app.path().app_local_data_dir() {
+                Ok(directory) => PersistenceState::new(directory)
+                    .unwrap_or_else(|_| PersistenceState::unavailable()),
+                Err(_) => PersistenceState::unavailable(),
+            };
+            app.manage(persistence);
+            WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
+                .title("DevHud")
+                .devtools(true)
+                .disable_drag_drop_handler()
+                .on_navigation(is_bundled_url)
+                .on_new_window(|_, _| NewWindowResponse::Deny)
+                .on_download(|_, _| false)
+                .build()?;
             Ok(())
         })
 }
@@ -571,7 +1288,46 @@ fn initialize_logging() {
         .try_init();
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn run_app() -> tauri::Result<()> {
+    let app = configure_builder(platform_builder()).build(tauri::generate_context!())?;
+    app.run(|app, event| match event {
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::CloseRequested { api, .. },
+            ..
+        } if label == MAIN_WINDOW_LABEL || label == SETTINGS_WINDOW_LABEL => {
+            api.prevent_close();
+            if label == MAIN_WINDOW_LABEL {
+                let _ = hide_hud_internal(app);
+            } else if let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
+                let _ = window.hide();
+            }
+        }
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::Focused(false),
+            ..
+        } if label == MAIN_WINDOW_LABEL => {
+            let _ = hide_hud_internal(app);
+        }
+        tauri::RunEvent::ExitRequested { api, .. }
+            if !app.state::<QuittingState>().0.load(Ordering::Acquire) =>
+        {
+            api.prevent_exit();
+        }
+        _ => {}
+    });
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
 fn run_app() -> tauri::Result<()> {
     let app = configure_builder(platform_builder()).build(tauri::generate_context!())?;
     app.run(|_, _| {});
@@ -597,9 +1353,24 @@ pub fn run() {
     initialize_logging();
 
     if run_app().is_err() {
+        #[cfg(all(
+            feature = "desktop-cef",
+            not(any(target_os = "android", target_os = "ios"))
+        ))]
         tracing::error!(
             event = "devhud.runtime.cef_initialization_failure",
             classification = "cef-initialization",
+            fatal = true,
+            "runtime initialization failed"
+        );
+        #[cfg(all(
+            feature = "mobile-system-webview",
+            any(target_os = "android", target_os = "ios")
+        ))]
+        tracing::error!(
+            event = "devhud.runtime.initialization_failure",
+            classification = "runtime-initialization",
+            fatal = true,
             "runtime initialization failed"
         );
         std::process::exit(70);
@@ -647,12 +1418,23 @@ mod tests {
             bundled_origin: "http://tauri.localhost".to_string(),
             runtime: "cef",
             sandbox_enabled: true,
+            surface: RuntimeSurface::Hud,
+            first_run: false,
         };
         let value = serde_json::to_value(runtime_info).unwrap();
 
         assert_eq!(value["applicationId"], APPLICATION_ID);
         assert_eq!(value["runtime"], "cef");
         assert_eq!(value["sandboxEnabled"], true);
+        assert_eq!(value["surface"], "hud");
+        assert_eq!(
+            serde_json::to_value(RuntimeSurface::Settings).unwrap(),
+            "settings"
+        );
+        assert_eq!(
+            serde_json::to_value(RuntimeSurface::Mobile).unwrap(),
+            "mobile"
+        );
     }
 
     #[test]
@@ -697,6 +1479,58 @@ mod tests {
                 r#"{"version":1,"configuration":{"slots":[]},"extra":true}"#
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn tray_has_exactly_the_five_product_actions_in_order() {
+        assert_eq!(
+            TRAY_ACTIONS.map(|(_, title)| title),
+            [
+                "Open DevHud",
+                "Settings",
+                "Check for Updates",
+                "Open DevTools",
+                "Quit"
+            ]
+        );
+    }
+
+    #[test]
+    fn hud_centers_on_the_display_containing_the_pointer() {
+        let displays = [
+            DisplayArea {
+                bounds_x: -1920,
+                bounds_y: 0,
+                bounds_width: 1920,
+                bounds_height: 1080,
+                work_x: -1920,
+                work_y: 0,
+                work_width: 1920,
+                work_height: 1080,
+            },
+            DisplayArea {
+                bounds_x: 0,
+                bounds_y: 0,
+                bounds_width: 2560,
+                bounds_height: 1440,
+                work_x: 0,
+                work_y: 0,
+                work_width: 2560,
+                work_height: 1440,
+            },
+        ];
+        assert_eq!(
+            centered_hud_position((-100.0, 400.0), &displays, (720, 520)),
+            Some((-1320, 280))
+        );
+        assert_eq!(
+            centered_hud_position((1200.0, 400.0), &displays, (720, 520)),
+            Some((920, 460))
+        );
+        assert_eq!(
+            centered_hud_position((5000.0, 400.0), &displays, (720, 520)),
+            None
         );
     }
 }
