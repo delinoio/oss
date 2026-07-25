@@ -72,7 +72,7 @@ enum RuntimeCommandError {
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 struct PersistenceState {
-    directory: PathBuf,
+    directory: Option<PathBuf>,
     write_lock: Mutex<()>,
 }
 
@@ -90,32 +90,91 @@ impl PersistenceState {
     fn new(directory: PathBuf) -> io::Result<Self> {
         fs::create_dir_all(&directory)?;
         Ok(Self {
-            directory,
+            directory: Some(directory),
             write_lock: Mutex::new(()),
         })
     }
 
-    fn path_for(&self, key: &str) -> PathBuf {
-        self.directory.join(key)
+    fn unavailable() -> Self {
+        Self {
+            directory: None,
+            write_lock: Mutex::new(()),
+        }
+    }
+
+    fn path_for(&self, key: &str) -> Option<PathBuf> {
+        self.directory.as_ref().map(|directory| directory.join(key))
     }
 
     fn read(&self, key: &str) -> Result<Option<String>, PersistenceCommandError> {
-        match fs::read_to_string(self.path_for(key)) {
+        let Some(path) = self.path_for(key) else {
+            log_persistence_unavailable("read", key);
+            return Err(PersistenceCommandError::StorageUnavailable);
+        };
+        match fs::read_to_string(path) {
             Ok(value) => Ok(Some(value)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(_) => Err(PersistenceCommandError::StorageUnavailable),
+            Err(error) => {
+                log_persistence_io_failure("read", key, &error);
+                Err(PersistenceCommandError::StorageUnavailable)
+            }
         }
     }
 
     fn write(&self, key: &str, record: &str) -> Result<(), PersistenceCommandError> {
         validate_current_record(key, record).ok_or(PersistenceCommandError::InvalidRecord)?;
-        let _guard = self
-            .write_lock
-            .lock()
-            .map_err(|_| PersistenceCommandError::StorageUnavailable)?;
-        write_atomically(&self.path_for(key), record)
-            .map_err(|_| PersistenceCommandError::WriteFailed)
+        let _guard = self.write_lock.lock().map_err(|_| {
+            tracing::warn!(
+                event = "devhud.persistence.unavailable",
+                operation = "write",
+                record = persistence_record_name(key),
+                classification = "storage-unavailable",
+                "DevHud persistence is unavailable"
+            );
+            PersistenceCommandError::StorageUnavailable
+        })?;
+        let Some(path) = self.path_for(key) else {
+            log_persistence_unavailable("write", key);
+            return Err(PersistenceCommandError::StorageUnavailable);
+        };
+        write_atomically(&path, record).map_err(|error| {
+            log_persistence_io_failure("write", key, &error);
+            PersistenceCommandError::WriteFailed
+        })
     }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn persistence_record_name(key: &str) -> &'static str {
+    match key {
+        SETTINGS_STORAGE_KEY => "settings",
+        WIDGET_CONFIGURATION_STORAGE_KEY => "widget-configuration",
+        "persistence" => "persistence",
+        _ => "unknown",
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn log_persistence_io_failure(operation: &'static str, key: &str, error: &io::Error) {
+    tracing::warn!(
+        event = "devhud.persistence.io_failure",
+        operation,
+        record = persistence_record_name(key),
+        error_kind = ?error.kind(),
+        classification = "storage-unavailable",
+        "DevHud persistence I/O failed"
+    );
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn log_persistence_unavailable(operation: &'static str, key: &str) {
+    tracing::warn!(
+        event = "devhud.persistence.unavailable",
+        operation,
+        record = persistence_record_name(key),
+        classification = "storage-unavailable",
+        "DevHud persistence is unavailable"
+    );
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -131,8 +190,15 @@ fn validate_current_record(key: &str, record: &str) -> Option<()> {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn has_exact_keys(object: &serde_json::Map<String, serde_json::Value>, keys: &[&str]) -> bool {
+    object.len() == keys.len() && keys.iter().all(|key| object.contains_key(*key))
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn validate_settings_record(object: &serde_json::Map<String, serde_json::Value>) -> Option<()> {
+    has_exact_keys(object, &["version", "settings"]).then_some(())?;
     let settings = object.get("settings")?.as_object()?;
+    has_exact_keys(settings, &["theme", "launchAtLogin", "shortcut"]).then_some(())?;
     matches!(
         settings.get("theme")?.as_str()?,
         "system" | "light" | "dark"
@@ -142,6 +208,7 @@ fn validate_settings_record(object: &serde_json::Map<String, serde_json::Value>)
     match settings.get("shortcut")? {
         serde_json::Value::Null => Some(()),
         serde_json::Value::Object(shortcut) => {
+            has_exact_keys(shortcut, &["modifiers", "key"]).then_some(())?;
             let modifiers = shortcut.get("modifiers")?.as_array()?;
             (!modifiers.is_empty()).then_some(())?;
             let mut unique_modifiers = std::collections::HashSet::new();
@@ -212,10 +279,14 @@ fn validate_settings_record(object: &serde_json::Map<String, serde_json::Value>)
 fn validate_widget_configuration_record(
     object: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<()> {
-    let slots = object.get("configuration")?.get("slots")?.as_array()?;
+    has_exact_keys(object, &["version", "configuration"]).then_some(())?;
+    let configuration = object.get("configuration")?.as_object()?;
+    has_exact_keys(configuration, &["slots"]).then_some(())?;
+    let slots = configuration.get("slots")?.as_array()?;
     let mut unique_slots = std::collections::HashSet::new();
     for reference in slots {
         let reference = reference.as_object()?;
+        has_exact_keys(reference, &["slot", "toolId"]).then_some(())?;
         let slot = reference.get("slot")?.as_str()?;
         matches!(slot, "primary" | "secondary" | "tertiary").then_some(())?;
         unique_slots.insert(slot).then_some(())?;
@@ -244,9 +315,60 @@ fn write_atomically(path: &std::path::Path, record: &str) -> io::Result<()> {
     temporary_file.sync_all()?;
     drop(temporary_file);
 
-    if let Err(error) = fs::rename(&temporary_path, path) {
+    if let Err(error) = replace_file(&temporary_path, path) {
         let _ = fs::remove_file(&temporary_path);
         return Err(error);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview"),
+    not(target_os = "windows")
+))]
+fn replace_file(temporary_path: &std::path::Path, path: &std::path::Path) -> io::Result<()> {
+    fs::rename(temporary_path, path)
+}
+
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview"),
+    target_os = "windows"
+))]
+fn replace_file(temporary_path: &std::path::Path, path: &std::path::Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+
+    unsafe extern "system" {
+        fn MoveFileExW(
+            existing_file_name: *const u16,
+            new_file_name: *const u16,
+            flags: u32,
+        ) -> i32;
+    }
+
+    let temporary_path: Vec<u16> = temporary_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let path: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // Both files are in the same directory, so MoveFileExW replaces the existing
+    // destination without the non-atomic delete-and-rename fallback.
+    if unsafe {
+        MoveFileExW(
+            temporary_path.as_ptr(),
+            path.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
     }
     Ok(())
 }
@@ -370,11 +492,26 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             write_widget_configuration
         ])
         .setup(|app| {
-            let persistence_directory = app
-                .path()
-                .app_local_data_dir()
-                .map_err(|_| io::Error::other("DevHud persistence directory is unavailable"))?;
-            app.manage(PersistenceState::new(persistence_directory)?);
+            let persistence = match app.path().app_local_data_dir() {
+                Ok(directory) => match PersistenceState::new(directory) {
+                    Ok(state) => state,
+                    Err(error) => {
+                        log_persistence_io_failure("initialize", "persistence", &error);
+                        PersistenceState::unavailable()
+                    }
+                },
+                Err(_) => {
+                    tracing::warn!(
+                        event = "devhud.persistence.unavailable",
+                        operation = "initialize",
+                        record = "persistence",
+                        classification = "storage-unavailable",
+                        "DevHud persistence is unavailable"
+                    );
+                    PersistenceState::unavailable()
+                }
+            };
+            app.manage(persistence);
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("DevHud")
                 .inner_size(720.0, 520.0)
@@ -549,5 +686,17 @@ mod tests {
             r#"{"version":1,"configuration":{"slots":[{"slot":"primary","toolId":"fixture-diagnostics"}]}}"#
         )
         .is_some());
+        assert!(validate_current_record(
+            SETTINGS_STORAGE_KEY,
+            r#"{"version":1,"settings":{"theme":"system","launchAtLogin":false,"shortcut":null,"extra":true}}"#
+        )
+        .is_none());
+        assert!(
+            validate_current_record(
+                WIDGET_CONFIGURATION_STORAGE_KEY,
+                r#"{"version":1,"configuration":{"slots":[]},"extra":true}"#
+            )
+            .is_none()
+        );
     }
 }

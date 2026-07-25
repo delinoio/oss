@@ -59,7 +59,9 @@ export class MemoryStorageAdapter implements LocalStorageAdapter {
   }
 }
 
-export type PersistenceIssue = DecodeFailure | { readonly kind: "storage"; readonly guidance: string };
+export type PersistenceIssue =
+  | (DecodeFailure & { readonly key: PersistenceKey })
+  | { readonly key: PersistenceKey; readonly kind: "storage"; readonly guidance: string };
 
 export interface LoadedPersistence {
   readonly settings: DevHudSettings;
@@ -67,27 +69,27 @@ export interface LoadedPersistence {
   readonly issues: readonly PersistenceIssue[];
 }
 
-export class FutureVersionWriteBlockedError extends Error {
-  readonly guidance =
-    "This DevHud data was created by a newer version. Update DevHud before changing it.";
-
-  constructor() {
-    super("DevHud refused to overwrite a future local data record.");
-    this.name = "FutureVersionWriteBlockedError";
+export class RejectedRecordWriteBlockedError extends Error {
+  constructor(
+    readonly key: PersistenceKey,
+    readonly failure: DecodeFailure,
+  ) {
+    super("DevHud refused to overwrite a rejected local data record.");
+    this.name = "RejectedRecordWriteBlockedError";
   }
 }
 
 const storageGuidance =
   "DevHud could not access local storage. Check device storage, then restart DevHud.";
 
-function storageIssue(): PersistenceIssue {
-  return { kind: "storage", guidance: storageGuidance };
+function storageIssue(key: PersistenceKey): PersistenceIssue {
+  return { key, kind: "storage", guidance: storageGuidance };
 }
 
 /** Serializes each record so call order, rather than completion timing, defines last-successful-write-wins. */
 export class DevHudPersistence {
   private readonly writeTails = new Map<PersistenceKey, Promise<void>>();
-  private readonly protectedKeys = new Set<PersistenceKey>();
+  private readonly rejectedRecords = new Map<PersistenceKey, DecodeFailure>();
   private loadPromise: Promise<LoadedPersistence> | undefined;
 
   constructor(private readonly storage: LocalStorageAdapter) {}
@@ -126,10 +128,10 @@ export class DevHudPersistence {
       if (raw === null) return { value: defaultSettings, issues: [] };
       const decoded = decodeSettings(raw);
       if (decoded.ok) return { value: decoded.value, issues: [] };
-      if (decoded.failure.kind === "future-version") this.protectedKeys.add(SETTINGS_STORAGE_KEY);
-      return { value: defaultSettings, issues: [decoded.failure] };
+      this.rejectedRecords.set(SETTINGS_STORAGE_KEY, decoded.failure);
+      return { value: defaultSettings, issues: [{ ...decoded.failure, key: SETTINGS_STORAGE_KEY }] };
     } catch {
-      return { value: defaultSettings, issues: [storageIssue()] };
+      return { value: defaultSettings, issues: [storageIssue(SETTINGS_STORAGE_KEY)] };
     }
   }
 
@@ -142,12 +144,16 @@ export class DevHudPersistence {
       if (raw === null) return { value: defaultWidgetConfiguration, issues: [] };
       const decoded = decodeWidgetConfiguration(raw);
       if (decoded.ok) return { value: decoded.value, issues: [] };
-      if (decoded.failure.kind === "future-version") {
-        this.protectedKeys.add(WIDGET_CONFIGURATION_STORAGE_KEY);
-      }
-      return { value: defaultWidgetConfiguration, issues: [decoded.failure] };
+      this.rejectedRecords.set(WIDGET_CONFIGURATION_STORAGE_KEY, decoded.failure);
+      return {
+        value: defaultWidgetConfiguration,
+        issues: [{ ...decoded.failure, key: WIDGET_CONFIGURATION_STORAGE_KEY }],
+      };
     } catch {
-      return { value: defaultWidgetConfiguration, issues: [storageIssue()] };
+      return {
+        value: defaultWidgetConfiguration,
+        issues: [storageIssue(WIDGET_CONFIGURATION_STORAGE_KEY)],
+      };
     }
   }
 
@@ -158,7 +164,10 @@ export class DevHudPersistence {
       .catch(() => undefined)
       .then(() => initialization.then(() => undefined))
       .then(() => {
-        if (this.protectedKeys.has(key)) throw new FutureVersionWriteBlockedError();
+        const rejectedRecord = this.rejectedRecords.get(key);
+        if (rejectedRecord !== undefined) {
+          throw new RejectedRecordWriteBlockedError(key, rejectedRecord);
+        }
         return this.storage.write(key, value).then(() => {
           this.loadPromise = undefined;
         });

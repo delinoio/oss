@@ -133,8 +133,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const valueKeys = Object.keys(value);
+  return valueKeys.length === keys.length && keys.every((key) => key in value);
+}
+
 function isShortcut(value: unknown): value is StructuredShortcut {
-  if (!isRecord(value) || !Array.isArray(value.modifiers) || typeof value.key !== "string") {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["modifiers", "key"]) ||
+    !Array.isArray(value.modifiers) ||
+    typeof value.key !== "string"
+  ) {
     return false;
   }
   if (value.modifiers.length === 0 || !shortcutKeys.has(value.key)) {
@@ -159,6 +169,7 @@ export function parseStableToolId(value: unknown): StableToolId | null {
 function isSettings(value: unknown): value is DevHudSettings {
   return (
     isRecord(value) &&
+    hasExactKeys(value, ["theme", "launchAtLogin", "shortcut"]) &&
     typeof value.theme === "string" &&
     themes.has(value.theme) &&
     typeof value.launchAtLogin === "boolean" &&
@@ -167,13 +178,17 @@ function isSettings(value: unknown): value is DevHudSettings {
 }
 
 function isWidgetConfiguration(value: unknown): value is WidgetConfiguration {
-  if (!isRecord(value) || !Array.isArray(value.slots)) {
+  if (!isRecord(value) || !hasExactKeys(value, ["slots"]) || !Array.isArray(value.slots)) {
     return false;
   }
 
   const seenSlots = new Set<string>();
   return value.slots.every((reference) => {
-    if (!isRecord(reference) || typeof reference.slot !== "string") {
+    if (
+      !isRecord(reference) ||
+      !hasExactKeys(reference, ["slot", "toolId"]) ||
+      typeof reference.slot !== "string"
+    ) {
       return false;
     }
     const toolId = parseStableToolId(reference.toolId);
@@ -225,7 +240,7 @@ function parseRecord(raw: string): DecodeResult<Record<string, unknown>> {
 export function decodeSettings(raw: string): DecodeResult<DevHudSettings> {
   const parsed = parseRecord(raw);
   if (!parsed.ok) return parsed;
-  if (!isSettings(parsed.value.settings)) {
+  if (!hasExactKeys(parsed.value, ["version", "settings"]) || !isSettings(parsed.value.settings)) {
     return { ok: false, failure: { kind: "incompatible", guidance: resetGuidance } };
   }
   return { ok: true, value: parsed.value.settings };
@@ -234,7 +249,10 @@ export function decodeSettings(raw: string): DecodeResult<DevHudSettings> {
 export function decodeWidgetConfiguration(raw: string): DecodeResult<WidgetConfiguration> {
   const parsed = parseRecord(raw);
   if (!parsed.ok) return parsed;
-  if (!isWidgetConfiguration(parsed.value.configuration)) {
+  if (
+    !hasExactKeys(parsed.value, ["version", "configuration"]) ||
+    !isWidgetConfiguration(parsed.value.configuration)
+  ) {
     return { ok: false, failure: { kind: "incompatible", guidance: resetGuidance } };
   }
   return { ok: true, value: parsed.value.configuration };

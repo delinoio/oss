@@ -3,6 +3,8 @@ import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, 
 import {
   defaultSettings,
   defaultWidgetConfiguration,
+  SETTINGS_STORAGE_KEY,
+  WIDGET_CONFIGURATION_STORAGE_KEY,
   type DevHudSettings,
   type StructuredShortcut,
   type ThemePreference,
@@ -10,7 +12,7 @@ import {
 } from "../persistence/contracts";
 import {
   DevHudPersistence,
-  FutureVersionWriteBlockedError,
+  RejectedRecordWriteBlockedError,
   type LocalStorageAdapter,
   type PersistenceIssue,
 } from "../persistence/storage";
@@ -36,7 +38,6 @@ interface ApplicationState {
 
 interface ApplicationActions {
   setTheme(theme: ThemePreference): void;
-  setLaunchAtLogin(launchAtLogin: boolean): void;
   setShortcut(shortcut: StructuredShortcut | null): void;
   setWidgetConfiguration(configuration: WidgetConfiguration): void;
   setMobileScreen(screen: MobileScreen): void;
@@ -95,22 +96,32 @@ export function ApplicationProvider({
 
   const persistSettings = useCallback(
     (nextSettings: DevHudSettings) => {
+      if (!persistenceReady) return;
       const mutation = ++settingsMutation.current;
       setSettings(nextSettings);
       void persistence.saveSettings(nextSettings).then(
         () => {
           lastSuccessfulSettings.current = nextSettings;
-          if (mutation === settingsMutation.current) setPersistenceIssues([]);
+          if (mutation === settingsMutation.current) {
+            setPersistenceIssues((issues) =>
+              issues.filter((issue) => issue.key !== SETTINGS_STORAGE_KEY),
+            );
+          }
         },
         (error: unknown) => {
           if (mutation !== settingsMutation.current) return;
           setSettings(lastSuccessfulSettings.current);
-          if (error instanceof FutureVersionWriteBlockedError) {
-            setPersistenceIssues([{ kind: "future-version", guidance: error.guidance }]);
+          if (error instanceof RejectedRecordWriteBlockedError) {
+            setPersistenceIssues((issues) => [
+              ...issues.filter((issue) => issue.key !== error.key),
+              { ...error.failure, key: error.key },
+            ]);
             return;
           }
-          setPersistenceIssues([
+          setPersistenceIssues((issues) => [
+            ...issues.filter((issue) => issue.key !== SETTINGS_STORAGE_KEY),
             {
+              key: SETTINGS_STORAGE_KEY,
               kind: "storage",
               guidance:
                 "DevHud could not save local settings. The last saved settings were kept.",
@@ -119,15 +130,11 @@ export function ApplicationProvider({
         },
       );
     },
-    [persistence],
+    [persistence, persistenceReady],
   );
 
   const setTheme = useCallback(
     (theme: ThemePreference) => persistSettings({ ...settings, theme }),
-    [persistSettings, settings],
-  );
-  const setLaunchAtLogin = useCallback(
-    (launchAtLogin: boolean) => persistSettings({ ...settings, launchAtLogin }),
     [persistSettings, settings],
   );
   const setShortcut = useCallback(
@@ -136,22 +143,32 @@ export function ApplicationProvider({
   );
   const setWidgetConfiguration = useCallback(
     (configuration: WidgetConfiguration) => {
+      if (!persistenceReady) return;
       const mutation = ++widgetConfigurationMutation.current;
       setWidgetConfigurationState(configuration);
       void persistence.saveWidgetConfiguration(configuration).then(
         () => {
           lastSuccessfulWidgetConfiguration.current = configuration;
-          if (mutation === widgetConfigurationMutation.current) setPersistenceIssues([]);
+          if (mutation === widgetConfigurationMutation.current) {
+            setPersistenceIssues((issues) =>
+              issues.filter((issue) => issue.key !== WIDGET_CONFIGURATION_STORAGE_KEY),
+            );
+          }
         },
         (error: unknown) => {
           if (mutation !== widgetConfigurationMutation.current) return;
           setWidgetConfigurationState(lastSuccessfulWidgetConfiguration.current);
-          if (error instanceof FutureVersionWriteBlockedError) {
-            setPersistenceIssues([{ kind: "future-version", guidance: error.guidance }]);
+          if (error instanceof RejectedRecordWriteBlockedError) {
+            setPersistenceIssues((issues) => [
+              ...issues.filter((issue) => issue.key !== error.key),
+              { ...error.failure, key: error.key },
+            ]);
             return;
           }
-          setPersistenceIssues([
+          setPersistenceIssues((issues) => [
+            ...issues.filter((issue) => issue.key !== WIDGET_CONFIGURATION_STORAGE_KEY),
             {
+              key: WIDGET_CONFIGURATION_STORAGE_KEY,
               kind: "storage",
               guidance:
                 "DevHud could not save widget configuration. The last saved configuration was kept.",
@@ -160,7 +177,7 @@ export function ApplicationProvider({
         },
       );
     },
-    [persistence],
+    [persistence, persistenceReady],
   );
 
   const openSettings = useCallback(() => setSettingsOpen(true), []);
@@ -173,7 +190,6 @@ export function ApplicationProvider({
       persistenceIssues,
       persistenceReady,
       setTheme,
-      setLaunchAtLogin,
       setShortcut,
       setWidgetConfiguration,
       mobileScreen,
@@ -188,7 +204,6 @@ export function ApplicationProvider({
       openSettings,
       persistenceIssues,
       persistenceReady,
-      setLaunchAtLogin,
       setShortcut,
       setTheme,
       setWidgetConfiguration,

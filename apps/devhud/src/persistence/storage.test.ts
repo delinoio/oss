@@ -141,7 +141,7 @@ describe("DevHud local persistence", () => {
     expect(storage.values.get(SETTINGS_STORAGE_KEY)).toBe(futureRecord);
     await expect(
       persistence.saveSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
-    ).rejects.toMatchObject({ name: "FutureVersionWriteBlockedError" });
+    ).rejects.toMatchObject({ name: "RejectedRecordWriteBlockedError" });
     expect(storage.values.get(SETTINGS_STORAGE_KEY)).toBe(futureRecord);
   });
 
@@ -149,7 +149,8 @@ describe("DevHud local persistence", () => {
     const storage = new MemoryStorageAdapter();
     const corruptRecord = "{not-json-with-sensitive-content}";
     storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, corruptRecord);
-    const loaded = await new DevHudPersistence(storage).load();
+    const persistence = new DevHudPersistence(storage);
+    const loaded = await persistence.load();
 
     expect(loaded.widgetConfiguration).toEqual(defaultWidgetConfiguration);
     expect(loaded.issues).toEqual([
@@ -157,6 +158,44 @@ describe("DevHud local persistence", () => {
     ]);
     expect(loaded.issues[0]?.guidance).not.toContain("sensitive-content");
     expect(storage.values.get(WIDGET_CONFIGURATION_STORAGE_KEY)).toBe(corruptRecord);
+    await expect(persistence.saveWidgetConfiguration(defaultWidgetConfiguration)).rejects.toMatchObject({
+      name: "RejectedRecordWriteBlockedError",
+    });
+    expect(storage.values.get(WIDGET_CONFIGURATION_STORAGE_KEY)).toBe(corruptRecord);
+  });
+
+  it("rejects records with fields outside their versioned schemas", async () => {
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        settings: { ...defaultSettings, unexpected: "retained-data" },
+      }),
+    );
+    const persistence = new DevHudPersistence(storage);
+
+    await expect(persistence.load()).resolves.toMatchObject({
+      settings: defaultSettings,
+      issues: [expect.objectContaining({ key: SETTINGS_STORAGE_KEY, kind: "incompatible" })],
+    });
+    await expect(persistence.saveSettings(defaultSettings)).rejects.toMatchObject({
+      name: "RejectedRecordWriteBlockedError",
+    });
+  });
+
+  it("keeps another record's issue after a successful write", async () => {
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, "{not-json}");
+    const persistence = new DevHudPersistence(storage);
+
+    await persistence.load();
+    await persistence.saveSettings({ ...defaultSettings, theme: ThemePreference.Dark });
+    const loaded = await persistence.load();
+
+    expect(loaded.issues).toEqual([
+      expect.objectContaining({ key: WIDGET_CONFIGURATION_STORAGE_KEY, kind: "corrupt" }),
+    ]);
   });
 
   it("restores records through a new persistence instance after restart", async () => {
