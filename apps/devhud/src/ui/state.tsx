@@ -15,6 +15,7 @@ import {
   RejectedRecordWriteBlockedError,
   type LocalStorageAdapter,
   type PersistenceIssue,
+  type PersistenceResetOutcome,
 } from "../persistence/storage";
 import { tauriPersistenceAdapter } from "../persistence/tauri";
 
@@ -37,7 +38,7 @@ interface ApplicationState {
 }
 
 interface ApplicationActions {
-  resetDevHud(): Promise<void>;
+  resetDevHud(): Promise<PersistenceResetOutcome>;
   setTheme(theme: ThemePreference): Promise<boolean>;
   setShortcut(shortcut: StructuredShortcut | null): void;
   setLaunchAtLogin(enabled: boolean): void;
@@ -230,12 +231,13 @@ export function ApplicationProvider({
     settingsMutation.current += 1;
     widgetConfigurationMutation.current += 1;
     try {
-      const loaded = await persistence.reset();
+      const { loaded, outcome } = await persistence.reset();
       setSettings(loaded.settings);
       setWidgetConfigurationState(loaded.widgetConfiguration);
       lastSuccessfulSettings.current = loaded.settings;
       lastSuccessfulWidgetConfiguration.current = loaded.widgetConfiguration;
       setPersistenceIssues(loaded.issues);
+      return outcome;
     } finally {
       settingsMutation.current = 0;
       widgetConfigurationMutation.current = 0;

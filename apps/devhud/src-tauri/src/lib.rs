@@ -185,6 +185,67 @@ enum RuntimeCommandError {
     NonBundledAsset,
 }
 
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuntimeInitializationFailure {
+    #[cfg(any(
+        all(
+            feature = "desktop-cef",
+            not(any(target_os = "android", target_os = "ios"))
+        ),
+        test
+    ))]
+    InstanceGuardUnavailable,
+    #[cfg(any(
+        all(
+            feature = "desktop-cef",
+            not(any(target_os = "android", target_os = "ios"))
+        ),
+        test
+    ))]
+    RuntimeInitialization,
+    #[cfg(any(
+        all(
+            feature = "mobile-system-webview",
+            any(target_os = "android", target_os = "ios")
+        ),
+        test
+    ))]
+    SystemWebviewInitialization,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+impl RuntimeInitializationFailure {
+    const fn classification(self) -> &'static str {
+        match self {
+            #[cfg(any(
+                all(
+                    feature = "desktop-cef",
+                    not(any(target_os = "android", target_os = "ios"))
+                ),
+                test
+            ))]
+            Self::InstanceGuardUnavailable => "instance-guard-unavailable",
+            #[cfg(any(
+                all(
+                    feature = "desktop-cef",
+                    not(any(target_os = "android", target_os = "ios"))
+                ),
+                test
+            ))]
+            Self::RuntimeInitialization => "runtime-initialization",
+            #[cfg(any(
+                all(
+                    feature = "mobile-system-webview",
+                    any(target_os = "android", target_os = "ios")
+                ),
+                test
+            ))]
+            Self::SystemWebviewInitialization => "system-webview-initialization",
+        }
+    }
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 struct PersistenceState {
     directory: Option<PathBuf>,
@@ -213,21 +274,11 @@ enum PersistenceResetFailure {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
-impl PersistenceResetFailure {
-    #[cfg_attr(
-        not(any(feature = "desktop-cef", feature = "mobile-system-webview")),
-        allow(dead_code)
-    )]
-    const fn command_error(self) -> PersistenceCommandError {
-        match self {
-            Self::BeforeRecordsRemoved(error) => error,
-            Self::CleanupFailed => PersistenceCommandError::ResetFailed,
-        }
-    }
-
-    const fn should_restore_integrations(self) -> bool {
-        matches!(self, Self::BeforeRecordsRemoved(_))
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+enum PersistenceResetOutcome {
+    Complete,
+    CleanupFailed,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -1073,14 +1124,16 @@ fn show_hud_internal(app: &AppHandle<ActiveRuntime>, toggle: bool) -> HudActionO
             reason: HudActionFailure::WindowUnavailable,
         };
     };
-    if toggle && window.is_visible().unwrap_or(false) {
-        return if window.hide().is_ok() {
-            HudActionOutcome::Hidden
-        } else {
-            HudActionOutcome::Unchanged {
-                reason: HudActionFailure::WindowUnavailable,
+    if toggle {
+        match window.is_visible() {
+            Ok(true) if window.hide().is_ok() => return HudActionOutcome::Hidden,
+            Ok(true) | Err(_) => {
+                return HudActionOutcome::Unchanged {
+                    reason: HudActionFailure::WindowUnavailable,
+                };
             }
-        };
+            Ok(false) => {}
+        }
     }
 
     let pointer = match app.cursor_position() {
@@ -1259,7 +1312,11 @@ fn hide_settings_internal(app: &AppHandle<ActiveRuntime>) -> Result<(), HudActio
 ))]
 #[tauri::command]
 fn hide_settings(app: AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> {
-    hide_settings_internal(&app)
+    let result = hide_settings_internal(&app);
+    if let Err(reason) = result {
+        log_window_action_failure("hud-hide-settings", reason);
+    }
+    result
 }
 
 #[cfg(all(
@@ -1686,7 +1743,7 @@ fn reset_dev_hud(
     shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
-) -> Result<(), PersistenceCommandError> {
+) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
     clear_browsing_data_for_reset(&app)?;
     let mut shortcuts = shortcut_state.lock().map_err(|_| {
         log_shortcut_integration_failure(
@@ -1773,8 +1830,9 @@ fn reset_dev_hud(
         return Err(reason);
     }
 
-    if let Err(failure) = persistence.reset() {
-        if failure.should_restore_integrations() {
+    let reset_outcome = match persistence.reset() {
+        Ok(()) => PersistenceResetOutcome::Complete,
+        Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => {
             let autostart_rollback = autostart_state.apply(previous_autostart);
             if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_rollback {
                 log_autostart_integration_failure("reset-rollback", reason, Some(enabled));
@@ -1792,21 +1850,24 @@ fn reset_dev_hud(
                     },
                 );
             }
+            return Err(error);
         }
-        return Err(failure.command_error());
-    }
+        Err(PersistenceResetFailure::CleanupFailed) => PersistenceResetOutcome::CleanupFailed,
+    };
 
     if let Ok(mut diagnostics) = startup_diagnostics.lock() {
         diagnostics.shortcut_failure = None;
         diagnostics.autostart_outcome = None;
     }
-    tracing::info!(
-        event = "devhud.persistence.reset",
-        native_shortcut_configured = false,
-        native_autostart_enabled = false,
-        "DevHud local data was reset"
-    );
-    Ok(())
+    if reset_outcome == PersistenceResetOutcome::Complete {
+        tracing::info!(
+            event = "devhud.persistence.reset",
+            native_shortcut_configured = false,
+            native_autostart_enabled = false,
+            "DevHud local data was reset"
+        );
+    }
+    Ok(reset_outcome)
 }
 
 #[cfg(all(
@@ -1817,16 +1878,20 @@ fn reset_dev_hud(
 fn reset_dev_hud(
     webview: Webview<ActiveRuntime>,
     state: State<'_, PersistenceState>,
-) -> Result<(), PersistenceCommandError> {
+) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
     clear_browsing_data_for_reset(webview)?;
-    state
-        .reset()
-        .map_err(PersistenceResetFailure::command_error)?;
-    tracing::info!(
-        event = "devhud.persistence.reset",
-        "DevHud local data was reset"
-    );
-    Ok(())
+    let reset_outcome = match state.reset() {
+        Ok(()) => PersistenceResetOutcome::Complete,
+        Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => return Err(error),
+        Err(PersistenceResetFailure::CleanupFailed) => PersistenceResetOutcome::CleanupFailed,
+    };
+    if reset_outcome == PersistenceResetOutcome::Complete {
+        tracing::info!(
+            event = "devhud.persistence.reset",
+            "DevHud local data was reset"
+        );
+    }
+    Ok(reset_outcome)
 }
 
 #[cfg(all(
@@ -2077,7 +2142,7 @@ fn initialize_logging() {
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-fn run_app() -> tauri::Result<()> {
+fn run_app() -> Result<(), RuntimeInitializationFailure> {
     let _instance_guard = match single_instance::InstanceGuard::acquire(APPLICATION_ID) {
         Ok(guard) => guard,
         Err(single_instance::InstanceGuardError::AlreadyRunning) => {
@@ -2096,10 +2161,12 @@ fn run_app() -> tauri::Result<()> {
                 fatal = true,
                 "DevHud could not acquire its desktop instance guard"
             );
-            return Err(error.into());
+            return Err(RuntimeInitializationFailure::InstanceGuardUnavailable);
         }
     };
-    let app = configure_builder(platform_builder()).build(tauri::generate_context!())?;
+    let app = configure_builder(platform_builder())
+        .build(tauri::generate_context!())
+        .map_err(|_| RuntimeInitializationFailure::RuntimeInitialization)?;
     app.run(|app, event| match event {
         tauri::RunEvent::WindowEvent {
             label,
@@ -2138,8 +2205,10 @@ fn run_app() -> tauri::Result<()> {
     feature = "mobile-system-webview",
     any(target_os = "android", target_os = "ios")
 ))]
-fn run_app() -> tauri::Result<()> {
-    let app = configure_builder(platform_builder()).build(tauri::generate_context!())?;
+fn run_app() -> Result<(), RuntimeInitializationFailure> {
+    let app = configure_builder(platform_builder())
+        .build(tauri::generate_context!())
+        .map_err(|_| RuntimeInitializationFailure::SystemWebviewInitialization)?;
     app.run(|_, _| {});
     Ok(())
 }
@@ -2160,14 +2229,10 @@ pub fn run() {
 
     initialize_logging();
 
-    if run_app().is_err() {
+    if let Err(error) = run_app() {
         tracing::error!(
             event = "devhud.runtime.initialization_failure",
-            classification = if cfg!(feature = "desktop-cef") {
-                "cef-initialization"
-            } else {
-                "system-webview-initialization"
-            },
+            classification = error.classification(),
             fatal = true,
             "runtime initialization failed"
         );
@@ -2464,9 +2529,32 @@ mod tests {
         );
 
         assert_eq!(result, Err(PersistenceResetFailure::CleanupFailed));
-        assert!(!result.unwrap_err().should_restore_integrations());
         assert!(staged_path.exists());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn runtime_and_partial_reset_classifications_remain_distinct() {
+        assert_eq!(
+            RuntimeInitializationFailure::InstanceGuardUnavailable.classification(),
+            "instance-guard-unavailable"
+        );
+        assert_eq!(
+            RuntimeInitializationFailure::RuntimeInitialization.classification(),
+            "runtime-initialization"
+        );
+        assert_eq!(
+            RuntimeInitializationFailure::SystemWebviewInitialization.classification(),
+            "system-webview-initialization"
+        );
+        assert_eq!(
+            serde_json::to_value(PersistenceResetOutcome::Complete).unwrap(),
+            serde_json::json!({ "status": "complete" })
+        );
+        assert_eq!(
+            serde_json::to_value(PersistenceResetOutcome::CleanupFailed).unwrap(),
+            serde_json::json!({ "status": "cleanup-failed" })
+        );
     }
 
     #[test]

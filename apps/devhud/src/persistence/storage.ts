@@ -15,13 +15,17 @@ import {
 
 export interface LocalStorageAdapter {
   read(key: PersistenceKey): Promise<string | null>;
-  reset(): Promise<void>;
+  reset(): Promise<PersistenceResetOutcome>;
   write(key: PersistenceKey, value: string): Promise<void>;
 }
 
+export type PersistenceResetOutcome =
+  | { readonly status: "complete" }
+  | { readonly status: "cleanup-failed" };
+
 export interface TauriPersistenceBridge {
   readSettings(): Promise<string | null>;
-  resetDevHud(): Promise<void>;
+  resetDevHud(): Promise<PersistenceResetOutcome>;
   writeSettings(record: string): Promise<void>;
   readWidgetConfiguration(): Promise<string | null>;
   writeWidgetConfiguration(record: string): Promise<void>;
@@ -59,8 +63,9 @@ export class MemoryStorageAdapter implements LocalStorageAdapter {
     return this.values.get(key) ?? null;
   }
 
-  async reset(): Promise<void> {
+  async reset(): Promise<PersistenceResetOutcome> {
     this.values.clear();
+    return { status: "complete" };
   }
 
   async write(key: PersistenceKey, value: string): Promise<void> {
@@ -78,6 +83,11 @@ export interface LoadedPersistence {
   readonly settings: DevHudSettings;
   readonly widgetConfiguration: WidgetConfiguration;
   readonly issues: readonly PersistenceIssue[];
+}
+
+export interface PersistenceResetResult {
+  readonly loaded: LoadedPersistence;
+  readonly outcome: PersistenceResetOutcome;
 }
 
 export class RejectedRecordWriteBlockedError extends Error {
@@ -133,12 +143,12 @@ export class DevHudPersistence {
     );
   }
 
-  async reset(): Promise<LoadedPersistence> {
+  async reset(): Promise<PersistenceResetResult> {
     await Promise.allSettled(this.writeTails.values());
-    await this.storage.reset();
+    const outcome = await this.storage.reset();
     this.blockedRecords.clear();
     this.loadPromise = undefined;
-    return this.load();
+    return { loaded: await this.load(), outcome };
   }
 
   private async loadSettings(): Promise<{ value: DevHudSettings; issues: readonly PersistenceIssue[] }> {

@@ -85,7 +85,10 @@ describe("DevHud local persistence", () => {
     });
     const storage: LocalStorageAdapter = {
       read: async (key) => values.get(key) ?? null,
-      reset: async () => values.clear(),
+      reset: async () => {
+        values.clear();
+        return { status: "complete" as const };
+      },
       write,
     };
     const persistence = new DevHudPersistence(storage);
@@ -108,7 +111,10 @@ describe("DevHud local persistence", () => {
     let failNextWrite = false;
     const storage: LocalStorageAdapter = {
       read: async (key) => values.get(key) ?? null,
-      reset: async () => values.clear(),
+      reset: async () => {
+        values.clear();
+        return { status: "complete" as const };
+      },
       write: async (key, value) => {
         if (failNextWrite) {
           failNextWrite = false;
@@ -136,7 +142,7 @@ describe("DevHud local persistence", () => {
         if (key === SETTINGS_STORAGE_KEY) throw new Error("injected read failure");
         return null;
       },
-      reset: async () => undefined,
+      reset: async () => ({ status: "complete" as const }),
       write,
     };
     const persistence = new DevHudPersistence(storage);
@@ -222,14 +228,42 @@ describe("DevHud local persistence", () => {
       ],
     });
     await expect(persistence.reset()).resolves.toEqual({
-      settings: defaultSettings,
-      widgetConfiguration: defaultWidgetConfiguration,
-      issues: [],
+      loaded: {
+        settings: defaultSettings,
+        widgetConfiguration: defaultWidgetConfiguration,
+        issues: [],
+      },
+      outcome: { status: "complete" },
     });
     expect(storage.values.size).toBe(0);
     await expect(
       persistence.saveSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
     ).resolves.toBeUndefined();
+  });
+
+  it("reloads cleared defaults after reset staging cleanup fails", async () => {
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        settings: { ...defaultSettings, theme: ThemePreference.Dark },
+      }),
+    );
+    storage.reset = async () => {
+      storage.values.clear();
+      return { status: "cleanup-failed" };
+    };
+    const persistence = new DevHudPersistence(storage);
+
+    await expect(persistence.reset()).resolves.toEqual({
+      loaded: {
+        settings: defaultSettings,
+        widgetConfiguration: defaultWidgetConfiguration,
+        issues: [],
+      },
+      outcome: { status: "cleanup-failed" },
+    });
   });
 
   it("keeps another record's issue after a successful write", async () => {
@@ -262,7 +296,7 @@ describe("DevHud local persistence", () => {
   it("maps only the scoped native record and reset operations", async () => {
     const bridge = {
       readSettings: vi.fn(async () => null),
-      resetDevHud: vi.fn(async () => undefined),
+      resetDevHud: vi.fn(async () => ({ status: "complete" as const })),
       writeSettings: vi.fn(async () => undefined),
       readWidgetConfiguration: vi.fn(async () => null),
       writeWidgetConfiguration: vi.fn(async () => undefined),
@@ -271,7 +305,7 @@ describe("DevHud local persistence", () => {
 
     await storage.read(SETTINGS_STORAGE_KEY);
     await storage.write(WIDGET_CONFIGURATION_STORAGE_KEY, "{}");
-    await storage.reset();
+    await expect(storage.reset()).resolves.toEqual({ status: "complete" });
     expect(bridge.readSettings).toHaveBeenCalledOnce();
     expect(bridge.writeWidgetConfiguration).toHaveBeenCalledWith("{}");
     expect(bridge.resetDevHud).toHaveBeenCalledOnce();

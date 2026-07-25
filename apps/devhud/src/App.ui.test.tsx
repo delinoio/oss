@@ -179,7 +179,7 @@ describe("DevHud application surfaces", () => {
     });
     const storage: LocalStorageAdapter = {
       read: async () => pendingRead,
-      reset: async () => undefined,
+      reset: async () => ({ status: "complete" as const }),
       write: async () => undefined,
     };
 
@@ -207,7 +207,7 @@ describe("DevHud application surfaces", () => {
       read: async () => {
         throw new Error("storage unavailable");
       },
-      reset: async () => undefined,
+      reset: async () => ({ status: "complete" as const }),
       write: async () => undefined,
     };
 
@@ -394,6 +394,32 @@ describe("DevHud application surfaces", () => {
     ).toBeVisible();
   });
 
+  it("surfaces a native settings-window hide failure", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "settings",
+      firstRun: false,
+    });
+    const bridge = desktopBridge({
+      hideSettings: vi.fn(async () => {
+        throw new Error("window unavailable");
+      }),
+    });
+    const user = userEvent.setup();
+    renderApp({ desktopBridge: bridge });
+
+    await user.click(await screen.findByRole("button", { name: "Close settings" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud could not close Settings",
+    );
+  });
+
   it("renders persistence failures in the native settings window", async () => {
     vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
       applicationId: "dev.deli.devhud",
@@ -409,7 +435,7 @@ describe("DevHud application surfaces", () => {
       read: async () => {
         throw new Error("storage unavailable");
       },
-      reset: async () => undefined,
+      reset: async () => ({ status: "complete" as const }),
       write: async () => undefined,
     };
 
@@ -484,6 +510,54 @@ describe("DevHud application surfaces", () => {
         name: "Launch DevHud at login",
       }),
     ).not.toBeChecked();
+    expect(bridge.publishTheme).toHaveBeenCalledWith(ThemePreference.System);
+  });
+
+  it("adopts cleared settings while reporting reset staging cleanup failure", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "settings",
+      firstRun: false,
+    });
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        settings: {
+          theme: ThemePreference.Dark,
+          launchAtLogin: true,
+          shortcut: null,
+        },
+      }),
+    );
+    storage.reset = async () => {
+      storage.values.clear();
+      return { status: "cleanup-failed" };
+    };
+    const bridge = desktopBridge();
+    const user = userEvent.setup();
+    renderApp({ desktopBridge: bridge, storage });
+
+    const launchAtLogin = await screen.findByRole("checkbox", {
+      name: "Launch DevHud at login",
+    });
+    await waitFor(() => expect(launchAtLogin).toBeChecked());
+    await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
+    await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud cleared local settings",
+    );
+    expect(launchAtLogin).not.toBeChecked();
+    expect(screen.getByRole("combobox", { name: "Theme preference" })).toHaveValue(
+      ThemePreference.System,
+    );
     expect(bridge.publishTheme).toHaveBeenCalledWith(ThemePreference.System);
   });
 

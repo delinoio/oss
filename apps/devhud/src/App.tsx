@@ -102,7 +102,13 @@ function ThemeField() {
   );
 }
 
-type ResetStatus = "idle" | "confirming" | "resetting" | "failed" | "complete";
+type ResetStatus =
+  | "idle"
+  | "confirming"
+  | "resetting"
+  | "failed"
+  | "cleanup-failed"
+  | "complete";
 
 function ResetDevHudControl({
   onResetComplete,
@@ -120,9 +126,9 @@ function ResetDevHudControl({
   const confirmReset = async () => {
     setStatus("resetting");
     try {
-      await resetDevHud();
+      const outcome = await resetDevHud();
       onResetComplete?.();
-      setStatus("complete");
+      setStatus(outcome.status === "complete" ? "complete" : "cleanup-failed");
     } catch {
       setStatus("failed");
     }
@@ -174,6 +180,12 @@ function ResetDevHudControl({
           DevHud could not reset local data. Check device storage and try again.
         </p>
       ) : null}
+      {status === "cleanup-failed" ? (
+        <p className="error" role="alert">
+          DevHud cleared local settings, but could not remove temporary reset data.
+          Check device storage and try again.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -192,12 +204,21 @@ function SettingsWindow({
   readonly startupShortcutFailure: RuntimeInfo["shortcutStartupFailure"];
 }) {
   const [firstRunActive, setFirstRunActive] = useState(firstRun);
+  const [closeFailed, setCloseFailed] = useState(false);
   const close = () => {
-    void bridge?.hideSettings();
+    setCloseFailed(false);
+    void (bridge?.hideSettings() ?? Promise.resolve()).catch(() => {
+      setCloseFailed(true);
+    });
   };
   return (
     <main className="settings-shell">
       <PersistenceAlerts />
+      {closeFailed ? (
+        <p className="runtime-status error" role="alert">
+          DevHud could not close Settings. Try again or use the tray Quit action.
+        </p>
+      ) : null}
       <SettingsPanel
         bridge={bridge}
         firstRun={firstRunActive}
