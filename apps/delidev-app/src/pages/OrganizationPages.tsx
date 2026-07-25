@@ -368,6 +368,7 @@ function MemberActions({
   organization: Organization;
   transport: Transport;
 }) {
+  const { refreshAccountState } = useAccountState();
   const navigate = useNavigate();
   const online = useOnline();
   const [open, setOpen] = useState(false);
@@ -437,6 +438,7 @@ function MemberActions({
           organizationId: organization.organizationId,
         });
         removalKey.current = undefined;
+        await refreshAccountState().catch(() => undefined);
         navigate("/account", { replace: true });
         return;
       }
@@ -1551,6 +1553,7 @@ function TeamActions({
           ) : null}
           <TeamMembershipManagement
             online={online}
+            onUpdated={onUpdated}
             team={team}
             transport={transport}
           />
@@ -1577,10 +1580,12 @@ function TeamActions({
 
 function TeamMembershipManagement({
   online,
+  onUpdated,
   team,
   transport,
 }: {
   online: boolean;
+  onUpdated: () => Promise<void>;
   team: Team;
   transport: Transport;
 }) {
@@ -1639,6 +1644,8 @@ function TeamMembershipManagement({
     memberships.data?.pages.flatMap((page) => page.memberships) ?? [];
   const organizationMembers =
     members.data?.pages.flatMap((page) => page.members) ?? [];
+  const isPending =
+    setMembership.isPending || removeMembership.isPending;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1660,7 +1667,7 @@ function TeamMembershipManagement({
       setKey.current = undefined;
       setAccountId("");
       setMessage("Direct team membership updated.");
-      await memberships.refetch();
+      await Promise.all([memberships.refetch(), onUpdated()]);
     } catch (error) {
       setFormError(describeDelibaseError(error));
     }
@@ -1683,7 +1690,7 @@ function TeamMembershipManagement({
       });
       removalKeys.current.delete(targetAccountId);
       setMessage("Direct team membership removed.");
-      await memberships.refetch();
+      await Promise.all([memberships.refetch(), onUpdated()]);
     } catch (error) {
       setFormError(describeDelibaseError(error));
     }
@@ -1738,7 +1745,7 @@ function TeamMembershipManagement({
         </label>
         <button
           className="button primary"
-          disabled={!online || setMembership.isPending || !accountId}
+          disabled={!online || isPending || !accountId}
           type="submit"
         >
           {setMembership.isPending ? "Updating access…" : "Set team access"}
@@ -1781,7 +1788,7 @@ function TeamMembershipManagement({
               </span>
               <button
                 className="button danger compact-button"
-                disabled={!online || removeMembership.isPending}
+                disabled={!online || isPending}
                 onClick={() => void remove(membership)}
                 type="button"
               >

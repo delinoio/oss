@@ -21,6 +21,7 @@ export function TestAccountStateProvider({
       slug: "acme",
     },
   ],
+  refreshAccountState = async () => undefined,
 }: {
   children: ReactNode;
   onboardingRequired?: boolean;
@@ -30,6 +31,7 @@ export function TestAccountStateProvider({
     role: OrganizationRole;
     slug: string;
   }>;
+  refreshAccountState?: () => Promise<void>;
 }) {
   return (
     <AccountStateProvider
@@ -42,7 +44,7 @@ export function TestAccountStateProvider({
         onboardingRequired,
         organizations,
       })}
-      refreshAccountState={async () => undefined}
+      refreshAccountState={refreshAccountState}
     >
       {children}
     </AccountStateProvider>

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -324,5 +324,206 @@ describe("organization team management", () => {
     expect(
       screen.getByRole("heading", { name: "Direct team membership" }),
     ).toBeVisible();
+  });
+
+  it("refreshes capabilities and serializes direct-membership mutations", async () => {
+    let effectiveAccessRequests = 0;
+    let hasAdminAccess = true;
+    let resolveRemoval: () => void = () => undefined;
+    let resolveSet: () => void = () => undefined;
+    const removalRelease = new Promise<void>((resolve) => {
+      resolveRemoval = resolve;
+    });
+    const setRelease = new Promise<void>((resolve) => {
+      resolveSet = resolve;
+    });
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/ResolveOrganizationSlug")) {
+        return connectJsonResponse({
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/GetOrganization")) {
+        return connectJsonResponse({
+          callerRole: "ORGANIZATION_ROLE_MEMBER",
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/ListTeams")) {
+        return connectJsonResponse({
+          teams: [
+            {
+              depth: 0,
+              name: "General",
+              organizationId: { value: "organization-id" },
+              protectedGeneral: true,
+              teamId: { value: "general-team-id" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/ListEffectiveTeamAccess")) {
+        effectiveAccessRequests += 1;
+        return connectJsonResponse({
+          access: [
+            {
+              effectiveRole: hasAdminAccess
+                ? "TEAM_ROLE_ADMIN"
+                : "TEAM_ROLE_MEMBER",
+              source: "TEAM_ACCESS_SOURCE_DIRECT_MEMBERSHIP",
+              teamId: { value: "general-team-id" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/ListOrganizationMembers")) {
+        return connectJsonResponse({
+          members: [
+            {
+              accountId: { value: "account-id" },
+              displayName: "Deli Developer",
+              role: "ORGANIZATION_ROLE_MEMBER",
+            },
+            {
+              accountId: { value: "other-account-id" },
+              displayName: "Other Developer",
+              role: "ORGANIZATION_ROLE_MEMBER",
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/ListTeamMemberships")) {
+        return connectJsonResponse({
+          memberships: hasAdminAccess
+            ? [
+                {
+                  accountId: { value: "account-id" },
+                  displayName: "Deli Developer",
+                  role: "TEAM_ROLE_ADMIN",
+                },
+                {
+                  accountId: { value: "other-account-id" },
+                  displayName: "Other Developer",
+                  role: "TEAM_ROLE_MEMBER",
+                },
+              ]
+            : [
+                {
+                  accountId: { value: "other-account-id" },
+                  displayName: "Other Developer",
+                  role: "TEAM_ROLE_MEMBER",
+                },
+              ],
+        });
+      }
+      if (url.endsWith("/SetTeamMembership")) {
+        await setRelease;
+        return connectJsonResponse({});
+      }
+      if (url.endsWith("/RemoveTeamMembership")) {
+        await removalRelease;
+        hasAdminAccess = false;
+        return connectJsonResponse({});
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/o/acme/teams"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <TestAccountStateProvider>
+              <Routes>
+                <Route
+                  path="/o/:orgSlug/teams"
+                  element={
+                    <OrganizationShell>
+                      <TeamsPage />
+                    </OrganizationShell>
+                  }
+                />
+              </Routes>
+            </TestAccountStateProvider>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Manage General" }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Organization member" }),
+      "other-account-id",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Set team access" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: "Remove direct access" })[0],
+      ).toBeDisabled(),
+    );
+
+    resolveSet();
+    await screen.findByText("Direct team membership updated.");
+    await waitFor(() => expect(effectiveAccessRequests).toBe(2));
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Organization member" }),
+      "other-account-id",
+    );
+    const currentMembership = screen
+      .getAllByText("Deli Developer")
+      .map((element) => element.closest("li"))
+      .find((element) => element !== null);
+    expect(currentMembership).not.toBeNull();
+    await user.click(
+      within(currentMembership!).getByRole("button", {
+        name: "Remove direct access",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Set team access" }),
+      ).toBeDisabled(),
+    );
+
+    resolveRemoval();
+    await waitFor(() => expect(effectiveAccessRequests).toBe(3));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Manage General" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 });
