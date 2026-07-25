@@ -1,11 +1,14 @@
 import { execFileSync, spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import { runPackageManager } from "./process.mjs";
 
 const appRoot = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(appRoot, "../..");
 const supportedHosts = new Set(["darwin", "linux", "win32"]);
+const applicationId = "dev.deli.devhud";
 
 if (!supportedHosts.has(process.platform)) {
   console.log(
@@ -139,9 +142,51 @@ function delay(milliseconds) {
   });
 }
 
+function localLogDirectory() {
+  if (process.platform === "darwin") {
+    return join(homedir(), "Library", "Logs", applicationId);
+  }
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA;
+    if (localAppData === undefined) return null;
+    return join(localAppData, applicationId, "logs");
+  }
+  const dataDirectory =
+    process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
+  return join(dataDirectory, applicationId, "logs");
+}
+
+function managedLogFiles() {
+  const directory = localLogDirectory();
+  if (directory === null || !existsSync(directory)) return new Map();
+  return new Map(
+    readdirSync(directory, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.startsWith("devhud-") &&
+          entry.name.endsWith(".jsonl"),
+      )
+      .map((entry) => [entry.name, join(directory, entry.name)]),
+  );
+}
+
+function newLogsContainReadyEvent(previousLogs) {
+  for (const [name, path] of managedLogFiles()) {
+    if (
+      !previousLogs.has(name) &&
+      readFileSync(path, "utf8").includes("devhud.runtime.ready")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function runSmokeIteration(iteration) {
   const output = [];
   const observedHelperPids = new Set();
+  const previousLogs = managedLogFiles();
   const child = spawn(binaryPath, [], {
     cwd: appRoot,
     env: {
@@ -179,7 +224,10 @@ async function runSmokeIteration(iteration) {
   clearTimeout(timeout);
 
   const combinedOutput = output.join("");
-  if (exitCode !== 0 || !combinedOutput.includes("devhud.runtime.ready")) {
+  const observedReady =
+    combinedOutput.includes("devhud.runtime.ready") ||
+    newLogsContainReadyEvent(previousLogs);
+  if (exitCode !== 0 || !observedReady) {
     throw new Error(
       `desktop smoke ${iteration} did not observe the ready runtime (exit ${exitCode ?? "signal"})`,
     );

@@ -54,34 +54,43 @@ struct LocalLogState {
     directory: PathBuf,
     file: Option<File>,
     file_bytes: u64,
+    opened_at: SystemTime,
     sequence: u64,
 }
 
 impl LocalLogState {
     fn new(directory: PathBuf) -> io::Result<Self> {
+        Self::new_at(directory, SystemTime::now())
+    }
+
+    fn new_at(directory: PathBuf, now: SystemTime) -> io::Result<Self> {
         fs::create_dir_all(&directory)?;
-        prune_logs(
-            &directory,
-            SystemTime::now(),
-            MAX_LOG_BYTES - MAX_LOG_FILE_BYTES,
-        )?;
+        prune_logs(&directory, now, MAX_LOG_BYTES - MAX_LOG_FILE_BYTES)?;
         let mut state = Self {
             directory,
             file: None,
             file_bytes: 0,
+            opened_at: now,
             sequence: 0,
         };
-        state.open_file()?;
+        state.open_file(now)?;
         Ok(state)
     }
 
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.write_at(buffer, SystemTime::now())
+    }
+
+    fn write_at(&mut self, buffer: &[u8], now: SystemTime) -> io::Result<usize> {
         let buffer_bytes = u64::try_from(buffer.len()).unwrap_or(u64::MAX);
         if buffer_bytes > MAX_LOG_FILE_BYTES {
             return Ok(buffer.len());
         }
+        if now.duration_since(self.opened_at).unwrap_or_default() >= LOG_RETENTION {
+            self.rotate(now)?;
+        }
         if self.file_bytes.saturating_add(buffer_bytes) > MAX_LOG_FILE_BYTES {
-            self.rotate()?;
+            self.rotate(now)?;
         }
         let file = self
             .file
@@ -101,25 +110,21 @@ impl LocalLogState {
             .flush()
     }
 
-    fn rotate(&mut self) -> io::Result<()> {
+    fn rotate(&mut self, now: SystemTime) -> io::Result<()> {
         self.file.take();
-        prune_logs(
-            &self.directory,
-            SystemTime::now(),
-            MAX_LOG_BYTES - MAX_LOG_FILE_BYTES,
-        )?;
-        self.open_file()
+        prune_logs(&self.directory, now, MAX_LOG_BYTES - MAX_LOG_FILE_BYTES)?;
+        self.open_file(now)
     }
 
     fn clear(&mut self) -> io::Result<()> {
         self.file.take();
         let removal = remove_managed_logs(&self.directory);
-        let reopen = self.open_file();
+        let reopen = self.open_file(SystemTime::now());
         removal.and(reopen)
     }
 
-    fn open_file(&mut self) -> io::Result<()> {
-        let timestamp = SystemTime::now()
+    fn open_file(&mut self, now: SystemTime) -> io::Result<()> {
+        let timestamp = now
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
@@ -134,6 +139,7 @@ impl LocalLogState {
                 Ok(file) => {
                     self.file = Some(file);
                     self.file_bytes = 0;
+                    self.opened_at = now;
                     return Ok(());
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
@@ -161,6 +167,29 @@ fn is_managed_log(path: &Path) -> bool {
         .is_some_and(|name| name.starts_with(LOG_FILE_PREFIX) && name.ends_with(LOG_FILE_SUFFIX))
 }
 
+fn managed_log_opened_at(path: &Path, fallback: SystemTime) -> SystemTime {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return fallback;
+    };
+    let Some(stem) = name
+        .strip_prefix(LOG_FILE_PREFIX)
+        .and_then(|name| name.strip_suffix(LOG_FILE_SUFFIX))
+    else {
+        return fallback;
+    };
+    let mut parts = stem.split('-');
+    let (Some(timestamp), Some(_process_id), Some(_sequence), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return fallback;
+    };
+    timestamp
+        .parse::<u64>()
+        .ok()
+        .and_then(|milliseconds| UNIX_EPOCH.checked_add(Duration::from_millis(milliseconds)))
+        .unwrap_or(fallback)
+}
+
 fn managed_logs(directory: &Path) -> io::Result<Vec<(PathBuf, SystemTime, u64)>> {
     let mut logs = Vec::new();
     for entry in fs::read_dir(directory)? {
@@ -169,9 +198,10 @@ fn managed_logs(directory: &Path) -> io::Result<Vec<(PathBuf, SystemTime, u64)>>
             continue;
         }
         let metadata = entry.metadata()?;
+        let path = entry.path();
         logs.push((
-            entry.path(),
-            metadata.modified().unwrap_or(UNIX_EPOCH),
+            path.clone(),
+            managed_log_opened_at(&path, metadata.modified().unwrap_or(UNIX_EPOCH)),
             metadata.len(),
         ));
     }
@@ -180,14 +210,14 @@ fn managed_logs(directory: &Path) -> io::Result<Vec<(PathBuf, SystemTime, u64)>>
 
 fn prune_logs(directory: &Path, now: SystemTime, retained_bytes: u64) -> io::Result<()> {
     let mut logs = managed_logs(directory)?;
-    for (path, modified, _) in &logs {
-        if now.duration_since(*modified).unwrap_or_default() > LOG_RETENTION {
+    for (path, opened_at, _) in &logs {
+        if now.duration_since(*opened_at).unwrap_or_default() >= LOG_RETENTION {
             fs::remove_file(path)?;
         }
     }
 
     logs = managed_logs(directory)?;
-    logs.sort_by_key(|(_, modified, _)| *modified);
+    logs.sort_by_key(|(_, opened_at, _)| *opened_at);
     let mut total_bytes = logs
         .iter()
         .fold(0_u64, |total, (_, _, bytes)| total.saturating_add(*bytes));
@@ -260,6 +290,25 @@ mod tests {
             fs::read_to_string(&logs[0].0).unwrap(),
             "{\"event\":\"after-reset\"}\n"
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn writing_rotates_and_prunes_a_log_at_the_retention_boundary() {
+        let directory = temporary_directory("retention");
+        let opened_at = UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let now = opened_at + LOG_RETENTION;
+        let mut state = LocalLogState::new_at(directory.clone(), opened_at).unwrap();
+        state.write_at(b"{\"event\":\"retained\"}\n", now).unwrap();
+        state.flush().unwrap();
+
+        let logs = managed_logs(&directory).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(
+            fs::read_to_string(&logs[0].0).unwrap(),
+            "{\"event\":\"retained\"}\n"
+        );
+        assert_eq!(logs[0].1, now);
         fs::remove_dir_all(directory).unwrap();
     }
 }

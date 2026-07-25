@@ -1203,12 +1203,20 @@ fn show_settings(app: AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> 
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-#[tauri::command]
-fn hide_settings(app: AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> {
+fn hide_settings_internal(app: &AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> {
     app.get_webview_window(SETTINGS_WINDOW_LABEL)
         .ok_or(HudActionFailure::WindowUnavailable)?
         .hide()
         .map_err(|_| HudActionFailure::WindowUnavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn hide_settings(app: AppHandle<ActiveRuntime>) -> Result<(), HudActionFailure> {
+    hide_settings_internal(&app)
 }
 
 #[cfg(all(
@@ -1959,9 +1967,11 @@ fn run_app() -> tauri::Result<()> {
         } if label == MAIN_WINDOW_LABEL || label == SETTINGS_WINDOW_LABEL => {
             api.prevent_close();
             if label == MAIN_WINDOW_LABEL {
-                let _ = hide_hud_internal(app);
-            } else if let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
-                let _ = window.hide();
+                if let HudActionOutcome::Unchanged { reason } = hide_hud_internal(app) {
+                    log_window_action_failure("window-close-hud", reason);
+                }
+            } else if let Err(reason) = hide_settings_internal(app) {
+                log_window_action_failure("window-close-settings", reason);
             }
         }
         tauri::RunEvent::WindowEvent {

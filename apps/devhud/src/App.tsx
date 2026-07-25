@@ -691,7 +691,7 @@ function ApplicationSurface({
           bridge={bridge}
           onResetComplete={reconcileReset}
           runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
-          showDesktopControls={platform === "desktop"}
+          showDesktopControls={platform === "desktop" && bridge !== null}
         />
       ) : null}
     </>

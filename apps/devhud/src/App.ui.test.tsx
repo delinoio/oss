@@ -147,10 +147,19 @@ describe("DevHud application surfaces", () => {
   });
 
   it("keeps launch-at-login disabled until the user explicitly enables it", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+      surface: "settings",
+      firstRun: false,
+    });
     const user = userEvent.setup();
-    renderApp();
-    await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
-    const launchAtLogin = screen.getByRole("checkbox", {
+    renderApp({ desktopBridge: desktopBridge() });
+    const launchAtLogin = await screen.findByRole("checkbox", {
       name: "Launch DevHud at login",
     });
     expect(launchAtLogin).not.toBeChecked();
@@ -492,6 +501,24 @@ describe("DevHud application surfaces", () => {
       "DevHud could not initialize its local runtime.",
     );
     expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
+  });
+
+  it("hides native settings controls when the desktop bridge is unavailable", async () => {
+    vi.mocked(loadRuntimeInfo).mockRejectedValueOnce(new Error("runtime unavailable"));
+    const user = userEvent.setup();
+    renderApp({ platform: "desktop" });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud could not initialize its local runtime.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(
+      screen.queryByRole("heading", { name: "Global shortcut" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Launch DevHud at login" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows explicit mobile loading states", async () => {
