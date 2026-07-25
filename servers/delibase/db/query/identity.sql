@@ -323,7 +323,7 @@ INSERT INTO ledger_entries (
     sqlc.arg(organization_id),
     'credit_forfeiture',
     -sqlc.arg(amount_micros)::bigint,
-    0,
+    sqlc.arg(balance_after_micros),
     sqlc.arg(source_reference),
     sqlc.arg(actor_reference)
 )

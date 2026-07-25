@@ -510,13 +510,24 @@ func (service *Organization) DeleteOrganization(
 		); transactionErr != nil {
 			return databaseError(transactionErr)
 		}
-		balance, transactionErr := queries.CurrentOrganizationBalance(
+		runningBalance, transactionErr := queries.CurrentOrganizationBalance(
 			ctx, pgUUID(organizationID),
 		)
 		if transactionErr != nil {
 			return databaseError(transactionErr)
 		}
-		if balance > 0 {
+		settledBalance, transactionErr := queries.CurrentSettledCreditBalance(
+			ctx, pgUUID(organizationID),
+		)
+		if transactionErr != nil {
+			return databaseError(transactionErr)
+		}
+		forfeiture, balanceAfter, validForfeiture :=
+			settledCreditForfeiture(runningBalance, settledBalance)
+		if !validForfeiture {
+			return serviceError(connect.CodeInternal, 0)
+		}
+		if forfeiture > 0 {
 			ledgerID, idErr := service.dependencies.IDs.New()
 			if idErr != nil {
 				return serviceError(connect.CodeInternal, 0)
@@ -524,11 +535,12 @@ func (service *Organization) DeleteOrganization(
 			if _, transactionErr = queries.ForfeitOrganizationCredit(
 				ctx,
 				dbgen.ForfeitOrganizationCreditParams{
-					ID:              pgUUID(ledgerID),
-					OrganizationID:  pgUUID(organizationID),
-					AmountMicros:    balance,
-					SourceReference: "organization-deletion:" + deletionID.String(),
-					ActorReference:  string(actor),
+					ID:                 pgUUID(ledgerID),
+					OrganizationID:     pgUUID(organizationID),
+					AmountMicros:       forfeiture,
+					BalanceAfterMicros: balanceAfter,
+					SourceReference:    "organization-deletion:" + deletionID.String(),
+					ActorReference:     string(actor),
 				},
 			); transactionErr != nil {
 				return databaseError(transactionErr)

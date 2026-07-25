@@ -323,19 +323,20 @@ INSERT INTO ledger_entries (
     $2,
     'credit_forfeiture',
     -$3::bigint,
-    0,
     $4,
-    $5
+    $5,
+    $6
 )
 RETURNING id, organization_id, billing_period_id, billing_period_starts_at_snapshot, billing_period_ends_at_snapshot, entry_type, amount_micros, balance_after_micros, reservation_id, usage_record_id, team_id_snapshot, team_name_snapshot, source_reference, actor_reference, created_at, retain_until
 `
 
 type ForfeitOrganizationCreditParams struct {
-	ID              pgtype.UUID
-	OrganizationID  pgtype.UUID
-	AmountMicros    int64
-	SourceReference string
-	ActorReference  string
+	ID                 pgtype.UUID
+	OrganizationID     pgtype.UUID
+	AmountMicros       int64
+	BalanceAfterMicros int64
+	SourceReference    string
+	ActorReference     string
 }
 
 func (q *Queries) ForfeitOrganizationCredit(ctx context.Context, arg ForfeitOrganizationCreditParams) (LedgerEntry, error) {
@@ -343,6 +344,7 @@ func (q *Queries) ForfeitOrganizationCredit(ctx context.Context, arg ForfeitOrga
 		arg.ID,
 		arg.OrganizationID,
 		arg.AmountMicros,
+		arg.BalanceAfterMicros,
 		arg.SourceReference,
 		arg.ActorReference,
 	)

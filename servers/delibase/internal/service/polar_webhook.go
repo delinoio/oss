@@ -326,7 +326,21 @@ func processPaidCycle(
 	); err != nil {
 		return err
 	}
-	if !organization.DeletedAt.Valid || nextBalance <= 0 {
+	if !organization.DeletedAt.Valid {
+		return nil
+	}
+	settledBalance, err := queries.CurrentSettledCreditBalance(
+		ctx, subscription.OrganizationID,
+	)
+	if err != nil {
+		return err
+	}
+	forfeiture, balanceAfter, ok :=
+		settledCreditForfeiture(nextBalance, settledBalance)
+	if !ok {
+		return reliability.ErrInvalidInput
+	}
+	if forfeiture == 0 {
 		return nil
 	}
 	forfeitureID, err := ids.New()
@@ -336,10 +350,11 @@ func processPaidCycle(
 	_, err = queries.ForfeitOrganizationCredit(
 		ctx,
 		dbgen.ForfeitOrganizationCreditParams{
-			ID:              pgUUID(forfeitureID),
-			OrganizationID:  subscription.OrganizationID,
-			AmountMicros:    nextBalance,
-			SourceReference: "polar-order-forfeiture:" + event.OrderID,
+			ID:                 pgUUID(forfeitureID),
+			OrganizationID:     subscription.OrganizationID,
+			AmountMicros:       forfeiture,
+			BalanceAfterMicros: balanceAfter,
+			SourceReference:    "polar-order-forfeiture:" + event.OrderID,
 		},
 	)
 	return err
@@ -693,4 +708,15 @@ func maxInt64(left, right int64) int64 {
 		return left
 	}
 	return right
+}
+
+func settledCreditForfeiture(
+	runningBalance int64,
+	settledCreditBalance int64,
+) (amountMicros int64, balanceAfterMicros int64, ok bool) {
+	if settledCreditBalance <= 0 {
+		return 0, runningBalance, true
+	}
+	balanceAfterMicros, ok = addInt64(runningBalance, -settledCreditBalance)
+	return settledCreditBalance, balanceAfterMicros, ok
 }

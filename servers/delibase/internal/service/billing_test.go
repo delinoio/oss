@@ -134,3 +134,32 @@ func TestBillingInt64ArithmeticRejectsOverflow(t *testing.T) {
 		t.Fatalf("valid arithmetic = %d, %t", value, ok)
 	}
 }
+
+func TestSettledCreditForfeiturePreservesNonCreditBalance(t *testing.T) {
+	t.Parallel()
+	amount, balanceAfter, ok := settledCreditForfeiture(
+		cycleGrantMicros/2,
+		cycleGrantMicros,
+	)
+	if !ok || amount != cycleGrantMicros ||
+		balanceAfter != -cycleGrantMicros/2 {
+		t.Fatalf(
+			"forfeiture = amount %d, balance %d, valid %t",
+			amount,
+			balanceAfter,
+			ok,
+		)
+	}
+	if amount, balanceAfter, ok = settledCreditForfeiture(-5, 0); !ok ||
+		amount != 0 || balanceAfter != -5 {
+		t.Fatalf(
+			"empty forfeiture = amount %d, balance %d, valid %t",
+			amount,
+			balanceAfter,
+			ok,
+		)
+	}
+	if _, _, ok = settledCreditForfeiture(math.MinInt64, 1); ok {
+		t.Fatal("overflowing forfeiture accepted")
+	}
+}
