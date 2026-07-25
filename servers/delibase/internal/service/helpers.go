@@ -478,6 +478,37 @@ func replayWithActiveAccount(
 	return account, replayed, completedAt, err
 }
 
+func replayWithActiveAccountForOrganization(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	subject string,
+	organizationID uuid.UUID,
+	operation string,
+	key string,
+	digest []byte,
+	target proto.Message,
+) (dbgen.Account, bool, time.Time, error) {
+	replayed, completedAt, err := replay(
+		ctx, queries, subject, operation, key, digest, target,
+	)
+	if err != nil || replayed {
+		return dbgen.Account{}, replayed, completedAt, err
+	}
+	if _, err = queries.LockOrganizationForMutation(
+		ctx, pgUUID(organizationID),
+	); err != nil {
+		return dbgen.Account{}, false, time.Time{}, membershipReadError(err)
+	}
+	account, err := activeAccount(ctx, queries, subject)
+	if err != nil {
+		return dbgen.Account{}, false, time.Time{}, err
+	}
+	replayed, completedAt, err = replay(
+		ctx, queries, subject, operation, key, digest, target,
+	)
+	return account, replayed, completedAt, err
+}
+
 func persistIdempotency(
 	ctx context.Context,
 	dependencies Dependencies,

@@ -59,6 +59,11 @@ func (service *Organization) CreateOrganizationInvitation(
 	}
 	var response *delibasev1.CreateOrganizationInvitationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.LockOrganizationForMutation(
+			ctx, pgUUID(organizationID),
+		); transactionErr != nil {
+			return membershipReadError(transactionErr)
+		}
 		account, transactionErr := activeAccount(ctx, queries, subject)
 		if transactionErr != nil {
 			return transactionErr
@@ -453,9 +458,11 @@ func (service *Organization) RevokeOrganizationInvitation(
 	var response *delibasev1.RevokeOrganizationInvitationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.RevokeOrganizationInvitationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "revoke_invitation", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "revoke_invitation",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}

@@ -667,6 +667,120 @@ func TestPostgreSQLAccountDeletionLocksOrganizationBeforeAccount(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLOrganizationMutationLocksOrganizationBeforeAccount(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+
+	blockerConnection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = blockerConnection.Close(context.WithoutCancel(ctx))
+	}()
+	blocker, err := blockerConnection.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = blocker.Exec(
+		ctx,
+		"SELECT id FROM accounts WHERE id = $1 FOR UPDATE",
+		fixture.ownerID,
+	); err != nil {
+		_ = blocker.Rollback(ctx)
+		t.Fatal(err)
+	}
+
+	type mutationResult struct {
+		response *connect.Response[delibasev1.UpdateOrganizationResponse]
+		err      error
+	}
+	result := make(chan mutationResult, 1)
+	go func() {
+		response, updateErr := NewOrganization(fixture.dependencies).
+			UpdateOrganization(
+				authenticatedContext(ctx, fixture.ownerSubject),
+				connect.NewRequest(&delibasev1.UpdateOrganizationRequest{
+					OrganizationId: usageUUID(fixture.organizationID),
+					Name:           "Organization lock order",
+					Idempotency: idempotency(
+						"organization-lock-order-" +
+							fixture.organizationID.String(),
+					),
+				}),
+			)
+		result <- mutationResult{response: response, err: updateErr}
+	}()
+
+	probeConnection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		_ = blocker.Rollback(ctx)
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = probeConnection.Close(context.WithoutCancel(ctx))
+	}()
+	organizationLocked := false
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		probe, beginErr := probeConnection.Begin(ctx)
+		if beginErr != nil {
+			_ = blocker.Rollback(ctx)
+			t.Fatal(beginErr)
+		}
+		var unlockedRows int
+		probeErr := probe.QueryRow(
+			ctx,
+			`SELECT count(*)
+			 FROM (
+			     SELECT id
+			     FROM organizations
+			     WHERE id = $1
+			     FOR UPDATE SKIP LOCKED
+			 ) AS unlocked`,
+			fixture.organizationID,
+		).Scan(&unlockedRows)
+		rollbackErr := probe.Rollback(ctx)
+		if probeErr != nil {
+			_ = blocker.Rollback(ctx)
+			t.Fatal(probeErr)
+		}
+		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			_ = blocker.Rollback(ctx)
+			t.Fatal(rollbackErr)
+		}
+		if unlockedRows == 0 {
+			organizationLocked = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err = blocker.Rollback(ctx); err != nil &&
+		!errors.Is(err, pgx.ErrTxClosed) {
+		t.Fatal(err)
+	}
+	mutation := <-result
+	if !organizationLocked {
+		t.Fatal("organization mutation did not lock the organization before the account")
+	}
+	if mutation.err != nil || mutation.response == nil ||
+		mutation.response.Msg.Organization.Name != "Organization lock order" {
+		t.Fatalf(
+			"organization mutation = %#v, %v",
+			mutation.response,
+			mutation.err,
+		)
+	}
+}
+
 func TestPostgreSQLInvitationAcceptanceLocksOrganizationBeforeAccount(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {

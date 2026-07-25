@@ -290,9 +290,11 @@ func (service *Organization) UpdateOrganization(
 	var response *delibasev1.UpdateOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.UpdateOrganizationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "update_organization", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "update_organization",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -376,9 +378,11 @@ func (service *Organization) UpdateOrganizationSlug(
 	var response *delibasev1.UpdateOrganizationSlugResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.UpdateOrganizationSlugResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "update_organization_slug", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "update_organization_slug",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -474,9 +478,11 @@ func (service *Organization) DeleteOrganization(
 	var response *delibasev1.DeleteOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.DeleteOrganizationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "delete_organization", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "delete_organization",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -712,9 +718,11 @@ func (service *Organization) UpdateOrganizationMemberRole(
 	var response *delibasev1.UpdateOrganizationMemberRoleResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.UpdateOrganizationMemberRoleResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "update_organization_member_role", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID,
+				"update_organization_member_role", key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -825,9 +833,11 @@ func (service *Organization) RemoveOrganizationMember(
 	var response *delibasev1.RemoveOrganizationMemberResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.RemoveOrganizationMemberResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "remove_organization_member", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID,
+				"remove_organization_member", key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -950,9 +960,11 @@ func (service *Organization) LeaveOrganization(
 	var response *delibasev1.LeaveOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.LeaveOrganizationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "leave_organization", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "leave_organization",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
