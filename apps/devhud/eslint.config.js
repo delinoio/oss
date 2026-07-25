@@ -7,7 +7,17 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["dist/**", "src-tauri/gen/**"],
+    ignores: [
+      "dist/**",
+      "native-widgets/**/.gradle/**",
+      "native-widgets/**/build/**",
+      "native-widgets/ios/DevHudWidgetBuildOnly.xcodeproj/**",
+      "src-tauri/gen/**",
+      "src-tauri/widget-bridge/android/.gradle/**",
+      "src-tauri/widget-bridge/android/.tauri/**",
+      "src-tauri/widget-bridge/android/build/**",
+      "src-tauri/widget-bridge/permissions/**",
+    ],
   },
   eslint.configs.recommended,
   {

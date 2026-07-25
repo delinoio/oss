@@ -10,3 +10,14 @@ src-tauri/gen/android/app/tauri.properties
 src-tauri/gen/apple/Externals/
 src-tauri/gen/apple/build/
 src-tauri/gen/apple/DerivedData/
+src-tauri/widget-bridge/android/.tauri/
+src-tauri/widget-bridge/android/.gradle/
+src-tauri/widget-bridge/android/build/
+src-tauri/widget-bridge/.tauri/
+src-tauri/widget-bridge/permissions/
+native-widgets/android/.gradle/
+native-widgets/android/build/
+native-widgets/android/widget-foundation/build/
+native-widgets/ios/DevHudWidgetBuildOnly.xcodeproj/
+native-widgets/ios/build/
+native-widgets/ios/DerivedData/

@@ -216,24 +216,31 @@ const resetGuidance =
 const futureVersionGuidance =
   "This DevHud data was created by a newer version. Update DevHud before changing it.";
 
+export function decodeFailureFromKind(kind: DecodeFailureKind): DecodeFailure {
+  return {
+    kind,
+    guidance: kind === "future-version" ? futureVersionGuidance : resetGuidance,
+  };
+}
+
 function parseRecord(raw: string): DecodeResult<Record<string, unknown>> {
   try {
     const value: unknown = JSON.parse(raw);
     if (!isRecord(value)) {
-      return { ok: false, failure: { kind: "corrupt", guidance: resetGuidance } };
+      return { ok: false, failure: decodeFailureFromKind("corrupt") };
     }
     if (typeof value.version !== "number" || !Number.isSafeInteger(value.version)) {
-      return { ok: false, failure: { kind: "incompatible", guidance: resetGuidance } };
+      return { ok: false, failure: decodeFailureFromKind("incompatible") };
     }
     if (value.version > PERSISTENCE_SCHEMA_VERSION) {
-      return { ok: false, failure: { kind: "future-version", guidance: futureVersionGuidance } };
+      return { ok: false, failure: decodeFailureFromKind("future-version") };
     }
     if (value.version !== PERSISTENCE_SCHEMA_VERSION) {
-      return { ok: false, failure: { kind: "incompatible", guidance: resetGuidance } };
+      return { ok: false, failure: decodeFailureFromKind("incompatible") };
     }
     return { ok: true, value };
   } catch {
-    return { ok: false, failure: { kind: "corrupt", guidance: resetGuidance } };
+    return { ok: false, failure: decodeFailureFromKind("corrupt") };
   }
 }
 
@@ -241,7 +248,7 @@ export function decodeSettings(raw: string): DecodeResult<DevHudSettings> {
   const parsed = parseRecord(raw);
   if (!parsed.ok) return parsed;
   if (!hasExactKeys(parsed.value, ["version", "settings"]) || !isSettings(parsed.value.settings)) {
-    return { ok: false, failure: { kind: "incompatible", guidance: resetGuidance } };
+    return { ok: false, failure: decodeFailureFromKind("incompatible") };
   }
   return { ok: true, value: parsed.value.settings };
 }
@@ -253,7 +260,7 @@ export function decodeWidgetConfiguration(raw: string): DecodeResult<WidgetConfi
     !hasExactKeys(parsed.value, ["version", "configuration"]) ||
     !isWidgetConfiguration(parsed.value.configuration)
   ) {
-    return { ok: false, failure: { kind: "incompatible", guidance: resetGuidance } };
+    return { ok: false, failure: decodeFailureFromKind("incompatible") };
   }
   return { ok: true, value: parsed.value.configuration };
 }

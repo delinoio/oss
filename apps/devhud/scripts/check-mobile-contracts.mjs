@@ -169,9 +169,13 @@ requireCondition(
   "the distributed Android manifest must not grant network access or register deep links",
 );
 requireCondition(
-  !/<receiver\b/u.test(androidManifest) &&
+  androidManifest.includes(
+    'xmlns:tools="http://schemas.android.com/tools"',
+  ) &&
+    androidManifest.includes('<receiver tools:node="removeAll" />') &&
+    (androidManifest.match(/<receiver\b/gu) ?? []).length === 1 &&
     !androidManifest.includes("AppWidgetProvider"),
-  "the distributed Android manifest must not register an AppWidgetProvider",
+  "the distributed Android manifest must remove dependency receivers and not register an AppWidgetProvider",
 );
 requireCondition(
   androidManifest.includes('android:allowBackup="false"') &&
@@ -237,8 +241,10 @@ requireCondition(
   !iosInfo.includes("CFBundleURLTypes") &&
     !iosInfo.includes("CFBundleURLSchemes") &&
     !iosEntitlements.includes("com.apple.developer.associated-domains") &&
-    !iosEntitlements.includes("com.apple.security.application-groups"),
-  "the distributed iOS target must have no deep-link or shared-widget entitlement",
+    iosEntitlements.includes("com.apple.security.application-groups") &&
+    iosEntitlements.includes("group.dev.deli.devhud") &&
+    !iosEntitlements.includes("dev.deli.devhud.widget"),
+  "the distributed iOS target must have only the future shared App Group and no deep-link or widget-extension identity",
 );
 requireCondition(
   (iosProject.split("\ntargets:\n")[1]?.match(/^ {2}[A-Za-z0-9_]+:\s*$/gmu) ?? [])

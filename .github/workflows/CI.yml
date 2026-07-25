@@ -786,6 +786,169 @@ jobs:
           pnpm --filter devhud check:mobile
           pnpm --filter devhud test:mobile
 
+  devhud-widget-android:
+    name: DevHud Widget Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            widget:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - Cargo.lock
+              - Cargo.toml
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+              - rust-toolchain.toml
+              - apps/devhud/native-widgets/**
+              - apps/devhud/package.json
+              - apps/devhud/scripts/check-widget-artifacts.mjs
+              - apps/devhud/scripts/mobile.mjs
+              - apps/devhud/scripts/process.mjs
+              - apps/devhud/scripts/widget-native.mjs
+              - apps/devhud/src-tauri/Cargo.toml
+              - apps/devhud/src-tauri/build.rs
+              - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/gen/android/**
+              - apps/devhud/src-tauri/icons/**
+              - apps/devhud/src-tauri/src/**
+              - apps/devhud/src-tauri/tauri.conf.json
+              - apps/devhud/src-tauri/tauri.android.conf.json
+              - apps/devhud/src-tauri/widget-bridge/**
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WIDGET_CHANGED: ${{ steps.filter.outputs.widget }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${WIDGET_CHANGED}" = "true" ]; then
+            run=true
+          fi
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+      - name: Skip (Android widget foundation unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud Android widget checks: no relevant changes"'
+      - name: Setup Java
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+      - name: Install Android API
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+      - name: Test the Android widget foundation, plugin, and release artifact
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter devhud test:widget:android
+
+  devhud-widget-ios:
+    name: DevHud Widget iOS
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            widget:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - Cargo.lock
+              - Cargo.toml
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+              - rust-toolchain.toml
+              - apps/devhud/native-widgets/**
+              - apps/devhud/package.json
+              - apps/devhud/scripts/check-widget-artifacts.mjs
+              - apps/devhud/scripts/mobile.mjs
+              - apps/devhud/scripts/process.mjs
+              - apps/devhud/scripts/widget-native.mjs
+              - apps/devhud/src-tauri/Cargo.toml
+              - apps/devhud/src-tauri/build.rs
+              - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/gen/apple/**
+              - apps/devhud/src-tauri/icons/**
+              - apps/devhud/src-tauri/src/**
+              - apps/devhud/src-tauri/tauri.conf.json
+              - apps/devhud/src-tauri/tauri.ios.conf.json
+              - apps/devhud/src-tauri/widget-bridge/**
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WIDGET_CHANGED: ${{ steps.filter.outputs.widget }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${WIDGET_CHANGED}" = "true" ]; then
+            run=true
+          fi
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+      - name: Skip (iOS widget foundation unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud iOS widget checks: no relevant changes"'
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+      - name: Install XcodeGen
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: brew install xcodegen
+      - name: Test the iOS widget foundation, plugin, and release artifact
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter devhud test:widget:ios
+
   node-binpm-docs-test:
     name: Node binpm-docs test
     runs-on: ubuntu-latest
@@ -1086,6 +1249,8 @@ jobs:
       - node-mpapp-test
       - node-mpapp-lint
       - node-devhud
+      - devhud-widget-android
+      - devhud-widget-ios
       - node-binpm-docs-test
       - node-nodeup-docs-test
       - node-public-docs-test

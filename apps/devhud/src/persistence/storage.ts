@@ -1,4 +1,5 @@
 import {
+  decodeFailureFromKind,
   decodeSettings,
   decodeWidgetConfiguration,
   defaultSettings,
@@ -8,6 +9,7 @@ import {
   SETTINGS_STORAGE_KEY,
   WIDGET_CONFIGURATION_STORAGE_KEY,
   type DecodeFailure,
+  type DecodeFailureKind,
   type DevHudSettings,
   type PersistenceKey,
   type WidgetConfiguration,
@@ -27,6 +29,26 @@ export interface TauriPersistenceBridge {
   writeWidgetConfiguration(record: string): Promise<void>;
 }
 
+class NativeRecordReadError extends Error {
+  constructor(readonly failure: DecodeFailure) {
+    super("The native adapter rejected a DevHud persistence record.");
+    this.name = "NativeRecordReadError";
+  }
+}
+
+const nativeRecordFailureKinds = new Set<DecodeFailureKind>([
+  "corrupt",
+  "future-version",
+  "incompatible",
+]);
+
+function nativeRecordReadError(error: unknown): NativeRecordReadError | undefined {
+  if (typeof error !== "string" || !nativeRecordFailureKinds.has(error as DecodeFailureKind)) {
+    return undefined;
+  }
+  return new NativeRecordReadError(decodeFailureFromKind(error as DecodeFailureKind));
+}
+
 /**
  * This adapter deliberately maps only the two versioned DevHud records. It is
  * usable by both Tauri CEF and the mobile system-webview runtimes without
@@ -39,7 +61,9 @@ export function createTauriPersistenceAdapter(
     read(key) {
       return key === SETTINGS_STORAGE_KEY
         ? bridge.readSettings()
-        : bridge.readWidgetConfiguration();
+        : bridge.readWidgetConfiguration().catch((error: unknown) => {
+            throw nativeRecordReadError(error) ?? error;
+          });
     },
     reset() {
       return bridge.resetDevHud();
@@ -78,6 +102,16 @@ export interface LoadedPersistence {
   readonly settings: DevHudSettings;
   readonly widgetConfiguration: WidgetConfiguration;
   readonly issues: readonly PersistenceIssue[];
+}
+
+export class PersistenceResetError extends Error {
+  constructor(
+    readonly loaded: LoadedPersistence,
+    options: ErrorOptions,
+  ) {
+    super("DevHud could not fully reset local data.", options);
+    this.name = "PersistenceResetError";
+  }
 }
 
 export class RejectedRecordWriteBlockedError extends Error {
@@ -135,10 +169,19 @@ export class DevHudPersistence {
 
   async reset(): Promise<LoadedPersistence> {
     await Promise.allSettled(this.writeTails.values());
-    await this.storage.reset();
+    let resetFailure: { readonly cause: unknown } | undefined;
+    try {
+      await this.storage.reset();
+    } catch (cause: unknown) {
+      resetFailure = { cause };
+    }
     this.blockedRecords.clear();
     this.loadPromise = undefined;
-    return this.load();
+    const loaded = await this.load();
+    if (resetFailure) {
+      throw new PersistenceResetError(loaded, resetFailure);
+    }
+    return loaded;
   }
 
   private async loadSettings(): Promise<{ value: DevHudSettings; issues: readonly PersistenceIssue[] }> {
@@ -169,14 +212,18 @@ export class DevHudPersistence {
         value: defaultWidgetConfiguration,
         issues: [{ ...decoded.failure, key: WIDGET_CONFIGURATION_STORAGE_KEY }],
       };
-    } catch {
+    } catch (error) {
+      const failure =
+        error instanceof NativeRecordReadError
+          ? error.failure
+          : storageIssue(WIDGET_CONFIGURATION_STORAGE_KEY);
       this.blockedRecords.set(
         WIDGET_CONFIGURATION_STORAGE_KEY,
-        storageIssue(WIDGET_CONFIGURATION_STORAGE_KEY),
+        failure,
       );
       return {
         value: defaultWidgetConfiguration,
-        issues: [storageIssue(WIDGET_CONFIGURATION_STORAGE_KEY)],
+        issues: [{ ...failure, key: WIDGET_CONFIGURATION_STORAGE_KEY }],
       };
     }
   }

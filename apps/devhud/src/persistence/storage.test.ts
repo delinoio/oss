@@ -12,6 +12,7 @@ import {
   WidgetSlot,
   SETTINGS_STORAGE_KEY,
   WIDGET_CONFIGURATION_STORAGE_KEY,
+  type PersistenceKey,
 } from "./contracts";
 import {
   createTauriPersistenceAdapter,
@@ -232,6 +233,41 @@ describe("DevHud local persistence", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("reloads records after a partial reset while preserving the failure", async () => {
+    const values = new Map<PersistenceKey, string>([
+      [
+        SETTINGS_STORAGE_KEY,
+        encodeSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
+      ],
+    ]);
+    const storage: LocalStorageAdapter = {
+      read: async (key) => values.get(key) ?? null,
+      reset: async () => {
+        values.delete(SETTINGS_STORAGE_KEY);
+        throw new Error("injected partial reset");
+      },
+      write: async (key, value) => {
+        values.set(key, value);
+      },
+    };
+    const persistence = new DevHudPersistence(storage);
+
+    await expect(persistence.load()).resolves.toMatchObject({
+      settings: { theme: ThemePreference.Dark },
+    });
+    await expect(persistence.reset()).rejects.toMatchObject({
+      name: "PersistenceResetError",
+      loaded: {
+        settings: defaultSettings,
+        widgetConfiguration: defaultWidgetConfiguration,
+        issues: [],
+      },
+    });
+    await expect(persistence.load()).resolves.toMatchObject({
+      settings: defaultSettings,
+    });
+  });
+
   it("keeps another record's issue after a successful write", async () => {
     const storage = new MemoryStorageAdapter();
     storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, "{not-json}");
@@ -278,4 +314,30 @@ describe("DevHud local persistence", () => {
     expect(bridge.readWidgetConfiguration).not.toHaveBeenCalled();
     expect(bridge.writeSettings).not.toHaveBeenCalled();
   });
+
+  it.each(["corrupt", "future-version", "incompatible"] as const)(
+    "preserves the native %s widget-record classification",
+    async (kind) => {
+      const bridge = {
+        readSettings: vi.fn(async () => null),
+        resetDevHud: vi.fn(async () => undefined),
+        writeSettings: vi.fn(async () => undefined),
+        readWidgetConfiguration: vi.fn(async () => Promise.reject(kind)),
+        writeWidgetConfiguration: vi.fn(async () => undefined),
+      };
+      const persistence = new DevHudPersistence(createTauriPersistenceAdapter(bridge));
+
+      await expect(persistence.load()).resolves.toMatchObject({
+        widgetConfiguration: defaultWidgetConfiguration,
+        issues: [expect.objectContaining({ key: WIDGET_CONFIGURATION_STORAGE_KEY, kind })],
+      });
+      await expect(
+        persistence.saveWidgetConfiguration(defaultWidgetConfiguration),
+      ).rejects.toMatchObject({
+        name: "RejectedRecordWriteBlockedError",
+        key: WIDGET_CONFIGURATION_STORAGE_KEY,
+      });
+      expect(bridge.writeWidgetConfiguration).not.toHaveBeenCalled();
+    },
+  );
 });

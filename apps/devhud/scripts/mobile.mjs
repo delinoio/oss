@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { run, runPackageManager } from "./process.mjs";
@@ -17,7 +18,7 @@ const [operation, platform, targetSet = "production"] = process.argv.slice(2);
 
 const platformNames = new Set(["android", "ios"]);
 const operations = new Set(["build", "generate"]);
-const targetSets = new Set(["production", "ci"]);
+const targetSets = new Set(["production", "ci", "artifact"]);
 
 if (
   !operations.has(operation) ||
@@ -25,7 +26,7 @@ if (
   !targetSets.has(targetSet)
 ) {
   throw new Error(
-    "Usage: node scripts/mobile.mjs <generate|build> <android|ios> [production|ci]",
+    "Usage: node scripts/mobile.mjs <generate|build> <android|ios> [production|ci|artifact]",
   );
 }
 
@@ -50,7 +51,7 @@ await runPackageManager(["run", "build"], { cwd: appRoot });
 
 if (platform === "android") {
   const targets =
-    targetSet === "ci" ? ["x86_64"] : ["aarch64", "armv7"];
+    targetSet === "production" ? ["aarch64", "armv7"] : ["x86_64"];
   await run(
     node,
     [
@@ -69,7 +70,15 @@ if (platform === "android") {
     { cwd: appRoot },
   );
 } else {
-  const targets = targetSet === "ci" ? ["x86_64"] : ["aarch64"];
+  const simulatorTarget =
+    process.arch === "arm64" ? "aarch64-sim" : "x86_64";
+  const targets =
+    targetSet === "production" ? ["aarch64"] : [simulatorTarget];
+  const iosGeneratedRoot = resolve(appRoot, "src-tauri/gen/apple");
+  await mkdir(resolve(iosGeneratedRoot, "Externals"), { recursive: true });
+  await run("xcodegen", ["generate", "--spec", "project.yml"], {
+    cwd: iosGeneratedRoot,
+  });
   await run(
     node,
     [
