@@ -82,6 +82,69 @@ function renderSettings(
 }
 
 describe("organization settings", () => {
+  it("reports a saved name when organization refresh fails", async () => {
+    let getOrganizationCalls = 0;
+    const refreshAccountState = vi.fn(async () => undefined);
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/ResolveOrganizationSlug")) {
+        return connectJsonResponse({
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/GetOrganization")) {
+        getOrganizationCalls += 1;
+        if (getOrganizationCalls > 1) {
+          return connectJsonResponse(
+            { code: "unavailable", message: "Refresh failed." },
+            503,
+          );
+        }
+        return connectJsonResponse({
+          callerRole: "ORGANIZATION_ROLE_OWNER",
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/UpdateOrganization")) {
+        return connectJsonResponse({
+          organization: {
+            name: "Acme Labs",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const user = userEvent.setup();
+    renderSettings(fetchMock, refreshAccountState);
+
+    const nameInput = await screen.findByRole("textbox", {
+      name: "Organization name",
+    });
+    await user.clear(nameInput);
+    await user.type(nameInput, "Acme Labs");
+    await user.click(
+      screen.getByRole("button", { name: "Save changes" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The organization name was saved, but current organization data could not be refreshed.",
+    );
+    expect(
+      screen.queryByText("Organization settings updated."),
+    ).not.toBeInTheDocument();
+    expect(refreshAccountState).toHaveBeenCalledTimes(2);
+  });
+
   it("does not navigate to a changed slug when account refresh fails", async () => {
     const refreshAccountState = vi.fn(async () => {
       throw new Error("Account refresh failed.");

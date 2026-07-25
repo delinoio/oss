@@ -82,9 +82,7 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
     );
   }
   if (
-    resolved.isError ||
-    details.isError ||
-    !resolved.data.organization ||
+    !resolved.data?.organization ||
     !details.data?.organization ||
     !transport
   ) {
@@ -118,7 +116,10 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
         callerRole: details.data.callerRole,
         organization: details.data.organization,
         refreshOrganization: async () => {
-          await Promise.all([resolved.refetch(), details.refetch()]);
+          await Promise.all([
+            resolved.refetch({ throwOnError: true }),
+            details.refetch({ throwOnError: true }),
+          ]);
         },
         transport,
       }}
