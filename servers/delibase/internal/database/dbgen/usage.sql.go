@@ -11,6 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countInvalidExpiredUsageReservationsForOrganization = `-- name: CountInvalidExpiredUsageReservationsForOrganization :one
+SELECT count(*)
+FROM usage_reservations
+WHERE organization_id = $1
+  AND status = 'held'
+  AND expires_at <= statement_timestamp()
+  AND NOT usage_reservation_holds_are_releasable(
+      id, held_credit_micros, held_overage_micros
+  )
+`
+
+func (q *Queries) CountInvalidExpiredUsageReservationsForOrganization(ctx context.Context, organizationID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countInvalidExpiredUsageReservationsForOrganization, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const finalizeUsageReservation = `-- name: FinalizeUsageReservation :one
 UPDATE usage_reservations
 SET status = $1
@@ -654,6 +672,9 @@ WHERE organization_id = $1
   AND account_id = $2
   AND status = 'held'
   AND expires_at <= statement_timestamp()
+  AND usage_reservation_holds_are_releasable(
+      id, held_credit_micros, held_overage_micros
+  )
 ORDER BY expires_at, id
 LIMIT $3
 FOR UPDATE
@@ -723,6 +744,9 @@ FROM usage_reservations
 WHERE organization_id = $1
   AND status = 'held'
   AND expires_at <= statement_timestamp()
+  AND usage_reservation_holds_are_releasable(
+      id, held_credit_micros, held_overage_micros
+  )
 ORDER BY expires_at, id
 LIMIT $2
 FOR UPDATE

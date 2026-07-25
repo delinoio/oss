@@ -125,6 +125,144 @@ func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) 
 	}
 }
 
+func TestPostgreSQLUsageReservationSnapshotsLockOrganizationFirst(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	dependencies := fixture.dependencies.withDefaults()
+	actor, err := actorFor(dependencies, fixture.ownerSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	locker, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = locker.Close(context.WithoutCancel(ctx)) }()
+	inserter, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = inserter.Close(context.WithoutCancel(ctx)) }()
+	observer, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = observer.Close(context.WithoutCancel(ctx)) }()
+
+	lockTransaction, err := locker.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = lockTransaction.Rollback(context.WithoutCancel(ctx))
+	}()
+	lockQueries := dbgen.New(lockTransaction)
+	if _, err = lockQueries.LockOrganizationForBilling(
+		ctx, pgUUID(fixture.organizationID),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	insertResult := make(chan error, 1)
+	go func() {
+		insertResult <- pgx.BeginFunc(ctx, inserter, func(transaction pgx.Tx) error {
+			queries := dbgen.New(transaction)
+			meter, queryErr := queries.GetUsageMeterAuthorization(
+				ctx,
+				dbgen.GetUsageMeterAuthorizationParams{
+					ServiceIdentityID: pgUUID(fixture.serviceID),
+					MeterID:           pgUUID(fixture.meterID),
+				},
+			)
+			if queryErr != nil {
+				return queryErr
+			}
+			_, queryErr = queries.InsertUsageReservation(
+				ctx,
+				dbgen.InsertUsageReservationParams{
+					ID:                pgUUID(uuidv7.MustNew()),
+					OrganizationID:    pgUUID(fixture.organizationID),
+					TeamID:            pgUUID(fixture.generalTeamID),
+					TeamNameSnapshot:  "General",
+					MeterID:           pgUUID(fixture.meterID),
+					PriceVersionID:    meter.PriceVersionID,
+					AccountID:         pgUUID(fixture.ownerID),
+					ServiceIdentityID: pgUUID(fixture.serviceID),
+					MaximumUnits:      51,
+					UsdMicrosPerUnit:  meter.UsdMicrosPerUnit,
+					MaximumCostMicros: 102,
+					HeldCreditMicros:  100,
+					HeldOverageMicros: 2,
+					ClientReference: "snapshot-lock-" +
+						fixture.organizationID.String(),
+					ReservationTtlSeconds:      meter.ReservationTtlSeconds,
+					UserActorReferenceSnapshot: string(actor),
+				},
+			)
+			return queryErr
+		})
+	}()
+
+	insertBlocked := false
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if err = observer.QueryRow(
+			ctx,
+			`SELECT $1::integer = ANY(pg_blocking_pids($2::integer))`,
+			int32(locker.PgConn().PID()),
+			int32(inserter.PgConn().PID()),
+		).Scan(&insertBlocked); err != nil {
+			t.Fatal(err)
+		}
+		if insertBlocked {
+			break
+		}
+		select {
+		case insertErr := <-insertResult:
+			t.Fatalf(
+				"reservation insert completed before organization lock release: %v",
+				insertErr,
+			)
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	if !insertBlocked {
+		t.Fatal("reservation insert did not wait for the organization lock")
+	}
+
+	if _, err = lockQueries.UpdateCurrentBillingPeriodOverageLimit(
+		ctx,
+		dbgen.UpdateCurrentBillingPeriodOverageLimitParams{
+			OverageLimitMicros: 100,
+			OrganizationID:     pgUUID(fixture.organizationID),
+		},
+	); err != nil {
+		t.Fatalf("billing-period update deadlocked with reservation insert: %v", err)
+	}
+	if err = lockTransaction.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case insertErr := <-insertResult:
+		if insertErr != nil {
+			t.Fatalf("reservation insert failed after lock release: %v", insertErr)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
 func TestPostgreSQLReserveDrainsExpiredCapacityPastBatchBoundary(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -942,6 +1080,30 @@ func TestPostgreSQLExpirationContinuesAfterOrganizationFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sameOrganizationReservation, err := poisonFixture.usage.ReserveUsage(
+		usageContext(
+			ctx,
+			poisonFixture.serviceClient,
+			poisonFixture.ownerSubject,
+		),
+		usageReserveRequest(
+			poisonFixture,
+			poisonFixture.generalTeamID,
+			poisonFixture.shortMeterID,
+			1,
+			"healthy-after-poison-"+poisonFixture.organizationID.String(),
+			"healthy-after-poison-"+poisonFixture.organizationID.String(),
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sameOrganizationReservationID, err := uuid.Parse(
+		sameOrganizationReservation.Msg.Reservation.ReservationId.Value,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(1100 * time.Millisecond)
 
 	healthyReservation, err := healthyFixture.usage.ReserveUsage(
@@ -981,8 +1143,25 @@ func TestPostgreSQLExpirationContinuesAfterOrganizationFailure(t *testing.T) {
 	if batchErr == nil {
 		t.Fatal("expiration batch succeeded despite poison reservation")
 	}
-	if processed < 1 {
+	if processed < 2 {
 		t.Fatalf("expiration processed = %d, %v", processed, batchErr)
+	}
+	sameOrganizationStored, err :=
+		poisonFixture.store.Queries().LockUsageReservation(
+			ctx,
+			dbgen.LockUsageReservationParams{
+				OrganizationID: pgUUID(poisonFixture.organizationID),
+				ReservationID:  pgUUID(sameOrganizationReservationID),
+			},
+		)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sameOrganizationStored.Status != "expired" {
+		t.Fatalf(
+			"same-organization reservation status = %q",
+			sameOrganizationStored.Status,
+		)
 	}
 	healthyStored, err := healthyFixture.store.Queries().LockUsageReservation(
 		ctx,

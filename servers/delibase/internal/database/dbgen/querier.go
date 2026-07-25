@@ -21,6 +21,7 @@ type Querier interface {
 	CompleteDeletionJob(ctx context.Context, arg CompleteDeletionJobParams) (pgtype.UUID, error)
 	CompleteIntegrationOutbox(ctx context.Context, arg CompleteIntegrationOutboxParams) (pgtype.UUID, error)
 	CompleteWebhookInbox(ctx context.Context, arg CompleteWebhookInboxParams) (pgtype.UUID, error)
+	CountInvalidExpiredUsageReservationsForOrganization(ctx context.Context, organizationID pgtype.UUID) (int64, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateGeneralTeam(ctx context.Context, arg CreateGeneralTeamParams) (Team, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)

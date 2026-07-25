@@ -15,6 +15,10 @@ import (
 
 const defaultUsageExpirationInterval = time.Second
 
+var errUsageReservationHoldLedgerInvalid = errors.New(
+	"usage expiration: reservation hold ledger is invalid",
+)
+
 // UsageExpirationWorker returns catalog-TTL holds without depending on Polar.
 // Every batch uses the same organization-first lock order as usage mutations
 // and team deletion.
@@ -93,6 +97,7 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 		}
 		seenOrganizations[organizationID] = struct{}{}
 		organizationProcessed := 0
+		var organizationExpirationErr error
 		err = worker.dependencies.Store.WithinTransaction(
 			ctx,
 			pgx.TxOptions{},
@@ -109,10 +114,22 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 					ctx, worker.dependencies, queries, organizationID,
 					usageExpirationBatchSize-int32(processed),
 				)
-				if expirationErr == nil {
-					organizationProcessed = count
+				if expirationErr != nil {
+					return expirationErr
 				}
-				return expirationErr
+				organizationProcessed = count
+				invalidCount, countErr :=
+					queries.CountInvalidExpiredUsageReservationsForOrganization(
+						ctx, candidate.OrganizationID,
+					)
+				if countErr != nil {
+					return countErr
+				}
+				if invalidCount > 0 {
+					organizationExpirationErr =
+						errUsageReservationHoldLedgerInvalid
+				}
+				return nil
 			},
 		)
 		if err != nil {
@@ -132,6 +149,23 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 			continue
 		}
 		processed += organizationProcessed
+		if organizationExpirationErr != nil {
+			batchErr = errors.Join(batchErr, organizationExpirationErr)
+			safelog.Record(
+				ctx,
+				worker.dependencies.Logger,
+				slog.LevelError,
+				safelog.EventReservation,
+				safelog.Fields{
+					OrganizationID: organizationID.String(),
+					Result:         safelog.ResultFailure,
+					ErrorClass: safeerr.Classify(
+						organizationExpirationErr,
+					),
+					IncludeErrorClass: true,
+				},
+			)
+		}
 	}
 	return processed, batchErr
 }

@@ -11,6 +11,32 @@ AS $$
        AND value !~ $pattern$\m([0-9][ -]?){12,18}[0-9]\M$pattern$;
 $$;
 
+CREATE FUNCTION usage_reservation_holds_are_releasable(
+    reservation_id uuid,
+    held_credit_micros bigint,
+    held_overage_micros bigint
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT
+        COALESCE(-sum(entry.amount_micros) FILTER (
+            WHERE entry.entry_type = 'credit_hold'
+        ), 0) = held_credit_micros::numeric
+        AND COALESCE(-sum(entry.amount_micros) FILTER (
+            WHERE entry.entry_type = 'overage_hold'
+        ), 0) = held_overage_micros::numeric
+        AND COALESCE(sum(entry.amount_micros) FILTER (
+            WHERE entry.entry_type = 'credit_release'
+        ), 0) = 0
+        AND COALESCE(sum(entry.amount_micros) FILTER (
+            WHERE entry.entry_type = 'overage_release'
+        ), 0) = 0
+    FROM ledger_entries AS entry
+    WHERE entry.reservation_id = usage_reservation_holds_are_releasable.reservation_id;
+$$;
+
 -- Usage mutations keep the operational references needed while a reservation
 -- is held and retain immutable, privacy-safe snapshots after finalization.
 ALTER TABLE usage_reservations
@@ -448,6 +474,20 @@ BEGIN
         RAISE EXCEPTION 'new client references cannot be grandfathered'
             USING ERRCODE = 'check_violation';
     END IF;
+
+    -- This trigger sorts before usage_reservations_validate_references, so it
+    -- must establish the shared organization-first lock order itself before
+    -- taking snapshot locks on billing periods and subscriptions.
+    PERFORM 1
+    FROM organizations
+    WHERE id = NEW.organization_id
+      AND deleted_at IS NULL
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'reservation organization does not exist'
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM usage_reservations AS reservation

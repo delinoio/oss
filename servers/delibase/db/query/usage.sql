@@ -189,6 +189,9 @@ FROM usage_reservations
 WHERE organization_id = sqlc.arg(organization_id)
   AND status = 'held'
   AND expires_at <= statement_timestamp()
+  AND usage_reservation_holds_are_releasable(
+      id, held_credit_micros, held_overage_micros
+  )
 ORDER BY expires_at, id
 LIMIT sqlc.arg(page_limit)
 FOR UPDATE;
@@ -200,9 +203,22 @@ WHERE organization_id = sqlc.arg(organization_id)
   AND account_id = sqlc.arg(account_id)
   AND status = 'held'
   AND expires_at <= statement_timestamp()
+  AND usage_reservation_holds_are_releasable(
+      id, held_credit_micros, held_overage_micros
+  )
 ORDER BY expires_at, id
 LIMIT sqlc.arg(page_limit)
 FOR UPDATE;
+
+-- name: CountInvalidExpiredUsageReservationsForOrganization :one
+SELECT count(*)
+FROM usage_reservations
+WHERE organization_id = sqlc.arg(organization_id)
+  AND status = 'held'
+  AND expires_at <= statement_timestamp()
+  AND NOT usage_reservation_holds_are_releasable(
+      id, held_credit_micros, held_overage_micros
+  );
 
 -- name: ListExpiredUsageReservationCandidates :many
 WITH organization_candidates AS (
