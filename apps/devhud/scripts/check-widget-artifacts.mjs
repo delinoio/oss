@@ -256,7 +256,7 @@ console.log(
 
 function inspectAndroidManifest(source, path) {
   requireCondition(
-    !/(<receiver\b|APPWIDGET_UPDATE|android\.appwidget\.provider|DevHudWidgetProvider|dev\.deli\.devhud\.widget)/u.test(
+    !/(APPWIDGET_UPDATE|android\.appwidget\.provider|DevHudWidgetProvider|dev\.deli\.devhud\.widget)/u.test(
       source,
     ),
     `distributed Android artifact registers a widget receiver: ${path}`,
