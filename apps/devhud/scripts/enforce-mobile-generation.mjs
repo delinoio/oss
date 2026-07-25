@@ -214,4 +214,18 @@ if (platform === "ios") {
       if (error.code !== "ENOENT") throw error;
     });
   }
+  await update(
+    "gen/apple/devhud_iOS/devhud_iOS.entitlements",
+    (source) => {
+      if (source.includes("group.dev.deli.devhud")) return source;
+      const entitlement =
+        "\t<key>com.apple.security.application-groups</key>\n" +
+        "\t<array>\n" +
+        "\t\t<string>group.dev.deli.devhud</string>\n" +
+        "\t</array>";
+      return source.includes("<dict/>")
+        ? source.replace("<dict/>", `<dict>\n${entitlement}\n</dict>`)
+        : source.replace("<dict>", `<dict>\n${entitlement}`);
+    },
+  );
 }

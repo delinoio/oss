@@ -29,6 +29,11 @@ use tauri::{
     http::{HeaderName, HeaderValue},
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+use tauri_plugin_devhud_widget::DevHudWidgetBridgeExt;
 
 #[cfg(all(
     feature = "desktop-cef",
@@ -85,6 +90,7 @@ enum PersistenceCommandError {
     StorageUnavailable,
     InvalidRecord,
     ResetFailed,
+    WidgetBridgeFailed,
     WriteFailed,
 }
 
@@ -229,6 +235,20 @@ fn log_persistence_unavailable(operation: &'static str, key: &str) {
         classification = "storage-unavailable",
         "DevHud persistence is unavailable"
     );
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+fn widget_bridge_failure(operation: &'static str) -> PersistenceCommandError {
+    tracing::warn!(
+        event = "devhud.widget_bridge.failure",
+        operation,
+        classification = "widget-bridge-failed",
+        "DevHud native widget bridge operation failed"
+    );
+    PersistenceCommandError::WidgetBridgeFailed
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -544,7 +564,10 @@ fn write_settings(
     state.write(SETTINGS_STORAGE_KEY, &record)
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 #[tauri::command]
 fn read_widget_configuration(
     state: State<'_, PersistenceState>,
@@ -552,7 +575,23 @@ fn read_widget_configuration(
     state.read(WIDGET_CONFIGURATION_STORAGE_KEY)
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn read_widget_configuration(
+    app: AppHandle<ActiveRuntime>,
+) -> Result<Option<String>, PersistenceCommandError> {
+    app.devhud_widget_bridge()
+        .read_configuration()
+        .map_err(|_| widget_bridge_failure("read"))
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 #[tauri::command]
 fn write_widget_configuration(
     record: String,
@@ -561,9 +600,27 @@ fn write_widget_configuration(
     state.write(WIDGET_CONFIGURATION_STORAGE_KEY, &record)
 }
 
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn write_widget_configuration(
+    record: String,
+    app: AppHandle<ActiveRuntime>,
+) -> Result<(), PersistenceCommandError> {
+    validate_current_record(WIDGET_CONFIGURATION_STORAGE_KEY, &record)
+        .ok_or(PersistenceCommandError::InvalidRecord)?;
+    app.devhud_widget_bridge()
+        .write_configuration(record)
+        .map(|_| ())
+        .map_err(|_| widget_bridge_failure("write-and-refresh"))
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 #[tauri::command]
 fn reset_dev_hud(
+    app: AppHandle<ActiveRuntime>,
     webview: Webview<ActiveRuntime>,
     state: State<'_, PersistenceState>,
 ) -> Result<(), PersistenceCommandError> {
@@ -576,6 +633,18 @@ fn reset_dev_hud(
         PersistenceCommandError::ResetFailed
     })?;
     state.reset()?;
+    #[cfg(all(
+        feature = "mobile-system-webview",
+        any(target_os = "android", target_os = "ios")
+    ))]
+    app.devhud_widget_bridge()
+        .reset_configuration()
+        .map_err(|_| widget_bridge_failure("reset-and-refresh"))?;
+    #[cfg(all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    let _ = app;
     tracing::info!(
         event = "devhud.persistence.reset",
         "DevHud local data was reset"
@@ -662,7 +731,7 @@ fn platform_builder() -> tauri::Builder<ActiveRuntime> {
     any(target_os = "android", target_os = "ios")
 ))]
 fn platform_builder() -> tauri::Builder<ActiveRuntime> {
-    tauri::Builder::<ActiveRuntime>::new()
+    tauri::Builder::<ActiveRuntime>::new().plugin(tauri_plugin_devhud_widget::init())
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]

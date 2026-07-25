@@ -1,0 +1,80 @@
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
+
+import { run } from "./process.mjs";
+
+const appRoot = resolve(import.meta.dirname, "..");
+const platform = process.argv[2];
+const operation = process.argv[3] ?? "test";
+const artifactCheck = resolve(appRoot, "scripts/check-widget-artifacts.mjs");
+
+if (!new Set(["android", "ios"]).has(platform)) {
+  throw new Error("Usage: node scripts/widget-native.mjs <android|ios> [build|test]");
+}
+if (!new Set(["build", "test"]).has(operation)) {
+  throw new Error("Widget native operation must be build or test.");
+}
+
+if (platform === "android") {
+  const androidRoot = resolve(appRoot, "native-widgets/android");
+  const gradle = resolve(
+    appRoot,
+    "src-tauri/gen/android",
+    process.platform === "win32" ? "gradlew.bat" : "gradlew",
+  );
+  const tasks = [":widget-foundation:assembleDebug"];
+  if (operation === "test") tasks.push(":widget-foundation:testDebugUnitTest");
+  await run(gradle, ["-p", androidRoot, ...tasks, "--no-daemon"], {
+    cwd: androidRoot,
+  });
+} else {
+  if (process.platform !== "darwin") {
+    throw new Error(
+      "The build-only WidgetKit target requires macOS, Xcode, and XcodeGen.",
+    );
+  }
+  const iosRoot = resolve(appRoot, "native-widgets/ios");
+  await run("xcodegen", ["generate", "--spec", "project.yml"], {
+    cwd: iosRoot,
+  });
+  const common = [
+    "-project",
+    "DevHudWidgetBuildOnly.xcodeproj",
+    "-scheme",
+    "DevHudWidgetBuildOnly",
+    "-sdk",
+    "iphonesimulator",
+    "CODE_SIGNING_ALLOWED=NO",
+  ];
+  await run(
+    "xcodebuild",
+    [...common, "-destination", "generic/platform=iOS Simulator", "build"],
+    { cwd: iosRoot },
+  );
+  if (operation === "test") {
+    const simulator =
+      process.env.DEVHUD_IOS_SIMULATOR_DESTINATION ??
+      (await firstAvailableSimulatorDestination());
+    await run(
+      "xcodebuild",
+      [...common, "-destination", simulator, "test"],
+      { cwd: iosRoot },
+    );
+  }
+}
+
+await run(process.execPath, [artifactCheck], { cwd: appRoot });
+
+async function firstAvailableSimulatorDestination() {
+  const output = execFileSync(
+    "xcrun",
+    ["simctl", "list", "devices", "available", "--json"],
+    { cwd: appRoot, encoding: "utf8" },
+  );
+  const listing = JSON.parse(output);
+  for (const devices of Object.values(listing.devices ?? {})) {
+    const device = devices.find((candidate) => candidate.isAvailable);
+    if (device) return `platform=iOS Simulator,id=${device.udid}`;
+  }
+  throw new Error("No available iOS simulator was reported by simctl.");
+}

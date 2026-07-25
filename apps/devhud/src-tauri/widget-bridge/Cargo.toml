@@ -1,0 +1,19 @@
+[package]
+name = "tauri-plugin-devhud-widget"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+publish = false
+links = "tauri-plugin-devhud-widget"
+description = "Private mobile widget state bridge for DevHud"
+
+[build-dependencies]
+tauri-plugin = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", features = ["build"] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false }

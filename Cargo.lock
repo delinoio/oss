@@ -1139,6 +1139,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-plugin-devhud-widget",
  "tauri-runtime-cef",
  "tauri-runtime-wry",
  "tracing",
@@ -5488,6 +5489,31 @@ dependencies = [
  "syn 2.0.117",
  "tauri-codegen",
  "tauri-utils",
+]
+
+[[package]]
+name = "tauri-plugin"
+version = "2.6.3"
+source = "git+https://github.com/tauri-apps/tauri?rev=f49ebda2fdba5755456b0f049e32593ca0ea331a#f49ebda2fdba5755456b0f049e32593ca0ea331a"
+dependencies = [
+ "anyhow",
+ "glob",
+ "plist",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "tauri-utils",
+ "walkdir",
+]
+
+[[package]]
+name = "tauri-plugin-devhud-widget"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
