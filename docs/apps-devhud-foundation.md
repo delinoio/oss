@@ -130,7 +130,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Mobile hosts add `mobile:generate:android`, `mobile:generate:ios`, `build:android`, `build:android:ci`, `build:ios`, `build:ios:ci`, `check:mobile`, `test:mobile`, and `test:android:native`. Native widget commands are `build:widget:android`, `build:widget:ios`, `test:widget:android`, `test:widget:ios`, and `check:widget-artifacts`. The artifact command checks canonical projects plus discovered merged manifests and accepts explicit Android manifest/APK and iOS `.app` paths; it fails if a receiver is registered or an extension/provisioning identity is embedded. Deterministic frontend output is declared in `apps/devhud/turbo.json`.
+The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Mobile hosts add `mobile:generate:android`, `mobile:generate:ios`, `build:android`, `build:android:ci`, `build:ios`, `build:ios:ci`, `check:mobile`, `test:mobile`, and `test:android:native`. Native widget commands are `build:widget:android`, `build:widget:ios`, `test:widget:android`, `test:widget:ios`, and `check:widget-artifacts`. The artifact command checks canonical projects plus discovered release merged manifests and accepts explicit Android manifest/APK and iOS `.app` paths; it requires at least one built release artifact and fails if any receiver is registered or an extension/provisioning identity is embedded. Deterministic frontend output is declared in `apps/devhud/turbo.json`.
 
 Required validation coverage is:
 
@@ -142,7 +142,7 @@ Required validation coverage is:
 - Installer, signature, updater, SBOM, and provenance validation.
 - Performance measurements must record HUD display latency, cold startup, package size, and idle memory per supported desktop platform, plus mobile startup time. Publish these measurements with the release; `0.1.0` defines no numeric pass threshold.
 
-DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. The `node-devhud` CI job runs the frontend typecheck, lint, unit, accessibility, build, and portable mobile/artifact contract commands when DevHud inputs change. Change-scoped `devhud-widget-android` and `devhud-widget-ios` jobs compile and test the build-only foundations on their native hosts and run the release-absence guard. Android uses JDK 17 and API 36; iOS uses macOS, Xcode/XCTest, an available simulator, and XcodeGen. No dedicated DevHud release job exists.
+DevHud participates in the existing change-scoped Rust formatting, Clippy, and test jobs. The `node-devhud` CI job runs the frontend typecheck, lint, unit, accessibility, build, and portable mobile contract commands when DevHud inputs change. Change-scoped `devhud-widget-android` and `devhud-widget-ios` jobs compile and test the build-only foundations, compile the private Kotlin/Swift plugin into an x64 release application on the native host, and pass the built application artifact to the fail-closed release-absence guard. Android uses JDK 17 and API 36; iOS uses macOS, Xcode/XCTest, an available simulator, and XcodeGen. No dedicated DevHud release job exists.
 
 ## Dependencies and Integrations
 

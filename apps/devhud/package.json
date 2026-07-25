@@ -14,7 +14,7 @@
     "build:widget:ios": "node scripts/widget-native.mjs ios build",
     "check:contracts": "node scripts/check-contracts.mjs",
     "check:locks": "node scripts/check-lockfiles.mjs",
-    "check:mobile": "node scripts/check-mobile-contracts.mjs && node scripts/check-widget-artifacts.mjs",
+    "check:mobile": "node scripts/check-mobile-contracts.mjs",
     "check:rust": "node scripts/run-cargo-checks.mjs",
     "check:widget-artifacts": "node scripts/check-widget-artifacts.mjs",
     "dev": "rsbuild dev",

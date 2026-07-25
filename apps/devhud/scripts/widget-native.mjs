@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { run } from "./process.mjs";
@@ -7,6 +8,7 @@ const appRoot = resolve(import.meta.dirname, "..");
 const platform = process.argv[2];
 const operation = process.argv[3] ?? "test";
 const artifactCheck = resolve(appRoot, "scripts/check-widget-artifacts.mjs");
+const mobileBuild = resolve(appRoot, "scripts/mobile.mjs");
 
 if (!new Set(["android", "ios"]).has(platform)) {
   throw new Error("Usage: node scripts/widget-native.mjs <android|ios> [build|test]");
@@ -63,7 +65,46 @@ if (platform === "android") {
   }
 }
 
-await run(process.execPath, [artifactCheck], { cwd: appRoot });
+if (operation === "test") {
+  await run(process.execPath, [mobileBuild, "build", platform, "artifact"], {
+    cwd: appRoot,
+  });
+
+  const outputRoot =
+    platform === "android"
+      ? resolve(appRoot, "src-tauri/gen/android/app/build/outputs/apk")
+      : resolve(appRoot, "src-tauri/gen/apple/build");
+  const suffix = platform === "android" ? ".apk" : ".app";
+  const artifactFlag =
+    platform === "android" ? "--android-apk" : "--ios-app";
+  const artifacts = await collectArtifacts(outputRoot, suffix);
+  if (artifacts.length === 0) {
+    throw new Error(
+      `The distributed ${platform} build produced no ${suffix} artifact to inspect.`,
+    );
+  }
+  await run(
+    process.execPath,
+    [
+      artifactCheck,
+      ...artifacts.flatMap((artifact) => [artifactFlag, artifact]),
+    ],
+    { cwd: appRoot },
+  );
+}
+
+async function collectArtifacts(directory, suffix) {
+  const artifacts = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name);
+    if (entry.name.endsWith(suffix)) {
+      artifacts.push(path);
+    } else if (entry.isDirectory()) {
+      artifacts.push(...(await collectArtifacts(path, suffix)));
+    }
+  }
+  return artifacts;
+}
 
 async function firstAvailableSimulatorDestination() {
   const output = execFileSync(

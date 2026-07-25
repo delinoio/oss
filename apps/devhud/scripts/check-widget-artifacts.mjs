@@ -5,6 +5,8 @@ import { delimiter, extname, resolve } from "node:path";
 
 const appRoot = resolve(import.meta.dirname, "..");
 const failures = [];
+let androidArtifactsInspected = 0;
+let iosArtifactsInspected = 0;
 
 function requireCondition(condition, message) {
   if (!condition) failures.push(message);
@@ -206,6 +208,7 @@ for (const relativeRoot of mergedManifestRoots) {
   );
   for (const file of files.filter((path) => path.endsWith("AndroidManifest.xml"))) {
     inspectAndroidManifest(await readFile(file, "utf8"), file);
+    if (/release/iu.test(file)) androidArtifactsInspected += 1;
   }
 }
 
@@ -216,14 +219,22 @@ for (let index = 0; index < arguments_.length; index += 2) {
   if (!path) throw new Error(`${flag} requires an artifact path.`);
   if (flag === "--android-manifest") {
     inspectAndroidManifest(await readFile(resolve(path), "utf8"), path);
+    androidArtifactsInspected += 1;
   } else if (flag === "--android-apk") {
     inspectAndroidManifest(inspectApk(resolve(path)), path);
+    androidArtifactsInspected += 1;
   } else if (flag === "--ios-app") {
     await inspectIosApplication(resolve(path));
+    iosArtifactsInspected += 1;
   } else {
     throw new Error(`Unknown widget artifact inspection option: ${flag}`);
   }
 }
+
+requireCondition(
+  androidArtifactsInspected + iosArtifactsInspected > 0,
+  "at least one built release Android manifest/APK or iOS application artifact is required",
+);
 
 if (failures.length > 0) {
   throw new Error(`DevHud widget artifact checks failed:\n- ${failures.join("\n- ")}`);
@@ -231,16 +242,19 @@ if (failures.length > 0) {
 
 console.log(
   JSON.stringify({
+    androidArtifactsInspected,
     check: "devhud-widget-artifacts",
-    releaseAndroidReceiverRegistered: false,
-    releaseIosExtensionEmbedded: false,
+    iosArtifactsInspected,
+    releaseAndroidReceiverRegistered:
+      androidArtifactsInspected > 0 ? false : null,
+    releaseIosExtensionEmbedded: iosArtifactsInspected > 0 ? false : null,
     status: "passed",
   }),
 );
 
 function inspectAndroidManifest(source, path) {
   requireCondition(
-    !/(APPWIDGET_UPDATE|android\.appwidget\.provider|DevHudWidgetProvider|dev\.deli\.devhud\.widget)/u.test(
+    !/(<receiver\b|APPWIDGET_UPDATE|android\.appwidget\.provider|DevHudWidgetProvider|dev\.deli\.devhud\.widget)/u.test(
       source,
     ),
     `distributed Android artifact registers a widget receiver: ${path}`,

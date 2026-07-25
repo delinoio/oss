@@ -28,14 +28,15 @@ pnpm build:ios:ci
 pnpm build:widget:android
 pnpm build:widget:ios
 pnpm check:mobile
-pnpm check:widget-artifacts
+pnpm check:widget-artifacts -- --android-apk path/to/release.apk
+pnpm check:widget-artifacts -- --ios-app path/to/DevHud.app
 pnpm test:mobile
 pnpm test:android:native
 pnpm test:widget:android
 pnpm test:widget:ios
 ```
 
-Android generation and builds require JDK 17, the Android SDK, NDK, and the Rust Android targets. iOS generation and builds require macOS, Xcode with the iOS 17 SDK, XcodeGen, and the corresponding Rust iOS targets. Production commands build the device architectures above; `:ci` commands build unsigned debug hosts only for the x64 simulator/emulator contract. `build:widget:*` compiles only the non-distributed native foundation, `test:widget:*` also exercises typed fixture round trips and refresh/error handling, and `check:widget-artifacts` fails if the release iOS project embeds an extension or the release Android manifest registers a widget.
+Android generation and builds require JDK 17, the Android SDK, NDK, and the Rust Android targets. iOS generation and builds require macOS, Xcode with the iOS 17 SDK, XcodeGen, and the corresponding Rust iOS targets. Production commands build the device architectures above; `:ci` commands build unsigned debug hosts only for the x64 simulator/emulator contract. `build:widget:*` compiles only the non-distributed native foundation. `test:widget:*` also exercises typed fixture round trips and refresh/error handling, compiles the private native plugin into an x64 release application, and passes that built artifact to the fail-closed release guard. `check:widget-artifacts` requires a built release manifest, APK, or `.app` and fails if the iOS application embeds an extension or the Android manifest contains any receiver.
 
 General package validation is `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:a11y`, `pnpm build`, `pnpm test:build`, `pnpm check:contracts`, `pnpm check:locks`, and `pnpm check:rust`. Desktop build and smoke commands remain `pnpm build:desktop` and `pnpm smoke:desktop`.
 
