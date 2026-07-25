@@ -55,6 +55,9 @@ targets:
         CFBundleVersion: "1"
     entitlements:
       path: devhud_iOS/devhud_iOS.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.deli.devhud
     settings:
       base:
         ENABLE_BITCODE: false

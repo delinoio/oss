@@ -36,6 +36,9 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
       path: Support/DevHudWidgetExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.deli.devhud
     settings:
       base:
         APPLICATION_EXTENSION_API_ONLY: true
