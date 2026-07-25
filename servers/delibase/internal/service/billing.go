@@ -307,7 +307,7 @@ func (service *Billing) ListLedgerEntries(
 	}
 	var response *delibasev1.ListLedgerEntriesResponse
 	err = service.dependencies.Store.WithinTransaction(
-		ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly},
+		ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			account, transactionErr := activeAccount(ctx, queries, subject)
 			if transactionErr != nil {
