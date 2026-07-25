@@ -340,6 +340,31 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 		cycle.ReversedMicros != cycleGrantMicros/2 {
 		t.Fatalf("paid cycle = %#v, %v", cycle, err)
 	}
+	if _, err = store.Queries().MarkOrganizationDeleted(
+		ctx, pgUUID(organizationID),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deletedOrganizationRefundPayload, _ := json.Marshal(polarBillingEvent{
+		Type: string(reliability.WebhookRefundUpdated), EventAt: now.Add(time.Minute),
+		ObjectID: "refund_deleted_organization", OrderID: "order_2",
+		Status: "succeeded", Currency: "usd", AmountMicros: cycleGrantMicros / 2,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarRefundUpdated,
+		Payload:   deletedOrganizationRefundPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deletedOrganizationCycle, err := store.Queries().GetPolarPaidCycle(ctx, "order_2")
+	if err != nil || deletedOrganizationCycle.ReversedMicros != cycleGrantMicros/2 {
+		t.Fatalf(
+			"deleted organization paid cycle = %#v, %v",
+			deletedOrganizationCycle,
+			err,
+		)
+	}
 }
 
 func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {

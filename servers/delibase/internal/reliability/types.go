@@ -140,6 +140,7 @@ const (
 	AuditTeamDeleted                 AuditEventType = "team.deleted"
 	AuditBillingLimitUpdated         AuditEventType = "billing_limit.updated"
 	AuditCheckoutCreated             AuditEventType = "checkout.created"
+	AuditBillingPortalSessionCreated AuditEventType = "billing_portal_session.created"
 	AuditSubscriptionUpdated         AuditEventType = "subscription.updated"
 	AuditRefundRecorded              AuditEventType = "refund.recorded"
 	AuditReservationCreated          AuditEventType = "reservation.created"

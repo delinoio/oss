@@ -1479,6 +1479,7 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		{"INSERT INTO subscriptions (id, organization_id, polar_subscription_id, status, current_period_starts_at, current_period_ends_at) VALUES ($1, $2, 'polar-a', 'active', NULL, NULL), ($3, $4, 'polar-b', 'active', NULL, NULL), ($5, $6, 'polar-c', 'active', transaction_timestamp() - interval '1 day', transaction_timestamp() + interval '1 day')", []any{subA, orgA, subB, orgB, subC, orgC}},
 		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, '2026-01-01', '2026-02-01'), ($4, $5, $6, '2026-01-01', '2026-02-01')", []any{periodA, orgA, subA, periodB, orgB, subB}},
 		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, transaction_timestamp() - interval '1 day', transaction_timestamp() + interval '1 day')", []any{periodC, orgC, subC}},
+		{"INSERT INTO polar_paid_cycles (polar_order_id, organization_id, subscription_id, billing_period_id, grant_micros, paid_at) VALUES ('schema-order-a', $1, $2, $3, 10000000, transaction_timestamp())", []any{orgA, subA, periodA}},
 	}
 	for _, item := range setup {
 		if _, err := transaction.Exec(ctx, item.statement, item.arguments...); err != nil {
@@ -1532,6 +1533,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	`, orgB, orgA)
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE subscriptions SET polar_subscription_id = 'rewritten-subscription' WHERE id = $1",
+		subA,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM subscriptions WHERE id = $1",
 		subA,
 	)
 	if _, err := transaction.Exec(ctx, `
@@ -3557,6 +3562,19 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			'{"request_id":"0198a000-0000-7000-8000-000000000914","trace_id":"0123456789abcdef0123456789abcdef","request_method":"POST","request_procedure":"/delibase.v1.UsageService/ReserveUsage"}'
 		)
 	`, auditID, orgA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO audit_events (
+			id, event_type, actor_reference, organization_id, result
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000133',
+			'billing_portal_session.created',
+			'',
+			$1,
+			'success'
+		)
+	`, orgA); err != nil {
 		t.Fatal(err)
 	}
 	requireConstraintFailure(t, ctx, transaction, `

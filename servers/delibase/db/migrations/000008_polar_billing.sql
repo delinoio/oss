@@ -87,6 +87,35 @@ ALTER TABLE webhook_inbox
         'refund.updated'
     ));
 
+ALTER TABLE audit_events DROP CONSTRAINT audit_events_type_check;
+ALTER TABLE audit_events
+    ADD CONSTRAINT audit_events_type_check CHECK (event_type IN (
+        'authorization.decision',
+        'organization.created',
+        'organization.updated',
+        'organization.deleted',
+        'role.updated',
+        'invitation.created',
+        'invitation.accepted',
+        'invitation.revoked',
+        'team.created',
+        'team.updated',
+        'team.deleted',
+        'billing_limit.updated',
+        'checkout.created',
+        'billing_portal_session.created',
+        'subscription.updated',
+        'refund.recorded',
+        'reservation.created',
+        'reservation.committed',
+        'reservation.released',
+        'settlement.recorded',
+        'account.deletion_requested',
+        'organization.deletion_requested',
+        'webhook.received',
+        'webhook.processed'
+    ));
+
 CREATE TABLE polar_catalog_mappings (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
     polar_product_id text NOT NULL UNIQUE,
@@ -117,7 +146,7 @@ CREATE TABLE polar_paid_cycles (
         DEFAULT (transaction_timestamp() + interval '7 years'),
     UNIQUE (organization_id, polar_order_id),
     FOREIGN KEY (organization_id, subscription_id)
-        REFERENCES subscriptions(organization_id, id) ON DELETE CASCADE,
+        REFERENCES subscriptions(organization_id, id),
     FOREIGN KEY (organization_id, billing_period_id)
         REFERENCES billing_periods(organization_id, id) ON DELETE CASCADE,
     CHECK (length(polar_order_id) BETWEEN 1 AND 255),

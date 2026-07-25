@@ -194,6 +194,11 @@ SELECT * FROM organizations
 WHERE id = sqlc.arg(id) AND deleted_at IS NULL
 FOR UPDATE;
 
+-- name: LockOrganizationForBillingHistory :one
+SELECT * FROM organizations
+WHERE id = sqlc.arg(id)
+FOR UPDATE;
+
 -- name: GetActivePolarSubscriptionCheckout :one
 SELECT * FROM polar_subscription_checkouts
 WHERE organization_id = sqlc.arg(organization_id)

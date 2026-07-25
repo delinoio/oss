@@ -118,6 +118,7 @@ type Querier interface {
 	ListTeamsForAccount(ctx context.Context, arg ListTeamsForAccountParams) ([]ListTeamsForAccountRow, error)
 	LockAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
 	LockOrganizationForBilling(ctx context.Context, id pgtype.UUID) (Organization, error)
+	LockOrganizationForBillingHistory(ctx context.Context, id pgtype.UUID) (Organization, error)
 	LockOrganizationForMutation(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	LockOrganizationInvitationByTokenHash(ctx context.Context, tokenHash []byte) (LockOrganizationInvitationByTokenHashRow, error)
 	LockOwnedOrganizations(ctx context.Context, accountID pgtype.UUID) ([]pgtype.UUID, error)

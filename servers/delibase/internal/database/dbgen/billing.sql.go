@@ -745,6 +745,28 @@ func (q *Queries) LockOrganizationForBilling(ctx context.Context, id pgtype.UUID
 	return i, err
 }
 
+const lockOrganizationForBillingHistory = `-- name: LockOrganizationForBillingHistory :one
+SELECT id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured FROM organizations
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockOrganizationForBillingHistory(ctx context.Context, id pgtype.UUID) (Organization, error) {
+	row := q.db.QueryRow(ctx, lockOrganizationForBillingHistory, id)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.OverageLimitMicros,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
+	)
+	return i, err
+}
+
 const updateCurrentBillingPeriodOverageLimit = `-- name: UpdateCurrentBillingPeriodOverageLimit :execrows
 WITH current_period AS (
     SELECT id, starts_at, ends_at

@@ -108,6 +108,7 @@ func validAuditType(eventType AuditEventType) bool {
 		AuditTeamDeleted,
 		AuditBillingLimitUpdated,
 		AuditCheckoutCreated,
+		AuditBillingPortalSessionCreated,
 		AuditSubscriptionUpdated,
 		AuditRefundRecorded,
 		AuditReservationCreated,

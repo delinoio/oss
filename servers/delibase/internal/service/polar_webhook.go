@@ -319,7 +319,9 @@ func processPolarRefund(
 	if err != nil {
 		return err
 	}
-	if _, err = queries.LockOrganizationForBilling(ctx, cycle.OrganizationID); err != nil {
+	if _, err = queries.LockOrganizationForBillingHistory(
+		ctx, cycle.OrganizationID,
+	); err != nil {
 		return err
 	}
 	previousReversal := int64(0)

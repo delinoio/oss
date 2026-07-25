@@ -162,7 +162,7 @@ func (service *Billing) CreateBillingPortalSession(
 	err = service.persistBillingMutation(
 		ctx, subject, organizationID, "create_billing_portal_session", key, digest,
 		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION,
-		reliability.AuditCheckoutCreated, response, &response.Idempotency,
+		reliability.AuditBillingPortalSessionCreated, response, &response.Idempotency,
 	)
 	if err != nil {
 		return nil, err
