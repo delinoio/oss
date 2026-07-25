@@ -160,6 +160,8 @@ describe("organization team management", () => {
   });
 
   it("renders inherited Team Admin capabilities without organization-admin controls", async () => {
+    let childCreated = false;
+    let effectiveAccessRequests = 0;
     const fetchMock = vi.fn<typeof fetch>(async (request) => {
       const url = String(request);
       if (url.endsWith("/ResolveOrganizationSlug")) {
@@ -191,10 +193,23 @@ describe("organization team management", () => {
               protectedGeneral: true,
               teamId: { value: "general-team-id" },
             },
+            ...(childCreated
+              ? [
+                  {
+                    depth: 1,
+                    name: "Platform",
+                    organizationId: { value: "organization-id" },
+                    parentTeamId: { value: "general-team-id" },
+                    protectedGeneral: false,
+                    teamId: { value: "platform-team-id" },
+                  },
+                ]
+              : []),
           ],
         });
       }
       if (url.endsWith("/ListEffectiveTeamAccess")) {
+        effectiveAccessRequests += 1;
         return connectJsonResponse({
           access: [
             {
@@ -202,7 +217,28 @@ describe("organization team management", () => {
               source: "TEAM_ACCESS_SOURCE_ANCESTOR_MEMBERSHIP",
               teamId: { value: "general-team-id" },
             },
+            ...(childCreated
+              ? [
+                  {
+                    effectiveRole: "TEAM_ROLE_ADMIN",
+                    source: "TEAM_ACCESS_SOURCE_ANCESTOR_MEMBERSHIP",
+                    teamId: { value: "platform-team-id" },
+                  },
+                ]
+              : []),
           ],
+        });
+      }
+      if (url.endsWith("/CreateTeam")) {
+        childCreated = true;
+        return connectJsonResponse({
+          team: {
+            depth: 1,
+            name: "Platform",
+            organizationId: { value: "organization-id" },
+            parentTeamId: { value: "general-team-id" },
+            teamId: { value: "platform-team-id" },
+          },
         });
       }
       if (url.endsWith("/ListOrganizationMembers")) {
@@ -261,6 +297,21 @@ describe("organization team management", () => {
     expect(
       screen.queryByRole("option", { name: "Top level" }),
     ).not.toBeInTheDocument();
+    await user.type(
+      screen.getByRole("textbox", { name: "Team name" }),
+      "Platform",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Parent team" }),
+      "general-team-id",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Create team" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Manage Platform" }),
+    ).toBeVisible();
+    expect(effectiveAccessRequests).toBe(2);
     await user.click(
       screen.getByRole("button", { name: "Manage General" }),
     );

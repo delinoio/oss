@@ -229,7 +229,13 @@ describe("account deletion", () => {
         queries: { retry: false },
       },
     });
-    const signOut = vi.fn(async () => undefined);
+    let signOutAttempt = 0;
+    const signOut = vi.fn(async () => {
+      signOutAttempt += 1;
+      if (signOutAttempt === 1) {
+        throw new Error("Logto is unavailable.");
+      }
+    });
     const user = userEvent.setup();
 
     render(
@@ -272,7 +278,19 @@ describe("account deletion", () => {
       await screen.findByRole("button", { name: "Delete account" }),
     );
 
-    expect(signOut).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByText(
+        "Account deletion succeeded, but Logto sign-out failed. Retry sign out.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Deletion accepted…" }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Retry sign out" }),
+    );
+
+    expect(signOut).toHaveBeenCalledTimes(2);
     expect(idempotencyKeys).toHaveLength(3);
     expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
     expect(idempotencyKeys[2]).not.toBe(idempotencyKeys[1]);

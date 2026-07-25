@@ -964,7 +964,14 @@ export function TeamsPage() {
   );
   const canCreateTeam = organizationManager || adminTeamIds.size > 0;
   const refreshTeams = async () => {
-    await teams.refetch();
+    if (organizationManager) {
+      await teams.refetch();
+      return;
+    }
+    await Promise.all([
+      teams.refetch(),
+      effectiveAccess.refetch(),
+    ]);
   };
   const hideDeletedSubtree = (teamId: string) => {
     const subtreeIds = getTeamSubtreeIds(teamId, loadedTeamRows);

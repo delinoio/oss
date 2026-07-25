@@ -51,7 +51,11 @@ export function Dialog({
           state.element.setAttribute("aria-hidden", state.ariaHidden);
         }
       }
-      previousFocusRef.current?.focus();
+      if (previousFocusRef.current?.isConnected) {
+        previousFocusRef.current.focus();
+      } else {
+        document.getElementById("main-content")?.focus();
+      }
     };
   }, []);
 

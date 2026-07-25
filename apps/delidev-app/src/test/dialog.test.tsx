@@ -5,18 +5,28 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Dialog } from "../components/Dialog";
 
-function DialogHarness({ onClose }: { onClose: () => void }) {
+function DialogHarness({
+  onClose,
+  removeTriggerOnClose = false,
+}: {
+  onClose: () => void;
+  removeTriggerOnClose?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [triggerRemoved, setTriggerRemoved] = useState(false);
   return (
-    <>
-      <button type="button" onClick={() => setOpen(true)}>
-        Review deletion
-      </button>
+    <main id="main-content" tabIndex={-1}>
+      {!triggerRemoved ? (
+        <button type="button" onClick={() => setOpen(true)}>
+          Review deletion
+        </button>
+      ) : null}
       {open ? (
         <Dialog
           descriptionId="dialog-description"
           onClose={() => {
             setOpen(false);
+            setTriggerRemoved(removeTriggerOnClose);
             onClose();
           }}
           titleId="dialog-title"
@@ -27,7 +37,7 @@ function DialogHarness({ onClose }: { onClose: () => void }) {
           <button type="button">Delete account</button>
         </Dialog>
       ) : null}
-    </>
+    </main>
   );
 }
 
@@ -50,5 +60,20 @@ describe("dialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(container.inert).not.toBe(true);
     expect(trigger).toHaveFocus();
+  });
+
+  it("focuses the main content when closing removes the opener", async () => {
+    const user = userEvent.setup();
+    render(
+      <DialogHarness
+        onClose={() => undefined}
+        removeTriggerOnClose
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Review deletion" }),
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("main")).toHaveFocus();
   });
 });

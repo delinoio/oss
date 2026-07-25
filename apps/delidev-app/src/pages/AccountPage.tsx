@@ -33,6 +33,8 @@ export function AccountPage() {
   const online = useOnline();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletionAccepted, setDeletionAccepted] = useState(false);
+  const [signOutAttempt, setSignOutAttempt] = useState(0);
+  const [signOutError, setSignOutError] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [organizationError, setOrganizationError] = useState("");
@@ -42,6 +44,7 @@ export function AccountPage() {
   const organizationIdempotencyKey = useRef<
     { key: string } | undefined
   >(undefined);
+  const lastSignOutAttempt = useRef(-1);
   const impact = useQuery(
     AccountService.method.getAccountDeletionImpact,
     {},
@@ -61,18 +64,35 @@ export function AccountPage() {
     { transport: auth.transport },
   );
   const closeDeleteDialog = () => {
-    if (remove.isPending) return;
+    if (remove.isPending || deletionAccepted) return;
     accountDeletionIdempotencyKey.current = undefined;
     remove.reset();
     setDeletionAccepted(false);
+    setSignOutAttempt(0);
+    setSignOutError("");
     setDeleteDialogOpen(false);
   };
 
   useEffect(() => {
-    if (deletionAccepted) {
-      void auth.signOut();
+    if (
+      !deletionAccepted ||
+      lastSignOutAttempt.current === signOutAttempt
+    ) {
+      return;
     }
-  }, [auth, deletionAccepted]);
+    lastSignOutAttempt.current = signOutAttempt;
+    let active = true;
+    void auth.signOut().catch(() => {
+      if (active) {
+        setSignOutError(
+          "Account deletion succeeded, but Logto sign-out failed. Retry sign out.",
+        );
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [auth, deletionAccepted, signOutAttempt]);
 
   const submitOrganization = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -276,10 +296,25 @@ export function AccountPage() {
               {describeDelibaseError(remove.error)}
             </p>
           ) : null}
+          {signOutError ? (
+            <div className="inline-error" role="alert">
+              <p>{signOutError}</p>
+              <button
+                className="button secondary"
+                onClick={() => {
+                  setSignOutError("");
+                  setSignOutAttempt((attempt) => attempt + 1);
+                }}
+                type="button"
+              >
+                Retry sign out
+              </button>
+            </div>
+          ) : null}
           <div className="dialog-actions">
             <button
               className="button secondary"
-              disabled={remove.isPending}
+              disabled={remove.isPending || deletionAccepted}
               onClick={closeDeleteDialog}
               type="button"
             >
@@ -288,7 +323,10 @@ export function AccountPage() {
             <button
               className="button danger"
               disabled={
-                !impact.data?.canDelete || !online || remove.isPending
+                !impact.data?.canDelete ||
+                !online ||
+                remove.isPending ||
+                deletionAccepted
               }
               onClick={() => {
                 accountDeletionIdempotencyKey.current ??=
