@@ -12,6 +12,7 @@ import {
 import { ProtectedRoute } from "../components/ProtectedRoute";
 import { canonicalAudience } from "../config";
 import { OnboardingPage } from "../pages/OnboardingPage";
+import { TestAccountStateProvider } from "./TestAccountStateProvider";
 
 function connectJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -67,10 +68,12 @@ describe("account onboarding", () => {
               transport,
             }}
           >
-            <Routes>
-              <Route path="/onboarding" element={<OnboardingPage />} />
-              <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
-            </Routes>
+            <TestAccountStateProvider onboardingRequired organizations={[]}>
+              <Routes>
+                <Route path="/onboarding" element={<OnboardingPage />} />
+                <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -193,5 +196,96 @@ describe("account onboarding", () => {
 
     expect(await screen.findByText("Acme apps")).toBeVisible();
     expect(accountStateRequests).toBe(2);
+  });
+
+  it("keeps the onboarding form available when account refresh fails", async () => {
+    let accountStateRequests = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/GetAccountState")) {
+        accountStateRequests += 1;
+        if (accountStateRequests > 1) {
+          return connectJsonResponse(
+            { code: "unavailable", message: "The response was lost." },
+            503,
+          );
+        }
+        return connectJsonResponse({
+          onboardingRequired: true,
+          organizations: [],
+        });
+      }
+      return connectJsonResponse({
+        organizationId: {
+          value: "01912345-0000-7000-8000-000000000001",
+        },
+      });
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/onboarding"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <Routes>
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute>
+                    <OnboardingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
+            </Routes>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.type(
+      await screen.findByRole("textbox", { name: "Your name" }),
+      "Deli Developer",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Organization name" }),
+      "Acme",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: /^Organization URL/ }),
+      "acme",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Create workspace" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Your workspace was created, but account refresh failed. Submit again to safely resume.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Create workspace" }),
+    ).toBeEnabled();
+    expect(screen.queryByText("Acme apps")).not.toBeInTheDocument();
   });
 });

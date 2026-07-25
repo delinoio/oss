@@ -4,11 +4,13 @@ import {
   OrganizationRole,
   OrganizationService,
 } from "@delinoio/delibase-connect";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
+import { describeDelibaseError } from "../api/errors";
 import { Dialog } from "../components/Dialog";
+import { useAccountState } from "../components/ProtectedRoute";
 import {
   ErrorState,
   LoadingState,
@@ -26,9 +28,13 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export function AccountPage() {
   useDocumentMetadata("Account", "Manage your DeliDev account.");
   const auth = useAuthSession();
+  const { accountState, refreshAccountState } = useAccountState();
   const navigate = useNavigate();
   const online = useOnline();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletionAccepted, setDeletionAccepted] = useState(false);
+  const [signOutAttempt, setSignOutAttempt] = useState(0);
+  const [signOutError, setSignOutError] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [organizationError, setOrganizationError] = useState("");
@@ -38,16 +44,7 @@ export function AccountPage() {
   const organizationIdempotencyKey = useRef<
     { key: string } | undefined
   >(undefined);
-  const account = useQuery(
-    AccountService.method.getAccountState,
-    {},
-    {
-      gcTime: 0,
-      retry: false,
-      staleTime: 0,
-      transport: auth.transport,
-    },
-  );
+  const lastSignOutAttempt = useRef(-1);
   const impact = useQuery(
     AccountService.method.getAccountDeletionImpact,
     {},
@@ -67,11 +64,29 @@ export function AccountPage() {
     { transport: auth.transport },
   );
   const closeDeleteDialog = () => {
-    if (remove.isPending) return;
+    if (remove.isPending || deletionAccepted) return;
     accountDeletionIdempotencyKey.current = undefined;
     remove.reset();
+    setDeletionAccepted(false);
+    setSignOutAttempt(0);
+    setSignOutError("");
     setDeleteDialogOpen(false);
   };
+
+  useEffect(() => {
+    if (
+      !deletionAccepted ||
+      lastSignOutAttempt.current === signOutAttempt
+    ) {
+      return;
+    }
+    lastSignOutAttempt.current = signOutAttempt;
+    void auth.signOut().catch(() => {
+      setSignOutError(
+        "Account deletion succeeded, but Logto sign-out failed. Retry sign out.",
+      );
+    });
+  }, [auth, deletionAccepted, signOutAttempt]);
 
   const submitOrganization = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -96,33 +111,22 @@ export function AccountPage() {
         slug,
       },
       {
-        onError: (error) => setOrganizationError(error.message),
-        onSuccess: (data) => {
-          organizationIdempotencyKey.current = undefined;
-          void navigate(`/o/${data.organization?.slug ?? slug}/apps`);
+        onError: (error) =>
+          setOrganizationError(describeDelibaseError(error)),
+        onSuccess: async (data) => {
+          try {
+            await refreshAccountState();
+            organizationIdempotencyKey.current = undefined;
+            void navigate(`/o/${data.organization?.slug ?? slug}/apps`);
+          } catch {
+            setOrganizationError(
+              "The organization was created, but account refresh failed. Submit again to safely resume.",
+            );
+          }
         },
       },
     );
   };
-
-  if (account.isPending) {
-    return (
-      <div className="page narrow">
-        <LoadingState label="Loading account" />
-      </div>
-    );
-  }
-  if (account.isError) {
-    return (
-      <div className="page narrow">
-        <ErrorState
-          error={account.error}
-          onRetry={() => void account.refetch()}
-          title="Account unavailable"
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="page narrow">
@@ -133,18 +137,18 @@ export function AccountPage() {
       </header>
       <section className="content-card account-profile">
         <span className="avatar large" aria-hidden="true">
-          {account.data.account?.displayName.slice(0, 1)}
+          {accountState.account?.displayName.slice(0, 1)}
         </span>
         <div>
-          <h2>{account.data.account?.displayName || "DeliDev account"}</h2>
+          <h2>{accountState.account?.displayName || "DeliDev account"}</h2>
           <p>Your identity is secured by Logto.</p>
         </div>
       </section>
       <section className="content-card">
         <h2>Organizations</h2>
-        {account.data.organizations.length ? (
+        {accountState.organizations.length ? (
           <ul className="organization-list">
-            {account.data.organizations.map((organization) => (
+            {accountState.organizations.map((organization) => (
               <li key={organization.organizationId?.value}>
                 <div>
                   <strong>{organization.name}</strong>
@@ -283,13 +287,28 @@ export function AccountPage() {
           ) : null}
           {remove.error ? (
             <p className="inline-error" role="alert">
-              {remove.error.message}
+              {describeDelibaseError(remove.error)}
             </p>
+          ) : null}
+          {signOutError ? (
+            <div className="inline-error" role="alert">
+              <p>{signOutError}</p>
+              <button
+                className="button secondary"
+                onClick={() => {
+                  setSignOutError("");
+                  setSignOutAttempt((attempt) => attempt + 1);
+                }}
+                type="button"
+              >
+                Retry sign out
+              </button>
+            </div>
           ) : null}
           <div className="dialog-actions">
             <button
               className="button secondary"
-              disabled={remove.isPending}
+              disabled={remove.isPending || deletionAccepted}
               onClick={closeDeleteDialog}
               type="button"
             >
@@ -298,7 +317,10 @@ export function AccountPage() {
             <button
               className="button danger"
               disabled={
-                !impact.data?.canDelete || !online || remove.isPending
+                !impact.data?.canDelete ||
+                !online ||
+                remove.isPending ||
+                deletionAccepted
               }
               onClick={() => {
                 accountDeletionIdempotencyKey.current ??=
@@ -311,15 +333,26 @@ export function AccountPage() {
                   {
                     onSuccess: () => {
                       accountDeletionIdempotencyKey.current = undefined;
-                      void auth.signOut();
+                      setDeletionAccepted(true);
                     },
                   },
                 );
               }}
               type="button"
             >
-              {remove.isPending ? "Deleting…" : "Delete account"}
+              {remove.isPending
+                ? "Deleting account…"
+                : remove.isSuccess
+                  ? "Deletion accepted…"
+                  : "Delete account"}
             </button>
+            <span className="sr-only" aria-live="assertive">
+              {remove.isPending
+                ? "Account deletion is in progress. Keep this window open."
+                : remove.isSuccess
+                  ? "Account deletion was accepted. Signing out of Logto."
+                  : ""}
+            </span>
           </div>
         </Dialog>
       ) : null}

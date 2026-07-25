@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
 
+import {
+  describeDelibaseError,
+  isPermissionError,
+} from "../api/errors";
+
 export function LoadingState({ label = "Loading" }: { label?: string }) {
   return (
     <div className="state-card" role="status" aria-live="polite">
@@ -39,16 +44,17 @@ export function ErrorState({
   onRetry?: () => void;
   title?: string;
 }) {
-  const detail =
-    error instanceof Error
-      ? error.message
-      : "The request could not be completed. Please try again.";
+  const permissionDenied = error ? isPermissionError(error) : false;
+  const detail = error
+    ? describeDelibaseError(error)
+    : "The request could not be completed. Please try again.";
+  const heading = permissionDenied ? "Permission denied" : title;
   return (
     <section className="state-card error-state" role="alert">
       <span className="error-icon" aria-hidden="true">
         !
       </span>
-      <h2>{title}</h2>
+      <h2>{heading}</h2>
       <p>{detail}</p>
       {onRetry ? (
         <button className="button secondary" type="button" onClick={onRetry}>
