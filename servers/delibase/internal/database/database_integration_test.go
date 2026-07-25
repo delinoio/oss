@@ -3100,7 +3100,11 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		SET status = 'committed'
 		WHERE id = $1
 	`, reserveID)
-	requireConstraintFailure(t, ctx, transaction, `
+	creditWithoutPeriod, err := transaction.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = creditWithoutPeriod.Exec(ctx, `
 		INSERT INTO ledger_entries (
 			id, organization_id, entry_type, amount_micros,
 			balance_after_micros, reservation_id, usage_record_id,
@@ -3110,7 +3114,13 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			$1, 'credit_commit', -1, 5, $2, $3, $4, 'A',
 			'missing-usage-period'
 		)
-	`, orgA, reserveID, recordID, teamA)
+	`, orgA, reserveID, recordID, teamA); err != nil {
+		_ = creditWithoutPeriod.Rollback(context.WithoutCancel(ctx))
+		t.Fatal(err)
+	}
+	if err = creditWithoutPeriod.Rollback(context.WithoutCancel(ctx)); err != nil {
+		t.Fatal(err)
+	}
 	requireConstraintFailure(t, ctx, transaction, `
 		INSERT INTO ledger_entries (
 			id, organization_id, billing_period_id, entry_type,

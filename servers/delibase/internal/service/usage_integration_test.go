@@ -500,6 +500,49 @@ func TestPostgreSQLExpirationContinuesAfterOrganizationFailure(t *testing.T) {
 	if poisonStored.Status != "held" {
 		t.Fatalf("poison reservation status = %q", poisonStored.Status)
 	}
+	err = poisonFixture.store.WithinTransaction(
+		ctx,
+		pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if _, lockErr := queries.LockOrganizationForBilling(
+				ctx,
+				pgUUID(poisonFixture.organizationID),
+			); lockErr != nil {
+				return lockErr
+			}
+			return appendUsageLedger(
+				ctx,
+				dependencies,
+				queries,
+				poisonStored,
+				"credit_hold",
+				-poisonStored.HeldCreditMicros,
+				uuid.Nil,
+				"reservation:"+poisonReservationID.String()+":credit-hold",
+				actor,
+			)
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	processed, batchErr = worker.ProcessBatch(ctx)
+	if batchErr != nil || processed < 1 {
+		t.Fatalf("repaired expiration processed = %d, %v", processed, batchErr)
+	}
+	poisonStored, err = poisonFixture.store.Queries().LockUsageReservation(
+		ctx,
+		dbgen.LockUsageReservationParams{
+			OrganizationID: pgUUID(poisonFixture.organizationID),
+			ReservationID:  pgUUID(poisonReservationID),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if poisonStored.Status != "expired" {
+		t.Fatalf("repaired poison reservation status = %q", poisonStored.Status)
+	}
 }
 
 func TestPostgreSQLPolarUsageOutboxPayloadMustMatchRecord(t *testing.T) {
