@@ -1,5 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
+  DeletionBlockerKind,
   ErrorDetailSchema,
   ErrorReason,
   type DeletionBlocker,
@@ -79,22 +80,49 @@ const reasonMessages = new Map<ErrorReason, string>([
   ],
   [
     ErrorReason.ACCOUNT_DELETION_BLOCKED,
-    "Account deletion is blocked until every organization has another Owner.",
+    "Account deletion is blocked. Transfer ownership where you are the last Owner and settle or release active usage reservations.",
   ],
 ]);
+
+function accountDeletionBlockerMessage(
+  blockers: DeletionBlocker[],
+): string | undefined {
+  const hasLastOwnerBlocker = blockers.some(
+    (blocker) =>
+      blocker.kind === DeletionBlockerKind.LAST_ORGANIZATION_OWNER,
+  );
+  const hasReservationBlocker = blockers.some(
+    (blocker) =>
+      blocker.kind === DeletionBlockerKind.ACTIVE_USAGE_RESERVATION,
+  );
+  if (hasLastOwnerBlocker && hasReservationBlocker) {
+    return "Account deletion is blocked. Transfer ownership where you are the last Owner and settle or release active usage reservations.";
+  }
+  if (hasReservationBlocker) {
+    return "Account deletion is blocked by active usage reservations. Settle or release them before deleting your account.";
+  }
+  if (hasLastOwnerBlocker) {
+    return "Account deletion is blocked until every organization has another Owner.";
+  }
+  return undefined;
+}
 
 export function getDelibaseError(error: unknown): DelibaseError {
   const connectError = ConnectError.from(error);
   const detail = connectError.findDetails(ErrorDetailSchema)[0];
+  const blockers = detail?.deletionBlockers ?? [];
+  const reason = detail?.reason ?? ErrorReason.UNSPECIFIED;
   return {
-    blockers: detail?.deletionBlockers ?? [],
+    blockers,
     code: connectError.code,
     message:
+      (reason === ErrorReason.ACCOUNT_DELETION_BLOCKED &&
+        accountDeletionBlockerMessage(blockers)) ||
       (detail && reasonMessages.get(detail.reason)) ||
       detail?.message ||
       connectError.rawMessage ||
       "The request could not be completed. Please try again.",
-    reason: detail?.reason ?? ErrorReason.UNSPECIFIED,
+    reason,
   };
 }
 

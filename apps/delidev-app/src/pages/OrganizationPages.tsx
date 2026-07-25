@@ -303,7 +303,7 @@ export function MembersPage() {
                           member={member}
                           onUpdated={async () => {
                             await Promise.all([
-                              members.refetch(),
+                              members.refetch({ throwOnError: true }),
                               refreshAccountState(),
                               refreshOrganization(),
                             ]);
@@ -421,8 +421,8 @@ function MemberActions({
         organizationId: organization.organizationId,
         role,
       });
-      updateKey.current = undefined;
       await onUpdated();
+      updateKey.current = undefined;
       setOpen(false);
     } catch (error) {
       setFormError(describeDelibaseError(error));
@@ -448,8 +448,8 @@ function MemberActions({
         idempotency: removalKey.current,
         organizationId: organization.organizationId,
       });
-      removalKey.current = undefined;
       await onUpdated();
+      removalKey.current = undefined;
       setOpen(false);
     } catch (error) {
       setFormError(describeDelibaseError(error));
@@ -968,12 +968,12 @@ export function TeamsPage() {
   const canCreateTeam = organizationManager || adminTeamIds.size > 0;
   const refreshTeams = async () => {
     if (organizationManager) {
-      await teams.refetch();
+      await teams.refetch({ throwOnError: true });
       return;
     }
     await Promise.all([
-      teams.refetch(),
-      effectiveAccess.refetch(),
+      teams.refetch({ throwOnError: true }),
+      effectiveAccess.refetch({ throwOnError: true }),
     ]);
   };
   const hideDeletedSubtree = (teamId: string) => {
@@ -1168,12 +1168,16 @@ function CreateTeamForm({
       {
         onError: (error) =>
           setFormError(describeDelibaseError(error)),
-        onSuccess: () => {
-          idempotencyKey.current = undefined;
-          setName("");
-          setParentTeamId("");
-          setMessage("Team created.");
-          void onUpdated();
+        onSuccess: async () => {
+          try {
+            await onUpdated();
+            idempotencyKey.current = undefined;
+            setName("");
+            setParentTeamId("");
+            setMessage("Team created.");
+          } catch (error) {
+            setFormError(describeDelibaseError(error));
+          }
         },
       },
     );
@@ -1419,7 +1423,7 @@ function TeamActions({
       setOpen(false);
     } catch (error) {
       if (mutationSucceeded) {
-        await onUpdated();
+        await onUpdated().catch(() => undefined);
       }
       setFormError(
         describeDelibaseError(error),
@@ -1445,7 +1449,7 @@ function TeamActions({
       onDeleted(teamId);
       deletionKey.current = undefined;
       setOpen(false);
-      void onUpdated();
+      void onUpdated().catch(() => undefined);
     } catch (error) {
       setFormError(
         describeDelibaseError(error),
@@ -1676,10 +1680,13 @@ function TeamMembershipManagement({
         role,
         teamId: team.teamId,
       });
+      await Promise.all([
+        memberships.refetch({ throwOnError: true }),
+        onUpdated(),
+      ]);
       setKey.current = undefined;
       setAccountId("");
       setMessage("Direct team membership updated.");
-      await Promise.all([memberships.refetch(), onUpdated()]);
     } catch (error) {
       setFormError(describeDelibaseError(error));
     }
@@ -1700,9 +1707,12 @@ function TeamMembershipManagement({
         organizationId: organization.organizationId,
         teamId: team.teamId,
       });
+      await Promise.all([
+        memberships.refetch({ throwOnError: true }),
+        onUpdated(),
+      ]);
       removalKeys.current.delete(targetAccountId);
       setMessage("Direct team membership removed.");
-      await Promise.all([memberships.refetch(), onUpdated()]);
     } catch (error) {
       setFormError(describeDelibaseError(error));
     }
@@ -1811,9 +1821,9 @@ function TeamMembershipManagement({
         </ul>
       ) : memberships.data ? (
         <p className="muted">No direct memberships are listed.</p>
-      ) : (
+      ) : memberships.isPending ? (
         <LoadingState label="Loading direct memberships" />
-      )}
+      ) : null}
       {memberships.hasNextPage ? (
         <button
           className="button secondary compact-button"
