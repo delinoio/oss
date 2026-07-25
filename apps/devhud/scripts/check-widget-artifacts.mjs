@@ -272,10 +272,10 @@ function inspectAndroidManifest(source, path) {
   const application = source.match(/<application\b[^>]*>/su)?.[0] ?? "";
   requireCondition(
     /android:allowBackup\s*=\s*["']false["']/u.test(application) &&
-      /android:dataExtractionRules\s*=\s*["']@xml\/data_extraction_rules["']/u.test(
+      /android:dataExtractionRules\s*=\s*["'](?:@xml\/data_extraction_rules|@ref\/0x[0-9a-f]+)["']/iu.test(
         application,
       ) &&
-      /android:fullBackupContent\s*=\s*["']@xml\/backup_rules["']/u.test(
+      /android:fullBackupContent\s*=\s*["'](?:@xml\/backup_rules|@ref\/0x[0-9a-f]+)["']/iu.test(
         application,
       ),
     `distributed Android artifact does not preserve backup exclusions: ${path}`,
