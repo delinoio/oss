@@ -138,6 +138,59 @@ func TestProjectRefundRejectsCentToMicrounitOverflow(t *testing.T) {
 	}
 }
 
+func TestProjectRefundClassifiesOnlyResolvedLostDisputeAsChargeback(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name       string
+		status     string
+		resolved   bool
+		chargeback bool
+	}{
+		{name: "pending", status: "needs_response"},
+		{name: "prevented", status: "prevented"},
+		{name: "won", status: "won", resolved: true},
+		{name: "unresolved lost", status: "lost"},
+		{name: "resolved lost", status: "lost", resolved: true, chargeback: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := []byte(`{
+				"type":"refund.updated",
+				"timestamp":"2026-07-24T12:00:00Z",
+				"data":{
+					"id":"refund_1",
+					"order_id":"order_1",
+					"status":"succeeded",
+					"currency":"usd",
+					"amount":100,
+					"dispute":{
+						"status":` + strconv.Quote(test.status) + `,
+						"resolved":` + strconv.FormatBool(test.resolved) + `,
+						"amount":200
+					}
+				}
+			}`)
+			_, projected, err := projectWebhook(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded projectedWebhook
+			if err := json.Unmarshal(projected, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded.Chargeback != test.chargeback {
+				t.Fatalf("chargeback = %t, want %t", decoded.Chargeback, test.chargeback)
+			}
+			wantAmount := int64(1_000_000)
+			if test.chargeback {
+				wantAmount = 2_000_000
+			}
+			if decoded.AmountMicros != wantAmount {
+				t.Fatalf("amount = %d, want %d", decoded.AmountMicros, wantAmount)
+			}
+		})
+	}
+}
+
 func TestProjectWebhookAcceptsSubscriptionUncanceled(t *testing.T) {
 	t.Parallel()
 	eventType, projected, err := projectWebhook([]byte(`{

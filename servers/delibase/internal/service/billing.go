@@ -226,6 +226,12 @@ func (service *Billing) UpdateOverageLimit(
 			); transactionErr != nil {
 				return transactionErr
 			}
+			replayed, completedAt, transactionErr = replay(
+				ctx, queries, subject, "update_overage_limit", key, digest, response,
+			)
+			if transactionErr != nil {
+				return transactionErr
+			}
 			if replayed {
 				setIdempotency(
 					&response.Idempotency,

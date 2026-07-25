@@ -885,6 +885,168 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLUpdateOverageLimitReplaysAfterOrganizationLock(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	locker, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer locker.Close(ctx)
+	observer, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer observer.Close(ctx)
+
+	accountID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
+	subject := "overage-lock-" + accountID.String()
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.CreateAccount(
+			ctx,
+			dbgen.CreateAccountParams{
+				ID:           pgUUID(accountID),
+				LogtoSubject: subject,
+				DisplayName:  "Overage Lock Owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateOrganization(
+			ctx,
+			dbgen.CreateOrganizationParams{
+				ID:   pgUUID(organizationID),
+				Name: "Overage Lock Integration",
+				Slug: "overage-lock-" + organizationID.String()[24:],
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreatePolarCustomer(
+			ctx,
+			dbgen.CreatePolarCustomerParams{
+				OrganizationID:  pgUUID(organizationID),
+				PolarCustomerID: "customer_" + organizationID.String(),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateOrganizationMembership(
+			ctx,
+			dbgen.CreateOrganizationMembershipParams{
+				OrganizationID: pgUUID(organizationID),
+				AccountID:      pgUUID(accountID),
+				Role:           "owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := queries.CreateGeneralTeam(
+			ctx,
+			dbgen.CreateGeneralTeamParams{
+				ID:             pgUUID(teamID),
+				OrganizationID: pgUUID(organizationID),
+			},
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pseudonymizer, err := safelog.NewPseudonymizer(bytes.Repeat([]byte{0x35}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	billing := NewBilling(Dependencies{
+		Store:         store,
+		Pseudonymizer: pseudonymizer,
+	})
+
+	lockTransaction, err := locker.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockTransaction.Rollback(context.Background())
+	if _, err = dbgen.New(lockTransaction).LockOrganizationForBilling(
+		ctx, pgUUID(organizationID),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	type overageResult struct {
+		response *connect.Response[delibasev1.UpdateOverageLimitResponse]
+		err      error
+	}
+	results := make(chan overageResult, 2)
+	update := func() {
+		response, updateErr := billing.UpdateOverageLimit(
+			authenticatedContext(ctx, subject),
+			connect.NewRequest(&delibasev1.UpdateOverageLimitRequest{
+				OrganizationId: &delibasev1.UuidV7{Value: organizationID.String()},
+				MonthlyLimit:   &delibasev1.UsdMicros{Value: 1_000_000},
+				Idempotency:    idempotency("overage-lock-" + organizationID.String()),
+			}),
+		)
+		results <- overageResult{response: response, err: updateErr}
+	}
+	go update()
+	go update()
+
+	for {
+		var waiting int
+		if err = observer.QueryRow(ctx, `
+			SELECT count(*)
+			FROM pg_stat_activity
+			WHERE datname = current_database()
+			  AND wait_event_type = 'Lock'
+			  AND query LIKE '%name: LockOrganizationForBilling :one%'
+		`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting >= 2 {
+			break
+		}
+		select {
+		case result := <-results:
+			t.Fatalf("overage request completed before billing lock released: %#v", result)
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	if err = lockTransaction.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	replayed := 0
+	for range 2 {
+		result := <-results
+		if result.err != nil || result.response == nil {
+			t.Fatalf("overage result = %#v", result)
+		}
+		if result.response.Msg.Idempotency.GetReplayed() {
+			replayed++
+		}
+		if result.response.Msg.Summary.GetMonthlyOverageLimit().GetValue() != 1_000_000 {
+			t.Fatalf("overage summary = %#v", result.response.Msg.Summary)
+		}
+	}
+	if replayed != 1 {
+		t.Fatalf("replayed responses = %d, want 1", replayed)
+	}
+}
+
 func TestPostgreSQLPortalAuthorizationRevalidatesBillingAccessUnderOrganizationLock(
 	t *testing.T,
 ) {

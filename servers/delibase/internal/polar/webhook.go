@@ -341,7 +341,8 @@ func projectWebhook(
 		projected.Status = refund.Status
 		projected.Currency = strings.ToLower(refund.Currency)
 		projected.AmountMicros = refund.Amount * 10000
-		if refund.Dispute != nil {
+		if refund.Dispute != nil && refund.Dispute.Resolved &&
+			refund.Dispute.Status == "lost" {
 			projected.Chargeback = true
 			if refund.Dispute.Amount > 0 {
 				if refund.Dispute.Amount > math.MaxInt64/10000 {
