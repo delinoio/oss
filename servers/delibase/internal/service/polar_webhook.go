@@ -236,8 +236,8 @@ func processPaidCycle(
 		}
 		if customer.OrganizationID != existing.OrganizationID ||
 			existing.PolarSubscriptionID != event.SubscriptionID ||
-			!existing.StartsAt.Time.Equal(event.CurrentPeriodStart) ||
-			!existing.EndsAt.Time.Equal(event.CurrentPeriodEnd) {
+			!existing.PeriodStartsAt.Time.Equal(event.CurrentPeriodStart) ||
+			!existing.PeriodEndsAt.Time.Equal(event.CurrentPeriodEnd) {
 			return reliability.ErrInvalidInput
 		}
 		return nil
@@ -291,6 +291,8 @@ func processPaidCycle(
 			OrganizationID:  subscription.OrganizationID,
 			SubscriptionID:  subscription.ID,
 			BillingPeriodID: period.ID,
+			PeriodStartsAt:  pgTimestamp(event.CurrentPeriodStart),
+			PeriodEndsAt:    pgTimestamp(event.CurrentPeriodEnd),
 			PaidAt:          pgTimestamp(event.EventAt),
 		},
 	); err != nil {
@@ -457,6 +459,9 @@ func processPolarRefund(
 	previousReversal := int64(0)
 	existing, err := queries.GetPolarRefund(ctx, event.ObjectID)
 	if err == nil {
+		if existing.PolarOrderID != event.OrderID {
+			return reliability.ErrIdempotencyConflict
+		}
 		if existing.ProviderEventAt.Time.After(event.EventAt) {
 			return nil
 		}

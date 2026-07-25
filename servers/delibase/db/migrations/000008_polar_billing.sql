@@ -134,6 +134,8 @@ CREATE TABLE polar_paid_cycles (
     organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     subscription_id uuid NOT NULL,
     billing_period_id uuid NOT NULL,
+    period_starts_at timestamptz NOT NULL,
+    period_ends_at timestamptz NOT NULL,
     grant_micros bigint NOT NULL CHECK (grant_micros = 10000000),
     reversed_micros bigint NOT NULL DEFAULT 0
         CHECK (reversed_micros BETWEEN 0 AND grant_micros),
@@ -147,6 +149,7 @@ CREATE TABLE polar_paid_cycles (
     FOREIGN KEY (organization_id, billing_period_id)
         REFERENCES billing_periods(organization_id, id),
     CHECK (length(polar_order_id) BETWEEN 1 AND 255),
+    CHECK (period_starts_at < period_ends_at),
     CHECK (retain_until >= created_at + interval '7 years')
 );
 
@@ -155,6 +158,40 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF ROW(
+            NEW.polar_order_id,
+            NEW.organization_id,
+            NEW.subscription_id,
+            NEW.billing_period_id,
+            NEW.period_starts_at,
+            NEW.period_ends_at,
+            NEW.grant_micros,
+            NEW.paid_at,
+            NEW.created_at,
+            NEW.retain_until
+        ) IS DISTINCT FROM ROW(
+            OLD.polar_order_id,
+            OLD.organization_id,
+            OLD.subscription_id,
+            OLD.billing_period_id,
+            OLD.period_starts_at,
+            OLD.period_ends_at,
+            OLD.grant_micros,
+            OLD.paid_at,
+            OLD.created_at,
+            OLD.retain_until
+        ) THEN
+            RAISE EXCEPTION 'paid cycle snapshot is immutable'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.reversed_micros < OLD.reversed_micros THEN
+            RAISE EXCEPTION 'paid cycle reversal total cannot decrease'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        RETURN NEW;
+    END IF;
+
     IF OLD.retain_until > transaction_timestamp() THEN
         RAISE EXCEPTION 'paid cycle retention period has not elapsed'
             USING ERRCODE = 'check_violation';
@@ -164,7 +201,7 @@ END;
 $$;
 
 CREATE TRIGGER polar_paid_cycles_enforce_retention
-BEFORE DELETE ON polar_paid_cycles
+BEFORE UPDATE OR DELETE ON polar_paid_cycles
 FOR EACH ROW EXECUTE FUNCTION enforce_polar_paid_cycle_retention();
 
 CREATE TABLE polar_refunds (

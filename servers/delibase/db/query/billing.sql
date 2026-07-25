@@ -322,24 +322,22 @@ SELECT * FROM polar_paid_cycles WHERE polar_order_id = sqlc.arg(polar_order_id);
 -- name: GetPolarPaidCycleBinding :one
 SELECT cycle.organization_id,
        subscription.polar_subscription_id,
-       period.starts_at,
-       period.ends_at
+       cycle.period_starts_at,
+       cycle.period_ends_at
 FROM polar_paid_cycles AS cycle
 JOIN subscriptions AS subscription
   ON subscription.organization_id = cycle.organization_id
  AND subscription.id = cycle.subscription_id
-JOIN billing_periods AS period
-  ON period.organization_id = cycle.organization_id
- AND period.id = cycle.billing_period_id
 WHERE cycle.polar_order_id = sqlc.arg(polar_order_id);
 
 -- name: InsertPolarPaidCycle :one
 INSERT INTO polar_paid_cycles (
     polar_order_id, organization_id, subscription_id, billing_period_id,
-    grant_micros, paid_at
+    period_starts_at, period_ends_at, grant_micros, paid_at
 ) VALUES (
     sqlc.arg(polar_order_id), sqlc.arg(organization_id),
-    sqlc.arg(subscription_id), sqlc.arg(billing_period_id), 10000000,
+    sqlc.arg(subscription_id), sqlc.arg(billing_period_id),
+    sqlc.arg(period_starts_at), sqlc.arg(period_ends_at), 10000000,
     sqlc.arg(paid_at)
 )
 ON CONFLICT (polar_order_id) DO UPDATE
@@ -347,6 +345,8 @@ SET polar_order_id = EXCLUDED.polar_order_id
 WHERE polar_paid_cycles.organization_id = EXCLUDED.organization_id
   AND polar_paid_cycles.subscription_id = EXCLUDED.subscription_id
   AND polar_paid_cycles.billing_period_id = EXCLUDED.billing_period_id
+  AND polar_paid_cycles.period_starts_at = EXCLUDED.period_starts_at
+  AND polar_paid_cycles.period_ends_at = EXCLUDED.period_ends_at
 RETURNING *;
 
 -- name: InsertBillingLedgerEntry :one

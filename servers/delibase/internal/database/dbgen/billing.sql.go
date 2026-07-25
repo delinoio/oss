@@ -16,7 +16,7 @@ UPDATE polar_paid_cycles
 SET reversed_micros = reversed_micros + $1
 WHERE polar_order_id = $2
   AND reversed_micros + $1 <= grant_micros
-RETURNING polar_order_id, organization_id, subscription_id, billing_period_id, grant_micros, reversed_micros, paid_at, created_at, retain_until
+RETURNING polar_order_id, organization_id, subscription_id, billing_period_id, period_starts_at, period_ends_at, grant_micros, reversed_micros, paid_at, created_at, retain_until
 `
 
 type AddPolarCycleReversalParams struct {
@@ -32,6 +32,8 @@ func (q *Queries) AddPolarCycleReversal(ctx context.Context, arg AddPolarCycleRe
 		&i.OrganizationID,
 		&i.SubscriptionID,
 		&i.BillingPeriodID,
+		&i.PeriodStartsAt,
+		&i.PeriodEndsAt,
 		&i.GrantMicros,
 		&i.ReversedMicros,
 		&i.PaidAt,
@@ -412,7 +414,7 @@ func (q *Queries) GetPolarCustomerByProviderID(ctx context.Context, polarCustome
 }
 
 const getPolarPaidCycle = `-- name: GetPolarPaidCycle :one
-SELECT polar_order_id, organization_id, subscription_id, billing_period_id, grant_micros, reversed_micros, paid_at, created_at, retain_until FROM polar_paid_cycles WHERE polar_order_id = $1
+SELECT polar_order_id, organization_id, subscription_id, billing_period_id, period_starts_at, period_ends_at, grant_micros, reversed_micros, paid_at, created_at, retain_until FROM polar_paid_cycles WHERE polar_order_id = $1
 `
 
 func (q *Queries) GetPolarPaidCycle(ctx context.Context, polarOrderID string) (PolarPaidCycle, error) {
@@ -423,6 +425,8 @@ func (q *Queries) GetPolarPaidCycle(ctx context.Context, polarOrderID string) (P
 		&i.OrganizationID,
 		&i.SubscriptionID,
 		&i.BillingPeriodID,
+		&i.PeriodStartsAt,
+		&i.PeriodEndsAt,
 		&i.GrantMicros,
 		&i.ReversedMicros,
 		&i.PaidAt,
@@ -435,23 +439,20 @@ func (q *Queries) GetPolarPaidCycle(ctx context.Context, polarOrderID string) (P
 const getPolarPaidCycleBinding = `-- name: GetPolarPaidCycleBinding :one
 SELECT cycle.organization_id,
        subscription.polar_subscription_id,
-       period.starts_at,
-       period.ends_at
+       cycle.period_starts_at,
+       cycle.period_ends_at
 FROM polar_paid_cycles AS cycle
 JOIN subscriptions AS subscription
   ON subscription.organization_id = cycle.organization_id
  AND subscription.id = cycle.subscription_id
-JOIN billing_periods AS period
-  ON period.organization_id = cycle.organization_id
- AND period.id = cycle.billing_period_id
 WHERE cycle.polar_order_id = $1
 `
 
 type GetPolarPaidCycleBindingRow struct {
 	OrganizationID      pgtype.UUID
 	PolarSubscriptionID string
-	StartsAt            pgtype.Timestamptz
-	EndsAt              pgtype.Timestamptz
+	PeriodStartsAt      pgtype.Timestamptz
+	PeriodEndsAt        pgtype.Timestamptz
 }
 
 func (q *Queries) GetPolarPaidCycleBinding(ctx context.Context, polarOrderID string) (GetPolarPaidCycleBindingRow, error) {
@@ -460,8 +461,8 @@ func (q *Queries) GetPolarPaidCycleBinding(ctx context.Context, polarOrderID str
 	err := row.Scan(
 		&i.OrganizationID,
 		&i.PolarSubscriptionID,
-		&i.StartsAt,
-		&i.EndsAt,
+		&i.PeriodStartsAt,
+		&i.PeriodEndsAt,
 	)
 	return i, err
 }
@@ -610,18 +611,21 @@ func (q *Queries) InsertBillingShortfall(ctx context.Context, arg InsertBillingS
 const insertPolarPaidCycle = `-- name: InsertPolarPaidCycle :one
 INSERT INTO polar_paid_cycles (
     polar_order_id, organization_id, subscription_id, billing_period_id,
-    grant_micros, paid_at
+    period_starts_at, period_ends_at, grant_micros, paid_at
 ) VALUES (
     $1, $2,
-    $3, $4, 10000000,
-    $5
+    $3, $4,
+    $5, $6, 10000000,
+    $7
 )
 ON CONFLICT (polar_order_id) DO UPDATE
 SET polar_order_id = EXCLUDED.polar_order_id
 WHERE polar_paid_cycles.organization_id = EXCLUDED.organization_id
   AND polar_paid_cycles.subscription_id = EXCLUDED.subscription_id
   AND polar_paid_cycles.billing_period_id = EXCLUDED.billing_period_id
-RETURNING polar_order_id, organization_id, subscription_id, billing_period_id, grant_micros, reversed_micros, paid_at, created_at, retain_until
+  AND polar_paid_cycles.period_starts_at = EXCLUDED.period_starts_at
+  AND polar_paid_cycles.period_ends_at = EXCLUDED.period_ends_at
+RETURNING polar_order_id, organization_id, subscription_id, billing_period_id, period_starts_at, period_ends_at, grant_micros, reversed_micros, paid_at, created_at, retain_until
 `
 
 type InsertPolarPaidCycleParams struct {
@@ -629,6 +633,8 @@ type InsertPolarPaidCycleParams struct {
 	OrganizationID  pgtype.UUID
 	SubscriptionID  pgtype.UUID
 	BillingPeriodID pgtype.UUID
+	PeriodStartsAt  pgtype.Timestamptz
+	PeriodEndsAt    pgtype.Timestamptz
 	PaidAt          pgtype.Timestamptz
 }
 
@@ -638,6 +644,8 @@ func (q *Queries) InsertPolarPaidCycle(ctx context.Context, arg InsertPolarPaidC
 		arg.OrganizationID,
 		arg.SubscriptionID,
 		arg.BillingPeriodID,
+		arg.PeriodStartsAt,
+		arg.PeriodEndsAt,
 		arg.PaidAt,
 	)
 	var i PolarPaidCycle
@@ -646,6 +654,8 @@ func (q *Queries) InsertPolarPaidCycle(ctx context.Context, arg InsertPolarPaidC
 		&i.OrganizationID,
 		&i.SubscriptionID,
 		&i.BillingPeriodID,
+		&i.PeriodStartsAt,
+		&i.PeriodEndsAt,
 		&i.GrantMicros,
 		&i.ReversedMicros,
 		&i.PaidAt,

@@ -260,6 +260,8 @@ type PolarPaidCycle struct {
 	OrganizationID  pgtype.UUID
 	SubscriptionID  pgtype.UUID
 	BillingPeriodID pgtype.UUID
+	PeriodStartsAt  pgtype.Timestamptz
+	PeriodEndsAt    pgtype.Timestamptz
 	GrantMicros     int64
 	ReversedMicros  int64
 	PaidAt          pgtype.Timestamptz

@@ -167,11 +167,12 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 		BillingReason: "subscription_cycle", Paid: true,
 		CurrentPeriodStart: currentPeriodStart, CurrentPeriodEnd: currentPeriodEnd,
 	})
-	if err := handler(ctx, reliability.Item{
+	currentPaidItem := reliability.Item{
 		ID:        uuidv7.MustNew(),
 		HandlerID: reliability.HandlerPolarOrderPaid,
 		Payload:   currentPaidPayload,
-	}); err != nil {
+	}
+	if err := handler(ctx, currentPaidItem); err != nil {
 		t.Fatal(err)
 	}
 	otherOrganizationID := uuidv7.MustNew()
@@ -378,6 +379,39 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 		cycle.ReversedMicros != cycleGrantMicros/2 {
 		t.Fatalf("paid cycle = %#v, %v", cycle, err)
 	}
+	reboundRefundPayload, _ := json.Marshal(polarBillingEvent{
+		Type: string(reliability.WebhookRefundUpdated), EventAt: now.Add(-time.Minute),
+		ObjectID: "refund_1", OrderID: "order_2", Status: "succeeded",
+		Currency: "usd", AmountMicros: cycleGrantMicros / 2,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarRefundUpdated,
+		Payload:   reboundRefundPayload,
+	}); !errors.Is(err, reliability.ErrIdempotencyConflict) {
+		t.Fatalf("rebound refund error = %v", err)
+	}
+	rawPaidCycle, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rawPaidCycle.Close(context.Background())
+	if _, err = rawPaidCycle.Exec(
+		ctx,
+		`UPDATE polar_paid_cycles
+		 SET paid_at = paid_at + interval '1 second'
+		 WHERE polar_order_id = 'order_1'`,
+	); err == nil {
+		t.Fatal("paid cycle snapshot accepted a direct update")
+	}
+	if _, err = rawPaidCycle.Exec(
+		ctx,
+		`UPDATE polar_paid_cycles
+		 SET reversed_micros = 0
+		 WHERE polar_order_id = 'order_1'`,
+	); err == nil {
+		t.Fatal("paid cycle reversal total accepted a decrease")
+	}
 	pastDuePayload, _ := json.Marshal(polarBillingEvent{
 		Type:       string(reliability.WebhookSubscriptionPastDue),
 		EventAt:    now.Add(2 * time.Minute),
@@ -450,6 +484,9 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 			activePeriod,
 			activePeriodErr,
 		)
+	}
+	if err := handler(ctx, currentPaidItem); err != nil {
+		t.Fatalf("paid-cycle replay after period replacement = %v", err)
 	}
 	deletionActor := safelog.ActorPseudonym(
 		"actor:v1:0123456789abcdef0123456789abcdef",
