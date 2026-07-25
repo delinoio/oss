@@ -21,6 +21,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
@@ -439,6 +440,15 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 	if _, err = rawPaidCycle.Exec(
 		ctx,
 		`UPDATE polar_refunds
+		 SET requested_micros = requested_micros + 1,
+		     reversed_micros = reversed_micros + 1
+		 WHERE polar_refund_id = 'refund_1'`,
+	); err == nil {
+		t.Fatal("refund reversal total advanced without its paid cycle")
+	}
+	if _, err = rawPaidCycle.Exec(
+		ctx,
+		`UPDATE polar_refunds
 		 SET provider_event_at = provider_event_at - interval '1 second'
 		 WHERE polar_refund_id = 'refund_1'`,
 	); err == nil {
@@ -692,6 +702,249 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 		 WHERE polar_refund_id = 'chargeback_1'`,
 	); err == nil {
 		t.Fatal("refund chargeback classification accepted a decrease")
+	}
+}
+
+func TestPostgreSQLCreditGrantCarriesOutstandingRefundShortfall(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	accountID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	subscriptionID := uuidv7.MustNew()
+	oldPeriodID := uuidv7.MustNew()
+	currentPeriodID := uuidv7.MustNew()
+	now := time.Now().UTC().Truncate(time.Second)
+	oldPeriodStart := now.Add(-62 * 24 * time.Hour)
+	oldPeriodEnd := now.Add(-31 * 24 * time.Hour)
+	currentPeriodStart := now.Add(-time.Hour)
+	currentPeriodEnd := currentPeriodStart.Add(31 * 24 * time.Hour)
+
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.CreateAccount(ctx, dbgen.CreateAccountParams{
+			ID: pgUUID(accountID), LogtoSubject: "shortfall-" + accountID.String(),
+			DisplayName: "Shortfall Owner",
+		}); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateOrganization(
+			ctx,
+			dbgen.CreateOrganizationParams{
+				ID:   pgUUID(organizationID),
+				Name: "Shortfall Carry",
+				Slug: "shortfall-" + organizationID.String()[24:],
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreatePolarCustomer(
+			ctx,
+			dbgen.CreatePolarCustomerParams{
+				OrganizationID:  pgUUID(organizationID),
+				PolarCustomerID: "customer_" + organizationID.String(),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateOrganizationMembership(
+			ctx,
+			dbgen.CreateOrganizationMembershipParams{
+				OrganizationID: pgUUID(organizationID),
+				AccountID:      pgUUID(accountID),
+				Role:           "owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.InsertSubscription(
+			ctx,
+			dbgen.InsertSubscriptionParams{
+				ID:                    pgUUID(subscriptionID),
+				OrganizationID:        pgUUID(organizationID),
+				PolarSubscriptionID:   "subscription_shortfall_carry",
+				Status:                "active",
+				CurrentPeriodStartsAt: pgTimestamp(currentPeriodStart),
+				CurrentPeriodEndsAt:   pgTimestamp(currentPeriodEnd),
+				ProviderEventAt:       pgTimestamp(now),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.EnsureBillingPeriod(
+			ctx,
+			dbgen.EnsureBillingPeriodParams{
+				ID:                 pgUUID(oldPeriodID),
+				OrganizationID:     pgUUID(organizationID),
+				SubscriptionID:     pgUUID(subscriptionID),
+				StartsAt:           pgTimestamp(oldPeriodStart),
+				EndsAt:             pgTimestamp(oldPeriodEnd),
+				OverageLimitMicros: cycleGrantMicros,
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.EnsureBillingPeriod(
+			ctx,
+			dbgen.EnsureBillingPeriodParams{
+				ID:                 pgUUID(currentPeriodID),
+				OrganizationID:     pgUUID(organizationID),
+				SubscriptionID:     pgUUID(subscriptionID),
+				StartsAt:           pgTimestamp(currentPeriodStart),
+				EndsAt:             pgTimestamp(currentPeriodEnd),
+				OverageLimitMicros: cycleGrantMicros,
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.LockOrganizationForBillingHistory(
+			ctx, pgUUID(organizationID),
+		); transactionErr != nil {
+			return transactionErr
+		}
+
+		balance := int64(0)
+		insertLedger := func(
+			entryType string,
+			amount int64,
+			periodID pgtype.UUID,
+			source string,
+		) error {
+			balance += amount
+			_, transactionErr := queries.InsertBillingLedgerEntry(
+				ctx,
+				dbgen.InsertBillingLedgerEntryParams{
+					ID:                 pgUUID(uuidv7.MustNew()),
+					OrganizationID:     pgUUID(organizationID),
+					BillingPeriodID:    periodID,
+					EntryType:          entryType,
+					AmountMicros:       amount,
+					BalanceAfterMicros: balance,
+					SourceReference:    source,
+				},
+			)
+			return transactionErr
+		}
+
+		for index, orderID := range []string{"order_shortfall_a", "order_shortfall_b"} {
+			if _, transactionErr := queries.InsertPolarPaidCycle(
+				ctx,
+				dbgen.InsertPolarPaidCycleParams{
+					PolarOrderID:    orderID,
+					OrganizationID:  pgUUID(organizationID),
+					SubscriptionID:  pgUUID(subscriptionID),
+					BillingPeriodID: pgUUID(oldPeriodID),
+					PeriodStartsAt:  pgTimestamp(oldPeriodStart),
+					PeriodEndsAt:    pgTimestamp(oldPeriodEnd),
+					PaidAt:          pgTimestamp(now.Add(time.Duration(index) * time.Second)),
+				},
+			); transactionErr != nil {
+				return transactionErr
+			}
+			if transactionErr := insertLedger(
+				"credit_grant",
+				cycleGrantMicros,
+				pgUUID(oldPeriodID),
+				"polar-order:"+orderID,
+			); transactionErr != nil {
+				return transactionErr
+			}
+		}
+		if transactionErr := insertLedger(
+			"credit_forfeiture",
+			-2*cycleGrantMicros,
+			pgtype.UUID{},
+			"test-consumed-old-cycle-credit",
+		); transactionErr != nil {
+			return transactionErr
+		}
+
+		for index, orderID := range []string{"order_shortfall_a", "order_shortfall_b"} {
+			refundID := "refund_shortfall_" + strconv.Itoa(index)
+			if _, transactionErr := queries.UpsertPolarRefund(
+				ctx,
+				dbgen.UpsertPolarRefundParams{
+					PolarRefundID:   refundID,
+					PolarOrderID:    orderID,
+					Status:          "succeeded",
+					RequestedMicros: cycleGrantMicros,
+					ReversedMicros:  cycleGrantMicros,
+					ProviderEventAt: pgTimestamp(now.Add(time.Duration(index+2) * time.Second)),
+				},
+			); transactionErr != nil {
+				return transactionErr
+			}
+			if _, transactionErr := queries.AddPolarCycleReversal(
+				ctx,
+				dbgen.AddPolarCycleReversalParams{
+					AmountMicros: cycleGrantMicros,
+					PolarOrderID: orderID,
+				},
+			); transactionErr != nil {
+				return transactionErr
+			}
+			if transactionErr := insertLedger(
+				"credit_reversal",
+				-cycleGrantMicros,
+				pgUUID(oldPeriodID),
+				"polar-refund:"+refundID+":"+strconv.FormatInt(cycleGrantMicros, 10),
+			); transactionErr != nil {
+				return transactionErr
+			}
+			if _, transactionErr := queries.InsertBillingShortfall(
+				ctx,
+				dbgen.InsertBillingShortfallParams{
+					ID:              pgUUID(uuidv7.MustNew()),
+					OrganizationID:  pgUUID(organizationID),
+					BillingPeriodID: pgUUID(oldPeriodID),
+					PolarRefundID:   refundID,
+					SourceReference: "polar-event:shortfall-" + strconv.Itoa(index),
+					AmountMicros:    cycleGrantMicros,
+				},
+			); transactionErr != nil {
+				return transactionErr
+			}
+		}
+
+		if _, transactionErr := queries.InsertPolarPaidCycle(
+			ctx,
+			dbgen.InsertPolarPaidCycleParams{
+				PolarOrderID:    "order_shortfall_renewal",
+				OrganizationID:  pgUUID(organizationID),
+				SubscriptionID:  pgUUID(subscriptionID),
+				BillingPeriodID: pgUUID(currentPeriodID),
+				PeriodStartsAt:  pgTimestamp(currentPeriodStart),
+				PeriodEndsAt:    pgTimestamp(currentPeriodEnd),
+				PaidAt:          pgTimestamp(now.Add(4 * time.Second)),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		return insertLedger(
+			"credit_grant",
+			cycleGrantMicros,
+			pgUUID(currentPeriodID),
+			"polar-order:order_shortfall_renewal",
+		)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := store.Queries().GetBillingSummary(ctx, pgUUID(organizationID))
+	if err != nil || summary.BillingPeriodID != pgUUID(currentPeriodID) ||
+		summary.AvailableCreditMicros != 0 ||
+		summary.CommittedOverageMicros != cycleGrantMicros ||
+		summary.NewOverageAllowed {
+		t.Fatalf("renewed shortfall summary = %#v, %v", summary, err)
 	}
 }
 

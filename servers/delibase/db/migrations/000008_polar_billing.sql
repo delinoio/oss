@@ -278,6 +278,41 @@ CREATE TRIGGER polar_refunds_enforce_retention
 BEFORE UPDATE OR DELETE ON polar_refunds
 FOR EACH ROW EXECUTE FUNCTION enforce_polar_refund_retention();
 
+CREATE FUNCTION enforce_polar_refund_cycle_reversal_match()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    cycle_reversal bigint;
+    refund_reversal bigint;
+BEGIN
+    SELECT reversed_micros
+    INTO cycle_reversal
+    FROM polar_paid_cycles
+    WHERE polar_order_id = NEW.polar_order_id;
+
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT COALESCE(sum(reversed_micros), 0)::bigint
+    INTO refund_reversal
+    FROM polar_refunds
+    WHERE polar_order_id = NEW.polar_order_id;
+
+    IF refund_reversal <> cycle_reversal THEN
+        RAISE EXCEPTION 'refund reversals must match the retained paid cycle'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER polar_refunds_match_paid_cycle_reversal
+AFTER INSERT OR UPDATE ON polar_refunds
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION enforce_polar_refund_cycle_reversal_match();
+
 CREATE TABLE billing_shortfalls (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL,
@@ -309,6 +344,69 @@ $$;
 CREATE TRIGGER billing_shortfalls_append_only
 BEFORE UPDATE OR DELETE ON billing_shortfalls
 FOR EACH ROW EXECUTE FUNCTION reject_billing_shortfall_mutation();
+
+CREATE FUNCTION carry_outstanding_refund_shortfall()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    settled_balance numeric;
+    recorded_shortfall numeric;
+    carry_amount numeric;
+    source_refund_id text;
+BEGIN
+    IF NEW.entry_type <> 'credit_grant' OR NEW.billing_period_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT COALESCE(sum(amount_micros), 0)
+    INTO settled_balance
+    FROM ledger_entries
+    WHERE organization_id = NEW.organization_id
+      AND entry_type IN (
+          'credit_grant', 'credit_reversal', 'credit_commit', 'credit_forfeiture'
+      );
+
+    IF settled_balance >= 0 THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT COALESCE(sum(amount_micros), 0)
+    INTO recorded_shortfall
+    FROM billing_shortfalls
+    WHERE organization_id = NEW.organization_id
+      AND billing_period_id = NEW.billing_period_id;
+
+    carry_amount := -settled_balance - recorded_shortfall;
+    IF carry_amount <= 0 THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT polar_refund_id
+    INTO source_refund_id
+    FROM billing_shortfalls
+    WHERE organization_id = NEW.organization_id
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RETURN NEW;
+    END IF;
+
+    INSERT INTO billing_shortfalls (
+        id, organization_id, billing_period_id, polar_refund_id,
+        source_reference, amount_micros
+    ) VALUES (
+        NEW.id, NEW.organization_id, NEW.billing_period_id, source_refund_id,
+        'credit-grant-shortfall:' || NEW.id::text, carry_amount
+    );
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER ledger_credit_grants_carry_refund_shortfall
+AFTER INSERT ON ledger_entries
+FOR EACH ROW EXECUTE FUNCTION carry_outstanding_refund_shortfall();
 
 CREATE FUNCTION enforce_refund_shortfall_overage_limit()
 RETURNS trigger
