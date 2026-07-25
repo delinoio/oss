@@ -149,7 +149,7 @@ function OnboardingGate({
       </div>
     );
   }
-  if (account.isError) {
+  if (account.isError && !account.data) {
     return (
       <div className="page narrow">
         <ErrorState
@@ -176,7 +176,7 @@ function OnboardingGate({
     <AccountStateProvider
       accountState={account.data}
       refreshAccountState={async () => {
-        await account.refetch();
+        await account.refetch({ throwOnError: true });
       }}
     >
       {children}
