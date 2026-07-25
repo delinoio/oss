@@ -140,6 +140,8 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	usageReservationID := uuidv7.MustNew()
 	usageRecordID := uuidv7.MustNew()
 	ambiguousUsageRecordID := uuidv7.MustNew()
+	creditOnlyUsageRecordID := uuidv7.MustNew()
+	creditOnlyOutboxID := uuidv7.MustNew()
 	duplicateReservationAID := uuidv7.MustNew()
 	duplicateReservationBID := uuidv7.MustNew()
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
@@ -370,6 +372,52 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 				},
 			},
 			{
+				sql: `INSERT INTO usage_records (
+							id, reservation_id, organization_id, team_id,
+							team_name_snapshot, meter_id, account_id,
+							service_identity_id, committed_units,
+							total_cost_micros, credit_applied_micros,
+							overage_applied_micros, committed_at
+						) VALUES (
+							$1, $2, $3, $4, 'General', $5, $6, $7,
+							1, 5, 5, 0, $8
+						)`,
+				args: []any{
+					creditOnlyUsageRecordID,
+					duplicateReservationAID,
+					organizationID,
+					teamID,
+					usageMeterID,
+					accountID,
+					serviceID,
+					createdAt,
+				},
+			},
+			{
+				sql: `INSERT INTO integration_outbox (
+							id, integration, operation, aggregate_type,
+							aggregate_id, payload, created_at,
+							idempotency_key, actor_reference
+						) VALUES (
+							$1, 'polar', 'report_usage', 'usage_record',
+							$2,
+							jsonb_build_object(
+								'event_name', 'migration-usage-event',
+								'organization_id', $3::uuid::text,
+								'usage_record_id', $2::uuid::text,
+								'units', 0,
+								'committed_at', $4::timestamptz
+							),
+							$4, 'legacy-credit-only-usage', ''
+						)`,
+				args: []any{
+					creditOnlyOutboxID,
+					creditOnlyUsageRecordID,
+					organizationID,
+					createdAt,
+				},
+			},
+			{
 				sql:  `DELETE FROM polar_meter_mappings WHERE meter_id = $1`,
 				args: []any{meterID},
 			},
@@ -408,6 +456,26 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 			ctx,
 			"DELETE FROM usage_records WHERE id = $1",
 			ambiguousUsageRecordID,
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = apply(ctx, connection, ordered[len(ordered)-1]); err == nil {
+		t.Fatal("usage migration accepted a credit-only Polar outbox event")
+	}
+	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
+		if _, transactionErr := transaction.Exec(
+			ctx,
+			"SET LOCAL session_replication_role = replica",
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := transaction.Exec(
+			ctx,
+			"DELETE FROM integration_outbox WHERE id = $1",
+			creditOnlyOutboxID,
 		)
 		return transactionErr
 	})

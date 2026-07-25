@@ -295,6 +295,11 @@ func (service *Organization) AcceptOrganizationInvitation(
 		); transactionErr != nil {
 			return transactionErr
 		}
+		if _, transactionErr = queries.LockOrganizationForMutation(
+			ctx, candidate.OrganizationID,
+		); transactionErr != nil {
+			return invitationLookupError(transactionErr)
+		}
 		account, transactionErr := ensureInvitationAccount(
 			ctx, queries, subject, accountID,
 		)
@@ -315,11 +320,6 @@ func (service *Organization) AcceptOrganizationInvitation(
 				completedAt,
 			)
 			return nil
-		}
-		if _, transactionErr = queries.LockOrganizationForMutation(
-			ctx, candidate.OrganizationID,
-		); transactionErr != nil {
-			return invitationLookupError(transactionErr)
 		}
 		invitation, transactionErr := queries.LockOrganizationInvitationByTokenHash(
 			ctx, tokenHash,

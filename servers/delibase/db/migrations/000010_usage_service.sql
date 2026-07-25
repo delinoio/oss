@@ -356,6 +356,49 @@ BEGIN
 END;
 $$;
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM integration_outbox AS outbox
+        WHERE outbox.integration = 'polar'
+          AND outbox.operation = 'report_usage'
+          AND (
+              outbox.aggregate_type <> 'usage_record'
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM usage_records AS usage
+                  WHERE usage.id = outbox.aggregate_id
+                    AND usage.overage_applied_micros > 0
+                    AND outbox.payload -> 'organization_id'
+                        = to_jsonb(usage.organization_id::text)
+                    AND outbox.payload -> 'usage_record_id'
+                        = to_jsonb(usage.id::text)
+                    AND outbox.payload -> 'event_name'
+                        = to_jsonb(usage.polar_event_name_snapshot)
+                    AND outbox.payload -> 'units'
+                        = to_jsonb(usage.overage_applied_micros)
+                    AND CASE
+                        WHEN jsonb_typeof(
+                            outbox.payload -> 'committed_at'
+                        ) = 'string'
+                         AND outbox.payload ->> 'committed_at'
+                            ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+                        THEN (
+                            outbox.payload ->> 'committed_at'
+                        )::timestamptz = usage.committed_at
+                        ELSE false
+                    END
+              )
+          )
+    ) THEN
+        RAISE EXCEPTION
+            'legacy Polar usage outbox requires a matching overage usage record'
+            USING ERRCODE = 'check_violation';
+    END IF;
+END;
+$$;
+
 CREATE UNIQUE INDEX usage_reservations_service_client_reference_idx
     ON usage_reservations(service_identity_id, client_reference)
     WHERE NOT client_reference_grandfathered;
