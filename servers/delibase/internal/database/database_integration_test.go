@@ -1539,6 +1539,10 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		"DELETE FROM subscriptions WHERE id = $1",
 		subA,
 	)
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM billing_periods WHERE id = $1",
+		periodA,
+	)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO subscriptions (
 			id, organization_id, polar_subscription_id, status

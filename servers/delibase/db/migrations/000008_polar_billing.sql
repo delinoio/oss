@@ -148,7 +148,7 @@ CREATE TABLE polar_paid_cycles (
     FOREIGN KEY (organization_id, subscription_id)
         REFERENCES subscriptions(organization_id, id),
     FOREIGN KEY (organization_id, billing_period_id)
-        REFERENCES billing_periods(organization_id, id) ON DELETE CASCADE,
+        REFERENCES billing_periods(organization_id, id),
     CHECK (length(polar_order_id) BETWEEN 1 AND 255),
     CHECK (retain_until >= created_at + interval '7 years')
 );

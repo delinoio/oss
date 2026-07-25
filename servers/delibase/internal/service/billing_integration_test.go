@@ -528,6 +528,93 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	if provider.Calls() != 1 {
 		t.Fatalf("Polar checkout replay calls = %d, want 1", provider.Calls())
 	}
+
+	summary, err := billing.GetBillingSummary(
+		userContext,
+		connect.NewRequest(&delibasev1.GetBillingSummaryRequest{
+			OrganizationId: &delibasev1.UuidV7{Value: organizationID.String()},
+		}),
+	)
+	if err != nil ||
+		summary.Msg.Summary.SubscriptionStatus !=
+			delibasev1.SubscriptionStatus_SUBSCRIPTION_STATUS_CHECKOUT_PENDING {
+		t.Fatalf("pending checkout summary = %#v, %v", summary, err)
+	}
+
+	historyOrganizationID := uuidv7.MustNew()
+	pastDueSubscriptionID := uuidv7.MustNew()
+	canceledSubscriptionID := uuidv7.MustNew()
+	now := time.Now().UTC()
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		if _, transactionErr := queries.CreateOrganization(
+			ctx,
+			dbgen.CreateOrganizationParams{
+				ID:   pgUUID(historyOrganizationID),
+				Name: "Billing History Integration",
+				Slug: "billing-history-" + historyOrganizationID.String()[24:],
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreatePolarCustomer(
+			ctx,
+			dbgen.CreatePolarCustomerParams{
+				OrganizationID:  pgUUID(historyOrganizationID),
+				PolarCustomerID: "customer_" + historyOrganizationID.String(),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreateOrganizationMembership(
+			ctx,
+			dbgen.CreateOrganizationMembershipParams{
+				OrganizationID: pgUUID(historyOrganizationID),
+				AccountID:      pgUUID(accountID),
+				Role:           "owner",
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.InsertSubscription(
+			ctx,
+			dbgen.InsertSubscriptionParams{
+				ID:                  pgUUID(pastDueSubscriptionID),
+				OrganizationID:      pgUUID(historyOrganizationID),
+				PolarSubscriptionID: "subscription_" + pastDueSubscriptionID.String(),
+				Status:              "past_due",
+				ProviderEventAt:     pgTimestamp(now.Add(-2 * time.Hour)),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.InsertSubscription(
+			ctx,
+			dbgen.InsertSubscriptionParams{
+				ID:                  pgUUID(canceledSubscriptionID),
+				OrganizationID:      pgUUID(historyOrganizationID),
+				PolarSubscriptionID: "subscription_" + canceledSubscriptionID.String(),
+				Status:              "canceled",
+				ProviderEventAt:     pgTimestamp(now.Add(-time.Hour)),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err = billing.GetBillingSummary(
+		userContext,
+		connect.NewRequest(&delibasev1.GetBillingSummaryRequest{
+			OrganizationId: &delibasev1.UuidV7{Value: historyOrganizationID.String()},
+		}),
+	)
+	if err != nil ||
+		summary.Msg.Summary.SubscriptionStatus !=
+			delibasev1.SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELED {
+		t.Fatalf("newest inactive subscription summary = %#v, %v", summary, err)
+	}
 }
 
 type blockingCheckoutPolar struct {

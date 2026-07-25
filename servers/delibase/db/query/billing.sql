@@ -40,16 +40,16 @@ WITH selected_subscription AS (
     FROM subscriptions
     WHERE organization_id = sqlc.arg(organization_id)
     ORDER BY
-        CASE status
-            WHEN 'active' THEN 0
-            WHEN 'past_due' THEN 1
-            WHEN 'pending' THEN 2
-            WHEN 'canceled' THEN 3
-            ELSE 4
-        END,
+        (status = 'active') DESC,
+        provider_event_at DESC,
         updated_at DESC,
         id DESC
     LIMIT 1
+), active_checkout AS (
+    SELECT organization_id
+    FROM polar_subscription_checkouts
+    WHERE organization_id = sqlc.arg(organization_id)
+      AND expires_at > transaction_timestamp()
 ), current_period AS (
     SELECT period.*
     FROM billing_periods AS period
@@ -91,7 +91,11 @@ WITH selected_subscription AS (
 )
 SELECT
     organization.id AS organization_id,
-    COALESCE(selected_subscription.status, 'none')::text AS subscription_status,
+    CASE
+        WHEN selected_subscription.status = 'active' THEN 'active'
+        WHEN active_checkout.organization_id IS NOT NULL THEN 'pending'
+        ELSE COALESCE(selected_subscription.status, 'none')
+    END::text AS subscription_status,
     current_period.id AS billing_period_id,
     current_period.starts_at,
     current_period.ends_at,
@@ -114,6 +118,7 @@ SELECT
     )::boolean AS new_overage_allowed
 FROM organizations AS organization
 LEFT JOIN selected_subscription ON true
+LEFT JOIN active_checkout ON true
 LEFT JOIN current_period ON true
 CROSS JOIN settled_credit
 CROSS JOIN active_holds
