@@ -557,7 +557,7 @@ func polarSubscriptionStatus(
 		return "past_due"
 	case "canceled":
 		return "canceled"
-	case "revoked", "unpaid":
+	case "revoked", "unpaid", "incomplete_expired":
 		return "revoked"
 	case "incomplete", "pending":
 		return "pending"

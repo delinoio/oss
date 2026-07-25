@@ -772,6 +772,178 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLPortalPersistenceRevalidatesBillingAccessUnderOrganizationLock(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	raw, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close(ctx)
+
+	ownerID := uuidv7.MustNew()
+	adminID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
+	adminSubject := "portal-admin-" + adminID.String()
+	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+		for _, account := range []dbgen.CreateAccountParams{
+			{
+				ID:           pgUUID(ownerID),
+				LogtoSubject: "portal-owner-" + ownerID.String(),
+				DisplayName:  "Portal Owner",
+			},
+			{
+				ID:           pgUUID(adminID),
+				LogtoSubject: adminSubject,
+				DisplayName:  "Portal Admin",
+			},
+		} {
+			if _, transactionErr := queries.CreateAccount(
+				ctx, account,
+			); transactionErr != nil {
+				return transactionErr
+			}
+		}
+		if _, transactionErr := queries.CreateOrganization(
+			ctx,
+			dbgen.CreateOrganizationParams{
+				ID:   pgUUID(organizationID),
+				Name: "Portal Lock Integration",
+				Slug: "portal-lock-" + organizationID.String()[24:],
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr := queries.CreatePolarCustomer(
+			ctx,
+			dbgen.CreatePolarCustomerParams{
+				OrganizationID:  pgUUID(organizationID),
+				PolarCustomerID: "customer_" + organizationID.String(),
+			},
+		); transactionErr != nil {
+			return transactionErr
+		}
+		for _, membership := range []dbgen.CreateOrganizationMembershipParams{
+			{
+				OrganizationID: pgUUID(organizationID),
+				AccountID:      pgUUID(ownerID),
+				Role:           "owner",
+			},
+			{
+				OrganizationID: pgUUID(organizationID),
+				AccountID:      pgUUID(adminID),
+				Role:           "admin",
+			},
+		} {
+			if _, transactionErr := queries.CreateOrganizationMembership(
+				ctx, membership,
+			); transactionErr != nil {
+				return transactionErr
+			}
+		}
+		_, transactionErr := queries.CreateGeneralTeam(
+			ctx,
+			dbgen.CreateGeneralTeamParams{
+				ID:             pgUUID(teamID),
+				OrganizationID: pgUUID(organizationID),
+			},
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pseudonymizer, err := safelog.NewPseudonymizer(bytes.Repeat([]byte{0x42}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &staticPortalPolar{started: make(chan struct{})}
+	billing := NewBilling(Dependencies{
+		Store:         store,
+		Polar:         provider,
+		Pseudonymizer: pseudonymizer,
+	})
+
+	roleTransaction, err := raw.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer roleTransaction.Rollback(context.Background())
+	roleQueries := dbgen.New(roleTransaction)
+	if _, err = roleQueries.LockOrganizationForMutation(
+		ctx, pgUUID(organizationID),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = roleQueries.UpdateOrganizationMembershipRole(
+		ctx,
+		dbgen.UpdateOrganizationMembershipRoleParams{
+			Role:           "member",
+			OrganizationID: pgUUID(organizationID),
+			AccountID:      pgUUID(adminID),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	type portalResult struct {
+		response *connect.Response[delibasev1.CreateBillingPortalSessionResponse]
+		err      error
+	}
+	results := make(chan portalResult, 1)
+	go func() {
+		response, createErr := billing.CreateBillingPortalSession(
+			authenticatedContext(ctx, adminSubject),
+			connect.NewRequest(&delibasev1.CreateBillingPortalSessionRequest{
+				OrganizationId: &delibasev1.UuidV7{Value: organizationID.String()},
+				ReturnUrl:      "https://deli.dev/billing",
+				Idempotency:    idempotency("portal-lock-" + organizationID.String()),
+			}),
+		)
+		results <- portalResult{response: response, err: createErr}
+	}()
+	select {
+	case <-provider.started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case result := <-results:
+		t.Fatalf(
+			"portal persistence completed before role change released organization lock: %#v",
+			result,
+		)
+	case <-time.After(200 * time.Millisecond):
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err = roleTransaction.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	result := <-results
+	if result.response != nil {
+		t.Fatalf("portal response after Admin downgrade = %#v", result.response)
+	}
+	requireConnectReason(
+		t,
+		result.err,
+		connect.CodePermissionDenied,
+		delibasev1.ErrorReason_ERROR_REASON_ADMIN_ROLE_REQUIRED,
+	)
+}
+
 type blockingCheckoutPolar struct {
 	mu      sync.Mutex
 	calls   int
@@ -820,4 +992,26 @@ func (provider *blockingCheckoutPolar) Calls() int {
 	provider.mu.Lock()
 	defer provider.mu.Unlock()
 	return provider.calls
+}
+
+type staticPortalPolar struct {
+	started chan struct{}
+}
+
+func (*staticPortalPolar) CreateCheckout(
+	context.Context,
+	contracts.CheckoutRequest,
+) (contracts.Checkout, error) {
+	return contracts.Checkout{}, errors.New("unexpected checkout call")
+}
+
+func (provider *staticPortalPolar) CreatePortalSession(
+	context.Context,
+	contracts.PortalRequest,
+) (contracts.PortalSession, error) {
+	close(provider.started)
+	return contracts.PortalSession{
+		URL:       "https://polar.sh/portal/test",
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	}, nil
 }

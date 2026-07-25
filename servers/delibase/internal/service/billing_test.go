@@ -50,6 +50,7 @@ func TestPolarSubscriptionStateMappingSupportsPastDueRecoveryAndTerminals(
 		{reliability.WebhookSubscriptionUncanceled, "canceled", "active"},
 		{reliability.WebhookSubscriptionUpdated, "active", "active"},
 		{reliability.WebhookSubscriptionUpdated, "unpaid", "revoked"},
+		{reliability.WebhookSubscriptionUpdated, "incomplete_expired", "revoked"},
 		{reliability.WebhookSubscriptionCanceled, "active", "canceled"},
 		{reliability.WebhookSubscriptionRevoked, "active", "revoked"},
 	}
