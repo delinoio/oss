@@ -81,6 +81,10 @@ const mobileDependencies =
   cargoManifest.match(
     /\[target\.'cfg\(any\(target_os = "android", target_os = "ios"\)\)'\.dependencies\]([\s\S]*?)(?=\n\[)/u,
   )?.[1] ?? "";
+const iosDependencies =
+  cargoManifest.match(
+    /\[target\.'cfg\(target_os = "ios"\)'\.dependencies\]([\s\S]*?)(?=\n\[)/u,
+  )?.[1] ?? "";
 
 requireCondition(
   tauriConfig.identifier === "dev.deli.devhud",
@@ -115,6 +119,16 @@ requireCondition(
     !mobileDependencies.includes("tauri-runtime-cef") &&
     !mobileDependencies.includes("tauri-cef"),
   "mobile dependencies must never enable CEF",
+);
+requireCondition(
+  /objc2-foundation\s*=\s*\{[^}]*default-features\s*=\s*false[^}]*"NSError"[^}]*"NSString"[^}]*"NSURL"[^}]*"NSValue"[^}]*"std"[^}]*\}/u.test(
+    iosDependencies,
+  ) &&
+    runtimeSource.includes("NSURLIsExcludedFromBackupKey") &&
+    /fs::create_dir_all\(directory\)\?;[\s\S]*exclude_ios_persistence_from_backup\(directory\)\?;/u.test(
+      runtimeSource,
+    ),
+  "iOS must exclude the local persistence directory from device backups",
 );
 requireCondition(
   cargoManifest.includes(

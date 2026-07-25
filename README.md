@@ -29,7 +29,7 @@ This repository hosts multiple products and shared tooling across apps, CLIs, se
 | `public-docs` | Rspress-based public documentation site for user-facing product and platform content. | `apps/public-docs` | `active` | [project-public-docs](docs/project-public-docs.md), [apps-public-docs-foundation](docs/apps-public-docs-foundation.md) |
 | `delidev` | Planned React/TypeScript/Rsbuild Cloudflare Pages PWA for the DeliDev developer-tools catalog and organization UI. | `apps/delidev-app` | `planned` | [project-delidev](docs/project-delidev.md), [apps-delidev-app-foundation](docs/apps-delidev-app-foundation.md) |
 | `delibase` | Planned reusable Go/PostgreSQL/sqlc organization, billing, and metered-usage service with a shared versioned Connect API. | `servers/delibase`<br>`protos/delibase` | `planned` | [project-delibase](docs/project-delibase.md), [servers-delibase-server-foundation](docs/servers-delibase-server-foundation.md), [protos-delibase-api-contract](docs/protos-delibase-api-contract.md) |
-| `devhud` | Local-only React/TypeScript/Rsbuild and Tauri application with a closed internal registry, the exact pinned CEF runtime on desktop, and maintained standard system-webview mobile hosts. | `apps/devhud` | `active` | [project-devhud](docs/project-devhud.md), [apps-devhud-foundation](docs/apps-devhud-foundation.md) |
+| `devhud` | Local-only React/TypeScript/Rsbuild and Tauri application with a closed internal registry, the exact pinned CEF runtime on desktop, and maintained standard system-webview mobile hosts with device-backup exclusions. | `apps/devhud` | `active` | [project-devhud](docs/project-devhud.md), [apps-devhud-foundation](docs/apps-devhud-foundation.md) |
 
 ## Documentation Contract
 

@@ -19,7 +19,7 @@ use std::time::Duration;
 use std::{
     fs::{self, File},
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
 };
 
@@ -91,7 +91,7 @@ enum PersistenceCommandError {
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 impl PersistenceState {
     fn new(directory: PathBuf) -> io::Result<Self> {
-        fs::create_dir_all(&directory)?;
+        prepare_persistence_directory(&directory)?;
         Ok(Self {
             directory: Some(directory),
             write_lock: Mutex::new(()),
@@ -170,6 +170,32 @@ impl PersistenceState {
         }
         Ok(())
     }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn prepare_persistence_directory(directory: &Path) -> io::Result<()> {
+    fs::create_dir_all(directory)?;
+    #[cfg(all(feature = "mobile-system-webview", target_os = "ios"))]
+    exclude_ios_persistence_from_backup(directory)?;
+    Ok(())
+}
+
+#[cfg(all(feature = "mobile-system-webview", target_os = "ios"))]
+fn exclude_ios_persistence_from_backup(directory: &Path) -> io::Result<()> {
+    use objc2_foundation::{NSNumber, NSString, NSURL, NSURLIsExcludedFromBackupKey};
+
+    let path = directory
+        .to_str()
+        .ok_or_else(|| io::Error::other("DevHud persistence path is not valid UTF-8"))?;
+    let path = NSString::from_str(path);
+    let directory_url = NSURL::fileURLWithPath_isDirectory(&path, true);
+    let excluded = NSNumber::new_bool(true);
+
+    // SAFETY: NSURLIsExcludedFromBackupKey requires an NSNumber boolean value.
+    unsafe {
+        directory_url.setResourceValue_forKey_error(Some(&*excluded), NSURLIsExcludedFromBackupKey)
+    }
+    .map_err(|_| io::Error::other("failed to exclude DevHud persistence from iOS backup"))
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
