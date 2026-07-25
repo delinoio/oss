@@ -55,8 +55,79 @@ function ThemeField() {
   );
 }
 
+type ResetStatus = "idle" | "confirming" | "resetting" | "failed" | "complete";
+
+function ResetDevHudControl() {
+  const { resetDevHud } = useApplication();
+  const [status, setStatus] = useState<ResetStatus>("idle");
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (status === "confirming") confirmRef.current?.focus();
+  }, [status]);
+
+  const confirmReset = async () => {
+    setStatus("resetting");
+    try {
+      await resetDevHud();
+      setStatus("complete");
+    } catch {
+      setStatus("failed");
+    }
+  };
+
+  return (
+    <section aria-labelledby="reset-devhud-title" className="reset-section">
+      <h3 id="reset-devhud-title">Reset DevHud</h3>
+      <p className="muted">
+        Clear local settings, widget state, and application browsing data from this
+        device.
+      </p>
+      {status === "confirming" ? (
+        <div aria-label="Confirm Reset DevHud" className="reset-confirmation" role="group">
+          <p>This cannot be undone. Reset all local DevHud data?</p>
+          <div className="reset-actions">
+            <button
+              className="danger-button"
+              onClick={() => void confirmReset()}
+              ref={confirmRef}
+              type="button"
+            >
+              Confirm reset
+            </button>
+            <button
+              className="secondary-button"
+              onClick={() => setStatus("idle")}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          className="secondary-button"
+          disabled={status === "resetting"}
+          onClick={() => setStatus("confirming")}
+          type="button"
+        >
+          {status === "resetting" ? "Resetting DevHud…" : "Reset DevHud"}
+        </button>
+      )}
+      {status === "complete" ? (
+        <p role="status">DevHud local data was reset.</p>
+      ) : null}
+      {status === "failed" ? (
+        <p className="error" role="alert">
+          DevHud could not reset local data. Check device storage and try again.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function SettingsDialog() {
-  const { closeSettings, persistenceReady } = useApplication();
+  const { closeSettings, persistenceIssues, persistenceReady } = useApplication();
   return (
     <Dialog title="DevHud settings" onClose={closeSettings}>
       <div className="dialog-heading">
@@ -79,9 +150,15 @@ function SettingsDialog() {
           Loading local settings…
         </p>
       ) : null}
+      {persistenceIssues.map((issue) => (
+        <p className="error" key={issue.key} role="alert">
+          {issue.guidance}
+        </p>
+      ))}
       <p className="muted">
         Settings stay on this device. No account or cloud sync is available.
       </p>
+      <ResetDevHudControl />
     </Dialog>
   );
 }
@@ -286,6 +363,7 @@ function MobileSettings() {
           Your System, Light, or Dark choice stays on this device. DevHud has no account or
           cloud sync.
         </p>
+        <ResetDevHudControl />
       </div>
     </section>
   );

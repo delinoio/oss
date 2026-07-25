@@ -4,6 +4,7 @@ import { createTauriPersistenceAdapter, type TauriPersistenceBridge } from "./st
 
 interface NativeCommandResults {
   read_settings: string | null;
+  reset_dev_hud: void;
   write_settings: void;
   read_widget_configuration: string | null;
   write_widget_configuration: void;
@@ -11,6 +12,7 @@ interface NativeCommandResults {
 
 export const tauriPersistenceBridge: TauriPersistenceBridge = {
   readSettings: () => invoke<NativeCommandResults["read_settings"]>("read_settings"),
+  resetDevHud: () => invoke<NativeCommandResults["reset_dev_hud"]>("reset_dev_hud"),
   writeSettings: (record) =>
     invoke<NativeCommandResults["write_settings"]>("write_settings", { record }),
   readWidgetConfiguration: () =>

@@ -157,6 +157,7 @@ select {
 
 .primary-button,
 .secondary-button,
+.danger-button,
 .text-button,
 .mobile-nav button,
 .icon-button {
@@ -177,6 +178,17 @@ select {
   background: transparent;
   color: inherit;
   font-weight: 700;
+}
+
+.danger-button {
+  background: #b42318;
+  color: #fff;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .text-button,
@@ -272,6 +284,24 @@ select {
   font-weight: 700;
 }
 
+.reset-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #d5d9e0;
+}
+
+.reset-section h3,
+.reset-confirmation p {
+  margin: 0;
+}
+
+.reset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
 .muted {
   color: #5c626d;
   line-height: 1.55;
@@ -349,6 +379,10 @@ select {
   border-color: #555c66;
 }
 
+:root[data-theme="dark"] .reset-section {
+  border-color: #555c66;
+}
+
 :root[data-theme="dark"] .mobile-nav button[aria-current="page"] {
   background: #243d6b;
   color: #e5edff;
@@ -383,6 +417,10 @@ select {
   }
 
   :root[data-theme="system"] .mobile-nav {
+    border-color: #555c66;
+  }
+
+  :root[data-theme="system"] .reset-section {
     border-color: #555c66;
   }
 

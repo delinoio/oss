@@ -52,7 +52,11 @@ describe("DevHud application surfaces", () => {
     expect(screen.getByRole("dialog", { name: "DevHud settings" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Close settings" })).toHaveFocus();
     await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(screen.getByRole("button", { name: "Reset DevHud" })).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
     expect(screen.getByRole("combobox", { name: "Theme preference" })).toHaveFocus();
+    await user.keyboard("{Tab}");
+    expect(screen.getByRole("button", { name: "Reset DevHud" })).toHaveFocus();
     await user.keyboard("{Tab}");
     expect(screen.getByRole("button", { name: "Close settings" })).toHaveFocus();
     await user.keyboard("{Escape}");
@@ -86,6 +90,7 @@ describe("DevHud application surfaces", () => {
     });
     const storage: LocalStorageAdapter = {
       read: async () => pendingRead,
+      reset: async () => undefined,
       write: async () => undefined,
     };
 
@@ -113,6 +118,7 @@ describe("DevHud application surfaces", () => {
       read: async () => {
         throw new Error("storage unavailable");
       },
+      reset: async () => undefined,
       write: async () => undefined,
     };
 
@@ -161,6 +167,7 @@ describe("DevHud application surfaces", () => {
   });
 
   it("shows explicit mobile loading states", async () => {
+    const user = userEvent.setup();
     let finishRuntime:
       | ((value: Awaited<ReturnType<typeof loadRuntimeInfo>>) => void)
       | undefined;
@@ -179,11 +186,13 @@ describe("DevHud application surfaces", () => {
       operatingSystem: "android",
       runtime: "system-webview",
       sandboxEnabled: false,
-      updatePolicy: "Managed by Google Play",
+      updatePolicy: "Unsupported",
     });
     expect(
       await screen.findByRole("heading", { name: "No tools yet" }),
     ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    expect(screen.getByText("Unsupported")).toBeVisible();
   });
 
   it("persists a mobile theme choice across application mounts", async () => {
@@ -207,6 +216,31 @@ describe("DevHud application surfaces", () => {
       ).toHaveValue("dark"),
     );
     expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("requires confirmation before resetting a rejected local record", async () => {
+    const user = userEvent.setup();
+    const storage = new MemoryStorageAdapter();
+    storage.values.set("devhud.settings.v1", "{not-json}");
+
+    renderApp({ platform: "mobile", storage });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Reset DevHud");
+
+    await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
+    expect(storage.values.get("devhud.settings.v1")).toBe("{not-json}");
+    const confirm = screen.getByRole("button", { name: "Confirm reset" });
+    expect(confirm).toHaveFocus();
+
+    await user.click(confirm);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "DevHud local data was reset.",
+    );
+    expect(storage.values.size).toBe(0);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Theme preference" })).toHaveValue(
+      "system",
+    );
   });
 
   it("has no automated accessibility violations on the mobile shell", async () => {

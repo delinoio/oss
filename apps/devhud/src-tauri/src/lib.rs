@@ -84,6 +84,7 @@ struct PersistenceState {
 enum PersistenceCommandError {
     StorageUnavailable,
     InvalidRecord,
+    ResetFailed,
     WriteFailed,
 }
 
@@ -143,6 +144,31 @@ impl PersistenceState {
             log_persistence_io_failure("write", key, &error);
             PersistenceCommandError::WriteFailed
         })
+    }
+
+    fn reset(&self) -> Result<(), PersistenceCommandError> {
+        let _guard = self.write_lock.lock().map_err(|_| {
+            tracing::warn!(
+                event = "devhud.persistence.reset_failure",
+                classification = "reset-failed",
+                "DevHud local data reset failed"
+            );
+            PersistenceCommandError::ResetFailed
+        })?;
+        for key in [SETTINGS_STORAGE_KEY, WIDGET_CONFIGURATION_STORAGE_KEY] {
+            let Some(path) = self.path_for(key) else {
+                log_persistence_unavailable("reset", key);
+                return Err(PersistenceCommandError::StorageUnavailable);
+            };
+            if let Err(error) = fs::remove_file(path) {
+                if error.kind() == io::ErrorKind::NotFound {
+                    continue;
+                }
+                log_persistence_io_failure("reset", key, &error);
+                return Err(PersistenceCommandError::ResetFailed);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -425,12 +451,10 @@ const fn operating_system() -> &'static str {
     }
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const fn update_policy() -> &'static str {
-    if cfg!(target_os = "ios") {
-        "Managed by the App Store"
-    } else if cfg!(target_os = "android") {
-        "Managed by Google Play"
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        "Unsupported"
     } else {
         "Desktop updater unavailable"
     }
@@ -512,6 +536,28 @@ fn write_widget_configuration(
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn reset_dev_hud(
+    webview: Webview<ActiveRuntime>,
+    state: State<'_, PersistenceState>,
+) -> Result<(), PersistenceCommandError> {
+    webview.clear_all_browsing_data().map_err(|_| {
+        tracing::warn!(
+            event = "devhud.persistence.reset_failure",
+            classification = "reset-failed",
+            "DevHud application browsing data reset failed"
+        );
+        PersistenceCommandError::ResetFailed
+    })?;
+    state.reset()?;
+    tracing::info!(
+        event = "devhud.persistence.reset",
+        "DevHud local data was reset"
+    );
+    Ok(())
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
     builder
         .invoke_handler(tauri::generate_handler![
@@ -519,7 +565,8 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             read_settings,
             write_settings,
             read_widget_configuration,
-            write_widget_configuration
+            write_widget_configuration,
+            reset_dev_hud
         ])
         .setup(|app| {
             let persistence = match app.path().app_local_data_dir() {
@@ -756,6 +803,7 @@ mod tests {
         assert_eq!(value["sandboxEnabled"], true);
         assert_eq!(value["operatingSystem"], "linux");
         assert_eq!(value["updatePolicy"], "Desktop updater unavailable");
+        assert_eq!(update_policy(), "Desktop updater unavailable");
     }
 
     #[test]

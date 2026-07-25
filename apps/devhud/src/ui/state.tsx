@@ -37,6 +37,7 @@ interface ApplicationState {
 }
 
 interface ApplicationActions {
+  resetDevHud(): Promise<void>;
   setTheme(theme: ThemePreference): void;
   setShortcut(shortcut: StructuredShortcut | null): void;
   setWidgetConfiguration(configuration: WidgetConfiguration): void;
@@ -180,6 +181,24 @@ export function ApplicationProvider({
     [persistence, persistenceReady],
   );
 
+  const resetDevHud = useCallback(async () => {
+    setPersistenceReady(false);
+    settingsMutation.current += 1;
+    widgetConfigurationMutation.current += 1;
+    try {
+      const loaded = await persistence.reset();
+      setSettings(loaded.settings);
+      setWidgetConfigurationState(loaded.widgetConfiguration);
+      lastSuccessfulSettings.current = loaded.settings;
+      lastSuccessfulWidgetConfiguration.current = loaded.widgetConfiguration;
+      setPersistenceIssues(loaded.issues);
+    } finally {
+      settingsMutation.current = 0;
+      widgetConfigurationMutation.current = 0;
+      setPersistenceReady(true);
+    }
+  }, [persistence]);
+
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
@@ -189,6 +208,7 @@ export function ApplicationProvider({
       widgetConfiguration,
       persistenceIssues,
       persistenceReady,
+      resetDevHud,
       setTheme,
       setShortcut,
       setWidgetConfiguration,
@@ -204,6 +224,7 @@ export function ApplicationProvider({
       openSettings,
       persistenceIssues,
       persistenceReady,
+      resetDevHud,
       setShortcut,
       setTheme,
       setWidgetConfiguration,

@@ -154,8 +154,9 @@ requireCondition(
       "allow-write-settings",
       "allow-read-widget-configuration",
       "allow-write-widget-configuration",
+      "allow-reset-dev-hud",
     ]),
-  "the main capability must expose only runtime information and the two scoped persistence records",
+  "the main capability must expose only runtime information, the two scoped persistence records, and confirmed reset",
 );
 
 if (failures.length > 0) {

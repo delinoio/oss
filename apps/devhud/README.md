@@ -36,6 +36,6 @@ General package validation is `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm 
 
 ## Native boundary
 
-The frontend loads only bundled assets. Native IPC exposes runtime diagnostics and record-specific reads/writes for `devhud.settings.v1` and `devhud.widget-configuration.v1`. It exposes no arbitrary filesystem path, generic key/value store, default-store authority, public route, or remote communication. Updates are reported as unsupported on mobile until a signed platform update integration exists.
+The frontend loads only bundled assets. Native IPC exposes runtime diagnostics, record-specific reads/writes for `devhud.settings.v1` and `devhud.widget-configuration.v1`, and the confirmed `Reset DevHud` operation that clears those records plus application browsing data. It exposes no arbitrary filesystem path, generic key/value store, default-store authority, public route, or remote communication. Updates are reported as unsupported on mobile until a signed platform update integration exists.
 
 No production tool, visible widget, release automation, public API, CLI, or deep link is included. See `docs/apps-devhud-foundation.md` for the complete contract.

@@ -45,10 +45,14 @@ const [
   tauriConfigSource,
   androidBuild,
   androidManifest,
+  androidBackupRules,
+  androidDataExtractionRules,
+  gradleWrapper,
   iosEntitlements,
   iosInfo,
   iosProject,
   productionRegistry,
+  runtimeSource,
 ] = await Promise.all([
   read("src-tauri/tauri.android.conf.json"),
   read("src-tauri/Cargo.toml"),
@@ -58,10 +62,14 @@ const [
   read("src-tauri/tauri.conf.json"),
   read("src-tauri/gen/android/app/build.gradle.kts"),
   read("src-tauri/gen/android/app/src/main/AndroidManifest.xml"),
+  read("src-tauri/gen/android/app/src/main/res/xml/backup_rules.xml"),
+  read("src-tauri/gen/android/app/src/main/res/xml/data_extraction_rules.xml"),
+  read("src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties"),
   read("src-tauri/gen/apple/devhud_iOS/devhud_iOS.entitlements"),
   read("src-tauri/gen/apple/devhud_iOS/Info.plist"),
   read("src-tauri/gen/apple/project.yml"),
   read("src/tools/registry.ts"),
+  read("src-tauri/src/lib.rs"),
 ]);
 
 const androidConfig = JSON.parse(androidConfigSource);
@@ -151,6 +159,47 @@ requireCondition(
     !androidManifest.includes("AppWidgetProvider"),
   "the distributed Android manifest must not register an AppWidgetProvider",
 );
+requireCondition(
+  androidManifest.includes('android:allowBackup="false"') &&
+    androidManifest.includes(
+      'android:dataExtractionRules="@xml/data_extraction_rules"',
+    ) &&
+    androidManifest.includes('android:fullBackupContent="@xml/backup_rules"'),
+  "the distributed Android host must disable backup and declare exclusions",
+);
+const backupDomains = [
+  "root",
+  "file",
+  "database",
+  "sharedpref",
+  "external",
+  "device_root",
+  "device_file",
+  "device_database",
+  "device_sharedpref",
+];
+for (const domain of backupDomains) {
+  requireCondition(
+    androidBackupRules.includes(`<exclude domain="${domain}" path="." />`),
+    `Android legacy backup rules must exclude the ${domain} domain`,
+  );
+  requireCondition(
+    androidDataExtractionRules
+      .split(`<exclude domain="${domain}" path="." />`).length === 3,
+    `Android extraction rules must exclude the ${domain} domain from cloud and device transfer`,
+  );
+}
+requireCondition(
+  androidDataExtractionRules.includes("<cloud-backup>") &&
+    androidDataExtractionRules.includes("<device-transfer>"),
+  "Android extraction rules must exclude both cloud backup and device transfer",
+);
+requireCondition(
+  gradleWrapper.includes(
+    "distributionSha256Sum=bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531",
+  ),
+  "the pinned Gradle distribution must retain its official SHA-256 checksum",
+);
 
 requireCondition(
   iosProject.includes("PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud") &&
@@ -191,8 +240,15 @@ requireCondition(
       "allow-write-settings",
       "allow-read-widget-configuration",
       "allow-write-widget-configuration",
+      "allow-reset-dev-hud",
     ]),
-  "mobile IPC must remain limited to diagnostics and the two versioned records",
+  "mobile IPC must remain limited to diagnostics, the two versioned records, and confirmed reset",
+);
+requireCondition(
+  runtimeSource.includes('"Unsupported"') &&
+    !runtimeSource.includes("Managed by the App Store") &&
+    !runtimeSource.includes("Managed by Google Play"),
+  "mobile runtime diagnostics must report updates as unsupported",
 );
 requireCondition(
   /export const productionTools:\s*readonly ToolDefinition\[\]\s*=\s*\[\];/u.test(

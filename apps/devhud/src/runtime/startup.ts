@@ -6,10 +6,7 @@ export interface RuntimeInfo {
   operatingSystem: "android" | "ios" | "linux" | "macos" | "windows";
   runtime: "cef" | "system-webview";
   sandboxEnabled: boolean;
-  updatePolicy:
-    | "Managed by the App Store"
-    | "Managed by Google Play"
-    | "Desktop updater unavailable";
+  updatePolicy: "Unsupported" | "Desktop updater unavailable";
 }
 
 interface NativeCommandResults {
