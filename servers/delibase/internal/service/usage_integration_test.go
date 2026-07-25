@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"math"
 	"os"
 	"strings"
@@ -41,6 +42,84 @@ type usageFixture struct {
 	parentTeamID   uuid.UUID
 	childTeamID    uuid.UUID
 	privateTeamID  uuid.UUID
+}
+
+func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	ownerContext := usageContext(ctx, fixture.serviceClient, fixture.ownerSubject)
+
+	type result struct {
+		response *connect.Response[delibasev1.ReserveUsageResponse]
+		err      error
+	}
+	results := make(chan result, 2)
+	var callers sync.WaitGroup
+	for index := 0; index < 2; index++ {
+		index := index
+		callers.Add(1)
+		go func() {
+			defer callers.Done()
+			suffix := string(rune('a' + index))
+			response, err := fixture.usage.ReserveUsage(
+				ownerContext,
+				usageReserveRequest(
+					fixture,
+					fixture.generalTeamID,
+					fixture.meterID,
+					75,
+					"oversubscribe-"+suffix+"-"+fixture.organizationID.String(),
+					"oversubscribe-"+suffix+"-"+fixture.organizationID.String(),
+				),
+			)
+			results <- result{response: response, err: err}
+		}()
+	}
+	callers.Wait()
+	close(results)
+
+	var winner *delibasev1.UsageReservation
+	successes, exhausted := 0, 0
+	for result := range results {
+		if result.err == nil {
+			successes++
+			winner = result.response.Msg.Reservation
+			continue
+		}
+		var failure *connect.Error
+		if !errors.As(result.err, &failure) ||
+			failure.Code() != connect.CodeResourceExhausted {
+			t.Fatalf("concurrent reserve error = %v", result.err)
+		}
+		exhausted++
+	}
+	if successes != 1 || exhausted != 1 ||
+		winner.HeldCredit.Value+winner.HeldOverage.Value != 150 {
+		t.Fatalf(
+			"concurrent reserves: successes=%d exhausted=%d winner=%#v",
+			successes,
+			exhausted,
+			winner,
+		)
+	}
+	if _, err := fixture.usage.ReleaseUsage(
+		ownerContext,
+		connect.NewRequest(&delibasev1.ReleaseUsageRequest{
+			OrganizationId: usageUUID(fixture.organizationID),
+			ReservationId:  winner.ReservationId,
+			Idempotency: idempotency(
+				"oversubscribe-release-" + fixture.organizationID.String(),
+			),
+		}),
+	); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPostgreSQLUsageServiceSerializesLifecycleAndVisibility(t *testing.T) {
