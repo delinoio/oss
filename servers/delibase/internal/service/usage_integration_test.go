@@ -1363,6 +1363,200 @@ func TestPostgreSQLExpirationContinuesAfterOrganizationFailure(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLExpirationPaginatesPastPoisonedOrganizations(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	dependencies := fixture.dependencies.withDefaults()
+	actor, err := actorFor(dependencies, fixture.ownerSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meter, err := fixture.store.Queries().GetUsageMeterAuthorization(
+		ctx,
+		dbgen.GetUsageMeterAuthorizationParams{
+			ServiceIdentityID: pgUUID(fixture.serviceID),
+			MeterID:           pgUUID(fixture.shortMeterID),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	connection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = connection.Close(context.WithoutCancel(ctx)) }()
+	poisonedOrganizationIDs := make(
+		[]uuid.UUID,
+		0,
+		usageExpirationBatchSize,
+	)
+	expiredAt := time.Now().UTC().Add(-time.Hour)
+	// Runtime writes cannot create ledger-inconsistent holds. Model retained
+	// corruption with trigger checks disabled, then exercise the normal worker.
+	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
+		if _, transactionErr := transaction.Exec(
+			ctx,
+			"SET LOCAL session_replication_role = replica",
+		); transactionErr != nil {
+			return transactionErr
+		}
+		for index := int32(0); index < usageExpirationBatchSize; index++ {
+			organizationID := uuidv7.MustNew()
+			poisonedOrganizationIDs = append(
+				poisonedOrganizationIDs,
+				organizationID,
+			)
+			if _, transactionErr := transaction.Exec(
+				ctx,
+				`INSERT INTO organizations (id, name, slug)
+				 VALUES ($1, 'Expiration poison', $2)`,
+				organizationID,
+				"expiration-poison-"+organizationID.String()[24:],
+			); transactionErr != nil {
+				return transactionErr
+			}
+			reservationID := uuidv7.MustNew()
+			if _, transactionErr := transaction.Exec(
+				ctx,
+				`INSERT INTO usage_reservations (
+				    id, organization_id, team_id, team_name_snapshot,
+				    meter_id, price_version_id, account_id,
+				    service_identity_id, maximum_units,
+				    usd_micros_per_unit, maximum_cost_micros,
+				    held_credit_micros, held_overage_micros,
+				    client_reference, expires_at, created_at,
+				    user_actor_reference_snapshot, service_name_snapshot,
+				    meter_name_snapshot, polar_event_name_snapshot,
+				    price_effective_from_snapshot,
+				    price_effective_until_snapshot
+				 ) VALUES (
+				    $1, $2, $3, 'General', $4, $5, $6, $7,
+				    1, $8, $8, $8, 0, $9, $10, $11, $12,
+				    $13, $14, $15, $16, $17
+				 )`,
+				reservationID,
+				organizationID,
+				fixture.generalTeamID,
+				fixture.shortMeterID,
+				uuid.UUID(meter.PriceVersionID.Bytes),
+				fixture.ownerID,
+				fixture.serviceID,
+				meter.UsdMicrosPerUnit,
+				"expiration-poison-"+reservationID.String(),
+				expiredAt,
+				expiredAt.Add(-time.Minute),
+				string(actor),
+				"Usage Integration Service",
+				meter.MeterName,
+				meter.PolarMeterID,
+				meter.EffectiveFrom,
+				meter.EffectiveUntil,
+			); transactionErr != nil {
+				return transactionErr
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(
+			context.Background(),
+			10*time.Second,
+		)
+		defer cleanupCancel()
+		cleanupErr := pgx.BeginFunc(
+			cleanupCtx,
+			connection,
+			func(transaction pgx.Tx) error {
+				if _, transactionErr := transaction.Exec(
+					cleanupCtx,
+					"SET LOCAL session_replication_role = replica",
+				); transactionErr != nil {
+					return transactionErr
+				}
+				for _, organizationID := range poisonedOrganizationIDs {
+					if _, transactionErr := transaction.Exec(
+						cleanupCtx,
+						"DELETE FROM usage_reservations WHERE organization_id = $1",
+						organizationID,
+					); transactionErr != nil {
+						return transactionErr
+					}
+					if _, transactionErr := transaction.Exec(
+						cleanupCtx,
+						"DELETE FROM organizations WHERE id = $1",
+						organizationID,
+					); transactionErr != nil {
+						return transactionErr
+					}
+				}
+				return nil
+			},
+		)
+		if cleanupErr != nil {
+			t.Errorf("cleanup poisoned expiration organizations: %v", cleanupErr)
+		}
+	}()
+
+	healthyReservation, err := fixture.usage.ReserveUsage(
+		usageContext(ctx, fixture.serviceClient, fixture.ownerSubject),
+		usageReserveRequest(
+			fixture,
+			fixture.generalTeamID,
+			fixture.shortMeterID,
+			1,
+			"healthy-after-poison-page-"+fixture.organizationID.String(),
+			"healthy-after-poison-page-"+fixture.organizationID.String(),
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthyReservationID, err := uuid.Parse(
+		healthyReservation.Msg.Reservation.ReservationId.Value,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+
+	worker, err := NewUsageExpirationWorker(
+		fixture.dependencies,
+		time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	processed, batchErr := worker.ProcessBatch(ctx)
+	if processed != 1 ||
+		!errors.Is(batchErr, errUsageReservationHoldLedgerInvalid) {
+		t.Fatalf("expiration batch processed = %d, error = %v", processed, batchErr)
+	}
+	stored, err := fixture.store.Queries().LockUsageReservation(
+		ctx,
+		dbgen.LockUsageReservationParams{
+			OrganizationID: pgUUID(fixture.organizationID),
+			ReservationID:  pgUUID(healthyReservationID),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != "expired" {
+		t.Fatalf("healthy reservation status = %q", stored.Status)
+	}
+}
+
 func TestPostgreSQLPolarUsageOutboxPayloadMustMatchRecord(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {

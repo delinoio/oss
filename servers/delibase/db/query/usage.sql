@@ -231,8 +231,15 @@ WITH organization_candidates AS (
       AND reservation.expires_at <= statement_timestamp()
     ORDER BY reservation.organization_id, reservation.expires_at, reservation.id
 )
-SELECT id, organization_id
+SELECT id, organization_id, expires_at
 FROM organization_candidates
+WHERE (
+    sqlc.narg(after_expires_at)::timestamptz IS NULL
+    OR (expires_at, id) > (
+        sqlc.narg(after_expires_at)::timestamptz,
+        sqlc.narg(after_id)::uuid
+    )
+)
 ORDER BY expires_at, id
 LIMIT sqlc.arg(page_limit);
 

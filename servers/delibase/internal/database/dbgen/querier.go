@@ -119,7 +119,7 @@ type Querier interface {
 	ListActiveReservationBlockersForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListActiveReservationBlockersForAccountRow, error)
 	ListCancelablePolarSubscriptionsForOrganization(ctx context.Context, organizationID pgtype.UUID) ([]string, error)
 	ListEffectiveTeamAccess(ctx context.Context, arg ListEffectiveTeamAccessParams) ([]ListEffectiveTeamAccessRow, error)
-	ListExpiredUsageReservationCandidates(ctx context.Context, pageLimit int32) ([]ListExpiredUsageReservationCandidatesRow, error)
+	ListExpiredUsageReservationCandidates(ctx context.Context, arg ListExpiredUsageReservationCandidatesParams) ([]ListExpiredUsageReservationCandidatesRow, error)
 	ListExpiredUsageReservationsForAccountInOrganization(ctx context.Context, arg ListExpiredUsageReservationsForAccountInOrganizationParams) ([]UsageReservation, error)
 	ListExpiredUsageReservationsForOrganization(ctx context.Context, arg ListExpiredUsageReservationsForOrganizationParams) ([]UsageReservation, error)
 	ListLastOwnerBlockers(ctx context.Context, accountID pgtype.UUID) ([]ListLastOwnerBlockersRow, error)

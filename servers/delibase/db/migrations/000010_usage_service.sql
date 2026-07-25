@@ -37,6 +37,19 @@ AS $$
     WHERE entry.reservation_id = usage_reservation_holds_are_releasable.reservation_id;
 $$;
 
+-- Migration 000002 bounded Polar identifiers but predated the provider's
+-- request-shape validation. Validate every persisted mapping before copying it
+-- into immutable reservation and usage snapshots.
+ALTER TABLE polar_meter_mappings
+    ADD CONSTRAINT polar_meter_mappings_provider_id_check CHECK (
+        octet_length(polar_meter_id) <= 255
+        AND polar_meter_id !~ '^[[:space:]]'
+        AND polar_meter_id !~ '[[:space:]]$'
+        AND strpos(polar_meter_id, '/') = 0
+        AND strpos(polar_meter_id, chr(10)) = 0
+        AND strpos(polar_meter_id, chr(13)) = 0
+    );
+
 -- Usage mutations keep the operational references needed while a reservation
 -- is held and retain immutable, privacy-safe snapshots after finalization.
 ALTER TABLE usage_reservations

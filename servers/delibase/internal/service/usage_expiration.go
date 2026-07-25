@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const defaultUsageExpirationInterval = time.Second
@@ -79,92 +80,112 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 	if worker == nil || worker.dependencies.Store == nil {
 		return 0, errors.New("usage expiration: worker is unavailable")
 	}
-	candidates, err := worker.dependencies.Store.Queries().
-		ListExpiredUsageReservationCandidates(ctx, usageExpirationBatchSize)
-	if err != nil {
-		return 0, err
-	}
 	processed := 0
 	var batchErr error
-	seenOrganizations := make(map[uuid.UUID]struct{}, len(candidates))
-	for _, candidate := range candidates {
-		if processed >= int(usageExpirationBatchSize) {
+	seenOrganizations := make(map[uuid.UUID]struct{})
+	var afterExpiresAt pgtype.Timestamptz
+	var afterID pgtype.UUID
+	for processed < int(usageExpirationBatchSize) {
+		candidates, err := worker.dependencies.Store.Queries().
+			ListExpiredUsageReservationCandidates(
+				ctx,
+				dbgen.ListExpiredUsageReservationCandidatesParams{
+					AfterExpiresAt: afterExpiresAt,
+					AfterID:        afterID,
+					PageLimit:      usageExpirationBatchSize,
+				},
+			)
+		if err != nil {
+			return processed, errors.Join(batchErr, err)
+		}
+		if len(candidates) == 0 {
 			break
 		}
-		organizationID := uuid.UUID(candidate.OrganizationID.Bytes)
-		if _, seen := seenOrganizations[organizationID]; seen {
-			continue
-		}
-		seenOrganizations[organizationID] = struct{}{}
-		organizationProcessed := 0
-		var organizationExpirationErr error
-		err = worker.dependencies.Store.WithinTransaction(
-			ctx,
-			pgx.TxOptions{},
-			func(queries *dbgen.Queries) error {
-				if _, lockErr := queries.LockOrganizationForBilling(
-					ctx, candidate.OrganizationID,
-				); lockErr != nil {
-					if errors.Is(lockErr, pgx.ErrNoRows) {
-						return nil
-					}
-					return lockErr
-				}
-				count, expirationErr := expireOrganizationReservations(
-					ctx, worker.dependencies, queries, organizationID,
-					usageExpirationBatchSize-int32(processed),
-				)
-				if expirationErr != nil {
-					return expirationErr
-				}
-				organizationProcessed = count
-				invalidCount, countErr :=
-					queries.CountInvalidExpiredUsageReservationsForOrganization(
+		lastCandidate := candidates[len(candidates)-1]
+		afterExpiresAt = lastCandidate.ExpiresAt
+		afterID = lastCandidate.ID
+		for _, candidate := range candidates {
+			if processed >= int(usageExpirationBatchSize) {
+				break
+			}
+			organizationID := uuid.UUID(candidate.OrganizationID.Bytes)
+			if _, seen := seenOrganizations[organizationID]; seen {
+				continue
+			}
+			seenOrganizations[organizationID] = struct{}{}
+			organizationProcessed := 0
+			var organizationExpirationErr error
+			err = worker.dependencies.Store.WithinTransaction(
+				ctx,
+				pgx.TxOptions{},
+				func(queries *dbgen.Queries) error {
+					if _, lockErr := queries.LockOrganizationForBilling(
 						ctx, candidate.OrganizationID,
+					); lockErr != nil {
+						if errors.Is(lockErr, pgx.ErrNoRows) {
+							return nil
+						}
+						return lockErr
+					}
+					count, expirationErr := expireOrganizationReservations(
+						ctx, worker.dependencies, queries, organizationID,
+						usageExpirationBatchSize-int32(processed),
 					)
-				if countErr != nil {
-					return countErr
-				}
-				if invalidCount > 0 {
-					organizationExpirationErr =
-						errUsageReservationHoldLedgerInvalid
-				}
-				return nil
-			},
-		)
-		if err != nil {
-			batchErr = errors.Join(batchErr, err)
-			safelog.Record(
-				ctx,
-				worker.dependencies.Logger,
-				slog.LevelError,
-				safelog.EventReservation,
-				safelog.Fields{
-					OrganizationID:    organizationID.String(),
-					Result:            safelog.ResultFailure,
-					ErrorClass:        safeerr.Classify(err),
-					IncludeErrorClass: true,
+					if expirationErr != nil {
+						return expirationErr
+					}
+					organizationProcessed = count
+					invalidCount, countErr :=
+						queries.CountInvalidExpiredUsageReservationsForOrganization(
+							ctx, candidate.OrganizationID,
+						)
+					if countErr != nil {
+						return countErr
+					}
+					if invalidCount > 0 {
+						organizationExpirationErr =
+							errUsageReservationHoldLedgerInvalid
+					}
+					return nil
 				},
 			)
-			continue
+			if err != nil {
+				batchErr = errors.Join(batchErr, err)
+				safelog.Record(
+					ctx,
+					worker.dependencies.Logger,
+					slog.LevelError,
+					safelog.EventReservation,
+					safelog.Fields{
+						OrganizationID:    organizationID.String(),
+						Result:            safelog.ResultFailure,
+						ErrorClass:        safeerr.Classify(err),
+						IncludeErrorClass: true,
+					},
+				)
+				continue
+			}
+			processed += organizationProcessed
+			if organizationExpirationErr != nil {
+				batchErr = errors.Join(batchErr, organizationExpirationErr)
+				safelog.Record(
+					ctx,
+					worker.dependencies.Logger,
+					slog.LevelError,
+					safelog.EventReservation,
+					safelog.Fields{
+						OrganizationID: organizationID.String(),
+						Result:         safelog.ResultFailure,
+						ErrorClass: safeerr.Classify(
+							organizationExpirationErr,
+						),
+						IncludeErrorClass: true,
+					},
+				)
+			}
 		}
-		processed += organizationProcessed
-		if organizationExpirationErr != nil {
-			batchErr = errors.Join(batchErr, organizationExpirationErr)
-			safelog.Record(
-				ctx,
-				worker.dependencies.Logger,
-				slog.LevelError,
-				safelog.EventReservation,
-				safelog.Fields{
-					OrganizationID: organizationID.String(),
-					Result:         safelog.ResultFailure,
-					ErrorClass: safeerr.Classify(
-						organizationExpirationErr,
-					),
-					IncludeErrorClass: true,
-				},
-			)
+		if len(candidates) < int(usageExpirationBatchSize) {
+			break
 		}
 	}
 	return processed, batchErr

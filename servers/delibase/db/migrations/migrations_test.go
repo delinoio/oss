@@ -482,6 +482,47 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
+		if _, transactionErr := transaction.Exec(
+			ctx,
+			"SET LOCAL session_replication_role = replica",
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := transaction.Exec(
+			ctx,
+			`UPDATE polar_meter_mappings
+			 SET polar_meter_id = 'migration/usage-event'
+			 WHERE meter_id = $1`,
+			usageMeterID,
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = apply(ctx, connection, ordered[len(ordered)-1]); err == nil {
+		t.Fatal("usage migration accepted an invalid persisted Polar mapping")
+	}
+	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
+		if _, transactionErr := transaction.Exec(
+			ctx,
+			"SET LOCAL session_replication_role = replica",
+		); transactionErr != nil {
+			return transactionErr
+		}
+		_, transactionErr := transaction.Exec(
+			ctx,
+			`UPDATE polar_meter_mappings
+			 SET polar_meter_id = 'migration-usage-event'
+			 WHERE meter_id = $1`,
+			usageMeterID,
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err = apply(ctx, connection, ordered[len(ordered)-1]); err != nil {
 		t.Fatal(err)
 	}

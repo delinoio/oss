@@ -634,19 +634,33 @@ WITH organization_candidates AS (
       AND reservation.expires_at <= statement_timestamp()
     ORDER BY reservation.organization_id, reservation.expires_at, reservation.id
 )
-SELECT id, organization_id
+SELECT id, organization_id, expires_at
 FROM organization_candidates
+WHERE (
+    $1::timestamptz IS NULL
+    OR (expires_at, id) > (
+        $1::timestamptz,
+        $2::uuid
+    )
+)
 ORDER BY expires_at, id
-LIMIT $1
+LIMIT $3
 `
+
+type ListExpiredUsageReservationCandidatesParams struct {
+	AfterExpiresAt pgtype.Timestamptz
+	AfterID        pgtype.UUID
+	PageLimit      int32
+}
 
 type ListExpiredUsageReservationCandidatesRow struct {
 	ID             pgtype.UUID
 	OrganizationID pgtype.UUID
+	ExpiresAt      pgtype.Timestamptz
 }
 
-func (q *Queries) ListExpiredUsageReservationCandidates(ctx context.Context, pageLimit int32) ([]ListExpiredUsageReservationCandidatesRow, error) {
-	rows, err := q.db.Query(ctx, listExpiredUsageReservationCandidates, pageLimit)
+func (q *Queries) ListExpiredUsageReservationCandidates(ctx context.Context, arg ListExpiredUsageReservationCandidatesParams) ([]ListExpiredUsageReservationCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredUsageReservationCandidates, arg.AfterExpiresAt, arg.AfterID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -654,7 +668,7 @@ func (q *Queries) ListExpiredUsageReservationCandidates(ctx context.Context, pag
 	items := []ListExpiredUsageReservationCandidatesRow{}
 	for rows.Next() {
 		var i ListExpiredUsageReservationCandidatesRow
-		if err := rows.Scan(&i.ID, &i.OrganizationID); err != nil {
+		if err := rows.Scan(&i.ID, &i.OrganizationID, &i.ExpiresAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
