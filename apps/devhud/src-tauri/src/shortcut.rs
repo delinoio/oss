@@ -118,6 +118,20 @@ pub(crate) enum ShortcutFailure {
     StorageFailed,
 }
 
+impl ShortcutFailure {
+    #[cfg_attr(not(feature = "desktop-cef"), allow(dead_code))]
+    pub(crate) const fn classification(self) -> &'static str {
+        match self {
+            Self::Malformed => "malformed",
+            Self::Conflict => "conflict",
+            Self::PermissionDenied => "permission-denied",
+            Self::RegistrationFailed => "registration-failed",
+            Self::UnsupportedDisplay => "unsupported-display",
+            Self::StorageFailed => "storage-failed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub(crate) enum ShortcutReplacementOutcome {
@@ -190,6 +204,17 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
 
     fn active_id(&self) -> Option<u32> {
         self.active.as_ref().map(|(_, binding)| B::id(*binding))
+    }
+
+    fn clear(&mut self) -> Result<(), ShortcutFailure> {
+        let Some((_, binding)) = self.active.as_ref() else {
+            return Ok(());
+        };
+        self.backend
+            .unregister(*binding)
+            .map_err(map_backend_error)?;
+        self.active = None;
+        Ok(())
     }
 }
 
@@ -427,16 +452,27 @@ impl ShortcutState {
         self.restoration_failure
     }
 
-    pub(crate) fn rollback(&mut self, previous: Option<StructuredShortcut>) {
-        let Some(coordinator) = &mut self.coordinator else {
-            return;
-        };
-        if let Some(previous) = previous {
-            let _ = coordinator.replace(previous);
-        } else if let Some((_, active)) = coordinator.active.as_ref()
-            && coordinator.backend.unregister(*active).is_ok()
-        {
-            coordinator.active = None;
+    pub(crate) fn clear(&mut self) -> Result<(), ShortcutFailure> {
+        if let Some(coordinator) = &mut self.coordinator {
+            coordinator.clear()?;
+        }
+        self.restoration_failure = None;
+        Ok(())
+    }
+
+    pub(crate) fn rollback(
+        &mut self,
+        previous: Option<StructuredShortcut>,
+    ) -> Result<(), ShortcutFailure> {
+        match previous {
+            Some(previous) => match self.replace(Some(
+                serde_json::to_value(previous).map_err(|_| ShortcutFailure::Malformed)?,
+            )) {
+                ShortcutReplacementOutcome::Replaced { .. } => Ok(()),
+                ShortcutReplacementOutcome::Unchanged { reason } => Err(reason),
+                ShortcutReplacementOutcome::Cancelled => Err(ShortcutFailure::RegistrationFailed),
+            },
+            None => self.clear(),
         }
     }
 }
@@ -558,6 +594,24 @@ mod tests {
         );
         assert_eq!(coordinator.active_id(), Some(working_id));
         assert_eq!(coordinator.backend.registered, vec![working_id]);
+    }
+
+    #[test]
+    fn clearing_a_binding_unregisters_it_and_preserves_it_on_failure() {
+        let mut coordinator = ShortcutCoordinator::new(FakeBackend::default());
+        coordinator.replace(shortcut(ShortcutKey::K));
+        let working_id = coordinator.active_id().unwrap();
+
+        coordinator
+            .backend
+            .unregister_results
+            .push_back(Err(BackendError::PermissionDenied));
+        assert_eq!(coordinator.clear(), Err(ShortcutFailure::PermissionDenied));
+        assert_eq!(coordinator.active_id(), Some(working_id));
+
+        assert_eq!(coordinator.clear(), Ok(()));
+        assert_eq!(coordinator.active_id(), None);
+        assert!(coordinator.backend.registered.is_empty());
     }
 
     #[test]

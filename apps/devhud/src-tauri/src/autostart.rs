@@ -8,6 +8,17 @@ pub(crate) enum AutostartFailure {
     StorageFailed,
 }
 
+impl AutostartFailure {
+    #[cfg_attr(not(feature = "desktop-cef"), allow(dead_code))]
+    pub(crate) const fn classification(self) -> &'static str {
+        match self {
+            Self::PermissionDenied => "permission-denied",
+            Self::OperationFailed => "operation-failed",
+            Self::StorageFailed => "storage-failed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub(crate) enum AutostartOutcome {

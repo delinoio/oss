@@ -163,7 +163,11 @@ struct PersistenceState {
     write_lock: Mutex<()>,
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg_attr(
+    not(any(feature = "desktop-cef", feature = "mobile-system-webview")),
+    allow(dead_code)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum PersistenceCommandError {
@@ -210,7 +214,6 @@ impl PersistenceState {
     }
 
     fn write(&self, key: &str, record: &str) -> Result<(), PersistenceCommandError> {
-        validate_current_record(key, record).ok_or(PersistenceCommandError::InvalidRecord)?;
         let _guard = self.write_lock.lock().map_err(|_| {
             tracing::warn!(
                 event = "devhud.persistence.unavailable",
@@ -221,6 +224,11 @@ impl PersistenceState {
             );
             PersistenceCommandError::StorageUnavailable
         })?;
+        self.write_without_lock(key, record)
+    }
+
+    fn write_without_lock(&self, key: &str, record: &str) -> Result<(), PersistenceCommandError> {
+        validate_current_record(key, record).ok_or(PersistenceCommandError::InvalidRecord)?;
         let Some(path) = self.path_for(key) else {
             log_persistence_unavailable("write", key);
             return Err(PersistenceCommandError::StorageUnavailable);
@@ -229,6 +237,46 @@ impl PersistenceState {
             log_persistence_io_failure("write", key, &error);
             PersistenceCommandError::WriteFailed
         })
+    }
+
+    #[cfg(feature = "desktop-cef")]
+    fn write_frontend_settings(&self, record: &str) -> Result<(), PersistenceCommandError> {
+        let _guard = self.write_lock.lock().map_err(|_| {
+            log_persistence_unavailable("write", SETTINGS_STORAGE_KEY);
+            PersistenceCommandError::StorageUnavailable
+        })?;
+        let current = self.read(SETTINGS_STORAGE_KEY)?;
+        let merged = merge_frontend_settings_record(current.as_deref(), record)?;
+        self.write_without_lock(SETTINGS_STORAGE_KEY, &merged)
+    }
+
+    #[cfg(feature = "desktop-cef")]
+    fn update_settings_field(
+        &self,
+        field: &str,
+        value: serde_json::Value,
+    ) -> Result<(), PersistenceCommandError> {
+        let _guard = self.write_lock.lock().map_err(|_| {
+            log_persistence_unavailable("write", SETTINGS_STORAGE_KEY);
+            PersistenceCommandError::StorageUnavailable
+        })?;
+        let mut record = match self.read(SETTINGS_STORAGE_KEY)? {
+            Some(record) => {
+                validate_current_record(SETTINGS_STORAGE_KEY, &record)
+                    .ok_or(PersistenceCommandError::InvalidRecord)?;
+                serde_json::from_str::<serde_json::Value>(&record)
+                    .map_err(|_| PersistenceCommandError::InvalidRecord)?
+            }
+            None => default_settings_record(),
+        };
+        let settings = record
+            .get_mut("settings")
+            .and_then(serde_json::Value::as_object_mut)
+            .ok_or(PersistenceCommandError::InvalidRecord)?;
+        settings.insert(field.to_string(), value);
+        let record =
+            serde_json::to_string(&record).map_err(|_| PersistenceCommandError::InvalidRecord)?;
+        self.write_without_lock(SETTINGS_STORAGE_KEY, &record)
     }
 
     fn reset(&self) -> Result<(), PersistenceCommandError> {
@@ -412,6 +460,56 @@ fn validate_settings_record(object: &serde_json::Map<String, serde_json::Value>)
         }
         _ => None,
     }
+}
+
+#[cfg(any(feature = "desktop-cef", test))]
+#[cfg_attr(not(feature = "desktop-cef"), allow(dead_code))]
+fn default_settings_record() -> serde_json::Value {
+    serde_json::json!({
+        "version": 1,
+        "settings": {
+            "theme": "system",
+            "launchAtLogin": false,
+            "shortcut": null
+        }
+    })
+}
+
+#[cfg(any(feature = "desktop-cef", test))]
+fn merge_frontend_settings_record(
+    current: Option<&str>,
+    candidate: &str,
+) -> Result<String, PersistenceCommandError> {
+    validate_current_record(SETTINGS_STORAGE_KEY, candidate)
+        .ok_or(PersistenceCommandError::InvalidRecord)?;
+    let mut candidate = serde_json::from_str::<serde_json::Value>(candidate)
+        .map_err(|_| PersistenceCommandError::InvalidRecord)?;
+    let Some(current) = current else {
+        return serde_json::to_string(&candidate)
+            .map_err(|_| PersistenceCommandError::InvalidRecord);
+    };
+    validate_current_record(SETTINGS_STORAGE_KEY, current)
+        .ok_or(PersistenceCommandError::InvalidRecord)?;
+    let current = serde_json::from_str::<serde_json::Value>(current)
+        .map_err(|_| PersistenceCommandError::InvalidRecord)?;
+    let current_settings = current
+        .get("settings")
+        .and_then(serde_json::Value::as_object)
+        .ok_or(PersistenceCommandError::InvalidRecord)?;
+    let candidate_settings = candidate
+        .get_mut("settings")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or(PersistenceCommandError::InvalidRecord)?;
+    for native_field in ["launchAtLogin", "shortcut"] {
+        candidate_settings.insert(
+            native_field.to_string(),
+            current_settings
+                .get(native_field)
+                .cloned()
+                .ok_or(PersistenceCommandError::InvalidRecord)?,
+        );
+    }
+    serde_json::to_string(&candidate).map_err(|_| PersistenceCommandError::InvalidRecord)
 }
 
 #[cfg(all(
@@ -693,7 +791,14 @@ fn write_settings(
     record: String,
     state: State<'_, PersistenceState>,
 ) -> Result<(), PersistenceCommandError> {
-    state.write(SETTINGS_STORAGE_KEY, &record)
+    #[cfg(feature = "desktop-cef")]
+    {
+        state.write_frontend_settings(&record)
+    }
+    #[cfg(feature = "mobile-system-webview")]
+    {
+        state.write(SETTINGS_STORAGE_KEY, &record)
+    }
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -1007,30 +1112,43 @@ fn persist_settings_field(
     field: &str,
     value: serde_json::Value,
 ) -> Result<(), PersistenceCommandError> {
-    let mut record = match persistence.read(SETTINGS_STORAGE_KEY)? {
-        Some(record) => {
-            validate_current_record(SETTINGS_STORAGE_KEY, &record)
-                .ok_or(PersistenceCommandError::InvalidRecord)?;
-            serde_json::from_str::<serde_json::Value>(&record)
-                .map_err(|_| PersistenceCommandError::InvalidRecord)?
-        }
-        None => serde_json::json!({
-            "version": 1,
-            "settings": {
-                "theme": "system",
-                "launchAtLogin": false,
-                "shortcut": null
-            }
-        }),
-    };
-    let settings = record
-        .get_mut("settings")
-        .and_then(serde_json::Value::as_object_mut)
-        .ok_or(PersistenceCommandError::InvalidRecord)?;
-    settings.insert(field.to_string(), value);
-    let record =
-        serde_json::to_string(&record).map_err(|_| PersistenceCommandError::InvalidRecord)?;
-    persistence.write(SETTINGS_STORAGE_KEY, &record)
+    persistence.update_settings_field(field, value)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn log_shortcut_integration_failure(
+    operation: &'static str,
+    reason: shortcut::ShortcutFailure,
+    effective_state: &'static str,
+) {
+    tracing::warn!(
+        event = "devhud.shortcut.integration_failure",
+        operation,
+        classification = reason.classification(),
+        effective_state,
+        "DevHud shortcut integration failed"
+    );
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn log_autostart_integration_failure(
+    operation: &'static str,
+    reason: autostart::AutostartFailure,
+    effective_enabled: bool,
+) {
+    tracing::warn!(
+        event = "devhud.autostart.integration_failure",
+        operation,
+        classification = reason.classification(),
+        effective_enabled,
+        "DevHud launch-at-login integration failed"
+    );
 }
 
 #[cfg(all(
@@ -1051,7 +1169,26 @@ fn replace_global_shortcut(
             if let shortcut::ShortcutReplacementOutcome::Replaced { shortcut } = &outcome {
                 let value = serde_json::to_value(shortcut).unwrap_or(serde_json::Value::Null);
                 if persist_settings_field(&persistence, "shortcut", value).is_err() {
-                    state.rollback(previous);
+                    if let Err(reason) = state.rollback(previous) {
+                        log_shortcut_integration_failure(
+                            "replace-rollback",
+                            reason,
+                            if state.active_shortcut().is_some() {
+                                "configured"
+                            } else {
+                                "not-configured"
+                            },
+                        );
+                    }
+                    log_shortcut_integration_failure(
+                        "replace-persist",
+                        shortcut::ShortcutFailure::StorageFailed,
+                        if state.active_shortcut().is_some() {
+                            "configured"
+                        } else {
+                            "not-configured"
+                        },
+                    );
                     return shortcut::ShortcutReplacementOutcome::Unchanged {
                         reason: shortcut::ShortcutFailure::StorageFailed,
                     };
@@ -1060,11 +1197,30 @@ fn replace_global_shortcut(
                     diagnostics.shortcut_failure = None;
                 }
             }
+            if let shortcut::ShortcutReplacementOutcome::Unchanged { reason } = &outcome {
+                log_shortcut_integration_failure(
+                    "replace",
+                    *reason,
+                    if state.active_shortcut().is_some() {
+                        "configured"
+                    } else {
+                        "not-configured"
+                    },
+                );
+                return shortcut::ShortcutReplacementOutcome::Unchanged { reason: *reason };
+            }
             outcome
         }
-        Err(_) => shortcut::ShortcutReplacementOutcome::Unchanged {
-            reason: shortcut::ShortcutFailure::RegistrationFailed,
-        },
+        Err(_) => {
+            log_shortcut_integration_failure(
+                "replace",
+                shortcut::ShortcutFailure::RegistrationFailed,
+                "unknown",
+            );
+            shortcut::ShortcutReplacementOutcome::Unchanged {
+                reason: shortcut::ShortcutFailure::RegistrationFailed,
+            }
+        }
     }
 }
 
@@ -1090,6 +1246,14 @@ fn set_launch_at_login(
         .is_err()
     {
         let rollback = state.apply(previous);
+        if let autostart::AutostartOutcome::Unchanged { enabled, reason } = rollback {
+            log_autostart_integration_failure("change-rollback", reason, enabled);
+        }
+        log_autostart_integration_failure(
+            "change-persist",
+            autostart::AutostartFailure::StorageFailed,
+            rollback.enabled(),
+        );
         return autostart::AutostartOutcome::Unchanged {
             enabled: rollback.enabled(),
             reason: autostart::AutostartFailure::StorageFailed,
@@ -1099,6 +1263,9 @@ fn set_launch_at_login(
         && let Ok(mut diagnostics) = startup_diagnostics.lock()
     {
         diagnostics.autostart_outcome = None;
+    }
+    if let autostart::AutostartOutcome::Unchanged { enabled, reason } = outcome {
+        log_autostart_integration_failure("change", reason, enabled);
     }
     outcome
 }
@@ -1236,10 +1403,8 @@ fn install_shortcut_handler(app: &AppHandle<ActiveRuntime>) {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-#[tauri::command]
-fn reset_dev_hud(
+fn clear_browsing_data_for_reset(
     webview: Webview<ActiveRuntime>,
-    state: State<'_, PersistenceState>,
 ) -> Result<(), PersistenceCommandError> {
     webview.clear_all_browsing_data().map_err(|_| {
         tracing::warn!(
@@ -1248,7 +1413,114 @@ fn reset_dev_hud(
             "DevHud application browsing data reset failed"
         );
         PersistenceCommandError::ResetFailed
+    })
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn reset_dev_hud(
+    webview: Webview<ActiveRuntime>,
+    persistence: State<'_, PersistenceState>,
+    shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
+    autostart_state: State<'_, autostart::AutostartState>,
+    startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
+) -> Result<(), PersistenceCommandError> {
+    clear_browsing_data_for_reset(webview)?;
+    let mut shortcuts = shortcut_state.lock().map_err(|_| {
+        log_shortcut_integration_failure(
+            "reset",
+            shortcut::ShortcutFailure::RegistrationFailed,
+            "unknown",
+        );
+        PersistenceCommandError::ResetFailed
     })?;
+    let previous_shortcut = shortcuts.active_shortcut();
+    if let Err(reason) = shortcuts.clear() {
+        log_shortcut_integration_failure("reset", reason, "configured");
+        return Err(PersistenceCommandError::ResetFailed);
+    }
+
+    let Some(previous_autostart) = autostart_state.current() else {
+        log_autostart_integration_failure(
+            "reset-snapshot",
+            autostart::AutostartFailure::OperationFailed,
+            false,
+        );
+        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+            log_shortcut_integration_failure(
+                "reset-rollback",
+                reason,
+                if shortcuts.active_shortcut().is_some() {
+                    "configured"
+                } else {
+                    "not-configured"
+                },
+            );
+        }
+        return Err(PersistenceCommandError::ResetFailed);
+    };
+    let autostart_outcome = autostart_state.apply(false);
+    if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_outcome {
+        log_autostart_integration_failure("reset", reason, enabled);
+        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+            log_shortcut_integration_failure(
+                "reset-rollback",
+                reason,
+                if shortcuts.active_shortcut().is_some() {
+                    "configured"
+                } else {
+                    "not-configured"
+                },
+            );
+        }
+        return Err(PersistenceCommandError::ResetFailed);
+    }
+
+    if let Err(reason) = persistence.reset() {
+        let autostart_rollback = autostart_state.apply(previous_autostart);
+        if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_rollback {
+            log_autostart_integration_failure("reset-rollback", reason, enabled);
+        }
+        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+            log_shortcut_integration_failure(
+                "reset-rollback",
+                reason,
+                if shortcuts.active_shortcut().is_some() {
+                    "configured"
+                } else {
+                    "not-configured"
+                },
+            );
+        }
+        return Err(reason);
+    }
+
+    if let Ok(mut diagnostics) = startup_diagnostics.lock() {
+        diagnostics.shortcut_failure = None;
+        diagnostics.autostart_outcome = None;
+    }
+    tracing::info!(
+        event = "devhud.persistence.reset",
+        native_shortcut_configured = false,
+        native_autostart_enabled = false,
+        "DevHud local data was reset"
+    );
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn reset_dev_hud(
+    webview: Webview<ActiveRuntime>,
+    state: State<'_, PersistenceState>,
+) -> Result<(), PersistenceCommandError> {
+    clear_browsing_data_for_reset(webview)?;
     state.reset()?;
     tracing::info!(
         event = "devhud.persistence.reset",
@@ -1321,11 +1593,25 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             // The persisted opt-in is authoritative. In particular, a first
             // run actively clears any stale OS entry using the same app id.
             let autostart_outcome = autostart.restore(launch_at_login);
+            if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_outcome {
+                log_autostart_integration_failure("startup-restore", reason, enabled);
+            }
             app.manage(autostart);
 
             let persisted_shortcut = persisted_settings.and_then(|settings| settings.shortcut);
             let shortcuts = shortcut::ShortcutState::initialize(persisted_shortcut);
             let shortcut_failure = shortcuts.restoration_failure();
+            if let Some(reason) = shortcut_failure {
+                log_shortcut_integration_failure(
+                    "startup-restore",
+                    reason,
+                    if shortcuts.active_shortcut().is_some() {
+                        "configured"
+                    } else {
+                        "not-configured"
+                    },
+                );
+            }
             app.manage(Mutex::new(shortcuts));
             app.manage(Mutex::new(StartupDiagnostics {
                 shortcut_failure,
@@ -1714,6 +2000,25 @@ mod tests {
                 r#"{"version":1,"configuration":{"slots":[]},"extra":true}"#
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn frontend_settings_writes_preserve_native_integration_fields() {
+        let current = r#"{"version":1,"settings":{"theme":"system","launchAtLogin":true,"shortcut":{"modifiers":["control"],"key":"k"}}}"#;
+        let stale_frontend =
+            r#"{"version":1,"settings":{"theme":"dark","launchAtLogin":false,"shortcut":null}}"#;
+        let merged = merge_frontend_settings_record(Some(current), stale_frontend).unwrap();
+        let merged: serde_json::Value = serde_json::from_str(&merged).unwrap();
+
+        assert_eq!(merged["settings"]["theme"], "dark");
+        assert_eq!(merged["settings"]["launchAtLogin"], true);
+        assert_eq!(
+            merged["settings"]["shortcut"],
+            serde_json::json!({
+                "modifiers": ["control"],
+                "key": "k"
+            })
         );
     }
 

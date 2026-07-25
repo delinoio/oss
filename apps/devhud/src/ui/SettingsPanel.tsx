@@ -148,6 +148,8 @@ export function SettingsPanel({
   } = useApplication();
   const captureRef = useRef<HTMLButtonElement>(null);
   const [capturing, setCapturing] = useState(false);
+  const [shortcutRestoredInSession, setShortcutRestoredInSession] =
+    useState(false);
   const [shortcutStatus, setShortcutStatus] = useState<{
     readonly message: string;
     readonly error: boolean;
@@ -224,6 +226,7 @@ export function SettingsPanel({
       if (outcome.status === "replaced") {
         if (bridge === null) setShortcut(outcome.shortcut);
         else adoptNativeShortcut(outcome.shortcut);
+        setShortcutRestoredInSession(true);
         setShortcutStatus({ message: "Shortcut updated.", error: false });
       } else if (outcome.status === "unchanged") {
         setShortcutStatus({
@@ -313,7 +316,16 @@ export function SettingsPanel({
           <section className="settings-section" aria-labelledby="shortcut-heading">
             <h2 id="shortcut-heading">Global shortcut</h2>
             <p className="setting-value">
-              Current shortcut: <kbd>{shortcutLabel(settings.shortcut)}</kbd>
+              Current shortcut:{" "}
+              <kbd>
+                {shortcutLabel(
+                  startupShortcutFailure !== undefined &&
+                    startupShortcutFailure !== null &&
+                    !shortcutRestoredInSession
+                    ? null
+                    : settings.shortcut,
+                )}
+              </kbd>
             </p>
             <div className="button-row">
               <button

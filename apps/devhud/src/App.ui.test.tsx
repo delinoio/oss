@@ -387,6 +387,7 @@ describe("DevHud application surfaces", () => {
     expect(
       await screen.findByText(/saved shortcut is already in use/u),
     ).toBeVisible();
+    expect(screen.getByText("Not configured")).toBeVisible();
     expect(
       await screen.findByText(/actual system setting is shown/u),
     ).toBeVisible();

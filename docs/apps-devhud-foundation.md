@@ -96,7 +96,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 - Mobile hosts exclude the record directory from iOS device backups and disable Android cloud backup and device transfer so local state is not restored onto another device.
 - Unsupported future schema versions are rejected without reading them into state or overwriting stored data. Corrupt, incompatible, or unreadable data surfaces actionable confirmed-reset guidance without raw stored data in UI, errors, or logs. An unreadable record remains write-blocked until it can be read successfully or the user completes Reset DevHud.
 - Local state is retained until the user chooses `Reset DevHud` or uninstalls the app.
-- `Reset DevHud` requires confirmation and clears settings, widget shared state, CEF runtime state, and logs. User-exported diagnostic files remain user-owned.
+- `Reset DevHud` requires confirmation, disables the active global shortcut and launch-at-login integration, and clears settings, widget shared state, CEF runtime state, and logs before reporting completion. A native integration or persistence failure reports that the reset failed, attempts to restore the previous working integrations, and records any rollback failure with its effective state. User-exported diagnostic files remain user-owned.
 - Persist only the minimum CEF profile data required for operation. Disable web downloads, browsing history, cookies, and application web storage; Reset clears all CEF state.
 - Do not implement settings import, settings export, migration from another application, account migration, or cloud synchronization.
 - Mobile future widget state uses only the same record-specific local application storage adapter as the frontend. It is not shared with, or readable by, a native widget process because no such target exists.
@@ -116,6 +116,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 - Use structured local logs for troubleshooting. Retain at most seven days and 20 MB with rotation.
 - Safe log fields may include application/build versions, OS/architecture, upstream Tauri/CEF versions, safe event IDs, timestamps, duration measurements, and enum error classifications.
+- Shortcut and launch-at-login application, reset, restoration, persistence, and rollback failures record only the operation, stable classification, and effective configured/enabled state.
 - Never log search text, clipboard contents, user files, arbitrary filesystem paths, shortcut keys, credentials, signing data, raw process environment values, invitation/account data, or tokens.
 - CEF initialization failure produces a fatal structured diagnostic followed by immediate process exit.
 - Diagnostics export occurs only after explicit user action to a user-selected destination. Redaction tests must prevent excluded values from logs and release bundles.
