@@ -1010,7 +1010,8 @@ func TestPostgreSQLUpdateOverageLimitReplaysAfterOrganizationLock(t *testing.T) 
 			FROM pg_stat_activity
 			WHERE datname = current_database()
 			  AND wait_event_type = 'Lock'
-			  AND query LIKE '%name: LockOrganizationForBilling :one%'
+			  AND query LIKE '%FROM organizations%'
+			  AND query LIKE '%FOR UPDATE%'
 		`).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
