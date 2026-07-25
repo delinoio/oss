@@ -392,7 +392,7 @@ func TestPostgreSQLUsageServiceSerializesLifecycleAndVisibility(t *testing.T) {
 	}
 	for _, record := range ownerUsage.Msg.Records {
 		if record.Status !=
-			delibasev1.UsageRecordStatus_USAGE_RECORD_STATUS_POLAR_PENDING {
+			delibasev1.UsageRecordStatus_USAGE_RECORD_STATUS_COMMITTED {
 			t.Fatalf("usage delivery status = %s", record.Status)
 		}
 	}
@@ -647,6 +647,108 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 	)
 	if err != nil || len(deleted.Msg.DeletedTeamIds) != 1 {
 		t.Fatalf("delete after expiration = %#v, %v", deleted, err)
+	}
+}
+
+func TestPostgreSQLExpiredReservationsDoNotBlockOrganizationMutations(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	removeFixture := newUsageFixture(t, ctx, databaseURL)
+	defer removeFixture.store.Close()
+	leaveFixture := newUsageFixture(t, ctx, databaseURL)
+	defer leaveFixture.store.Close()
+	deleteFixture := newUsageFixture(t, ctx, databaseURL)
+	defer deleteFixture.store.Close()
+
+	reserveExpiring := func(
+		fixture usageFixture,
+		subject string,
+		teamID uuid.UUID,
+		operation string,
+	) {
+		t.Helper()
+		_, err := fixture.usage.ReserveUsage(
+			usageContext(ctx, fixture.serviceClient, subject),
+			usageReserveRequest(
+				fixture,
+				teamID,
+				fixture.shortMeterID,
+				1,
+				operation+"-"+fixture.organizationID.String(),
+				operation+"-"+fixture.organizationID.String(),
+			),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	reserveExpiring(
+		removeFixture,
+		removeFixture.memberSubject,
+		removeFixture.parentTeamID,
+		"expired-remove-member",
+	)
+	reserveExpiring(
+		leaveFixture,
+		leaveFixture.memberSubject,
+		leaveFixture.parentTeamID,
+		"expired-leave",
+	)
+	reserveExpiring(
+		deleteFixture,
+		deleteFixture.ownerSubject,
+		deleteFixture.generalTeamID,
+		"expired-delete-organization",
+	)
+	time.Sleep(1100 * time.Millisecond)
+
+	if _, err := NewOrganization(removeFixture.dependencies).
+		RemoveOrganizationMember(
+			authenticatedContext(ctx, removeFixture.ownerSubject),
+			connect.NewRequest(&delibasev1.RemoveOrganizationMemberRequest{
+				OrganizationId: usageUUID(removeFixture.organizationID),
+				AccountId:      usageUUID(removeFixture.memberID),
+				Idempotency: idempotency(
+					"expired-remove-member-" +
+						removeFixture.organizationID.String(),
+				),
+			}),
+		); err != nil {
+		t.Fatalf("remove member after reservation expiry: %v", err)
+	}
+	if _, err := NewOrganization(leaveFixture.dependencies).LeaveOrganization(
+		authenticatedContext(ctx, leaveFixture.memberSubject),
+		connect.NewRequest(&delibasev1.LeaveOrganizationRequest{
+			OrganizationId: usageUUID(leaveFixture.organizationID),
+			Idempotency: idempotency(
+				"expired-leave-" + leaveFixture.organizationID.String(),
+			),
+		}),
+	); err != nil {
+		t.Fatalf("leave after reservation expiry: %v", err)
+	}
+	deleted, err := NewOrganization(deleteFixture.dependencies).
+		DeleteOrganization(
+			authenticatedContext(ctx, deleteFixture.ownerSubject),
+			connect.NewRequest(&delibasev1.DeleteOrganizationRequest{
+				OrganizationId: usageUUID(deleteFixture.organizationID),
+				Confirm:        true,
+				Idempotency: idempotency(
+					"expired-delete-organization-" +
+						deleteFixture.organizationID.String(),
+				),
+			}),
+		)
+	if err != nil || deleted == nil || deleted.Msg == nil ||
+		deleted.Msg.DeletionId == nil {
+		t.Fatalf("delete organization after reservation expiry = %#v, %v", deleted, err)
 	}
 }
 

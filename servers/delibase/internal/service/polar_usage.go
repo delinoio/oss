@@ -18,6 +18,27 @@ type polarUsagePayload struct {
 	CommittedAt    time.Time `json:"committed_at"`
 }
 
+func newPolarOveragePayload(
+	eventName string,
+	organizationID uuid.UUID,
+	usageRecordID uuid.UUID,
+	overageAppliedMicros int64,
+	committedAt time.Time,
+) (polarUsagePayload, bool) {
+	if overageAppliedMicros <= 0 {
+		return polarUsagePayload{}, false
+	}
+	return polarUsagePayload{
+		EventName:      eventName,
+		OrganizationID: organizationID.String(),
+		UsageRecordID:  usageRecordID.String(),
+		// Polar's mapped meter is denominated in USD micro-units so a credit
+		// that covers part of one catalog unit cannot be billed a second time.
+		Units:       overageAppliedMicros,
+		CommittedAt: committedAt,
+	}, true
+}
+
 // NewPolarUsageHandler recovers metered reporting independently of local
 // authorization. Polar event external IDs make provider delivery idempotent
 // even after worker crashes or dead-letter recovery.

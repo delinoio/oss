@@ -7,7 +7,9 @@ invitations), plus the billing summary, Checkout, Customer Portal,
 overage-limit, ledger, and role-filtered usage-read RPCs are backed by
 PostgreSQL/sqlc transactions. `UsageService` reserve, commit, and release RPCs
 use the same database-backed authorization, credit/overage, idempotency, and
-durable Polar-outbox boundaries. A local worker expires catalog-TTL holds.
+durable Polar-outbox boundaries. Polar delivery reports only nonzero locally
+settled overage as chargeable USD micro-units. A local worker expires
+catalog-TTL holds.
 
 ## Configuration categories
 

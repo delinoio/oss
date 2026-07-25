@@ -476,35 +476,38 @@ func (service *Usage) CommitUsage(
 			if transactionErr != nil {
 				return databaseError(transactionErr)
 			}
-			outboxPayload, transactionErr := json.Marshal(polarUsagePayload{
-				EventName:      usageRecord.PolarEventNameSnapshot,
-				OrganizationID: organizationID.String(),
-				UsageRecordID:  usageRecordID.String(),
-				Units:          actualUnits,
-				CommittedAt:    usageRecord.CommittedAt.Time.UTC(),
-			})
-			if transactionErr != nil {
-				return serviceError(connect.CodeInternal, 0)
-			}
-			outboxID, transactionErr := service.dependencies.IDs.New()
-			if transactionErr != nil {
-				return serviceError(connect.CodeInternal, 0)
-			}
-			if _, transactionErr = reliability.EnqueueOutbox(
-				ctx,
-				queries,
-				reliability.OutboxInput{
-					ID:             outboxID,
-					Integration:    reliability.IntegrationPolar,
-					Operation:      reliability.OperationReportUsage,
-					AggregateType:  reliability.AggregateUsageRecord,
-					AggregateID:    usageRecordID,
-					Payload:        outboxPayload,
-					IdempotencyKey: "usage-record:" + usageRecordID.String(),
-					Actor:          actor,
-				},
-			); transactionErr != nil {
-				return databaseError(transactionErr)
+			polarPayload, reportOverage := newPolarOveragePayload(
+				usageRecord.PolarEventNameSnapshot,
+				organizationID,
+				usageRecordID,
+				overageApplied,
+				usageRecord.CommittedAt.Time.UTC(),
+			)
+			if reportOverage {
+				outboxPayload, marshalErr := json.Marshal(polarPayload)
+				if marshalErr != nil {
+					return serviceError(connect.CodeInternal, 0)
+				}
+				outboxID, idErr := service.dependencies.IDs.New()
+				if idErr != nil {
+					return serviceError(connect.CodeInternal, 0)
+				}
+				if _, transactionErr = reliability.EnqueueOutbox(
+					ctx,
+					queries,
+					reliability.OutboxInput{
+						ID:             outboxID,
+						Integration:    reliability.IntegrationPolar,
+						Operation:      reliability.OperationReportUsage,
+						AggregateType:  reliability.AggregateUsageRecord,
+						AggregateID:    usageRecordID,
+						Payload:        outboxPayload,
+						IdempotencyKey: "usage-record:" + usageRecordID.String(),
+						Actor:          actor,
+					},
+				); transactionErr != nil {
+					return databaseError(transactionErr)
+				}
 			}
 			if transactionErr = appendUsageAudit(
 				ctx, service.dependencies, queries,

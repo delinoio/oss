@@ -23,6 +23,27 @@ func (stub *usageReporterStub) ReportUsage(
 	return nil
 }
 
+func TestPolarOveragePayloadReportsOnlyChargeableMicros(t *testing.T) {
+	t.Parallel()
+	organizationID := uuid.MustParse("0198a000-0000-7000-8000-000000000001")
+	usageRecordID := uuid.MustParse("0198a000-0000-7000-8000-000000000002")
+	committedAt := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+
+	if payload, report := newPolarOveragePayload(
+		"meter_usage", organizationID, usageRecordID, 0, committedAt,
+	); report || payload != (polarUsagePayload{}) {
+		t.Fatalf("credit-funded payload = %#v, report = %t", payload, report)
+	}
+	payload, report := newPolarOveragePayload(
+		"meter_usage", organizationID, usageRecordID, 17, committedAt,
+	)
+	if !report || payload.Units != 17 ||
+		payload.OrganizationID != organizationID.String() ||
+		payload.UsageRecordID != usageRecordID.String() {
+		t.Fatalf("overage payload = %#v, report = %t", payload, report)
+	}
+}
+
 func TestPolarUsageHandlerPinsProviderIdempotencyToUsageRecord(t *testing.T) {
 	t.Parallel()
 	organizationID := "0198a000-0000-7000-8000-000000000001"

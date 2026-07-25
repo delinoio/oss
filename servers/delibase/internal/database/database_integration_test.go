@@ -31,6 +31,22 @@ func TestPostgreSQLMigrationsAndTransactionRollback(t *testing.T) {
 	if err := store.Ping(ctx); err != nil {
 		t.Fatal(err)
 	}
+	var actorSnapshotDefault *string
+	if err := store.pool.QueryRow(ctx, `
+		SELECT column_default
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		  AND table_name = 'usage_reservations'
+		  AND column_name = 'user_actor_reference_snapshot'
+	`).Scan(&actorSnapshotDefault); err != nil {
+		t.Fatal(err)
+	}
+	if actorSnapshotDefault != nil {
+		t.Fatalf(
+			"usage reservation actor snapshot default = %q",
+			*actorSnapshotDefault,
+		)
+	}
 
 	id, err := uuidv7.New()
 	if err != nil {

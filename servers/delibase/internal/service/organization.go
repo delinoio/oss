@@ -494,6 +494,11 @@ func (service *Organization) DeleteOrganization(
 		); transactionErr != nil {
 			return transactionErr
 		}
+		if _, transactionErr = expireOrganizationReservations(
+			ctx, service.dependencies, queries, organizationID,
+		); transactionErr != nil {
+			return transactionErr
+		}
 		hasActiveReservations, transactionErr :=
 			queries.HasActiveReservationsForOrganization(
 				ctx,
@@ -857,6 +862,11 @@ func (service *Organization) RemoveOrganizationMember(
 				delibasev1.ErrorReason_ERROR_REASON_OWNER_ROLE_REQUIRED,
 			)
 		}
+		if _, transactionErr = expireOrganizationReservations(
+			ctx, service.dependencies, queries, organizationID,
+		); transactionErr != nil {
+			return transactionErr
+		}
 		hasActiveReservations, transactionErr := queries.
 			HasActiveReservationsForOrganizationMember(
 				ctx,
@@ -968,6 +978,11 @@ func (service *Organization) LeaveOrganization(
 			},
 		); transactionErr != nil {
 			return membershipReadError(transactionErr)
+		}
+		if _, transactionErr = expireOrganizationReservations(
+			ctx, service.dependencies, queries, organizationID,
+		); transactionErr != nil {
+			return transactionErr
 		}
 		hasActiveReservations, transactionErr := queries.
 			HasActiveReservationsForOrganizationMember(

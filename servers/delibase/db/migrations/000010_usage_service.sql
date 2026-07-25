@@ -58,6 +58,9 @@ WHERE service.id = reservation.service_identity_id
   AND price.meter_id = reservation.meter_id;
 
 ALTER TABLE usage_reservations
+    ALTER COLUMN user_actor_reference_snapshot DROP DEFAULT;
+
+ALTER TABLE usage_reservations
     ADD CONSTRAINT usage_reservations_overage_period_check CHECK (
         (held_overage_micros = 0 AND overage_billing_period_id IS NULL)
         OR
