@@ -179,6 +179,36 @@ CREATE UNIQUE INDEX integration_outbox_one_polar_usage_event_idx
     ON integration_outbox(integration, operation, aggregate_id)
     WHERE integration = 'polar' AND operation = 'report_usage';
 
+ALTER TABLE audit_events DROP CONSTRAINT audit_events_type_check;
+ALTER TABLE audit_events
+    ADD CONSTRAINT audit_events_type_check CHECK (event_type IN (
+        'authorization.decision',
+        'organization.created',
+        'organization.updated',
+        'organization.deleted',
+        'role.updated',
+        'invitation.created',
+        'invitation.accepted',
+        'invitation.revoked',
+        'team.created',
+        'team.updated',
+        'team.deleted',
+        'billing_limit.updated',
+        'checkout.created',
+        'billing_portal_session.created',
+        'subscription.updated',
+        'refund.recorded',
+        'reservation.created',
+        'reservation.committed',
+        'reservation.released',
+        'reservation.expired',
+        'settlement.recorded',
+        'account.deletion_requested',
+        'organization.deletion_requested',
+        'webhook.received',
+        'webhook.processed'
+    ));
+
 CREATE FUNCTION capture_usage_reservation_snapshots()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -424,3 +454,29 @@ $$;
 CREATE TRIGGER usage_records_validate_current_capacity
 AFTER INSERT ON usage_records
 FOR EACH ROW EXECUTE FUNCTION validate_usage_record_current_capacity();
+
+CREATE FUNCTION require_usage_record_polar_outbox()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.overage_applied_micros > 0
+       AND NOT EXISTS (
+           SELECT 1
+           FROM integration_outbox
+           WHERE integration = 'polar'
+             AND operation = 'report_usage'
+             AND aggregate_type = 'usage_record'
+             AND aggregate_id = NEW.id
+       ) THEN
+        RAISE EXCEPTION 'overage usage record requires a Polar outbox event'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER usage_records_require_polar_outbox
+AFTER INSERT ON usage_records
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION require_usage_record_polar_outbox();

@@ -438,8 +438,23 @@ func (service *Account) DeleteAccount(
 					delibasev1.ErrorReason_ERROR_REASON_DELETION_ALREADY_PENDING,
 				)
 			}
-			if _, transactionErr = queries.LockOwnedOrganizations(ctx, account.ID); transactionErr != nil {
+			organizations, transactionErr := queries.LockAccountOrganizations(
+				ctx, account.ID,
+			)
+			if transactionErr != nil {
 				return databaseError(transactionErr)
+			}
+			for _, organization := range organizations {
+				if _, transactionErr = expireAccountReservations(
+					ctx,
+					service.dependencies,
+					queries,
+					uuid.UUID(organization.Bytes),
+					account.ID,
+					usageExpirationBatchSize,
+				); transactionErr != nil {
+					return transactionErr
+				}
 			}
 			blockers, transactionErr := queries.ListLastOwnerBlockers(ctx, account.ID)
 			if transactionErr != nil {

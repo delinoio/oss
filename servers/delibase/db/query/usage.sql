@@ -190,6 +190,18 @@ WHERE organization_id = sqlc.arg(organization_id)
   AND status = 'held'
   AND expires_at <= statement_timestamp()
 ORDER BY expires_at, id
+LIMIT sqlc.arg(page_limit)
+FOR UPDATE;
+
+-- name: ListExpiredUsageReservationsForAccountInOrganization :many
+SELECT *
+FROM usage_reservations
+WHERE organization_id = sqlc.arg(organization_id)
+  AND account_id = sqlc.arg(account_id)
+  AND status = 'held'
+  AND expires_at <= statement_timestamp()
+ORDER BY expires_at, id
+LIMIT sqlc.arg(page_limit)
 FOR UPDATE;
 
 -- name: ListExpiredUsageReservationCandidates :many

@@ -519,6 +519,7 @@ func (service *Team) DeleteTeamSubtree(
 		}
 		if _, transactionErr = expireOrganizationReservations(
 			ctx, service.dependencies, queries, organizationID,
+			usageExpirationBatchSize,
 		); transactionErr != nil {
 			return transactionErr
 		}

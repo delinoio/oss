@@ -496,6 +496,7 @@ func (service *Organization) DeleteOrganization(
 		}
 		if _, transactionErr = expireOrganizationReservations(
 			ctx, service.dependencies, queries, organizationID,
+			usageExpirationBatchSize,
 		); transactionErr != nil {
 			return transactionErr
 		}
@@ -864,6 +865,7 @@ func (service *Organization) RemoveOrganizationMember(
 		}
 		if _, transactionErr = expireOrganizationReservations(
 			ctx, service.dependencies, queries, organizationID,
+			usageExpirationBatchSize,
 		); transactionErr != nil {
 			return transactionErr
 		}
@@ -981,6 +983,7 @@ func (service *Organization) LeaveOrganization(
 		}
 		if _, transactionErr = expireOrganizationReservations(
 			ctx, service.dependencies, queries, organizationID,
+			usageExpirationBatchSize,
 		); transactionErr != nil {
 			return transactionErr
 		}

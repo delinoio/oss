@@ -134,6 +134,7 @@ func (service *Usage) ReserveUsage(
 			}
 			if _, transactionErr = expireOrganizationReservations(
 				ctx, service.dependencies, queries, organizationID,
+				usageExpirationBatchSize,
 			); transactionErr != nil {
 				return transactionErr
 			}
@@ -343,6 +344,7 @@ func (service *Usage) CommitUsage(
 			}
 			if _, transactionErr = expireOrganizationReservations(
 				ctx, service.dependencies, queries, organizationID,
+				usageExpirationBatchSize,
 			); transactionErr != nil {
 				return transactionErr
 			}
@@ -626,6 +628,7 @@ func (service *Usage) ReleaseUsage(
 			}
 			if _, transactionErr = expireOrganizationReservations(
 				ctx, service.dependencies, queries, organizationID,
+				usageExpirationBatchSize,
 			); transactionErr != nil {
 				return transactionErr
 			}
@@ -929,20 +932,56 @@ func expireOrganizationReservations(
 	dependencies Dependencies,
 	queries *dbgen.Queries,
 	organizationID uuid.UUID,
+	pageLimit int32,
 ) (int, error) {
 	reservations, err := queries.ListExpiredUsageReservationsForOrganization(
-		ctx, pgUUID(organizationID),
+		ctx,
+		dbgen.ListExpiredUsageReservationsForOrganizationParams{
+			OrganizationID: pgUUID(organizationID),
+			PageLimit:      pageLimit,
+		},
 	)
 	if err != nil {
 		return 0, databaseError(err)
 	}
+	return expireReservations(ctx, dependencies, queries, reservations)
+}
+
+func expireAccountReservations(
+	ctx context.Context,
+	dependencies Dependencies,
+	queries *dbgen.Queries,
+	organizationID uuid.UUID,
+	accountID pgtype.UUID,
+	pageLimit int32,
+) (int, error) {
+	reservations, err := queries.ListExpiredUsageReservationsForAccountInOrganization(
+		ctx,
+		dbgen.ListExpiredUsageReservationsForAccountInOrganizationParams{
+			OrganizationID: pgUUID(organizationID),
+			AccountID:      accountID,
+			PageLimit:      pageLimit,
+		},
+	)
+	if err != nil {
+		return 0, databaseError(err)
+	}
+	return expireReservations(ctx, dependencies, queries, reservations)
+}
+
+func expireReservations(
+	ctx context.Context,
+	dependencies Dependencies,
+	queries *dbgen.Queries,
+	reservations []dbgen.UsageReservation,
+) (int, error) {
 	for index, reservation := range reservations {
 		if err := releaseUsageHolds(
 			ctx, dependencies, queries, reservation, "",
 		); err != nil {
 			return index, err
 		}
-		reservation, err = queries.FinalizeUsageReservation(
+		reservation, err := queries.FinalizeUsageReservation(
 			ctx,
 			dbgen.FinalizeUsageReservationParams{
 				Status:         "expired",
@@ -953,8 +992,8 @@ func expireOrganizationReservations(
 		if err != nil {
 			return index, databaseError(err)
 		}
-		if err = appendUsageAudit(
-			ctx, dependencies, queries, reliability.AuditReservationReleased,
+		if err := appendUsageAudit(
+			ctx, dependencies, queries, reliability.AuditReservationExpired,
 			"", reservation,
 		); err != nil {
 			return index, err

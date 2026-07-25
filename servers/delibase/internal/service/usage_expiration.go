@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
+	"github.com/delinoio/oss/servers/internal/safeerr"
+	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -46,9 +49,16 @@ func (worker *UsageExpirationWorker) Run(ctx context.Context) error {
 	for {
 		if _, err := worker.ProcessBatch(ctx); err != nil &&
 			ctx.Err() == nil {
-			worker.dependencies.Logger.Error(
-				"usage expiration batch failed",
-				"event", "usage_expiration_failure",
+			safelog.Record(
+				ctx,
+				worker.dependencies.Logger,
+				slog.LevelError,
+				safelog.EventReservation,
+				safelog.Fields{
+					Result:            safelog.ResultFailure,
+					ErrorClass:        safeerr.Classify(err),
+					IncludeErrorClass: true,
+				},
 			)
 		}
 		select {
@@ -73,6 +83,9 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 	processed := 0
 	seenOrganizations := make(map[uuid.UUID]struct{}, len(candidates))
 	for _, candidate := range candidates {
+		if processed >= int(usageExpirationBatchSize) {
+			break
+		}
 		organizationID := uuid.UUID(candidate.OrganizationID.Bytes)
 		if _, seen := seenOrganizations[organizationID]; seen {
 			continue
@@ -92,6 +105,7 @@ func (worker *UsageExpirationWorker) ProcessBatch(
 				}
 				count, expirationErr := expireOrganizationReservations(
 					ctx, worker.dependencies, queries, organizationID,
+					usageExpirationBatchSize-int32(processed),
 				)
 				processed += count
 				return expirationErr

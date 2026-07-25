@@ -637,6 +637,75 @@ func (q *Queries) ListExpiredUsageReservationCandidates(ctx context.Context, pag
 	return items, nil
 }
 
+const listExpiredUsageReservationsForAccountInOrganization = `-- name: ListExpiredUsageReservationsForAccountInOrganization :many
+SELECT id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id
+FROM usage_reservations
+WHERE organization_id = $1
+  AND account_id = $2
+  AND status = 'held'
+  AND expires_at <= statement_timestamp()
+ORDER BY expires_at, id
+LIMIT $3
+FOR UPDATE
+`
+
+type ListExpiredUsageReservationsForAccountInOrganizationParams struct {
+	OrganizationID pgtype.UUID
+	AccountID      pgtype.UUID
+	PageLimit      int32
+}
+
+func (q *Queries) ListExpiredUsageReservationsForAccountInOrganization(ctx context.Context, arg ListExpiredUsageReservationsForAccountInOrganizationParams) ([]UsageReservation, error) {
+	rows, err := q.db.Query(ctx, listExpiredUsageReservationsForAccountInOrganization, arg.OrganizationID, arg.AccountID, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsageReservation{}
+	for rows.Next() {
+		var i UsageReservation
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.TeamID,
+			&i.TeamNameSnapshot,
+			&i.MeterID,
+			&i.PriceVersionID,
+			&i.AccountID,
+			&i.ServiceIdentityID,
+			&i.MaximumUnits,
+			&i.UsdMicrosPerUnit,
+			&i.MaximumCostMicros,
+			&i.HeldCreditMicros,
+			&i.HeldOverageMicros,
+			&i.ClientReference,
+			&i.Status,
+			&i.ActiveOrganizationID,
+			&i.ActiveTeamID,
+			&i.ActiveAccountID,
+			&i.ActiveServiceIdentityID,
+			&i.ActiveMeterID,
+			&i.ExpiresAt,
+			&i.FinalizedAt,
+			&i.CreatedAt,
+			&i.UserActorReferenceSnapshot,
+			&i.ServiceNameSnapshot,
+			&i.MeterNameSnapshot,
+			&i.PolarEventNameSnapshot,
+			&i.PriceEffectiveFromSnapshot,
+			&i.PriceEffectiveUntilSnapshot,
+			&i.OverageBillingPeriodID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExpiredUsageReservationsForOrganization = `-- name: ListExpiredUsageReservationsForOrganization :many
 SELECT id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id
 FROM usage_reservations
@@ -644,11 +713,17 @@ WHERE organization_id = $1
   AND status = 'held'
   AND expires_at <= statement_timestamp()
 ORDER BY expires_at, id
+LIMIT $2
 FOR UPDATE
 `
 
-func (q *Queries) ListExpiredUsageReservationsForOrganization(ctx context.Context, organizationID pgtype.UUID) ([]UsageReservation, error) {
-	rows, err := q.db.Query(ctx, listExpiredUsageReservationsForOrganization, organizationID)
+type ListExpiredUsageReservationsForOrganizationParams struct {
+	OrganizationID pgtype.UUID
+	PageLimit      int32
+}
+
+func (q *Queries) ListExpiredUsageReservationsForOrganization(ctx context.Context, arg ListExpiredUsageReservationsForOrganizationParams) ([]UsageReservation, error) {
+	rows, err := q.db.Query(ctx, listExpiredUsageReservationsForOrganization, arg.OrganizationID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
