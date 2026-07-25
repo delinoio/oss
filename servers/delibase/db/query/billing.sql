@@ -228,6 +228,34 @@ SET polar_checkout_id = EXCLUDED.polar_checkout_id,
 WHERE polar_subscription_checkouts.expires_at <= transaction_timestamp()
 RETURNING *;
 
+-- name: GetActivePolarSubscriptionCheckoutAttempt :one
+SELECT * FROM polar_subscription_checkout_attempts
+WHERE organization_id = sqlc.arg(organization_id)
+  AND expires_at > transaction_timestamp()
+FOR UPDATE;
+
+-- name: ClaimPolarSubscriptionCheckoutAttempt :one
+INSERT INTO polar_subscription_checkout_attempts (
+    organization_id, provider_idempotency_key, request_digest, expires_at
+) VALUES (
+    sqlc.arg(organization_id),
+    sqlc.arg(provider_idempotency_key),
+    sqlc.arg(request_digest),
+    sqlc.arg(expires_at)
+)
+ON CONFLICT (organization_id) DO UPDATE
+SET provider_idempotency_key = EXCLUDED.provider_idempotency_key,
+    request_digest = EXCLUDED.request_digest,
+    expires_at = EXCLUDED.expires_at,
+    created_at = transaction_timestamp()
+WHERE polar_subscription_checkout_attempts.expires_at <= transaction_timestamp()
+RETURNING *;
+
+-- name: DeletePolarSubscriptionCheckoutAttempt :execrows
+DELETE FROM polar_subscription_checkout_attempts
+WHERE organization_id = sqlc.arg(organization_id)
+  AND provider_idempotency_key = sqlc.arg(provider_idempotency_key);
+
 -- name: CurrentSettledCreditBalance :one
 SELECT COALESCE(sum(amount_micros), 0)::bigint AS balance_micros
 FROM ledger_entries

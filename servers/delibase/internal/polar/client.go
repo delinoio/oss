@@ -24,6 +24,7 @@ const (
 	apiURL               = "https://api.polar.sh/v1"
 	sandboxAPIURL        = "https://sandbox-api.polar.sh/v1"
 	maximumResponseBytes = 1 << 20
+	billingPriceCents    = 1_000
 )
 
 type Client struct {
@@ -79,6 +80,81 @@ func newClient(
 	}, nil
 }
 
+type productResponse struct {
+	ID                     string                 `json:"id"`
+	RecurringInterval      string                 `json:"recurring_interval"`
+	RecurringIntervalCount int64                  `json:"recurring_interval_count"`
+	IsRecurring            bool                   `json:"is_recurring"`
+	IsArchived             bool                   `json:"is_archived"`
+	Prices                 []productPriceResponse `json:"prices"`
+}
+
+type productPriceResponse struct {
+	AmountType    string `json:"amount_type"`
+	PriceCurrency string `json:"price_currency"`
+	PriceAmount   *int64 `json:"price_amount"`
+	IsArchived    bool   `json:"is_archived"`
+	ProductID     string `json:"product_id"`
+}
+
+// ValidateBillingProduct verifies the provider-owned product before its ID is
+// pinned to delibase's fixed monthly USD grant contract.
+func (client *Client) ValidateBillingProduct(ctx context.Context) error {
+	if client == nil || !validProviderID(client.productID) {
+		return safeerr.New(safeerr.ClassInvalidArgument)
+	}
+	endpoint := *client.apiURL
+	endpoint.Path = path.Join(
+		endpoint.Path,
+		"products",
+		url.PathEscape(client.productID),
+	)
+	response, err := client.do(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maximumResponseBytes))
+		return safeerr.New(safeerr.ClassDependency)
+	}
+	var product productResponse
+	if err := decodeJSON(response.Body, &product); err != nil ||
+		!validBillingProduct(product, client.productID) {
+		return safeerr.New(safeerr.ClassDependency)
+	}
+	return nil
+}
+
+func validBillingProduct(product productResponse, productID string) bool {
+	if product.ID != productID || !product.IsRecurring || product.IsArchived ||
+		product.RecurringInterval != "month" ||
+		product.RecurringIntervalCount != 1 {
+		return false
+	}
+	fixedPrices := 0
+	for _, price := range product.Prices {
+		if price.IsArchived {
+			continue
+		}
+		if price.ProductID != productID || price.PriceCurrency != "usd" {
+			return false
+		}
+		switch price.AmountType {
+		case "fixed":
+			fixedPrices++
+			if price.PriceAmount == nil ||
+				*price.PriceAmount != billingPriceCents {
+				return false
+			}
+		case "metered_unit":
+		default:
+			return false
+		}
+	}
+	return fixedPrices == 1
+}
+
 type checkoutResponse struct {
 	ID        string    `json:"id"`
 	URL       string    `json:"url"`
@@ -94,7 +170,10 @@ func (client *Client) CreateCheckout(
 		!validHostedReturnURL(input.SuccessURL) ||
 		!validHostedReturnURL(input.CancelURL) ||
 		!validIdempotencyKey(input.IdempotencyKey) {
-		return contracts.Checkout{}, safeerr.New(safeerr.ClassInvalidArgument)
+		return contracts.Checkout{}, errors.Join(
+			contracts.ErrCheckoutNotCreated,
+			safeerr.New(safeerr.ClassInvalidArgument),
+		)
 	}
 	payload, err := json.Marshal(map[string]any{
 		"products":             []string{client.productID},
@@ -104,7 +183,10 @@ func (client *Client) CreateCheckout(
 		"allow_trial":          false,
 	})
 	if err != nil {
-		return contracts.Checkout{}, safeerr.New(safeerr.ClassInternal)
+		return contracts.Checkout{}, errors.Join(
+			contracts.ErrCheckoutNotCreated,
+			safeerr.New(safeerr.ClassInternal),
+		)
 	}
 	endpoint := *client.apiURL
 	endpoint.Path = path.Join(endpoint.Path, "checkouts")
@@ -118,6 +200,13 @@ func (client *Client) CreateCheckout(
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusCreated {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maximumResponseBytes))
+		if response.StatusCode >= http.StatusBadRequest &&
+			response.StatusCode < http.StatusInternalServerError {
+			return contracts.Checkout{}, errors.Join(
+				contracts.ErrCheckoutNotCreated,
+				safeerr.New(safeerr.ClassDependency),
+			)
+		}
 		return contracts.Checkout{}, safeerr.New(safeerr.ClassDependency)
 	}
 	var decoded checkoutResponse

@@ -15,6 +15,7 @@ type Querier interface {
 	AppendAuditEvent(ctx context.Context, arg AppendAuditEventParams) (AuditEvent, error)
 	ClaimDeletionJob(ctx context.Context, arg ClaimDeletionJobParams) (DeletionJob, error)
 	ClaimIntegrationOutbox(ctx context.Context, arg ClaimIntegrationOutboxParams) (IntegrationOutbox, error)
+	ClaimPolarSubscriptionCheckoutAttempt(ctx context.Context, arg ClaimPolarSubscriptionCheckoutAttemptParams) (PolarSubscriptionCheckoutAttempt, error)
 	ClaimWebhookInbox(ctx context.Context, arg ClaimWebhookInboxParams) (WebhookInbox, error)
 	CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalogPriceVersionParams) error
 	CompleteDeletionJob(ctx context.Context, arg CompleteDeletionJobParams) (pgtype.UUID, error)
@@ -38,6 +39,7 @@ type Querier interface {
 	DeleteExpiredIdempotencyRecord(ctx context.Context, arg DeleteExpiredIdempotencyRecordParams) (int64, error)
 	DeleteOrganizationMembership(ctx context.Context, arg DeleteOrganizationMembershipParams) (int64, error)
 	DeleteOrganizationOperationalData(ctx context.Context, organizationID pgtype.UUID) (bool, error)
+	DeletePolarSubscriptionCheckoutAttempt(ctx context.Context, arg DeletePolarSubscriptionCheckoutAttemptParams) (int64, error)
 	DeleteTeamMembership(ctx context.Context, arg DeleteTeamMembershipParams) (int64, error)
 	DeleteTeamSubtree(ctx context.Context, arg DeleteTeamSubtreeParams) (int64, error)
 	DeleteUnusedPolarMeterMappings(ctx context.Context) error
@@ -60,6 +62,7 @@ type Querier interface {
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
 	GetAccountByLogtoSubject(ctx context.Context, logtoSubject string) (Account, error)
 	GetActivePolarSubscriptionCheckout(ctx context.Context, organizationID pgtype.UUID) (PolarSubscriptionCheckout, error)
+	GetActivePolarSubscriptionCheckoutAttempt(ctx context.Context, organizationID pgtype.UUID) (PolarSubscriptionCheckoutAttempt, error)
 	GetActiveSubscriptionForOrganization(ctx context.Context, organizationID pgtype.UUID) (Subscription, error)
 	GetAuditEvent(ctx context.Context, id pgtype.UUID) (AuditEvent, error)
 	GetBillingAccess(ctx context.Context, arg GetBillingAccessParams) (GetBillingAccessRow, error)

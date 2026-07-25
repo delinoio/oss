@@ -457,6 +457,7 @@ func processPolarRefund(
 		return err
 	}
 	previousReversal := int64(0)
+	chargeback := event.Chargeback
 	existing, err := queries.GetPolarRefund(ctx, event.ObjectID)
 	if err == nil {
 		if existing.PolarOrderID != event.OrderID {
@@ -466,13 +467,14 @@ func processPolarRefund(
 			return nil
 		}
 		previousReversal = existing.ReversedMicros
+		chargeback = existing.Chargeback || event.Chargeback
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
 	desired := int64(0)
-	if event.Status == "succeeded" || event.Chargeback {
+	if event.Status == "succeeded" || chargeback {
 		desired = event.AmountMicros
-		if event.Chargeback {
+		if chargeback {
 			desired = cycleGrantMicros
 		}
 		if desired > cycleGrantMicros {
@@ -490,7 +492,7 @@ func processPolarRefund(
 	}
 	status := event.Status
 	requestedMicros := event.AmountMicros
-	if event.Chargeback {
+	if chargeback {
 		status = "succeeded"
 		if requestedMicros < desired {
 			requestedMicros = desired
@@ -501,7 +503,7 @@ func processPolarRefund(
 	}
 	if status != "pending" && status != "succeeded" &&
 		status != "failed" && status != "canceled" {
-		if event.Chargeback {
+		if chargeback {
 			status = "succeeded"
 		} else {
 			return reliability.ErrInvalidInput
@@ -515,7 +517,7 @@ func processPolarRefund(
 			Status:          status,
 			RequestedMicros: requestedMicros,
 			ReversedMicros:  desired,
-			Chargeback:      event.Chargeback,
+			Chargeback:      chargeback,
 			ProviderEventAt: pgTimestamp(event.EventAt),
 		},
 	); err != nil {

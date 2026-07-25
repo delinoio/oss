@@ -288,6 +288,14 @@ type PolarSubscriptionCheckout struct {
 	CreatedAt       pgtype.Timestamptz
 }
 
+type PolarSubscriptionCheckoutAttempt struct {
+	OrganizationID         pgtype.UUID
+	ProviderIdempotencyKey string
+	RequestDigest          []byte
+	ExpiresAt              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+}
+
 type ServiceIdentity struct {
 	ID            pgtype.UUID
 	LogtoClientID string

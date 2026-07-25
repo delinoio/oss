@@ -657,6 +657,42 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 			deletedForfeiture,
 		)
 	}
+	chargebackPayload, _ := json.Marshal(polarBillingEvent{
+		Type: string(reliability.WebhookRefundUpdated), EventAt: now.Add(7 * time.Minute),
+		ObjectID: "chargeback_1", OrderID: "order_1", Status: "succeeded",
+		Currency: "usd", AmountMicros: cycleGrantMicros, Chargeback: true,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarRefundUpdated,
+		Payload:   chargebackPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	chargebackPayload, _ = json.Marshal(polarBillingEvent{
+		Type: string(reliability.WebhookRefundUpdated), EventAt: now.Add(8 * time.Minute),
+		ObjectID: "chargeback_1", OrderID: "order_1", Status: "succeeded",
+		Currency: "usd", AmountMicros: cycleGrantMicros,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarRefundUpdated,
+		Payload:   chargebackPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	retainedChargeback, err := store.Queries().GetPolarRefund(ctx, "chargeback_1")
+	if err != nil || !retainedChargeback.Chargeback {
+		t.Fatalf("retained chargeback = %#v, %v", retainedChargeback, err)
+	}
+	if _, err = rawPaidCycle.Exec(
+		ctx,
+		`UPDATE polar_refunds
+		 SET chargeback = false
+		 WHERE polar_refund_id = 'chargeback_1'`,
+	); err == nil {
+		t.Fatal("refund chargeback classification accepted a decrease")
+	}
 }
 
 func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
@@ -755,6 +791,8 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 		Pseudonymizer: pseudonymizer,
 	})
 	userContext := authenticatedContext(ctx, subject)
+	firstRequestContext, cancelFirstRequest := context.WithCancel(userContext)
+	provider.afterCreate = cancelFirstRequest
 	request := func(key string) *connect.Request[delibasev1.CreateSubscriptionCheckoutRequest] {
 		return connect.NewRequest(&delibasev1.CreateSubscriptionCheckoutRequest{
 			OrganizationId: &delibasev1.UuidV7{Value: organizationID.String()},
@@ -770,7 +808,7 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	results := make(chan checkoutResult, 2)
 	go func() {
 		response, createErr := billing.CreateSubscriptionCheckout(
-			userContext, request("checkout-first"),
+			firstRequestContext, request("checkout-first"),
 		)
 		results <- checkoutResult{response: response, err: createErr}
 	}()
@@ -1439,10 +1477,11 @@ func TestPostgreSQLPortalAuthorizationRevalidatesBillingAccessUnderOrganizationL
 }
 
 type blockingCheckoutPolar struct {
-	mu      sync.Mutex
-	calls   int
-	started chan struct{}
-	release chan struct{}
+	mu          sync.Mutex
+	calls       int
+	started     chan struct{}
+	release     chan struct{}
+	afterCreate func()
 }
 
 func newBlockingCheckoutPolar() *blockingCheckoutPolar {
@@ -1467,6 +1506,9 @@ func (provider *blockingCheckoutPolar) CreateCheckout(
 	case <-provider.release:
 	case <-ctx.Done():
 		return contracts.Checkout{}, ctx.Err()
+	}
+	if provider.afterCreate != nil {
+		provider.afterCreate()
 	}
 	return contracts.Checkout{
 		ID:        "checkout_" + strconv.Itoa(call),

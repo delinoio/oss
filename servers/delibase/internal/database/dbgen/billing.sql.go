@@ -43,6 +43,49 @@ func (q *Queries) AddPolarCycleReversal(ctx context.Context, arg AddPolarCycleRe
 	return i, err
 }
 
+const claimPolarSubscriptionCheckoutAttempt = `-- name: ClaimPolarSubscriptionCheckoutAttempt :one
+INSERT INTO polar_subscription_checkout_attempts (
+    organization_id, provider_idempotency_key, request_digest, expires_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4
+)
+ON CONFLICT (organization_id) DO UPDATE
+SET provider_idempotency_key = EXCLUDED.provider_idempotency_key,
+    request_digest = EXCLUDED.request_digest,
+    expires_at = EXCLUDED.expires_at,
+    created_at = transaction_timestamp()
+WHERE polar_subscription_checkout_attempts.expires_at <= transaction_timestamp()
+RETURNING organization_id, provider_idempotency_key, request_digest, expires_at, created_at
+`
+
+type ClaimPolarSubscriptionCheckoutAttemptParams struct {
+	OrganizationID         pgtype.UUID
+	ProviderIdempotencyKey string
+	RequestDigest          []byte
+	ExpiresAt              pgtype.Timestamptz
+}
+
+func (q *Queries) ClaimPolarSubscriptionCheckoutAttempt(ctx context.Context, arg ClaimPolarSubscriptionCheckoutAttemptParams) (PolarSubscriptionCheckoutAttempt, error) {
+	row := q.db.QueryRow(ctx, claimPolarSubscriptionCheckoutAttempt,
+		arg.OrganizationID,
+		arg.ProviderIdempotencyKey,
+		arg.RequestDigest,
+		arg.ExpiresAt,
+	)
+	var i PolarSubscriptionCheckoutAttempt
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ProviderIdempotencyKey,
+		&i.RequestDigest,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const currentSettledCreditBalance = `-- name: CurrentSettledCreditBalance :one
 SELECT COALESCE(sum(amount_micros), 0)::bigint AS balance_micros
 FROM ledger_entries
@@ -57,6 +100,25 @@ func (q *Queries) CurrentSettledCreditBalance(ctx context.Context, organizationI
 	var balance_micros int64
 	err := row.Scan(&balance_micros)
 	return balance_micros, err
+}
+
+const deletePolarSubscriptionCheckoutAttempt = `-- name: DeletePolarSubscriptionCheckoutAttempt :execrows
+DELETE FROM polar_subscription_checkout_attempts
+WHERE organization_id = $1
+  AND provider_idempotency_key = $2
+`
+
+type DeletePolarSubscriptionCheckoutAttemptParams struct {
+	OrganizationID         pgtype.UUID
+	ProviderIdempotencyKey string
+}
+
+func (q *Queries) DeletePolarSubscriptionCheckoutAttempt(ctx context.Context, arg DeletePolarSubscriptionCheckoutAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deletePolarSubscriptionCheckoutAttempt, arg.OrganizationID, arg.ProviderIdempotencyKey)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const ensureBillingPeriod = `-- name: EnsureBillingPeriod :one
@@ -119,6 +181,26 @@ func (q *Queries) GetActivePolarSubscriptionCheckout(ctx context.Context, organi
 	err := row.Scan(
 		&i.OrganizationID,
 		&i.PolarCheckoutID,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getActivePolarSubscriptionCheckoutAttempt = `-- name: GetActivePolarSubscriptionCheckoutAttempt :one
+SELECT organization_id, provider_idempotency_key, request_digest, expires_at, created_at FROM polar_subscription_checkout_attempts
+WHERE organization_id = $1
+  AND expires_at > transaction_timestamp()
+FOR UPDATE
+`
+
+func (q *Queries) GetActivePolarSubscriptionCheckoutAttempt(ctx context.Context, organizationID pgtype.UUID) (PolarSubscriptionCheckoutAttempt, error) {
+	row := q.db.QueryRow(ctx, getActivePolarSubscriptionCheckoutAttempt, organizationID)
+	var i PolarSubscriptionCheckoutAttempt
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ProviderIdempotencyKey,
+		&i.RequestDigest,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 	)

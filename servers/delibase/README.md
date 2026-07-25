@@ -44,6 +44,9 @@ never include configured values.
 `catalog.json` is intentionally empty for this foundation. Startup validates the
 complete document and transactionally synchronizes apps, meters, price versions,
 service allowlists, and Polar meter mappings before readiness is exposed.
+Startup also fetches `DELIBASE_POLAR_PRODUCT_ID` from the selected Polar
+environment and requires one active fixed monthly USD $10 base price before
+pinning that provider catalog to the local grant contract.
 
 ## Persistence reliability
 

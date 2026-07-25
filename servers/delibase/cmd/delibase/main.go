@@ -113,6 +113,20 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		cancelDatabase()
 		return &startupError{stage: stageCatalog}
 	}
+	polarClient, err := polar.NewBilling(
+		configuration.PolarAccessToken,
+		configuration.PolarProductID,
+		configuration.PolarEnvironment == config.PolarEnvironmentSandbox,
+		nil,
+	)
+	if err != nil {
+		cancelDatabase()
+		return &startupError{stage: stageConfiguration}
+	}
+	if err := polarClient.ValidateBillingProduct(databaseCtx); err != nil {
+		cancelDatabase()
+		return &startupError{stage: stageCatalog}
+	}
 	if err := store.SyncPolarCatalog(
 		databaseCtx,
 		configuration.PolarProductID,
@@ -143,15 +157,6 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	)
 	if err != nil {
 		return &startupError{stage: stageAuthentication}
-	}
-	polarClient, err := polar.NewBilling(
-		configuration.PolarAccessToken,
-		configuration.PolarProductID,
-		configuration.PolarEnvironment == config.PolarEnvironmentSandbox,
-		nil,
-	)
-	if err != nil {
-		return &startupError{stage: stageConfiguration}
 	}
 	polarWebhook, err := polar.NewWebhookHandler(
 		store,

@@ -3,6 +3,7 @@ package polar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,135 @@ import (
 
 	"github.com/delinoio/oss/servers/delibase/internal/contracts"
 )
+
+func TestValidateBillingProduct(t *testing.T) {
+	t.Parallel()
+	const (
+		accessToken = "polar-access-token"
+		productID   = "product_monthly_10_usd"
+	)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		if request.Method != http.MethodGet ||
+			request.URL.Path != "/v1/products/"+productID {
+			t.Errorf("request = %s %s", request.Method, request.URL.Path)
+		}
+		if request.Header.Get("Authorization") != "Bearer "+accessToken {
+			t.Error("request omitted the Polar access token")
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{
+			"id":"product_monthly_10_usd",
+			"recurring_interval":"month",
+			"recurring_interval_count":1,
+			"is_recurring":true,
+			"is_archived":false,
+			"prices":[
+				{
+					"amount_type":"fixed",
+					"price_currency":"usd",
+					"price_amount":1000,
+					"is_archived":false,
+					"product_id":"product_monthly_10_usd"
+				},
+				{
+					"amount_type":"metered_unit",
+					"price_currency":"usd",
+					"is_archived":false,
+					"product_id":"product_monthly_10_usd"
+				}
+			]
+		}`)
+	}))
+	defer server.Close()
+
+	client, err := newClient(server.URL+"/v1", accessToken, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.productID = productID
+	if err := client.ValidateBillingProduct(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBillingProductValidationRejectsProviderCatalogDrift(t *testing.T) {
+	t.Parallel()
+	const productID = "product_monthly_10_usd"
+	amount := int64(billingPriceCents)
+	validPrice := productPriceResponse{
+		AmountType:    "fixed",
+		PriceCurrency: "usd",
+		PriceAmount:   &amount,
+		ProductID:     productID,
+	}
+	tests := []struct {
+		name    string
+		product productResponse
+	}{
+		{
+			name: "wrong interval",
+			product: productResponse{
+				ID: productID, IsRecurring: true, RecurringInterval: "year",
+				RecurringIntervalCount: 1, Prices: []productPriceResponse{validPrice},
+			},
+		},
+		{
+			name: "wrong interval count",
+			product: productResponse{
+				ID: productID, IsRecurring: true, RecurringInterval: "month",
+				RecurringIntervalCount: 2, Prices: []productPriceResponse{validPrice},
+			},
+		},
+		{
+			name: "wrong currency",
+			product: productResponse{
+				ID: productID, IsRecurring: true, RecurringInterval: "month",
+				RecurringIntervalCount: 1,
+				Prices: []productPriceResponse{{
+					AmountType: "fixed", PriceCurrency: "eur",
+					PriceAmount: &amount, ProductID: productID,
+				}},
+			},
+		},
+		{
+			name: "wrong amount",
+			product: productResponse{
+				ID: productID, IsRecurring: true, RecurringInterval: "month",
+				RecurringIntervalCount: 1,
+				Prices: []productPriceResponse{{
+					AmountType: "fixed", PriceCurrency: "usd",
+					PriceAmount: func() *int64 {
+						value := int64(999)
+						return &value
+					}(),
+					ProductID: productID,
+				}},
+			},
+		},
+		{
+			name: "custom base price",
+			product: productResponse{
+				ID: productID, IsRecurring: true, RecurringInterval: "month",
+				RecurringIntervalCount: 1,
+				Prices: []productPriceResponse{{
+					AmountType: "custom", PriceCurrency: "usd", ProductID: productID,
+				}},
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if validBillingProduct(test.product, productID) {
+				t.Fatal("invalid provider product was accepted")
+			}
+		})
+	}
+}
 
 func TestCreateHostedCheckoutAndPortalSession(t *testing.T) {
 	t.Parallel()
@@ -79,6 +209,51 @@ func TestCreateHostedCheckoutAndPortalSession(t *testing.T) {
 	if err != nil || session.URL != "https://polar.sh/portal/1" ||
 		!session.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("portal = %#v, %v", session, err)
+	}
+}
+
+func TestCreateCheckoutClassifiesDefinitiveProviderRejection(t *testing.T) {
+	t.Parallel()
+	const organizationID = "0198a000-0000-7000-8000-000000000005"
+	for _, test := range []struct {
+		name       string
+		statusCode int
+		definitive bool
+	}{
+		{name: "validation rejection", statusCode: http.StatusUnprocessableEntity, definitive: true},
+		{name: "provider failure", statusCode: http.StatusInternalServerError},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewTLSServer(http.HandlerFunc(func(
+				writer http.ResponseWriter,
+				_ *http.Request,
+			) {
+				http.Error(writer, "safe provider failure", test.statusCode)
+			}))
+			defer server.Close()
+			client, err := newClient(
+				server.URL+"/v1", "polar-access-token", server.Client(),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.productID = "product_1"
+			_, err = client.CreateCheckout(
+				context.Background(),
+				contracts.CheckoutRequest{
+					OrganizationID: organizationID,
+					SuccessURL:     "https://deli.dev/success",
+					CancelURL:      "https://deli.dev/cancel",
+					IdempotencyKey: "billing-key",
+				},
+			)
+			if err == nil ||
+				errors.Is(err, contracts.ErrCheckoutNotCreated) != test.definitive {
+				t.Fatalf("checkout error = %v, definitive = %t", err, test.definitive)
+			}
+		})
 	}
 }
 

@@ -259,6 +259,10 @@ BEGIN
             RAISE EXCEPTION 'refund reversal total cannot decrease'
                 USING ERRCODE = 'check_violation';
         END IF;
+        IF OLD.chargeback AND NOT NEW.chargeback THEN
+            RAISE EXCEPTION 'refund chargeback classification cannot be cleared'
+                USING ERRCODE = 'check_violation';
+        END IF;
         RETURN NEW;
     END IF;
 

@@ -3,8 +3,14 @@ package contracts
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrCheckoutNotCreated marks a definitive provider rejection before a hosted
+// checkout exists. Unmarked provider errors are treated as ambiguous so the
+// same idempotency scope can recover them without admitting a distinct checkout.
+var ErrCheckoutNotCreated = errors.New("contracts: checkout was not created")
 
 // Clock keeps time-dependent business rules deterministic in tests.
 type Clock interface {
