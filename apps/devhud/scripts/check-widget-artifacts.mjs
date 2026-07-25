@@ -309,7 +309,15 @@ async function inspectIosApplication(path) {
 
 function findExecutable(name) {
   const extension = process.platform === "win32" ? ".bat" : "";
-  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+  const sdkRoots = [
+    process.env.ANDROID_HOME,
+    process.env.ANDROID_SDK_ROOT,
+  ].filter(Boolean);
+  const directories = [
+    ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
+    ...sdkRoots.map((root) => resolve(root, "cmdline-tools", "latest", "bin")),
+  ];
+  for (const directory of directories) {
     const candidate = resolve(directory, `${name}${extension}`);
     if (existsSync(candidate)) return candidate;
   }

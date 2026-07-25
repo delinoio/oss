@@ -12,6 +12,7 @@ import {
 } from "../persistence/contracts";
 import {
   DevHudPersistence,
+  PersistenceResetError,
   RejectedRecordWriteBlockedError,
   type LocalStorageAdapter,
   type PersistenceIssue,
@@ -192,6 +193,16 @@ export function ApplicationProvider({
       lastSuccessfulSettings.current = loaded.settings;
       lastSuccessfulWidgetConfiguration.current = loaded.widgetConfiguration;
       setPersistenceIssues(loaded.issues);
+    } catch (error: unknown) {
+      if (error instanceof PersistenceResetError) {
+        const { loaded } = error;
+        setSettings(loaded.settings);
+        setWidgetConfigurationState(loaded.widgetConfiguration);
+        lastSuccessfulSettings.current = loaded.settings;
+        lastSuccessfulWidgetConfiguration.current = loaded.widgetConfiguration;
+        setPersistenceIssues(loaded.issues);
+      }
+      throw error;
     } finally {
       settingsMutation.current = 0;
       widgetConfigurationMutation.current = 0;

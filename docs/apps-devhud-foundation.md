@@ -104,6 +104,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 - Unsupported future schema versions are rejected without reading them into state or overwriting stored data. Corrupt, incompatible, or unreadable data surfaces actionable confirmed-reset guidance without raw stored data in UI, errors, or logs. An unreadable record remains write-blocked until it can be read successfully or the user completes Reset DevHud.
 - Local state is retained until the user chooses `Reset DevHud` or uninstalls the app.
 - `Reset DevHud` requires confirmation and clears settings, widget shared state, CEF runtime state, and logs. User-exported diagnostic files remain user-owned.
+- If a reset operation only partially clears native state before failing, the frontend reloads the resulting records while continuing to report the reset failure.
 - Persist only the minimum CEF profile data required for operation. Disable web downloads, browsing history, cookies, and application web storage; Reset clears all CEF state.
 - Do not implement settings import, settings export, migration from another application, account migration, or cloud synchronization.
 - The mobile application and build-only native targets use matching typed adapters for the exact widget record. Tests inject isolated App Group suites or temporary DataStores, round-trip the shared fixture, preserve unrelated state on reset, reject corrupt and future-version records without overwrite, and propagate injected refresh failures.

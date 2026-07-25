@@ -243,6 +243,32 @@ describe("DevHud application surfaces", () => {
     );
   });
 
+  it("reconciles provider state after a partial reset failure", async () => {
+    const user = userEvent.setup();
+    const storage = new MemoryStorageAdapter();
+    storage.reset = async () => {
+      storage.values.delete("devhud.settings.v1");
+      throw new Error("injected partial reset");
+    };
+
+    renderApp({ platform: "mobile", storage });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const theme = screen.getByRole("combobox", { name: "Theme preference" });
+    await waitFor(() => expect(theme).toBeEnabled());
+    await user.selectOptions(theme, "dark");
+    await waitFor(() =>
+      expect(storage.values.get("devhud.settings.v1")).toContain('"theme":"dark"'),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
+    await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "DevHud could not reset local data.",
+    );
+    expect(theme).toHaveValue("system");
+  });
+
   it("has no automated accessibility violations on the mobile shell", async () => {
     const { container } = renderApp({ platform: "mobile" });
     await screen.findByRole("heading", { name: "No tools yet" });

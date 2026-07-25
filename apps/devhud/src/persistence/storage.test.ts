@@ -12,6 +12,7 @@ import {
   WidgetSlot,
   SETTINGS_STORAGE_KEY,
   WIDGET_CONFIGURATION_STORAGE_KEY,
+  type PersistenceKey,
 } from "./contracts";
 import {
   createTauriPersistenceAdapter,
@@ -230,6 +231,41 @@ describe("DevHud local persistence", () => {
     await expect(
       persistence.saveSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
     ).resolves.toBeUndefined();
+  });
+
+  it("reloads records after a partial reset while preserving the failure", async () => {
+    const values = new Map<PersistenceKey, string>([
+      [
+        SETTINGS_STORAGE_KEY,
+        encodeSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
+      ],
+    ]);
+    const storage: LocalStorageAdapter = {
+      read: async (key) => values.get(key) ?? null,
+      reset: async () => {
+        values.delete(SETTINGS_STORAGE_KEY);
+        throw new Error("injected partial reset");
+      },
+      write: async (key, value) => {
+        values.set(key, value);
+      },
+    };
+    const persistence = new DevHudPersistence(storage);
+
+    await expect(persistence.load()).resolves.toMatchObject({
+      settings: { theme: ThemePreference.Dark },
+    });
+    await expect(persistence.reset()).rejects.toMatchObject({
+      name: "PersistenceResetError",
+      loaded: {
+        settings: defaultSettings,
+        widgetConfiguration: defaultWidgetConfiguration,
+        issues: [],
+      },
+    });
+    await expect(persistence.load()).resolves.toMatchObject({
+      settings: defaultSettings,
+    });
   });
 
   it("keeps another record's issue after a successful write", async () => {

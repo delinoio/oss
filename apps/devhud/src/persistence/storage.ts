@@ -104,6 +104,16 @@ export interface LoadedPersistence {
   readonly issues: readonly PersistenceIssue[];
 }
 
+export class PersistenceResetError extends Error {
+  constructor(
+    readonly loaded: LoadedPersistence,
+    options: ErrorOptions,
+  ) {
+    super("DevHud could not fully reset local data.", options);
+    this.name = "PersistenceResetError";
+  }
+}
+
 export class RejectedRecordWriteBlockedError extends Error {
   constructor(
     readonly key: PersistenceKey,
@@ -159,10 +169,19 @@ export class DevHudPersistence {
 
   async reset(): Promise<LoadedPersistence> {
     await Promise.allSettled(this.writeTails.values());
-    await this.storage.reset();
+    let resetFailure: { readonly cause: unknown } | undefined;
+    try {
+      await this.storage.reset();
+    } catch (cause: unknown) {
+      resetFailure = { cause };
+    }
     this.blockedRecords.clear();
     this.loadPromise = undefined;
-    return this.load();
+    const loaded = await this.load();
+    if (resetFailure) {
+      throw new PersistenceResetError(loaded, resetFailure);
+    }
+    return loaded;
   }
 
   private async loadSettings(): Promise<{ value: DevHudSettings; issues: readonly PersistenceIssue[] }> {
