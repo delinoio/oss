@@ -2377,6 +2377,7 @@ export function OrganizationSettingsPage() {
   const [slug, setSlug] = useState(organization.slug);
   const [message, setMessage] = useState("");
   const [formError, setFormError] = useState("");
+  const updateSlugKey = useRef<{ key: string } | undefined>(undefined);
   const updateName = useMutation(
     OrganizationService.method.updateOrganization,
     { transport },
@@ -2414,8 +2415,9 @@ export function OrganizationSettingsPage() {
         nameUpdated = true;
       }
       if (normalizedSlug !== organization.slug) {
+        updateSlugKey.current ??= createIdempotencyKey();
         const response = await updateSlug.mutateAsync({
-          idempotency: createIdempotencyKey(),
+          idempotency: updateSlugKey.current,
           organizationId: uuid(organization.organizationId?.value),
           slug: normalizedSlug,
         });
@@ -2424,6 +2426,7 @@ export function OrganizationSettingsPage() {
           `/o/${response.organization?.slug ?? normalizedSlug}/settings`,
           { replace: true },
         );
+        updateSlugKey.current = undefined;
         return;
       }
       if (normalizedName !== organization.name) {
@@ -2485,7 +2488,10 @@ export function OrganizationSettingsPage() {
                 autoCapitalize="none"
                 autoComplete="off"
                 maxLength={63}
-                onChange={(event) => setSlug(event.target.value)}
+                onChange={(event) => {
+                  updateSlugKey.current = undefined;
+                  setSlug(event.target.value);
+                }}
                 pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
                 required
                 spellCheck={false}

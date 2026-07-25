@@ -145,18 +145,21 @@ describe("organization settings", () => {
     expect(refreshAccountState).toHaveBeenCalledTimes(2);
   });
 
-  it("does not navigate to a changed slug when account refresh fails", async () => {
-    const refreshAccountState = vi.fn(async () => {
-      throw new Error("Account refresh failed.");
-    });
-    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+  it("retains the slug update key when account refresh fails", async () => {
+    const slugUpdateKeys: string[] = [];
+    let currentSlug = "acme";
+    const refreshAccountState = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("Account refresh failed."))
+      .mockResolvedValue(undefined);
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
       const url = String(request);
       if (url.endsWith("/ResolveOrganizationSlug")) {
         return connectJsonResponse({
           organization: {
             name: "Acme",
             organizationId: { value: "organization-id" },
-            slug: "acme",
+            slug: currentSlug,
           },
         });
       }
@@ -166,16 +169,23 @@ describe("organization settings", () => {
           organization: {
             name: "Acme",
             organizationId: { value: "organization-id" },
-            slug: "acme",
+            slug: currentSlug,
           },
         });
       }
       if (url.endsWith("/UpdateOrganizationSlug")) {
+        const body = (await new Response(
+          init?.body ?? (request instanceof Request
+            ? request.clone().body
+            : null),
+        ).json()) as { idempotency: { key: string } };
+        slugUpdateKeys.push(body.idempotency.key);
+        currentSlug = "new-acme";
         return connectJsonResponse({
           organization: {
             name: "Acme",
             organizationId: { value: "organization-id" },
-            slug: "new-acme",
+            slug: currentSlug,
           },
         });
       }
@@ -197,6 +207,19 @@ describe("organization settings", () => {
     expect(refreshAccountState).toHaveBeenCalledOnce();
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/o/acme/settings",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Save changes" }),
+    );
+
+    await waitFor(() => expect(slugUpdateKeys).toHaveLength(2));
+    expect(slugUpdateKeys[1]).toBe(slugUpdateKeys[0]);
+    expect(refreshAccountState).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/o/new-acme/settings",
+      ),
     );
   });
 
