@@ -63,6 +63,8 @@ export type PersistenceIssue =
   | (DecodeFailure & { readonly key: PersistenceKey })
   | { readonly key: PersistenceKey; readonly kind: "storage"; readonly guidance: string };
 
+type RecordWriteBlockFailure = DecodeFailure | { readonly kind: "storage"; readonly guidance: string };
+
 export interface LoadedPersistence {
   readonly settings: DevHudSettings;
   readonly widgetConfiguration: WidgetConfiguration;
@@ -72,7 +74,7 @@ export interface LoadedPersistence {
 export class RejectedRecordWriteBlockedError extends Error {
   constructor(
     readonly key: PersistenceKey,
-    readonly failure: DecodeFailure,
+    readonly failure: RecordWriteBlockFailure,
   ) {
     super("DevHud refused to overwrite a rejected local data record.");
     this.name = "RejectedRecordWriteBlockedError";
@@ -89,7 +91,7 @@ function storageIssue(key: PersistenceKey): PersistenceIssue {
 /** Serializes each record so call order, rather than completion timing, defines last-successful-write-wins. */
 export class DevHudPersistence {
   private readonly writeTails = new Map<PersistenceKey, Promise<void>>();
-  private readonly rejectedRecords = new Map<PersistenceKey, DecodeFailure>();
+  private readonly blockedRecords = new Map<PersistenceKey, RecordWriteBlockFailure>();
   private loadPromise: Promise<LoadedPersistence> | undefined;
 
   constructor(private readonly storage: LocalStorageAdapter) {}
@@ -128,9 +130,10 @@ export class DevHudPersistence {
       if (raw === null) return { value: defaultSettings, issues: [] };
       const decoded = decodeSettings(raw);
       if (decoded.ok) return { value: decoded.value, issues: [] };
-      this.rejectedRecords.set(SETTINGS_STORAGE_KEY, decoded.failure);
+      this.blockedRecords.set(SETTINGS_STORAGE_KEY, decoded.failure);
       return { value: defaultSettings, issues: [{ ...decoded.failure, key: SETTINGS_STORAGE_KEY }] };
     } catch {
+      this.blockedRecords.set(SETTINGS_STORAGE_KEY, storageIssue(SETTINGS_STORAGE_KEY));
       return { value: defaultSettings, issues: [storageIssue(SETTINGS_STORAGE_KEY)] };
     }
   }
@@ -144,12 +147,16 @@ export class DevHudPersistence {
       if (raw === null) return { value: defaultWidgetConfiguration, issues: [] };
       const decoded = decodeWidgetConfiguration(raw);
       if (decoded.ok) return { value: decoded.value, issues: [] };
-      this.rejectedRecords.set(WIDGET_CONFIGURATION_STORAGE_KEY, decoded.failure);
+      this.blockedRecords.set(WIDGET_CONFIGURATION_STORAGE_KEY, decoded.failure);
       return {
         value: defaultWidgetConfiguration,
         issues: [{ ...decoded.failure, key: WIDGET_CONFIGURATION_STORAGE_KEY }],
       };
     } catch {
+      this.blockedRecords.set(
+        WIDGET_CONFIGURATION_STORAGE_KEY,
+        storageIssue(WIDGET_CONFIGURATION_STORAGE_KEY),
+      );
       return {
         value: defaultWidgetConfiguration,
         issues: [storageIssue(WIDGET_CONFIGURATION_STORAGE_KEY)],
@@ -164,9 +171,9 @@ export class DevHudPersistence {
       .catch(() => undefined)
       .then(() => initialization.then(() => undefined))
       .then(() => {
-        const rejectedRecord = this.rejectedRecords.get(key);
-        if (rejectedRecord !== undefined) {
-          throw new RejectedRecordWriteBlockedError(key, rejectedRecord);
+        const blockedRecord = this.blockedRecords.get(key);
+        if (blockedRecord !== undefined) {
+          throw new RejectedRecordWriteBlockedError(key, blockedRecord);
         }
         return this.storage.write(key, value).then(() => {
           this.loadPromise = undefined;

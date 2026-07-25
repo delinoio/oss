@@ -87,6 +87,24 @@ describe("DevHud application surfaces", () => {
     expect(settings.closest("div[inert]")).toHaveAttribute("inert");
   });
 
+  it("hides persistence alerts from assistive technology while settings is open", async () => {
+    const user = userEvent.setup();
+    const storage: LocalStorageAdapter = {
+      read: async () => {
+        throw new Error("storage unavailable");
+      },
+      write: async () => undefined,
+    };
+
+    render(<App storage={storage} />);
+    const alerts = await screen.findAllByRole("alert");
+    await user.click(screen.getAllByRole("button", { name: "Settings" })[0]!);
+    for (const alert of alerts) {
+      expect(alert.closest("div[aria-hidden]")).toHaveAttribute("aria-hidden", "true");
+      expect(alert.closest("div[inert]")).toHaveAttribute("inert");
+    }
+  });
+
   it("has no automated accessibility violations", async () => {
     const { container } = render(<App />);
     const results = await axe.run(container, {

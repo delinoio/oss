@@ -127,6 +127,28 @@ describe("DevHud local persistence", () => {
     });
   });
 
+  it("does not overwrite a record when its read fails", async () => {
+    const write = vi.fn(async () => undefined);
+    const storage: LocalStorageAdapter = {
+      read: async (key) => {
+        if (key === SETTINGS_STORAGE_KEY) throw new Error("injected read failure");
+        return null;
+      },
+      write,
+    };
+    const persistence = new DevHudPersistence(storage);
+
+    await expect(persistence.load()).resolves.toMatchObject({
+      settings: defaultSettings,
+      issues: [expect.objectContaining({ key: SETTINGS_STORAGE_KEY, kind: "storage" })],
+    });
+    await expect(persistence.saveSettings(defaultSettings)).rejects.toMatchObject({
+      name: "RejectedRecordWriteBlockedError",
+      key: SETTINGS_STORAGE_KEY,
+    });
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it("preserves future records and provides safe update guidance", async () => {
     const storage = new MemoryStorageAdapter();
     const futureRecord = JSON.stringify({ version: 2, settings: { secret: "not exposed" } });
