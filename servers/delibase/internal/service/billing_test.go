@@ -61,6 +61,27 @@ func TestPolarSubscriptionStateMappingSupportsPastDueRecoveryAndTerminals(
 	}
 }
 
+func TestPolarBillingAuditEventTypeDistinguishesFinancialEvents(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		event reliability.WebhookEventType
+		want  reliability.AuditEventType
+	}{
+		{reliability.WebhookOrderPaid, reliability.AuditSettlementRecorded},
+		{reliability.WebhookRefundCreated, reliability.AuditRefundRecorded},
+		{reliability.WebhookRefundUpdated, reliability.AuditRefundRecorded},
+		{
+			reliability.WebhookSubscriptionUpdated,
+			reliability.AuditSubscriptionUpdated,
+		},
+	}
+	for _, test := range tests {
+		if got := polarBillingAuditEventType(test.event); got != test.want {
+			t.Errorf("audit event(%q) = %q, want %q", test.event, got, test.want)
+		}
+	}
+}
+
 func TestProviderIdempotencyKeyPreservesLocalScope(t *testing.T) {
 	t.Parallel()
 	organizationID := uuid.MustParse("0198a000-0000-7000-8000-000000000001")

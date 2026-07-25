@@ -340,6 +340,59 @@ func TestPostgreSQLPolarPaidCycleAndRefundEffectsAreExactOnce(t *testing.T) {
 		cycle.ReversedMicros != cycleGrantMicros/2 {
 		t.Fatalf("paid cycle = %#v, %v", cycle, err)
 	}
+	pastDuePayload, _ := json.Marshal(polarBillingEvent{
+		Type:       string(reliability.WebhookSubscriptionPastDue),
+		EventAt:    now.Add(2 * time.Minute),
+		ObjectID:   "subscription_1",
+		CustomerID: "customer_" + organizationID.String(),
+		ExternalID: organizationID.String(), SubscriptionID: "subscription_1",
+		ProductID: productID, CurrentPeriodStart: currentPeriodStart,
+		CurrentPeriodEnd: currentPeriodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarSubscriptionPastDue,
+		Payload:   pastDuePayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	replacementPeriodStart := now.Add(-30 * time.Minute)
+	replacementPeriodEnd := replacementPeriodStart.Add(31 * 24 * time.Hour)
+	replacementPayload, _ := json.Marshal(polarBillingEvent{
+		Type: string(reliability.WebhookOrderPaid), EventAt: now.Add(3 * time.Minute),
+		ObjectID: "order_replacement", OrderID: "order_replacement",
+		CustomerID: "customer_" + organizationID.String(),
+		ExternalID: organizationID.String(), SubscriptionID: "subscription_2",
+		ProductID: productID, Currency: "usd",
+		BillingReason: "subscription_create", Paid: true,
+		CurrentPeriodStart: replacementPeriodStart,
+		CurrentPeriodEnd:   replacementPeriodEnd,
+	})
+	if err := handler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarOrderPaid,
+		Payload:   replacementPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	replacementCycle, replacementCycleErr := store.Queries().GetPolarPaidCycle(
+		ctx, "order_replacement",
+	)
+	activePeriod, activePeriodErr := store.Queries().GetCurrentActiveBillingPeriod(
+		ctx, pgUUID(organizationID),
+	)
+	if replacementCycleErr != nil || activePeriodErr != nil ||
+		replacementCycle.BillingPeriodID != activePeriod.ID ||
+		!activePeriod.StartsAt.Time.Equal(replacementPeriodStart) ||
+		!activePeriod.EndsAt.Time.Equal(replacementPeriodEnd) {
+		t.Fatalf(
+			"replacement cycle = %#v, %v; active period = %#v, %v",
+			replacementCycle,
+			replacementCycleErr,
+			activePeriod,
+			activePeriodErr,
+		)
+	}
 	if _, err = store.Queries().MarkOrganizationDeleted(
 		ctx, pgUUID(organizationID),
 	); err != nil {

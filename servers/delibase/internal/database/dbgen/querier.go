@@ -17,6 +17,7 @@ type Querier interface {
 	ClaimIntegrationOutbox(ctx context.Context, arg ClaimIntegrationOutboxParams) (IntegrationOutbox, error)
 	ClaimWebhookInbox(ctx context.Context, arg ClaimWebhookInboxParams) (WebhookInbox, error)
 	CloseCatalogPriceVersion(ctx context.Context, arg CloseCatalogPriceVersionParams) error
+	CloseInactiveBillingPeriodForReplacement(ctx context.Context, arg CloseInactiveBillingPeriodForReplacementParams) (int64, error)
 	CompleteDeletionJob(ctx context.Context, arg CompleteDeletionJobParams) (pgtype.UUID, error)
 	CompleteIntegrationOutbox(ctx context.Context, arg CompleteIntegrationOutboxParams) (pgtype.UUID, error)
 	CompleteWebhookInbox(ctx context.Context, arg CompleteWebhookInboxParams) (pgtype.UUID, error)

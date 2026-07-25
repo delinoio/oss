@@ -10,7 +10,7 @@
 - Persistence: PostgreSQL with ordered migrations and sqlc for all queries
 - API: `delibase.v1` Connect RPC, with signed Polar webhook REST as the explicit non-Connect exception.
 - Stateful structure must provide explicit service, contracts, logging, database, generation, and configuration boundaries before runtime rollout.
-- The runnable foundation lives at `servers/delibase/cmd/delibase`, registers all six generated handlers, exposes `/healthz` and PostgreSQL-backed `/readyz`, and shuts down gracefully. `AccountService`, `TeamService`, and `OrganizationService` (including invitations) use authenticated PostgreSQL/sqlc transactions. `BillingService` and `UsageService` business RPCs remain typed Connect `Unimplemented` responses rather than placeholder successes.
+- The runnable foundation lives at `servers/delibase/cmd/delibase`, registers all six generated handlers, exposes `/healthz` and PostgreSQL-backed `/readyz`, and shuts down gracefully. `AccountService`, `TeamService`, and `OrganizationService` (including invitations) use authenticated PostgreSQL/sqlc transactions. `BillingService` implements `GetBillingSummary`, `CreateSubscriptionCheckout`, `CreateBillingPortalSession`, `UpdateOverageLimit`, and `ListLedgerEntries`; its `ListUsageRecords` RPC and all `UsageService` business RPCs remain typed Connect `Unimplemented` responses rather than placeholder successes.
 
 ## Users and Operators
 - DeliDev users and organization Owners, Admins, Members, Team Admins, and Team Members.

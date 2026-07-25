@@ -153,6 +153,23 @@ CREATE TABLE polar_paid_cycles (
     CHECK (retain_until >= created_at + interval '7 years')
 );
 
+CREATE FUNCTION enforce_polar_paid_cycle_retention()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF OLD.retain_until > transaction_timestamp() THEN
+        RAISE EXCEPTION 'paid cycle retention period has not elapsed'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER polar_paid_cycles_enforce_retention
+BEFORE DELETE ON polar_paid_cycles
+FOR EACH ROW EXECUTE FUNCTION enforce_polar_paid_cycle_retention();
+
 CREATE TABLE polar_refunds (
     polar_refund_id text PRIMARY KEY,
     polar_order_id text NOT NULL REFERENCES polar_paid_cycles(polar_order_id)

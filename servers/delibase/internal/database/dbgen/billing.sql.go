@@ -41,6 +41,33 @@ func (q *Queries) AddPolarCycleReversal(ctx context.Context, arg AddPolarCycleRe
 	return i, err
 }
 
+const closeInactiveBillingPeriodForReplacement = `-- name: CloseInactiveBillingPeriodForReplacement :execrows
+UPDATE billing_periods AS period
+SET ends_at = $1
+FROM subscriptions AS subscription
+WHERE period.organization_id = $2
+  AND period.subscription_id = subscription.id
+  AND subscription.organization_id = period.organization_id
+  AND period.subscription_id <> $3
+  AND subscription.status IN ('past_due', 'canceled', 'revoked')
+  AND period.starts_at < $1
+  AND period.ends_at > $1
+`
+
+type CloseInactiveBillingPeriodForReplacementParams struct {
+	ReplacementStartsAt       pgtype.Timestamptz
+	OrganizationID            pgtype.UUID
+	ReplacementSubscriptionID pgtype.UUID
+}
+
+func (q *Queries) CloseInactiveBillingPeriodForReplacement(ctx context.Context, arg CloseInactiveBillingPeriodForReplacementParams) (int64, error) {
+	result, err := q.db.Exec(ctx, closeInactiveBillingPeriodForReplacement, arg.ReplacementStartsAt, arg.OrganizationID, arg.ReplacementSubscriptionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const currentSettledCreditBalance = `-- name: CurrentSettledCreditBalance :one
 SELECT COALESCE(sum(amount_micros), 0)::bigint AS balance_micros
 FROM ledger_entries

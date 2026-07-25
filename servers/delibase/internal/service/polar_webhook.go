@@ -92,12 +92,13 @@ func appendPolarBillingAudit(
 	ids IDGenerator,
 	event polarBillingEvent,
 ) error {
-	eventType := reliability.AuditSubscriptionUpdated
+	eventType := polarBillingAuditEventType(
+		reliability.WebhookEventType(event.Type),
+	)
 	var organizationID pgtype.UUID
 	var err error
 	switch reliability.WebhookEventType(event.Type) {
 	case reliability.WebhookRefundCreated, reliability.WebhookRefundUpdated:
-		eventType = reliability.AuditRefundRecorded
 		var cycle dbgen.PolarPaidCycle
 		cycle, err = queries.GetPolarPaidCycle(ctx, event.OrderID)
 		organizationID = cycle.OrganizationID
@@ -166,6 +167,16 @@ func processPaidCycle(
 		ctx, subscription.OrganizationID,
 	)
 	if err != nil {
+		return err
+	}
+	if _, err = queries.CloseInactiveBillingPeriodForReplacement(
+		ctx,
+		dbgen.CloseInactiveBillingPeriodForReplacementParams{
+			ReplacementStartsAt:       pgTimestamp(event.CurrentPeriodStart),
+			OrganizationID:            subscription.OrganizationID,
+			ReplacementSubscriptionID: subscription.ID,
+		},
+	); err != nil {
 		return err
 	}
 	periodID, err := ids.New()
@@ -302,6 +313,19 @@ func reconcilePolarSubscription(
 			ProviderEventAt:       pgTimestamp(event.EventAt),
 		},
 	)
+}
+
+func polarBillingAuditEventType(
+	eventType reliability.WebhookEventType,
+) reliability.AuditEventType {
+	switch eventType {
+	case reliability.WebhookOrderPaid:
+		return reliability.AuditSettlementRecorded
+	case reliability.WebhookRefundCreated, reliability.WebhookRefundUpdated:
+		return reliability.AuditRefundRecorded
+	default:
+		return reliability.AuditSubscriptionUpdated
+	}
 }
 
 func processPolarRefund(

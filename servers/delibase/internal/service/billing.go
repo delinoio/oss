@@ -218,15 +218,15 @@ func (service *Billing) UpdateOverageLimit(
 				)
 				return nil
 			}
+			if _, transactionErr = queries.LockOrganizationForBilling(
+				ctx, pgUUID(organizationID),
+			); transactionErr != nil {
+				return membershipReadError(transactionErr)
+			}
 			if _, transactionErr = billingAccess(
 				ctx, queries, organizationID, account.ID, true,
 			); transactionErr != nil {
 				return transactionErr
-			}
-			if _, transactionErr = queries.LockOrganizationForBilling(
-				ctx, pgUUID(organizationID),
-			); transactionErr != nil {
-				return databaseError(transactionErr)
 			}
 			if _, transactionErr = queries.UpdateOrganizationOverageLimit(
 				ctx,
@@ -406,13 +406,13 @@ func (service *Billing) createSubscriptionCheckout(
 			if transactionErr != nil {
 				return transactionErr
 			}
-			if _, transactionErr = billingAccess(
-				ctx, queries, organizationID, account.ID, true,
-			); transactionErr != nil {
-				return transactionErr
-			}
 			if _, transactionErr = queries.LockOrganizationForBilling(
 				ctx, pgUUID(organizationID),
+			); transactionErr != nil {
+				return membershipReadError(transactionErr)
+			}
+			if _, transactionErr = billingAccess(
+				ctx, queries, organizationID, account.ID, true,
 			); transactionErr != nil {
 				return transactionErr
 			}
