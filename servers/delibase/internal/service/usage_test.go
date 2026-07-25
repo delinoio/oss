@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"testing"
@@ -48,6 +49,21 @@ func TestUsageSubjectsRequireConsistentM2MAndForwardedUser(t *testing.T) {
 	)
 	if err != nil || serviceID != "service" || subject != "user" {
 		t.Fatalf("subjects = %q, %q, %v", serviceID, subject, err)
+	}
+}
+
+func TestUsageRequestDigestBindsForwardedSubject(t *testing.T) {
+	t.Parallel()
+	first := usageRequestDigest("user-a", "organization", "reservation")
+	second := usageRequestDigest("user-b", "organization", "reservation")
+	if bytes.Equal(first, second) {
+		t.Fatal("usage request digest did not bind the forwarded subject")
+	}
+	if !bytes.Equal(
+		first,
+		usageRequestDigest("user-a", "organization", "reservation"),
+	) {
+		t.Fatal("usage request digest is not stable")
 	}
 }
 

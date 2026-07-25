@@ -67,7 +67,8 @@ func (service *Usage) ReserveUsage(
 	if err != nil {
 		return nil, err
 	}
-	digest := requestDigest(
+	digest := usageRequestDigest(
+		subject,
 		organizationID.String(),
 		teamID.String(),
 		meterID.String(),
@@ -280,7 +281,8 @@ func (service *Usage) CommitUsage(
 	if err != nil {
 		return nil, err
 	}
-	digest := requestDigest(
+	digest := usageRequestDigest(
+		subject,
 		organizationID.String(),
 		reservationID.String(),
 		strconv.FormatInt(actualUnits, 10),
@@ -567,7 +569,11 @@ func (service *Usage) ReleaseUsage(
 	if err != nil {
 		return nil, err
 	}
-	digest := requestDigest(organizationID.String(), reservationID.String())
+	digest := usageRequestDigest(
+		subject,
+		organizationID.String(),
+		reservationID.String(),
+	)
 	actor, err := actorFor(service.dependencies, subject)
 	if err != nil {
 		return nil, err
@@ -1295,6 +1301,10 @@ func validateClientReference(value string) (string, error) {
 		)
 	}
 	return value, nil
+}
+
+func usageRequestDigest(subject string, parts ...string) []byte {
+	return requestDigest(append([]string{subject}, parts...)...)
 }
 
 func multiplyNonnegativeInt64(left, right int64) (int64, bool) {

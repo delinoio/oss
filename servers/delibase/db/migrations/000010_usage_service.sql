@@ -1,3 +1,16 @@
+CREATE FUNCTION usage_client_reference_is_credential_safe(value text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+    SELECT value !~* $pattern$\m(bearer|basic)[[:space:]]+[A-Za-z0-9._~+/=-]+$pattern$
+       AND value !~ $pattern$\meyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\M$pattern$
+       AND value !~* $pattern$(authorization|token|secret|password|passwd|api[-_]?key|x-delibase-forwarded-user-token)(["']?[[:space:]]*[:=][[:space:]]*["']?)[^"'[:space:],;&]+$pattern$
+       AND value !~ $pattern$\m[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+\M$pattern$
+       AND value !~ $pattern$\m([0-9][ -]?){12,18}[0-9]\M$pattern$;
+$$;
+
 -- Usage mutations keep the operational references needed while a reservation
 -- is held and retain immutable, privacy-safe snapshots after finalization.
 ALTER TABLE usage_reservations
@@ -9,6 +22,7 @@ ALTER TABLE usage_reservations
     ADD COLUMN price_effective_from_snapshot timestamptz NOT NULL DEFAULT '-infinity',
     ADD COLUMN price_effective_until_snapshot timestamptz,
     ADD COLUMN overage_billing_period_id uuid,
+    ADD COLUMN client_reference_grandfathered boolean NOT NULL DEFAULT false,
     ADD CONSTRAINT usage_reservations_user_actor_snapshot_check CHECK (
         user_actor_reference_snapshot ~ '^actor:v1:[0-9a-f]{32}$'
     ),
@@ -32,12 +46,20 @@ ALTER TABLE usage_reservations
 ALTER TABLE usage_reservations
     DISABLE TRIGGER usage_reservations_enforce_transition;
 
--- Earlier migrations accepted arbitrary nonempty client references. Preserve a
--- stable per-reservation reference for legacy values that the service no
--- longer accepts before installing the stricter storage invariant.
-UPDATE usage_reservations
-SET client_reference = 'legacy:' || id::text
-WHERE client_reference !~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$';
+-- Earlier migrations accepted arbitrary and duplicate client references.
+-- Grandfather those rows without rewriting caller-owned correlation values.
+-- New reservations remain canonical and unique through the constraints and
+-- insertion trigger installed below.
+UPDATE usage_reservations AS reservation
+SET client_reference_grandfathered = true
+WHERE client_reference !~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$'
+   OR EXISTS (
+       SELECT 1
+       FROM usage_reservations AS duplicate
+       WHERE duplicate.service_identity_id = reservation.service_identity_id
+         AND duplicate.client_reference = reservation.client_reference
+         AND duplicate.id <> reservation.id
+   );
 
 UPDATE usage_reservations AS reservation
 SET service_name_snapshot = service.name,
@@ -46,6 +68,7 @@ SET service_name_snapshot = service.name,
         SELECT mapping.polar_meter_id
         FROM polar_meter_mappings AS mapping
         WHERE mapping.meter_id = reservation.meter_id
+          AND mapping.created_at <= reservation.created_at
     ), 'unknown'),
     price_effective_from_snapshot = price.effective_from,
     price_effective_until_snapshot = price.effective_until,
@@ -77,7 +100,11 @@ ALTER TABLE usage_reservations
 
 ALTER TABLE usage_reservations
     ADD CONSTRAINT usage_reservations_client_reference_check CHECK (
-        client_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$'
+        (
+            client_reference_grandfathered
+            OR client_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$'
+        )
+        AND usage_client_reference_is_credential_safe(client_reference)
     ),
     ADD CONSTRAINT usage_reservations_overage_period_check CHECK (
         (held_overage_micros = 0 AND overage_billing_period_id IS NULL)
@@ -161,7 +188,7 @@ ALTER TABLE usage_records
         usd_micros_per_unit >= 0
     ),
     ADD CONSTRAINT usage_records_client_reference_snapshot_check CHECK (
-        client_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$'
+        usage_client_reference_is_credential_safe(client_reference)
     ),
     ADD CONSTRAINT usage_records_user_actor_snapshot_check CHECK (
         user_actor_reference_snapshot ~ '^actor:v1:[0-9a-f]{32}$'
@@ -242,6 +269,7 @@ BEGIN
           ON reservation.id = usage.reservation_id
         LEFT JOIN polar_meter_mappings AS mapping
           ON mapping.meter_id = reservation.meter_id
+         AND mapping.created_at <= reservation.created_at
         WHERE usage.overage_applied_micros > 0
           AND mapping.meter_id IS NULL
     ) THEN
@@ -329,7 +357,8 @@ END;
 $$;
 
 CREATE UNIQUE INDEX usage_reservations_service_client_reference_idx
-    ON usage_reservations(service_identity_id, client_reference);
+    ON usage_reservations(service_identity_id, client_reference)
+    WHERE NOT client_reference_grandfathered;
 
 CREATE UNIQUE INDEX integration_outbox_one_polar_usage_event_idx
     ON integration_outbox(integration, operation, aggregate_id)
@@ -372,6 +401,22 @@ AS $$
 DECLARE
     selected_period_id uuid;
 BEGIN
+    IF NEW.client_reference_grandfathered THEN
+        RAISE EXCEPTION 'new client references cannot be grandfathered'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM usage_reservations AS reservation
+        WHERE reservation.service_identity_id = NEW.service_identity_id
+          AND reservation.client_reference = NEW.client_reference
+    ) THEN
+        RAISE EXCEPTION 'usage client reference already exists'
+            USING
+                ERRCODE = 'unique_violation',
+                CONSTRAINT = 'usage_reservations_service_client_reference_idx';
+    END IF;
+
     NEW.created_at := statement_timestamp();
 
     SELECT service.name, meter.name, mapping.polar_meter_id,
@@ -431,7 +476,9 @@ BEGIN
        OR NEW.polar_event_name_snapshot IS DISTINCT FROM OLD.polar_event_name_snapshot
        OR NEW.price_effective_from_snapshot IS DISTINCT FROM OLD.price_effective_from_snapshot
        OR NEW.price_effective_until_snapshot IS DISTINCT FROM OLD.price_effective_until_snapshot
-       OR NEW.overage_billing_period_id IS DISTINCT FROM OLD.overage_billing_period_id THEN
+       OR NEW.overage_billing_period_id IS DISTINCT FROM OLD.overage_billing_period_id
+       OR NEW.client_reference_grandfathered
+          IS DISTINCT FROM OLD.client_reference_grandfathered THEN
         RAISE EXCEPTION 'usage reservation snapshots are immutable'
             USING ERRCODE = 'check_violation';
     END IF;
@@ -502,6 +549,15 @@ DECLARE
     reservation usage_reservations%ROWTYPE;
     period billing_periods%ROWTYPE;
 BEGIN
+    PERFORM 1
+    FROM organizations
+    WHERE id = NEW.organization_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'usage record organization snapshot is unavailable'
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
     SELECT *
     INTO reservation
     FROM usage_reservations

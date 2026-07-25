@@ -1186,6 +1186,163 @@ func TestPostgreSQLPolarUsageOutboxPayloadMustMatchRecord(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLUsageIdempotencyBindsForwardedSubject(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	ownerContext := usageContext(
+		ctx,
+		fixture.serviceClient,
+		fixture.ownerSubject,
+	)
+	memberContext := usageContext(
+		ctx,
+		fixture.serviceClient,
+		fixture.memberSubject,
+	)
+
+	reserveRequest := usageReserveRequest(
+		fixture,
+		fixture.generalTeamID,
+		fixture.meterID,
+		1,
+		"subject-bound-reserve-"+fixture.organizationID.String(),
+		"subject-bound-reserve-"+fixture.organizationID.String(),
+	)
+	reserved, err := fixture.usage.ReserveUsage(ownerContext, reserveRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = fixture.usage.ReserveUsage(memberContext, reserveRequest)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeAborted,
+		delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
+	)
+
+	commitRequest := connect.NewRequest(&delibasev1.CommitUsageRequest{
+		OrganizationId: usageUUID(fixture.organizationID),
+		ReservationId:  reserved.Msg.Reservation.ReservationId,
+		ActualUnits:    &delibasev1.UsageUnits{Value: 1},
+		Idempotency: idempotency(
+			"subject-bound-commit-" + fixture.organizationID.String(),
+		),
+	})
+	if _, err = fixture.usage.CommitUsage(ownerContext, commitRequest); err != nil {
+		t.Fatal(err)
+	}
+	_, err = fixture.usage.CommitUsage(memberContext, commitRequest)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeAborted,
+		delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
+	)
+
+	releaseReserved, err := fixture.usage.ReserveUsage(
+		ownerContext,
+		usageReserveRequest(
+			fixture,
+			fixture.generalTeamID,
+			fixture.meterID,
+			1,
+			"subject-bound-release-"+fixture.organizationID.String(),
+			"subject-bound-release-reserve-"+fixture.organizationID.String(),
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseRequest := connect.NewRequest(&delibasev1.ReleaseUsageRequest{
+		OrganizationId: usageUUID(fixture.organizationID),
+		ReservationId:  releaseReserved.Msg.Reservation.ReservationId,
+		Idempotency: idempotency(
+			"subject-bound-release-" + fixture.organizationID.String(),
+		),
+	})
+	if _, err = fixture.usage.ReleaseUsage(ownerContext, releaseRequest); err != nil {
+		t.Fatal(err)
+	}
+	_, err = fixture.usage.ReleaseUsage(memberContext, releaseRequest)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeAborted,
+		delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
+	)
+}
+
+func TestPostgreSQLUsageStorageRejectsCredentialClientReference(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	dependencies := fixture.dependencies.withDefaults()
+	actor, err := actorFor(dependencies, fixture.ownerSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = fixture.store.WithinTransaction(
+		ctx,
+		pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if _, lockErr := queries.LockOrganizationForBilling(
+				ctx,
+				pgUUID(fixture.organizationID),
+			); lockErr != nil {
+				return lockErr
+			}
+			meter, meterErr := queries.GetUsageMeterAuthorization(
+				ctx,
+				dbgen.GetUsageMeterAuthorizationParams{
+					ServiceIdentityID: pgUUID(fixture.serviceID),
+					MeterID:           pgUUID(fixture.meterID),
+				},
+			)
+			if meterErr != nil {
+				return meterErr
+			}
+			_, insertErr := queries.InsertUsageReservation(
+				ctx,
+				dbgen.InsertUsageReservationParams{
+					ID:                         pgUUID(uuidv7.MustNew()),
+					OrganizationID:             pgUUID(fixture.organizationID),
+					TeamID:                     pgUUID(fixture.generalTeamID),
+					TeamNameSnapshot:           "General",
+					MeterID:                    pgUUID(fixture.meterID),
+					PriceVersionID:             meter.PriceVersionID,
+					AccountID:                  pgUUID(fixture.ownerID),
+					ServiceIdentityID:          pgUUID(fixture.serviceID),
+					MaximumUnits:               1,
+					UsdMicrosPerUnit:           meter.UsdMicrosPerUnit,
+					MaximumCostMicros:          2,
+					HeldCreditMicros:           2,
+					HeldOverageMicros:          0,
+					ClientReference:            "eyJabcd.abcdef.ghijkl",
+					ReservationTtlSeconds:      meter.ReservationTtlSeconds,
+					UserActorReferenceSnapshot: string(actor),
+				},
+			)
+			return insertErr
+		},
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "usage_reservations_client_reference_check") {
+		t.Fatalf("credential-shaped client reference error = %v", err)
+	}
+}
+
 func TestPostgreSQLCreditOnlyUsageRejectsPolarOutbox(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
