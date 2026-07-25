@@ -1,5 +1,13 @@
 #[cfg(any(feature = "desktop-cef", test))]
 mod autostart;
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+mod local_log;
 #[cfg(any(feature = "desktop-cef", test))]
 mod shortcut;
 #[cfg(any(feature = "desktop-cef", test))]
@@ -22,6 +30,11 @@ compile_error!("desktop-cef cannot be used for iOS or Android");
 ))]
 compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+use std::sync::OnceLock;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use std::sync::{
     Mutex,
@@ -94,6 +107,11 @@ const WIDGET_CONFIGURATION_STORAGE_KEY: &str = "devhud.widget-configuration.v1";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const PERMISSIONS_POLICY: &str =
     "camera=(), display-capture=(), geolocation=(), microphone=(), usb=()";
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+static LOCAL_LOG_WRITER: OnceLock<local_log::LocalLogWriter> = OnceLock::new();
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[derive(Debug, Serialize)]
@@ -354,13 +372,15 @@ where
         }
     }
 
-    // Once all records are staged, every stable key is absent.
-    // Cleanup is best-effort because a partial unlink can no longer be rolled back.
+    // Once all records are staged, every stable key is absent. A partial unlink
+    // can no longer be rolled back, but it must still report an incomplete reset.
+    let mut cleanup_failed = false;
     for staged_index in staged {
         let (key, _, staged_path) = &paths[staged_index];
         if let Err(error) = remove_staged_record(staged_path)
             && error.kind() != io::ErrorKind::NotFound
         {
+            cleanup_failed = true;
             tracing::warn!(
                 event = "devhud.persistence.reset_cleanup_failure",
                 operation = "reset-cleanup",
@@ -371,7 +391,11 @@ where
             );
         }
     }
-    Ok(())
+    if cleanup_failed {
+        Err(PersistenceCommandError::ResetFailed)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -1513,9 +1537,17 @@ fn install_shortcut_handler(app: &AppHandle<ActiveRuntime>) {
         if is_active {
             let dispatch = app.clone();
             let action = dispatch.clone();
-            let _ = dispatch.run_on_main_thread(move || {
-                let _ = show_hud_internal(&action, true);
-            });
+            if dispatch
+                .run_on_main_thread(move || {
+                    if let HudActionOutcome::Unchanged { reason } = show_hud_internal(&action, true)
+                    {
+                        log_window_action_failure("shortcut-toggle", reason);
+                    }
+                })
+                .is_err()
+            {
+                log_window_action_failure("shortcut-dispatch", HudActionFailure::WindowUnavailable);
+            }
         }
     }));
 }
@@ -1529,6 +1561,26 @@ fn clear_browsing_data_for_reset(
             event = "devhud.persistence.reset_failure",
             classification = "reset-failed",
             "DevHud application browsing data reset failed"
+        );
+        PersistenceCommandError::ResetFailed
+    })
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn clear_local_logs_for_reset() -> Result<(), PersistenceCommandError> {
+    let Some(writer) = LOCAL_LOG_WRITER.get() else {
+        return Ok(());
+    };
+    writer.clear().map_err(|error| {
+        tracing::warn!(
+            event = "devhud.logging.reset_failure",
+            operation = "reset",
+            error_kind = ?error.kind(),
+            classification = "reset-failed",
+            "DevHud local log reset failed"
         );
         PersistenceCommandError::ResetFailed
     })
@@ -1595,6 +1647,25 @@ fn reset_dev_hud(
             );
         }
         return Err(PersistenceCommandError::ResetFailed);
+    }
+
+    if let Err(reason) = clear_local_logs_for_reset() {
+        let autostart_rollback = autostart_state.apply(previous_autostart);
+        if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_rollback {
+            log_autostart_integration_failure("reset-rollback", reason, enabled);
+        }
+        if let Err(reason) = shortcuts.rollback(previous_shortcut) {
+            log_shortcut_integration_failure(
+                "reset-rollback",
+                reason,
+                if shortcuts.active_shortcut().is_some() {
+                    "configured"
+                } else {
+                    "not-configured"
+                },
+            );
+        }
+        return Err(reason);
     }
 
     if let Err(reason) = persistence.reset() {
@@ -1852,6 +1923,21 @@ fn platform_builder() -> tauri::Builder<ActiveRuntime> {
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 fn initialize_logging() {
+    #[cfg(all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    if let Ok(writer) = local_log::LocalLogWriter::new(APPLICATION_ID) {
+        let sink = writer.clone();
+        let _ = LOCAL_LOG_WRITER.set(writer);
+        let _ = tracing_subscriber::fmt()
+            .json()
+            .with_target(false)
+            .with_writer(move || sink.clone())
+            .try_init();
+        return;
+    }
+
     let _ = tracing_subscriber::fmt()
         .json()
         .with_target(false)
@@ -2192,6 +2278,35 @@ mod tests {
         assert_eq!(result, Err(PersistenceCommandError::ResetFailed));
         assert_eq!(fs::read(settings_path).unwrap(), settings);
         assert_eq!(fs::read(widget_path).unwrap(), widgets);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn failed_staged_record_cleanup_reports_an_incomplete_reset() {
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-reset-cleanup-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let settings_path = directory.join(SETTINGS_STORAGE_KEY);
+        let staged_path = directory.join("settings-staged");
+        fs::write(&settings_path, b"settings").unwrap();
+        let paths = [(SETTINGS_STORAGE_KEY, settings_path, staged_path.clone())];
+
+        let result = reset_persisted_records(
+            &paths,
+            |source, destination| fs::rename(source, destination),
+            |_| {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "injected cleanup failure",
+                ))
+            },
+        );
+
+        assert_eq!(result, Err(PersistenceCommandError::ResetFailed));
+        assert!(staged_path.exists());
         fs::remove_dir_all(directory).unwrap();
     }
 
