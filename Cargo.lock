@@ -5427,6 +5427,8 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "url",
+ "webkit2gtk",
+ "webview2-com",
  "window-vibrancy",
  "windows",
 ]

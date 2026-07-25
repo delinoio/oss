@@ -16,4 +16,4 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["wry"] }
