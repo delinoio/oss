@@ -7,7 +7,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.8.0
+	github.com/jackc/pgx/v5 v5.9.2
 	golang.org/x/sys v0.42.0
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.48.0
