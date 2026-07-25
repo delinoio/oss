@@ -24,6 +24,7 @@ import {
   type TeamMembership,
 } from "@delinoio/delibase-connect";
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -1348,6 +1349,7 @@ function TeamActions({
   );
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
   const [formError, setFormError] = useState("");
+  const [membershipPending, setMembershipPending] = useState(false);
   const deletionKey = useRef<{ key: string } | undefined>(undefined);
   const updateTeam = useMutation(TeamService.method.updateTeam, { transport });
   const moveTeam = useMutation(TeamService.method.moveTeam, { transport });
@@ -1358,7 +1360,10 @@ function TeamActions({
   const titleId = `manage-team-${teamId}`;
   const descriptionId = `manage-team-description-${teamId}`;
   const isPending =
-    updateTeam.isPending || moveTeam.isPending || deleteTeam.isPending;
+    updateTeam.isPending ||
+    moveTeam.isPending ||
+    deleteTeam.isPending ||
+    membershipPending;
   const parentOptions = teams.filter((candidate) =>
     canUseTeamAsParent(team, candidate, teams),
   ).filter(
@@ -1553,6 +1558,7 @@ function TeamActions({
           ) : null}
           <TeamMembershipManagement
             online={online}
+            onPendingChange={setMembershipPending}
             onUpdated={onUpdated}
             team={team}
             transport={transport}
@@ -1580,11 +1586,13 @@ function TeamActions({
 
 function TeamMembershipManagement({
   online,
+  onPendingChange,
   onUpdated,
   team,
   transport,
 }: {
   online: boolean;
+  onPendingChange: (pending: boolean) => void;
   onUpdated: () => Promise<void>;
   team: Team;
   transport: Transport;
@@ -1646,6 +1654,10 @@ function TeamMembershipManagement({
     members.data?.pages.flatMap((page) => page.members) ?? [];
   const isPending =
     setMembership.isPending || removeMembership.isPending;
+
+  useEffect(() => {
+    onPendingChange(isPending);
+  }, [isPending, onPendingChange]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2397,7 +2409,7 @@ export function OrganizationSettingsPage() {
           organizationId: uuid(organization.organizationId?.value),
           slug: normalizedSlug,
         });
-        await refreshAccountState().catch(() => undefined);
+        await refreshAccountState();
         navigate(
           `/o/${response.organization?.slug ?? normalizedSlug}/settings`,
           { replace: true },
@@ -2672,10 +2684,7 @@ function OrganizationLifecycleActions({
             Enter {organization.name} to confirm
             <input
               autoComplete="off"
-              onChange={(event) => {
-                deleteKey.current = undefined;
-                setConfirmation(event.target.value);
-              }}
+              onChange={(event) => setConfirmation(event.target.value)}
               value={confirmation}
             />
           </label>

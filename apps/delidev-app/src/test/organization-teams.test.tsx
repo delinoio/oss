@@ -493,6 +493,15 @@ describe("organization team management", () => {
         screen.getAllByRole("button", { name: "Remove direct access" })[0],
       ).toBeDisabled(),
     );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Close" }),
+      ).toBeDisabled(),
+    );
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: "Manage General" }),
+    ).toBeVisible();
 
     resolveSet();
     await screen.findByText("Direct team membership updated.");
@@ -517,6 +526,13 @@ describe("organization team management", () => {
         screen.getByRole("button", { name: "Set team access" }),
       ).toBeDisabled(),
     );
+    expect(
+      screen.getByRole("button", { name: "Close" }),
+    ).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: "Manage General" }),
+    ).toBeVisible();
 
     resolveRemoval();
     await waitFor(() => expect(effectiveAccessRequests).toBe(3));
