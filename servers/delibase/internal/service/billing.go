@@ -36,7 +36,7 @@ func (service *Billing) GetBillingSummary(
 	}
 	var response *delibasev1.GetBillingSummaryResponse
 	err = service.dependencies.Store.WithinTransaction(
-		ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly},
+		ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			account, transactionErr := activeAccount(ctx, queries, subject)
 			if transactionErr != nil {
