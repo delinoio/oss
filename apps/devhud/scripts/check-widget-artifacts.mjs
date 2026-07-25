@@ -185,7 +185,9 @@ requireCondition(
 );
 
 const prohibitedReleaseSurface =
-  /(?:CFBundleURLSchemes|com\.apple\.developer\.associated-domains|android\.intent\.category\.BROWSABLE|android:scheme=|android:autoVerify|https?:\/\/(?!(?:schemas\.android\.com|www\.apple\.com\/DTDs\/)))/u;
+  /(?:CFBundleURLTypes|CFBundleURLSchemes|com\.apple\.developer\.associated-domains|android\.intent\.category\.BROWSABLE|android:scheme=|android:autoVerify|https?:\/\/(?!(?:schemas\.android\.com|www\.apple\.com\/DTDs\/)))/u;
+const prohibitedIosEntitlement =
+  /com\.apple\.developer\.associated-domains/u;
 for (const [name, source] of [
   ["distributed iOS project", iosAppProject],
   ["distributed iOS entitlements", iosAppEntitlements],
@@ -256,16 +258,27 @@ console.log(
 
 function inspectAndroidManifest(source, path) {
   requireCondition(
-    !/(APPWIDGET_UPDATE|android\.appwidget\.provider|DevHudWidgetProvider|dev\.deli\.devhud\.widget)/u.test(
+    !/(<receiver\b|APPWIDGET_UPDATE|android\.appwidget\.provider|DevHudWidgetProvider|dev\.deli\.devhud\.widget)/u.test(
       source,
     ),
-    `distributed Android artifact registers a widget receiver: ${path}`,
+    `distributed Android artifact registers receiver metadata: ${path}`,
   );
   requireCondition(
     !/(android\.intent\.category\.BROWSABLE|android:scheme=|android:autoVerify|android\.permission\.INTERNET)/u.test(
       source,
     ),
     `distributed Android artifact contains a prohibited release surface: ${path}`,
+  );
+  const application = source.match(/<application\b[^>]*>/su)?.[0] ?? "";
+  requireCondition(
+    /android:allowBackup\s*=\s*["']false["']/u.test(application) &&
+      /android:dataExtractionRules\s*=\s*["']@xml\/data_extraction_rules["']/u.test(
+        application,
+      ) &&
+      /android:fullBackupContent\s*=\s*["']@xml\/backup_rules["']/u.test(
+        application,
+      ),
+    `distributed Android artifact does not preserve backup exclusions: ${path}`,
   );
 }
 
@@ -284,6 +297,12 @@ function inspectApk(path) {
 async function inspectIosApplication(path) {
   await access(path);
   const files = await collectFiles(path);
+  const infoPlist = resolve(path, "Info.plist");
+  const infoSource = readPropertyList(infoPlist);
+  requireCondition(
+    !prohibitedReleaseSurface.test(infoSource),
+    `distributed iOS application contains prohibited Info.plist metadata: ${infoPlist}`,
+  );
   requireCondition(
     !files.some(
       (file) =>
@@ -299,12 +318,53 @@ async function inspectIosApplication(path) {
       candidate.endsWith(".xcent") ||
       candidate.endsWith(".entitlements"),
   )) {
-    const source = await readFile(file);
+    const source = file.endsWith("embedded.mobileprovision")
+      ? (await readFile(file)).toString("latin1")
+      : readPropertyList(file);
     requireCondition(
-      !source.toString("latin1").includes("dev.deli.devhud.widget"),
+      !source.includes("dev.deli.devhud.widget"),
       `distributed iOS provisioning payload claims the widget extension: ${file}`,
     );
+    requireCondition(
+      !prohibitedIosEntitlement.test(source),
+      `distributed iOS provisioning payload contains a prohibited release surface: ${file}`,
+    );
   }
+  if (existsSync(resolve(path, "_CodeSignature"))) {
+    const entitlements = readCodeSignatureEntitlements(path);
+    requireCondition(
+      !entitlements.includes("dev.deli.devhud.widget"),
+      `distributed iOS code signature claims the widget extension: ${path}`,
+    );
+    requireCondition(
+      !prohibitedIosEntitlement.test(entitlements),
+      `distributed iOS code signature contains a prohibited release surface: ${path}`,
+    );
+  }
+}
+
+function readPropertyList(path) {
+  const executable = findExecutable("plutil");
+  if (!executable) {
+    throw new Error("plutil is required to inspect an iOS application artifact.");
+  }
+  return execFileSync(executable, ["-convert", "xml1", "-o", "-", path], {
+    encoding: "utf8",
+  });
+}
+
+function readCodeSignatureEntitlements(path) {
+  const executable = findExecutable("codesign");
+  if (!executable) {
+    throw new Error(
+      "codesign is required to inspect a signed iOS application artifact.",
+    );
+  }
+  return execFileSync(
+    executable,
+    ["--display", "--entitlements", "-", "--xml", path],
+    { encoding: "utf8" },
+  );
 }
 
 function findExecutable(name) {

@@ -116,7 +116,7 @@ class WidgetConfigurationTest {
                 }
 
             assertEquals(
-                WidgetConfigurationErrorCode.STORAGE_UNAVAILABLE,
+                WidgetConfigurationErrorCode.CORRUPT,
                 error.code,
             )
             assertArrayEquals(corruptBytes, Files.readAllBytes(dataStoreFile))

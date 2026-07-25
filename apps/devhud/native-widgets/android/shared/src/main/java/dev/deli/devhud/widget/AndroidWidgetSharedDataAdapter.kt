@@ -1,6 +1,7 @@
 package dev.deli.devhud.widget
 
 import android.content.Context
+import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
@@ -80,6 +81,11 @@ class AndroidWidgetSharedDataAdapter internal constructor(
             val raw =
                 try {
                     dataStore.data.first()[configurationKey]
+                } catch (error: CorruptionException) {
+                    throw WidgetConfigurationException(
+                        WidgetConfigurationErrorCode.CORRUPT,
+                        error,
+                    )
                 } catch (error: IOException) {
                     throw WidgetConfigurationException(
                         WidgetConfigurationErrorCode.STORAGE_UNAVAILABLE,
