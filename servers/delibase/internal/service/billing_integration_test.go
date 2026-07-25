@@ -525,6 +525,10 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	const productID = "product_monthly_10_usd"
+	if err = store.SyncPolarCatalog(ctx, productID, "production"); err != nil {
+		t.Fatal(err)
+	}
 	pseudonymizer, err := safelog.NewPseudonymizer(bytes.Repeat([]byte{0x25}, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -561,6 +565,47 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	now := time.Now().UTC().Truncate(time.Second)
+	webhookEvent := polarBillingEvent{
+		Type:               string(reliability.WebhookSubscriptionActive),
+		EventAt:            now,
+		ObjectID:           "subscription_checkout_race",
+		CustomerID:         "customer_" + organizationID.String(),
+		ExternalID:         organizationID.String(),
+		SubscriptionID:     "subscription_checkout_race",
+		ProductID:          productID,
+		CurrentPeriodStart: now,
+		CurrentPeriodEnd:   now.Add(31 * 24 * time.Hour),
+	}
+	webhookPayload, err := json.Marshal(webhookEvent)
+	if err != nil {
+		close(provider.release)
+		t.Fatal(err)
+	}
+	webhookResults := make(chan error, 1)
+	webhookStarted := make(chan struct{})
+	webhookHandler := NewPolarWebhookProcessor(store, defaultIDGenerator{})
+	go func() {
+		close(webhookStarted)
+		webhookResults <- webhookHandler(ctx, reliability.Item{
+			ID:        uuidv7.MustNew(),
+			HandlerID: reliability.HandlerPolarSubscriptionActive,
+			Payload:   webhookPayload,
+		})
+	}()
+	<-webhookStarted
+	select {
+	case webhookErr := <-webhookResults:
+		close(provider.release)
+		t.Fatalf(
+			"subscription webhook completed before checkout released billing lock: %v",
+			webhookErr,
+		)
+	case <-time.After(200 * time.Millisecond):
+	case <-ctx.Done():
+		close(provider.release)
+		t.Fatal(ctx.Err())
+	}
 	go func() {
 		response, createErr := billing.CreateSubscriptionCheckout(
 			userContext, request("checkout-second"),
@@ -595,6 +640,28 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	if provider.Calls() != 1 {
 		t.Fatalf("Polar checkout calls = %d, want 1", provider.Calls())
 	}
+	if webhookErr := <-webhookResults; webhookErr != nil {
+		t.Fatalf("subscription webhook after checkout = %v", webhookErr)
+	}
+	subscription, err := store.Queries().GetSubscriptionByPolarID(
+		ctx, "subscription_checkout_race",
+	)
+	if err != nil || subscription.Status != "active" {
+		t.Fatalf("serialized subscription webhook = %#v, %v", subscription, err)
+	}
+	webhookEvent.Type = string(reliability.WebhookSubscriptionPastDue)
+	webhookEvent.EventAt = now.Add(time.Second)
+	webhookPayload, err = json.Marshal(webhookEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = webhookHandler(ctx, reliability.Item{
+		ID:        uuidv7.MustNew(),
+		HandlerID: reliability.HandlerPolarSubscriptionPastDue,
+		Payload:   webhookPayload,
+	}); err != nil {
+		t.Fatalf("past-due subscription webhook = %v", err)
+	}
 
 	replayed, err := billing.CreateSubscriptionCheckout(
 		userContext, request("checkout-first"),
@@ -623,7 +690,7 @@ func TestPostgreSQLSubscriptionCheckoutSerializesDistinctKeys(t *testing.T) {
 	historyTeamID := uuidv7.MustNew()
 	pastDueSubscriptionID := uuidv7.MustNew()
 	canceledSubscriptionID := uuidv7.MustNew()
-	now := time.Now().UTC()
+	now = time.Now().UTC()
 	err = store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		if _, transactionErr := queries.CreateOrganization(
 			ctx,

@@ -269,14 +269,19 @@ func reconcilePolarSubscription(
 	if status == "" {
 		return dbgen.Subscription{}, reliability.ErrInvalidInput
 	}
+	customer, err := resolvePolarCustomer(ctx, queries, event)
+	if err != nil {
+		return dbgen.Subscription{}, err
+	}
+	if _, err = queries.LockOrganizationForBillingHistory(
+		ctx, customer.OrganizationID,
+	); err != nil {
+		return dbgen.Subscription{}, err
+	}
 	existing, err := queries.GetSubscriptionByPolarID(
 		ctx, event.SubscriptionID,
 	)
 	if err == nil {
-		customer, customerErr := resolvePolarCustomer(ctx, queries, event)
-		if customerErr != nil {
-			return dbgen.Subscription{}, customerErr
-		}
 		if customer.OrganizationID != existing.OrganizationID {
 			return dbgen.Subscription{}, reliability.ErrInvalidInput
 		}
@@ -300,10 +305,6 @@ func reconcilePolarSubscription(
 		return updated, updateErr
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return dbgen.Subscription{}, err
-	}
-	customer, err := resolvePolarCustomer(ctx, queries, event)
-	if err != nil {
 		return dbgen.Subscription{}, err
 	}
 	id, err := ids.New()
