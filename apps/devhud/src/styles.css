@@ -33,3 +33,492 @@ kbd { display:inline-block; padding:.25rem .45rem; border:1px solid #a1a1aa; bor
   :root[data-theme="system"] .muted { color:#b8b8c0; }
   :root[data-theme="system"] .settings-section { border-color:#55555c; }
 }
+
+:root {
+  color: #191a1d;
+  background: #f4f6f9;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-synthesis: none;
+}
+
+:root[data-theme="dark"] {
+  color: #f5f6f8;
+  background: #15171a;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color: #f5f6f8;
+    background: #15171a;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 20rem;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  background: inherit;
+  color: inherit;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex="-1"]:focus-visible {
+  outline: 3px solid #2b70e8;
+  outline-offset: 2px;
+}
+
+.desktop-shell,
+.mobile-shell {
+  width: min(100%, 50rem);
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+}
+
+.desktop-shell {
+  padding: 1.25rem;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 3rem;
+}
+
+.wordmark {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  font-size: 1.1rem;
+}
+
+.wordmark span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.55rem;
+  background: #2869dc;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+}
+
+.wordmark strong {
+  letter-spacing: -0.03em;
+}
+
+.hud-panel {
+  margin-top: clamp(3rem, 12vh, 7rem);
+}
+
+.hud-panel > h1 {
+  max-width: 35rem;
+  margin: 0 0 2rem;
+  font-size: clamp(2rem, 7vw, 4rem);
+  letter-spacing: -0.05em;
+  line-height: 1.02;
+}
+
+.search-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+
+.hud-panel input,
+select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #767680;
+  border-radius: 0.7rem;
+  background: #fff;
+  color: #191a1d;
+}
+
+.empty-state,
+.state-card,
+.settings-card,
+.diagnostics-card {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid #d5d9e0;
+  border-radius: 1rem;
+  background: #fff;
+}
+
+.empty-state h1,
+.empty-state h2,
+.state-card h2,
+.diagnostics-card h2 {
+  margin: 0.15rem 0 0.6rem;
+  letter-spacing: -0.03em;
+}
+
+.empty-state p,
+.state-card p {
+  margin: 0.4rem 0 1rem;
+  line-height: 1.55;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #245ebf;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button,
+.text-button,
+.mobile-nav button,
+.icon-button {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.65rem;
+  padding: 0.65rem 0.9rem;
+}
+
+.primary-button {
+  background: #2869dc;
+  color: #fff;
+  font-weight: 700;
+}
+
+.secondary-button {
+  border: 1px solid #8c96a5;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+}
+
+.danger-button {
+  background: #b42318;
+  color: #fff;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.text-button,
+.mobile-nav button,
+.icon-button {
+  background: transparent;
+  color: inherit;
+}
+
+.runtime-status {
+  margin: 1rem;
+}
+
+.error {
+  color: #b42318;
+}
+
+.error-card {
+  border-color: #e8a29c;
+}
+
+.mobile-shell {
+  display: flex;
+  flex-direction: column;
+  max-width: 64rem;
+  padding:
+    max(0.85rem, env(safe-area-inset-top))
+    max(1rem, env(safe-area-inset-right))
+    max(0.5rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
+}
+
+.mobile-header {
+  padding-inline: 0.25rem;
+}
+
+.mobile-layout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.mobile-content {
+  flex: 1;
+  padding-bottom: 1rem;
+}
+
+.mobile-screen {
+  width: min(100%, 42rem);
+  margin: 0 auto;
+}
+
+.screen-heading {
+  padding: clamp(1.5rem, 7vh, 4rem) 0.25rem 0;
+}
+
+.screen-heading h1 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(2rem, 9vw, 3.5rem);
+  letter-spacing: -0.05em;
+  line-height: 1.05;
+}
+
+.mobile-nav {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  order: 2;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.2rem;
+  margin-top: auto;
+  padding-top: 0.6rem;
+  border-top: 1px solid #d5d9e0;
+  background: inherit;
+}
+
+.mobile-nav button {
+  min-width: 0;
+  padding-inline: 0.3rem;
+  font-size: clamp(0.72rem, 3.2vw, 0.9rem);
+}
+
+.mobile-nav button[aria-current="page"] {
+  background: #dce9ff;
+  color: #164a9b;
+  font-weight: 700;
+}
+
+.field {
+  display: grid;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+
+.reset-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #d5d9e0;
+}
+
+.reset-section h3,
+.reset-confirmation p {
+  margin: 0;
+}
+
+.reset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.muted {
+  color: #5c626d;
+  line-height: 1.55;
+}
+
+.diagnostics-card dl {
+  margin: 0;
+}
+
+.diagnostics-card dl > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid #e3e6eb;
+}
+
+.diagnostics-card dt {
+  color: #5c626d;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.diagnostics-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog {
+  width: min(100%, 28rem);
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: #fff;
+  color: #191a1d;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 25%);
+}
+
+.dialog-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.dialog h2 {
+  margin: 0.2rem 0 1.25rem;
+}
+
+:root[data-theme="dark"] .empty-state,
+:root[data-theme="dark"] .state-card,
+:root[data-theme="dark"] .settings-card,
+:root[data-theme="dark"] .diagnostics-card,
+:root[data-theme="dark"] .hud-panel input {
+  border-color: #555c66;
+  background: #25282d;
+  color: #f5f6f8;
+}
+
+:root[data-theme="dark"] .eyebrow {
+  color: #9ec5ff;
+}
+
+:root[data-theme="dark"] .error {
+  color: #ffb4ab;
+}
+
+:root[data-theme="dark"] .mobile-nav {
+  border-color: #555c66;
+}
+
+:root[data-theme="dark"] .reset-section {
+  border-color: #555c66;
+}
+
+:root[data-theme="dark"] .mobile-nav button[aria-current="page"] {
+  background: #243d6b;
+  color: #e5edff;
+}
+
+:root[data-theme="dark"] .diagnostics-card dl > div {
+  border-color: #444a53;
+}
+
+:root[data-theme="dark"] .muted,
+:root[data-theme="dark"] .diagnostics-card dt {
+  color: #b9bec7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .empty-state,
+  :root[data-theme="system"] .state-card,
+  :root[data-theme="system"] .settings-card,
+  :root[data-theme="system"] .diagnostics-card,
+  :root[data-theme="system"] .hud-panel input {
+    border-color: #555c66;
+    background: #25282d;
+    color: #f5f6f8;
+  }
+
+  :root[data-theme="system"] .eyebrow {
+    color: #9ec5ff;
+  }
+
+  :root[data-theme="system"] .error {
+    color: #ffb4ab;
+  }
+
+  :root[data-theme="system"] .mobile-nav {
+    border-color: #555c66;
+  }
+
+  :root[data-theme="system"] .reset-section {
+    border-color: #555c66;
+  }
+
+  :root[data-theme="system"] .mobile-nav button[aria-current="page"] {
+    background: #243d6b;
+    color: #e5edff;
+  }
+
+  :root[data-theme="system"] .diagnostics-card dl > div {
+    border-color: #444a53;
+  }
+
+  :root[data-theme="system"] .muted,
+  :root[data-theme="system"] .diagnostics-card dt {
+    color: #b9bec7;
+  }
+}
+
+@media (min-width: 48rem) {
+  .desktop-shell {
+    padding: 2rem;
+  }
+
+  .mobile-shell {
+    padding-inline: 1.5rem;
+  }
+
+  .mobile-layout {
+    display: grid;
+    grid-template-columns: 10rem minmax(0, 1fr);
+    gap: 2rem;
+    padding-top: 1rem;
+  }
+
+  .mobile-nav {
+    position: static;
+    order: 0;
+    display: flex;
+    align-self: start;
+    flex-direction: column;
+    padding: 0.5rem 0;
+    border: 0;
+  }
+
+  .mobile-nav button {
+    justify-content: start;
+    text-align: left;
+  }
+
+  .mobile-content {
+    min-width: 0;
+  }
+
+  .screen-heading {
+    padding-top: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}

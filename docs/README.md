@@ -91,6 +91,6 @@ Each project must have one project index document and one or more domain contrac
 
 ### devhud
 - `docs/project-devhud.md`
-- `docs/apps-devhud-foundation.md` (`apps/devhud`, sole canonical implementation path; active Tauri CEF application and production desktop shell)
+- `docs/apps-devhud-foundation.md` (`apps/devhud`, sole canonical implementation path; production desktop CEF shell and maintained mobile system-webview hosts)
 
-DevHud is local-only and independent from DeliDev. `apps/devhud` is the active React/TypeScript/Rsbuild and Tauri application, with a tray-resident production desktop shell on the pinned upstream CEF runtime and standard system webviews reserved for mobile. It includes a closed internal registry and desktop/mobile empty-state UI, while production tools and user-visible widgets remain empty; no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or DeliDev integration is authorized.
+DevHud is local-only and independent from DeliDev. `apps/devhud` is the active React/TypeScript/Rsbuild and Tauri application, with a tray-resident production desktop shell on the pinned upstream CEF runtime and maintained standard WKWebView/System WebView native hosts for mobile. Mobile record storage is excluded from iOS device backups and Android cloud backup/device transfer. It includes a closed internal registry and desktop/mobile empty-state UI, while production tools and user-visible widgets remain empty; no native widget target, CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or DeliDev integration is authorized.

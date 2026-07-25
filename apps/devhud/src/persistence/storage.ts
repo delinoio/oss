@@ -15,11 +15,13 @@ import {
 
 export interface LocalStorageAdapter {
   read(key: PersistenceKey): Promise<string | null>;
+  reset(): Promise<void>;
   write(key: PersistenceKey, value: string): Promise<void>;
 }
 
 export interface TauriPersistenceBridge {
   readSettings(): Promise<string | null>;
+  resetDevHud(): Promise<void>;
   writeSettings(record: string): Promise<void>;
   readWidgetConfiguration(): Promise<string | null>;
   writeWidgetConfiguration(record: string): Promise<void>;
@@ -39,6 +41,9 @@ export function createTauriPersistenceAdapter(
         ? bridge.readSettings()
         : bridge.readWidgetConfiguration();
     },
+    reset() {
+      return bridge.resetDevHud();
+    },
     write(key, value) {
       return key === SETTINGS_STORAGE_KEY
         ? bridge.writeSettings(value)
@@ -52,6 +57,10 @@ export class MemoryStorageAdapter implements LocalStorageAdapter {
 
   async read(key: PersistenceKey): Promise<string | null> {
     return this.values.get(key) ?? null;
+  }
+
+  async reset(): Promise<void> {
+    this.values.clear();
   }
 
   async write(key: PersistenceKey, value: string): Promise<void> {
@@ -122,6 +131,14 @@ export class DevHudPersistence {
       WIDGET_CONFIGURATION_STORAGE_KEY,
       encodeWidgetConfiguration(configuration),
     );
+  }
+
+  async reset(): Promise<LoadedPersistence> {
+    await Promise.allSettled(this.writeTails.values());
+    await this.storage.reset();
+    this.blockedRecords.clear();
+    this.loadPromise = undefined;
+    return this.load();
   }
 
   private async loadSettings(): Promise<{ value: DevHudSettings; issues: readonly PersistenceIssue[] }> {

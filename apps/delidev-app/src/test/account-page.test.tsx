@@ -11,6 +11,7 @@ import {
 } from "../auth/AuthSession";
 import { canonicalAudience } from "../config";
 import { AccountPage } from "../pages/AccountPage";
+import { TestAccountStateProvider } from "./TestAccountStateProvider";
 
 function connectJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -71,10 +72,12 @@ describe("account organization creation", () => {
               transport,
             }}
           >
-            <Routes>
-              <Route path="/account" element={<AccountPage />} />
-              <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
-            </Routes>
+            <TestAccountStateProvider organizations={[]}>
+              <Routes>
+                <Route path="/account" element={<AccountPage />} />
+                <Route path="/o/acme/apps" element={<p>Acme apps</p>} />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -154,9 +157,11 @@ describe("account deletion", () => {
               transport,
             }}
           >
-            <Routes>
-              <Route path="/account" element={<AccountPage />} />
-            </Routes>
+            <TestAccountStateProvider organizations={[]}>
+              <Routes>
+                <Route path="/account" element={<AccountPage />} />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -185,7 +190,7 @@ describe("account deletion", () => {
     expect(screen.getByRole("button", { name: "Keep account" })).toBeEnabled();
   });
 
-  it("reuses the pending key across retries and resets it on cancellation", async () => {
+  it("preserves retries across cancellation and auth refreshes", async () => {
     const idempotencyKeys: string[] = [];
     let deleteAttempt = 0;
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
@@ -224,27 +229,39 @@ describe("account deletion", () => {
         queries: { retry: false },
       },
     });
-    const signOut = vi.fn(async () => undefined);
+    let rejectSignOut: ((reason?: unknown) => void) | undefined;
+    const signOut = vi.fn(() => {
+      if (signOut.mock.calls.length === 1) {
+        return new Promise<void>((_, reject) => {
+          rejectSignOut = reject;
+        });
+      }
+      return Promise.resolve();
+    });
     const user = userEvent.setup();
-
-    render(
+    const renderAccount = (authError?: string) => (
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={["/account"]}>
           <AuthSessionProvider
             value={{
+              error: authError,
               signIn: async () => undefined,
               signOut,
               status: AuthStatus.SignedIn,
               transport,
             }}
           >
-            <Routes>
-              <Route path="/account" element={<AccountPage />} />
-            </Routes>
+            <TestAccountStateProvider organizations={[]}>
+              <Routes>
+                <Route path="/account" element={<AccountPage />} />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
-      </QueryClientProvider>,
+      </QueryClientProvider>
     );
+
+    const { rerender } = render(renderAccount());
 
     await screen.findByRole("heading", { name: "Account" });
     await user.click(
@@ -265,7 +282,22 @@ describe("account deletion", () => {
       await screen.findByRole("button", { name: "Delete account" }),
     );
 
-    expect(signOut).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+    rerender(renderAccount("Logto session refreshed."));
+    rejectSignOut?.(new Error("Logto is unavailable."));
+    expect(
+      await screen.findByText(
+        "Account deletion succeeded, but Logto sign-out failed. Retry sign out.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Deletion accepted…" }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Retry sign out" }),
+    );
+
+    expect(signOut).toHaveBeenCalledTimes(2);
     expect(idempotencyKeys).toHaveLength(3);
     expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
     expect(idempotencyKeys[2]).not.toBe(idempotencyKeys[1]);

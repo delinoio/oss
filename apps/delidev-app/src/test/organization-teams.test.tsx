@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -12,6 +12,7 @@ import {
 import { canonicalAudience } from "../config";
 import { TeamsPage } from "../pages/OrganizationPages";
 import { OrganizationShell } from "../pages/OrganizationShell";
+import { TestAccountStateProvider } from "./TestAccountStateProvider";
 
 function connectJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -71,6 +72,12 @@ describe("organization team management", () => {
           ],
         });
       }
+      if (url.endsWith("/ListOrganizationMembers")) {
+        return connectJsonResponse({ members: [] });
+      }
+      if (url.endsWith("/ListTeamMemberships")) {
+        return connectJsonResponse({ memberships: [] });
+      }
       if (url.endsWith("/DeleteTeamSubtree")) {
         deletionKeys.push(
           (body.idempotency as { key: string }).key,
@@ -112,23 +119,30 @@ describe("organization team management", () => {
               transport,
             }}
           >
-            <Routes>
-              <Route
-                path="/o/:orgSlug/teams"
-                element={
-                  <OrganizationShell>
-                    <TeamsPage />
-                  </OrganizationShell>
-                }
-              />
-            </Routes>
+            <TestAccountStateProvider>
+              <Routes>
+                <Route
+                  path="/o/:orgSlug/teams"
+                  element={
+                    <OrganizationShell>
+                      <TeamsPage />
+                    </OrganizationShell>
+                  }
+                />
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
 
     await user.click(
-      await screen.findByRole("button", { name: "Manage" }),
+      await screen.findByRole("button", { name: "Manage Platform" }),
+    );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /deleting this team also deletes every descendant/,
+      }),
     );
     await user.click(
       screen.getByRole("button", { name: "Delete subtree" }),
@@ -142,6 +156,635 @@ describe("organization team management", () => {
     expect(deletionKeys[1]).toBe(deletionKeys[0]);
     await waitFor(() =>
       expect(screen.getByText("No teams found")).toBeVisible(),
+    );
+  });
+
+  it("retains team creation state until the team-list refresh succeeds", async () => {
+    const creationKeys: string[] = [];
+    let refreshShouldFail = true;
+    let teamCreated = false;
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
+      const url = String(request);
+      if (url.endsWith("/ResolveOrganizationSlug")) {
+        return connectJsonResponse({
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/GetOrganization")) {
+        return connectJsonResponse({
+          callerRole: "ORGANIZATION_ROLE_ADMIN",
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/ListTeams")) {
+        if (teamCreated && refreshShouldFail) {
+          return connectJsonResponse(
+            { code: "unavailable", message: "The refresh failed." },
+            503,
+          );
+        }
+        return connectJsonResponse({
+          teams: [
+            {
+              depth: 0,
+              name: "General",
+              organizationId: { value: "organization-id" },
+              protectedGeneral: true,
+              teamId: { value: "general-team-id" },
+            },
+            ...(teamCreated
+              ? [
+                  {
+                    depth: 0,
+                    name: "Platform",
+                    organizationId: { value: "organization-id" },
+                    protectedGeneral: false,
+                    teamId: { value: "platform-team-id" },
+                  },
+                ]
+              : []),
+          ],
+        });
+      }
+      if (url.endsWith("/CreateTeam")) {
+        const body = (await new Response(
+          init?.body ??
+            (request instanceof Request ? request.clone().body : null),
+        ).json()) as { idempotency: { key: string } };
+        creationKeys.push(body.idempotency.key);
+        teamCreated = true;
+        return connectJsonResponse({});
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/o/acme/teams"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <TestAccountStateProvider>
+              <Routes>
+                <Route
+                  path="/o/:orgSlug/teams"
+                  element={
+                    <OrganizationShell>
+                      <TeamsPage />
+                    </OrganizationShell>
+                  }
+                />
+              </Routes>
+            </TestAccountStateProvider>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const name = await screen.findByRole("textbox", {
+      name: "Team name",
+    });
+    await user.type(name, "Platform");
+    const createTeam = screen.getByRole("button", {
+      name: "Create team",
+    });
+    await user.click(createTeam);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The refresh failed.",
+    );
+    expect(name).toHaveValue("Platform");
+    expect(screen.queryByText("Team created.")).not.toBeInTheDocument();
+
+    refreshShouldFail = false;
+    await user.click(createTeam);
+
+    expect(await screen.findByText("Team created.")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Manage Platform" }),
+    ).toBeVisible();
+    expect(creationKeys).toHaveLength(2);
+    expect(creationKeys[1]).toBe(creationKeys[0]);
+  });
+
+  it("does not render a membership loading state after the query fails", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/ResolveOrganizationSlug")) {
+        return connectJsonResponse({
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/GetOrganization")) {
+        return connectJsonResponse({
+          callerRole: "ORGANIZATION_ROLE_ADMIN",
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/ListTeams")) {
+        return connectJsonResponse({
+          teams: [
+            {
+              depth: 0,
+              name: "General",
+              organizationId: { value: "organization-id" },
+              protectedGeneral: true,
+              teamId: { value: "general-team-id" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/ListOrganizationMembers")) {
+        return connectJsonResponse({ members: [] });
+      }
+      if (url.endsWith("/ListTeamMemberships")) {
+        return connectJsonResponse(
+          { code: "unavailable", message: "Memberships failed." },
+          503,
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/o/acme/teams"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <TestAccountStateProvider>
+              <Routes>
+                <Route
+                  path="/o/:orgSlug/teams"
+                  element={
+                    <OrganizationShell>
+                      <TeamsPage />
+                    </OrganizationShell>
+                  }
+                />
+              </Routes>
+            </TestAccountStateProvider>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Manage General" }),
+    );
+
+    expect(
+      await screen.findByText("Team membership unavailable"),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Loading direct memberships"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders inherited Team Admin capabilities without organization-admin controls", async () => {
+    let childCreated = false;
+    let effectiveAccessRequests = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/ResolveOrganizationSlug")) {
+        return connectJsonResponse({
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/GetOrganization")) {
+        return connectJsonResponse({
+          callerRole: "ORGANIZATION_ROLE_MEMBER",
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/ListTeams")) {
+        return connectJsonResponse({
+          teams: [
+            {
+              depth: 0,
+              name: "General",
+              organizationId: { value: "organization-id" },
+              protectedGeneral: true,
+              teamId: { value: "general-team-id" },
+            },
+            ...(childCreated
+              ? [
+                  {
+                    depth: 1,
+                    name: "Platform",
+                    organizationId: { value: "organization-id" },
+                    parentTeamId: { value: "general-team-id" },
+                    protectedGeneral: false,
+                    teamId: { value: "platform-team-id" },
+                  },
+                ]
+              : []),
+          ],
+        });
+      }
+      if (url.endsWith("/ListEffectiveTeamAccess")) {
+        effectiveAccessRequests += 1;
+        return connectJsonResponse({
+          access: [
+            {
+              effectiveRole: "TEAM_ROLE_ADMIN",
+              source: "TEAM_ACCESS_SOURCE_ANCESTOR_MEMBERSHIP",
+              teamId: { value: "general-team-id" },
+            },
+            ...(childCreated
+              ? [
+                  {
+                    effectiveRole: "TEAM_ROLE_ADMIN",
+                    source: "TEAM_ACCESS_SOURCE_ANCESTOR_MEMBERSHIP",
+                    teamId: { value: "platform-team-id" },
+                  },
+                ]
+              : []),
+          ],
+        });
+      }
+      if (url.endsWith("/CreateTeam")) {
+        childCreated = true;
+        return connectJsonResponse({
+          team: {
+            depth: 1,
+            name: "Platform",
+            organizationId: { value: "organization-id" },
+            parentTeamId: { value: "general-team-id" },
+            teamId: { value: "platform-team-id" },
+          },
+        });
+      }
+      if (url.endsWith("/ListOrganizationMembers")) {
+        return connectJsonResponse({ members: [] });
+      }
+      if (url.endsWith("/ListTeamMemberships")) {
+        return connectJsonResponse({ memberships: [] });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/o/acme/teams"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <TestAccountStateProvider>
+              <Routes>
+                <Route
+                  path="/o/:orgSlug/teams"
+                  element={
+                    <OrganizationShell>
+                      <TeamsPage />
+                    </OrganizationShell>
+                  }
+                />
+              </Routes>
+            </TestAccountStateProvider>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText("Team Admin · Ancestor membership"),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("option", { name: "Top level" }),
+    ).not.toBeInTheDocument();
+    await user.type(
+      screen.getByRole("textbox", { name: "Team name" }),
+      "Platform",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Parent team" }),
+      "general-team-id",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Create team" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Manage Platform" }),
+    ).toBeVisible();
+    expect(effectiveAccessRequests).toBe(2);
+    await user.click(
+      screen.getByRole("button", { name: "Manage General" }),
+    );
+    expect(
+      screen.getByText(/General is protected from rename, move, and deletion/),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Delete subtree" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Direct team membership" }),
+    ).toBeVisible();
+  });
+
+  it("refreshes capabilities and serializes direct-membership mutations", async () => {
+    let effectiveAccessRequests = 0;
+    let hasAdminAccess = true;
+    let resolveCapabilityRefresh: () => void = () => undefined;
+    let resolveRemoval: () => void = () => undefined;
+    let resolveSet: () => void = () => undefined;
+    const capabilityRefreshRelease = new Promise<void>((resolve) => {
+      resolveCapabilityRefresh = resolve;
+    });
+    const removalRelease = new Promise<void>((resolve) => {
+      resolveRemoval = resolve;
+    });
+    const setRelease = new Promise<void>((resolve) => {
+      resolveSet = resolve;
+    });
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/ResolveOrganizationSlug")) {
+        return connectJsonResponse({
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/GetOrganization")) {
+        return connectJsonResponse({
+          callerRole: "ORGANIZATION_ROLE_MEMBER",
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/ListTeams")) {
+        return connectJsonResponse({
+          teams: [
+            {
+              depth: 0,
+              name: "General",
+              organizationId: { value: "organization-id" },
+              protectedGeneral: true,
+              teamId: { value: "general-team-id" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/ListEffectiveTeamAccess")) {
+        effectiveAccessRequests += 1;
+        if (effectiveAccessRequests === 2) {
+          await capabilityRefreshRelease;
+        }
+        return connectJsonResponse({
+          access: [
+            {
+              effectiveRole: hasAdminAccess
+                ? "TEAM_ROLE_ADMIN"
+                : "TEAM_ROLE_MEMBER",
+              source: "TEAM_ACCESS_SOURCE_DIRECT_MEMBERSHIP",
+              teamId: { value: "general-team-id" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/ListOrganizationMembers")) {
+        return connectJsonResponse({
+          members: [
+            {
+              accountId: { value: "account-id" },
+              displayName: "Deli Developer",
+              role: "ORGANIZATION_ROLE_MEMBER",
+            },
+            {
+              accountId: { value: "other-account-id" },
+              displayName: "Other Developer",
+              role: "ORGANIZATION_ROLE_MEMBER",
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/ListTeamMemberships")) {
+        return connectJsonResponse({
+          memberships: hasAdminAccess
+            ? [
+                {
+                  accountId: { value: "account-id" },
+                  displayName: "Deli Developer",
+                  role: "TEAM_ROLE_ADMIN",
+                },
+                {
+                  accountId: { value: "other-account-id" },
+                  displayName: "Other Developer",
+                  role: "TEAM_ROLE_MEMBER",
+                },
+              ]
+            : [
+                {
+                  accountId: { value: "other-account-id" },
+                  displayName: "Other Developer",
+                  role: "TEAM_ROLE_MEMBER",
+                },
+              ],
+        });
+      }
+      if (url.endsWith("/SetTeamMembership")) {
+        await setRelease;
+        return connectJsonResponse({});
+      }
+      if (url.endsWith("/RemoveTeamMembership")) {
+        await removalRelease;
+        hasAdminAccess = false;
+        return connectJsonResponse({});
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const transport = createAuthenticatedTransport({
+      audience: canonicalAudience,
+      baseUrl: canonicalAudience,
+      fetch: fetchMock,
+      getAccessToken: async () => "access-token",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/o/acme/teams"]}>
+          <AuthSessionProvider
+            value={{
+              signIn: async () => undefined,
+              signOut: async () => undefined,
+              status: AuthStatus.SignedIn,
+              transport,
+            }}
+          >
+            <TestAccountStateProvider>
+              <Routes>
+                <Route
+                  path="/o/:orgSlug/teams"
+                  element={
+                    <OrganizationShell>
+                      <TeamsPage />
+                    </OrganizationShell>
+                  }
+                />
+              </Routes>
+            </TestAccountStateProvider>
+          </AuthSessionProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Manage General" }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Organization member" }),
+      "other-account-id",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Set team access" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: "Remove direct access" })[0],
+      ).toBeDisabled(),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Close" }),
+      ).toBeDisabled(),
+    );
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: "Manage General" }),
+    ).toBeVisible();
+
+    resolveSet();
+    await waitFor(() => expect(effectiveAccessRequests).toBe(2));
+    expect(
+      screen.queryByText("Direct team membership updated."),
+    ).not.toBeInTheDocument();
+    resolveCapabilityRefresh();
+    await screen.findByText("Direct team membership updated.");
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Organization member" }),
+      "other-account-id",
+    );
+    const currentMembership = screen
+      .getAllByText("Deli Developer")
+      .map((element) => element.closest("li"))
+      .find((element) => element !== null);
+    expect(currentMembership).not.toBeNull();
+    await user.click(
+      within(currentMembership!).getByRole("button", {
+        name: "Remove direct access",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Set team access" }),
+      ).toBeDisabled(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Close" }),
+    ).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: "Manage General" }),
+    ).toBeVisible();
+
+    resolveRemoval();
+    await waitFor(() => expect(effectiveAccessRequests).toBe(3));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Manage General" }),
+      ).not.toBeInTheDocument(),
     );
   });
 });

@@ -15,7 +15,28 @@
     "build:desktop": {
       "cache": false
     },
+    "build:android": {
+      "cache": false
+    },
+    "build:android:ci": {
+      "cache": false
+    },
+    "build:ios": {
+      "cache": false
+    },
+    "build:ios:ci": {
+      "cache": false
+    },
+    "check:mobile": {
+      "cache": false
+    },
     "check:rust": {
+      "cache": false
+    },
+    "test:mobile": {
+      "cache": false
+    },
+    "test:android:native": {
       "cache": false
     },
     "smoke:desktop": {

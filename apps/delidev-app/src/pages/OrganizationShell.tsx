@@ -5,10 +5,18 @@ import {
   type Organization,
 } from "@delinoio/delibase-connect";
 import { createContext, use, type ReactNode } from "react";
-import { Navigate, NavLink, useLocation, useParams } from "react-router-dom";
+import {
+  Navigate,
+  NavLink,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
+import { useAccountState } from "../components/ProtectedRoute";
 import { ErrorState, LoadingState } from "../components/States";
+import { formatEnumLabel } from "../utils/format";
 
 interface OrganizationContextValue {
   callerRole: OrganizationRole;
@@ -41,7 +49,9 @@ const organizationNavigation = [
 export function OrganizationShell({ children }: { children: ReactNode }) {
   const { orgSlug = "" } = useParams();
   const { transport } = useAuthSession();
+  const { accountState } = useAccountState();
   const location = useLocation();
+  const navigate = useNavigate();
   const resolved = useQuery(
     OrganizationService.method.resolveOrganizationSlug,
     { slug: orgSlug },
@@ -72,9 +82,7 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
     );
   }
   if (
-    resolved.isError ||
-    details.isError ||
-    !resolved.data.organization ||
+    !resolved.data?.organization ||
     !details.data?.organization ||
     !transport
   ) {
@@ -91,18 +99,16 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (
-    resolved.data.matchedAlias &&
-    resolved.data.organization.slug !== orgSlug
-  ) {
+  if (resolved.data.organization.slug !== orgSlug) {
     const suffix = location.pathname.slice(`/o/${orgSlug}`.length);
     return (
       <Navigate
         replace
-        to={`/o/${resolved.data.organization.slug}${suffix}${location.search}`}
+        to={`/o/${resolved.data.organization.slug}${suffix}${location.search}${location.hash}`}
       />
     );
   }
+  const canonicalSlug = details.data.organization.slug;
 
   return (
     <OrganizationContext
@@ -110,7 +116,10 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
         callerRole: details.data.callerRole,
         organization: details.data.organization,
         refreshOrganization: async () => {
-          await Promise.all([resolved.refetch(), details.refetch()]);
+          await Promise.all([
+            resolved.refetch({ throwOnError: true }),
+            details.refetch({ throwOnError: true }),
+          ]);
         },
         transport,
       }}
@@ -123,12 +132,35 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
             </span>
             <div>
               <strong>{details.data.organization.name}</strong>
-              <small>Organization</small>
+              <small>
+                {formatEnumLabel(
+                  OrganizationRole[details.data.callerRole] ??
+                    details.data.callerRole,
+                )}
+              </small>
             </div>
           </div>
+          <label className="organization-switcher">
+            <span>Switch organization</span>
+            <select
+              onChange={(event) =>
+                navigate(`/o/${event.target.value}/apps`)
+              }
+              value={canonicalSlug}
+            >
+              {accountState.organizations.map((item) => (
+                <option key={item.organizationId?.value} value={item.slug}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <nav aria-label="Organization navigation">
             {organizationNavigation.map(([label, path]) => (
-              <NavLink key={path} to={`/o/${orgSlug}/${path}`}>
+              <NavLink
+                key={path}
+                to={`/o/${canonicalSlug}/${path}`}
+              >
                 {label}
               </NavLink>
             ))}

@@ -9,7 +9,7 @@
   "app": {
     "windows": [],
     "security": {
-      "capabilities": ["main", "settings"],
+      "capabilities": ["main", "desktop-main", "settings"],
       "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; font-src 'none'; frame-src 'none'; img-src 'self' data:; media-src 'none'; object-src 'none'; script-src 'self'; style-src 'self'; worker-src 'none'",
       "freezePrototype": true
     }

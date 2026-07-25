@@ -775,7 +775,7 @@ jobs:
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
-      - name: Validate DevHud frontend
+      - name: Validate DevHud frontend and portable mobile contracts
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           pnpm --filter devhud typecheck
@@ -783,6 +783,8 @@ jobs:
           pnpm --filter devhud test
           pnpm --filter devhud test:a11y
           pnpm --filter devhud build
+          pnpm --filter devhud check:mobile
+          pnpm --filter devhud test:mobile
 
   node-binpm-docs-test:
     name: Node binpm-docs test

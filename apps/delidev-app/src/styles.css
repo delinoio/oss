@@ -940,6 +940,25 @@ main {
   background: var(--blue-soft);
 }
 
+.organization-switcher {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 18px;
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.organization-switcher select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  color: var(--gray-900);
+  background: #fff;
+}
+
 .organization-content {
   min-width: 0;
 }
@@ -1102,6 +1121,68 @@ tr:last-child td {
 
 .team-dialog-form .dialog-actions {
   margin-top: 8px;
+}
+
+.team-membership-management {
+  display: grid;
+  gap: 16px;
+  margin-top: 26px;
+  padding-top: 24px;
+  border-top: 1px solid var(--gray-200);
+}
+
+.team-membership-management h3,
+.team-membership-management p {
+  margin: 0;
+}
+
+.team-membership-form {
+  display: grid;
+  grid-template-columns: 1fr 0.8fr;
+  gap: 12px;
+}
+
+.team-membership-form .button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.direct-membership-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.direct-membership-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--gray-100);
+}
+
+.direct-membership-list strong,
+.direct-membership-list small {
+  display: block;
+}
+
+.direct-membership-list small {
+  margin-top: 4px;
+  color: var(--gray-600);
+}
+
+.confirmation-check {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  color: var(--gray-600);
+  line-height: 1.5;
+}
+
+.confirmation-check input {
+  width: 20px;
+  min-height: 20px;
+  margin: 1px 0 0;
 }
 
 .team-tree li:last-child {
@@ -1285,6 +1366,27 @@ tr:last-child td {
 .dialog-panel > p {
   color: var(--gray-600);
   line-height: 1.6;
+}
+
+.dialog-panel label,
+.team-membership-form label {
+  display: grid;
+  gap: 9px;
+  color: var(--gray-900);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.dialog-panel input:not([type="checkbox"]),
+.dialog-panel select,
+.team-membership-form select {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 13px;
+  border: 1px solid #d1d6db;
+  border-radius: 11px;
+  color: var(--gray-900);
+  background: #fff;
 }
 
 .dialog-actions {
@@ -1535,6 +1637,15 @@ tr:last-child td {
   .invitation-form-fields,
   .team-form-fields {
     grid-template-columns: 1fr;
+  }
+
+  .team-membership-form {
+    grid-template-columns: 1fr;
+  }
+
+  .direct-membership-list li {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .slug-input > span {

@@ -1,6 +1,13 @@
 import { useQuery } from "@connectrpc/connect-query";
-import { AccountService } from "@delinoio/delibase-connect";
-import { type ReactNode } from "react";
+import {
+  AccountService,
+  type GetAccountStateResponse,
+} from "@delinoio/delibase-connect";
+import {
+  createContext,
+  use,
+  type ReactNode,
+} from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
 import {
@@ -10,6 +17,35 @@ import {
 } from "../auth/AuthSession";
 import { useOnline } from "../hooks/useOnline";
 import { ErrorState, LoadingState } from "./States";
+
+interface AccountStateValue {
+  accountState: GetAccountStateResponse;
+  refreshAccountState: () => Promise<void>;
+}
+
+const AccountStateContext = createContext<AccountStateValue | undefined>(
+  undefined,
+);
+
+export function AccountStateProvider({
+  accountState,
+  children,
+  refreshAccountState,
+}: AccountStateValue & { children: ReactNode }) {
+  return (
+    <AccountStateContext value={{ accountState, refreshAccountState }}>
+      {children}
+    </AccountStateContext>
+  );
+}
+
+export function useAccountState(): AccountStateValue {
+  const value = use(AccountStateContext);
+  if (!value) {
+    throw new Error("Account state is only available inside a protected route.");
+  }
+  return value;
+}
 
 export function ProtectedRoute({
   children,
@@ -113,7 +149,7 @@ function OnboardingGate({
       </div>
     );
   }
-  if (account.isError) {
+  if (account.isError && !account.data) {
     return (
       <div className="page narrow">
         <ErrorState
@@ -136,5 +172,14 @@ function OnboardingGate({
   ) {
     return <Navigate replace to="/account" />;
   }
-  return children;
+  return (
+    <AccountStateProvider
+      accountState={account.data}
+      refreshAccountState={async () => {
+        await account.refetch({ throwOnError: true });
+      }}
+    >
+      {children}
+    </AccountStateProvider>
+  );
 }

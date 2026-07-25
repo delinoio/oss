@@ -1,8 +1,8 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Allows only DevHud's HUD window to use its runtime, local records, and HUD lifecycle commands.",
+  "description": "Allows the DevHud main window to read runtime information, access its two versioned local records, and reset local DevHud data.",
   "local": true,
+  "platforms": ["linux", "macOS", "windows", "iOS", "android"],
   "windows": ["main"],
   "permissions": [
     "allow-get-runtime-info",
@@ -10,7 +10,6 @@
     "allow-write-settings",
     "allow-read-widget-configuration",
     "allow-write-widget-configuration",
-    "allow-hide-hud",
-    "allow-show-settings"
+    "allow-reset-dev-hud"
   ]
 }

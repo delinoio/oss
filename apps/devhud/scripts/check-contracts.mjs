@@ -9,6 +9,10 @@ const repository = "https://github.com/tauri-apps/tauri";
 const paths = {
   cargoLock: resolve(repositoryRoot, "Cargo.lock"),
   cargoManifest: resolve(appRoot, "src-tauri/Cargo.toml"),
+  desktopMainCapability: resolve(
+    appRoot,
+    "src-tauri/capabilities/desktop-main.json",
+  ),
   mainCapability: resolve(appRoot, "src-tauri/capabilities/main.json"),
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
@@ -22,6 +26,7 @@ const paths = {
 const [
   cargoLock,
   cargoManifest,
+  desktopMainCapability,
   mainCapability,
   packageLock,
   packageManifest,
@@ -33,6 +38,7 @@ const [
 ] = await Promise.all([
   readFile(paths.cargoLock, "utf8"),
   readFile(paths.cargoManifest, "utf8"),
+  readFile(paths.desktopMainCapability, "utf8"),
   readFile(paths.mainCapability, "utf8"),
   readFile(paths.packageLock, "utf8"),
   readFile(paths.packageManifest, "utf8"),
@@ -44,6 +50,7 @@ const [
 ]);
 
 const packageJson = JSON.parse(packageManifest);
+const desktopMainCapabilityJson = JSON.parse(desktopMainCapability);
 const mainCapabilityJson = JSON.parse(mainCapability);
 const settingsCapabilityJson = JSON.parse(settingsCapability);
 const tauriJson = JSON.parse(tauriConfig);
@@ -65,6 +72,11 @@ requireCondition(
   "the production preview manifests must identify version 0.1.0",
 );
 requireCondition(
+  packageJson.devDependencies?.["@tauri-apps/cli-mobile"] ===
+    "npm:@tauri-apps/cli@2.11.4",
+  "@tauri-apps/cli-mobile must alias the standard CLI exactly at 2.11.4",
+);
+requireCondition(
   packageLock.includes("specifier: 3.0.0-alpha.6") &&
     packageLock.includes("version: 3.0.0-alpha.6"),
   "pnpm-lock.yaml must lock @tauri-apps/cli-cef 3.0.0-alpha.6",
@@ -78,7 +90,12 @@ requireCondition(
   "Tauri, WRY, and cef-rs must not be overridden with Cargo patches",
 );
 
-for (const dependency of ["tauri", "tauri-build", "tauri-runtime-cef"]) {
+for (const dependency of [
+  "tauri",
+  "tauri-build",
+  "tauri-runtime-cef",
+  "tauri-runtime-wry",
+]) {
   const dependencyPattern = new RegExp(
     `${dependency}\\s*=\\s*\\{[^}]*git\\s*=\\s*"${repository}"[^}]*rev\\s*=\\s*"${revision}"`,
     "u",
@@ -90,7 +107,7 @@ for (const dependency of ["tauri", "tauri-build", "tauri-runtime-cef"]) {
 }
 
 requireCondition(
-  /tauri-runtime-cef\s*=\s*\{[^}]*default-features\s*=\s*false[^}]*features\s*=\s*\["sandbox"\]/u.test(
+  /tauri-runtime-cef\s*=\s*\{[^}]*default-features\s*=\s*false[^}]*features\s*=\s*\["devtools", "sandbox"\]/u.test(
     cargoManifest,
   ),
   "desktop must select tauri-runtime-cef's sandbox feature directly",
@@ -106,9 +123,11 @@ requireCondition(
 );
 requireCondition(
   cargoManifest.includes(
-    'desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef"]',
+    'desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
   ) &&
-    cargoManifest.includes('mobile-system-webview = ["dep:tauri"]'),
+    cargoManifest.includes(
+      'mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]',
+    ),
   "Cargo features must keep desktop CEF and mobile system webviews mutually selectable",
 );
 requireCondition(
@@ -152,6 +171,9 @@ const expectedMainPermissions = [
   "allow-write-settings",
   "allow-read-widget-configuration",
   "allow-write-widget-configuration",
+  "allow-reset-dev-hud",
+];
+const expectedDesktopMainPermissions = [
   "allow-hide-hud",
   "allow-show-settings",
 ];
@@ -160,6 +182,7 @@ const expectedSettingsPermissions = [
   "allow-read-settings",
   "allow-write-settings",
   "allow-read-widget-configuration",
+  "allow-reset-dev-hud",
   "allow-hide-settings",
   "allow-replace-global-shortcut",
   "allow-set-launch-at-login",
@@ -172,6 +195,13 @@ requireCondition(
   "the HUD capability must expose only its scoped shell and persistence commands",
 );
 requireCondition(
+  JSON.stringify(desktopMainCapabilityJson.windows) ===
+      JSON.stringify(["main"]) &&
+    JSON.stringify(desktopMainCapabilityJson.permissions) ===
+      JSON.stringify(expectedDesktopMainPermissions),
+  "the desktop HUD capability must expose only desktop lifecycle commands",
+);
+requireCondition(
   JSON.stringify(settingsCapabilityJson.windows) ===
       JSON.stringify(["settings"]) &&
     JSON.stringify(settingsCapabilityJson.permissions) ===
@@ -180,8 +210,8 @@ requireCondition(
 );
 requireCondition(
   JSON.stringify(tauriJson.app?.security?.capabilities) ===
-    JSON.stringify(["main", "settings"]),
-  "the Tauri configuration must enable the split HUD and settings capabilities",
+    JSON.stringify(["main", "desktop-main", "settings"]),
+  "the Tauri configuration must enable shared, desktop HUD, and settings capabilities",
 );
 for (const action of [
   "Open DevHud",

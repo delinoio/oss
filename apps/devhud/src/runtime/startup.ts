@@ -8,12 +8,14 @@ import type {
 export interface RuntimeInfo {
   applicationId: "dev.deli.devhud";
   bundledOrigin: string;
+  operatingSystem: "android" | "ios" | "linux" | "macos" | "windows";
   runtime: "cef" | "system-webview";
   sandboxEnabled: boolean;
   surface?: "hud" | "settings" | "mobile";
   firstRun?: boolean;
   shortcutStartupFailure?: ShortcutFailure | null;
   autostartStartupOutcome?: AutostartOutcome | null;
+  updatePolicy: "Unsupported" | "Desktop updater unavailable";
 }
 
 interface NativeCommandResults {

@@ -12,6 +12,7 @@ import {
 import { canonicalAudience } from "../config";
 import { BillingPage } from "../pages/OrganizationPages";
 import { OrganizationShell } from "../pages/OrganizationShell";
+import { TestAccountStateProvider } from "./TestAccountStateProvider";
 
 function connectJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -98,7 +99,8 @@ describe("organization billing", () => {
               transport,
             }}
           >
-            <Routes>
+            <TestAccountStateProvider>
+              <Routes>
               <Route
                 path="/o/:orgSlug/billing"
                 element={
@@ -107,7 +109,8 @@ describe("organization billing", () => {
                   </OrganizationShell>
                 }
               />
-            </Routes>
+              </Routes>
+            </TestAccountStateProvider>
           </AuthSessionProvider>
         </MemoryRouter>
       </QueryClientProvider>,

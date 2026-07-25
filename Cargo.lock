@@ -1150,11 +1150,13 @@ version = "0.1.0"
 dependencies = [
  "auto-launch",
  "global-hotkey",
+ "objc2-foundation",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-runtime-cef",
+ "tauri-runtime-wry",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -5546,8 +5548,6 @@ dependencies = [
  "tokio",
  "tray-icon",
  "url",
- "webkit2gtk",
- "webview2-com",
  "window-vibrancy",
  "windows",
 ]
