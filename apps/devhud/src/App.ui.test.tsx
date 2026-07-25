@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,10 @@ vi.mock("./runtime/startup", () => ({
 }));
 
 import { App } from "./App";
+import {
+  SETTINGS_STORAGE_KEY,
+  ThemePreference,
+} from "./persistence/contracts";
 import type { LocalStorageAdapter } from "./persistence/storage";
 import type { DesktopBridge } from "./runtime/desktop";
 import { loadRuntimeInfo } from "./runtime/startup";
@@ -38,6 +42,8 @@ function desktopBridge(
       status: "unavailable" as const,
       reason: "scoped-updater-unavailable" as const,
     })),
+    publishTheme: vi.fn(),
+    subscribeTheme: vi.fn(() => () => undefined),
     ...overrides,
   };
 }
@@ -76,6 +82,46 @@ describe("DevHud application surfaces", () => {
     await user.selectOptions(theme, "dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(theme).toHaveFocus();
+  });
+
+  it("publishes persisted desktop theme changes to the HUD window", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      runtime: "cef",
+      sandboxEnabled: true,
+      surface: "settings",
+      firstRun: false,
+    });
+    const bridge = desktopBridge();
+    const user = userEvent.setup();
+    render(<App desktopBridge={bridge} />);
+    const theme = await screen.findByRole("combobox", {
+      name: "Theme preference",
+    });
+    await waitFor(() => expect(theme).toBeEnabled());
+    await user.selectOptions(
+      theme,
+      "dark",
+    );
+    await waitFor(() =>
+      expect(bridge.publishTheme).toHaveBeenCalledWith("dark"),
+    );
+  });
+
+  it("adopts theme changes published by the settings window", async () => {
+    let publishToHud: ((theme: ThemePreference) => void) | undefined;
+    const bridge = desktopBridge({
+      subscribeTheme: vi.fn((listener) => {
+        publishToHud = listener;
+        return () => undefined;
+      }),
+    });
+    render(<App desktopBridge={bridge} />);
+
+    act(() => publishToHud?.(ThemePreference.Dark));
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
   it("keeps launch-at-login disabled until the user explicitly enables it", async () => {
@@ -215,6 +261,84 @@ describe("DevHud application surfaces", () => {
     await user.click(screen.getByRole("button", { name: "Skip for now" }));
     expect(bridge.completeFirstRun).toHaveBeenCalledOnce();
     await waitFor(() => expect(bridge.hideSettings).toHaveBeenCalledOnce());
+    expect(
+      screen.getByRole("heading", { name: "DevHud settings" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Skip for now" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders persistence failures in the native settings window", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      runtime: "cef",
+      sandboxEnabled: true,
+      surface: "settings",
+      firstRun: false,
+    });
+    const storage: LocalStorageAdapter = {
+      read: async () => {
+        throw new Error("storage unavailable");
+      },
+      write: async () => undefined,
+    };
+
+    render(<App desktopBridge={desktopBridge()} storage={storage} />);
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts[0]).toHaveTextContent(
+      "DevHud could not access local storage",
+    );
+  });
+
+  it("surfaces native shortcut and autostart restoration failures", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      runtime: "cef",
+      sandboxEnabled: true,
+      surface: "settings",
+      firstRun: false,
+      shortcutStartupFailure: "conflict",
+      autostartStartupOutcome: {
+        status: "unchanged",
+        enabled: false,
+        reason: "permission-denied",
+      },
+    });
+    const settingsRecord = JSON.stringify({
+      version: 1,
+      settings: {
+        theme: "system",
+        launchAtLogin: true,
+        shortcut: {
+          modifiers: ["control"],
+          key: "k",
+        },
+      },
+    });
+    const storage: LocalStorageAdapter = {
+      read: async (key) =>
+        key === SETTINGS_STORAGE_KEY ? settingsRecord : null,
+      write: async () => undefined,
+    };
+
+    render(<App desktopBridge={desktopBridge()} storage={storage} />);
+
+    expect(
+      await screen.findByText(/saved shortcut is already in use/u),
+    ).toBeVisible();
+    expect(
+      await screen.findByText(/actual system setting is shown/u),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", {
+          name: "Launch DevHud at login",
+        }),
+      ).not.toBeChecked(),
+    );
   });
 
   it("provides explicit mobile content states without visible widgets", async () => {

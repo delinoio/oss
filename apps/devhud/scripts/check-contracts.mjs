@@ -9,11 +9,12 @@ const repository = "https://github.com/tauri-apps/tauri";
 const paths = {
   cargoLock: resolve(repositoryRoot, "Cargo.lock"),
   cargoManifest: resolve(appRoot, "src-tauri/Cargo.toml"),
-  capability: resolve(appRoot, "src-tauri/capabilities/main.json"),
+  mainCapability: resolve(appRoot, "src-tauri/capabilities/main.json"),
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
   rootCargoManifest: resolve(repositoryRoot, "Cargo.toml"),
   rustShell: resolve(appRoot, "src-tauri/src/lib.rs"),
+  settingsCapability: resolve(appRoot, "src-tauri/capabilities/settings.json"),
   tauriConfig: resolve(appRoot, "src-tauri/tauri.conf.json"),
   updaterBoundary: resolve(appRoot, "src-tauri/src/updater.rs"),
 };
@@ -21,27 +22,30 @@ const paths = {
 const [
   cargoLock,
   cargoManifest,
-  capability,
+  mainCapability,
   packageLock,
   packageManifest,
   rootCargoManifest,
   rustShell,
+  settingsCapability,
   tauriConfig,
   updaterBoundary,
 ] = await Promise.all([
   readFile(paths.cargoLock, "utf8"),
   readFile(paths.cargoManifest, "utf8"),
-  readFile(paths.capability, "utf8"),
+  readFile(paths.mainCapability, "utf8"),
   readFile(paths.packageLock, "utf8"),
   readFile(paths.packageManifest, "utf8"),
   readFile(paths.rootCargoManifest, "utf8"),
   readFile(paths.rustShell, "utf8"),
+  readFile(paths.settingsCapability, "utf8"),
   readFile(paths.tauriConfig, "utf8"),
   readFile(paths.updaterBoundary, "utf8"),
 ]);
 
 const packageJson = JSON.parse(packageManifest);
-const capabilityJson = JSON.parse(capability);
+const mainCapabilityJson = JSON.parse(mainCapability);
+const settingsCapabilityJson = JSON.parse(settingsCapability);
 const tauriJson = JSON.parse(tauriConfig);
 const failures = [];
 
@@ -142,29 +146,42 @@ requireCondition(
   tauriJson.plugins === undefined,
   "the common scaffold must not expose plugin, updater, or deep-link configuration",
 );
-requireCondition(
-  JSON.stringify(capabilityJson.windows) === JSON.stringify(["main", "settings"]),
-  "the production capability must be limited to the HUD and settings windows",
-);
-const expectedPermissions = [
+const expectedMainPermissions = [
   "allow-get-runtime-info",
   "allow-read-settings",
   "allow-write-settings",
   "allow-read-widget-configuration",
   "allow-write-widget-configuration",
-  "allow-show-hud",
   "allow-hide-hud",
   "allow-show-settings",
+];
+const expectedSettingsPermissions = [
+  "allow-get-runtime-info",
+  "allow-read-settings",
+  "allow-write-settings",
+  "allow-read-widget-configuration",
   "allow-hide-settings",
   "allow-replace-global-shortcut",
   "allow-set-launch-at-login",
   "allow-complete-first-run",
-  "allow-request-update-action",
 ];
 requireCondition(
-  JSON.stringify(capabilityJson.permissions) ===
-    JSON.stringify(expectedPermissions),
-  "the production capability must expose only scoped shell and persistence commands",
+  JSON.stringify(mainCapabilityJson.windows) === JSON.stringify(["main"]) &&
+    JSON.stringify(mainCapabilityJson.permissions) ===
+      JSON.stringify(expectedMainPermissions),
+  "the HUD capability must expose only its scoped shell and persistence commands",
+);
+requireCondition(
+  JSON.stringify(settingsCapabilityJson.windows) ===
+      JSON.stringify(["settings"]) &&
+    JSON.stringify(settingsCapabilityJson.permissions) ===
+      JSON.stringify(expectedSettingsPermissions),
+  "the settings capability must expose only its scoped settings commands",
+);
+requireCondition(
+  JSON.stringify(tauriJson.app?.security?.capabilities) ===
+    JSON.stringify(["main", "settings"]),
+  "the Tauri configuration must enable the split HUD and settings capabilities",
 );
 for (const action of [
   "Open DevHud",

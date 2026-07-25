@@ -6,6 +6,7 @@ import {
   type StructuredShortcut,
 } from "../persistence/contracts";
 import type {
+  AutostartOutcome,
   DesktopBridge,
   ShortcutFailure,
 } from "../runtime/desktop";
@@ -104,14 +105,35 @@ const shortcutFailureMessage: Record<ShortcutFailure, string> = {
     "DevHud could not save that shortcut. The previous shortcut is still active.",
 };
 
+const shortcutStartupFailureMessage: Record<ShortcutFailure, string> = {
+  malformed:
+    "The saved shortcut is malformed and could not be restored. Record another shortcut.",
+  conflict:
+    "The saved shortcut is already in use and could not be restored. Record another shortcut.",
+  "permission-denied":
+    "DevHud does not have permission to restore the saved shortcut. Record another shortcut after granting permission.",
+  "registration-failed":
+    "DevHud could not restore the saved shortcut. Record another shortcut.",
+  "unsupported-display":
+    "The saved shortcut could not be restored because global shortcuts require X11 or XWayland on Linux.",
+  "storage-failed":
+    "DevHud could not restore the saved shortcut because local settings are unavailable.",
+};
+
 export function SettingsPanel({
   bridge,
   firstRun = false,
   onClose,
+  onFirstRunCompleted,
+  startupAutostartOutcome,
+  startupShortcutFailure,
 }: {
   readonly bridge: DesktopBridge | null;
   readonly firstRun?: boolean;
   readonly onClose: () => void;
+  readonly onFirstRunCompleted?: () => void;
+  readonly startupAutostartOutcome?: AutostartOutcome | null;
+  readonly startupShortcutFailure?: ShortcutFailure | null;
 }) {
   const {
     adoptNativeLaunchAtLogin,
@@ -128,7 +150,35 @@ export function SettingsPanel({
     readonly message: string;
     readonly error: boolean;
   } | null>(null);
-  const [autostartStatus, setAutostartStatus] = useState<string | null>(null);
+  const [autostartStatus, setAutostartStatus] = useState<{
+    readonly message: string;
+    readonly error: boolean;
+  } | null>(null);
+  const displayedShortcutStatus =
+    shortcutStatus ??
+    (startupShortcutFailure === undefined || startupShortcutFailure === null
+      ? null
+      : {
+          message: shortcutStartupFailureMessage[startupShortcutFailure],
+          error: true,
+        });
+  const startupAutostartStatus =
+    startupAutostartOutcome?.status === "unchanged"
+      ? {
+          message:
+            startupAutostartOutcome.reason === "permission-denied"
+              ? "DevHud could not restore launch at login because permission was denied. The actual system setting is shown."
+              : "DevHud could not restore launch at login. The actual system setting is shown.",
+          error: true,
+        }
+      : null;
+  const displayedAutostartStatus =
+    autostartStatus ?? startupAutostartStatus;
+  const displayedLaunchAtLogin =
+    autostartStatus === null &&
+    startupAutostartOutcome?.status === "unchanged"
+      ? startupAutostartOutcome.enabled
+      : settings.launchAtLogin;
 
   const beginCapture = () => {
     setCapturing(true);
@@ -192,18 +242,27 @@ export function SettingsPanel({
       if (outcome.status === "applied") {
         if (bridge === null) setLaunchAtLogin(outcome.enabled);
         else adoptNativeLaunchAtLogin(outcome.enabled);
-        setAutostartStatus(
-          outcome.enabled
+        setAutostartStatus({
+          message: outcome.enabled
             ? "DevHud will launch at login."
             : "Launch at login is disabled.",
-        );
+          error: false,
+        });
       } else {
-        setAutostartStatus(
-          outcome.reason === "permission-denied"
+        adoptNativeLaunchAtLogin(outcome.enabled);
+        setAutostartStatus({
+          message: outcome.reason === "permission-denied"
             ? "Permission was denied. The previous launch-at-login setting was kept."
             : "DevHud could not change launch at login. The previous setting was kept.",
-        );
+          error: true,
+        });
       }
+    });
+  };
+
+  const changeTheme = (theme: ThemePreference) => {
+    void setTheme(theme).then((saved) => {
+      if (saved) bridge?.publishTheme(theme);
     });
   };
 
@@ -211,6 +270,7 @@ export function SettingsPanel({
     void (bridge?.completeFirstRun() ??
       Promise.resolve({ status: "completed" as const })).then((outcome) => {
       if (outcome.status === "completed") {
+        onFirstRunCompleted?.();
         onClose();
       } else {
         setShortcutStatus({
@@ -278,8 +338,10 @@ export function SettingsPanel({
             </button>
           ) : null}
         </div>
-        {shortcutStatus ? (
-          <p role={shortcutStatus.error ? "alert" : "status"}>{shortcutStatus.message}</p>
+        {displayedShortcutStatus ? (
+          <p role={displayedShortcutStatus.error ? "alert" : "status"}>
+            {displayedShortcutStatus.message}
+          </p>
         ) : null}
       </section>
 
@@ -287,7 +349,7 @@ export function SettingsPanel({
         <h2 id="startup-heading">Startup</h2>
         <label className="check-field">
           <input
-            checked={settings.launchAtLogin}
+            checked={displayedLaunchAtLogin}
             disabled={!persistenceReady}
             onChange={(event) => changeAutostart(event.target.checked)}
             type="checkbox"
@@ -295,7 +357,11 @@ export function SettingsPanel({
           Launch DevHud at login
         </label>
         <p className="muted">Disabled by default. DevHud starts in the tray when enabled.</p>
-        {autostartStatus ? <p role="status">{autostartStatus}</p> : null}
+        {displayedAutostartStatus ? (
+          <p role={displayedAutostartStatus.error ? "alert" : "status"}>
+            {displayedAutostartStatus.message}
+          </p>
+        ) : null}
       </section>
 
       <section className="settings-section" aria-labelledby="appearance-heading">
@@ -306,7 +372,7 @@ export function SettingsPanel({
             disabled={!persistenceReady}
             id="theme-preference"
             onChange={(event) =>
-              setTheme(event.target.value as ThemePreference)
+              changeTheme(event.target.value as ThemePreference)
             }
             value={settings.theme}
           >

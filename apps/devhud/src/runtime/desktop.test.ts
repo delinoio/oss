@@ -2,9 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ShortcutKey, ShortcutModifier } from "../persistence/contracts";
 import type { StructuredShortcut } from "../persistence/contracts";
-import type { DesktopBridge } from "./desktop";
+import {
+  desktopBridgeForRuntime,
+  type DesktopBridge,
+} from "./desktop";
 
 describe("desktop native boundary", () => {
+  it("does not expose desktop IPC commands to mobile system webviews", () => {
+    const bridge = {} as DesktopBridge;
+
+    expect(desktopBridgeForRuntime("system-webview", bridge)).toBeNull();
+    expect(desktopBridgeForRuntime("cef", bridge)).toBe(bridge);
+  });
+
   it("represents cancelled and failed shortcut replacements without changing settings", async () => {
     const previous = {
       modifiers: [ShortcutModifier.Control],

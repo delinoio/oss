@@ -5,7 +5,7 @@
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
 - Status: active application; `apps/devhud` contains the bundled-asset package, internal empty tool registry, production desktop shell, sign-ready desktop bundle configuration, and mobile empty-state foundation. It has no production tool, visible widget, scoped updater network implementation, published release, publisher automation, or public support implementation.
-- The current desktop implementation includes tray-resident window lifecycle, transactional global shortcuts, explicit autostart, pointer-monitor HUD placement, preview DevTools, typed local update action, scoped persistence/runtime IPC, and deterministic local and host smoke validation.
+- The current desktop implementation includes tray-resident window lifecycle, transactional global shortcuts, explicit autostart, pointer-monitor HUD placement, preview DevTools, typed local update action, runtime-gated desktop IPC, window-specific capabilities, cross-window theme reconciliation, surfaced startup integration failures, scoped persistence/runtime IPC, and deterministic local and host smoke validation.
 
 ## Runtime and Language
 
@@ -64,6 +64,8 @@ The native boundary exposes only scoped Tauri/plugin commands required for setti
 - Show a skippable first-run settings window that captures and validates a global shortcut. Tray access remains available until a shortcut is configured.
 - Launch-at-login is disabled by default and has an explicit settings toggle. The native desktop integration verifies changes and reports a stable typed failure while preserving the previous setting.
 - Store shortcuts as structured modifier and key values, never as an unchecked free-form string. A malformed, conflicting, permission-denied, or failed registration preserves the previous valid binding.
+- A failed persisted shortcut or launch-at-login restoration is surfaced in Settings with the effective native state, and completing first-run setup immediately clears the setup presentation for the retained settings webview.
+- Theme changes persist before they are broadcast from the settings webview and are adopted by the retained HUD webview without restarting the application.
 - Display the always-on-top HUD centered on the monitor containing the mouse pointer and focus the search input immediately.
 - Repeating the global shortcut toggles the HUD. `Esc` or focus loss hides it immediately.
 - The empty production registry displays the exact message `No tools are available in this foundation preview.` and a Settings action.
@@ -105,7 +107,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 - Render only bundled frontend assets. Enable the CEF sandbox in every signed desktop build.
 - Block external navigation, popups, downloads, and remote frontend resources.
-- Keep Tauri capabilities window-specific and least-privileged. DevTools in the technical preview does not relax these boundaries.
+- Keep Tauri capabilities window-specific and least-privileged: the HUD and settings webviews use separate capability documents containing only the record and shell commands each surface invokes. DevTools in the technical preview does not relax these boundaries.
 - Do not implement authentication, an account system, tenant data, billing, cloud storage, backend services, DeliDev integration, analytics, crash telemetry, remote logs, advertising, or user tracking.
 - The sole network exception is desktop updater discovery and download: use the unauthenticated GitHub Releases API, filter releases to `delinoio/oss` tags beginning with `devhud@v`, ignore drafts, unrelated releases, invalid semantic versions, unsupported targets, and releases without a valid signed DevHud updater manifest, and download manifests/assets only from GitHub Releases. Never ship a GitHub token.
 - Check for updates at startup and every 24 hours. Offline, unavailable, and rate-limited checks are non-fatal. Require user confirmation before install/restart; invalid updater signatures leave the installed version unchanged.

@@ -1,6 +1,13 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-import type { StructuredShortcut } from "../persistence/contracts";
+import type {
+  StructuredShortcut,
+  ThemePreference,
+} from "../persistence/contracts";
+import {
+  publishThemePreference,
+  subscribeToThemePreference,
+} from "./theme";
 
 export type ShortcutFailure =
   | "malformed"
@@ -62,6 +69,8 @@ export interface DesktopBridge {
   setLaunchAtLogin(enabled: boolean): Promise<AutostartOutcome>;
   completeFirstRun(): Promise<FirstRunOutcome>;
   requestUpdateAction(): Promise<UpdateActionOutcome>;
+  publishTheme(theme: ThemePreference): void;
+  subscribeTheme(listener: (theme: ThemePreference) => void): () => void;
 }
 
 export const tauriDesktopBridge: DesktopBridge = {
@@ -76,8 +85,22 @@ export const tauriDesktopBridge: DesktopBridge = {
   completeFirstRun: () => invoke<FirstRunOutcome>("complete_first_run"),
   requestUpdateAction: () =>
     invoke<UpdateActionOutcome>("request_update_action"),
+  publishTheme: publishThemePreference,
+  subscribeTheme: subscribeToThemePreference,
 };
 
-export function nativeDesktopBridge(): DesktopBridge | null {
-  return isTauri() ? tauriDesktopBridge : null;
+export function nativeDesktopBridge(
+  runtime: "cef" | "system-webview",
+): DesktopBridge | null {
+  return desktopBridgeForRuntime(
+    runtime,
+    isTauri() ? tauriDesktopBridge : null,
+  );
+}
+
+export function desktopBridgeForRuntime(
+  runtime: "cef" | "system-webview",
+  bridge: DesktopBridge | null,
+): DesktopBridge | null {
+  return runtime === "cef" ? bridge : null;
 }

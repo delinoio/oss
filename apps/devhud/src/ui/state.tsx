@@ -37,9 +37,10 @@ interface ApplicationState {
 }
 
 interface ApplicationActions {
-  setTheme(theme: ThemePreference): void;
+  setTheme(theme: ThemePreference): Promise<boolean>;
   setShortcut(shortcut: StructuredShortcut | null): void;
   setLaunchAtLogin(enabled: boolean): void;
+  adoptNativeTheme(theme: ThemePreference): void;
   adoptNativeShortcut(shortcut: StructuredShortcut): void;
   adoptNativeLaunchAtLogin(enabled: boolean): void;
   setWidgetConfiguration(configuration: WidgetConfiguration): void;
@@ -98,11 +99,11 @@ export function ApplicationProvider({
   }, [persistence]);
 
   const persistSettings = useCallback(
-    (nextSettings: DevHudSettings) => {
-      if (!persistenceReady) return;
+    (nextSettings: DevHudSettings): Promise<boolean> => {
+      if (!persistenceReady) return Promise.resolve(false);
       const mutation = ++settingsMutation.current;
       setSettings(nextSettings);
-      void persistence.saveSettings(nextSettings).then(
+      return persistence.saveSettings(nextSettings).then(
         () => {
           lastSuccessfulSettings.current = nextSettings;
           if (mutation === settingsMutation.current) {
@@ -110,16 +111,17 @@ export function ApplicationProvider({
               issues.filter((issue) => issue.key !== SETTINGS_STORAGE_KEY),
             );
           }
+          return true;
         },
         (error: unknown) => {
-          if (mutation !== settingsMutation.current) return;
+          if (mutation !== settingsMutation.current) return false;
           setSettings(lastSuccessfulSettings.current);
           if (error instanceof RejectedRecordWriteBlockedError) {
             setPersistenceIssues((issues) => [
               ...issues.filter((issue) => issue.key !== error.key),
               { ...error.failure, key: error.key },
             ]);
-            return;
+            return false;
           }
           setPersistenceIssues((issues) => [
             ...issues.filter((issue) => issue.key !== SETTINGS_STORAGE_KEY),
@@ -130,6 +132,7 @@ export function ApplicationProvider({
                 "DevHud could not save local settings. The last saved settings were kept.",
             },
           ]);
+          return false;
         },
       );
     },
@@ -141,12 +144,26 @@ export function ApplicationProvider({
     [persistSettings, settings],
   );
   const setShortcut = useCallback(
-    (shortcut: StructuredShortcut | null) => persistSettings({ ...settings, shortcut }),
+    (shortcut: StructuredShortcut | null) => {
+      void persistSettings({ ...settings, shortcut });
+    },
     [persistSettings, settings],
   );
   const setLaunchAtLogin = useCallback(
-    (launchAtLogin: boolean) => persistSettings({ ...settings, launchAtLogin }),
+    (launchAtLogin: boolean) => {
+      void persistSettings({ ...settings, launchAtLogin });
+    },
     [persistSettings, settings],
+  );
+  const adoptNativeTheme = useCallback(
+    (theme: ThemePreference) => {
+      setSettings((current) => {
+        const nextSettings = { ...current, theme };
+        lastSuccessfulSettings.current = nextSettings;
+        return nextSettings;
+      });
+    },
+    [],
   );
   const adoptNativeShortcut = useCallback(
     (shortcut: StructuredShortcut) => {
@@ -219,6 +236,7 @@ export function ApplicationProvider({
       setTheme,
       setShortcut,
       setLaunchAtLogin,
+      adoptNativeTheme,
       adoptNativeShortcut,
       adoptNativeLaunchAtLogin,
       setWidgetConfiguration,
@@ -231,6 +249,7 @@ export function ApplicationProvider({
     [
       adoptNativeLaunchAtLogin,
       adoptNativeShortcut,
+      adoptNativeTheme,
       closeSettings,
       mobileScreen,
       openSettings,

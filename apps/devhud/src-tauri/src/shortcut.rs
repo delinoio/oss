@@ -345,6 +345,7 @@ const fn native_key(key: ShortcutKey) -> Code {
 pub(crate) struct ShortcutState {
     coordinator: Option<ShortcutCoordinator<NativeShortcutBackend>>,
     unavailable: Option<ShortcutFailure>,
+    restoration_failure: Option<ShortcutFailure>,
 }
 
 #[cfg(feature = "desktop-cef")]
@@ -353,11 +354,14 @@ impl ShortcutState {
         app: AppHandle<crate::ActiveRuntime>,
         restored: Option<StructuredShortcut>,
     ) -> Self {
+        let has_restored_shortcut = restored.is_some();
         #[cfg(target_os = "linux")]
         if std::env::var_os("DISPLAY").is_none_or(|display| display.is_empty()) {
             return Self {
                 coordinator: None,
                 unavailable: Some(ShortcutFailure::UnsupportedDisplay),
+                restoration_failure: has_restored_shortcut
+                    .then_some(ShortcutFailure::UnsupportedDisplay),
             };
         }
 
@@ -366,26 +370,36 @@ impl ShortcutState {
                 let manager = Arc::new(SendableGlobalHotKeyManager(manager));
                 let backend = NativeShortcutBackend { app, manager };
                 let mut coordinator = ShortcutCoordinator::new(backend);
+                let mut restoration_failure = None;
                 if let Some(shortcut) = restored
                     && shortcut.validate().is_ok()
                 {
                     let binding = NativeShortcutBackend::binding(&shortcut);
-                    if coordinator.backend.manager.0.register(binding).is_ok() {
-                        coordinator.active = Some((shortcut, binding));
+                    match coordinator.backend.manager.0.register(binding) {
+                        Ok(()) => coordinator.active = Some((shortcut, binding)),
+                        Err(error) => {
+                            restoration_failure =
+                                Some(map_backend_error(classify_native_error(error)));
+                        }
                     }
                 }
                 Self {
                     coordinator: Some(coordinator),
                     unavailable: None,
+                    restoration_failure,
                 }
             }
-            Err(error) => Self {
-                coordinator: None,
-                unavailable: Some(match classify_native_error(error) {
+            Err(error) => {
+                let failure = match classify_native_error(error) {
                     BackendError::PermissionDenied => ShortcutFailure::PermissionDenied,
                     _ => ShortcutFailure::RegistrationFailed,
-                }),
-            },
+                };
+                Self {
+                    coordinator: None,
+                    unavailable: Some(failure),
+                    restoration_failure: has_restored_shortcut.then_some(failure),
+                }
+            }
         }
     }
 
@@ -404,14 +418,18 @@ impl ShortcutState {
                 };
             }
         };
-        match &mut self.coordinator {
+        let outcome = match &mut self.coordinator {
             Some(coordinator) => coordinator.replace(shortcut),
             None => ShortcutReplacementOutcome::Unchanged {
                 reason: self
                     .unavailable
                     .unwrap_or(ShortcutFailure::RegistrationFailed),
             },
+        };
+        if matches!(outcome, ShortcutReplacementOutcome::Replaced { .. }) {
+            self.restoration_failure = None;
         }
+        outcome
     }
 
     pub(crate) fn active_id(&self) -> Option<u32> {
@@ -425,6 +443,10 @@ impl ShortcutState {
             .as_ref()
             .and_then(|coordinator| coordinator.active.as_ref())
             .map(|(shortcut, _)| shortcut.clone())
+    }
+
+    pub(crate) const fn restoration_failure(&self) -> Option<ShortcutFailure> {
+        self.restoration_failure
     }
 
     pub(crate) fn rollback(&mut self, previous: Option<StructuredShortcut>) {

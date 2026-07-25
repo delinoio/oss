@@ -1,22 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Allows only DevHud's HUD and settings windows to use the production shell and its two versioned local records.",
+  "description": "Allows only DevHud's HUD window to use its runtime, local records, and HUD lifecycle commands.",
   "local": true,
-  "windows": ["main", "settings"],
+  "windows": ["main"],
   "permissions": [
     "allow-get-runtime-info",
     "allow-read-settings",
     "allow-write-settings",
     "allow-read-widget-configuration",
     "allow-write-widget-configuration",
-    "allow-show-hud",
     "allow-hide-hud",
-    "allow-show-settings",
-    "allow-hide-settings",
-    "allow-replace-global-shortcut",
-    "allow-set-launch-at-login",
-    "allow-complete-first-run",
-    "allow-request-update-action"
+    "allow-show-settings"
   ]
 }

@@ -43,11 +43,32 @@ function Wordmark() {
   );
 }
 
-function SettingsDialog({ bridge }: { readonly bridge: DesktopBridge | null }) {
+function PersistenceAlerts() {
+  const { persistenceIssues } = useApplication();
+  return persistenceIssues.map((issue) => (
+    <p className="runtime-status error" key={issue.key} role="alert">
+      {issue.guidance}
+    </p>
+  ));
+}
+
+function SettingsDialog({
+  bridge,
+  runtimeInfo,
+}: {
+  readonly bridge: DesktopBridge | null;
+  readonly runtimeInfo: RuntimeInfo | null;
+}) {
   const { closeSettings } = useApplication();
   return (
     <Dialog title="DevHud settings" onClose={closeSettings}>
-      <SettingsPanel bridge={bridge} onClose={closeSettings} />
+      <PersistenceAlerts />
+      <SettingsPanel
+        bridge={bridge}
+        onClose={closeSettings}
+        startupAutostartOutcome={runtimeInfo?.autostartStartupOutcome}
+        startupShortcutFailure={runtimeInfo?.shortcutStartupFailure}
+      />
     </Dialog>
   );
 }
@@ -55,16 +76,29 @@ function SettingsDialog({ bridge }: { readonly bridge: DesktopBridge | null }) {
 function SettingsWindow({
   bridge,
   firstRun,
+  startupAutostartOutcome,
+  startupShortcutFailure,
 }: {
   readonly bridge: DesktopBridge | null;
   readonly firstRun: boolean;
+  readonly startupAutostartOutcome: RuntimeInfo["autostartStartupOutcome"];
+  readonly startupShortcutFailure: RuntimeInfo["shortcutStartupFailure"];
 }) {
+  const [firstRunActive, setFirstRunActive] = useState(firstRun);
   const close = () => {
     void bridge?.hideSettings();
   };
   return (
     <main className="settings-shell">
-      <SettingsPanel bridge={bridge} firstRun={firstRun} onClose={close} />
+      <PersistenceAlerts />
+      <SettingsPanel
+        bridge={bridge}
+        firstRun={firstRunActive}
+        onClose={close}
+        onFirstRunCompleted={() => setFirstRunActive(false)}
+        startupAutostartOutcome={startupAutostartOutcome}
+        startupShortcutFailure={startupShortcutFailure}
+      />
     </main>
   );
 }
@@ -286,11 +320,11 @@ function MobileShell({ runtime }: { readonly runtime: RuntimeState }) {
 }
 
 function ApplicationSurface({
-  bridge,
+  desktopBridge,
   initialPlatform,
   synchronizePlatform,
 }: {
-  readonly bridge: DesktopBridge | null;
+  readonly desktopBridge?: DesktopBridge | null;
   readonly initialPlatform: ApplicationPlatform;
   readonly synchronizePlatform: boolean;
 }) {
@@ -320,7 +354,23 @@ function ApplicationSurface({
       active = false;
     };
   }, [synchronizePlatform]);
-  const { persistenceIssues, settingsOpen } = useApplication();
+  const bridge = useMemo(
+    () =>
+      desktopBridge === undefined
+        ? runtime.status === "ready"
+          ? nativeDesktopBridge(runtime.runtimeInfo.runtime)
+          : null
+        : desktopBridge,
+    [desktopBridge, runtime],
+  );
+  const {
+    adoptNativeTheme,
+    settingsOpen,
+  } = useApplication();
+  useEffect(() => bridge?.subscribeTheme(adoptNativeTheme), [
+    adoptNativeTheme,
+    bridge,
+  ]);
 
   if (
     runtime.status === "ready" &&
@@ -330,6 +380,8 @@ function ApplicationSurface({
       <SettingsWindow
         bridge={bridge}
         firstRun={runtime.runtimeInfo.firstRun === true}
+        startupAutostartOutcome={runtime.runtimeInfo.autostartStartupOutcome}
+        startupShortcutFailure={runtime.runtimeInfo.shortcutStartupFailure}
       />
     );
   }
@@ -337,22 +389,19 @@ function ApplicationSurface({
   return (
     <>
       <div aria-hidden={settingsOpen} inert={settingsOpen}>
-        {persistenceIssues.map((issue) => (
-          <p
-            className="runtime-status error"
-            key={issue.key}
-            role="alert"
-          >
-            {issue.guidance}
-          </p>
-        ))}
+        <PersistenceAlerts />
         {platform === "desktop" ? (
           <DesktopHud bridge={bridge} runtime={runtime} />
         ) : (
           <MobileShell runtime={runtime} />
         )}
       </div>
-      {settingsOpen ? <SettingsDialog bridge={bridge} /> : null}
+      {settingsOpen ? (
+        <SettingsDialog
+          bridge={bridge}
+          runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
+        />
+      ) : null}
     </>
   );
 }
@@ -366,17 +415,13 @@ export function App({
   readonly platform?: ApplicationPlatform;
   readonly storage?: LocalStorageAdapter;
 }) {
-  const bridge = useMemo(
-    () => desktopBridge === undefined ? nativeDesktopBridge() : desktopBridge,
-    [desktopBridge],
-  );
   const synchronizePlatform = platform === undefined;
   const initialPlatform =
     platform ?? detectApplicationPlatform(navigator.userAgent);
   return (
     <ApplicationProvider storage={storage}>
       <ApplicationSurface
-        bridge={bridge}
+        desktopBridge={desktopBridge}
         initialPlatform={initialPlatform}
         synchronizePlatform={synchronizePlatform}
       />

@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type {
+  AutostartOutcome,
+  ShortcutFailure,
+} from "./desktop";
+
 export interface RuntimeInfo {
   applicationId: "dev.deli.devhud";
   bundledOrigin: string;
@@ -7,6 +12,8 @@ export interface RuntimeInfo {
   sandboxEnabled: boolean;
   surface?: "hud" | "settings" | "mobile";
   firstRun?: boolean;
+  shortcutStartupFailure?: ShortcutFailure | null;
+  autostartStartupOutcome?: AutostartOutcome | null;
 }
 
 interface NativeCommandResults {

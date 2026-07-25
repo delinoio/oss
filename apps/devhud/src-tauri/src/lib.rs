@@ -103,6 +103,15 @@ struct RuntimeInfo {
     sandbox_enabled: bool,
     surface: RuntimeSurface,
     first_run: bool,
+    shortcut_startup_failure: Option<shortcut::ShortcutFailure>,
+    autostart_startup_outcome: Option<autostart::AutostartOutcome>,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[derive(Default)]
+struct StartupDiagnostics {
+    shortcut_failure: Option<shortcut::ShortcutFailure>,
+    autostart_outcome: Option<autostart::AutostartOutcome>,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -518,6 +527,7 @@ fn get_runtime_info(
     webview: Webview<ActiveRuntime>,
     app: AppHandle<ActiveRuntime>,
     persistence: State<'_, PersistenceState>,
+    startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<RuntimeInfo, RuntimeCommandError> {
     let url = webview
         .url()
@@ -563,6 +573,10 @@ fn get_runtime_info(
     ))]
     let surface = RuntimeSurface::Mobile;
     let first_run = matches!(persistence.read(SETTINGS_STORAGE_KEY), Ok(None));
+    let (shortcut_startup_failure, autostart_startup_outcome) = startup_diagnostics
+        .lock()
+        .map(|diagnostics| (diagnostics.shortcut_failure, diagnostics.autostart_outcome))
+        .unwrap_or((None, None));
 
     Ok(RuntimeInfo {
         application_id: APPLICATION_ID,
@@ -571,6 +585,8 @@ fn get_runtime_info(
         sandbox_enabled: cfg!(not(any(target_os = "android", target_os = "ios"))),
         surface,
         first_run,
+        shortcut_startup_failure,
+        autostart_startup_outcome,
     })
 }
 
@@ -932,6 +948,7 @@ fn replace_global_shortcut(
     candidate: Option<serde_json::Value>,
     state: State<'_, Mutex<shortcut::ShortcutState>>,
     persistence: State<'_, PersistenceState>,
+    startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> shortcut::ShortcutReplacementOutcome {
     match state.lock() {
         Ok(mut state) => {
@@ -944,6 +961,9 @@ fn replace_global_shortcut(
                     return shortcut::ShortcutReplacementOutcome::Unchanged {
                         reason: shortcut::ShortcutFailure::StorageFailed,
                     };
+                }
+                if let Ok(mut diagnostics) = startup_diagnostics.lock() {
+                    diagnostics.shortcut_failure = None;
                 }
             }
             outcome
@@ -963,6 +983,7 @@ fn set_launch_at_login(
     enabled: bool,
     state: State<'_, autostart::AutostartState>,
     persistence: State<'_, PersistenceState>,
+    startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> autostart::AutostartOutcome {
     let previous = state.current().unwrap_or(false);
     let outcome = state.apply(enabled);
@@ -979,6 +1000,11 @@ fn set_launch_at_login(
             enabled: previous,
             reason: autostart::AutostartFailure::OperationFailed,
         };
+    }
+    if matches!(outcome, autostart::AutostartOutcome::Applied { .. })
+        && let Ok(mut diagnostics) = startup_diagnostics.lock()
+    {
+        diagnostics.autostart_outcome = None;
     }
     outcome
 }
@@ -999,10 +1025,7 @@ enum FirstRunOutcome {
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn complete_first_run(
-    app: AppHandle<ActiveRuntime>,
-    persistence: State<'_, PersistenceState>,
-) -> FirstRunOutcome {
+fn complete_first_run(persistence: State<'_, PersistenceState>) -> FirstRunOutcome {
     match persistence.read(SETTINGS_STORAGE_KEY) {
         Ok(None) => {
             let record = r#"{"version":1,"settings":{"theme":"system","launchAtLogin":false,"shortcut":null}}"#;
@@ -1013,9 +1036,6 @@ fn complete_first_run(
         Ok(Some(_)) => {}
         Err(reason) => return FirstRunOutcome::Unchanged { reason },
     }
-    let _ = app
-        .get_webview_window(SETTINGS_WINDOW_LABEL)
-        .map(|window| window.hide());
     FirstRunOutcome::Completed
 }
 
@@ -1175,13 +1195,22 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 .is_some_and(|settings| settings.launch_at_login);
             // The persisted opt-in is authoritative. In particular, a first
             // run actively clears any stale OS entry using the same app id.
-            let _ = autostart.apply(launch_at_login);
+            let autostart_outcome = autostart.apply(launch_at_login);
             app.manage(autostart);
 
             let persisted_shortcut = persisted_settings.and_then(|settings| settings.shortcut);
             let shortcuts =
                 shortcut::ShortcutState::initialize(app.handle().clone(), persisted_shortcut);
+            let shortcut_failure = shortcuts.restoration_failure();
             app.manage(Mutex::new(shortcuts));
+            app.manage(Mutex::new(StartupDiagnostics {
+                shortcut_failure,
+                autostart_outcome: matches!(
+                    autostart_outcome,
+                    autostart::AutostartOutcome::Unchanged { .. }
+                )
+                .then_some(autostart_outcome),
+            }));
 
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -1242,6 +1271,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 Err(_) => PersistenceState::unavailable(),
             };
             app.manage(persistence);
+            app.manage(Mutex::new(StartupDiagnostics::default()));
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("DevHud")
                 .devtools(true)
@@ -1420,6 +1450,11 @@ mod tests {
             sandbox_enabled: true,
             surface: RuntimeSurface::Hud,
             first_run: false,
+            shortcut_startup_failure: Some(shortcut::ShortcutFailure::Conflict),
+            autostart_startup_outcome: Some(autostart::AutostartOutcome::Unchanged {
+                enabled: false,
+                reason: autostart::AutostartFailure::PermissionDenied,
+            }),
         };
         let value = serde_json::to_value(runtime_info).unwrap();
 
@@ -1427,6 +1462,15 @@ mod tests {
         assert_eq!(value["runtime"], "cef");
         assert_eq!(value["sandboxEnabled"], true);
         assert_eq!(value["surface"], "hud");
+        assert_eq!(value["shortcutStartupFailure"], "conflict");
+        assert_eq!(
+            value["autostartStartupOutcome"],
+            serde_json::json!({
+                "status": "unchanged",
+                "enabled": false,
+                "reason": "permission-denied"
+            })
+        );
         assert_eq!(
             serde_json::to_value(RuntimeSurface::Settings).unwrap(),
             "settings"
