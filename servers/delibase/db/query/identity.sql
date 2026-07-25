@@ -214,7 +214,7 @@ RETURNING *;
 -- name: DeleteOrganizationOperationalData :one
 SELECT delete_organization_operational_data(sqlc.arg(organization_id)::uuid);
 
--- name: GetCancelablePolarSubscriptionForOrganization :one
+-- name: ListCancelablePolarSubscriptionsForOrganization :many
 SELECT polar_subscription_id
 FROM subscriptions
 WHERE organization_id = sqlc.arg(organization_id)
@@ -225,8 +225,7 @@ ORDER BY
         WHEN 'past_due' THEN 1
         ELSE 2
     END,
-    created_at DESC
-LIMIT 1;
+    created_at DESC;
 
 -- name: GetOrganizationMembership :one
 SELECT membership.*
@@ -324,7 +323,7 @@ INSERT INTO ledger_entries (
     sqlc.arg(organization_id),
     'credit_forfeiture',
     -sqlc.arg(amount_micros)::bigint,
-    0,
+    sqlc.arg(balance_after_micros),
     sqlc.arg(source_reference),
     sqlc.arg(actor_reference)
 )

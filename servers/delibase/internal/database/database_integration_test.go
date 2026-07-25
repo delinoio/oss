@@ -147,12 +147,14 @@ func TestPostgreSQLOrganizationDeletionCleanupAndLiveSubscriptionSelection(
 	); err != nil {
 		t.Fatal(err)
 	}
-	selected, err := store.Queries().GetCancelablePolarSubscriptionForOrganization(
+	selected, err := store.Queries().ListCancelablePolarSubscriptionsForOrganization(
 		ctx,
 		pgtype.UUID{Bytes: organizationID, Valid: true},
 	)
-	if err != nil || selected != "polar-active-"+activeSubscriptionID.String() {
-		t.Fatalf("cancelable subscription = %q, %v", selected, err)
+	if err != nil || len(selected) != 2 ||
+		selected[0] != "polar-active-"+activeSubscriptionID.String() ||
+		selected[1] != "polar-pending-"+pendingSubscriptionID.String() {
+		t.Fatalf("cancelable subscriptions = %#v, %v", selected, err)
 	}
 	if _, err := store.pool.Exec(ctx, `
 		UPDATE organizations
@@ -1165,6 +1167,243 @@ func TestPostgreSQLReservationSerializesAuthoritativeStateChanges(t *testing.T) 
 	}
 }
 
+func TestPostgreSQLPreservesAndSerializesRequestedOverageLimitChecks(t *testing.T) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	store, err := Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	const (
+		accountID      = "0198a000-0000-7000-8000-000000000521"
+		organizationID = "0198a000-0000-7000-8000-000000000522"
+		teamID         = "0198a000-0000-7000-8000-000000000523"
+		appID          = "0198a000-0000-7000-8000-000000000524"
+		meterID        = "0198a000-0000-7000-8000-000000000525"
+		priceID        = "0198a000-0000-7000-8000-000000000526"
+		serviceID      = "0198a000-0000-7000-8000-000000000527"
+		subscriptionID = "0198a000-0000-7000-8000-000000000528"
+		periodID       = "0198a000-0000-7000-8000-000000000529"
+		firstID        = "0198a000-0000-7000-8000-000000000530"
+		secondID       = "0198a000-0000-7000-8000-000000000531"
+	)
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO accounts (id, logto_subject)
+		VALUES ($1, 'requested-overage-owner')
+	`, accountID); err != nil {
+		t.Fatal(err)
+	}
+	createTestOrganization(
+		t,
+		ctx,
+		store,
+		organizationID,
+		"Requested Overage Serialization",
+		"requested-overage-serialization",
+		accountID,
+	)
+	setup := []struct {
+		statement string
+		arguments []any
+	}{
+		{
+			"INSERT INTO teams (id, organization_id, name) VALUES ($1, $2, 'Overage Team')",
+			[]any{teamID, organizationID},
+		},
+		{
+			"INSERT INTO catalog_apps (id, slug, name, enabled) VALUES ($1, 'requested-overage-app', 'Requested Overage App', true)",
+			[]any{appID},
+		},
+		{
+			"INSERT INTO catalog_meters (id, app_id, meter_key, name, unit_name, reservation_ttl_seconds, enabled) VALUES ($1, $2, 'requests', 'Requests', 'request', 60, true)",
+			[]any{meterID, appID},
+		},
+		{
+			"INSERT INTO catalog_price_versions (id, meter_id, usd_micros_per_unit, effective_from) VALUES ($1, $2, 1, transaction_timestamp() - interval '1 day')",
+			[]any{priceID, meterID},
+		},
+		{
+			"INSERT INTO service_identities (id, logto_client_id, name) VALUES ($1, 'requested-overage-service', 'Requested Overage Service')",
+			[]any{serviceID},
+		},
+		{
+			"INSERT INTO service_meter_allowlists (service_identity_id, meter_id) VALUES ($1, $2)",
+			[]any{serviceID, meterID},
+		},
+		{
+			"INSERT INTO polar_meter_mappings (meter_id, polar_meter_id) VALUES ($1, 'requested-overage-meter')",
+			[]any{meterID},
+		},
+		{
+			`INSERT INTO subscriptions (
+				id, organization_id, polar_subscription_id, status,
+				current_period_starts_at, current_period_ends_at
+			) VALUES (
+				$1, $2, 'requested-overage-subscription', 'active',
+				transaction_timestamp() - interval '1 day',
+				transaction_timestamp() + interval '1 day'
+			)`,
+			[]any{subscriptionID, organizationID},
+		},
+		{
+			`INSERT INTO billing_periods (
+				id, organization_id, subscription_id, starts_at, ends_at,
+				overage_limit_micros, requested_overage_limit_micros
+			)
+			SELECT
+				$1, organization_id, id, current_period_starts_at,
+				current_period_ends_at, 3, 1
+			FROM subscriptions
+			WHERE id = $2`,
+			[]any{periodID, subscriptionID},
+		},
+	}
+	for _, item := range setup {
+		if _, err := store.pool.Exec(ctx, item.statement, item.arguments...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var effectiveLimit, requestedLimit int64
+	if err := store.pool.QueryRow(ctx, `
+		UPDATE billing_periods
+		SET overage_limit_micros = 2,
+		    requested_overage_limit_micros = 1
+		WHERE id = $1
+		RETURNING overage_limit_micros, requested_overage_limit_micros
+	`, periodID).Scan(&effectiveLimit, &requestedLimit); err != nil {
+		t.Fatal(err)
+	}
+	if effectiveLimit != 2 || requestedLimit != 1 {
+		t.Fatalf(
+			"overage limits after explicit update = effective %d, requested %d",
+			effectiveLimit,
+			requestedLimit,
+		)
+	}
+	defer func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM organizations WHERE id = $1",
+			organizationID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM catalog_price_versions WHERE id = $1",
+			priceID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM catalog_apps WHERE id = $1",
+			appID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM service_identities WHERE id = $1",
+			serviceID,
+		)
+		_, _ = store.pool.Exec(
+			cleanupCtx,
+			"DELETE FROM accounts WHERE id = $1",
+			accountID,
+		)
+	}()
+
+	const insertReservation = `
+		INSERT INTO usage_reservations (
+			id, organization_id, team_id, team_name_snapshot, meter_id,
+			price_version_id, account_id, service_identity_id, maximum_units,
+			usd_micros_per_unit, maximum_cost_micros, held_credit_micros,
+			held_overage_micros, client_reference, expires_at
+		) VALUES (
+			$1, $2, $3, 'Overage Team', $4, $5, $6, $7,
+			1, 1, 1, 0, 1, $8,
+			statement_timestamp() + interval '1 minute'
+		)
+	`
+	first, err := store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := first.Exec(
+		ctx,
+		insertReservation,
+		firstID,
+		organizationID,
+		teamID,
+		meterID,
+		priceID,
+		accountID,
+		serviceID,
+		"requested-overage-first",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = second.Rollback(context.WithoutCancel(ctx)) }()
+	secondResult := make(chan error, 1)
+	go func() {
+		_, err := second.Exec(
+			ctx,
+			insertReservation,
+			secondID,
+			organizationID,
+			teamID,
+			meterID,
+			priceID,
+			accountID,
+			serviceID,
+			"requested-overage-second",
+		)
+		secondResult <- err
+	}()
+
+	select {
+	case err := <-secondResult:
+		t.Fatalf("second reservation did not serialize: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := first.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-secondResult:
+		if err == nil {
+			t.Fatal("concurrent reservations exceeded the requested overage limit")
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := second.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var heldReservations int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)
+		FROM usage_reservations
+		WHERE organization_id = $1
+		  AND status = 'held'
+	`, organizationID).Scan(&heldReservations); err != nil {
+		t.Fatal(err)
+	}
+	if heldReservations != 1 {
+		t.Fatalf("held reservation count = %d, want 1", heldReservations)
+	}
+}
+
 func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -1259,6 +1498,17 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		{"INSERT INTO subscriptions (id, organization_id, polar_subscription_id, status, current_period_starts_at, current_period_ends_at) VALUES ($1, $2, 'polar-a', 'active', NULL, NULL), ($3, $4, 'polar-b', 'active', NULL, NULL), ($5, $6, 'polar-c', 'active', transaction_timestamp() - interval '1 day', transaction_timestamp() + interval '1 day')", []any{subA, orgA, subB, orgB, subC, orgC}},
 		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, '2026-01-01', '2026-02-01'), ($4, $5, $6, '2026-01-01', '2026-02-01')", []any{periodA, orgA, subA, periodB, orgB, subB}},
 		{"INSERT INTO billing_periods (id, organization_id, subscription_id, starts_at, ends_at) VALUES ($1, $2, $3, transaction_timestamp() - interval '1 day', transaction_timestamp() + interval '1 day')", []any{periodC, orgC, subC}},
+		{`INSERT INTO polar_paid_cycles (
+			polar_order_id, organization_id, subscription_id, billing_period_id,
+			period_starts_at, period_ends_at, grant_micros,
+			reversed_micros, paid_at
+		)
+		SELECT
+			'schema-order-a', $1, $2, id, starts_at, ends_at,
+			10000000, 1000000, transaction_timestamp()
+		FROM billing_periods
+		WHERE id = $3`, []any{orgA, subA, periodA}},
+		{"INSERT INTO polar_refunds (polar_refund_id, organization_id, polar_order_id, status, requested_micros, reversed_micros, provider_event_at) VALUES ('schema-refund-a', $1, 'schema-order-a', 'succeeded', 1000000, 1000000, transaction_timestamp())", []any{orgA}},
 	}
 	for _, item := range setup {
 		if _, err := transaction.Exec(ctx, item.statement, item.arguments...); err != nil {
@@ -1296,6 +1546,15 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		orgA,
 	)
 	requireConstraintFailure(t, ctx, transaction, `
+		INSERT INTO billing_shortfalls (
+			id, organization_id, billing_period_id, polar_refund_id,
+			source_reference, amount_micros
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000330',
+			$1, $2, 'schema-refund-a', 'cross-organization-shortfall', 1
+		)
+	`, orgB, periodB)
+	requireConstraintFailure(t, ctx, transaction, `
 		WITH removed_customer AS (
 			DELETE FROM polar_customers
 			WHERE organization_id = $1
@@ -1313,6 +1572,20 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	requireConstraintFailure(t, ctx, transaction,
 		"UPDATE subscriptions SET polar_subscription_id = 'rewritten-subscription' WHERE id = $1",
 		subA,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM subscriptions WHERE id = $1",
+		subA,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM billing_periods WHERE id = $1",
+		periodA,
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM polar_paid_cycles WHERE polar_order_id = 'schema-order-a'",
+	)
+	requireConstraintFailure(t, ctx, transaction,
+		"DELETE FROM polar_refunds WHERE polar_refund_id = 'schema-refund-a'",
 	)
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO subscriptions (
@@ -1336,6 +1609,20 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	if _, err := transaction.Exec(
 		ctx,
 		"UPDATE subscriptions SET status = 'canceled' WHERE id = $1",
+		subB,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE subscriptions SET status = 'active' WHERE id = $1",
+		subB,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		"UPDATE subscriptions SET status = 'revoked' WHERE id = $1",
 		subB,
 	); err != nil {
 		t.Fatal(err)
@@ -1973,7 +2260,9 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := transaction.Exec(ctx, `
-		UPDATE billing_periods SET overage_limit_micros = 0
+		UPDATE billing_periods
+		SET overage_limit_micros = 0,
+		    requested_overage_limit_micros = 0
 		WHERE id = '0198a000-0000-7000-8000-000000000121'
 	`); err != nil {
 		t.Fatal(err)
@@ -1996,7 +2285,8 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 	}
 	if _, err := overageCapacity.Exec(ctx, `
 		UPDATE billing_periods
-		SET overage_limit_micros = 10
+		SET overage_limit_micros = 10,
+		    requested_overage_limit_micros = 10
 		WHERE id = $1
 	`, currentPeriodA); err != nil {
 		_ = overageCapacity.Rollback(context.WithoutCancel(ctx))
@@ -2018,6 +2308,54 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 		_ = overageCapacity.Rollback(context.WithoutCancel(ctx))
 		t.Fatal(err)
 	}
+	if _, err := overageCapacity.Exec(ctx, `
+		WITH paid_cycle AS (
+			INSERT INTO polar_paid_cycles (
+				polar_order_id, organization_id, subscription_id,
+				billing_period_id, period_starts_at, period_ends_at,
+				grant_micros, reversed_micros, paid_at
+			)
+			SELECT
+				'order_commit_shortfall', $1, $2, id, starts_at, ends_at,
+				10000000, 10, statement_timestamp()
+			FROM billing_periods
+			WHERE id = $3
+			RETURNING polar_order_id, organization_id
+		), refund AS (
+			INSERT INTO polar_refunds (
+				polar_refund_id, organization_id, polar_order_id, status,
+				requested_micros, reversed_micros, provider_event_at
+			)
+			SELECT
+				'refund_commit_shortfall', organization_id, polar_order_id,
+				'succeeded', 10, 10, statement_timestamp()
+			FROM paid_cycle
+			RETURNING polar_refund_id
+		)
+		INSERT INTO billing_shortfalls (
+			id, organization_id, billing_period_id, polar_refund_id,
+			source_reference, amount_micros
+		)
+		SELECT
+			'0198a000-0000-7000-8000-000000000324',
+			$1, $3, polar_refund_id,
+			'refund-shortfall-before-commit', 10
+		FROM refund
+	`, orgA, subA, currentPeriodA); err != nil {
+		_ = overageCapacity.Rollback(context.WithoutCancel(ctx))
+		t.Fatal(err)
+	}
+	requireConstraintFailure(t, ctx, overageCapacity, `
+		INSERT INTO usage_records (
+			id, reservation_id, organization_id, team_id, team_name_snapshot,
+			meter_id, account_id, service_identity_id, committed_units,
+			total_cost_micros, credit_applied_micros, overage_applied_micros
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000322',
+			'0198a000-0000-7000-8000-000000000323',
+			$1, $2, 'A', $3, $4, $5, 5, 5, 4, 1
+		)
+	`, orgA, teamA, meterID, accountA, serviceID)
 	if _, err := overageCapacity.Exec(
 		ctx,
 		"UPDATE subscriptions SET status = 'past_due' WHERE id = $1",
@@ -3278,6 +3616,19 @@ func TestPostgreSQLSchemaEnforcesOrganizationBoundariesAndRetention(t *testing.T
 			'{"request_id":"0198a000-0000-7000-8000-000000000914","trace_id":"0123456789abcdef0123456789abcdef","request_method":"POST","request_procedure":"/delibase.v1.UsageService/ReserveUsage"}'
 		)
 	`, auditID, orgA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO audit_events (
+			id, event_type, actor_reference, organization_id, result
+		) VALUES (
+			'0198a000-0000-7000-8000-000000000133',
+			'billing_portal_session.created',
+			'',
+			$1,
+			'success'
+		)
+	`, orgA); err != nil {
 		t.Fatal(err)
 	}
 	requireConstraintFailure(t, ctx, transaction, `

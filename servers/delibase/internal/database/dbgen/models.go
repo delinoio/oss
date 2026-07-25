@@ -36,13 +36,25 @@ type AuditEvent struct {
 }
 
 type BillingPeriod struct {
-	ID                 pgtype.UUID
-	OrganizationID     pgtype.UUID
-	SubscriptionID     pgtype.UUID
-	StartsAt           pgtype.Timestamptz
-	EndsAt             pgtype.Timestamptz
-	OverageLimitMicros int64
-	CreatedAt          pgtype.Timestamptz
+	ID                          pgtype.UUID
+	OrganizationID              pgtype.UUID
+	SubscriptionID              pgtype.UUID
+	StartsAt                    pgtype.Timestamptz
+	EndsAt                      pgtype.Timestamptz
+	OverageLimitMicros          int64
+	CreatedAt                   pgtype.Timestamptz
+	RequestedOverageLimitMicros int64
+}
+
+type BillingShortfall struct {
+	ID              pgtype.UUID
+	OrganizationID  pgtype.UUID
+	BillingPeriodID pgtype.UUID
+	PolarRefundID   string
+	SourceReference string
+	AmountMicros    int64
+	CreatedAt       pgtype.Timestamptz
+	RetainUntil     pgtype.Timestamptz
 }
 
 type CatalogApp struct {
@@ -170,13 +182,14 @@ type LedgerEntry struct {
 }
 
 type Organization struct {
-	ID                 pgtype.UUID
-	Name               string
-	Slug               string
-	OverageLimitMicros int64
-	DeletedAt          pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
+	ID                     pgtype.UUID
+	Name                   string
+	Slug                   string
+	OverageLimitMicros     int64
+	DeletedAt              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	OverageLimitConfigured bool
 }
 
 type OrganizationInvitation struct {
@@ -217,17 +230,71 @@ type OrganizationSlugRegistry struct {
 	OrganizationID pgtype.UUID
 }
 
+type PolarCatalogMapping struct {
+	Singleton         bool
+	PolarProductID    string
+	PolarEnvironment  string
+	Currency          string
+	RecurringInterval string
+	PriceMicros       int64
+	CycleGrantMicros  int64
+	UpdatedAt         pgtype.Timestamptz
+}
+
 type PolarCustomer struct {
 	OrganizationID  pgtype.UUID
 	PolarCustomerID string
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+	ExternalID      pgtype.UUID
 }
 
 type PolarMeterMapping struct {
 	MeterID      pgtype.UUID
 	PolarMeterID string
 	CreatedAt    pgtype.Timestamptz
+}
+
+type PolarPaidCycle struct {
+	PolarOrderID    string
+	OrganizationID  pgtype.UUID
+	SubscriptionID  pgtype.UUID
+	BillingPeriodID pgtype.UUID
+	PeriodStartsAt  pgtype.Timestamptz
+	PeriodEndsAt    pgtype.Timestamptz
+	GrantMicros     int64
+	ReversedMicros  int64
+	PaidAt          pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	RetainUntil     pgtype.Timestamptz
+}
+
+type PolarRefund struct {
+	PolarRefundID   string
+	OrganizationID  pgtype.UUID
+	PolarOrderID    string
+	Status          string
+	RequestedMicros int64
+	ReversedMicros  int64
+	Chargeback      bool
+	ProviderEventAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	RetainUntil     pgtype.Timestamptz
+}
+
+type PolarSubscriptionCheckout struct {
+	OrganizationID  pgtype.UUID
+	PolarCheckoutID string
+	ExpiresAt       pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
+type PolarSubscriptionCheckoutAttempt struct {
+	OrganizationID         pgtype.UUID
+	ProviderIdempotencyKey string
+	RequestDigest          []byte
+	ExpiresAt              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
 }
 
 type ServiceIdentity struct {
@@ -255,6 +322,7 @@ type Subscription struct {
 	CurrentPeriodEndsAt   pgtype.Timestamptz
 	CreatedAt             pgtype.Timestamptz
 	UpdatedAt             pgtype.Timestamptz
+	ProviderEventAt       pgtype.Timestamptz
 }
 
 type Team struct {

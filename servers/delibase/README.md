@@ -3,9 +3,10 @@
 This directory contains the runnable, artifact-only delibase server foundation.
 It does not deploy or activate `https://delibase.deli.dev`. Authenticated
 `AccountService`, `TeamService`, and `OrganizationService` RPCs (including
-invitations) are backed by PostgreSQL/sqlc transactions. Billing and usage RPCs
-outside this implementation slice return Connect `Unimplemented`; none return
-placeholder success.
+invitations), plus the billing summary, Checkout, Customer Portal,
+overage-limit, and ledger RPCs are backed by PostgreSQL/sqlc transactions.
+Remaining usage RPCs outside this implementation slice return Connect
+`Unimplemented`; none return placeholder success.
 
 ## Configuration categories
 
@@ -22,6 +23,11 @@ Non-secret server configuration:
 - `DELIBASE_LOGTO_ISSUER`
 - `DELIBASE_LOGTO_AUDIENCE`
 - `DELIBASE_LOGTO_JWKS_URL`
+- `DELIBASE_POLAR_PRODUCT_ID`
+- `DELIBASE_POLAR_API_URL` (optional compatible HTTPS endpoint; the selected
+  official production or sandbox API is the default)
+- `DELIBASE_POLAR_ENVIRONMENT` (`production` by default; set to `sandbox` only
+  for the opt-in Polar sandbox checkout path)
 
 Secret configuration:
 
@@ -40,6 +46,9 @@ never include configured values.
 `catalog.json` is intentionally empty for this foundation. Startup validates the
 complete document and transactionally synchronizes apps, meters, price versions,
 service allowlists, and Polar meter mappings before readiness is exposed.
+Startup also fetches `DELIBASE_POLAR_PRODUCT_ID` from the selected Polar
+environment and requires one active fixed monthly USD $10 base price before
+pinning that provider catalog to the local grant contract.
 
 ## Persistence reliability
 

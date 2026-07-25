@@ -371,6 +371,20 @@ func requestDigest(parts ...string) []byte {
 	return hash.Sum(nil)
 }
 
+func providerIdempotencyKey(
+	operation string,
+	subject string,
+	organizationID uuid.UUID,
+	key string,
+) string {
+	return "delibase:v1:" + hex.EncodeToString(requestDigest(
+		operation,
+		subject,
+		organizationID.String(),
+		key,
+	))
+}
+
 func replay(
 	ctx context.Context,
 	queries *dbgen.Queries,

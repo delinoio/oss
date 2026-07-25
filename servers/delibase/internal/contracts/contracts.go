@@ -3,8 +3,14 @@ package contracts
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrCheckoutNotCreated marks a definitive provider rejection before a hosted
+// checkout exists. Unmarked provider errors are treated as ambiguous so the
+// same idempotency scope can recover them without admitting a distinct checkout.
+var ErrCheckoutNotCreated = errors.New("contracts: checkout was not created")
 
 // Clock keeps time-dependent business rules deterministic in tests.
 type Clock interface {
@@ -29,6 +35,18 @@ type PolarCustomerManager interface {
 	EnsureCustomer(context.Context, CustomerRequest) (Customer, error)
 }
 
+type PolarUsageReporter interface {
+	ReportUsage(context.Context, UsageEvent) error
+}
+
+type UsageEvent struct {
+	Name               string
+	ExternalCustomerID string
+	ExternalID         string
+	Units              int64
+	Timestamp          time.Time
+}
+
 type CustomerRequest struct {
 	OrganizationID string
 	Name           string
@@ -40,21 +58,26 @@ type Customer struct {
 
 type CheckoutRequest struct {
 	OrganizationID string
-	ReturnURL      string
+	SuccessURL     string
+	CancelURL      string
+	IdempotencyKey string
 }
 
 type Checkout struct {
-	ID  string
-	URL string
+	ID        string
+	URL       string
+	ExpiresAt time.Time
 }
 
 type PortalRequest struct {
 	OrganizationID string
 	ReturnURL      string
+	IdempotencyKey string
 }
 
 type PortalSession struct {
-	URL string
+	URL       string
+	ExpiresAt time.Time
 }
 
 // IdentityManager is the future Logto Management API deletion boundary.
