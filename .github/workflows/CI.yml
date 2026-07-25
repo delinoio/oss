@@ -815,7 +815,9 @@ jobs:
               - apps/devhud/scripts/check-widget-artifacts.mjs
               - apps/devhud/scripts/mobile.mjs
               - apps/devhud/scripts/widget-native.mjs
+              - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/gen/android/**
+              - apps/devhud/src-tauri/src/**
               - apps/devhud/src-tauri/widget-bridge/**
       - name: Determine whether to run
         id: gate
@@ -893,7 +895,9 @@ jobs:
               - apps/devhud/scripts/check-widget-artifacts.mjs
               - apps/devhud/scripts/mobile.mjs
               - apps/devhud/scripts/widget-native.mjs
+              - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/gen/apple/**
+              - apps/devhud/src-tauri/src/**
               - apps/devhud/src-tauri/widget-bridge/**
       - name: Determine whether to run
         id: gate
