@@ -51,6 +51,11 @@ requireCondition(
   "@tauri-apps/cli-cef must be pinned exactly to 3.0.0-alpha.6",
 );
 requireCondition(
+  packageJson.devDependencies?.["@tauri-apps/cli-mobile"] ===
+    "npm:@tauri-apps/cli@2.11.4",
+  "@tauri-apps/cli-mobile must alias the standard CLI exactly at 2.11.4",
+);
+requireCondition(
   packageLock.includes("specifier: 3.0.0-alpha.6") &&
     packageLock.includes("version: 3.0.0-alpha.6"),
   "pnpm-lock.yaml must lock @tauri-apps/cli-cef 3.0.0-alpha.6",
@@ -64,7 +69,12 @@ requireCondition(
   "Tauri, WRY, and cef-rs must not be overridden with Cargo patches",
 );
 
-for (const dependency of ["tauri", "tauri-build", "tauri-runtime-cef"]) {
+for (const dependency of [
+  "tauri",
+  "tauri-build",
+  "tauri-runtime-cef",
+  "tauri-runtime-wry",
+]) {
   const dependencyPattern = new RegExp(
     `${dependency}\\s*=\\s*\\{[^}]*git\\s*=\\s*"${repository}"[^}]*rev\\s*=\\s*"${revision}"`,
     "u",
@@ -76,7 +86,7 @@ for (const dependency of ["tauri", "tauri-build", "tauri-runtime-cef"]) {
 }
 
 requireCondition(
-  /tauri-runtime-cef\s*=\s*\{[^}]*default-features\s*=\s*false[^}]*features\s*=\s*\["sandbox"\]/u.test(
+  /tauri-runtime-cef\s*=\s*\{[^}]*default-features\s*=\s*false[^}]*features\s*=\s*\["devtools", "sandbox"\]/u.test(
     cargoManifest,
   ),
   "desktop must select tauri-runtime-cef's sandbox feature directly",
@@ -92,9 +102,11 @@ requireCondition(
 );
 requireCondition(
   cargoManifest.includes(
-    'desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef"]',
+    'desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
   ) &&
-    cargoManifest.includes('mobile-system-webview = ["dep:tauri"]'),
+    cargoManifest.includes(
+      'mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]',
+    ),
   "Cargo features must keep desktop CEF and mobile system webviews mutually selectable",
 );
 requireCondition(
@@ -142,8 +154,9 @@ requireCondition(
       "allow-write-settings",
       "allow-read-widget-configuration",
       "allow-write-widget-configuration",
+      "allow-reset-dev-hud",
     ]),
-  "the main capability must expose only runtime information and the two scoped persistence records",
+  "the main capability must expose only runtime information, the two scoped persistence records, and confirmed reset",
 );
 
 if (failures.length > 0) {

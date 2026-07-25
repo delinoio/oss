@@ -1,6 +1,6 @@
 [package]
 name = "devhud"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
@@ -25,16 +25,20 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "json"] }
 url = "2"
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, optional = true }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["cef", "devtools", "tray-icon"], optional = true }
-tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["sandbox"], optional = true }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["cef"], optional = true }
+tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["devtools", "sandbox"], optional = true }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["tray-icon", "devtools", "cef", "wry"], optional = true }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, optional = true }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSError", "NSString", "NSURL", "NSValue", "std"] }
 
 [features]
 default = []
 custom-protocol = ["tauri?/custom-protocol"]
-desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef"]
-mobile-system-webview = ["dep:tauri"]
+desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]
+mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]

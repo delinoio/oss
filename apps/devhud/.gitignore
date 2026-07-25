@@ -1,2 +1,12 @@
 dist/
-src-tauri/gen/
+src-tauri/gen/schemas/
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/build/
+src-tauri/gen/android/buildSrc/build/
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/app/tauri.build.gradle.kts
+src-tauri/gen/android/app/tauri.properties
+src-tauri/gen/apple/Externals/
+src-tauri/gen/apple/build/
+src-tauri/gen/apple/DerivedData/

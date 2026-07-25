@@ -85,6 +85,7 @@ describe("DevHud local persistence", () => {
     });
     const storage: LocalStorageAdapter = {
       read: async (key) => values.get(key) ?? null,
+      reset: async () => values.clear(),
       write,
     };
     const persistence = new DevHudPersistence(storage);
@@ -107,6 +108,7 @@ describe("DevHud local persistence", () => {
     let failNextWrite = false;
     const storage: LocalStorageAdapter = {
       read: async (key) => values.get(key) ?? null,
+      reset: async () => values.clear(),
       write: async (key, value) => {
         if (failNextWrite) {
           failNextWrite = false;
@@ -134,6 +136,7 @@ describe("DevHud local persistence", () => {
         if (key === SETTINGS_STORAGE_KEY) throw new Error("injected read failure");
         return null;
       },
+      reset: async () => undefined,
       write,
     };
     const persistence = new DevHudPersistence(storage);
@@ -206,6 +209,29 @@ describe("DevHud local persistence", () => {
     });
   });
 
+  it("clears rejected records and permits writes after reset", async () => {
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(SETTINGS_STORAGE_KEY, "{not-json}");
+    storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, "{not-json}");
+    const persistence = new DevHudPersistence(storage);
+
+    await expect(persistence.load()).resolves.toMatchObject({
+      issues: [
+        expect.objectContaining({ key: SETTINGS_STORAGE_KEY }),
+        expect.objectContaining({ key: WIDGET_CONFIGURATION_STORAGE_KEY }),
+      ],
+    });
+    await expect(persistence.reset()).resolves.toEqual({
+      settings: defaultSettings,
+      widgetConfiguration: defaultWidgetConfiguration,
+      issues: [],
+    });
+    expect(storage.values.size).toBe(0);
+    await expect(
+      persistence.saveSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
+    ).resolves.toBeUndefined();
+  });
+
   it("keeps another record's issue after a successful write", async () => {
     const storage = new MemoryStorageAdapter();
     storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, "{not-json}");
@@ -233,9 +259,10 @@ describe("DevHud local persistence", () => {
     });
   });
 
-  it("maps only the four narrow native record operations", async () => {
+  it("maps only the scoped native record and reset operations", async () => {
     const bridge = {
       readSettings: vi.fn(async () => null),
+      resetDevHud: vi.fn(async () => undefined),
       writeSettings: vi.fn(async () => undefined),
       readWidgetConfiguration: vi.fn(async () => null),
       writeWidgetConfiguration: vi.fn(async () => undefined),
@@ -244,8 +271,10 @@ describe("DevHud local persistence", () => {
 
     await storage.read(SETTINGS_STORAGE_KEY);
     await storage.write(WIDGET_CONFIGURATION_STORAGE_KEY, "{}");
+    await storage.reset();
     expect(bridge.readSettings).toHaveBeenCalledOnce();
     expect(bridge.writeWidgetConfiguration).toHaveBeenCalledWith("{}");
+    expect(bridge.resetDevHud).toHaveBeenCalledOnce();
     expect(bridge.readWidgetConfiguration).not.toHaveBeenCalled();
     expect(bridge.writeSettings).not.toHaveBeenCalled();
   });

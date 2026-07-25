@@ -3,8 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 export interface RuntimeInfo {
   applicationId: "dev.deli.devhud";
   bundledOrigin: string;
+  operatingSystem: "android" | "ios" | "linux" | "macos" | "windows";
   runtime: "cef" | "system-webview";
   sandboxEnabled: boolean;
+  updatePolicy: "Unsupported" | "Desktop updater unavailable";
 }
 
 interface NativeCommandResults {

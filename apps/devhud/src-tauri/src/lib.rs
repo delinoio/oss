@@ -19,7 +19,7 @@ use std::time::Duration;
 use std::{
     fs::{self, File},
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
 };
 
@@ -39,7 +39,7 @@ type ActiveRuntime = tauri_runtime_cef::CefRuntime<tauri::EventLoopMessage>;
     feature = "mobile-system-webview",
     any(target_os = "android", target_os = "ios")
 ))]
-type ActiveRuntime = tauri::Wry;
+type ActiveRuntime = tauri_runtime_wry::Wry<tauri::EventLoopMessage>;
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const APPLICATION_ID: &str = "dev.deli.devhud";
@@ -59,8 +59,10 @@ const PERMISSIONS_POLICY: &str =
 struct RuntimeInfo {
     application_id: &'static str,
     bundled_origin: String,
+    operating_system: &'static str,
     runtime: &'static str,
     sandbox_enabled: bool,
+    update_policy: &'static str,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -82,13 +84,14 @@ struct PersistenceState {
 enum PersistenceCommandError {
     StorageUnavailable,
     InvalidRecord,
+    ResetFailed,
     WriteFailed,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 impl PersistenceState {
     fn new(directory: PathBuf) -> io::Result<Self> {
-        fs::create_dir_all(&directory)?;
+        prepare_persistence_directory(&directory)?;
         Ok(Self {
             directory: Some(directory),
             write_lock: Mutex::new(()),
@@ -142,6 +145,57 @@ impl PersistenceState {
             PersistenceCommandError::WriteFailed
         })
     }
+
+    fn reset(&self) -> Result<(), PersistenceCommandError> {
+        let _guard = self.write_lock.lock().map_err(|_| {
+            tracing::warn!(
+                event = "devhud.persistence.reset_failure",
+                classification = "reset-failed",
+                "DevHud local data reset failed"
+            );
+            PersistenceCommandError::ResetFailed
+        })?;
+        for key in [SETTINGS_STORAGE_KEY, WIDGET_CONFIGURATION_STORAGE_KEY] {
+            let Some(path) = self.path_for(key) else {
+                log_persistence_unavailable("reset", key);
+                return Err(PersistenceCommandError::StorageUnavailable);
+            };
+            if let Err(error) = fs::remove_file(path) {
+                if error.kind() == io::ErrorKind::NotFound {
+                    continue;
+                }
+                log_persistence_io_failure("reset", key, &error);
+                return Err(PersistenceCommandError::ResetFailed);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn prepare_persistence_directory(directory: &Path) -> io::Result<()> {
+    fs::create_dir_all(directory)?;
+    #[cfg(all(feature = "mobile-system-webview", target_os = "ios"))]
+    exclude_ios_persistence_from_backup(directory)?;
+    Ok(())
+}
+
+#[cfg(all(feature = "mobile-system-webview", target_os = "ios"))]
+fn exclude_ios_persistence_from_backup(directory: &Path) -> io::Result<()> {
+    use objc2_foundation::{NSNumber, NSString, NSURL, NSURLIsExcludedFromBackupKey};
+
+    let path = directory
+        .to_str()
+        .ok_or_else(|| io::Error::other("DevHud persistence path is not valid UTF-8"))?;
+    let path = NSString::from_str(path);
+    let directory_url = NSURL::fileURLWithPath_isDirectory(&path, true);
+    let excluded = NSNumber::new_bool(true);
+
+    // SAFETY: NSURLIsExcludedFromBackupKey requires an NSNumber boolean value.
+    unsafe {
+        directory_url.setResourceValue_forKey_error(Some(&*excluded), NSURLIsExcludedFromBackupKey)
+    }
+    .map_err(|_| io::Error::other("failed to exclude DevHud persistence from iOS backup"))
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -409,6 +463,30 @@ const fn runtime_name() -> &'static str {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+const fn operating_system() -> &'static str {
+    if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "linux"
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+const fn update_policy() -> &'static str {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        "Unsupported"
+    } else {
+        "Desktop updater unavailable"
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 #[tauri::command]
 fn get_runtime_info(
     webview: Webview<ActiveRuntime>,
@@ -442,8 +520,10 @@ fn get_runtime_info(
     Ok(RuntimeInfo {
         application_id: APPLICATION_ID,
         bundled_origin: bundled_origin(&url),
+        operating_system: operating_system(),
         runtime: runtime_name(),
         sandbox_enabled: cfg!(not(any(target_os = "android", target_os = "ios"))),
+        update_policy: update_policy(),
     })
 }
 
@@ -482,6 +562,28 @@ fn write_widget_configuration(
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn reset_dev_hud(
+    webview: Webview<ActiveRuntime>,
+    state: State<'_, PersistenceState>,
+) -> Result<(), PersistenceCommandError> {
+    webview.clear_all_browsing_data().map_err(|_| {
+        tracing::warn!(
+            event = "devhud.persistence.reset_failure",
+            classification = "reset-failed",
+            "DevHud application browsing data reset failed"
+        );
+        PersistenceCommandError::ResetFailed
+    })?;
+    state.reset()?;
+    tracing::info!(
+        event = "devhud.persistence.reset",
+        "DevHud local data was reset"
+    );
+    Ok(())
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
     builder
         .invoke_handler(tauri::generate_handler![
@@ -489,7 +591,8 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             read_settings,
             write_settings,
             read_widget_configuration,
-            write_widget_configuration
+            write_widget_configuration,
+            reset_dev_hud
         ])
         .setup(|app| {
             let persistence = match app.path().app_local_data_dir() {
@@ -515,7 +618,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("DevHud")
                 .inner_size(720.0, 520.0)
-                .devtools(true)
+                .devtools(cfg!(feature = "desktop-cef") || cfg!(debug_assertions))
                 .disable_drag_drop_handler()
                 .on_navigation(is_bundled_url)
                 .on_new_window(|_, _| NewWindowResponse::Deny)
@@ -578,31 +681,100 @@ fn run_app() -> tauri::Result<()> {
     Ok(())
 }
 
-#[cfg_attr(
-    all(
-        feature = "desktop-cef",
-        not(any(target_os = "android", target_os = "ios"))
-    ),
-    tauri::cef_entry_point
-)]
-#[cfg_attr(
-    all(
-        feature = "mobile-system-webview",
-        any(target_os = "android", target_os = "ios")
-    ),
-    tauri::mobile_entry_point
-)]
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 pub fn run() {
+    #[cfg(all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    if std::env::args().any(|argument| argument.starts_with("--type=")) {
+        // The pinned entry-point macro reaches this same upstream helper through
+        // tauri's `cef` feature. Calling the selected runtime directly prevents
+        // that feature from being unified into mobile builds.
+        tauri_runtime_cef::run_cef_helper_process();
+        return;
+    }
+
     initialize_logging();
 
     if run_app().is_err() {
         tracing::error!(
-            event = "devhud.runtime.cef_initialization_failure",
-            classification = "cef-initialization",
+            event = "devhud.runtime.initialization_failure",
+            classification = if cfg!(feature = "desktop-cef") {
+                "cef-initialization"
+            } else {
+                "system-webview-initialization"
+            },
             "runtime initialization failed"
         );
         std::process::exit(70);
+    }
+}
+
+#[cfg(all(feature = "mobile-system-webview", target_os = "ios"))]
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn start_app() {
+    run();
+}
+
+#[cfg(all(feature = "mobile-system-webview", target_os = "android"))]
+mod android_entry {
+    fn start_app_inner() {
+        use tauri_runtime_wry::wry::{
+            android_setup,
+            prelude::{JClass, JNIEnv, JString},
+        };
+
+        // This is the pinned upstream mobile entry binding with its WRY path
+        // made explicit. Remove it when Tauri's macro accepts an explicit
+        // runtime without requiring the `tauri/wry` feature.
+        tauri_runtime_wry::wry::android_binding!(dev_deli, devhud, tauri_runtime_wry::wry);
+        tauri_runtime_wry::tao::android_binding!(
+            dev_deli,
+            devhud,
+            Rust,
+            android_setup,
+            start_app_inner,
+            tauri_runtime_wry::tao
+        );
+        tauri_runtime_wry::tao::platform::android::prelude::android_fn!(
+            app_tauri,
+            plugin,
+            PluginManager,
+            handlePluginResponse,
+            [i32, JString, JString],
+        );
+        tauri_runtime_wry::tao::platform::android::prelude::android_fn!(
+            app_tauri,
+            plugin,
+            PluginManager,
+            sendChannelData,
+            [i64, JString],
+        );
+
+        #[allow(non_snake_case)]
+        fn handlePluginResponse(
+            mut environment: JNIEnv,
+            _: JClass,
+            id: i32,
+            success: JString,
+            error: JString,
+        ) {
+            tauri::plugin::mobile::handle_android_plugin_response(
+                &mut environment,
+                id,
+                success,
+                error,
+            );
+        }
+
+        #[allow(non_snake_case)]
+        fn sendChannelData(mut environment: JNIEnv, _: JClass, id: i64, data: JString) {
+            tauri::plugin::mobile::send_channel_data(&mut environment, id, data);
+        }
+
+        super::run();
     }
 }
 
@@ -645,14 +817,19 @@ mod tests {
         let runtime_info = RuntimeInfo {
             application_id: APPLICATION_ID,
             bundled_origin: "http://tauri.localhost".to_string(),
+            operating_system: "linux",
             runtime: "cef",
             sandbox_enabled: true,
+            update_policy: "Desktop updater unavailable",
         };
         let value = serde_json::to_value(runtime_info).unwrap();
 
         assert_eq!(value["applicationId"], APPLICATION_ID);
         assert_eq!(value["runtime"], "cef");
         assert_eq!(value["sandboxEnabled"], true);
+        assert_eq!(value["operatingSystem"], "linux");
+        assert_eq!(value["updatePolicy"], "Desktop updater unavailable");
+        assert_eq!(update_policy(), "Desktop updater unavailable");
     }
 
     #[test]

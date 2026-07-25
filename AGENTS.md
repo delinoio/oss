@@ -128,8 +128,8 @@ enum ProjectId {
 - `devhud` is a local-only project for individual developers and is independent from `delidev` and `delibase`.
 - `apps/devhud` is DevHud's sole canonical implementation path. Do not place DevHud runtime, native widget, backend, API, or shared contract code in another path.
 - DevHud must not consume or expose DeliDev accounts, catalog, billing, APIs, routes, contracts, organizations, or authentication. It has no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or cloud synchronization.
-- Production tools and user-visible widgets remain empty in `0.1.0`. The active foundation includes a closed internal tool registry plus desktop/mobile empty-state UI, provider-owned local theme/widget state, and `test:a11y`; frontend persistence is limited to the two stable versioned records through record-specific native commands, never broad filesystem/default-store authority. The complete runtime, identifier, security, diagnostic, CI, release, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
-- `apps/devhud` contains the active application foundation and Cargo workspace member. Desktop builds use the exact pinned upstream Tauri CEF runtime and sandbox directly; mobile builds use their native empty-state shell. Product, mobile/widget, packaging, release, publisher, and support work may proceed only with synchronized implementation, validation, and contract updates.
+- Production tools and user-visible widgets remain empty in `0.1.0`. The active foundation includes a closed internal tool registry plus desktop/mobile empty-state UI, provider-owned local theme/widget state, and `test:a11y`; frontend persistence is limited to the two stable versioned records through record-specific native commands, never broad filesystem/default-store authority. Mobile hosts must keep those records device-local by excluding iOS device backups and disabling Android cloud backup and device transfer. The complete runtime, identifier, security, diagnostic, CI, release, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
+- `apps/devhud` contains the active application foundation, Cargo workspace member, and maintained iOS/Android native hosts. Desktop builds use the exact pinned upstream Tauri CEF runtime and sandbox directly; iOS 17+ uses standard WKWebView and Android 10/API 29+ uses System WebView through isolated mobile-only features. Distributed mobile targets contain no WidgetKit extension, Android AppWidgetProvider, deep-link handler, associated domain, or network permission. Product, native-widget, packaging, release, publisher, and support work may proceed only with synchronized implementation, validation, and contract updates.
 
 ### Repository Default Technology Choices
 
@@ -353,7 +353,7 @@ Coverage expectations:
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
-- `node-devhud`: runs `pnpm install --frozen-lockfile` and DevHud `typecheck`, `lint`, unit, accessibility, and build commands.
+- `node-devhud`: runs `pnpm install --frozen-lockfile` and DevHud `typecheck`, `lint`, unit, accessibility, build, and portable mobile-contract commands.
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
