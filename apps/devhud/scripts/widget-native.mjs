@@ -72,7 +72,10 @@ async function firstAvailableSimulatorDestination() {
     { cwd: appRoot, encoding: "utf8" },
   );
   const listing = JSON.parse(output);
-  for (const devices of Object.values(listing.devices ?? {})) {
+  for (const [runtime, devices] of Object.entries(listing.devices ?? {})) {
+    if (!runtime.startsWith("com.apple.CoreSimulator.SimRuntime.iOS-")) {
+      continue;
+    }
     const device = devices.find((candidate) => candidate.isAvailable);
     if (device) return `platform=iOS Simulator,id=${device.udid}`;
   }
