@@ -814,6 +814,7 @@ jobs:
               - apps/devhud/package.json
               - apps/devhud/scripts/check-widget-artifacts.mjs
               - apps/devhud/scripts/mobile.mjs
+              - apps/devhud/scripts/process.mjs
               - apps/devhud/scripts/widget-native.mjs
               - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/build.rs
@@ -899,6 +900,7 @@ jobs:
               - apps/devhud/package.json
               - apps/devhud/scripts/check-widget-artifacts.mjs
               - apps/devhud/scripts/mobile.mjs
+              - apps/devhud/scripts/process.mjs
               - apps/devhud/scripts/widget-native.mjs
               - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/build.rs
