@@ -62,6 +62,7 @@ use tauri::{
 ))]
 use tauri::{
     PhysicalPosition, WindowEvent,
+    image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
@@ -1893,8 +1894,15 @@ fn create_tray(app: &AppHandle<ActiveRuntime>) -> tauri::Result<()> {
             "quit" => request_quit(app),
             _ => {}
         });
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
+    #[cfg(target_os = "macos")]
+    let tray_icon = Image::from_bytes(include_bytes!(
+        "../../assets/tray/devhud-tray-template@2x.png"
+    ))
+    .ok();
+    #[cfg(not(target_os = "macos"))]
+    let tray_icon = Image::from_bytes(include_bytes!("../../assets/tray/devhud-tray@2x.png")).ok();
+    if let Some(icon) = tray_icon {
+        tray = tray.icon(icon);
     }
     #[cfg(target_os = "macos")]
     {

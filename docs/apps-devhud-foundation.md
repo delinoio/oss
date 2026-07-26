@@ -19,6 +19,14 @@
 - Mobile operating systems and architectures: iOS 17.0 or newer on `arm64` production devices and `x86_64` CI simulators; Android 10/API 29 or newer on `arm64-v8a` and `armeabi-v7a` production devices and `x86_64` CI emulators.
 - UX baseline: English-only, System/Light/Dark themes with System initially selected, Toss Design Guidelines, and WCAG 2.2 AA. The product uses the DevHud wordmark and minimal `DH` lettermark; a complete brand system is out of scope.
 
+### Visual asset foundation
+
+- The visual boundary is intentionally limited to the existing DevHud wordmark and a reusable `DH` lettermark. Its canonical source is `apps/devhud/assets/source/devhud-lettermark.svg`; `pnpm assets` deterministically generates the Tauri desktop PNG, ICO, and ICNS icons, tray/menu-bar templates, installer/application/launch images, iOS app and launch catalog images, Android launcher densities, and English store-listing images under `apps/devhud`.
+- Asset regeneration removes obsolete manifest entries only when their resolved paths remain inside the approved generated-asset directories; malformed or traversal paths are ignored during cleanup.
+- The documented `mobile:generate:android` and `mobile:generate:ios` workflows reapply and validate canonical assets after Tauri regenerates each native host, so generated launcher, AppIcon, and LaunchLogo resources cannot silently revert to platform defaults.
+- Generated PNGs use the same blue/white treatment in System, Light, and Dark contexts; opaque iOS catalog icons, Android launcher icons, store listings, and Windows/Linux tray assets are 8-bit RGB, while transparent outputs such as macOS tray templates are 8-bit RGBA. The ICO and ICNS desktop containers wrap deterministic PNGs generated from the same source. The Google Play listing uses a distinct 512×512 icon and an opaque 1024×500 feature graphic. `pnpm check:assets` validates dimensions, PNG color formats, decoded alpha coverage, native container signatures, contrast, safe names, source hash, deterministic regeneration, Tauri inclusion, native host inclusion, and accessible store metadata.
+- The iOS release application consumes only its generated app/launch asset catalog and the Android release application consumes only generated launcher resources. The compile-only WidgetKit/AppWidgetProvider projects receive no release asset dependency and remain unembedded/unregistered. No widget artwork, product tool illustration, campaign graphic, website asset, or broader brand system is included.
+
 ### CEF desktop runtime
 
 DevHud uses Tauri's pinned CEF runtime directly for desktop builds. Desktop implementation and release validation covers the following behavior on macOS, Windows, and Ubuntu, for x64 and ARM64 where supported:

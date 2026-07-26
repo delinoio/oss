@@ -1,0 +1,341 @@
+{
+  "source": "source/devhud-lettermark.svg",
+  "sourceSha256": "e0ceab28a28723a073a22562d757952f905471b901d9ea7bd17037efd5b6f7d8",
+  "generator": "scripts/generate-assets.mjs",
+  "assets": [
+    {
+      "path": "src-tauri/icons/icon.ico",
+      "dimensions": [
+        256,
+        256
+      ],
+      "format": "ico"
+    },
+    {
+      "path": "src-tauri/icons/icon.icns",
+      "dimensions": [
+        512,
+        512
+      ],
+      "format": "icns"
+    },
+    {
+      "path": "src-tauri/icons/icon.png",
+      "dimensions": [
+        512,
+        512
+      ]
+    },
+    {
+      "path": "src-tauri/icons/32x32.png",
+      "dimensions": [
+        32,
+        32
+      ]
+    },
+    {
+      "path": "src-tauri/icons/128x128.png",
+      "dimensions": [
+        128,
+        128
+      ]
+    },
+    {
+      "path": "src-tauri/icons/128x128@2x.png",
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "path": "src-tauri/icons/256x256.png",
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "path": "assets/application/devhud-application-1024.png",
+      "dimensions": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "path": "assets/installer/devhud-installer-256.png",
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "path": "assets/launch/devhud-launch-2048.png",
+      "dimensions": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/LaunchLogo.imageset/devhud-launch.png",
+      "dimensions": [
+        512,
+        512
+      ]
+    },
+    {
+      "path": "assets/store/devhud-store-icon-1024.png",
+      "dimensions": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "path": "assets/store/devhud-play-icon-512.png",
+      "dimensions": [
+        512,
+        512
+      ]
+    },
+    {
+      "path": "assets/store/devhud-store-feature-1024x500.png",
+      "dimensions": [
+        1024,
+        500
+      ]
+    },
+    {
+      "path": "assets/tray/devhud-tray-template.png",
+      "dimensions": [
+        18,
+        18
+      ]
+    },
+    {
+      "path": "assets/tray/devhud-tray-template@2x.png",
+      "dimensions": [
+        36,
+        36
+      ]
+    },
+    {
+      "path": "assets/tray/devhud-tray.png",
+      "dimensions": [
+        18,
+        18
+      ]
+    },
+    {
+      "path": "assets/tray/devhud-tray@2x.png",
+      "dimensions": [
+        36,
+        36
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@1x.png",
+      "dimensions": [
+        20,
+        20
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@2x-1.png",
+      "dimensions": [
+        40,
+        40
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@2x.png",
+      "dimensions": [
+        40,
+        40
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@3x.png",
+      "dimensions": [
+        60,
+        60
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-29x29@1x.png",
+      "dimensions": [
+        29,
+        29
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-29x29@2x-1.png",
+      "dimensions": [
+        58,
+        58
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-29x29@2x.png",
+      "dimensions": [
+        58,
+        58
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-29x29@3x.png",
+      "dimensions": [
+        87,
+        87
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-40x40@1x.png",
+      "dimensions": [
+        40,
+        40
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-40x40@2x-1.png",
+      "dimensions": [
+        80,
+        80
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-40x40@2x.png",
+      "dimensions": [
+        80,
+        80
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-40x40@3x.png",
+      "dimensions": [
+        120,
+        120
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-60x60@2x.png",
+      "dimensions": [
+        120,
+        120
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-60x60@3x.png",
+      "dimensions": [
+        180,
+        180
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-76x76@1x.png",
+      "dimensions": [
+        76,
+        76
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-76x76@2x.png",
+      "dimensions": [
+        152,
+        152
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-83.5x83.5@2x.png",
+      "dimensions": [
+        167,
+        167
+      ]
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png",
+      "dimensions": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "dimensions": [
+        48,
+        48
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png",
+      "dimensions": [
+        48,
+        48
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "dimensions": [
+        72,
+        72
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
+      "dimensions": [
+        72,
+        72
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "dimensions": [
+        96,
+        96
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png",
+      "dimensions": [
+        96,
+        96
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "dimensions": [
+        144,
+        144
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png",
+      "dimensions": [
+        144,
+        144
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "dimensions": [
+        192,
+        192
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png",
+      "dimensions": [
+        192,
+        192
+      ]
+    }
+  ],
+  "generatedFiles": [
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "sha256": "d21adf93fed76cca8496746d9eff711290c4c86db00c9509330ae5997d6f91bc"
+    },
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/LaunchLogo.imageset/Contents.json",
+      "sha256": "f629502d9684ee85a2b26015c4ce911328b356790917154d35150c9ce6f555f0"
+    }
+  ]
+}
