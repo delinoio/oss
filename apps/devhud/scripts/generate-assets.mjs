@@ -127,14 +127,15 @@ function contains(point, polygon) {
 }
 
 function png(width, height, source, { tray = false, opaque = false } = {}) {
-  const pixels = Buffer.alloc(width * height * 4);
+  const channels = opaque ? 3 : 4;
+  const pixels = Buffer.alloc(width * height * channels);
   const fit = Math.min(width, height) / 512;
   const offsetX = (width - 512 * fit) / 2; const offsetY = (height - 512 * fit) / 2;
   const rect = parseRect(source);
   const blueColor = parseColor(source, "blue", blue); const whiteColor = parseColor(source, "white", white);
   const paint = (x, y, color) => {
-    const offset = (y * width + x) * 4;
-    for (let i = 0; i < 4; i += 1) pixels[offset + i] = color[i];
+    const offset = (y * width + x) * channels;
+    for (let i = 0; i < channels; i += 1) pixels[offset + i] = color[i];
   };
   const insideRoundRect = (x, y) => {
     const localX = x - rect.x; const localY = y - rect.y;
@@ -157,9 +158,10 @@ function png(width, height, source, { tray = false, opaque = false } = {}) {
     }
     paint(x, y, color);
   }
-  const rows = Buffer.alloc((width * 4 + 1) * height);
-  for (let y = 0; y < height; y += 1) { rows[y * (width * 4 + 1)] = 0; pixels.copy(rows, y * (width * 4 + 1) + 1, y * width * 4, (y + 1) * width * 4); }
-  const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 6;
+  const rowSize = width * channels;
+  const rows = Buffer.alloc((rowSize + 1) * height);
+  for (let y = 0; y < height; y += 1) { rows[y * (rowSize + 1)] = 0; pixels.copy(rows, y * (rowSize + 1) + 1, y * rowSize, (y + 1) * rowSize); }
+  const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = opaque ? 2 : 6;
   return Buffer.concat([Buffer.from("\x89PNG\r\n\x1a\n", "binary"), chunk("IHDR", header), chunk("IDAT", deflateSync(rows, { level: 9 }),), chunk("IEND", Buffer.alloc(0))]);
 }
 

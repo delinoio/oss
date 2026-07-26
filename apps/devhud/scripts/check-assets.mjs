@@ -38,7 +38,8 @@ function pngInfo(buffer) {
   requireCondition(buffer.toString("ascii", 12, 16) === "IHDR", "asset has no PNG IHDR");
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20), bitDepth: buffer[24], colorType: buffer[25] };
 }
-function alphaCoverage(buffer, { width, height }) {
+function alphaCoverage(buffer, { width, height, colorType }) {
+  if (colorType === 2) return 1;
   const idat = []; let offset = 8;
   while (offset < buffer.length) { const length = buffer.readUInt32BE(offset); const type = buffer.toString("ascii", offset + 4, offset + 8); if (type === "IDAT") idat.push(buffer.subarray(offset + 8, offset + 8 + length)); offset += 12 + length; }
   const rows = inflateSync(Buffer.concat(idat)); let opaque = 0;
@@ -49,7 +50,8 @@ for (const asset of manifest.assets) {
   const buffer = await readFile(resolve(appRoot, asset.path));
   const info = pngInfo(buffer);
   requireCondition(info.width === asset.dimensions[0] && info.height === asset.dimensions[1], `${asset.path} has unexpected dimensions`);
-  requireCondition(info.bitDepth === 8 && info.colorType === 6, `${asset.path} must be 8-bit RGBA`);
+  const requiresOpaque = asset.path.includes("AppIcon") || asset.path.includes("mipmap-") || asset.path.includes("assets/store/") || asset.path.endsWith("assets/tray/devhud-tray.png") || asset.path.endsWith("assets/tray/devhud-tray@2x.png");
+  requireCondition(info.bitDepth === 8 && info.colorType === (requiresOpaque ? 2 : 6), `${asset.path} must be 8-bit ${requiresOpaque ? "RGB" : "RGBA"}`);
   requireCondition(buffer.length > 64, `${asset.path} is empty or suspiciously small`);
   const coverage = alphaCoverage(buffer, info);
   requireCondition(coverage > 0, `${asset.path} has no opaque pixels`);
