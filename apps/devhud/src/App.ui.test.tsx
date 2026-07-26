@@ -46,7 +46,6 @@ function desktopBridge(
   overrides: Partial<DesktopBridge> = {},
 ): DesktopBridge {
   return {
-    showHud: vi.fn(async () => ({ status: "shown" as const })),
     hideHud: vi.fn(async () => ({ status: "hidden" as const })),
     showSettings: vi.fn(async () => undefined),
     hideSettings: vi.fn(async () => undefined),

@@ -35,6 +35,8 @@ compile_error!("desktop-cef cannot be used for iOS or Android");
 ))]
 compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+use std::borrow::Cow;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use std::sync::{
     Mutex,
@@ -50,10 +52,11 @@ use std::{
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::{fs::File, io::Write};
 
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+use http::{HeaderName, HeaderValue, Request, Response, StatusCode};
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use tauri::{
     AppHandle, Manager, State, Webview, WebviewUrl,
-    http::{HeaderName, HeaderValue},
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
 #[cfg(all(
@@ -1336,7 +1339,79 @@ fn is_bundled_url(url: &Url) -> bool {
         ("http", "tauri.localhost")
     };
 
-    url.port().is_none() && url.scheme() == scheme && url.host_str() == Some(host)
+    url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.scheme() == scheme
+        && url.host_str() == Some(host)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn is_local_ipc_request(url: &Url) -> bool {
+    url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && ((url.scheme() == "ipc" && url.host_str() == Some("localhost"))
+            || (url.scheme() == "http" && url.host_str() == Some("ipc.localhost")))
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WebResourceDecision {
+    AllowBundledAsset,
+    AllowIpc,
+    Deny,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn web_resource_decision(uri: &str) -> WebResourceDecision {
+    match uri.parse::<Url>() {
+        Ok(url) if is_bundled_url(&url) => WebResourceDecision::AllowBundledAsset,
+        Ok(url) if is_local_ipc_request(&url) => WebResourceDecision::AllowIpc,
+        Ok(_) | Err(_) => WebResourceDecision::Deny,
+    }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn apply_web_resource_policy(
+    request: Request<Vec<u8>>,
+    response: &mut Response<Cow<'static, [u8]>>,
+) {
+    let decision = web_resource_decision(&request.uri().to_string());
+    if decision == WebResourceDecision::Deny {
+        *response.status_mut() = StatusCode::FORBIDDEN;
+        *response.body_mut() = Cow::Borrowed(&[]);
+        response.headers_mut().clear();
+    }
+
+    let headers = response.headers_mut();
+    headers.insert(
+        HeaderName::from_static("cache-control"),
+        HeaderValue::from_static("no-store"),
+    );
+    if decision == WebResourceDecision::AllowIpc {
+        return;
+    }
+    headers.insert(
+        HeaderName::from_static("cross-origin-opener-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
+    headers.insert(
+        HeaderName::from_static("cross-origin-resource-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
+    headers.insert(
+        HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static(PERMISSIONS_POLICY),
+    );
+    headers.insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -1756,15 +1831,6 @@ fn hide_hud_internal(app: &AppHandle<ActiveRuntime>) -> HudActionOutcome {
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn show_hud(app: AppHandle<ActiveRuntime>) -> HudActionOutcome {
-    show_hud_internal(&app, false)
-}
-
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
-))]
-#[tauri::command]
 fn hide_hud(app: AppHandle<ActiveRuntime>) -> HudActionOutcome {
     let outcome = hide_hud_internal(&app);
     if let HudActionOutcome::Unchanged { reason } = outcome {
@@ -1796,12 +1862,7 @@ fn build_settings_window(
     .on_navigation(is_bundled_url)
     .on_new_window(|_, _| NewWindowResponse::Deny)
     .on_download(|_, _| false)
-    .on_web_resource_request(|_, response| {
-        response.headers_mut().insert(
-            HeaderName::from_static("permissions-policy"),
-            HeaderValue::from_static(PERMISSIONS_POLICY),
-        );
-    })
+    .on_web_resource_request(apply_web_resource_policy)
     .build()
 }
 
@@ -2714,7 +2775,6 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             write_widget_configuration,
             export_diagnostics,
             reset_dev_hud,
-            show_hud,
             hide_hud,
             show_settings,
             hide_settings,
@@ -2812,12 +2872,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 .on_navigation(is_bundled_url)
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .on_download(|_, _| false)
-                .on_web_resource_request(|_, response| {
-                    response.headers_mut().insert(
-                        HeaderName::from_static("permissions-policy"),
-                        HeaderValue::from_static(PERMISSIONS_POLICY),
-                    );
-                })
+                .on_web_resource_request(apply_web_resource_policy)
                 .build()?;
             create_tray(app.handle())?;
             install_shortcut_handler(app.handle());
@@ -2883,17 +2938,12 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             app.manage(Mutex::new(StartupDiagnostics::default()));
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("DevHud")
-                .devtools(cfg!(debug_assertions))
+                .devtools(false)
                 .disable_drag_drop_handler()
                 .on_navigation(is_bundled_url)
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .on_download(|_, _| false)
-                .on_web_resource_request(|_, response| {
-                    response.headers_mut().insert(
-                        HeaderName::from_static("permissions-policy"),
-                        HeaderValue::from_static(PERMISSIONS_POLICY),
-                    );
-                })
+                .on_web_resource_request(apply_web_resource_policy)
                 .build()?;
             Ok(())
         })
@@ -3137,12 +3187,121 @@ mod tests {
             "http://localhost:4173/",
             "https://tauri.localhost/index.html",
             "https://tauri.localhost:8080/index.html",
+            "http://attacker@tauri.localhost/index.html",
+            "http://tauri.localhost@attacker.example/index.html",
             "file:///tmp/index.html",
             "data:text/html,devhud",
             "about:blank",
         ] {
             assert!(!is_bundled_url(&denied.parse().unwrap()), "{denied}");
         }
+    }
+
+    #[test]
+    fn normal_views_and_devtools_deny_malicious_navigation_and_remote_resources() {
+        for attack_surface in [
+            "hud-view",
+            "settings-view",
+            "hud-devtools",
+            "settings-devtools",
+        ] {
+            for denied in [
+                "https://attacker.example/remote.js",
+                "http://localhost:4173/remote.js",
+                "file:///private/user/file",
+                "data:text/javascript,fetch('https://attacker.example')",
+                "ftp://attacker.example/payload",
+                "not a URI",
+            ] {
+                assert_eq!(
+                    web_resource_decision(denied),
+                    WebResourceDecision::Deny,
+                    "{attack_surface} accepted {denied}"
+                );
+            }
+            for denied in [
+                "https://attacker.example/navigation",
+                "http://localhost:4173/navigation",
+                "file:///private/user/file",
+                "data:text/html,malicious",
+                "about:blank",
+            ] {
+                assert!(
+                    !is_bundled_url(&denied.parse().unwrap()),
+                    "{attack_surface} accepted navigation {denied}"
+                );
+            }
+        }
+
+        for allowed in [
+            "http://tauri.localhost/index.html",
+            "http://tauri.localhost/static/app.js",
+        ] {
+            assert_eq!(
+                web_resource_decision(allowed),
+                WebResourceDecision::AllowBundledAsset,
+                "{allowed}"
+            );
+        }
+        for allowed in ["ipc://localhost", "http://ipc.localhost"] {
+            assert_eq!(
+                web_resource_decision(allowed),
+                WebResourceDecision::AllowIpc,
+                "{allowed}"
+            );
+        }
+    }
+
+    #[test]
+    fn malicious_remote_resource_responses_are_replaced_with_empty_denials() {
+        let request = Request::builder()
+            .uri("https://attacker.example/remote.js")
+            .body(Vec::new())
+            .unwrap();
+        let mut response = Response::builder()
+            .status(StatusCode::OK)
+            .body(Cow::<[u8]>::Borrowed(b"malicious response"))
+            .unwrap();
+
+        apply_web_resource_policy(request, &mut response);
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(response.body().is_empty());
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert_eq!(
+            response.headers()["cross-origin-resource-policy"],
+            "same-origin"
+        );
+        assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+        assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+    }
+
+    #[test]
+    fn local_ipc_responses_keep_internal_transport_headers_and_body() {
+        let request = Request::builder()
+            .uri("http://ipc.localhost")
+            .body(Vec::new())
+            .unwrap();
+        let mut response = Response::builder()
+            .status(StatusCode::OK)
+            .header("access-control-allow-origin", "http://tauri.localhost")
+            .body(Cow::<[u8]>::Borrowed(b"{\"ok\":true}"))
+            .unwrap();
+
+        apply_web_resource_policy(request, &mut response);
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.body().as_ref(), b"{\"ok\":true}");
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            "http://tauri.localhost"
+        );
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert!(
+            !response
+                .headers()
+                .contains_key("cross-origin-resource-policy")
+        );
     }
 
     #[test]

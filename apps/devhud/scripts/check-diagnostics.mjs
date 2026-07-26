@@ -15,7 +15,7 @@ const [
   frontendSource,
   iosPlugin,
   localLogSource,
-  mainCapabilitySource,
+  mobileCapabilitySource,
   nativeSource,
   packageSource,
   settingsCapabilitySource,
@@ -30,13 +30,13 @@ const [
     "src-tauri/diagnostics-bridge/ios/Sources/DevHudDiagnosticsPlugin/DevHudDiagnosticsPlugin.swift",
   ),
   read("src-tauri/src/local_log.rs"),
-  read("src-tauri/capabilities/main.json"),
+  read("src-tauri/capabilities/mobile-main.json"),
   read("src-tauri/src/lib.rs"),
   read("package.json"),
   read("src-tauri/capabilities/settings.json"),
 ]);
 
-const mainCapability = JSON.parse(mainCapabilitySource);
+const mobileCapability = JSON.parse(mobileCapabilitySource);
 const settingsCapability = JSON.parse(settingsCapabilitySource);
 const packageJson = JSON.parse(packageSource);
 
@@ -88,9 +88,9 @@ requireCondition(
   "native export must validate explicit selection, cancellation, and absence of remote transport",
 );
 requireCondition(
-  mainCapability.permissions.includes("allow-export-diagnostics") &&
+  mobileCapability.permissions.includes("allow-export-diagnostics") &&
     settingsCapability.permissions.includes("allow-export-diagnostics") &&
-    !mainCapability.permissions.some((permission) =>
+    !mobileCapability.permissions.some((permission) =>
       /(?:dialog|fs|http|upload|shell|opener)/u.test(permission),
     ) &&
     !settingsCapability.permissions.some((permission) =>

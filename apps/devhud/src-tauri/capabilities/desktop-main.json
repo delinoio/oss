@@ -1,11 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-main",
-  "description": "Allows only DevHud's desktop HUD window to use its HUD lifecycle commands.",
+  "description": "Allows only DevHud's desktop HUD window to identify its bundled runtime, read the two application records needed to render, and use HUD lifecycle commands.",
   "local": true,
   "platforms": ["linux", "macOS", "windows"],
   "windows": ["main"],
   "permissions": [
+    "allow-get-runtime-info",
+    "allow-read-settings",
+    "allow-read-widget-configuration",
     "allow-hide-hud",
     "allow-show-settings"
   ]

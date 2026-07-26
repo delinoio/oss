@@ -1158,6 +1158,7 @@ dependencies = [
  "dirs",
  "fs2",
  "global-hotkey",
+ "http",
  "objc2-foundation",
  "rfd",
  "serde",

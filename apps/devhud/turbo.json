@@ -39,10 +39,16 @@
     "check:rust": {
       "cache": false
     },
+    "check:security": {
+      "cache": false
+    },
     "check:widget-artifacts": {
       "cache": false
     },
     "test:mobile": {
+      "cache": false
+    },
+    "test:security": {
       "cache": false
     },
     "test:android:native": {

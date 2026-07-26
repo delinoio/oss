@@ -20,6 +20,7 @@ required-features = ["desktop-cef"]
 tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", features = ["codegen"] }
 
 [dependencies]
+http = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"

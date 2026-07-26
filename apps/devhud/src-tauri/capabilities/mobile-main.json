@@ -1,8 +1,8 @@
 {
-  "identifier": "main",
-  "description": "Allows the DevHud main window to read runtime information, access its two versioned local records, request a user-selected local diagnostics export, and reset local DevHud data.",
+  "identifier": "mobile-main",
+  "description": "Allows only DevHud's standard mobile webview to identify its bundled runtime, access the two exact versioned records, request path-free diagnostics export, and reset application-owned state.",
   "local": true,
-  "platforms": ["linux", "macOS", "windows", "iOS", "android"],
+  "platforms": ["iOS", "android"],
   "windows": ["main"],
   "permissions": [
     "allow-get-runtime-info",
