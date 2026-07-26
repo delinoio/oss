@@ -85,6 +85,9 @@ test("desktop performance command owns its cross-platform build fallback", () =>
   assert.equal(packageManifest.scripts["perf:desktop"], "node scripts/performance.mjs desktop --build");
   assert.match(script, /process\.platform === "win32" \? "pnpm\.cmd" : "pnpm"/u);
   assert.match(script, /buildTimeoutMs = 15 \* 60_000/u);
+  assert.equal(packageManifest.scripts["build:desktop:performance"], "pnpm run build && tauri build --no-bundle --features desktop-cef,custom-protocol,performance-instrumentation");
+  assert.match(script, /target", "release"/u);
+  assert.match(script, /requireCleanWorktree\(\)/u);
   assert.match(script, /"build:desktop:performance"\], buildTimeoutMs, \{ stdio: "inherit", env: \{ \.\.\.process\.env, DEVHUD_BUILD_REVISION: buildRevision \} \}/u);
   assert.equal(packageManifest.scripts["perf:package"], "node scripts/performance.mjs package --build");
   assert.match(script, /clearPackageArtifacts\(\); const build = run\(process\.platform === "win32" \? "pnpm\.cmd" : "pnpm", \["run", "build:preview"\]/u);

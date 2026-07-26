@@ -65,10 +65,14 @@ They intentionally exclude user content, shortcut values, paths, environment
 values, device IDs, credentials, and raw diagnostics. Missing host tools,
 display servers, artifacts, build provenance, or supported targets are `unavailable`; an attempted
 launch/protocol error is `failed`. Mobile collection verifies the installed app's
-version and desktop collection verifies the debug binary's profiler provenance
+version and desktop collection verifies the release binary's profiler provenance
 before timing it; if either cannot verify the requested build, it writes
 unavailable evidence rather than label a stale build as current. If target
 inspection fails, its architecture is recorded as `unknown`, never guessed.
+Performance builds and evidence collection require a clean Git worktree so a
+commit revision cannot be attached to uncommitted source changes. The desktop
+profiler uses a release-profile binary with an instrumentation-only feature and
+an isolated local lock, CEF cache, and diagnostics namespace.
 Version 0.1.0 has no performance threshold:
 these commands always produce evidence rather than gate a release.
 If the desktop performance build fails, `perf:desktop` writes a `build-failed`

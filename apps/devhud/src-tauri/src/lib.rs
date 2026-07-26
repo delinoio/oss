@@ -106,6 +106,14 @@ type ActiveRuntime = tauri_runtime_wry::Wry<tauri::EventLoopMessage>;
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const APPLICATION_ID: &str = "dev.deli.devhud";
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+const PERFORMANCE_APPLICATION_ID: &str = "dev.deli.devhud.performance";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 const MAIN_WINDOW_LABEL: &str = "main";
 #[cfg(all(
@@ -701,7 +709,41 @@ where
     test
 ))]
 fn cef_profile_directory_from(cache_base: &Path) -> PathBuf {
-    cache_base.join(APPLICATION_ID).join(CEF_PROFILE_DIRECTORY)
+    cache_base
+        .join(desktop_runtime_application_id())
+        .join(CEF_PROFILE_DIRECTORY)
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn performance_instrumentation_enabled() -> bool {
+    #[cfg(feature = "performance-instrumentation")]
+    {
+        return std::env::var_os("DEVHUD_PERF").is_some_and(|value| value == "1");
+    }
+
+    #[cfg(not(feature = "performance-instrumentation"))]
+    false
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn desktop_runtime_application_id() -> &'static str {
+    if performance_instrumentation_enabled() {
+        PERFORMANCE_APPLICATION_ID
+    } else {
+        APPLICATION_ID
+    }
 }
 
 #[cfg(all(
@@ -1489,13 +1531,11 @@ fn get_runtime_info(
     // values. The HUD marker records the explicit native show invocation's
     // elapsed duration inside the measured process.
     #[cfg(all(
-        debug_assertions,
+        feature = "performance-instrumentation",
         feature = "desktop-cef",
         not(any(target_os = "android", target_os = "ios"))
     ))]
-    if webview.label() == MAIN_WINDOW_LABEL
-        && std::env::var_os("DEVHUD_PERF").is_some_and(|value| value == "1")
-    {
+    if webview.label() == MAIN_WINDOW_LABEL && performance_instrumentation_enabled() {
         let tauri_revision = diagnostics::TAURI_UPSTREAM_VERSION
             .split_once('+')
             .expect("TAURI_UPSTREAM_VERSION must include the pinned revision")
@@ -3026,7 +3066,7 @@ fn platform_builder() -> Result<tauri::Builder<ActiveRuntime>, RuntimeInitializa
     not(any(target_os = "android", target_os = "ios"))
 ))]
 fn initialize_logging() {
-    if let Ok(writer) = local_log::LocalLogWriter::new(APPLICATION_ID) {
+    if let Ok(writer) = local_log::LocalLogWriter::new(desktop_runtime_application_id()) {
         diagnostics::Diagnostics::install(writer);
     }
 }
@@ -3042,22 +3082,23 @@ const fn initialize_logging() {}
     not(any(target_os = "android", target_os = "ios"))
 ))]
 fn run_app() -> Result<(), RuntimeInitializationFailure> {
-    let _instance_guard = match single_instance::InstanceGuard::acquire(APPLICATION_ID) {
-        Ok(guard) => guard,
-        Err(single_instance::InstanceGuardError::AlreadyRunning) => {
-            diagnostics::emit(
-                diagnostics::DiagnosticEventId::RuntimeDuplicateInstance,
-                diagnostics::DiagnosticClassification::DesktopAlreadyRunning,
-            );
-            return Ok(());
-        }
-        Err(single_instance::InstanceGuardError::Unavailable(error)) => {
-            // Preserve the source error for internal diagnosis without
-            // disclosing filesystem details in the local diagnostics record.
-            let _ = error.kind();
-            return Err(RuntimeInitializationFailure::InstanceGuardUnavailable);
-        }
-    };
+    let _instance_guard =
+        match single_instance::InstanceGuard::acquire(desktop_runtime_application_id()) {
+            Ok(guard) => guard,
+            Err(single_instance::InstanceGuardError::AlreadyRunning) => {
+                diagnostics::emit(
+                    diagnostics::DiagnosticEventId::RuntimeDuplicateInstance,
+                    diagnostics::DiagnosticClassification::DesktopAlreadyRunning,
+                );
+                return Ok(());
+            }
+            Err(single_instance::InstanceGuardError::Unavailable(error)) => {
+                // Preserve the source error for internal diagnosis without
+                // disclosing filesystem details in the local diagnostics record.
+                let _ = error.kind();
+                return Err(RuntimeInitializationFailure::InstanceGuardUnavailable);
+            }
+        };
     let app = configure_builder(platform_builder()?)
         .build(tauri::generate_context!())
         .map_err(|_| RuntimeInitializationFailure::CefInitialization)?;

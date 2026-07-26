@@ -15,7 +15,9 @@ const repositoryRoot = resolve(appRoot, "../..");
 const outputDirectory = resolve(appRoot, "performance/results");
 const revision = "f49ebda2fdba5755456b0f049e32593ca0ea331a";
 const gitRevision = run("git", ["rev-parse", "HEAD"]);
-const buildRevision = gitRevision.status === 0 && /^[0-9a-f]{40}$/u.test(gitRevision.stdout.trim()) ? gitRevision.stdout.trim() : null;
+const gitWorktree = run("git", ["status", "--porcelain", "--untracked-files=all"]);
+const cleanWorktree = gitWorktree.status === 0 && !gitWorktree.stdout.trim();
+const buildRevision = cleanWorktree && gitRevision.status === 0 && /^[0-9a-f]{40}$/u.test(gitRevision.stdout.trim()) ? gitRevision.stdout.trim() : null;
 const schemaVersion = "devhud.performance.result.v1";
 const application = { version: "0.1.0", tauriRevision: revision, cefRevision: `tauri-runtime-cef@${revision}`, buildRevision };
 const hostPlatform = { darwin: "macos", win32: "windows", linux: "linux" }[process.platform];
@@ -36,6 +38,9 @@ function canonicalize(value) {
 function unavailable(platform, architecture, reason, names = [], targetKind) { return { platform, architecture, ...(targetKind ? { targetKind } : {}), status: "unavailable", unavailableReason: reason, measurements: names.map((name) => ({ name, status: "unavailable", method: methodFor(name, platform, targetKind), samples: [] })) }; }
 function methodFor(name, platform, targetKind) { return name === "desktop-hud-display" ? "process-hud-marker" : name === "desktop-package-size" ? "artifact-byte-count" : name === "desktop-idle-memory" ? "resident-set-sampling" : name === "mobile-startup" ? platform === "ios" ? targetKind === "ios-device" ? "devicectl-launch-wall-clock" : "simctl-launch-wall-clock" : "adb-am-start-w" : "process-ready-marker"; }
 function run(command, args, timeout = 30_000, options = {}) { return spawnSync(command, args, { encoding: "utf8", timeout, ...options }); }
+function requireCleanWorktree() {
+  if (!cleanWorktree) throw new Error("performance evidence requires a clean Git worktree");
+}
 function executable(command) { return run(process.platform === "win32" ? "where" : "which", [command]).status === 0; }
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -51,7 +56,7 @@ function matchesHostArchitecture(name) {
   return tokens.some((token) => new RegExp(`(?:^|[^a-z0-9])${token}(?:$|[^a-z0-9])`, "iu").test(name));
 }
 function findDesktopExecutable() {
-  const target = resolve(repositoryRoot, "target", "debug");
+  const target = resolve(repositoryRoot, "target", "release");
   if (process.platform === "darwin") {
     const bundleExecutable = resolve(target, "bundle", "macos", "DevHud.app", "Contents", "MacOS", "devhud");
     return existsSync(bundleExecutable) ? bundleExecutable : null;
@@ -398,8 +403,8 @@ function reportBuildFailure(build) {
 async function main() {
   const [command, ...rawArgs] = process.argv.slice(2);
   const args = rawArgs.filter((argument) => argument !== "--");
-  if (command === "desktop") { if (!buildRevision) throw new Error("desktop performance profiling requires a Git commit revision"); const build = args.includes("--build") ? run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:desktop:performance"], buildTimeoutMs, { stdio: "inherit", env: { ...process.env, DEVHUD_BUILD_REVISION: buildRevision } }) : null; if (build && build.status !== 0) reportBuildFailure(build); const value = args.includes("--build-failed") || (build && build.status !== 0) ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
-  if (command === "package") { if (args.includes("--build")) { clearPackageArtifacts(); const build = run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:preview"], buildTimeoutMs, { stdio: "inherit" }); if (build.status !== 0) { reportBuildFailure(build); throw new Error("package build failed"); } } console.log(recordPackageProvenance()); return; }
+  if (command === "desktop") { requireCleanWorktree(); if (!buildRevision) throw new Error("desktop performance profiling requires a Git commit revision"); const build = args.includes("--build") ? run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:desktop:performance"], buildTimeoutMs, { stdio: "inherit", env: { ...process.env, DEVHUD_BUILD_REVISION: buildRevision } }) : null; if (build && build.status !== 0) reportBuildFailure(build); const value = args.includes("--build-failed") || (build && build.status !== 0) ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
+  if (command === "package") { requireCleanWorktree(); if (args.includes("--build")) { clearPackageArtifacts(); const build = run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:preview"], buildTimeoutMs, { stdio: "inherit" }); if (build.status !== 0) { reportBuildFailure(build); throw new Error("package build failed"); } } console.log(recordPackageProvenance()); return; }
   if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}-${randomUUID()}.json`)); return; }
   if (command === "aggregate") { const files = args.length ? args.map((file) => resolve(file)) : existsSync(outputDirectory) ? readdirSync(outputDirectory).filter((file) => file.endsWith(".json") && file !== "release-performance.json").map((file) => resolve(outputDirectory, file)) : []; const value = aggregate(files); validate(value); const json = writeResult(value, "release-performance.json"); const markdown = resolve(outputDirectory, "release-performance.md"); writeFileSync(markdown, summary(value)); console.log(`${json}\n${markdown}`); return; }
   if (command === "validate") { if (!args.length) throw new Error("Usage: perf:validate -- <result.json...>"); for (const file of args) validate(JSON.parse(readFileSync(resolve(file), "utf8"))); return; }
