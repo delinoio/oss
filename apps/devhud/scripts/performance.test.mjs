@@ -79,6 +79,8 @@ test("desktop performance command owns its cross-platform build fallback", () =>
   assert.match(script, /process\.platform === "win32" \? "pnpm\.cmd" : "pnpm"/u);
   assert.match(script, /buildTimeoutMs = 15 \* 60_000/u);
   assert.match(script, /"build:desktop:performance"\], buildTimeoutMs/u);
+  assert.match(script, /DevHud desktop performance build failed/u);
+  assert.doesNotMatch(script, /console\.error\(build\.(?:stdout|stderr)/u);
 });
 
 test("Android architecture comes from the installed application ABI", () => {
@@ -91,9 +93,9 @@ test("aggregation is deterministic and keeps unavailable distinct from failed", 
   const available = JSON.parse(readFileSync(fixture, "utf8"));
   assert.deepEqual(aggregate([fixture, fixture]), available);
   const unavailable = structuredClone(available);
-  unavailable.targets[0] = { platform: "ios", architecture: "x86_64", status: "unavailable", unavailableReason: "unsupported-host", measurements: [{ name: "mobile-startup", status: "unavailable", method: "simctl-launch-wall-clock", samples: [] }] };
+  unavailable.targets[0] = { platform: "ios", architecture: "x86_64", targetKind: "ios-simulator", status: "unavailable", unavailableReason: "unsupported-host", measurements: [{ name: "mobile-startup", status: "unavailable", method: "simctl-launch-wall-clock", samples: [] }] };
   const failed = structuredClone(available);
-  failed.targets[0] = { platform: "android", architecture: "x86_64", status: "failed", failure: "launch-failed", measurements: [] };
+  failed.targets[0] = { platform: "android", architecture: "x86_64", targetKind: "android-emulator", status: "failed", failure: "launch-failed", measurements: [] };
   const directory = resolve(import.meta.dirname, "../performance/fixtures");
   // aggregate consumes files, so these existing equivalent fixture paths exercise ordering separately below.
   const merged = { ...available, targets: [...available.targets, unavailable.targets[0], failed.targets[0]].sort((a, b) => `${a.platform}/${a.architecture}`.localeCompare(`${b.platform}/${b.architecture}`)) };
@@ -165,7 +167,7 @@ test("validation rejects incompatible platform, status, and measurement combinat
   delete value.targets[0].failure;
   value.targets[0].measurements[0].method = "process-hud-marker";
   assert.throws(() => validate(value), /invalid measurement/u);
-  value.targets[0] = { platform: "android", architecture: "armv7", status: "available", measurements: [{ name: "mobile-startup", status: "available", method: "simctl-launch-wall-clock", samples: [42], unit: "milliseconds", note: "cold-process" }] };
+  value.targets[0] = { platform: "android", architecture: "armv7", targetKind: "android-device", status: "available", measurements: [{ name: "mobile-startup", status: "available", method: "simctl-launch-wall-clock", samples: [42], unit: "milliseconds", note: "cold-process" }] };
   assert.throws(() => validate(value), /invalid measurement/u);
   value.targets[0].measurements[0].method = "adb-am-start-w";
   value.targets[0].measurements[0].status = "bad | injected";
@@ -279,13 +281,37 @@ test("aggregation combines complementary unavailable evidence into an available 
   }
 });
 
-test("aggregation deterministically keeps one mobile metric when target kinds differ", () => {
+test("aggregation combines complementary failed evidence into an available target", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const cold = JSON.parse(readFileSync(fixture, "utf8"));
+    const warm = structuredClone(cold);
+    cold.targets[0].status = "failed";
+    cold.targets[0].failure = "startup-timeout";
+    cold.targets[0].measurements = cold.targets[0].measurements.filter((measurement) => measurement.name !== "desktop-warm-startup");
+    warm.targets[0].status = "failed";
+    warm.targets[0].failure = "startup-exited";
+    warm.targets[0].measurements = warm.targets[0].measurements.filter((measurement) => measurement.name !== "desktop-cold-startup");
+    const coldFile = resolve(directory, "cold.json");
+    const warmFile = resolve(directory, "warm.json");
+    writeFileSync(coldFile, JSON.stringify(cold));
+    writeFileSync(warmFile, JSON.stringify(warm));
+    const merged = aggregate([coldFile, warmFile]);
+    assert.equal(merged.targets[0].status, "available");
+    assert.equal(validate(merged), true);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("aggregation keeps mobile target kinds separate", () => {
   const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
   try {
     const simulator = JSON.parse(readFileSync(fixture, "utf8"));
-    simulator.targets[0] = { platform: "ios", architecture: "arm64", status: "available", measurements: [{ name: "mobile-startup", status: "available", method: "simctl-launch-wall-clock", samples: [42], unit: "milliseconds", note: "cold-process" }] };
+    simulator.targets[0] = { platform: "android", architecture: "arm64", targetKind: "android-emulator", status: "available", measurements: [{ name: "mobile-startup", status: "available", method: "adb-am-start-w", samples: [42], unit: "milliseconds", note: "cold-process" }] };
     const device = structuredClone(simulator);
-    device.targets[0].measurements[0] = { ...device.targets[0].measurements[0], method: "devicectl-launch-wall-clock", samples: [24] };
+    device.targets[0].targetKind = "android-device";
+    device.targets[0].measurements[0] = { ...device.targets[0].measurements[0], samples: [24] };
     const simulatorFile = resolve(directory, "simulator.json");
     const deviceFile = resolve(directory, "device.json");
     writeFileSync(simulatorFile, JSON.stringify(simulator));
@@ -294,7 +320,7 @@ test("aggregation deterministically keeps one mobile metric when target kinds di
     const reverse = aggregate([deviceFile, simulatorFile]);
     assert.deepEqual(forward, reverse);
     assert.equal(validate(forward), true);
-    assert.equal(forward.targets[0].measurements.length, 1);
+    assert.equal(forward.targets.length, 2);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -326,7 +352,7 @@ test("validation rejects repeated metrics and only permits unknown architectures
   value.targets[0].measurements.push(structuredClone(value.targets[0].measurements[0]));
   assert.throws(() => validate(value), /duplicate measurement name/u);
   value.targets[0].measurements.pop();
-  value.targets[0] = { platform: "ios", architecture: "unknown", status: "unavailable", unavailableReason: "tool-not-installed", measurements: [{ name: "mobile-startup", status: "unavailable", method: "simctl-launch-wall-clock", samples: [] }] };
+  value.targets[0] = { platform: "ios", architecture: "unknown", targetKind: "ios-simulator", status: "unavailable", unavailableReason: "tool-not-installed", measurements: [{ name: "mobile-startup", status: "unavailable", method: "simctl-launch-wall-clock", samples: [] }] };
   assert.equal(validate(value), true);
   value.targets[0].status = "failed";
   delete value.targets[0].unavailableReason;
