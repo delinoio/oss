@@ -13,4 +13,10 @@ if [[ ! "$tag" =~ ^delibase@v${core_number}\.${core_number}\.${core_number}$ ]];
   exit 1
 fi
 
-printf '%s\n' "${tag#delibase@}"
+version="${tag#delibase@}"
+if [ "${#version}" -gt 128 ]; then
+  echo "invalid delibase release tag: OCI version tag exceeds 128 characters" >&2
+  exit 1
+fi
+
+printf '%s\n' "$version"

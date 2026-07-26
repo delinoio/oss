@@ -155,6 +155,20 @@ jobs:
           DELIBASE_TEST_EXPECTED_REVISION: ${{ github.sha }}
         run: servers/delibase/scripts/test-image.sh
 
+      - name: Generate platform SPDX SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: ${{ env.IMAGE_NAME }}@${{ steps.architecture-image.outputs.digest }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: delibase-${{ matrix.arch }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Validate platform SPDX SBOM
+        run: jq -e '.spdxVersion | startswith("SPDX-")' "delibase-${{ matrix.arch }}.spdx.json" >/dev/null
+
       - name: Export validated architecture digest
         env:
           IMAGE_DIGEST: ${{ steps.architecture-image.outputs.digest }}
@@ -170,7 +184,16 @@ jobs:
           name: delibase-digest-${{ matrix.arch }}
           path: digests/*
           if-no-files-found: error
+          overwrite: true
           retention-days: 1
+
+      - name: Upload platform SPDX SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: delibase-${{ needs.metadata.outputs.version }}-${{ matrix.arch }}-spdx
+          path: delibase-${{ matrix.arch }}.spdx.json
+          if-no-files-found: error
+          overwrite: true
 
   publish:
     name: Publish signed multi-architecture image
@@ -205,6 +228,13 @@ jobs:
         with:
           pattern: delibase-digest-*
           path: digests
+          merge-multiple: true
+
+      - name: Download platform SPDX SBOMs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: delibase-${{ needs.metadata.outputs.version }}-*-spdx
+          path: sboms
           merge-multiple: true
 
       - name: Create staging manifest from validated digests
@@ -265,6 +295,30 @@ jobs:
               ["linux/amd64", "linux/arm64"]
           ' manifest.json >/dev/null
 
+      - name: Protect immutable version tag
+        id: version-tag
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if existing_descriptor="$(docker buildx imagetools inspect --format '{{json .Manifest}}' "${IMAGE_NAME}:${VERSION}" 2>version-tag-error.txt)"; then
+            existing_digest="$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' <<< "$existing_descriptor")"
+            if [ "$existing_digest" != "$IMAGE_DIGEST" ]; then
+              echo "release version ${VERSION} already points to ${existing_digest}, refusing to retarget it to ${IMAGE_DIGEST}" >&2
+              exit 1
+            fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release version ${VERSION} already points to the validated digest."
+          elif grep -Eqi '(manifest unknown|not found)' version-tag-error.txt; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            cat version-tag-error.txt >&2
+            echo "could not determine whether release version ${VERSION} already exists" >&2
+            exit 1
+          fi
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@v4.1.1
 
@@ -273,26 +327,15 @@ jobs:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: cosign sign --yes "${IMAGE_NAME}@${IMAGE_DIGEST}"
 
-      - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@v0.24.0
-        with:
-          image: ${{ env.IMAGE_NAME }}@${{ steps.image.outputs.digest }}
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
-          format: spdx-json
-          output-file: delibase.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
-
-      - name: Validate SPDX SBOM
-        run: jq -e '.spdxVersion | startswith("SPDX-")' delibase.spdx.json >/dev/null
-
-      - name: Upload SPDX SBOM
-        uses: actions/upload-artifact@v7
-        with:
-          name: delibase-${{ needs.metadata.outputs.version }}-spdx
-          path: delibase.spdx.json
-          if-no-files-found: error
+      - name: Validate platform SPDX SBOMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            sbom="sboms/delibase-${arch}.spdx.json"
+            test -f "$sbom"
+            jq -e '.spdxVersion | startswith("SPDX-")' "$sbom" >/dev/null
+          done
 
       - name: Publish GitHub build provenance
         uses: actions/attest@v4
@@ -301,21 +344,34 @@ jobs:
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
 
-      - name: Publish GitHub SBOM attestation
+      - name: Publish GitHub amd64 SBOM attestation
         uses: actions/attest@v4
         with:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.image.outputs.digest }}
-          sbom-path: delibase.spdx.json
+          sbom-path: sboms/delibase-amd64.spdx.json
+          push-to-registry: true
+
+      - name: Publish GitHub arm64 SBOM attestation
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          sbom-path: sboms/delibase-arm64.spdx.json
           push-to-registry: true
 
       - name: Publish signed version tag
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          VERSION_TAG_EXISTS: ${{ steps.version-tag.outputs.exists }}
           VERSION: ${{ needs.metadata.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$VERSION_TAG_EXISTS" = "true" ]; then
+            echo "Release version ${VERSION} already references ${IMAGE_DIGEST}; no tag update is required."
+            exit 0
+          fi
           docker buildx imagetools create \
             --tag "${IMAGE_NAME}:${VERSION}" \
             "${IMAGE_NAME}@${IMAGE_DIGEST}"

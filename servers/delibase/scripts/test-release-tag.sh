@@ -3,11 +3,14 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 resolver="${script_dir}/resolve-release-tag.sh"
+max_component="1$(printf '%0122d' 0)"
+too_long_component="1$(printf '%0123d' 0)"
 
 valid_tags=(
   "delibase@v0.0.0:v0.0.0"
   "delibase@v1.2.3:v1.2.3"
   "delibase@v10.200.3000:v10.200.3000"
+  "delibase@v${max_component}.0.0:v${max_component}.0.0"
 )
 for test_case in "${valid_tags[@]}"; do
   tag="${test_case%%:*}"
@@ -30,6 +33,7 @@ invalid_tags=(
   "delibase@v1.2.3-alpha"
   "delibase@v1.2.3+build"
   "delibase@vlatest"
+  "delibase@v${too_long_component}.0.0"
   "other@v1.2.3"
 )
 for tag in "${invalid_tags[@]}"; do

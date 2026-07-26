@@ -118,17 +118,22 @@ declared runtime identity is UID/GID `65532:65532`; it contains no shell,
 compiler, source tree, repository metadata, or configured secret.
 
 `.github/workflows/release-delibase.yml` runs only for pushed
-`delibase@vX.Y.Z` tags with core SemVer numbers and no leading zeroes. It
-pushes each `linux/amd64` and `linux/arm64` build by digest, pulls and tests
-that exact digest, and assembles the validated digests into a run-scoped
-candidate index. Only after the candidate is signed and its SPDX and GitHub
-attestations succeed does it publish the public release references:
+`delibase@vX.Y.Z` tags with core SemVer numbers, no leading zeroes, and a
+derived OCI tag no longer than 128 characters. It pushes each `linux/amd64`
+and `linux/arm64` build by digest, pulls and tests that exact digest, generates
+an SPDX JSON SBOM for each platform, and assembles the validated digests into a
+run-scoped candidate index. Only after the candidate is signed and its SPDX
+and GitHub attestations succeed does it publish the public release references:
 
 - `ghcr.io/delinoio/delibase:vX.Y.Z`
 - `ghcr.io/delinoio/delibase:latest`
 
+An existing version tag may be reused only when it already resolves to the
+validated digest; the workflow rejects every attempt to retarget a version.
 The immutable published digest receives a keyless Sigstore/Cosign signature,
-an uploaded SPDX JSON SBOM, and GitHub build-provenance and SBOM attestations.
+uploaded amd64 and arm64 SPDX JSON SBOMs, and GitHub build-provenance and
+per-platform SBOM attestations. Workflow artifact uploads safely replace the
+same run's prior attempt so all or only failed jobs can be rerun.
 The `latest` promotion is serialized across releases and occurs only when the
 current version remains the newest pushed core SemVer, so an older release
 cannot roll it backward. Run-scoped candidate references are not release
