@@ -113,6 +113,17 @@ const approvedGeneratedCleanup = [
   })),
 ];
 
+// Tauri's Android initializer leaves these default adaptive-icon resources
+// behind. They are not part of DevHud's launcher contract and must not remain
+// as a second, stale source of launcher artwork after regeneration.
+const obsoleteAndroidLauncherFiles = [
+  ...["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"].map(
+    (density) => `src-tauri/gen/android/app/src/main/res/mipmap-${density}/ic_launcher_foreground.png`,
+  ),
+  "src-tauri/gen/android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml",
+  "src-tauri/gen/android/app/src/main/res/drawable/ic_launcher_background.xml",
+].map((path) => resolve(appRoot, path));
+
 function chunk(type, data) {
   const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
   const name = Buffer.from(type);
@@ -286,6 +297,12 @@ if (check && previousManifest) {
   const generatedFilesMatch = JSON.stringify(previousManifest.generatedFiles ?? []) === JSON.stringify(generatedManifest.generatedFiles);
   if (!generatedFilesMatch) throw new Error("generated-file manifest does not match generator outputs");
 }
+if (check) {
+  for (const obsoletePath of obsoleteAndroidLauncherFiles) {
+    const existing = await readFile(obsoletePath).catch(() => null);
+    if (existing) throw new Error(`obsolete Android launcher artwork remains: ${relative(appRoot, obsoletePath)}`);
+  }
+}
 if (!check && previousManifest) {
   for (const asset of previousManifest.assets ?? []) {
     if (typeof asset.path !== "string" || expectedPaths.has(asset.path)) continue;
@@ -297,6 +314,9 @@ if (!check && previousManifest) {
     const obsoletePath = resolve(appRoot, file.path);
     if (isApprovedGeneratedPath(obsoletePath)) await unlink(obsoletePath).catch(() => {});
   }
+}
+if (!check) {
+  for (const obsoletePath of obsoleteAndroidLauncherFiles) await unlink(obsoletePath).catch(() => {});
 }
 for (const { relativePath, data } of entries) {
   const destination = join(appRoot, relativePath);
