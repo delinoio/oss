@@ -59,29 +59,51 @@ class DevHudDiagnosticsPlugin(
     ) {
         val bundle =
             synchronized(this) {
-                pendingBundle.also { pendingBundle = null }
+                pendingBundle
             } ?: run {
                 reject(invoke, DiagnosticsExportErrorCode.WRITE_FAILED)
                 return
             }
         if (result.resultCode == Activity.RESULT_CANCELED) {
+            clearPendingBundle()
             invoke.resolve(status("cancelled"))
             return
         }
         val destination = result.data?.data
         if (result.resultCode != Activity.RESULT_OK || destination == null) {
+            clearPendingBundle()
             reject(invoke, DiagnosticsExportErrorCode.PICKER_UNAVAILABLE)
             return
         }
-        try {
-            activity.contentResolver.openOutputStream(destination, "wt").use { stream ->
-                requireNotNull(stream)
-                stream.write(bundle.toByteArray(Charsets.UTF_8))
-                stream.flush()
-            }
-            invoke.resolve(status("exported"))
-        } catch (_: Exception) {
-            reject(invoke, DiagnosticsExportErrorCode.WRITE_FAILED)
+        Thread(
+            {
+                val error =
+                    try {
+                        activity.contentResolver.openOutputStream(destination, "wt").use { stream ->
+                            requireNotNull(stream)
+                            stream.write(bundle.toByteArray(Charsets.UTF_8))
+                            stream.flush()
+                        }
+                        null
+                    } catch (_: Exception) {
+                        DiagnosticsExportErrorCode.WRITE_FAILED
+                    }
+                activity.runOnUiThread {
+                    clearPendingBundle()
+                    if (error == null) {
+                        invoke.resolve(status("exported"))
+                    } else {
+                        reject(invoke, error)
+                    }
+                }
+            },
+            "devhud-diagnostics-export",
+        ).start()
+    }
+
+    private fun clearPendingBundle() {
+        synchronized(this) {
+            pendingBundle = null
         }
     }
 

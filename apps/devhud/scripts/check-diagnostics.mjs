@@ -102,9 +102,11 @@ requireCondition(
   androidPlugin.includes("Intent.ACTION_CREATE_DOCUMENT") &&
     androidPlugin.includes("Activity.RESULT_CANCELED") &&
     androidPlugin.includes('status("cancelled")') &&
+    androidPlugin.includes('"devhud-diagnostics-export"') &&
+    androidPlugin.includes("activity.runOnUiThread") &&
     !androidPlugin.includes("android.permission.INTERNET") &&
     !/https?:\/\//u.test(androidPlugin),
-  "Android diagnostics export must use the user document picker without network authority",
+  "Android diagnostics export must use the user document picker, perform writes off the UI thread, and have no network authority",
 );
 requireCondition(
   iosPlugin.includes("UIDocumentPickerViewController") &&

@@ -131,18 +131,25 @@ fn emit_with(
         classification = classification.as_str(),
         severity = severity.as_str(),
     );
-    if let Some(diagnostics) = DIAGNOSTICS.get() {
-        let _ = diagnostics.emit(event_id, classification, severity, duration);
-    } else if severity == DiagnosticSeverity::Fatal {
+    let sink_succeeded = DIAGNOSTICS.get().is_some_and(|diagnostics| {
+        diagnostics
+            .emit(event_id, classification, severity, duration)
+            .is_ok()
+    });
+    if needs_fatal_fallback(severity, sink_succeeded) {
         // This fallback is deliberately static and contains no exception or
         // environment material. It preserves the fatal event if the local sink
-        // itself could not be initialized.
+        // could not be initialized or becomes unwritable.
         eprintln!(
             "{{\"eventId\":\"{}\",\"classification\":\"{}\",\"severity\":\"fatal\"}}",
             event_id.as_str(),
             classification.as_str()
         );
     }
+}
+
+fn needs_fatal_fallback(severity: DiagnosticSeverity, sink_succeeded: bool) -> bool {
+    severity == DiagnosticSeverity::Fatal && !sink_succeeded
 }
 
 pub(crate) fn active() -> Option<&'static Diagnostics> {
@@ -570,6 +577,13 @@ mod tests {
         assert!(!encoded.contains("error"));
         assert!(!encoded.contains("exception"));
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn fatal_events_fall_back_when_an_installed_sink_fails() {
+        assert!(needs_fatal_fallback(DiagnosticSeverity::Fatal, false));
+        assert!(!needs_fatal_fallback(DiagnosticSeverity::Fatal, true));
+        assert!(!needs_fatal_fallback(DiagnosticSeverity::Warning, false));
     }
 
     #[test]
