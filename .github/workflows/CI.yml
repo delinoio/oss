@@ -304,6 +304,8 @@ jobs:
 
       - name: Run delibase PostgreSQL tests
         if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DELIBASE_TEST_DATABASE_URL: postgres://delibase:delibase_test@127.0.0.1:5432/delibase?sslmode=disable
         run: servers/delibase/scripts/test-postgres.sh
 
       - name: Run migration and concurrency integration checks

@@ -2,6 +2,13 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
+
+if [[ -n "${DELIBASE_TEST_DATABASE_URL:-}" ]]; then
+  cd "$repo_root"
+  go test -count=1 ./servers/delibase/...
+  exit 0
+fi
+
 image="${DELIBASE_TEST_POSTGRES_IMAGE:-postgres:17-alpine}"
 container="delibase-test-postgres-$$"
 port="${DELIBASE_TEST_POSTGRES_PORT:-55432}"
