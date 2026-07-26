@@ -16,9 +16,11 @@ const revision = "f49ebda2fdba5755456b0f049e32593ca0ea331a";
 const schemaVersion = "devhud.performance.result.v1";
 const application = { version: "0.1.0", tauriRevision: revision, cefRevision: `tauri-runtime-cef@${revision}` };
 const hostPlatform = { darwin: "macos", win32: "windows", linux: "linux" }[process.platform];
-const hostArchitecture = { x64: "x86_64", arm64: "arm64", arm: "armv7" }[process.arch] ?? "x86_64";
+const hostArchitecture = { x64: "x86_64", arm64: "arm64", arm: "armv7" }[process.arch];
 const desktopNames = ["desktop-cold-startup", "desktop-warm-startup", "desktop-hud-display", "desktop-package-size", "desktop-idle-memory"];
 const startupTimeoutMs = 30_000;
+const processTerminationGraceMs = 1_000;
+const expectedNotes = { "desktop-cold-startup": "cold-process", "desktop-warm-startup": "warm-process", "desktop-hud-display": "explicit-hud-invocation", "desktop-package-size": "packaged-artifact", "desktop-idle-memory": "post-ready-idle", "mobile-startup": "cold-process" };
 
 function result(targets) { return { schemaVersion, application, targets }; }
 function writeResult(value, name) { mkdirSync(outputDirectory, { recursive: true }); const path = resolve(outputDirectory, name); writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`); return path; }
@@ -90,10 +92,25 @@ function rssForProcessTree(rootPid, rows) {
   const total = rows.filter((row) => descendants.has(row.pid)).reduce((sum, row) => sum + row.rss, 0);
   return Number.isFinite(total) ? total : null;
 }
+function waitForClose(closed, timeoutMs) {
+  let timeout;
+  return Promise.race([closed, new Promise((resolveTimeout) => { timeout = setTimeout(resolveTimeout, timeoutMs); })]).finally(() => clearTimeout(timeout));
+}
+async function terminateDesktopProcess(child, closed) {
+  if (child.exitCode !== null) return;
+  child.kill();
+  if (await waitForClose(closed, processTerminationGraceMs)) return;
+  if (process.platform === "win32") run("taskkill", ["/pid", String(child.pid), "/t", "/f"]);
+  else {
+    try { process.kill(-child.pid, "SIGKILL"); }
+    catch { child.kill("SIGKILL"); }
+  }
+  await waitForClose(closed, processTerminationGraceMs);
+}
 async function profileDesktop(binary, startupNote) {
   const markers = [];
   const start = performance.now();
-  const child = spawn(binary, [], { cwd: appRoot, env: { ...process.env, DEVHUD_PERF: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(binary, [], { cwd: appRoot, detached: process.platform !== "win32", env: { ...process.env, DEVHUD_PERF: "1" }, stdio: ["ignore", "pipe", "pipe"] });
   const closed = new Promise((resolveClosed) => child.once("close", () => resolveClosed("startup-exited")));
   const spawnFailed = new Promise((resolveFailed) => child.once("error", () => resolveFailed(true)));
   let markReady;
@@ -120,14 +137,12 @@ async function profileDesktop(binary, startupNote) {
   if (readyMarker === true) return { failure: "launch-failed", measurements: [] };
   if (readyMarker === "startup-exited") return { failure: "startup-exited", measurements: [] };
   if (readyMarker === "startup-timeout") {
-    child.kill();
-    await closed;
+    await terminateDesktopProcess(child, closed);
     return { failure: "startup-timeout", measurements: [] };
   }
   if (readyMarker) await new Promise((resolveDone) => setTimeout(resolveDone, 200));
   const memory = readyMarker ? [processTreeRssBytes(child.pid), processTreeRssBytes(child.pid), processTreeRssBytes(child.pid)].filter((sample) => sample !== null) : [];
-  child.kill();
-  await closed;
+  await terminateDesktopProcess(child, closed);
   const readyEvent = markers.find((marker) => marker.event === "ready"); const hud = markers.find((marker) => marker.event === "hud-shown");
   if (!readyEvent || !hud || !memory.length) return { failure: "measurement-protocol-failed", measurements: [] };
   return { measurements: [
@@ -137,7 +152,7 @@ async function profileDesktop(binary, startupNote) {
   ] };
 }
 async function desktop() {
-  if (!hostPlatform) throw new Error("desktop performance profiling is unsupported on this host");
+  if (!hostPlatform || !hostArchitecture) throw new Error("desktop performance profiling is unsupported on this host");
   if (process.platform === "linux" && !process.env.DISPLAY) return result([unavailable("linux", hostArchitecture, "no-display-server", desktopNames)]);
   const executable = findDesktopExecutable();
   if (!executable) return result([unavailable(hostPlatform, hostArchitecture, "artifact-not-found", desktopNames)]);
@@ -191,7 +206,7 @@ function validate(value) {
   const exactKeys = (candidate, keys) => Object.keys(candidate).every((key) => keys.includes(key));
   const allowedArchitectures = { linux: ["x86_64", "arm64"], macos: ["x86_64", "arm64"], windows: ["x86_64", "arm64"], android: ["x86_64", "arm64", "armv7"], ios: ["x86_64", "arm64"] };
   const expectedMethods = { "desktop-cold-startup": ["process-ready-marker"], "desktop-warm-startup": ["process-ready-marker"], "desktop-hud-display": ["process-hud-marker"], "desktop-package-size": ["artifact-byte-count"], "desktop-idle-memory": ["resident-set-sampling"], "mobile-startup": ["adb-am-start-w", "simctl-launch-wall-clock", "devicectl-launch-wall-clock"] };
-  if (!value || !exactKeys(value, ["schemaVersion", "application", "targets"]) || value.schemaVersion !== schemaVersion || !Array.isArray(value.targets)) throw new Error("invalid performance result envelope");
+  if (!value || !exactKeys(value, ["schemaVersion", "application", "targets"]) || value.schemaVersion !== schemaVersion || !Array.isArray(value.targets) || !value.targets.length) throw new Error("invalid performance result envelope");
   if (!value.application || !exactKeys(value.application, ["version", "tauriRevision", "cefRevision"]) || value.application.version !== application.version || value.application.tauriRevision !== revision || value.application.cefRevision !== application.cefRevision) throw new Error("invalid application provenance");
   for (const target of value.targets) {
     if (!target || !exactKeys(target, ["platform", "architecture", "status", "unavailableReason", "failure", "measurements"]) || !allowedArchitectures[target.platform]?.includes(target.architecture) || !["available", "unavailable", "failed"].includes(target.status) || !Array.isArray(target.measurements)) throw new Error("invalid target");
@@ -202,7 +217,7 @@ function validate(value) {
       const expectedUnit = ["desktop-package-size", "desktop-idle-memory"].includes(measurement?.name) ? "bytes" : "milliseconds";
       const validMobileMethod = measurement?.name !== "mobile-startup" || (target.platform === "android" ? measurement.method === "adb-am-start-w" : target.platform === "ios" && ["simctl-launch-wall-clock", "devicectl-launch-wall-clock"].includes(measurement.method));
       const validPlatformMeasurement = ["linux", "macos", "windows"].includes(target.platform) ? measurement?.name !== "mobile-startup" : measurement?.name === "mobile-startup";
-      if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || !expectedMethods[measurement.name]?.includes(measurement.method) || !validMobileMethod || !validPlatformMeasurement || !["available", "unavailable", "failed"].includes(measurement.status) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" && (!measurement.samples.length || measurement.unit !== expectedUnit)) || (measurement.note !== undefined && !["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"].includes(measurement.note))) throw new Error("invalid measurement");
+      if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || !expectedMethods[measurement.name]?.includes(measurement.method) || !validMobileMethod || !validPlatformMeasurement || !["available", "unavailable", "failed"].includes(measurement.status) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" && (!measurement.samples.length || measurement.unit !== expectedUnit)) || (measurement.note !== undefined && measurement.note !== expectedNotes[measurement.name])) throw new Error("invalid measurement");
     }
     const requiredMeasurements = ["linux", "macos", "windows"].includes(target.platform) ? desktopNames : ["mobile-startup"];
     if (target.status === "available" && !requiredMeasurements.every((name) => target.measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) throw new Error("available target missing required measurements");

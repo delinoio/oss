@@ -49,6 +49,15 @@ test("validation rejects arbitrary units and notes", () => {
   assert.throws(() => validate(value), /invalid measurement/u);
 });
 
+test("validation rejects targetless evidence and mismatched measurement notes", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets = [];
+  assert.throws(() => validate(value), /invalid performance result envelope/u);
+  value.targets = JSON.parse(readFileSync(fixture, "utf8")).targets;
+  value.targets[0].measurements[0].note = "warm-process";
+  assert.throws(() => validate(value), /invalid measurement/u);
+});
+
 test("available measurements require samples and their expected unit", () => {
   const value = JSON.parse(readFileSync(fixture, "utf8"));
   value.targets[0].measurements[0].samples = [];
