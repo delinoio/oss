@@ -93,7 +93,9 @@ test("desktop performance command owns its cross-platform build fallback", () =>
   assert.match(script, /"build:desktop:performance"\], buildTimeoutMs, \{ stdio: "inherit", env: \{ \.\.\.process\.env, DEVHUD_BUILD_REVISION: buildRevision \} \}/u);
   assert.equal(packageManifest.scripts["perf:package"], "node scripts/performance.mjs package --build");
   assert.match(script, /clearPackageArtifacts\(\); const build = run\(process\.platform === "win32" \? "pnpm\.cmd" : "pnpm", \["run", "build:preview"\]/u);
-  assert.match(script, /DevHud desktop performance build failed/u);
+  assert.match(script, /reportBuildFailure\(build, "build:desktop:performance", "desktop performance"\)/u);
+  assert.match(script, /reportBuildFailure\(build, "build:preview", "package"\)/u);
+  assert.match(script, /rerun pnpm run \$\{buildCommand\} to inspect build output/u);
   assert.doesNotMatch(script, /console\.error\(build\.(?:stdout|stderr)/u);
 });
 
