@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { resolve } from "node:path";
 
-import { aggregate, canonicalize, desktopBuildFailed, packageMeasurement, profileDesktop, recordPackageProvenance, summary, validate } from "./performance.mjs";
+import { aggregate, canonicalize, desktopBuildFailed, installedAndroidArchitecture, packageMeasurement, profileDesktop, recordPackageProvenance, summary, validate } from "./performance.mjs";
 
 const fixture = resolve(import.meta.dirname, "../performance/fixtures/available-desktop.json");
 
@@ -66,6 +66,10 @@ test("malformed performance markers after ready invalidate the complete profile"
 
 test("build failures produce valid desktop evidence", () => {
   assert.equal(validate(desktopBuildFailed()), true);
+  const packageSize = { name: "desktop-package-size", status: "available", method: "artifact-byte-count", samples: [42], unit: "bytes", note: "packaged-artifact" };
+  const evidence = desktopBuildFailed(packageSize);
+  assert.equal(validate(evidence), true);
+  assert.deepEqual(evidence.targets[0].measurements, [packageSize]);
 });
 
 test("desktop performance command owns its cross-platform build fallback", () => {
@@ -73,6 +77,14 @@ test("desktop performance command owns its cross-platform build fallback", () =>
   const packageManifest = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8"));
   assert.equal(packageManifest.scripts["perf:desktop"], "node scripts/performance.mjs desktop --build");
   assert.match(script, /process\.platform === "win32" \? "pnpm\.cmd" : "pnpm"/u);
+  assert.match(script, /buildTimeoutMs = 15 \* 60_000/u);
+  assert.match(script, /"build:desktop:performance"\], buildTimeoutMs/u);
+});
+
+test("Android architecture comes from the installed application ABI", () => {
+  assert.equal(installedAndroidArchitecture("primaryCpuAbi=armeabi-v7a"), "armv7");
+  assert.equal(installedAndroidArchitecture("primaryCpuAbi=arm64-v8a"), "arm64");
+  assert.equal(installedAndroidArchitecture("ro.product.cpu.abi=arm64-v8a"), null);
 });
 
 test("aggregation is deterministic and keeps unavailable distinct from failed", () => {

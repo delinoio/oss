@@ -20,6 +20,7 @@ const hostPlatform = { darwin: "macos", win32: "windows", linux: "linux" }[proce
 const hostArchitecture = { x64: "x86_64", arm64: "arm64", arm: "armv7" }[process.arch];
 const desktopNames = ["desktop-cold-startup", "desktop-warm-startup", "desktop-hud-display", "desktop-package-size", "desktop-idle-memory"];
 const startupTimeoutMs = 30_000;
+const buildTimeoutMs = 15 * 60_000;
 const processTerminationGraceMs = 1_000;
 const expectedNotes = { "desktop-cold-startup": "cold-process", "desktop-warm-startup": "warm-process", "desktop-hud-display": "explicit-hud-invocation", "desktop-package-size": "packaged-artifact", "desktop-idle-memory": "post-ready-idle", "mobile-startup": "cold-process" };
 
@@ -32,7 +33,7 @@ function canonicalize(value) {
 }
 function unavailable(platform, architecture, reason, names = [], targetKind) { return { platform, architecture, status: "unavailable", unavailableReason: reason, measurements: names.map((name) => ({ name, status: "unavailable", method: methodFor(name, platform, targetKind), samples: [] })) }; }
 function methodFor(name, platform, targetKind) { return name === "desktop-hud-display" ? "process-hud-marker" : name === "desktop-package-size" ? "artifact-byte-count" : name === "desktop-idle-memory" ? "resident-set-sampling" : name === "mobile-startup" ? platform === "ios" ? targetKind === "ios-device" ? "devicectl-launch-wall-clock" : "simctl-launch-wall-clock" : "adb-am-start-w" : "process-ready-marker"; }
-function run(command, args) { return spawnSync(command, args, { encoding: "utf8", timeout: 30_000 }); }
+function run(command, args, timeout = 30_000) { return spawnSync(command, args, { encoding: "utf8", timeout }); }
 function executable(command) { return run(process.platform === "win32" ? "where" : "which", [command]).status === 0; }
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -228,13 +229,14 @@ async function desktop() {
   return result([target]);
 }
 function architectureFrom(value) { const normalized = value.toLowerCase(); return normalized.includes("arm64") || normalized.includes("aarch64") ? "arm64" : normalized.includes("armv7") || normalized.includes("armeabi-v7a") ? "armv7" : normalized.includes("x86_64") ? "x86_64" : null; }
+function installedAndroidArchitecture(packageInfo) { return architectureFrom(packageInfo.match(/primaryCpuAbi=([^\s]+)/u)?.[1] ?? ""); }
 function mobileArchitecture(platform, targetKind, selector) {
   const probe = platform === "android"
-    ? run("adb", [...(selector ? ["-s", selector] : []), "shell", "getprop", "ro.product.cpu.abi"])
+    ? run("adb", [...(selector ? ["-s", selector] : []), "shell", "dumpsys", "package", "dev.deli.devhud"])
     : targetKind === "ios-device"
       ? run("xcrun", ["devicectl", "device", "info", "details", "--device", selector, "--json-output", "-"])
       : run("xcrun", ["simctl", "getenv", "booted", "SIMULATOR_ARCHS"]);
-  return probe.status === 0 ? architectureFrom(probe.stdout) : null;
+  return probe.status === 0 ? platform === "android" ? installedAndroidArchitecture(probe.stdout) : architectureFrom(probe.stdout) : null;
 }
 function mobileBuildProvenance(platform, targetKind, selector) {
   if (platform === "android") {
@@ -382,14 +384,14 @@ function summary(value) {
   for (const target of value.targets) lines.push(`| ${target.platform} | ${target.architecture} | ${target.status}${target.unavailableReason ? ` (${target.unavailableReason})` : target.failure ? ` (${target.failure})` : ""} | ${target.measurements.map((item) => item.status === "available" ? `${item.name}: ${median(item.samples)} ${item.unit}` : `${item.name}: ${item.status}`).join("; ")} |`);
   return `${lines.join("\n")}\n`;
 }
-function desktopBuildFailed() {
+function desktopBuildFailed(packageSize = packageMeasurement().measurement) {
   if (!hostPlatform || !hostArchitecture) throw new Error("desktop performance profiling is unsupported on this host");
-  return result([{ platform: hostPlatform, architecture: hostArchitecture, status: "failed", failure: "build-failed", measurements: [] }]);
+  return result([{ platform: hostPlatform, architecture: hostArchitecture, status: "failed", failure: "build-failed", measurements: [packageSize] }]);
 }
 async function main() {
   const [command, ...rawArgs] = process.argv.slice(2);
   const args = rawArgs.filter((argument) => argument !== "--");
-  if (command === "desktop") { const build = args.includes("--build") ? run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:desktop:performance"]) : null; const value = args.includes("--build-failed") || (build && build.status !== 0) ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
+  if (command === "desktop") { const build = args.includes("--build") ? run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:desktop:performance"], buildTimeoutMs) : null; const value = args.includes("--build-failed") || (build && build.status !== 0) ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
   if (command === "package") { console.log(recordPackageProvenance()); return; }
   if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}-${randomUUID()}.json`)); return; }
   if (command === "aggregate") { const files = args.length ? args.map((file) => resolve(file)) : existsSync(outputDirectory) ? readdirSync(outputDirectory).filter((file) => file.endsWith(".json") && file !== "release-performance.json").map((file) => resolve(outputDirectory, file)) : []; const value = aggregate(files); validate(value); const json = writeResult(value, "release-performance.json"); const markdown = resolve(outputDirectory, "release-performance.md"); writeFileSync(markdown, summary(value)); console.log(`${json}\n${markdown}`); return; }
@@ -397,4 +399,4 @@ async function main() {
   throw new Error("Usage: performance.mjs <desktop|mobile|package|aggregate|validate>");
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
-export { aggregate, canonicalize, desktopBuildFailed, packageMeasurement, profileDesktop, recordPackageProvenance, result, summary, validate };
+export { aggregate, canonicalize, desktopBuildFailed, installedAndroidArchitecture, packageMeasurement, profileDesktop, recordPackageProvenance, result, summary, validate };
