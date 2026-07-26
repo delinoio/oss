@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { deflateSync } from "node:zlib";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 const appRoot = resolve(import.meta.dirname, "..");
 const sourcePath = join(appRoot, "assets/source/devhud-lettermark.svg");
+const manifestPath = join(appRoot, "assets/manifest.json");
 const blue = [40, 105, 220, 255];
 const white = [255, 255, 255, 255];
 const transparent = [0, 0, 0, 0];
@@ -174,6 +175,18 @@ async function outputs() {
 
 const check = process.argv.includes("--check");
 const { sourceHash, entries } = await outputs();
+const generatedManifest = { source: "source/devhud-lettermark.svg", sourceSha256: sourceHash, generator: "scripts/generate-assets.mjs", assets: entries.map(({ relativePath, size }) => ({ path: relativePath, dimensions: dimensions(size) })) };
+const previousManifest = await readFile(manifestPath, "utf8").then(JSON.parse).catch(() => null);
+const expectedPaths = new Set(generatedManifest.assets.map(({ path }) => path));
+if (check && previousManifest) {
+  const manifestMatches = JSON.stringify(previousManifest.assets) === JSON.stringify(generatedManifest.assets);
+  if (!manifestMatches) throw new Error("asset manifest does not match generator outputs");
+}
+if (!check && previousManifest) {
+  for (const asset of previousManifest.assets ?? []) {
+    if (!expectedPaths.has(asset.path)) await unlink(join(appRoot, asset.path)).catch(() => {});
+  }
+}
 for (const { relativePath, data } of entries) {
   const destination = join(appRoot, relativePath);
   if (check) {
@@ -185,6 +198,6 @@ for (const { relativePath, data } of entries) {
   }
 }
 if (!check) {
-  await writeFile(join(appRoot, "assets/manifest.json"), `${JSON.stringify({ source: "source/devhud-lettermark.svg", sourceSha256: sourceHash, generator: "scripts/generate-assets.mjs", assets: entries.map(({ relativePath, size }) => ({ path: relativePath, dimensions: dimensions(size) })) }, null, 2)}\n`);
+  await writeFile(manifestPath, `${JSON.stringify(generatedManifest, null, 2)}\n`);
 }
 console.log(JSON.stringify({ check: "devhud-assets", status: "passed", mode: check ? "verify" : "generated", sourceSha256: sourceHash, count: entries.length }));
