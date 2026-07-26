@@ -143,6 +143,8 @@ async function profileDesktop(binary, startupNote) {
   const spawnFailed = new Promise((resolveFailed) => child.once("error", () => resolveFailed(true)));
   let markReady;
   const ready = new Promise((resolveReady) => { markReady = resolveReady; });
+  let reportProtocolFailure;
+  const protocolFailed = new Promise((resolveFailed) => { reportProtocolFailure = resolveFailed; });
   for (const stream of [child.stdout, child.stderr]) {
     let pending = "";
     stream.setEncoding("utf8");
@@ -154,19 +156,23 @@ async function profileDesktop(binary, startupNote) {
           const marker = { ...JSON.parse(line.slice(12)), at: performance.now() - start };
           markers.push(marker);
           if (marker.event === "ready") markReady(marker);
-        } catch { /* marker protocol failure is handled below */ }
+        } catch { reportProtocolFailure("measurement-protocol-failed"); }
       }
     });
   }
   let timeout;
   const timeoutReached = new Promise((resolveTimeout) => { timeout = setTimeout(() => resolveTimeout("startup-timeout"), startupTimeoutMs); });
-  const readyMarker = await Promise.race([ready, spawnFailed, closed, timeoutReached]);
+  const readyMarker = await Promise.race([ready, protocolFailed, spawnFailed, closed, timeoutReached]);
   clearTimeout(timeout);
   if (readyMarker === true) return { failure: "launch-failed", measurements: [] };
   if (readyMarker === "startup-exited") return { failure: "startup-exited", measurements: [] };
   if (readyMarker === "startup-timeout") {
     await terminateDesktopProcess(child, closed);
     return { failure: "startup-timeout", measurements: [] };
+  }
+  if (readyMarker === "measurement-protocol-failed") {
+    await terminateDesktopProcess(child, closed);
+    return { failure: "measurement-protocol-failed", measurements: [] };
   }
   if (!readyMarker.application || canonicalText(readyMarker.application) !== canonicalText(application)) {
     await terminateDesktopProcess(child, closed);
@@ -293,15 +299,23 @@ function validate(value) {
   return true;
 }
 function canonicalText(value) { return JSON.stringify(canonicalize(value)); }
-function mergeAvailableTargets(left, right) {
+function mergeMeasurements(left, right) {
   const measurements = new Map();
   for (const measurement of [...left.measurements, ...right.measurements]) {
     const current = measurements.get(measurement.name);
     if (!current) measurements.set(measurement.name, measurement);
+    else if (measurement.status === "available" && current.status !== "available") measurements.set(measurement.name, measurement);
     else if (canonicalText({ ...current, samples: [] }) === canonicalText({ ...measurement, samples: [] })) measurements.set(measurement.name, { ...current, samples: [...current.samples, ...measurement.samples].sort((a, b) => a - b) });
     else if (canonicalText(measurement).localeCompare(canonicalText(current)) < 0) measurements.set(measurement.name, measurement);
   }
-  return { ...left, measurements: [...measurements.values()].sort((a, b) => (desktopNames.indexOf(a.name) - desktopNames.indexOf(b.name)) || canonicalText(a).localeCompare(canonicalText(b))) };
+  return [...measurements.values()].sort((a, b) => (desktopNames.indexOf(a.name) - desktopNames.indexOf(b.name)) || canonicalText(a).localeCompare(canonicalText(b)));
+}
+function mergeEqualStatusTargets(left, right) {
+  const measurements = mergeMeasurements(left, right);
+  const required = ["linux", "macos", "windows"].includes(left.platform) ? desktopNames : ["mobile-startup"];
+  if (required.every((name) => measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) return { platform: left.platform, architecture: left.architecture, status: "available", measurements };
+  const unavailableReason = [left.unavailableReason, right.unavailableReason].filter(Boolean).sort()[0];
+  return { platform: left.platform, architecture: left.architecture, status: "unavailable", unavailableReason, measurements };
 }
 function aggregate(files) {
   if (!files.length) throw new Error("at least one performance result is required");
@@ -313,7 +327,7 @@ function aggregate(files) {
     const key = `${target.platform}/${target.architecture}`;
     const current = deduplicated.get(key);
     if (!current || priority[target.status] > priority[current.status]) deduplicated.set(key, target);
-    else if (target.status === current.status) deduplicated.set(key, target.status === "available" ? mergeAvailableTargets(current, target) : canonicalText(target).localeCompare(canonicalText(current)) < 0 ? target : current);
+    else if (target.status === current.status) deduplicated.set(key, target.status === "failed" ? canonicalText(target).localeCompare(canonicalText(current)) < 0 ? target : current : mergeEqualStatusTargets(current, target));
   }
   return result([...deduplicated.values()].sort((a, b) => `${a.platform}/${a.architecture}`.localeCompare(`${b.platform}/${b.architecture}`)));
 }
@@ -333,4 +347,4 @@ async function main() {
   throw new Error("Usage: performance.mjs <desktop|mobile|package|aggregate|validate>");
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
-export { aggregate, canonicalize, packageMeasurement, recordPackageProvenance, result, summary, validate };
+export { aggregate, canonicalize, packageMeasurement, profileDesktop, recordPackageProvenance, result, summary, validate };

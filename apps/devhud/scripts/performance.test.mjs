@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { resolve } from "node:path";
 
-import { aggregate, canonicalize, packageMeasurement, recordPackageProvenance, summary, validate } from "./performance.mjs";
+import { aggregate, canonicalize, packageMeasurement, profileDesktop, recordPackageProvenance, summary, validate } from "./performance.mjs";
 
 const fixture = resolve(import.meta.dirname, "../performance/fixtures/available-desktop.json");
 
@@ -22,6 +22,19 @@ test("package size requires provenance created for the selected artifact", () =>
     assert.equal(packageMeasurement(artifact).measurement.status, "available");
     writeFileSync(artifact, "stale package");
     assert.equal(packageMeasurement(artifact).unavailableReason, "build-provenance-unverified");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("malformed performance markers fail without waiting for the startup timeout", async () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const executable = resolve(directory, "malformed-marker.mjs");
+    writeFileSync(executable, "#!/usr/bin/env node\nconsole.log('DEVHUD_PERF {not-json}')\nsetInterval(() => {}, 1_000)\n");
+    chmodSync(executable, 0o755);
+    const profile = await profileDesktop(executable, "cold-process");
+    assert.equal(profile.failure, "measurement-protocol-failed");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -150,6 +163,29 @@ test("aggregation merges equal-status available targets independently of input o
     const reverse = aggregate([secondFile, firstFile]);
     assert.deepEqual(forward, reverse);
     assert.deepEqual(forward.targets[0].measurements.find((measurement) => measurement.name === "desktop-cold-startup").samples, [99, 120]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("aggregation combines complementary unavailable evidence into an available target", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const runtime = JSON.parse(readFileSync(fixture, "utf8"));
+    const packageOnly = structuredClone(runtime);
+    for (const measurement of runtime.targets[0].measurements) if (measurement.name === "desktop-package-size") { measurement.status = "unavailable"; measurement.samples = []; delete measurement.unit; delete measurement.note; }
+    for (const measurement of packageOnly.targets[0].measurements) if (measurement.name !== "desktop-package-size") { measurement.status = "unavailable"; measurement.samples = []; delete measurement.unit; delete measurement.note; }
+    for (const value of [runtime, packageOnly]) {
+      value.targets[0].status = "unavailable";
+      value.targets[0].unavailableReason = "artifact-not-found";
+    }
+    const runtimeFile = resolve(directory, "runtime.json");
+    const packageFile = resolve(directory, "package.json");
+    writeFileSync(runtimeFile, JSON.stringify(runtime));
+    writeFileSync(packageFile, JSON.stringify(packageOnly));
+    const merged = aggregate([runtimeFile, packageFile]);
+    assert.equal(merged.targets[0].status, "available");
+    assert.equal(validate(merged), true);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
