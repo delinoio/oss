@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -32,13 +33,19 @@ export function Dialog({
 
   useEffect(() => {
     const focusBeforeDialog = previousFocus.current;
-    const dialog = dialogRef.current;
-    const firstControl = dialog?.querySelector<HTMLElement>(focusableSelector);
-    firstControl?.focus();
     return () => {
       focusBeforeDialog?.focus();
     };
   }, []);
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog === null) return;
+    const firstControl = dialog.querySelector<HTMLElement>(focusableSelector);
+    if (firstControl === null || !dialog.contains(document.activeElement)) {
+      (firstControl ?? dialog).focus();
+    }
+  });
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const dialog = dialogRef.current;
@@ -55,6 +62,12 @@ export function Dialog({
     ];
     const first = controls[0];
     const last = controls.at(-1);
+    if (first === undefined) {
+      event.preventDefault();
+      event.stopPropagation();
+      dialog.focus();
+      return;
+    }
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       event.stopPropagation();
@@ -79,6 +92,7 @@ export function Dialog({
         data-devhud-modal="true"
         onKeyDown={onKeyDown}
         role="dialog"
+        tabIndex={-1}
       >
         {children}
       </div>

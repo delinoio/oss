@@ -210,8 +210,8 @@ function ResetDevHudControl({
       ) : null}
       {status === "cleanup-failed" ? (
         <p className="error" role="alert">
-          DevHud cleared local settings, but could not remove temporary reset data.
-          Check device storage and try again.
+          DevHud cleared local settings, but temporary reset data or application
+          browsing data may remain. Check device storage and try again.
         </p>
       ) : null}
       {status === "partially-retained" ? (

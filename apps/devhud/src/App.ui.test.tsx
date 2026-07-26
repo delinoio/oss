@@ -711,7 +711,7 @@ describe("DevHud application surfaces", () => {
     await user.click(screen.getByRole("button", { name: "Confirm reset" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "DevHud cleared local settings",
+      "temporary reset data or application browsing data may remain",
     );
     expect(
       screen.getByRole("checkbox", { name: "Launch DevHud at login" }),
@@ -1111,6 +1111,40 @@ describe("DevHud application surfaces", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(trigger).toHaveFocus();
     expect(reset).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus in the dialog while reset controls are disabled", async () => {
+    const user = userEvent.setup();
+    const storage = new MemoryStorageAdapter();
+    let completeReset: (outcome: PersistenceResetOutcome) => void = () => undefined;
+    storage.reset = vi.fn(
+      () =>
+        new Promise<PersistenceResetOutcome>((resolve) => {
+          completeReset = resolve;
+        }),
+    );
+
+    renderApp({ platform: "mobile", storage });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const trigger = screen.getByRole("button", { name: "Reset DevHud" });
+    await waitFor(() => expect(trigger).toBeEnabled());
+    await user.click(trigger);
+
+    const confirmation = screen.getByRole("dialog", {
+      name: "Confirm Reset DevHud",
+    });
+    const confirm = screen.getByRole("button", { name: "Confirm reset" });
+    await user.click(confirm);
+
+    await waitFor(() => {
+      expect(confirm).toBeDisabled();
+      expect(confirmation).toHaveFocus();
+    });
+    fireEvent.keyDown(confirmation, { key: "Tab" });
+    expect(confirmation).toHaveFocus();
+
+    await act(async () => completeReset({ status: "complete" }));
+    expect(await screen.findByText("DevHud local data was reset.")).toBeVisible();
   });
 
   it("supports repeated confirmed reset without recreating retained records", async () => {
