@@ -9,12 +9,17 @@
   "app": {
     "windows": [],
     "security": {
-      "capabilities": ["main"],
+      "capabilities": ["main", "desktop-main", "settings"],
       "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; font-src 'none'; frame-src 'none'; img-src 'self' data:; media-src 'none'; object-src 'none'; script-src 'self'; style-src 'self'; worker-src 'none'",
       "freezePrototype": true
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "minimumSystemVersion": "14.0"
+    }
   }
 }

@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { LocalStorageAdapter } from "./persistence/storage";
+import type {
+  LocalStorageAdapter,
+  PersistenceResetOutcome,
+} from "./persistence/storage";
 import {
   detectApplicationPlatform,
   platformForRuntime,
@@ -12,7 +15,19 @@ import {
   type RuntimeBridge,
   type RuntimeInfo,
 } from "./runtime/startup";
+import {
+  nativeDesktopBridge,
+  type DesktopBridge,
+} from "./runtime/desktop";
+import { publishPersistenceReset } from "./runtime/theme";
+import {
+  filterTools,
+  productionTools,
+  type ToolCapability,
+  ToolPlatform,
+} from "./tools/registry";
 import { Dialog } from "./ui/Dialog";
+import { SettingsPanel } from "./ui/SettingsPanel";
 import {
   ApplicationProvider,
   MobileScreen,
@@ -36,6 +51,45 @@ function Wordmark() {
   );
 }
 
+function PersistenceAlerts() {
+  const { persistenceIssues } = useApplication();
+  return persistenceIssues.map((issue) => (
+    <p className="runtime-status error" key={issue.key} role="alert">
+      {issue.guidance}
+    </p>
+  ));
+}
+
+function SettingsDialog({
+  bridge,
+  onResetComplete,
+  settingsRevision,
+  showDesktopControls,
+  runtimeInfo,
+}: {
+  readonly bridge: DesktopBridge | null;
+  readonly onResetComplete: (outcome: PersistenceResetOutcome) => void;
+  readonly settingsRevision: number;
+  readonly showDesktopControls: boolean;
+  readonly runtimeInfo: RuntimeInfo | null;
+}) {
+  const { closeSettings } = useApplication();
+  return (
+    <Dialog title="DevHud settings" onClose={closeSettings}>
+      <PersistenceAlerts />
+      <SettingsPanel
+        bridge={bridge}
+        key={settingsRevision}
+        onClose={closeSettings}
+        showDesktopControls={showDesktopControls}
+        startupAutostartOutcome={runtimeInfo?.autostartStartupOutcome}
+        startupShortcutFailure={runtimeInfo?.shortcutStartupFailure}
+      />
+      <ResetDevHudControl onResetComplete={onResetComplete} />
+    </Dialog>
+  );
+}
+
 function ThemeField() {
   const { persistenceReady, setTheme, settings } = useApplication();
   return (
@@ -44,7 +98,7 @@ function ThemeField() {
       <select
         disabled={!persistenceReady}
         id="theme-preference"
-        onChange={(event) => setTheme(event.target.value as ThemePreference)}
+        onChange={(event) => void setTheme(event.target.value as ThemePreference)}
         value={settings.theme}
       >
         <option value={ThemePreference.System}>System</option>
@@ -55,9 +109,21 @@ function ThemeField() {
   );
 }
 
-type ResetStatus = "idle" | "confirming" | "resetting" | "failed" | "complete";
+type ResetStatus =
+  | "idle"
+  | "confirming"
+  | "resetting"
+  | "failed"
+  | "partially-retained"
+  | "cleanup-failed"
+  | "integration-rollback-failed"
+  | "complete";
 
-function ResetDevHudControl() {
+function ResetDevHudControl({
+  onResetComplete,
+}: {
+  readonly onResetComplete?: (outcome: PersistenceResetOutcome) => void;
+}) {
   const { resetDevHud } = useApplication();
   const [status, setStatus] = useState<ResetStatus>("idle");
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -69,8 +135,9 @@ function ResetDevHudControl() {
   const confirmReset = async () => {
     setStatus("resetting");
     try {
-      await resetDevHud();
-      setStatus("complete");
+      const outcome = await resetDevHud();
+      onResetComplete?.(outcome);
+      setStatus(outcome.status);
     } catch {
       setStatus("failed");
     }
@@ -122,60 +189,93 @@ function ResetDevHudControl() {
           DevHud could not reset local data. Check device storage and try again.
         </p>
       ) : null}
+      {status === "cleanup-failed" ? (
+        <p className="error" role="alert">
+          DevHud cleared local settings, but could not remove temporary reset data.
+          Check device storage and try again.
+        </p>
+      ) : null}
+      {status === "partially-retained" ? (
+        <p className="error" role="alert">
+          DevHud reset only some local data. Some saved settings or widget state
+          remain. Check device storage and try again.
+        </p>
+      ) : null}
+      {status === "integration-rollback-failed" ? (
+        <p className="error" role="alert">
+          DevHud could not reset local data or fully restore the previous system
+          integrations. The effective shortcut and launch-at-login settings are
+          shown.
+        </p>
+      ) : null}
     </section>
   );
 }
 
-function SettingsDialog() {
-  const { closeSettings, persistenceIssues, persistenceReady } = useApplication();
+function SettingsWindow({
+  bridge,
+  firstRun,
+  onResetComplete,
+  settingsRevision,
+  startupAutostartOutcome,
+  startupShortcutFailure,
+}: {
+  readonly bridge: DesktopBridge | null;
+  readonly firstRun: boolean;
+  readonly onResetComplete: (outcome: PersistenceResetOutcome) => void;
+  readonly settingsRevision: number;
+  readonly startupAutostartOutcome: RuntimeInfo["autostartStartupOutcome"];
+  readonly startupShortcutFailure: RuntimeInfo["shortcutStartupFailure"];
+}) {
+  const [firstRunActive, setFirstRunActive] = useState(firstRun);
+  const [closeFailed, setCloseFailed] = useState(false);
+  const close = () => {
+    setCloseFailed(false);
+    void (bridge?.hideSettings() ?? Promise.resolve()).catch(() => {
+      setCloseFailed(true);
+    });
+  };
   return (
-    <Dialog title="DevHud settings" onClose={closeSettings}>
-      <div className="dialog-heading">
-        <div>
-          <p className="eyebrow">Settings</p>
-          <h2>Appearance</h2>
-        </div>
-        <button
-          aria-label="Close settings"
-          className="icon-button"
-          onClick={closeSettings}
-          type="button"
-        >
-          ×
-        </button>
-      </div>
-      <ThemeField />
-      {!persistenceReady ? (
-        <p className="muted" role="status">
-          Loading local settings…
+    <main className="settings-shell">
+      <PersistenceAlerts />
+      {closeFailed ? (
+        <p className="runtime-status error" role="alert">
+          DevHud could not close Settings. Try again or use the tray Quit action.
         </p>
       ) : null}
-      {persistenceIssues.map((issue) => (
-        <p className="error" key={issue.key} role="alert">
-          {issue.guidance}
-        </p>
-      ))}
-      <p className="muted">
-        Settings stay on this device. No account or cloud sync is available.
-      </p>
-      <ResetDevHudControl />
-    </Dialog>
+      <SettingsPanel
+        bridge={bridge}
+        firstRun={firstRunActive}
+        key={settingsRevision}
+        onClose={close}
+        onFirstRunCompleted={() => setFirstRunActive(false)}
+        startupAutostartOutcome={startupAutostartOutcome}
+        startupShortcutFailure={startupShortcutFailure}
+      />
+      <ResetDevHudControl onResetComplete={onResetComplete} />
+    </main>
   );
 }
 
-function EmptyTools({ compact = false }: { compact?: boolean }) {
+function EmptyTools({
+  compact = false,
+  onOpenSettings,
+}: {
+  readonly compact?: boolean;
+  readonly onOpenSettings?: () => void;
+}) {
   const { openSettings, setMobileScreen } = useApplication();
   const showSettings = () => {
     if (compact) {
       setMobileScreen(MobileScreen.Settings);
       return;
     }
-    openSettings();
+    (onOpenSettings ?? openSettings)();
   };
   return (
     <section
-      aria-labelledby="tools-empty-title"
       className={compact ? "empty-state compact" : "empty-state"}
+      aria-labelledby="tools-empty-title"
     >
       <p className="eyebrow">Local foundation</p>
       <h2 id="tools-empty-title">No tools yet</h2>
@@ -206,27 +306,95 @@ function RuntimeFailure({
   );
 }
 
+const NO_TOOL_CAPABILITIES: ReadonlySet<ToolCapability> = new Set();
+
+function ProductionToolSurface({
+  onOpenSettings,
+}: {
+  readonly onOpenSettings: () => void;
+}) {
+  const availableTools = filterTools(productionTools, {
+    platform: ToolPlatform.Desktop,
+    grantedCapabilities: NO_TOOL_CAPABILITIES,
+  });
+  if (availableTools.length === 0) {
+    return <EmptyTools onOpenSettings={onOpenSettings} />;
+  }
+  return (
+    <section aria-labelledby="available-tools-title">
+      <h2 id="available-tools-title">Available tools</h2>
+      {availableTools.map(({ EntryPoint, toolId }) => (
+        <EntryPoint key={toolId} />
+      ))}
+    </section>
+  );
+}
+
 function DesktopHud({
+  bridge,
   retryRuntime,
   runtime,
 }: {
-  retryRuntime(): void;
-  runtime: RuntimeState;
+  readonly bridge: DesktopBridge | null;
+  readonly retryRuntime: () => void;
+  readonly runtime: RuntimeState;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
+  const [hideFailure, setHideFailure] = useState(false);
+  const [settingsFailure, setSettingsFailure] = useState(false);
   const { openSettings } = useApplication();
   useEffect(() => {
-    searchRef.current?.focus();
-  }, []);
+    let active = true;
+    const focusSearch = () => searchRef.current?.focus();
+    focusSearch();
+    window.addEventListener("devhud:shown", focusSearch);
+    const hideHud = () => {
+      if (bridge === null) return;
+      setHideFailure(false);
+      void bridge.hideHud().then(
+        (outcome) => {
+          if (active && outcome.status === "unchanged") setHideFailure(true);
+        },
+        () => {
+          if (active) setHideFailure(true);
+        },
+      );
+    };
+    const hideForBlur = () => {
+      hideHud();
+    };
+    const hideForEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        hideHud();
+      }
+    };
+    window.addEventListener("blur", hideForBlur);
+    document.addEventListener("keydown", hideForEscape);
+    return () => {
+      active = false;
+      window.removeEventListener("devhud:shown", focusSearch);
+      window.removeEventListener("blur", hideForBlur);
+      document.removeEventListener("keydown", hideForEscape);
+    };
+  }, [bridge]);
+
+  const showSettings = () => {
+    if (bridge === null) openSettings();
+    else {
+      setSettingsFailure(false);
+      void bridge.showSettings().catch(() => setSettingsFailure(true));
+    }
+  };
   return (
     <main className="desktop-shell">
       <header className="app-header">
         <Wordmark />
-        <button className="text-button" onClick={openSettings} type="button">
+        <button className="text-button" onClick={showSettings} type="button">
           Settings
         </button>
       </header>
-      <section aria-labelledby="hud-title" className="hud-panel">
+      <section className="hud-panel" aria-labelledby="hud-title">
         <h1 id="hud-title">Developer tools, kept local.</h1>
         <label className="search-label" htmlFor="tool-search">
           Search tools
@@ -237,6 +405,16 @@ function DesktopHud({
           placeholder="Search available tools"
           type="search"
         />
+        {settingsFailure ? (
+          <p className="runtime-status error" role="alert">
+            DevHud could not open Settings. Try again from the tray.
+          </p>
+        ) : null}
+        {hideFailure ? (
+          <p className="runtime-status error" role="alert">
+            DevHud could not hide this window. Try again or use the tray Quit action.
+          </p>
+        ) : null}
         {runtime.status === "loading" ? (
           <p className="runtime-status" role="status">
             Starting DevHud…
@@ -245,7 +423,7 @@ function DesktopHud({
         {runtime.status === "failed" ? (
           <RuntimeFailure message={runtime.message} onRetry={retryRuntime} />
         ) : (
-          <EmptyTools />
+          <ProductionToolSurface onOpenSettings={showSettings} />
         )}
       </section>
     </main>
@@ -485,17 +663,34 @@ function MobileShell({
 }
 
 function ApplicationSurface({
+  desktopBridge,
   initialPlatform,
   runtimeBridge,
   synchronizePlatform,
 }: {
-  initialPlatform: ApplicationPlatform;
-  runtimeBridge: RuntimeBridge;
-  synchronizePlatform: boolean;
+  readonly desktopBridge?: DesktopBridge | null;
+  readonly initialPlatform: ApplicationPlatform;
+  readonly runtimeBridge: RuntimeBridge;
+  readonly synchronizePlatform: boolean;
 }) {
   const [platform, setPlatform] = useState(initialPlatform);
   const [runtime, setRuntime] = useState<RuntimeState>({ status: "loading" });
   const [runtimeAttempt, setRuntimeAttempt] = useState(0);
+  const [settingsRevision, setSettingsRevision] = useState(0);
+  const clearStartupDiagnostics = useCallback(() => {
+    setRuntime((current) =>
+      current.status === "ready"
+        ? {
+            status: "ready",
+            runtimeInfo: {
+              ...current.runtimeInfo,
+              autostartStartupOutcome: null,
+              shortcutStartupFailure: null,
+            },
+          }
+        : current,
+    );
+  }, []);
   const retryRuntime = useCallback(() => {
     setRuntime({ status: "loading" });
     setRuntimeAttempt((attempt) => attempt + 1);
@@ -517,43 +712,122 @@ function ApplicationSurface({
       active = false;
     };
   }, [runtimeAttempt, runtimeBridge, synchronizePlatform]);
+  const bridge = useMemo(
+    () =>
+      desktopBridge === undefined
+        ? runtime.status === "ready"
+          ? nativeDesktopBridge(runtime.runtimeInfo.runtime)
+          : null
+        : desktopBridge,
+    [desktopBridge, runtime],
+  );
+  const {
+    adoptNativeTheme,
+    readPersistedTheme,
+    reloadPersistence,
+    settingsOpen,
+  } = useApplication();
+  useEffect(() => {
+    if (bridge === null) return;
+    let themePublished = false;
+    let active = true;
+    const unsubscribe = bridge.subscribeTheme((theme) => {
+      themePublished = true;
+      adoptNativeTheme(theme);
+    });
+    void readPersistedTheme().then((theme) => {
+      if (active && !themePublished && theme !== null) adoptNativeTheme(theme);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [
+    adoptNativeTheme,
+    bridge,
+    readPersistedTheme,
+  ]);
+  useEffect(() => {
+    if (bridge === null) return;
+    return bridge.subscribeReset((outcome) => {
+      clearStartupDiagnostics();
+      setSettingsRevision((revision) => revision + 1);
+      void reloadPersistence(outcome);
+    });
+  }, [bridge, clearStartupDiagnostics, reloadPersistence]);
+  const reconcileReset = useCallback((outcome: PersistenceResetOutcome) => {
+    clearStartupDiagnostics();
+    setSettingsRevision((revision) => revision + 1);
+    (bridge?.publishReset ?? publishPersistenceReset)(outcome);
+    if (
+      outcome.status === "complete" ||
+      outcome.status === "cleanup-failed"
+    ) {
+      bridge?.publishTheme(ThemePreference.System);
+    }
+  }, [bridge, clearStartupDiagnostics]);
 
-  const { persistenceIssues, settingsOpen } = useApplication();
+  if (
+    runtime.status === "ready" &&
+    runtime.runtimeInfo.surface === "settings"
+  ) {
+    return (
+      <SettingsWindow
+        bridge={bridge}
+        firstRun={runtime.runtimeInfo.firstRun === true}
+        onResetComplete={reconcileReset}
+        settingsRevision={settingsRevision}
+        startupAutostartOutcome={runtime.runtimeInfo.autostartStartupOutcome}
+        startupShortcutFailure={runtime.runtimeInfo.shortcutStartupFailure}
+      />
+    );
+  }
+
   return (
     <>
       <div aria-hidden={settingsOpen} inert={settingsOpen}>
-        {platform === "desktop"
-          ? persistenceIssues.map((issue) => (
-              <p className="runtime-status error" key={issue.key} role="alert">
-                {issue.guidance}
-              </p>
-            ))
-          : null}
+        {platform === "desktop" ? <PersistenceAlerts /> : null}
         {platform === "desktop" ? (
-          <DesktopHud retryRuntime={retryRuntime} runtime={runtime} />
+          <DesktopHud
+            bridge={bridge}
+            retryRuntime={retryRuntime}
+            runtime={runtime}
+          />
         ) : (
           <MobileShell retryRuntime={retryRuntime} runtime={runtime} />
         )}
       </div>
-      {settingsOpen ? <SettingsDialog /> : null}
+      {settingsOpen ? (
+        <SettingsDialog
+          bridge={bridge}
+          onResetComplete={reconcileReset}
+          runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
+          settingsRevision={settingsRevision}
+          showDesktopControls={false}
+        />
+      ) : null}
     </>
   );
 }
 
 export function App({
+  desktopBridge,
   platform,
   runtimeBridge = tauriRuntimeBridge,
   storage,
 }: {
-  platform?: ApplicationPlatform;
-  runtimeBridge?: RuntimeBridge;
-  storage?: LocalStorageAdapter;
+  readonly desktopBridge?: DesktopBridge | null;
+  readonly platform?: ApplicationPlatform;
+  readonly runtimeBridge?: RuntimeBridge;
+  readonly storage?: LocalStorageAdapter;
 }) {
   const synchronizePlatform = platform === undefined;
-  const initialPlatform = platform ?? detectApplicationPlatform(navigator.userAgent);
+  const initialPlatform =
+    platform ?? detectApplicationPlatform(navigator.userAgent);
   return (
     <ApplicationProvider storage={storage}>
       <ApplicationSurface
+        desktopBridge={desktopBridge}
         initialPlatform={initialPlatform}
         runtimeBridge={runtimeBridge}
         synchronizePlatform={synchronizePlatform}

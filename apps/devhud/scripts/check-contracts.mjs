@@ -9,11 +9,18 @@ const repository = "https://github.com/tauri-apps/tauri";
 const paths = {
   cargoLock: resolve(repositoryRoot, "Cargo.lock"),
   cargoManifest: resolve(appRoot, "src-tauri/Cargo.toml"),
-  capability: resolve(appRoot, "src-tauri/capabilities/main.json"),
+  desktopMainCapability: resolve(
+    appRoot,
+    "src-tauri/capabilities/desktop-main.json",
+  ),
+  mainCapability: resolve(appRoot, "src-tauri/capabilities/main.json"),
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
   rootCargoManifest: resolve(repositoryRoot, "Cargo.toml"),
+  rustShell: resolve(appRoot, "src-tauri/src/lib.rs"),
+  settingsCapability: resolve(appRoot, "src-tauri/capabilities/settings.json"),
   tauriConfig: resolve(appRoot, "src-tauri/tauri.conf.json"),
+  updaterBoundary: resolve(appRoot, "src-tauri/src/updater.rs"),
   widgetBridgeManifest: resolve(
     appRoot,
     "src-tauri/widget-bridge/Cargo.toml",
@@ -23,25 +30,35 @@ const paths = {
 const [
   cargoLock,
   cargoManifest,
-  capability,
+  desktopMainCapability,
+  mainCapability,
   packageLock,
   packageManifest,
   rootCargoManifest,
+  rustShell,
+  settingsCapability,
   tauriConfig,
+  updaterBoundary,
   widgetBridgeManifest,
 ] = await Promise.all([
   readFile(paths.cargoLock, "utf8"),
   readFile(paths.cargoManifest, "utf8"),
-  readFile(paths.capability, "utf8"),
+  readFile(paths.desktopMainCapability, "utf8"),
+  readFile(paths.mainCapability, "utf8"),
   readFile(paths.packageLock, "utf8"),
   readFile(paths.packageManifest, "utf8"),
   readFile(paths.rootCargoManifest, "utf8"),
+  readFile(paths.rustShell, "utf8"),
+  readFile(paths.settingsCapability, "utf8"),
   readFile(paths.tauriConfig, "utf8"),
+  readFile(paths.updaterBoundary, "utf8"),
   readFile(paths.widgetBridgeManifest, "utf8"),
 ]);
 
 const packageJson = JSON.parse(packageManifest);
-const capabilityJson = JSON.parse(capability);
+const desktopMainCapabilityJson = JSON.parse(desktopMainCapability);
+const mainCapabilityJson = JSON.parse(mainCapability);
+const settingsCapabilityJson = JSON.parse(settingsCapability);
 const tauriJson = JSON.parse(tauriConfig);
 const failures = [];
 
@@ -55,6 +72,10 @@ requireCondition(
   packageJson.devDependencies?.["@tauri-apps/cli-cef"] ===
     "3.0.0-alpha.6",
   "@tauri-apps/cli-cef must be pinned exactly to 3.0.0-alpha.6",
+);
+requireCondition(
+  packageJson.version === "0.1.0" && tauriJson.version === "0.1.0",
+  "the production preview manifests must identify version 0.1.0",
 );
 requireCondition(
   packageJson.devDependencies?.["@tauri-apps/cli-mobile"] ===
@@ -153,29 +174,98 @@ requireCondition(
   "the main window must be created with explicit navigation guards",
 );
 requireCondition(
-  tauriJson.bundle?.active === false,
-  "the foundation must not enable release bundling before packaging is implemented",
+  tauriJson.bundle?.active === true &&
+    tauriJson.bundle?.targets === "all" &&
+    tauriJson.bundle?.createUpdaterArtifacts === true &&
+    tauriJson.bundle?.macOS?.minimumSystemVersion === "14.0",
+  "the 0.1.0 preview must enable host bundles, updater artifacts, and macOS 14+",
 );
 requireCondition(
   tauriJson.plugins === undefined,
   "the common scaffold must not expose plugin, updater, or deep-link configuration",
 );
+const expectedMainPermissions = [
+  "allow-get-runtime-info",
+  "allow-read-settings",
+  "allow-write-settings",
+  "allow-read-widget-configuration",
+  "allow-write-widget-configuration",
+  "allow-reset-dev-hud",
+];
+const expectedDesktopMainPermissions = [
+  "allow-hide-hud",
+  "allow-show-settings",
+];
+const expectedSettingsPermissions = [
+  "allow-get-runtime-info",
+  "allow-read-settings",
+  "allow-write-settings",
+  "allow-read-widget-configuration",
+  "allow-reset-dev-hud",
+  "allow-hide-settings",
+  "allow-replace-global-shortcut",
+  "allow-set-launch-at-login",
+  "allow-complete-first-run",
+];
 requireCondition(
-  capabilityJson.windows?.length === 1 &&
-    capabilityJson.windows[0] === "main",
-  "the main capability must be window-specific",
+  JSON.stringify(mainCapabilityJson.windows) === JSON.stringify(["main"]) &&
+    JSON.stringify(mainCapabilityJson.permissions) ===
+      JSON.stringify(expectedMainPermissions),
+  "the HUD capability must expose only its scoped shell and persistence commands",
 );
 requireCondition(
-  JSON.stringify(capabilityJson.permissions) ===
-    JSON.stringify([
-      "allow-get-runtime-info",
-      "allow-read-settings",
-      "allow-write-settings",
-      "allow-read-widget-configuration",
-      "allow-write-widget-configuration",
-      "allow-reset-dev-hud",
-    ]),
-  "the main capability must expose only runtime information, the two scoped persistence records, and confirmed reset",
+  JSON.stringify(desktopMainCapabilityJson.windows) ===
+      JSON.stringify(["main"]) &&
+    JSON.stringify(desktopMainCapabilityJson.permissions) ===
+      JSON.stringify(expectedDesktopMainPermissions),
+  "the desktop HUD capability must expose only desktop lifecycle commands",
+);
+requireCondition(
+  JSON.stringify(settingsCapabilityJson.windows) ===
+      JSON.stringify(["settings"]) &&
+    JSON.stringify(settingsCapabilityJson.permissions) ===
+      JSON.stringify(expectedSettingsPermissions),
+  "the settings capability must expose only its scoped settings commands",
+);
+requireCondition(
+  JSON.stringify(tauriJson.app?.security?.capabilities) ===
+    JSON.stringify(["main", "desktop-main", "settings"]),
+  "the Tauri configuration must enable shared, desktop HUD, and settings capabilities",
+);
+for (const action of [
+  "Open DevHud",
+  "Settings",
+  "Check for Updates",
+  "Open DevTools",
+  "Quit",
+]) {
+  requireCondition(
+    rustShell.includes(`"${action}"`),
+    `the tray must include ${action}`,
+  );
+}
+requireCondition(
+  rustShell.includes(".visible(false)") &&
+    rustShell.includes(".always_on_top(true)") &&
+    rustShell.includes(".skip_taskbar(true)") &&
+    rustShell.includes("ActivationPolicy::Accessory"),
+  "the desktop HUD must be hidden, always-on-top, taskbar-free, and menu-bar resident",
+);
+requireCondition(
+  rustShell.match(/\.incognito\(true\)/gu)?.length === 2,
+  "both desktop CEF webviews must use off-the-record profiles",
+);
+requireCondition(
+  rustShell.includes('event = "devhud.settings.window_failure"') &&
+    !rustShell.includes("build_settings_window(app.handle())?;"),
+  "first-run settings failure must keep the tray-resident process alive",
+);
+requireCondition(
+  !updaterBoundary.includes("reqwest") &&
+    !updaterBoundary.includes("ureq") &&
+    !updaterBoundary.includes("github.com") &&
+    updaterBoundary.includes("ScopedUpdaterUnavailable"),
+  "the typed preview updater boundary must perform no network access",
 );
 
 if (failures.length > 0) {

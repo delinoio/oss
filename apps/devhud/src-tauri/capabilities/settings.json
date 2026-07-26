@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Allows only DevHud's settings window to read and change desktop settings through scoped commands.",
+  "local": true,
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": ["settings"],
+  "permissions": [
+    "allow-get-runtime-info",
+    "allow-read-settings",
+    "allow-write-settings",
+    "allow-read-widget-configuration",
+    "allow-reset-dev-hud",
+    "allow-hide-settings",
+    "allow-replace-global-shortcut",
+    "allow-set-launch-at-login",
+    "allow-complete-first-run"
+  ]
+}

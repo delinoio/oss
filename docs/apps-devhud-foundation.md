@@ -4,8 +4,8 @@
 
 - Project/component: `devhud` / `app`
 - Sole canonical implementation path: `apps/devhud`
-- Status: active foundation; `apps/devhud` contains the common bundled-asset application package, internal empty tool registry, desktop/mobile empty-state UI, maintained native iOS and Android hosts, a private mobile widget-state plugin, and independently built WidgetKit/AppWidgetProvider source targets. It has no production tool, visible or distributed widget, packaging, release, publisher, or public support implementation.
-- The current implementation includes the shared bundled-asset frontend, provider-owned persisted System/Light/Dark state, internal registry filtering, target-isolated desktop CEF and mobile system-webview runtimes, scoped native commands, Swift/Kotlin shared-data adapters, non-distributed native widget fixtures, and deterministic local validation commands.
+- Status: active application; `apps/devhud` contains the bundled-asset package, internal empty tool registry, production desktop shell, sign-ready desktop bundle configuration, stable mobile empty-state UI, maintained native iOS and Android hosts, a private mobile widget-state plugin, and independently built WidgetKit/AppWidgetProvider source targets. It has no production tool, visible or distributed widget, scoped updater network implementation, published release, publisher automation, or public support implementation.
+- The current implementation includes tray-resident desktop window lifecycle, transactional global shortcuts, explicit autostart, pointer-monitor HUD placement, preview DevTools, a typed local update action, cross-window theme reconciliation, surfaced startup integration failures, provider-owned persisted System/Light/Dark state, internal registry filtering, target-isolated desktop CEF and mobile system-webview runtimes, scoped native commands, Swift/Kotlin shared-data adapters, non-distributed native widget fixtures, generated native host sources, and deterministic local and host validation commands.
 
 ## Runtime and Language
 
@@ -58,12 +58,14 @@ The native boundary exposes only scoped Tauri commands required for settings, ap
 
 ### Desktop HUD and tray behavior
 
-- Run as a tray/menu-bar resident application without a persistent Dock or taskbar icon.
+- Run as a single tray/menu-bar resident application without a persistent Dock or taskbar icon. A per-application process guard is acquired before desktop windows, tray actions, shortcuts, or autostart state are initialized.
 - Closing the HUD or settings window hides it while the process remains resident. Only the tray `Quit` action terminates the app, except a fatal CEF initialization failure, which logs and exits immediately.
 - Tray actions are `Open DevHud`, `Settings`, `Check for Updates`, `Open DevTools`, and `Quit`.
-- Show a skippable first-run settings window that captures and validates a global shortcut. Tray access remains available until a shortcut is configured.
-- Launch-at-login is disabled by default. Its persisted setting is reserved for the native desktop integration; do not expose a settings toggle until that integration can apply changes and roll back failures.
-- Store shortcuts as structured modifier and key values, never as an unchecked free-form string. A malformed, conflicting, permission-denied, or failed registration preserves the previous valid binding.
+- Show a skippable first-run settings window that focuses the single shortcut-capture control when local settings are ready, then captures and validates a global shortcut. Tray access remains available until a shortcut is configured.
+- Launch-at-login is disabled by default and has an explicit settings toggle. The native desktop integration verifies changes and reports a stable typed failure while preserving the previous setting; if the effective system state cannot be read, Settings keeps the saved value visible and reports that the native state is unknown.
+- Store shortcuts as structured modifier and key values, never as an unchecked free-form string. A malformed, conflicting, permission-denied, or failed registration preserves the previous valid binding. If persistence and native rollback both fail after a replacement, report and adopt the effective native binding instead of presenting stale shortcut state.
+- A failed persisted shortcut or launch-at-login restoration is surfaced in Settings with the effective native state, and completing first-run setup immediately clears the setup presentation for the retained settings webview.
+- Theme changes persist before they are broadcast from the settings webview and are adopted by the retained HUD webview without restarting the application.
 - Display the always-on-top HUD centered on the monitor containing the mouse pointer and focus the search input immediately.
 - Repeating the global shortcut toggles the HUD. `Esc` or focus loss hides it immediately.
 - The empty production registry displays the exact message `No tools are available in this foundation preview.` and a Settings action.
@@ -103,8 +105,8 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 - iOS excludes both the application-local record directory and future App Group container from device backups. Android backup and extraction rules exclude all application/DataStore domains from cloud backup and device transfer so local state is not restored onto another device.
 - Unsupported future schema versions are rejected without reading them into state or overwriting stored data. Corrupt, incompatible, or unreadable data surfaces actionable confirmed-reset guidance without raw stored data in UI, errors, or logs. An unreadable record remains write-blocked until it can be read successfully or the user completes Reset DevHud.
 - Local state is retained until the user chooses `Reset DevHud` or uninstalls the app.
-- `Reset DevHud` requires confirmation and clears settings, widget shared state, CEF runtime state, and logs. User-exported diagnostic files remain user-owned.
-- If a reset operation only partially clears native state before failing, the frontend reloads the resulting records while continuing to report the reset failure.
+- `Reset DevHud` requires confirmation, disables the active global shortcut and launch-at-login integration, clears settings, widget shared state, both retained desktop CEF webviews, logs, and surfaced startup-integration diagnostics before reporting completion. A native integration or pre-removal persistence failure reports that the reset failed, attempts to restore the previous working integrations, and records any rollback failure with its effective state. A failed record rollback that leaves a stable record present reports a partially retained reset and reloads both providers from the effective records. Cleanup failure after both stable record paths are absent remains a failed reset but keeps integrations disabled so runtime state matches the next launch. User-exported diagnostic files remain user-owned.
+- If a reset operation only partially clears native widget state before failing, the frontend reloads the resulting records while continuing to report the reset failure.
 - Persist only the minimum CEF profile data required for operation. Disable web downloads, browsing history, cookies, and application web storage; Reset clears all CEF state.
 - Do not implement settings import, settings export, migration from another application, account migration, or cloud synchronization.
 - The mobile application and build-only native targets use matching typed adapters for the exact widget record. Tests inject isolated App Group suites or temporary DataStores, round-trip the shared fixture, preserve unrelated state on reset, reject corrupt and future-version records without overwrite, and propagate injected refresh failures.
@@ -114,7 +116,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 - Render only bundled frontend assets. Enable the CEF sandbox in every signed desktop build.
 - Block external navigation, popups, downloads, and remote frontend resources.
-- Keep Tauri capabilities window-specific and least-privileged. DevTools in the technical preview does not relax these boundaries.
+- Keep Tauri capabilities window-specific and least-privileged: the HUD and settings webviews use separate capability documents containing only the record and shell commands each surface invokes. DevTools in the technical preview does not relax these boundaries.
 - Do not implement authentication, an account system, tenant data, billing, cloud storage, backend services, DeliDev integration, analytics, crash telemetry, remote logs, advertising, or user tracking.
 - The sole network exception is desktop updater discovery and download: use the unauthenticated GitHub Releases API, filter releases to `delinoio/oss` tags beginning with `devhud@v`, ignore drafts, unrelated releases, invalid semantic versions, unsupported targets, and releases without a valid signed DevHud updater manifest, and download manifests/assets only from GitHub Releases. Never ship a GitHub token. The mobile runtime reports updates as unsupported and has no network permission or endpoint.
 - Check for updates at startup and every 24 hours. Offline, unavailable, and rate-limited checks are non-fatal. Require user confirmation before install/restart; invalid updater signatures leave the installed version unchanged.
@@ -124,6 +126,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 - Use structured local logs for troubleshooting. Retain at most seven days and 20 MB with rotation.
 - Safe log fields may include application/build versions, OS/architecture, upstream Tauri/CEF versions, safe event IDs, timestamps, duration measurements, and enum error classifications.
+- Shortcut and launch-at-login application, reset, restoration, persistence, and rollback failures record only the operation, stable classification, and effective configured/enabled state.
 - Never log search text, clipboard contents, user files, arbitrary filesystem paths, shortcut keys, credentials, signing data, raw process environment values, invitation/account data, or tokens.
 - CEF initialization failure produces a fatal structured diagnostic followed by immediate process exit.
 - Diagnostics export occurs only after explicit user action to a user-selected destination. Redaction tests must prevent excluded values from logs and release bundles.
@@ -131,7 +134,7 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 ## Build and Test
 
-The foundation provides package-local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop build, and host-appropriate desktop smoke commands. Mobile hosts add `mobile:generate:android`, `mobile:generate:ios`, `build:android`, `build:android:ci`, `build:ios`, `build:ios:ci`, `check:mobile`, `test:mobile`, and `test:android:native`. Native widget commands are `build:widget:android`, `build:widget:ios`, `test:widget:android`, `test:widget:ios`, and `check:widget-artifacts`. The artifact command checks canonical projects plus discovered release merged manifests and accepts explicit Android manifest/APK and iOS `.app` paths; it requires at least one built release artifact and fails if any receiver is registered or an extension/provisioning identity is embedded. Deterministic frontend output is declared in `apps/devhud/turbo.json`.
+The package provides local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop, sign-ready preview bundle, and host-appropriate repeated desktop lifecycle smoke commands. Mobile hosts add `mobile:generate:android`, `mobile:generate:ios`, `build:android`, `build:android:ci`, `build:ios`, `build:ios:ci`, `check:mobile`, `test:mobile`, and `test:android:native`. Native widget commands are `build:widget:android`, `build:widget:ios`, `test:widget:android`, `test:widget:ios`, and `check:widget-artifacts`. The artifact command checks canonical projects plus discovered release merged manifests and accepts explicit Android manifest/APK and iOS `.app` paths; it requires at least one built release artifact and fails if any receiver is registered or an extension/provisioning identity is embedded. Deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics plus automated WCAG checks with `axe-core`; the full desktop OS/architecture/display matrix, signature validation, and release-validation tasks must be added with their corresponding implementations and must not be represented by passing placeholders.
 
 Required validation coverage is:
 

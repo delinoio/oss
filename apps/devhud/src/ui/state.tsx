@@ -1,6 +1,7 @@
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
+  decodeSettings,
   defaultSettings,
   defaultWidgetConfiguration,
   SETTINGS_STORAGE_KEY,
@@ -16,6 +17,7 @@ import {
   RejectedRecordWriteBlockedError,
   type LocalStorageAdapter,
   type PersistenceIssue,
+  type PersistenceResetOutcome,
 } from "../persistence/storage";
 import { tauriPersistenceAdapter } from "../persistence/tauri";
 
@@ -38,9 +40,15 @@ interface ApplicationState {
 }
 
 interface ApplicationActions {
-  resetDevHud(): Promise<void>;
-  setTheme(theme: ThemePreference): void;
+  readPersistedTheme(): Promise<ThemePreference | null>;
+  reloadPersistence(outcome?: PersistenceResetOutcome): Promise<void>;
+  resetDevHud(): Promise<PersistenceResetOutcome>;
+  setTheme(theme: ThemePreference): Promise<boolean>;
   setShortcut(shortcut: StructuredShortcut | null): void;
+  setLaunchAtLogin(enabled: boolean): void;
+  adoptNativeTheme(theme: ThemePreference): void;
+  adoptNativeShortcut(shortcut: StructuredShortcut): void;
+  adoptNativeLaunchAtLogin(enabled: boolean): void;
   setWidgetConfiguration(configuration: WidgetConfiguration): void;
   setMobileScreen(screen: MobileScreen): void;
   openSettings(): void;
@@ -48,6 +56,18 @@ interface ApplicationActions {
 }
 
 const ApplicationContext = createContext<(ApplicationState & ApplicationActions) | null>(null);
+
+function settingsAfterReset(
+  settings: DevHudSettings,
+  outcome?: PersistenceResetOutcome,
+): DevHudSettings {
+  if (outcome?.status !== "integration-rollback-failed") return settings;
+  return {
+    ...settings,
+    shortcut: outcome.shortcut,
+    launchAtLogin: outcome.launchAtLogin ?? settings.launchAtLogin,
+  };
+}
 
 export function ApplicationProvider({
   children,
@@ -97,11 +117,11 @@ export function ApplicationProvider({
   }, [persistence]);
 
   const persistSettings = useCallback(
-    (nextSettings: DevHudSettings) => {
-      if (!persistenceReady) return;
+    (nextSettings: DevHudSettings): Promise<boolean> => {
+      if (!persistenceReady) return Promise.resolve(false);
       const mutation = ++settingsMutation.current;
       setSettings(nextSettings);
-      void persistence.saveSettings(nextSettings).then(
+      return persistence.saveSettings(nextSettings).then(
         () => {
           lastSuccessfulSettings.current = nextSettings;
           if (mutation === settingsMutation.current) {
@@ -109,16 +129,17 @@ export function ApplicationProvider({
               issues.filter((issue) => issue.key !== SETTINGS_STORAGE_KEY),
             );
           }
+          return true;
         },
         (error: unknown) => {
-          if (mutation !== settingsMutation.current) return;
+          if (mutation !== settingsMutation.current) return false;
           setSettings(lastSuccessfulSettings.current);
           if (error instanceof RejectedRecordWriteBlockedError) {
             setPersistenceIssues((issues) => [
               ...issues.filter((issue) => issue.key !== error.key),
               { ...error.failure, key: error.key },
             ]);
-            return;
+            return false;
           }
           setPersistenceIssues((issues) => [
             ...issues.filter((issue) => issue.key !== SETTINGS_STORAGE_KEY),
@@ -129,6 +150,7 @@ export function ApplicationProvider({
                 "DevHud could not save local settings. The last saved settings were kept.",
             },
           ]);
+          return false;
         },
       );
     },
@@ -140,8 +162,56 @@ export function ApplicationProvider({
     [persistSettings, settings],
   );
   const setShortcut = useCallback(
-    (shortcut: StructuredShortcut | null) => persistSettings({ ...settings, shortcut }),
+    (shortcut: StructuredShortcut | null) => {
+      void persistSettings({ ...settings, shortcut });
+    },
     [persistSettings, settings],
+  );
+  const setLaunchAtLogin = useCallback(
+    (launchAtLogin: boolean) => {
+      void persistSettings({ ...settings, launchAtLogin });
+    },
+    [persistSettings, settings],
+  );
+  const adoptNativeTheme = useCallback(
+    (theme: ThemePreference) => {
+      setSettings((current) => {
+        const nextSettings = { ...current, theme };
+        lastSuccessfulSettings.current = nextSettings;
+        return nextSettings;
+      });
+    },
+    [],
+  );
+  const readPersistedTheme = useCallback(async () => {
+    try {
+      const record = await storage.read(SETTINGS_STORAGE_KEY);
+      if (record === null) return defaultSettings.theme;
+      const decoded = decodeSettings(record);
+      return decoded.ok ? decoded.value.theme : null;
+    } catch {
+      return null;
+    }
+  }, [storage]);
+  const adoptNativeShortcut = useCallback(
+    (shortcut: StructuredShortcut) => {
+      setSettings((current) => {
+        const nextSettings = { ...current, shortcut };
+        lastSuccessfulSettings.current = nextSettings;
+        return nextSettings;
+      });
+    },
+    [],
+  );
+  const adoptNativeLaunchAtLogin = useCallback(
+    (launchAtLogin: boolean) => {
+      setSettings((current) => {
+        const nextSettings = { ...current, launchAtLogin };
+        lastSuccessfulSettings.current = nextSettings;
+        return nextSettings;
+      });
+    },
+    [],
   );
   const setWidgetConfiguration = useCallback(
     (configuration: WidgetConfiguration) => {
@@ -187,12 +257,14 @@ export function ApplicationProvider({
     settingsMutation.current += 1;
     widgetConfigurationMutation.current += 1;
     try {
-      const loaded = await persistence.reset();
-      setSettings(loaded.settings);
+      const { loaded, outcome } = await persistence.reset();
+      const effectiveSettings = settingsAfterReset(loaded.settings, outcome);
+      setSettings(effectiveSettings);
       setWidgetConfigurationState(loaded.widgetConfiguration);
-      lastSuccessfulSettings.current = loaded.settings;
+      lastSuccessfulSettings.current = effectiveSettings;
       lastSuccessfulWidgetConfiguration.current = loaded.widgetConfiguration;
       setPersistenceIssues(loaded.issues);
+      return outcome;
     } catch (error: unknown) {
       if (error instanceof PersistenceResetError) {
         const { loaded } = error;
@@ -209,6 +281,24 @@ export function ApplicationProvider({
       setPersistenceReady(true);
     }
   }, [persistence]);
+  const reloadPersistence = useCallback(async (outcome?: PersistenceResetOutcome) => {
+    setPersistenceReady(false);
+    settingsMutation.current += 1;
+    widgetConfigurationMutation.current += 1;
+    try {
+      const loaded = await persistence.reload();
+      const effectiveSettings = settingsAfterReset(loaded.settings, outcome);
+      setSettings(effectiveSettings);
+      setWidgetConfigurationState(loaded.widgetConfiguration);
+      lastSuccessfulSettings.current = effectiveSettings;
+      lastSuccessfulWidgetConfiguration.current = loaded.widgetConfiguration;
+      setPersistenceIssues(loaded.issues);
+    } finally {
+      settingsMutation.current = 0;
+      widgetConfigurationMutation.current = 0;
+      setPersistenceReady(true);
+    }
+  }, [persistence]);
 
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -219,9 +309,15 @@ export function ApplicationProvider({
       widgetConfiguration,
       persistenceIssues,
       persistenceReady,
+      readPersistedTheme,
+      reloadPersistence,
       resetDevHud,
       setTheme,
       setShortcut,
+      setLaunchAtLogin,
+      adoptNativeTheme,
+      adoptNativeShortcut,
+      adoptNativeLaunchAtLogin,
       setWidgetConfiguration,
       mobileScreen,
       settingsOpen,
@@ -230,13 +326,19 @@ export function ApplicationProvider({
       closeSettings,
     }),
     [
+      adoptNativeLaunchAtLogin,
+      adoptNativeShortcut,
+      adoptNativeTheme,
       closeSettings,
       mobileScreen,
       openSettings,
       persistenceIssues,
       persistenceReady,
+      readPersistedTheme,
+      reloadPersistence,
       resetDevHud,
       setShortcut,
+      setLaunchAtLogin,
       setTheme,
       setWidgetConfiguration,
       settings,
