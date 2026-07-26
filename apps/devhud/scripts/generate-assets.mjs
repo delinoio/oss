@@ -9,7 +9,6 @@ const manifestPath = join(appRoot, "assets/manifest.json");
 const blue = [40, 105, 220, 255];
 const white = [255, 255, 255, 255];
 const transparent = [0, 0, 0, 0];
-let canonicalPolygons;
 
 const files = new Map([
   ["src-tauri/icons/icon.ico", { format: "ico", size: 256 }],
@@ -145,7 +144,7 @@ function parseRect(source) {
   return { x, y, width, height, rx, ry };
 }
 
-function pathPolygons(source) {
+function pathPolygons(source, targetScale = 1) {
   const paths = [...source.matchAll(/<path[^>]+d=["']([^"']+)["'][^>]*>/g)].map((match) => match[1]);
   const token = /([a-z])|(-?\d*\.?\d+(?:e[-+]?\d+)?)/gi;
   return paths.map((path) => {
@@ -156,7 +155,8 @@ function pathPolygons(source) {
     const point = (px, py) => { polygon.push([px, py]); x = px; y = py; };
     const cubic = (x1, y1, x2, y2, x3, y3) => {
       const [sx, sy] = [x, y];
-      for (let step = 1; step <= 12; step += 1) { const t = step / 12; const u = 1 - t; point(u ** 3 * sx + 3 * u ** 2 * t * x1 + 3 * u * t ** 2 * x2 + t ** 3 * x3, u ** 3 * sy + 3 * u ** 2 * t * y1 + 3 * u * t ** 2 * y2 + t ** 3 * y3); }
+      const steps = Math.max(12, Math.ceil(12 * targetScale));
+      for (let step = 1; step <= steps; step += 1) { const t = step / steps; const u = 1 - t; point(u ** 3 * sx + 3 * u ** 2 * t * x1 + 3 * u * t ** 2 * x2 + t ** 3 * x3, u ** 3 * sy + 3 * u ** 2 * t * y1 + 3 * u * t ** 2 * y2 + t ** 3 * y3); }
       previous = [x2, y2];
     };
     while (index < tokens.length) {
@@ -186,6 +186,7 @@ function png(width, height, source, { tray = false, opaque = false } = {}) {
   const channels = opaque ? 3 : 4;
   const pixels = Buffer.alloc(width * height * channels);
   const fit = Math.min(width, height) / 512;
+  const canonicalPolygons = pathPolygons(source, fit);
   const offsetX = (width - 512 * fit) / 2; const offsetY = (height - 512 * fit) / 2;
   const rect = parseRect(source);
   const blueColor = parseColor(source, "blue", blue); const whiteColor = parseColor(source, "white", white);
@@ -251,8 +252,6 @@ function icns(data) {
 async function outputs() {
   const source = await readFile(sourcePath, "utf8");
   const sourceHash = createHash("sha256").update(source.replace(/\r\n?/gu, "\n")).digest("hex");
-  const polygons = pathPolygons(source);
-  canonicalPolygons = polygons;
   return { sourceHash, entries: [...files].map(([relativePath, value]) => {
     const options = typeof value === "object" ? value : {};
     const size = options.size ?? value;
