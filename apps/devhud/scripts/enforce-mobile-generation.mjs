@@ -117,6 +117,7 @@ if (platform === "android") {
       ["allowBackup", "false"],
       ["dataExtractionRules", "@xml/data_extraction_rules"],
       ["fullBackupContent", "@xml/backup_rules"],
+      ["roundIcon", "@mipmap/ic_launcher_round"],
     ]) {
       const pattern = new RegExp(`android:${attribute}="[^"]*"`, "u");
       updated = pattern.test(updated)

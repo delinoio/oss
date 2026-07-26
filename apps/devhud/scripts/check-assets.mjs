@@ -82,6 +82,7 @@ requireCondition(rustShell.includes('assets/tray/devhud-tray-template@2x.png'), 
 requireCondition(rustShell.includes('assets/tray/devhud-tray@2x.png'), "desktop tray does not consume the generated non-macOS asset");
 const androidManifest = await readFile(resolve(appRoot, "src-tauri/gen/android/app/src/main/AndroidManifest.xml"), "utf8");
 requireCondition(androidManifest.includes('android:icon="@mipmap/ic_launcher"'), "Android release host does not include the generated launcher asset");
+requireCondition(androidManifest.includes('android:roundIcon="@mipmap/ic_launcher_round"'), "Android release host does not include the generated round launcher asset");
 const iosProject = await readFile(resolve(appRoot, "src-tauri/gen/apple/project.yml"), "utf8");
 requireCondition(iosProject.includes("- path: Assets.xcassets"), "iOS release host does not include the generated asset catalog");
 requireCondition(iosProject.includes("ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon"), "iOS release host does not declare AppIcon as its primary icon set");
