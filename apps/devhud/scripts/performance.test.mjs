@@ -49,6 +49,15 @@ test("validation rejects arbitrary units and notes", () => {
   assert.throws(() => validate(value), /invalid measurement/u);
 });
 
+test("available measurements require samples and their expected unit", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0].measurements[0].samples = [];
+  assert.throws(() => validate(value), /invalid measurement/u);
+  value.targets[0].measurements[0].samples = [42];
+  value.targets[0].measurements[0].unit = "bytes";
+  assert.throws(() => validate(value), /invalid measurement/u);
+});
+
 test("aggregation validates provenance and retains available duplicate targets", () => {
   const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
   try {

@@ -34,6 +34,10 @@ function median(values) { const sorted = [...values].sort((a, b) => a - b); retu
 function artifactBytes(path) { if (!path || !existsSync(path)) return null; const stat = statSync(path); if (stat.isFile()) return stat.size; return readdirSync(path, { withFileTypes: true }).reduce((total, entry) => total + (artifactBytes(resolve(path, entry.name)) ?? 0), 0); }
 function findDesktopExecutable() {
   const target = resolve(repositoryRoot, "target", "debug");
+  if (process.platform === "darwin") {
+    const bundleExecutable = resolve(target, "bundle", "macos", "DevHud.app", "Contents", "MacOS", "devhud");
+    return existsSync(bundleExecutable) ? bundleExecutable : null;
+  }
   const binary = resolve(target, process.platform === "win32" ? "devhud.exe" : "devhud");
   return existsSync(binary) ? binary : null;
 }
@@ -52,29 +56,56 @@ function findPackagedArtifact() {
   }
   return null;
 }
-function rssBytes(pid) {
+function processTreeRssBytes(pid) {
   if (process.platform === "win32") {
-    const outcome = run("powershell.exe", ["-NoProfile", "-Command", `(Get-Process -Id ${pid}).WorkingSet64`]);
-    return outcome.status === 0 ? Number(outcome.stdout.trim()) : null;
+    const outcome = run("powershell.exe", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($process) { [PSCustomObject]@{ ProcessId = $_.ProcessId; ParentProcessId = $_.ParentProcessId; WorkingSet64 = $process.WorkingSet64 } } } | ConvertTo-Json -Compress"]);
+    if (outcome.status !== 0 || !outcome.stdout.trim()) return null;
+    const rows = JSON.parse(outcome.stdout);
+    return rssForProcessTree(pid, (Array.isArray(rows) ? rows : [rows]).map((row) => ({ pid: Number(row.ProcessId), parentPid: Number(row.ParentProcessId), rss: Number(row.WorkingSet64) })));
   }
-  const outcome = run("ps", ["-o", "rss=", "-p", String(pid)]);
-  const kb = Number(outcome.stdout.trim()); return Number.isFinite(kb) ? kb * 1024 : null;
+  const outcome = run("ps", ["-axo", "pid=,ppid=,rss="]);
+  if (outcome.status !== 0) return null;
+  const rows = outcome.stdout.trim().split(/\n/u).flatMap((line) => {
+    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)$/u);
+    return match ? [{ pid: Number(match[1]), parentPid: Number(match[2]), rss: Number(match[3]) * 1024 }] : [];
+  });
+  return rssForProcessTree(pid, rows);
+}
+function rssForProcessTree(rootPid, rows) {
+  const descendants = new Set([rootPid]);
+  let found = false;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const row of rows) {
+      if (row.pid === rootPid) found = true;
+      if (descendants.has(row.parentPid) && !descendants.has(row.pid)) {
+        descendants.add(row.pid);
+        changed = true;
+      }
+    }
+  }
+  if (!found) return null;
+  const total = rows.filter((row) => descendants.has(row.pid)).reduce((sum, row) => sum + row.rss, 0);
+  return Number.isFinite(total) ? total : null;
 }
 async function profileDesktop(binary, startupNote) {
   const markers = [];
   const start = performance.now();
   const child = spawn(binary, [], { cwd: appRoot, env: { ...process.env, DEVHUD_PERF: "1" }, stdio: ["ignore", "pipe", "pipe"] });
   const closed = new Promise((resolveClosed) => child.once("close", resolveClosed));
+  const spawnFailed = new Promise((resolveFailed) => child.once("error", () => resolveFailed(true)));
   let markReady;
   const ready = new Promise((resolveReady) => { markReady = resolveReady; });
   for (const stream of [child.stdout, child.stderr]) { stream.setEncoding("utf8"); stream.on("data", (chunk) => { for (const line of chunk.split(/\r?\n/u)) if (line.startsWith("DEVHUD_PERF ")) { try { const marker = { ...JSON.parse(line.slice(12)), at: performance.now() - start }; markers.push(marker); if (marker.event === "ready") markReady(marker); } catch { /* marker protocol failure is handled below */ } } }); }
-  const readyMarker = await Promise.race([ready, new Promise((resolveReady) => setTimeout(() => resolveReady(null), 900))]);
+  const readyMarker = await Promise.race([ready, spawnFailed, new Promise((resolveReady) => setTimeout(() => resolveReady(null), 900))]);
+  if (readyMarker === true) return { failure: "launch-failed", measurements: [] };
   if (readyMarker) await new Promise((resolveDone) => setTimeout(resolveDone, 200));
-  const memory = readyMarker ? [rssBytes(child.pid), rssBytes(child.pid), rssBytes(child.pid)].filter((sample) => sample !== null) : [];
+  const memory = readyMarker ? [processTreeRssBytes(child.pid), processTreeRssBytes(child.pid), processTreeRssBytes(child.pid)].filter((sample) => sample !== null) : [];
   child.kill();
   await closed;
   const readyEvent = markers.find((marker) => marker.event === "ready"); const hud = markers.find((marker) => marker.event === "hud-shown");
-  if (!readyEvent || !hud) return { failure: "measurement-protocol-failed", measurements: [] };
+  if (!readyEvent || !hud || !memory.length) return { failure: "measurement-protocol-failed", measurements: [] };
   return { measurements: [
     { name: startupNote === "cold-process" ? "desktop-cold-startup" : "desktop-warm-startup", status: "available", method: "process-ready-marker", samples: [Math.round(readyEvent.at)], unit: "milliseconds", note: startupNote },
     { name: "desktop-hud-display", status: "available", method: "process-hud-marker", samples: [Math.max(0, Math.round(hud.at - readyEvent.at))], unit: "milliseconds", note: "explicit-hud-invocation" },
@@ -136,7 +167,8 @@ function validate(value) {
     if (target.status === "unavailable" && !["unsupported-host", "no-display-server", "tool-not-installed", "no-supported-target", "artifact-not-found"].includes(target.unavailableReason)) throw new Error("unavailable target missing reason");
     if (target.status === "failed" && !["build-failed", "launch-failed", "measurement-protocol-failed"].includes(target.failure)) throw new Error("failed target missing failure");
     for (const measurement of target.measurements) {
-      if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || ![...desktopNames, "mobile-startup"].includes(measurement.name) || !["available", "unavailable", "failed"].includes(measurement.status) || !["process-ready-marker", "process-hud-marker", "artifact-byte-count", "resident-set-sampling", "adb-am-start-w", "simctl-launch-wall-clock", "devicectl-launch-wall-clock"].includes(measurement.method) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.note !== undefined && !["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"].includes(measurement.note))) throw new Error("invalid measurement");
+      const expectedUnit = ["desktop-package-size", "desktop-idle-memory"].includes(measurement?.name) ? "bytes" : "milliseconds";
+      if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || ![...desktopNames, "mobile-startup"].includes(measurement.name) || !["available", "unavailable", "failed"].includes(measurement.status) || !["process-ready-marker", "process-hud-marker", "artifact-byte-count", "resident-set-sampling", "adb-am-start-w", "simctl-launch-wall-clock", "devicectl-launch-wall-clock"].includes(measurement.method) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" && (!measurement.samples.length || measurement.unit !== expectedUnit)) || (measurement.note !== undefined && !["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"].includes(measurement.note))) throw new Error("invalid measurement");
     }
   }
   return true;
@@ -161,7 +193,7 @@ async function main() {
   if (command === "desktop") { const value = await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}.json`)); return; }
   if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}.json`)); return; }
   if (command === "aggregate") { const files = args.length ? args.map((file) => resolve(file)) : existsSync(outputDirectory) ? readdirSync(outputDirectory).filter((file) => file.endsWith(".json") && file !== "release-performance.json").map((file) => resolve(outputDirectory, file)) : []; const value = aggregate(files); validate(value); const json = writeResult(value, "release-performance.json"); const markdown = resolve(outputDirectory, "release-performance.md"); writeFileSync(markdown, summary(value)); console.log(`${json}\n${markdown}`); return; }
-  if (command === "validate") { for (const file of args) validate(JSON.parse(readFileSync(resolve(file), "utf8"))); return; }
+  if (command === "validate") { if (!args.length) throw new Error("Usage: perf:validate -- <result.json...>"); for (const file of args) validate(JSON.parse(readFileSync(resolve(file), "utf8"))); return; }
   throw new Error("Usage: performance.mjs <desktop|mobile|aggregate|validate>");
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

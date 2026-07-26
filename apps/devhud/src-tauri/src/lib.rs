@@ -1109,6 +1109,7 @@ fn get_runtime_info(
     // never receives settings, paths, shortcuts, diagnostics, or environment
     // values. The HUD marker starts at the explicit native show invocation.
     #[cfg(all(
+        debug_assertions,
         feature = "desktop-cef",
         not(any(target_os = "android", target_os = "ios"))
     ))]
