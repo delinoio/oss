@@ -23,6 +23,26 @@ const platformNames = new Set(["android", "ios"]);
 const operations = new Set(["build", "generate"]);
 const targetSets = new Set(["production", "ci", "artifact"]);
 
+async function snapshotTrackedFiles(directory) {
+  const files = spawnSync("git", ["ls-files", "-z", "--", directory], {
+    cwd: appRoot,
+  });
+  if (files.status !== 0) {
+    throw new Error(`could not snapshot tracked generated files in ${directory}`);
+  }
+  const snapshot = await Promise.all(
+    files.stdout
+      .toString("utf8")
+      .split("\0")
+      .filter(Boolean)
+      .map(async (file) => {
+        const path = resolve(appRoot, file);
+        return [path, await readFile(path)];
+      }),
+  );
+  return () => Promise.all(snapshot.map(([path, source]) => writeFile(path, source)));
+}
+
 async function stampBuildRevision(platform) {
   const revision = spawnSync("git", ["rev-parse", "HEAD"], { cwd: appRoot, encoding: "utf8" });
   const worktree = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: appRoot, encoding: "utf8" });
@@ -37,13 +57,14 @@ async function stampBuildRevision(platform) {
     await writeFile(path, source.replace(/^\s*versionName = [^\n]+$/mu, `        versionName = "0.1.0+f49ebda2fdba5755456b0f049e32593ca0ea331a+${buildRevision}"`));
     return () => writeFile(path, source);
   }
+  const restoreGeneratedFiles = await snapshotTrackedFiles("src-tauri/gen/apple");
   const path = resolve(appRoot, "src-tauri/gen/apple/project.yml");
   const source = await readFile(path, "utf8");
   const updated = source.includes("DevHudBuildRevision")
     ? source.replace(/(\s+DevHudBuildRevision:\s*)[^\r\n]*/u, `$1${buildRevision}`)
     : source.replace("        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a", `        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a\n        DevHudBuildRevision: ${buildRevision}`);
   await writeFile(path, updated);
-  return () => writeFile(path, source);
+  return restoreGeneratedFiles;
 }
 
 if (

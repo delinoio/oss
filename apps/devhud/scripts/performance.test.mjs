@@ -102,6 +102,13 @@ test("ordinary mobile builds stamp dirty worktrees as unverified", () => {
   assert.match(script, /: "unverified"/u);
   assert.match(script, /prevents perf:mobile from publishing evidence/u);
   assert.doesNotMatch(script, /throw new Error\("mobile performance provenance requires a clean Git worktree"\)/u);
+  assert.match(script, /snapshotTrackedFiles\("src-tauri\/gen\/apple"\)/u);
+  assert.match(script, /git", \["ls-files", "-z", "--", directory\]/u);
+});
+
+test("mobile performance collection requires clean provenance before writing evidence", () => {
+  const script = readFileSync(resolve(import.meta.dirname, "performance.mjs"), "utf8");
+  assert.match(script, /command === "mobile"\) \{ requireCleanWorktree\(\); if \(!buildRevision\) throw new Error\("mobile performance profiling requires a Git commit revision"\)/u);
 });
 
 test("Android architecture comes from the installed application ABI", () => {
