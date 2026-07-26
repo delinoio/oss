@@ -60,6 +60,25 @@ const files = new Map([
   ["src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png", { size: 192, opaque: true }],
 ]);
 
+const generatedFiles = new Map([
+  [
+    "src-tauri/gen/apple/Assets.xcassets/LaunchLogo.imageset/Contents.json",
+    `${JSON.stringify({
+      images: [{ idiom: "universal", filename: "devhud-launch.png", scale: "1x" }],
+      info: { version: 1, author: "devhud-assets" },
+    })}\n`,
+  ],
+]);
+
+// Cleanup is restricted to stable generated namespaces. The current output map
+// alone cannot remove a generated file after its directory is renamed.
+const approvedGeneratedRoots = [
+  "assets",
+  "src-tauri/icons",
+  "src-tauri/gen/apple/Assets.xcassets",
+  "src-tauri/gen/android/app/src/main/res",
+].map((path) => resolve(appRoot, path));
+
 function chunk(type, data) {
   const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
   const name = Buffer.from(type);
@@ -212,9 +231,13 @@ async function outputs() {
 const check = process.argv.includes("--check");
 const { sourceHash, entries } = await outputs();
 const generatedManifest = { source: "source/devhud-lettermark.svg", sourceSha256: sourceHash, generator: "scripts/generate-assets.mjs", assets: entries.map(({ relativePath, size, format }) => ({ path: relativePath, dimensions: dimensions(size), ...(format ? { format } : {}) })) };
+generatedManifest.generatedFiles = [...generatedFiles].map(([path, contents]) => ({
+  path,
+  sha256: createHash("sha256").update(contents).digest("hex"),
+}));
 const previousManifest = await readFile(manifestPath, "utf8").then(JSON.parse).catch(() => null);
 const expectedPaths = new Set(generatedManifest.assets.map(({ path }) => path));
-const generatedDirectories = [...files.keys()].map((path) => resolve(appRoot, dirname(path)));
+const expectedGeneratedFiles = new Set(generatedManifest.generatedFiles.map(({ path }) => path));
 const isWithin = (root, target) => {
   const relativePath = relative(root, target);
   return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
@@ -227,7 +250,12 @@ if (!check && previousManifest) {
   for (const asset of previousManifest.assets ?? []) {
     if (typeof asset.path !== "string" || expectedPaths.has(asset.path)) continue;
     const obsoletePath = resolve(appRoot, asset.path);
-    if (generatedDirectories.some((directory) => isWithin(directory, obsoletePath))) await unlink(obsoletePath).catch(() => {});
+    if (approvedGeneratedRoots.some((directory) => isWithin(directory, obsoletePath))) await unlink(obsoletePath).catch(() => {});
+  }
+  for (const file of previousManifest.generatedFiles ?? []) {
+    if (typeof file.path !== "string" || expectedGeneratedFiles.has(file.path)) continue;
+    const obsoletePath = resolve(appRoot, file.path);
+    if (approvedGeneratedRoots.some((directory) => isWithin(directory, obsoletePath))) await unlink(obsoletePath).catch(() => {});
   }
 }
 for (const { relativePath, data } of entries) {
@@ -238,6 +266,16 @@ for (const { relativePath, data } of entries) {
   } else {
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, data);
+  }
+}
+for (const [relativePath, contents] of generatedFiles) {
+  const destination = join(appRoot, relativePath);
+  if (check) {
+    const existing = await readFile(destination, "utf8").catch(() => null);
+    if (existing !== contents) throw new Error(`generated file is stale or missing: ${relativePath}`);
+  } else {
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, contents);
   }
 }
 if (!check) {

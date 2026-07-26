@@ -327,5 +327,11 @@
         192
       ]
     }
+  ],
+  "generatedFiles": [
+    {
+      "path": "src-tauri/gen/apple/Assets.xcassets/LaunchLogo.imageset/Contents.json",
+      "sha256": "f629502d9684ee85a2b26015c4ce911328b356790917154d35150c9ce6f555f0"
+    }
   ]
 }

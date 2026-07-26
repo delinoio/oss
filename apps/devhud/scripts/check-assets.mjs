@@ -14,6 +14,11 @@ const { inflateSync } = await import("node:zlib");
 requireCondition(createHash("sha256").update(expectedSource.replace(/\r\n?/gu, "\n")).digest("hex") === manifest.sourceSha256, "asset manifest source hash is stale");
 requireCondition(manifest.generator === "scripts/generate-assets.mjs", "asset manifest generator is not canonical");
 requireCondition(manifest.assets.every(({ path }) => /^[A-Za-z0-9@._/-]+\.(?:png|ico|icns)$/u.test(path)), "asset names must use deterministic platform-safe image paths");
+for (const file of manifest.generatedFiles ?? []) {
+  const contents = await readFile(resolve(appRoot, file.path), "utf8").catch(() => null);
+  requireCondition(contents !== null, `${file.path} is missing`);
+  if (contents !== null) requireCondition(createHash("sha256").update(contents).digest("hex") === file.sha256, `${file.path} is stale`);
+}
 
 function sourceColor(source, selector) {
   const match = source.match(new RegExp(`<${selector}[^>]*\\bfill=["']#([0-9a-f]{3}|[0-9a-f]{6})["']`, "i"));
