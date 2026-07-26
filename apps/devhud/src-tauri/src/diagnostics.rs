@@ -420,23 +420,6 @@ fn numeric_version_triplet(value: &str) -> Option<[u64; 3]> {
     ])
 }
 
-fn is_semantic_version(value: &str) -> bool {
-    if value.is_empty() || value.len() > 64 {
-        return false;
-    }
-    let (core_and_prerelease, build) = value
-        .split_once('+')
-        .map_or((value, None), |(version, build)| (version, Some(build)));
-    let (core, prerelease) = core_and_prerelease
-        .split_once('-')
-        .map_or((core_and_prerelease, None), |(core, prerelease)| {
-            (core, Some(prerelease))
-        });
-    is_numeric_version_with_exact_parts(core, 3)
-        && prerelease.is_none_or(is_version_identifier_list)
-        && build.is_none_or(is_version_identifier_list)
-}
-
 fn is_numeric_version(value: &str) -> bool {
     if value.is_empty() || value.len() > 32 {
         return false;
@@ -459,21 +442,11 @@ fn has_valid_numeric_version_parts(value: &str) -> bool {
     })
 }
 
-fn is_version_identifier_list(value: &str) -> bool {
-    !value.is_empty()
-        && value.split('.').all(|part| {
-            !part.is_empty()
-                && part
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        })
-}
-
 fn is_tauri_version(value: &str) -> bool {
     let Some((version, revision)) = value.split_once('+') else {
         return false;
     };
-    is_semantic_version(version)
+    is_numeric_version_with_exact_parts(version, 3)
         && revision.len() == 40
         && revision
             .bytes()
@@ -725,6 +698,14 @@ mod tests {
         );
         record.tauri_version = "2.11.4+token-secret".to_string();
 
+        assert!(
+            sanitize_chunks(vec![serde_json::to_vec(&record).unwrap()])
+                .unwrap()
+                .is_empty()
+        );
+
+        record.tauri_version =
+            "2.11.4-token-secret+0123456789abcdef0123456789abcdef01234567".to_string();
         assert!(
             sanitize_chunks(vec![serde_json::to_vec(&record).unwrap()])
                 .unwrap()
