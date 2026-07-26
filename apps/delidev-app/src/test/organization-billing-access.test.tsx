@@ -314,6 +314,108 @@ describe("organization billing access", () => {
     navigate.mockRestore();
   });
 
+  it("replays a retained checkout after the server reports checkout pending", async () => {
+    const checkoutKeys: string[] = [];
+    const checkoutReturnUrls: Array<{
+      cancelUrl: string;
+      successUrl: string;
+    }> = [];
+    let checkoutPending = false;
+    const navigate = vi
+      .spyOn(hostedBilling, "navigateToPolarHostedPage")
+      .mockReturnValue(true);
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
+      const method = methodName(request);
+      if (method === "ResolveOrganizationSlug") {
+        return connectJsonResponse({
+          organization: organizationResponse("OWNER").organization,
+        });
+      }
+      if (method === "GetOrganization") {
+        return connectJsonResponse(organizationResponse("OWNER"));
+      }
+      if (method === "GetBillingSummary") {
+        return connectJsonResponse({
+          summary: {
+            availableCredit: { value: "0" },
+            committedOverage: { value: "0" },
+            heldCredit: { value: "0" },
+            heldOverage: { value: "0" },
+            monthlyOverageLimit: { value: "0" },
+            overageLimitConfigured: false,
+            subscriptionStatus: checkoutPending
+              ? "SUBSCRIPTION_STATUS_CHECKOUT_PENDING"
+              : "SUBSCRIPTION_STATUS_NONE",
+          },
+        });
+      }
+      if (method === "ListLedgerEntries") {
+        return connectJsonResponse({ entries: [] });
+      }
+      if (method === "CreateSubscriptionCheckout") {
+        const body = (await new Response(
+          init?.body ??
+            (request instanceof Request ? request.clone().body : null),
+        ).json()) as {
+          cancelUrl: string;
+          idempotency: { key: string };
+          successUrl: string;
+        };
+        checkoutKeys.push(body.idempotency.key);
+        checkoutReturnUrls.push({
+          cancelUrl: body.cancelUrl,
+          successUrl: body.successUrl,
+        });
+        if (!checkoutPending) {
+          checkoutPending = true;
+          return connectJsonResponse(
+            { code: "unavailable", message: "The response was lost." },
+            503,
+          );
+        }
+        return connectJsonResponse({
+          checkoutUrl: "https://checkout.polar.sh/session/recovered",
+        });
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    const firstRoute = renderOrganizationPage({
+      fetch: fetchMock,
+      page: <BillingPage />,
+      path: "/o/acme/billing?attempt=first",
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: "Start subscription" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "The service is temporarily unavailable.",
+      ),
+    );
+    firstRoute.unmount();
+
+    renderOrganizationPage({
+      fetch: fetchMock,
+      page: <BillingPage />,
+      path: "/o/acme/billing?attempt=replay",
+    });
+    await user.click(
+      await screen.findByRole("button", { name: "Start subscription" }),
+    );
+
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "https://checkout.polar.sh/session/recovered",
+      ),
+    );
+    expect(checkoutKeys).toHaveLength(2);
+    expect(checkoutKeys[1]).toBe(checkoutKeys[0]);
+    expect(checkoutReturnUrls[1]).toEqual(checkoutReturnUrls[0]);
+    navigate.mockRestore();
+  });
+
   it("shows the latest billing action error and renews hosted billing keys after success", async () => {
     const checkoutKeys: string[] = [];
     const checkoutReturnUrls: Array<{

@@ -2106,7 +2106,9 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
   const canStartCheckout =
     summary.subscriptionStatus === SubscriptionStatus.NONE ||
     summary.subscriptionStatus === SubscriptionStatus.CANCELED ||
-    summary.subscriptionStatus === SubscriptionStatus.REVOKED;
+    summary.subscriptionStatus === SubscriptionStatus.REVOKED ||
+    (summary.subscriptionStatus === SubscriptionStatus.CHECKOUT_PENDING &&
+      pendingCheckoutRequests.has(checkoutScope));
   const canOpenPortal =
     summary.subscriptionStatus !== SubscriptionStatus.NONE &&
     summary.subscriptionStatus !== SubscriptionStatus.UNSPECIFIED &&
