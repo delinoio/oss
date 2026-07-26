@@ -1,10 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import { createTauriPersistenceAdapter, type TauriPersistenceBridge } from "./storage";
+import {
+  createTauriPersistenceAdapter,
+  type PersistenceResetOutcome,
+  type TauriPersistenceBridge,
+} from "./storage";
 
 interface NativeCommandResults {
   read_settings: string | null;
-  reset_dev_hud: void;
+  reset_dev_hud: PersistenceResetOutcome;
   write_settings: void;
   read_widget_configuration: string | null;
   write_widget_configuration: void;

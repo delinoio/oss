@@ -138,7 +138,9 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   return valueKeys.length === keys.length && keys.every((key) => key in value);
 }
 
-function isShortcut(value: unknown): value is StructuredShortcut {
+export function isStructuredShortcut(
+  value: unknown,
+): value is StructuredShortcut {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, ["modifiers", "key"]) ||
@@ -173,7 +175,7 @@ function isSettings(value: unknown): value is DevHudSettings {
     typeof value.theme === "string" &&
     themes.has(value.theme) &&
     typeof value.launchAtLogin === "boolean" &&
-    (value.shortcut === null || isShortcut(value.shortcut))
+    (value.shortcut === null || isStructuredShortcut(value.shortcut))
   );
 }
 

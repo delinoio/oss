@@ -28,7 +28,11 @@ url = "2"
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, optional = true }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["cef"], optional = true }
+auto-launch = "=0.6.0"
+dirs = "6"
+fs2 = "=0.4.3"
+global-hotkey = { version = "=0.8.0", features = ["tracing"] }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["cef", "tray-icon"], optional = true }
 tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["devtools", "sandbox"], optional = true }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]

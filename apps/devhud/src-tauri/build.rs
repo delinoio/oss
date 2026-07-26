@@ -5,6 +5,14 @@ const COMMANDS: &[&str] = &[
     "read_widget_configuration",
     "write_widget_configuration",
     "reset_dev_hud",
+    "show_hud",
+    "hide_hud",
+    "show_settings",
+    "hide_settings",
+    "replace_global_shortcut",
+    "set_launch_at_login",
+    "complete_first_run",
+    "request_update_action",
 ];
 
 fn main() {
