@@ -11,6 +11,8 @@
     "build:preview": "pnpm run build && tauri build --features desktop-cef,custom-protocol",
     "build:ios": "node scripts/mobile.mjs build ios production",
     "build:ios:ci": "node scripts/mobile.mjs build ios ci",
+    "assets": "node scripts/generate-assets.mjs",
+    "check:assets": "node scripts/check-assets.mjs",
     "build:widget:android": "node scripts/widget-native.mjs android build",
     "build:widget:ios": "node scripts/widget-native.mjs ios build",
     "check:contracts": "node scripts/check-contracts.mjs",

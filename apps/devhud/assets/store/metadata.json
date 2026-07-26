@@ -1,0 +1,11 @@
+{
+  "applicationName": "DevHud",
+  "shortDescription": "A local developer-tool shell.",
+  "icon": "devhud-store-icon-1024.png",
+  "featureGraphic": "devhud-store-feature-1024x500.png",
+  "accessibility": {
+    "iconAlt": "DevHud DH lettermark in white on a blue rounded square",
+    "featureGraphicAlt": "DevHud DH lettermark in white on a blue background"
+  },
+  "language": "en"
+}
