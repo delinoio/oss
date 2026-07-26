@@ -755,10 +755,20 @@ fn validate_cef_profile_target(cache_base: &Path, profile: &Path) -> io::Result<
             "CEF profile reset target is outside the DevHud boundary",
         ));
     }
-    if fs::symlink_metadata(profile).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
-        return Err(io::Error::other(
-            "CEF profile reset target must not be a symbolic link",
-        ));
+    match fs::symlink_metadata(profile) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(io::Error::other(
+                "CEF profile reset target must not be a symbolic link",
+            ));
+        }
+        Ok(metadata) if !metadata.file_type().is_dir() => {
+            return Err(io::Error::other(
+                "CEF profile reset target has an invalid filesystem type",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
     }
     Ok(())
 }
@@ -3271,7 +3281,7 @@ mod tests {
     }
 
     #[test]
-    fn cef_reset_rejects_a_broad_or_symbolic_target_before_deletion() {
+    fn cef_reset_rejects_a_broad_symbolic_or_non_directory_target_before_deletion() {
         let directory = std::env::temp_dir().join(format!(
             "devhud-cef-boundary-test-{}-{:?}",
             std::process::id(),
@@ -3285,6 +3295,13 @@ mod tests {
         assert!(preflight_cef_profile_reset(&cache_base, &cache_base).is_err());
         assert_eq!(fs::read(&valid_data).unwrap(), b"keep");
 
+        let profile = cef_profile_directory_from(&cache_base);
+        fs::create_dir_all(profile.parent().unwrap()).unwrap();
+        fs::write(&profile, b"invalid-profile-file").unwrap();
+        assert!(preflight_cef_profile_reset(&cache_base, &profile).is_err());
+        assert_eq!(fs::read(&profile).unwrap(), b"invalid-profile-file");
+        fs::remove_file(&profile).unwrap();
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::symlink;
@@ -3292,8 +3309,6 @@ mod tests {
             let external = directory.join("external");
             fs::create_dir_all(&external).unwrap();
             fs::write(external.join("keep.txt"), b"external").unwrap();
-            let profile = cef_profile_directory_from(&cache_base);
-            fs::create_dir_all(profile.parent().unwrap()).unwrap();
             symlink(&external, &profile).unwrap();
 
             assert!(preflight_cef_profile_reset(&cache_base, &profile).is_err());
