@@ -79,8 +79,10 @@ const androidManifest = await readFile(resolve(appRoot, "src-tauri/gen/android/a
 requireCondition(androidManifest.includes('android:icon="@mipmap/ic_launcher"'), "Android release host does not include the generated launcher asset");
 const iosProject = await readFile(resolve(appRoot, "src-tauri/gen/apple/project.yml"), "utf8");
 requireCondition(iosProject.includes("- path: Assets.xcassets"), "iOS release host does not include the generated asset catalog");
+requireCondition(iosProject.includes("ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon"), "iOS release host does not declare AppIcon as its primary icon set");
 const launchScreen = await readFile(resolve(appRoot, "src-tauri/gen/apple/LaunchScreen.storyboard"), "utf8");
 requireCondition(launchScreen.includes('image="LaunchLogo"'), "iOS launch screen does not include the generated launch asset");
+requireCondition(/<subviews>\s*<imageView[\s\S]*image="LaunchLogo"[\s\S]*<\/subviews>/u.test(launchScreen), "iOS launch screen must nest LaunchLogo inside view subviews");
 const storeMetadata = JSON.parse(await readFile(resolve(appRoot, "assets/store/metadata.json"), "utf8"));
 requireCondition(storeMetadata.language === "en" && storeMetadata.icon === "devhud-play-icon-512.png" && storeMetadata.accessibility?.iconAlt?.includes("DH"), "store metadata must provide the 512px English Play icon and accessible asset names");
 if (failures.length) throw new Error(failures.join("\n"));

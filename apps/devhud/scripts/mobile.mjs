@@ -12,6 +12,8 @@ const generationPolicy = resolve(
   appRoot,
   "scripts/enforce-mobile-generation.mjs",
 );
+const assetGenerator = resolve(appRoot, "scripts/generate-assets.mjs");
+const assetCheck = resolve(appRoot, "scripts/check-assets.mjs");
 const contractCheck = resolve(appRoot, "scripts/check-mobile-contracts.mjs");
 const node = process.execPath;
 const [operation, platform, targetSet = "production"] = process.argv.slice(2);
@@ -43,6 +45,8 @@ if (operation === "generate") {
     { cwd: appRoot },
   );
   await run(node, [generationPolicy, platform], { cwd: appRoot });
+  await run(node, [assetGenerator], { cwd: appRoot });
+  await run(node, [assetCheck], { cwd: appRoot });
   await run(node, [contractCheck], { cwd: appRoot });
   process.exit(0);
 }
