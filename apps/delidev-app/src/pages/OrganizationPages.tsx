@@ -55,7 +55,10 @@ import {
   formatEnumLabel,
   formatUsdMicros,
 } from "../utils/format";
-import { navigateToPolarHostedPage } from "../utils/hostedBilling";
+import {
+  hostedBillingReturnUrl,
+  navigateToPolarHostedPage,
+} from "../utils/hostedBilling";
 import { useOrganization } from "./OrganizationShell";
 
 function uuid(value: string | undefined) {
@@ -2071,16 +2074,19 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
     portal.reset();
     setNavigationError("");
     checkoutKey.current ??= createIdempotencyKey();
+    const returnUrl = hostedBillingReturnUrl(window.location.href);
     checkout.mutate(
       {
-        cancelUrl: window.location.href,
+        cancelUrl: returnUrl,
         idempotency: checkoutKey.current,
         organizationId: organization.organizationId,
-        successUrl: window.location.href,
+        successUrl: returnUrl,
       },
       {
         onSuccess: (data) => {
-          if (!navigateToPolarHostedPage(data.checkoutUrl)) {
+          if (navigateToPolarHostedPage(data.checkoutUrl)) {
+            checkoutKey.current = undefined;
+          } else {
             setNavigationError(
               "Checkout did not return a valid Polar-hosted HTTPS page. Retry or contact support.",
             );
@@ -2095,11 +2101,12 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
     checkout.reset();
     setNavigationError("");
     portalKey.current ??= createIdempotencyKey();
+    const returnUrl = hostedBillingReturnUrl(window.location.href);
     portal.mutate(
       {
         idempotency: portalKey.current,
         organizationId: organization.organizationId,
-        returnUrl: window.location.href,
+        returnUrl,
       },
       {
         onSuccess: (data) => {

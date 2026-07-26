@@ -309,7 +309,9 @@ describe("organization billing access", () => {
     navigate.mockRestore();
   });
 
-  it("shows the latest billing action error and renews portal keys after success", async () => {
+  it("shows the latest billing action error and renews hosted billing keys after success", async () => {
+    const checkoutKeys: string[] = [];
+    let checkoutAttempts = 0;
     const portalKeys: string[] = [];
     let portalAttempts = 0;
     const navigate = vi
@@ -342,10 +344,21 @@ describe("organization billing access", () => {
         return connectJsonResponse({ entries: [] });
       }
       if (method === "CreateSubscriptionCheckout") {
-        return connectJsonResponse(
-          { code: "permission_denied", message: "Checkout denied." },
-          403,
-        );
+        const body = (await new Response(
+          init?.body ??
+            (request instanceof Request ? request.clone().body : null),
+        ).json()) as { idempotency: { key: string } };
+        checkoutKeys.push(body.idempotency.key);
+        checkoutAttempts += 1;
+        if (checkoutAttempts === 1) {
+          return connectJsonResponse(
+            { code: "unavailable", message: "The response was lost." },
+            503,
+          );
+        }
+        return connectJsonResponse({
+          checkoutUrl: `https://checkout.polar.sh/session-${checkoutAttempts}`,
+        });
       }
       if (method === "CreateBillingPortalSession") {
         const body = (await new Response(
@@ -376,8 +389,26 @@ describe("organization billing access", () => {
     await user.click(
       await screen.findByRole("button", { name: "Start subscription" }),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Checkout denied.",
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "The service is temporarily unavailable.",
+      ),
+    );
+
+    const startSubscription = screen.getByRole("button", {
+      name: "Start subscription",
+    });
+    await user.click(startSubscription);
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "https://checkout.polar.sh/session-2",
+      ),
+    );
+    await user.click(startSubscription);
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "https://checkout.polar.sh/session-3",
+      ),
     );
 
     const openPortal = screen.getByRole("button", {
@@ -403,6 +434,9 @@ describe("organization billing access", () => {
       ),
     );
 
+    expect(checkoutKeys).toHaveLength(3);
+    expect(checkoutKeys[1]).toBe(checkoutKeys[0]);
+    expect(checkoutKeys[2]).not.toBe(checkoutKeys[1]);
     expect(portalKeys).toHaveLength(3);
     expect(portalKeys[1]).toBe(portalKeys[0]);
     expect(portalKeys[2]).not.toBe(portalKeys[1]);

@@ -1,5 +1,11 @@
 export type HostedBillingNavigator = (url: string) => void;
 
+export function hostedBillingReturnUrl(value: string): string {
+  const url = new URL(value);
+  url.hash = "";
+  return url.href;
+}
+
 export function polarHostedUrl(value: string): string | undefined {
   try {
     const url = new URL(value);

@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  hostedBillingReturnUrl,
   navigateToPolarHostedPage,
   polarHostedUrl,
 } from "../utils/hostedBilling";
 
 describe("Polar-hosted billing navigation", () => {
+  it("removes fragments from hosted billing return URLs", () => {
+    expect(
+      hostedBillingReturnUrl(
+        "https://deli.dev/o/acme/billing?source=portal#payment",
+      ),
+    ).toBe("https://deli.dev/o/acme/billing?source=portal");
+  });
+
   it("navigates only to HTTPS Polar checkout and portal pages", () => {
     const navigate = vi.fn();
 
