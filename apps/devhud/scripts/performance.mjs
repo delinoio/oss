@@ -276,6 +276,10 @@ function terminateMobileApp(platform, targetKind, selector) {
 function iosAppWasAlreadyAbsent(outcome) {
   return outcome.status !== 0 && /(?:not (?:currently )?running|not found|no such process|process.*(?:does not|isn't) running)/iu.test(`${outcome.stdout}\n${outcome.stderr}`);
 }
+function androidTargetIsEmulator(selector) {
+  const outcome = run("adb", [...(selector ? ["-s", selector] : []), "shell", "getprop", "ro.kernel.qemu"]);
+  return outcome.status === 0 ? outcome.stdout.trim() === "1" : null;
+}
 function mobile(platform, targetKind) {
   const unknownArchitecture = "unknown";
   if (platform === "ios" && process.platform !== "darwin") return result([unavailable("ios", unknownArchitecture, "unsupported-host", ["mobile-startup"], targetKind)]);
@@ -284,9 +288,14 @@ function mobile(platform, targetKind) {
   // The selector is consumed only for this launch and is never written to a result.
   const selector = process.env.DEVHUD_PERF_DEVICE;
   if (targetKind === "ios-device" && !selector) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
+  if (targetKind === "android-device" && !selector) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
   const selected = selector ? ["-s", selector] : [];
   const probe = platform === "android" ? run("adb", [...selected, "get-state"]) : targetKind === "ios-simulator" ? run("xcrun", ["simctl", "bootstatus", "booted", "-b"]) : null;
   if (probe && probe.status !== 0) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
+  if (platform === "android") {
+    const isEmulator = androidTargetIsEmulator(selector);
+    if (isEmulator === null || isEmulator !== (targetKind === "android-emulator")) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
+  }
   const architecture = mobileArchitecture(platform, targetKind, selector);
   if (!architecture) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
   if (mobileBuildProvenance(platform, targetKind, selector) !== `${application.version}+${revision}`) return result([unavailable(platform, architecture, "build-provenance-unverified", ["mobile-startup"], targetKind)]);
@@ -380,7 +389,7 @@ function desktopBuildFailed() {
 async function main() {
   const [command, ...rawArgs] = process.argv.slice(2);
   const args = rawArgs.filter((argument) => argument !== "--");
-  if (command === "desktop") { const value = args.includes("--build-failed") ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
+  if (command === "desktop") { const build = args.includes("--build") ? run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:desktop:performance"]) : null; const value = args.includes("--build-failed") || (build && build.status !== 0) ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
   if (command === "package") { console.log(recordPackageProvenance()); return; }
   if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}-${randomUUID()}.json`)); return; }
   if (command === "aggregate") { const files = args.length ? args.map((file) => resolve(file)) : existsSync(outputDirectory) ? readdirSync(outputDirectory).filter((file) => file.endsWith(".json") && file !== "release-performance.json").map((file) => resolve(outputDirectory, file)) : []; const value = aggregate(files); validate(value); const json = writeResult(value, "release-performance.json"); const markdown = resolve(outputDirectory, "release-performance.md"); writeFileSync(markdown, summary(value)); console.log(`${json}\n${markdown}`); return; }

@@ -25,7 +25,7 @@
     "mobile:generate:android": "node scripts/mobile.mjs generate android",
     "mobile:generate:ios": "node scripts/mobile.mjs generate ios",
     "perf:aggregate": "node scripts/performance.mjs aggregate",
-    "perf:desktop": "pnpm run build:desktop:performance || { node scripts/performance.mjs desktop --build-failed; exit 0; }; node scripts/performance.mjs desktop",
+    "perf:desktop": "node scripts/performance.mjs desktop --build",
     "perf:mobile": "node scripts/performance.mjs mobile",
     "perf:package": "pnpm run build:preview && node scripts/performance.mjs package",
     "perf:validate": "node scripts/performance.mjs validate",

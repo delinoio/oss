@@ -68,6 +68,13 @@ test("build failures produce valid desktop evidence", () => {
   assert.equal(validate(desktopBuildFailed()), true);
 });
 
+test("desktop performance command owns its cross-platform build fallback", () => {
+  const script = readFileSync(resolve(import.meta.dirname, "performance.mjs"), "utf8");
+  const packageManifest = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8"));
+  assert.equal(packageManifest.scripts["perf:desktop"], "node scripts/performance.mjs desktop --build");
+  assert.match(script, /process\.platform === "win32" \? "pnpm\.cmd" : "pnpm"/u);
+});
+
 test("aggregation is deterministic and keeps unavailable distinct from failed", () => {
   const available = JSON.parse(readFileSync(fixture, "utf8"));
   assert.deepEqual(aggregate([fixture, fixture]), available);
