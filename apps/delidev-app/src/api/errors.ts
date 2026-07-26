@@ -230,8 +230,8 @@ export function getDelibaseError(error: unknown): DelibaseError {
         accountDeletionBlockerMessage(blockers)) ||
       (detail && reasonMessages.get(detail.reason)) ||
       detail?.message ||
-      connectError.rawMessage ||
       codeMessage ||
+      connectError.rawMessage ||
       "The request could not be completed. Please try again.",
     reason,
   };

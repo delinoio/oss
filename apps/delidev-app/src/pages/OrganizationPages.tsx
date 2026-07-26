@@ -2058,7 +2058,9 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
   const portalKey = useRef<{ key: string } | undefined>(undefined);
   const [navigationError, setNavigationError] = useState("");
   const canStartCheckout =
-    summary.subscriptionStatus === SubscriptionStatus.NONE;
+    summary.subscriptionStatus === SubscriptionStatus.NONE ||
+    summary.subscriptionStatus === SubscriptionStatus.CANCELED ||
+    summary.subscriptionStatus === SubscriptionStatus.REVOKED;
   const canOpenPortal =
     summary.subscriptionStatus !== SubscriptionStatus.NONE &&
     summary.subscriptionStatus !== SubscriptionStatus.UNSPECIFIED &&
@@ -2321,6 +2323,10 @@ function OverageLimitDialog({
     gcTime: 0,
     transport,
   });
+  const close = () => {
+    if (update.isPending) return;
+    onClose();
+  };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2355,7 +2361,7 @@ function OverageLimitDialog({
   return (
     <Dialog
       descriptionId="overage-limit-description"
-      onClose={onClose}
+      onClose={close}
       titleId="overage-limit-dialog-title"
     >
       <h2 id="overage-limit-dialog-title">Change monthly overage limit</h2>
@@ -2406,7 +2412,7 @@ function OverageLimitDialog({
           <button
             className="button secondary"
             disabled={update.isPending}
-            onClick={onClose}
+            onClick={close}
             type="button"
           >
             Cancel

@@ -230,6 +230,24 @@ describe("organization billing access", () => {
       url: "https://checkout.polar.sh/session/checkout-id",
     },
     {
+      action: "Start subscription",
+      method: "CreateSubscriptionCheckout",
+      response: {
+        checkoutUrl: "https://checkout.polar.sh/session/canceled-id",
+      },
+      status: "SUBSCRIPTION_STATUS_CANCELED",
+      url: "https://checkout.polar.sh/session/canceled-id",
+    },
+    {
+      action: "Start subscription",
+      method: "CreateSubscriptionCheckout",
+      response: {
+        checkoutUrl: "https://checkout.polar.sh/session/revoked-id",
+      },
+      status: "SUBSCRIPTION_STATUS_REVOKED",
+      url: "https://checkout.polar.sh/session/revoked-id",
+    },
+    {
       action: "Invoices and payment",
       method: "CreateBillingPortalSession",
       response: {
@@ -238,7 +256,7 @@ describe("organization billing access", () => {
       status: "SUBSCRIPTION_STATUS_ACTIVE",
       url: "https://polar.sh/customer-portal/session-id",
     },
-  ])("opens Polar for $action", async ({
+  ])("opens Polar for $action from $status", async ({
     action,
     method: billingMethod,
     response,
@@ -428,6 +446,71 @@ describe("organization billing access", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it("keeps the overage dialog open while an update is pending", async () => {
+    let resolveUpdate: (response: Response) => void = () => undefined;
+    const updateResponse = new Promise<Response>((resolve) => {
+      resolveUpdate = resolve;
+    });
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const method = methodName(request);
+      if (method === "ResolveOrganizationSlug") {
+        return connectJsonResponse({
+          organization: organizationResponse("OWNER").organization,
+        });
+      }
+      if (method === "GetOrganization") {
+        return connectJsonResponse(organizationResponse("OWNER"));
+      }
+      if (method === "GetBillingSummary") {
+        return connectJsonResponse({
+          summary: {
+            availableCredit: { value: "0" },
+            committedOverage: { value: "0" },
+            heldCredit: { value: "0" },
+            heldOverage: { value: "0" },
+            monthlyOverageLimit: { value: "0" },
+            overageLimitConfigured: false,
+            subscriptionStatus: "SUBSCRIPTION_STATUS_NONE",
+          },
+        });
+      }
+      if (method === "ListLedgerEntries") {
+        return connectJsonResponse({ entries: [] });
+      }
+      if (method === "UpdateOverageLimit") {
+        return updateResponse;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+
+    renderOrganizationPage({
+      fetch: fetchMock,
+      page: <BillingPage />,
+      path: "/o/acme/billing",
+    });
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Change monthly limit",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Update limit" }));
+    expect(
+      await screen.findByRole("button", { name: "Updating…" }),
+    ).toBeDisabled();
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.mouseDown(document.querySelector(".dialog-backdrop")!);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    resolveUpdate(connectJsonResponse({}));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 });
 

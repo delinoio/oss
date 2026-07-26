@@ -108,9 +108,16 @@ describe("delibase error details", () => {
     ).toContain("reserved units");
   });
 
-  it("maps dependency outages without exposing arbitrary diagnostics", () => {
+  it("prefers actionable code guidance over generic server diagnostics", () => {
     expect(
-      describeDelibaseError(new ConnectError("", Code.Unavailable)),
+      describeDelibaseError(
+        new ConnectError("request failed", Code.Unavailable),
+      ),
     ).toContain("temporarily unavailable");
+    expect(
+      describeDelibaseError(
+        new ConnectError("request failed", Code.Unauthenticated),
+      ),
+    ).toContain("Sign in again");
   });
 });

@@ -277,7 +277,7 @@ describe("organization team management", () => {
     await user.click(createTeam);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The refresh failed.",
+      "The service is temporarily unavailable.",
     );
     expect(name).toHaveValue("Platform");
     expect(screen.queryByText("Team created.")).not.toBeInTheDocument();
