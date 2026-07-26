@@ -322,6 +322,7 @@ describe("organization billing access", () => {
     }> = [];
     let checkoutAttempts = 0;
     const portalKeys: string[] = [];
+    const portalReturnUrls: string[] = [];
     let portalAttempts = 0;
     const navigate = vi
       .spyOn(hostedBilling, "navigateToPolarHostedPage")
@@ -381,8 +382,12 @@ describe("organization billing access", () => {
         const body = (await new Response(
           init?.body ??
             (request instanceof Request ? request.clone().body : null),
-        ).json()) as { idempotency: { key: string } };
+        ).json()) as {
+          idempotency: { key: string };
+          returnUrl: string;
+        };
         portalKeys.push(body.idempotency.key);
+        portalReturnUrls.push(body.returnUrl);
         portalAttempts += 1;
         if (portalAttempts === 1) {
           return connectJsonResponse(
@@ -447,6 +452,11 @@ describe("organization billing access", () => {
         "The service is temporarily unavailable.",
       ),
     );
+    window.history.replaceState(
+      null,
+      "",
+      "/o/acme/billing?attempt=portal-retry",
+    );
 
     await user.click(openPortal);
     await waitFor(() =>
@@ -469,7 +479,50 @@ describe("organization billing access", () => {
     expect(portalKeys).toHaveLength(3);
     expect(portalKeys[1]).toBe(portalKeys[0]);
     expect(portalKeys[2]).not.toBe(portalKeys[1]);
+    expect(portalReturnUrls[1]).toBe(portalReturnUrls[0]);
+    expect(portalReturnUrls[2]).not.toBe(portalReturnUrls[1]);
     navigate.mockRestore();
+  });
+
+  it("renders missing overage totals as unavailable", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const method = methodName(request);
+      if (method === "ResolveOrganizationSlug") {
+        return connectJsonResponse({
+          organization: organizationResponse("OWNER").organization,
+        });
+      }
+      if (method === "GetOrganization") {
+        return connectJsonResponse(organizationResponse("OWNER"));
+      }
+      if (method === "GetBillingSummary") {
+        return connectJsonResponse({
+          summary: {
+            availableCredit: { value: "0" },
+            committedOverage: { value: "0" },
+            heldCredit: { value: "0" },
+            monthlyOverageLimit: { value: "0" },
+            overageLimitConfigured: false,
+            subscriptionStatus: "SUBSCRIPTION_STATUS_NONE",
+          },
+        });
+      }
+      if (method === "ListLedgerEntries") {
+        return connectJsonResponse({ entries: [] });
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+
+    renderOrganizationPage({
+      fetch: fetchMock,
+      page: <BillingPage />,
+      path: "/o/acme/billing",
+    });
+
+    expect(await screen.findByText("Held overage")).toBeInTheDocument();
+    expect(screen.getByText(/committed or held this period/)).toHaveTextContent(
+      "Unavailable committed or held this period.",
+    );
   });
 
   it("disables checkout and overage mutations while offline", async () => {

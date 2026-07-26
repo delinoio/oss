@@ -2095,7 +2095,9 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
     BillingService.method.createBillingPortalSession,
     { gcTime: 0, transport },
   );
-  const portalKey = useRef<{ key: string } | undefined>(undefined);
+  const pendingPortal = useRef<
+    { idempotency: { key: string }; returnUrl: string } | undefined
+  >(undefined);
   const [navigationError, setNavigationError] = useState("");
   const checkoutScope = checkoutRetryScope(
     accountState.account?.accountId?.value,
@@ -2144,17 +2146,20 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
     if (!online) return;
     checkout.reset();
     setNavigationError("");
-    portalKey.current ??= createIdempotencyKey();
-    const returnUrl = hostedBillingReturnUrl(window.location.href);
+    const pendingRequest = pendingPortal.current ?? {
+      idempotency: createIdempotencyKey(),
+      returnUrl: hostedBillingReturnUrl(window.location.href),
+    };
+    pendingPortal.current = pendingRequest;
     portal.mutate(
       {
-        idempotency: portalKey.current,
+        idempotency: pendingRequest.idempotency,
         organizationId: organization.organizationId,
-        returnUrl,
+        returnUrl: pendingRequest.returnUrl,
       },
       {
         onSuccess: (data) => {
-          portalKey.current = undefined;
+          pendingPortal.current = undefined;
           if (!navigateToPolarHostedPage(data.portalUrl)) {
             setNavigationError(
               "The portal did not return a valid Polar-hosted HTTPS page. Retry or contact support.",
@@ -2302,8 +2307,9 @@ function OverageLimitControl({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [message, setMessage] = useState("");
   const used =
-    (summary.committedOverage?.value ?? 0n) +
-    (summary.heldOverage?.value ?? 0n);
+    summary.committedOverage && summary.heldOverage
+      ? summary.committedOverage.value + summary.heldOverage.value
+      : undefined;
   return (
     <section
       aria-labelledby="overage-limit-title"
@@ -2317,7 +2323,7 @@ function OverageLimitControl({
           {formatOverageLimit(
             summary.overageLimitConfigured,
             summary.monthlyOverageLimit?.value,
-          )}; {formatUsdMicros(used)} committed or held this period.
+          )}; {formatOptionalUsdMicros(used)} committed or held this period.
         </p>
         <p className="muted">
           Overage defaults to zero until explicitly set. Lowering the limit
