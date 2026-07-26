@@ -130,9 +130,11 @@ for required_path in "delibase" "etc/delibase/catalog.json"; do
     exit 1
   fi
 done
-if grep -Eq '(^|/)(src|go\.mod|go\.sum|\.git|Dockerfile|scripts)(/|$)' "$filesystem_listing"; then
+# Docker exports relative paths, so anchor build-context names at the image
+# root instead of rejecting standard base-image directories such as usr/src.
+if grep -Eq '^(src|go\.mod|go\.sum|\.git|Dockerfile|scripts)(/|$)' "$filesystem_listing"; then
   echo "delibase image contains build-only material" >&2
-  grep -E '(^|/)(src|go\.mod|go\.sum|\.git|Dockerfile|scripts)(/|$)' "$filesystem_listing" >&2
+  grep -E '^(src|go\.mod|go\.sum|\.git|Dockerfile|scripts)(/|$)' "$filesystem_listing" >&2
   exit 1
 fi
 
