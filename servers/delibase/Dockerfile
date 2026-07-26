@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1.7
 
-ARG GO_VERSION=1.25.7
+ARG GO_BUILD_IMAGE=golang:1.25.7-alpine@sha256:f6751d823c26342f9506c03797d2527668d095b0a15f1862cddb4d927a7a4ced
 ARG VERSION=dev
 ARG REVISION=unknown
 ARG SOURCE=https://github.com/delinoio/oss
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+FROM --platform=$BUILDPLATFORM ${GO_BUILD_IMAGE} AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
