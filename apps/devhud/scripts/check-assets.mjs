@@ -13,7 +13,7 @@ const { createHash } = await import("node:crypto");
 const { inflateSync } = await import("node:zlib");
 requireCondition(createHash("sha256").update(expectedSource.replace(/\r\n?/gu, "\n")).digest("hex") === manifest.sourceSha256, "asset manifest source hash is stale");
 requireCondition(manifest.generator === "scripts/generate-assets.mjs", "asset manifest generator is not canonical");
-requireCondition(manifest.assets.every(({ path }) => /^[A-Za-z0-9@._/-]+\.png$/u.test(path)), "asset names must use deterministic platform-safe PNG paths");
+requireCondition(manifest.assets.every(({ path }) => /^[A-Za-z0-9@._/-]+\.(?:png|ico|icns)$/u.test(path)), "asset names must use deterministic platform-safe image paths");
 
 function sourceColor(source, selector) {
   const match = source.match(new RegExp(`<${selector}[^>]*\\bfill=["']#([0-9a-f]{3}|[0-9a-f]{6})["']`, "i"));
@@ -48,6 +48,16 @@ function alphaCoverage(buffer, { width, height, colorType }) {
 }
 for (const asset of manifest.assets) {
   const buffer = await readFile(resolve(appRoot, asset.path));
+  if (asset.format === "ico" || asset.format === "icns") {
+    if (asset.format === "ico") {
+      requireCondition(buffer.readUInt16LE(0) === 0 && buffer.readUInt16LE(2) === 1 && buffer.readUInt16LE(4) >= 1, `${asset.path} is not a valid ICO container`);
+      requireCondition(buffer.subarray(22, 30).equals(Buffer.from("89504e470d0a1a0a", "hex")), `${asset.path} must contain a PNG image payload`);
+    } else {
+      requireCondition(buffer.toString("ascii", 0, 4) === "icns" && buffer.readUInt32BE(4) === buffer.length, `${asset.path} is not a valid ICNS container`);
+      requireCondition(buffer.toString("ascii", 8, 12) === "ic09", `${asset.path} must contain a 512px PNG icon payload`);
+    }
+    continue;
+  }
   const info = pngInfo(buffer);
   requireCondition(info.width === asset.dimensions[0] && info.height === asset.dimensions[1], `${asset.path} has unexpected dimensions`);
   const requiresOpaque = asset.path.includes("AppIcon") || asset.path.includes("mipmap-") || asset.path.includes("assets/store/") || asset.path.endsWith("assets/tray/devhud-tray.png") || asset.path.endsWith("assets/tray/devhud-tray@2x.png");
@@ -61,7 +71,7 @@ for (const asset of manifest.assets) {
 const tray = await readFile(resolve(appRoot, "assets/tray/devhud-tray-template.png"));
 requireCondition(alphaCoverage(tray, pngInfo(tray)) < 1, "tray template must retain transparent pixels");
 const tauri = JSON.parse(await readFile(resolve(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
-requireCondition(JSON.stringify(tauri.bundle?.icon) === JSON.stringify(["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/256x256.png", "icons/icon.png"]), "Tauri bundle icon list is not complete");
+requireCondition(JSON.stringify(tauri.bundle?.icon) === JSON.stringify(["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/256x256.png", "icons/icon.png", "icons/icon.ico", "icons/icon.icns"]), "Tauri bundle icon list is not complete");
 const rustShell = await readFile(resolve(appRoot, "src-tauri/src/lib.rs"), "utf8");
 requireCondition(rustShell.includes('assets/tray/devhud-tray-template@2x.png'), "desktop tray does not consume the generated menu-bar template");
 requireCondition(rustShell.includes('assets/tray/devhud-tray@2x.png'), "desktop tray does not consume the generated non-macOS asset");

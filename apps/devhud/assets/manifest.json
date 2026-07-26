@@ -4,6 +4,22 @@
   "generator": "scripts/generate-assets.mjs",
   "assets": [
     {
+      "path": "src-tauri/icons/icon.ico",
+      "dimensions": [
+        256,
+        256
+      ],
+      "format": "ico"
+    },
+    {
+      "path": "src-tauri/icons/icon.icns",
+      "dimensions": [
+        512,
+        512
+      ],
+      "format": "icns"
+    },
+    {
       "path": "src-tauri/icons/icon.png",
       "dimensions": [
         512,

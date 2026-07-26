@@ -12,6 +12,8 @@ const transparent = [0, 0, 0, 0];
 let canonicalMask;
 
 const files = new Map([
+  ["src-tauri/icons/icon.ico", { format: "ico", size: 256 }],
+  ["src-tauri/icons/icon.icns", { format: "icns", size: 512 }],
   ["src-tauri/icons/icon.png", 512],
   ["src-tauri/icons/32x32.png", 32],
   ["src-tauri/icons/128x128.png", 128],
@@ -166,18 +168,49 @@ function png(width, height, source, { tray = false, opaque = false } = {}) {
 }
 
 function dimensions(value) { return Array.isArray(value) ? value : [value, value]; }
+function ico(data, width, height) {
+  const directory = Buffer.alloc(22);
+  directory.writeUInt16LE(0, 0);
+  directory.writeUInt16LE(1, 2);
+  directory.writeUInt16LE(1, 4);
+  directory[6] = width === 256 ? 0 : width;
+  directory[7] = height === 256 ? 0 : height;
+  directory[8] = 0;
+  directory[9] = 0;
+  directory.writeUInt16LE(1, 10);
+  directory.writeUInt16LE(32, 12);
+  directory.writeUInt32LE(data.length, 14);
+  directory.writeUInt32LE(22, 18);
+  return Buffer.concat([directory, data]);
+}
+function icns(data) {
+  const chunk = Buffer.alloc(8);
+  chunk.write("ic09", 0, "ascii");
+  chunk.writeUInt32BE(data.length + 8, 4);
+  const header = Buffer.alloc(8);
+  header.write("icns", 0, "ascii");
+  header.writeUInt32BE(data.length + 16, 4);
+  return Buffer.concat([header, chunk, data]);
+}
 async function outputs() {
   const source = await readFile(sourcePath, "utf8");
   const sourceHash = createHash("sha256").update(source.replace(/\r\n?/gu, "\n")).digest("hex");
   const polygons = pathPolygons(source);
   canonicalMask = new Uint8Array(512 * 512);
   for (let y = 0; y < 512; y += 1) for (let x = 0; x < 512; x += 1) canonicalMask[y * 512 + x] = polygons.reduce((count, polygon) => count + (contains([x + 0.5, y + 0.5], polygon) ? 1 : 0), 0) % 2;
-  return { sourceHash, entries: [...files].map(([relativePath, value]) => { const options = typeof value === "object" ? value : {}; const size = options.size ?? value; return { relativePath, size, data: png(...dimensions(size), source, { tray: options.tray ?? relativePath.includes("tray"), opaque: options.opaque || relativePath.includes("AppIcon") }) }; }) };
+  return { sourceHash, entries: [...files].map(([relativePath, value]) => {
+    const options = typeof value === "object" ? value : {};
+    const size = options.size ?? value;
+    const [width, height] = dimensions(size);
+    const raster = png(width, height, source, { tray: options.tray ?? relativePath.includes("tray"), opaque: options.opaque || relativePath.includes("AppIcon") });
+    const data = options.format === "ico" ? ico(raster, width, height) : options.format === "icns" ? icns(raster) : raster;
+    return { relativePath, size, format: options.format, data };
+  }) };
 }
 
 const check = process.argv.includes("--check");
 const { sourceHash, entries } = await outputs();
-const generatedManifest = { source: "source/devhud-lettermark.svg", sourceSha256: sourceHash, generator: "scripts/generate-assets.mjs", assets: entries.map(({ relativePath, size }) => ({ path: relativePath, dimensions: dimensions(size) })) };
+const generatedManifest = { source: "source/devhud-lettermark.svg", sourceSha256: sourceHash, generator: "scripts/generate-assets.mjs", assets: entries.map(({ relativePath, size, format }) => ({ path: relativePath, dimensions: dimensions(size), ...(format ? { format } : {}) })) };
 const previousManifest = await readFile(manifestPath, "utf8").then(JSON.parse).catch(() => null);
 const expectedPaths = new Set(generatedManifest.assets.map(({ path }) => path));
 const generatedDirectories = [...files.keys()].map((path) => resolve(appRoot, dirname(path)));
