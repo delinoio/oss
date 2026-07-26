@@ -9,6 +9,10 @@ const repository = "https://github.com/tauri-apps/tauri";
 const paths = {
   cargoLock: resolve(repositoryRoot, "Cargo.lock"),
   cargoManifest: resolve(appRoot, "src-tauri/Cargo.toml"),
+  diagnosticsBridgeManifest: resolve(
+    appRoot,
+    "src-tauri/diagnostics-bridge/Cargo.toml",
+  ),
   desktopMainCapability: resolve(
     appRoot,
     "src-tauri/capabilities/desktop-main.json",
@@ -30,6 +34,7 @@ const paths = {
 const [
   cargoLock,
   cargoManifest,
+  diagnosticsBridgeManifest,
   desktopMainCapability,
   mainCapability,
   packageLock,
@@ -43,6 +48,7 @@ const [
 ] = await Promise.all([
   readFile(paths.cargoLock, "utf8"),
   readFile(paths.cargoManifest, "utf8"),
+  readFile(paths.diagnosticsBridgeManifest, "utf8"),
   readFile(paths.desktopMainCapability, "utf8"),
   readFile(paths.mainCapability, "utf8"),
   readFile(paths.packageLock, "utf8"),
@@ -89,6 +95,7 @@ requireCondition(
 );
 requireCondition(
   !/\bbranch\s*=/u.test(cargoManifest) &&
+    !/\bbranch\s*=/u.test(diagnosticsBridgeManifest) &&
     !/\bbranch\s*=/u.test(widgetBridgeManifest),
   "Cargo.toml must not follow a moving Git branch",
 );
@@ -130,7 +137,7 @@ requireCondition(
 );
 requireCondition(
   cargoManifest.includes(
-    'desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
+    'desktop-cef = ["dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
   ) &&
     cargoManifest.includes(
       'mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]',
@@ -140,6 +147,18 @@ requireCondition(
 requireCondition(
   rootCargoManifest.includes('"apps/devhud/src-tauri"'),
   "the DevHud Rust crate must be a root Cargo workspace member",
+);
+requireCondition(
+  rootCargoManifest.includes('"apps/devhud/src-tauri/diagnostics-bridge"') &&
+    new RegExp(
+      `tauri-plugin\\s*=\\s*\\{[^}]*git\\s*=\\s*"${repository}"[^}]*rev\\s*=\\s*"${revision}"`,
+      "u",
+    ).test(diagnosticsBridgeManifest) &&
+    new RegExp(
+      `tauri\\s*=\\s*\\{[^}]*git\\s*=\\s*"${repository}"[^}]*rev\\s*=\\s*"${revision}"`,
+      "u",
+    ).test(diagnosticsBridgeManifest),
+  "the private mobile diagnostics plugin must be a workspace member pinned to the same Tauri revision",
 );
 requireCondition(
   rootCargoManifest.includes('"apps/devhud/src-tauri/widget-bridge"') &&
@@ -190,6 +209,7 @@ const expectedMainPermissions = [
   "allow-write-settings",
   "allow-read-widget-configuration",
   "allow-write-widget-configuration",
+  "allow-export-diagnostics",
   "allow-reset-dev-hud",
 ];
 const expectedDesktopMainPermissions = [
@@ -201,6 +221,7 @@ const expectedSettingsPermissions = [
   "allow-read-settings",
   "allow-write-settings",
   "allow-read-widget-configuration",
+  "allow-export-diagnostics",
   "allow-reset-dev-hud",
   "allow-hide-settings",
   "allow-replace-global-shortcut",
@@ -256,7 +277,10 @@ requireCondition(
   "both desktop CEF webviews must use off-the-record profiles",
 );
 requireCondition(
-  rustShell.includes('event = "devhud.settings.window_failure"') &&
+  rustShell.includes("build_settings_window(app.handle()).is_err()") &&
+    rustShell.includes(
+      "diagnostics::DiagnosticClassification::DisplayWindowUnavailable",
+    ) &&
     !rustShell.includes("build_settings_window(app.handle())?;"),
   "first-run settings failure must keep the tray-resident process alive",
 );

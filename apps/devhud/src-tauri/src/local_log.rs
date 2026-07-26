@@ -18,9 +18,13 @@ pub(crate) struct LocalLogWriter {
 }
 
 impl LocalLogWriter {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn new(application_id: &str) -> io::Result<Self> {
-        let directory = log_directory(application_id)
-            .ok_or_else(|| io::Error::other("local log directory is unavailable"))?;
+        let directory = managed_log_directory(application_id)?;
+        Self::new_in(directory)
+    }
+
+    pub(crate) fn new_in(directory: PathBuf) -> io::Result<Self> {
         Ok(Self {
             state: Arc::new(Mutex::new(LocalLogState::new(directory)?)),
         })
@@ -31,6 +35,26 @@ impl LocalLogWriter {
             .lock()
             .map_err(|_| io::Error::other("local log state is unavailable"))?
             .clear()
+    }
+
+    pub(crate) fn snapshot(&self) -> io::Result<Vec<Vec<u8>>> {
+        self.state
+            .lock()
+            .map_err(|_| io::Error::other("local log state is unavailable"))?
+            .snapshot()
+    }
+
+    pub(crate) fn destination_is_managed(&self, destination: &Path) -> bool {
+        self.state
+            .lock()
+            .is_ok_and(|state| destination.parent() == Some(state.directory.as_path()))
+    }
+
+    pub(crate) fn clear_managed_in(directory: &Path) -> io::Result<()> {
+        match remove_managed_logs(directory) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        }
     }
 }
 
@@ -123,6 +147,24 @@ impl LocalLogState {
         removal.and(reopen)
     }
 
+    fn snapshot(&mut self) -> io::Result<Vec<Vec<u8>>> {
+        self.snapshot_at(SystemTime::now())
+    }
+
+    fn snapshot_at(&mut self, now: SystemTime) -> io::Result<Vec<Vec<u8>>> {
+        self.flush()?;
+        if now.duration_since(self.opened_at).unwrap_or_default() >= LOG_RETENTION {
+            self.rotate(now)?;
+        } else {
+            prune_logs(&self.directory, now, MAX_LOG_BYTES)?;
+        }
+        let mut logs = managed_logs(&self.directory)?;
+        logs.sort_by_key(|(_, opened_at, _)| *opened_at);
+        logs.into_iter()
+            .map(|(path, _, _)| fs::read(path))
+            .collect()
+    }
+
     fn open_file(&mut self, now: SystemTime) -> io::Result<()> {
         let timestamp = now
             .duration_since(UNIX_EPOCH)
@@ -149,22 +191,42 @@ impl LocalLogState {
     }
 }
 
-fn log_directory(application_id: &str) -> Option<PathBuf> {
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) fn managed_log_directory(application_id: &str) -> io::Result<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         dirs::home_dir()
             .map(|directory| directory.join("Library").join("Logs").join(application_id))
+            .ok_or_else(|| io::Error::other("local log directory is unavailable"))
     }
     #[cfg(not(target_os = "macos"))]
     {
-        dirs::data_local_dir().map(|directory| directory.join(application_id).join("logs"))
+        dirs::data_local_dir()
+            .map(|directory| directory.join(application_id).join("logs"))
+            .ok_or_else(|| io::Error::other("local log directory is unavailable"))
     }
 }
 
 fn is_managed_log(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.starts_with(LOG_FILE_PREFIX) && name.ends_with(LOG_FILE_SUFFIX))
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(stem) = name
+        .strip_prefix(LOG_FILE_PREFIX)
+        .and_then(|name| name.strip_suffix(LOG_FILE_SUFFIX))
+    else {
+        return false;
+    };
+    let mut parts = stem.split('-');
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some(timestamp), Some(process_id), Some(sequence), None)
+            if is_decimal(timestamp) && is_decimal(process_id) && is_decimal(sequence)
+    )
+}
+
+fn is_decimal(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn managed_log_opened_at(path: &Path, fallback: SystemTime) -> SystemTime {
@@ -254,21 +316,37 @@ mod tests {
     fn production_constructor_resolves_the_platform_log_directory() {
         let constructor: fn(&str) -> io::Result<LocalLogWriter> = LocalLogWriter::new;
         let _ = constructor;
-        assert!(log_directory("dev.deli.devhud").is_some());
+        assert!(managed_log_directory("dev.deli.devhud").is_ok());
     }
 
     #[test]
     fn pruning_keeps_only_managed_logs_within_the_byte_budget() {
         let directory = temporary_directory("prune");
         fs::create_dir_all(&directory).unwrap();
-        fs::write(directory.join("devhud-1.jsonl"), [0_u8; 8]).unwrap();
-        fs::write(directory.join("devhud-2.jsonl"), [0_u8; 8]).unwrap();
+        let now = SystemTime::now();
+        let timestamp = now.duration_since(UNIX_EPOCH).unwrap().as_millis();
+        fs::write(
+            directory.join(format!("devhud-{}-1-1.jsonl", timestamp - 1)),
+            [0_u8; 8],
+        )
+        .unwrap();
+        fs::write(
+            directory.join(format!("devhud-{timestamp}-1-1.jsonl")),
+            [0_u8; 8],
+        )
+        .unwrap();
         fs::write(directory.join("user-export.jsonl"), [0_u8; 8]).unwrap();
+        fs::write(
+            directory.join("devhud-user-selected-export.jsonl"),
+            [0_u8; 8],
+        )
+        .unwrap();
 
-        prune_logs(&directory, SystemTime::now(), 8).unwrap();
+        prune_logs(&directory, now, 8).unwrap();
 
         assert_eq!(managed_logs(&directory).unwrap().len(), 1);
         assert!(directory.join("user-export.jsonl").exists());
+        assert!(directory.join("devhud-user-selected-export.jsonl").exists());
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -279,6 +357,8 @@ mod tests {
             state: Arc::new(Mutex::new(LocalLogState::new(directory.clone()).unwrap())),
         };
         writer.write_all(b"{\"event\":\"before-reset\"}\n").unwrap();
+        let user_owned_export = directory.join("DevHud-diagnostics.jsonl");
+        fs::write(&user_owned_export, b"user-owned-export").unwrap();
 
         writer.clear().unwrap();
         writer.write_all(b"{\"event\":\"after-reset\"}\n").unwrap();
@@ -289,6 +369,28 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&logs[0].0).unwrap(),
             "{\"event\":\"after-reset\"}\n"
+        );
+        assert_eq!(
+            fs::read_to_string(user_owned_export).unwrap(),
+            "user-owned-export"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn clearing_without_an_active_sink_removes_only_managed_logs() {
+        let directory = temporary_directory("clear-without-sink");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("devhud-1-1-1.jsonl"), b"managed").unwrap();
+        let user_owned_export = directory.join("DevHud-diagnostics.jsonl");
+        fs::write(&user_owned_export, b"user-owned-export").unwrap();
+
+        LocalLogWriter::clear_managed_in(&directory).unwrap();
+
+        assert!(managed_logs(&directory).unwrap().is_empty());
+        assert_eq!(
+            fs::read_to_string(user_owned_export).unwrap(),
+            "user-owned-export"
         );
         fs::remove_dir_all(directory).unwrap();
     }
@@ -309,6 +411,73 @@ mod tests {
             "{\"event\":\"retained\"}\n"
         );
         assert_eq!(logs[0].1, now);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rotation_never_exceeds_the_total_byte_budget() {
+        let directory = temporary_directory("size");
+        let opened_at = UNIX_EPOCH + Duration::from_secs(2_000_000);
+        let mut state = LocalLogState::new_at(directory.clone(), opened_at).unwrap();
+        let record = vec![b'x'; MAX_LOG_FILE_BYTES as usize];
+
+        for sequence in 0..12 {
+            state
+                .write_at(&record, opened_at + Duration::from_secs(sequence + 1))
+                .unwrap();
+        }
+        state.flush().unwrap();
+
+        let total = managed_logs(&directory)
+            .unwrap()
+            .iter()
+            .map(|(_, _, bytes)| bytes)
+            .sum::<u64>();
+        assert!(total <= MAX_LOG_BYTES);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn pruning_removes_logs_at_the_seven_day_boundary() {
+        let directory = temporary_directory("age");
+        fs::create_dir_all(&directory).unwrap();
+        let opened_at = UNIX_EPOCH + Duration::from_secs(3_000_000);
+        let milliseconds = opened_at.duration_since(UNIX_EPOCH).unwrap().as_millis();
+        let expired = directory.join(format!("devhud-{milliseconds}-1-1.jsonl"));
+        fs::write(&expired, b"expired").unwrap();
+
+        prune_logs(&directory, opened_at + LOG_RETENTION, MAX_LOG_BYTES).unwrap();
+
+        assert!(!expired.exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn snapshot_flushes_and_orders_managed_logs_only() {
+        let directory = temporary_directory("snapshot");
+        let mut writer = LocalLogWriter::new_in(directory.clone()).unwrap();
+        writer.write_all(b"safe\n").unwrap();
+        fs::write(directory.join("user-owned.jsonl"), b"private").unwrap();
+
+        assert_eq!(writer.snapshot().unwrap(), vec![b"safe\n".to_vec()]);
+        assert!(writer.destination_is_managed(&directory.join("export.jsonl")));
+        assert!(!writer.destination_is_managed(&std::env::temp_dir().join("export.jsonl")));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn snapshot_prunes_logs_at_the_retention_boundary_after_idle_time() {
+        let directory = temporary_directory("snapshot-retention");
+        let opened_at = UNIX_EPOCH + Duration::from_secs(4_000_000);
+        let mut state = LocalLogState::new_at(directory.clone(), opened_at).unwrap();
+        state.write_at(b"expired\n", opened_at).unwrap();
+
+        let snapshot = state.snapshot_at(opened_at + LOG_RETENTION).unwrap();
+
+        assert_eq!(snapshot, vec![Vec::<u8>::new()]);
+        let logs = managed_logs(&directory).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].1, opened_at + LOG_RETENTION);
         fs::remove_dir_all(directory).unwrap();
     }
 }

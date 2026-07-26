@@ -5,6 +5,7 @@ import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./runtime/startup", () => ({
+  exportDiagnostics: vi.fn(async () => ({ status: "cancelled" as const })),
   loadRuntimeInfo: vi.fn(async () => ({
     applicationId: "dev.deli.devhud",
     bundledOrigin: "http://tauri.localhost",
@@ -33,7 +34,7 @@ import {
 } from "./persistence/storage";
 import type { DesktopBridge } from "./runtime/desktop";
 import * as desktopRuntime from "./runtime/desktop";
-import { loadRuntimeInfo } from "./runtime/startup";
+import { exportDiagnostics, loadRuntimeInfo } from "./runtime/startup";
 import * as themeRuntime from "./runtime/theme";
 
 afterEach(() => {
@@ -872,6 +873,35 @@ describe("DevHud application surfaces", () => {
     expect(screen.getByRole("heading", { name: "Local diagnostics" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Runtime details" })).toBeVisible();
     expect(screen.getByText("dev.deli.devhud")).toBeVisible();
+  });
+
+  it("exports diagnostics only after an explicit action and reports cancellation", async () => {
+    const user = userEvent.setup();
+    renderApp({ platform: "mobile" });
+    await screen.findByRole("heading", { name: "No tools yet" });
+
+    expect(exportDiagnostics).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    expect(exportDiagnostics).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Export diagnostics" }));
+
+    expect(exportDiagnostics).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "No file was changed",
+    );
+  });
+
+  it("reports a completed user-selected diagnostics export without a path", async () => {
+    vi.mocked(exportDiagnostics).mockResolvedValueOnce({ status: "exported" });
+    const user = userEvent.setup();
+    renderApp({ platform: "mobile" });
+    await user.click(await screen.findByRole("button", { name: "Diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Export diagnostics" }));
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("selected destination");
+    expect(status).not.toHaveTextContent("/");
+    expect(status).not.toHaveTextContent("\\");
   });
 
   it("shows a runtime startup failure on the mobile Home screen", async () => {

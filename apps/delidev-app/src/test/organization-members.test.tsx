@@ -253,7 +253,7 @@ describe("organization member management", () => {
     await user.click(saveRole);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The refresh failed.",
+      "The service is temporarily unavailable.",
     );
     expect(
       screen.getByRole("dialog", { name: "Manage Other Developer" }),

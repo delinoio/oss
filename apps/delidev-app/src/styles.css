@@ -1240,32 +1240,223 @@ tr:last-child td {
   letter-spacing: -0.035em;
 }
 
+.billing-stat-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.member-balance-grid {
+  grid-template-columns: minmax(240px, 1fr);
+  max-width: 420px;
+}
+
 .billing-plan {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
+}
+
+.billing-plan-copy {
+  max-width: 560px;
 }
 
 .billing-plan h2 {
   font-size: 28px;
 }
 
-.billing-limit-form {
+.billing-plan-copy p {
+  margin-bottom: 0;
+}
+
+.billing-state-message {
+  padding: 12px 14px;
+  border-radius: 10px;
+  color: #27496f;
+  background: var(--blue-soft);
+  font-size: 14px;
+}
+
+.billing-actions {
+  display: grid;
+  flex: 1 1 260px;
+  gap: 12px;
+  max-width: 380px;
+}
+
+.billing-actions small {
+  color: var(--gray-600);
+  line-height: 1.5;
+}
+
+.billing-period-card,
+.overage-limit-card,
+.usage-period-context {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
   margin-top: 18px;
+}
+
+.billing-period-card h2,
+.overage-limit-card h2,
+.billing-policy h2,
+.usage-period-context h2,
+.usage-reservation-note h2,
+.privacy-boundary h2 {
+  margin: 0 0 9px;
+  letter-spacing: -0.035em;
+}
+
+.billing-period-card p,
+.overage-limit-card p,
+.usage-period-context p {
+  margin: 0;
+  color: var(--gray-600);
+  line-height: 1.6;
+}
+
+.billing-period-values {
+  display: grid;
+  flex: 0 1 360px;
+  gap: 13px;
+  min-width: 280px;
+  margin: 0;
+}
+
+.billing-period-values div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.billing-period-values div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.billing-period-values dt {
+  color: var(--gray-600);
+  font-size: 13px;
+}
+
+.billing-period-values dd {
+  margin: 0;
+  font-weight: 750;
+  text-align: right;
+}
+
+.overage-limit-card {
+  flex-wrap: wrap;
+}
+
+.overage-limit-card > div {
+  max-width: 640px;
+}
+
+.overage-limit-card > .inline-success {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.overage-dialog-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.overage-dialog-form .inline-error {
+  margin: 0;
+}
+
+.billing-policy {
+  margin-top: 18px;
+}
+
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.policy-grid li {
+  padding: 17px;
+  border-radius: 14px;
+  background: var(--gray-50);
+}
+
+.policy-grid strong,
+.policy-grid span {
+  display: block;
+}
+
+.policy-grid span {
+  margin-top: 7px;
+  color: var(--gray-600);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .billing-ledger {
   margin-top: 28px;
 }
 
-.billing-limit-form h2 {
-  margin: 5px 0 8px;
+.privacy-boundary p,
+.usage-reservation-note p {
+  margin-bottom: 0;
+  color: var(--gray-600);
+  line-height: 1.65;
 }
 
-.billing-limit-form > .button {
-  justify-self: start;
+.usage-summary-grid {
+  margin-bottom: 18px;
+}
+
+.usage-visibility-note {
+  margin: -2px 0 24px;
+}
+
+.usage-period-context {
+  margin-bottom: 24px;
+}
+
+.usage-period-context > div {
+  flex: 1 1 440px;
+}
+
+.usage-period-context > p {
+  flex: 1 1 360px;
+}
+
+.outage-state {
+  padding: 15px 17px;
+  border: 1px solid #f1d382;
+  border-radius: 12px;
+  color: #5c4500;
+  background: #fff9e7;
+  line-height: 1.55;
+}
+
+.usage-attribution,
+.usage-attribution span,
+.usage-attribution small {
+  display: block;
+}
+
+.usage-attribution small {
+  margin-top: 4px;
+  color: var(--gray-400);
+}
+
+.usage-reservation-note {
+  margin-top: 28px;
 }
 
 .button-row,
@@ -1486,6 +1677,16 @@ tr:last-child td {
   .stat-grid {
     grid-template-columns: 1fr;
   }
+
+  .billing-period-card,
+  .usage-period-context {
+    flex-direction: column;
+  }
+
+  .billing-period-values {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1658,6 +1859,19 @@ tr:last-child td {
   }
 
   .billing-plan {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .billing-actions {
+    max-width: none;
+  }
+
+  .policy-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overage-limit-card {
     align-items: stretch;
     flex-direction: column;
   }

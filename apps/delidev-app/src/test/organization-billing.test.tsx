@@ -12,6 +12,7 @@ import {
 import { canonicalAudience } from "../config";
 import { BillingPage } from "../pages/OrganizationPages";
 import { OrganizationShell } from "../pages/OrganizationShell";
+import * as hostedBilling from "../utils/hostedBilling";
 import { TestAccountStateProvider } from "./TestAccountStateProvider";
 
 function connectJsonResponse(body: unknown, status = 200): Response {
@@ -22,8 +23,11 @@ function connectJsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("organization billing", () => {
-  it("reuses the subscription checkout key after a lost response", async () => {
+  it("reuses the checkout key after a lost response and route unmount", async () => {
     const checkoutKeys: string[] = [];
+    const navigate = vi
+      .spyOn(hostedBilling, "navigateToPolarHostedPage")
+      .mockReturnValue(true);
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
       const url = String(request);
       if (url.endsWith("/ResolveOrganizationSlug")) {
@@ -67,6 +71,11 @@ describe("organization billing", () => {
             (request instanceof Request ? request.clone().body : null),
         ).json()) as { idempotency: { key: string } };
         checkoutKeys.push(body.idempotency.key);
+        if (checkoutKeys.length > 1) {
+          return connectJsonResponse({
+            checkoutUrl: "https://checkout.polar.sh/recovered",
+          });
+        }
         return connectJsonResponse(
           { code: "unavailable", message: "The response was lost." },
           503,
@@ -109,6 +118,14 @@ describe("organization billing", () => {
                   </OrganizationShell>
                 }
               />
+              <Route
+                path="/o/:orgSlug/apps"
+                element={
+                  <OrganizationShell>
+                    <p>Apps route</p>
+                  </OrganizationShell>
+                }
+              />
               </Routes>
             </TestAccountStateProvider>
           </AuthSessionProvider>
@@ -121,10 +138,18 @@ describe("organization billing", () => {
     });
     await user.click(startSubscription);
     await screen.findByRole("alert");
-    await user.click(startSubscription);
-    await screen.findByRole("alert");
+    await user.click(screen.getByRole("link", { name: "Apps" }));
+    await screen.findByText("Apps route");
+    await user.click(screen.getByRole("link", { name: "Billing" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Start subscription" }),
+    );
 
     expect(checkoutKeys).toHaveLength(2);
     expect(checkoutKeys[1]).toBe(checkoutKeys[0]);
+    expect(navigate).toHaveBeenCalledWith(
+      "https://checkout.polar.sh/recovered",
+    );
+    navigate.mockRestore();
   });
 });

@@ -789,6 +789,7 @@ jobs:
           pnpm --filter devhud test:a11y
           pnpm --filter devhud check:assets
           pnpm --filter devhud build
+          pnpm --filter devhud check:diagnostics
           pnpm --filter devhud check:mobile
           pnpm --filter devhud test:mobile
 
@@ -825,6 +826,7 @@ jobs:
               - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/build.rs
               - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/diagnostics-bridge/**
               - apps/devhud/src-tauri/gen/android/**
               - apps/devhud/src-tauri/icons/**
               - apps/devhud/src-tauri/src/**
@@ -911,6 +913,7 @@ jobs:
               - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/build.rs
               - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/diagnostics-bridge/**
               - apps/devhud/src-tauri/gen/apple/**
               - apps/devhud/src-tauri/icons/**
               - apps/devhud/src-tauri/src/**
