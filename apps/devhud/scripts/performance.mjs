@@ -5,6 +5,7 @@
  * not present; `failed` means an attempted measurement did not complete.
  */
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { extname, resolve } from "node:path";
@@ -39,6 +40,8 @@ function median(values) {
   return sorted.length % 2 ? (sorted[middle] ?? 0) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 function artifactBytes(path) { if (!path || !existsSync(path)) return null; const stat = statSync(path); if (stat.isFile()) return stat.size; return readdirSync(path, { withFileTypes: true }).reduce((total, entry) => total + (artifactBytes(resolve(path, entry.name)) ?? 0), 0); }
+function artifactDigest(path) { return !path || !existsSync(path) || !statSync(path).isFile() ? null : createHash("sha256").update(readFileSync(path)).digest("hex"); }
+function packageProvenancePath(path) { return `${path}.devhud-performance.json`; }
 function matchesHostArchitecture(name) {
   const tokens = { x86_64: ["x86_64", "x64", "amd64"], arm64: ["arm64", "aarch64"], armv7: ["armv7", "armeabi-v7a"] }[hostArchitecture] ?? [];
   return tokens.some((token) => new RegExp(`(?:^|[^a-z0-9])${token}(?:$|[^a-z0-9])`, "iu").test(name));
@@ -66,6 +69,23 @@ function findPackagedArtifact() {
     if (artifact) return resolve(candidate, artifact);
   }
   return null;
+}
+function packageMeasurement(artifact = findPackagedArtifact()) {
+  if (!artifact) return { measurement: { name: "desktop-package-size", status: "unavailable", method: "artifact-byte-count", samples: [] }, unavailableReason: "artifact-not-found" };
+  try {
+    const provenance = JSON.parse(readFileSync(packageProvenancePath(artifact), "utf8"));
+    if (canonicalText(provenance.application) !== canonicalText(application) || provenance.sha256 !== artifactDigest(artifact)) throw new Error("package provenance mismatch");
+  } catch {
+    return { measurement: { name: "desktop-package-size", status: "unavailable", method: "artifact-byte-count", samples: [] }, unavailableReason: "build-provenance-unverified" };
+  }
+  return { measurement: { name: "desktop-package-size", status: "available", method: "artifact-byte-count", samples: [artifactBytes(artifact)], unit: "bytes", note: "packaged-artifact" } };
+}
+function recordPackageProvenance(artifact = findPackagedArtifact()) {
+  const sha256 = artifactDigest(artifact);
+  if (!artifact || !sha256) throw new Error("a host-architecture release artifact is required");
+  const provenance = { application, sha256 };
+  writeFileSync(packageProvenancePath(artifact), `${JSON.stringify(canonicalize(provenance), null, 2)}\n`);
+  return artifact;
 }
 function processTreeRssBytes(pid) {
   if (process.platform === "win32") {
@@ -165,13 +185,9 @@ async function profileDesktop(binary, startupNote) {
 }
 async function desktop() {
   if (!hostPlatform || !hostArchitecture) throw new Error("desktop performance profiling is unsupported on this host");
-  const packageSize = () => {
-    const size = artifactBytes(findPackagedArtifact());
-    return size === null ? { name: "desktop-package-size", status: "unavailable", method: "artifact-byte-count", samples: [] } : { name: "desktop-package-size", status: "available", method: "artifact-byte-count", samples: [size], unit: "bytes", note: "packaged-artifact" };
-  };
   const unavailableDesktop = (reason) => {
     const runtime = unavailable(hostPlatform, hostArchitecture, reason, desktopNames.filter((name) => name !== "desktop-package-size"));
-    return result([{ ...runtime, measurements: [...runtime.measurements, packageSize()] }]);
+    return result([{ ...runtime, measurements: [...runtime.measurements, packageMeasurement().measurement] }]);
   };
   if (process.platform === "linux" && !process.env.DISPLAY) return unavailableDesktop("no-display-server");
   const executable = findDesktopExecutable();
@@ -187,11 +203,11 @@ async function desktop() {
     [cold, warm].flatMap((profile) => profile.measurements).find((measurement) => measurement.name === "desktop-idle-memory")
   ].filter(Boolean);
   const target = { platform: hostPlatform, architecture: hostArchitecture, status: unavailableReason ? "unavailable" : profiled ? "failed" : "available", ...(unavailableReason ? { unavailableReason } : profiled ? { failure: profiled.failure } : {}), measurements };
-  const sizeMeasurement = packageSize();
-  target.measurements.push(sizeMeasurement);
-  if (!profiled && sizeMeasurement.status === "unavailable") {
+  const size = packageMeasurement();
+  target.measurements.push(size.measurement);
+  if (!profiled && size.measurement.status === "unavailable") {
     target.status = "unavailable";
-    target.unavailableReason = "artifact-not-found";
+    target.unavailableReason = size.unavailableReason;
   }
   return result([target]);
 }
@@ -310,10 +326,11 @@ async function main() {
   const [command, ...rawArgs] = process.argv.slice(2);
   const args = rawArgs.filter((argument) => argument !== "--");
   if (command === "desktop") { const value = await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}.json`)); return; }
+  if (command === "package") { console.log(recordPackageProvenance()); return; }
   if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}.json`)); return; }
   if (command === "aggregate") { const files = args.length ? args.map((file) => resolve(file)) : existsSync(outputDirectory) ? readdirSync(outputDirectory).filter((file) => file.endsWith(".json") && file !== "release-performance.json").map((file) => resolve(outputDirectory, file)) : []; const value = aggregate(files); validate(value); const json = writeResult(value, "release-performance.json"); const markdown = resolve(outputDirectory, "release-performance.md"); writeFileSync(markdown, summary(value)); console.log(`${json}\n${markdown}`); return; }
   if (command === "validate") { if (!args.length) throw new Error("Usage: perf:validate -- <result.json...>"); for (const file of args) validate(JSON.parse(readFileSync(resolve(file), "utf8"))); return; }
-  throw new Error("Usage: performance.mjs <desktop|mobile|aggregate|validate>");
+  throw new Error("Usage: performance.mjs <desktop|mobile|package|aggregate|validate>");
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
-export { aggregate, canonicalize, result, summary, validate };
+export { aggregate, canonicalize, packageMeasurement, recordPackageProvenance, result, summary, validate };

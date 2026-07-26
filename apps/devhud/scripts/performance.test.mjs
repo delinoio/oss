@@ -4,12 +4,27 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { resolve } from "node:path";
 
-import { aggregate, canonicalize, summary, validate } from "./performance.mjs";
+import { aggregate, canonicalize, packageMeasurement, recordPackageProvenance, summary, validate } from "./performance.mjs";
 
 const fixture = resolve(import.meta.dirname, "../performance/fixtures/available-desktop.json");
 
 test("validates the representative desktop result", () => {
   assert.equal(validate(JSON.parse(readFileSync(fixture, "utf8"))), true);
+});
+
+test("package size requires provenance created for the selected artifact", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const artifact = resolve(directory, "DevHud_0.1.0_amd64.deb");
+    writeFileSync(artifact, "current package");
+    assert.equal(packageMeasurement(artifact).unavailableReason, "build-provenance-unverified");
+    recordPackageProvenance(artifact);
+    assert.equal(packageMeasurement(artifact).measurement.status, "available");
+    writeFileSync(artifact, "stale package");
+    assert.equal(packageMeasurement(artifact).unavailableReason, "build-provenance-unverified");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("aggregation is deterministic and keeps unavailable distinct from failed", () => {
