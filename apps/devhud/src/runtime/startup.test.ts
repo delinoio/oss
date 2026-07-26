@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  exportDiagnostics,
   loadRuntimeInfo,
   type RuntimeBridge,
   type RuntimeInfo,
@@ -34,5 +35,16 @@ describe("runtime startup", () => {
     } as RuntimeBridge;
 
     await expect(loadRuntimeInfo(bridge)).rejects.toBe(error);
+  });
+
+  it("exports only through the explicit scoped native command", async () => {
+    const invoke = vi.fn(async () => ({ status: "cancelled" as const }));
+    const bridge = { invoke } as RuntimeBridge;
+
+    await expect(exportDiagnostics(bridge)).resolves.toEqual({
+      status: "cancelled",
+    });
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(invoke).toHaveBeenCalledWith("export_diagnostics");
   });
 });

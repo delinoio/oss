@@ -132,7 +132,7 @@ requireCondition(
 );
 requireCondition(
   cargoManifest.includes(
-    'desktop-cef = ["dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
+    'desktop-cef = ["dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
   ) &&
     cargoManifest.includes(
       'mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]',
@@ -260,6 +260,7 @@ requireCondition(
       "allow-write-settings",
       "allow-read-widget-configuration",
       "allow-write-widget-configuration",
+      "allow-export-diagnostics",
       "allow-reset-dev-hud",
     ]),
   "mobile IPC must remain limited to diagnostics, the two versioned records, and confirmed reset",

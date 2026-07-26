@@ -10,6 +10,7 @@ import {
   type ApplicationPlatform,
 } from "./runtime/platform";
 import {
+  exportDiagnostics,
   loadRuntimeInfo,
   tauriRuntimeBridge,
   type RuntimeBridge,
@@ -62,12 +63,14 @@ function PersistenceAlerts() {
 
 function SettingsDialog({
   bridge,
+  diagnosticsBridge,
   onResetComplete,
   settingsRevision,
   showDesktopControls,
   runtimeInfo,
 }: {
   readonly bridge: DesktopBridge | null;
+  readonly diagnosticsBridge: RuntimeBridge;
   readonly onResetComplete: (outcome: PersistenceResetOutcome) => void;
   readonly settingsRevision: number;
   readonly showDesktopControls: boolean;
@@ -85,6 +88,7 @@ function SettingsDialog({
         startupAutostartOutcome={runtimeInfo?.autostartStartupOutcome}
         startupShortcutFailure={runtimeInfo?.shortcutStartupFailure}
       />
+      <DiagnosticsExportControl bridge={diagnosticsBridge} />
       <ResetDevHudControl onResetComplete={onResetComplete} />
     </Dialog>
   );
@@ -214,6 +218,7 @@ function ResetDevHudControl({
 
 function SettingsWindow({
   bridge,
+  diagnosticsBridge,
   firstRun,
   onResetComplete,
   settingsRevision,
@@ -221,6 +226,7 @@ function SettingsWindow({
   startupShortcutFailure,
 }: {
   readonly bridge: DesktopBridge | null;
+  readonly diagnosticsBridge: RuntimeBridge;
   readonly firstRun: boolean;
   readonly onResetComplete: (outcome: PersistenceResetOutcome) => void;
   readonly settingsRevision: number;
@@ -252,6 +258,7 @@ function SettingsWindow({
         startupAutostartOutcome={startupAutostartOutcome}
         startupShortcutFailure={startupShortcutFailure}
       />
+      <DiagnosticsExportControl bridge={diagnosticsBridge} />
       <ResetDevHudControl onResetComplete={onResetComplete} />
     </main>
   );
@@ -558,10 +565,66 @@ function diagnosticPlatformLabel(platform: RuntimeInfo["operatingSystem"]): stri
   return labels[platform];
 }
 
+type DiagnosticsExportStatus =
+  | "idle"
+  | "exporting"
+  | "exported"
+  | "cancelled"
+  | "failed";
+
+function DiagnosticsExportControl({
+  bridge,
+}: {
+  readonly bridge: RuntimeBridge;
+}) {
+  const [status, setStatus] = useState<DiagnosticsExportStatus>("idle");
+  const startExport = async () => {
+    setStatus("exporting");
+    try {
+      const outcome = await exportDiagnostics(bridge);
+      setStatus(outcome.status);
+    } catch {
+      setStatus("failed");
+    }
+  };
+
+  return (
+    <section aria-labelledby="diagnostics-export-title" className="settings-section">
+      <h2 id="diagnostics-export-title">Diagnostics export</h2>
+      <p className="muted">
+        Save a redacted local diagnostics file to a destination you select. DevHud
+        never sends diagnostics remotely.
+      </p>
+      <button
+        className="secondary-button"
+        disabled={status === "exporting"}
+        onClick={() => void startExport()}
+        type="button"
+      >
+        {status === "exporting" ? "Choosing destination…" : "Export diagnostics"}
+      </button>
+      {status === "exported" ? (
+        <p role="status">Diagnostics were saved to your selected destination.</p>
+      ) : null}
+      {status === "cancelled" ? (
+        <p role="status">Diagnostics export was cancelled. No file was changed.</p>
+      ) : null}
+      {status === "failed" ? (
+        <p className="error" role="alert">
+          DevHud could not export diagnostics. Choose a writable destination and try
+          again.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function MobileDiagnostics({
+  diagnosticsBridge,
   retryRuntime,
   runtime,
 }: {
+  diagnosticsBridge: RuntimeBridge;
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
@@ -602,6 +665,7 @@ function MobileDiagnostics({
             Diagnostics stay on this device and contain no account, telemetry, or remote
             service data.
           </p>
+          <DiagnosticsExportControl bridge={diagnosticsBridge} />
         </section>
       ) : null}
     </section>
@@ -609,9 +673,11 @@ function MobileDiagnostics({
 }
 
 function MobileContent({
+  diagnosticsBridge,
   retryRuntime,
   runtime,
 }: {
+  diagnosticsBridge: RuntimeBridge;
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
@@ -624,14 +690,22 @@ function MobileContent({
     case MobileScreen.Settings:
       return <MobileSettings />;
     case MobileScreen.Diagnostics:
-      return <MobileDiagnostics retryRuntime={retryRuntime} runtime={runtime} />;
+      return (
+        <MobileDiagnostics
+          diagnosticsBridge={diagnosticsBridge}
+          retryRuntime={retryRuntime}
+          runtime={runtime}
+        />
+      );
   }
 }
 
 function MobileShell({
+  diagnosticsBridge,
   retryRuntime,
   runtime,
 }: {
+  diagnosticsBridge: RuntimeBridge;
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
@@ -655,7 +729,11 @@ function MobileShell({
           ))}
         </nav>
         <div className="mobile-content" key={mobileScreen}>
-          <MobileContent retryRuntime={retryRuntime} runtime={runtime} />
+          <MobileContent
+            diagnosticsBridge={diagnosticsBridge}
+            retryRuntime={retryRuntime}
+            runtime={runtime}
+          />
         </div>
       </div>
     </main>
@@ -774,6 +852,7 @@ function ApplicationSurface({
     return (
       <SettingsWindow
         bridge={bridge}
+        diagnosticsBridge={runtimeBridge}
         firstRun={runtime.runtimeInfo.firstRun === true}
         onResetComplete={reconcileReset}
         settingsRevision={settingsRevision}
@@ -794,12 +873,17 @@ function ApplicationSurface({
             runtime={runtime}
           />
         ) : (
-          <MobileShell retryRuntime={retryRuntime} runtime={runtime} />
+          <MobileShell
+            diagnosticsBridge={runtimeBridge}
+            retryRuntime={retryRuntime}
+            runtime={runtime}
+          />
         )}
       </div>
       {settingsOpen ? (
         <SettingsDialog
           bridge={bridge}
+          diagnosticsBridge={runtimeBridge}
           onResetComplete={reconcileReset}
           runtimeInfo={runtime.status === "ready" ? runtime.runtimeInfo : null}
           settingsRevision={settingsRevision}

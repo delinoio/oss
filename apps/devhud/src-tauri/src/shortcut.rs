@@ -118,20 +118,6 @@ pub(crate) enum ShortcutFailure {
     StorageFailed,
 }
 
-impl ShortcutFailure {
-    #[cfg_attr(not(feature = "desktop-cef"), allow(dead_code))]
-    pub(crate) const fn classification(self) -> &'static str {
-        match self {
-            Self::Malformed => "malformed",
-            Self::Conflict => "conflict",
-            Self::PermissionDenied => "permission-denied",
-            Self::RegistrationFailed => "registration-failed",
-            Self::UnsupportedDisplay => "unsupported-display",
-            Self::StorageFailed => "storage-failed",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub(crate) enum ShortcutReplacementOutcome {

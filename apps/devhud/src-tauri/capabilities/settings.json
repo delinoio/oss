@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "Allows only DevHud's settings window to read and change desktop settings through scoped commands.",
+  "description": "Allows only DevHud's settings window to read and change desktop settings, request a user-selected local diagnostics export, and reset local state through scoped commands.",
   "local": true,
   "platforms": ["linux", "macOS", "windows"],
   "windows": ["settings"],
@@ -10,6 +10,7 @@
     "allow-read-settings",
     "allow-write-settings",
     "allow-read-widget-configuration",
+    "allow-export-diagnostics",
     "allow-reset-dev-hud",
     "allow-hide-settings",
     "allow-replace-global-shortcut",

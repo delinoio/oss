@@ -1,6 +1,6 @@
 {
   "identifier": "main",
-  "description": "Allows the DevHud main window to read runtime information, access its two versioned local records, and reset local DevHud data.",
+  "description": "Allows the DevHud main window to read runtime information, access its two versioned local records, request a user-selected local diagnostics export, and reset local DevHud data.",
   "local": true,
   "platforms": ["linux", "macOS", "windows", "iOS", "android"],
   "windows": ["main"],
@@ -10,6 +10,7 @@
     "allow-write-settings",
     "allow-read-widget-configuration",
     "allow-write-widget-configuration",
+    "allow-export-diagnostics",
     "allow-reset-dev-hud"
   ]
 }
