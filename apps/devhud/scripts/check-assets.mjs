@@ -15,6 +15,24 @@ requireCondition(createHash("sha256").update(expectedSource).digest("hex") === m
 requireCondition(manifest.generator === "scripts/generate-assets.mjs", "asset manifest generator is not canonical");
 requireCondition(manifest.assets.every(({ path }) => /^[A-Za-z0-9@._/-]+\.png$/u.test(path)), "asset names must use deterministic platform-safe PNG paths");
 
+function sourceColor(source, selector) {
+  const match = source.match(new RegExp(`<${selector}[^>]*\\bfill=["']#([0-9a-f]{3}|[0-9a-f]{6})["']`, "i"));
+  if (!match) return null;
+  const value = match[1].length === 3 ? match[1].split("").map((digit) => `${digit}${digit}`).join("") : match[1];
+  return [Number.parseInt(value.slice(0, 2), 16), Number.parseInt(value.slice(2, 4), 16), Number.parseInt(value.slice(4), 16)];
+}
+function luminance([red, green, blue]) {
+  return [red, green, blue].map((channel) => channel / 255).map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+}
+const background = sourceColor(expectedSource, "rect");
+const foreground = sourceColor(expectedSource, "path");
+if (background && foreground) {
+  const contrast = (Math.max(luminance(background), luminance(foreground)) + 0.05) / (Math.min(luminance(background), luminance(foreground)) + 0.05);
+  requireCondition(contrast >= 4.5, "lettermark foreground/background contrast is below WCAG AA");
+} else {
+  requireCondition(false, "canonical SVG colors are missing or unsupported");
+}
+
 function pngInfo(buffer) {
   requireCondition(buffer.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")), "asset is not a PNG");
   requireCondition(buffer.toString("ascii", 12, 16) === "IHDR", "asset has no PNG IHDR");
@@ -40,8 +58,6 @@ for (const asset of manifest.assets) {
 }
 const tray = await readFile(resolve(appRoot, "assets/tray/devhud-tray-template.png"));
 requireCondition(tray.includes(0), "tray template must retain transparent pixels");
-// White on #2869dc is 4.84:1, above WCAG AA for the compact lettermark.
-requireCondition((255 + 0.05) / (105 / 255 + 0.05) > 4.5, "lettermark foreground/background contrast is below WCAG AA");
 const tauri = JSON.parse(await readFile(resolve(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
 requireCondition(JSON.stringify(tauri.bundle?.icon) === JSON.stringify(["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/256x256.png", "icons/icon.png"]), "Tauri bundle icon list is not complete");
 const rustShell = await readFile(resolve(appRoot, "src-tauri/src/lib.rs"), "utf8");

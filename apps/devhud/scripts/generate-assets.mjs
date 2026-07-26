@@ -77,6 +77,15 @@ function parseColor(source, name, fallback) {
   return [Number.parseInt(expanded.slice(0, 2), 16), Number.parseInt(expanded.slice(2, 4), 16), Number.parseInt(expanded.slice(4), 16), 255];
 }
 
+function parseRect(source) {
+  const match = source.match(/<rect\s+([^>]+)>/i);
+  if (!match) throw new Error("canonical SVG must contain a background rect");
+  const attributes = Object.fromEntries([...match[1].matchAll(/([a-z]+)=["']([^"']+)["']/gi)].map((entry) => [entry[1], Number(entry[2])]));
+  const { x = 0, y = 0, width, height, rx, ry = rx } = attributes;
+  if (![width, height, rx].every(Number.isFinite)) throw new Error("canonical SVG background rect is incomplete");
+  return { x, y, width, height, rx, ry };
+}
+
 function pathPolygons(source) {
   const paths = [...source.matchAll(/<path[^>]+d=["']([^"']+)["'][^>]*>/g)].map((match) => match[1]);
   const token = /([a-z])|(-?\d*\.?\d+(?:e[-+]?\d+)?)/gi;
@@ -118,27 +127,31 @@ function png(width, height, source, { tray = false, opaque = false } = {}) {
   const pixels = Buffer.alloc(width * height * 4);
   const fit = Math.min(width, height) / 512;
   const offsetX = (width - 512 * fit) / 2; const offsetY = (height - 512 * fit) / 2;
-  const radius = 112 * fit;
+  const rect = parseRect(source);
   const blueColor = parseColor(source, "blue", blue); const whiteColor = parseColor(source, "white", white);
   const paint = (x, y, color) => {
     const offset = (y * width + x) * 4;
     for (let i = 0; i < 4; i += 1) pixels[offset + i] = color[i];
   };
   const insideRoundRect = (x, y) => {
-    const left = Math.min(x, width - 1 - x); const top = Math.min(y, height - 1 - y);
-    if (left >= radius || top >= radius) return true;
-    const dx = radius - left - 0.5; const dy = radius - top - 0.5;
-    return dx * dx + dy * dy <= radius * radius;
+    const localX = x - rect.x; const localY = y - rect.y;
+    if (localX < 0 || localY < 0 || localX >= rect.width || localY >= rect.height) return false;
+    const left = Math.min(localX, rect.width - localX); const top = Math.min(localY, rect.height - localY);
+    if (left >= rect.rx || top >= rect.ry) return true;
+    const dx = rect.rx - left; const dy = rect.ry - top;
+    return (dx * dx) / (rect.rx * rect.rx) + (dy * dy) / (rect.ry * rect.ry) <= 1;
   };
-  const box = (x, y) => x >= 88 && y >= 128 && x < 424 && y < 384;
   for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
-    const sx = (x + 0.5 - offsetX) / fit; const sy = (y + 0.5 - offsetY) / fit;
     let color = transparent;
-    const sourcePoint = [(x - offsetX) / fit, (y - offsetY) / fit];
-    if (opaque || (!tray && insideRoundRect(x - offsetX, y - offsetY))) color = blueColor;
-    if (tray && box(sx, sy)) color = [0, 0, 0, 255];
-    if (canonicalMask[Math.floor(sourcePoint[1]) * 512 + Math.floor(sourcePoint[0])]) color = whiteColor;
-    if (tray && !box(sx, sy)) color = transparent;
+    const sourcePoint = [(x + 0.5 - offsetX) / fit, (y + 0.5 - offsetY) / fit];
+    const sourceX = Math.floor(sourcePoint[0]); const sourceY = Math.floor(sourcePoint[1]);
+    const glyph = sourceX >= 0 && sourceX < 512 && sourceY >= 0 && sourceY < 512 && canonicalMask[sourceY * 512 + sourceX];
+    if (tray) {
+      if (glyph) color = whiteColor;
+    } else {
+      if (opaque || insideRoundRect(sourcePoint[0], sourcePoint[1])) color = blueColor;
+      if (glyph) color = whiteColor;
+    }
     paint(x, y, color);
   }
   const rows = Buffer.alloc((width * 4 + 1) * height);
