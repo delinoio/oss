@@ -23,6 +23,10 @@
     "lint": "eslint . --max-warnings 0",
     "mobile:generate:android": "node scripts/mobile.mjs generate android",
     "mobile:generate:ios": "node scripts/mobile.mjs generate ios",
+    "perf:aggregate": "node scripts/performance.mjs aggregate",
+    "perf:desktop": "node scripts/performance.mjs desktop",
+    "perf:mobile": "node scripts/performance.mjs mobile",
+    "perf:validate": "node scripts/performance.mjs validate",
     "smoke:desktop": "node scripts/smoke-desktop.mjs",
     "test": "vitest run",
     "test:diagnostics": "pnpm run check:diagnostics && vitest run src/runtime/startup.test.ts src/App.ui.test.tsx && cargo test -p devhud",
@@ -30,6 +34,7 @@
     "test:a11y": "vitest run src/App.ui.test.tsx",
     "test:build": "node scripts/check-build-reproducibility.mjs",
     "test:mobile": "pnpm run build && vitest run src/App.ui.test.tsx src/runtime/platform.test.ts && pnpm run check:mobile",
+    "test:performance": "node --test scripts/performance.test.mjs",
     "test:widget:android": "node scripts/widget-native.mjs android test",
     "test:widget:ios": "node scripts/widget-native.mjs ios test",
     "typecheck": "tsc --noEmit"

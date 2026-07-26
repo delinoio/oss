@@ -36,7 +36,33 @@ pnpm test:android:native
 pnpm test:diagnostics
 pnpm test:widget:android
 pnpm test:widget:ios
+pnpm perf:desktop
+pnpm perf:mobile -- android android-emulator
+pnpm perf:mobile -- ios ios-simulator
+pnpm perf:aggregate
+pnpm test:performance
 ```
+
+## Non-gating performance evidence
+
+`perf:desktop` records cold and warm process-to-ready timing, native HUD
+invocation-to-show timing, packaged artifact bytes, and post-ready resident
+memory when a desktop artifact can execute on the current host. `perf:mobile`
+captures startup for one explicitly selected Android/iOS device or simulator
+target. Each command is independent and writes a machine-readable result to
+`performance/results/`; `perf:aggregate` creates the CI/release artifact
+`release-performance.json` and its Markdown release summary.
+
+The stable schema is `performance/result.schema.json`. Results record only
+platform, architecture, app version, the exact pinned Tauri/CEF revision,
+measurement method, numeric samples, and availability/failure classification.
+They intentionally exclude user content, shortcut values, paths, environment
+values, device IDs, credentials, and raw diagnostics. Missing host tools,
+display servers, artifacts, or supported targets are `unavailable`; an attempted
+launch/protocol error is `failed`. Version 0.1.0 has no performance threshold:
+these commands always produce evidence rather than gate a release.
+For a physical mobile target, set `DEVHUD_PERF_DEVICE` only for the command
+invocation; it selects the connected target but is never written to the result.
 
 Android generation and builds require JDK 17, the Android SDK, NDK, and the Rust Android targets. iOS generation and builds require macOS, Xcode with the iOS 17 SDK, XcodeGen, and the corresponding Rust iOS targets. Production commands build the device architectures above; `:ci` commands build unsigned debug hosts only for the x64 simulator/emulator contract. `build:widget:*` compiles only the non-distributed native foundation. `test:widget:*` also exercises typed fixture round trips and refresh/error handling, compiles the private native plugin into an x64 release application, and passes that built artifact to the fail-closed release guard. `check:widget-artifacts` requires a built release manifest, APK, or `.app` and fails if the iOS application embeds an extension or the Android manifest contains any receiver.
 

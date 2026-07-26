@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.deli/schemas/devhud-performance-result-v1.json",
+  "title": "DevHud performance result",
+  "type": "object",
+  "required": ["schemaVersion", "application", "targets"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "devhud.performance.result.v1" },
+    "application": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "tauriRevision", "cefRevision"],
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$" },
+        "tauriRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "cefRevision": { "type": "string", "pattern": "^tauri-runtime-cef@[0-9a-f]{40}$" }
+      }
+    },
+    "targets": { "type": "array", "items": { "$ref": "#/$defs/target" } }
+  },
+  "$defs": {
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["platform", "architecture", "status", "measurements"],
+      "properties": {
+        "platform": { "enum": ["linux", "macos", "windows", "android", "ios"] },
+        "architecture": { "enum": ["x86_64", "arm64", "armv7"] },
+        "status": { "enum": ["available", "unavailable", "failed"] },
+        "unavailableReason": { "type": "string", "enum": ["unsupported-host", "no-display-server", "tool-not-installed", "no-supported-target", "artifact-not-found"] },
+        "failure": { "type": "string", "enum": ["build-failed", "launch-failed", "measurement-protocol-failed"] },
+        "measurements": { "type": "array", "items": { "$ref": "#/$defs/measurement" } }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "unavailable" } } }, "then": { "required": ["unavailableReason"] } },
+        { "if": { "properties": { "status": { "const": "failed" } } }, "then": { "required": ["failure"] } }
+      ]
+    },
+    "measurement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "status", "method", "samples"],
+      "properties": {
+        "name": { "enum": ["desktop-cold-startup", "desktop-warm-startup", "desktop-hud-display", "desktop-package-size", "desktop-idle-memory", "mobile-startup"] },
+        "status": { "enum": ["available", "unavailable", "failed"] },
+        "method": { "type": "string", "enum": ["process-ready-marker", "process-hud-marker", "artifact-byte-count", "resident-set-sampling", "adb-am-start-w", "simctl-launch-wall-clock", "devicectl-launch-wall-clock"] },
+        "samples": { "type": "array", "items": { "type": "number", "minimum": 0 } },
+        "unit": { "enum": ["milliseconds", "bytes"] },
+        "note": { "type": "string", "enum": ["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"] }
+      }
+    }
+  }
+}

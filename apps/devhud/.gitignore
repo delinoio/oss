@@ -1,4 +1,5 @@
 dist/
+performance/results/
 src-tauri/gen/schemas/
 src-tauri/gen/android/.gradle/
 src-tauri/gen/android/app/build/

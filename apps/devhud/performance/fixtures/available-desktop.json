@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "devhud.performance.result.v1",
+  "application": { "version": "0.1.0", "tauriRevision": "f49ebda2fdba5755456b0f049e32593ca0ea331a", "cefRevision": "tauri-runtime-cef@f49ebda2fdba5755456b0f049e32593ca0ea331a" },
+  "targets": [{ "platform": "linux", "architecture": "x86_64", "status": "available", "measurements": [
+    { "name": "desktop-cold-startup", "status": "available", "method": "process-ready-marker", "samples": [120], "unit": "milliseconds", "note": "cold-process" },
+    { "name": "desktop-warm-startup", "status": "available", "method": "process-ready-marker", "samples": [80], "unit": "milliseconds", "note": "warm-process" },
+    { "name": "desktop-hud-display", "status": "available", "method": "process-hud-marker", "samples": [12], "unit": "milliseconds", "note": "explicit-hud-invocation" },
+    { "name": "desktop-package-size", "status": "available", "method": "artifact-byte-count", "samples": [1234], "unit": "bytes", "note": "packaged-artifact" },
+    { "name": "desktop-idle-memory", "status": "available", "method": "resident-set-sampling", "samples": [4567], "unit": "bytes", "note": "post-ready-idle" }
+  ]}]
+}

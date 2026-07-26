@@ -1104,6 +1104,26 @@ fn get_runtime_info(
         diagnostics::DiagnosticClassification::DesktopReady
     });
 
+    // This deliberately has no production effect. The package-local profiler
+    // opts in with DEVHUD_PERF and consumes only these fixed marker names; it
+    // never receives settings, paths, shortcuts, diagnostics, or environment
+    // values. The HUD marker starts at the explicit native show invocation.
+    #[cfg(all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    if std::env::var_os("DEVHUD_PERF").is_some_and(|value| value == "1") {
+        eprintln!("DEVHUD_PERF {{\"event\":\"ready\"}}");
+        if matches!(show_hud_internal(&_app, false), HudActionOutcome::Shown) {
+            eprintln!("DEVHUD_PERF {{\"event\":\"hud-shown\"}}");
+        }
+        let app = _app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(1100));
+            request_quit(&app);
+        });
+    }
+
     #[cfg(debug_assertions)]
     if std::env::var_os("DEVHUD_SMOKE").is_some_and(|value| value == "1") {
         let app = _app.clone();
