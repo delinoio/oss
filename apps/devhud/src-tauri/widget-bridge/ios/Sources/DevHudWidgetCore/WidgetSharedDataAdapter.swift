@@ -68,9 +68,12 @@ public final class WidgetSharedDataAdapter: @unchecked Sendable {
         }
     }
 
-    public func reset() {
-        synchronized {
+    public func reset() throws {
+        try synchronized {
             defaults.removeObject(forKey: DevHudWidgetContract.storageKey)
+            guard defaults.object(forKey: DevHudWidgetContract.storageKey) == nil else {
+                throw WidgetConfigurationError.writeFailed
+            }
         }
     }
 
@@ -122,7 +125,7 @@ public final class WidgetConfigurationService {
 
     @discardableResult
     public func reset() throws -> UInt32 {
-        adapter.reset()
+        try adapter.reset()
         return try refresher.refresh()
     }
 }

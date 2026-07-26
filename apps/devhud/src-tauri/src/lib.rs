@@ -127,6 +127,29 @@ const TRAY_ACTIONS: [(&str, &str); 5] = [
 const SETTINGS_STORAGE_KEY: &str = "devhud.settings.v1";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const WIDGET_CONFIGURATION_STORAGE_KEY: &str = "devhud.widget-configuration.v1";
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+const CEF_PROFILE_DIRECTORY: &str = "cef";
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+const CEF_PRIVATE_STORAGE_SWITCHES: [&str; 6] = [
+    "--disable-application-cache",
+    "--disable-databases",
+    "--disable-local-storage",
+    "--disable-session-storage",
+    "--disable-sync",
+    "--incognito",
+];
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const PERMISSIONS_POLICY: &str =
     "camera=(), display-capture=(), geolocation=(), microphone=(), usb=()";
@@ -462,6 +485,52 @@ impl PersistenceState {
             );
             PersistenceResetFailure::BeforeRecordsRemoved(PersistenceCommandError::ResetFailed)
         })?;
+        let (directory, paths) = self.reset_paths()?;
+        let previously_staged = pending_reset_stage_paths(directory, &paths).map_err(|_| {
+            diagnostics::emit_warning(
+                diagnostics::DiagnosticEventId::PersistenceResetFailure,
+                diagnostics::DiagnosticClassification::PersistenceResetFailed,
+            );
+            PersistenceResetFailure::BeforeRecordsRemoved(PersistenceCommandError::ResetFailed)
+        })?;
+        let transaction_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        // Stage both stable records before unlinking either one so a staging
+        // failure can restore the complete pre-reset persistence state.
+        let staged_paths = paths.map(|(key, path)| {
+            let staged_path =
+                path.with_extension(format!("reset-{}-{transaction_id}", std::process::id()));
+            (key, path, staged_path)
+        });
+        reset_persisted_records(
+            &staged_paths,
+            &previously_staged,
+            |source, destination| fs::rename(source, destination),
+            |path| fs::remove_file(path),
+        )
+    }
+
+    fn preflight_reset(&self) -> Result<(), PersistenceCommandError> {
+        let _guard = self
+            .write_lock
+            .lock()
+            .map_err(|_| PersistenceCommandError::ResetFailed)?;
+        let (directory, paths) = self.reset_paths().map_err(|failure| match failure {
+            PersistenceResetFailure::BeforeRecordsRemoved(error) => error,
+            PersistenceResetFailure::PartiallyRetained | PersistenceResetFailure::CleanupFailed => {
+                PersistenceCommandError::ResetFailed
+            }
+        })?;
+        pending_reset_stage_paths(directory, &paths)
+            .map(|_| ())
+            .map_err(|_| PersistenceCommandError::ResetFailed)
+    }
+
+    fn reset_paths(
+        &self,
+    ) -> Result<(&Path, [(&'static str, PathBuf); 2]), PersistenceResetFailure> {
         let paths = [
             (
                 SETTINGS_STORAGE_KEY,
@@ -489,30 +558,7 @@ impl PersistenceState {
                 .ok_or(PersistenceResetFailure::BeforeRecordsRemoved(
                     PersistenceCommandError::StorageUnavailable,
                 ))?;
-        let previously_staged = pending_reset_stage_paths(directory, &paths).map_err(|_| {
-            diagnostics::emit_warning(
-                diagnostics::DiagnosticEventId::PersistenceResetFailure,
-                diagnostics::DiagnosticClassification::PersistenceResetFailed,
-            );
-            PersistenceResetFailure::BeforeRecordsRemoved(PersistenceCommandError::ResetFailed)
-        })?;
-        let transaction_id = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        // Stage both stable records before unlinking either one so a staging
-        // failure can restore the complete pre-reset persistence state.
-        let staged_paths = paths.map(|(key, path)| {
-            let staged_path =
-                path.with_extension(format!("reset-{}-{transaction_id}", std::process::id()));
-            (key, path, staged_path)
-        });
-        reset_persisted_records(
-            &staged_paths,
-            &previously_staged,
-            |source, destination| fs::rename(source, destination),
-            |path| fs::remove_file(path),
-        )
+        Ok((directory, paths))
     }
 }
 
@@ -521,9 +567,18 @@ fn pending_reset_stage_paths<'a>(
     directory: &Path,
     paths: &[(&'a str, PathBuf)],
 ) -> io::Result<Vec<(&'a str, PathBuf)>> {
+    if fs::symlink_metadata(directory)?.file_type().is_symlink() {
+        return Err(io::Error::other(
+            "persistence reset target must not be a symbolic link",
+        ));
+    }
     let mut staged = Vec::new();
     for entry in fs::read_dir(directory)? {
-        let candidate = entry?.path();
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let candidate = entry.path();
         let Some(extension) = candidate.extension().and_then(|value| value.to_str()) else {
             continue;
         };
@@ -610,6 +665,180 @@ where
                 diagnostics::DiagnosticEventId::PersistenceResetCleanupFailure,
                 diagnostics::DiagnosticClassification::PersistenceCleanupFailed,
             );
+        }
+    }
+    if cleanup_failed {
+        Err(PersistenceResetFailure::CleanupFailed)
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn cef_profile_directory_from(cache_base: &Path) -> PathBuf {
+    cache_base.join(APPLICATION_ID).join(CEF_PROFILE_DIRECTORY)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn cef_profile_directory() -> io::Result<PathBuf> {
+    dirs::cache_dir()
+        .map(|cache_base| cef_profile_directory_from(&cache_base))
+        .ok_or_else(|| io::Error::other("CEF profile directory is unavailable"))
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn is_cef_reset_stage(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(transaction) = name.strip_prefix("cef.reset-") else {
+        return false;
+    };
+    let mut identifiers = transaction.split('-');
+    identifiers
+        .next()
+        .is_some_and(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
+        && identifiers.next().is_some_and(|value| {
+            !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        && identifiers.next().is_none()
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn validate_cef_profile_target(cache_base: &Path, profile: &Path) -> io::Result<()> {
+    let expected = cef_profile_directory_from(cache_base);
+    if profile != expected
+        || profile.file_name().and_then(|name| name.to_str()) != Some(CEF_PROFILE_DIRECTORY)
+        || profile
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            != Some(APPLICATION_ID)
+    {
+        return Err(io::Error::other(
+            "CEF profile reset target is outside the DevHud boundary",
+        ));
+    }
+    if fs::symlink_metadata(profile).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err(io::Error::other(
+            "CEF profile reset target must not be a symbolic link",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn preflight_cef_profile_reset(cache_base: &Path, profile: &Path) -> io::Result<Vec<PathBuf>> {
+    validate_cef_profile_target(cache_base, profile)?;
+    let parent = profile
+        .parent()
+        .ok_or_else(|| io::Error::other("CEF profile parent is unavailable"))?;
+    if fs::symlink_metadata(parent).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err(io::Error::other(
+            "CEF profile parent must not be a symbolic link",
+        ));
+    }
+    let entries = match fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut pending = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let candidate = entry.path();
+        if is_cef_reset_stage(&candidate) {
+            if !entry.file_type()?.is_dir() {
+                return Err(io::Error::other(
+                    "CEF reset stage has an invalid filesystem type",
+                ));
+            }
+            pending.push(candidate);
+        }
+    }
+    Ok(pending)
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn reset_cef_profile_directory(
+    cache_base: &Path,
+    profile: &Path,
+) -> Result<(), PersistenceResetFailure> {
+    let pending = preflight_cef_profile_reset(cache_base, profile).map_err(|_| {
+        PersistenceResetFailure::BeforeRecordsRemoved(PersistenceCommandError::ResetFailed)
+    })?;
+    let parent = profile
+        .parent()
+        .ok_or(PersistenceResetFailure::BeforeRecordsRemoved(
+            PersistenceCommandError::ResetFailed,
+        ))?;
+    let transaction_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let staged = parent.join(format!("cef.reset-{}-{transaction_id}", std::process::id()));
+
+    let staged_current = match fs::rename(profile, &staged) {
+        Ok(()) => true,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+        Err(_) => {
+            return Err(PersistenceResetFailure::BeforeRecordsRemoved(
+                PersistenceCommandError::ResetFailed,
+            ));
+        }
+    };
+    if let Err(error) = fs::create_dir_all(profile) {
+        if staged_current && fs::rename(&staged, profile).is_err() {
+            return Err(PersistenceResetFailure::PartiallyRetained);
+        }
+        let _ = error.kind();
+        return Err(PersistenceResetFailure::BeforeRecordsRemoved(
+            PersistenceCommandError::ResetFailed,
+        ));
+    }
+
+    let mut cleanup_failed = false;
+    for candidate in pending
+        .into_iter()
+        .chain(staged_current.then_some(staged).into_iter())
+    {
+        if let Err(error) = fs::remove_dir_all(candidate)
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            cleanup_failed = true;
         }
     }
     if cleanup_failed {
@@ -1980,13 +2209,11 @@ fn clear_browsing_data_for_reset(
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[cfg_attr(test, allow(dead_code))]
-fn clear_local_logs_for_reset(
-    log_directory: io::Result<PathBuf>,
-) -> Result<(), PersistenceCommandError> {
+fn clear_local_logs_for_reset(log_directory: &Path) -> Result<(), PersistenceCommandError> {
     let result = if let Some(diagnostics) = diagnostics::active() {
-        diagnostics.clear()
+        diagnostics.clear(log_directory)
     } else {
-        log_directory.and_then(|directory| local_log::LocalLogWriter::clear_managed_in(&directory))
+        local_log::LocalLogWriter::clear_managed_in(log_directory)
     };
     result.map_err(|_| {
         diagnostics::emit_warning(
@@ -1995,6 +2222,17 @@ fn clear_local_logs_for_reset(
         );
         PersistenceCommandError::ResetFailed
     })
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg_attr(test, allow(dead_code))]
+fn preflight_local_logs_for_reset(log_directory: &Path) -> Result<(), PersistenceCommandError> {
+    let result = if let Some(diagnostics) = diagnostics::active() {
+        diagnostics.preflight_clear(log_directory)
+    } else {
+        local_log::LocalLogWriter::preflight_clear_managed_in(log_directory)
+    };
+    result.map_err(|_| PersistenceCommandError::ResetFailed)
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -2118,6 +2356,14 @@ fn reset_dev_hud(
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
+    persistence.preflight_reset()?;
+    let cache_base = dirs::cache_dir().ok_or(PersistenceCommandError::ResetFailed)?;
+    let cef_profile = cef_profile_directory().map_err(|_| PersistenceCommandError::ResetFailed)?;
+    preflight_cef_profile_reset(&cache_base, &cef_profile)
+        .map_err(|_| PersistenceCommandError::ResetFailed)?;
+    let log_directory = local_log::managed_log_directory(APPLICATION_ID)
+        .map_err(|_| PersistenceCommandError::ResetFailed)?;
+    preflight_local_logs_for_reset(&log_directory)?;
     clear_browsing_data_for_reset(&app)?;
     let mut shortcuts = shortcut_state.lock().map_err(|_| {
         log_shortcut_integration_failure(
@@ -2201,9 +2447,7 @@ fn reset_dev_hud(
         });
     }
 
-    if let Err(reason) =
-        clear_local_logs_for_reset(local_log::managed_log_directory(APPLICATION_ID))
-    {
+    if let Err(reason) = clear_local_logs_for_reset(&log_directory) {
         let autostart_rollback = autostart_state.apply(previous_autostart);
         let autostart_rollback_failed = !matches!(
             autostart_rollback,
@@ -2236,7 +2480,7 @@ fn reset_dev_hud(
         return Err(reason);
     }
 
-    let reset_outcome = match persistence.reset() {
+    let mut reset_outcome = match persistence.reset() {
         Ok(()) => PersistenceResetOutcome::Complete,
         Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => {
             let autostart_rollback = autostart_state.apply(previous_autostart);
@@ -2275,6 +2519,23 @@ fn reset_dev_hud(
         }
         Err(PersistenceResetFailure::CleanupFailed) => PersistenceResetOutcome::CleanupFailed,
     };
+    if let Err(failure) = reset_cef_profile_directory(&cache_base, &cef_profile) {
+        diagnostics::emit_warning(
+            diagnostics::DiagnosticEventId::PersistenceResetCleanupFailure,
+            diagnostics::DiagnosticClassification::CefProfileCleanupFailed,
+        );
+        match failure {
+            PersistenceResetFailure::PartiallyRetained => {
+                reset_outcome = PersistenceResetOutcome::PartiallyRetained;
+            }
+            PersistenceResetFailure::CleanupFailed
+            | PersistenceResetFailure::BeforeRecordsRemoved(_) => {
+                if reset_outcome != PersistenceResetOutcome::PartiallyRetained {
+                    reset_outcome = PersistenceResetOutcome::CleanupFailed;
+                }
+            }
+        }
+    }
 
     if let Ok(mut diagnostics) = startup_diagnostics.lock() {
         diagnostics.shortcut_failure = None;
@@ -2299,12 +2560,17 @@ fn reset_dev_hud(
     webview: Webview<ActiveRuntime>,
     state: State<'_, PersistenceState>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
+    state.preflight_reset()?;
+    app.devhud_widget_bridge()
+        .prepare_reset()
+        .map_err(|error| widget_bridge_failure("reset-preflight", &error))?;
+    let log_directory = app
+        .path()
+        .app_log_dir()
+        .map_err(|_| PersistenceCommandError::ResetFailed)?;
+    preflight_local_logs_for_reset(&log_directory)?;
     clear_browsing_data_for_reset(webview)?;
-    clear_local_logs_for_reset(
-        app.path()
-            .app_log_dir()
-            .map_err(|_| io::Error::other("local log directory is unavailable")),
-    )?;
+    clear_local_logs_for_reset(&log_directory)?;
     let reset_outcome = match state.reset() {
         Ok(()) => PersistenceResetOutcome::Complete,
         Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => return Err(error),
@@ -2318,7 +2584,10 @@ fn reset_dev_hud(
         Err(error) if error.code() == Some(WidgetBridgeErrorCode::RefreshFailed) => {
             widget_bridge_failure("reset-refresh", &error);
         }
-        Err(error) => return Err(widget_bridge_failure("reset", &error)),
+        Err(error) => {
+            widget_bridge_failure("reset", &error);
+            return Ok(PersistenceResetOutcome::PartiallyRetained);
+        }
     }
     if reset_outcome == PersistenceResetOutcome::Complete {
         diagnostics::emit(
@@ -2532,27 +2801,34 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-fn platform_builder() -> tauri::Builder<ActiveRuntime> {
-    tauri::Builder::<ActiveRuntime>::new().command_line_args([
-        ("--disable-background-networking", None::<&str>),
+fn platform_builder() -> Result<tauri::Builder<ActiveRuntime>, RuntimeInitializationFailure> {
+    let profile =
+        cef_profile_directory().map_err(|_| RuntimeInitializationFailure::CefInitialization)?;
+    let mut arguments = CEF_PRIVATE_STORAGE_SWITCHES
+        .map(|switch| (switch, None::<&str>))
+        .to_vec();
+    arguments.extend([
+        ("--disable-background-networking", None),
         ("--disable-component-update", None),
         ("--disable-domain-reliability", None),
-        ("--disable-sync", None),
         (
             "host-resolver-rules",
             Some("MAP * ~NOTFOUND, EXCLUDE tauri.localhost"),
         ),
-    ])
+    ]);
+    Ok(tauri::Builder::<ActiveRuntime>::new()
+        .root_cache_path(profile)
+        .command_line_args(arguments))
 }
 
 #[cfg(all(
     feature = "mobile-system-webview",
     any(target_os = "android", target_os = "ios")
 ))]
-fn platform_builder() -> tauri::Builder<ActiveRuntime> {
-    tauri::Builder::<ActiveRuntime>::new()
+fn platform_builder() -> Result<tauri::Builder<ActiveRuntime>, RuntimeInitializationFailure> {
+    Ok(tauri::Builder::<ActiveRuntime>::new()
         .plugin(tauri_plugin_devhud_diagnostics::init())
-        .plugin(tauri_plugin_devhud_widget::init())
+        .plugin(tauri_plugin_devhud_widget::init()))
 }
 
 #[cfg(all(
@@ -2592,7 +2868,7 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
             return Err(RuntimeInitializationFailure::InstanceGuardUnavailable);
         }
     };
-    let app = configure_builder(platform_builder())
+    let app = configure_builder(platform_builder()?)
         .build(tauri::generate_context!())
         .map_err(|_| RuntimeInitializationFailure::CefInitialization)?;
     app.run(|app, event| match event {
@@ -2634,7 +2910,7 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
     any(target_os = "android", target_os = "ios")
 ))]
 fn run_app() -> Result<(), RuntimeInitializationFailure> {
-    let app = configure_builder(platform_builder())
+    let app = configure_builder(platform_builder()?)
         .build(tauri::generate_context!())
         .map_err(|_| RuntimeInitializationFailure::SystemWebviewInitialization)?;
     app.run(|_, _| {});
@@ -2855,6 +3131,123 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn cef_uses_an_exact_private_profile_with_persistent_web_storage_disabled() {
+        let cache_base = PathBuf::from("/application-cache");
+        assert_eq!(
+            cef_profile_directory_from(&cache_base),
+            cache_base.join(APPLICATION_ID).join("cef")
+        );
+        for required in [
+            "--disable-application-cache",
+            "--disable-databases",
+            "--disable-local-storage",
+            "--disable-session-storage",
+            "--incognito",
+        ] {
+            assert!(CEF_PRIVATE_STORAGE_SWITCHES.contains(&required));
+        }
+    }
+
+    #[test]
+    fn cef_reset_removes_every_exact_profile_artifact_and_is_idempotent() {
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-cef-reset-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let cache_base = directory.join("cache");
+        let profile = cef_profile_directory_from(&cache_base);
+        let exported = directory.join("DevHud-diagnostics.jsonl");
+        let unrelated = cache_base.join("another-application").join("Cookies");
+        for artifact in [
+            profile.join("Default").join("History"),
+            profile.join("Default").join("Cookies"),
+            profile.join("Default").join("Local Storage").join("state"),
+            profile.join("runtime").join("GPUCache").join("entry"),
+        ] {
+            fs::create_dir_all(artifact.parent().unwrap()).unwrap();
+            fs::write(artifact, b"retained-cef-artifact").unwrap();
+        }
+        fs::create_dir_all(unrelated.parent().unwrap()).unwrap();
+        fs::write(&unrelated, b"unrelated").unwrap();
+        fs::write(&exported, b"user-owned-export").unwrap();
+
+        assert_eq!(reset_cef_profile_directory(&cache_base, &profile), Ok(()));
+        assert_eq!(fs::read_dir(&profile).unwrap().count(), 0);
+        assert_eq!(fs::read(&unrelated).unwrap(), b"unrelated");
+        assert_eq!(fs::read(&exported).unwrap(), b"user-owned-export");
+
+        assert_eq!(reset_cef_profile_directory(&cache_base, &profile), Ok(()));
+        assert_eq!(fs::read_dir(&profile).unwrap().count(), 0);
+        assert_eq!(fs::read(&unrelated).unwrap(), b"unrelated");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn cef_reset_rejects_a_broad_or_symbolic_target_before_deletion() {
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-cef-boundary-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let cache_base = directory.join("cache");
+        let valid_data = cache_base.join("keep.txt");
+        fs::create_dir_all(&cache_base).unwrap();
+        fs::write(&valid_data, b"keep").unwrap();
+
+        assert!(preflight_cef_profile_reset(&cache_base, &cache_base).is_err());
+        assert_eq!(fs::read(&valid_data).unwrap(), b"keep");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+
+            let external = directory.join("external");
+            fs::create_dir_all(&external).unwrap();
+            fs::write(external.join("keep.txt"), b"external").unwrap();
+            let profile = cef_profile_directory_from(&cache_base);
+            fs::create_dir_all(profile.parent().unwrap()).unwrap();
+            symlink(&external, &profile).unwrap();
+
+            assert!(preflight_cef_profile_reset(&cache_base, &profile).is_err());
+            assert_eq!(fs::read(external.join("keep.txt")).unwrap(), b"external");
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn record_reset_preflight_rejects_a_symbolic_directory_without_deletion() {
+        use std::os::unix::fs::symlink;
+
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-record-boundary-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let user_directory = directory.join("user-owned");
+        let linked_directory = directory.join("devhud-records");
+        fs::create_dir_all(&user_directory).unwrap();
+        let user_record = user_directory.join(SETTINGS_STORAGE_KEY);
+        fs::write(&user_record, b"user-owned").unwrap();
+        symlink(&user_directory, &linked_directory).unwrap();
+        let paths = [
+            (
+                SETTINGS_STORAGE_KEY,
+                linked_directory.join(SETTINGS_STORAGE_KEY),
+            ),
+            (
+                WIDGET_CONFIGURATION_STORAGE_KEY,
+                linked_directory.join(WIDGET_CONFIGURATION_STORAGE_KEY),
+            ),
+        ];
+
+        assert!(pending_reset_stage_paths(&linked_directory, &paths).is_err());
+        assert_eq!(fs::read(&user_record).unwrap(), b"user-owned");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -3112,14 +3505,11 @@ mod tests {
         fs::write(&managed_log, b"retained-log").unwrap();
         fs::write(&user_export, b"user-export").unwrap();
 
-        clear_local_logs_for_reset(Ok(directory.clone())).unwrap();
+        preflight_local_logs_for_reset(&directory).unwrap();
+        clear_local_logs_for_reset(&directory).unwrap();
 
         assert!(!managed_log.exists());
         assert_eq!(fs::read(&user_export).unwrap(), b"user-export");
-        assert_eq!(
-            clear_local_logs_for_reset(Err(io::Error::other("injected unresolved log boundary"))),
-            Err(PersistenceCommandError::ResetFailed)
-        );
         fs::remove_dir_all(directory).unwrap();
     }
 

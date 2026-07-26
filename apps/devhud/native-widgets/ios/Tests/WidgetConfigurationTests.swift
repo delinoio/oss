@@ -43,7 +43,8 @@ final class WidgetConfigurationTests: XCTestCase {
             #"{"version":1,"configuration":{"slots":[]}}"#
         )
 
-        adapter.reset()
+        try adapter.reset()
+        try adapter.reset()
 
         XCTAssertNil(try adapter.readRawRecord())
         XCTAssertEqual(defaults.string(forKey: "devhud.settings.v1"), "preserved")

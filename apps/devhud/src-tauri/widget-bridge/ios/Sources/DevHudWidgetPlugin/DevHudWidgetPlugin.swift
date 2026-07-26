@@ -15,6 +15,10 @@ private struct WidgetRefreshResponse: Encodable {
     let refreshedWidgetCount: UInt32
 }
 
+private struct PrepareResetResponse: Encodable {
+    let prepared: Bool
+}
+
 final class DevHudWidgetPlugin: Plugin {
     private lazy var service: WidgetConfigurationService? = {
         guard let adapter = try? WidgetSharedDataAdapter.live() else {
@@ -36,6 +40,14 @@ final class DevHudWidgetPlugin: Plugin {
             let arguments = try invoke.parseArgs(WriteConfigurationArgs.self)
             let count = try service.writeRawRecord(arguments.record)
             invoke.resolve(WidgetRefreshResponse(refreshedWidgetCount: count))
+        }
+    }
+
+    @objc func prepareReset(_ invoke: Invoke) {
+        withService(invoke) { _ in
+            // Resolving the App Group adapter is the only prerequisite. The
+            // retained value is untouched until resetConfiguration.
+            invoke.resolve(PrepareResetResponse(prepared: true))
         }
     }
 

@@ -276,6 +276,37 @@ requireCondition(
   rustShell.match(/\.incognito\(true\)/gu)?.length === 2,
   "both desktop CEF webviews must use off-the-record profiles",
 );
+for (const storageSwitch of [
+  "--disable-application-cache",
+  "--disable-databases",
+  "--disable-local-storage",
+  "--disable-session-storage",
+  "--disable-sync",
+  "--incognito",
+]) {
+  requireCondition(
+    rustShell.includes(`"${storageSwitch}"`),
+    `desktop CEF must apply ${storageSwitch}`,
+  );
+}
+requireCondition(
+  rustShell.includes(".root_cache_path(profile)") &&
+    rustShell.includes('const CEF_PROFILE_DIRECTORY: &str = "cef"') &&
+    rustShell.includes("validate_cef_profile_target") &&
+    rustShell.includes("preflight_cef_profile_reset") &&
+    rustShell.includes("reset_cef_profile_directory"),
+  "desktop CEF must use and reset only its explicit application-owned profile root",
+);
+requireCondition(
+  (rustShell.match(/\.on_download\(\|_, _\| false\)/gu)?.length ?? 0) >= 2,
+  "both desktop CEF webviews must deny downloads",
+);
+requireCondition(
+  rustShell.includes("preflight_local_logs_for_reset") &&
+    rustShell.includes("preflight_reset()") &&
+    rustShell.includes("prepare_reset()"),
+  "reset must resolve persistence, mobile widget, and bounded-log preconditions before mutation",
+);
 requireCondition(
   rustShell.includes("build_settings_window(app.handle()).is_err()") &&
     rustShell.includes(

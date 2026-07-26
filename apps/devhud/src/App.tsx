@@ -128,13 +128,9 @@ function ResetDevHudControl({
 }: {
   readonly onResetComplete?: (outcome: PersistenceResetOutcome) => void;
 }) {
-  const { resetDevHud } = useApplication();
+  const { persistenceReady, resetDevHud } = useApplication();
   const [status, setStatus] = useState<ResetStatus>("idle");
-  const confirmRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (status === "confirming") confirmRef.current?.focus();
-  }, [status]);
+  const resetTriggerRef = useRef<HTMLButtonElement>(null);
 
   const confirmReset = async () => {
     setStatus("resetting");
@@ -146,6 +142,9 @@ function ResetDevHudControl({
       setStatus("failed");
     }
   };
+  const cancelReset = () => {
+    if (status === "confirming") setStatus("idle");
+  };
 
   return (
     <section aria-labelledby="reset-devhud-title" className="reset-section">
@@ -154,37 +153,53 @@ function ResetDevHudControl({
         Clear local settings, widget state, and application browsing data from this
         device.
       </p>
-      {status === "confirming" ? (
-        <div aria-label="Confirm Reset DevHud" className="reset-confirmation" role="group">
-          <p>This cannot be undone. Reset all local DevHud data?</p>
+      <button
+        className="secondary-button"
+        disabled={!persistenceReady || status === "resetting"}
+        onClick={() => setStatus("confirming")}
+        ref={resetTriggerRef}
+        type="button"
+      >
+        {status === "resetting" ? "Resetting DevHud…" : "Reset DevHud"}
+      </button>
+      {status === "confirming" || status === "resetting" ? (
+        <Dialog
+          descriptionId="reset-devhud-description"
+          title="Confirm Reset DevHud"
+          onClose={cancelReset}
+        >
+          <div className="dialog-heading">
+            <div>
+              <p className="eyebrow">Local data</p>
+              <h2>Reset DevHud?</h2>
+            </div>
+          </div>
+          <p id="reset-devhud-description">
+            This cannot be undone. DevHud will clear its local settings, widget
+            state, browsing data, and rotating logs. Diagnostic files you
+            previously exported will not be changed.
+          </p>
           <div className="reset-actions">
             <button
+              aria-describedby="reset-devhud-description"
               className="danger-button"
+              disabled={status === "resetting"}
               onClick={() => void confirmReset()}
-              ref={confirmRef}
               type="button"
             >
-              Confirm reset
+              {status === "resetting" ? "Resetting…" : "Confirm reset"}
             </button>
             <button
               className="secondary-button"
-              onClick={() => setStatus("idle")}
+              disabled={status === "resetting"}
+              onClick={cancelReset}
               type="button"
             >
               Cancel
             </button>
           </div>
-        </div>
-      ) : (
-        <button
-          className="secondary-button"
-          disabled={status === "resetting"}
-          onClick={() => setStatus("confirming")}
-          type="button"
-        >
-          {status === "resetting" ? "Resetting DevHud…" : "Reset DevHud"}
-        </button>
-      )}
+        </Dialog>
+      ) : null}
       {status === "complete" ? (
         <p role="status">DevHud local data was reset.</p>
       ) : null}

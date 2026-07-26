@@ -59,6 +59,16 @@ class DevHudWidgetPlugin(
     }
 
     @Command
+    fun prepareReset(invoke: Invoke) {
+        execute(invoke) {
+            // Resolving the dedicated adapter is the only native prerequisite.
+            // No value is read or changed until the separately confirmed reset.
+            service
+            JSObject().apply { put("prepared", true) }
+        }
+    }
+
+    @Command
     fun resetConfiguration(invoke: Invoke) {
         execute(invoke) {
             JSObject().apply {

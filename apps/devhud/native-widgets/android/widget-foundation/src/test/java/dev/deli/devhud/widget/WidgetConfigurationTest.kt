@@ -55,6 +55,7 @@ class WidgetConfigurationTest {
             )
 
             adapter.reset()
+            adapter.reset()
 
             assertNull(adapter.readRawRecord())
             assertEquals("preserved", dataStore.data.first()[otherKey])

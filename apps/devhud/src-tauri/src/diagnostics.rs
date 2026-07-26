@@ -57,8 +57,12 @@ impl Diagnostics {
         writer.flush()
     }
 
-    pub(crate) fn clear(&self) -> io::Result<()> {
-        self.writer.clear()
+    pub(crate) fn preflight_clear(&self, directory: &std::path::Path) -> io::Result<()> {
+        self.writer.preflight_clear_in(directory)
+    }
+
+    pub(crate) fn clear(&self, directory: &std::path::Path) -> io::Result<()> {
+        self.writer.clear_in(directory)
     }
 
     pub(crate) fn sanitized_bundle(&self) -> io::Result<Vec<u8>> {
@@ -234,6 +238,7 @@ pub(crate) enum DiagnosticClassification {
     PersistenceResetFailed,
     PersistencePartiallyRetained,
     PersistenceCleanupFailed,
+    CefProfileCleanupFailed,
     DisplayWindowUnavailable,
     DisplayUnsupported,
     DisplayPositionFailed,
@@ -278,6 +283,7 @@ impl DiagnosticClassification {
             Self::PersistenceResetFailed => "persistence-reset-failed",
             Self::PersistencePartiallyRetained => "persistence-partially-retained",
             Self::PersistenceCleanupFailed => "persistence-cleanup-failed",
+            Self::CefProfileCleanupFailed => "cef-profile-cleanup-failed",
             Self::DisplayWindowUnavailable => "display-window-unavailable",
             Self::DisplayUnsupported => "display-unsupported",
             Self::DisplayPositionFailed => "display-position-failed",
