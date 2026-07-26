@@ -30,7 +30,7 @@
     "perf:aggregate": "node scripts/performance.mjs aggregate",
     "perf:desktop": "node scripts/performance.mjs desktop --build",
     "perf:mobile": "node scripts/performance.mjs mobile",
-    "perf:package": "pnpm run build:preview && node scripts/performance.mjs package",
+    "perf:package": "node scripts/performance.mjs package --build",
     "perf:validate": "node scripts/performance.mjs validate",
     "smoke:desktop": "node scripts/smoke-desktop.mjs",
     "test": "vitest run",

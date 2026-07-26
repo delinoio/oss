@@ -1,5 +1,6 @@
-import { mkdir } from "node:fs/promises";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { run, runPackageManager } from "./process.mjs";
 
@@ -21,6 +22,24 @@ const [operation, platform, targetSet = "production"] = process.argv.slice(2);
 const platformNames = new Set(["android", "ios"]);
 const operations = new Set(["build", "generate"]);
 const targetSets = new Set(["production", "ci", "artifact"]);
+
+async function stampBuildRevision(platform) {
+  const revision = spawnSync("git", ["rev-parse", "HEAD"], { cwd: appRoot, encoding: "utf8" });
+  if (revision.status !== 0 || !/^[0-9a-f]{40}\n$/u.test(revision.stdout)) throw new Error("mobile builds require a Git commit revision");
+  const buildRevision = revision.stdout.trim();
+  if (platform === "android") {
+    const path = resolve(appRoot, "src-tauri/gen/android/app/build.gradle.kts");
+    const source = await readFile(path, "utf8");
+    await writeFile(path, source.replace(/^\s*versionName = [^\n]+$/mu, `        versionName = "0.1.0+f49ebda2fdba5755456b0f049e32593ca0ea331a+${buildRevision}"`));
+    return;
+  }
+  const path = resolve(appRoot, "src-tauri/gen/apple/project.yml");
+  const source = await readFile(path, "utf8");
+  const updated = source.includes("DevHudBuildRevision")
+    ? source.replace(/(\s+DevHudBuildRevision:\s*)[^\r\n]*/u, `$1${buildRevision}`)
+    : source.replace("        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a", `        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a\n        DevHudBuildRevision: ${buildRevision}`);
+  await writeFile(path, updated);
+}
 
 if (
   !operations.has(operation) ||
@@ -52,6 +71,7 @@ if (operation === "generate") {
 }
 
 await runPackageManager(["run", "build"], { cwd: appRoot });
+await stampBuildRevision(platform);
 
 if (platform === "android") {
   const targets =

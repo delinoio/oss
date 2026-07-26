@@ -1515,7 +1515,7 @@ fn get_runtime_info(
         }
         let app = _app.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(1100));
+            std::thread::sleep(Duration::from_secs(10));
             request_quit(&app);
         });
     }

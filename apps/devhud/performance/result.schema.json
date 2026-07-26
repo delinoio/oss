@@ -85,6 +85,14 @@
           { "contains": { "type": "object", "properties": { "name": { "const": "desktop-idle-memory" }, "status": { "const": "available" } }, "required": ["name", "status"] } }
         ] } } } } },
         { "if": { "properties": { "status": { "const": "unavailable" }, "platform": { "enum": ["android", "ios"] } }, "required": ["status", "platform"] }, "then": { "not": { "properties": { "measurements": { "contains": { "type": "object", "properties": { "name": { "const": "mobile-startup" }, "status": { "const": "available" } }, "required": ["name", "status"] } } } } } },
+        { "if": { "properties": { "status": { "const": "failed" }, "platform": { "enum": ["linux", "macos", "windows"] } }, "required": ["status", "platform"] }, "then": { "not": { "properties": { "measurements": { "allOf": [
+          { "contains": { "type": "object", "properties": { "name": { "const": "desktop-cold-startup" }, "status": { "const": "available" } }, "required": ["name", "status"] } },
+          { "contains": { "type": "object", "properties": { "name": { "const": "desktop-warm-startup" }, "status": { "const": "available" } }, "required": ["name", "status"] } },
+          { "contains": { "type": "object", "properties": { "name": { "const": "desktop-hud-display" }, "status": { "const": "available" } }, "required": ["name", "status"] } },
+          { "contains": { "type": "object", "properties": { "name": { "const": "desktop-package-size" }, "status": { "const": "available" } }, "required": ["name", "status"] } },
+          { "contains": { "type": "object", "properties": { "name": { "const": "desktop-idle-memory" }, "status": { "const": "available" } }, "required": ["name", "status"] } }
+        ] } } } } },
+        { "if": { "properties": { "status": { "const": "failed" }, "platform": { "enum": ["android", "ios"] } }, "required": ["status", "platform"] }, "then": { "not": { "properties": { "measurements": { "contains": { "type": "object", "properties": { "name": { "const": "mobile-startup" }, "status": { "const": "available" } }, "required": ["name", "status"] } } } } } },
         { "properties": { "measurements": { "contains": { "properties": { "name": { "const": "desktop-cold-startup" } }, "required": ["name"] }, "minContains": 0, "maxContains": 1 } } },
         { "properties": { "measurements": { "contains": { "properties": { "name": { "const": "desktop-warm-startup" } }, "required": ["name"] }, "minContains": 0, "maxContains": 1 } } },
         { "properties": { "measurements": { "contains": { "properties": { "name": { "const": "desktop-hud-display" } }, "required": ["name"] }, "minContains": 0, "maxContains": 1 } } },

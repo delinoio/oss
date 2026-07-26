@@ -6,7 +6,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { extname, resolve } from "node:path";
 
@@ -14,6 +14,8 @@ const appRoot = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(appRoot, "../..");
 const outputDirectory = resolve(appRoot, "performance/results");
 const revision = "f49ebda2fdba5755456b0f049e32593ca0ea331a";
+const gitRevision = run("git", ["rev-parse", "HEAD"]);
+const buildRevision = gitRevision.status === 0 ? gitRevision.stdout.trim() : null;
 const schemaVersion = "devhud.performance.result.v1";
 const application = { version: "0.1.0", tauriRevision: revision, cefRevision: `tauri-runtime-cef@${revision}` };
 const hostPlatform = { darwin: "macos", win32: "windows", linux: "linux" }[process.platform];
@@ -89,6 +91,7 @@ function recordPackageProvenance(artifact = findPackagedArtifact()) {
   writeFileSync(packageProvenancePath(artifact), `${JSON.stringify(canonicalize(provenance), null, 2)}\n`);
   return artifact;
 }
+function clearPackageArtifacts() { rmSync(resolve(repositoryRoot, "target", "release", "bundle"), { recursive: true, force: true }); }
 function processTreeRssBytes(pid) {
   if (process.platform === "win32") {
     const outcome = run("powershell.exe", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($process) { [PSCustomObject]@{ ProcessId = $_.ProcessId; ParentProcessId = $_.ParentProcessId; WorkingSet64 = $process.WorkingSet64 } } } | ConvertTo-Json -Compress"]);
@@ -249,7 +252,8 @@ function mobileBuildProvenance(platform, targetKind, selector) {
     const info = resolve(container.stdout.trim(), "Info.plist");
     const version = run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", info]);
     const revision = run("/usr/libexec/PlistBuddy", ["-c", "Print :DevHudTauriRevision", info]);
-    return version.status === 0 && revision.status === 0 ? `${version.stdout.trim()}+${revision.stdout.trim()}` : null;
+    const build = run("/usr/libexec/PlistBuddy", ["-c", "Print :DevHudBuildRevision", info]);
+    return version.status === 0 && revision.status === 0 && build.status === 0 ? `${version.stdout.trim()}+${revision.stdout.trim()}+${build.stdout.trim()}` : null;
   }
   if (targetKind === "ios-device") {
     const outcome = run("xcrun", ["devicectl", "device", "info", "apps", "--device", selector, "--json-output", "-"]);
@@ -261,7 +265,8 @@ function mobileBuildProvenance(platform, targetKind, selector) {
         if (value.bundleIdentifier === "dev.deli.devhud") {
           const version = value.version ?? value.shortVersion ?? value.CFBundleShortVersionString;
           const revision = value.DevHudTauriRevision ?? value.tauriRevision;
-          return version && revision ? `${version}+${revision}` : null;
+          const build = value.DevHudBuildRevision ?? value.buildRevision;
+          return version && revision && build ? `${version}+${revision}+${build}` : null;
         }
         return Object.values(value).map(findVersion).find(Boolean) ?? null;
       };
@@ -300,7 +305,7 @@ function mobile(platform, targetKind) {
   }
   const architecture = mobileArchitecture(platform, targetKind, selector);
   if (!architecture) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
-  if (mobileBuildProvenance(platform, targetKind, selector) !== `${application.version}+${revision}`) return result([unavailable(platform, architecture, "build-provenance-unverified", ["mobile-startup"], targetKind)]);
+  if (!buildRevision || mobileBuildProvenance(platform, targetKind, selector) !== `${application.version}+${revision}+${buildRevision}`) return result([unavailable(platform, architecture, "build-provenance-unverified", ["mobile-startup"], targetKind)]);
   const termination = terminateMobileApp(platform, targetKind, selector);
   // iOS reports a nonzero status when the process was already absent. Any
   // other termination error could turn the following launch into a warm activation.
@@ -339,6 +344,7 @@ function validate(value) {
     const requiredMeasurements = ["linux", "macos", "windows"].includes(target.platform) ? desktopNames : ["mobile-startup"];
     if (target.status === "available" && !requiredMeasurements.every((name) => target.measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) throw new Error("available target missing required measurements");
     if (target.status === "unavailable" && requiredMeasurements.every((name) => target.measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) throw new Error("unavailable target has complete measurements");
+    if (target.status === "failed" && requiredMeasurements.every((name) => target.measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) throw new Error("failed target has complete measurements");
   }
   return true;
 }
@@ -393,7 +399,7 @@ async function main() {
   const [command, ...rawArgs] = process.argv.slice(2);
   const args = rawArgs.filter((argument) => argument !== "--");
   if (command === "desktop") { const build = args.includes("--build") ? run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:desktop:performance"], buildTimeoutMs, { stdio: "inherit" }) : null; if (build && build.status !== 0) reportBuildFailure(build); const value = args.includes("--build-failed") || (build && build.status !== 0) ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
-  if (command === "package") { console.log(recordPackageProvenance()); return; }
+  if (command === "package") { if (args.includes("--build")) { clearPackageArtifacts(); const build = run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:preview"], buildTimeoutMs, { stdio: "inherit" }); if (build.status !== 0) { reportBuildFailure(build); throw new Error("package build failed"); } } console.log(recordPackageProvenance()); return; }
   if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}-${randomUUID()}.json`)); return; }
   if (command === "aggregate") { const files = args.length ? args.map((file) => resolve(file)) : existsSync(outputDirectory) ? readdirSync(outputDirectory).filter((file) => file.endsWith(".json") && file !== "release-performance.json").map((file) => resolve(outputDirectory, file)) : []; const value = aggregate(files); validate(value); const json = writeResult(value, "release-performance.json"); const markdown = resolve(outputDirectory, "release-performance.md"); writeFileSync(markdown, summary(value)); console.log(`${json}\n${markdown}`); return; }
   if (command === "validate") { if (!args.length) throw new Error("Usage: perf:validate -- <result.json...>"); for (const file of args) validate(JSON.parse(readFileSync(resolve(file), "utf8"))); return; }

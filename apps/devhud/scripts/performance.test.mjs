@@ -79,6 +79,8 @@ test("desktop performance command owns its cross-platform build fallback", () =>
   assert.match(script, /process\.platform === "win32" \? "pnpm\.cmd" : "pnpm"/u);
   assert.match(script, /buildTimeoutMs = 15 \* 60_000/u);
   assert.match(script, /"build:desktop:performance"\], buildTimeoutMs, \{ stdio: "inherit" \}/u);
+  assert.equal(packageManifest.scripts["perf:package"], "node scripts/performance.mjs package --build");
+  assert.match(script, /clearPackageArtifacts\(\); const build = run\(process\.platform === "win32" \? "pnpm\.cmd" : "pnpm", \["run", "build:preview"\]/u);
   assert.match(script, /DevHud desktop performance build failed/u);
   assert.doesNotMatch(script, /console\.error\(build\.(?:stdout|stderr)/u);
 });
@@ -200,6 +202,13 @@ test("unavailable targets cannot retain every required measurement", () => {
   value.targets[0].status = "unavailable";
   value.targets[0].unavailableReason = "artifact-not-found";
   assert.throws(() => validate(value), /unavailable target has complete measurements/u);
+});
+
+test("failed targets cannot retain every required measurement", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0].status = "failed";
+  value.targets[0].failure = "startup-timeout";
+  assert.throws(() => validate(value), /failed target has complete measurements/u);
 });
 
 test("aggregation validates provenance and retains available duplicate targets", () => {
