@@ -11,39 +11,57 @@ durable Polar-outbox boundaries. Polar delivery reports only nonzero locally
 settled overage as chargeable USD micro-units. A local worker expires
 catalog-TTL holds.
 
-## Configuration categories
+## Runtime configuration
 
 Configuration is environment-owned. This document lists variable names and
 categories only; it intentionally provides no values or example secrets.
 
-Non-secret server configuration:
+Required non-secret server configuration:
 
-- `DELIBASE_HTTP_ADDRESS`
-- `DELIBASE_SHUTDOWN_TIMEOUT`
-- `DELIBASE_API_ORIGIN`
-- `DELIBASE_CORS_ALLOWED_ORIGINS`
-- `DELIBASE_CATALOG_PATH`
-- `DELIBASE_LOGTO_ISSUER`
-- `DELIBASE_LOGTO_AUDIENCE`
-- `DELIBASE_LOGTO_JWKS_URL`
-- `DELIBASE_POLAR_PRODUCT_ID`
-- `DELIBASE_POLAR_API_URL` (optional compatible HTTPS endpoint; the selected
-  official production or sandbox API is the default)
-- `DELIBASE_POLAR_ENVIRONMENT` (`production` by default; set to `sandbox` only
-  for the opt-in Polar sandbox checkout path)
+- `DELIBASE_API_ORIGIN`: the externally visible API origin. It must be the
+  canonical `https://delibase.deli.dev`.
+- `DELIBASE_CORS_ALLOWED_ORIGINS`: a comma-separated, explicit browser-origin
+  allowlist. The future DeliDev client origin is `https://deli.dev`; wildcards
+  and credential-bearing origins are rejected.
+- `DELIBASE_CATALOG_PATH`: a readable strict versioned JSON catalog path. The
+  image includes the intentionally empty foundation catalog at
+  `/etc/delibase/catalog.json`; operators may mount another validated file.
+- `DELIBASE_LOGTO_ISSUER`: the exact HTTPS OIDC issuer used for user, forwarded
+  user, and M2M token validation and as the Logto Management API origin.
+- `DELIBASE_LOGTO_AUDIENCE`: the exact canonical
+  `https://delibase.deli.dev` audience.
+- `DELIBASE_LOGTO_JWKS_URL`: the issuer's HTTPS JWKS endpoint without
+  credentials, query, or fragment.
+- `DELIBASE_LOGTO_M2M_CLIENT_ID`: the non-secret identifier paired with the
+  Management API client secret for provider-side account deletion.
+- `DELIBASE_POLAR_PRODUCT_ID`: the provider product whose active fixed monthly
+  USD price is validated at startup.
 
-Secret configuration:
+Optional non-secret server configuration:
 
-- `DELIBASE_DATABASE_URL`
-- `DELIBASE_LOGTO_M2M_CLIENT_ID`
-- `DELIBASE_LOGTO_M2M_CLIENT_SECRET`
-- `DELIBASE_POLAR_ACCESS_TOKEN`
-- `DELIBASE_POLAR_WEBHOOK_SECRET`
-- `DELIBASE_LOG_PSEUDONYM_KEY`
+- `DELIBASE_HTTP_ADDRESS`: the process listen address.
+- `DELIBASE_SHUTDOWN_TIMEOUT`: the bounded graceful-shutdown duration.
+- `DELIBASE_POLAR_API_URL`: a compatible HTTPS endpoint without credentials,
+  query, or fragment. The selected official provider endpoint is used when it
+  is absent.
+- `DELIBASE_POLAR_ENVIRONMENT`: either `production` or the explicit `sandbox`
+  opt-in. Production is the default, and provider credentials/catalogs must
+  remain environment-specific.
 
-The canonical API origin and Logto audience are both
-`https://delibase.deli.dev`. Configuration errors identify variable names but
-never include configured values.
+Required secret server configuration:
+
+- `DELIBASE_DATABASE_URL`: the PostgreSQL connection URL, including its
+  credential material and required TLS policy.
+- `DELIBASE_LOGTO_M2M_CLIENT_SECRET`: the Logto Management API client secret.
+- `DELIBASE_POLAR_ACCESS_TOKEN`: the Polar API credential.
+- `DELIBASE_POLAR_WEBHOOK_SECRET`: the Polar webhook verification secret.
+- `DELIBASE_LOG_PSEUDONYM_KEY`: a distinct key of at least 32 bytes used only
+  for stable log/audit pseudonyms.
+
+Pass secrets through the runtime's secret manager. Do not bake them into image
+layers, labels, catalog files, workflow build arguments, or checked-in
+environment files. Configuration errors identify variable names but never
+include configured values.
 
 `DELIBASE_CATALOG_PATH` points to a strict versioned JSON catalog. The checked-in
 `catalog.json` is intentionally empty for this foundation. Startup validates the
@@ -78,13 +96,39 @@ re-onboarding with an unexpired token. Account/organization tombstones and
 financial/audit snapshots carry an explicit minimum seven-year retention
 boundary.
 
-Browser configuration belongs to DeliDev, is non-secret, and is not consumed
-by this process:
+Browser configuration belongs to the DeliDev build, is non-secret, and is not
+consumed by this process:
 
-- `PUBLIC_DELIBASE_API_ORIGIN`
-- `PUBLIC_LOGTO_ENDPOINT`
-- `PUBLIC_LOGTO_APP_ID`
-- `PUBLIC_LOGTO_AUDIENCE`
+- `PUBLIC_DELIBASE_API_ORIGIN`: the canonical
+  `https://delibase.deli.dev` API origin.
+- `PUBLIC_LOGTO_ENDPOINT`: the browser-safe Logto endpoint.
+- `PUBLIC_LOGTO_APP_ID`: the browser application's public identifier.
+- `PUBLIC_LOGTO_AUDIENCE`: the same canonical
+  `https://delibase.deli.dev` audience.
+
+These `PUBLIC_*` variables must never contain PostgreSQL, Logto M2M, Polar, or
+other provider credentials. The two canonical origins are documented targets,
+not evidence that DNS or either public service is active.
+
+## Container and release artifacts
+
+The multi-stage image cross-compiles a static Go executable, then copies only
+that executable and the foundation catalog into a distroless runtime. Its
+declared runtime identity is UID/GID `65532:65532`; it contains no shell,
+compiler, source tree, repository metadata, or configured secret.
+
+`.github/workflows/release-delibase.yml` runs only for pushed
+`delibase@vX.Y.Z` tags with core SemVer numbers and no leading zeroes. After
+validating both `linux/amd64` and `linux/arm64` images, it publishes one OCI
+index under exactly:
+
+- `ghcr.io/delinoio/delibase:vX.Y.Z`
+- `ghcr.io/delinoio/delibase:latest`
+
+The immutable published digest receives a keyless Sigstore/Cosign signature,
+registry SPDX metadata, an uploaded SPDX JSON SBOM, and GitHub build-provenance
+and SBOM attestations. The workflow does not publish branch, `edge`, or
+commit-SHA tags and does not deploy the image.
 
 ## Local validation
 
@@ -121,4 +165,7 @@ servers/delibase/scripts/test-image.sh
 ```
 
 The operational endpoints are `GET /healthz` for process liveness and
-`GET /readyz` for PostgreSQL readiness.
+`GET /readyz` for PostgreSQL readiness. Both return JSON with `Cache-Control:
+no-store`; liveness returns HTTP 200 while the process can serve requests,
+readiness returns HTTP 200 only after a bounded PostgreSQL ping and HTTP 503
+when that dependency is unavailable.

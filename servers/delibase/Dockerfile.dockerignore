@@ -7,4 +7,14 @@
 !protos/delibase/gen/go/
 !protos/delibase/gen/go/**
 !servers/
-!servers/**
+!servers/internal/
+!servers/internal/**
+!servers/delibase/
+!servers/delibase/**
+servers/delibase/**/*_test.go
+servers/delibase/db/query/
+servers/delibase/db/sqlc.yaml
+servers/delibase/README.md
+servers/delibase/Dockerfile
+servers/delibase/Dockerfile.dockerignore
+servers/delibase/scripts/

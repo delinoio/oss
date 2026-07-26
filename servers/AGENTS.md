@@ -69,7 +69,7 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 - Polar refunds and chargebacks must reconcile against retained financial history after organization deletion. Organization deletion must cancel every nonterminal Polar subscription, including subscriptions materialized by delayed webhooks after deletion. Hosted billing-portal sessions and subscription checkouts use distinct typed audit events.
 - New usage client references are canonical, credential-safe, and unique per service. Migration preserves benign legacy syntax and duplicate correlation values as immutable grandfathered snapshots, while credential-shaped values fail closed.
 - Required checks once code exists include `gofmt`, `go vet ./...`, `go test ./servers/delibase/...`, sqlc/migration checks, Protobuf generation/compatibility, PostgreSQL concurrency tests, and Docker validation.
-- Issue #722 artifact scope excludes public activation/deployment, production SLO/RPM controls, dashboards/alerts, kill switches, feature flags, operator RPCs, and manual replay tooling. Future GHCR release scope is signed `delibase@v*` multi-architecture `vX.Y.Z` and `latest` only.
+- Issue #722 artifact scope excludes public activation/deployment, production SLO/RPM controls, dashboards/alerts, kill switches, feature flags, operator RPCs, and manual replay tooling. GHCR release scope is pushed core `delibase@vX.Y.Z` tags only, publishing the signed multi-architecture `vX.Y.Z` and `latest` digest with SPDX and GitHub attestations; manual, branch, `edge`, and SHA publication paths are forbidden.
 
 ### Multi-Component Contract Sync
 

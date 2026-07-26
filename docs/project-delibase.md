@@ -37,7 +37,7 @@ This index establishes the documentation and ownership contract for issue [#722]
 - Held usage reservations block organization-member removal and self-leave with the stable member-active-reservations reason.
 - Root Protobuf sources live at `protos/delibase/v1/`; generated artifacts are derived and must not become a second source of truth.
 - Reproducible generated consumers live at `protos/delibase/gen/go` and `protos/delibase/gen/ts`; the latter is the private workspace package `@delinoio/delibase-connect`. Root `pnpm generate:proto` generates both runtimes and builds the package's loadable `dist` exports; `pnpm check:proto` is the canonical compatibility entrypoint.
-- The issue scope is artifact-only: validate/build the app, validate/generate the API, test/build the server artifacts, and publish only the specified tagged GHCR images later. Do not activate or deploy either service.
+- The issue scope is artifact-only: validate/build the app, validate/generate the API, test/build the server artifacts, and allow only pushed core `delibase@vX.Y.Z` tags to publish the signed `ghcr.io/delinoio/delibase:vX.Y.Z` and `:latest` two-platform OCI index with SPDX and GitHub provenance/SBOM attestations. Do not activate or deploy either service.
 
 ## Change Policy
 - Any API change updates this index, the app index/contract, the server contract, the proto contract, and the relevant `AGENTS.md` files.
