@@ -312,7 +312,7 @@ for (const [relativePath, contents] of generatedFiles) {
   const destination = join(appRoot, relativePath);
   if (check) {
     const existing = await readFile(destination, "utf8").catch(() => null);
-    if (existing !== contents) throw new Error(`generated file is stale or missing: ${relativePath}`);
+    if (existing?.replace(/\r\n?/gu, "\n") !== contents) throw new Error(`generated file is stale or missing: ${relativePath}`);
   } else {
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, contents);

@@ -8,16 +8,19 @@ const appRoot = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(await readFile(resolve(appRoot, "assets/manifest.json"), "utf8"));
 const failures = [];
 const requireCondition = (condition, message) => { if (!condition) failures.push(message); };
-const expectedSource = await readFile(resolve(appRoot, "assets", manifest.source), "utf8");
+const normalizeText = (value) => value.replace(/\r\n?/gu, "\n");
+const canonicalSource = "source/devhud-lettermark.svg";
+const expectedSource = await readFile(resolve(appRoot, "assets", canonicalSource), "utf8");
+requireCondition(manifest.source === canonicalSource, "asset manifest source is not canonical");
 const { createHash } = await import("node:crypto");
 const { inflateSync } = await import("node:zlib");
-requireCondition(createHash("sha256").update(expectedSource.replace(/\r\n?/gu, "\n")).digest("hex") === manifest.sourceSha256, "asset manifest source hash is stale");
+requireCondition(createHash("sha256").update(normalizeText(expectedSource)).digest("hex") === manifest.sourceSha256, "asset manifest source hash is stale");
 requireCondition(manifest.generator === "scripts/generate-assets.mjs", "asset manifest generator is not canonical");
 requireCondition(manifest.assets.every(({ path }) => /^[A-Za-z0-9@._/-]+\.(?:png|ico|icns)$/u.test(path)), "asset names must use deterministic platform-safe image paths");
 for (const file of manifest.generatedFiles ?? []) {
   const contents = await readFile(resolve(appRoot, file.path), "utf8").catch(() => null);
   requireCondition(contents !== null, `${file.path} is missing`);
-  if (contents !== null) requireCondition(createHash("sha256").update(contents).digest("hex") === file.sha256, `${file.path} is stale`);
+  if (contents !== null) requireCondition(createHash("sha256").update(normalizeText(contents)).digest("hex") === file.sha256, `${file.path} is stale`);
 }
 
 function sourceColor(source, selector) {
