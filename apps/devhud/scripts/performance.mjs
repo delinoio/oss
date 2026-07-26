@@ -33,7 +33,7 @@ function canonicalize(value) {
 }
 function unavailable(platform, architecture, reason, names = [], targetKind) { return { platform, architecture, ...(targetKind ? { targetKind } : {}), status: "unavailable", unavailableReason: reason, measurements: names.map((name) => ({ name, status: "unavailable", method: methodFor(name, platform, targetKind), samples: [] })) }; }
 function methodFor(name, platform, targetKind) { return name === "desktop-hud-display" ? "process-hud-marker" : name === "desktop-package-size" ? "artifact-byte-count" : name === "desktop-idle-memory" ? "resident-set-sampling" : name === "mobile-startup" ? platform === "ios" ? targetKind === "ios-device" ? "devicectl-launch-wall-clock" : "simctl-launch-wall-clock" : "adb-am-start-w" : "process-ready-marker"; }
-function run(command, args, timeout = 30_000) { return spawnSync(command, args, { encoding: "utf8", timeout }); }
+function run(command, args, timeout = 30_000, options = {}) { return spawnSync(command, args, { encoding: "utf8", timeout, ...options }); }
 function executable(command) { return run(process.platform === "win32" ? "where" : "which", [command]).status === 0; }
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -330,7 +330,7 @@ function validate(value) {
     const measurementNames = new Set();
     for (const measurement of target.measurements) {
       const expectedUnit = ["desktop-package-size", "desktop-idle-memory"].includes(measurement?.name) ? "bytes" : "milliseconds";
-      const validMobileMethod = measurement?.name !== "mobile-startup" || (target.platform === "android" ? measurement.method === "adb-am-start-w" : target.platform === "ios" && ["simctl-launch-wall-clock", "devicectl-launch-wall-clock"].includes(measurement.method));
+      const validMobileMethod = measurement?.name !== "mobile-startup" || (target.platform === "android" ? measurement.method === "adb-am-start-w" : target.platform === "ios" && (target.targetKind === "ios-device" ? measurement.method === "devicectl-launch-wall-clock" : measurement.method === "simctl-launch-wall-clock"));
       const validPlatformMeasurement = ["linux", "macos", "windows"].includes(target.platform) ? measurement?.name !== "mobile-startup" : measurement?.name === "mobile-startup";
       if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || !expectedMethods[measurement.name]?.includes(measurement.method) || !validMobileMethod || !validPlatformMeasurement || !["available", "unavailable", "failed"].includes(measurement.status) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" ? (!measurement.samples.length || measurement.unit !== expectedUnit) : (measurement.samples.length || measurement.unit !== undefined || measurement.note !== undefined)) || (measurement.note !== undefined && measurement.note !== expectedNotes[measurement.name])) throw new Error("invalid measurement");
       if (measurementNames.has(measurement.name)) throw new Error("duplicate measurement name");
@@ -356,37 +356,25 @@ function mergeMeasurements(left, right) {
   }
   return [...measurements.values()].sort((a, b) => (desktopNames.indexOf(a.name) - desktopNames.indexOf(b.name)) || canonicalText(a).localeCompare(canonicalText(b)));
 }
-function mergeEqualStatusTargets(left, right) {
-  const measurements = mergeMeasurements(left, right);
-  const required = ["linux", "macos", "windows"].includes(left.platform) ? desktopNames : ["mobile-startup"];
-  if (required.every((name) => measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) return { ...targetBase(left), status: "available", measurements };
-  const unavailableReason = [left.unavailableReason, right.unavailableReason].filter(Boolean).sort()[0];
-  return { ...targetBase(left), status: "unavailable", unavailableReason, measurements };
-}
-function mergeFailedTargets(left, right) {
-  const measurements = mergeMeasurements(left, right);
-  const required = ["linux", "macos", "windows"].includes(left.platform) ? desktopNames : ["mobile-startup"];
-  if (required.every((name) => measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) return { ...targetBase(left), status: "available", measurements };
-  return { ...targetBase(left), status: "failed", failure: [left.failure, right.failure].sort()[0], measurements };
+function mergeTargets(targets) {
+  const ordered = [...targets].sort((left, right) => canonicalText(left).localeCompare(canonicalText(right)));
+  const measurements = ordered.slice(1).reduce((merged, target) => mergeMeasurements({ measurements: merged }, target), ordered[0].measurements);
+  const required = ["linux", "macos", "windows"].includes(ordered[0].platform) ? desktopNames : ["mobile-startup"];
+  if (required.every((name) => measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) return { ...targetBase(ordered[0]), status: "available", measurements };
+  const failures = ordered.map((target) => target.failure).filter(Boolean).sort();
+  if (failures.length) return { ...targetBase(ordered[0]), status: "failed", failure: failures[0], measurements };
+  return { ...targetBase(ordered[0]), status: "unavailable", unavailableReason: ordered.map((target) => target.unavailableReason).filter(Boolean).sort()[0], measurements };
 }
 function aggregate(files) {
   if (!files.length) throw new Error("at least one performance result is required");
   const targets = [...new Set(files.map((file) => resolve(file)))].flatMap((file) => { const value = JSON.parse(readFileSync(file, "utf8")); validate(value); return value.targets; });
   if (!targets.length) throw new Error("at least one performance target is required");
-  const deduplicated = new Map();
-  const priority = { unavailable: 0, failed: 1, available: 2 };
+  const grouped = new Map();
   for (const target of targets) {
     const key = targetIdentity(target);
-    const current = deduplicated.get(key);
-    if (!current) deduplicated.set(key, target);
-    else if (target.status === current.status) deduplicated.set(key, target.status === "failed" ? mergeFailedTargets(current, target) : mergeEqualStatusTargets(current, target));
-    else {
-      const preferred = priority[target.status] > priority[current.status] ? target : current;
-      const other = preferred === target ? current : target;
-      deduplicated.set(key, { ...preferred, measurements: mergeMeasurements(preferred, other) });
-    }
+    grouped.set(key, [...(grouped.get(key) ?? []), target]);
   }
-  return result([...deduplicated.values()].sort((a, b) => targetIdentity(a).localeCompare(targetIdentity(b))));
+  return result([...grouped.values()].map(mergeTargets).sort((a, b) => targetIdentity(a).localeCompare(targetIdentity(b))));
 }
 function summary(value) {
   const lines = ["# DevHud 0.1.0 performance summary", "", `Pinned Tauri/CEF revision: \`${revision}\``, "", "| Platform | Architecture | Target | Availability | Measurements |", "| --- | --- | --- | --- | --- |"];
@@ -404,7 +392,7 @@ function reportBuildFailure(build) {
 async function main() {
   const [command, ...rawArgs] = process.argv.slice(2);
   const args = rawArgs.filter((argument) => argument !== "--");
-  if (command === "desktop") { const build = args.includes("--build") ? run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:desktop:performance"], buildTimeoutMs) : null; if (build && build.status !== 0) reportBuildFailure(build); const value = args.includes("--build-failed") || (build && build.status !== 0) ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
+  if (command === "desktop") { const build = args.includes("--build") ? run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build:desktop:performance"], buildTimeoutMs, { stdio: "inherit" }) : null; if (build && build.status !== 0) reportBuildFailure(build); const value = args.includes("--build-failed") || (build && build.status !== 0) ? desktopBuildFailed() : await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}-${randomUUID()}.json`)); return; }
   if (command === "package") { console.log(recordPackageProvenance()); return; }
   if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}-${randomUUID()}.json`)); return; }
   if (command === "aggregate") { const files = args.length ? args.map((file) => resolve(file)) : existsSync(outputDirectory) ? readdirSync(outputDirectory).filter((file) => file.endsWith(".json") && file !== "release-performance.json").map((file) => resolve(outputDirectory, file)) : []; const value = aggregate(files); validate(value); const json = writeResult(value, "release-performance.json"); const markdown = resolve(outputDirectory, "release-performance.md"); writeFileSync(markdown, summary(value)); console.log(`${json}\n${markdown}`); return; }

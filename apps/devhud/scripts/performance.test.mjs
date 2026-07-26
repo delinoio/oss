@@ -78,7 +78,7 @@ test("desktop performance command owns its cross-platform build fallback", () =>
   assert.equal(packageManifest.scripts["perf:desktop"], "node scripts/performance.mjs desktop --build");
   assert.match(script, /process\.platform === "win32" \? "pnpm\.cmd" : "pnpm"/u);
   assert.match(script, /buildTimeoutMs = 15 \* 60_000/u);
-  assert.match(script, /"build:desktop:performance"\], buildTimeoutMs/u);
+  assert.match(script, /"build:desktop:performance"\], buildTimeoutMs, \{ stdio: "inherit" \}/u);
   assert.match(script, /DevHud desktop performance build failed/u);
   assert.doesNotMatch(script, /console\.error\(build\.(?:stdout|stderr)/u);
 });
@@ -187,6 +187,14 @@ test("available targets require every platform measurement", () => {
   assert.throws(() => validate(value), /available target missing required measurements/u);
 });
 
+test("validation binds iOS launch methods to their target kinds", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0] = { platform: "ios", architecture: "arm64", targetKind: "ios-simulator", status: "available", measurements: [{ name: "mobile-startup", status: "available", method: "devicectl-launch-wall-clock", samples: [42], unit: "milliseconds", note: "cold-process" }] };
+  assert.throws(() => validate(value), /invalid measurement/u);
+  value.targets[0].targetKind = "ios-device";
+  assert.equal(validate(value), true);
+});
+
 test("unavailable targets cannot retain every required measurement", () => {
   const value = JSON.parse(readFileSync(fixture, "utf8"));
   value.targets[0].status = "unavailable";
@@ -276,6 +284,31 @@ test("aggregation combines complementary unavailable evidence into an available 
     const merged = aggregate([runtimeFile, packageFile]);
     assert.equal(merged.targets[0].status, "available");
     assert.equal(validate(merged), true);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("aggregation resolves mixed target status after combining all evidence", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const runtime = JSON.parse(readFileSync(fixture, "utf8"));
+    const packageOnly = structuredClone(runtime);
+    const failed = structuredClone(runtime);
+    for (const measurement of runtime.targets[0].measurements) if (measurement.name === "desktop-package-size") { measurement.status = "unavailable"; measurement.samples = []; delete measurement.unit; delete measurement.note; }
+    for (const measurement of packageOnly.targets[0].measurements) if (measurement.name !== "desktop-package-size") { measurement.status = "unavailable"; measurement.samples = []; delete measurement.unit; delete measurement.note; }
+    for (const value of [runtime, packageOnly]) { value.targets[0].status = "unavailable"; value.targets[0].unavailableReason = "artifact-not-found"; }
+    failed.targets[0] = { platform: "linux", architecture: "x86_64", status: "failed", failure: "startup-timeout", measurements: [] };
+    const runtimeFile = resolve(directory, "runtime.json");
+    const packageFile = resolve(directory, "package.json");
+    const failedFile = resolve(directory, "failed.json");
+    writeFileSync(runtimeFile, JSON.stringify(runtime));
+    writeFileSync(packageFile, JSON.stringify(packageOnly));
+    writeFileSync(failedFile, JSON.stringify(failed));
+    const forward = aggregate([runtimeFile, failedFile, packageFile]);
+    const reverse = aggregate([packageFile, failedFile, runtimeFile]);
+    assert.deepEqual(forward, reverse);
+    assert.equal(forward.targets[0].status, "available");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
