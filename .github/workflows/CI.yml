@@ -199,7 +199,8 @@ jobs:
 
       - name: Skip (shared server infrastructure unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
-        run: echo "Skipping shared server infrastructure checks: no relevant changes"
+        run: |
+          echo "Skipping shared server infrastructure checks: no relevant changes"
 
       - name: Setup Go
         if: ${{ steps.gate.outputs.run == 'true' }}
