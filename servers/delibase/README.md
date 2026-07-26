@@ -118,17 +118,22 @@ declared runtime identity is UID/GID `65532:65532`; it contains no shell,
 compiler, source tree, repository metadata, or configured secret.
 
 `.github/workflows/release-delibase.yml` runs only for pushed
-`delibase@vX.Y.Z` tags with core SemVer numbers and no leading zeroes. After
-validating both `linux/amd64` and `linux/arm64` images, it publishes one OCI
-index under exactly:
+`delibase@vX.Y.Z` tags with core SemVer numbers and no leading zeroes. It
+pushes each `linux/amd64` and `linux/arm64` build by digest, pulls and tests
+that exact digest, and assembles the validated digests into a run-scoped
+candidate index. Only after the candidate is signed and its SPDX and GitHub
+attestations succeed does it publish the public release references:
 
 - `ghcr.io/delinoio/delibase:vX.Y.Z`
 - `ghcr.io/delinoio/delibase:latest`
 
 The immutable published digest receives a keyless Sigstore/Cosign signature,
-registry SPDX metadata, an uploaded SPDX JSON SBOM, and GitHub build-provenance
-and SBOM attestations. The workflow does not publish branch, `edge`, or
-commit-SHA tags and does not deploy the image.
+an uploaded SPDX JSON SBOM, and GitHub build-provenance and SBOM attestations.
+The `latest` promotion is serialized across releases and occurs only when the
+current version remains the newest pushed core SemVer, so an older release
+cannot roll it backward. Run-scoped candidate references are not release
+channels. The workflow does not publish branch, `edge`, or commit-SHA tags and
+does not deploy the image.
 
 ## Local validation
 
