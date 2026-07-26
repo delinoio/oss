@@ -56,7 +56,7 @@ const [
 ] = await Promise.all([
   read("src-tauri/tauri.android.conf.json"),
   read("src-tauri/Cargo.toml"),
-  read("src-tauri/capabilities/main.json"),
+  read("src-tauri/capabilities/mobile-main.json"),
   read("src-tauri/tauri.ios.conf.json"),
   read("package.json"),
   read("src-tauri/tauri.conf.json"),

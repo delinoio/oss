@@ -15,6 +15,7 @@
     "allow-hide-settings",
     "allow-replace-global-shortcut",
     "allow-set-launch-at-login",
-    "allow-complete-first-run"
+    "allow-complete-first-run",
+    "allow-request-update-action"
   ]
 }

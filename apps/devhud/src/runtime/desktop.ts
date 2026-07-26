@@ -75,7 +75,6 @@ export type UpdateActionOutcome = {
 };
 
 export interface DesktopBridge {
-  showHud(): Promise<HudActionOutcome>;
   hideHud(): Promise<HudActionOutcome>;
   showSettings(): Promise<void>;
   hideSettings(): Promise<void>;
@@ -92,7 +91,6 @@ export interface DesktopBridge {
 }
 
 export const tauriDesktopBridge: DesktopBridge = {
-  showHud: () => invoke<HudActionOutcome>("show_hud"),
   hideHud: () => invoke<HudActionOutcome>("hide_hud"),
   showSettings: () => invoke<void>("show_settings"),
   hideSettings: () => invoke<void>("hide_settings"),
