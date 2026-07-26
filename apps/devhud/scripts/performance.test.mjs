@@ -58,6 +58,16 @@ test("available measurements require samples and their expected unit", () => {
   assert.throws(() => validate(value), /invalid measurement/u);
 });
 
+test("available targets require every platform measurement", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0].measurements = [];
+  assert.throws(() => validate(value), /available target missing required measurements/u);
+  value.targets[0].measurements = [
+    { name: "mobile-startup", status: "available", method: "adb-am-start-w", samples: [42], unit: "milliseconds", note: "cold-process" }
+  ];
+  assert.throws(() => validate(value), /available target missing required measurements/u);
+});
+
 test("aggregation validates provenance and retains available duplicate targets", () => {
   const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
   try {

@@ -18,6 +18,7 @@ const application = { version: "0.1.0", tauriRevision: revision, cefRevision: `t
 const hostPlatform = { darwin: "macos", win32: "windows", linux: "linux" }[process.platform];
 const hostArchitecture = { x64: "x86_64", arm64: "arm64", arm: "armv7" }[process.arch] ?? "x86_64";
 const desktopNames = ["desktop-cold-startup", "desktop-warm-startup", "desktop-hud-display", "desktop-package-size", "desktop-idle-memory"];
+const startupTimeoutMs = 30_000;
 
 function result(targets) { return { schemaVersion, application, targets }; }
 function writeResult(value, name) { mkdirSync(outputDirectory, { recursive: true }); const path = resolve(outputDirectory, name); writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`); return path; }
@@ -44,14 +45,14 @@ function findDesktopExecutable() {
 function findPackagedArtifact() {
   const bundle = resolve(repositoryRoot, "target", "release", "bundle");
   const candidates = process.platform === "darwin"
-    ? [resolve(bundle, "macos", "DevHud.app")]
+    ? [resolve(bundle, "dmg")]
     : process.platform === "win32"
       ? [resolve(bundle, "nsis"), resolve(bundle, "msi")]
       : [resolve(bundle, "appimage"), resolve(bundle, "deb")];
   for (const candidate of candidates) {
     if (!existsSync(candidate)) continue;
     if (statSync(candidate).isFile() || candidate.endsWith(".app")) return candidate;
-    const artifact = readdirSync(candidate).sort().find((entry) => [".app", ".appimage", ".deb", ".exe", ".msi"].includes(extname(entry).toLowerCase()) || entry.endsWith(".AppImage"));
+    const artifact = readdirSync(candidate).sort().find((entry) => [".appimage", ".deb", ".dmg", ".exe", ".msi"].includes(extname(entry).toLowerCase()) || entry.endsWith(".AppImage"));
     if (artifact) return resolve(candidate, artifact);
   }
   return null;
@@ -98,8 +99,13 @@ async function profileDesktop(binary, startupNote) {
   let markReady;
   const ready = new Promise((resolveReady) => { markReady = resolveReady; });
   for (const stream of [child.stdout, child.stderr]) { stream.setEncoding("utf8"); stream.on("data", (chunk) => { for (const line of chunk.split(/\r?\n/u)) if (line.startsWith("DEVHUD_PERF ")) { try { const marker = { ...JSON.parse(line.slice(12)), at: performance.now() - start }; markers.push(marker); if (marker.event === "ready") markReady(marker); } catch { /* marker protocol failure is handled below */ } } }); }
-  const readyMarker = await Promise.race([ready, spawnFailed, new Promise((resolveReady) => setTimeout(() => resolveReady(null), 900))]);
+  const readyMarker = await Promise.race([ready, spawnFailed, new Promise((resolveReady) => setTimeout(() => resolveReady("startup-timeout"), startupTimeoutMs))]);
   if (readyMarker === true) return { failure: "launch-failed", measurements: [] };
+  if (readyMarker === "startup-timeout") {
+    child.kill();
+    await closed;
+    return { failure: "startup-timeout", measurements: [] };
+  }
   if (readyMarker) await new Promise((resolveDone) => setTimeout(resolveDone, 200));
   const memory = readyMarker ? [processTreeRssBytes(child.pid), processTreeRssBytes(child.pid), processTreeRssBytes(child.pid)].filter((sample) => sample !== null) : [];
   child.kill();
@@ -129,6 +135,10 @@ async function desktop() {
   const target = { platform: hostPlatform, architecture: hostArchitecture, status: profiled ? "failed" : "available", ...(profiled ? { failure: profiled.failure } : {}), measurements };
   const size = artifactBytes(findPackagedArtifact());
   target.measurements.push(size === null ? { name: "desktop-package-size", status: "unavailable", method: "artifact-byte-count", samples: [] } : { name: "desktop-package-size", status: "available", method: "artifact-byte-count", samples: [size], unit: "bytes", note: "packaged-artifact" });
+  if (!profiled && size === null) {
+    target.status = "unavailable";
+    target.unavailableReason = "artifact-not-found";
+  }
   return result([target]);
 }
 function architectureFrom(value) { const normalized = value.toLowerCase(); return normalized.includes("arm64") || normalized.includes("aarch64") ? "arm64" : normalized.includes("armv7") || normalized.includes("armeabi-v7a") ? "armv7" : normalized.includes("x86_64") ? "x86_64" : null; }
@@ -153,6 +163,7 @@ function mobile(platform, targetKind) {
   if (probe && probe.status !== 0) return result([unavailable(platform, fallbackArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
   const architecture = mobileArchitecture(platform, targetKind, selector);
   if (!architecture) return result([unavailable(platform, fallbackArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
+  if (platform === "android" && run("adb", [...selected, "shell", "am", "force-stop", "dev.deli.devhud"]).status !== 0) return result([{ platform, architecture, status: "failed", failure: "launch-failed", measurements: [] }]);
   const command = platform === "android" ? [...selected, "shell", "am", "start", "-W", "-n", "dev.deli.devhud/.MainActivity"] : targetKind === "ios-device" ? ["devicectl", "device", "process", "launch", "--device", selector, "dev.deli.devhud"] : ["simctl", "launch", "booted", "dev.deli.devhud"];
   const start = performance.now(); const outcome = run(tool, command); const elapsed = Math.round(performance.now() - start);
   if (outcome.status !== 0) return result([{ platform, architecture, status: "failed", failure: "launch-failed", measurements: [] }]);
@@ -165,11 +176,13 @@ function validate(value) {
   for (const target of value.targets) {
     if (!target || !exactKeys(target, ["platform", "architecture", "status", "unavailableReason", "failure", "measurements"]) || !["linux", "macos", "windows", "android", "ios"].includes(target.platform) || !["x86_64", "arm64", "armv7"].includes(target.architecture) || !["available", "unavailable", "failed"].includes(target.status) || !Array.isArray(target.measurements)) throw new Error("invalid target");
     if (target.status === "unavailable" && !["unsupported-host", "no-display-server", "tool-not-installed", "no-supported-target", "artifact-not-found"].includes(target.unavailableReason)) throw new Error("unavailable target missing reason");
-    if (target.status === "failed" && !["build-failed", "launch-failed", "measurement-protocol-failed"].includes(target.failure)) throw new Error("failed target missing failure");
+    if (target.status === "failed" && !["build-failed", "launch-failed", "measurement-protocol-failed", "startup-timeout"].includes(target.failure)) throw new Error("failed target missing failure");
     for (const measurement of target.measurements) {
       const expectedUnit = ["desktop-package-size", "desktop-idle-memory"].includes(measurement?.name) ? "bytes" : "milliseconds";
       if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || ![...desktopNames, "mobile-startup"].includes(measurement.name) || !["available", "unavailable", "failed"].includes(measurement.status) || !["process-ready-marker", "process-hud-marker", "artifact-byte-count", "resident-set-sampling", "adb-am-start-w", "simctl-launch-wall-clock", "devicectl-launch-wall-clock"].includes(measurement.method) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" && (!measurement.samples.length || measurement.unit !== expectedUnit)) || (measurement.note !== undefined && !["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"].includes(measurement.note))) throw new Error("invalid measurement");
     }
+    const requiredMeasurements = ["linux", "macos", "windows"].includes(target.platform) ? desktopNames : ["mobile-startup"];
+    if (target.status === "available" && !requiredMeasurements.every((name) => target.measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) throw new Error("available target missing required measurements");
   }
   return true;
 }
