@@ -62,10 +62,8 @@ jobs:
         include:
           - platform: linux/amd64
             arch: amd64
-            runtime_test: true
           - platform: linux/arm64
             arch: arm64
-            runtime_test: false
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -126,9 +124,8 @@ jobs:
           fi
 
       - name: Validate non-root runtime and health endpoints
-        if: ${{ matrix.runtime_test }}
         env:
-          DELIBASE_TEST_IMAGE: delibase:release-amd64
+          DELIBASE_TEST_IMAGE: delibase:release-${{ matrix.arch }}
           DELIBASE_TEST_BUILD_IMAGE: "false"
           DELIBASE_TEST_EXPECTED_VERSION: ${{ needs.metadata.outputs.version }}
           DELIBASE_TEST_EXPECTED_REVISION: ${{ github.sha }}
