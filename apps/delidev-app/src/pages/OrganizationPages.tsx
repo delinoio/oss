@@ -68,6 +68,14 @@ function uuid(value: string | undefined) {
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const maxSignedInt64 = 9_223_372_036_854_775_807n;
 const maximumTeamLevels = 5;
+const pendingCheckoutKeys = new Map<string, { key: string }>();
+
+function checkoutRetryScope(
+  accountId: string | undefined,
+  organizationId: string | undefined,
+): string {
+  return JSON.stringify([accountId ?? null, organizationId ?? null]);
+}
 
 export function parseUsdMicros(value: string): bigint | undefined {
   if (!/^\d+(?:\.\d{1,6})?$/.test(value)) return undefined;
@@ -2048,6 +2056,7 @@ function subscriptionStateMessage(status: SubscriptionStatus): string {
 
 function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
   const { organization, transport } = useOrganization();
+  const { accountState } = useAccountState();
   const online = useOnline();
   const checkout = useMutation(
     BillingService.method.createSubscriptionCheckout,
@@ -2057,9 +2066,12 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
     BillingService.method.createBillingPortalSession,
     { gcTime: 0, transport },
   );
-  const checkoutKey = useRef<{ key: string } | undefined>(undefined);
   const portalKey = useRef<{ key: string } | undefined>(undefined);
   const [navigationError, setNavigationError] = useState("");
+  const checkoutScope = checkoutRetryScope(
+    accountState.account?.accountId?.value,
+    organization.organizationId?.value,
+  );
   const canStartCheckout =
     summary.subscriptionStatus === SubscriptionStatus.NONE ||
     summary.subscriptionStatus === SubscriptionStatus.CANCELED ||
@@ -2073,19 +2085,21 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
     if (!online) return;
     portal.reset();
     setNavigationError("");
-    checkoutKey.current ??= createIdempotencyKey();
+    const checkoutKey =
+      pendingCheckoutKeys.get(checkoutScope) ?? createIdempotencyKey();
+    pendingCheckoutKeys.set(checkoutScope, checkoutKey);
     const returnUrl = hostedBillingReturnUrl(window.location.href);
     checkout.mutate(
       {
         cancelUrl: returnUrl,
-        idempotency: checkoutKey.current,
+        idempotency: checkoutKey,
         organizationId: organization.organizationId,
         successUrl: returnUrl,
       },
       {
         onSuccess: (data) => {
           if (navigateToPolarHostedPage(data.checkoutUrl)) {
-            checkoutKey.current = undefined;
+            pendingCheckoutKeys.delete(checkoutScope);
           } else {
             setNavigationError(
               "Checkout did not return a valid Polar-hosted HTTPS page. Retry or contact support.",
@@ -2392,6 +2406,7 @@ function OverageLimitDialog({
             // Dialog focuses this critical input after capturing the opener,
             // preserving focus restoration when the modal closes.
             data-dialog-autofocus
+            disabled={update.isPending}
             id="monthly-overage-limit"
             inputMode="decimal"
             min="0"
@@ -2827,7 +2842,7 @@ function UsagePeriodContext({ summary }: { summary: BillingSummary }) {
 
 function shortIdentifier(value: string | undefined): string {
   if (!value) return "Unavailable";
-  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
+  return value.length > 12 ? `…${value.slice(-8)}` : value;
 }
 
 function UsageAttribution({

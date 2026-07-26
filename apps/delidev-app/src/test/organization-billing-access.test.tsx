@@ -635,6 +635,9 @@ describe("organization billing access", () => {
     expect(
       await screen.findByRole("button", { name: "Updating…" }),
     ).toBeDisabled();
+    expect(
+      screen.getByRole("spinbutton", { name: "Limit in USD" }),
+    ).toBeDisabled();
 
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -688,9 +691,17 @@ describe("organization usage access and pagination", () => {
               clientReference: secondPage ? "job-2" : "job-1",
               committedAt: "2026-07-01T00:00:00Z",
               creditApplied: { value: secondPage ? "100000" : "0" },
-              meterId: { value: "meter-image-generation" },
+              meterId: {
+                value: secondPage
+                  ? "019abcde-1234-7000-8000-000000000012"
+                  : "019abcde-1234-7000-8000-000000000011",
+              },
               overageApplied: { value: secondPage ? "0" : "500000" },
-              serviceIdentityId: { value: "service-image-worker" },
+              serviceIdentityId: {
+                value: secondPage
+                  ? "019abcde-1234-7000-8000-000000000002"
+                  : "019abcde-1234-7000-8000-000000000001",
+              },
               status: secondPage
                 ? "USAGE_RECORD_STATUS_COMMITTED"
                 : "USAGE_RECORD_STATUS_POLAR_PENDING",
@@ -718,12 +729,20 @@ describe("organization usage access and pagination", () => {
     ).toBeInTheDocument();
     const table = screen.getByRole("table", { name: "Usage records" });
     expect(within(table).getByText("You")).toBeInTheDocument();
+    expect(
+      within(table).getByText("Service …00000001"),
+    ).toBeInTheDocument();
+    expect(within(table).getByText("…00000011")).toBeInTheDocument();
     expect(within(table).getByText("Queued for Polar")).toBeInTheDocument();
     expect(within(table).getByText("job-1")).toBeInTheDocument();
     await user.click(
       screen.getByRole("button", { name: "Load more usage" }),
     );
     expect(await within(table).findByText("job-2")).toBeInTheDocument();
+    expect(
+      within(table).getByText("Service …00000002"),
+    ).toBeInTheDocument();
+    expect(within(table).getByText("…00000012")).toBeInTheDocument();
     expect(usageBodies[1]?.page?.cursor).toBe("next-usage");
     expect(
       screen.getByText(/never performs charging/),
