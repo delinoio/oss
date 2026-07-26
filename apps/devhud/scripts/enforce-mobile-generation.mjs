@@ -213,6 +213,69 @@ if (platform === "android") {
 }
 
 if (platform === "ios") {
+  await update("gen/apple/project.yml", (source) => {
+    let updated = source;
+    if (!updated.includes("- path: Assets.xcassets")) {
+      updated = updated.replace(
+        /(^\s+sources:\n)(\s+- path: Sources\n)/mu,
+        "$1$2      - path: Assets.xcassets\n",
+      );
+    }
+    if (!updated.includes("ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon")) {
+      updated = updated.replace(
+        /(^\s+settings:\n\s+base:\n)/mu,
+        "$1        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon\n",
+      );
+    }
+    return updated;
+  });
+  await writeFile(
+    resolve(nativeRoot, "gen/apple/LaunchScreen.storyboard"),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="17150" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="Y6W-OH-hqX">
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="17122"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="s0d-6b-0kx">
+            <objects>
+                <viewController id="Y6W-OH-hqX" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="5EZ-qb-Rvc">
+                        <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <viewLayoutGuide key="safeArea" id="vDu-zF-Fre"/>
+                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                        <subviews>
+                            <imageView opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="LaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="DH-logo">
+                                <rect key="frame" x="157" y="346" width="100" height="100"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="100" id="DH-logo-width"/>
+                                    <constraint firstAttribute="height" constant="100" id="DH-logo-height"/>
+                                </constraints>
+                            </imageView>
+                        </subviews>
+                        <constraints>
+                            <constraint firstItem="DH-logo" firstAttribute="centerX" secondItem="5EZ-qb-Rvc" secondAttribute="centerX" id="DH-logo-center-x"/>
+                            <constraint firstItem="DH-logo" firstAttribute="centerY" secondItem="5EZ-qb-Rvc" secondAttribute="centerY" id="DH-logo-center-y"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="Ief-a0-LHa" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
+            </objects>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="LaunchLogo" width="512" height="512"/>
+        <systemColor name="systemBackgroundColor">
+            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+        </systemColor>
+    </resources>
+</document>
+`,
+  );
   for (const relativePath of [
     "gen/apple/project.yml",
     "gen/apple/devhud.xcodeproj/project.pbxproj",

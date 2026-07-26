@@ -84,7 +84,15 @@ const launchScreen = await readFile(resolve(appRoot, "src-tauri/gen/apple/Launch
 requireCondition(launchScreen.includes('image="LaunchLogo"'), "iOS launch screen does not include the generated launch asset");
 requireCondition(/<subviews>\s*<imageView[\s\S]*image="LaunchLogo"[\s\S]*<\/subviews>/u.test(launchScreen), "iOS launch screen must nest LaunchLogo inside view subviews");
 const storeMetadata = JSON.parse(await readFile(resolve(appRoot, "assets/store/metadata.json"), "utf8"));
-requireCondition(storeMetadata.language === "en" && storeMetadata.icon === "devhud-play-icon-512.png" && storeMetadata.accessibility?.iconAlt?.includes("DH"), "store metadata must provide the 512px English Play icon and accessible asset names");
+requireCondition(
+  storeMetadata.language === "en" &&
+    storeMetadata.icon === "devhud-play-icon-512.png" &&
+    storeMetadata.featureGraphic === "devhud-store-feature-1024x500.png" &&
+    storeMetadata.accessibility?.iconAlt?.includes("DH") &&
+    typeof storeMetadata.accessibility?.featureGraphicAlt === "string" &&
+    storeMetadata.accessibility.featureGraphicAlt.trim().length > 0,
+  "store metadata must provide the 512px English Play icon, feature graphic, and accessible asset names",
+);
 if (failures.length) throw new Error(failures.join("\n"));
 await run(process.execPath, [resolve(import.meta.dirname, "generate-assets.mjs"), "--check"], { cwd: appRoot });
 console.log(JSON.stringify({ check: "devhud-assets", status: "passed", count: manifest.assets.length }));

@@ -9,7 +9,7 @@ const manifestPath = join(appRoot, "assets/manifest.json");
 const blue = [40, 105, 220, 255];
 const white = [255, 255, 255, 255];
 const transparent = [0, 0, 0, 0];
-let canonicalMask;
+let canonicalPolygons;
 
 const files = new Map([
   ["src-tauri/icons/icon.ico", { format: "ico", size: 256 }],
@@ -150,8 +150,10 @@ function png(width, height, source, { tray = false, opaque = false } = {}) {
   for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
     let color = transparent;
     const sourcePoint = [(x + 0.5 - offsetX) / fit, (y + 0.5 - offsetY) / fit];
-    const sourceX = Math.floor(sourcePoint[0]); const sourceY = Math.floor(sourcePoint[1]);
-    const glyph = sourceX >= 0 && sourceX < 512 && sourceY >= 0 && sourceY < 512 && canonicalMask[sourceY * 512 + sourceX];
+    const glyph = canonicalPolygons.reduce(
+      (count, polygon) => count + (contains(sourcePoint, polygon) ? 1 : 0),
+      0,
+    ) % 2;
     if (tray) {
       if (glyph) color = whiteColor;
     } else {
@@ -196,8 +198,7 @@ async function outputs() {
   const source = await readFile(sourcePath, "utf8");
   const sourceHash = createHash("sha256").update(source.replace(/\r\n?/gu, "\n")).digest("hex");
   const polygons = pathPolygons(source);
-  canonicalMask = new Uint8Array(512 * 512);
-  for (let y = 0; y < 512; y += 1) for (let x = 0; x < 512; x += 1) canonicalMask[y * 512 + x] = polygons.reduce((count, polygon) => count + (contains([x + 0.5, y + 0.5], polygon) ? 1 : 0), 0) % 2;
+  canonicalPolygons = polygons;
   return { sourceHash, entries: [...files].map(([relativePath, value]) => {
     const options = typeof value === "object" ? value : {};
     const size = options.size ?? value;
