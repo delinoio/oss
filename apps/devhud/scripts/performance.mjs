@@ -144,6 +144,10 @@ async function profileDesktop(binary, startupNote) {
     await terminateDesktopProcess(child, closed);
     return { failure: "startup-timeout", measurements: [] };
   }
+  if (!readyMarker.application || canonicalText(readyMarker.application) !== canonicalText(application)) {
+    await terminateDesktopProcess(child, closed);
+    return { unavailableReason: "build-provenance-unverified", measurements: [] };
+  }
   if (readyMarker) await new Promise((resolveDone) => setTimeout(resolveDone, 200));
   const memory = readyMarker ? [processTreeRssBytes(child.pid), processTreeRssBytes(child.pid), processTreeRssBytes(child.pid)].filter((sample) => sample !== null) : [];
   await terminateDesktopProcess(child, closed);
@@ -163,13 +167,14 @@ async function desktop() {
   const cold = await profileDesktop(executable, "cold-process");
   const warm = await profileDesktop(executable, "warm-process");
   const profiled = cold.failure ? cold : warm.failure ? warm : null;
+  const unavailableReason = cold.unavailableReason ?? warm.unavailableReason;
   const measurements = [
     cold.measurements.find((measurement) => measurement.name === "desktop-cold-startup"),
     warm.measurements.find((measurement) => measurement.name === "desktop-warm-startup"),
     [cold, warm].flatMap((profile) => profile.measurements).find((measurement) => measurement.name === "desktop-hud-display"),
     [cold, warm].flatMap((profile) => profile.measurements).find((measurement) => measurement.name === "desktop-idle-memory")
   ].filter(Boolean);
-  const target = { platform: hostPlatform, architecture: hostArchitecture, status: profiled ? "failed" : "available", ...(profiled ? { failure: profiled.failure } : {}), measurements };
+  const target = { platform: hostPlatform, architecture: hostArchitecture, status: unavailableReason ? "unavailable" : profiled ? "failed" : "available", ...(unavailableReason ? { unavailableReason } : profiled ? { failure: profiled.failure } : {}), measurements };
   const size = artifactBytes(findPackagedArtifact());
   target.measurements.push(size === null ? { name: "desktop-package-size", status: "unavailable", method: "artifact-byte-count", samples: [] } : { name: "desktop-package-size", status: "available", method: "artifact-byte-count", samples: [size], unit: "bytes", note: "packaged-artifact" });
   if (!profiled && size === null) {

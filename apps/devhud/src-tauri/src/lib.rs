@@ -1116,7 +1116,16 @@ fn get_runtime_info(
     if webview.label() == MAIN_WINDOW_LABEL
         && std::env::var_os("DEVHUD_PERF").is_some_and(|value| value == "1")
     {
-        eprintln!("DEVHUD_PERF {{\"event\":\"ready\"}}");
+        let tauri_revision = diagnostics::TAURI_UPSTREAM_VERSION
+            .split_once('+')
+            .expect("TAURI_UPSTREAM_VERSION must include the pinned revision")
+            .1;
+        eprintln!(
+            r#"DEVHUD_PERF {{"event":"ready","application":{{"version":"{}","tauriRevision":"{}","cefRevision":"tauri-runtime-cef@{}"}}}}"#,
+            env!("CARGO_PKG_VERSION"),
+            tauri_revision,
+            tauri_revision,
+        );
         if matches!(show_hud_internal(&_app, false), HudActionOutcome::Shown) {
             eprintln!("DEVHUD_PERF {{\"event\":\"hud-shown\"}}");
         }

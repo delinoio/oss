@@ -60,7 +60,8 @@ They intentionally exclude user content, shortcut values, paths, environment
 values, device IDs, credentials, and raw diagnostics. Missing host tools,
 display servers, artifacts, build provenance, or supported targets are `unavailable`; an attempted
 launch/protocol error is `failed`. Mobile collection verifies the installed app's
-version before timing it; if it cannot verify the requested build, it writes
+version and desktop collection verifies the debug binary's profiler provenance
+before timing it; if either cannot verify the requested build, it writes
 unavailable evidence rather than label a stale build as current. If target
 inspection fails, its architecture is recorded as `unknown`, never guessed.
 Version 0.1.0 has no performance threshold:
