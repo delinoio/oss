@@ -384,6 +384,12 @@ SELECT * FROM webhook_inbox WHERE id = $1;
 -- name: GetIntegrationOutbox :one
 SELECT * FROM integration_outbox WHERE id = $1;
 
+-- name: GetOrganizationDeletionActor :one
+SELECT actor_reference
+FROM deletion_jobs
+WHERE job_type = 'organization'
+  AND organization_id = sqlc.arg(organization_id);
+
 -- name: GetDeletionJob :one
 SELECT * FROM deletion_jobs WHERE id = $1;
 

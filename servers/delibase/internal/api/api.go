@@ -29,6 +29,7 @@ type Dependencies struct {
 	Authentication authmiddleware.Validator
 	Health         HealthChecker
 	Services       service.Dependencies
+	PolarWebhook   http.Handler
 	CORSOrigins    []string
 	Logger         *slog.Logger
 }
@@ -59,6 +60,9 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", live)
 	mux.Handle("GET /readyz", ready(dependencies.Health))
+	if dependencies.PolarWebhook != nil {
+		mux.Handle("POST /webhooks/polar", dependencies.PolarWebhook)
+	}
 
 	register := func(path string, handler http.Handler) { mux.Handle(path, handler) }
 	path, handler := delibasev1connect.NewAccountServiceHandler(

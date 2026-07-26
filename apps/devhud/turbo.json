@@ -27,16 +27,31 @@
     "build:ios:ci": {
       "cache": false
     },
+    "build:widget:android": {
+      "cache": false
+    },
+    "build:widget:ios": {
+      "cache": false
+    },
     "check:mobile": {
       "cache": false
     },
     "check:rust": {
       "cache": false
     },
+    "check:widget-artifacts": {
+      "cache": false
+    },
     "test:mobile": {
       "cache": false
     },
     "test:android:native": {
+      "cache": false
+    },
+    "test:widget:android": {
+      "cache": false
+    },
+    "test:widget:ios": {
       "cache": false
     },
     "smoke:desktop": {

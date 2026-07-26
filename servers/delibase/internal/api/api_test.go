@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1/delibasev1connect"
 	"github.com/delinoio/oss/servers/delibase/internal/logging"
 	"github.com/delinoio/oss/servers/internal/auth"
+	"github.com/delinoio/oss/servers/internal/authmiddleware"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
 )
 
@@ -137,5 +138,40 @@ func TestCORSAndRequestLogsDoNotIncludeCredentials(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "request-secret") {
 		t.Fatalf("log leaked credential: %s", output.String())
+	}
+}
+
+func TestUsageProceduresRequireDedicatedServiceAndForwardedUserScopes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		procedure string
+		scope     string
+	}{
+		{
+			procedure: delibasev1connect.UsageServiceReserveUsageProcedure,
+			scope:     "delibase:usage:reserve",
+		},
+		{
+			procedure: delibasev1connect.UsageServiceCommitUsageProcedure,
+			scope:     "delibase:usage:commit",
+		},
+		{
+			procedure: delibasev1connect.UsageServiceReleaseUsageProcedure,
+			scope:     "delibase:usage:release",
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.scope, func(t *testing.T) {
+			t.Parallel()
+			requirement := connectPolicy(test.procedure)
+			if requirement.Mode != authmiddleware.ModeM2MWithForwardedUser ||
+				len(requirement.M2MScopes) != 1 ||
+				requirement.M2MScopes[0] != test.scope ||
+				len(requirement.UserScopes) != 1 ||
+				requirement.UserScopes[0] != "delibase:usage:execute" {
+				t.Fatalf("requirement = %#v", requirement)
+			}
+		})
 	}
 }

@@ -40,7 +40,7 @@ func (q *Queries) CreateGeneralTeam(ctx context.Context, arg CreateGeneralTeamPa
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (id, name, slug)
 VALUES ($1, $2, $3)
-RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 `
 
 type CreateOrganizationParams struct {
@@ -60,6 +60,7 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }
@@ -99,7 +100,7 @@ VALUES (
     $1::uuid,
     $2
 )
-RETURNING organization_id, polar_customer_id, created_at, updated_at
+RETURNING organization_id, polar_customer_id, created_at, updated_at, external_id
 `
 
 type CreatePolarCustomerParams struct {
@@ -115,6 +116,7 @@ func (q *Queries) CreatePolarCustomer(ctx context.Context, arg CreatePolarCustom
 		&i.PolarCustomerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -321,19 +323,20 @@ INSERT INTO ledger_entries (
     $2,
     'credit_forfeiture',
     -$3::bigint,
-    0,
     $4,
-    $5
+    $5,
+    $6
 )
 RETURNING id, organization_id, billing_period_id, billing_period_starts_at_snapshot, billing_period_ends_at_snapshot, entry_type, amount_micros, balance_after_micros, reservation_id, usage_record_id, team_id_snapshot, team_name_snapshot, source_reference, actor_reference, created_at, retain_until
 `
 
 type ForfeitOrganizationCreditParams struct {
-	ID              pgtype.UUID
-	OrganizationID  pgtype.UUID
-	AmountMicros    int64
-	SourceReference string
-	ActorReference  string
+	ID                 pgtype.UUID
+	OrganizationID     pgtype.UUID
+	AmountMicros       int64
+	BalanceAfterMicros int64
+	SourceReference    string
+	ActorReference     string
 }
 
 func (q *Queries) ForfeitOrganizationCredit(ctx context.Context, arg ForfeitOrganizationCreditParams) (LedgerEntry, error) {
@@ -341,6 +344,7 @@ func (q *Queries) ForfeitOrganizationCredit(ctx context.Context, arg ForfeitOrga
 		arg.ID,
 		arg.OrganizationID,
 		arg.AmountMicros,
+		arg.BalanceAfterMicros,
 		arg.SourceReference,
 		arg.ActorReference,
 	)
@@ -384,28 +388,6 @@ func (q *Queries) GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, 
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const getCancelablePolarSubscriptionForOrganization = `-- name: GetCancelablePolarSubscriptionForOrganization :one
-SELECT polar_subscription_id
-FROM subscriptions
-WHERE organization_id = $1
-  AND status IN ('pending', 'active', 'past_due')
-ORDER BY
-    CASE status
-        WHEN 'active' THEN 0
-        WHEN 'past_due' THEN 1
-        ELSE 2
-    END,
-    created_at DESC
-LIMIT 1
-`
-
-func (q *Queries) GetCancelablePolarSubscriptionForOrganization(ctx context.Context, organizationID pgtype.UUID) (string, error) {
-	row := q.db.QueryRow(ctx, getCancelablePolarSubscriptionForOrganization, organizationID)
-	var polar_subscription_id string
-	err := row.Scan(&polar_subscription_id)
-	return polar_subscription_id, err
 }
 
 const getDeletedAccountSubject = `-- name: GetDeletedAccountSubject :one
@@ -468,7 +450,7 @@ func (q *Queries) GetIdempotencyRecord(ctx context.Context, arg GetIdempotencyRe
 }
 
 const getOrganizationByID = `-- name: GetOrganizationByID :one
-SELECT id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+SELECT id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 FROM organizations
 WHERE id = $1
 `
@@ -484,12 +466,13 @@ func (q *Queries) GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Orga
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }
 
 const getOrganizationForAccount = `-- name: GetOrganizationForAccount :one
-SELECT organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at, membership.role AS caller_role
+SELECT organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at, organization.overage_limit_configured, membership.role AS caller_role
 FROM organizations AS organization
 JOIN organization_memberships AS membership
   ON membership.organization_id = organization.id
@@ -504,14 +487,15 @@ type GetOrganizationForAccountParams struct {
 }
 
 type GetOrganizationForAccountRow struct {
-	ID                 pgtype.UUID
-	Name               string
-	Slug               string
-	OverageLimitMicros int64
-	DeletedAt          pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	CallerRole         string
+	ID                     pgtype.UUID
+	Name                   string
+	Slug                   string
+	OverageLimitMicros     int64
+	DeletedAt              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	OverageLimitConfigured bool
+	CallerRole             string
 }
 
 func (q *Queries) GetOrganizationForAccount(ctx context.Context, arg GetOrganizationForAccountParams) (GetOrganizationForAccountRow, error) {
@@ -525,6 +509,7 @@ func (q *Queries) GetOrganizationForAccount(ctx context.Context, arg GetOrganiza
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 		&i.CallerRole,
 	)
 	return i, err
@@ -851,6 +836,7 @@ JOIN teams AS team
  AND team.id = reservation.team_id
 WHERE reservation.account_id = $1
   AND reservation.status = 'held'
+  AND reservation.expires_at > statement_timestamp()
 ORDER BY organization.id, team.id
 `
 
@@ -879,6 +865,40 @@ func (q *Queries) ListActiveReservationBlockersForAccount(ctx context.Context, a
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCancelablePolarSubscriptionsForOrganization = `-- name: ListCancelablePolarSubscriptionsForOrganization :many
+SELECT polar_subscription_id
+FROM subscriptions
+WHERE organization_id = $1
+  AND status IN ('pending', 'active', 'past_due')
+ORDER BY
+    CASE status
+        WHEN 'active' THEN 0
+        WHEN 'past_due' THEN 1
+        ELSE 2
+    END,
+    created_at DESC
+`
+
+func (q *Queries) ListCancelablePolarSubscriptionsForOrganization(ctx context.Context, organizationID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listCancelablePolarSubscriptionsForOrganization, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var polar_subscription_id string
+		if err := rows.Scan(&polar_subscription_id); err != nil {
+			return nil, err
+		}
+		items = append(items, polar_subscription_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -995,7 +1015,7 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, arg ListOrganizat
 }
 
 const listOrganizationsForAccount = `-- name: ListOrganizationsForAccount :many
-SELECT organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at
+SELECT organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at, organization.overage_limit_configured
 FROM organizations AS organization
 JOIN organization_memberships AS membership
   ON membership.organization_id = organization.id
@@ -1029,6 +1049,7 @@ func (q *Queries) ListOrganizationsForAccount(ctx context.Context, arg ListOrgan
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OverageLimitConfigured,
 		); err != nil {
 			return nil, err
 		}
@@ -1061,20 +1082,19 @@ func (q *Queries) LockAccountByLogtoSubject(ctx context.Context, logtoSubject st
 	return i, err
 }
 
-const lockOwnedOrganizations = `-- name: LockOwnedOrganizations :many
+const lockAccountOrganizations = `-- name: LockAccountOrganizations :many
 SELECT organization.id
 FROM organizations AS organization
 JOIN organization_memberships AS membership
   ON membership.organization_id = organization.id
 WHERE membership.account_id = $1
-  AND membership.role = 'owner'
   AND organization.deleted_at IS NULL
 ORDER BY organization.id
 FOR UPDATE OF organization
 `
 
-func (q *Queries) LockOwnedOrganizations(ctx context.Context, accountID pgtype.UUID) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, lockOwnedOrganizations, accountID)
+func (q *Queries) LockAccountOrganizations(ctx context.Context, accountID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, lockAccountOrganizations, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -1099,7 +1119,7 @@ SET deleted_at = transaction_timestamp(),
     updated_at = transaction_timestamp()
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 `
 
 func (q *Queries) MarkOrganizationDeleted(ctx context.Context, id pgtype.UUID) (Organization, error) {
@@ -1113,13 +1133,14 @@ func (q *Queries) MarkOrganizationDeleted(ctx context.Context, id pgtype.UUID) (
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }
 
 const resolveOrganizationSlugForAccount = `-- name: ResolveOrganizationSlugForAccount :one
 SELECT
-    organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at,
+    organization.id, organization.name, organization.slug, organization.overage_limit_micros, organization.deleted_at, organization.created_at, organization.updated_at, organization.overage_limit_configured,
     (organization.slug <> $1)::boolean AS matched_alias
 FROM organization_slug_registry AS registry
 JOIN organizations AS organization
@@ -1137,14 +1158,15 @@ type ResolveOrganizationSlugForAccountParams struct {
 }
 
 type ResolveOrganizationSlugForAccountRow struct {
-	ID                 pgtype.UUID
-	Name               string
-	Slug               string
-	OverageLimitMicros int64
-	DeletedAt          pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	MatchedAlias       bool
+	ID                     pgtype.UUID
+	Name                   string
+	Slug                   string
+	OverageLimitMicros     int64
+	DeletedAt              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	OverageLimitConfigured bool
+	MatchedAlias           bool
 }
 
 func (q *Queries) ResolveOrganizationSlugForAccount(ctx context.Context, arg ResolveOrganizationSlugForAccountParams) (ResolveOrganizationSlugForAccountRow, error) {
@@ -1158,6 +1180,7 @@ func (q *Queries) ResolveOrganizationSlugForAccount(ctx context.Context, arg Res
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 		&i.MatchedAlias,
 	)
 	return i, err
@@ -1225,7 +1248,7 @@ SET name = $1,
     updated_at = transaction_timestamp()
 WHERE id = $2
   AND deleted_at IS NULL
-RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 `
 
 type UpdateOrganizationNameParams struct {
@@ -1244,6 +1267,7 @@ func (q *Queries) UpdateOrganizationName(ctx context.Context, arg UpdateOrganiza
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }
@@ -1254,7 +1278,7 @@ SET slug = $1,
     updated_at = transaction_timestamp()
 WHERE id = $2
   AND deleted_at IS NULL
-RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at
+RETURNING id, name, slug, overage_limit_micros, deleted_at, created_at, updated_at, overage_limit_configured
 `
 
 type UpdateOrganizationSlugParams struct {
@@ -1273,6 +1297,7 @@ func (q *Queries) UpdateOrganizationSlug(ctx context.Context, arg UpdateOrganiza
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OverageLimitConfigured,
 	)
 	return i, err
 }

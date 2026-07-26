@@ -61,13 +61,12 @@ SELECT EXISTS (
       AND organization.deleted_at IS NULL
 );
 
--- name: LockOwnedOrganizations :many
+-- name: LockAccountOrganizations :many
 SELECT organization.id
 FROM organizations AS organization
 JOIN organization_memberships AS membership
   ON membership.organization_id = organization.id
 WHERE membership.account_id = sqlc.arg(account_id)
-  AND membership.role = 'owner'
   AND organization.deleted_at IS NULL
 ORDER BY organization.id
 FOR UPDATE OF organization;
@@ -106,6 +105,7 @@ JOIN teams AS team
  AND team.id = reservation.team_id
 WHERE reservation.account_id = sqlc.arg(account_id)
   AND reservation.status = 'held'
+  AND reservation.expires_at > statement_timestamp()
 ORDER BY organization.id, team.id;
 
 -- name: DeleteAccountMemberships :execrows
@@ -214,7 +214,7 @@ RETURNING *;
 -- name: DeleteOrganizationOperationalData :one
 SELECT delete_organization_operational_data(sqlc.arg(organization_id)::uuid);
 
--- name: GetCancelablePolarSubscriptionForOrganization :one
+-- name: ListCancelablePolarSubscriptionsForOrganization :many
 SELECT polar_subscription_id
 FROM subscriptions
 WHERE organization_id = sqlc.arg(organization_id)
@@ -225,8 +225,7 @@ ORDER BY
         WHEN 'past_due' THEN 1
         ELSE 2
     END,
-    created_at DESC
-LIMIT 1;
+    created_at DESC;
 
 -- name: GetOrganizationMembership :one
 SELECT membership.*
@@ -324,7 +323,7 @@ INSERT INTO ledger_entries (
     sqlc.arg(organization_id),
     'credit_forfeiture',
     -sqlc.arg(amount_micros)::bigint,
-    0,
+    sqlc.arg(balance_after_micros),
     sqlc.arg(source_reference),
     sqlc.arg(actor_reference)
 )

@@ -19,6 +19,14 @@ const (
 	defaultAddress     = ":8080"
 )
 
+// PolarEnvironment identifies the isolated provider API and persisted catalog.
+type PolarEnvironment string
+
+const (
+	PolarEnvironmentProduction PolarEnvironment = "production"
+	PolarEnvironmentSandbox    PolarEnvironment = "sandbox"
+)
+
 // LookupEnv matches os.LookupEnv and makes environment loading deterministic
 // in tests.
 type LookupEnv func(string) (string, bool)
@@ -41,6 +49,9 @@ type Config struct {
 
 	PolarAccessToken   string
 	PolarWebhookSecret string
+	PolarProductID     string
+	PolarEnvironment   PolarEnvironment
+	PolarAPIURL        string
 	LogPseudonymKey    []byte
 }
 
@@ -115,6 +126,34 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	if result.PolarWebhookSecret, err = required("DELIBASE_POLAR_WEBHOOK_SECRET"); err != nil {
 		return Config{}, err
+	}
+	if len(result.PolarWebhookSecret) < 16 ||
+		strings.TrimSpace(result.PolarWebhookSecret) != result.PolarWebhookSecret ||
+		strings.ContainsAny(result.PolarWebhookSecret, "\x00\r\n") {
+		return Config{}, errors.New("config: DELIBASE_POLAR_WEBHOOK_SECRET is invalid")
+	}
+	if result.PolarProductID, err = required("DELIBASE_POLAR_PRODUCT_ID"); err != nil {
+		return Config{}, err
+	}
+	if strings.TrimSpace(result.PolarProductID) != result.PolarProductID ||
+		len(result.PolarProductID) > 255 ||
+		strings.ContainsAny(result.PolarProductID, "/\x00\r\n") {
+		return Config{}, errors.New("config: DELIBASE_POLAR_PRODUCT_ID is invalid")
+	}
+	result.PolarEnvironment = PolarEnvironmentProduction
+	if value, ok := lookup("DELIBASE_POLAR_ENVIRONMENT"); ok {
+		switch PolarEnvironment(value) {
+		case PolarEnvironmentProduction, PolarEnvironmentSandbox:
+			result.PolarEnvironment = PolarEnvironment(value)
+		default:
+			return Config{}, errors.New("config: DELIBASE_POLAR_ENVIRONMENT is invalid")
+		}
+	}
+	if value, ok := lookup("DELIBASE_POLAR_API_URL"); ok {
+		if !validHTTPSURL(value) {
+			return Config{}, errors.New("config: DELIBASE_POLAR_API_URL is invalid")
+		}
+		result.PolarAPIURL = value
 	}
 	pseudonymKey, err := required("DELIBASE_LOG_PSEUDONYM_KEY")
 	if err != nil {

@@ -371,6 +371,20 @@ func requestDigest(parts ...string) []byte {
 	return hash.Sum(nil)
 }
 
+func providerIdempotencyKey(
+	operation string,
+	subject string,
+	organizationID uuid.UUID,
+	key string,
+) string {
+	return "delibase:v1:" + hex.EncodeToString(requestDigest(
+		operation,
+		subject,
+		organizationID.String(),
+		key,
+	))
+}
+
 func replay(
 	ctx context.Context,
 	queries *dbgen.Queries,
@@ -380,9 +394,31 @@ func replay(
 	digest []byte,
 	target proto.Message,
 ) (bool, time.Time, error) {
+	return replayForCaller(
+		ctx,
+		queries,
+		"user",
+		idempotencyCallerID(subject),
+		operation,
+		key,
+		digest,
+		target,
+	)
+}
+
+func replayForCaller(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	callerKind string,
+	callerID string,
+	operation string,
+	key string,
+	digest []byte,
+	target proto.Message,
+) (bool, time.Time, error) {
 	scope := dbgen.DeleteExpiredIdempotencyRecordParams{
-		CallerKind:     "user",
-		CallerID:       idempotencyCallerID(subject),
+		CallerKind:     callerKind,
+		CallerID:       callerID,
 		Operation:      operation,
 		IdempotencyKey: key,
 	}
@@ -442,11 +478,66 @@ func replayWithActiveAccount(
 	return account, replayed, completedAt, err
 }
 
+func replayWithActiveAccountForOrganization(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	subject string,
+	organizationID uuid.UUID,
+	operation string,
+	key string,
+	digest []byte,
+	target proto.Message,
+) (dbgen.Account, bool, time.Time, error) {
+	replayed, completedAt, err := replay(
+		ctx, queries, subject, operation, key, digest, target,
+	)
+	if err != nil || replayed {
+		return dbgen.Account{}, replayed, completedAt, err
+	}
+	if _, err = queries.LockOrganizationForMutation(
+		ctx, pgUUID(organizationID),
+	); err != nil {
+		return dbgen.Account{}, false, time.Time{}, membershipReadError(err)
+	}
+	account, err := activeAccount(ctx, queries, subject)
+	if err != nil {
+		return dbgen.Account{}, false, time.Time{}, err
+	}
+	replayed, completedAt, err = replay(
+		ctx, queries, subject, operation, key, digest, target,
+	)
+	return account, replayed, completedAt, err
+}
+
 func persistIdempotency(
 	ctx context.Context,
 	dependencies Dependencies,
 	queries *dbgen.Queries,
 	subject string,
+	operation string,
+	key string,
+	digest []byte,
+	response proto.Message,
+) (time.Time, error) {
+	return persistIdempotencyForCaller(
+		ctx,
+		dependencies,
+		queries,
+		"user",
+		idempotencyCallerID(subject),
+		operation,
+		key,
+		digest,
+		response,
+	)
+}
+
+func persistIdempotencyForCaller(
+	ctx context.Context,
+	dependencies Dependencies,
+	queries *dbgen.Queries,
+	callerKind string,
+	callerID string,
 	operation string,
 	key string,
 	digest []byte,
@@ -462,8 +553,8 @@ func persistIdempotency(
 	}
 	record, err := queries.InsertIdempotencyRecord(ctx, dbgen.InsertIdempotencyRecordParams{
 		ID:              pgUUID(id),
-		CallerKind:      "user",
-		CallerID:        idempotencyCallerID(subject),
+		CallerKind:      callerKind,
+		CallerID:        callerID,
 		Operation:       operation,
 		IdempotencyKey:  key,
 		RequestHash:     digest,
@@ -726,6 +817,21 @@ func databaseError(err error) error {
 					delibasev1.ErrorReason_ERROR_REASON_SLUG_CONFLICT,
 				)
 			}
+			if strings.Contains(
+				postgres.ConstraintName,
+				"usage_reservations_service_client_reference",
+			) {
+				return serviceError(
+					connect.CodeAlreadyExists,
+					delibasev1.ErrorReason_ERROR_REASON_CLIENT_REFERENCE_CONFLICT,
+				)
+			}
+			if strings.Contains(postgres.ConstraintName, "idempotency_records") {
+				return serviceError(
+					connect.CodeAborted,
+					delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
+				)
+			}
 			return serviceError(
 				connect.CodeAborted,
 				delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
@@ -755,6 +861,27 @@ func databaseError(err error) error {
 				)
 			case strings.Contains(postgres.Message, "General team"):
 				return generalTeamProtected()
+			case strings.Contains(postgres.Message, "reservation has expired"):
+				return serviceError(
+					connect.CodeFailedPrecondition,
+					delibasev1.ErrorReason_ERROR_REASON_RESERVATION_EXPIRED,
+				)
+			case strings.Contains(postgres.Message, "exceeds reservation maximum"):
+				return serviceError(
+					connect.CodeInvalidArgument,
+					delibasev1.ErrorReason_ERROR_REASON_COMMIT_UNITS_EXCEED_RESERVED,
+				)
+			case strings.Contains(postgres.Message, "overage capacity"),
+				strings.Contains(postgres.Message, "overage limit"):
+				return serviceError(
+					connect.CodeResourceExhausted,
+					delibasev1.ErrorReason_ERROR_REASON_OVERAGE_LIMIT_EXHAUSTED,
+				)
+			case strings.Contains(postgres.Message, "credit capacity"):
+				return serviceError(
+					connect.CodeFailedPrecondition,
+					delibasev1.ErrorReason_ERROR_REASON_AVAILABLE_FUNDS_EXHAUSTED,
+				)
 			}
 			return invalidArgument()
 		case "23503":

@@ -1157,6 +1157,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-plugin-devhud-widget",
  "tauri-runtime-cef",
  "tauri-runtime-wry",
  "tracing",
@@ -4120,9 +4121,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "4fcb935c5bec503c2f0e306bdd3e58bb9029dcb14fa8d9ac76e3a5256ac0763e"
 dependencies = [
  "bytes",
  "getrandom 0.3.4",
@@ -5560,6 +5561,8 @@ dependencies = [
  "tokio",
  "tray-icon",
  "url",
+ "webkit2gtk",
+ "webview2-com",
  "window-vibrancy",
  "windows",
 ]
@@ -5622,6 +5625,31 @@ dependencies = [
  "syn 2.0.117",
  "tauri-codegen",
  "tauri-utils",
+]
+
+[[package]]
+name = "tauri-plugin"
+version = "2.6.3"
+source = "git+https://github.com/tauri-apps/tauri?rev=f49ebda2fdba5755456b0f049e32593ca0ea331a#f49ebda2fdba5755456b0f049e32593ca0ea331a"
+dependencies = [
+ "anyhow",
+ "glob",
+ "plist",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "tauri-utils",
+ "walkdir",
+]
+
+[[package]]
+name = "tauri-plugin-devhud-widget"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/delinoio/oss/servers/delibase/internal/contracts"
 	"github.com/google/uuid"
 )
 
@@ -234,7 +235,7 @@ func (specification Specification) validate() error {
 	polarIDs := make(map[string]struct{}, len(specification.PolarMeters))
 	for _, mapping := range specification.PolarMeters {
 		if _, exists := meters[mapping.MeterID]; !exists ||
-			len(mapping.PolarMeterID) < 1 || len(mapping.PolarMeterID) > 255 {
+			!contracts.ValidPolarProviderID(mapping.PolarMeterID) {
 			return errors.New("catalog: invalid Polar meter mapping")
 		}
 		if _, duplicate := polarMappings[mapping.MeterID]; duplicate {

@@ -290,9 +290,11 @@ func (service *Organization) UpdateOrganization(
 	var response *delibasev1.UpdateOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.UpdateOrganizationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "update_organization", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "update_organization",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -376,9 +378,11 @@ func (service *Organization) UpdateOrganizationSlug(
 	var response *delibasev1.UpdateOrganizationSlugResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.UpdateOrganizationSlugResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "update_organization_slug", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "update_organization_slug",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -474,9 +478,11 @@ func (service *Organization) DeleteOrganization(
 	var response *delibasev1.DeleteOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.DeleteOrganizationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "delete_organization", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "delete_organization",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -491,6 +497,11 @@ func (service *Organization) DeleteOrganization(
 		}
 		if _, transactionErr = authorizeOrganizationMutation(
 			ctx, queries, organizationID, account.ID, true,
+		); transactionErr != nil {
+			return transactionErr
+		}
+		if _, transactionErr = drainExpiredOrganizationReservations(
+			ctx, service.dependencies, queries, organizationID,
 		); transactionErr != nil {
 			return transactionErr
 		}
@@ -510,13 +521,24 @@ func (service *Organization) DeleteOrganization(
 		); transactionErr != nil {
 			return databaseError(transactionErr)
 		}
-		balance, transactionErr := queries.CurrentOrganizationBalance(
+		runningBalance, transactionErr := queries.CurrentOrganizationBalance(
 			ctx, pgUUID(organizationID),
 		)
 		if transactionErr != nil {
 			return databaseError(transactionErr)
 		}
-		if balance > 0 {
+		settledBalance, transactionErr := queries.CurrentSettledCreditBalance(
+			ctx, pgUUID(organizationID),
+		)
+		if transactionErr != nil {
+			return databaseError(transactionErr)
+		}
+		forfeiture, balanceAfter, validForfeiture :=
+			settledCreditForfeiture(runningBalance, settledBalance)
+		if !validForfeiture {
+			return serviceError(connect.CodeInternal, 0)
+		}
+		if forfeiture > 0 {
 			ledgerID, idErr := service.dependencies.IDs.New()
 			if idErr != nil {
 				return serviceError(connect.CodeInternal, 0)
@@ -524,11 +546,12 @@ func (service *Organization) DeleteOrganization(
 			if _, transactionErr = queries.ForfeitOrganizationCredit(
 				ctx,
 				dbgen.ForfeitOrganizationCreditParams{
-					ID:              pgUUID(ledgerID),
-					OrganizationID:  pgUUID(organizationID),
-					AmountMicros:    balance,
-					SourceReference: "organization-deletion:" + deletionID.String(),
-					ActorReference:  string(actor),
+					ID:                 pgUUID(ledgerID),
+					OrganizationID:     pgUUID(organizationID),
+					AmountMicros:       forfeiture,
+					BalanceAfterMicros: balanceAfter,
+					SourceReference:    "organization-deletion:" + deletionID.String(),
+					ActorReference:     string(actor),
 				},
 			); transactionErr != nil {
 				return databaseError(transactionErr)
@@ -695,9 +718,11 @@ func (service *Organization) UpdateOrganizationMemberRole(
 	var response *delibasev1.UpdateOrganizationMemberRoleResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.UpdateOrganizationMemberRoleResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "update_organization_member_role", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID,
+				"update_organization_member_role", key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -808,9 +833,11 @@ func (service *Organization) RemoveOrganizationMember(
 	var response *delibasev1.RemoveOrganizationMemberResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.RemoveOrganizationMemberResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "remove_organization_member", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID,
+				"remove_organization_member", key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -844,6 +871,11 @@ func (service *Organization) RemoveOrganizationMember(
 				connect.CodePermissionDenied,
 				delibasev1.ErrorReason_ERROR_REASON_OWNER_ROLE_REQUIRED,
 			)
+		}
+		if _, transactionErr = drainExpiredOrganizationReservations(
+			ctx, service.dependencies, queries, organizationID,
+		); transactionErr != nil {
+			return transactionErr
 		}
 		hasActiveReservations, transactionErr := queries.
 			HasActiveReservationsForOrganizationMember(
@@ -928,9 +960,11 @@ func (service *Organization) LeaveOrganization(
 	var response *delibasev1.LeaveOrganizationResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 		response = &delibasev1.LeaveOrganizationResponse{}
-		account, replayed, completedAt, transactionErr := replayWithActiveAccount(
-			ctx, queries, subject, "leave_organization", key, digest, response,
-		)
+		account, replayed, completedAt, transactionErr :=
+			replayWithActiveAccountForOrganization(
+				ctx, queries, subject, organizationID, "leave_organization",
+				key, digest, response,
+			)
 		if transactionErr != nil {
 			return transactionErr
 		}
@@ -956,6 +990,11 @@ func (service *Organization) LeaveOrganization(
 			},
 		); transactionErr != nil {
 			return membershipReadError(transactionErr)
+		}
+		if _, transactionErr = drainExpiredOrganizationReservations(
+			ctx, service.dependencies, queries, organizationID,
+		); transactionErr != nil {
+			return transactionErr
 		}
 		hasActiveReservations, transactionErr := queries.
 			HasActiveReservationsForOrganizationMember(
@@ -1155,10 +1194,10 @@ func NewOrganizationDeletionHandler(
 }
 
 type polarSubscriptionQueries interface {
-	GetCancelablePolarSubscriptionForOrganization(
+	ListCancelablePolarSubscriptionsForOrganization(
 		context.Context,
 		pgtype.UUID,
-	) (string, error)
+	) ([]string, error)
 }
 
 type polarCancellationClient interface {
@@ -1173,16 +1212,18 @@ func NewPolarCancellationHandler(
 		if queries == nil || client == nil || item.EntityID == uuid.Nil {
 			return reliability.ErrInvalidInput
 		}
-		subscriptionID, err := queries.GetCancelablePolarSubscriptionForOrganization(
+		subscriptionIDs, err := queries.ListCancelablePolarSubscriptionsForOrganization(
 			ctx,
 			pgUUID(item.EntityID),
 		)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
 		if err != nil {
 			return err
 		}
-		return client.CancelSubscription(ctx, subscriptionID)
+		for _, subscriptionID := range subscriptionIDs {
+			if err = client.CancelSubscription(ctx, subscriptionID); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }

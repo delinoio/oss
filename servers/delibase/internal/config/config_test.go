@@ -17,8 +17,41 @@ func validEnvironment() map[string]string {
 		"DELIBASE_LOGTO_M2M_CLIENT_ID":     "service-client",
 		"DELIBASE_LOGTO_M2M_CLIENT_SECRET": "logto-secret",
 		"DELIBASE_POLAR_ACCESS_TOKEN":      "polar-token",
-		"DELIBASE_POLAR_WEBHOOK_SECRET":    "webhook-secret",
+		"DELIBASE_POLAR_WEBHOOK_SECRET":    "webhook-secret-0123456789",
+		"DELIBASE_POLAR_PRODUCT_ID":        "polar-product",
 		"DELIBASE_LOG_PSEUDONYM_KEY":       strings.Repeat("k", 32),
+	}
+}
+
+func TestLoadRequiresExplicitSandboxOptIn(t *testing.T) {
+	t.Parallel()
+	values := validEnvironment()
+	values["DELIBASE_POLAR_ENVIRONMENT"] = "sandbox"
+	configuration, err := Load(lookup(values))
+	if err != nil ||
+		configuration.PolarEnvironment != PolarEnvironmentSandbox {
+		t.Fatalf("sandbox configuration = %#v, %v", configuration, err)
+	}
+	values["DELIBASE_POLAR_ENVIRONMENT"] = "staging"
+	if _, err := Load(lookup(values)); err == nil {
+		t.Fatal("unsupported Polar environment was accepted")
+	}
+	values["DELIBASE_POLAR_ENVIRONMENT"] = " "
+	if _, err := Load(lookup(values)); err == nil {
+		t.Fatal("whitespace-only Polar environment was accepted")
+	}
+}
+
+func TestLoadAcceptsExplicitPolarAPIURL(t *testing.T) {
+	t.Parallel()
+	values := validEnvironment()
+	values["DELIBASE_POLAR_API_URL"] = "https://polar-proxy.example.com/v1"
+	configuration, err := Load(lookup(values))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuration.PolarAPIURL != values["DELIBASE_POLAR_API_URL"] {
+		t.Fatalf("PolarAPIURL = %q", configuration.PolarAPIURL)
 	}
 }
 
@@ -37,6 +70,7 @@ func TestLoadValidEnvironment(t *testing.T) {
 	}
 	if configuration.APIOrigin != CanonicalAPIOrigin ||
 		configuration.HTTPAddress != ":8080" ||
+		configuration.PolarEnvironment != PolarEnvironmentProduction ||
 		len(configuration.CORSAllowedOrigins) != 1 {
 		t.Fatalf("configuration = %#v", configuration)
 	}
@@ -72,6 +106,7 @@ func TestLoadRejectsInvalidValuesWithoutLeakingThem(t *testing.T) {
 		{name: "pseudonym key", variable: "DELIBASE_LOG_PSEUDONYM_KEY", value: "short-secret"},
 		{name: "address", variable: "DELIBASE_HTTP_ADDRESS", value: "bad-address"},
 		{name: "shutdown", variable: "DELIBASE_SHUTDOWN_TIMEOUT", value: "forever"},
+		{name: "polar api", variable: "DELIBASE_POLAR_API_URL", value: "http://polar.example.com/v1"},
 	}
 	for _, test := range tests {
 		test := test

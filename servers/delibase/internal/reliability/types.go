@@ -56,13 +56,16 @@ const ProviderPolar Provider = "polar"
 type WebhookEventType string
 
 const (
-	WebhookOrderPaid            WebhookEventType = "order.paid"
-	WebhookSubscriptionCreated  WebhookEventType = "subscription.created"
-	WebhookSubscriptionUpdated  WebhookEventType = "subscription.updated"
-	WebhookSubscriptionCanceled WebhookEventType = "subscription.canceled"
-	WebhookSubscriptionRevoked  WebhookEventType = "subscription.revoked"
-	WebhookRefundCreated        WebhookEventType = "refund.created"
-	WebhookRefundUpdated        WebhookEventType = "refund.updated"
+	WebhookOrderPaid              WebhookEventType = "order.paid"
+	WebhookSubscriptionCreated    WebhookEventType = "subscription.created"
+	WebhookSubscriptionUpdated    WebhookEventType = "subscription.updated"
+	WebhookSubscriptionActive     WebhookEventType = "subscription.active"
+	WebhookSubscriptionUncanceled WebhookEventType = "subscription.uncanceled"
+	WebhookSubscriptionPastDue    WebhookEventType = "subscription.past_due"
+	WebhookSubscriptionCanceled   WebhookEventType = "subscription.canceled"
+	WebhookSubscriptionRevoked    WebhookEventType = "subscription.revoked"
+	WebhookRefundCreated          WebhookEventType = "refund.created"
+	WebhookRefundUpdated          WebhookEventType = "refund.updated"
 )
 
 // Integration is a supported outbound provider.
@@ -103,18 +106,21 @@ const (
 type HandlerID string
 
 const (
-	HandlerPolarOrderPaid            HandlerID = "polar.webhook.order_paid"
-	HandlerPolarSubscriptionCreated  HandlerID = "polar.webhook.subscription_created"
-	HandlerPolarSubscriptionUpdated  HandlerID = "polar.webhook.subscription_updated"
-	HandlerPolarSubscriptionCanceled HandlerID = "polar.webhook.subscription_canceled"
-	HandlerPolarSubscriptionRevoked  HandlerID = "polar.webhook.subscription_revoked"
-	HandlerPolarRefundCreated        HandlerID = "polar.webhook.refund_created"
-	HandlerPolarRefundUpdated        HandlerID = "polar.webhook.refund_updated"
-	HandlerPolarReportUsage          HandlerID = "polar.outbox.report_usage"
-	HandlerPolarCancelSubscription   HandlerID = "polar.outbox.cancel_subscription"
-	HandlerLogtoDeleteAccount        HandlerID = "logto.outbox.delete_account"
-	HandlerDeleteAccount             HandlerID = "deletion.account"
-	HandlerDeleteOrganization        HandlerID = "deletion.organization"
+	HandlerPolarOrderPaid              HandlerID = "polar.webhook.order_paid"
+	HandlerPolarSubscriptionCreated    HandlerID = "polar.webhook.subscription_created"
+	HandlerPolarSubscriptionUpdated    HandlerID = "polar.webhook.subscription_updated"
+	HandlerPolarSubscriptionActive     HandlerID = "polar.webhook.subscription_active"
+	HandlerPolarSubscriptionUncanceled HandlerID = "polar.webhook.subscription_uncanceled"
+	HandlerPolarSubscriptionPastDue    HandlerID = "polar.webhook.subscription_past_due"
+	HandlerPolarSubscriptionCanceled   HandlerID = "polar.webhook.subscription_canceled"
+	HandlerPolarSubscriptionRevoked    HandlerID = "polar.webhook.subscription_revoked"
+	HandlerPolarRefundCreated          HandlerID = "polar.webhook.refund_created"
+	HandlerPolarRefundUpdated          HandlerID = "polar.webhook.refund_updated"
+	HandlerPolarReportUsage            HandlerID = "polar.outbox.report_usage"
+	HandlerPolarCancelSubscription     HandlerID = "polar.outbox.cancel_subscription"
+	HandlerLogtoDeleteAccount          HandlerID = "logto.outbox.delete_account"
+	HandlerDeleteAccount               HandlerID = "deletion.account"
+	HandlerDeleteOrganization          HandlerID = "deletion.organization"
 )
 
 // AuditEventType is the allowlisted immutable audit contract.
@@ -134,11 +140,13 @@ const (
 	AuditTeamDeleted                 AuditEventType = "team.deleted"
 	AuditBillingLimitUpdated         AuditEventType = "billing_limit.updated"
 	AuditCheckoutCreated             AuditEventType = "checkout.created"
+	AuditBillingPortalSessionCreated AuditEventType = "billing_portal_session.created"
 	AuditSubscriptionUpdated         AuditEventType = "subscription.updated"
 	AuditRefundRecorded              AuditEventType = "refund.recorded"
 	AuditReservationCreated          AuditEventType = "reservation.created"
 	AuditReservationCommitted        AuditEventType = "reservation.committed"
 	AuditReservationReleased         AuditEventType = "reservation.released"
+	AuditReservationExpired          AuditEventType = "reservation.expired"
 	AuditSettlementRecorded          AuditEventType = "settlement.recorded"
 	AuditAccountDeletionRequested    AuditEventType = "account.deletion_requested"
 	AuditOrganizationDeletionRequest AuditEventType = "organization.deletion_requested"

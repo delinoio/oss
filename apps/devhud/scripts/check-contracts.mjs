@@ -21,6 +21,10 @@ const paths = {
   settingsCapability: resolve(appRoot, "src-tauri/capabilities/settings.json"),
   tauriConfig: resolve(appRoot, "src-tauri/tauri.conf.json"),
   updaterBoundary: resolve(appRoot, "src-tauri/src/updater.rs"),
+  widgetBridgeManifest: resolve(
+    appRoot,
+    "src-tauri/widget-bridge/Cargo.toml",
+  ),
 };
 
 const [
@@ -35,6 +39,7 @@ const [
   settingsCapability,
   tauriConfig,
   updaterBoundary,
+  widgetBridgeManifest,
 ] = await Promise.all([
   readFile(paths.cargoLock, "utf8"),
   readFile(paths.cargoManifest, "utf8"),
@@ -47,6 +52,7 @@ const [
   readFile(paths.settingsCapability, "utf8"),
   readFile(paths.tauriConfig, "utf8"),
   readFile(paths.updaterBoundary, "utf8"),
+  readFile(paths.widgetBridgeManifest, "utf8"),
 ]);
 
 const packageJson = JSON.parse(packageManifest);
@@ -82,7 +88,8 @@ requireCondition(
   "pnpm-lock.yaml must lock @tauri-apps/cli-cef 3.0.0-alpha.6",
 );
 requireCondition(
-  !/\bbranch\s*=/u.test(cargoManifest),
+  !/\bbranch\s*=/u.test(cargoManifest) &&
+    !/\bbranch\s*=/u.test(widgetBridgeManifest),
   "Cargo.toml must not follow a moving Git branch",
 );
 requireCondition(
@@ -133,6 +140,18 @@ requireCondition(
 requireCondition(
   rootCargoManifest.includes('"apps/devhud/src-tauri"'),
   "the DevHud Rust crate must be a root Cargo workspace member",
+);
+requireCondition(
+  rootCargoManifest.includes('"apps/devhud/src-tauri/widget-bridge"') &&
+    new RegExp(
+      `tauri-plugin\\s*=\\s*\\{[^}]*git\\s*=\\s*"${repository}"[^}]*rev\\s*=\\s*"${revision}"`,
+      "u",
+    ).test(widgetBridgeManifest) &&
+    new RegExp(
+      `tauri\\s*=\\s*\\{[^}]*git\\s*=\\s*"${repository}"[^}]*rev\\s*=\\s*"${revision}"`,
+      "u",
+    ).test(widgetBridgeManifest),
+  "the private mobile widget plugin must be a workspace member pinned to the same Tauri revision",
 );
 requireCondition(
   cargoLock.includes(

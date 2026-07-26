@@ -10,6 +10,12 @@ func webhookHandler(eventType WebhookEventType) HandlerID {
 		return HandlerPolarSubscriptionCreated
 	case WebhookSubscriptionUpdated:
 		return HandlerPolarSubscriptionUpdated
+	case WebhookSubscriptionActive:
+		return HandlerPolarSubscriptionActive
+	case WebhookSubscriptionUncanceled:
+		return HandlerPolarSubscriptionUncanceled
+	case WebhookSubscriptionPastDue:
+		return HandlerPolarSubscriptionPastDue
 	case WebhookSubscriptionCanceled:
 		return HandlerPolarSubscriptionCanceled
 	case WebhookSubscriptionRevoked:
@@ -52,6 +58,9 @@ func validHandlerID(id HandlerID) bool {
 	case HandlerPolarOrderPaid,
 		HandlerPolarSubscriptionCreated,
 		HandlerPolarSubscriptionUpdated,
+		HandlerPolarSubscriptionActive,
+		HandlerPolarSubscriptionUncanceled,
+		HandlerPolarSubscriptionPastDue,
 		HandlerPolarSubscriptionCanceled,
 		HandlerPolarSubscriptionRevoked,
 		HandlerPolarRefundCreated,
@@ -99,11 +108,13 @@ func validAuditType(eventType AuditEventType) bool {
 		AuditTeamDeleted,
 		AuditBillingLimitUpdated,
 		AuditCheckoutCreated,
+		AuditBillingPortalSessionCreated,
 		AuditSubscriptionUpdated,
 		AuditRefundRecorded,
 		AuditReservationCreated,
 		AuditReservationCommitted,
 		AuditReservationReleased,
+		AuditReservationExpired,
 		AuditSettlementRecorded,
 		AuditAccountDeletionRequested,
 		AuditOrganizationDeletionRequest,

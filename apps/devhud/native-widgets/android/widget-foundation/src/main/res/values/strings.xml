@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="devhud_widget_empty">No widget configured</string>
+    <string name="devhud_widget_configured">No widget available in DevHud 0.1.0</string>
+</resources>

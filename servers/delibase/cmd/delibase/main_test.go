@@ -43,7 +43,8 @@ func TestRunRejectsMissingCatalogBeforeDatabaseStartup(t *testing.T) {
 		"DELIBASE_LOGTO_M2M_CLIENT_ID":     "service-client",
 		"DELIBASE_LOGTO_M2M_CLIENT_SECRET": "logto-secret",
 		"DELIBASE_POLAR_ACCESS_TOKEN":      "polar-token",
-		"DELIBASE_POLAR_WEBHOOK_SECRET":    "webhook-secret",
+		"DELIBASE_POLAR_WEBHOOK_SECRET":    "webhook-secret-0123456789",
+		"DELIBASE_POLAR_PRODUCT_ID":        "polar-product",
 		"DELIBASE_LOG_PSEUDONYM_KEY":       strings.Repeat("k", 32),
 	}
 	err := run(
