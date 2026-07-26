@@ -168,7 +168,7 @@ function png(width, height, source, { tray = false, opaque = false } = {}) {
 function dimensions(value) { return Array.isArray(value) ? value : [value, value]; }
 async function outputs() {
   const source = await readFile(sourcePath, "utf8");
-  const sourceHash = createHash("sha256").update(source).digest("hex");
+  const sourceHash = createHash("sha256").update(source.replace(/\r\n?/gu, "\n")).digest("hex");
   const polygons = pathPolygons(source);
   canonicalMask = new Uint8Array(512 * 512);
   for (let y = 0; y < 512; y += 1) for (let x = 0; x < 512; x += 1) canonicalMask[y * 512 + x] = polygons.reduce((count, polygon) => count + (contains([x + 0.5, y + 0.5], polygon) ? 1 : 0), 0) % 2;

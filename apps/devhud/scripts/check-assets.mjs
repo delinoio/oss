@@ -11,7 +11,7 @@ const requireCondition = (condition, message) => { if (!condition) failures.push
 const expectedSource = await readFile(resolve(appRoot, "assets", manifest.source), "utf8");
 const { createHash } = await import("node:crypto");
 const { inflateSync } = await import("node:zlib");
-requireCondition(createHash("sha256").update(expectedSource).digest("hex") === manifest.sourceSha256, "asset manifest source hash is stale");
+requireCondition(createHash("sha256").update(expectedSource.replace(/\r\n?/gu, "\n")).digest("hex") === manifest.sourceSha256, "asset manifest source hash is stale");
 requireCondition(manifest.generator === "scripts/generate-assets.mjs", "asset manifest generator is not canonical");
 requireCondition(manifest.assets.every(({ path }) => /^[A-Za-z0-9@._/-]+\.png$/u.test(path)), "asset names must use deterministic platform-safe PNG paths");
 
@@ -59,7 +59,7 @@ for (const asset of manifest.assets) {
   if (asset.path.includes("assets/tray/")) requireCondition(coverage > 0.1, `${asset.path} has insufficient opaque tray coverage`);
 }
 const tray = await readFile(resolve(appRoot, "assets/tray/devhud-tray-template.png"));
-requireCondition(tray.includes(0), "tray template must retain transparent pixels");
+requireCondition(alphaCoverage(tray, pngInfo(tray)) < 1, "tray template must retain transparent pixels");
 const tauri = JSON.parse(await readFile(resolve(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
 requireCondition(JSON.stringify(tauri.bundle?.icon) === JSON.stringify(["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/256x256.png", "icons/icon.png"]), "Tauri bundle icon list is not complete");
 const rustShell = await readFile(resolve(appRoot, "src-tauri/src/lib.rs"), "utf8");
