@@ -139,3 +139,37 @@ test("aggregation merges equal-status available targets independently of input o
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("aggregation preserves independent repeated samples and reports even medians", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const first = JSON.parse(readFileSync(fixture, "utf8"));
+    const second = structuredClone(first);
+    first.targets[0].measurements[0].samples = [80, 120];
+    second.targets[0].measurements[0].samples = [120];
+    const firstFile = resolve(directory, "first.json");
+    const secondFile = resolve(directory, "second.json");
+    writeFileSync(firstFile, JSON.stringify(first));
+    writeFileSync(secondFile, JSON.stringify(second));
+    const merged = aggregate([firstFile, secondFile]);
+    assert.deepEqual(merged.targets[0].measurements[0].samples, [80, 120, 120]);
+    const onlyFirst = aggregate([firstFile, firstFile]);
+    assert.deepEqual(onlyFirst, first);
+    assert.match(summary(first), /desktop-cold-startup: 100 milliseconds/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("validation rejects repeated metrics and only permits unknown architectures for unavailable evidence", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0].measurements.push(structuredClone(value.targets[0].measurements[0]));
+  assert.throws(() => validate(value), /duplicate measurement name/u);
+  value.targets[0].measurements.pop();
+  value.targets[0] = { platform: "ios", architecture: "unknown", status: "unavailable", unavailableReason: "tool-not-installed", measurements: [{ name: "mobile-startup", status: "unavailable", method: "simctl-launch-wall-clock", samples: [] }] };
+  assert.equal(validate(value), true);
+  value.targets[0].status = "failed";
+  delete value.targets[0].unavailableReason;
+  value.targets[0].failure = "launch-failed";
+  assert.throws(() => validate(value), /unknown architecture must be unavailable/u);
+});

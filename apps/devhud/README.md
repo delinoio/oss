@@ -58,8 +58,12 @@ platform, architecture, app version, the exact pinned Tauri/CEF revision,
 measurement method, numeric samples, and availability/failure classification.
 They intentionally exclude user content, shortcut values, paths, environment
 values, device IDs, credentials, and raw diagnostics. Missing host tools,
-display servers, artifacts, or supported targets are `unavailable`; an attempted
-launch/protocol error is `failed`. Version 0.1.0 has no performance threshold:
+display servers, artifacts, build provenance, or supported targets are `unavailable`; an attempted
+launch/protocol error is `failed`. Mobile collection verifies the installed app's
+version before timing it; if it cannot verify the requested build, it writes
+unavailable evidence rather than label a stale build as current. If target
+inspection fails, its architecture is recorded as `unknown`, never guessed.
+Version 0.1.0 has no performance threshold:
 these commands always produce evidence rather than gate a release.
 For a physical mobile target, set `DEVHUD_PERF_DEVICE` only for the command
 invocation; it selects the connected target but is never written to the result.
