@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const appRoot = resolve(import.meta.dirname, "..");
 const sourcePath = join(appRoot, "assets/source/devhud-lettermark.svg");
@@ -96,14 +96,23 @@ const generatedFiles = new Map([
   ],
 ]);
 
-// Cleanup is restricted to stable generated namespaces. The current output map
-// alone cannot remove a generated file after its directory is renamed.
-const approvedGeneratedRoots = [
-  "assets",
-  "src-tauri/icons",
-  "src-tauri/gen/apple/Assets.xcassets",
-  "src-tauri/gen/android/app/src/main/res",
-].map((path) => resolve(appRoot, path));
+// Cleanup is restricted to generated-only directories and explicit generated
+// filenames in shared directories. This prevents a stale manifest from
+// deleting the canonical source, store metadata, or native resources that are
+// maintained outside this generator.
+const approvedGeneratedCleanup = [
+  ...["assets/application", "assets/installer", "assets/launch", "assets/tray"].map((path) => ({
+    directory: resolve(appRoot, path),
+  })),
+  { directory: resolve(appRoot, "assets/store"), fileName: /^devhud-/u },
+  { directory: resolve(appRoot, "src-tauri/icons"), fileName: /^(?:icon|32x32|128x128|128x128@2x|256x256)\.(?:png|ico|icns)$/u },
+  { directory: resolve(appRoot, "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset") },
+  { directory: resolve(appRoot, "src-tauri/gen/apple/Assets.xcassets/LaunchLogo.imageset") },
+  ...["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"].map((density) => ({
+    directory: resolve(appRoot, `src-tauri/gen/android/app/src/main/res/mipmap-${density}`),
+    fileName: /^ic_launcher(?:_round)?\.png$/u,
+  })),
+];
 
 function chunk(type, data) {
   const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
@@ -268,6 +277,10 @@ const isWithin = (root, target) => {
   const relativePath = relative(root, target);
   return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
 };
+const isApprovedGeneratedPath = (target) => approvedGeneratedCleanup.some(({ directory, fileName }) => {
+  if (!isWithin(directory, target)) return false;
+  return !fileName || fileName.test(basename(target));
+});
 if (check && previousManifest) {
   const manifestMatches = JSON.stringify(previousManifest.assets) === JSON.stringify(generatedManifest.assets);
   if (!manifestMatches) throw new Error("asset manifest does not match generator outputs");
@@ -278,12 +291,12 @@ if (!check && previousManifest) {
   for (const asset of previousManifest.assets ?? []) {
     if (typeof asset.path !== "string" || expectedPaths.has(asset.path)) continue;
     const obsoletePath = resolve(appRoot, asset.path);
-    if (approvedGeneratedRoots.some((directory) => isWithin(directory, obsoletePath))) await unlink(obsoletePath).catch(() => {});
+    if (isApprovedGeneratedPath(obsoletePath)) await unlink(obsoletePath).catch(() => {});
   }
   for (const file of previousManifest.generatedFiles ?? []) {
     if (typeof file.path !== "string" || expectedGeneratedFiles.has(file.path)) continue;
     const obsoletePath = resolve(appRoot, file.path);
-    if (approvedGeneratedRoots.some((directory) => isWithin(directory, obsoletePath))) await unlink(obsoletePath).catch(() => {});
+    if (isApprovedGeneratedPath(obsoletePath)) await unlink(obsoletePath).catch(() => {});
   }
 }
 for (const { relativePath, data } of entries) {
