@@ -119,7 +119,7 @@ check_label "org.opencontainers.image.title" "delibase"
 check_label "org.opencontainers.image.version" "$expected_version"
 check_label "org.opencontainers.image.revision" "$expected_revision"
 check_label "org.opencontainers.image.source" "$expected_source"
-check_label "org.opencontainers.image.licenses" "MIT"
+check_label "org.opencontainers.image.licenses" "Apache-2.0"
 
 filesystem_listing="$(mktemp)"
 docker create --name "$contents_container" "$image" >/dev/null

@@ -34,7 +34,7 @@ LABEL org.opencontainers.image.title="delibase" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.source="${SOURCE}" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="Apache-2.0"
 
 COPY --from=build --chown=65532:65532 --chmod=0555 /out/delibase /delibase
 COPY --chown=65532:65532 --chmod=0444 servers/delibase/catalog.json /etc/delibase/catalog.json
