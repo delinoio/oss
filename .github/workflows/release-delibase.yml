@@ -23,6 +23,7 @@ jobs:
     name: Validate release metadata
     runs-on: ubuntu-latest
     outputs:
+      source_date_epoch: ${{ steps.release.outputs.source_date_epoch }}
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Checkout
@@ -36,6 +37,12 @@ jobs:
         run: |
           set -euo pipefail
           version="$(servers/delibase/scripts/resolve-release-tag.sh "$RELEASE_TAG")"
+          source_date_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          if [[ ! "$source_date_epoch" =~ ^[0-9]+$ ]]; then
+            echo "release commit did not resolve to a valid Unix timestamp" >&2
+            exit 1
+          fi
+          echo "source_date_epoch=${source_date_epoch}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
   validate-images:
@@ -94,8 +101,9 @@ jobs:
           context: .
           file: servers/delibase/Dockerfile
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
+            SOURCE_DATE_EPOCH=${{ needs.metadata.outputs.source_date_epoch }}
             VERSION=${{ needs.metadata.outputs.version }}
             REVISION=${{ github.sha }}
             SOURCE=${{ env.IMAGE_SOURCE }}
