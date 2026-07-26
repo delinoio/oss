@@ -34,9 +34,11 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - servers/AGENTS.md
               - scripts/generate-go-proto.sh
               - scripts/lib/go-proto-tools.sh
               - cmds/**
+              - servers/internal/**
               - servers/**
 
       - name: Determine whether to run
@@ -114,9 +116,11 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - servers/AGENTS.md
               - scripts/generate-go-proto.sh
               - scripts/lib/go-proto-tools.sh
               - cmds/**
+              - servers/internal/**
               - servers/**
 
       - name: Determine whether to run
@@ -156,6 +160,61 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: go test ./...
 
+  servers-internal:
+    name: Shared Server Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            servers_internal:
+              - .github/workflows/CI.yml
+              - go.mod
+              - go.sum
+              - servers/AGENTS.md
+              - servers/internal/**
+              - docs/servers-internal-foundation.md
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SERVERS_INTERNAL_CHANGED: ${{ steps.filter.outputs.servers_internal }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${SERVERS_INTERNAL_CHANGED}" = "true" ]; then
+            run=true
+          fi
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (shared server infrastructure unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: echo "Skipping shared server infrastructure checks: no relevant changes"
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run shared server infrastructure checks
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          test -z "$(gofmt -l servers/internal)"
+          go vet ./servers/internal/...
+          go test -count=1 ./servers/internal/...
+
   delibase-server:
     name: Delibase Server
     runs-on: ubuntu-latest
@@ -190,9 +249,13 @@ jobs:
               - .github/workflows/release-delibase.yml
               - go.mod
               - go.sum
-              - protos/delibase/gen/go/**
+              - protos/delibase/**
               - servers/delibase/**
               - servers/internal/**
+              - servers/AGENTS.md
+              - docs/project-delibase.md
+              - docs/servers-delibase-server-foundation.md
+              - docs/servers-internal-foundation.md
 
       - name: Determine whether to run
         id: gate
@@ -240,13 +303,35 @@ jobs:
 
       - name: Run delibase PostgreSQL tests
         if: ${{ steps.gate.outputs.run == 'true' }}
+        run: servers/delibase/scripts/test-postgres.sh
+
+      - name: Run migration and concurrency integration checks
+        if: ${{ steps.gate.outputs.run == 'true' }}
         env:
           DELIBASE_TEST_DATABASE_URL: postgres://delibase:delibase_test@127.0.0.1:5432/delibase?sslmode=disable
-        run: go test -count=1 ./servers/delibase/...
+        run: go test -count=1 -run 'Migration|Concurrent|Concurrency|Race|Idempot' ./servers/delibase/...
 
       - name: Validate delibase image
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: servers/delibase/scripts/test-image.sh
+
+      - name: Setup Docker Buildx
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Verify both delibase image architectures without pushing
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: servers/delibase/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          outputs: type=oci,dest=${{ runner.temp }}/delibase-multiarch.oci.tar
+          build-args: |
+            VERSION=ci
+            REVISION=${{ github.sha }}
+            SOURCE=https://github.com/delinoio/oss
 
   proto-delibase:
     name: Delibase Protobuf
@@ -270,9 +355,11 @@ jobs:
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
+              - protos/AGENTS.md
               - protos/buf.gen.yaml
               - protos/buf.yaml
               - protos/delibase/**
+              - docs/protos-delibase-api-contract.md
               - scripts/check-proto.sh
               - scripts/generate-delibase-proto.sh
               - scripts/generate-proto.sh
@@ -1173,6 +1260,8 @@ jobs:
               - turbo.json
               - apps/AGENTS.md
               - apps/delidev-app/**
+              - docs/project-delidev.md
+              - docs/apps-delidev-app-foundation.md
               - protos/buf.gen.yaml
               - protos/buf.yaml
               - protos/delibase/**
@@ -1227,6 +1316,10 @@ jobs:
           pnpm --filter delidev-app lint
           pnpm --filter delidev-app test
 
+      - name: Run automated WCAG accessibility checks
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter delidev-app test:a11y
+
       - name: Build and validate PWA artifact
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
@@ -1249,6 +1342,7 @@ jobs:
     needs:
       - go-quality
       - go-test
+      - servers-internal
       - delibase-server
       - proto-delibase
       - rust-fmt

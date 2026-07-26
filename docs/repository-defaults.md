@@ -21,6 +21,13 @@ This document defines default technology choices and repository workflow default
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
 
+## CI Validation Defaults
+- Repository CI is defined in `.github/workflows/CI.yml`; domain jobs self-gate with in-job path filters and `workflow_dispatch` runs every domain check.
+- Artifact-producing changes must validate deterministic generated output, build artifacts, and relevant tests without public activation, DNS changes, runtime deployment, image push, or release publication.
+- Delibase validation covers root `protos/delibase/v1` Go/TypeScript generation, Buf lint/compatibility, `servers/internal`, sqlc and PostgreSQL migration/concurrency tests, Go quality, and non-pushing `linux/amd64`/`linux/arm64` image builds.
+- DeliDev validation covers frozen dependency installation, generated-client compatibility, typecheck/lint/unit-component/WCAG tests, deterministic `dist` production output, PWA manifest/service-worker and sensitive-cache policy, and Playwright smoke coverage across public, signed-out, authenticated/onboarding, empty, validation, permission-denied, offline, and dependency-error states at desktop and mobile sizes.
+- `ci-result` must depend on every required domain job and fail when any required job fails or is cancelled.
+
 ## References
 - `docs/README.md`
 - `docs/project-template.md`

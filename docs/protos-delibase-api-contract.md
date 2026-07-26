@@ -8,6 +8,7 @@
 ## Runtime and Language
 - Source format: versioned Protobuf.
 - Generated consumers: Connect-compatible Go server/client artifacts and TypeScript browser client artifacts.
+- CI runs the self-gated `proto-delibase` job for `protos/delibase` changes. It runs Buf lint and compatibility checks against the immutable prior descriptor, regenerates the checked-in Go and TypeScript outputs twice, verifies the descriptor and generated trees remain clean, and typechecks/tests both consumers. No generated artifact is deployed or published by this validation.
 - Protobuf source is authoritative; generated output is derived and must not be edited as a second contract.
 - Checked-in Go output is `protos/delibase/gen/go`; protobuf-es v2 output is `protos/delibase/gen/ts` and is exposed to workspace consumers as `@delinoio/delibase-connect`. Connect 2 consumes the `GenService` descriptors emitted in the generated `*_pb.ts` modules.
 

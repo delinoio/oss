@@ -362,10 +362,11 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
-- `delibase-server`: runs sqlc reproducibility checks, the delibase Go test suite against PostgreSQL 17, and the non-root Docker image health/readiness validation on delibase server, generated Go API, or shared server infrastructure changes.
-- `node-delidev-app`: runs `pnpm --filter @delinoio/delibase-connect build`, the DeliDev `typecheck`, `lint`, `test`, `build`, `test:pwa`, and `test:browser` scripts, rejects deterministic rebuild changes to the checked-in `dist` artifact, and installs the required Playwright browser engines before browser smoke tests.
+- `servers-internal`: self-gates on `servers/internal` and its shared contract, then runs `gofmt`, `go vet ./servers/internal/...`, and uncached shared-infrastructure unit tests.
+- `delibase-server`: self-gates on `protos/delibase`, `servers/delibase`, `servers/internal`, and their contracts; runs sqlc reproducibility checks, the delibase Go suite plus named PostgreSQL migration/concurrency/idempotency checks against PostgreSQL 17, the non-root Docker image health/readiness validation, and a non-pushing `linux/amd64,linux/arm64` Buildx OCI build.
+- `node-delidev-app`: self-gates on `apps/delidev-app` and its app/client/contracts, installs frozen dependencies, runs generated-client build, `typecheck`, `lint`, unit/component tests, the dedicated `test:a11y` WCAG suite, `build`, `test:pwa`, and responsive `test:browser` smoke coverage, rejects deterministic rebuild changes to the checked-in `dist` artifact, and installs the required Playwright browser engines before browser smoke tests.
 - `proto-delibase`: runs `pnpm check:proto`, `go test ./protos/delibase/...`, `go vet ./protos/delibase/...`, and `pnpm --filter @delinoio/delibase-connect typecheck` on delibase Protobuf and generation changes.
-- `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
+- `ci-result`: is `always()` and depends on every required domain job, failing when any required job is failed or cancelled. CI only builds and validates artifacts; it does not activate Pages, change DNS, deploy a runtime, push images, or publish a release.
 
 Change-scoped execution rules:
 - CI jobs perform self-gating (there is no standalone `detect-changes` job).
