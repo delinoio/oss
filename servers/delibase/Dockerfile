@@ -1,21 +1,45 @@
-FROM golang:1.25.7-alpine AS build
+# syntax=docker/dockerfile:1.7
+
+ARG GO_BUILD_IMAGE=golang:1.25.7-alpine@sha256:f6751d823c26342f9506c03797d2527668d095b0a15f1862cddb4d927a7a4ced
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG SOURCE=https://github.com/delinoio/oss
+
+FROM --platform=$BUILDPLATFORM ${GO_BUILD_IMAGE} AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY protos/delibase/gen/go ./protos/delibase/gen/go
-COPY servers ./servers
-RUN CGO_ENABLED=0 GOOS=linux go build \
+COPY servers/internal ./servers/internal
+COPY servers/delibase ./servers/delibase
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
     -trimpath \
-    -ldflags="-s -w" \
+    -buildvcs=false \
+    -ldflags="-s -w -buildid=" \
     -o /out/delibase \
     ./servers/delibase/cmd/delibase
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35
 
-COPY --from=build /out/delibase /delibase
-COPY --chown=65532:65532 servers/delibase/catalog.json /etc/delibase/catalog.json
+ARG VERSION
+ARG REVISION
+ARG SOURCE
+LABEL org.opencontainers.image.title="delibase" \
+      org.opencontainers.image.description="Artifact-only delibase organization and usage-billing runtime" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.source="${SOURCE}" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
+COPY --from=build --chown=65532:65532 --chmod=0555 /out/delibase /delibase
+COPY --chown=65532:65532 --chmod=0444 servers/delibase/catalog.json /etc/delibase/catalog.json
 
 USER 65532:65532
 EXPOSE 8080
+STOPSIGNAL SIGTERM
 ENTRYPOINT ["/delibase"]

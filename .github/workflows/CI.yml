@@ -187,6 +187,7 @@ jobs:
           filters: |
             delibase:
               - .github/workflows/CI.yml
+              - .github/workflows/release-delibase.yml
               - go.mod
               - go.sum
               - protos/delibase/gen/go/**
@@ -220,6 +221,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Validate delibase release tags
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: servers/delibase/scripts/test-release-tag.sh
 
       - name: Install sqlc
         if: ${{ steps.gate.outputs.run == 'true' }}
