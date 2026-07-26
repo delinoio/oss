@@ -58,8 +58,8 @@ function matchesHostArchitecture(name) {
 function findDesktopExecutable() {
   const target = resolve(repositoryRoot, "target", "release");
   if (process.platform === "darwin") {
-    const bundleExecutable = resolve(target, "bundle", "macos", "DevHud.app", "Contents", "MacOS", "devhud");
-    return existsSync(bundleExecutable) ? bundleExecutable : null;
+    const binary = resolve(target, "devhud");
+    return existsSync(binary) ? binary : null;
   }
   const binary = resolve(target, process.platform === "win32" ? "devhud.exe" : "devhud");
   return existsSync(binary) ? binary : null;

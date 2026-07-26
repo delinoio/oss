@@ -87,12 +87,21 @@ test("desktop performance command owns its cross-platform build fallback", () =>
   assert.match(script, /buildTimeoutMs = 15 \* 60_000/u);
   assert.equal(packageManifest.scripts["build:desktop:performance"], "pnpm run build && tauri build --no-bundle --features desktop-cef,custom-protocol,performance-instrumentation");
   assert.match(script, /target", "release"/u);
+  assert.match(script, /process\.platform === "darwin"[\s\S]*?resolve\(target, "devhud"\)/u);
+  assert.doesNotMatch(script, /bundle", "macos", "DevHud\.app"/u);
   assert.match(script, /requireCleanWorktree\(\)/u);
   assert.match(script, /"build:desktop:performance"\], buildTimeoutMs, \{ stdio: "inherit", env: \{ \.\.\.process\.env, DEVHUD_BUILD_REVISION: buildRevision \} \}/u);
   assert.equal(packageManifest.scripts["perf:package"], "node scripts/performance.mjs package --build");
   assert.match(script, /clearPackageArtifacts\(\); const build = run\(process\.platform === "win32" \? "pnpm\.cmd" : "pnpm", \["run", "build:preview"\]/u);
   assert.match(script, /DevHud desktop performance build failed/u);
   assert.doesNotMatch(script, /console\.error\(build\.(?:stdout|stderr)/u);
+});
+
+test("ordinary mobile builds stamp dirty worktrees as unverified", () => {
+  const script = readFileSync(resolve(import.meta.dirname, "mobile.mjs"), "utf8");
+  assert.match(script, /: "unverified"/u);
+  assert.match(script, /prevents perf:mobile from publishing evidence/u);
+  assert.doesNotMatch(script, /throw new Error\("mobile performance provenance requires a clean Git worktree"\)/u);
 });
 
 test("Android architecture comes from the installed application ABI", () => {

@@ -25,10 +25,12 @@ const targetSets = new Set(["production", "ci", "artifact"]);
 
 async function stampBuildRevision(platform) {
   const revision = spawnSync("git", ["rev-parse", "HEAD"], { cwd: appRoot, encoding: "utf8" });
-  if (revision.status !== 0 || !/^[0-9a-f]{40}\n$/u.test(revision.stdout)) throw new Error("mobile builds require a Git commit revision");
   const worktree = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: appRoot, encoding: "utf8" });
-  if (worktree.status !== 0 || worktree.stdout.trim()) throw new Error("mobile performance provenance requires a clean Git worktree");
-  const buildRevision = revision.stdout.trim();
+  // Local development builds remain usable with uncommitted changes. Their
+  // explicit unverified stamp prevents perf:mobile from publishing evidence.
+  const buildRevision = revision.status === 0 && /^[0-9a-f]{40}\n$/u.test(revision.stdout) && worktree.status === 0 && !worktree.stdout.trim()
+    ? revision.stdout.trim()
+    : "unverified";
   if (platform === "android") {
     const path = resolve(appRoot, "src-tauri/gen/android/app/build.gradle.kts");
     const source = await readFile(path, "utf8");
