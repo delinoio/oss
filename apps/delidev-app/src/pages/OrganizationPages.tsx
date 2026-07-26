@@ -1,9 +1,11 @@
 import {
+  createConnectQueryKey,
   useInfiniteQuery,
   useMutation,
   useQuery,
 } from "@connectrpc/connect-query";
 import { createClient, type Transport } from "@connectrpc/connect";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BillingPeriodStatus,
   BillingService,
@@ -68,7 +70,10 @@ function uuid(value: string | undefined) {
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const maxSignedInt64 = 9_223_372_036_854_775_807n;
 const maximumTeamLevels = 5;
-const pendingCheckoutKeys = new Map<string, { key: string }>();
+const pendingCheckoutRequests = new Map<
+  string,
+  { idempotency: { key: string }; returnUrl: string }
+>();
 
 function checkoutRetryScope(
   accountId: string | undefined,
@@ -1870,10 +1875,18 @@ function TeamMembershipManagement({
 export function BillingPage() {
   useDocumentMetadata("Billing", "View organization balance and subscription.");
   const { callerRole, organization, transport } = useOrganization();
+  const queryClient = useQueryClient();
   const canManageBilling = canManageOrganization(callerRole);
+  const summaryInput = { organizationId: organization.organizationId };
+  const summaryQueryKey = createConnectQueryKey({
+    cardinality: "finite",
+    input: summaryInput,
+    schema: BillingService.method.getBillingSummary,
+    transport,
+  });
   const summary = useQuery(
     BillingService.method.getBillingSummary,
-    { organizationId: organization.organizationId },
+    summaryInput,
     { gcTime: 0, retry: false, staleTime: 0, transport },
   );
 
@@ -1934,6 +1947,13 @@ export function BillingPage() {
           {canManageBilling ? (
             <BillingAdministration
               onRefreshSummary={() => void summary.refetch()}
+              onSummaryUpdated={(updatedSummary) => {
+                queryClient.setQueryData(summaryQueryKey, (current) =>
+                  current
+                    ? { ...current, summary: updatedSummary }
+                    : current,
+                );
+              }}
               summary={summary.data.summary}
             />
           ) : (
@@ -1953,6 +1973,7 @@ export function BillingPage() {
           )}
         </>
       ) : null}
+      {canManageBilling ? <BillingLedgerSection /> : null}
     </>
   );
 }
@@ -1968,31 +1989,13 @@ function BillingStat({ label, value }: { label: string; value: string }) {
 
 function BillingAdministration({
   onRefreshSummary,
+  onSummaryUpdated,
   summary,
 }: {
   onRefreshSummary: () => void;
+  onSummaryUpdated: (summary: BillingSummary) => void;
   summary: BillingSummary;
 }) {
-  const { organization, transport } = useOrganization();
-  const ledger = useInfiniteQuery(
-    BillingService.method.listLedgerEntries,
-    {
-      operation: LedgerOperation.UNSPECIFIED,
-      organizationId: organization.organizationId,
-      page: { cursor: "", pageSize: 100 },
-    },
-    {
-      gcTime: 0,
-      getNextPageParam: (lastPage) => {
-        const cursor = lastPage.page?.nextCursor;
-        return cursor ? { cursor, pageSize: 100 } : undefined;
-      },
-      pageParamKey: "page",
-      retry: false,
-      staleTime: 0,
-      transport,
-    },
-  );
   const editableLimit = getEditableOverageLimit(
     summary.overageLimitConfigured,
     summary.monthlyOverageLimit?.value,
@@ -2015,23 +2018,49 @@ function BillingAdministration({
       ) : (
         <OverageLimitControl
           initialLimit={editableLimit}
-          onUpdated={onRefreshSummary}
+          onUpdated={onSummaryUpdated}
           summary={summary}
         />
       )}
       <BillingPolicy />
-      <BillingLedger
-        entries={ledger.data?.pages.flatMap((page) => page.entries) ?? []}
-        error={ledger.error}
-        hasData={Boolean(ledger.data)}
-        hasNextPage={ledger.hasNextPage}
-        isFetchNextPageError={ledger.isFetchNextPageError}
-        isFetchingNextPage={ledger.isFetchingNextPage}
-        isPending={ledger.isPending}
-        onLoadMore={() => void ledger.fetchNextPage()}
-        onRetry={() => void ledger.refetch()}
-      />
     </>
+  );
+}
+
+function BillingLedgerSection() {
+  const { organization, transport } = useOrganization();
+  const ledger = useInfiniteQuery(
+    BillingService.method.listLedgerEntries,
+    {
+      operation: LedgerOperation.UNSPECIFIED,
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+    },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
+  );
+
+  return (
+    <BillingLedger
+      entries={ledger.data?.pages.flatMap((page) => page.entries) ?? []}
+      error={ledger.error}
+      hasData={Boolean(ledger.data)}
+      hasNextPage={ledger.hasNextPage}
+      isFetchNextPageError={ledger.isFetchNextPageError}
+      isFetchingNextPage={ledger.isFetchingNextPage}
+      isPending={ledger.isPending}
+      onLoadMore={() => void ledger.fetchNextPage()}
+      onRetry={() => void ledger.refetch()}
+    />
   );
 }
 
@@ -2085,21 +2114,22 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
     if (!online) return;
     portal.reset();
     setNavigationError("");
-    const checkoutKey =
-      pendingCheckoutKeys.get(checkoutScope) ?? createIdempotencyKey();
-    pendingCheckoutKeys.set(checkoutScope, checkoutKey);
-    const returnUrl = hostedBillingReturnUrl(window.location.href);
+    const pendingCheckout = pendingCheckoutRequests.get(checkoutScope) ?? {
+      idempotency: createIdempotencyKey(),
+      returnUrl: hostedBillingReturnUrl(window.location.href),
+    };
+    pendingCheckoutRequests.set(checkoutScope, pendingCheckout);
     checkout.mutate(
       {
-        cancelUrl: returnUrl,
-        idempotency: checkoutKey,
+        cancelUrl: pendingCheckout.returnUrl,
+        idempotency: pendingCheckout.idempotency,
         organizationId: organization.organizationId,
-        successUrl: returnUrl,
+        successUrl: pendingCheckout.returnUrl,
       },
       {
         onSuccess: (data) => {
           if (navigateToPolarHostedPage(data.checkoutUrl)) {
-            pendingCheckoutKeys.delete(checkoutScope);
+            pendingCheckoutRequests.delete(checkoutScope);
           } else {
             setNavigationError(
               "Checkout did not return a valid Polar-hosted HTTPS page. Retry or contact support.",
@@ -2266,7 +2296,7 @@ function OverageLimitControl({
   summary,
 }: {
   initialLimit: bigint;
-  onUpdated: () => void;
+  onUpdated: (summary: BillingSummary) => void;
   summary: BillingSummary;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -2314,10 +2344,10 @@ function OverageLimitControl({
         <OverageLimitDialog
           initialLimit={initialLimit}
           onClose={() => setDialogOpen(false)}
-          onUpdated={() => {
+          onUpdated={(updatedSummary) => {
+            onUpdated(updatedSummary);
             setMessage("Monthly overage limit updated.");
             setDialogOpen(false);
-            onUpdated();
           }}
         />
       ) : null}
@@ -2332,7 +2362,7 @@ function OverageLimitDialog({
 }: {
   initialLimit: bigint;
   onClose: () => void;
-  onUpdated: () => void;
+  onUpdated: (summary: BillingSummary) => void;
 }) {
   const { organization, transport } = useOrganization();
   const online = useOnline();
@@ -2374,9 +2404,15 @@ function OverageLimitDialog({
       },
       {
         onError: (error) => setFormError(describeDelibaseError(error)),
-        onSuccess: () => {
+        onSuccess: (data) => {
+          if (!data.summary) {
+            setFormError(
+              "The updated billing summary was missing. Retry or contact support.",
+            );
+            return;
+          }
           pendingKey.current = undefined;
-          onUpdated();
+          onUpdated(data.summary);
         },
       },
     );

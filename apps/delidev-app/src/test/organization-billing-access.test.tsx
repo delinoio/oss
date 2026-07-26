@@ -152,6 +152,10 @@ describe("organization billing access", () => {
   });
 
   it("shows manager payment, period, overage, policy, and ledger context", async () => {
+    let resolveSummary: (response: Response) => void = () => undefined;
+    const summaryResponse = new Promise<Response>((resolve) => {
+      resolveSummary = resolve;
+    });
     const fetchMock = vi.fn<typeof fetch>(async (request) => {
       const method = methodName(request);
       if (method === "ResolveOrganizationSlug") {
@@ -163,23 +167,7 @@ describe("organization billing access", () => {
         return connectJsonResponse(organizationResponse("ADMIN"));
       }
       if (method === "GetBillingSummary") {
-        return connectJsonResponse({
-          summary: {
-            availableCredit: { value: "19000000" },
-            committedOverage: { value: "2000000" },
-            currentPeriod: {
-              endsAt: "2026-07-31T00:00:00Z",
-              startsAt: "2026-06-30T00:00:00Z",
-              status: "BILLING_PERIOD_STATUS_OPEN",
-            },
-            heldCredit: { value: "1000000" },
-            heldOverage: { value: "500000" },
-            monthlyOverageLimit: { value: "3000000" },
-            newOverageAllowed: true,
-            overageLimitConfigured: true,
-            subscriptionStatus: "SUBSCRIPTION_STATUS_ACTIVE",
-          },
-        });
+        return summaryResponse;
       }
       if (method === "ListLedgerEntries") {
         return connectJsonResponse({
@@ -203,6 +191,26 @@ describe("organization billing access", () => {
       path: "/o/acme/billing",
     });
 
+    expect(await screen.findByText("Credit grant")).toBeInTheDocument();
+    resolveSummary(
+      connectJsonResponse({
+        summary: {
+          availableCredit: { value: "19000000" },
+          committedOverage: { value: "2000000" },
+          currentPeriod: {
+            endsAt: "2026-07-31T00:00:00Z",
+            startsAt: "2026-06-30T00:00:00Z",
+            status: "BILLING_PERIOD_STATUS_OPEN",
+          },
+          heldCredit: { value: "1000000" },
+          heldOverage: { value: "500000" },
+          monthlyOverageLimit: { value: "3000000" },
+          newOverageAllowed: true,
+          overageLimitConfigured: true,
+          subscriptionStatus: "SUBSCRIPTION_STATUS_ACTIVE",
+        },
+      }),
+    );
     expect(
       await screen.findByRole("heading", { name: "Active" }),
     ).toBeInTheDocument();
@@ -211,9 +219,6 @@ describe("organization billing access", () => {
     expect(screen.getByText("Allowed")).toBeInTheDocument();
     expect(screen.getByText("Refunds and chargebacks")).toBeInTheDocument();
     expect(screen.getByText("Polar outage")).toBeInTheDocument();
-    expect(
-      await screen.findByText("Credit grant"),
-    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Invoices and payment" }),
     ).toBeInTheDocument();
@@ -311,6 +316,10 @@ describe("organization billing access", () => {
 
   it("shows the latest billing action error and renews hosted billing keys after success", async () => {
     const checkoutKeys: string[] = [];
+    const checkoutReturnUrls: Array<{
+      cancelUrl: string;
+      successUrl: string;
+    }> = [];
     let checkoutAttempts = 0;
     const portalKeys: string[] = [];
     let portalAttempts = 0;
@@ -347,8 +356,16 @@ describe("organization billing access", () => {
         const body = (await new Response(
           init?.body ??
             (request instanceof Request ? request.clone().body : null),
-        ).json()) as { idempotency: { key: string } };
+        ).json()) as {
+          cancelUrl: string;
+          idempotency: { key: string };
+          successUrl: string;
+        };
         checkoutKeys.push(body.idempotency.key);
+        checkoutReturnUrls.push({
+          cancelUrl: body.cancelUrl,
+          successUrl: body.successUrl,
+        });
         checkoutAttempts += 1;
         if (checkoutAttempts === 1) {
           return connectJsonResponse(
@@ -386,6 +403,11 @@ describe("organization billing access", () => {
       path: "/o/acme/billing",
     });
 
+    window.history.replaceState(
+      null,
+      "",
+      "/o/acme/billing?attempt=first#ignored",
+    );
     await user.click(
       await screen.findByRole("button", { name: "Start subscription" }),
     );
@@ -393,6 +415,11 @@ describe("organization billing access", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(
         "The service is temporarily unavailable.",
       ),
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/o/acme/billing?attempt=second",
     );
 
     const startSubscription = screen.getByRole("button", {
@@ -437,6 +464,8 @@ describe("organization billing access", () => {
     expect(checkoutKeys).toHaveLength(3);
     expect(checkoutKeys[1]).toBe(checkoutKeys[0]);
     expect(checkoutKeys[2]).not.toBe(checkoutKeys[1]);
+    expect(checkoutReturnUrls[1]).toEqual(checkoutReturnUrls[0]);
+    expect(checkoutReturnUrls[2]).not.toEqual(checkoutReturnUrls[1]);
     expect(portalKeys).toHaveLength(3);
     expect(portalKeys[1]).toBe(portalKeys[0]);
     expect(portalKeys[2]).not.toBe(portalKeys[1]);
@@ -583,6 +612,7 @@ describe("organization billing access", () => {
   });
 
   it("keeps the overage dialog open while an update is pending", async () => {
+    let summaryRequests = 0;
     let resolveUpdate: (response: Response) => void = () => undefined;
     const updateResponse = new Promise<Response>((resolve) => {
       resolveUpdate = resolve;
@@ -598,6 +628,7 @@ describe("organization billing access", () => {
         return connectJsonResponse(organizationResponse("OWNER"));
       }
       if (method === "GetBillingSummary") {
+        summaryRequests += 1;
         return connectJsonResponse({
           summary: {
             availableCredit: { value: "0" },
@@ -644,10 +675,32 @@ describe("organization billing access", () => {
     fireEvent.mouseDown(document.querySelector(".dialog-backdrop")!);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-    resolveUpdate(connectJsonResponse({}));
+    resolveUpdate(
+      connectJsonResponse({
+        summary: {
+          availableCredit: { value: "0" },
+          committedOverage: { value: "0" },
+          heldCredit: { value: "0" },
+          heldOverage: { value: "0" },
+          monthlyOverageLimit: { value: "1250000" },
+          overageLimitConfigured: true,
+          subscriptionStatus: "SUBSCRIPTION_STATUS_NONE",
+        },
+      }),
+    );
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
+    expect(screen.getByText(/Current limit:/)).toHaveTextContent(
+      "Current limit: $1.25",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Change monthly limit" }),
+    );
+    expect(
+      screen.getByRole("spinbutton", { name: "Limit in USD" }),
+    ).toHaveValue(1.25);
+    expect(summaryRequests).toBe(1);
   });
 });
 
