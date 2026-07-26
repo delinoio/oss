@@ -5,7 +5,7 @@
  * not present; `failed` means an attempted measurement did not complete.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { extname, resolve } from "node:path";
@@ -203,11 +203,15 @@ async function desktop() {
   const warm = await profileDesktop(executable, "warm-process");
   const profiled = cold.failure ? cold : warm.failure ? warm : null;
   const unavailableReason = cold.unavailableReason ?? warm.unavailableReason;
+  const profileMeasurement = (name) => {
+    const compatible = [cold, warm].flatMap((profile) => profile.measurements).filter((measurement) => measurement.name === name);
+    return compatible.length ? { ...compatible[0], samples: compatible.flatMap((measurement) => measurement.samples) } : undefined;
+  };
   const measurements = [
     cold.measurements.find((measurement) => measurement.name === "desktop-cold-startup"),
     warm.measurements.find((measurement) => measurement.name === "desktop-warm-startup"),
-    [cold, warm].flatMap((profile) => profile.measurements).find((measurement) => measurement.name === "desktop-hud-display"),
-    [cold, warm].flatMap((profile) => profile.measurements).find((measurement) => measurement.name === "desktop-idle-memory")
+    profileMeasurement("desktop-hud-display"),
+    profileMeasurement("desktop-idle-memory")
   ].filter(Boolean);
   const target = { platform: hostPlatform, architecture: hostArchitecture, status: unavailableReason ? "unavailable" : profiled ? "failed" : "available", ...(unavailableReason ? { unavailableReason } : profiled ? { failure: profiled.failure } : {}), measurements };
   const size = packageMeasurement();
@@ -223,7 +227,7 @@ function mobileArchitecture(platform, targetKind, selector) {
   const probe = platform === "android"
     ? run("adb", [...(selector ? ["-s", selector] : []), "shell", "getprop", "ro.product.cpu.abi"])
     : targetKind === "ios-device"
-      ? run("xcrun", ["devicectl", "device", "info", "--device", selector, "--json-output", "-"])
+      ? run("xcrun", ["devicectl", "device", "info", "details", "--device", selector, "--json-output", "-"])
       : run("xcrun", ["simctl", "getenv", "booted", "SIMULATOR_ARCHS"]);
   return probe.status === 0 ? architectureFrom(probe.stdout) : null;
 }
@@ -259,6 +263,11 @@ function mobileBuildProvenance(platform, targetKind, selector) {
   }
   return null;
 }
+function terminateMobileApp(platform, targetKind, selector) {
+  if (platform === "android") return run("adb", [...(selector ? ["-s", selector] : []), "shell", "am", "force-stop", "dev.deli.devhud"]);
+  if (targetKind === "ios-device") return run("xcrun", ["devicectl", "device", "process", "terminate", "--device", selector, "dev.deli.devhud"]);
+  return run("xcrun", ["simctl", "terminate", "booted", "dev.deli.devhud"]);
+}
 function mobile(platform, targetKind) {
   const unknownArchitecture = "unknown";
   if (platform === "ios" && process.platform !== "darwin") return result([unavailable("ios", unknownArchitecture, "unsupported-host", ["mobile-startup"], targetKind)]);
@@ -273,7 +282,10 @@ function mobile(platform, targetKind) {
   const architecture = mobileArchitecture(platform, targetKind, selector);
   if (!architecture) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
   if (mobileBuildProvenance(platform, targetKind, selector) !== `${application.version}+${revision}`) return result([unavailable(platform, architecture, "build-provenance-unverified", ["mobile-startup"], targetKind)]);
-  if (platform === "android" && run("adb", [...selected, "shell", "am", "force-stop", "dev.deli.devhud"]).status !== 0) return result([{ platform, architecture, status: "failed", failure: "launch-failed", measurements: [] }]);
+  const termination = terminateMobileApp(platform, targetKind, selector);
+  // iOS reports a nonzero status when the process was already absent; launch
+  // remains the authoritative operation for a cold-start measurement.
+  if (platform === "android" && termination.status !== 0) return result([{ platform, architecture, status: "failed", failure: "launch-failed", measurements: [] }]);
   const command = platform === "android" ? [...selected, "shell", "am", "start", "-W", "-n", "dev.deli.devhud/.MainActivity"] : targetKind === "ios-device" ? ["devicectl", "device", "process", "launch", "--device", selector, "dev.deli.devhud"] : ["simctl", "launch", "booted", "dev.deli.devhud"];
   const start = performance.now(); const outcome = run(tool, command); const elapsed = Math.round(performance.now() - start);
   if (outcome.status !== 0) return result([{ platform, architecture, status: "failed", failure: "launch-failed", measurements: [] }]);
@@ -285,8 +297,12 @@ function validate(value) {
   const expectedMethods = { "desktop-cold-startup": ["process-ready-marker"], "desktop-warm-startup": ["process-ready-marker"], "desktop-hud-display": ["process-hud-marker"], "desktop-package-size": ["artifact-byte-count"], "desktop-idle-memory": ["resident-set-sampling"], "mobile-startup": ["adb-am-start-w", "simctl-launch-wall-clock", "devicectl-launch-wall-clock"] };
   if (!value || !exactKeys(value, ["schemaVersion", "application", "targets"]) || value.schemaVersion !== schemaVersion || !Array.isArray(value.targets) || !value.targets.length) throw new Error("invalid performance result envelope");
   if (!value.application || !exactKeys(value.application, ["version", "tauriRevision", "cefRevision"]) || value.application.version !== application.version || value.application.tauriRevision !== revision || value.application.cefRevision !== application.cefRevision) throw new Error("invalid application provenance");
+  const targetIdentities = new Set();
   for (const target of value.targets) {
     if (!target || !exactKeys(target, ["platform", "architecture", "status", "unavailableReason", "failure", "measurements"]) || !allowedArchitectures[target.platform]?.includes(target.architecture) || !["available", "unavailable", "failed"].includes(target.status) || !Array.isArray(target.measurements)) throw new Error("invalid target");
+    const targetIdentity = `${target.platform}/${target.architecture}`;
+    if (targetIdentities.has(targetIdentity)) throw new Error("duplicate target identity");
+    targetIdentities.add(targetIdentity);
     if (target.status === "unavailable" && (!["unsupported-host", "no-display-server", "tool-not-installed", "no-supported-target", "artifact-not-found", "build-provenance-unverified"].includes(target.unavailableReason) || target.failure !== undefined)) throw new Error("unavailable target missing reason");
     if (target.status === "failed" && (!["build-failed", "launch-failed", "measurement-protocol-failed", "startup-timeout", "startup-exited"].includes(target.failure) || target.unavailableReason !== undefined)) throw new Error("failed target missing failure");
     if (target.status === "available" && (target.unavailableReason !== undefined || target.failure !== undefined)) throw new Error("available target has status-specific fields");
@@ -353,7 +369,7 @@ async function main() {
   const args = rawArgs.filter((argument) => argument !== "--");
   if (command === "desktop") { const value = await desktop(); validate(value); console.log(writeResult(value, `desktop-${hostPlatform ?? "unsupported"}-${hostArchitecture}.json`)); return; }
   if (command === "package") { console.log(recordPackageProvenance()); return; }
-  if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}.json`)); return; }
+  if (command === "mobile") { const platform = args[0]; const target = args[1] ?? (platform === "ios" ? "ios-simulator" : "android-emulator"); const allowedTargets = { android: ["android-device", "android-emulator"], ios: ["ios-device", "ios-simulator"] }; if (!allowedTargets[platform]?.includes(target)) throw new Error("Usage: perf:mobile -- <android|ios> <android-device|android-emulator|ios-device|ios-simulator>"); const value = mobile(platform, target); validate(value); console.log(writeResult(value, `${platform}-${target}-${randomUUID()}.json`)); return; }
   if (command === "aggregate") { const files = args.length ? args.map((file) => resolve(file)) : existsSync(outputDirectory) ? readdirSync(outputDirectory).filter((file) => file.endsWith(".json") && file !== "release-performance.json").map((file) => resolve(outputDirectory, file)) : []; const value = aggregate(files); validate(value); const json = writeResult(value, "release-performance.json"); const markdown = resolve(outputDirectory, "release-performance.md"); writeFileSync(markdown, summary(value)); console.log(`${json}\n${markdown}`); return; }
   if (command === "validate") { if (!args.length) throw new Error("Usage: perf:validate -- <result.json...>"); for (const file of args) validate(JSON.parse(readFileSync(resolve(file), "utf8"))); return; }
   throw new Error("Usage: performance.mjs <desktop|mobile|package|aggregate|validate>");

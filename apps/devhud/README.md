@@ -52,7 +52,7 @@ are still collected independently when runtime profiling is unavailable, and
 only an artifact explicitly labeled for the current architecture is used.
 `perf:mobile`
 captures startup for one explicitly selected Android/iOS device or simulator
-target. Each command is independent and writes a machine-readable result to
+target. Each invocation writes a distinct machine-readable result to
 `performance/results/`; `perf:aggregate` creates the CI/release artifact
 `release-performance.json` and its Markdown release summary.
 

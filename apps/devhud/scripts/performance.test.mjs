@@ -290,3 +290,9 @@ test("validation rejects repeated metrics and only permits unknown architectures
   value.targets[0].failure = "launch-failed";
   assert.throws(() => validate(value), /unknown architecture must be unavailable/u);
 });
+
+test("validation rejects duplicate platform and architecture target identities", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets.push(structuredClone(value.targets[0]));
+  assert.throws(() => validate(value), /duplicate target identity/u);
+});

@@ -215,9 +215,12 @@ if (platform === "android") {
     );
   }
 } else {
-  await update("gen/apple/project.yml", (source) => source.includes("DevHudTauriRevision")
-    ? source
-    : source.replace('        CFBundleVersion: "1"', '        CFBundleVersion: "1"\n        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a'));
+  await update("gen/apple/project.yml", (source) => {
+    const revision = "f49ebda2fdba5755456b0f049e32593ca0ea331a";
+    return source.includes("DevHudTauriRevision")
+      ? source.replace(/(\s+DevHudTauriRevision:\s*)[^\r\n]*/u, `$1${revision}`)
+      : source.replace('        CFBundleVersion: "1"', `        CFBundleVersion: "1"\n        DevHudTauriRevision: ${revision}`);
+  });
 }
 
 if (platform === "ios") {
