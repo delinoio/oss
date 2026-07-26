@@ -17,6 +17,12 @@ if (!new Set(["build", "test"]).has(operation)) {
   throw new Error("Widget native operation must be build or test.");
 }
 
+if (operation === "test") {
+  await run(process.execPath, [mobileBuild, "build", platform, "artifact"], {
+    cwd: appRoot,
+  });
+}
+
 if (platform === "android") {
   const androidRoot = resolve(appRoot, "native-widgets/android");
   const gradle = resolve(
@@ -66,10 +72,6 @@ if (platform === "android") {
 }
 
 if (operation === "test") {
-  await run(process.execPath, [mobileBuild, "build", platform, "artifact"], {
-    cwd: appRoot,
-  });
-
   const outputRoot =
     platform === "android"
       ? resolve(appRoot, "src-tauri/gen/android/app/build/outputs/apk")
