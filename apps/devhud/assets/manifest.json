@@ -102,6 +102,20 @@
       ]
     },
     {
+      "path": "assets/tray/devhud-tray.png",
+      "dimensions": [
+        18,
+        18
+      ]
+    },
+    {
+      "path": "assets/tray/devhud-tray@2x.png",
+      "dimensions": [
+        36,
+        36
+      ]
+    },
+    {
       "path": "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@1x.png",
       "dimensions": [
         20,

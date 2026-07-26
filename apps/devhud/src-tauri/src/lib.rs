@@ -1813,11 +1813,16 @@ fn create_tray(app: &AppHandle<ActiveRuntime>) -> tauri::Result<()> {
             "quit" => request_quit(app),
             _ => {}
         });
+    #[cfg(target_os = "macos")]
     let tray_icon = Image::from_bytes(include_bytes!(
         "../../assets/tray/devhud-tray-template@2x.png"
     ))
-    .ok()
-    .or_else(|| app.default_window_icon().cloned());
+    .ok();
+    #[cfg(not(target_os = "macos"))]
+    let tray_icon = Image::from_bytes(include_bytes!(
+        "../../assets/tray/devhud-tray@2x.png"
+    ))
+    .ok();
     if let Some(icon) = tray_icon {
         tray = tray.icon(icon);
     }

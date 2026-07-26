@@ -22,9 +22,11 @@ const files = new Map([
   ["src-tauri/gen/apple/Assets.xcassets/LaunchLogo.imageset/devhud-launch.png", 512],
   ["assets/store/devhud-store-icon-1024.png", { size: 1024, opaque: true }],
   ["assets/store/devhud-play-icon-512.png", { size: 512, opaque: true }],
-  ["assets/store/devhud-store-feature-1024x500.png", [1024, 500]],
+  ["assets/store/devhud-store-feature-1024x500.png", { size: [1024, 500], opaque: true }],
   ["assets/tray/devhud-tray-template.png", 18],
   ["assets/tray/devhud-tray-template@2x.png", 36],
+  ["assets/tray/devhud-tray.png", { size: 18, opaque: true, tray: false }],
+  ["assets/tray/devhud-tray@2x.png", { size: 36, opaque: true, tray: false }],
   ["src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@1x.png", 20],
   ["src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@2x-1.png", 40],
   ["src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@2x.png", 40],
@@ -167,7 +169,7 @@ async function outputs() {
   const polygons = pathPolygons(source);
   canonicalMask = new Uint8Array(512 * 512);
   for (let y = 0; y < 512; y += 1) for (let x = 0; x < 512; x += 1) canonicalMask[y * 512 + x] = polygons.reduce((count, polygon) => count + (contains([x + 0.5, y + 0.5], polygon) ? 1 : 0), 0) % 2;
-  return { sourceHash, entries: [...files].map(([relativePath, value]) => { const options = typeof value === "object" ? value : {}; const size = options.size ?? value; return { relativePath, size, data: png(...dimensions(size), source, { tray: relativePath.includes("tray"), opaque: options.opaque || relativePath.includes("AppIcon") }) }; }) };
+  return { sourceHash, entries: [...files].map(([relativePath, value]) => { const options = typeof value === "object" ? value : {}; const size = options.size ?? value; return { relativePath, size, data: png(...dimensions(size), source, { tray: options.tray ?? relativePath.includes("tray"), opaque: options.opaque || relativePath.includes("AppIcon") }) }; }) };
 }
 
 const check = process.argv.includes("--check");

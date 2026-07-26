@@ -62,6 +62,7 @@ const tauri = JSON.parse(await readFile(resolve(appRoot, "src-tauri/tauri.conf.j
 requireCondition(JSON.stringify(tauri.bundle?.icon) === JSON.stringify(["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/256x256.png", "icons/icon.png"]), "Tauri bundle icon list is not complete");
 const rustShell = await readFile(resolve(appRoot, "src-tauri/src/lib.rs"), "utf8");
 requireCondition(rustShell.includes('assets/tray/devhud-tray-template@2x.png'), "desktop tray does not consume the generated menu-bar template");
+requireCondition(rustShell.includes('assets/tray/devhud-tray@2x.png'), "desktop tray does not consume the generated non-macOS asset");
 const androidManifest = await readFile(resolve(appRoot, "src-tauri/gen/android/app/src/main/AndroidManifest.xml"), "utf8");
 requireCondition(androidManifest.includes('android:icon="@mipmap/ic_launcher"'), "Android release host does not include the generated launcher asset");
 const iosProject = await readFile(resolve(appRoot, "src-tauri/gen/apple/project.yml"), "utf8");
