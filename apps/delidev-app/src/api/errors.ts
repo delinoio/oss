@@ -82,6 +82,110 @@ const reasonMessages = new Map<ErrorReason, string>([
     ErrorReason.ACCOUNT_DELETION_BLOCKED,
     "Account deletion is blocked. Transfer ownership where you are the last Owner and settle or release active usage reservations.",
   ],
+  [
+    ErrorReason.SUBSCRIPTION_INACTIVE,
+    "Overage requires an active subscription. Existing credit remains available.",
+  ],
+  [
+    ErrorReason.SUBSCRIPTION_PAST_DUE,
+    "Payment is past due. Use the billing portal to restore billing; existing credit remains available, but new overage is blocked.",
+  ],
+  [
+    ErrorReason.SUBSCRIPTION_CANCELED,
+    "The subscription is canceled. Existing credit remains available, but new overage is blocked.",
+  ],
+  [
+    ErrorReason.SUBSCRIPTION_REVOKED,
+    "The subscription was revoked. Existing credit remains available, but new overage is blocked.",
+  ],
+  [
+    ErrorReason.OVERAGE_NOT_CONFIGURED,
+    "Monthly overage defaults to zero. An organization Owner or Admin must set a non-negative limit before overage can be used.",
+  ],
+  [
+    ErrorReason.OVERAGE_DISABLED,
+    "New overage is disabled. Check the subscription state and monthly overage limit.",
+  ],
+  [
+    ErrorReason.OVERAGE_LIMIT_EXHAUSTED,
+    "Committed and held overage have reached the monthly limit. Increase the limit or wait for the next billing period.",
+  ],
+  [
+    ErrorReason.AVAILABLE_FUNDS_EXHAUSTED,
+    "Available credit and permitted overage cannot cover this reservation. Release unused holds, increase the limit, or wait for more credit.",
+  ],
+  [
+    ErrorReason.PRICE_UNAVAILABLE,
+    "This meter does not have an available price. Choose another app or try again later.",
+  ],
+  [
+    ErrorReason.MONEY_OVERFLOW,
+    "The requested amount is outside the supported billing range. Reduce it and try again.",
+  ],
+  [
+    ErrorReason.USAGE_UNITS_INVALID,
+    "The requested usage units are invalid. Check the amount and try again.",
+  ],
+  [
+    ErrorReason.USAGE_UNITS_OVERFLOW,
+    "The requested usage units are too large. Reduce the amount and try again.",
+  ],
+  [
+    ErrorReason.CATALOG_PRECISION_INVALID,
+    "This meter has invalid billing precision and cannot be used. Contact support.",
+  ],
+  [
+    ErrorReason.OVERAGE_LIMIT_INVALID,
+    "Enter a non-negative monthly overage limit with no more than six decimal places.",
+  ],
+  [
+    ErrorReason.RESERVATION_NOT_FOUND,
+    "This usage reservation no longer exists. Start the operation again.",
+  ],
+  [
+    ErrorReason.RESERVATION_EXPIRED,
+    "This usage reservation expired and its held funds were released. Start the operation again.",
+  ],
+  [
+    ErrorReason.RESERVATION_ALREADY_COMMITTED,
+    "This usage reservation was already committed. Refresh usage to see the result.",
+  ],
+  [
+    ErrorReason.RESERVATION_ALREADY_RELEASED,
+    "This usage reservation was already released. Start a new operation if usage is still needed.",
+  ],
+  [
+    ErrorReason.RESERVATION_FINALIZED,
+    "This usage reservation is already finalized and cannot be changed.",
+  ],
+  [
+    ErrorReason.COMMIT_UNITS_EXCEED_RESERVED,
+    "Committed usage cannot exceed the reserved units. Start a larger reservation first.",
+  ],
+  [
+    ErrorReason.CLIENT_REFERENCE_CONFLICT,
+    "That usage reference conflicts with an earlier operation. Use a new reference or replay the original request.",
+  ],
+  [
+    ErrorReason.RESERVATION_UNITS_NEGATIVE,
+    "Reservation units must be zero or greater.",
+  ],
+  [
+    ErrorReason.IDEMPOTENCY_KEY_REQUIRED,
+    "A safe retry key is required. Retry the action.",
+  ],
+  [
+    ErrorReason.IDEMPOTENCY_CONFLICT,
+    "This retry key was already used with different input. Refresh the page before trying again.",
+  ],
+  [
+    ErrorReason.IDEMPOTENCY_OPERATION_MISMATCH,
+    "This retry key belongs to a different operation. Refresh the page before trying again.",
+  ],
+  [
+    ErrorReason.RESOURCE_CONFLICT,
+    "This resource changed or an operation is already in progress. Refresh the page and try again.",
+  ],
 ]);
 
 function accountDeletionBlockerMessage(
@@ -112,6 +216,12 @@ export function getDelibaseError(error: unknown): DelibaseError {
   const detail = connectError.findDetails(ErrorDetailSchema)[0];
   const blockers = detail?.deletionBlockers ?? [];
   const reason = detail?.reason ?? ErrorReason.UNSPECIFIED;
+  const codeMessage =
+    connectError.code === Code.Unavailable
+      ? "The service is temporarily unavailable. Check your connection and retry; safe retries keep the same operation identity."
+      : connectError.code === Code.Unauthenticated
+        ? "Your session is no longer valid. Sign in again and retry."
+        : undefined;
   return {
     blockers,
     code: connectError.code,
@@ -120,6 +230,7 @@ export function getDelibaseError(error: unknown): DelibaseError {
         accountDeletionBlockerMessage(blockers)) ||
       (detail && reasonMessages.get(detail.reason)) ||
       detail?.message ||
+      codeMessage ||
       connectError.rawMessage ||
       "The request could not be completed. Please try again.",
     reason,
