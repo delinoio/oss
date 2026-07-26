@@ -58,12 +58,26 @@ test("available measurements require samples and their expected unit", () => {
   assert.throws(() => validate(value), /invalid measurement/u);
 });
 
+test("validation rejects incompatible platform, status, and measurement combinations", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0].architecture = "armv7";
+  assert.throws(() => validate(value), /invalid target/u);
+  value.targets[0].architecture = "x86_64";
+  value.targets[0].failure = "launch-failed";
+  assert.throws(() => validate(value), /status-specific fields/u);
+  delete value.targets[0].failure;
+  value.targets[0].measurements[0].method = "process-hud-marker";
+  assert.throws(() => validate(value), /invalid measurement/u);
+  value.targets[0] = { platform: "android", architecture: "armv7", status: "available", measurements: [{ name: "mobile-startup", status: "available", method: "simctl-launch-wall-clock", samples: [42], unit: "milliseconds", note: "cold-process" }] };
+  assert.throws(() => validate(value), /invalid measurement/u);
+});
+
 test("available targets require every platform measurement", () => {
   const value = JSON.parse(readFileSync(fixture, "utf8"));
   value.targets[0].measurements = [];
   assert.throws(() => validate(value), /available target missing required measurements/u);
   value.targets[0].measurements = [
-    { name: "mobile-startup", status: "available", method: "adb-am-start-w", samples: [42], unit: "milliseconds", note: "cold-process" }
+    { name: "desktop-cold-startup", status: "available", method: "process-ready-marker", samples: [42], unit: "milliseconds", note: "cold-process" }
   ];
   assert.throws(() => validate(value), /available target missing required measurements/u);
 });

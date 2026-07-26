@@ -27,12 +27,16 @@
         "architecture": { "enum": ["x86_64", "arm64", "armv7"] },
         "status": { "enum": ["available", "unavailable", "failed"] },
         "unavailableReason": { "type": "string", "enum": ["unsupported-host", "no-display-server", "tool-not-installed", "no-supported-target", "artifact-not-found"] },
-        "failure": { "type": "string", "enum": ["build-failed", "launch-failed", "measurement-protocol-failed", "startup-timeout"] },
+        "failure": { "type": "string", "enum": ["build-failed", "launch-failed", "measurement-protocol-failed", "startup-timeout", "startup-exited"] },
         "measurements": { "type": "array", "items": { "$ref": "#/$defs/measurement" } }
       },
       "allOf": [
-        { "if": { "properties": { "status": { "const": "unavailable" } } }, "then": { "required": ["unavailableReason"] } },
-        { "if": { "properties": { "status": { "const": "failed" } } }, "then": { "required": ["failure"] } },
+        { "if": { "properties": { "status": { "const": "unavailable" } }, "required": ["status"] }, "then": { "required": ["unavailableReason"], "not": { "required": ["failure"] } } },
+        { "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] }, "then": { "required": ["failure"], "not": { "required": ["unavailableReason"] } } },
+        { "if": { "properties": { "status": { "const": "available" } }, "required": ["status"] }, "then": { "not": { "anyOf": [{ "required": ["unavailableReason"] }, { "required": ["failure"] }] } } },
+        { "if": { "properties": { "platform": { "enum": ["linux", "macos", "windows", "ios"] } }, "required": ["platform"] }, "then": { "properties": { "architecture": { "enum": ["x86_64", "arm64"] } } } },
+        { "if": { "properties": { "platform": { "const": "android" } }, "required": ["platform"] }, "then": { "properties": { "measurements": { "items": { "allOf": [{ "$ref": "#/$defs/measurement" }, { "if": { "properties": { "name": { "const": "mobile-startup" } }, "required": ["name"] }, "then": { "properties": { "method": { "const": "adb-am-start-w" } } } }] } } } } },
+        { "if": { "properties": { "platform": { "const": "ios" } }, "required": ["platform"] }, "then": { "properties": { "measurements": { "items": { "allOf": [{ "$ref": "#/$defs/measurement" }, { "if": { "properties": { "name": { "const": "mobile-startup" } }, "required": ["name"] }, "then": { "properties": { "method": { "enum": ["simctl-launch-wall-clock", "devicectl-launch-wall-clock"] } } } }] } } } } },
         { "if": { "properties": { "status": { "const": "available" }, "platform": { "enum": ["linux", "macos", "windows"] } }, "required": ["status", "platform"] }, "then": { "properties": { "measurements": { "allOf": [
           { "contains": { "type": "object", "properties": { "name": { "const": "desktop-cold-startup" }, "status": { "const": "available" } }, "required": ["name", "status"] } },
           { "contains": { "type": "object", "properties": { "name": { "const": "desktop-warm-startup" }, "status": { "const": "available" } }, "required": ["name", "status"] } },
@@ -53,7 +57,16 @@
         "samples": { "type": "array", "items": { "type": "number", "minimum": 0 } },
         "unit": { "enum": ["milliseconds", "bytes"] },
         "note": { "type": "string", "enum": ["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"] }
-      }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "available" } }, "required": ["status"] }, "then": { "required": ["unit"], "properties": { "samples": { "minItems": 1 } } } },
+        { "if": { "properties": { "name": { "enum": ["desktop-cold-startup", "desktop-warm-startup"] } }, "required": ["name"] }, "then": { "properties": { "method": { "const": "process-ready-marker" } } } },
+        { "if": { "properties": { "name": { "const": "desktop-hud-display" } }, "required": ["name"] }, "then": { "properties": { "method": { "const": "process-hud-marker" } } } },
+        { "if": { "properties": { "name": { "const": "desktop-package-size" } }, "required": ["name"] }, "then": { "properties": { "method": { "const": "artifact-byte-count" } } } },
+        { "if": { "properties": { "name": { "const": "desktop-idle-memory" } }, "required": ["name"] }, "then": { "properties": { "method": { "const": "resident-set-sampling" } } } },
+        { "if": { "properties": { "status": { "const": "available" }, "name": { "enum": ["desktop-package-size", "desktop-idle-memory"] } }, "required": ["status", "name"] }, "then": { "properties": { "unit": { "const": "bytes" } } } },
+        { "if": { "properties": { "status": { "const": "available" }, "name": { "enum": ["desktop-cold-startup", "desktop-warm-startup", "desktop-hud-display", "mobile-startup"] } }, "required": ["status", "name"] }, "then": { "properties": { "unit": { "const": "milliseconds" } } } }
+      ]
     }
   }
 }

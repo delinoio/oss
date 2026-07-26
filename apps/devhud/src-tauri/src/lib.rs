@@ -1113,7 +1113,9 @@ fn get_runtime_info(
         feature = "desktop-cef",
         not(any(target_os = "android", target_os = "ios"))
     ))]
-    if std::env::var_os("DEVHUD_PERF").is_some_and(|value| value == "1") {
+    if webview.label() == MAIN_WINDOW_LABEL
+        && std::env::var_os("DEVHUD_PERF").is_some_and(|value| value == "1")
+    {
         eprintln!("DEVHUD_PERF {{\"event\":\"ready\"}}");
         if matches!(show_hud_internal(&_app, false), HudActionOutcome::Shown) {
             eprintln!("DEVHUD_PERF {{\"event\":\"hud-shown\"}}");
