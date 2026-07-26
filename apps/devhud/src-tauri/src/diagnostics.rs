@@ -229,6 +229,7 @@ pub(crate) enum DiagnosticClassification {
     PersistenceCleanupFailed,
     DisplayWindowUnavailable,
     DisplayUnsupported,
+    DisplayPositionFailed,
     ShortcutMalformed,
     ShortcutConflict,
     ShortcutPermissionDenied,
@@ -272,6 +273,7 @@ impl DiagnosticClassification {
             Self::PersistenceCleanupFailed => "persistence-cleanup-failed",
             Self::DisplayWindowUnavailable => "display-window-unavailable",
             Self::DisplayUnsupported => "display-unsupported",
+            Self::DisplayPositionFailed => "display-position-failed",
             Self::ShortcutMalformed => "shortcut-malformed",
             Self::ShortcutConflict => "shortcut-conflict",
             Self::ShortcutPermissionDenied => "shortcut-permission-denied",
@@ -383,14 +385,82 @@ impl DiagnosticRecord {
     }
 
     fn is_valid(&self) -> bool {
-        self.application_version == APPLICATION_VERSION
-            && self.build_version == BUILD_VERSION
-            && self.operating_system == current_operating_system()
-            && self.architecture == current_architecture()
-            && self.tauri_version == TAURI_UPSTREAM_VERSION
-            && self.cef_version.as_deref() == current_cef_version()
+        is_semantic_version(&self.application_version)
+            && is_numeric_version(&self.build_version)
+            && is_tauri_version(&self.tauri_version)
+            && self.cef_version.as_deref().is_none_or(is_cef_version)
             && self.session_id.get_version_num() == 7
     }
+}
+
+fn is_semantic_version(value: &str) -> bool {
+    if value.is_empty() || value.len() > 64 {
+        return false;
+    }
+    let (core_and_prerelease, build) = value
+        .split_once('+')
+        .map_or((value, None), |(version, build)| (version, Some(build)));
+    let (core, prerelease) = core_and_prerelease
+        .split_once('-')
+        .map_or((core_and_prerelease, None), |(core, prerelease)| {
+            (core, Some(prerelease))
+        });
+    is_numeric_version_with_exact_parts(core, 3)
+        && prerelease.is_none_or(is_version_identifier_list)
+        && build.is_none_or(is_version_identifier_list)
+}
+
+fn is_numeric_version(value: &str) -> bool {
+    if value.is_empty() || value.len() > 32 {
+        return false;
+    }
+    let count = value.split('.').count();
+    (1..=4).contains(&count) && has_valid_numeric_version_parts(value)
+}
+
+fn is_numeric_version_with_exact_parts(value: &str, expected_parts: usize) -> bool {
+    value.len() <= 32
+        && value.split('.').count() == expected_parts
+        && has_valid_numeric_version_parts(value)
+}
+
+fn has_valid_numeric_version_parts(value: &str) -> bool {
+    value.split('.').all(|part| {
+        !part.is_empty()
+            && part.bytes().all(|byte| byte.is_ascii_digit())
+            && (part.len() == 1 || !part.starts_with('0'))
+    })
+}
+
+fn is_version_identifier_list(value: &str) -> bool {
+    !value.is_empty()
+        && value.split('.').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+}
+
+fn is_tauri_version(value: &str) -> bool {
+    let Some((version, revision)) = value.split_once('+') else {
+        return false;
+    };
+    is_semantic_version(version)
+        && revision.len() == 40
+        && revision
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn is_cef_version(value: &str) -> bool {
+    if value.len() > 65 {
+        return false;
+    }
+    let Some((cef, chromium)) = value.split_once('+') else {
+        return false;
+    };
+    is_numeric_version_with_exact_parts(cef, 3) && is_numeric_version_with_exact_parts(chromium, 3)
 }
 
 fn current_timestamp_ms() -> u64 {
@@ -585,6 +655,47 @@ mod tests {
         ] {
             assert!(!text.contains(excluded));
         }
+    }
+
+    #[test]
+    fn export_preserves_closed_records_from_previous_builds() {
+        let mut record = DiagnosticRecord::new(
+            Uuid::now_v7(),
+            DiagnosticEventId::RuntimeReady,
+            DiagnosticClassification::DesktopReady,
+            DiagnosticSeverity::Info,
+            None,
+        );
+        record.application_version = "0.0.9".to_string();
+        record.build_version = "42.1".to_string();
+        record.tauri_version = "2.11.4+0123456789abcdef0123456789abcdef01234567".to_string();
+        record.cef_version = Some("149.0.0+149.0.7".to_string());
+
+        let bundle = sanitize_chunks(vec![serde_json::to_vec(&record).unwrap()]).unwrap();
+
+        assert_eq!(
+            serde_json::from_slice::<DiagnosticRecord>(bundle.strip_suffix(b"\n").unwrap())
+                .unwrap(),
+            record
+        );
+    }
+
+    #[test]
+    fn export_rejects_unbounded_version_metadata() {
+        let mut record = DiagnosticRecord::new(
+            Uuid::now_v7(),
+            DiagnosticEventId::RuntimeReady,
+            DiagnosticClassification::DesktopReady,
+            DiagnosticSeverity::Info,
+            None,
+        );
+        record.tauri_version = "2.11.4+token-secret".to_string();
+
+        assert!(
+            sanitize_chunks(vec![serde_json::to_vec(&record).unwrap()])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

@@ -110,8 +110,10 @@ requireCondition(
   iosPlugin.includes("UIDocumentPickerViewController") &&
     iosPlugin.includes('finish(status: "cancelled")') &&
     iosPlugin.includes("removeItem(at: temporaryURL)") &&
+    iosPlugin.includes("if let temporaryURL") &&
+    !iosPlugin.includes("try? FileManager.default.removeItem") &&
     !/https?:\/\//u.test(iosPlugin),
-  "iOS diagnostics export must use the user document picker and clean cancellation staging",
+  "iOS diagnostics export must use the user document picker and retry or surface staging cleanup failures",
 );
 requireCondition(
   frontendSource.includes('onClick={() => void startExport()}') &&

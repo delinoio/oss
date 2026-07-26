@@ -28,6 +28,15 @@ final class DevHudDiagnosticsPlugin: Plugin, UIDocumentPickerDelegate {
             reject(invoke, .busy)
             return
         }
+        if let temporaryURL {
+            do {
+                try FileManager.default.removeItem(at: temporaryURL)
+                self.temporaryURL = nil
+            } catch {
+                reject(invoke, .writeFailed)
+                return
+            }
+        }
         let arguments: ExportDiagnosticsArgs
         do {
             arguments = try invoke.parseArgs(ExportDiagnosticsArgs.self)
@@ -44,23 +53,25 @@ final class DevHudDiagnosticsPlugin: Plugin, UIDocumentPickerDelegate {
                 at: destination,
                 withIntermediateDirectories: false
             )
+            temporaryURL = destination
             try arguments.bundle.write(
                 to: source,
                 atomically: true,
                 encoding: .utf8
             )
         } catch {
-            try? FileManager.default.removeItem(at: destination)
+            if temporaryURL != nil {
+                removeStagingAfterFailure(destination)
+            }
             reject(invoke, .writeFailed)
             return
         }
         guard let viewController = manager.viewController else {
-            try? FileManager.default.removeItem(at: destination)
+            removeStagingAfterFailure(destination)
             reject(invoke, .pickerUnavailable)
             return
         }
         pendingInvoke = invoke
-        temporaryURL = destination
         DispatchQueue.main.async {
             let picker = UIDocumentPickerViewController(
                 forExporting: [source],
@@ -90,7 +101,14 @@ final class DevHudDiagnosticsPlugin: Plugin, UIDocumentPickerDelegate {
         let invoke = pendingInvoke
         pendingInvoke = nil
         if let temporaryURL {
-            try? FileManager.default.removeItem(at: temporaryURL)
+            do {
+                try FileManager.default.removeItem(at: temporaryURL)
+            } catch {
+                if let invoke {
+                    reject(invoke, .writeFailed)
+                }
+                return
+            }
         }
         temporaryURL = nil
         guard let invoke else {
@@ -101,6 +119,15 @@ final class DevHudDiagnosticsPlugin: Plugin, UIDocumentPickerDelegate {
             return
         }
         invoke.resolve(ExportDiagnosticsResponse(status: status))
+    }
+
+    private func removeStagingAfterFailure(_ url: URL) {
+        do {
+            try FileManager.default.removeItem(at: url)
+            temporaryURL = nil
+        } catch {
+            temporaryURL = url
+        }
     }
 
     private func reject(

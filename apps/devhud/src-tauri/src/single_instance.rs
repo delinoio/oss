@@ -11,7 +11,7 @@ pub(crate) struct InstanceGuard {
 }
 
 #[derive(Debug)]
-#[cfg_attr(not(feature = "desktop-cef"), allow(dead_code))]
+#[allow(dead_code)]
 pub(crate) enum InstanceGuardError {
     AlreadyRunning,
     Unavailable(io::Error),

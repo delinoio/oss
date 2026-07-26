@@ -142,7 +142,16 @@ impl LocalLogState {
     }
 
     fn snapshot(&mut self) -> io::Result<Vec<Vec<u8>>> {
+        self.snapshot_at(SystemTime::now())
+    }
+
+    fn snapshot_at(&mut self, now: SystemTime) -> io::Result<Vec<Vec<u8>>> {
         self.flush()?;
+        if now.duration_since(self.opened_at).unwrap_or_default() >= LOG_RETENTION {
+            self.rotate(now)?;
+        } else {
+            prune_logs(&self.directory, now, MAX_LOG_BYTES)?;
+        }
         let mut logs = managed_logs(&self.directory)?;
         logs.sort_by_key(|(_, opened_at, _)| *opened_at);
         logs.into_iter()
@@ -426,6 +435,22 @@ mod tests {
         assert_eq!(writer.snapshot().unwrap(), vec![b"safe\n".to_vec()]);
         assert!(writer.destination_is_managed(&directory.join("export.jsonl")));
         assert!(!writer.destination_is_managed(&std::env::temp_dir().join("export.jsonl")));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn snapshot_prunes_logs_at_the_retention_boundary_after_idle_time() {
+        let directory = temporary_directory("snapshot-retention");
+        let opened_at = UNIX_EPOCH + Duration::from_secs(4_000_000);
+        let mut state = LocalLogState::new_at(directory.clone(), opened_at).unwrap();
+        state.write_at(b"expired\n", opened_at).unwrap();
+
+        let snapshot = state.snapshot_at(opened_at + LOG_RETENTION).unwrap();
+
+        assert_eq!(snapshot, vec![Vec::<u8>::new()]);
+        let logs = managed_logs(&directory).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].1, opened_at + LOG_RETENTION);
         fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -1207,10 +1207,6 @@ enum HudActionFailure {
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
-))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 enum HudActionOutcome {
@@ -1587,8 +1583,11 @@ fn log_window_action_failure(_operation: &'static str, reason: HudActionFailure)
         HudActionFailure::UnsupportedDisplay => {
             diagnostics::DiagnosticClassification::DisplayUnsupported
         }
-        HudActionFailure::WindowUnavailable | HudActionFailure::PositionFailed => {
+        HudActionFailure::WindowUnavailable => {
             diagnostics::DiagnosticClassification::DisplayWindowUnavailable
+        }
+        HudActionFailure::PositionFailed => {
+            diagnostics::DiagnosticClassification::DisplayPositionFailed
         }
     };
     diagnostics::emit_warning(
@@ -2420,10 +2419,12 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
         .setup(|app| {
             if let Ok(directory) = app.path().app_log_dir() {
                 #[cfg(target_os = "ios")]
-                let backup_exclusion_directory = directory.clone();
-                if let Ok(writer) = local_log::LocalLogWriter::new_in(directory) {
-                    #[cfg(target_os = "ios")]
-                    let _ = exclude_ios_persistence_from_backup(&backup_exclusion_directory);
+                let writer = fs::create_dir_all(&directory)
+                    .and_then(|()| exclude_ios_persistence_from_backup(&directory))
+                    .and_then(|()| local_log::LocalLogWriter::new_in(directory));
+                #[cfg(not(target_os = "ios"))]
+                let writer = local_log::LocalLogWriter::new_in(directory);
+                if let Ok(writer) = writer {
                     diagnostics::Diagnostics::install(writer);
                 }
             }
