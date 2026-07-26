@@ -53,6 +53,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "1"
+        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a
     entitlements:
       path: devhud_iOS/devhud_iOS.entitlements
       properties:

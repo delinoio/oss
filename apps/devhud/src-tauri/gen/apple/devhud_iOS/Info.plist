@@ -18,6 +18,8 @@
     <string>0.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>DevHudTauriRevision</key>
+    <string>f49ebda2fdba5755456b0f049e32593ca0ea331a</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UILaunchStoryboardName</key>

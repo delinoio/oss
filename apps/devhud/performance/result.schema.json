@@ -68,7 +68,7 @@
         "note": { "type": "string", "enum": ["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"] }
       },
       "allOf": [
-        { "if": { "properties": { "status": { "const": "available" } }, "required": ["status"] }, "then": { "required": ["unit"], "properties": { "samples": { "minItems": 1 } } } },
+        { "if": { "properties": { "status": { "const": "available" } }, "required": ["status"] }, "then": { "required": ["unit"], "properties": { "samples": { "minItems": 1 } } }, "else": { "properties": { "samples": { "maxItems": 0 } }, "not": { "anyOf": [{ "required": ["unit"] }, { "required": ["note"] }] } } },
         { "if": { "properties": { "name": { "enum": ["desktop-cold-startup", "desktop-warm-startup"] } }, "required": ["name"] }, "then": { "properties": { "method": { "const": "process-ready-marker" } } } },
         { "if": { "properties": { "name": { "const": "desktop-hud-display" } }, "required": ["name"] }, "then": { "properties": { "method": { "const": "process-hud-marker" } } } },
         { "if": { "properties": { "name": { "const": "desktop-package-size" } }, "required": ["name"] }, "then": { "properties": { "method": { "const": "artifact-byte-count" } } } },

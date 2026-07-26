@@ -27,6 +27,17 @@ test("package size requires provenance created for the selected artifact", () =>
   }
 });
 
+test("package provenance rejects artifacts from another application version", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const artifact = resolve(directory, "DevHud_0.0.9_amd64.deb");
+    writeFileSync(artifact, "stale package");
+    assert.throws(() => recordPackageProvenance(artifact), /current host-architecture/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("malformed performance markers fail without waiting for the startup timeout", async () => {
   const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
   try {
@@ -95,6 +106,19 @@ test("available measurements require samples and their expected unit", () => {
   assert.throws(() => validate(value), /invalid measurement/u);
 });
 
+test("unavailable and failed measurements cannot retain availability data", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0].status = "unavailable";
+  value.targets[0].unavailableReason = "artifact-not-found";
+  const measurement = value.targets[0].measurements[0];
+  measurement.status = "unavailable";
+  assert.throws(() => validate(value), /invalid measurement/u);
+  measurement.samples = [];
+  delete measurement.unit;
+  delete measurement.note;
+  assert.equal(validate(value), true);
+});
+
 test("validation rejects incompatible platform, status, and measurement combinations", () => {
   const value = JSON.parse(readFileSync(fixture, "utf8"));
   value.targets[0].architecture = "armv7";
@@ -144,6 +168,27 @@ test("aggregation validates provenance and retains available duplicate targets",
     assert.equal(aggregate([unavailableFile, availableFile]).targets[0].status, "available");
     assert.throws(() => aggregate([staleFile]), /invalid application provenance/u);
     assert.throws(() => aggregate([]), /at least one performance result/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("aggregation retains partial evidence when a target later fails", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const packaged = JSON.parse(readFileSync(fixture, "utf8"));
+    packaged.targets[0].status = "unavailable";
+    packaged.targets[0].unavailableReason = "no-display-server";
+    packaged.targets[0].measurements = [packaged.targets[0].measurements.find((measurement) => measurement.name === "desktop-package-size")];
+    const failed = structuredClone(packaged);
+    failed.targets[0] = { platform: "linux", architecture: "x86_64", status: "failed", failure: "startup-timeout", measurements: [] };
+    const packagedFile = resolve(directory, "packaged.json");
+    const failedFile = resolve(directory, "failed.json");
+    writeFileSync(packagedFile, JSON.stringify(packaged));
+    writeFileSync(failedFile, JSON.stringify(failed));
+    const merged = aggregate([packagedFile, failedFile]);
+    assert.equal(merged.targets[0].status, "failed");
+    assert.equal(merged.targets[0].measurements[0].name, "desktop-package-size");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

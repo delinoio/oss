@@ -42,6 +42,7 @@ function median(values) {
 function artifactBytes(path) { if (!path || !existsSync(path)) return null; const stat = statSync(path); if (stat.isFile()) return stat.size; return readdirSync(path, { withFileTypes: true }).reduce((total, entry) => total + (artifactBytes(resolve(path, entry.name)) ?? 0), 0); }
 function artifactDigest(path) { return !path || !existsSync(path) || !statSync(path).isFile() ? null : createHash("sha256").update(readFileSync(path)).digest("hex"); }
 function packageProvenancePath(path) { return `${path}.devhud-performance.json`; }
+function matchesApplicationVersion(path) { return new RegExp(`(?:^|[^0-9])${application.version.replaceAll(".", "\\.")}(?:$|[^0-9])`, "u").test(path); }
 function matchesHostArchitecture(name) {
   const tokens = { x86_64: ["x86_64", "x64", "amd64"], arm64: ["arm64", "aarch64"], armv7: ["armv7", "armeabi-v7a"] }[hostArchitecture] ?? [];
   return tokens.some((token) => new RegExp(`(?:^|[^a-z0-9])${token}(?:$|[^a-z0-9])`, "iu").test(name));
@@ -64,8 +65,8 @@ function findPackagedArtifact() {
       : [resolve(bundle, "appimage"), resolve(bundle, "deb")];
   for (const candidate of candidates) {
     if (!existsSync(candidate)) continue;
-    if ((statSync(candidate).isFile() || candidate.endsWith(".app")) && matchesHostArchitecture(candidate)) return candidate;
-    const artifact = readdirSync(candidate).sort().find((entry) => ([".appimage", ".deb", ".dmg", ".exe", ".msi"].includes(extname(entry).toLowerCase()) || entry.endsWith(".AppImage")) && matchesHostArchitecture(entry));
+    if ((statSync(candidate).isFile() || candidate.endsWith(".app")) && matchesHostArchitecture(candidate) && matchesApplicationVersion(candidate)) return candidate;
+    const artifact = readdirSync(candidate).sort().find((entry) => ([".appimage", ".deb", ".dmg", ".exe", ".msi"].includes(extname(entry).toLowerCase()) || entry.endsWith(".AppImage")) && matchesHostArchitecture(entry) && matchesApplicationVersion(entry));
     if (artifact) return resolve(candidate, artifact);
   }
   return null;
@@ -82,7 +83,7 @@ function packageMeasurement(artifact = findPackagedArtifact()) {
 }
 function recordPackageProvenance(artifact = findPackagedArtifact()) {
   const sha256 = artifactDigest(artifact);
-  if (!artifact || !sha256) throw new Error("a host-architecture release artifact is required");
+  if (!artifact || !sha256 || !matchesApplicationVersion(artifact)) throw new Error("a current host-architecture release artifact is required");
   const provenance = { application, sha256 };
   writeFileSync(packageProvenancePath(artifact), `${JSON.stringify(canonicalize(provenance), null, 2)}\n`);
   return artifact;
@@ -226,7 +227,7 @@ function mobileArchitecture(platform, targetKind, selector) {
       : run("xcrun", ["simctl", "getenv", "booted", "SIMULATOR_ARCHS"]);
   return probe.status === 0 ? architectureFrom(probe.stdout) : null;
 }
-function mobileVersion(platform, targetKind, selector) {
+function mobileBuildProvenance(platform, targetKind, selector) {
   if (platform === "android") {
     const outcome = run("adb", [...(selector ? ["-s", selector] : []), "shell", "dumpsys", "package", "dev.deli.devhud"]);
     return outcome.status === 0 ? outcome.stdout.match(/versionName=([^\s]+)/u)?.[1] ?? null : null;
@@ -234,8 +235,10 @@ function mobileVersion(platform, targetKind, selector) {
   if (targetKind === "ios-simulator") {
     const container = run("xcrun", ["simctl", "get_app_container", "booted", "dev.deli.devhud", "app"]);
     if (container.status !== 0 || !container.stdout.trim()) return null;
-    const outcome = run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", resolve(container.stdout.trim(), "Info.plist")]);
-    return outcome.status === 0 ? outcome.stdout.trim() : null;
+    const info = resolve(container.stdout.trim(), "Info.plist");
+    const version = run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", info]);
+    const revision = run("/usr/libexec/PlistBuddy", ["-c", "Print :DevHudTauriRevision", info]);
+    return version.status === 0 && revision.status === 0 ? `${version.stdout.trim()}+${revision.stdout.trim()}` : null;
   }
   if (targetKind === "ios-device") {
     const outcome = run("xcrun", ["devicectl", "device", "info", "apps", "--device", selector, "--json-output", "-"]);
@@ -244,7 +247,11 @@ function mobileVersion(platform, targetKind, selector) {
       const findVersion = (value) => {
         if (Array.isArray(value)) return value.map(findVersion).find(Boolean) ?? null;
         if (!value || typeof value !== "object") return null;
-        if (value.bundleIdentifier === "dev.deli.devhud") return value.version ?? value.shortVersion ?? value.CFBundleShortVersionString ?? null;
+        if (value.bundleIdentifier === "dev.deli.devhud") {
+          const version = value.version ?? value.shortVersion ?? value.CFBundleShortVersionString;
+          const revision = value.DevHudTauriRevision ?? value.tauriRevision;
+          return version && revision ? `${version}+${revision}` : null;
+        }
         return Object.values(value).map(findVersion).find(Boolean) ?? null;
       };
       return findVersion(JSON.parse(outcome.stdout));
@@ -265,7 +272,7 @@ function mobile(platform, targetKind) {
   if (probe && probe.status !== 0) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
   const architecture = mobileArchitecture(platform, targetKind, selector);
   if (!architecture) return result([unavailable(platform, unknownArchitecture, "no-supported-target", ["mobile-startup"], targetKind)]);
-  if (mobileVersion(platform, targetKind, selector) !== application.version) return result([unavailable(platform, architecture, "build-provenance-unverified", ["mobile-startup"], targetKind)]);
+  if (mobileBuildProvenance(platform, targetKind, selector) !== `${application.version}+${revision}`) return result([unavailable(platform, architecture, "build-provenance-unverified", ["mobile-startup"], targetKind)]);
   if (platform === "android" && run("adb", [...selected, "shell", "am", "force-stop", "dev.deli.devhud"]).status !== 0) return result([{ platform, architecture, status: "failed", failure: "launch-failed", measurements: [] }]);
   const command = platform === "android" ? [...selected, "shell", "am", "start", "-W", "-n", "dev.deli.devhud/.MainActivity"] : targetKind === "ios-device" ? ["devicectl", "device", "process", "launch", "--device", selector, "dev.deli.devhud"] : ["simctl", "launch", "booted", "dev.deli.devhud"];
   const start = performance.now(); const outcome = run(tool, command); const elapsed = Math.round(performance.now() - start);
@@ -289,7 +296,7 @@ function validate(value) {
       const expectedUnit = ["desktop-package-size", "desktop-idle-memory"].includes(measurement?.name) ? "bytes" : "milliseconds";
       const validMobileMethod = measurement?.name !== "mobile-startup" || (target.platform === "android" ? measurement.method === "adb-am-start-w" : target.platform === "ios" && ["simctl-launch-wall-clock", "devicectl-launch-wall-clock"].includes(measurement.method));
       const validPlatformMeasurement = ["linux", "macos", "windows"].includes(target.platform) ? measurement?.name !== "mobile-startup" : measurement?.name === "mobile-startup";
-      if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || !expectedMethods[measurement.name]?.includes(measurement.method) || !validMobileMethod || !validPlatformMeasurement || !["available", "unavailable", "failed"].includes(measurement.status) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" && (!measurement.samples.length || measurement.unit !== expectedUnit)) || (measurement.note !== undefined && measurement.note !== expectedNotes[measurement.name])) throw new Error("invalid measurement");
+      if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || !expectedMethods[measurement.name]?.includes(measurement.method) || !validMobileMethod || !validPlatformMeasurement || !["available", "unavailable", "failed"].includes(measurement.status) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" ? (!measurement.samples.length || measurement.unit !== expectedUnit) : (measurement.samples.length || measurement.unit !== undefined || measurement.note !== undefined)) || (measurement.note !== undefined && measurement.note !== expectedNotes[measurement.name])) throw new Error("invalid measurement");
       if (measurementNames.has(measurement.name)) throw new Error("duplicate measurement name");
       measurementNames.add(measurement.name);
     }
@@ -326,8 +333,13 @@ function aggregate(files) {
   for (const target of targets) {
     const key = `${target.platform}/${target.architecture}`;
     const current = deduplicated.get(key);
-    if (!current || priority[target.status] > priority[current.status]) deduplicated.set(key, target);
-    else if (target.status === current.status) deduplicated.set(key, target.status === "failed" ? canonicalText(target).localeCompare(canonicalText(current)) < 0 ? target : current : mergeEqualStatusTargets(current, target));
+    if (!current) deduplicated.set(key, target);
+    else if (target.status === current.status) deduplicated.set(key, target.status === "failed" ? { ...(canonicalText(target).localeCompare(canonicalText(current)) < 0 ? target : current), measurements: mergeMeasurements(current, target) } : mergeEqualStatusTargets(current, target));
+    else {
+      const preferred = priority[target.status] > priority[current.status] ? target : current;
+      const other = preferred === target ? current : target;
+      deduplicated.set(key, { ...preferred, measurements: mergeMeasurements(preferred, other) });
+    }
   }
   return result([...deduplicated.values()].sort((a, b) => `${a.platform}/${a.architecture}`.localeCompare(`${b.platform}/${b.architecture}`)));
 }

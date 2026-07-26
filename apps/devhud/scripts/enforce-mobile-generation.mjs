@@ -137,6 +137,10 @@ if (platform === "android") {
       .replace(
         "packaging {                jniLibs",
         "packaging {\n                jniLibs",
+      )
+      .replace(
+        /^\s*versionName = [^\n]+$/mu,
+        '        versionName = "0.1.0+f49ebda2fdba5755456b0f049e32593ca0ea331a"',
       );
     if (!updated.includes("abiFilters +=")) {
       updated = updated.replace(
@@ -210,6 +214,10 @@ if (platform === "android") {
       source.replace(/[ \t]+$/gmu, "").replace(/\n+$/u, "\n"),
     );
   }
+} else {
+  await update("gen/apple/project.yml", (source) => source.includes("DevHudTauriRevision")
+    ? source
+    : source.replace('        CFBundleVersion: "1"', '        CFBundleVersion: "1"\n        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a'));
 }
 
 if (platform === "ios") {

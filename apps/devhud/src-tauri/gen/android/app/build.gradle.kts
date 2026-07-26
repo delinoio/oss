@@ -21,7 +21,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
-        versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        versionName = "0.1.0+f49ebda2fdba5755456b0f049e32593ca0ea331a"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
