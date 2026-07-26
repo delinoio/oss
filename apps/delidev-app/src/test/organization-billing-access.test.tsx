@@ -309,6 +309,106 @@ describe("organization billing access", () => {
     navigate.mockRestore();
   });
 
+  it("shows the latest billing action error and renews portal keys after success", async () => {
+    const portalKeys: string[] = [];
+    let portalAttempts = 0;
+    const navigate = vi
+      .spyOn(hostedBilling, "navigateToPolarHostedPage")
+      .mockReturnValue(true);
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
+      const method = methodName(request);
+      if (method === "ResolveOrganizationSlug") {
+        return connectJsonResponse({
+          organization: organizationResponse("OWNER").organization,
+        });
+      }
+      if (method === "GetOrganization") {
+        return connectJsonResponse(organizationResponse("OWNER"));
+      }
+      if (method === "GetBillingSummary") {
+        return connectJsonResponse({
+          summary: {
+            availableCredit: { value: "0" },
+            committedOverage: { value: "0" },
+            heldCredit: { value: "0" },
+            heldOverage: { value: "0" },
+            monthlyOverageLimit: { value: "0" },
+            overageLimitConfigured: false,
+            subscriptionStatus: "SUBSCRIPTION_STATUS_CANCELED",
+          },
+        });
+      }
+      if (method === "ListLedgerEntries") {
+        return connectJsonResponse({ entries: [] });
+      }
+      if (method === "CreateSubscriptionCheckout") {
+        return connectJsonResponse(
+          { code: "permission_denied", message: "Checkout denied." },
+          403,
+        );
+      }
+      if (method === "CreateBillingPortalSession") {
+        const body = (await new Response(
+          init?.body ??
+            (request instanceof Request ? request.clone().body : null),
+        ).json()) as { idempotency: { key: string } };
+        portalKeys.push(body.idempotency.key);
+        portalAttempts += 1;
+        if (portalAttempts === 1) {
+          return connectJsonResponse(
+            { code: "unavailable", message: "The response was lost." },
+            503,
+          );
+        }
+        return connectJsonResponse({
+          portalUrl: `https://polar.sh/customer-portal/session-${portalAttempts}`,
+        });
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    renderOrganizationPage({
+      fetch: fetchMock,
+      page: <BillingPage />,
+      path: "/o/acme/billing",
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: "Start subscription" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Checkout denied.",
+    );
+
+    const openPortal = screen.getByRole("button", {
+      name: "Invoices and payment",
+    });
+    await user.click(openPortal);
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "The service is temporarily unavailable.",
+      ),
+    );
+
+    await user.click(openPortal);
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "https://polar.sh/customer-portal/session-2",
+      ),
+    );
+    await user.click(openPortal);
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "https://polar.sh/customer-portal/session-3",
+      ),
+    );
+
+    expect(portalKeys).toHaveLength(3);
+    expect(portalKeys[1]).toBe(portalKeys[0]);
+    expect(portalKeys[2]).not.toBe(portalKeys[1]);
+    navigate.mockRestore();
+  });
+
   it("disables checkout and overage mutations while offline", async () => {
     Object.defineProperty(navigator, "onLine", {
       configurable: true,

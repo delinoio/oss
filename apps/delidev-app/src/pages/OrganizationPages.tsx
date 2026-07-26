@@ -2068,6 +2068,7 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
 
   const openCheckout = () => {
     if (!online) return;
+    portal.reset();
     setNavigationError("");
     checkoutKey.current ??= createIdempotencyKey();
     checkout.mutate(
@@ -2091,6 +2092,7 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
 
   const openPortal = () => {
     if (!online) return;
+    checkout.reset();
     setNavigationError("");
     portalKey.current ??= createIdempotencyKey();
     portal.mutate(
@@ -2101,6 +2103,7 @@ function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
       },
       {
         onSuccess: (data) => {
+          portalKey.current = undefined;
           if (!navigateToPolarHostedPage(data.portalUrl)) {
             setNavigationError(
               "The portal did not return a valid Polar-hosted HTTPS page. Retry or contact support.",
