@@ -528,9 +528,7 @@ impl PersistenceState {
             .map_err(|_| PersistenceCommandError::ResetFailed)
     }
 
-    fn reset_paths(
-        &self,
-    ) -> Result<(&Path, [(&'static str, PathBuf); 2]), PersistenceResetFailure> {
+    fn reset_paths(&self) -> Result<PersistenceResetPaths<'_>, PersistenceResetFailure> {
         let paths = [
             (
                 SETTINGS_STORAGE_KEY,
@@ -561,6 +559,9 @@ impl PersistenceState {
         Ok((directory, paths))
     }
 }
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+type PersistenceResetPaths<'a> = (&'a Path, [(&'static str, PathBuf); 2]);
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn pending_reset_stage_paths<'a>(

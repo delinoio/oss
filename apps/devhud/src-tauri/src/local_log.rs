@@ -30,6 +30,7 @@ impl LocalLogWriter {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn clear(&self) -> io::Result<()> {
         self.state
             .lock()
