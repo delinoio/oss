@@ -8,6 +8,7 @@ const sourcePath = join(appRoot, "assets/source/devhud-lettermark.svg");
 const blue = [40, 105, 220, 255];
 const white = [255, 255, 255, 255];
 const transparent = [0, 0, 0, 0];
+let canonicalMask;
 
 const files = new Map([
   ["src-tauri/icons/icon.png", 512],
@@ -19,7 +20,8 @@ const files = new Map([
   ["assets/installer/devhud-installer-256.png", 256],
   ["assets/launch/devhud-launch-2048.png", 2048],
   ["src-tauri/gen/apple/Assets.xcassets/LaunchLogo.imageset/devhud-launch.png", 512],
-  ["assets/store/devhud-store-icon-1024.png", 1024],
+  ["assets/store/devhud-store-icon-1024.png", { size: 1024, opaque: true }],
+  ["assets/store/devhud-play-icon-512.png", { size: 512, opaque: true }],
   ["assets/store/devhud-store-feature-1024x500.png", [1024, 500]],
   ["assets/tray/devhud-tray-template.png", 18],
   ["assets/tray/devhud-tray-template@2x.png", 36],
@@ -41,6 +43,16 @@ const files = new Map([
   ["src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-76x76@2x.png", 152],
   ["src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-83.5x83.5@2x.png", 167],
   ["src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png", 1024],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher.png", { size: 48, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png", { size: 48, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher.png", { size: 72, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png", { size: 72, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png", { size: 96, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png", { size: 96, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png", { size: 144, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png", { size: 144, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png", { size: 192, opaque: true }],
+  ["src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png", { size: 192, opaque: true }],
 ]);
 
 function chunk(type, data) {
@@ -57,10 +69,57 @@ function chunk(type, data) {
 
 // PNG output is intentionally produced here instead of by a platform-specific
 // editor so regeneration is byte-stable on every supported build host.
-function png(width, height, tray = false) {
+function parseColor(source, name, fallback) {
+  const values = [...source.matchAll(/fill=["']#([0-9a-f]{3}|[0-9a-f]{6})["']/gi)].map((match) => match[1]);
+  const value = values[name === "white" ? 1 : 0];
+  if (!value) return fallback;
+  const expanded = value.length === 3 ? value.split("").map((digit) => `${digit}${digit}`).join("") : value;
+  return [Number.parseInt(expanded.slice(0, 2), 16), Number.parseInt(expanded.slice(2, 4), 16), Number.parseInt(expanded.slice(4), 16), 255];
+}
+
+function pathPolygons(source) {
+  const paths = [...source.matchAll(/<path[^>]+d=["']([^"']+)["'][^>]*>/g)].map((match) => match[1]);
+  const token = /([a-z])|(-?\d*\.?\d+(?:e[-+]?\d+)?)/gi;
+  return paths.map((path) => {
+    const tokens = [...path.matchAll(token)].map((match) => match[1] ?? Number(match[2]));
+    let index = 0; let command = ""; let x = 0; let y = 0; let startX = 0; let startY = 0; let previous = null;
+    const polygons = []; let polygon = [];
+    const next = () => tokens[index++];
+    const point = (px, py) => { polygon.push([px, py]); x = px; y = py; };
+    const cubic = (x1, y1, x2, y2, x3, y3) => {
+      const [sx, sy] = [x, y];
+      for (let step = 1; step <= 12; step += 1) { const t = step / 12; const u = 1 - t; point(u ** 3 * sx + 3 * u ** 2 * t * x1 + 3 * u * t ** 2 * x2 + t ** 3 * x3, u ** 3 * sy + 3 * u ** 2 * t * y1 + 3 * u * t ** 2 * y2 + t ** 3 * y3); }
+      previous = [x2, y2];
+    };
+    while (index < tokens.length) {
+      if (typeof tokens[index] === "string") command = next();
+      const relative = command === command.toLowerCase(); const upper = command.toUpperCase();
+      const read = () => { const value = next(); return relative ? value : value; };
+      if (upper === "M" || upper === "L") { const px = read(); const py = next(); const nx = relative ? x + px : px; const ny = relative ? y + py : py; if (upper === "M") { if (polygon.length) polygons.push(polygon); polygon = []; startX = nx; startY = ny; } point(nx, ny); command = relative ? "l" : "L"; }
+      else if (upper === "H") point(relative ? x + read() : read(), y);
+      else if (upper === "V") point(x, relative ? y + read() : read());
+      else if (upper === "C") { const a = read(); const b = next(); const c = next(); const d = next(); const e = next(); const f = next(); cubic(relative ? x + a : a, relative ? y + b : b, relative ? x + c : c, relative ? y + d : d, relative ? x + e : e, relative ? y + f : f); }
+      else if (upper === "S") { const a = read(); const b = next(); const c = next(); const d = next(); const reflected = previous ? [2 * x - previous[0], 2 * y - previous[1]] : [x, y]; cubic(reflected[0], reflected[1], relative ? x + a : a, relative ? y + b : b, relative ? x + c : c, relative ? y + d : d); }
+      else if (upper === "Z") { point(startX, startY); if (polygon.length) polygons.push(polygon); polygon = []; command = ""; }
+      else throw new Error(`unsupported SVG path command: ${command}`);
+    }
+    if (polygon.length) polygons.push(polygon);
+    return polygons;
+  }).flat();
+}
+
+function contains(point, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) { const [xi, yi] = polygon[i]; const [xj, yj] = polygon[j]; if ((yi > point[1]) !== (yj > point[1]) && point[0] < ((xj - xi) * (point[1] - yi)) / (yj - yi) + xi) inside = !inside; }
+  return inside;
+}
+
+function png(width, height, source, { tray = false, opaque = false } = {}) {
   const pixels = Buffer.alloc(width * height * 4);
-  const scale = Math.max(width, height) / 512;
-  const radius = 112 * scale;
+  const fit = Math.min(width, height) / 512;
+  const offsetX = (width - 512 * fit) / 2; const offsetY = (height - 512 * fit) / 2;
+  const radius = 112 * fit;
+  const blueColor = parseColor(source, "blue", blue); const whiteColor = parseColor(source, "white", white);
   const paint = (x, y, color) => {
     const offset = (y * width + x) * 4;
     for (let i = 0; i < 4; i += 1) pixels[offset + i] = color[i];
@@ -71,17 +130,14 @@ function png(width, height, tray = false) {
     const dx = radius - left - 0.5; const dy = radius - top - 0.5;
     return dx * dx + dy * dy <= radius * radius;
   };
-  const box = (x, y) => x >= 88 * scale && y >= 128 * scale && x < 424 * scale && y < 384 * scale;
+  const box = (x, y) => x >= 88 && y >= 128 && x < 424 && y < 384;
   for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
-    const sx = (x + 0.5) / scale; const sy = (y + 0.5) / scale;
+    const sx = (x + 0.5 - offsetX) / fit; const sy = (y + 0.5 - offsetY) / fit;
     let color = transparent;
-    if (!tray && insideRoundRect(x, y)) color = blue;
+    const sourcePoint = [(x - offsetX) / fit, (y - offsetY) / fit];
+    if (opaque || (!tray && insideRoundRect(x - offsetX, y - offsetY))) color = blueColor;
     if (tray && box(sx, sy)) color = [0, 0, 0, 255];
-    // The two letterforms use the same simple block geometry as the source SVG.
-    const d = sx >= 88 && sx < 268 && sy >= 128 && sy < 384;
-    const dHole = sx >= 144 && sx < 232 && sy >= 180 && sy < 332 && !(sx < 204 && sy >= 180 && sy < 332);
-    const h = sx >= 296 && sx < 440 && sy >= 128 && sy < 384 && (sx < 352 || sx >= 384 || (sy >= 228 && sy < 284));
-    if (!tray && ((d && !dHole) || h)) color = white;
+    if (canonicalMask[Math.floor(sourcePoint[1]) * 512 + Math.floor(sourcePoint[0])]) color = whiteColor;
     if (tray && !box(sx, sy)) color = transparent;
     paint(x, y, color);
   }
@@ -95,7 +151,10 @@ function dimensions(value) { return Array.isArray(value) ? value : [value, value
 async function outputs() {
   const source = await readFile(sourcePath, "utf8");
   const sourceHash = createHash("sha256").update(source).digest("hex");
-  return { sourceHash, entries: [...files].map(([relativePath, size]) => ({ relativePath, size, data: png(...dimensions(size), relativePath.includes("tray")) })) };
+  const polygons = pathPolygons(source);
+  canonicalMask = new Uint8Array(512 * 512);
+  for (let y = 0; y < 512; y += 1) for (let x = 0; x < 512; x += 1) canonicalMask[y * 512 + x] = polygons.reduce((count, polygon) => count + (contains([x + 0.5, y + 0.5], polygon) ? 1 : 0), 0) % 2;
+  return { sourceHash, entries: [...files].map(([relativePath, value]) => { const options = typeof value === "object" ? value : {}; const size = options.size ?? value; return { relativePath, size, data: png(...dimensions(size), source, { tray: relativePath.includes("tray"), opaque: options.opaque || relativePath.includes("AppIcon") }) }; }) };
 }
 
 const check = process.argv.includes("--check");

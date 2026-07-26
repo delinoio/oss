@@ -10,6 +10,7 @@ const failures = [];
 const requireCondition = (condition, message) => { if (!condition) failures.push(message); };
 const expectedSource = await readFile(resolve(appRoot, "assets", manifest.source), "utf8");
 const { createHash } = await import("node:crypto");
+const { inflateSync } = await import("node:zlib");
 requireCondition(createHash("sha256").update(expectedSource).digest("hex") === manifest.sourceSha256, "asset manifest source hash is stale");
 requireCondition(manifest.generator === "scripts/generate-assets.mjs", "asset manifest generator is not canonical");
 requireCondition(manifest.assets.every(({ path }) => /^[A-Za-z0-9@._/-]+\.png$/u.test(path)), "asset names must use deterministic platform-safe PNG paths");
@@ -19,12 +20,23 @@ function pngInfo(buffer) {
   requireCondition(buffer.toString("ascii", 12, 16) === "IHDR", "asset has no PNG IHDR");
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20), bitDepth: buffer[24], colorType: buffer[25] };
 }
+function alphaCoverage(buffer, { width, height }) {
+  const idat = []; let offset = 8;
+  while (offset < buffer.length) { const length = buffer.readUInt32BE(offset); const type = buffer.toString("ascii", offset + 4, offset + 8); if (type === "IDAT") idat.push(buffer.subarray(offset + 8, offset + 8 + length)); offset += 12 + length; }
+  const rows = inflateSync(Buffer.concat(idat)); let opaque = 0;
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) if (rows[y * (width * 4 + 1) + 1 + x * 4 + 3] !== 0) opaque += 1;
+  return opaque / (width * height);
+}
 for (const asset of manifest.assets) {
   const buffer = await readFile(resolve(appRoot, asset.path));
   const info = pngInfo(buffer);
   requireCondition(info.width === asset.dimensions[0] && info.height === asset.dimensions[1], `${asset.path} has unexpected dimensions`);
   requireCondition(info.bitDepth === 8 && info.colorType === 6, `${asset.path} must be 8-bit RGBA`);
   requireCondition(buffer.length > 64, `${asset.path} is empty or suspiciously small`);
+  const coverage = alphaCoverage(buffer, info);
+  requireCondition(coverage > 0, `${asset.path} has no opaque pixels`);
+  if (asset.path.includes("AppIcon") || asset.path.includes("mipmap-")) requireCondition(coverage === 1, `${asset.path} must be fully opaque`);
+  if (asset.path.includes("assets/tray/")) requireCondition(coverage > 0.1, `${asset.path} has insufficient opaque tray coverage`);
 }
 const tray = await readFile(resolve(appRoot, "assets/tray/devhud-tray-template.png"));
 requireCondition(tray.includes(0), "tray template must retain transparent pixels");
@@ -41,7 +53,7 @@ requireCondition(iosProject.includes("- path: Assets.xcassets"), "iOS release ho
 const launchScreen = await readFile(resolve(appRoot, "src-tauri/gen/apple/LaunchScreen.storyboard"), "utf8");
 requireCondition(launchScreen.includes('image="LaunchLogo"'), "iOS launch screen does not include the generated launch asset");
 const storeMetadata = JSON.parse(await readFile(resolve(appRoot, "assets/store/metadata.json"), "utf8"));
-requireCondition(storeMetadata.language === "en" && storeMetadata.accessibility?.iconAlt?.includes("DH"), "store metadata must provide English accessible asset names");
+requireCondition(storeMetadata.language === "en" && storeMetadata.icon === "devhud-play-icon-512.png" && storeMetadata.accessibility?.iconAlt?.includes("DH"), "store metadata must provide the 512px English Play icon and accessible asset names");
 if (failures.length) throw new Error(failures.join("\n"));
 await run(process.execPath, [resolve(import.meta.dirname, "generate-assets.mjs"), "--check"], { cwd: appRoot });
 console.log(JSON.stringify({ check: "devhud-assets", status: "passed", count: manifest.assets.length }));

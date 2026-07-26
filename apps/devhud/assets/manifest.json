@@ -74,6 +74,13 @@
       ]
     },
     {
+      "path": "assets/store/devhud-play-icon-512.png",
+      "dimensions": [
+        512,
+        512
+      ]
+    },
+    {
       "path": "assets/store/devhud-store-feature-1024x500.png",
       "dimensions": [
         1024,
@@ -218,6 +225,76 @@
       "dimensions": [
         1024,
         1024
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "dimensions": [
+        48,
+        48
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png",
+      "dimensions": [
+        48,
+        48
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "dimensions": [
+        72,
+        72
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
+      "dimensions": [
+        72,
+        72
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "dimensions": [
+        96,
+        96
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png",
+      "dimensions": [
+        96,
+        96
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "dimensions": [
+        144,
+        144
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png",
+      "dimensions": [
+        144,
+        144
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "dimensions": [
+        192,
+        192
+      ]
+    },
+    {
+      "path": "src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png",
+      "dimensions": [
+        192,
+        192
       ]
     }
   ]
