@@ -137,18 +137,18 @@ async function profileDesktop(binary, startupNote) {
   ] };
 }
 async function desktop() {
-  if (!hostPlatform) return result([unavailable("linux", hostArchitecture, "unsupported-host", desktopNames)]);
+  if (!hostPlatform) throw new Error("desktop performance profiling is unsupported on this host");
   if (process.platform === "linux" && !process.env.DISPLAY) return result([unavailable("linux", hostArchitecture, "no-display-server", desktopNames)]);
   const executable = findDesktopExecutable();
   if (!executable) return result([unavailable(hostPlatform, hostArchitecture, "artifact-not-found", desktopNames)]);
   const cold = await profileDesktop(executable, "cold-process");
   const warm = await profileDesktop(executable, "warm-process");
   const profiled = cold.failure ? cold : warm.failure ? warm : null;
-  const measurements = profiled ? [] : [
+  const measurements = [
     cold.measurements.find((measurement) => measurement.name === "desktop-cold-startup"),
     warm.measurements.find((measurement) => measurement.name === "desktop-warm-startup"),
-    cold.measurements.find((measurement) => measurement.name === "desktop-hud-display"),
-    cold.measurements.find((measurement) => measurement.name === "desktop-idle-memory")
+    [cold, warm].flatMap((profile) => profile.measurements).find((measurement) => measurement.name === "desktop-hud-display"),
+    [cold, warm].flatMap((profile) => profile.measurements).find((measurement) => measurement.name === "desktop-idle-memory")
   ].filter(Boolean);
   const target = { platform: hostPlatform, architecture: hostArchitecture, status: profiled ? "failed" : "available", ...(profiled ? { failure: profiled.failure } : {}), measurements };
   const size = artifactBytes(findPackagedArtifact());
@@ -201,12 +201,23 @@ function validate(value) {
     for (const measurement of target.measurements) {
       const expectedUnit = ["desktop-package-size", "desktop-idle-memory"].includes(measurement?.name) ? "bytes" : "milliseconds";
       const validMobileMethod = measurement?.name !== "mobile-startup" || (target.platform === "android" ? measurement.method === "adb-am-start-w" : target.platform === "ios" && ["simctl-launch-wall-clock", "devicectl-launch-wall-clock"].includes(measurement.method));
-      if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || !expectedMethods[measurement.name]?.includes(measurement.method) || !validMobileMethod || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" && (!measurement.samples.length || measurement.unit !== expectedUnit)) || (measurement.note !== undefined && !["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"].includes(measurement.note))) throw new Error("invalid measurement");
+      const validPlatformMeasurement = ["linux", "macos", "windows"].includes(target.platform) ? measurement?.name !== "mobile-startup" : measurement?.name === "mobile-startup";
+      if (!measurement || !exactKeys(measurement, ["name", "status", "method", "samples", "unit", "note"]) || !expectedMethods[measurement.name]?.includes(measurement.method) || !validMobileMethod || !validPlatformMeasurement || !["available", "unavailable", "failed"].includes(measurement.status) || !Array.isArray(measurement.samples) || !measurement.samples.every((sample) => Number.isFinite(sample) && sample >= 0) || (measurement.unit !== undefined && !["milliseconds", "bytes"].includes(measurement.unit)) || (measurement.status === "available" && (!measurement.samples.length || measurement.unit !== expectedUnit)) || (measurement.note !== undefined && !["cold-process", "warm-process", "explicit-hud-invocation", "packaged-artifact", "post-ready-idle"].includes(measurement.note))) throw new Error("invalid measurement");
     }
     const requiredMeasurements = ["linux", "macos", "windows"].includes(target.platform) ? desktopNames : ["mobile-startup"];
     if (target.status === "available" && !requiredMeasurements.every((name) => target.measurements.some((measurement) => measurement.name === name && measurement.status === "available"))) throw new Error("available target missing required measurements");
   }
   return true;
+}
+function canonicalText(value) { return JSON.stringify(canonicalize(value)); }
+function mergeAvailableTargets(left, right) {
+  const measurements = new Map();
+  for (const measurement of [...left.measurements, ...right.measurements]) {
+    const key = canonicalText({ ...measurement, samples: [] });
+    const current = measurements.get(key);
+    measurements.set(key, current ? { ...current, samples: [...new Set([...current.samples, ...measurement.samples])].sort((a, b) => a - b) } : measurement);
+  }
+  return { ...left, measurements: [...measurements.values()].sort((a, b) => (desktopNames.indexOf(a.name) - desktopNames.indexOf(b.name)) || canonicalText(a).localeCompare(canonicalText(b))) };
 }
 function aggregate(files) {
   if (!files.length) throw new Error("at least one performance result is required");
@@ -214,7 +225,12 @@ function aggregate(files) {
   if (!targets.length) throw new Error("at least one performance target is required");
   const deduplicated = new Map();
   const priority = { unavailable: 0, failed: 1, available: 2 };
-  for (const target of targets) { const key = `${target.platform}/${target.architecture}`; if (!deduplicated.has(key) || priority[target.status] > priority[deduplicated.get(key).status]) deduplicated.set(key, target); }
+  for (const target of targets) {
+    const key = `${target.platform}/${target.architecture}`;
+    const current = deduplicated.get(key);
+    if (!current || priority[target.status] > priority[current.status]) deduplicated.set(key, target);
+    else if (target.status === current.status) deduplicated.set(key, target.status === "available" ? mergeAvailableTargets(current, target) : canonicalText(target).localeCompare(canonicalText(current)) < 0 ? target : current);
+  }
   return result([...deduplicated.values()].sort((a, b) => `${a.platform}/${a.architecture}`.localeCompare(`${b.platform}/${b.architecture}`)));
 }
 function summary(value) {

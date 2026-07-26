@@ -70,6 +70,12 @@ test("validation rejects incompatible platform, status, and measurement combinat
   assert.throws(() => validate(value), /invalid measurement/u);
   value.targets[0] = { platform: "android", architecture: "armv7", status: "available", measurements: [{ name: "mobile-startup", status: "available", method: "simctl-launch-wall-clock", samples: [42], unit: "milliseconds", note: "cold-process" }] };
   assert.throws(() => validate(value), /invalid measurement/u);
+  value.targets[0].measurements[0].method = "adb-am-start-w";
+  value.targets[0].measurements[0].status = "bad | injected";
+  assert.throws(() => validate(value), /invalid measurement/u);
+  value.targets[0].measurements[0].status = "available";
+  value.targets[0].measurements.push({ name: "desktop-package-size", status: "available", method: "artifact-byte-count", samples: [42], unit: "bytes", note: "packaged-artifact" });
+  assert.throws(() => validate(value), /invalid measurement/u);
 });
 
 test("available targets require every platform measurement", () => {
@@ -101,6 +107,25 @@ test("aggregation validates provenance and retains available duplicate targets",
     assert.equal(aggregate([unavailableFile, availableFile]).targets[0].status, "available");
     assert.throws(() => aggregate([staleFile]), /invalid application provenance/u);
     assert.throws(() => aggregate([]), /at least one performance result/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("aggregation merges equal-status available targets independently of input order", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const first = JSON.parse(readFileSync(fixture, "utf8"));
+    const second = structuredClone(first);
+    second.targets[0].measurements[0].samples = [99];
+    const firstFile = resolve(directory, "first.json");
+    const secondFile = resolve(directory, "second.json");
+    writeFileSync(firstFile, JSON.stringify(first));
+    writeFileSync(secondFile, JSON.stringify(second));
+    const forward = aggregate([firstFile, secondFile]);
+    const reverse = aggregate([secondFile, firstFile]);
+    assert.deepEqual(forward, reverse);
+    assert.deepEqual(forward.targets[0].measurements.find((measurement) => measurement.name === "desktop-cold-startup").samples, [99, 120]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
