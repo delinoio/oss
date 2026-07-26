@@ -200,6 +200,13 @@ enum DiagnosticsExportOutcome {
 #[serde(rename_all = "kebab-case")]
 enum DiagnosticsExportError {
     Unavailable,
+    #[cfg(any(
+        all(
+            feature = "mobile-system-webview",
+            any(target_os = "android", target_os = "ios")
+        ),
+        test
+    ))]
     PickerUnavailable,
     WriteFailed,
 }
@@ -235,7 +242,7 @@ enum RuntimeInitializationFailure {
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 impl RuntimeInitializationFailure {
-    const fn classification(self) -> &'static str {
+    const fn diagnostic_classification(self) -> diagnostics::DiagnosticClassification {
         match self {
             #[cfg(any(
                 all(
@@ -244,7 +251,9 @@ impl RuntimeInitializationFailure {
                 ),
                 test
             ))]
-            Self::InstanceGuardUnavailable => "instance-guard-unavailable",
+            Self::InstanceGuardUnavailable => {
+                diagnostics::DiagnosticClassification::DesktopInstanceGuardUnavailable
+            }
             #[cfg(any(
                 all(
                     feature = "desktop-cef",
@@ -252,7 +261,9 @@ impl RuntimeInitializationFailure {
                 ),
                 test
             ))]
-            Self::CefInitialization => "cef-initialization",
+            Self::CefInitialization => {
+                diagnostics::DiagnosticClassification::DesktopCefInitializationFailed
+            }
             #[cfg(any(
                 all(
                     feature = "mobile-system-webview",
@@ -260,7 +271,9 @@ impl RuntimeInitializationFailure {
                 ),
                 test
             ))]
-            Self::SystemWebviewInitialization => "system-webview-initialization",
+            Self::SystemWebviewInitialization => {
+                diagnostics::DiagnosticClassification::MobileSystemWebviewInitializationFailed
+            }
         }
     }
 }
@@ -1194,16 +1207,6 @@ enum HudActionFailure {
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-impl HudActionFailure {
-    const fn classification(self) -> &'static str {
-        match self {
-            Self::UnsupportedDisplay => "unsupported-display",
-            Self::WindowUnavailable => "window-unavailable",
-            Self::PositionFailed => "position-failed",
-        }
-    }
-}
-
 #[cfg(all(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
@@ -1579,10 +1582,18 @@ fn log_autostart_integration_failure(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-fn log_window_action_failure(_operation: &'static str, _reason: HudActionFailure) {
+fn log_window_action_failure(_operation: &'static str, reason: HudActionFailure) {
+    let classification = match reason {
+        HudActionFailure::UnsupportedDisplay => {
+            diagnostics::DiagnosticClassification::DisplayUnsupported
+        }
+        HudActionFailure::WindowUnavailable | HudActionFailure::PositionFailed => {
+            diagnostics::DiagnosticClassification::DisplayWindowUnavailable
+        }
+    };
     diagnostics::emit_warning(
         diagnostics::DiagnosticEventId::DisplayOutcome,
-        diagnostics::DiagnosticClassification::DisplayWindowUnavailable,
+        classification,
     );
 }
 
@@ -2509,7 +2520,10 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
             );
             return Ok(());
         }
-        Err(single_instance::InstanceGuardError::Unavailable(_)) => {
+        Err(single_instance::InstanceGuardError::Unavailable(error)) => {
+            // Preserve the source error for internal diagnosis without
+            // disclosing filesystem details in the local diagnostics record.
+            let _ = error.kind();
             return Err(RuntimeInitializationFailure::InstanceGuardUnavailable);
         }
     };
@@ -2579,32 +2593,9 @@ pub fn run() {
     initialize_logging();
 
     if let Err(error) = run_app() {
-        let classification = match error {
-            #[cfg(all(
-                feature = "desktop-cef",
-                not(any(target_os = "android", target_os = "ios"))
-            ))]
-            RuntimeInitializationFailure::InstanceGuardUnavailable => {
-                diagnostics::DiagnosticClassification::DesktopInstanceGuardUnavailable
-            }
-            #[cfg(all(
-                feature = "desktop-cef",
-                not(any(target_os = "android", target_os = "ios"))
-            ))]
-            RuntimeInitializationFailure::CefInitialization => {
-                diagnostics::DiagnosticClassification::DesktopCefInitializationFailed
-            }
-            #[cfg(all(
-                feature = "mobile-system-webview",
-                any(target_os = "android", target_os = "ios")
-            ))]
-            RuntimeInitializationFailure::SystemWebviewInitialization => {
-                diagnostics::DiagnosticClassification::MobileSystemWebviewInitializationFailed
-            }
-        };
         diagnostics::emit_fatal(
             diagnostics::DiagnosticEventId::RuntimeInitializationFailure,
-            classification,
+            error.diagnostic_classification(),
         );
         std::process::exit(70);
     }
@@ -3000,16 +2991,22 @@ mod tests {
     #[test]
     fn runtime_and_partial_reset_classifications_remain_distinct() {
         assert_eq!(
-            RuntimeInitializationFailure::InstanceGuardUnavailable.classification(),
-            "instance-guard-unavailable"
+            RuntimeInitializationFailure::InstanceGuardUnavailable
+                .diagnostic_classification()
+                .as_str(),
+            "desktop-instance-guard-unavailable"
         );
         assert_eq!(
-            RuntimeInitializationFailure::CefInitialization.classification(),
-            "cef-initialization"
+            RuntimeInitializationFailure::CefInitialization
+                .diagnostic_classification()
+                .as_str(),
+            "desktop-cef-initialization-failed"
         );
         assert_eq!(
-            RuntimeInitializationFailure::SystemWebviewInitialization.classification(),
-            "system-webview-initialization"
+            RuntimeInitializationFailure::SystemWebviewInitialization
+                .diagnostic_classification()
+                .as_str(),
+            "mobile-system-webview-initialization-failed"
         );
         assert_eq!(
             serde_json::to_value(PersistenceResetOutcome::Complete).unwrap(),
