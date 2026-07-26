@@ -47,7 +47,10 @@ pnpm test:performance
 
 `perf:desktop` records cold and warm process-to-ready timing, native HUD
 invocation-to-show timing, packaged artifact bytes, and post-ready resident
-memory when a desktop artifact can execute on the current host. `perf:mobile`
+memory when a desktop artifact can execute on the current host. Package bytes
+are still collected independently when runtime profiling is unavailable, and
+only an artifact explicitly labeled for the current architecture is used.
+`perf:mobile`
 captures startup for one explicitly selected Android/iOS device or simulator
 target. Each command is independent and writes a machine-readable result to
 `performance/results/`; `perf:aggregate` creates the CI/release artifact

@@ -140,6 +140,27 @@ test("aggregation merges equal-status available targets independently of input o
   }
 });
 
+test("aggregation deterministically keeps one mobile metric when target kinds differ", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const simulator = JSON.parse(readFileSync(fixture, "utf8"));
+    simulator.targets[0] = { platform: "ios", architecture: "arm64", status: "available", measurements: [{ name: "mobile-startup", status: "available", method: "simctl-launch-wall-clock", samples: [42], unit: "milliseconds", note: "cold-process" }] };
+    const device = structuredClone(simulator);
+    device.targets[0].measurements[0] = { ...device.targets[0].measurements[0], method: "devicectl-launch-wall-clock", samples: [24] };
+    const simulatorFile = resolve(directory, "simulator.json");
+    const deviceFile = resolve(directory, "device.json");
+    writeFileSync(simulatorFile, JSON.stringify(simulator));
+    writeFileSync(deviceFile, JSON.stringify(device));
+    const forward = aggregate([simulatorFile, deviceFile]);
+    const reverse = aggregate([deviceFile, simulatorFile]);
+    assert.deepEqual(forward, reverse);
+    assert.equal(validate(forward), true);
+    assert.equal(forward.targets[0].measurements.length, 1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("aggregation preserves independent repeated samples and reports even medians", () => {
   const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
   try {

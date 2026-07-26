@@ -39,6 +39,10 @@ function median(values) {
   return sorted.length % 2 ? (sorted[middle] ?? 0) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 function artifactBytes(path) { if (!path || !existsSync(path)) return null; const stat = statSync(path); if (stat.isFile()) return stat.size; return readdirSync(path, { withFileTypes: true }).reduce((total, entry) => total + (artifactBytes(resolve(path, entry.name)) ?? 0), 0); }
+function matchesHostArchitecture(name) {
+  const tokens = { x86_64: ["x86_64", "x64", "amd64"], arm64: ["arm64", "aarch64"], armv7: ["armv7", "armeabi-v7a"] }[hostArchitecture] ?? [];
+  return tokens.some((token) => new RegExp(`(?:^|[^a-z0-9])${token}(?:$|[^a-z0-9])`, "iu").test(name));
+}
 function findDesktopExecutable() {
   const target = resolve(repositoryRoot, "target", "debug");
   if (process.platform === "darwin") {
@@ -57,8 +61,8 @@ function findPackagedArtifact() {
       : [resolve(bundle, "appimage"), resolve(bundle, "deb")];
   for (const candidate of candidates) {
     if (!existsSync(candidate)) continue;
-    if (statSync(candidate).isFile() || candidate.endsWith(".app")) return candidate;
-    const artifact = readdirSync(candidate).sort().find((entry) => [".appimage", ".deb", ".dmg", ".exe", ".msi"].includes(extname(entry).toLowerCase()) || entry.endsWith(".AppImage"));
+    if ((statSync(candidate).isFile() || candidate.endsWith(".app")) && matchesHostArchitecture(candidate)) return candidate;
+    const artifact = readdirSync(candidate).sort().find((entry) => ([".appimage", ".deb", ".dmg", ".exe", ".msi"].includes(extname(entry).toLowerCase()) || entry.endsWith(".AppImage")) && matchesHostArchitecture(entry));
     if (artifact) return resolve(candidate, artifact);
   }
   return null;
@@ -152,18 +156,26 @@ async function profileDesktop(binary, startupNote) {
   const memory = readyMarker ? [processTreeRssBytes(child.pid), processTreeRssBytes(child.pid), processTreeRssBytes(child.pid)].filter((sample) => sample !== null) : [];
   await terminateDesktopProcess(child, closed);
   const readyEvent = markers.find((marker) => marker.event === "ready"); const hud = markers.find((marker) => marker.event === "hud-shown");
-  if (!readyEvent || !hud || !memory.length) return { failure: "measurement-protocol-failed", measurements: [] };
+  if (!readyEvent || !hud || !Number.isFinite(hud.durationMs) || hud.durationMs < 0 || !memory.length) return { failure: "measurement-protocol-failed", measurements: [] };
   return { measurements: [
     { name: startupNote === "cold-process" ? "desktop-cold-startup" : "desktop-warm-startup", status: "available", method: "process-ready-marker", samples: [Math.round(readyEvent.at)], unit: "milliseconds", note: startupNote },
-    { name: "desktop-hud-display", status: "available", method: "process-hud-marker", samples: [Math.max(0, Math.round(hud.at - readyEvent.at))], unit: "milliseconds", note: "explicit-hud-invocation" },
+    { name: "desktop-hud-display", status: "available", method: "process-hud-marker", samples: [Math.round(hud.durationMs)], unit: "milliseconds", note: "explicit-hud-invocation" },
     { name: "desktop-idle-memory", status: "available", method: "resident-set-sampling", samples: memory, unit: "bytes", note: "post-ready-idle" }
   ] };
 }
 async function desktop() {
   if (!hostPlatform || !hostArchitecture) throw new Error("desktop performance profiling is unsupported on this host");
-  if (process.platform === "linux" && !process.env.DISPLAY) return result([unavailable("linux", hostArchitecture, "no-display-server", desktopNames)]);
+  const packageSize = () => {
+    const size = artifactBytes(findPackagedArtifact());
+    return size === null ? { name: "desktop-package-size", status: "unavailable", method: "artifact-byte-count", samples: [] } : { name: "desktop-package-size", status: "available", method: "artifact-byte-count", samples: [size], unit: "bytes", note: "packaged-artifact" };
+  };
+  const unavailableDesktop = (reason) => {
+    const runtime = unavailable(hostPlatform, hostArchitecture, reason, desktopNames.filter((name) => name !== "desktop-package-size"));
+    return result([{ ...runtime, measurements: [...runtime.measurements, packageSize()] }]);
+  };
+  if (process.platform === "linux" && !process.env.DISPLAY) return unavailableDesktop("no-display-server");
   const executable = findDesktopExecutable();
-  if (!executable) return result([unavailable(hostPlatform, hostArchitecture, "artifact-not-found", desktopNames)]);
+  if (!executable) return unavailableDesktop("artifact-not-found");
   const cold = await profileDesktop(executable, "cold-process");
   const warm = await profileDesktop(executable, "warm-process");
   const profiled = cold.failure ? cold : warm.failure ? warm : null;
@@ -175,9 +187,9 @@ async function desktop() {
     [cold, warm].flatMap((profile) => profile.measurements).find((measurement) => measurement.name === "desktop-idle-memory")
   ].filter(Boolean);
   const target = { platform: hostPlatform, architecture: hostArchitecture, status: unavailableReason ? "unavailable" : profiled ? "failed" : "available", ...(unavailableReason ? { unavailableReason } : profiled ? { failure: profiled.failure } : {}), measurements };
-  const size = artifactBytes(findPackagedArtifact());
-  target.measurements.push(size === null ? { name: "desktop-package-size", status: "unavailable", method: "artifact-byte-count", samples: [] } : { name: "desktop-package-size", status: "available", method: "artifact-byte-count", samples: [size], unit: "bytes", note: "packaged-artifact" });
-  if (!profiled && size === null) {
+  const sizeMeasurement = packageSize();
+  target.measurements.push(sizeMeasurement);
+  if (!profiled && sizeMeasurement.status === "unavailable") {
     target.status = "unavailable";
     target.unavailableReason = "artifact-not-found";
   }
@@ -268,9 +280,10 @@ function canonicalText(value) { return JSON.stringify(canonicalize(value)); }
 function mergeAvailableTargets(left, right) {
   const measurements = new Map();
   for (const measurement of [...left.measurements, ...right.measurements]) {
-    const key = canonicalText({ ...measurement, samples: [] });
-    const current = measurements.get(key);
-    measurements.set(key, current ? { ...current, samples: [...current.samples, ...measurement.samples].sort((a, b) => a - b) } : measurement);
+    const current = measurements.get(measurement.name);
+    if (!current) measurements.set(measurement.name, measurement);
+    else if (canonicalText({ ...current, samples: [] }) === canonicalText({ ...measurement, samples: [] })) measurements.set(measurement.name, { ...current, samples: [...current.samples, ...measurement.samples].sort((a, b) => a - b) });
+    else if (canonicalText(measurement).localeCompare(canonicalText(current)) < 0) measurements.set(measurement.name, measurement);
   }
   return { ...left, measurements: [...measurements.values()].sort((a, b) => (desktopNames.indexOf(a.name) - desktopNames.indexOf(b.name)) || canonicalText(a).localeCompare(canonicalText(b))) };
 }

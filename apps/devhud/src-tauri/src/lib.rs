@@ -1107,7 +1107,8 @@ fn get_runtime_info(
     // This deliberately has no production effect. The package-local profiler
     // opts in with DEVHUD_PERF and consumes only these fixed marker names; it
     // never receives settings, paths, shortcuts, diagnostics, or environment
-    // values. The HUD marker starts at the explicit native show invocation.
+    // values. The HUD marker records the explicit native show invocation's
+    // elapsed duration inside the measured process.
     #[cfg(all(
         debug_assertions,
         feature = "desktop-cef",
@@ -1126,8 +1127,12 @@ fn get_runtime_info(
             tauri_revision,
             tauri_revision,
         );
+        let hud_start = std::time::Instant::now();
         if matches!(show_hud_internal(&_app, false), HudActionOutcome::Shown) {
-            eprintln!("DEVHUD_PERF {{\"event\":\"hud-shown\"}}");
+            eprintln!(
+                "DEVHUD_PERF {{\"event\":\"hud-shown\",\"durationMs\":{}}}",
+                hud_start.elapsed().as_millis()
+            );
         }
         let app = _app.clone();
         std::thread::spawn(move || {
