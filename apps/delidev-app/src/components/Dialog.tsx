@@ -39,9 +39,11 @@ export function Dialog({
       element.inert = true;
       element.setAttribute("aria-hidden", "true");
     }
+    const requestedInitialFocus =
+      panelRef.current?.querySelector<HTMLElement>("[data-dialog-autofocus]");
     const firstFocusable =
       panelRef.current?.querySelector<HTMLElement>(focusableSelector);
-    (firstFocusable ?? panelRef.current)?.focus();
+    (requestedInitialFocus ?? firstFocusable ?? panelRef.current)?.focus();
     return () => {
       for (const state of previousBackgroundState) {
         state.element.inert = state.inert;

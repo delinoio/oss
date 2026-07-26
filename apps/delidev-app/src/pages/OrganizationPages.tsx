@@ -5,6 +5,7 @@ import {
 } from "@connectrpc/connect-query";
 import { createClient, type Transport } from "@connectrpc/connect";
 import {
+  BillingPeriodStatus,
   BillingService,
   CatalogService,
   InvitationStatus,
@@ -15,6 +16,8 @@ import {
   TeamAccessSource,
   TeamService,
   TeamRole,
+  UsageRecordStatus,
+  type BillingSummary,
   type EffectiveTeamAccess,
   type LedgerEntry,
   type Organization,
@@ -22,6 +25,7 @@ import {
   type OrganizationMember,
   type Team,
   type TeamMembership,
+  type UsageRecord,
 } from "@delinoio/delibase-connect";
 import {
   useEffect,
@@ -51,6 +55,7 @@ import {
   formatEnumLabel,
   formatUsdMicros,
 } from "../utils/format";
+import { navigateToPolarHostedPage } from "../utils/hostedBilling";
 import { useOrganization } from "./OrganizationShell";
 
 function uuid(value: string | undefined) {
@@ -1854,86 +1859,21 @@ function TeamMembershipManagement({
 export function BillingPage() {
   useDocumentMetadata("Billing", "View organization balance and subscription.");
   const { callerRole, organization, transport } = useOrganization();
-  const online = useOnline();
-  const showBillingActions = canManageOrganization(callerRole);
+  const canManageBilling = canManageOrganization(callerRole);
   const summary = useQuery(
     BillingService.method.getBillingSummary,
     { organizationId: organization.organizationId },
     { gcTime: 0, retry: false, staleTime: 0, transport },
   );
-  const ledger = useInfiniteQuery(
-    BillingService.method.listLedgerEntries,
-    {
-      operation: LedgerOperation.UNSPECIFIED,
-      organizationId: organization.organizationId,
-      page: { cursor: "", pageSize: 100 },
-    },
-    {
-      enabled: showBillingActions,
-      gcTime: 0,
-      getNextPageParam: (lastPage) => {
-        const cursor = lastPage.page?.nextCursor;
-        return cursor ? { cursor, pageSize: 100 } : undefined;
-      },
-      pageParamKey: "page",
-      retry: false,
-      staleTime: 0,
-      transport,
-    },
-  );
-  const checkout = useMutation(
-    BillingService.method.createSubscriptionCheckout,
-    { transport },
-  );
-  const portal = useMutation(
-    BillingService.method.createBillingPortalSession,
-    { transport },
-  );
-  const checkoutIdempotencyKey = useRef<
-    { key: string } | undefined
-  >(undefined);
-  const editableOverageLimit = summary.data?.summary
-    ? getEditableOverageLimit(
-        summary.data.summary.overageLimitConfigured,
-        summary.data.summary.monthlyOverageLimit?.value,
-      )
-    : undefined;
-
-  const openCheckout = () => {
-    checkoutIdempotencyKey.current ??= createIdempotencyKey();
-    checkout.mutate(
-      {
-        cancelUrl: window.location.href,
-        idempotency: checkoutIdempotencyKey.current,
-        organizationId: organization.organizationId,
-        successUrl: window.location.href,
-      },
-      {
-        onSuccess: (data) => {
-          if (data.checkoutUrl) window.location.assign(data.checkoutUrl);
-        },
-      },
-    );
-  };
-  const openPortal = () => {
-    portal.mutate(
-      {
-        idempotency: createIdempotencyKey(),
-        organizationId: organization.organizationId,
-        returnUrl: window.location.href,
-      },
-      {
-        onSuccess: (data) => {
-          if (data.portalUrl) window.location.assign(data.portalUrl);
-        },
-      },
-    );
-  };
 
   return (
     <>
       <OrganizationPageHeading
-        description="Credits roll forward. New overage is off until an owner or admin sets a limit."
+        description={
+          canManageBilling
+            ? "Review the shared balance, subscription, billing period, and metered usage policy."
+            : "See the shared credit available for app usage in this organization."
+        }
         title="Billing"
       />
       {summary.isPending ? <LoadingState label="Loading billing" /> : null}
@@ -1946,113 +1886,590 @@ export function BillingPage() {
       ) : null}
       {summary.data?.summary ? (
         <>
-          <div className="stat-grid">
+          <div
+            className={`stat-grid ${canManageBilling ? "billing-stat-grid" : "member-balance-grid"}`}
+          >
             <article>
-              <span>Available credit</span>
+              <span>Shared available credit</span>
               <strong>
                 {formatOptionalUsdMicros(
                   summary.data.summary.availableCredit?.value,
                 )}
               </strong>
             </article>
-            <article>
-              <span>Held credit</span>
-              <strong>
-                {formatOptionalUsdMicros(
-                  summary.data.summary.heldCredit?.value,
-                )}
-              </strong>
-            </article>
-            <article>
-              <span>Monthly overage limit</span>
-              <strong>
-                {formatOverageLimit(
-                  summary.data.summary.overageLimitConfigured,
-                  summary.data.summary.monthlyOverageLimit?.value,
-                )}
-              </strong>
-            </article>
+            {canManageBilling ? (
+              <>
+                <BillingStat
+                  label="Held credit"
+                  value={formatOptionalUsdMicros(
+                    summary.data.summary.heldCredit?.value,
+                  )}
+                />
+                <BillingStat
+                  label="Committed overage"
+                  value={formatOptionalUsdMicros(
+                    summary.data.summary.committedOverage?.value,
+                  )}
+                />
+                <BillingStat
+                  label="Held overage"
+                  value={formatOptionalUsdMicros(
+                    summary.data.summary.heldOverage?.value,
+                  )}
+                />
+              </>
+            ) : null}
           </div>
-          {showBillingActions ? (
-            <>
-              <section className="content-card billing-plan">
-                <div>
-                  <span className="eyebrow">Monthly plan</span>
-                  <h2>
-                    {formatEnumLabel(
-                      SubscriptionStatus[
-                        summary.data.summary.subscriptionStatus
-                      ] ?? summary.data.summary.subscriptionStatus,
-                    )}
-                  </h2>
-                  <p>$10 monthly includes $10 of credits that never expire.</p>
-                </div>
-                <div className="button-row">
-                  <button
-                    className="button primary"
-                    disabled={!online || checkout.isPending}
-                    onClick={openCheckout}
-                    type="button"
-                  >
-                    Start subscription
-                  </button>
-                  <button
-                    className="button secondary"
-                    disabled={!online || portal.isPending}
-                    onClick={openPortal}
-                    type="button"
-                  >
-                    Manage billing
-                  </button>
-                </div>
-                {checkout.error || portal.error ? (
-                  <p className="inline-error" role="alert">
-                    {(checkout.error ?? portal.error)?.message}
-                  </p>
-                ) : null}
-                {!online ? <OfflineActionHint /> : null}
-              </section>
-              {editableOverageLimit === undefined ? (
-                <ErrorState
-                  error={
-                    new Error(
-                      "The configured limit was missing from the billing summary.",
-                    )
-                  }
-                  onRetry={() => void summary.refetch()}
-                  title="Overage limit unavailable"
-                />
-              ) : (
-                <OverageLimitForm
-                  initialLimit={editableOverageLimit}
-                  onUpdated={() => void summary.refetch()}
-                />
-              )}
-            </>
+          {canManageBilling ? (
+            <BillingAdministration
+              onRefreshSummary={() => void summary.refetch()}
+              summary={summary.data.summary}
+            />
           ) : (
-            <p className="muted">
-              An organization owner or admin can change subscription and
-              overage settings.
-            </p>
+            <section className="content-card privacy-boundary">
+              <h2>Your billing access</h2>
+              <p>
+                This balance is shared by the organization. Your usage page
+                includes only your own usage and usage in teams you can
+                effectively access.
+              </p>
+              <p>
+                Invoices, the full credit ledger, subscription and payment
+                state, checkout, the billing portal, and overage settings are
+                available only to organization Owners and Admins.
+              </p>
+            </section>
           )}
         </>
       ) : null}
-      {showBillingActions ? (
-        <BillingLedger
-          entries={
-            ledger.data?.pages.flatMap((page) => page.entries) ?? []
+    </>
+  );
+}
+
+function BillingStat({ label, value }: { label: string; value: string }) {
+  return (
+    <article>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function BillingAdministration({
+  onRefreshSummary,
+  summary,
+}: {
+  onRefreshSummary: () => void;
+  summary: BillingSummary;
+}) {
+  const { organization, transport } = useOrganization();
+  const ledger = useInfiniteQuery(
+    BillingService.method.listLedgerEntries,
+    {
+      operation: LedgerOperation.UNSPECIFIED,
+      organizationId: organization.organizationId,
+      page: { cursor: "", pageSize: 100 },
+    },
+    {
+      gcTime: 0,
+      getNextPageParam: (lastPage) => {
+        const cursor = lastPage.page?.nextCursor;
+        return cursor ? { cursor, pageSize: 100 } : undefined;
+      },
+      pageParamKey: "page",
+      retry: false,
+      staleTime: 0,
+      transport,
+    },
+  );
+  const editableLimit = getEditableOverageLimit(
+    summary.overageLimitConfigured,
+    summary.monthlyOverageLimit?.value,
+  );
+
+  return (
+    <>
+      <BillingSubscriptionCard summary={summary} />
+      <BillingPeriodCard summary={summary} />
+      {editableLimit === undefined ? (
+        <ErrorState
+          error={
+            new Error(
+              "The configured limit was missing from the billing summary.",
+            )
           }
-          error={ledger.error}
-          hasData={Boolean(ledger.data)}
-          hasNextPage={ledger.hasNextPage}
-          isFetchNextPageError={ledger.isFetchNextPageError}
-          isFetchingNextPage={ledger.isFetchingNextPage}
-          isPending={ledger.isPending}
-          onLoadMore={() => void ledger.fetchNextPage()}
-          onRetry={() => void ledger.refetch()}
+          onRetry={onRefreshSummary}
+          title="Overage limit unavailable"
+        />
+      ) : (
+        <OverageLimitControl
+          initialLimit={editableLimit}
+          onUpdated={onRefreshSummary}
+          summary={summary}
+        />
+      )}
+      <BillingPolicy />
+      <BillingLedger
+        entries={ledger.data?.pages.flatMap((page) => page.entries) ?? []}
+        error={ledger.error}
+        hasData={Boolean(ledger.data)}
+        hasNextPage={ledger.hasNextPage}
+        isFetchNextPageError={ledger.isFetchNextPageError}
+        isFetchingNextPage={ledger.isFetchingNextPage}
+        isPending={ledger.isPending}
+        onLoadMore={() => void ledger.fetchNextPage()}
+        onRetry={() => void ledger.refetch()}
+      />
+    </>
+  );
+}
+
+function subscriptionStateMessage(status: SubscriptionStatus): string {
+  switch (status) {
+    case SubscriptionStatus.ACTIVE:
+      return "The current paid cycle can grant credit and allow configured overage.";
+    case SubscriptionStatus.CHECKOUT_PENDING:
+      return "A hosted checkout is already open. Finish it in the existing Polar page or wait for it to expire.";
+    case SubscriptionStatus.PAST_DUE:
+      return "Payment is past due. Existing credit remains usable, but no new credit or overage is available until payment recovers.";
+    case SubscriptionStatus.CANCELED:
+      return "The subscription is canceled. Existing credit remains usable; new grants and overage are stopped.";
+    case SubscriptionStatus.REVOKED:
+      return "The subscription is revoked. Existing credit remains usable; new grants and overage are stopped.";
+    case SubscriptionStatus.NONE:
+      return "There is no subscription. Existing credit, if any, remains usable and overage stays disabled.";
+    default:
+      return "Subscription state is unavailable. Refresh before changing billing.";
+  }
+}
+
+function BillingSubscriptionCard({ summary }: { summary: BillingSummary }) {
+  const { organization, transport } = useOrganization();
+  const online = useOnline();
+  const checkout = useMutation(
+    BillingService.method.createSubscriptionCheckout,
+    { gcTime: 0, transport },
+  );
+  const portal = useMutation(
+    BillingService.method.createBillingPortalSession,
+    { gcTime: 0, transport },
+  );
+  const checkoutKey = useRef<{ key: string } | undefined>(undefined);
+  const portalKey = useRef<{ key: string } | undefined>(undefined);
+  const [navigationError, setNavigationError] = useState("");
+  const canStartCheckout =
+    summary.subscriptionStatus === SubscriptionStatus.NONE;
+  const canOpenPortal =
+    summary.subscriptionStatus !== SubscriptionStatus.NONE &&
+    summary.subscriptionStatus !== SubscriptionStatus.UNSPECIFIED &&
+    summary.subscriptionStatus !== SubscriptionStatus.CHECKOUT_PENDING;
+
+  const openCheckout = () => {
+    if (!online) return;
+    setNavigationError("");
+    checkoutKey.current ??= createIdempotencyKey();
+    checkout.mutate(
+      {
+        cancelUrl: window.location.href,
+        idempotency: checkoutKey.current,
+        organizationId: organization.organizationId,
+        successUrl: window.location.href,
+      },
+      {
+        onSuccess: (data) => {
+          if (!navigateToPolarHostedPage(data.checkoutUrl)) {
+            setNavigationError(
+              "Checkout did not return a valid Polar-hosted HTTPS page. Retry or contact support.",
+            );
+          }
+        },
+      },
+    );
+  };
+
+  const openPortal = () => {
+    if (!online) return;
+    setNavigationError("");
+    portalKey.current ??= createIdempotencyKey();
+    portal.mutate(
+      {
+        idempotency: portalKey.current,
+        organizationId: organization.organizationId,
+        returnUrl: window.location.href,
+      },
+      {
+        onSuccess: (data) => {
+          if (!navigateToPolarHostedPage(data.portalUrl)) {
+            setNavigationError(
+              "The portal did not return a valid Polar-hosted HTTPS page. Retry or contact support.",
+            );
+          }
+        },
+      },
+    );
+  };
+  const requestError = checkout.error ?? portal.error;
+
+  return (
+    <section className="content-card billing-plan">
+      <div className="billing-plan-copy">
+        <span className="eyebrow">Monthly plan</span>
+        <h2>
+          {formatEnumLabel(
+            SubscriptionStatus[summary.subscriptionStatus] ??
+              summary.subscriptionStatus,
+          )}
+        </h2>
+        <p>
+          <strong>$10 monthly</strong> grants exactly $10.00
+          (10,000,000 USD micro-units) after each successful payment. Unused
+          credit rolls over without expiration.
+        </p>
+        <p className="billing-state-message">
+          {subscriptionStateMessage(summary.subscriptionStatus)}
+        </p>
+      </div>
+      <div className="billing-actions">
+        <div className="button-row">
+          {canStartCheckout ? (
+            <button
+              className="button primary"
+              disabled={!online || checkout.isPending || portal.isPending}
+              onClick={openCheckout}
+              type="button"
+            >
+              {checkout.isPending ? "Opening Polar…" : "Start subscription"}
+            </button>
+          ) : null}
+          {canOpenPortal ? (
+            <button
+              className="button secondary"
+              disabled={!online || checkout.isPending || portal.isPending}
+              onClick={openPortal}
+              type="button"
+            >
+              {portal.isPending
+                ? "Opening Polar…"
+                : "Invoices and payment"}
+            </button>
+          ) : null}
+        </div>
+        <small>
+          Checkout, card collection, invoices, receipts, cancellation, and
+          payment recovery stay on Polar-hosted pages. DeliDev never handles
+          card details.
+        </small>
+        {requestError || navigationError ? (
+          <p className="inline-error" role="alert">
+            {navigationError || describeDelibaseError(requestError)}
+          </p>
+        ) : null}
+        {!online ? <OfflineActionHint /> : null}
+      </div>
+    </section>
+  );
+}
+
+type TimestampValue = {
+  nanos: number;
+  seconds: bigint;
+};
+
+function formatTimestamp(
+  value: TimestampValue | undefined,
+  options: Intl.DateTimeFormatOptions,
+): string {
+  if (!value) return "Unavailable";
+  return new Date(
+    Number(value.seconds) * 1000 + value.nanos / 1_000_000,
+  ).toLocaleString("en-US", options);
+}
+
+function BillingPeriodCard({ summary }: { summary: BillingSummary }) {
+  const period = summary.currentPeriod;
+  const overageUsed =
+    summary.committedOverage && summary.heldOverage
+      ? summary.committedOverage.value + summary.heldOverage.value
+      : undefined;
+  return (
+    <section
+      aria-labelledby="billing-period-heading"
+      className="content-card billing-period-card"
+    >
+      <div>
+        <span className="eyebrow">Billing period</span>
+        <h2 id="billing-period-heading">
+          {period
+            ? formatEnumLabel(
+                BillingPeriodStatus[period.status] ?? period.status,
+              )
+            : "No open period"}
+        </h2>
+        <p>
+          {period
+            ? `${formatTimestamp(period.startsAt, { dateStyle: "medium" })} – ${formatTimestamp(period.endsAt, { dateStyle: "medium" })}`
+            : "Overage requires a current active Polar billing period. Rollover credit can still be used without one."}
+        </p>
+      </div>
+      <dl className="billing-period-values">
+        <div>
+          <dt>Committed + held overage</dt>
+          <dd>{formatOptionalUsdMicros(overageUsed)}</dd>
+        </div>
+        <div>
+          <dt>Monthly limit</dt>
+          <dd>
+            {formatOverageLimit(
+              summary.overageLimitConfigured,
+              summary.monthlyOverageLimit?.value,
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>New overage</dt>
+          <dd>{summary.newOverageAllowed ? "Allowed" : "Blocked"}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+function OverageLimitControl({
+  initialLimit,
+  onUpdated,
+  summary,
+}: {
+  initialLimit: bigint;
+  onUpdated: () => void;
+  summary: BillingSummary;
+}) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const used =
+    (summary.committedOverage?.value ?? 0n) +
+    (summary.heldOverage?.value ?? 0n);
+  return (
+    <section
+      aria-labelledby="overage-limit-title"
+      className="content-card overage-limit-card"
+    >
+      <div>
+        <span className="eyebrow">Metered usage</span>
+        <h2 id="overage-limit-title">Monthly overage limit</h2>
+        <p>
+          Current limit:{" "}
+          {formatOverageLimit(
+            summary.overageLimitConfigured,
+            summary.monthlyOverageLimit?.value,
+          )}; {formatUsdMicros(used)} committed or held this period.
+        </p>
+        <p className="muted">
+          Overage defaults to zero until explicitly set. Lowering the limit
+          below committed and held overage never reverses usage; it blocks new
+          reservations until usage is below the limit or a new period begins.
+        </p>
+      </div>
+      <button
+        className="button secondary"
+        onClick={() => {
+          setMessage("");
+          setDialogOpen(true);
+        }}
+        type="button"
+      >
+        Change monthly limit
+      </button>
+      {message ? (
+        <p className="inline-success" role="status">
+          {message}
+        </p>
+      ) : null}
+      {dialogOpen ? (
+        <OverageLimitDialog
+          initialLimit={initialLimit}
+          onClose={() => setDialogOpen(false)}
+          onUpdated={() => {
+            setMessage("Monthly overage limit updated.");
+            setDialogOpen(false);
+            onUpdated();
+          }}
         />
       ) : null}
-    </>
+    </section>
+  );
+}
+
+function OverageLimitDialog({
+  initialLimit,
+  onClose,
+  onUpdated,
+}: {
+  initialLimit: bigint;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const { organization, transport } = useOrganization();
+  const online = useOnline();
+  const [monthlyLimit, setMonthlyLimit] = useState(() =>
+    formatUsdMicrosInput(initialLimit),
+  );
+  const [formError, setFormError] = useState("");
+  const pendingKey = useRef<
+    { input: bigint; key: { key: string } } | undefined
+  >(undefined);
+  const update = useMutation(BillingService.method.updateOverageLimit, {
+    gcTime: 0,
+    transport,
+  });
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!online) return;
+    setFormError("");
+    const micros = parseUsdMicros(monthlyLimit.trim());
+    if (micros === undefined) {
+      setFormError(
+        "Enter a non-negative USD amount with up to six decimals.",
+      );
+      return;
+    }
+    if (pendingKey.current?.input !== micros) {
+      pendingKey.current = { input: micros, key: createIdempotencyKey() };
+    }
+    update.mutate(
+      {
+        idempotency: pendingKey.current.key,
+        monthlyLimit: { value: micros },
+        organizationId: organization.organizationId,
+      },
+      {
+        onError: (error) => setFormError(describeDelibaseError(error)),
+        onSuccess: () => {
+          pendingKey.current = undefined;
+          onUpdated();
+        },
+      },
+    );
+  };
+
+  return (
+    <Dialog
+      descriptionId="overage-limit-description"
+      onClose={onClose}
+      titleId="overage-limit-dialog-title"
+    >
+      <h2 id="overage-limit-dialog-title">Change monthly overage limit</h2>
+      <p id="overage-limit-description">
+        Enter the maximum overage allowed in each Polar billing period. Set
+        zero to block all new overage.
+      </p>
+      <form className="overage-dialog-form" onSubmit={submit}>
+        <label htmlFor="monthly-overage-limit">
+          Limit in USD
+          <input
+            aria-describedby={
+              formError
+                ? "monthly-overage-help monthly-overage-error"
+                : "monthly-overage-help"
+            }
+            aria-invalid={Boolean(formError)}
+            // Dialog focuses this critical input after capturing the opener,
+            // preserving focus restoration when the modal closes.
+            data-dialog-autofocus
+            id="monthly-overage-limit"
+            inputMode="decimal"
+            min="0"
+            onChange={(event) => {
+              setMonthlyLimit(event.target.value);
+              setFormError("");
+            }}
+            required
+            step="0.000001"
+            type="number"
+            value={monthlyLimit}
+          />
+        </label>
+        <small className="field-hint" id="monthly-overage-help">
+          Up to six decimal places; stored exactly as USD micro-units.
+        </small>
+        {formError ? (
+          <p
+            className="inline-error"
+            id="monthly-overage-error"
+            role="alert"
+          >
+            {formError}
+          </p>
+        ) : null}
+        {!online ? <OfflineActionHint /> : null}
+        <div className="dialog-actions">
+          <button
+            className="button secondary"
+            disabled={update.isPending}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="button primary"
+            disabled={!online || update.isPending}
+            type="submit"
+          >
+            {update.isPending ? "Updating…" : "Update limit"}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function BillingPolicy() {
+  return (
+    <section
+      aria-labelledby="billing-policy-title"
+      className="content-card billing-policy"
+    >
+      <span className="eyebrow">How billing behaves</span>
+      <h2 id="billing-policy-title">Credits, overage, and reliability</h2>
+      <ul className="policy-grid">
+        <li>
+          <strong>Refunds and chargebacks</strong>
+          <span>
+            The matching net credit grant is reversed. Credit already consumed
+            becomes overage in the applicable period, counts against its
+            limit, and can block new reservations.
+          </span>
+        </li>
+        <li>
+          <strong>Cancellation or past due</strong>
+          <span>
+            Existing credit stays usable. New credit grants and all new
+            overage stop until billing returns to active.
+          </span>
+        </li>
+        <li>
+          <strong>Polar outage</strong>
+          <span>
+            Delibase continues authorizing within local credit and configured
+            overage, then queues overage usage for eventual Polar delivery.
+            Checkout creation fails without changing local billing.
+          </span>
+        </li>
+        <li>
+          <strong>Reservations</strong>
+          <span>
+            Apps reserve a maximum amount server-to-server. Expired or
+            released holds return to the shared balance; late commits and
+            commits above reserved units fail with stable error reasons.
+          </span>
+        </li>
+      </ul>
+      <p className="muted">
+        DeliDev only displays delibase results and billing settings. Usage
+        charging is never initiated in the browser.
+      </p>
+    </section>
   );
 }
 
@@ -2146,7 +2563,7 @@ function BillingLedger({
           </div>
           {isFetchNextPageError && error ? (
             <p className="inline-error" role="alert">
-              {error.message}
+              {describeDelibaseError(error)}
             </p>
           ) : null}
           {hasNextPage ? (
@@ -2169,101 +2586,16 @@ function BillingLedger({
   );
 }
 
-function OverageLimitForm({
-  initialLimit,
-  onUpdated,
-}: {
-  initialLimit: bigint;
-  onUpdated: () => void;
-}) {
-  const { organization, transport } = useOrganization();
-  const online = useOnline();
-  const [monthlyLimit, setMonthlyLimit] = useState(() =>
-    formatUsdMicrosInput(initialLimit),
-  );
-  const [message, setMessage] = useState("");
-  const [formError, setFormError] = useState("");
-  const update = useMutation(BillingService.method.updateOverageLimit, {
-    transport,
-  });
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setMessage("");
-    setFormError("");
-    const micros = parseUsdMicros(monthlyLimit.trim());
-    if (micros === undefined) {
-      setFormError(
-        "Enter a non-negative USD amount with up to six decimals.",
-      );
-      return;
-    }
-    update.mutate(
-      {
-        idempotency: createIdempotencyKey(),
-        monthlyLimit: { value: micros },
-        organizationId: organization.organizationId,
-      },
-      {
-        onError: (error) =>
-          setFormError(describeDelibaseError(error)),
-        onSuccess: () => {
-          setMessage("Monthly overage limit updated.");
-          onUpdated();
-        },
-      },
-    );
-  };
-
-  return (
-    <form className="form-card billing-limit-form" onSubmit={submit}>
-      <div>
-        <span className="eyebrow">Metered usage</span>
-        <h2>Monthly overage limit</h2>
-        <p className="muted">
-          Set zero to block new overage after available credits are used.
-        </p>
-      </div>
-      <label>
-        Limit in USD
-        <input
-          // This is the single critical input in the overage form.
-          // eslint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
-          inputMode="decimal"
-          min="0"
-          onChange={(event) => setMonthlyLimit(event.target.value)}
-          required
-          step="0.000001"
-          type="number"
-          value={monthlyLimit}
-        />
-      </label>
-      {formError ? (
-        <p className="inline-error" role="alert">
-          {formError}
-        </p>
-      ) : null}
-      {message ? (
-        <p className="inline-success" role="status">
-          {message}
-        </p>
-      ) : null}
-      <button
-        className="button primary"
-        disabled={!online || update.isPending}
-        type="submit"
-      >
-        {update.isPending ? "Updating…" : "Update overage limit"}
-      </button>
-      {!online ? <OfflineActionHint /> : null}
-    </form>
-  );
-}
-
 export function UsagePage() {
   useDocumentMetadata("Usage", "View organization usage records.");
-  const { organization, transport } = useOrganization();
+  const { callerRole, organization, transport } = useOrganization();
+  const { accountState } = useAccountState();
+  const canViewOrganizationUsage = canManageOrganization(callerRole);
+  const summary = useQuery(
+    BillingService.method.getBillingSummary,
+    { organizationId: organization.organizationId },
+    { gcTime: 0, retry: false, staleTime: 0, transport },
+  );
   const usage = useInfiniteQuery(
     BillingService.method.listUsageRecords,
     {
@@ -2287,9 +2619,58 @@ export function UsagePage() {
   return (
     <>
       <OrganizationPageHeading
-        description="Usage visibility follows your organization and effective team role."
+        description={
+          canViewOrganizationUsage
+            ? "Review organization-wide settled usage and its team, actor, service, meter, credit, and overage attribution."
+            : "Review your usage and usage in teams you can effectively access."
+        }
         title="Usage"
       />
+      {summary.isPending ? <LoadingState label="Loading shared balance" /> : null}
+      {summary.isError ? (
+        <ErrorState
+          error={summary.error}
+          onRetry={() => void summary.refetch()}
+          title="Balance unavailable"
+        />
+      ) : null}
+      {summary.data?.summary ? (
+        <>
+          <div className="stat-grid usage-summary-grid">
+            <BillingStat
+              label="Shared available credit"
+              value={formatOptionalUsdMicros(
+                summary.data.summary.availableCredit?.value,
+              )}
+            />
+            {canViewOrganizationUsage ? (
+              <>
+                <BillingStat
+                  label="Committed overage"
+                  value={formatOptionalUsdMicros(
+                    summary.data.summary.committedOverage?.value,
+                  )}
+                />
+                <BillingStat
+                  label="Held overage"
+                  value={formatOptionalUsdMicros(
+                    summary.data.summary.heldOverage?.value,
+                  )}
+                />
+              </>
+            ) : null}
+          </div>
+          {canViewOrganizationUsage ? (
+            <UsagePeriodContext summary={summary.data.summary} />
+          ) : (
+            <p className="muted usage-visibility-note">
+              Delibase applies your personal and effective-team visibility on
+              every page of results. Other teams and organization-wide billing
+              data are not returned to Members.
+            </p>
+          )}
+        </>
+      ) : null}
       {usage.isPending ? <LoadingState label="Loading usage" /> : null}
       {usage.isError && !usage.data ? (
         <ErrorState
@@ -2306,23 +2687,63 @@ export function UsagePage() {
       ) : null}
       {usageRows.length ? (
         <>
+          {usageRows.some(
+            (record) =>
+              record.status === UsageRecordStatus.POLAR_PENDING,
+          ) ? (
+            <p className="outage-state" role="status">
+              Some overage usage is queued for Polar. Local balances and limits
+              remain authoritative while delivery is retried; no usage is lost
+              or charged from this browser.
+            </p>
+          ) : null}
           <div className="table-card">
             <table>
               <caption className="sr-only">Usage records</caption>
               <thead>
                 <tr>
+                  <th scope="col">Committed</th>
                   <th scope="col">Team</th>
+                  <th scope="col">Attribution</th>
+                  <th scope="col">Meter</th>
                   <th scope="col">Units</th>
-                  <th scope="col">Cost</th>
+                  <th scope="col">Unit price</th>
+                  <th scope="col">Total</th>
+                  <th scope="col">Credit</th>
+                  <th scope="col">Overage</th>
+                  <th scope="col">Status</th>
                   <th scope="col">Reference</th>
                 </tr>
               </thead>
               <tbody>
                 {usageRows.map((record) => (
                   <tr key={record.usageRecordId?.value}>
+                    <td>
+                      {formatTimestamp(record.committedAt, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </td>
                     <td>{record.teamNameSnapshot}</td>
+                    <td>
+                      <UsageAttribution
+                        callerAccountId={
+                          accountState.account?.accountId?.value ?? ""
+                        }
+                        record={record}
+                      />
+                    </td>
+                    <td>
+                      <code>{shortIdentifier(record.meterId?.value)}</code>
+                    </td>
                     <td>{formatUsageUnits(record.units?.value)}</td>
+                    <td>
+                      {formatUsageCost(record.usdMicrosPerUnit?.value)}
+                    </td>
                     <td>{formatUsageCost(record.totalCost?.value)}</td>
+                    <td>{formatUsageCost(record.creditApplied?.value)}</td>
+                    <td>{formatUsageCost(record.overageApplied?.value)}</td>
+                    <td>{formatUsageStatus(record.status)}</td>
                     <td>{record.clientReference || "—"}</td>
                   </tr>
                 ))}
@@ -2331,7 +2752,7 @@ export function UsagePage() {
           </div>
           {usage.isFetchNextPageError ? (
             <p className="inline-error" role="alert">
-              {usage.error.message}
+              {describeDelibaseError(usage.error)}
             </p>
           ) : null}
           {usage.hasNextPage ? (
@@ -2350,8 +2771,81 @@ export function UsagePage() {
           ) : null}
         </>
       ) : null}
+      <section className="content-card usage-reservation-note">
+        <h2>How usage reaches this page</h2>
+        <p>
+          Mini-app services reserve, commit, or release usage through
+          authenticated server-to-server requests. Reservations hold shared
+          credit and overage atomically, expire at the catalog-defined time,
+          and reject late or above-reservation commits with canonical stable
+          error details. This page is read-only and never performs charging.
+        </p>
+      </section>
     </>
   );
+}
+
+function UsagePeriodContext({ summary }: { summary: BillingSummary }) {
+  const period = summary.currentPeriod;
+  return (
+    <section
+      aria-labelledby="usage-period-title"
+      className="content-card usage-period-context"
+    >
+      <div>
+        <span className="eyebrow">Current billing period</span>
+        <h2 id="usage-period-title">
+          {period
+            ? `${formatTimestamp(period.startsAt, { dateStyle: "medium" })} – ${formatTimestamp(period.endsAt, { dateStyle: "medium" })}`
+            : "No open period"}
+        </h2>
+      </div>
+      <p>
+        Usage history below is paginated across periods. Held and committed
+        overage count only against the current Polar period; rollover credit
+        remains available across period boundaries.
+      </p>
+    </section>
+  );
+}
+
+function shortIdentifier(value: string | undefined): string {
+  if (!value) return "Unavailable";
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
+}
+
+function UsageAttribution({
+  callerAccountId,
+  record,
+}: {
+  callerAccountId: string;
+  record: UsageRecord;
+}) {
+  const accountId = record.userAccountId?.value;
+  const serviceId = record.serviceIdentityId?.value;
+  return (
+    <span className="usage-attribution">
+      <span>
+        {accountId === callerAccountId
+          ? "You"
+          : `Account ${shortIdentifier(accountId)}`}
+      </span>
+      <small>Service {shortIdentifier(serviceId)}</small>
+    </span>
+  );
+}
+
+function formatUsageStatus(value: UsageRecordStatus): string {
+  switch (value) {
+    case UsageRecordStatus.POLAR_PENDING:
+      return "Queued for Polar";
+    case UsageRecordStatus.POLAR_REPORTED:
+      return "Reported to Polar";
+    case UsageRecordStatus.COMMITTED:
+      return "Committed";
+    default:
+      return "Unavailable";
+  }
 }
 
 export function formatUsageUnits(value: bigint | undefined): string {

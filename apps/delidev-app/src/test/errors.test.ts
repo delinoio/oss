@@ -86,4 +86,31 @@ describe("delibase error details", () => {
       ),
     ).toContain("Transfer ownership");
   });
+
+  it("maps billing and reservation details to actionable states", () => {
+    expect(
+      describeDelibaseError(
+        delibaseError(ErrorReason.OVERAGE_LIMIT_EXHAUSTED),
+      ),
+    ).toContain("Increase the limit");
+    expect(
+      describeDelibaseError(
+        delibaseError(ErrorReason.SUBSCRIPTION_PAST_DUE),
+      ),
+    ).toContain("billing portal");
+    expect(
+      describeDelibaseError(delibaseError(ErrorReason.RESERVATION_EXPIRED)),
+    ).toContain("held funds were released");
+    expect(
+      describeDelibaseError(
+        delibaseError(ErrorReason.COMMIT_UNITS_EXCEED_RESERVED),
+      ),
+    ).toContain("reserved units");
+  });
+
+  it("maps dependency outages without exposing arbitrary diagnostics", () => {
+    expect(
+      describeDelibaseError(new ConnectError("", Code.Unavailable)),
+    ).toContain("temporarily unavailable");
+  });
 });

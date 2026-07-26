@@ -51,7 +51,12 @@ describe("service worker cache policy", () => {
     "BillingService/GetBillingSummary",
     "BillingService/ListLedgerEntries",
     "BillingService/ListUsageRecords",
+    "BillingService/CreateSubscriptionCheckout",
+    "BillingService/CreateBillingPortalSession",
+    "BillingService/UpdateOverageLimit",
     "UsageService/ReserveUsage",
+    "UsageService/CommitUsage",
+    "UsageService/ReleaseUsage",
   ])("never caches sensitive RPC %s", (rpc) => {
     expect(
       classifyCacheRequest(
