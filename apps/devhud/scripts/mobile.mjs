@@ -73,10 +73,10 @@ if (operation === "generate") {
   process.exit(0);
 }
 
-await runPackageManager(["run", "build"], { cwd: appRoot });
 const restoreBuildTemplate = await stampBuildRevision(platform);
 
 try {
+await runPackageManager(["run", "build"], { cwd: appRoot });
 if (platform === "android") {
   const targets =
     targetSet === "production" ? ["aarch64", "armv7"] : ["x86_64"];
