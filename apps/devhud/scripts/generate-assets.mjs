@@ -62,6 +62,32 @@ const files = new Map([
 
 const generatedFiles = new Map([
   [
+    "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/Contents.json",
+    `${JSON.stringify({
+      images: [
+        { size: "20x20", idiom: "iphone", filename: "AppIcon-20x20@2x.png", scale: "2x" },
+        { size: "20x20", idiom: "iphone", filename: "AppIcon-20x20@3x.png", scale: "3x" },
+        { size: "29x29", idiom: "iphone", filename: "AppIcon-29x29@2x-1.png", scale: "2x" },
+        { size: "29x29", idiom: "iphone", filename: "AppIcon-29x29@3x.png", scale: "3x" },
+        { size: "40x40", idiom: "iphone", filename: "AppIcon-40x40@2x.png", scale: "2x" },
+        { size: "40x40", idiom: "iphone", filename: "AppIcon-40x40@3x.png", scale: "3x" },
+        { size: "60x60", idiom: "iphone", filename: "AppIcon-60x60@2x.png", scale: "2x" },
+        { size: "60x60", idiom: "iphone", filename: "AppIcon-60x60@3x.png", scale: "3x" },
+        { size: "20x20", idiom: "ipad", filename: "AppIcon-20x20@1x.png", scale: "1x" },
+        { size: "20x20", idiom: "ipad", filename: "AppIcon-20x20@2x-1.png", scale: "2x" },
+        { size: "29x29", idiom: "ipad", filename: "AppIcon-29x29@1x.png", scale: "1x" },
+        { size: "29x29", idiom: "ipad", filename: "AppIcon-29x29@2x.png", scale: "2x" },
+        { size: "40x40", idiom: "ipad", filename: "AppIcon-40x40@1x.png", scale: "1x" },
+        { size: "40x40", idiom: "ipad", filename: "AppIcon-40x40@2x-1.png", scale: "2x" },
+        { size: "76x76", idiom: "ipad", filename: "AppIcon-76x76@1x.png", scale: "1x" },
+        { size: "76x76", idiom: "ipad", filename: "AppIcon-76x76@2x.png", scale: "2x" },
+        { size: "83.5x83.5", idiom: "ipad", filename: "AppIcon-83.5x83.5@2x.png", scale: "2x" },
+        { size: "1024x1024", idiom: "ios-marketing", filename: "AppIcon-512@2x.png", scale: "1x" },
+      ],
+      info: { version: 1, author: "xcode" },
+    })}\n`,
+  ],
+  [
     "src-tauri/gen/apple/Assets.xcassets/LaunchLogo.imageset/Contents.json",
     `${JSON.stringify({
       images: [{ idiom: "universal", filename: "devhud-launch.png", scale: "1x" }],
@@ -245,6 +271,8 @@ const isWithin = (root, target) => {
 if (check && previousManifest) {
   const manifestMatches = JSON.stringify(previousManifest.assets) === JSON.stringify(generatedManifest.assets);
   if (!manifestMatches) throw new Error("asset manifest does not match generator outputs");
+  const generatedFilesMatch = JSON.stringify(previousManifest.generatedFiles ?? []) === JSON.stringify(generatedManifest.generatedFiles);
+  if (!generatedFilesMatch) throw new Error("generated-file manifest does not match generator outputs");
 }
 if (!check && previousManifest) {
   for (const asset of previousManifest.assets ?? []) {
