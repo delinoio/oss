@@ -786,6 +786,7 @@ jobs:
           pnpm --filter devhud typecheck
           pnpm --filter devhud lint
           pnpm --filter devhud test
+          pnpm --filter devhud test:performance
           pnpm --filter devhud test:a11y
           pnpm --filter devhud build
           pnpm --filter devhud check:diagnostics

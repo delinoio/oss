@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { resolve } from "node:path";
 
@@ -37,4 +38,37 @@ test("schema rejects fields that could carry raw host or user data", () => {
   const value = JSON.parse(readFileSync(fixture, "utf8"));
   value.targets[0].path = "/private/user";
   assert.throws(() => validate(value), /invalid target/u);
+});
+
+test("validation rejects arbitrary units and notes", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0].measurements[0].unit = "arbitrary | injected";
+  assert.throws(() => validate(value), /invalid measurement/u);
+  value.targets[0].measurements[0].unit = "milliseconds";
+  value.targets[0].measurements[0].note = "/home/user/token";
+  assert.throws(() => validate(value), /invalid measurement/u);
+});
+
+test("aggregation validates provenance and retains available duplicate targets", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const available = JSON.parse(readFileSync(fixture, "utf8"));
+    const unavailable = structuredClone(available);
+    unavailable.targets[0].status = "unavailable";
+    unavailable.targets[0].unavailableReason = "artifact-not-found";
+    unavailable.targets[0].measurements = [];
+    const stale = structuredClone(available);
+    stale.application.version = "9.9.9";
+    const availableFile = resolve(directory, "available.json");
+    const unavailableFile = resolve(directory, "unavailable.json");
+    const staleFile = resolve(directory, "stale.json");
+    writeFileSync(availableFile, JSON.stringify(available));
+    writeFileSync(unavailableFile, JSON.stringify(unavailable));
+    writeFileSync(staleFile, JSON.stringify(stale));
+    assert.equal(aggregate([unavailableFile, availableFile]).targets[0].status, "available");
+    assert.throws(() => aggregate([staleFile]), /invalid application provenance/u);
+    assert.throws(() => aggregate([]), /at least one performance result/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
