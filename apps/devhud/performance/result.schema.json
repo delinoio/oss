@@ -9,11 +9,12 @@
     "schemaVersion": { "const": "devhud.performance.result.v1" },
     "application": {
       "type": "object", "additionalProperties": false,
-      "required": ["version", "tauriRevision", "cefRevision"],
+      "required": ["version", "tauriRevision", "cefRevision", "buildRevision"],
       "properties": {
         "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$" },
         "tauriRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
-        "cefRevision": { "type": "string", "pattern": "^tauri-runtime-cef@[0-9a-f]{40}$" }
+        "cefRevision": { "type": "string", "pattern": "^tauri-runtime-cef@[0-9a-f]{40}$" },
+        "buildRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
       }
     },
     "targets": {

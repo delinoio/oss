@@ -31,7 +31,7 @@ async function stampBuildRevision(platform) {
     const path = resolve(appRoot, "src-tauri/gen/android/app/build.gradle.kts");
     const source = await readFile(path, "utf8");
     await writeFile(path, source.replace(/^\s*versionName = [^\n]+$/mu, `        versionName = "0.1.0+f49ebda2fdba5755456b0f049e32593ca0ea331a+${buildRevision}"`));
-    return;
+    return () => writeFile(path, source);
   }
   const path = resolve(appRoot, "src-tauri/gen/apple/project.yml");
   const source = await readFile(path, "utf8");
@@ -39,6 +39,7 @@ async function stampBuildRevision(platform) {
     ? source.replace(/(\s+DevHudBuildRevision:\s*)[^\r\n]*/u, `$1${buildRevision}`)
     : source.replace("        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a", `        DevHudTauriRevision: f49ebda2fdba5755456b0f049e32593ca0ea331a\n        DevHudBuildRevision: ${buildRevision}`);
   await writeFile(path, updated);
+  return () => writeFile(path, source);
 }
 
 if (
@@ -71,8 +72,9 @@ if (operation === "generate") {
 }
 
 await runPackageManager(["run", "build"], { cwd: appRoot });
-await stampBuildRevision(platform);
+const restoreBuildTemplate = await stampBuildRevision(platform);
 
+try {
 if (platform === "android") {
   const targets =
     targetSet === "production" ? ["aarch64", "armv7"] : ["x86_64"];
@@ -119,4 +121,7 @@ if (platform === "android") {
     ],
     { cwd: appRoot },
   );
+}
+} finally {
+  await restoreBuildTemplate();
 }

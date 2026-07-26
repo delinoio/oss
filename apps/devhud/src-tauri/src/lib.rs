@@ -1501,10 +1501,11 @@ fn get_runtime_info(
             .expect("TAURI_UPSTREAM_VERSION must include the pinned revision")
             .1;
         eprintln!(
-            r#"DEVHUD_PERF {{"event":"ready","application":{{"version":"{}","tauriRevision":"{}","cefRevision":"tauri-runtime-cef@{}"}}}}"#,
+            r#"DEVHUD_PERF {{"event":"ready","application":{{"version":"{}","tauriRevision":"{}","cefRevision":"tauri-runtime-cef@{}","buildRevision":"{}"}}}}"#,
             env!("CARGO_PKG_VERSION"),
             tauri_revision,
             tauri_revision,
+            option_env!("DEVHUD_BUILD_REVISION").unwrap_or("unverified"),
         );
         let hud_start = std::time::Instant::now();
         if matches!(show_hud_internal(&_app, false), HudActionOutcome::Shown) {

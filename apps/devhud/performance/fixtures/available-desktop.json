@@ -1,6 +1,6 @@
 {
   "schemaVersion": "devhud.performance.result.v1",
-  "application": { "version": "0.1.0", "tauriRevision": "f49ebda2fdba5755456b0f049e32593ca0ea331a", "cefRevision": "tauri-runtime-cef@f49ebda2fdba5755456b0f049e32593ca0ea331a" },
+  "application": { "version": "0.1.0", "tauriRevision": "f49ebda2fdba5755456b0f049e32593ca0ea331a", "cefRevision": "tauri-runtime-cef@f49ebda2fdba5755456b0f049e32593ca0ea331a", "buildRevision": "0000000000000000000000000000000000000000" },
   "targets": [{ "platform": "linux", "architecture": "x86_64", "status": "available", "measurements": [
     { "name": "desktop-cold-startup", "status": "available", "method": "process-ready-marker", "samples": [120], "unit": "milliseconds", "note": "cold-process" },
     { "name": "desktop-warm-startup", "status": "available", "method": "process-ready-marker", "samples": [80], "unit": "milliseconds", "note": "warm-process" },

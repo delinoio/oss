@@ -4,9 +4,15 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { resolve } from "node:path";
 
-import { aggregate, canonicalize, desktopBuildFailed, installedAndroidArchitecture, packageMeasurement, profileDesktop, recordPackageProvenance, summary, validate } from "./performance.mjs";
+import { aggregate, canonicalize, desktopBuildFailed, installedAndroidArchitecture, packageMeasurement, profileDesktop, recordPackageProvenance, result, summary, validate } from "./performance.mjs";
 
-const fixture = resolve(import.meta.dirname, "../performance/fixtures/available-desktop.json");
+const fixtureSource = resolve(import.meta.dirname, "../performance/fixtures/available-desktop.json");
+const fixtureDirectory = mkdtempSync(resolve(tmpdir(), "devhud-performance-fixture-"));
+const fixture = resolve(fixtureDirectory, "available-desktop.json");
+const fixtureValue = JSON.parse(readFileSync(fixtureSource, "utf8"));
+fixtureValue.application = result([]).application;
+writeFileSync(fixture, JSON.stringify(fixtureValue));
+process.on("exit", () => rmSync(fixtureDirectory, { recursive: true, force: true }));
 
 test("validates the representative desktop result", () => {
   assert.equal(validate(JSON.parse(readFileSync(fixture, "utf8"))), true);
@@ -55,7 +61,8 @@ test("malformed performance markers after ready invalidate the complete profile"
   const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
   try {
     const executable = resolve(directory, "late-malformed-marker.mjs");
-    writeFileSync(executable, "#!/usr/bin/env node\nconsole.log('DEVHUD_PERF {\\\"event\\\":\\\"ready\\\",\\\"application\\\":{\\\"version\\\":\\\"0.1.0\\\",\\\"tauriRevision\\\":\\\"f49ebda2fdba5755456b0f049e32593ca0ea331a\\\",\\\"cefRevision\\\":\\\"tauri-runtime-cef@f49ebda2fdba5755456b0f049e32593ca0ea331a\\\"}}')\nconsole.log('DEVHUD_PERF {\\\"event\\\":\\\"hud-shown\\\",\\\"durationMs\\\":1}')\nsetTimeout(() => console.log('DEVHUD_PERF {not-json}'), 20)\nsetInterval(() => {}, 1_000)\n");
+    const ready = JSON.stringify({ event: "ready", application: result([]).application });
+    writeFileSync(executable, `#!/usr/bin/env node\nconsole.log('DEVHUD_PERF ${ready}')\nconsole.log('DEVHUD_PERF {"event":"hud-shown","durationMs":1}')\nsetTimeout(() => console.log('DEVHUD_PERF {not-json}'), 20)\nsetInterval(() => {}, 1_000)\n`);
     chmodSync(executable, 0o755);
     const profile = await profileDesktop(executable, "cold-process");
     assert.equal(profile.failure, "measurement-protocol-failed");
@@ -78,7 +85,7 @@ test("desktop performance command owns its cross-platform build fallback", () =>
   assert.equal(packageManifest.scripts["perf:desktop"], "node scripts/performance.mjs desktop --build");
   assert.match(script, /process\.platform === "win32" \? "pnpm\.cmd" : "pnpm"/u);
   assert.match(script, /buildTimeoutMs = 15 \* 60_000/u);
-  assert.match(script, /"build:desktop:performance"\], buildTimeoutMs, \{ stdio: "inherit" \}/u);
+  assert.match(script, /"build:desktop:performance"\], buildTimeoutMs, \{ stdio: "inherit", env: \{ \.\.\.process\.env, DEVHUD_BUILD_REVISION: buildRevision \} \}/u);
   assert.equal(packageManifest.scripts["perf:package"], "node scripts/performance.mjs package --build");
   assert.match(script, /clearPackageArtifacts\(\); const build = run\(process\.platform === "win32" \? "pnpm\.cmd" : "pnpm", \["run", "build:preview"\]/u);
   assert.match(script, /DevHud desktop performance build failed/u);
@@ -221,14 +228,19 @@ test("aggregation validates provenance and retains available duplicate targets",
     unavailable.targets[0].measurements = [];
     const stale = structuredClone(available);
     stale.application.version = "9.9.9";
+    const staleBuild = structuredClone(available);
+    staleBuild.application.buildRevision = "0".repeat(40);
     const availableFile = resolve(directory, "available.json");
     const unavailableFile = resolve(directory, "unavailable.json");
     const staleFile = resolve(directory, "stale.json");
+    const staleBuildFile = resolve(directory, "stale-build.json");
     writeFileSync(availableFile, JSON.stringify(available));
     writeFileSync(unavailableFile, JSON.stringify(unavailable));
     writeFileSync(staleFile, JSON.stringify(stale));
+    writeFileSync(staleBuildFile, JSON.stringify(staleBuild));
     assert.equal(aggregate([unavailableFile, availableFile]).targets[0].status, "available");
     assert.throws(() => aggregate([staleFile]), /invalid application provenance/u);
+    assert.throws(() => aggregate([staleBuildFile]), /invalid application provenance/u);
     assert.throws(() => aggregate([]), /at least one performance result/u);
   } finally {
     rmSync(directory, { recursive: true, force: true });
