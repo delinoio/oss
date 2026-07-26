@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { resolve } from "node:path";
 
-import { aggregate, canonicalize, packageMeasurement, profileDesktop, recordPackageProvenance, summary, validate } from "./performance.mjs";
+import { aggregate, canonicalize, desktopBuildFailed, packageMeasurement, profileDesktop, recordPackageProvenance, summary, validate } from "./performance.mjs";
 
 const fixture = resolve(import.meta.dirname, "../performance/fixtures/available-desktop.json");
 
@@ -49,6 +49,23 @@ test("malformed performance markers fail without waiting for the startup timeout
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("malformed performance markers after ready invalidate the complete profile", async () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "devhud-performance-"));
+  try {
+    const executable = resolve(directory, "late-malformed-marker.mjs");
+    writeFileSync(executable, "#!/usr/bin/env node\nconsole.log('DEVHUD_PERF {\\\"event\\\":\\\"ready\\\",\\\"application\\\":{\\\"version\\\":\\\"0.1.0\\\",\\\"tauriRevision\\\":\\\"f49ebda2fdba5755456b0f049e32593ca0ea331a\\\",\\\"cefRevision\\\":\\\"tauri-runtime-cef@f49ebda2fdba5755456b0f049e32593ca0ea331a\\\"}}')\nconsole.log('DEVHUD_PERF {\\\"event\\\":\\\"hud-shown\\\",\\\"durationMs\\\":1}')\nsetTimeout(() => console.log('DEVHUD_PERF {not-json}'), 20)\nsetInterval(() => {}, 1_000)\n");
+    chmodSync(executable, 0o755);
+    const profile = await profileDesktop(executable, "cold-process");
+    assert.equal(profile.failure, "measurement-protocol-failed");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("build failures produce valid desktop evidence", () => {
+  assert.equal(validate(desktopBuildFailed()), true);
 });
 
 test("aggregation is deterministic and keeps unavailable distinct from failed", () => {
@@ -147,6 +164,13 @@ test("available targets require every platform measurement", () => {
     { name: "desktop-cold-startup", status: "available", method: "process-ready-marker", samples: [42], unit: "milliseconds", note: "cold-process" }
   ];
   assert.throws(() => validate(value), /available target missing required measurements/u);
+});
+
+test("unavailable targets cannot retain every required measurement", () => {
+  const value = JSON.parse(readFileSync(fixture, "utf8"));
+  value.targets[0].status = "unavailable";
+  value.targets[0].unavailableReason = "artifact-not-found";
+  assert.throws(() => validate(value), /unavailable target has complete measurements/u);
 });
 
 test("aggregation validates provenance and retains available duplicate targets", () => {

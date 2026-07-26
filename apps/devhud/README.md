@@ -69,6 +69,8 @@ unavailable evidence rather than label a stale build as current. If target
 inspection fails, its architecture is recorded as `unknown`, never guessed.
 Version 0.1.0 has no performance threshold:
 these commands always produce evidence rather than gate a release.
+If the desktop performance build fails, `perf:desktop` writes a `build-failed`
+result instead of omitting that host from the evidence.
 Run `pnpm perf:package` before `pnpm perf:desktop` to build a release artifact
 and write its matching provenance sidecar. Desktop profiling reports package
 size only when that sidecar's application provenance and SHA-256 match the
