@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const appRoot = resolve(import.meta.dirname, "..");
 const sourcePath = join(appRoot, "assets/source/devhud-lettermark.svg");
@@ -180,13 +180,20 @@ const { sourceHash, entries } = await outputs();
 const generatedManifest = { source: "source/devhud-lettermark.svg", sourceSha256: sourceHash, generator: "scripts/generate-assets.mjs", assets: entries.map(({ relativePath, size }) => ({ path: relativePath, dimensions: dimensions(size) })) };
 const previousManifest = await readFile(manifestPath, "utf8").then(JSON.parse).catch(() => null);
 const expectedPaths = new Set(generatedManifest.assets.map(({ path }) => path));
+const generatedDirectories = [...files.keys()].map((path) => resolve(appRoot, dirname(path)));
+const isWithin = (root, target) => {
+  const relativePath = relative(root, target);
+  return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
+};
 if (check && previousManifest) {
   const manifestMatches = JSON.stringify(previousManifest.assets) === JSON.stringify(generatedManifest.assets);
   if (!manifestMatches) throw new Error("asset manifest does not match generator outputs");
 }
 if (!check && previousManifest) {
   for (const asset of previousManifest.assets ?? []) {
-    if (!expectedPaths.has(asset.path)) await unlink(join(appRoot, asset.path)).catch(() => {});
+    if (typeof asset.path !== "string" || expectedPaths.has(asset.path)) continue;
+    const obsoletePath = resolve(appRoot, asset.path);
+    if (generatedDirectories.some((directory) => isWithin(directory, obsoletePath))) await unlink(obsoletePath).catch(() => {});
   }
 }
 for (const { relativePath, data } of entries) {
