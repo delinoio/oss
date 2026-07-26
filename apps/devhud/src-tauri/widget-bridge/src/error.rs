@@ -26,6 +26,9 @@ impl WidgetBridgeErrorCode {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[cfg(mobile)]
+    #[error("the widget reset precondition failed")]
+    ResetPrecondition,
+    #[cfg(mobile)]
     #[error("the native widget bridge failed")]
     PluginInvoke(#[from] tauri::plugin::mobile::PluginInvokeError),
     #[cfg(mobile)]
@@ -37,6 +40,7 @@ pub enum Error {
 impl Error {
     pub fn code(&self) -> Option<WidgetBridgeErrorCode> {
         match self {
+            Self::ResetPrecondition => Some(WidgetBridgeErrorCode::StorageUnavailable),
             Self::PluginInvoke(tauri::plugin::mobile::PluginInvokeError::InvokeRejected(
                 response,
             )) => response

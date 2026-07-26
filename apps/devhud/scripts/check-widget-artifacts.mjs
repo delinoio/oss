@@ -104,8 +104,9 @@ requireCondition(
     privatePluginRustSource.includes("register_ios_plugin") &&
     privatePluginRustSource.includes('run_mobile_plugin("readConfiguration"') &&
     privatePluginRustSource.includes('run_mobile_plugin("writeConfiguration"') &&
+    privatePluginRustSource.includes('run_mobile_plugin("prepareReset"') &&
     privatePluginRustSource.includes('run_mobile_plugin("resetConfiguration"'),
-  "widget state operations must cross only the standard private Tauri Kotlin/Swift plugin boundary",
+  "widget state operations and reset preflight must cross only the standard private Tauri Kotlin/Swift plugin boundary",
 );
 requireCondition(
   privatePluginManifest.includes("publish = false") &&
