@@ -30,11 +30,39 @@ impl LocalLogWriter {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn clear(&self) -> io::Result<()> {
         self.state
             .lock()
             .map_err(|_| io::Error::other("local log state is unavailable"))?
             .clear()
+    }
+
+    pub(crate) fn preflight_clear_in(&self, directory: &Path) -> io::Result<()> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("local log state is unavailable"))?;
+        if state.directory != directory {
+            return Err(io::Error::other(
+                "local log reset target does not match the active sink",
+            ));
+        }
+        preflight_managed_logs(directory)
+    }
+
+    pub(crate) fn clear_in(&self, directory: &Path) -> io::Result<()> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("local log state is unavailable"))?;
+        if state.directory != directory {
+            return Err(io::Error::other(
+                "local log reset target does not match the active sink",
+            ));
+        }
+        preflight_managed_logs(directory)?;
+        state.clear()
     }
 
     pub(crate) fn snapshot(&self) -> io::Result<Vec<Vec<u8>>> {
@@ -51,10 +79,15 @@ impl LocalLogWriter {
     }
 
     pub(crate) fn clear_managed_in(directory: &Path) -> io::Result<()> {
+        preflight_managed_logs(directory)?;
         match remove_managed_logs(directory) {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
             result => result,
         }
+    }
+
+    pub(crate) fn preflight_clear_managed_in(directory: &Path) -> io::Result<()> {
+        preflight_managed_logs(directory)
     }
 }
 
@@ -270,6 +303,26 @@ fn managed_logs(directory: &Path) -> io::Result<Vec<(PathBuf, SystemTime, u64)>>
     Ok(logs)
 }
 
+fn preflight_managed_logs(directory: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(directory) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(io::Error::other(
+                "local log reset target must not be a symbolic link",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    }
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        if is_managed_log(&entry.path()) && !entry.file_type()?.is_file() {
+            return Err(io::Error::other("managed local log must be a regular file"));
+        }
+    }
+    managed_logs(directory).map(|_| ())
+}
+
 fn prune_logs(directory: &Path, now: SystemTime, retained_bytes: u64) -> io::Result<()> {
     let mut logs = managed_logs(directory)?;
     for (path, opened_at, _) in &logs {
@@ -393,6 +446,51 @@ mod tests {
             "user-owned-export"
         );
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clearing_rejects_a_symbolic_link_before_deleting_managed_looking_files() {
+        use std::os::unix::fs::symlink;
+
+        let root = temporary_directory("clear-symlink");
+        let user_directory = root.join("user-owned");
+        let linked_directory = root.join("devhud-logs");
+        fs::create_dir_all(&user_directory).unwrap();
+        let user_file = user_directory.join("devhud-1-1-1.jsonl");
+        fs::write(&user_file, b"user-owned").unwrap();
+        symlink(&user_directory, &linked_directory).unwrap();
+
+        assert!(LocalLogWriter::clear_managed_in(&linked_directory).is_err());
+        assert_eq!(fs::read_to_string(user_file).unwrap(), "user-owned");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clearing_rejects_a_managed_looking_symbolic_link_before_mutation() {
+        use std::os::unix::fs::symlink;
+
+        let root = temporary_directory("clear-managed-symlink");
+        let directory = root.join("devhud-logs");
+        let user_file = root.join("user-owned.jsonl");
+        let managed_file = directory.join("devhud-1-1-1.jsonl");
+        let managed_link = directory.join("devhud-1-1-2.jsonl");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&user_file, b"user-owned").unwrap();
+        fs::write(&managed_file, b"managed").unwrap();
+        symlink(&user_file, &managed_link).unwrap();
+
+        assert!(LocalLogWriter::clear_managed_in(&directory).is_err());
+        assert_eq!(fs::read(&managed_file).unwrap(), b"managed");
+        assert_eq!(fs::read(&user_file).unwrap(), b"user-owned");
+        assert!(
+            fs::symlink_metadata(&managed_link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

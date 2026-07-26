@@ -16,6 +16,11 @@ pub struct ReadConfigurationResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct PrepareResetResponse {
+    pub prepared: bool,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetRefreshResponse {
     pub refreshed_widget_count: u32,

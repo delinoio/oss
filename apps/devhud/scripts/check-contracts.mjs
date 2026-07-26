@@ -17,7 +17,10 @@ const paths = {
     appRoot,
     "src-tauri/capabilities/desktop-main.json",
   ),
-  mainCapability: resolve(appRoot, "src-tauri/capabilities/main.json"),
+  mobileMainCapability: resolve(
+    appRoot,
+    "src-tauri/capabilities/mobile-main.json",
+  ),
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
   rootCargoManifest: resolve(repositoryRoot, "Cargo.toml"),
@@ -36,7 +39,7 @@ const [
   cargoManifest,
   diagnosticsBridgeManifest,
   desktopMainCapability,
-  mainCapability,
+  mobileMainCapability,
   packageLock,
   packageManifest,
   rootCargoManifest,
@@ -50,7 +53,7 @@ const [
   readFile(paths.cargoManifest, "utf8"),
   readFile(paths.diagnosticsBridgeManifest, "utf8"),
   readFile(paths.desktopMainCapability, "utf8"),
-  readFile(paths.mainCapability, "utf8"),
+  readFile(paths.mobileMainCapability, "utf8"),
   readFile(paths.packageLock, "utf8"),
   readFile(paths.packageManifest, "utf8"),
   readFile(paths.rootCargoManifest, "utf8"),
@@ -63,7 +66,7 @@ const [
 
 const packageJson = JSON.parse(packageManifest);
 const desktopMainCapabilityJson = JSON.parse(desktopMainCapability);
-const mainCapabilityJson = JSON.parse(mainCapability);
+const mobileMainCapabilityJson = JSON.parse(mobileMainCapability);
 const settingsCapabilityJson = JSON.parse(settingsCapability);
 const tauriJson = JSON.parse(tauriConfig);
 const failures = [];
@@ -203,7 +206,7 @@ requireCondition(
   tauriJson.plugins === undefined,
   "the common scaffold must not expose plugin, updater, or deep-link configuration",
 );
-const expectedMainPermissions = [
+const expectedMobileMainPermissions = [
   "allow-get-runtime-info",
   "allow-read-settings",
   "allow-write-settings",
@@ -213,6 +216,9 @@ const expectedMainPermissions = [
   "allow-reset-dev-hud",
 ];
 const expectedDesktopMainPermissions = [
+  "allow-get-runtime-info",
+  "allow-read-settings",
+  "allow-read-widget-configuration",
   "allow-hide-hud",
   "allow-show-settings",
 ];
@@ -227,12 +233,15 @@ const expectedSettingsPermissions = [
   "allow-replace-global-shortcut",
   "allow-set-launch-at-login",
   "allow-complete-first-run",
+  "allow-request-update-action",
 ];
 requireCondition(
-  JSON.stringify(mainCapabilityJson.windows) === JSON.stringify(["main"]) &&
-    JSON.stringify(mainCapabilityJson.permissions) ===
-      JSON.stringify(expectedMainPermissions),
-  "the HUD capability must expose only its scoped shell and persistence commands",
+  JSON.stringify(mobileMainCapabilityJson.windows) === JSON.stringify(["main"]) &&
+    JSON.stringify(mobileMainCapabilityJson.platforms) ===
+      JSON.stringify(["iOS", "android"]) &&
+    JSON.stringify(mobileMainCapabilityJson.permissions) ===
+      JSON.stringify(expectedMobileMainPermissions),
+  "the mobile capability must expose only its scoped persistence, diagnostics, and reset commands",
 );
 requireCondition(
   JSON.stringify(desktopMainCapabilityJson.windows) ===
@@ -250,8 +259,8 @@ requireCondition(
 );
 requireCondition(
   JSON.stringify(tauriJson.app?.security?.capabilities) ===
-    JSON.stringify(["main", "desktop-main", "settings"]),
-  "the Tauri configuration must enable shared, desktop HUD, and settings capabilities",
+    JSON.stringify(["desktop-main", "settings", "mobile-main"]),
+  "the Tauri configuration must enable only desktop HUD, settings, and mobile capabilities",
 );
 for (const action of [
   "Open DevHud",
@@ -275,6 +284,39 @@ requireCondition(
 requireCondition(
   rustShell.match(/\.incognito\(true\)/gu)?.length === 2,
   "both desktop CEF webviews must use off-the-record profiles",
+);
+for (const storageSwitch of [
+  "--disable-application-cache",
+  "--disable-databases",
+  "--disable-local-storage",
+  "--disable-session-storage",
+  "--disable-sync",
+  "--incognito",
+]) {
+  requireCondition(
+    rustShell.includes(`"${storageSwitch}"`),
+    `desktop CEF must apply ${storageSwitch}`,
+  );
+}
+requireCondition(
+  rustShell.includes(".root_cache_path(profile)") &&
+    rustShell.includes('const CEF_PROFILE_DIRECTORY: &str = "cef"') &&
+    rustShell.includes("validate_cef_profile_target") &&
+    rustShell.includes("preflight_cef_profile_reset") &&
+    rustShell.includes("reset_cef_profile_directory"),
+  "desktop CEF must use and reset only its explicit application-owned profile root",
+);
+requireCondition(
+  (rustShell.match(/\.on_download\(\|_, _\| false\)/gu)?.length ?? 0) === 3 &&
+    (rustShell.match(/\.on_web_resource_request\(apply_web_resource_policy\)/gu)
+      ?.length ?? 0) === 3,
+  "every desktop and mobile webview must deny downloads and remote resources",
+);
+requireCondition(
+  rustShell.includes("preflight_local_logs_for_reset") &&
+    rustShell.includes("preflight_reset()") &&
+    rustShell.includes("prepare_reset()"),
+  "reset must resolve persistence, mobile widget, and bounded-log preconditions before mutation",
 );
 requireCondition(
   rustShell.includes("build_settings_window(app.handle()).is_err()") &&

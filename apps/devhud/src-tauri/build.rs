@@ -6,7 +6,6 @@ const COMMANDS: &[&str] = &[
     "write_widget_configuration",
     "export_diagnostics",
     "reset_dev_hud",
-    "show_hud",
     "hide_hud",
     "show_settings",
     "hide_settings",

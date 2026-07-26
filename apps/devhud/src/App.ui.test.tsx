@@ -46,7 +46,6 @@ function desktopBridge(
   overrides: Partial<DesktopBridge> = {},
 ): DesktopBridge {
   return {
-    showHud: vi.fn(async () => ({ status: "shown" as const })),
     hideHud: vi.fn(async () => ({ status: "hidden" as const })),
     showSettings: vi.fn(async () => undefined),
     hideSettings: vi.fn(async () => undefined),
@@ -90,17 +89,13 @@ describe("DevHud application surfaces", () => {
     expect(screen.getByText("No tools are available in this foundation preview.")).toBeVisible();
   });
 
-  it("traps focus in settings, closes with Escape, and restores focus", async () => {
+  it("closes settings with Escape and restores focus", async () => {
     const user = userEvent.setup();
     renderApp();
     const settings = screen.getAllByRole("button", { name: "Settings" })[0];
     if (settings === undefined) throw new Error("Settings trigger is missing");
     await user.click(settings);
     expect(screen.getByRole("dialog", { name: "DevHud settings" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Close settings" })).toHaveFocus();
-    await user.keyboard("{Shift>}{Tab}{/Shift}");
-    expect(screen.getByRole("button", { name: "Reset DevHud" })).toHaveFocus();
-    await user.keyboard("{Tab}");
     expect(screen.getByRole("button", { name: "Close settings" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -715,7 +710,7 @@ describe("DevHud application surfaces", () => {
     await user.click(screen.getByRole("button", { name: "Confirm reset" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "DevHud cleared local settings",
+      "temporary reset data or application browsing data may remain",
     );
     expect(
       screen.getByRole("checkbox", { name: "Launch DevHud at login" }),
@@ -1066,6 +1061,112 @@ describe("DevHud application surfaces", () => {
     expect(screen.getByRole("combobox", { name: "Theme preference" })).toHaveValue(
       "system",
     );
+  });
+
+  it("traps confirmation focus and cancels with Escape without changing data", async () => {
+    const user = userEvent.setup();
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      encodeSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
+    );
+    const reset = vi.spyOn(storage, "reset");
+
+    renderApp({ platform: "mobile", storage });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const trigger = screen.getByRole("button", { name: "Reset DevHud" });
+    await waitFor(() => expect(trigger).toBeEnabled());
+    await user.click(trigger);
+
+    const confirmation = screen.getByRole("dialog", {
+      name: "Confirm Reset DevHud",
+    });
+    expect(confirmation).toBeVisible();
+    const accessibility = await axe.run(confirmation, {
+      rules: {
+        "color-contrast": { enabled: false },
+      },
+    });
+    expect(accessibility.violations).toEqual([]);
+    const confirm = screen.getByRole("button", { name: "Confirm reset" });
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(confirm).toHaveFocus();
+    expect(screen.getByText(/previously exported will not be changed/u)).toBeVisible();
+    fireEvent.keyDown(confirm, { key: "Tab", shiftKey: true });
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: "Tab" });
+    expect(confirm).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+
+    expect(
+      screen.queryByRole("dialog", { name: "Confirm Reset DevHud" }),
+    ).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(reset).not.toHaveBeenCalled();
+    expect(storage.values.get(SETTINGS_STORAGE_KEY)).toContain('"theme":"dark"');
+
+    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(trigger).toHaveFocus();
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus in the dialog while reset controls are disabled", async () => {
+    const user = userEvent.setup();
+    const storage = new MemoryStorageAdapter();
+    let completeReset: (outcome: PersistenceResetOutcome) => void = () => undefined;
+    storage.reset = vi.fn(
+      () =>
+        new Promise<PersistenceResetOutcome>((resolve) => {
+          completeReset = resolve;
+        }),
+    );
+
+    renderApp({ platform: "mobile", storage });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const trigger = screen.getByRole("button", { name: "Reset DevHud" });
+    await waitFor(() => expect(trigger).toBeEnabled());
+    await user.click(trigger);
+
+    const confirmation = screen.getByRole("dialog", {
+      name: "Confirm Reset DevHud",
+    });
+    const confirm = screen.getByRole("button", { name: "Confirm reset" });
+    await user.click(confirm);
+
+    await waitFor(() => {
+      expect(confirm).toBeDisabled();
+      expect(confirmation).toHaveFocus();
+    });
+    fireEvent.keyDown(confirmation, { key: "Tab" });
+    expect(confirmation).toHaveFocus();
+
+    await act(async () => completeReset({ status: "complete" }));
+    expect(await screen.findByText("DevHud local data was reset.")).toBeVisible();
+  });
+
+  it("supports repeated confirmed reset without recreating retained records", async () => {
+    const user = userEvent.setup();
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(
+      SETTINGS_STORAGE_KEY,
+      encodeSettings({ ...defaultSettings, theme: ThemePreference.Dark }),
+    );
+    const reset = vi.spyOn(storage, "reset");
+
+    renderApp({ platform: "mobile", storage });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const trigger = screen.getByRole("button", { name: "Reset DevHud" });
+    await waitFor(() => expect(trigger).toBeEnabled());
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      await user.click(trigger);
+      await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+      await waitFor(() => expect(reset).toHaveBeenCalledTimes(attempt));
+      expect(storage.values.size).toBe(0);
+      expect(trigger).toHaveFocus();
+    }
   });
 
   it("reconciles provider state after a partial reset failure", async () => {

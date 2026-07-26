@@ -1,6 +1,7 @@
 const NATIVE_COMMANDS: &[&str] = &[
     "readConfiguration",
     "writeConfiguration",
+    "prepareReset",
     "resetConfiguration",
 ];
 

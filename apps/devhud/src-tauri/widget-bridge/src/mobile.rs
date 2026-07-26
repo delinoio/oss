@@ -5,7 +5,7 @@ use tauri::{
 };
 
 use crate::{
-    EmptyRequest, ReadConfigurationResponse, Result, WidgetRefreshResponse,
+    EmptyRequest, PrepareResetResponse, ReadConfigurationResponse, Result, WidgetRefreshResponse,
     WriteConfigurationRequest,
 };
 
@@ -41,6 +41,17 @@ impl<R: Runtime> DevHudWidgetBridge<R> {
             .0
             .run_mobile_plugin("writeConfiguration", WriteConfigurationRequest { record })?;
         Ok(response.refreshed_widget_count)
+    }
+
+    pub fn prepare_reset(&self) -> Result<()> {
+        let response: PrepareResetResponse = self
+            .0
+            .run_mobile_plugin("prepareReset", EmptyRequest::default())?;
+        if response.prepared {
+            Ok(())
+        } else {
+            Err(crate::Error::ResetPrecondition)
+        }
     }
 
     pub fn reset_configuration(&self) -> Result<u32> {
