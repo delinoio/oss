@@ -20,8 +20,7 @@ pub(crate) struct LocalLogWriter {
 impl LocalLogWriter {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn new(application_id: &str) -> io::Result<Self> {
-        let directory = log_directory(application_id)
-            .ok_or_else(|| io::Error::other("local log directory is unavailable"))?;
+        let directory = managed_log_directory(application_id)?;
         Self::new_in(directory)
     }
 
@@ -49,6 +48,13 @@ impl LocalLogWriter {
         self.state
             .lock()
             .is_ok_and(|state| destination.parent() == Some(state.directory.as_path()))
+    }
+
+    pub(crate) fn clear_managed_in(directory: &Path) -> io::Result<()> {
+        match remove_managed_logs(directory) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        }
     }
 }
 
@@ -186,15 +192,18 @@ impl LocalLogState {
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn log_directory(application_id: &str) -> Option<PathBuf> {
+pub(crate) fn managed_log_directory(application_id: &str) -> io::Result<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         dirs::home_dir()
             .map(|directory| directory.join("Library").join("Logs").join(application_id))
+            .ok_or_else(|| io::Error::other("local log directory is unavailable"))
     }
     #[cfg(not(target_os = "macos"))]
     {
-        dirs::data_local_dir().map(|directory| directory.join(application_id).join("logs"))
+        dirs::data_local_dir()
+            .map(|directory| directory.join(application_id).join("logs"))
+            .ok_or_else(|| io::Error::other("local log directory is unavailable"))
     }
 }
 
@@ -307,7 +316,7 @@ mod tests {
     fn production_constructor_resolves_the_platform_log_directory() {
         let constructor: fn(&str) -> io::Result<LocalLogWriter> = LocalLogWriter::new;
         let _ = constructor;
-        assert!(log_directory("dev.deli.devhud").is_some());
+        assert!(managed_log_directory("dev.deli.devhud").is_ok());
     }
 
     #[test]
@@ -361,6 +370,24 @@ mod tests {
             fs::read_to_string(&logs[0].0).unwrap(),
             "{\"event\":\"after-reset\"}\n"
         );
+        assert_eq!(
+            fs::read_to_string(user_owned_export).unwrap(),
+            "user-owned-export"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn clearing_without_an_active_sink_removes_only_managed_logs() {
+        let directory = temporary_directory("clear-without-sink");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("devhud-1-1-1.jsonl"), b"managed").unwrap();
+        let user_owned_export = directory.join("DevHud-diagnostics.jsonl");
+        fs::write(&user_owned_export, b"user-owned-export").unwrap();
+
+        LocalLogWriter::clear_managed_in(&directory).unwrap();
+
+        assert!(managed_logs(&directory).unwrap().is_empty());
         assert_eq!(
             fs::read_to_string(user_owned_export).unwrap(),
             "user-owned-export"

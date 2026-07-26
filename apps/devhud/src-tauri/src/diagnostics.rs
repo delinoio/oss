@@ -392,12 +392,32 @@ impl DiagnosticRecord {
     }
 
     fn is_valid(&self) -> bool {
-        is_semantic_version(&self.application_version)
+        is_trusted_application_version(&self.application_version)
             && is_numeric_version(&self.build_version)
             && is_tauri_version(&self.tauri_version)
             && self.cef_version.as_deref().is_none_or(is_cef_version)
             && self.session_id.get_version_num() == 7
     }
+}
+
+fn is_trusted_application_version(value: &str) -> bool {
+    let Some(version) = numeric_version_triplet(value) else {
+        return false;
+    };
+    let Some(current_version) = numeric_version_triplet(APPLICATION_VERSION) else {
+        return false;
+    };
+    version <= current_version
+}
+
+fn numeric_version_triplet(value: &str) -> Option<[u64; 3]> {
+    is_numeric_version_with_exact_parts(value, 3).then_some(())?;
+    let mut parts = value.split('.').map(str::parse::<u64>);
+    Some([
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+    ])
 }
 
 fn is_semantic_version(value: &str) -> bool {
@@ -705,6 +725,21 @@ mod tests {
         );
         record.tauri_version = "2.11.4+token-secret".to_string();
 
+        assert!(
+            sanitize_chunks(vec![serde_json::to_vec(&record).unwrap()])
+                .unwrap()
+                .is_empty()
+        );
+
+        record.tauri_version = TAURI_UPSTREAM_VERSION.to_string();
+        record.application_version = format!("{APPLICATION_VERSION}+token-secret");
+        assert!(
+            sanitize_chunks(vec![serde_json::to_vec(&record).unwrap()])
+                .unwrap()
+                .is_empty()
+        );
+
+        record.application_version = "999.0.0".to_string();
         assert!(
             sanitize_chunks(vec![serde_json::to_vec(&record).unwrap()])
                 .unwrap()

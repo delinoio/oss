@@ -47,7 +47,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::{fs::File, io::Write};
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -80,6 +80,14 @@ use tauri_plugin_devhud_diagnostics::{
 use tauri_plugin_devhud_widget::{
     DevHudWidgetBridgeExt, Error as WidgetBridgeError, WidgetBridgeErrorCode,
 };
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+use uuid::Uuid;
 
 #[cfg(all(
     feature = "desktop-cef",
@@ -916,8 +924,57 @@ fn write_atomically(path: &std::path::Path, record: &str) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn write_export_atomically(path: &std::path::Path, contents: &[u8]) -> io::Result<()> {
+    write_export_atomically_with(path, |temporary_file| {
+        temporary_file.write_all(contents)?;
+        temporary_file.sync_all()
+    })
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn write_export_atomically_with(
+    path: &std::path::Path,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+) -> io::Result<()> {
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| io::Error::other("atomic destination has no file name"))?;
+    let mut temporary_name = file_name.to_os_string();
+    temporary_name.push(format!(".{}.tmp", Uuid::now_v7()));
+    let temporary_path = path.with_file_name(temporary_name);
+    let mut temporary_file = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary_path)?;
+    if let Err(error) = write(&mut temporary_file) {
+        drop(temporary_file);
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    drop(temporary_file);
+
+    if let Err(error) = replace_file(&temporary_path, path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    Ok(())
+}
+
 #[cfg(all(
-    any(feature = "desktop-cef", feature = "mobile-system-webview"),
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
     not(target_os = "windows")
 ))]
 fn replace_file(temporary_path: &std::path::Path, path: &std::path::Path) -> io::Result<()> {
@@ -925,7 +982,7 @@ fn replace_file(temporary_path: &std::path::Path, path: &std::path::Path) -> io:
 }
 
 #[cfg(all(
-    any(feature = "desktop-cef", feature = "mobile-system-webview"),
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
     target_os = "windows"
 ))]
 fn replace_file(temporary_path: &std::path::Path, path: &std::path::Path) -> io::Result<()> {
@@ -1923,11 +1980,15 @@ fn clear_browsing_data_for_reset(
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[cfg_attr(test, allow(dead_code))]
-fn clear_local_logs_for_reset() -> Result<(), PersistenceCommandError> {
-    let Some(diagnostics) = diagnostics::active() else {
-        return Ok(());
+fn clear_local_logs_for_reset(
+    log_directory: io::Result<PathBuf>,
+) -> Result<(), PersistenceCommandError> {
+    let result = if let Some(diagnostics) = diagnostics::active() {
+        diagnostics.clear()
+    } else {
+        log_directory.and_then(|directory| local_log::LocalLogWriter::clear_managed_in(&directory))
     };
-    diagnostics.clear().map_err(|_| {
+    result.map_err(|_| {
         diagnostics::emit_warning(
             diagnostics::DiagnosticEventId::PersistenceResetFailure,
             diagnostics::DiagnosticClassification::PersistenceResetFailed,
@@ -1989,10 +2050,7 @@ fn export_diagnostics() -> Result<DiagnosticsExportOutcome, DiagnosticsExportErr
                 return Err(DiagnosticsExportError::WriteFailed);
             }
             let bundle = diagnostics_bundle()?;
-            let mut file =
-                File::create(destination).map_err(|_| DiagnosticsExportError::WriteFailed)?;
-            file.write_all(&bundle)
-                .and_then(|()| file.sync_all())
+            write_export_atomically(&destination, &bundle)
                 .map_err(|_| DiagnosticsExportError::WriteFailed)
         },
     );
@@ -2143,7 +2201,9 @@ fn reset_dev_hud(
         });
     }
 
-    if let Err(reason) = clear_local_logs_for_reset() {
+    if let Err(reason) =
+        clear_local_logs_for_reset(local_log::managed_log_directory(APPLICATION_ID))
+    {
         let autostart_rollback = autostart_state.apply(previous_autostart);
         let autostart_rollback_failed = !matches!(
             autostart_rollback,
@@ -2240,7 +2300,11 @@ fn reset_dev_hud(
     state: State<'_, PersistenceState>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
     clear_browsing_data_for_reset(webview)?;
-    clear_local_logs_for_reset()?;
+    clear_local_logs_for_reset(
+        app.path()
+            .app_log_dir()
+            .map_err(|_| io::Error::other("local log directory is unavailable")),
+    )?;
     let reset_outcome = match state.reset() {
         Ok(()) => PersistenceResetOutcome::Complete,
         Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => return Err(error),
@@ -3036,6 +3100,30 @@ mod tests {
     }
 
     #[test]
+    fn reset_clears_managed_logs_without_an_active_sink() {
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-reset-log-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let managed_log = directory.join("devhud-1-1-1.jsonl");
+        let user_export = directory.join("DevHud-diagnostics.jsonl");
+        fs::write(&managed_log, b"retained-log").unwrap();
+        fs::write(&user_export, b"user-export").unwrap();
+
+        clear_local_logs_for_reset(Ok(directory.clone())).unwrap();
+
+        assert!(!managed_log.exists());
+        assert_eq!(fs::read(&user_export).unwrap(), b"user-export");
+        assert_eq!(
+            clear_local_logs_for_reset(Err(io::Error::other("injected unresolved log boundary"))),
+            Err(PersistenceCommandError::ResetFailed)
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn cancelled_diagnostics_export_never_opens_or_mutates_a_destination() {
         let writes = std::cell::Cell::new(0_u8);
         let outcome = export_selected_destination(
@@ -3062,6 +3150,32 @@ mod tests {
         assert_eq!(serialized, "\"write-failed\"");
         assert!(!serialized.contains("private"));
         assert!(!serialized.contains('/'));
+    }
+
+    #[test]
+    fn failed_atomic_export_preserves_the_previous_destination() {
+        let directory = std::env::temp_dir().join(format!(
+            "devhud-export-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("DevHud-diagnostics.jsonl");
+        fs::write(&destination, b"previous-export").unwrap();
+
+        let result = write_export_atomically_with(&destination, |temporary_file| {
+            temporary_file.write_all(b"incomplete-export")?;
+            Err(io::Error::other("injected export failure"))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"previous-export");
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+
+        write_export_atomically(&destination, b"complete-export").unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"complete-export");
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
