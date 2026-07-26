@@ -18,8 +18,13 @@ export interface RuntimeInfo {
   updatePolicy: "Unsupported" | "Desktop updater unavailable";
 }
 
+export type DiagnosticsExportOutcome =
+  | { status: "exported" }
+  | { status: "cancelled" };
+
 interface NativeCommandResults {
   get_runtime_info: RuntimeInfo;
+  export_diagnostics: DiagnosticsExportOutcome;
 }
 
 export interface RuntimeBridge {
@@ -37,4 +42,10 @@ export function loadRuntimeInfo(
   bridge: RuntimeBridge,
 ): Promise<RuntimeInfo> {
   return bridge.invoke("get_runtime_info");
+}
+
+export function exportDiagnostics(
+  bridge: RuntimeBridge,
+): Promise<DiagnosticsExportOutcome> {
+  return bridge.invoke("export_diagnostics");
 }

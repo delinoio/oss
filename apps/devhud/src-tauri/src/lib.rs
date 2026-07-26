@@ -1,12 +1,9 @@
 #[cfg(any(feature = "desktop-cef", test))]
 mod autostart;
-#[cfg(any(
-    all(
-        feature = "desktop-cef",
-        not(any(target_os = "android", target_os = "ios"))
-    ),
-    test
-))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg_attr(test, allow(dead_code))]
+mod diagnostics;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod local_log;
 #[cfg(any(feature = "desktop-cef", test))]
 mod shortcut;
@@ -38,11 +35,6 @@ compile_error!("desktop-cef cannot be used for iOS or Android");
 ))]
 compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
-))]
-use std::sync::OnceLock;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use std::sync::{
     Mutex,
@@ -72,6 +64,14 @@ use tauri::{
     PhysicalPosition, WindowEvent,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+};
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+use tauri_plugin_devhud_diagnostics::{
+    DevHudDiagnosticsBridgeExt, DiagnosticsBridgeErrorCode,
+    DiagnosticsExportOutcome as MobileDiagnosticsExportOutcome,
 };
 #[cfg(all(
     feature = "mobile-system-webview",
@@ -122,12 +122,6 @@ const WIDGET_CONFIGURATION_STORAGE_KEY: &str = "devhud.widget-configuration.v1";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const PERMISSIONS_POLICY: &str =
     "camera=(), display-capture=(), geolocation=(), microphone=(), usb=()";
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
-))]
-static LOCAL_LOG_WRITER: OnceLock<local_log::LocalLogWriter> = OnceLock::new();
-
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -190,6 +184,24 @@ enum RuntimeSurface {
 #[serde(rename_all = "camelCase")]
 enum RuntimeCommandError {
     NonBundledAsset,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+enum DiagnosticsExportOutcome {
+    Exported,
+    Cancelled,
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, allow(dead_code))]
+#[serde(rename_all = "kebab-case")]
+enum DiagnosticsExportError {
+    Unavailable,
+    PickerUnavailable,
+    WriteFailed,
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -360,12 +372,9 @@ impl PersistenceState {
 
     fn write(&self, key: &str, record: &str) -> Result<(), PersistenceCommandError> {
         let _guard = self.write_lock.lock().map_err(|_| {
-            tracing::warn!(
-                event = "devhud.persistence.unavailable",
-                operation = "write",
-                record = persistence_record_name(key),
-                classification = "storage-unavailable",
-                "DevHud persistence is unavailable"
+            diagnostics::emit_warning(
+                diagnostics::DiagnosticEventId::PersistenceUnavailable,
+                diagnostics::DiagnosticClassification::PersistenceStorageUnavailable,
             );
             PersistenceCommandError::StorageUnavailable
         })?;
@@ -426,10 +435,9 @@ impl PersistenceState {
 
     fn reset(&self) -> Result<(), PersistenceResetFailure> {
         let _guard = self.write_lock.lock().map_err(|_| {
-            tracing::warn!(
-                event = "devhud.persistence.reset_failure",
-                classification = "reset-failed",
-                "DevHud local data reset failed"
+            diagnostics::emit_warning(
+                diagnostics::DiagnosticEventId::PersistenceResetFailure,
+                diagnostics::DiagnosticClassification::PersistenceResetFailed,
             );
             PersistenceResetFailure::BeforeRecordsRemoved(PersistenceCommandError::ResetFailed)
         })?;
@@ -460,13 +468,10 @@ impl PersistenceState {
                 .ok_or(PersistenceResetFailure::BeforeRecordsRemoved(
                     PersistenceCommandError::StorageUnavailable,
                 ))?;
-        let previously_staged = pending_reset_stage_paths(directory, &paths).map_err(|error| {
-            tracing::warn!(
-                event = "devhud.persistence.reset_failure",
-                operation = "reset-scan",
-                error_kind = ?error.kind(),
-                classification = "reset-failed",
-                "DevHud could not inspect retained reset staging records"
+        let previously_staged = pending_reset_stage_paths(directory, &paths).map_err(|_| {
+            diagnostics::emit_warning(
+                diagnostics::DiagnosticEventId::PersistenceResetFailure,
+                diagnostics::DiagnosticClassification::PersistenceResetFailed,
             );
             PersistenceResetFailure::BeforeRecordsRemoved(PersistenceCommandError::ResetFailed)
         })?;
@@ -563,34 +568,26 @@ where
     // Once all records are staged, every stable key is absent. A partial unlink
     // can no longer be rolled back, but it must still report an incomplete reset.
     let mut cleanup_failed = false;
-    for (key, staged_path) in previously_staged {
+    for (_key, staged_path) in previously_staged {
         if let Err(error) = remove_staged_record(staged_path)
             && error.kind() != io::ErrorKind::NotFound
         {
             cleanup_failed = true;
-            tracing::warn!(
-                event = "devhud.persistence.reset_cleanup_failure",
-                operation = "reset-cleanup",
-                record = persistence_record_name(key),
-                error_kind = ?error.kind(),
-                classification = "cleanup-failed",
-                "DevHud retained reset staging cleanup failed"
+            diagnostics::emit_warning(
+                diagnostics::DiagnosticEventId::PersistenceResetCleanupFailure,
+                diagnostics::DiagnosticClassification::PersistenceCleanupFailed,
             );
         }
     }
     for staged_index in staged {
-        let (key, _, staged_path) = &paths[staged_index];
+        let (_key, _, staged_path) = &paths[staged_index];
         if let Err(error) = remove_staged_record(staged_path)
             && error.kind() != io::ErrorKind::NotFound
         {
             cleanup_failed = true;
-            tracing::warn!(
-                event = "devhud.persistence.reset_cleanup_failure",
-                operation = "reset-cleanup",
-                record = persistence_record_name(key),
-                error_kind = ?error.kind(),
-                classification = "cleanup-failed",
-                "DevHud reset staging cleanup failed"
+            diagnostics::emit_warning(
+                diagnostics::DiagnosticEventId::PersistenceResetCleanupFailure,
+                diagnostics::DiagnosticClassification::PersistenceCleanupFailed,
             );
         }
     }
@@ -628,35 +625,18 @@ fn exclude_ios_persistence_from_backup(directory: &Path) -> io::Result<()> {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
-fn persistence_record_name(key: &str) -> &'static str {
-    match key {
-        SETTINGS_STORAGE_KEY => "settings",
-        WIDGET_CONFIGURATION_STORAGE_KEY => "widget-configuration",
-        "persistence" => "persistence",
-        _ => "unknown",
-    }
-}
-
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
-fn log_persistence_io_failure(operation: &'static str, key: &str, error: &io::Error) {
-    tracing::warn!(
-        event = "devhud.persistence.io_failure",
-        operation,
-        record = persistence_record_name(key),
-        error_kind = ?error.kind(),
-        classification = "storage-unavailable",
-        "DevHud persistence I/O failed"
+fn log_persistence_io_failure(_operation: &'static str, _key: &str, _error: &io::Error) {
+    diagnostics::emit_warning(
+        diagnostics::DiagnosticEventId::PersistenceIoFailure,
+        diagnostics::DiagnosticClassification::PersistenceStorageUnavailable,
     );
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-fn log_persistence_unavailable(operation: &'static str, key: &str) {
-    tracing::warn!(
-        event = "devhud.persistence.unavailable",
-        operation,
-        record = persistence_record_name(key),
-        classification = "storage-unavailable",
-        "DevHud persistence is unavailable"
+fn log_persistence_unavailable(_operation: &'static str, _key: &str) {
+    diagnostics::emit_warning(
+        diagnostics::DiagnosticEventId::PersistenceUnavailable,
+        diagnostics::DiagnosticClassification::PersistenceStorageUnavailable,
     );
 }
 
@@ -674,11 +654,24 @@ fn widget_bridge_failure(
         Some(WidgetBridgeErrorCode::Incompatible) => PersistenceCommandError::Incompatible,
         _ => PersistenceCommandError::WidgetBridgeFailed,
     };
-    tracing::warn!(
-        event = "devhud.widget_bridge.failure",
-        operation,
-        classification = ?error.code(),
-        "DevHud native widget bridge operation failed"
+    let classification = match error.code() {
+        Some(WidgetBridgeErrorCode::Corrupt) => {
+            diagnostics::DiagnosticClassification::WidgetCorrupt
+        }
+        Some(WidgetBridgeErrorCode::FutureVersion) => {
+            diagnostics::DiagnosticClassification::WidgetFutureVersion
+        }
+        Some(WidgetBridgeErrorCode::Incompatible) => {
+            diagnostics::DiagnosticClassification::WidgetIncompatible
+        }
+        Some(WidgetBridgeErrorCode::RefreshFailed) => {
+            diagnostics::DiagnosticClassification::WidgetRefreshFailed
+        }
+        _ => diagnostics::DiagnosticClassification::WidgetBridgeUnavailable,
+    };
+    diagnostics::emit_warning(
+        diagnostics::DiagnosticEventId::WidgetOutcome,
+        classification,
     );
     failure
 }
@@ -1035,11 +1028,11 @@ fn get_runtime_info(
         return Err(RuntimeCommandError::NonBundledAsset);
     }
 
-    tracing::info!(
-        event = "devhud.runtime.ready",
-        runtime = runtime_name(),
-        "DevHud runtime is ready"
-    );
+    diagnostics::emit_runtime_ready(if cfg!(any(target_os = "android", target_os = "ios")) {
+        diagnostics::DiagnosticClassification::MobileReady
+    } else {
+        diagnostics::DiagnosticClassification::DesktopReady
+    });
 
     #[cfg(debug_assertions)]
     if std::env::var_os("DEVHUD_SMOKE").is_some_and(|value| value == "1") {
@@ -1522,16 +1515,37 @@ fn persist_settings_field(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 fn log_shortcut_integration_failure(
-    operation: &'static str,
+    _operation: &'static str,
     reason: shortcut::ShortcutFailure,
-    effective_state: &'static str,
+    _effective_state: &'static str,
 ) {
-    tracing::warn!(
-        event = "devhud.shortcut.integration_failure",
-        operation,
-        classification = reason.classification(),
-        effective_state,
-        "DevHud shortcut integration failed"
+    let classification = match reason {
+        shortcut::ShortcutFailure::Malformed => {
+            diagnostics::DiagnosticClassification::ShortcutMalformed
+        }
+        shortcut::ShortcutFailure::Conflict => {
+            diagnostics::DiagnosticClassification::ShortcutConflict
+        }
+        shortcut::ShortcutFailure::PermissionDenied => {
+            diagnostics::DiagnosticClassification::ShortcutPermissionDenied
+        }
+        shortcut::ShortcutFailure::RegistrationFailed => {
+            diagnostics::DiagnosticClassification::ShortcutRegistrationFailed
+        }
+        shortcut::ShortcutFailure::UnsupportedDisplay => {
+            diagnostics::DiagnosticClassification::DisplayUnsupported
+        }
+        shortcut::ShortcutFailure::StorageFailed => {
+            diagnostics::DiagnosticClassification::ShortcutStorageFailed
+        }
+    };
+    diagnostics::emit_warning(
+        if reason == shortcut::ShortcutFailure::UnsupportedDisplay {
+            diagnostics::DiagnosticEventId::DisplayOutcome
+        } else {
+            diagnostics::DiagnosticEventId::ShortcutOutcome
+        },
+        classification,
     );
 }
 
@@ -1540,21 +1554,24 @@ fn log_shortcut_integration_failure(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 fn log_autostart_integration_failure(
-    operation: &'static str,
+    _operation: &'static str,
     reason: autostart::AutostartFailure,
-    effective_enabled: Option<bool>,
+    _effective_enabled: Option<bool>,
 ) {
-    let effective_state = match effective_enabled {
-        Some(true) => "enabled",
-        Some(false) => "disabled",
-        None => "unknown",
+    let classification = match reason {
+        autostart::AutostartFailure::PermissionDenied => {
+            diagnostics::DiagnosticClassification::AutostartPermissionDenied
+        }
+        autostart::AutostartFailure::OperationFailed => {
+            diagnostics::DiagnosticClassification::AutostartOperationFailed
+        }
+        autostart::AutostartFailure::StorageFailed => {
+            diagnostics::DiagnosticClassification::AutostartStorageFailed
+        }
     };
-    tracing::warn!(
-        event = "devhud.autostart.integration_failure",
-        operation,
-        classification = reason.classification(),
-        effective_state,
-        "DevHud launch-at-login integration failed"
+    diagnostics::emit_warning(
+        diagnostics::DiagnosticEventId::AutostartOutcome,
+        classification,
     );
 }
 
@@ -1562,12 +1579,10 @@ fn log_autostart_integration_failure(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-fn log_window_action_failure(operation: &'static str, reason: HudActionFailure) {
-    tracing::warn!(
-        event = "devhud.window.action_failure",
-        operation,
-        classification = reason.classification(),
-        "DevHud window action failed"
+fn log_window_action_failure(_operation: &'static str, _reason: HudActionFailure) {
+    diagnostics::emit_warning(
+        diagnostics::DiagnosticEventId::DisplayOutcome,
+        diagnostics::DiagnosticClassification::DisplayWindowUnavailable,
     );
 }
 
@@ -1797,11 +1812,10 @@ fn create_tray(app: &AppHandle<ActiveRuntime>) -> tauri::Result<()> {
                 }
             }
             "check-for-updates" => {
-                let outcome = app.state::<updater::UpdateActionBoundary>().request();
-                tracing::info!(
-                    event = "devhud.update.action",
-                    classification = ?outcome,
-                    "DevHud update action completed"
+                let _outcome = app.state::<updater::UpdateActionBoundary>().request();
+                diagnostics::emit(
+                    diagnostics::DiagnosticEventId::UpdaterOutcome,
+                    diagnostics::DiagnosticClassification::UpdaterUnavailable,
                 );
             }
             "open-devtools" => {
@@ -1861,10 +1875,9 @@ fn install_shortcut_handler(app: &AppHandle<ActiveRuntime>) {
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 fn browsing_data_reset_failure() -> PersistenceCommandError {
-    tracing::warn!(
-        event = "devhud.persistence.reset_failure",
-        classification = "reset-failed",
-        "DevHud application browsing data reset failed"
+    diagnostics::emit_warning(
+        diagnostics::DiagnosticEventId::PersistenceResetFailure,
+        diagnostics::DiagnosticClassification::PersistenceResetFailed,
     );
     PersistenceCommandError::ResetFailed
 }
@@ -1898,24 +1911,131 @@ fn clear_browsing_data_for_reset(
         .map_err(|_| browsing_data_reset_failure())
 }
 
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg_attr(test, allow(dead_code))]
+fn clear_local_logs_for_reset() -> Result<(), PersistenceCommandError> {
+    let Some(diagnostics) = diagnostics::active() else {
+        return Ok(());
+    };
+    diagnostics.clear().map_err(|_| {
+        diagnostics::emit_warning(
+            diagnostics::DiagnosticEventId::PersistenceResetFailure,
+            diagnostics::DiagnosticClassification::PersistenceResetFailed,
+        );
+        PersistenceCommandError::ResetFailed
+    })
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+const DIAGNOSTICS_EXPORT_FILE_NAME: &str = "DevHud-diagnostics.jsonl";
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn diagnostics_bundle() -> Result<Vec<u8>, DiagnosticsExportError> {
+    diagnostics::active()
+        .ok_or(DiagnosticsExportError::Unavailable)?
+        .sanitized_bundle()
+        .map_err(|_| DiagnosticsExportError::Unavailable)
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+fn export_selected_destination<T, S, W>(
+    select: S,
+    write: W,
+) -> Result<DiagnosticsExportOutcome, DiagnosticsExportError>
+where
+    S: FnOnce() -> Option<T>,
+    W: FnOnce(T) -> Result<(), DiagnosticsExportError>,
+{
+    let Some(destination) = select() else {
+        return Ok(DiagnosticsExportOutcome::Cancelled);
+    };
+    write(destination)?;
+    Ok(DiagnosticsExportOutcome::Exported)
+}
+
 #[cfg(all(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-fn clear_local_logs_for_reset() -> Result<(), PersistenceCommandError> {
-    let Some(writer) = LOCAL_LOG_WRITER.get() else {
-        return Ok(());
-    };
-    writer.clear().map_err(|error| {
-        tracing::warn!(
-            event = "devhud.logging.reset_failure",
-            operation = "reset",
-            error_kind = ?error.kind(),
-            classification = "reset-failed",
-            "DevHud local log reset failed"
-        );
-        PersistenceCommandError::ResetFailed
-    })
+#[tauri::command]
+fn export_diagnostics() -> Result<DiagnosticsExportOutcome, DiagnosticsExportError> {
+    let outcome = export_selected_destination(
+        || {
+            rfd::FileDialog::new()
+                .set_file_name(DIAGNOSTICS_EXPORT_FILE_NAME)
+                .add_filter("DevHud diagnostics", &["jsonl"])
+                .save_file()
+        },
+        |destination| {
+            if diagnostics::active()
+                .is_some_and(|diagnostics| diagnostics.destination_is_managed(&destination))
+            {
+                return Err(DiagnosticsExportError::WriteFailed);
+            }
+            let bundle = diagnostics_bundle()?;
+            let mut file =
+                File::create(destination).map_err(|_| DiagnosticsExportError::WriteFailed)?;
+            file.write_all(&bundle)
+                .and_then(|()| file.sync_all())
+                .map_err(|_| DiagnosticsExportError::WriteFailed)
+        },
+    );
+    match outcome {
+        Ok(DiagnosticsExportOutcome::Exported) => diagnostics::emit(
+            diagnostics::DiagnosticEventId::DiagnosticsExportOutcome,
+            diagnostics::DiagnosticClassification::DiagnosticsExported,
+        ),
+        Err(_) => diagnostics::emit_warning(
+            diagnostics::DiagnosticEventId::DiagnosticsExportOutcome,
+            diagnostics::DiagnosticClassification::DiagnosticsExportFailed,
+        ),
+        Ok(DiagnosticsExportOutcome::Cancelled) => {}
+    }
+    outcome
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn export_diagnostics(
+    app: AppHandle<ActiveRuntime>,
+) -> Result<DiagnosticsExportOutcome, DiagnosticsExportError> {
+    let bundle = diagnostics_bundle()?;
+    let bundle = String::from_utf8(bundle).map_err(|_| DiagnosticsExportError::Unavailable)?;
+    let outcome = app
+        .devhud_diagnostics_bridge()
+        .export(DIAGNOSTICS_EXPORT_FILE_NAME.to_string(), bundle)
+        .map_err(|error| match error.code() {
+            Some(
+                DiagnosticsBridgeErrorCode::Busy | DiagnosticsBridgeErrorCode::PickerUnavailable,
+            ) => DiagnosticsExportError::PickerUnavailable,
+            Some(DiagnosticsBridgeErrorCode::WriteFailed) => DiagnosticsExportError::WriteFailed,
+            None => DiagnosticsExportError::Unavailable,
+        })
+        .map(|outcome| match outcome {
+            MobileDiagnosticsExportOutcome::Exported => DiagnosticsExportOutcome::Exported,
+            MobileDiagnosticsExportOutcome::Cancelled => DiagnosticsExportOutcome::Cancelled,
+        });
+    match outcome {
+        Ok(DiagnosticsExportOutcome::Exported) => diagnostics::emit(
+            diagnostics::DiagnosticEventId::DiagnosticsExportOutcome,
+            diagnostics::DiagnosticClassification::DiagnosticsExported,
+        ),
+        Err(_) => diagnostics::emit_warning(
+            diagnostics::DiagnosticEventId::DiagnosticsExportOutcome,
+            diagnostics::DiagnosticClassification::DiagnosticsExportFailed,
+        ),
+        Ok(DiagnosticsExportOutcome::Cancelled) => {}
+    }
+    outcome
 }
 
 #[cfg(all(
@@ -2091,11 +2211,9 @@ fn reset_dev_hud(
         diagnostics.autostart_outcome = None;
     }
     if reset_outcome == PersistenceResetOutcome::Complete {
-        tracing::info!(
-            event = "devhud.persistence.reset",
-            native_shortcut_configured = false,
-            native_autostart_enabled = false,
-            "DevHud local data was reset"
+        diagnostics::emit(
+            diagnostics::DiagnosticEventId::PersistenceReset,
+            diagnostics::DiagnosticClassification::PersistenceResetComplete,
         );
     }
     Ok(reset_outcome)
@@ -2112,6 +2230,7 @@ fn reset_dev_hud(
     state: State<'_, PersistenceState>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
     clear_browsing_data_for_reset(webview)?;
+    clear_local_logs_for_reset()?;
     let reset_outcome = match state.reset() {
         Ok(()) => PersistenceResetOutcome::Complete,
         Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => return Err(error),
@@ -2128,9 +2247,9 @@ fn reset_dev_hud(
         Err(error) => return Err(widget_bridge_failure("reset", &error)),
     }
     if reset_outcome == PersistenceResetOutcome::Complete {
-        tracing::info!(
-            event = "devhud.persistence.reset",
-            "DevHud local data was reset"
+        diagnostics::emit(
+            diagnostics::DiagnosticEventId::PersistenceReset,
+            diagnostics::DiagnosticClassification::PersistenceResetComplete,
         );
     }
     Ok(reset_outcome)
@@ -2148,6 +2267,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             write_settings,
             read_widget_configuration,
             write_widget_configuration,
+            export_diagnostics,
             reset_dev_hud,
             show_hud,
             hide_hud,
@@ -2168,12 +2288,9 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                     }
                 },
                 Err(_) => {
-                    tracing::warn!(
-                        event = "devhud.persistence.unavailable",
-                        operation = "initialize",
-                        record = "persistence",
-                        classification = "storage-unavailable",
-                        "DevHud persistence is unavailable"
+                    diagnostics::emit_warning(
+                        diagnostics::DiagnosticEventId::PersistenceUnavailable,
+                        diagnostics::DiagnosticClassification::PersistenceStorageUnavailable,
                     );
                     PersistenceState::unavailable()
                 }
@@ -2260,18 +2377,15 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             create_tray(app.handle())?;
             install_shortcut_handler(app.handle());
             if first_run && build_settings_window(app.handle()).is_err() {
-                tracing::warn!(
-                    event = "devhud.settings.window_failure",
-                    operation = "first-run",
-                    classification = "window-unavailable",
-                    "DevHud first-run settings window could not be opened"
+                diagnostics::emit_warning(
+                    diagnostics::DiagnosticEventId::DisplayOutcome,
+                    diagnostics::DiagnosticClassification::DisplayWindowUnavailable,
                 );
             }
 
-            tracing::info!(
-                event = "devhud.window.created",
-                runtime = runtime_name(),
-                "DevHud window created"
+            diagnostics::emit(
+                diagnostics::DiagnosticEventId::DisplayOutcome,
+                diagnostics::DiagnosticClassification::DesktopReady,
             );
             Ok(())
         })
@@ -2289,9 +2403,19 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             write_settings,
             read_widget_configuration,
             write_widget_configuration,
+            export_diagnostics,
             reset_dev_hud
         ])
         .setup(|app| {
+            if let Ok(directory) = app.path().app_log_dir() {
+                #[cfg(target_os = "ios")]
+                let backup_exclusion_directory = directory.clone();
+                if let Ok(writer) = local_log::LocalLogWriter::new_in(directory) {
+                    #[cfg(target_os = "ios")]
+                    let _ = exclude_ios_persistence_from_backup(&backup_exclusion_directory);
+                    diagnostics::Diagnostics::install(writer);
+                }
+            }
             let persistence = match app.path().app_local_data_dir() {
                 Ok(directory) => match PersistenceState::new(directory) {
                     Ok(state) => state,
@@ -2301,12 +2425,9 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                     }
                 },
                 Err(_) => {
-                    tracing::warn!(
-                        event = "devhud.persistence.unavailable",
-                        operation = "initialize",
-                        record = "persistence",
-                        classification = "storage-unavailable",
-                        "DevHud persistence is unavailable"
+                    diagnostics::emit_warning(
+                        diagnostics::DiagnosticEventId::PersistenceUnavailable,
+                        diagnostics::DiagnosticClassification::PersistenceStorageUnavailable,
                     );
                     PersistenceState::unavailable()
                 }
@@ -2353,32 +2474,26 @@ fn platform_builder() -> tauri::Builder<ActiveRuntime> {
     any(target_os = "android", target_os = "ios")
 ))]
 fn platform_builder() -> tauri::Builder<ActiveRuntime> {
-    tauri::Builder::<ActiveRuntime>::new().plugin(tauri_plugin_devhud_widget::init())
+    tauri::Builder::<ActiveRuntime>::new()
+        .plugin(tauri_plugin_devhud_diagnostics::init())
+        .plugin(tauri_plugin_devhud_widget::init())
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 fn initialize_logging() {
-    #[cfg(all(
-        feature = "desktop-cef",
-        not(any(target_os = "android", target_os = "ios"))
-    ))]
     if let Ok(writer) = local_log::LocalLogWriter::new(APPLICATION_ID) {
-        let sink = writer.clone();
-        let _ = LOCAL_LOG_WRITER.set(writer);
-        let _ = tracing_subscriber::fmt()
-            .json()
-            .with_target(false)
-            .with_writer(move || sink.clone())
-            .try_init();
-        return;
+        diagnostics::Diagnostics::install(writer);
     }
-
-    let _ = tracing_subscriber::fmt()
-        .json()
-        .with_target(false)
-        .without_time()
-        .try_init();
 }
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+const fn initialize_logging() {}
 
 #[cfg(all(
     feature = "desktop-cef",
@@ -2388,21 +2503,13 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
     let _instance_guard = match single_instance::InstanceGuard::acquire(APPLICATION_ID) {
         Ok(guard) => guard,
         Err(single_instance::InstanceGuardError::AlreadyRunning) => {
-            tracing::info!(
-                event = "devhud.runtime.duplicate_instance",
-                classification = "already-running",
-                "A resident DevHud instance is already running"
+            diagnostics::emit(
+                diagnostics::DiagnosticEventId::RuntimeDuplicateInstance,
+                diagnostics::DiagnosticClassification::DesktopAlreadyRunning,
             );
             return Ok(());
         }
-        Err(single_instance::InstanceGuardError::Unavailable(error)) => {
-            tracing::error!(
-                event = "devhud.runtime.instance_guard_failure",
-                error_kind = ?error.kind(),
-                classification = "instance-guard-unavailable",
-                fatal = true,
-                "DevHud could not acquire its desktop instance guard"
-            );
+        Err(single_instance::InstanceGuardError::Unavailable(_)) => {
             return Err(RuntimeInitializationFailure::InstanceGuardUnavailable);
         }
     };
@@ -2472,11 +2579,32 @@ pub fn run() {
     initialize_logging();
 
     if let Err(error) = run_app() {
-        tracing::error!(
-            event = "devhud.runtime.initialization_failure",
-            classification = error.classification(),
-            fatal = true,
-            "runtime initialization failed"
+        let classification = match error {
+            #[cfg(all(
+                feature = "desktop-cef",
+                not(any(target_os = "android", target_os = "ios"))
+            ))]
+            RuntimeInitializationFailure::InstanceGuardUnavailable => {
+                diagnostics::DiagnosticClassification::DesktopInstanceGuardUnavailable
+            }
+            #[cfg(all(
+                feature = "desktop-cef",
+                not(any(target_os = "android", target_os = "ios"))
+            ))]
+            RuntimeInitializationFailure::CefInitialization => {
+                diagnostics::DiagnosticClassification::DesktopCefInitializationFailed
+            }
+            #[cfg(all(
+                feature = "mobile-system-webview",
+                any(target_os = "android", target_os = "ios")
+            ))]
+            RuntimeInitializationFailure::SystemWebviewInitialization => {
+                diagnostics::DiagnosticClassification::MobileSystemWebviewInitializationFailed
+            }
+        };
+        diagnostics::emit_fatal(
+            diagnostics::DiagnosticEventId::RuntimeInitializationFailure,
+            classification,
         );
         std::process::exit(70);
     }
@@ -2907,6 +3035,35 @@ mod tests {
                 "launchAtLogin": true,
             })
         );
+    }
+
+    #[test]
+    fn cancelled_diagnostics_export_never_opens_or_mutates_a_destination() {
+        let writes = std::cell::Cell::new(0_u8);
+        let outcome = export_selected_destination(
+            || None::<PathBuf>,
+            |_| {
+                writes.set(writes.get() + 1);
+                Ok(())
+            },
+        );
+
+        assert_eq!(outcome, Ok(DiagnosticsExportOutcome::Cancelled));
+        assert_eq!(writes.get(), 0);
+    }
+
+    #[test]
+    fn diagnostics_export_errors_are_stable_and_disclose_no_path() {
+        let outcome = export_selected_destination(
+            || Some(PathBuf::from("/private/adversarial/user-file")),
+            |_| Err(DiagnosticsExportError::WriteFailed),
+        );
+
+        assert_eq!(outcome, Err(DiagnosticsExportError::WriteFailed));
+        let serialized = serde_json::to_string(&outcome.unwrap_err()).unwrap();
+        assert_eq!(serialized, "\"write-failed\"");
+        assert!(!serialized.contains("private"));
+        assert!(!serialized.contains('/'));
     }
 
     #[test]

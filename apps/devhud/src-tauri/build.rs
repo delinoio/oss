@@ -4,6 +4,7 @@ const COMMANDS: &[&str] = &[
     "write_settings",
     "read_widget_configuration",
     "write_widget_configuration",
+    "export_diagnostics",
     "reset_dev_hud",
     "show_hud",
     "hide_hud",
