@@ -146,6 +146,24 @@ func TestPostgreSQLBackgroundAuthorizationHumanPolicyAndIdempotency(t *testing.T
 		connect.CodePermissionDenied,
 		delibasev1.ErrorReason_ERROR_REASON_PERMISSION_DENIED,
 	)
+	_, err = fixture.billing.CreateBackgroundUsageAuthorization(
+		memberContext,
+		backgroundGrantRequest(
+			fixture,
+			fixture.memberID,
+			fixture.parentTeamID,
+			uuidv7.MustNew(),
+			10,
+			"member-organization-owner-"+fixture.organizationID.String(),
+			true,
+		),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodePermissionDenied,
+		delibasev1.ErrorReason_ERROR_REASON_ADMIN_ROLE_REQUIRED,
+	)
 
 	organizationGrant := createBackgroundGrant(
 		t,

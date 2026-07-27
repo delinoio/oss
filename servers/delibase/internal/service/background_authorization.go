@@ -186,6 +186,7 @@ func (service *Billing) CreateBackgroundUsageAuthorization(
 			team, transactionErr := authorizeBackgroundTeam(
 				ctx,
 				queries,
+				owner,
 				account.ID,
 				organizationID,
 				teamID,
@@ -694,23 +695,33 @@ func backgroundPurposeAndPeriod(
 func authorizeBackgroundTeam(
 	ctx context.Context,
 	queries *dbgen.Queries,
+	owner backgroundOwnerBinding,
 	accountID pgtype.UUID,
 	organizationID uuid.UUID,
 	teamID uuid.UUID,
 ) (dbgen.GetTeamInOrganizationRow, error) {
-	if _, err := queries.GetOrganizationMembership(
+	membership, err := queries.GetOrganizationMembership(
 		ctx,
 		dbgen.GetOrganizationMembershipParams{
 			OrganizationID: pgUUID(organizationID),
 			AccountID:      accountID,
 		},
-	); errors.Is(err, pgx.ErrNoRows) {
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return dbgen.GetTeamInOrganizationRow{}, serviceError(
 			connect.CodePermissionDenied,
 			delibasev1.ErrorReason_ERROR_REASON_ORGANIZATION_MEMBERSHIP_REQUIRED,
 		)
-	} else if err != nil {
+	}
+	if err != nil {
 		return dbgen.GetTeamInOrganizationRow{}, databaseError(err)
+	}
+	if owner.ownerType == "organization" &&
+		membership.Role != "owner" && membership.Role != "admin" {
+		return dbgen.GetTeamInOrganizationRow{}, serviceError(
+			connect.CodePermissionDenied,
+			delibasev1.ErrorReason_ERROR_REASON_ADMIN_ROLE_REQUIRED,
+		)
 	}
 	team, err := queries.GetTeamInOrganization(
 		ctx,
