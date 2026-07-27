@@ -22,6 +22,11 @@ function ownerKey(owner: ShortcutOwner): string {
   }
 }
 
+function compareOwners(left: ShortcutOwner, right: ShortcutOwner): number {
+  const rank = { devhud: 0, deck: 1, realqa: 2 } as const;
+  return rank[left.feature] - rank[right.feature] || ownerKey(left).localeCompare(ownerKey(right));
+}
+
 /**
  * A deterministic, pure planning step shared by desktop UI flows. Native code
  * remains the authority for actual registration and returns the final local
@@ -37,9 +42,7 @@ export function planShortcutDefinitions(
   let realQaCount = 0;
   const accepted: ShortcutDefinition[] = [];
 
-  for (const definition of [...definitions].sort((left, right) =>
-    ownerKey(left.owner).localeCompare(ownerKey(right.owner)),
-  )) {
+  for (const definition of [...definitions].sort((left, right) => compareOwners(left.owner, right.owner))) {
     const key = ownerKey(definition.owner);
     if (!available && definition.owner.feature !== "devhud") {
       outcomes.set(key, { status: "inactive", reason: "unavailable" });

@@ -35,4 +35,13 @@ describe("planShortcutDefinitions", () => {
     expect(outcomes.get("devhud")).toEqual({ status: "active" });
     expect(outcomes.get("deck:account-a:view")).toEqual({ status: "inactive", reason: "unavailable" });
   });
+
+  it("gives the generic DevHud binding priority over feature definitions", () => {
+    const outcomes = planShortcutDefinitions([
+      deck("account-a", "view", ShortcutKey.K),
+      { owner: { feature: "devhud" }, shortcut: shortcut(ShortcutKey.K) },
+    ], true);
+    expect(outcomes.get("devhud")).toEqual({ status: "active" });
+    expect(outcomes.get("deck:account-a:view")).toEqual({ status: "inactive", reason: "conflict" });
+  });
 });
