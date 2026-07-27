@@ -26,6 +26,7 @@ message UsageReservation {
   google.protobuf.Timestamp created_at = 16;
   google.protobuf.Timestamp expires_at = 17;
   google.protobuf.Timestamp finalized_at = 18;
+  AuthorizedUsageContext authorized_usage = 19;
 }
 
 message UsageCommit {
@@ -87,9 +88,56 @@ message ReleaseUsageResponse {
   IdempotencyResult idempotency = 3;
 }
 
+message ReserveAuthorizedUsageRequest {
+  AuthorizedUsageContext context = 1;
+  UsageUnits maximum_units = 2;
+  string client_reference = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message ReserveAuthorizedUsageResponse {
+  UsageReservation reservation = 1;
+  BackgroundUsagePeriodUsage period_usage = 2;
+  IdempotencyResult idempotency = 3;
+}
+
+message CommitAuthorizedUsageRequest {
+  AuthorizedUsageContext context = 1;
+  UuidV7 reservation_id = 2;
+  UsageUnits actual_units = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message CommitAuthorizedUsageResponse {
+  UsageReservation reservation = 1;
+  UsageCommit commit = 2;
+  BackgroundUsagePeriodUsage period_usage = 3;
+  IdempotencyResult idempotency = 4;
+}
+
+message ReleaseAuthorizedUsageRequest {
+  AuthorizedUsageContext context = 1;
+  UuidV7 reservation_id = 2;
+  // Must equal the reservation's authorized maximum so the release replay
+  // digest binds units as well as authorization, service, purpose, resource,
+  // and period.
+  UsageUnits reserved_units = 3;
+  IdempotencyKey idempotency = 4;
+}
+
+message ReleaseAuthorizedUsageResponse {
+  UsageReservation reservation = 1;
+  UsageRelease release = 2;
+  BackgroundUsagePeriodUsage period_usage = 3;
+  IdempotencyResult idempotency = 4;
+}
+
 // UsageService is server-to-server only. Every RPC requires a Logto M2M bearer
-// token and a Logto user token in x-delibase-forwarded-user-token. Both values
-// are credentials and must be redacted from logs, traces, errors, and storage.
+// token. ReserveUsage, CommitUsage, and ReleaseUsage additionally require a
+// Logto user token in x-delibase-forwarded-user-token. Both bearer values are
+// credentials and must be redacted from logs, traces, errors, and storage.
+// Authorized-usage RPCs are M2M-only: they neither require nor store a
+// forwarded user bearer, and instead revalidate the durable bounded grant.
 service UsageService {
   // Requires M2M delibase:usage:reserve and forwarded-user delibase:usage:execute.
   rpc ReserveUsage(ReserveUsageRequest) returns (ReserveUsageResponse);
@@ -97,4 +145,16 @@ service UsageService {
   rpc CommitUsage(CommitUsageRequest) returns (CommitUsageResponse);
   // Requires M2M delibase:usage:release and forwarded-user delibase:usage:execute.
   rpc ReleaseUsage(ReleaseUsageRequest) returns (ReleaseUsageResponse);
+  // M2M-only. Requires delibase:usage:reserve; revalidates current access and
+  // the per-period ceiling before creating a normal reservation. No forwarded
+  // user bearer is accepted or persisted.
+  rpc ReserveAuthorizedUsage(ReserveAuthorizedUsageRequest) returns (ReserveAuthorizedUsageResponse);
+  // M2M-only. Requires delibase:usage:commit; the reservation must have the
+  // same authorization and authenticated service. No forwarded user bearer is
+  // accepted or persisted.
+  rpc CommitAuthorizedUsage(CommitAuthorizedUsageRequest) returns (CommitAuthorizedUsageResponse);
+  // M2M-only. Requires delibase:usage:release; the reservation must have the
+  // same authorization and authenticated service. No forwarded user bearer is
+  // accepted or persisted.
+  rpc ReleaseAuthorizedUsage(ReleaseAuthorizedUsageRequest) returns (ReleaseAuthorizedUsageResponse);
 }

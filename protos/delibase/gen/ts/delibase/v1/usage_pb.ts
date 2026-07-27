@@ -4,7 +4,7 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { IdempotencyKey, IdempotencyResult, ReservationStatus, UsageUnits, UsdMicros, UuidV7 } from "./common_pb.js";
+import type { AuthorizedUsageContext, BackgroundUsagePeriodUsage, IdempotencyKey, IdempotencyResult, ReservationStatus, UsageUnits, UsdMicros, UuidV7 } from "./common_pb.js";
 import { file_delibase_v1_common } from "./common_pb.js";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delibase/v1/usage.proto.
  */
 export const file_delibase_v1_usage: GenFile = /*@__PURE__*/
-  fileDesc("ChdkZWxpYmFzZS92MS91c2FnZS5wcm90bxILZGVsaWJhc2UudjEirwYKEFVzYWdlUmVzZXJ2YXRpb24SKwoOcmVzZXJ2YXRpb25faWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSLAoPb3JnYW5pemF0aW9uX2lkGAIgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EiQKB3RlYW1faWQYAyABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSGgoSdGVhbV9uYW1lX3NuYXBzaG90GAQgASgJEiUKCG1ldGVyX2lkGAUgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3Ei0KEHByaWNlX3ZlcnNpb25faWQYBiABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSLAoPdXNlcl9hY2NvdW50X2lkGAcgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EjAKE3NlcnZpY2VfaWRlbnRpdHlfaWQYCCABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSLgoNbWF4aW11bV91bml0cxgJIAEoCzIXLmRlbGliYXNlLnYxLlVzYWdlVW5pdHMSMwoTdXNkX21pY3Jvc19wZXJfdW5pdBgKIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxIsCgxtYXhpbXVtX2Nvc3QYCyABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSKwoLaGVsZF9jcmVkaXQYDCABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSLAoMaGVsZF9vdmVyYWdlGA0gASgLMhYuZGVsaWJhc2UudjEuVXNkTWljcm9zEhgKEGNsaWVudF9yZWZlcmVuY2UYDiABKAkSLgoGc3RhdHVzGA8gASgOMh4uZGVsaWJhc2UudjEuUmVzZXJ2YXRpb25TdGF0dXMSLgoKY3JlYXRlZF9hdBgQIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgRIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMZmluYWxpemVkX2F0GBIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLGAwoLVXNhZ2VDb21taXQSLAoPdXNhZ2VfcmVjb3JkX2lkGAEgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EisKDnJlc2VydmF0aW9uX2lkGAIgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EjAKD2NvbW1pdHRlZF91bml0cxgDIAEoCzIXLmRlbGliYXNlLnYxLlVzYWdlVW5pdHMSKgoKdG90YWxfY29zdBgEIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxIuCg5jcmVkaXRfYXBwbGllZBgFIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxIvCg9vdmVyYWdlX2FwcGxpZWQYBiABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSNAoUY3JlZGl0X2hvbGRfcmVsZWFzZWQYByABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSNQoVb3ZlcmFnZV9ob2xkX3JlbGVhc2VkGAggASgLMhYuZGVsaWJhc2UudjEuVXNkTWljcm9zEjAKDGNvbW1pdHRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAilgIKDFVzYWdlUmVsZWFzZRIrCg5yZXNlcnZhdGlvbl9pZBgBIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxI0ChRjcmVkaXRfaG9sZF9yZWxlYXNlZBgCIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxI1ChVvdmVyYWdlX2hvbGRfcmVsZWFzZWQYAyABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSOgoScmVzZXJ2YXRpb25fc3RhdHVzGAQgASgOMh4uZGVsaWJhc2UudjEuUmVzZXJ2YXRpb25TdGF0dXMSMAoMZmluYWxpemVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKMAgoTUmVzZXJ2ZVVzYWdlUmVxdWVzdBIsCg9vcmdhbml6YXRpb25faWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSJAoHdGVhbV9pZBgCIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIlCghtZXRlcl9pZBgDIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIuCg1tYXhpbXVtX3VuaXRzGAQgASgLMhcuZGVsaWJhc2UudjEuVXNhZ2VVbml0cxIYChBjbGllbnRfcmVmZXJlbmNlGAUgASgJEjAKC2lkZW1wb3RlbmN5GAYgASgLMhsuZGVsaWJhc2UudjEuSWRlbXBvdGVuY3lLZXkifwoUUmVzZXJ2ZVVzYWdlUmVzcG9uc2USMgoLcmVzZXJ2YXRpb24YASABKAsyHS5kZWxpYmFzZS52MS5Vc2FnZVJlc2VydmF0aW9uEjMKC2lkZW1wb3RlbmN5GAIgASgLMh4uZGVsaWJhc2UudjEuSWRlbXBvdGVuY3lSZXN1bHQi0AEKEkNvbW1pdFVzYWdlUmVxdWVzdBIsCg9vcmdhbml6YXRpb25faWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSKwoOcmVzZXJ2YXRpb25faWQYAiABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSLQoMYWN0dWFsX3VuaXRzGAMgASgLMhcuZGVsaWJhc2UudjEuVXNhZ2VVbml0cxIwCgtpZGVtcG90ZW5jeRgEIAEoCzIbLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5S2V5IqgBChNDb21taXRVc2FnZVJlc3BvbnNlEjIKC3Jlc2VydmF0aW9uGAEgASgLMh0uZGVsaWJhc2UudjEuVXNhZ2VSZXNlcnZhdGlvbhIoCgZjb21taXQYAiABKAsyGC5kZWxpYmFzZS52MS5Vc2FnZUNvbW1pdBIzCgtpZGVtcG90ZW5jeRgDIAEoCzIeLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5UmVzdWx0IqIBChNSZWxlYXNlVXNhZ2VSZXF1ZXN0EiwKD29yZ2FuaXphdGlvbl9pZBgBIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIrCg5yZXNlcnZhdGlvbl9pZBgCIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIwCgtpZGVtcG90ZW5jeRgDIAEoCzIbLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5S2V5IqsBChRSZWxlYXNlVXNhZ2VSZXNwb25zZRIyCgtyZXNlcnZhdGlvbhgBIAEoCzIdLmRlbGliYXNlLnYxLlVzYWdlUmVzZXJ2YXRpb24SKgoHcmVsZWFzZRgCIAEoCzIZLmRlbGliYXNlLnYxLlVzYWdlUmVsZWFzZRIzCgtpZGVtcG90ZW5jeRgDIAEoCzIeLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5UmVzdWx0MooCCgxVc2FnZVNlcnZpY2USUwoMUmVzZXJ2ZVVzYWdlEiAuZGVsaWJhc2UudjEuUmVzZXJ2ZVVzYWdlUmVxdWVzdBohLmRlbGliYXNlLnYxLlJlc2VydmVVc2FnZVJlc3BvbnNlElAKC0NvbW1pdFVzYWdlEh8uZGVsaWJhc2UudjEuQ29tbWl0VXNhZ2VSZXF1ZXN0GiAuZGVsaWJhc2UudjEuQ29tbWl0VXNhZ2VSZXNwb25zZRJTCgxSZWxlYXNlVXNhZ2USIC5kZWxpYmFzZS52MS5SZWxlYXNlVXNhZ2VSZXF1ZXN0GiEuZGVsaWJhc2UudjEuUmVsZWFzZVVzYWdlUmVzcG9uc2VCR1pFZ2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2RlbGliYXNlL2dlbi9nby9kZWxpYmFzZS92MTtkZWxpYmFzZXYxYgZwcm90bzM", [file_delibase_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChdkZWxpYmFzZS92MS91c2FnZS5wcm90bxILZGVsaWJhc2UudjEi7gYKEFVzYWdlUmVzZXJ2YXRpb24SKwoOcmVzZXJ2YXRpb25faWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSLAoPb3JnYW5pemF0aW9uX2lkGAIgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EiQKB3RlYW1faWQYAyABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSGgoSdGVhbV9uYW1lX3NuYXBzaG90GAQgASgJEiUKCG1ldGVyX2lkGAUgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3Ei0KEHByaWNlX3ZlcnNpb25faWQYBiABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSLAoPdXNlcl9hY2NvdW50X2lkGAcgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EjAKE3NlcnZpY2VfaWRlbnRpdHlfaWQYCCABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSLgoNbWF4aW11bV91bml0cxgJIAEoCzIXLmRlbGliYXNlLnYxLlVzYWdlVW5pdHMSMwoTdXNkX21pY3Jvc19wZXJfdW5pdBgKIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxIsCgxtYXhpbXVtX2Nvc3QYCyABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSKwoLaGVsZF9jcmVkaXQYDCABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSLAoMaGVsZF9vdmVyYWdlGA0gASgLMhYuZGVsaWJhc2UudjEuVXNkTWljcm9zEhgKEGNsaWVudF9yZWZlcmVuY2UYDiABKAkSLgoGc3RhdHVzGA8gASgOMh4uZGVsaWJhc2UudjEuUmVzZXJ2YXRpb25TdGF0dXMSLgoKY3JlYXRlZF9hdBgQIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgRIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMZmluYWxpemVkX2F0GBIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI9ChBhdXRob3JpemVkX3VzYWdlGBMgASgLMiMuZGVsaWJhc2UudjEuQXV0aG9yaXplZFVzYWdlQ29udGV4dCLGAwoLVXNhZ2VDb21taXQSLAoPdXNhZ2VfcmVjb3JkX2lkGAEgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EisKDnJlc2VydmF0aW9uX2lkGAIgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EjAKD2NvbW1pdHRlZF91bml0cxgDIAEoCzIXLmRlbGliYXNlLnYxLlVzYWdlVW5pdHMSKgoKdG90YWxfY29zdBgEIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxIuCg5jcmVkaXRfYXBwbGllZBgFIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxIvCg9vdmVyYWdlX2FwcGxpZWQYBiABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSNAoUY3JlZGl0X2hvbGRfcmVsZWFzZWQYByABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSNQoVb3ZlcmFnZV9ob2xkX3JlbGVhc2VkGAggASgLMhYuZGVsaWJhc2UudjEuVXNkTWljcm9zEjAKDGNvbW1pdHRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAilgIKDFVzYWdlUmVsZWFzZRIrCg5yZXNlcnZhdGlvbl9pZBgBIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxI0ChRjcmVkaXRfaG9sZF9yZWxlYXNlZBgCIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxI1ChVvdmVyYWdlX2hvbGRfcmVsZWFzZWQYAyABKAsyFi5kZWxpYmFzZS52MS5Vc2RNaWNyb3MSOgoScmVzZXJ2YXRpb25fc3RhdHVzGAQgASgOMh4uZGVsaWJhc2UudjEuUmVzZXJ2YXRpb25TdGF0dXMSMAoMZmluYWxpemVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKMAgoTUmVzZXJ2ZVVzYWdlUmVxdWVzdBIsCg9vcmdhbml6YXRpb25faWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSJAoHdGVhbV9pZBgCIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIlCghtZXRlcl9pZBgDIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIuCg1tYXhpbXVtX3VuaXRzGAQgASgLMhcuZGVsaWJhc2UudjEuVXNhZ2VVbml0cxIYChBjbGllbnRfcmVmZXJlbmNlGAUgASgJEjAKC2lkZW1wb3RlbmN5GAYgASgLMhsuZGVsaWJhc2UudjEuSWRlbXBvdGVuY3lLZXkifwoUUmVzZXJ2ZVVzYWdlUmVzcG9uc2USMgoLcmVzZXJ2YXRpb24YASABKAsyHS5kZWxpYmFzZS52MS5Vc2FnZVJlc2VydmF0aW9uEjMKC2lkZW1wb3RlbmN5GAIgASgLMh4uZGVsaWJhc2UudjEuSWRlbXBvdGVuY3lSZXN1bHQi0AEKEkNvbW1pdFVzYWdlUmVxdWVzdBIsCg9vcmdhbml6YXRpb25faWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSKwoOcmVzZXJ2YXRpb25faWQYAiABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSLQoMYWN0dWFsX3VuaXRzGAMgASgLMhcuZGVsaWJhc2UudjEuVXNhZ2VVbml0cxIwCgtpZGVtcG90ZW5jeRgEIAEoCzIbLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5S2V5IqgBChNDb21taXRVc2FnZVJlc3BvbnNlEjIKC3Jlc2VydmF0aW9uGAEgASgLMh0uZGVsaWJhc2UudjEuVXNhZ2VSZXNlcnZhdGlvbhIoCgZjb21taXQYAiABKAsyGC5kZWxpYmFzZS52MS5Vc2FnZUNvbW1pdBIzCgtpZGVtcG90ZW5jeRgDIAEoCzIeLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5UmVzdWx0IqIBChNSZWxlYXNlVXNhZ2VSZXF1ZXN0EiwKD29yZ2FuaXphdGlvbl9pZBgBIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIrCg5yZXNlcnZhdGlvbl9pZBgCIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIwCgtpZGVtcG90ZW5jeRgDIAEoCzIbLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5S2V5IqsBChRSZWxlYXNlVXNhZ2VSZXNwb25zZRIyCgtyZXNlcnZhdGlvbhgBIAEoCzIdLmRlbGliYXNlLnYxLlVzYWdlUmVzZXJ2YXRpb24SKgoHcmVsZWFzZRgCIAEoCzIZLmRlbGliYXNlLnYxLlVzYWdlUmVsZWFzZRIzCgtpZGVtcG90ZW5jeRgDIAEoCzIeLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5UmVzdWx0ItEBCh1SZXNlcnZlQXV0aG9yaXplZFVzYWdlUmVxdWVzdBI0Cgdjb250ZXh0GAEgASgLMiMuZGVsaWJhc2UudjEuQXV0aG9yaXplZFVzYWdlQ29udGV4dBIuCg1tYXhpbXVtX3VuaXRzGAIgASgLMhcuZGVsaWJhc2UudjEuVXNhZ2VVbml0cxIYChBjbGllbnRfcmVmZXJlbmNlGAMgASgJEjAKC2lkZW1wb3RlbmN5GAQgASgLMhsuZGVsaWJhc2UudjEuSWRlbXBvdGVuY3lLZXkiyAEKHlJlc2VydmVBdXRob3JpemVkVXNhZ2VSZXNwb25zZRIyCgtyZXNlcnZhdGlvbhgBIAEoCzIdLmRlbGliYXNlLnYxLlVzYWdlUmVzZXJ2YXRpb24SPQoMcGVyaW9kX3VzYWdlGAIgASgLMicuZGVsaWJhc2UudjEuQmFja2dyb3VuZFVzYWdlUGVyaW9kVXNhZ2USMwoLaWRlbXBvdGVuY3kYAyABKAsyHi5kZWxpYmFzZS52MS5JZGVtcG90ZW5jeVJlc3VsdCLiAQocQ29tbWl0QXV0aG9yaXplZFVzYWdlUmVxdWVzdBI0Cgdjb250ZXh0GAEgASgLMiMuZGVsaWJhc2UudjEuQXV0aG9yaXplZFVzYWdlQ29udGV4dBIrCg5yZXNlcnZhdGlvbl9pZBgCIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxItCgxhY3R1YWxfdW5pdHMYAyABKAsyFy5kZWxpYmFzZS52MS5Vc2FnZVVuaXRzEjAKC2lkZW1wb3RlbmN5GAQgASgLMhsuZGVsaWJhc2UudjEuSWRlbXBvdGVuY3lLZXki8QEKHUNvbW1pdEF1dGhvcml6ZWRVc2FnZVJlc3BvbnNlEjIKC3Jlc2VydmF0aW9uGAEgASgLMh0uZGVsaWJhc2UudjEuVXNhZ2VSZXNlcnZhdGlvbhIoCgZjb21taXQYAiABKAsyGC5kZWxpYmFzZS52MS5Vc2FnZUNvbW1pdBI9CgxwZXJpb2RfdXNhZ2UYAyABKAsyJy5kZWxpYmFzZS52MS5CYWNrZ3JvdW5kVXNhZ2VQZXJpb2RVc2FnZRIzCgtpZGVtcG90ZW5jeRgEIAEoCzIeLmRlbGliYXNlLnYxLklkZW1wb3RlbmN5UmVzdWx0IuUBCh1SZWxlYXNlQXV0aG9yaXplZFVzYWdlUmVxdWVzdBI0Cgdjb250ZXh0GAEgASgLMiMuZGVsaWJhc2UudjEuQXV0aG9yaXplZFVzYWdlQ29udGV4dBIrCg5yZXNlcnZhdGlvbl9pZBgCIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIvCg5yZXNlcnZlZF91bml0cxgDIAEoCzIXLmRlbGliYXNlLnYxLlVzYWdlVW5pdHMSMAoLaWRlbXBvdGVuY3kYBCABKAsyGy5kZWxpYmFzZS52MS5JZGVtcG90ZW5jeUtleSL0AQoeUmVsZWFzZUF1dGhvcml6ZWRVc2FnZVJlc3BvbnNlEjIKC3Jlc2VydmF0aW9uGAEgASgLMh0uZGVsaWJhc2UudjEuVXNhZ2VSZXNlcnZhdGlvbhIqCgdyZWxlYXNlGAIgASgLMhkuZGVsaWJhc2UudjEuVXNhZ2VSZWxlYXNlEj0KDHBlcmlvZF91c2FnZRgDIAEoCzInLmRlbGliYXNlLnYxLkJhY2tncm91bmRVc2FnZVBlcmlvZFVzYWdlEjMKC2lkZW1wb3RlbmN5GAQgASgLMh4uZGVsaWJhc2UudjEuSWRlbXBvdGVuY3lSZXN1bHQy4AQKDFVzYWdlU2VydmljZRJTCgxSZXNlcnZlVXNhZ2USIC5kZWxpYmFzZS52MS5SZXNlcnZlVXNhZ2VSZXF1ZXN0GiEuZGVsaWJhc2UudjEuUmVzZXJ2ZVVzYWdlUmVzcG9uc2USUAoLQ29tbWl0VXNhZ2USHy5kZWxpYmFzZS52MS5Db21taXRVc2FnZVJlcXVlc3QaIC5kZWxpYmFzZS52MS5Db21taXRVc2FnZVJlc3BvbnNlElMKDFJlbGVhc2VVc2FnZRIgLmRlbGliYXNlLnYxLlJlbGVhc2VVc2FnZVJlcXVlc3QaIS5kZWxpYmFzZS52MS5SZWxlYXNlVXNhZ2VSZXNwb25zZRJxChZSZXNlcnZlQXV0aG9yaXplZFVzYWdlEiouZGVsaWJhc2UudjEuUmVzZXJ2ZUF1dGhvcml6ZWRVc2FnZVJlcXVlc3QaKy5kZWxpYmFzZS52MS5SZXNlcnZlQXV0aG9yaXplZFVzYWdlUmVzcG9uc2USbgoVQ29tbWl0QXV0aG9yaXplZFVzYWdlEikuZGVsaWJhc2UudjEuQ29tbWl0QXV0aG9yaXplZFVzYWdlUmVxdWVzdBoqLmRlbGliYXNlLnYxLkNvbW1pdEF1dGhvcml6ZWRVc2FnZVJlc3BvbnNlEnEKFlJlbGVhc2VBdXRob3JpemVkVXNhZ2USKi5kZWxpYmFzZS52MS5SZWxlYXNlQXV0aG9yaXplZFVzYWdlUmVxdWVzdBorLmRlbGliYXNlLnYxLlJlbGVhc2VBdXRob3JpemVkVXNhZ2VSZXNwb25zZUJHWkVnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZGVsaWJhc2UvZ2VuL2dvL2RlbGliYXNlL3YxO2RlbGliYXNldjFiBnByb3RvMw", [file_delibase_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message delibase.v1.UsageReservation
@@ -109,6 +109,11 @@ export type UsageReservation = Message<"delibase.v1.UsageReservation"> & {
    * @generated from field: google.protobuf.Timestamp finalized_at = 18;
    */
   finalizedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: delibase.v1.AuthorizedUsageContext authorized_usage = 19;
+   */
+  authorizedUsage?: AuthorizedUsageContext | undefined;
 };
 
 /**
@@ -390,9 +395,203 @@ export const ReleaseUsageResponseSchema: GenMessage<ReleaseUsageResponse> = /*@_
   messageDesc(file_delibase_v1_usage, 8);
 
 /**
+ * @generated from message delibase.v1.ReserveAuthorizedUsageRequest
+ */
+export type ReserveAuthorizedUsageRequest = Message<"delibase.v1.ReserveAuthorizedUsageRequest"> & {
+  /**
+   * @generated from field: delibase.v1.AuthorizedUsageContext context = 1;
+   */
+  context?: AuthorizedUsageContext | undefined;
+
+  /**
+   * @generated from field: delibase.v1.UsageUnits maximum_units = 2;
+   */
+  maximumUnits?: UsageUnits | undefined;
+
+  /**
+   * @generated from field: string client_reference = 3;
+   */
+  clientReference: string;
+
+  /**
+   * @generated from field: delibase.v1.IdempotencyKey idempotency = 4;
+   */
+  idempotency?: IdempotencyKey | undefined;
+};
+
+/**
+ * Describes the message delibase.v1.ReserveAuthorizedUsageRequest.
+ * Use `create(ReserveAuthorizedUsageRequestSchema)` to create a new message.
+ */
+export const ReserveAuthorizedUsageRequestSchema: GenMessage<ReserveAuthorizedUsageRequest> = /*@__PURE__*/
+  messageDesc(file_delibase_v1_usage, 9);
+
+/**
+ * @generated from message delibase.v1.ReserveAuthorizedUsageResponse
+ */
+export type ReserveAuthorizedUsageResponse = Message<"delibase.v1.ReserveAuthorizedUsageResponse"> & {
+  /**
+   * @generated from field: delibase.v1.UsageReservation reservation = 1;
+   */
+  reservation?: UsageReservation | undefined;
+
+  /**
+   * @generated from field: delibase.v1.BackgroundUsagePeriodUsage period_usage = 2;
+   */
+  periodUsage?: BackgroundUsagePeriodUsage | undefined;
+
+  /**
+   * @generated from field: delibase.v1.IdempotencyResult idempotency = 3;
+   */
+  idempotency?: IdempotencyResult | undefined;
+};
+
+/**
+ * Describes the message delibase.v1.ReserveAuthorizedUsageResponse.
+ * Use `create(ReserveAuthorizedUsageResponseSchema)` to create a new message.
+ */
+export const ReserveAuthorizedUsageResponseSchema: GenMessage<ReserveAuthorizedUsageResponse> = /*@__PURE__*/
+  messageDesc(file_delibase_v1_usage, 10);
+
+/**
+ * @generated from message delibase.v1.CommitAuthorizedUsageRequest
+ */
+export type CommitAuthorizedUsageRequest = Message<"delibase.v1.CommitAuthorizedUsageRequest"> & {
+  /**
+   * @generated from field: delibase.v1.AuthorizedUsageContext context = 1;
+   */
+  context?: AuthorizedUsageContext | undefined;
+
+  /**
+   * @generated from field: delibase.v1.UuidV7 reservation_id = 2;
+   */
+  reservationId?: UuidV7 | undefined;
+
+  /**
+   * @generated from field: delibase.v1.UsageUnits actual_units = 3;
+   */
+  actualUnits?: UsageUnits | undefined;
+
+  /**
+   * @generated from field: delibase.v1.IdempotencyKey idempotency = 4;
+   */
+  idempotency?: IdempotencyKey | undefined;
+};
+
+/**
+ * Describes the message delibase.v1.CommitAuthorizedUsageRequest.
+ * Use `create(CommitAuthorizedUsageRequestSchema)` to create a new message.
+ */
+export const CommitAuthorizedUsageRequestSchema: GenMessage<CommitAuthorizedUsageRequest> = /*@__PURE__*/
+  messageDesc(file_delibase_v1_usage, 11);
+
+/**
+ * @generated from message delibase.v1.CommitAuthorizedUsageResponse
+ */
+export type CommitAuthorizedUsageResponse = Message<"delibase.v1.CommitAuthorizedUsageResponse"> & {
+  /**
+   * @generated from field: delibase.v1.UsageReservation reservation = 1;
+   */
+  reservation?: UsageReservation | undefined;
+
+  /**
+   * @generated from field: delibase.v1.UsageCommit commit = 2;
+   */
+  commit?: UsageCommit | undefined;
+
+  /**
+   * @generated from field: delibase.v1.BackgroundUsagePeriodUsage period_usage = 3;
+   */
+  periodUsage?: BackgroundUsagePeriodUsage | undefined;
+
+  /**
+   * @generated from field: delibase.v1.IdempotencyResult idempotency = 4;
+   */
+  idempotency?: IdempotencyResult | undefined;
+};
+
+/**
+ * Describes the message delibase.v1.CommitAuthorizedUsageResponse.
+ * Use `create(CommitAuthorizedUsageResponseSchema)` to create a new message.
+ */
+export const CommitAuthorizedUsageResponseSchema: GenMessage<CommitAuthorizedUsageResponse> = /*@__PURE__*/
+  messageDesc(file_delibase_v1_usage, 12);
+
+/**
+ * @generated from message delibase.v1.ReleaseAuthorizedUsageRequest
+ */
+export type ReleaseAuthorizedUsageRequest = Message<"delibase.v1.ReleaseAuthorizedUsageRequest"> & {
+  /**
+   * @generated from field: delibase.v1.AuthorizedUsageContext context = 1;
+   */
+  context?: AuthorizedUsageContext | undefined;
+
+  /**
+   * @generated from field: delibase.v1.UuidV7 reservation_id = 2;
+   */
+  reservationId?: UuidV7 | undefined;
+
+  /**
+   * Must equal the reservation's authorized maximum so the release replay
+   * digest binds units as well as authorization, service, purpose, resource,
+   * and period.
+   *
+   * @generated from field: delibase.v1.UsageUnits reserved_units = 3;
+   */
+  reservedUnits?: UsageUnits | undefined;
+
+  /**
+   * @generated from field: delibase.v1.IdempotencyKey idempotency = 4;
+   */
+  idempotency?: IdempotencyKey | undefined;
+};
+
+/**
+ * Describes the message delibase.v1.ReleaseAuthorizedUsageRequest.
+ * Use `create(ReleaseAuthorizedUsageRequestSchema)` to create a new message.
+ */
+export const ReleaseAuthorizedUsageRequestSchema: GenMessage<ReleaseAuthorizedUsageRequest> = /*@__PURE__*/
+  messageDesc(file_delibase_v1_usage, 13);
+
+/**
+ * @generated from message delibase.v1.ReleaseAuthorizedUsageResponse
+ */
+export type ReleaseAuthorizedUsageResponse = Message<"delibase.v1.ReleaseAuthorizedUsageResponse"> & {
+  /**
+   * @generated from field: delibase.v1.UsageReservation reservation = 1;
+   */
+  reservation?: UsageReservation | undefined;
+
+  /**
+   * @generated from field: delibase.v1.UsageRelease release = 2;
+   */
+  release?: UsageRelease | undefined;
+
+  /**
+   * @generated from field: delibase.v1.BackgroundUsagePeriodUsage period_usage = 3;
+   */
+  periodUsage?: BackgroundUsagePeriodUsage | undefined;
+
+  /**
+   * @generated from field: delibase.v1.IdempotencyResult idempotency = 4;
+   */
+  idempotency?: IdempotencyResult | undefined;
+};
+
+/**
+ * Describes the message delibase.v1.ReleaseAuthorizedUsageResponse.
+ * Use `create(ReleaseAuthorizedUsageResponseSchema)` to create a new message.
+ */
+export const ReleaseAuthorizedUsageResponseSchema: GenMessage<ReleaseAuthorizedUsageResponse> = /*@__PURE__*/
+  messageDesc(file_delibase_v1_usage, 14);
+
+/**
  * UsageService is server-to-server only. Every RPC requires a Logto M2M bearer
- * token and a Logto user token in x-delibase-forwarded-user-token. Both values
- * are credentials and must be redacted from logs, traces, errors, and storage.
+ * token. ReserveUsage, CommitUsage, and ReleaseUsage additionally require a
+ * Logto user token in x-delibase-forwarded-user-token. Both bearer values are
+ * credentials and must be redacted from logs, traces, errors, and storage.
+ * Authorized-usage RPCs are M2M-only: they neither require nor store a
+ * forwarded user bearer, and instead revalidate the durable bounded grant.
  *
  * @generated from service delibase.v1.UsageService
  */
@@ -426,6 +625,42 @@ export const UsageService: GenService<{
     methodKind: "unary";
     input: typeof ReleaseUsageRequestSchema;
     output: typeof ReleaseUsageResponseSchema;
+  },
+  /**
+   * M2M-only. Requires delibase:usage:reserve; revalidates current access and
+   * the per-period ceiling before creating a normal reservation. No forwarded
+   * user bearer is accepted or persisted.
+   *
+   * @generated from rpc delibase.v1.UsageService.ReserveAuthorizedUsage
+   */
+  reserveAuthorizedUsage: {
+    methodKind: "unary";
+    input: typeof ReserveAuthorizedUsageRequestSchema;
+    output: typeof ReserveAuthorizedUsageResponseSchema;
+  },
+  /**
+   * M2M-only. Requires delibase:usage:commit; the reservation must have the
+   * same authorization and authenticated service. No forwarded user bearer is
+   * accepted or persisted.
+   *
+   * @generated from rpc delibase.v1.UsageService.CommitAuthorizedUsage
+   */
+  commitAuthorizedUsage: {
+    methodKind: "unary";
+    input: typeof CommitAuthorizedUsageRequestSchema;
+    output: typeof CommitAuthorizedUsageResponseSchema;
+  },
+  /**
+   * M2M-only. Requires delibase:usage:release; the reservation must have the
+   * same authorization and authenticated service. No forwarded user bearer is
+   * accepted or persisted.
+   *
+   * @generated from rpc delibase.v1.UsageService.ReleaseAuthorizedUsage
+   */
+  releaseAuthorizedUsage: {
+    methodKind: "unary";
+    input: typeof ReleaseAuthorizedUsageRequestSchema;
+    output: typeof ReleaseAuthorizedUsageResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_delibase_v1_usage, 0);

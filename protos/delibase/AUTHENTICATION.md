@@ -23,8 +23,8 @@ access checks also apply when the target resource requires them.
 | `OrganizationService` mutations | `delibase:organizations:write` |
 | `TeamService` reads | `delibase:teams:read` |
 | `TeamService` mutations | `delibase:teams:write` |
-| `BillingService.GetBillingSummary`, `ListLedgerEntries`, `ListUsageRecords` | `delibase:billing:read` |
-| `BillingService` checkout, portal, and overage-limit mutations | `delibase:billing:write` |
+| `BillingService.GetBillingSummary`, `ListLedgerEntries`, `ListUsageRecords`, `GetBackgroundUsageAuthorization`, `ListBackgroundUsageAuthorizations` | `delibase:billing:read` |
+| `BillingService` checkout, portal, overage-limit, background-authorization create, and background-authorization revoke mutations | `delibase:billing:write` |
 
 Invitation preview and acceptance require an authenticated user token even
 though the invitation URL also contains a bearer token. A valid invitation bearer
@@ -52,9 +52,21 @@ user scope `delibase:usage:execute`. The M2M token requires the operation scope:
 | `UsageService.ReserveUsage` | `delibase:usage:reserve` |
 | `UsageService.CommitUsage` | `delibase:usage:commit` |
 | `UsageService.ReleaseUsage` | `delibase:usage:release` |
+| `UsageService.ReserveAuthorizedUsage` | `delibase:usage:reserve` |
+| `UsageService.CommitAuthorizedUsage` | `delibase:usage:commit` |
+| `UsageService.ReleaseAuthorizedUsage` | `delibase:usage:release` |
 
-Possession of both tokens and scopes is necessary but not sufficient. Delibase
-also validates issuer, audience, expiry, the authenticated service's catalog
-meter allowlist, organization membership, and the forwarded user's direct or
-inherited access to the requested team. The browser must never call
-`UsageService` or hold an M2M credential.
+For the three live-user usage RPCs, possession of both tokens and scopes is
+necessary but not sufficient. Delibase also validates issuer, audience, expiry,
+the authenticated service's catalog meter allowlist, organization membership,
+and the forwarded user's direct or inherited access to the requested team. The
+browser must never call `UsageService` or hold an M2M credential.
+
+The three authorized-usage RPCs are the bounded exception to the forwarded-user
+requirement. They authenticate only the M2M bearer and revalidate the durable
+`BackgroundUsageAuthorization`; they must not request, accept as application
+state, or persist `x-delibase-forwarded-user-token`. A supplied credential
+header is stripped by authentication middleware and never reaches the handler.
+The authenticated service identity, rather than a caller-supplied service ID,
+is included in the operation digest. Existing `ReserveUsage`, `CommitUsage`,
+and `ReleaseUsage` continue to require both credentials.

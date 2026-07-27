@@ -175,3 +175,75 @@ func TestUsageProceduresRequireDedicatedServiceAndForwardedUserScopes(t *testing
 		})
 	}
 }
+
+func TestAuthorizedUsageProceduresRequireOnlyDedicatedServiceScopes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		procedure string
+		scope     string
+	}{
+		{
+			procedure: delibasev1connect.UsageServiceReserveAuthorizedUsageProcedure,
+			scope:     "delibase:usage:reserve",
+		},
+		{
+			procedure: delibasev1connect.UsageServiceCommitAuthorizedUsageProcedure,
+			scope:     "delibase:usage:commit",
+		},
+		{
+			procedure: delibasev1connect.UsageServiceReleaseAuthorizedUsageProcedure,
+			scope:     "delibase:usage:release",
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.scope, func(t *testing.T) {
+			t.Parallel()
+			requirement := connectPolicy(test.procedure)
+			if requirement.Mode != authmiddleware.ModeM2M ||
+				len(requirement.M2MScopes) != 1 ||
+				requirement.M2MScopes[0] != test.scope ||
+				len(requirement.UserScopes) != 0 {
+				t.Fatalf("requirement = %#v", requirement)
+			}
+		})
+	}
+}
+
+func TestBackgroundAuthorizationProceduresRequireHumanBillingScopes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		procedure string
+		scope     string
+	}{
+		{
+			procedure: delibasev1connect.BillingServiceCreateBackgroundUsageAuthorizationProcedure,
+			scope:     "delibase:billing:write",
+		},
+		{
+			procedure: delibasev1connect.BillingServiceGetBackgroundUsageAuthorizationProcedure,
+			scope:     "delibase:billing:read",
+		},
+		{
+			procedure: delibasev1connect.BillingServiceListBackgroundUsageAuthorizationsProcedure,
+			scope:     "delibase:billing:read",
+		},
+		{
+			procedure: delibasev1connect.BillingServiceRevokeBackgroundUsageAuthorizationProcedure,
+			scope:     "delibase:billing:write",
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.procedure, func(t *testing.T) {
+			t.Parallel()
+			requirement := connectPolicy(test.procedure)
+			if requirement.Mode != authmiddleware.ModeUser ||
+				len(requirement.UserScopes) != 1 ||
+				requirement.UserScopes[0] != test.scope ||
+				len(requirement.M2MScopes) != 0 {
+				t.Fatalf("requirement = %#v", requirement)
+			}
+		})
+	}
+}

@@ -27,12 +27,34 @@ package exports all v1 messages and descriptors from its root and also exposes
   are opaque to callers.
 - Mutation idempotency is scoped by authenticated identity and
   `IdempotentOperation`. Invitation acceptance and revocation have distinct
-  operation values; invitation creation is not idempotent. A replay with the
-  same payload returns the stored original response and marks
+  operation values; invitation creation is not idempotent. Background
+  authorization creation/revocation and authorized reserve/commit/release also
+  have distinct human- or service-scoped operations. A replay with the same
+  payload returns the stored original response and marks
   `IdempotencyResult.replayed`; a different payload returns
   `ERROR_REASON_IDEMPOTENCY_CONFLICT`.
 - Non-OK Connect responses carry `delibase.v1.ErrorDetail`. Consumers switch on
   `ErrorReason`, never the human-readable message.
+
+## Bounded background usage
+
+`BillingService` exposes human-authenticated create, get, opaque-cursor list,
+and revoke operations for `BackgroundUsageAuthorization`. Each UUID v7 grant
+binds its authorizer; personal or organization feature-resource owner; payer
+organization/team where applicable; exact service identity and meter;
+`REALQA_STORAGE` purpose; feature-resource UUID; `UTC_DAY` period; maximum
+units; lifecycle status; revision; and timestamps. Status is closed to
+`ACTIVE`, `REVOKED`, `ACCESS_LOST`, `RESOURCE_DELETED`, and `OWNER_DELETED`.
+There is intentionally no Deck purpose.
+
+`UsageService.ReserveAuthorizedUsage`, `CommitAuthorizedUsage`, and
+`ReleaseAuthorizedUsage` are M2M-only. They do not accept, require, forward, or
+store a user bearer. Their independently scoped replay digests bind the
+authorization, authenticated service identity, purpose, feature resource, UTC
+period, and units. The server rejects substitutions, stale access or status,
+period-limit overflow, and altered replays with stable background-usage
+`ErrorReason` values. These additions do not create another service: the
+package still contains exactly the existing six services.
 
 See [AUTHENTICATION.md](AUTHENTICATION.md) for token metadata and scopes.
 
