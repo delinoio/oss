@@ -9,7 +9,9 @@
 
 - `servers/thenv`: Backend for secure environment sharing.
 - `servers/delibase`: Go/PostgreSQL/sqlc organization, billing, and usage service owned by project `delibase`.
-- `servers/internal`: Repository-shared Go package boundary consumed by delibase; not a project-owned delibase subcomponent or an unrelated project.
+- `servers/devhud-deck`: planned client-initiated GitHub.com pull-request service owned by project `devhud`.
+- `servers/devhud-realqa`: planned screenshot-submission, GitHub.com issue, and public-image service owned by project `devhud`.
+- `servers/internal`: Repository-shared Go package boundary currently consumed by delibase; planned DevHud feature servers require explicit compatibility review before consuming provider-agnostic subsets, and no consuming project owns it.
 
 ### Server Language and Data Rules
 
@@ -74,6 +76,19 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 ### Multi-Component Contract Sync
 
 - `servers/thenv` changes must keep CLI contracts synchronized.
+
+### DevHud Feature Server Rules
+
+- Read `docs/project-devhud.md`, the corresponding `docs/servers-devhud-*-foundation.md`, proto contract, and app contract before implementation. `servers/devhud-deck` and `servers/devhud-realqa` are planned ownership paths; documentation does not claim that either directory, service, origin, image, production secret, provider registration, or catalog activation exists.
+- Both services use Go, PostgreSQL, migrations, sqlc, UUID v7, Connect RPC for business mutations, redacted structured operations/audit data, and narrowly scoped HTTP callbacks/webhooks. Before reusing any `servers/internal` package, complete the compatibility review required by its contract (including feature audiences and error types); keep feature business policy in its owning service.
+- Validate feature-audience Logto user tokens plus memory-only delibase-audience forwarded user tokens with matching subjects and required scopes. Strip credentials before handlers and never store/log tokens or raw authorization/provider metadata.
+- Deck's future origin is exactly `https://deck.deli.dev`. Its GitHub App is separate from RealQA and GitHub.com-only. Never add a scheduler, durable refresh job, webhook-driven PR refresh, or any provider request not traceable to a current client request. Coalesce automatic/widget refreshes for five minutes; manual refresh bypasses cache with warning. Reserve 50 USD micros before provider dispatch, release if undispatched, and commit after any dispatch including error/rate-limit/timeout. Enforce 12 manual refreshes/minute/user, 30 mutations/minute/user, and four provider requests/installation.
+- Deck disconnect immediately deletes provider tokens, cached PR results, notification state, and widget snapshots while retaining disconnected view definitions. Retain current PR snapshots only, notification history 30 days, and views until deletion. Reset is device-local and does not delete server views/connections. Personal/org feature deletion and account/org asynchronous hard deletion follow the Deck server contract; only required pseudonymized financial/security records survive.
+- RealQA's future origins are exactly `https://realqa.deli.dev` and `https://assets.realqa.deli.dev`. Its GitHub App is separate from Deck and GitHub.com-only. Register only the internal GitHub adapter; no public tracker SDK. HTTP is limited to provider callbacks/lifecycle webhooks and public image GET.
+- RealQA stages signed R2 uploads privately, re-decodes/re-encodes and verifies before promotion, and uses opaque public IDs with at least 128 bits of entropy. Apply 25 MiB/image, 250 MiB/session, 100 MP/image, 60,000-byte body, three concurrent upload sessions/user, 30 submissions/hour/user, and 300 public GETs/minute/IP. Never retain reconciled title/body/URL/DOM content beyond minimum provider IDs/URLs, asset state, and idempotency digest.
+- RealQA transfer is 500 USD micros/MiB verified bytes, rounded once/submission and committed at verification. Storage is 2 USD micros/MiB-day, aggregated/rounded once per authorization/UTC day. Failed storage billing blocks submissions, preserves public images for 30 days, never back-bills grace days after recovery, and deletes unrecovered images. Unlinked private uploads expire after 24 hours. Deleted public URLs return `Image removed`; image deletion does not depend on GitHub and issue cleanup is best effort.
+- Production-facing Deck/RealQA catalog records remain disabled. Tests may build non-root multi-architecture fixture images with SBOM/signature/attestation validation and fixture GitHub Apps/R2/extension IDs, but must not publish GHCR images, deploy APIs, configure DNS/R2, inject production secrets, register either GitHub App, publish an extension/widget/store artifact, activate catalog entries, or roll out operations.
+- Once code exists, run `go vet ./servers/devhud-deck/...`, `go test ./servers/devhud-deck/...`, `go vet ./servers/devhud-realqa/...`, and `go test ./servers/devhud-realqa/...`, plus format, sqlc, migration, PostgreSQL concurrency, provider-fixture, billing/deletion, and image validation from the corresponding server contracts.
 
 ### Testing and Validation
 

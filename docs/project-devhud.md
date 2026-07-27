@@ -1,58 +1,88 @@
 # Project: devhud
 
-## Goal
+## Purpose
 
-Define the application contract for DevHud, a local-only developer-tool shell for individual developers. The project is intentionally independent from the DeliDev web platform.
+Define DevHud as a developer-tool shell with a usable signed-out, bundled-asset base experience and two explicitly bounded future authenticated features: Deck and RealQA. This contract authorizes implementation for issues #755 and #757; it does not claim that either feature, service, origin, provider registration, catalog entry, extension, widget, or release artifact exists or is active.
 
-`apps/devhud` contains one active pnpm package: a React/TypeScript/Rsbuild bundled-asset application, a target-selecting Tauri Rust application crate, private Rust/native mobile widget and diagnostics-export bridges, maintained iOS and Android host projects, and build-only WidgetKit/AppWidgetProvider projects. Desktop builds use the exact pinned upstream CEF runtime directly and implement the production tray, window, shortcut, autostart, empty HUD, settings, DevTools, diagnostics export, and sign-ready preview bundle shell. Mobile builds use only standard Tauri WKWebView and Android System WebView and expose stable Home, Widgets, Settings, and Diagnostics screens. The shared UI includes provider-owned local settings/widget state and a closed internal tool registry. Native widget sources compile and test but are neither embedded nor registered in release apps. The application does not create a production tool, visible native widget, updater network implementation, published release workflow, or support/publisher artifact.
+The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild, the exact pinned Tauri desktop CEF runtime, standard mobile system webviews, tray/shortcut/autostart behavior, a closed internal tool registry, typed local persistence, bounded diagnostics, device-local reset, and non-distributed native-widget fixtures. Deck may later add authenticated GitHub.com pull-request workflows on desktop, iOS, Android, tray, shortcuts, notifications, and native widgets. RealQA may later add authenticated screenshot capture and new-GitHub.com-issue submission on supported desktop systems plus an exact-origin Chrome MV3/native-host bridge. Neither feature is part of the signed-out base shell.
 
-## Project ID
+## Stable Project Identifier
 
 `devhud`
 
 ## Domain Ownership Map
 
-- `apps/devhud` (`app`): the sole canonical implementation path. It owns the one-package React/TypeScript/Rsbuild plus Tauri application foundation and all future product, mobile/widget, and release sources.
+- `apps/devhud` (`app`): the sole DevHud client and native-integration path. It owns the signed-out base shell; shared authentication client; Deck desktop/mobile/tray/shortcut/notification/widget UI; RealQA desktop capture/editor, encrypted local drafts, Chrome extension, and native-host source.
+- `servers/devhud-deck` (`deck-server`, planned): the Go/PostgreSQL/sqlc Deck service described by [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md).
+- `protos/devhud-deck` (`deck-api`, planned): the versioned `devhud.deck.v1` Connect contract described by [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
+- `servers/devhud-realqa` (`realqa-server`, planned): the Go/PostgreSQL/sqlc RealQA service described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
+- `protos/devhud-realqa` (`realqa-api`, planned): the versioned `devhud.realqa.v1` Connect contract described by [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 
-No other repository path may implement DevHud. `servers/`, `protos/`, `crates/`, `cmds/`, `packages/`, and `apps/delidev-app` are not DevHud ownership paths.
+No DevHud implementation belongs under `apps/delidev-app`, `servers/delibase`, `protos/delibase`, `crates/`, `cmds/`, or a public plugin/package path. DeliDev may expose connection management only through its existing `/account` and `/o/:orgSlug/settings` sections; that does not transfer DevHud ownership or authorize a new top-level DeliDev route.
 
 ## Domain Contract Documents
 
 - [apps-devhud-foundation](apps-devhud-foundation.md)
+- [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md)
+- [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md)
+- [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md)
+- [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md)
 
 ## Cross-Domain Invariants
 
-- DevHud's stable project identifier is `devhud`; its sole canonical path is `apps/devhud`.
-- The application is one pnpm package: a React and TypeScript frontend built with Rsbuild, a Tauri Rust application crate, and private mobile plugin crates under `src-tauri`. Root package scripts remain delegators; deterministic validation tasks are package-local.
-- Desktop uses Tauri's pinned upstream CEF runtime. Mobile uses standard Tauri iOS WKWebView and Android System WebView runtimes. The target-specific Cargo features and independently pinned CLIs prevent either runtime model from leaking into the other.
-- Tauri, `tauri-build`, `tauri-runtime-cef`, `tauri-runtime-wry`, `@tauri-apps/cli-cef`, and the standard aliased mobile CLI use the exact versions defined by the app foundation contract. DevHud must not carry a Tauri, WRY, or `cef-rs` fork or local patch and must not follow a moving upstream branch.
-- Desktop validation covers the CEF sandbox, bundled assets, deny-by-default host resolution, guarded navigation/resources/popups/downloads, scoped IPC shared unchanged by DevTools, lifecycle behavior, package formats, updater artifacts, helper cleanup, supported architectures, and the Linux display matrix.
-- The minimal visual asset foundation is source-controlled at `apps/devhud/assets/source/devhud-lettermark.svg`; generated desktop, installer, tray, iOS, Android, launch, and English store assets are reproducible with the package asset command and guarded by the package asset validator. This boundary contains no production-tool or widget artwork.
-- Asset regeneration cleanup is fail-closed: obsolete manifest paths are removed only within the approved generated-asset directories.
-- The active immutable identifiers are application ID `dev.deli.devhud`, build-only widget ID `dev.deli.devhud.widget`, future shared App Group `group.dev.deli.devhud`, settings key `devhud.settings.v1`, and widget-state key `devhud.widget-configuration.v1`. The App Group may be present on the iOS application solely for scoped shared state; the widget extension identity and Android receiver metadata are absent from distributed mobile artifacts.
-- The frontend persistence boundary is limited to record-specific read/write commands for those two keys. Both desktop CEF and standard Tauri mobile runtimes use the same dependency-injected adapter contract; no broad filesystem, default-store, arbitrary-key, account, or remote-storage authority is exposed.
-- Tauri authority is partitioned into exact desktop HUD, desktop settings, and mobile-main capability manifests. Each is local-origin-only and grants explicit application commands rather than plugin defaults. The desktop HUD can identify/read its render state and manage HUD lifecycle only; settings owns desktop mutations, diagnostics/reset, shortcut/autostart, and the typed updater request; mobile owns only its record, diagnostics, and reset boundary. DevTools inherits the containing desktop window's same capability.
-- Desktop integration failures surface the effective native shortcut and launch-at-login state. An accessible confirmed reset preflights exact application-owned record, log, CEF-profile, and mobile-widget targets, rejecting an existing CEF target unless it is a directory; reconciles both retained providers with the effective records; clears startup diagnostics when record removal starts; preserves user-owned diagnostic exports; and distinguishes partially retained stable records from post-record cleanup failure that may retain transaction stages or CEF profile data.
-- Mobile persistence remains device-local: iOS excludes the record directory from device backups, and Android disables cloud backup and device transfer.
-- Production tool registration, production widget configuration, and user-visible mobile widget state are empty in `0.1.0`; stable fixture `toolId` references and fixture widget state may exist only in tests. Package-local WidgetKit and Android `AppWidgetProvider` source targets compile independently. The iOS release application has no extension dependency, embedded `.appex`, or extension provisioning payload, and the Android release application has no provider module dependency or receiver metadata.
-- DevHud has no CLI, backend, public API, Connect RPC service, route, deep link, plugin SDK, remote plugin surface, telemetry, account system, cloud synchronization, or DeliDev integration. In particular, it must not consume DeliDev accounts, catalog, billing, APIs, routes, or contracts.
-- Networking is deny-by-default. The only future application network exception is separately scoped unauthenticated, GitHub Releases-only update discovery and download for compatible `devhud@v*` releases. The current typed updater has no network implementation, and no GitHub token or other service credential may ship in the app.
-- Desktop release publication requires signed architecture-specific installers, updater material, checksums, SPDX SBOMs, provenance, and all required publisher credentials. Mobile publication uses TestFlight and Google Play beta channels; store rejection uses the documented internal/closed-testing fallback.
-- Diagnostic data uses a strict typed allowlist, fresh per-process UUID v7 correlation, seven-day/20 MB local rotation, and native user-selected export only after explicit action. Cancellation leaves the destination unchanged, paths and exceptions never cross IPC or enter the bundle, reset preserves user-owned exports, and no diagnostic transport exists. There is no remote telemetry, crash reporting, online dashboard, remote alert, feature flag service, or kill switch.
+- The signed-out base shell remains usable without an account or network service. Authentication gates Deck and RealQA entry points and must not turn base settings, diagnostics, reset, tray access, or the empty foundation shell into signed-in-only behavior.
+- The internal tool/view/tracker registries remain closed, source-controlled, and enum-backed. Deck initially permits only `GITHUB_PULL_REQUESTS`; RealQA initially permits only GitHub.com. No public plugin SDK, third-party provider adapter, user-authored runtime code, remotely supplied UI, arbitrary remote frontend asset, or server-defined component tree is authorized.
+- Tauri, `tauri-build`, `tauri-runtime-cef`, `tauri-runtime-wry`, `@tauri-apps/cli-cef`, and the standard aliased mobile CLI retain the exact versions in the app contract. In particular, the upstream revision remains `f49ebda2fdba5755456b0f049e32593ca0ea331a`, `@tauri-apps/cli-cef` remains `3.0.0-alpha.6`, and `@tauri-apps/cli-mobile` remains exactly `2.11.4`; no Tauri, WRY, or `cef-rs` fork, local patch, or moving branch is allowed.
+- Existing bundled-resource, sandbox, least-privilege capability, diagnostics, redaction, backup exclusion, and destructive-path validation guarantees remain in force. Feature implementation must add narrow window/command/network policies; it must not replace them with generic HTTP, filesystem, screen, process, store, shell, or environment authority exposed to frontend JavaScript.
+- The only authenticated account boundary is DeliDev identity through Logto Authorization Code with PKCE in the system browser. Desktop uses a one-shot random `127.0.0.1` callback; Deck mobile uses the exact verified `https://deli.dev/auth/devhud/callback` universal/app link. Only a refresh token and device-session key may persist in the OS secure vault; access and ID tokens remain memory-only; one DeliDev account is active per OS user or device.
+- Feature calls use a feature-audience bearer plus a memory-only delibase-audience forwarded bearer. Servers verify matching subjects and required scopes and never persist or log either token. Deck and RealQA use separate GitHub Apps and user authorization tokens; neither production GitHub App is registered by this documentation change.
+- Future canonical origins are `https://deck.deli.dev`, `https://realqa.deli.dev`, and `https://assets.realqa.deli.dev`. They are contract identifiers only: no DNS, deployment, R2 production bucket, production secret, public image, or service activation is claimed or authorized here.
+- Application networking remains deny-by-default. Authorized future exceptions are the existing signed GitHub Releases updater boundary; Logto/DeliDev authentication; Connect calls to the exact Deck or RealQA origin from the corresponding authenticated feature; RealQA signed uploads and public-image delivery at its exact asset origin; verified Deck mobile auth callbacks; and the exact-origin RealQA Chrome native-host bridge. GitHub.com provider calls, delibase usage calls, and R2 administration are server-side feature boundaries. No arbitrary browsing, remote UI, remote configuration, client-side provider token use, or wildcard origin is allowed.
+- Deck is the only feature authorized on desktop, iOS, Android, tray, shortcuts, notifications, WidgetKit, and Android widgets. RealQA is desktop-only on macOS 14+, Windows 11, and Ubuntu 24.04 (X11/XWayland plus native Wayland capture through `xdg-desktop-portal`) and may use only its signed Chrome MV3 native host; RealQA must not appear on iOS or Android.
+- Remote client and extension telemetry, crash reporting, analytics, advertising, and user tracking remain prohibited. Feature servers may emit redacted structured operational logs, metrics, traces, and audit events; tokens, URLs, repositories, titles, queries, screenshots, issue text, and other user content are never telemetry fields.
+- Production-facing Deck and RealQA delibase catalog records remain stable but disabled until a separate activation change. There is no deployment, production app registration, catalog activation, widget publication, extension publication, image publication, store release, or operational rollout in issues #755/#757.
 
-## Change Policy
+## Offline, Reset, Disconnect, and Deletion Boundaries
 
-- Update this index, [apps-devhud-foundation](apps-devhud-foundation.md), `docs/README.md`, `README.md`, root `AGENTS.md`, and `apps/AGENTS.md` together when DevHud ownership, identifiers, runtime boundaries, supported platforms, security exclusions, or policy changes.
-- The application package, production desktop shell, sign-ready bundle configuration, native mobile hosts, Cargo workspace membership, deterministic Turborepo output contract, build-only native widget sources, and native widget CI jobs are present. Add product behavior, widget distribution, full matrix CI, updater networking, packaging, release workflows, signing/publisher material, and support material only with their corresponding documented contracts and validation.
-- Any route, command, API, plugin, account, telemetry, DeliDev, widget-registration, or network exception proposal requires an explicit contract change before implementation; none is authorized by this project index.
-- Changes to the pinned Tauri CEF commit, `@tauri-apps/cli-cef` version, or supported OS/architecture matrix require architecture and release-policy review. Do not track a moving upstream branch or patch Tauri, WRY, or `cef-rs` locally.
-- Changes to release tags, artifacts, beta channels, signing prerequisites, updater selection, rollback, or upstream monitoring must update this index, the app foundation contract, root/app policy, and the relevant workflow or runbook contract together.
+- Base-shell local settings, diagnostics, and `Reset DevHud` retain the exact app-foundation behavior. User-selected diagnostic exports are never deleted by reset.
+- Deck's only offline PR-data exception is a minimal encrypted widget snapshot containing freshness/offline state. The ordinary Deck UI shows connection/offline state instead of a cached PR list. Logout deletes device tokens, PR data, and widget snapshots. Provider disconnect immediately deletes provider tokens, cached PR results, notification state, and widget snapshots but retains view definitions as disconnected records. `Reset DevHud` deletes device tokens, Deck snapshots, and shortcut effective state without deleting server views or connections. Personal feature deletion removes personal Deck data; an organization Owner removes organization Deck data. Account/organization deletion blocks access immediately and starts asynchronous hard deletion, retaining only minimal pseudonymized financial/security records required by delibase.
+- RealQA permits offline capture/edit and encrypted account-bound local drafts only after a prior successful login and device binding; first-time offline entry is forbidden and upload/submission requires online reauthentication. Successful submission and explicit draft deletion remove the local raw draft. Logout hides and locks drafts without deleting them, and only the same account may unlock them. Provider disconnect deletes tokens while retaining presets/mappings as disconnected records. `Reset DevHud` deletes local drafts, tokens, shortcut state, and extension pairing but cannot revoke Chrome-owned permissions. Personal feature deletion removes personal presets, submissions, and assets; an organization Owner removes organization RealQA data. Account/organization deletion blocks access immediately and asynchronously deletes feature data/assets, retaining only required pseudonymized financial/security records.
+- RealQA private staging uploads expire after 24 hours. Submitted images remain until explicit image/range deletion, a GitHub issue-deletion webhook, account/organization deletion, or storage-billing grace expiry. Deleted public-image URLs return only the generic `Image removed` placeholder. Image deletion never depends on GitHub access; issue-body cleanup is best effort when valid authorization remains. Failed storage billing blocks new submissions, keeps existing images public for 30 days, does not back-bill grace days after recovery, and deletes unrecovered images after the grace period.
+
+## Validation Contract
+
+Documentation-only changes run link/path/status consistency checks and `git diff --check`. Once implementation exists, the synchronized validation set is:
+
+- app: `pnpm --filter devhud typecheck`, `pnpm --filter devhud lint`, `pnpm --filter devhud test`, `pnpm --filter devhud test:a11y`, `pnpm --filter devhud build`, `pnpm --filter devhud test:security`, `pnpm --filter devhud test:diagnostics`, `pnpm --filter devhud test:deck`, `pnpm --filter devhud test:deck:widgets`, `pnpm --filter devhud test:realqa`, `pnpm --filter devhud test:realqa:native`, `pnpm --filter devhud test:realqa:extension`, and `pnpm --filter devhud check:realqa:package`;
+- shared APIs: `pnpm generate:proto`, `pnpm check:proto`, Go test/vet for both proto roots, and TypeScript typechecks for both generated Connect packages;
+- servers: Go format/vet/test, sqlc reproducibility, PostgreSQL migration/integration/concurrency tests, provider fixtures, and non-root multi-architecture image/SBOM/signature/attestation checks for both feature services.
+
+Validation artifacts are fixtures only. Passing them must not publish an image, register either GitHub App, inject a production Chrome extension ID, deploy an origin, create DNS/R2 infrastructure, embed/register a release widget, publish an extension, enable a catalog record, or release an app.
+
+## Change Triggers
+
+- Update this index, every affected domain contract, `docs/README.md`, `README.md`, and root plus relevant `apps/`, `servers/`, and `protos/` `AGENTS.md` files together when ownership, authentication, provider, origin, client platform, offline behavior, deletion, service, API, registry, network, widget, extension, catalog, or activation status changes.
+- Update the app contract before adding feature UI, native commands, capabilities, mobile links, network allowlists, widgets, Chrome host behavior, draft storage, or account behavior.
+- Update the relevant server and proto contracts before adding RPCs, HTTP handlers, provider permissions, persistence, billing, retention, or generated clients.
+- Activation is a separate change requiring explicit contracts and implementation for DNS, deployment, production secrets, GitHub App registration, catalog enablement, widget embedding/publication, extension publication, store release, and operational rollout.
 
 ## References
 
-- [Project template](project-template.md)
-- [Domain contract](domain-template.md)
-- [DevHud app foundation](apps-devhud-foundation.md)
-- [Documentation catalog](README.md)
-- [Repository defaults](repository-defaults.md)
 - [Issue #729](https://github.com/delinoio/oss/issues/729)
+- [Issue #755](https://github.com/delinoio/oss/issues/755)
+- [Issue #757](https://github.com/delinoio/oss/issues/757)
+- [App foundation](apps-devhud-foundation.md)
+- [Deck server](servers-devhud-deck-foundation.md)
+- [Deck API](protos-devhud-deck-api-contract.md)
+- [RealQA server](servers-devhud-realqa-foundation.md)
+- [RealQA API](protos-devhud-realqa-api-contract.md)
+- [Repository defaults](repository-defaults.md)
+
+## Out of Scope
+
+- Any feature outside Deck and RealQA, or any network/account/provider exception not enumerated above.
+- GHES, custom GitHub hosts, on-premises connectors, non-GitHub trackers, or additional tracker/view kinds in v1.
+- Public plugin/tracker SDKs, third-party view plugins, arbitrary remote UI, runtime code downloads, or remote configuration.
+- Server-initiated Deck polling; guaranteed five-minute widget execution; ordinary offline Deck PR caches.
+- Mobile RealQA, Incognito/full-page Chrome capture, comments or updates to existing issues, and automatic multi-issue splitting.
+- Production deployment, DNS/R2 provisioning, GHCR publication, production GitHub App or extension registration, Chrome Web Store publication, widget/store publication, catalog activation, production SLOs/alerts, or rollout.

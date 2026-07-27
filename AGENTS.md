@@ -66,8 +66,12 @@
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `docs/apps-nodeup-docs-foundation.md`: Nodeup Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
-- `docs/project-devhud.md`: DevHud local-only project index and ownership contract.
-- `docs/apps-devhud-foundation.md`: DevHud React/TypeScript/Rsbuild plus Tauri desktop CEF, mobile webview, widget-boundary, security, diagnostics, CI, support, and release foundation contract.
+- `docs/project-devhud.md`: DevHud signed-out base plus bounded Deck/RealQA ownership contract.
+- `docs/apps-devhud-foundation.md`: DevHud React/TypeScript/Rsbuild plus Tauri desktop CEF, mobile webview, Deck/RealQA client/native boundaries, security, diagnostics, CI, support, and release foundation contract.
+- `docs/servers-devhud-deck-foundation.md`: Planned client-initiated Deck Go/PostgreSQL/GitHub.com service contract.
+- `docs/protos-devhud-deck-api-contract.md`: Planned `devhud.deck.v1` Connect contract.
+- `docs/servers-devhud-realqa-foundation.md`: Planned RealQA Go/PostgreSQL/GitHub.com/R2 service and public-image contract.
+- `docs/protos-devhud-realqa-api-contract.md`: Planned `devhud.realqa.v1` Connect contract.
 ### Project Identifier Contract
 
 Treat project IDs as stable enum-style values:
@@ -106,8 +110,8 @@ enum ProjectId {
 - `public-docs` -> `apps/public-docs`
 - `delidev` -> `apps/delidev-app`
 - `delibase` -> `servers/delibase`, `protos/delibase`
-- `devhud` -> `apps/devhud` (sole canonical implementation path)
-- `servers/internal` -> repository-shared Go infrastructure consumed by `delibase`; it is not assigned to an unrelated project.
+- `devhud` -> `apps/devhud`, `servers/devhud-deck`, `protos/devhud-deck`, `servers/devhud-realqa`, `protos/devhud-realqa`
+- `servers/internal` -> repository-shared Go infrastructure currently consumed by `delibase`; planned DevHud servers require the documented explicit compatibility review before consuming provider-agnostic subsets, and no consuming project owns it.
 
 ### DeliDev and delibase Contract Boundary
 
@@ -128,11 +132,16 @@ enum ProjectId {
 
 ### DevHud and DeliDev Contract Boundary
 
-- `devhud` is a local-only project for individual developers and is independent from `delidev` and `delibase`.
-- `apps/devhud` is DevHud's sole canonical implementation path. Do not place DevHud runtime, native widget, backend, API, or shared contract code in another path.
-- DevHud must not consume or expose DeliDev accounts, catalog, billing, APIs, routes, contracts, organizations, or authentication. It has no CLI, backend, public API, plugin SDK, deep link, telemetry, account system, or cloud synchronization.
-- Production tools and user-visible widgets remain empty in `0.1.0`. The active application includes a closed internal tool registry, the production tray-resident desktop shell, stable mobile empty-state UI, provider-owned local theme/widget state, typed seven-day/20 MB local diagnostics with explicit user-selected export, `test:a11y`, and compile-tested native widget sources; frontend persistence is limited to the two stable versioned records through record-specific native commands, never broad filesystem/default-store authority. Mobile widget configuration and diagnostics export use separate private standard Tauri Swift/Kotlin plugin boundaries. Diagnostics plugins accept only a sanitized bundle and fixed safe file name, never expose a path or generic filesystem permission to JavaScript, and never transmit remotely. Mobile hosts must keep retained application data device-local by excluding iOS containers from device backups and disabling Android cloud backup and device transfer. The complete runtime, identifier, security, diagnostic, CI, release, and exclusion contract is [apps-devhud-foundation](docs/apps-devhud-foundation.md).
-- `apps/devhud` contains the active application, Cargo workspace members including private mobile widget and diagnostics bridges, maintained iOS/Android native hosts, and package-local build-only WidgetKit/AppWidgetProvider projects. Desktop builds use the exact pinned upstream Tauri CEF runtime and sandbox directly, with tray, shortcut, autostart, guarded bundled-resource-only windows, deny-by-default CEF networking, preview DevTools that inherit the same exact window capability, native diagnostics picker, and sign-ready bundle integration. Capabilities remain split into desktop HUD, desktop settings, and mobile main documents with explicit application-command grants and no broad plugin defaults. iOS 17+ uses standard WKWebView and Android 10/API 29+ uses System WebView through isolated mobile-only features. The iOS release project must never depend on or embed the build-only extension or its provisioning identity, and the Android release app must never depend on the build-only provider module or register receiver metadata. Distributed mobile targets also contain no deep-link handler, associated domain, or network permission. Product, widget distribution, packaging, updater networking, release, publisher, and support work may proceed only with synchronized implementation, validation, and contract updates.
+- DevHud's signed-out base shell stays usable without DeliDev, Logto, Deck, RealQA, or any online service. Existing closed-registry, exact CEF pin, bundled-asset, sandbox, capability, diagnostics/export, backup-exclusion, and device-local reset guarantees remain mandatory.
+- `apps/devhud` is the only client/native path. Planned services and shared wire contracts belong only at `servers/devhud-deck`, `protos/devhud-deck`, `servers/devhud-realqa`, and `protos/devhud-realqa`. Never move DevHud implementation into DeliDev/delibase paths or add another DevHud ownership path without synchronized contracts.
+- The only account exception is DeliDev identity through Logto Authorization Code with PKCE. Desktop uses a one-shot random loopback callback; Deck mobile uses the exact verified `https://deli.dev/auth/devhud/callback`. Persist only refresh token/device-session key in the OS vault; access/ID and forwarded delibase-audience tokens remain memory-only. One account is active per OS user/device.
+- Future exact origins are `https://deck.deli.dev`, `https://realqa.deli.dev`, and `https://assets.realqa.deli.dev`. They authorize bounded feature contracts only and do not claim DNS, deployment, R2 infrastructure, production secrets, registration, publication, or activation. Feature clients must not load remote UI or arbitrary assets; provider GitHub/delibase/R2 administration remains server-side.
+- Deck is authorized only for authenticated desktop/mobile/tray/shortcut/notification/native-widget workflows. RealQA is authorized only for authenticated desktop capture/editor/offline-draft workflows and its exact-origin signed Chrome MV3 native host; no mobile RealQA. Deck and RealQA require separate minimal-permission GitHub Apps, support GitHub.com only, and keep production-facing catalog records disabled.
+- The internal registry remains closed and source-controlled. No public plugin/tracker SDK, third-party view/provider, remotely supplied component tree, runtime code download, arbitrary remote UI, or public API is authorized. Remote client/extension telemetry remains prohibited; only redacted server operational logs/metrics/traces/audits are permitted.
+- Networking remains deny-by-default except the signed updater, exact Logto/DeliDev auth, exact Deck/RealQA/RealQA-assets origins, verified mobile auth callback, and exact-origin Chrome Native Messaging boundaries. Add narrow per-window/per-command allowlists without generic frontend filesystem/screen/process/store/network authority.
+- Preserve exact lifecycle distinctions. Deck's only offline PR cache is the minimal encrypted widget snapshot; ordinary Deck shows offline state. Deck logout clears device tokens/PR data/snapshots; disconnect additionally clears provider/cache/notification/widget data while retaining disconnected views; reset clears device tokens/snapshots/effective shortcuts but not server views/connections; feature/account/org deletion follows the Deck server contract. RealQA permits encrypted offline drafts only after prior login/device binding; logout locks rather than deletes them; reset deletes drafts/tokens/shortcut state/pairing but not Chrome-owned permissions; disconnect retains disconnected presets/mappings; asset/feature/account/org deletion and the 24-hour staging/30-day billing-grace/placeholder rules follow the RealQA server contract.
+- Current production tools, widget registration, and user-visible widget state remain empty until implementation/distribution changes. Issues #755/#757 do not deploy services, configure DNS/R2, register GitHub Apps, publish images/widgets/extensions/stores, inject production identities, enable catalog entries, or roll out operations.
+- Once implementation exists, use the exact app commands in `docs/apps-devhud-foundation.md` (`test:deck`, `test:deck:widgets`, `test:realqa`, `test:realqa:native`, `test:realqa:extension`, `check:realqa:package`) in addition to the existing DevHud baseline; root `pnpm generate:proto`/`pnpm check:proto`, per-package TypeScript typechecks, and Go test/vet for both proto roots; and Go format/vet/test plus sqlc/PostgreSQL/provider/image checks for both servers. Missing planned commands must not be represented by passing placeholders.
 
 ### Repository Default Technology Choices
 
