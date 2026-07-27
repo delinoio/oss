@@ -599,7 +599,8 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 				) VALUES (
 					$1, $2, 'personal_account', $2, $3, $4, $5, $6,
 					'realqa_storage', $7, 'utc_day', 1, 'access_lost', 2,
-					$8, $8, $8, $8 + interval '7 years'
+					$8::timestamptz, $8::timestamptz, $8::timestamptz,
+					$8::timestamptz + interval '7 years'
 				)
 			`,
 				authorization.id,
@@ -620,9 +621,9 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 				organization_id, team_id, team_name_snapshot,
 				decision, result, metadata, retain_until
 			) VALUES (
-				$1, $2, 'team.deleted', '', $3, $4,
+				$1, $2::timestamptz, 'team.deleted', '', $3, $4,
 				'Deleted Migration Team', 'allow', 'success', '{}'::jsonb,
-				$2 + interval '7 years'
+				$2::timestamptz + interval '7 years'
 			)
 		`,
 			teamDeletedAuditID,
