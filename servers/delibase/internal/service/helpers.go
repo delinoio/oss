@@ -416,6 +416,53 @@ func replayForCaller(
 	digest []byte,
 	target proto.Message,
 ) (bool, time.Time, error) {
+	return replayForCallerWithConflictReason(
+		ctx,
+		queries,
+		callerKind,
+		callerID,
+		operation,
+		key,
+		digest,
+		target,
+		delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
+	)
+}
+
+func backgroundReplayForCaller(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	callerKind string,
+	callerID string,
+	operation string,
+	key string,
+	digest []byte,
+	target proto.Message,
+) (bool, time.Time, error) {
+	return replayForCallerWithConflictReason(
+		ctx,
+		queries,
+		callerKind,
+		callerID,
+		operation,
+		key,
+		digest,
+		target,
+		delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
+	)
+}
+
+func replayForCallerWithConflictReason(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	callerKind string,
+	callerID string,
+	operation string,
+	key string,
+	digest []byte,
+	target proto.Message,
+	conflictReason delibasev1.ErrorReason,
+) (bool, time.Time, error) {
 	scope := dbgen.DeleteExpiredIdempotencyRecordParams{
 		CallerKind:     callerKind,
 		CallerID:       callerID,
@@ -435,13 +482,13 @@ func replayForCaller(
 	if !bytes.Equal(record.RequestHash, digest) {
 		return false, time.Time{}, serviceError(
 			connect.CodeAborted,
-			delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
+			conflictReason,
 		)
 	}
 	if record.ConnectCode.Valid {
 		return false, time.Time{}, serviceError(
 			connect.CodeAborted,
-			delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
+			conflictReason,
 		)
 	}
 	if err := proto.Unmarshal(record.ResponsePayload, target); err != nil {
@@ -832,6 +879,15 @@ func databaseError(err error) error {
 					delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
 				)
 			}
+			if strings.Contains(
+				postgres.ConstraintName,
+				"usage_records_one_background_period_settlement",
+			) {
+				return serviceError(
+					connect.CodeResourceExhausted,
+					delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED,
+				)
+			}
 			return serviceError(
 				connect.CodeAborted,
 				delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
@@ -881,6 +937,30 @@ func databaseError(err error) error {
 				return serviceError(
 					connect.CodeFailedPrecondition,
 					delibasev1.ErrorReason_ERROR_REASON_AVAILABLE_FUNDS_EXHAUSTED,
+				)
+			case strings.Contains(
+				postgres.Message,
+				"background authorization binding was substituted",
+			):
+				return serviceError(
+					connect.CodePermissionDenied,
+					delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION,
+				)
+			case strings.Contains(
+				postgres.Message,
+				"background authorization access is unavailable",
+			):
+				return serviceError(
+					connect.CodePermissionDenied,
+					delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST,
+				)
+			case strings.Contains(
+				postgres.Message,
+				"background authorization period limit exceeded",
+			):
+				return serviceError(
+					connect.CodeResourceExhausted,
+					delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED,
 				)
 			}
 			return invalidArgument()
