@@ -474,6 +474,72 @@ func TestPostgreSQLBackgroundAuthorizationFormerAuthorizerCannotRead(
 	}
 }
 
+func TestPostgreSQLBackgroundResourceDeletionAfterOrganizationDeletion(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	resourceID := uuidv7.MustNew()
+	grant := createBackgroundGrant(
+		t,
+		authenticatedContext(ctx, fixture.ownerSubject),
+		fixture.billing,
+		fixture,
+		fixture.ownerID,
+		fixture.generalTeamID,
+		resourceID,
+		10,
+		"deleted-owner-create-"+fixture.organizationID.String(),
+		true,
+	)
+
+	connection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close(ctx)
+	if _, err = connection.Exec(
+		ctx,
+		"DELETE FROM organizations WHERE id = $1",
+		pgUUID(fixture.organizationID),
+	); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := fixture.store.Queries().GetBackgroundUsageAuthorization(
+		ctx,
+		pgUUID(mustUUID(t, grant.Authorization.AuthorizationId)),
+	)
+	if err != nil || closed.Status != "owner_deleted" {
+		t.Fatalf("deleted owner grant = %#v, %v", closed, err)
+	}
+
+	response, err := fixture.usage.MarkBackgroundUsageResourceDeleted(
+		authorizedUsageContext(ctx, fixture.serviceClient),
+		connect.NewRequest(&delibasev1.MarkBackgroundUsageResourceDeletedRequest{
+			AuthorizationId:   grant.Authorization.AuthorizationId,
+			Purpose:           delibasev1.BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE,
+			FeatureResourceId: usageUUID(resourceID),
+			ExpectedRevision:  grant.Authorization.Revision,
+			Idempotency: idempotency(
+				"deleted-owner-resource-delete-" +
+					fixture.organizationID.String(),
+			),
+		}),
+	)
+	if err != nil ||
+		response.Msg.Authorization.Authorization.Status !=
+			delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_OWNER_DELETED ||
+		response.Msg.Authorization.Authorization.Revision != closed.Revision {
+		t.Fatalf("deleted owner resource deletion = %#v, %v", response, err)
+	}
+}
+
 func TestPostgreSQLAuthorizedUsageFinancialPathsAndSubstitution(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {

@@ -7,6 +7,10 @@
 - Contract identity: `devhud.deck.v1`
 - Status: planned for issue #755; no source, generated package, deployed API, or published client is claimed.
 
+### Out of Scope
+
+- Public API/plugin SDK status, third-party clients, remote UI, GHES/custom hosts, server schedulers, production deployment, generated-client publication, GitHub App registration, and catalog activation.
+
 ## Runtime and Language
 
 - Versioned Protobuf is authoritative.
@@ -14,7 +18,15 @@
 - The future workspace TypeScript package is `@delinoio/devhud-deck-connect`.
 - Preserve released v1 fields additively. Breaking changes require `devhud.deck.v2` and synchronized consumer migration docs.
 
-## Services and RPCs
+## Users and Operators
+
+- Primary users are authenticated DevHud Deck users on supported desktop and mobile clients.
+- DeliDev users may operate only the `DeckIntegrationService` connection-management surface.
+- Deck service operators and delibase lifecycle workers consume the bounded server-side contracts described below.
+
+## Interfaces and Contracts
+
+### Services and RPCs
 
 - `DeckViewService`: `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `GetManualRefreshQuote`, `RefreshView`, `MutatePullRequest`, `DeleteFeatureData`.
 - `DeckIntegrationService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`.
@@ -22,7 +34,7 @@
 
 No additional v1 service or RPC is implied. GitHub callback/webhook handlers and push delivery are HTTP/server boundaries, not public Connect services.
 
-## Wire Contract
+### Wire Contract
 
 - IDs are UUID v7 wrappers. Owner scope, view kind, sort, grouping, mutation kind, connection state, refresh outcome, notification transition, freshness state, and stable error reason are closed enums.
 - The only v1 view kind is `GITHUB_PULL_REQUESTS`.
@@ -41,7 +53,12 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 - Every mutation that changes existing synchronized data carries the expected revision and returns a new revision. Stable conflict details support reload/compare/reapply; creation replay safety is provided by the separate `CreateView` idempotency key above.
 - Authenticated messages identify personal/organization/team resources by IDs only; client-provided roles, repository permission, billing authority, provider access, and price are never authoritative.
 
-## Authentication, Privacy, and Errors
+## Storage
+
+- Protobuf source and reproducibly generated Go/TypeScript artifacts are the only files owned by this contract.
+- The API defines persisted identifiers and lifecycle semantics, but it owns no runtime database, cache, credential store, or local file storage; those boundaries belong to the Deck server and client contracts.
+
+## Security
 
 - Human RPCs require the Deck-audience user token plus the dedicated memory-only delibase-audience forwarded bearer metadata defined by the server contract. `UnregisterDevice` alone may instead accept the single-registration revocation grant, and `DeleteFeatureData` in delibase-lifecycle mode instead requires the exact Deck-scoped delibase M2M identity; each alternate credential is rejected by every other procedure. Generated clients must treat all credentials as sensitive and keep them out of messages, logs, errors, caches, persistence, and diagnostics except for the revocation grant's narrowly scoped OS-vault cleanup tombstone.
 - The future delibase single-reservation billing-finalization grant is an internal delibase-to-Deck server credential, not a `devhud.deck.v1` field or metadata value. Deck clients never receive, retain, or submit it; server-side recovery uses it only under the Deck server contract.
@@ -49,6 +66,11 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 - The server verifies matching subjects, DeliDev role/scope, and the viewer's GitHub permission. Error enums distinguish authentication, authorization, provider permission, stale revision, limits, truncation, rate/concurrency limits, billing catalog/preflight, billing reservation, provider failure/rate limit/timeout, offline/stale, disconnected, and unsupported host/action.
 - Messages must not carry GitHub tokens, webhook secrets, raw authorization headers, production secrets, or sensitive push payloads.
 - The API transports data, not UI definitions. It must not expose HTML, JavaScript, component trees, plugin manifests, arbitrary URLs, or runtime code.
+
+## Logging
+
+- Generated clients and servers must preserve stable typed error reasons while excluding credentials, authorization targets, repository/title/query fields, and other user content from logs and diagnostics.
+- Operational logging, redaction, audit, and troubleshooting requirements are owned by the consuming Deck server and app contracts.
 
 ## Build and Test
 
@@ -64,9 +86,12 @@ Generation must lint, check the immutable descriptor baseline, generate Go/TypeS
 
 Checks do not publish the TypeScript package, deploy `https://deck.deli.dev`, register the GitHub App, activate a catalog entry, or publish a server image.
 
-## Dependencies and Change Triggers
+## Dependencies and Integrations
 
 - Owned by `devhud`; consumed by `servers/devhud-deck`, the authenticated Deck client under `apps/devhud`, the authenticated DeliDev settings client under `apps/delidev-app` only for `DeckIntegrationService`, and `servers/delibase` only for service-authenticated `DeleteFeatureData` lifecycle delivery.
+
+## Change Triggers
+
 - Update this document, [project-devhud](project-devhud.md), [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), [apps-delidev-app-foundation](apps-delidev-app-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, generated package, or compatibility change.
 
 ## References
@@ -76,7 +101,4 @@ Checks do not publish the TypeScript package, deploy `https://deck.deli.dev`, re
 - [DevHud app](apps-devhud-foundation.md)
 - [DeliDev app](apps-delidev-app-foundation.md)
 - [Issue #755](https://github.com/delinoio/oss/issues/755)
-
-## Out of Scope
-
-- Public API/plugin SDK status, third-party clients, remote UI, GHES/custom hosts, server schedulers, production deployment, generated-client publication, GitHub App registration, and catalog activation.
+- [Repository defaults](repository-defaults.md)

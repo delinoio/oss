@@ -8,7 +8,23 @@
 - Future canonical API origin and Logto audience: `https://deck.deli.dev`; documenting it does not create or activate the origin.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrowly scoped HTTP handlers, and shared `servers/internal` infrastructure where its generic contracts apply.
 
-## Users and Authorization
+### Out of Scope
+
+- GHES/custom GitHub hosts/on-premises connectors.
+- Server-scheduled or server-initiated PR polling.
+- Public plugin SDKs, third-party views, remotely supplied UI, and arbitrary remote assets.
+- GitHub comments, review approvals/change requests, or personal/organization view transfer/copy.
+- Guaranteed five-minute widget refresh and offline PR lists beyond the minimal encrypted widget snapshot.
+- Production deployment, DNS, GitHub App registration, catalog activation, GHCR/image publication, widget/store publication, production SLOs/alerts, or rollout.
+
+## Runtime and Language
+
+- The planned service uses Go with PostgreSQL, migrations, sqlc, Connect RPC, and narrowly scoped HTTP handlers.
+- Provider, billing, lifecycle, and push integrations remain server-side; shared `servers/internal` infrastructure may be used only where its generic contracts apply.
+
+## Users and Operators
+
+### Users and Authorization
 
 - The signed-out DevHud base shell never depends on Deck. A user must complete DeliDev Logto Authorization Code with PKCE before entering Deck.
 - Human RPCs accept a Deck-audience bearer and a memory-only delibase-audience forwarded bearer. The service validates issuer, audience, expiry, scopes, and matching subjects and strips credentials before business handlers. `UnregisterDevice` additionally accepts only the opaque, single-registration revocation grant issued by `RegisterDevice`; that grant authorizes no other procedure or registration. `DeleteFeatureData` alone also accepts the exact Deck lifecycle M2M identity used by delibase for a typed account/organization-deletion trigger. Its token must have the client-credentials shape (`sub == client_id`) and both values must equal the configured `DECK_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID` in addition to passing issuer, Deck audience, expiry, and lifecycle-scope validation; another M2M client with the same audience/scope is rejected. No other procedure accepts that identity. No credential may be logged. The registration record retains only a non-reversible verifier for the revocation grant; a separate application-level encrypted idempotency result may retain replay material only through the registration lease so an exact lost-response `RegisterDevice` retry can return the same grant, and must delete it on unregister or lease expiry. The client retains the grant only in the OS secure vault as described below.
@@ -16,7 +32,9 @@
 - Personal resources may select an accessible organization/team for billing. Organization resources bill their owning organization/team.
 - Every synchronized mutation uses a revision/ETag. Stale writes fail with a typed conflict suitable for reload, compare, and reapply.
 
-## GitHub.com Provider Boundary
+## Interfaces and Contracts
+
+### GitHub.com Provider Boundary
 
 - Deck uses its own minimal-permission GitHub App, separate from RealQA, and uses GitHub App user authorization tokens so reads and mutations are attributed to the current GitHub user.
 - Only GitHub.com is accepted. GHES, GitHub Enterprise Server, custom hosts, and on-premises connectors fail closed.
@@ -28,7 +46,7 @@
 - GitHub App user authorization credentials retained for an active connection use application-level envelope encryption before PostgreSQL persistence: a fresh data-encryption key protects each credential record, only ciphertext plus wrapped key and versioned managed environment-scoped key ID are stored or backed up, and decrypt authority is limited to the provider adapter for the current authorized operation. Rotation must support decrypting old key versions and transactional rewrapping to the active key without exposing plaintext; database/storage encryption alone is insufficient. Plaintext credentials and unwrapped data keys are memory-only for the bounded provider call and never enter logs, traces, errors, audits, caches, or backups.
 - Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository.
 
-## Data and Query Contract
+### Data and Query Contract
 
 - Implement exactly the `DeckViewService`, `DeckIntegrationService`, and `DeckDeviceService` RPC sets in [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md). Business mutations remain Connect RPC; only the provider callback/webhook handlers described above use HTTP.
 - Persisted identifiers are UUID v7. Owner scope, view kind, sort, grouping, mutation kind, connection state, refresh outcome, notification transition, and freshness state are closed enums.
@@ -41,7 +59,7 @@
 - Default PR results/details contain repository, number, title, author, review decision, checks, mergeability, draft state, and updated time. Additional provider metadata is fetched only for the action that needs it.
 - Mutations are limited to assign/unassign users; request/remove individual or team reviewers; add/remove labels; mark draft/ready; close/reopen; merge; and enable/cancel GitHub native auto-merge. Merge requires explicit confirmation and respects current-user permission, repository rules, branch protection, and available merge methods. Commenting, approving, and requesting changes open GitHub and are not Deck mutations.
 
-## Client-Initiated Refresh and Billing
+### Client-Initiated Refresh and Billing
 
 - The service must not contain a scheduler, durable refresh job, or worker that initiates or continues GitHub PR polling.
 - Every refresh is traceable to a running desktop tray process, an open mobile app, an OS-permitted client background task, or an explicit app/shortcut/widget action.
@@ -53,7 +71,7 @@
 - Limits are 12 manual refresh requests/minute/user, 30 PR mutations/minute/user, and four concurrent GitHub provider requests/installation.
 - Deck catalog records, including the identity and mapping above, remain disabled in production-facing artifacts until a separate activation change; this contract does not add them to the current empty production catalog.
 
-## Devices, Notifications, and Widgets
+### Devices, Notifications, and Widgets
 
 - The server synchronizes Deck views for desktop, iOS, Android, tray, shortcuts, notifications, WidgetKit, and Android widgets. Client/native code remains under `apps/devhud`.
 - Up to 20 per-view shortcut definitions synchronize per account/device; the client registers them through one unified DevHud conflict registry and marks unavailable bindings inactive without replacing another binding.
@@ -63,7 +81,9 @@
 - Each widget selects one view. Supported families are WidgetKit small/medium/large for iPhone and macOS and responsive Android compact/wide/list. New widgets show counts only; repository and PR titles require per-widget privacy opt-in.
 - Widget actions open a view/PR or request refresh and never mutate a PR. The only offline PR-data exception is a minimal encrypted widget snapshot with freshness/offline state. The regular Deck app shows a connection/offline state rather than a cached PR list.
 
-## Storage, Retention, and Deletion
+## Storage
+
+### Retention and Deletion
 
 - Retain only current matching PR snapshots, notification event/delivery history for 30 days, and view definitions until deletion.
 - Logout revokes the device push registration as described above, then deletes Deck tokens, PR data, and widget snapshots from that device.
@@ -72,13 +92,18 @@
 - `DeckViewService.DeleteFeatureData` is the only feature-deletion mutation. In owner-request mode it is idempotent by authenticated subject, operation, and owner scope: a personal caller may delete only their personal Deck data, while an organization Owner may delete organization Deck data. In lifecycle mode it requires the exact Deck-scoped delibase M2M identity, accepts only a typed account or organization target plus the immutable delibase deletion-job UUID, and treats that UUID as its replay identity; DeliDev and ordinary feature users cannot select this mode.
 - The first accepted request in either mode immediately tombstones the target scope, blocks new scope access/mutations, and starts asynchronous hard deletion of all data owned by that scope, including view definitions and attached connection/provider, cache, notification, widget, and shortcut data. Exact replays return the same deletion-job result, absent feature data succeeds idempotently, and only required pseudonymized financial/security records survive. Delibase transactionally enqueues the lifecycle call when it accepts account/organization deletion and retries ambiguous or failed delivery through its immutable retained outbox/dead-letter contract.
 
-## Security and Observability
+## Security
 
 - Remote client telemetry remains prohibited. The service may use redacted structured logs, metrics, traces, and audit events for operations and authorization.
 - Never persist or log feature/delibase bearer tokens, authorization headers, URLs, push content, or user content outside the explicit data contract. The sole provider-token persistence exception is the envelope-encrypted active-connection credential record defined above; the bounded server-side grant exceptions are the encrypted `RegisterDevice` replay result and the encrypted single-reservation billing-finalization grant defined above. Canonical raw queries and identity-bearing typed builder clauses may persist only in view definitions, and repository names, PR titles, and PR authors may persist only in current matching PR snapshots; encrypt those fields at rest with managed environment-scoped keys, authorize every read before decryption, and delete them at the retention boundaries above. Never place credentials or those fields in logs, telemetry, traces, audits, notification history, uncontracted caches, or plaintext backups. Audit only typed safe decisions and pseudonymized actors.
 - Use least-privilege database/provider identities, fail-closed authorization, CSRF/state validation for callbacks, webhook signature validation, rate/concurrency limits, and explicit safe error enums.
 - DevHud reaches Connect through its private native transport, not browser fetch. Do not allow `http://tauri.localhost` in CORS. The exact `https://deli.dev` browser origin may call only `DeckIntegrationService`; all other procedures reject browser-origin requests.
 - Measure refresh latency, query latency, mutation latency, and widget snapshot size in CI/fixtures only. This contract defines no production SLO, alert threshold, dashboard, or telemetry pipeline.
+
+## Logging
+
+- Emit redacted structured operational logs, metrics, traces, and typed audit decisions sufficient to troubleshoot authentication, authorization, provider, refresh, billing, device, and deletion flows.
+- Never emit credentials, URLs, authorization targets, repository names, PR titles/authors, raw queries, push content, or other user content; actors must remain pseudonymized.
 
 ## Build and Test
 
@@ -117,12 +142,4 @@ These checks validate artifacts only. They must not push GHCR images, deploy the
 - [Deck API](protos-devhud-deck-api-contract.md)
 - [DevHud app](apps-devhud-foundation.md)
 - [Issue #755](https://github.com/delinoio/oss/issues/755)
-
-## Out of Scope
-
-- GHES/custom GitHub hosts/on-premises connectors.
-- Server-scheduled or server-initiated PR polling.
-- Public plugin SDKs, third-party views, remotely supplied UI, and arbitrary remote assets.
-- GitHub comments, review approvals/change requests, or personal/organization view transfer/copy.
-- Guaranteed five-minute widget refresh and offline PR lists beyond the minimal encrypted widget snapshot.
-- Production deployment, DNS, GitHub App registration, catalog activation, GHCR/image publication, widget/store publication, production SLOs/alerts, or rollout.
+- [Repository defaults](repository-defaults.md)

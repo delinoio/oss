@@ -8,7 +8,22 @@
 - Future canonical API origin and Logto audience: `https://realqa.deli.dev`; future public-image origin: `https://assets.realqa.deli.dev`. Both are inactive contract identifiers.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrow HTTP handlers, Cloudflare R2 signed uploads/public delivery, and shared `servers/internal` infrastructure where its generic contracts apply.
 
-## Clients, Users, and Authorization
+### Out of Scope
+
+- GHES/custom GitHub hosts/on-premises or non-GitHub trackers.
+- Public tracker/plugin SDKs; comments/screenshots on existing issues; updates to issues not created by the same RealQA submission; general edits beyond best-effort deleted-image-reference cleanup on that submission's issue; automatic issue splitting.
+- Incognito or full-page/scroll-stitched Chrome capture; mobile RealQA.
+- Private/authenticated image URLs that prevent ordinary issue readers from viewing inline images.
+- Production deployment, DNS/R2 provisioning, GitHub App registration, extension/store/image publication, catalog activation, production SLOs/alerts, or rollout.
+
+## Runtime and Language
+
+- The planned service uses Go with PostgreSQL, migrations, sqlc, Connect RPC, narrowly scoped HTTP, and Cloudflare R2-backed image delivery.
+- Provider, billing, lifecycle, and object-storage integrations remain server-side; shared `servers/internal` infrastructure may be used only where its generic contracts apply.
+
+## Users and Operators
+
+### Clients, Users, and Authorization
 
 - RealQA is available only to DevHud desktop on macOS 14+, Windows 11, and Ubuntu 24.04. Ubuntu capture covers X11/XWayland and native Wayland through `xdg-desktop-portal`. iOS and Android are excluded.
 - The signed-out base shell remains usable. Entering RealQA requires DeliDev Logto Authorization Code with PKCE through a system browser and a one-shot random `127.0.0.1` callback.
@@ -17,7 +32,9 @@
 - Personal resources may select an accessible billing organization/team; organization resources use their owning organization/team.
 - Synchronized mutations use revisions/ETags with typed reload/compare/reapply conflicts.
 
-## Presets and Synchronization
+## Interfaces and Contracts
+
+### Presets and Synchronization
 
 - Synchronize logical presets, tracker destinations, repository-template/form choices, ordered process/URL mappings, and shortcut definitions.
 - Keep OS capture permission, Chrome optional-host permission, shortcut registration result, and extension pairing device-local.
@@ -26,7 +43,7 @@
 - Preset creation requires a stable client-generated UUID v7 idempotency key scoped to the authenticated subject and operation. Exact replay returns the original preset and revision without consuming another limit slot; reuse with changed creation input fails with the typed idempotency-conflict reason.
 - Process/title rules use a Rust-compatible non-backtracking regex syntax with compilation and length limits. Resolve in order by exact process name plus an optional safe title match and URL template.
 
-## GitHub.com Tracker Boundary
+### GitHub.com Tracker Boundary
 
 - RealQA uses a dedicated minimal-permission GitHub App separate from Deck and acts with GitHub App user authorization tokens.
 - Only GitHub.com is supported. GHES, custom GitHub hosts, on-premises trackers, and non-GitHub adapters fail closed.
@@ -39,7 +56,7 @@
 - Include a hidden `realqa:submission:<UUID>` marker. Serialize before submission and enforce 60,000 UTF-8 bytes. There is no image-count cap inside the session limits; overflow stays a draft and requires manual removal/splitting, never automatic multi-issue creation.
 - On an ambiguous create result, reconcile recent user-created issues by hidden marker before retrying; never silently duplicate an issue.
 
-## Tracker, Submission, and HTTP Boundaries
+### Tracker, Submission, and HTTP Boundaries
 
 - Implement exactly the `RealQAPresetService`, `RealQATrackerService`, and `RealQASubmissionService` RPC sets in [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 - The internal tracker interface normalizes title, body, attachments, labels, and assignees plus typed provider extensions. Only GitHub is registered in v1; adapter contract tests are required. It is not a public tracker/plugin SDK.
@@ -48,7 +65,7 @@
 - `ListSubmissions` is an authenticated, owner-authorized, opaque-cursor discovery path for retained submissions and assets the caller may delete. It returns only submission and asset UUIDs, asset state, bounded timestamps, and the minimum retained provider issue URL/ID needed to identify the record; it never reconstructs or returns submitted title, body, URL, DOM metadata, screenshot content, object keys, or a public bucket index.
 - Do not retain submitted title, body, URL, or DOM metadata after provider reconciliation. Retain only minimum provider IDs/URLs, asset state, and an idempotency digest.
 
-## Capture Payload and URL Boundary
+### Capture Payload and URL Boundary
 
 - Uploads are flattened PNG/WebP only. Raw originals remain solely in encrypted local drafts and are never uploaded.
 - A session has no explicit image-count limit, at most 25 MiB/encoded image, 250 MiB total encoded images, and 100 megapixels/decoded image. Reject malformed/unsupported images, decompression bombs, and limit overflow before upload.
@@ -56,7 +73,9 @@
 - URLs accept HTTP/HTTPS only, reject credentials, warn for localhost/private destinations, and strip query/fragment by default; review may explicitly restore/edit them.
 - Suggested OS/architecture, DevHud/Chrome version, screen/viewport size, capture time, sanitized URL, and DOM fields are user-removable.
 
-## Image Upload, Public Delivery, and Deletion
+## Storage
+
+### Image Upload, Public Delivery, and Deletion
 
 - Stage privately through short-lived RealQA-signed PUT URLs at exactly `https://assets.realqa.deli.dev`; the same-origin handler writes through a least-privilege R2 binding. `CreateImageUpload` never returns or allowlists an account-specific `r2.cloudflarestorage.com` S3 endpoint, and no signed PUT expires after the submission's server-derived upload deadline. After upload, re-decode/re-encode, remove metadata, and verify type, dimensions, SHA-256, and size before marking verified.
 - Promote only submitted images under opaque unguessable identifiers with at least 128 bits of entropy at the future exact asset origin. Never expose bucket indexes, sequential IDs, object keys, or signed GET URLs.
@@ -66,7 +85,7 @@
 - Retain submitted images until explicit image/range deletion, GitHub issue-deletion webhook, account/organization deletion, or storage-billing grace expiry.
 - Deleted URLs remain stable and return only a generic non-sensitive `Image removed` placeholder. When valid user authorization remains, best-effort update only the exact issue reconciled to that RealQA submission and only remove or replace its deleted-image references without changing other content; deletion itself never depends on GitHub access.
 
-## Submission Consistency and Billing
+### Submission Consistency and Billing
 
 The exact sequence is:
 
@@ -90,7 +109,7 @@ The exact sequence is:
 - Limits are three concurrent upload sessions/user and 30 issue submissions/hour/user.
 - RealQA catalog records remain stable and disabled in production-facing artifacts until a separate activation change.
 
-## Offline, Local Lifecycle, and Feature Deletion
+### Offline, Local Lifecycle, and Feature Deletion
 
 - After a prior successful login/device binding, offline capture/edit and encrypted account-bound local drafts are allowed. A first-time offline user cannot enter RealQA; upload/submission requires online reauthentication.
 - Successful submission deletes the local raw draft. Explicit draft deletion removes it immediately.
@@ -101,13 +120,18 @@ The exact sequence is:
 - Acceptance in either mode immediately tombstones the target scope, blocks new access/mutations and provider credential use, and starts asynchronous hard deletion of all scoped feature and provider records. Exact replays return the same deletion-job result, absent feature data succeeds idempotently, and only required pseudonymized financial/security records survive. Delibase transactionally enqueues the lifecycle call when it accepts account/organization deletion and retries ambiguous or failed delivery through its immutable retained outbox/dead-letter contract.
 - Before owner-request deletion hard-deletes an affected submission or removes its submission-to-authorization mapping, the deletion job durably enqueues an independently idempotent `MarkBackgroundUsageResourceDeleted` call for each submission-bound `REALQA_STORAGE` authorization, binding the authorization, authenticated service, purpose, feature-resource UUID, and expected revision. It retains the mapping and retry state until the exact bound-service response reports `RESOURCE_DELETED`, `REVOKED`, or `ACCESS_LOST`; the latter two are already closed and require no forbidden transition. In delibase lifecycle mode, `OWNER_DELETED` is also terminal because delibase closes the owner grants before dispatching `DeleteFeatureData`. Ambiguous delivery retries and cannot orphan an active grant.
 
-## Security and Observability
+## Security
 
 - Remote DevHud/extension telemetry, analytics, crash reporting, advertising, and user tracking remain prohibited. The service may use redacted structured operational logs, metrics, traces, and audits.
 - Never log or persist feature/delibase bearer tokens, signed upload URLs, object keys, screenshot content, title/body/URL/DOM data, repository names, raw process/window values, or user content outside the explicitly retained encrypted draft/asset/provider state. The sole provider-token persistence exception is the envelope-encrypted active-connection credential record defined above; it must never appear in plaintext storage or backups.
 - Validate callback state and webhook signatures, use least-privilege R2/database/provider identities, and expose typed safe errors.
 - DevHud reaches Connect and the signed image PUT through its private native transports, not browser fetch. Do not allow `http://tauri.localhost` in CORS; RealQA has no browser RPC client.
 - Public assets are intentionally unauthenticated only after per-submission confirmation and verified promotion; no public asset listing or bucket index exists. Authenticated `ListSubmissions` exposes only the caller-authorized retained references defined above.
+
+## Logging
+
+- Emit redacted structured operational logs, metrics, traces, and typed audit decisions sufficient to troubleshoot authentication, authorization, provider, upload, reconciliation, billing, lifecycle, and deletion flows.
+- Never emit credentials, signed upload URLs, object keys, screenshots, title/body/URL/DOM data, repository names, process/window values, or other user content; actors must remain pseudonymized.
 
 ## Build and Test
 
@@ -146,11 +170,4 @@ These checks use fixture production substitutes and a fixture extension ID. They
 - [DevHud app](apps-devhud-foundation.md)
 - [Issue #757](https://github.com/delinoio/oss/issues/757)
 - [Issue #756](https://github.com/delinoio/oss/issues/756)
-
-## Out of Scope
-
-- GHES/custom GitHub hosts/on-premises or non-GitHub trackers.
-- Public tracker/plugin SDKs; comments/screenshots on existing issues; updates to issues not created by the same RealQA submission; general edits beyond best-effort deleted-image-reference cleanup on that submission's issue; automatic issue splitting.
-- Incognito or full-page/scroll-stitched Chrome capture; mobile RealQA.
-- Private/authenticated image URLs that prevent ordinary issue readers from viewing inline images.
-- Production deployment, DNS/R2 provisioning, GitHub App registration, extension/store/image publication, catalog activation, production SLOs/alerts, or rollout.
+- [Repository defaults](repository-defaults.md)

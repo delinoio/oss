@@ -7,6 +7,10 @@
 - Contract identity: `devhud.realqa.v1`
 - Status: planned for issue #757; no source, generated package, deployed API, or published client is claimed.
 
+### Out of Scope
+
+- Public API/plugin SDK status, third-party clients/trackers, remote UI, GHES/custom hosts, mobile RealQA, production deployment, generated-client publication, GitHub App/extension registration, R2 provisioning, and catalog activation.
+
 ## Runtime and Language
 
 - Versioned Protobuf is authoritative.
@@ -14,7 +18,15 @@
 - The future workspace TypeScript package is `@delinoio/devhud-realqa-connect`.
 - Preserve released v1 fields additively. Breaking changes require `devhud.realqa.v2` and synchronized consumer migration docs.
 
-## Services and RPCs
+## Users and Operators
+
+- Primary users are authenticated DevHud RealQA users on supported desktop clients and the paired exact-origin Chrome extension/native host.
+- RealQA service operators and delibase lifecycle workers consume the bounded server-side contracts described below.
+- Ordinary public issue readers consume promoted image URLs, not this authenticated Connect API.
+
+## Interfaces and Contracts
+
+### Services and RPCs
 
 - `RealQAPresetService`: `ListPresets`, `GetPreset`, `CreatePreset`, `UpdatePreset`, `DeletePreset`, `DeleteFeatureData`.
 - `RealQATrackerService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`, `ListRepositories`, `GetRepositoryIssueSchema`.
@@ -22,7 +34,7 @@
 
 No additional v1 service or RPC is implied. GitHub callback/webhook, same-origin signed image PUT, and public image GET handlers are narrow HTTP/server boundaries.
 
-## Wire Contract
+### Wire Contract
 
 - IDs and idempotency keys are UUID v7 wrappers. Owner scope, capture mode, selector mode, tracker kind, submission state, upload state, failure class, asset state, and stable error reason are closed enums.
 - The only v1 tracker is GitHub.com. The internal tracker abstraction is not exposed as a plugin protocol.
@@ -40,13 +52,23 @@ No additional v1 service or RPC is implied. GitHub callback/webhook, same-origin
 - The first accepted feature-deletion request blocks new access and asynchronously removes the scope's presets, submissions, assets, tracker connection and installation bindings, envelope-encrypted provider credentials, and related callback/webhook state; exact replays return the same deletion-job result. Responses preserve the stable removed-placeholder URL contract and required pseudonymized financial/security records.
 - Client-provided role, GitHub permission, billing authorization/price, upload verification, provider success, and asset state are never authoritative.
 
-## Authentication, Privacy, and Errors
+## Storage
+
+- Protobuf source and reproducibly generated Go/TypeScript artifacts are the only files owned by this contract.
+- The API defines persisted identifiers, upload capabilities, and lifecycle semantics, but it owns no runtime database, object bucket, cache, credential store, or local draft storage; those boundaries belong to the RealQA server and client contracts.
+
+## Security
 
 - Human RPCs require the RealQA-audience user token and dedicated memory-only delibase-audience forwarded bearer metadata. Only `DeleteFeatureData` in delibase-lifecycle mode instead requires the exact RealQA-scoped delibase M2M identity; that identity is rejected by every other procedure. Generated clients keep all credentials out of messages, logs, errors, caches, persistence, and diagnostics.
 - The DevHud generated client runs through the private native Connect transport's closed procedure/origin mapping rather than browser fetch. The separately scoped native uploader validates the exact signed asset-origin PUT capability returned by `CreateImageUpload`. Neither path grants an arbitrary URL, header, method, redirect, or `http://tauri.localhost` CORS access.
 - Errors distinguish authentication/reauthentication, authorization, stale revision or storage-authorization mapping, idempotency conflict, disconnected/unsupported host, provider permission/schema/validation, body/image/session limits, malformed/unsupported/decompression-bomb input, upload deadline/expiry or verification, ambiguous reconciliation, rate/concurrency limit, billing reservation/background-authorization/rebind/grace, asset removed, and retention state.
 - Messages must not carry GitHub tokens, webhook/R2 secrets, raw authorization headers, production secrets, raw originals, arbitrary HTML/page text, or remotely supplied UI/code.
 - Submitted title/body/URL/DOM content must not remain in ordinary server messages/storage after reconciliation beyond the response needed by the active operation.
+
+## Logging
+
+- Generated clients and servers must preserve stable typed error reasons while excluding credentials, signed upload capabilities, object identifiers, screenshot/title/body/URL/DOM data, and other user content from logs and diagnostics.
+- Operational logging, redaction, audit, and troubleshooting requirements are owned by the consuming RealQA server and app contracts.
 
 ## Build and Test
 
@@ -62,10 +84,13 @@ Generation must lint, check the immutable descriptor baseline, generate Go/TypeS
 
 Checks do not publish the TypeScript package, deploy either RealQA origin, create R2 infrastructure, register the GitHub App, publish the extension, activate a catalog entry, or publish a server image.
 
-## Dependencies and Change Triggers
+## Dependencies and Integrations
 
 - Owned by `devhud`; consumed by `servers/devhud-realqa`, authenticated RealQA code under `apps/devhud`, and `servers/delibase` only for service-authenticated `DeleteFeatureData` lifecycle delivery. DeliDev has no RealQA client.
 - Recurring storage settlement depends on the separately synchronized delibase background-usage contract implemented by issue #756. RealQA implementation and activation remain future work and require its own planned server/client plus a separate catalog activation; the existing live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute.
+
+## Change Triggers
+
 - Update this document, [project-devhud](project-devhud.md), [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, idempotency, generated package, or compatibility change.
 
 ## References
@@ -75,7 +100,4 @@ Checks do not publish the TypeScript package, deploy either RealQA origin, creat
 - [DevHud app](apps-devhud-foundation.md)
 - [Issue #757](https://github.com/delinoio/oss/issues/757)
 - [Issue #756](https://github.com/delinoio/oss/issues/756)
-
-## Out of Scope
-
-- Public API/plugin SDK status, third-party clients/trackers, remote UI, GHES/custom hosts, mobile RealQA, production deployment, generated-client publication, GitHub App/extension registration, R2 provisioning, and catalog activation.
+- [Repository defaults](repository-defaults.md)

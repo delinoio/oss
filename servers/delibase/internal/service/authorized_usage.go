@@ -990,11 +990,15 @@ func (service *Usage) MarkBackgroundUsageResourceDeleted(
 			); transactionErr != nil {
 				return transactionErr
 			}
+			organizationRowMissing := false
 			if _, transactionErr = queries.LockOrganizationForBillingHistory(
 				ctx,
 				current.OrganizationID,
 			); transactionErr != nil {
-				return backgroundAuthorizationAccessLost()
+				if !errors.Is(transactionErr, pgx.ErrNoRows) {
+					return databaseError(transactionErr)
+				}
+				organizationRowMissing = true
 			}
 			replayed, completedAt, transactionErr = backgroundReplayForCaller(
 				ctx,
@@ -1031,6 +1035,9 @@ func (service *Usage) MarkBackgroundUsageResourceDeleted(
 				featureResourceID,
 			); transactionErr != nil {
 				return transactionErr
+			}
+			if organizationRowMissing && current.Status == "active" {
+				return backgroundAuthorizationAccessLost()
 			}
 			if request.Msg.ExpectedRevision > current.Revision {
 				return serviceError(
