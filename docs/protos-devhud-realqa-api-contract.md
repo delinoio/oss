@@ -65,7 +65,7 @@ Checks do not publish the TypeScript package, deploy either RealQA origin, creat
 ## Dependencies and Change Triggers
 
 - Owned by `devhud`; consumed by `servers/devhud-realqa`, authenticated RealQA code under `apps/devhud`, and `servers/delibase` only for service-authenticated `DeleteFeatureData` lifecycle delivery. DeliDev has no RealQA client.
-- Recurring storage settlement additionally depends on the separately synchronized delibase background-usage contract in issue #756. RealQA implementation and activation are blocked until that contract exposes its bounded human authorization and M2M authorized-usage RPCs; the existing live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute.
+- Recurring storage settlement depends on the separately synchronized delibase background-usage contract implemented by issue #756. RealQA implementation and activation remain future work and require its own planned server/client plus a separate catalog activation; the existing live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute.
 - Update this document, [project-devhud](project-devhud.md), [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, idempotency, generated package, or compatibility change.
 
 ## References
