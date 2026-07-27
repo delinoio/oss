@@ -182,7 +182,7 @@ SELECT
     grant_row.period,
     sqlc.arg(period_start)::timestamptz AS period_start,
     grant_row.maximum_units,
-    COALESCE(held.units, 0)::bigint AS held_units,
+    COALESCE(reservations.held_units, 0)::bigint AS held_units,
     COALESCE(committed.units, 0)::bigint AS committed_units,
     COALESCE(
         committed.has_settlement,
@@ -192,7 +192,7 @@ SELECT
         WHEN COALESCE(committed.has_settlement, false) THEN 0
         ELSE GREATEST(
             grant_row.maximum_units
-                - COALESCE(held.units, 0)
+                - COALESCE(reservations.held_units, 0)
                 - COALESCE(committed.units, 0),
             0
         )
@@ -202,20 +202,25 @@ SELECT
     )::timestamptz AS period_end,
     GREATEST(
         grant_row.updated_at,
-        COALESCE(held.updated_at, '-infinity'::timestamptz),
+        COALESCE(reservations.updated_at, '-infinity'::timestamptz),
         COALESCE(committed.updated_at, '-infinity'::timestamptz)
     )::timestamptz AS updated_at
 FROM background_usage_authorizations AS grant_row
 LEFT JOIN LATERAL (
     SELECT
-        COALESCE(sum(reservation.maximum_units), 0)::bigint AS units,
-        max(reservation.created_at) AS updated_at
+        COALESCE(
+            sum(reservation.maximum_units)
+                FILTER (WHERE reservation.status = 'held'),
+            0
+        )::bigint AS held_units,
+        max(
+            COALESCE(reservation.finalized_at, reservation.created_at)
+        ) AS updated_at
     FROM usage_reservations AS reservation
     WHERE reservation.background_usage_authorization_id = grant_row.id
       AND reservation.background_period_start
           = sqlc.arg(period_start)::timestamptz
-      AND reservation.status = 'held'
-) AS held ON true
+) AS reservations ON true
 LEFT JOIN LATERAL (
     SELECT
         COALESCE(sum(record.committed_units), 0)::bigint AS units,

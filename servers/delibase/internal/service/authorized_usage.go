@@ -760,7 +760,7 @@ func (service *Usage) ReleaseAuthorizedUsage(
 				)
 				return nil
 			}
-			authorization, transactionErr := lockCurrentBackgroundAuthorization(
+			authorization, transactionErr := lockBackgroundAuthorizationForRelease(
 				ctx,
 				queries,
 				binding,
@@ -813,15 +813,15 @@ func (service *Usage) ReleaseAuthorizedUsage(
 			if reservedUnits != reservation.MaximumUnits {
 				return backgroundAuthorizationSubstitution()
 			}
-			actor, transactionErr := backgroundAuthorizationActor(authorization)
-			if transactionErr != nil {
-				return transactionErr
-			}
 			switch reservation.Status {
 			case "expired":
 				response.Reservation = usageReservationMessage(reservation)
 				response.Release = usageReleaseMessage(reservation)
 			case "held":
+				actor, actorErr := backgroundReservationActor(reservation)
+				if actorErr != nil {
+					return actorErr
+				}
 				if transactionErr = releaseUsageHolds(
 					ctx,
 					service.dependencies,
@@ -1269,7 +1269,78 @@ func lockCurrentBackgroundAuthorization(
 	return current, nil
 }
 
+func lockBackgroundAuthorizationForRelease(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	binding authorizedUsageBinding,
+	serviceIdentityID pgtype.UUID,
+) (dbgen.BackgroundUsageAuthorization, error) {
+	current, err := queries.GetBackgroundUsageAuthorization(
+		ctx,
+		pgUUID(binding.authorizationID),
+	)
+	if err != nil {
+		return dbgen.BackgroundUsageAuthorization{},
+			backgroundAuthorizationNotFound(err)
+	}
+	if err = validateBackgroundAuthorizationImmutableBinding(
+		current,
+		binding,
+		serviceIdentityID,
+	); err != nil {
+		return dbgen.BackgroundUsageAuthorization{}, err
+	}
+	if _, err = queries.LockOrganizationForBillingHistory(
+		ctx,
+		current.OrganizationID,
+	); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return dbgen.BackgroundUsageAuthorization{}, databaseError(err)
+		}
+		return dbgen.BackgroundUsageAuthorization{},
+			backgroundAuthorizationAccessLost()
+	}
+	current, err = queries.LockBackgroundUsageAuthorizationForMutation(
+		ctx,
+		pgUUID(binding.authorizationID),
+	)
+	if err != nil {
+		return dbgen.BackgroundUsageAuthorization{},
+			backgroundAuthorizationNotFound(err)
+	}
+	if err = validateBackgroundAuthorizationImmutableBinding(
+		current,
+		binding,
+		serviceIdentityID,
+	); err != nil {
+		return dbgen.BackgroundUsageAuthorization{}, err
+	}
+	return current, nil
+}
+
 func validateBackgroundAuthorizationBinding(
+	authorization dbgen.BackgroundUsageAuthorization,
+	binding authorizedUsageBinding,
+	serviceIdentityID pgtype.UUID,
+) error {
+	if err := validateBackgroundAuthorizationImmutableBinding(
+		authorization,
+		binding,
+		serviceIdentityID,
+	); err != nil {
+		return err
+	}
+	switch authorization.Status {
+	case "active":
+		return nil
+	case "access_lost", "owner_deleted":
+		return backgroundAuthorizationAccessLost()
+	default:
+		return backgroundAuthorizationStatusInvalid()
+	}
+}
+
+func validateBackgroundAuthorizationImmutableBinding(
 	authorization dbgen.BackgroundUsageAuthorization,
 	binding authorizedUsageBinding,
 	serviceIdentityID pgtype.UUID,
@@ -1280,14 +1351,7 @@ func validateBackgroundAuthorizationBinding(
 		authorization.Period != binding.period {
 		return backgroundAuthorizationSubstitution()
 	}
-	switch authorization.Status {
-	case "active":
-		return nil
-	case "access_lost", "owner_deleted":
-		return backgroundAuthorizationAccessLost()
-	default:
-		return backgroundAuthorizationStatusInvalid()
-	}
+	return nil
 }
 
 func lockAuthorizedReservation(
@@ -1344,6 +1408,15 @@ func backgroundAuthorizationActor(
 		return "", serviceError(connect.CodeInternal, 0)
 	}
 	return safelog.ActorPseudonym(authorization.ActorReference), nil
+}
+
+func backgroundReservationActor(
+	reservation dbgen.UsageReservation,
+) (safelog.ActorPseudonym, error) {
+	if reservation.UserActorReferenceSnapshot == "" {
+		return "", serviceError(connect.CodeInternal, 0)
+	}
+	return safelog.ActorPseudonym(reservation.UserActorReferenceSnapshot), nil
 }
 
 func logAuthorizedUsageSuccess(

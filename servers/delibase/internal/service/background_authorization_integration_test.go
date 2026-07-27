@@ -987,6 +987,14 @@ func TestPostgreSQLAuthorizedUsageReleaseLimitSettlementAndRevokeRace(
 		connect.CodeAborted,
 		delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
 	)
+	closedAuthorizationReservation := reserveAuthorizedUsage(
+		t,
+		m2mContext,
+		fixture,
+		releaseContext,
+		5,
+		"authorized-closed-release-"+fixture.organizationID.String(),
+	)
 	deleted, err := fixture.usage.MarkBackgroundUsageResourceDeleted(
 		m2mContext,
 		connect.NewRequest(&delibasev1.MarkBackgroundUsageResourceDeletedRequest{
@@ -1038,6 +1046,36 @@ func TestPostgreSQLAuthorizedUsageReleaseLimitSettlementAndRevokeRace(
 		connect.CodeAborted,
 		delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
 	)
+	closedAuthorizationRelease, err := fixture.usage.ReleaseAuthorizedUsage(
+		m2mContext,
+		connect.NewRequest(&delibasev1.ReleaseAuthorizedUsageRequest{
+			Context:       releaseContext,
+			ReservationId: closedAuthorizationReservation.ReservationId,
+			ReservedUnits: &delibasev1.UsageUnits{Value: 5},
+			Idempotency: idempotency(
+				"authorized-closed-release-call-" +
+					fixture.organizationID.String(),
+			),
+		}),
+	)
+	if err != nil ||
+		closedAuthorizationRelease.Msg.Reservation.Status !=
+			delibasev1.ReservationStatus_RESERVATION_STATUS_RELEASED {
+		t.Fatalf(
+			"closed authorization release = %#v, %v",
+			closedAuthorizationRelease,
+			err,
+		)
+	}
+	if !closedAuthorizationRelease.Msg.PeriodUsage.UpdatedAt.AsTime().Equal(
+		closedAuthorizationRelease.Msg.Reservation.FinalizedAt.AsTime(),
+	) {
+		t.Fatalf(
+			"period usage updated at = %s, reservation finalized at = %s",
+			closedAuthorizationRelease.Msg.PeriodUsage.UpdatedAt.AsTime(),
+			closedAuthorizationRelease.Msg.Reservation.FinalizedAt.AsTime(),
+		)
+	}
 
 	concurrentResourceID := uuidv7.MustNew()
 	concurrentGrant := createBackgroundGrant(
