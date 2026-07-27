@@ -19,8 +19,8 @@ func TestEmbeddedMigrationsAreOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ordered) != 13 {
-		t.Fatalf("migration count = %d, want 13", len(ordered))
+	if len(ordered) != 14 {
+		t.Fatalf("migration count = %d, want 14", len(ordered))
 	}
 	for index, item := range ordered {
 		want := int64(index + 1)
@@ -561,7 +561,8 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err = apply(ctx, connection, ordered[usageServiceMigrationIndex]); err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range ordered[usageServiceMigrationIndex+1 : len(ordered)-1] {
+	const backgroundAuditMigrationIndex = 12
+	for _, item := range ordered[usageServiceMigrationIndex+1 : backgroundAuditMigrationIndex] {
 		if err = apply(ctx, connection, item); err != nil {
 			t.Fatal(err)
 		}
@@ -636,8 +637,17 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = apply(ctx, connection, ordered[len(ordered)-1]); err != nil {
+	if err = apply(
+		ctx,
+		connection,
+		ordered[backgroundAuditMigrationIndex],
+	); err != nil {
 		t.Fatal(err)
+	}
+	for _, item := range ordered[backgroundAuditMigrationIndex+1:] {
+		if err = apply(ctx, connection, item); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var eventName string
 	var backfilledPeriodID uuid.UUID

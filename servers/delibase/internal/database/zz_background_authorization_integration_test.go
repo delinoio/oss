@@ -184,6 +184,56 @@ func TestPostgreSQLBackgroundAuthorizationAccessLossIsTerminal(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLOrganizationBackgroundAuthorizationManagerLoss(t *testing.T) {
+	fixture := newBackgroundAuthorizationFixture(t, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if _, err := fixture.store.pool.Exec(ctx, `
+		UPDATE organization_memberships
+		SET role = 'owner'
+		WHERE organization_id = $1 AND account_id = $2
+	`, fixture.organizationID, fixture.accountIDs[0]); err != nil {
+		t.Fatal(err)
+	}
+	grant := fixture.createOrganizationAuthorization(
+		t, ctx, fixture.ownerAccountID, uuidv7.MustNew(), 10,
+	)
+	if _, err := fixture.store.pool.Exec(ctx, `
+		INSERT INTO team_memberships (
+			organization_id, team_id, account_id, role
+		) VALUES ($1, $2, $3, 'member')
+	`, fixture.organizationID, fixture.teamID, fixture.ownerAccountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.pool.Exec(ctx, `
+		UPDATE organization_memberships
+		SET role = 'member'
+		WHERE organization_id = $1 AND account_id = $2
+	`, fixture.organizationID, fixture.ownerAccountID); err != nil {
+		t.Fatal(err)
+	}
+
+	var effectiveRole string
+	if err := fixture.store.pool.QueryRow(ctx, `
+		SELECT effective_team_role($1, $2, $3)
+	`, fixture.organizationID, fixture.teamID, fixture.ownerAccountID).
+		Scan(&effectiveRole); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := fixture.store.Queries().
+		GetBackgroundUsageAuthorization(ctx, grant.ID)
+	if err != nil || effectiveRole != "member" ||
+		closed.Status != "access_lost" || closed.Revision != 2 {
+		t.Fatalf(
+			"manager-loss authorization = %#v, effective role %q, %v",
+			closed,
+			effectiveRole,
+			err,
+		)
+	}
+}
+
 func TestPostgreSQLBackgroundAuthorizationConnectionLoss(t *testing.T) {
 	fixture := newBackgroundAuthorizationFixture(t, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
