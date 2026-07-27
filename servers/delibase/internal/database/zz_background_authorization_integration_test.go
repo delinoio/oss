@@ -59,6 +59,13 @@ func TestPostgreSQLBackgroundAuthorizationLifecycleAndSecurity(t *testing.T) {
 	`, grant.ID, uuidv7.MustNew()); err == nil {
 		t.Fatal("mutable authorization meter binding was accepted")
 	}
+	if _, err := fixture.store.pool.Exec(ctx, `
+		UPDATE background_usage_authorizations
+		SET team_name_snapshot = 'rewritten'
+		WHERE id = $1
+	`, grant.ID); err == nil {
+		t.Fatal("mutable authorization team-name snapshot was accepted")
+	}
 
 	deleted, err := fixture.store.Queries().
 		MarkBackgroundUsageAuthorizationResourceDeleted(
@@ -269,6 +276,271 @@ func TestPostgreSQLBackgroundAuthorizationOwnerLoss(t *testing.T) {
 			t.Fatalf("organization owner deletion = %#v, %v", closed, err)
 		}
 	})
+}
+
+func TestPostgreSQLBackgroundAuthorizationDeletionTriggers(t *testing.T) {
+	type deletionCase struct {
+		name                string
+		organizationOwner   bool
+		expectedStatus      string
+		deleteAuthoritative func(context.Context, backgroundAuthorizationFixture) error
+	}
+	testCases := []deletionCase{
+		{
+			name:           "account",
+			expectedStatus: "owner_deleted",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				_, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM accounts WHERE id = $1",
+					fixture.accountIDs[0],
+				)
+				return err
+			},
+		},
+		{
+			name:              "organization",
+			organizationOwner: true,
+			expectedStatus:    "owner_deleted",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				_, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM organizations WHERE id = $1",
+					fixture.organizationID,
+				)
+				return err
+			},
+		},
+		{
+			name:           "organization membership",
+			expectedStatus: "access_lost",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				_, err := fixture.store.pool.Exec(ctx, `
+					DELETE FROM organization_memberships
+					WHERE organization_id = $1 AND account_id = $2
+				`, fixture.organizationID, fixture.accountIDs[0])
+				return err
+			},
+		},
+		{
+			name:           "team membership",
+			expectedStatus: "access_lost",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				_, err := fixture.store.pool.Exec(ctx, `
+					DELETE FROM team_memberships
+					WHERE organization_id = $1
+					  AND team_id = $2
+					  AND account_id = $3
+				`,
+					fixture.organizationID,
+					fixture.teamID,
+					fixture.accountIDs[0],
+				)
+				return err
+			},
+		},
+		{
+			name:           "team",
+			expectedStatus: "access_lost",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				_, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM teams WHERE id = $1",
+					fixture.teamID,
+				)
+				return err
+			},
+		},
+		{
+			name:           "service identity",
+			expectedStatus: "access_lost",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				_, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM service_identities WHERE id = $1",
+					fixture.serviceID,
+				)
+				return err
+			},
+		},
+		{
+			name:           "service meter allowlist",
+			expectedStatus: "access_lost",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				_, err := fixture.store.pool.Exec(ctx, `
+					DELETE FROM service_meter_allowlists
+					WHERE service_identity_id = $1 AND meter_id = $2
+				`, fixture.serviceID, fixture.meterID)
+				return err
+			},
+		},
+		{
+			name:           "catalog meter",
+			expectedStatus: "access_lost",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				if _, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM catalog_price_versions WHERE meter_id = $1",
+					fixture.meterID,
+				); err != nil {
+					return err
+				}
+				_, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM catalog_meters WHERE id = $1",
+					fixture.meterID,
+				)
+				return err
+			},
+		},
+		{
+			name:           "catalog app",
+			expectedStatus: "access_lost",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				if _, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM catalog_price_versions WHERE meter_id = $1",
+					fixture.meterID,
+				); err != nil {
+					return err
+				}
+				_, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM catalog_apps WHERE id = $1",
+					fixture.appID,
+				)
+				return err
+			},
+		},
+		{
+			name:           "Polar meter mapping",
+			expectedStatus: "access_lost",
+			deleteAuthoritative: func(
+				ctx context.Context,
+				fixture backgroundAuthorizationFixture,
+			) error {
+				_, err := fixture.store.pool.Exec(
+					ctx,
+					"DELETE FROM polar_meter_mappings WHERE meter_id = $1",
+					fixture.meterID,
+				)
+				return err
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newBackgroundAuthorizationFixture(t, 1)
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				30*time.Second,
+			)
+			defer cancel()
+			resourceID := uuidv7.MustNew()
+			var grant dbgen.BackgroundUsageAuthorization
+			if testCase.organizationOwner {
+				grant = fixture.createOrganizationAuthorization(
+					t,
+					ctx,
+					fixture.accountIDs[0],
+					resourceID,
+					10,
+				)
+			} else {
+				grant = fixture.createPersonalAuthorization(
+					t,
+					ctx,
+					fixture.accountIDs[0],
+					resourceID,
+					10,
+				)
+			}
+			if err := testCase.deleteAuthoritative(ctx, fixture); err != nil {
+				t.Fatal(err)
+			}
+			closed, err := fixture.store.Queries().
+				GetBackgroundUsageAuthorization(ctx, grant.ID)
+			if err != nil ||
+				closed.Status != testCase.expectedStatus ||
+				closed.Revision != 2 ||
+				!closed.RevokedAt.Valid {
+				t.Fatalf(
+					"deletion outcome = %#v, %v; want status %q",
+					closed,
+					err,
+					testCase.expectedStatus,
+				)
+			}
+			transitions, err := fixture.store.Queries().
+				ListBackgroundUsageAuthorizationTransitions(ctx, grant.ID)
+			if err != nil || len(transitions) != 2 ||
+				transitions[1].ToStatus != testCase.expectedStatus {
+				t.Fatalf("deletion transitions = %#v, %v", transitions, err)
+			}
+			var auditCount int
+			if err = fixture.store.pool.QueryRow(ctx, `
+				SELECT count(*)
+				FROM audit_events
+				WHERE background_usage_authorization_id = $1
+				  AND event_type = $2
+				  AND actor_reference = ''
+				  AND organization_id = $3
+				  AND team_id = $4
+				  AND team_name_snapshot = 'Background Team'
+				  AND service_identity_id = $5
+				  AND meter_id = $6
+				  AND decision = 'allow'
+				  AND result = 'success'
+				  AND metadata = '{}'::jsonb
+				  AND is_uuid_v7(id)
+				  AND retain_until >= occurred_at + interval '7 years'
+			`,
+				grant.ID,
+				"background_authorization."+testCase.expectedStatus,
+				fixture.organizationID,
+				fixture.teamID,
+				fixture.serviceID,
+				fixture.meterID,
+			).Scan(&auditCount); err != nil {
+				t.Fatal(err)
+			}
+			if auditCount != 1 {
+				t.Fatalf(
+					"automatic %s audits = %d; want 1",
+					testCase.expectedStatus,
+					auditCount,
+				)
+			}
+		})
+	}
 }
 
 func TestPostgreSQLBackgroundAuthorizationMembershipRemovalRace(t *testing.T) {

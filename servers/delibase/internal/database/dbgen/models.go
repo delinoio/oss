@@ -57,6 +57,7 @@ type BackgroundUsageAuthorization struct {
 	UpdatedAt           pgtype.Timestamptz
 	RevokedAt           pgtype.Timestamptz
 	RetainUntil         pgtype.Timestamptz
+	TeamNameSnapshot    pgtype.Text
 }
 
 type BackgroundUsageAuthorizationTransition struct {

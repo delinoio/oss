@@ -42,7 +42,20 @@ SELECT grant_row.*
 FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id = sqlc.arg(authorization_id)
   AND (
-      grant_row.authorizer_account_id = sqlc.arg(caller_account_id)
+      (
+          grant_row.authorizer_account_id = sqlc.arg(caller_account_id)
+          AND EXISTS (
+              SELECT 1
+              FROM organization_memberships AS caller_membership
+              JOIN organizations AS caller_organization
+                ON caller_organization.id = caller_membership.organization_id
+              WHERE caller_membership.organization_id
+                      = grant_row.organization_id
+                AND caller_membership.account_id
+                      = sqlc.arg(caller_account_id)
+                AND caller_organization.deleted_at IS NULL
+          )
+      )
       OR (
           sqlc.arg(full_organization_access)::boolean
           AND grant_row.organization_id = sqlc.arg(organization_id)
@@ -53,12 +66,18 @@ WHERE grant_row.id = sqlc.arg(authorization_id)
 SELECT grant_row.*
 FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id > sqlc.arg(after_id)
-  AND (
-      grant_row.authorizer_account_id = sqlc.arg(caller_account_id)
-      OR (
-          sqlc.arg(full_organization_access)::boolean
-          AND grant_row.organization_id = sqlc.arg(caller_organization_id)
-      )
+  AND EXISTS (
+      SELECT 1
+      FROM organization_memberships AS caller_membership
+      JOIN organizations AS caller_organization
+        ON caller_organization.id = caller_membership.organization_id
+      WHERE caller_membership.organization_id = grant_row.organization_id
+        AND caller_membership.account_id = sqlc.arg(caller_account_id)
+        AND (
+            grant_row.authorizer_account_id = sqlc.arg(caller_account_id)
+            OR caller_membership.role IN ('owner', 'admin')
+        )
+        AND caller_organization.deleted_at IS NULL
   )
   AND (
       sqlc.arg(owner_type)::text = ''
@@ -163,37 +182,50 @@ SELECT
     grant_row.period,
     sqlc.arg(period_start)::timestamptz AS period_start,
     grant_row.maximum_units,
-    COALESCE(held.units, 0)::bigint AS held_units,
+    COALESCE(reservations.held_units, 0)::bigint AS held_units,
     COALESCE(committed.units, 0)::bigint AS committed_units,
-    GREATEST(
-        grant_row.maximum_units
-            - COALESCE(held.units, 0)
-            - COALESCE(committed.units, 0),
-        0
-    )::bigint AS remaining_units,
+    COALESCE(
+        committed.has_settlement,
+        false
+    )::boolean AS has_committed_settlement,
+    CASE
+        WHEN COALESCE(committed.has_settlement, false) THEN 0
+        ELSE GREATEST(
+            grant_row.maximum_units
+                - COALESCE(reservations.held_units, 0)
+                - COALESCE(committed.units, 0),
+            0
+        )
+    END::bigint AS remaining_units,
     (
         sqlc.arg(period_start)::timestamptz + interval '1 day'
     )::timestamptz AS period_end,
     GREATEST(
         grant_row.updated_at,
-        COALESCE(held.updated_at, '-infinity'::timestamptz),
+        COALESCE(reservations.updated_at, '-infinity'::timestamptz),
         COALESCE(committed.updated_at, '-infinity'::timestamptz)
     )::timestamptz AS updated_at
 FROM background_usage_authorizations AS grant_row
 LEFT JOIN LATERAL (
     SELECT
-        COALESCE(sum(reservation.maximum_units), 0)::bigint AS units,
-        max(reservation.created_at) AS updated_at
+        COALESCE(
+            sum(reservation.maximum_units)
+                FILTER (WHERE reservation.status = 'held'),
+            0
+        )::bigint AS held_units,
+        max(
+            COALESCE(reservation.finalized_at, reservation.created_at)
+        ) AS updated_at
     FROM usage_reservations AS reservation
     WHERE reservation.background_usage_authorization_id = grant_row.id
       AND reservation.background_period_start
           = sqlc.arg(period_start)::timestamptz
-      AND reservation.status = 'held'
-) AS held ON true
+) AS reservations ON true
 LEFT JOIN LATERAL (
     SELECT
         COALESCE(sum(record.committed_units), 0)::bigint AS units,
-        max(record.committed_at) AS updated_at
+        max(record.committed_at) AS updated_at,
+        (count(*) > 0)::boolean AS has_settlement
     FROM usage_records AS record
     WHERE record.background_usage_authorization_id = grant_row.id
       AND record.background_period_start

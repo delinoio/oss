@@ -64,7 +64,7 @@
 - Update [project-devhud](project-devhud.md), [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md), and [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md) for Deck connection-management or API changes.
 - Update `apps/AGENTS.md`, CI docs/workflows, and release docs when validation, artifact, or deployment policy changes.
 - The issue #722 app artifact is implemented in this repository. Public activation/deployment, a complete brand system, and server-side background or production operations remain out of scope.
-- Issue #756 adds the generated client contract but does not activate catalog entries, ship the background-authorization UI, or represent the unimplemented server lifecycle as available. Those surfaces remain disabled until their implementation and validation land together.
+- Issue #756's server lifecycle and generated client contract are implemented, but this app does not ship the background-authorization UI or activate a catalog entry. The checked-in RealQA fixture and all client surfaces remain disabled pending a separate production activation change.
 
 ## Implemented Client Boundaries
 - Public pages use a dedicated anonymous Connect transport for `CatalogService`. Protected routes use a separate transport interceptor that requests a Logto access token for exactly `https://delibase.deli.dev`, attaches it only to the current request, and sends `Cache-Control: no-store`.

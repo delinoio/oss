@@ -87,3 +87,22 @@ func TestLoadRejectsMissingAndOversizedFiles(t *testing.T) {
 		t.Fatal("Load() accepted an oversized file")
 	}
 }
+
+func TestCheckedInRealQAStorageCatalogRemainsDisabled(t *testing.T) {
+	t.Parallel()
+	specification, err := Load(filepath.Join("..", "..", "catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specification.Apps) != 1 || len(specification.Meters) != 1 ||
+		len(specification.Services) != 1 ||
+		*specification.Apps[0].Enabled ||
+		*specification.Meters[0].Enabled ||
+		*specification.Services[0].Enabled {
+		t.Fatalf("checked-in catalog activated RealQA: %#v", specification)
+	}
+	if specification.Meters[0].Key != "screenshot-storage-mib-day" ||
+		specification.Services[0].Name != "RealQA" {
+		t.Fatalf("checked-in RealQA fixture = %#v", specification)
+	}
+}
