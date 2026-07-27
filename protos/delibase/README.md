@@ -77,18 +77,26 @@ Run from the repository root after `pnpm install`:
 ```sh
 pnpm generate:proto
 pnpm check:proto
+pnpm --dir protos/delibase generate:proto
+pnpm --dir protos/delibase check:proto
 pnpm --filter @delinoio/delibase-connect typecheck
 go test ./protos/delibase/...
 ```
 
-`pnpm check:proto` lints the module, checks the source against the checked-in v1
-descriptor baseline, regenerates artifacts and the descriptor, and rejects a
-generation diff. CI supplies the immutable descriptor from the pull request
-base or pre-push commit for the compatibility check. Generator versions come
-from `go.mod`, `scripts/lib/go-proto-tools.sh`,
-`protos/delibase/package.json`, and `pnpm-lock.yaml`. `pnpm generate:proto`
-refreshes the descriptor and also builds the package `dist` output referenced
-by its workspace exports.
+The root commands aggregate every implemented shared-contract package in a
+fixed order. The package-local commands operate only on delibase:
+`buf.gen.yaml` may clean only `gen/go` and `gen/ts`, and generation writes only
+those trees plus `delibase.v1.binpb`. `check:proto` lints only
+`protos/delibase/v1`, checks it against the delibase v1 baseline, regenerates
+the component twice, and rejects nondeterminism or a component-local generated
+diff. CI supplies the immutable delibase descriptor from the pull request base
+or pre-push commit; another component's descriptor is never a compatible
+baseline.
+
+Generator versions come from `go.mod`, `scripts/lib/go-proto-tools.sh`,
+`protos/delibase/package.json`, and `pnpm-lock.yaml`. Delibase
+`generate:proto`, whether invoked directly or by the root aggregate, also
+builds the package `dist` output referenced by its existing workspace exports.
 
 ## Compatibility
 

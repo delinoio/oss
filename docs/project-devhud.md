@@ -59,7 +59,7 @@ No full DevHud feature client or native implementation belongs under `apps/delid
 Documentation-only changes run link/path/status consistency checks and `git diff --check`. Once implementation exists, the synchronized validation set is:
 
 - app: `pnpm --filter devhud typecheck`, `pnpm --filter devhud lint`, `pnpm --filter devhud test`, `pnpm --filter devhud test:a11y`, `pnpm --filter devhud build`, `pnpm --filter devhud test:security`, `pnpm --filter devhud test:diagnostics`, `pnpm --filter devhud test:deck`, `pnpm --filter devhud test:deck:widgets`, `pnpm --filter devhud test:realqa`, `pnpm --filter devhud test:realqa:native`, `pnpm --filter devhud test:realqa:extension`, and `pnpm --filter devhud check:realqa:package`;
-- shared APIs: `pnpm generate:proto`, `pnpm check:proto`, Go test/vet for both proto roots, and TypeScript typechecks for both generated Connect packages;
+- shared APIs: fixed-order root `pnpm generate:proto`/`pnpm check:proto` aggregates, component-local generation/check commands for each implemented feature root, Go test/vet for both proto roots, and TypeScript typechecks for both generated Connect packages; each feature owns and may clean only its generated trees and uses only its own immutable descriptor baseline;
 - servers: Go format/vet/test, sqlc reproducibility, PostgreSQL migration/integration/concurrency tests, provider fixtures, and non-root multi-architecture image/SBOM/signature/attestation checks for both feature services.
 
 Validation artifacts are fixtures only. Passing them must not publish an image, register either GitHub App, inject a production Chrome extension ID, deploy an origin, create DNS/R2 infrastructure, embed/register a release widget, publish an extension, enable a catalog record, or release an app.
