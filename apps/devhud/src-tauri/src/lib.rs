@@ -5,7 +5,7 @@ mod autostart;
 mod diagnostics;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod local_log;
-#[cfg(any(feature = "desktop-cef", test))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod shortcut;
 #[cfg(any(
     all(
@@ -37,12 +37,15 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::borrow::Cow;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(feature = "desktop-cef")]
 use std::sync::{
     Mutex,
     atomic::{AtomicBool, Ordering},
 };
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview"),
+    debug_assertions
+))]
 use std::time::Duration;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::{
@@ -577,7 +580,7 @@ impl PersistenceState {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-type PersistenceResetPaths<'a> = (&'a Path, [(&'static str, PathBuf); 2]);
+type PersistenceResetPaths<'a> = (&'a Path, [(&'static str, PathBuf); 3]);
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn pending_reset_stage_paths<'a>(
@@ -985,7 +988,7 @@ fn log_persistence_unavailable(_operation: &'static str, _key: &str) {
     any(target_os = "android", target_os = "ios")
 ))]
 fn widget_bridge_failure(
-    operation: &'static str,
+    _operation: &'static str,
     error: &WidgetBridgeError,
 ) -> PersistenceCommandError {
     let failure = match error.code() {
