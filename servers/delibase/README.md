@@ -8,8 +8,11 @@ overage-limit, ledger, and role-filtered usage-read RPCs are backed by
 PostgreSQL/sqlc transactions. `UsageService` reserve, commit, and release RPCs
 use the same database-backed authorization, credit/overage, idempotency, and
 durable Polar-outbox boundaries. Polar delivery reports only nonzero locally
-settled overage as chargeable USD micro-units. A local worker expires
-catalog-TTL holds.
+settled overage as chargeable USD micro-units. Human background-authorization
+management and M2M-only authorized reserve, commit, release, and
+feature-resource deletion handlers use the same persisted financial boundary
+without storing a forwarded user token. A local worker expires catalog-TTL
+holds.
 
 ## Runtime configuration
 
@@ -24,7 +27,7 @@ Required non-secret server configuration:
   allowlist. The future DeliDev client origin is `https://deli.dev`; wildcards
   and credential-bearing origins are rejected.
 - `DELIBASE_CATALOG_PATH`: a readable strict versioned JSON catalog path. The
-  image includes the intentionally empty foundation catalog at
+  image includes a disabled, non-production RealQA storage fixture at
   `/etc/delibase/catalog.json`; operators may mount another validated file.
 - `DELIBASE_LOGTO_ISSUER`: the exact HTTPS OIDC issuer used for user, forwarded
   user, and M2M token validation and as the Logto Management API origin.
@@ -64,9 +67,12 @@ environment files. Configuration errors identify variable names but never
 include configured values.
 
 `DELIBASE_CATALOG_PATH` points to a strict versioned JSON catalog. The checked-in
-`catalog.json` is intentionally empty for this foundation. Startup validates the
-complete document and transactionally synchronizes apps, meters, price versions,
-service allowlists, and Polar meter mappings before readiness is exposed.
+`catalog.json` contains only a disabled RealQA storage fixture; its app, meter,
+service identity, and authorization target cannot become publicly available or
+accept usage without an explicit later catalog activation change. Startup
+validates the complete document and transactionally synchronizes apps, meters,
+price versions, service allowlists, and Polar meter mappings before readiness is
+exposed.
 Startup also fetches `DELIBASE_POLAR_PRODUCT_ID` from the selected Polar
 environment and requires one active fixed monthly USD $10 base price before
 pinning that provider catalog to the local grant contract.
