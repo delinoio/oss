@@ -1,9 +1,14 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 #[cfg(feature = "desktop-cef")]
 use global_hotkey::{
     GlobalHotKeyManager,
     hotkey::{Code, HotKey, Modifiers},
 };
 use serde::{Deserialize, Serialize};
+
+pub(crate) const MAX_DECK_SHORTCUT_DEFINITIONS: usize = 20;
+pub(crate) const MAX_REALQA_SHORTCUT_DEFINITIONS: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -139,6 +144,26 @@ enum BackendError {
     Failed,
 }
 
+/// Typed feature identity used only inside the local registration coordinator.
+/// Account and definition strings are opaque identifiers: no diagnostic or
+/// serialized outcome includes them.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum ShortcutOwner {
+    DevHud,
+    Deck { account: String, view: String },
+    RealQa { preset: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FeatureShortcutOutcome {
+    Active,
+    InactiveConflict,
+    InactiveUnavailable,
+    InactiveLimitExceeded,
+    Unchanged(ShortcutFailure),
+}
+
 trait ShortcutBackend {
     type Binding: Copy + PartialEq;
 
@@ -238,6 +263,119 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
             }
         }
         Ok(())
+    }
+}
+
+/// One device-local registry for generic DevHud and future feature bindings.
+/// It intentionally stores effective registrations only; synchronizable Deck
+/// definitions and device-scoped RealQA presets remain feature-owned data.
+struct UnifiedShortcutRegistry<B: ShortcutBackend> {
+    backend: B,
+    active: BTreeMap<ShortcutOwner, (StructuredShortcut, B::Binding)>,
+    inactive: BTreeSet<ShortcutOwner>,
+}
+
+impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
+    fn new(backend: B) -> Self {
+        Self {
+            backend,
+            active: BTreeMap::new(),
+            inactive: BTreeSet::new(),
+        }
+    }
+
+    fn apply(
+        &mut self,
+        owner: ShortcutOwner,
+        shortcut: StructuredShortcut,
+        available: bool,
+    ) -> FeatureShortcutOutcome {
+        if let Err(reason) = shortcut.validate() {
+            return FeatureShortcutOutcome::Unchanged(reason);
+        }
+        if !available && owner != ShortcutOwner::DevHud {
+            self.inactive.insert(owner);
+            return FeatureShortcutOutcome::InactiveUnavailable;
+        }
+        if !self.within_limit(&owner) {
+            self.inactive.insert(owner);
+            return FeatureShortcutOutcome::InactiveLimitExceeded;
+        }
+        let candidate = B::binding(&shortcut);
+        if self
+            .active
+            .iter()
+            .any(|(existing_owner, (_, binding))| existing_owner != &owner && *binding == candidate)
+        {
+            self.inactive.insert(owner);
+            return FeatureShortcutOutcome::InactiveConflict;
+        }
+        if let Some((_, active)) = self.active.get(&owner)
+            && *active == candidate
+        {
+            self.inactive.remove(&owner);
+            return FeatureShortcutOutcome::Active;
+        }
+        // Register before removing a working binding. A platform conflict,
+        // permission denial, or concurrent registration therefore preserves it.
+        if let Err(error) = self.backend.register(candidate) {
+            return FeatureShortcutOutcome::Unchanged(map_backend_error(error));
+        }
+        if let Some((_, previous)) = self.active.get(&owner)
+            && self.backend.unregister(*previous).is_err()
+        {
+            let _ = self.backend.unregister(candidate);
+            return FeatureShortcutOutcome::Unchanged(ShortcutFailure::RegistrationFailed);
+        }
+        self.active.insert(owner.clone(), (shortcut, candidate));
+        self.inactive.remove(&owner);
+        FeatureShortcutOutcome::Active
+    }
+
+    fn clear_all(&mut self) -> Result<(), ShortcutFailure> {
+        // Preserve entries whose removal fails so process shutdown or reset can
+        // retry without claiming that an OS registration is gone.
+        let owners: Vec<_> = self.active.keys().cloned().collect();
+        for owner in owners {
+            let binding = self.active[&owner].1;
+            self.backend
+                .unregister(binding)
+                .map_err(map_backend_error)?;
+            self.active.remove(&owner);
+        }
+        self.inactive.clear();
+        Ok(())
+    }
+
+    fn logout_account(&mut self, account: &str) -> Result<(), ShortcutFailure> {
+        let owners: Vec<_> = self
+            .active
+            .keys()
+            .filter_map(|owner| match owner {
+                ShortcutOwner::Deck {
+                    account: owner_account,
+                    ..
+                } if owner_account == account => Some(owner.clone()),
+                _ => None,
+            })
+            .collect();
+        for owner in owners {
+            let binding = self.active[&owner].1;
+            self.backend
+                .unregister(binding)
+                .map_err(map_backend_error)?;
+            self.active.remove(&owner);
+        }
+        self.inactive.retain(|owner| !matches!(owner, ShortcutOwner::Deck { account: owner_account, .. } if owner_account == account));
+        Ok(())
+    }
+
+    fn within_limit(&self, owner: &ShortcutOwner) -> bool {
+        match owner {
+            ShortcutOwner::DevHud => true,
+            ShortcutOwner::Deck { account, .. } => self.active.keys().filter(|candidate| matches!(candidate, ShortcutOwner::Deck { account: candidate_account, .. } if candidate_account == account)).count() < MAX_DECK_SHORTCUT_DEFINITIONS || self.active.contains_key(owner),
+            ShortcutOwner::RealQa { .. } => self.active.keys().filter(|candidate| matches!(candidate, ShortcutOwner::RealQa { .. })).count() < MAX_REALQA_SHORTCUT_DEFINITIONS || self.active.contains_key(owner),
+        }
     }
 }
 
@@ -719,5 +857,121 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn unified_registry_keeps_conflicts_inactive_without_replacing_a_binding() {
+        let mut registry = UnifiedShortcutRegistry::new(FakeBackend::default());
+        assert_eq!(
+            registry.apply(ShortcutOwner::DevHud, shortcut(ShortcutKey::K), true),
+            FeatureShortcutOutcome::Active
+        );
+        assert_eq!(
+            registry.apply(
+                ShortcutOwner::Deck {
+                    account: "account-a".into(),
+                    view: "view-a".into()
+                },
+                shortcut(ShortcutKey::K),
+                true,
+            ),
+            FeatureShortcutOutcome::InactiveConflict
+        );
+        assert_eq!(registry.active.len(), 1);
+        assert!(
+            registry
+                .inactive
+                .iter()
+                .any(|owner| matches!(owner, ShortcutOwner::Deck { .. }))
+        );
+    }
+
+    #[test]
+    fn unified_registry_enforces_limits_and_account_logout_isolated() {
+        let mut registry = UnifiedShortcutRegistry::new(FakeBackend::default());
+        for index in 0..MAX_DECK_SHORTCUT_DEFINITIONS {
+            let key = match index {
+                0 => ShortcutKey::A,
+                1 => ShortcutKey::B,
+                2 => ShortcutKey::C,
+                3 => ShortcutKey::D,
+                4 => ShortcutKey::E,
+                5 => ShortcutKey::F,
+                6 => ShortcutKey::G,
+                7 => ShortcutKey::H,
+                8 => ShortcutKey::I,
+                9 => ShortcutKey::J,
+                10 => ShortcutKey::K,
+                11 => ShortcutKey::L,
+                12 => ShortcutKey::M,
+                13 => ShortcutKey::N,
+                14 => ShortcutKey::O,
+                15 => ShortcutKey::P,
+                16 => ShortcutKey::Q,
+                17 => ShortcutKey::R,
+                18 => ShortcutKey::S,
+                _ => ShortcutKey::T,
+            };
+            assert_eq!(
+                registry.apply(
+                    ShortcutOwner::Deck {
+                        account: "account-a".into(),
+                        view: format!("view-{index}")
+                    },
+                    shortcut(key),
+                    true
+                ),
+                FeatureShortcutOutcome::Active
+            );
+        }
+        assert_eq!(
+            registry.apply(
+                ShortcutOwner::Deck {
+                    account: "account-a".into(),
+                    view: "extra".into()
+                },
+                shortcut(ShortcutKey::U),
+                true
+            ),
+            FeatureShortcutOutcome::InactiveLimitExceeded
+        );
+        assert_eq!(
+            registry.apply(
+                ShortcutOwner::Deck {
+                    account: "account-b".into(),
+                    view: "view".into()
+                },
+                shortcut(ShortcutKey::V),
+                true
+            ),
+            FeatureShortcutOutcome::Active
+        );
+        assert_eq!(registry.logout_account("account-a"), Ok(()));
+        assert_eq!(registry.active.len(), 1);
+        assert!(
+            matches!(registry.active.keys().next(), Some(ShortcutOwner::Deck { account, .. }) if account == "account-b")
+        );
+    }
+
+    #[test]
+    fn unavailable_features_are_inactive_and_reset_cleans_all_registered_bindings() {
+        let mut registry = UnifiedShortcutRegistry::new(FakeBackend::default());
+        assert_eq!(
+            registry.apply(ShortcutOwner::DevHud, shortcut(ShortcutKey::K), true),
+            FeatureShortcutOutcome::Active
+        );
+        assert_eq!(
+            registry.apply(
+                ShortcutOwner::RealQa {
+                    preset: "preset".into()
+                },
+                shortcut(ShortcutKey::P),
+                false
+            ),
+            FeatureShortcutOutcome::InactiveUnavailable
+        );
+        assert_eq!(registry.clear_all(), Ok(()));
+        assert!(registry.active.is_empty());
+        assert!(registry.inactive.is_empty());
     }
 }
