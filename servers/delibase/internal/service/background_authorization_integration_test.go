@@ -396,6 +396,8 @@ func TestPostgreSQLBackgroundAuthorizationFormerAuthorizerCannotRead(
 	defer fixture.store.Close()
 	ownerContext := authenticatedContext(ctx, fixture.ownerSubject)
 	memberContext := authenticatedContext(ctx, fixture.memberSubject)
+	m2mContext := authorizedUsageContext(ctx, fixture.serviceClient)
+	resourceID := uuidv7.MustNew()
 	grant := createBackgroundGrant(
 		t,
 		memberContext,
@@ -403,7 +405,7 @@ func TestPostgreSQLBackgroundAuthorizationFormerAuthorizerCannotRead(
 		fixture,
 		fixture.memberID,
 		fixture.parentTeamID,
-		uuidv7.MustNew(),
+		resourceID,
 		10,
 		"former-authorizer-create-"+fixture.organizationID.String(),
 		false,
@@ -428,6 +430,24 @@ func TestPostgreSQLBackgroundAuthorizationFormerAuthorizerCannotRead(
 	)
 	if err != nil || closed.Status != "access_lost" {
 		t.Fatalf("removed authorizer grant = %#v, %v", closed, err)
+	}
+	closedResponse, err := fixture.usage.MarkBackgroundUsageResourceDeleted(
+		m2mContext,
+		connect.NewRequest(&delibasev1.MarkBackgroundUsageResourceDeletedRequest{
+			AuthorizationId:   grant.Authorization.AuthorizationId,
+			Purpose:           delibasev1.BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE,
+			FeatureResourceId: usageUUID(resourceID),
+			ExpectedRevision:  grant.Authorization.Revision,
+			Idempotency: idempotency(
+				"access-lost-resource-delete-" + fixture.organizationID.String(),
+			),
+		}),
+	)
+	if err != nil ||
+		closedResponse.Msg.Authorization.Authorization.Status !=
+			delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACCESS_LOST ||
+		closedResponse.Msg.Authorization.Authorization.Revision != closed.Revision {
+		t.Fatalf("access-lost resource deletion = %#v, %v", closedResponse, err)
 	}
 
 	_, err = fixture.billing.GetBackgroundUsageAuthorization(
@@ -1028,6 +1048,26 @@ func TestPostgreSQLAuthorizedUsageReleaseLimitSettlementAndRevokeRace(
 	if err != nil || !replayedDelete.Msg.Idempotency.Replayed {
 		t.Fatalf("authorized resource deletion replay = %#v, %v", replayedDelete, err)
 	}
+	closedDelete, err := fixture.usage.MarkBackgroundUsageResourceDeleted(
+		m2mContext,
+		connect.NewRequest(&delibasev1.MarkBackgroundUsageResourceDeletedRequest{
+			AuthorizationId:   releaseGrant.Authorization.AuthorizationId,
+			Purpose:           releaseContext.Purpose,
+			FeatureResourceId: releaseContext.FeatureResourceId,
+			ExpectedRevision:  releaseGrant.Authorization.Revision,
+			Idempotency: idempotency(
+				"authorized-resource-delete-closed-" +
+					fixture.organizationID.String(),
+			),
+		}),
+	)
+	if err != nil ||
+		closedDelete.Msg.Authorization.Authorization.Status !=
+			delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_RESOURCE_DELETED ||
+		closedDelete.Msg.Authorization.Authorization.Revision != 2 ||
+		closedDelete.Msg.Idempotency.Replayed {
+		t.Fatalf("closed resource deletion = %#v, %v", closedDelete, err)
+	}
 	_, err = fixture.usage.MarkBackgroundUsageResourceDeleted(
 		m2mContext,
 		connect.NewRequest(&delibasev1.MarkBackgroundUsageResourceDeletedRequest{
@@ -1045,6 +1085,75 @@ func TestPostgreSQLAuthorizedUsageReleaseLimitSettlementAndRevokeRace(
 		err,
 		connect.CodeAborted,
 		delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
+	)
+	revokedResourceID := uuidv7.MustNew()
+	revokedGrant := createBackgroundGrant(
+		t,
+		ownerContext,
+		fixture.billing,
+		fixture,
+		fixture.ownerID,
+		fixture.generalTeamID,
+		revokedResourceID,
+		5,
+		"revoked-delete-grant-"+fixture.organizationID.String(),
+		false,
+	)
+	revokedGrantResponse, err :=
+		fixture.billing.RevokeBackgroundUsageAuthorization(
+			ownerContext,
+			connect.NewRequest(
+				&delibasev1.RevokeBackgroundUsageAuthorizationRequest{
+					AuthorizationId:  revokedGrant.Authorization.AuthorizationId,
+					ExpectedRevision: revokedGrant.Authorization.Revision,
+					Idempotency: idempotency(
+						"revoke-before-resource-delete-" +
+							fixture.organizationID.String(),
+					),
+				},
+			),
+		)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revokedDelete, err := fixture.usage.MarkBackgroundUsageResourceDeleted(
+		m2mContext,
+		connect.NewRequest(&delibasev1.MarkBackgroundUsageResourceDeletedRequest{
+			AuthorizationId:   revokedGrant.Authorization.AuthorizationId,
+			Purpose:           delibasev1.BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE,
+			FeatureResourceId: usageUUID(revokedResourceID),
+			ExpectedRevision:  revokedGrant.Authorization.Revision,
+			Idempotency: idempotency(
+				"revoked-resource-delete-" + fixture.organizationID.String(),
+			),
+		}),
+	)
+	if err != nil ||
+		revokedDelete.Msg.Authorization.Authorization.Status !=
+			delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_REVOKED ||
+		revokedDelete.Msg.Authorization.Authorization.Revision !=
+			revokedGrantResponse.Msg.Authorization.Authorization.Revision {
+		t.Fatalf("revoked resource deletion = %#v, %v", revokedDelete, err)
+	}
+	_, err = fixture.usage.MarkBackgroundUsageResourceDeleted(
+		m2mContext,
+		connect.NewRequest(&delibasev1.MarkBackgroundUsageResourceDeletedRequest{
+			AuthorizationId:   revokedGrant.Authorization.AuthorizationId,
+			Purpose:           delibasev1.BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE,
+			FeatureResourceId: usageUUID(revokedResourceID),
+			ExpectedRevision: revokedGrantResponse.Msg.Authorization.Authorization.Revision +
+				1,
+			Idempotency: idempotency(
+				"future-revision-resource-delete-" +
+					fixture.organizationID.String(),
+			),
+		}),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeAborted,
+		delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
 	)
 	closedAuthorizationRelease, err := fixture.usage.ReleaseAuthorizedUsage(
 		m2mContext,

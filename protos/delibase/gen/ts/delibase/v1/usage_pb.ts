@@ -729,8 +729,9 @@ export const UsageService: GenService<{
   },
   /**
    * M2M-only. Requires delibase:usage:release. The authenticated bound service
-   * idempotently transitions the matching grant to RESOURCE_DELETED before the
-   * external feature resource disappears.
+   * idempotently transitions a matching ACTIVE grant to RESOURCE_DELETED before
+   * the external feature resource disappears. An already closed matching grant
+   * returns its current status and revision without another transition.
    *
    * @generated from rpc delibase.v1.UsageService.MarkBackgroundUsageResourceDeleted
    */
