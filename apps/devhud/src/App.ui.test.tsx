@@ -185,8 +185,10 @@ describe("DevHud application surfaces", () => {
     storage.values.clear();
     act(() => publishReset?.({ status: "complete" }));
 
-    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
-    expect(document.documentElement.dataset.theme).toBe(ThemePreference.System);
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(document.documentElement.dataset.theme).toBe(ThemePreference.System);
+    });
     expect(
       read.mock.calls.filter(([key]) => key === SETTINGS_STORAGE_KEY),
     ).toHaveLength(settingsReadsBeforeReset + 1);
