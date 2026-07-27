@@ -140,7 +140,7 @@ INSERT INTO background_usage_authorizations (
     $13,
     $14
 )
-RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 `
 
 type CreateBackgroundUsageAuthorizationParams struct {
@@ -199,12 +199,13 @@ func (q *Queries) CreateBackgroundUsageAuthorization(ctx context.Context, arg Cr
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
 
 const getBackgroundUsageAuthorization = `-- name: GetBackgroundUsageAuthorization :one
-SELECT id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+SELECT id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 FROM background_usage_authorizations
 WHERE id = $1
 `
@@ -233,6 +234,7 @@ func (q *Queries) GetBackgroundUsageAuthorization(ctx context.Context, authoriza
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -245,37 +247,50 @@ SELECT
     grant_row.period,
     $1::timestamptz AS period_start,
     grant_row.maximum_units,
-    COALESCE(held.units, 0)::bigint AS held_units,
+    COALESCE(reservations.held_units, 0)::bigint AS held_units,
     COALESCE(committed.units, 0)::bigint AS committed_units,
-    GREATEST(
-        grant_row.maximum_units
-            - COALESCE(held.units, 0)
-            - COALESCE(committed.units, 0),
-        0
-    )::bigint AS remaining_units,
+    COALESCE(
+        committed.has_settlement,
+        false
+    )::boolean AS has_committed_settlement,
+    CASE
+        WHEN COALESCE(committed.has_settlement, false) THEN 0
+        ELSE GREATEST(
+            grant_row.maximum_units
+                - COALESCE(reservations.held_units, 0)
+                - COALESCE(committed.units, 0),
+            0
+        )
+    END::bigint AS remaining_units,
     (
         $1::timestamptz + interval '1 day'
     )::timestamptz AS period_end,
     GREATEST(
         grant_row.updated_at,
-        COALESCE(held.updated_at, '-infinity'::timestamptz),
+        COALESCE(reservations.updated_at, '-infinity'::timestamptz),
         COALESCE(committed.updated_at, '-infinity'::timestamptz)
     )::timestamptz AS updated_at
 FROM background_usage_authorizations AS grant_row
 LEFT JOIN LATERAL (
     SELECT
-        COALESCE(sum(reservation.maximum_units), 0)::bigint AS units,
-        max(reservation.created_at) AS updated_at
+        COALESCE(
+            sum(reservation.maximum_units)
+                FILTER (WHERE reservation.status = 'held'),
+            0
+        )::bigint AS held_units,
+        max(
+            COALESCE(reservation.finalized_at, reservation.created_at)
+        ) AS updated_at
     FROM usage_reservations AS reservation
     WHERE reservation.background_usage_authorization_id = grant_row.id
       AND reservation.background_period_start
           = $1::timestamptz
-      AND reservation.status = 'held'
-) AS held ON true
+) AS reservations ON true
 LEFT JOIN LATERAL (
     SELECT
         COALESCE(sum(record.committed_units), 0)::bigint AS units,
-        max(record.committed_at) AS updated_at
+        max(record.committed_at) AS updated_at,
+        (count(*) > 0)::boolean AS has_settlement
     FROM usage_records AS record
     WHERE record.background_usage_authorization_id = grant_row.id
       AND record.background_period_start
@@ -296,17 +311,18 @@ type GetBackgroundUsagePeriodUsageParams struct {
 }
 
 type GetBackgroundUsagePeriodUsageRow struct {
-	AuthorizationID   pgtype.UUID
-	Purpose           string
-	FeatureResourceID pgtype.UUID
-	Period            string
-	PeriodStart       pgtype.Timestamptz
-	MaximumUnits      int64
-	HeldUnits         int64
-	CommittedUnits    int64
-	RemainingUnits    int64
-	PeriodEnd         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
+	AuthorizationID        pgtype.UUID
+	Purpose                string
+	FeatureResourceID      pgtype.UUID
+	Period                 string
+	PeriodStart            pgtype.Timestamptz
+	MaximumUnits           int64
+	HeldUnits              int64
+	CommittedUnits         int64
+	HasCommittedSettlement bool
+	RemainingUnits         int64
+	PeriodEnd              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
 }
 
 func (q *Queries) GetBackgroundUsagePeriodUsage(ctx context.Context, arg GetBackgroundUsagePeriodUsageParams) (GetBackgroundUsagePeriodUsageRow, error) {
@@ -321,6 +337,7 @@ func (q *Queries) GetBackgroundUsagePeriodUsage(ctx context.Context, arg GetBack
 		&i.MaximumUnits,
 		&i.HeldUnits,
 		&i.CommittedUnits,
+		&i.HasCommittedSettlement,
 		&i.RemainingUnits,
 		&i.PeriodEnd,
 		&i.UpdatedAt,
@@ -329,11 +346,24 @@ func (q *Queries) GetBackgroundUsagePeriodUsage(ctx context.Context, arg GetBack
 }
 
 const getVisibleBackgroundUsageAuthorization = `-- name: GetVisibleBackgroundUsageAuthorization :one
-SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until
+SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until, grant_row.team_name_snapshot
 FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id = $1
   AND (
-      grant_row.authorizer_account_id = $2
+      (
+          grant_row.authorizer_account_id = $2
+          AND EXISTS (
+              SELECT 1
+              FROM organization_memberships AS caller_membership
+              JOIN organizations AS caller_organization
+                ON caller_organization.id = caller_membership.organization_id
+              WHERE caller_membership.organization_id
+                      = grant_row.organization_id
+                AND caller_membership.account_id
+                      = $2
+                AND caller_organization.deleted_at IS NULL
+          )
+      )
       OR (
           $3::boolean
           AND grant_row.organization_id = $4
@@ -377,6 +407,7 @@ func (q *Queries) GetVisibleBackgroundUsageAuthorization(ctx context.Context, ar
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -557,85 +588,87 @@ func (q *Queries) ListBackgroundUsageAuthorizationTransitions(ctx context.Contex
 }
 
 const listVisibleBackgroundUsageAuthorizations = `-- name: ListVisibleBackgroundUsageAuthorizations :many
-SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until
+SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until, grant_row.team_name_snapshot
 FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id > $1
-  AND (
-      grant_row.authorizer_account_id = $2
-      OR (
-          $3::boolean
-          AND grant_row.organization_id = $4
-      )
+  AND EXISTS (
+      SELECT 1
+      FROM organization_memberships AS caller_membership
+      JOIN organizations AS caller_organization
+        ON caller_organization.id = caller_membership.organization_id
+      WHERE caller_membership.organization_id = grant_row.organization_id
+        AND caller_membership.account_id = $2
+        AND (
+            grant_row.authorizer_account_id = $2
+            OR caller_membership.role IN ('owner', 'admin')
+        )
+        AND caller_organization.deleted_at IS NULL
   )
   AND (
-      $5::text = ''
-      OR grant_row.owner_type = $5
+      $3::text = ''
+      OR grant_row.owner_type = $3
+  )
+  AND (
+      $4::uuid IS NULL
+      OR grant_row.owner_account_id = $4
+  )
+  AND (
+      $5::uuid IS NULL
+      OR grant_row.owner_organization_id
+          = $5
   )
   AND (
       $6::uuid IS NULL
-      OR grant_row.owner_account_id = $6
+      OR grant_row.organization_id = $6
   )
   AND (
       $7::uuid IS NULL
-      OR grant_row.owner_organization_id
-          = $7
+      OR grant_row.team_id = $7
   )
   AND (
       $8::uuid IS NULL
-      OR grant_row.organization_id = $8
+      OR grant_row.service_identity_id = $8
   )
   AND (
       $9::uuid IS NULL
-      OR grant_row.team_id = $9
+      OR grant_row.meter_id = $9
   )
   AND (
-      $10::uuid IS NULL
-      OR grant_row.service_identity_id = $10
+      $10::text = ''
+      OR grant_row.purpose = $10
   )
   AND (
       $11::uuid IS NULL
-      OR grant_row.meter_id = $11
+      OR grant_row.feature_resource_id = $11
   )
   AND (
       $12::text = ''
-      OR grant_row.purpose = $12
-  )
-  AND (
-      $13::uuid IS NULL
-      OR grant_row.feature_resource_id = $13
-  )
-  AND (
-      $14::text = ''
-      OR grant_row.status = $14
+      OR grant_row.status = $12
   )
 ORDER BY grant_row.id
-LIMIT $15
+LIMIT $13
 `
 
 type ListVisibleBackgroundUsageAuthorizationsParams struct {
-	AfterID                pgtype.UUID
-	CallerAccountID        pgtype.UUID
-	FullOrganizationAccess bool
-	CallerOrganizationID   pgtype.UUID
-	OwnerType              string
-	OwnerAccountID         pgtype.UUID
-	OwnerOrganizationID    pgtype.UUID
-	OrganizationID         pgtype.UUID
-	TeamID                 pgtype.UUID
-	ServiceIdentityID      pgtype.UUID
-	MeterID                pgtype.UUID
-	Purpose                string
-	FeatureResourceID      pgtype.UUID
-	Status                 string
-	PageLimit              int32
+	AfterID             pgtype.UUID
+	CallerAccountID     pgtype.UUID
+	OwnerType           string
+	OwnerAccountID      pgtype.UUID
+	OwnerOrganizationID pgtype.UUID
+	OrganizationID      pgtype.UUID
+	TeamID              pgtype.UUID
+	ServiceIdentityID   pgtype.UUID
+	MeterID             pgtype.UUID
+	Purpose             string
+	FeatureResourceID   pgtype.UUID
+	Status              string
+	PageLimit           int32
 }
 
 func (q *Queries) ListVisibleBackgroundUsageAuthorizations(ctx context.Context, arg ListVisibleBackgroundUsageAuthorizationsParams) ([]BackgroundUsageAuthorization, error) {
 	rows, err := q.db.Query(ctx, listVisibleBackgroundUsageAuthorizations,
 		arg.AfterID,
 		arg.CallerAccountID,
-		arg.FullOrganizationAccess,
-		arg.CallerOrganizationID,
 		arg.OwnerType,
 		arg.OwnerAccountID,
 		arg.OwnerOrganizationID,
@@ -676,6 +709,7 @@ func (q *Queries) ListVisibleBackgroundUsageAuthorizations(ctx context.Context, 
 			&i.UpdatedAt,
 			&i.RevokedAt,
 			&i.RetainUntil,
+			&i.TeamNameSnapshot,
 		); err != nil {
 			return nil, err
 		}
@@ -765,7 +799,7 @@ func (q *Queries) LockAuthorizedUsageReservation(ctx context.Context, arg LockAu
 }
 
 const lockBackgroundUsageAuthorizationForMutation = `-- name: LockBackgroundUsageAuthorizationForMutation :one
-SELECT id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+SELECT id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 FROM background_usage_authorizations
 WHERE id = $1
 FOR UPDATE
@@ -795,6 +829,7 @@ func (q *Queries) LockBackgroundUsageAuthorizationForMutation(ctx context.Contex
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -809,7 +844,7 @@ WITH payer AS MATERIALIZED (
       AND organization.deleted_at IS NULL
     FOR UPDATE OF organization
 )
-SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until
+SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until, grant_row.team_name_snapshot
 FROM background_usage_authorizations AS grant_row
 JOIN payer ON payer.id = grant_row.organization_id
 WHERE grant_row.id = $1
@@ -860,6 +895,7 @@ func (q *Queries) LockBackgroundUsageAuthorizationForReserve(ctx context.Context
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -875,7 +911,7 @@ WHERE id = $1
   AND feature_resource_id = $4
   AND revision = $5
   AND status = 'active'
-RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 `
 
 type MarkBackgroundUsageAuthorizationResourceDeletedParams struct {
@@ -916,6 +952,7 @@ func (q *Queries) MarkBackgroundUsageAuthorizationResourceDeleted(ctx context.Co
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -928,7 +965,7 @@ SET status = 'revoked',
 WHERE id = $2
   AND revision = $3
   AND status = 'active'
-RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 `
 
 type RevokeBackgroundUsageAuthorizationParams struct {
@@ -961,6 +998,7 @@ func (q *Queries) RevokeBackgroundUsageAuthorization(ctx context.Context, arg Re
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }

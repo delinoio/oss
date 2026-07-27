@@ -1,8 +1,53 @@
 {
   "version": 1,
-  "apps": [],
-  "meters": [],
-  "prices": [],
-  "services": [],
-  "polar_meters": []
+  "apps": [
+    {
+      "id": "019c0000-0000-7000-8000-000000000756",
+      "slug": "realqa",
+      "name": "RealQA",
+      "summary": "Disabled RealQA catalog fixture.",
+      "description": "Reserved for bounded screenshot-storage authorization validation.",
+      "icon_url": "",
+      "enabled": false
+    }
+  ],
+  "meters": [
+    {
+      "id": "019c0000-0000-7000-8000-000000000757",
+      "app_id": "019c0000-0000-7000-8000-000000000756",
+      "key": "screenshot-storage-mib-day",
+      "name": "RealQA screenshot storage",
+      "description": "Disabled integer MiB-day storage fixture.",
+      "unit_name": "MiB-day",
+      "unit_precision": 0,
+      "reservation_ttl_seconds": 86400,
+      "enabled": false
+    }
+  ],
+  "prices": [
+    {
+      "id": "019c0000-0000-7000-8000-000000000758",
+      "meter_id": "019c0000-0000-7000-8000-000000000757",
+      "usd_micros_per_unit": 1,
+      "effective_from": "2026-01-01T00:00:00Z",
+      "effective_until": null
+    }
+  ],
+  "services": [
+    {
+      "id": "019c0000-0000-7000-8000-000000000759",
+      "logto_client_id": "disabled-realqa-storage",
+      "name": "RealQA",
+      "enabled": false,
+      "allowed_meter_ids": [
+        "019c0000-0000-7000-8000-000000000757"
+      ]
+    }
+  ],
+  "polar_meters": [
+    {
+      "meter_id": "019c0000-0000-7000-8000-000000000757",
+      "polar_meter_id": "disabled-realqa-storage"
+    }
+  ]
 }

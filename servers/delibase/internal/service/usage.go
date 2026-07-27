@@ -241,6 +241,7 @@ func (service *Usage) ReserveUsage(
 			_, transactionErr = persistIdempotencyForCaller(
 				ctx, service.dependencies, queries, "service", callerID,
 				"reserve_usage", key, digest, response,
+				delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
 			)
 			return transactionErr
 		},
@@ -533,6 +534,7 @@ func (service *Usage) CommitUsage(
 			_, transactionErr = persistIdempotencyForCaller(
 				ctx, service.dependencies, queries, "service", callerID,
 				"commit_usage", key, digest, response,
+				delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
 			)
 			return transactionErr
 		},
@@ -701,6 +703,7 @@ func (service *Usage) ReleaseUsage(
 			_, transactionErr = persistIdempotencyForCaller(
 				ctx, service.dependencies, queries, "service", callerID,
 				"release_usage", key, digest, response,
+				delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
 			)
 			return transactionErr
 		},
@@ -1157,6 +1160,24 @@ func appendUsageAudit(
 	actor safelog.ActorPseudonym,
 	reservation dbgen.UsageReservation,
 ) error {
+	if reservation.BackgroundUsageAuthorizationID.Valid {
+		return appendBackgroundAuthorizationAudit(
+			ctx,
+			dependencies,
+			queries,
+			event,
+			actor,
+			dbgen.BackgroundUsageAuthorization{
+				ID:                reservation.BackgroundUsageAuthorizationID,
+				OrganizationID:    reservation.OrganizationID,
+				TeamID:            reservation.TeamID,
+				ServiceIdentityID: reservation.ServiceIdentityID,
+				MeterID:           reservation.MeterID,
+			},
+			reservation.TeamNameSnapshot,
+			uuid.UUID(reservation.ID.Bytes),
+		)
+	}
 	id, err := dependencies.IDs.New()
 	if err != nil {
 		return serviceError(connect.CodeInternal, 0)
@@ -1189,7 +1210,7 @@ func appendUsageAudit(
 func usageReservationMessage(
 	row dbgen.UsageReservation,
 ) *delibasev1.UsageReservation {
-	return &delibasev1.UsageReservation{
+	message := &delibasev1.UsageReservation{
 		ReservationId:     uuidMessage(row.ID),
 		OrganizationId:    uuidMessage(row.OrganizationID),
 		TeamId:            uuidMessage(row.TeamID),
@@ -1209,6 +1230,16 @@ func usageReservationMessage(
 		ExpiresAt:         timestamp(row.ExpiresAt),
 		FinalizedAt:       timestamp(row.FinalizedAt),
 	}
+	if row.BackgroundUsageAuthorizationID.Valid {
+		message.AuthorizedUsage = &delibasev1.AuthorizedUsageContext{
+			AuthorizationId:   uuidMessage(row.BackgroundUsageAuthorizationID),
+			Purpose:           backgroundPurpose(row.BackgroundUsagePurpose.String),
+			FeatureResourceId: uuidMessage(row.BackgroundFeatureResourceID),
+			Period:            backgroundPeriod(row.BackgroundUsagePeriod.String),
+			PeriodStart:       timestamp(row.BackgroundPeriodStart),
+		}
+	}
+	return message
 }
 
 func usageCommitMessage(
@@ -1244,7 +1275,7 @@ func usageReleaseMessage(
 func visibleUsageRecordMessage(
 	row dbgen.ListVisibleUsageRecordsRow,
 ) *delibasev1.UsageRecord {
-	return &delibasev1.UsageRecord{
+	message := &delibasev1.UsageRecord{
 		UsageRecordId:     uuidMessage(row.ID),
 		OrganizationId:    uuidMessage(row.OrganizationID),
 		ReservationId:     uuidMessage(row.ReservationID),
@@ -1263,6 +1294,16 @@ func visibleUsageRecordMessage(
 		Status:            usageRecordStatus(row.DeliveryStatus),
 		CommittedAt:       timestamp(row.CommittedAt),
 	}
+	if row.BackgroundUsageAuthorizationID.Valid {
+		message.AuthorizedUsage = &delibasev1.AuthorizedUsageContext{
+			AuthorizationId:   uuidMessage(row.BackgroundUsageAuthorizationID),
+			Purpose:           backgroundPurpose(row.BackgroundUsagePurpose.String),
+			FeatureResourceId: uuidMessage(row.BackgroundFeatureResourceID),
+			Period:            backgroundPeriod(row.BackgroundUsagePeriod.String),
+			PeriodStart:       timestamp(row.BackgroundPeriodStart),
+		}
+	}
+	return message
 }
 
 func reservationStatus(value string) delibasev1.ReservationStatus {
