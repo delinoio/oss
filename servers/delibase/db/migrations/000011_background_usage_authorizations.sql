@@ -10,8 +10,6 @@ CREATE TABLE background_usage_authorizations (
     owner_organization_id uuid,
     organization_id uuid NOT NULL,
     team_id uuid NOT NULL,
-    team_name_snapshot text NOT NULL
-        CHECK (length(team_name_snapshot) BETWEEN 1 AND 120),
     service_identity_id uuid NOT NULL,
     meter_id uuid NOT NULL,
     purpose text NOT NULL CHECK (purpose = 'realqa_storage'),
@@ -142,8 +140,6 @@ CREATE FUNCTION validate_new_background_usage_authorization()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    locked_team_name text;
 BEGIN
     IF NEW.status <> 'active'
        OR NEW.revision <> 1
@@ -196,8 +192,7 @@ BEGIN
         END IF;
     END IF;
 
-    SELECT name
-    INTO locked_team_name
+    PERFORM 1
     FROM teams
     WHERE organization_id = NEW.organization_id
       AND id = NEW.team_id
@@ -211,7 +206,6 @@ BEGIN
         RAISE EXCEPTION 'background authorization team access is unavailable'
             USING ERRCODE = 'check_violation';
     END IF;
-    NEW.team_name_snapshot := locked_team_name;
 
     PERFORM 1
     FROM service_meter_allowlists AS allowlist
@@ -259,7 +253,6 @@ BEGIN
        OR NEW.owner_organization_id IS DISTINCT FROM OLD.owner_organization_id
        OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
        OR NEW.team_id IS DISTINCT FROM OLD.team_id
-       OR NEW.team_name_snapshot IS DISTINCT FROM OLD.team_name_snapshot
        OR NEW.service_identity_id IS DISTINCT FROM OLD.service_identity_id
        OR NEW.meter_id IS DISTINCT FROM OLD.meter_id
        OR NEW.purpose IS DISTINCT FROM OLD.purpose
