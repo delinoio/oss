@@ -56,14 +56,15 @@
 - Up to 20 per-view shortcut definitions synchronize per account/device; the client registers them through one unified DevHud conflict registry and marks unavailable bindings inactive without replacing another binding.
 - Notification preferences are opt-in per view for viewer assignment/review request, check failure, becoming mergeable, conflict, and merged/closed. Respect OS Do Not Disturb; v1 adds no quiet-hours system.
 - Default text is exactly `Deck view updated`. Detailed repository/PR titles require per-device opt-in. Push payloads contain opaque event identifiers only.
+- Device push registrations have bounded server-issued leases renewed only by an authenticated matching account/device. Logout and `Reset DevHud` call the idempotent `UnregisterDevice` before local credential deletion. If that call is offline or ambiguous, the client disables the local registration, deletes its platform push token, retains a credential-free cleanup tombstone, and retries unregister before any later registration; an opaque event is never displayed without the matching active local account/device binding.
 - Each widget selects one view. Supported families are WidgetKit small/medium/large for iPhone and macOS and responsive Android compact/wide/list. New widgets show counts only; repository and PR titles require per-widget privacy opt-in.
 - Widget actions open a view/PR or request refresh and never mutate a PR. The only offline PR-data exception is a minimal encrypted widget snapshot with freshness/offline state. The regular Deck app shows a connection/offline state rather than a cached PR list.
 
 ## Storage, Retention, and Deletion
 
 - Retain only current matching PR snapshots, notification event/delivery history for 30 days, and view definitions until deletion.
-- Logout deletes Deck tokens, PR data, and widget snapshots from that device.
-- `Reset DevHud` remains device-local: it deletes tokens, Deck snapshots, and shortcut effective state and does not delete server views or GitHub connections.
+- Logout revokes the device push registration as described above, then deletes Deck tokens, PR data, and widget snapshots from that device.
+- `Reset DevHud` revokes the device push registration as described above, then remains device-local: it deletes tokens, Deck snapshots, and shortcut effective state and does not delete server views or GitHub connections.
 - Disconnect follows the immediate provider-data deletion boundary above and preserves disconnected view definitions.
 - Separate feature deletion lets a personal user delete personal Deck data and an organization Owner delete organization Deck data.
 - Account/organization deletion blocks access immediately and starts asynchronous hard deletion. Only minimal pseudonymized financial/security records required by the delibase contract survive.
@@ -71,7 +72,7 @@
 ## Security and Observability
 
 - Remote client telemetry remains prohibited. The service may use redacted structured logs, metrics, traces, and audit events for operations and authorization.
-- Never persist or log bearer/provider tokens, authorization headers, URLs, repository names, PR titles, raw queries, push content, or user content. Audit only typed safe decisions and pseudonymized actors.
+- Never persist or log bearer/provider tokens, authorization headers, URLs, push content, or user content outside the explicit data contract. Canonical raw queries may persist only in view definitions, and repository names/PR titles may persist only in current matching PR snapshots; encrypt those fields at rest with managed environment-scoped keys, authorize every read before decryption, and delete them at the retention boundaries above. Never place those fields in logs, telemetry, traces, audits, notification history, or uncontracted caches. Audit only typed safe decisions and pseudonymized actors.
 - Use least-privilege database/provider identities, fail-closed authorization, CSRF/state validation for callbacks, webhook signature validation, rate/concurrency limits, and explicit safe error enums.
 - Measure refresh latency, query latency, mutation latency, and widget snapshot size in CI/fixtures only. This contract defines no production SLO, alert threshold, dashboard, or telemetry pipeline.
 

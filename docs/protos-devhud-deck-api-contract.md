@@ -31,6 +31,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 - PR results/details carry only repository, number, title, author, review decision, checks, mergeability, draft state, and updated time by default.
 - Mutations are a closed union for assign/unassign, reviewer request/removal, label add/remove, draft/ready, close/reopen, merge, and native auto-merge enable/cancel. Merge requests carry explicit user confirmation.
 - Refresh requests distinguish automatic/widget/manual origin, client request identity, and cache behavior. Responses expose freshness, outcome, cache/coalescing state, and billing disposition without exposing provider credentials.
+- Device registration returns a bounded server lease and an opaque registration ID. `UnregisterDevice` is idempotent and revokes delivery for the authenticated account/device; a new or renewed registration is rejected while a credential-free cleanup tombstone for that device remains pending. Opaque push events are usable only by the matching active local account/device registration.
 - Every mutation that changes synchronized data carries the expected revision and returns a new revision. Stable conflict details support reload/compare/reapply.
 - Authenticated messages identify personal/organization/team resources by IDs only; client-provided roles, repository permission, billing authority, provider access, and price are never authoritative.
 

@@ -41,7 +41,7 @@
 
 - Implement exactly the `RealQAPresetService`, `RealQATrackerService`, and `RealQASubmissionService` RPC sets in [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 - The internal tracker interface normalizes title, body, attachments, labels, and assignees plus typed provider extensions. Only GitHub is registered in v1; adapter contract tests are required. It is not a public tracker/plugin SDK.
-- HTTP handlers are limited to GitHub OAuth/App callbacks, installation/issue-lifecycle webhooks, and public image GET. All business mutations use Connect RPC.
+- HTTP handlers are limited to GitHub OAuth/App callbacks, installation/issue-lifecycle webhooks, a short-lived signed image PUT at the exact asset origin, and public image GET. The PUT accepts only the object, content type, checksum, and size bound by `CreateImageUpload`; all business mutations use Connect RPC.
 - Persisted IDs and local draft/submission idempotency keys are UUID v7. Preserve an idempotency key across retries. Owner scope, capture mode, selector mode, tracker kind, submission state, upload state, failure class, and asset state are closed enums.
 - Do not retain submitted title, body, URL, or DOM metadata after provider reconciliation. Retain only minimum provider IDs/URLs, asset state, and an idempotency digest.
 
@@ -55,7 +55,7 @@
 
 ## Image Upload, Public Delivery, and Deletion
 
-- Stage privately in R2 using short-lived signed PUT URLs. After upload, re-decode/re-encode, remove metadata, and verify type, dimensions, SHA-256, and size before marking verified.
+- Stage privately through short-lived RealQA-signed PUT URLs at exactly `https://assets.realqa.deli.dev`; the same-origin handler writes through a least-privilege R2 binding. `CreateImageUpload` never returns or allowlists an account-specific `r2.cloudflarestorage.com` S3 endpoint. After upload, re-decode/re-encode, remove metadata, and verify type, dimensions, SHA-256, and size before marking verified.
 - Promote only submitted images under opaque unguessable identifiers with at least 128 bits of entropy at the future exact asset origin. Never expose bucket indexes, sequential IDs, object keys, or signed GET URLs.
 - Inline public Markdown images must be readable by ordinary issue readers without RealQA authentication. Before every submission, explain that anyone with the issue/image URL may view the screenshot and require explicit confirmation.
 - Public delivery applies WAF controls and 300 GETs/minute/IP.
@@ -68,7 +68,7 @@
 The exact sequence is:
 
 1. create the RealQA submission;
-2. create its delibase `REALQA_STORAGE` durable background authorization;
+2. use delibase `BillingService.CreateBackgroundUsageAuthorization` to create the submission-bound `REALQA_STORAGE` authorization defined by issue #756;
 3. reserve live transfer usage;
 4. upload and verify images;
 5. commit transfer usage for verified bytes;
@@ -76,8 +76,9 @@ The exact sequence is:
 7. create/reconcile the GitHub issue;
 8. promote linked assets to retained public state.
 
-- Transfer is 500 USD micros/MiB of verified uploaded bytes, aggregated and rounded once per submission. Commit when R2 verification succeeds even if issue creation later fails; release only bytes without a verified upload.
-- Storage is 2 USD micros/MiB-day through the submission-bound durable authorization, aggregating image byte-seconds per authorization/UTC day and rounding up once/day.
+- Transfer is 500 USD micros/MiB of verified uploaded bytes. Aggregate bytes once per submission and compute `ceil(verified_bytes * 500 / 1_048_576)` USD micros using a checked wide-integer intermediate; zero bytes cost zero, and overflow beyond signed int64 fails before reservation/commit. Commit when R2 verification succeeds even if issue creation later fails; release only bytes without a verified upload.
+- Storage is 2 USD micros/MiB-day through the submission-bound durable authorization, aggregating image byte-seconds per authorization/UTC day and rounding up once/day. Recurring settlement uses the issue #756 `ReserveAuthorizedUsage`, `CommitAuthorizedUsage`, and `ReleaseAuthorizedUsage` M2M RPCs; the current live forwarded-token usage RPCs cannot be used after the client exits.
+- RealQA implementation and activation are blocked until issue #756 lands its synchronized delibase proto/server contract. This planned contract does not authorize storing a forwarded user token or inventing an unbounded background charge path.
 - Failed recurring storage billing immediately blocks new submissions, notifies the owner and exposes rebind/payment recovery, keeps existing images public for 30 days, never back-bills grace-period days after recovery, and deletes screenshots after 30 days if not recovered/rebound.
 - Failed/ambiguous submissions remain encrypted local drafts. Verified unlinked server uploads remain for 24 hours. Retries reuse the idempotency key and reconcile the marker before another create.
 - Limits are three concurrent upload sessions/user and 30 issue submissions/hour/user.
@@ -90,7 +91,7 @@ The exact sequence is:
 - Logout hides and locks drafts without deleting them; signing into the same account restores access. Another account cannot see or decrypt them.
 - `Reset DevHud` deletes local drafts, tokens, RealQA shortcut state, and extension pairing. It cannot revoke Chrome-owned tab/origin permission and must direct the user to Chrome extension settings.
 - Provider disconnect follows the token-deletion/preset-preservation rule above.
-- Personal feature deletion removes personal presets, submissions, and assets. An organization Owner removes organization RealQA data.
+- `RealQAPresetService.DeleteFeatureData` is the only feature-deletion mutation. It is owner-scoped and idempotent: a personal caller removes their personal presets, submissions, and assets; an organization Owner removes organization RealQA data. Acceptance immediately blocks new scope access/mutations and starts asynchronous hard deletion while preserving only required pseudonymized financial/security records.
 - Account/organization deletion blocks access immediately and asynchronously deletes feature data/assets, retaining only required pseudonymized financial/security records.
 
 ## Security and Observability
@@ -121,7 +122,7 @@ These checks use fixture production substitutes and a fixture extension ID. They
 - Wire contract: [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 - Client/native/Chrome contract: [apps-devhud-foundation](apps-devhud-foundation.md).
 - Shared service utilities may come from `servers/internal`; RealQA business policy remains under `servers/devhud-realqa`.
-- External boundaries are Logto/DeliDev authentication, delibase live/background usage, PostgreSQL, the separate RealQA GitHub App on GitHub.com, and R2 signed upload/public delivery at the exact future asset origin.
+- External boundaries are Logto/DeliDev authentication, delibase live usage plus the issue #756 background-usage prerequisite, PostgreSQL, the separate RealQA GitHub App on GitHub.com, and same-origin signed upload/public delivery backed by R2 at the exact future asset origin.
 
 ## Change Triggers
 
@@ -134,6 +135,7 @@ These checks use fixture production substitutes and a fixture extension ID. They
 - [RealQA API](protos-devhud-realqa-api-contract.md)
 - [DevHud app](apps-devhud-foundation.md)
 - [Issue #757](https://github.com/delinoio/oss/issues/757)
+- [Issue #756](https://github.com/delinoio/oss/issues/756)
 
 ## Out of Scope
 

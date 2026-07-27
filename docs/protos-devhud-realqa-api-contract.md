@@ -16,11 +16,11 @@
 
 ## Services and RPCs
 
-- `RealQAPresetService`: `ListPresets`, `GetPreset`, `CreatePreset`, `UpdatePreset`, `DeletePreset`.
+- `RealQAPresetService`: `ListPresets`, `GetPreset`, `CreatePreset`, `UpdatePreset`, `DeletePreset`, `DeleteFeatureData`.
 - `RealQATrackerService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`, `ListRepositories`, `GetRepositoryIssueSchema`.
 - `RealQASubmissionService`: `CreateSubmission`, `CreateImageUpload`, `FinalizeImageUpload`, `SubmitIssue`, `GetSubmission`, `DeleteImage`, `DeleteSubmissionAssets`.
 
-No additional v1 service or RPC is implied. GitHub callback/webhook and public image GET handlers are narrow HTTP/server boundaries.
+No additional v1 service or RPC is implied. GitHub callback/webhook, same-origin signed image PUT, and public image GET handlers are narrow HTTP/server boundaries.
 
 ## Wire Contract
 
@@ -29,10 +29,10 @@ No additional v1 service or RPC is implied. GitHub callback/webhook and public i
 - Presets carry owner/billing scope, capture/pointer/selector defaults, destination/repository, template/form choice, supported provider extensions, ordered safe process/title URL mappings, shortcut, and revision.
 - Lists use opaque cursors. Enforce 50 personal presets, 250 organization presets, and 20 active device shortcuts.
 - Synchronized writes carry expected revision and return a new revision; typed conflicts support reload/compare/reapply.
-- Submission creation carries the stable local idempotency key. Upload messages carry bounded metadata needed for a short-lived signed PUT and verification, never raw image bytes through Connect when signed upload is used.
+- Submission creation carries the stable local idempotency key. Upload messages carry bounded metadata needed for a short-lived signed PUT at exactly `https://assets.realqa.deli.dev` and verification, never an R2 S3 endpoint or raw image bytes through Connect.
 - The API represents no explicit image-count limit, while errors enforce 25 MiB/encoded image, 250 MiB/session, 100 megapixels/decoded image, and 60,000 UTF-8 bytes/final issue body.
 - Final submission carries explicit public-image confirmation. Reconciliation state represents ambiguous GitHub responses and the hidden marker without exposing the marker as a user-editable identity.
-- Deletion messages distinguish image/range deletion from submission-asset deletion. Responses preserve the stable removed-placeholder URL contract.
+- Deletion messages distinguish image/range deletion, submission-asset deletion, and owner-scoped feature deletion. `DeleteFeatureData` carries personal or organization owner scope plus an idempotency key; a personal caller may delete only their own data, while organization deletion requires an Owner. The first accepted request blocks new access and asynchronously removes the scope's presets, submissions, and assets; exact replays return the same deletion-job result. Responses preserve the stable removed-placeholder URL contract and required pseudonymized financial/security records.
 - Client-provided role, GitHub permission, billing authorization/price, upload verification, provider success, and asset state are never authoritative.
 
 ## Authentication, Privacy, and Errors
@@ -59,6 +59,7 @@ Checks do not publish the TypeScript package, deploy either RealQA origin, creat
 ## Dependencies and Change Triggers
 
 - Owned by `devhud`; consumed only by `servers/devhud-realqa` and authenticated RealQA code under `apps/devhud`.
+- Recurring storage settlement additionally depends on the separately synchronized delibase background-usage contract in issue #756. RealQA implementation and activation are blocked until that contract exposes its bounded human authorization and M2M authorized-usage RPCs; the existing live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute.
 - Update this document, [project-devhud](project-devhud.md), [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, idempotency, generated package, or compatibility change.
 
 ## References
@@ -67,6 +68,7 @@ Checks do not publish the TypeScript package, deploy either RealQA origin, creat
 - [RealQA server](servers-devhud-realqa-foundation.md)
 - [DevHud app](apps-devhud-foundation.md)
 - [Issue #757](https://github.com/delinoio/oss/issues/757)
+- [Issue #756](https://github.com/delinoio/oss/issues/756)
 
 ## Out of Scope
 

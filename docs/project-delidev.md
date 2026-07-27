@@ -19,6 +19,7 @@ This index records the repository implementation for issue [#722](https://github
 ## Cross-Domain Invariants
 - Canonical origin: `https://deli.dev`; this origin is a documented future canonical origin, not an activation claim.
 - Stable route IDs are `/`, `/apps`, `/apps/:appSlug`, `/auth/callback`, `/onboarding`, `/invite/:token`, `/o/:orgSlug/apps`, `/o/:orgSlug/members`, `/o/:orgSlug/teams`, `/o/:orgSlug/billing`, `/o/:orgSlug/usage`, `/o/:orgSlug/settings`, and `/account`.
+- Deck mobile reserves the planned `/auth/devhud/callback` route. Before activation, DeliDev owns a dedicated non-SPA callback artifact and exact-path Apple `apple-app-site-association` and Android `assetlinks.json` artifacts for `dev.deli.devhud`; fixture identities are test-only, release identities are injected externally, and callback credentials never enter the SPA fallback, service worker, logs, analytics, or caches.
 - Public catalog metadata and pricing are anonymous; organization, billing, usage, invitation acceptance, onboarding, and account operations require authentication.
 - The app consumes the versioned `delibase.v1` Connect contract and must update with its owning proto contract for any interface change.
 - Logto is the authentication provider. Delibase is authoritative for local profiles keyed by unique Logto `sub` values, organizations, memberships, roles, teams, and billing ownership.
@@ -43,3 +44,4 @@ This index records the repository implementation for issue [#722](https://github
 - [Project delibase](project-delibase.md)
 - [Repository defaults](repository-defaults.md)
 - [Issue #722](https://github.com/delinoio/oss/issues/722)
+- [Issue #755](https://github.com/delinoio/oss/issues/755)

@@ -20,6 +20,7 @@
 
 ## Interfaces and Contracts
 - Stable routes: `/`, `/apps`, `/apps/:appSlug`, `/auth/callback`, `/onboarding`, `/invite/:token`, `/o/:orgSlug/apps`, `/o/:orgSlug/members`, `/o/:orgSlug/teams`, `/o/:orgSlug/billing`, `/o/:orgSlug/usage`, `/o/:orgSlug/settings`, `/account`.
+- Deck mobile reserves the planned credential-sensitive callback route `/auth/devhud/callback`. Before Deck mobile activation, `apps/delidev-app` must emit a dedicated non-SPA callback artifact plus `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`, scoped only to that path and application ID `dev.deli.devhud`. Fixture association identities are permitted in CI; release artifacts require externally injected Apple Team ID and Android release-certificate SHA-256 values and must fail closed when either is missing. The service worker, SPA fallback, logs, analytics, and caches must never consume or retain callback query/fragment credentials.
 - `/apps` and `/apps/:appSlug` are public. Organization context, billing, usage, invitation preview/acceptance, onboarding, and account management require authentication. Only accounts whose server-authoritative state requires onboarding may enter `/onboarding`; completed accounts redirect to `/account`. Invitation preview and acceptance authorize with the invitation bearer token and do not require the user to be an existing organization or team member.
 - Consume the five human-facing `delibase.v1` Connect services: `AccountService`, `OrganizationService`, `TeamService`, `CatalogService`, and `BillingService`. `UsageService` is server-to-server; the browser must not issue its reserve, commit, or release mutations or hold M2M credentials.
 - Consume protobuf-es v2 messages and `GenService` descriptors through the workspace package `@delinoio/delibase-connect`; Connect Query remains responsible for browser transport/query integration.
@@ -45,6 +46,7 @@
 ## Build and Test
 - Shared client checks are `pnpm check:proto` and `pnpm --filter @delinoio/delibase-connect typecheck`. Required local checks once the app exists are `pnpm --filter delidev-app typecheck`, `pnpm --filter delidev-app lint`, `pnpm --filter delidev-app test`, `pnpm --filter delidev-app build`, plus PWA, accessibility, and browser smoke validation. The app typecheck, test, and build commands build the generated Connect client first so they work from a clean checkout.
 - CI must validate the production static artifact, SPA fallback, manifest/service worker, sensitive-cache exclusions, responsive accessibility, and Connect client generation compatibility. The deterministic build must leave the checked-in `apps/delidev-app/dist` artifact unchanged.
+- Deck mobile implementation additionally validates the dedicated callback artifact, exact callback-only Apple/Android association rules, no redirects for either well-known file, injected release identities, and exclusion of callback requests from SPA/service-worker caching.
 - `pnpm --filter delidev-app test:pwa` validates the installable manifest, generated SPA fallback, versioned shell, canonical metadata, and allow/deny cache rules. `pnpm --filter delidev-app test:browser` covers Chromium, Edge, Firefox, WebKit, and representative mobile Chromium/WebKit viewports.
 - Rsbuild writes the static app to `apps/delidev-app/dist`; `scripts/postbuild.mjs` copies `index.html` to `404.html` and produces `sw.js` from the exact generated shell file set. Cloudflare Pages `_redirects` provides the primary SPA fallback.
 
@@ -84,3 +86,4 @@
 - [Protobuf API contract](protos-delibase-api-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [Issue #722](https://github.com/delinoio/oss/issues/722)
+- [Issue #755](https://github.com/delinoio/oss/issues/755)
