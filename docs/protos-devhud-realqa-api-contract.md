@@ -18,7 +18,7 @@
 
 - `RealQAPresetService`: `ListPresets`, `GetPreset`, `CreatePreset`, `UpdatePreset`, `DeletePreset`, `DeleteFeatureData`.
 - `RealQATrackerService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`, `ListRepositories`, `GetRepositoryIssueSchema`.
-- `RealQASubmissionService`: `CreateSubmission`, `CreateImageUpload`, `FinalizeImageUpload`, `SubmitIssue`, `GetSubmission`, `DeleteImage`, `DeleteSubmissionAssets`.
+- `RealQASubmissionService`: `ListSubmissions`, `CreateSubmission`, `CreateImageUpload`, `FinalizeImageUpload`, `SubmitIssue`, `GetSubmission`, `DeleteImage`, `DeleteSubmissionAssets`.
 
 No additional v1 service or RPC is implied. GitHub callback/webhook, same-origin signed image PUT, and public image GET handlers are narrow HTTP/server boundaries.
 
@@ -30,6 +30,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook, same-origin
 - Lists use opaque cursors. Enforce 50 personal presets, 250 organization presets, and 20 active device shortcuts.
 - Synchronized writes carry expected revision and return a new revision; typed conflicts support reload/compare/reapply.
 - Submission creation carries the stable local idempotency key. Upload messages carry bounded metadata needed for a short-lived signed PUT at exactly `https://assets.realqa.deli.dev` and verification, never an R2 S3 endpoint or raw image bytes through Connect.
+- `ListSubmissions` uses opaque cursor pagination and server-side owner authorization. Each result exposes only the retained submission UUID, asset UUID/state summaries, bounded timestamps, and minimum provider issue ID/URL needed to identify records available to `GetSubmission`, `DeleteImage`, or `DeleteSubmissionAssets`; it never returns submitted title/body/URL/DOM data, screenshot bytes, object keys, or a public asset index.
 - The API represents no explicit image-count limit, while errors enforce 25 MiB/encoded image, 250 MiB/session, 100 megapixels/decoded image, and 60,000 UTF-8 bytes/final issue body.
 - Final submission carries explicit public-image confirmation. Reconciliation state represents ambiguous GitHub responses and the hidden marker without exposing the marker as a user-editable identity.
 - Deletion messages distinguish image/range deletion, submission-asset deletion, and feature deletion. `DeleteFeatureData` carries a closed trigger union. Owner-request mode carries personal or organization owner scope plus an idempotency key; a personal caller may delete only their own data, while organization deletion requires an Owner. Delibase-lifecycle mode carries only an account or organization target UUID plus the immutable delibase deletion-job UUID and requires the exact RealQA-scoped delibase M2M identity. The deletion-job UUID is the replay identity, DeliDev and ordinary feature callers cannot select lifecycle mode, and absent feature data succeeds idempotently.

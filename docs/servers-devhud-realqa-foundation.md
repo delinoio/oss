@@ -43,6 +43,7 @@
 - The internal tracker interface normalizes title, body, attachments, labels, and assignees plus typed provider extensions. Only GitHub is registered in v1; adapter contract tests are required. It is not a public tracker/plugin SDK.
 - HTTP handlers are limited to GitHub OAuth/App callbacks, installation/issue-lifecycle webhooks, a short-lived signed image PUT at the exact asset origin, and public image GET. The PUT accepts only the object, content type, checksum, and size bound by `CreateImageUpload`; all business mutations use Connect RPC.
 - Persisted IDs and local draft/submission idempotency keys are UUID v7. Preserve an idempotency key across retries. Owner scope, capture mode, selector mode, tracker kind, submission state, upload state, failure class, and asset state are closed enums.
+- `ListSubmissions` is an authenticated, owner-authorized, opaque-cursor discovery path for retained submissions and assets the caller may delete. It returns only submission and asset UUIDs, asset state, bounded timestamps, and the minimum retained provider issue URL/ID needed to identify the record; it never reconstructs or returns submitted title, body, URL, DOM metadata, screenshot content, object keys, or a public bucket index.
 - Do not retain submitted title, body, URL, or DOM metadata after provider reconciliation. Retain only minimum provider IDs/URLs, asset state, and an idempotency digest.
 
 ## Capture Payload and URL Boundary
@@ -100,7 +101,7 @@ The exact sequence is:
 - Never log/persist authorization/provider tokens, signed upload URLs, object keys, screenshot content, title/body/URL/DOM data, repository names, raw process/window values, or user content outside the explicitly retained encrypted draft/asset/provider state.
 - Validate callback state and webhook signatures, use least-privilege R2/database/provider identities, and expose typed safe errors.
 - DevHud reaches Connect and the signed image PUT through its private native transports, not browser fetch. Do not allow `http://tauri.localhost` in CORS; RealQA has no browser RPC client.
-- Public assets are intentionally unauthenticated only after per-submission confirmation and verified promotion; no listing/index exists.
+- Public assets are intentionally unauthenticated only after per-submission confirmation and verified promotion; no public asset listing or bucket index exists. Authenticated `ListSubmissions` exposes only the caller-authorized retained references defined above.
 
 ## Build and Test
 
@@ -114,7 +115,7 @@ Once implementation exists, canonical server checks are:
 - fixture GitHub App, R2, callback/webhook, permission, reconciliation, WAF/rate, billing, retention, and deletion tests;
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
 
-Coverage must include all size/body boundaries, verification failures and bombs, templates/forms, marker reconciliation without duplicates, private staging/promotion/24-hour cleanup, explicit deletion/placeholder/best-effort issue update, transfer/storage rounding and commit semantics, payer rebind/30-day grace/no back-billing/deletion, rate limits, redaction, owner and delibase-lifecycle deletion authorization, deletion-job replay/absent data, browser-origin rejection, and GitHub.com-only rejection.
+Coverage must include all size/body boundaries, verification failures and bombs, templates/forms, marker reconciliation without duplicates, private staging/promotion/24-hour cleanup, authorized paginated submission/asset discovery after local draft deletion, explicit deletion/placeholder/best-effort issue update, transfer/storage rounding and commit semantics, payer rebind/30-day grace/no back-billing/deletion, rate limits, redaction, owner and delibase-lifecycle deletion authorization, deletion-job replay/absent data, browser-origin rejection, and GitHub.com-only rejection.
 
 These checks use fixture production substitutes and a fixture extension ID. They must not publish images, deploy services, configure DNS/R2, register a GitHub App, publish a Chrome extension, inject a production extension ID, ship stores, activate catalog entries, or begin operations.
 
