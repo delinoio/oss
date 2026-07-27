@@ -20,8 +20,9 @@ This index records the repository implementation for issue [#722](https://github
 - Canonical origin: `https://deli.dev`; this origin is a documented future canonical origin, not an activation claim.
 - Stable route IDs are `/`, `/apps`, `/apps/:appSlug`, `/auth/callback`, `/onboarding`, `/invite/:token`, `/o/:orgSlug/apps`, `/o/:orgSlug/members`, `/o/:orgSlug/teams`, `/o/:orgSlug/billing`, `/o/:orgSlug/usage`, `/o/:orgSlug/settings`, and `/account`.
 - Deck mobile reserves the planned `/auth/devhud/callback` route. Before activation, DeliDev owns a dedicated non-SPA callback artifact and exact-path Apple `apple-app-site-association` and Android `assetlinks.json` artifacts for `dev.deli.devhud`; fixture identities are test-only, release identities are injected externally, and callback credentials never enter the SPA fallback, service worker, logs, analytics, or caches.
+- The existing `/account` and `/o/:orgSlug/settings` sections may add planned Deck GitHub connection management by consuming only `DeckIntegrationService` from the DevHud-owned `devhud.deck.v1` contract. This narrow cross-project client boundary does not authorize a top-level Deck route or any Deck view, pull-request, mutation, device, notification, or widget UI in DeliDev.
 - Public catalog metadata and pricing are anonymous; organization, billing, usage, invitation acceptance, onboarding, and account operations require authentication.
-- The app consumes the versioned `delibase.v1` Connect contract and must update with its owning proto contract for any interface change.
+- The app consumes the versioned `delibase.v1` Connect contract and, for planned Deck connection management only, `DeckIntegrationService` from `devhud.deck.v1`; it must update with the corresponding owning proto contract for any interface change.
 - Logto is the authentication provider. Delibase is authoritative for local profiles keyed by unique Logto `sub` values, organizations, memberships, roles, teams, and billing ownership.
 - The PWA may cache only versioned static shell and public catalog data; authenticated organization, team, balance, ledger, usage, and token data are excluded.
 - PWA output is an artifact-only Cloudflare Pages deliverable. This project must not activate or deploy the site as part of issue #722.
@@ -34,7 +35,7 @@ This index records the repository implementation for issue [#722](https://github
 
 ## Change Policy
 - Route, authentication, cache, UI-state, or Pages artifact changes update this index and [apps-delidev-app-foundation](apps-delidev-app-foundation.md).
-- Connect request/response or service changes update this index, the app contract, [project-delibase](project-delibase.md), and [protos-delibase-api-contract](protos-delibase-api-contract.md).
+- Delibase Connect request/response or service changes update this index, the app contract, [project-delibase](project-delibase.md), and [protos-delibase-api-contract](protos-delibase-api-contract.md). Deck connection-management changes instead update [project-devhud](project-devhud.md), [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md), and [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
 - Organization, team, invitation, billing, or usage semantics update both project indexes and all affected app, server, proto, and shared-infrastructure contracts.
 - Do not describe planned behavior as available, and do not activate or deploy either service without a later explicit scope and contract update.
 

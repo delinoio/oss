@@ -22,7 +22,7 @@
 - Only GitHub.com is accepted. GHES, GitHub Enterprise Server, custom hosts, and on-premises connectors fail closed.
 - Permissions are limited to repository metadata, pull requests, checks, labels, assignees, requested reviewers, draft state, merge state, supported mutations, and member/team read only when resolving team reviewers.
 - One installation binds to exactly one DeliDev personal or organization owner scope.
-- Connections may be managed from DevHud Deck settings and the existing DeliDev `/account` or `/o/:orgSlug/settings` sections. No new top-level DeliDev route is authorized.
+- Connections may be managed from DevHud Deck settings and the existing DeliDev `/account` or `/o/:orgSlug/settings` sections. The DeliDev settings client may call only the four `DeckIntegrationService` RPCs; it must not consume views, pull-request data, mutations, devices, notifications, or widgets. No new top-level DeliDev route is authorized.
 - HTTP is limited to GitHub OAuth/App callbacks and installation-lifecycle webhooks. Provider webhooks must not refresh pull-request status.
 - Disconnect immediately deletes provider tokens, cached PR results, notification state, and widget snapshots while retaining view definitions as disconnected records.
 - Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository.
@@ -66,7 +66,7 @@
 - Logout revokes the device push registration as described above, then deletes Deck tokens, PR data, and widget snapshots from that device.
 - `Reset DevHud` revokes the device push registration as described above, then remains device-local: it deletes tokens, Deck snapshots, and shortcut effective state and does not delete server views or GitHub connections.
 - Disconnect follows the immediate provider-data deletion boundary above and preserves disconnected view definitions.
-- Separate feature deletion lets a personal user delete personal Deck data and an organization Owner delete organization Deck data.
+- `DeckViewService.DeleteFeatureData` is the only feature-deletion mutation. It is owner-scoped and idempotent by authenticated subject, operation, and owner scope: a personal caller may delete only their personal Deck data, while an organization Owner may delete organization Deck data. The first accepted request immediately blocks new scope access and mutations and starts asynchronous hard deletion of all data owned by that scope, including view definitions and attached connection/provider, cache, notification, widget, and shortcut data. Exact replays return the same deletion-job result, and only required pseudonymized financial/security records survive.
 - Account/organization deletion blocks access immediately and starts asynchronous hard deletion. Only minimal pseudonymized financial/security records required by the delibase contract survive.
 
 ## Security and Observability
@@ -88,7 +88,7 @@ Once implementation exists, canonical server checks are:
 - mock GitHub App callback, webhook, permission, rate-limit, and provider tests;
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
 
-Coverage must include unknown-clause preservation, per-viewer `@me`, repository non-disclosure, limits/pagination/truncation, stale revisions, multi-device coalescing and billing, provider timeout charging, reservation failure, zero refresh after all clients stop, every supported mutation and merge confirmation, widget privacy/staleness, DND-safe notifications, shortcut conflicts, redaction, disconnect/logout/reset/deletion, GitHub.com-only rejection, and a fixture GitHub App.
+Coverage must include unknown-clause preservation, per-viewer `@me`, repository non-disclosure, limits/pagination/truncation, stale revisions, multi-device coalescing and billing, provider timeout charging, reservation failure, zero refresh after all clients stop, every supported mutation and merge confirmation, widget privacy/staleness, DND-safe notifications, shortcut conflicts, redaction, disconnect/logout/reset, feature-deletion authorization and idempotent replay, GitHub.com-only rejection, and a fixture GitHub App.
 
 These checks validate artifacts only. They must not push GHCR images, deploy the API, configure DNS, create production secrets, register a GitHub App, enable catalog records, publish widgets, release an app, or begin operations.
 
@@ -96,6 +96,7 @@ These checks validate artifacts only. They must not push GHCR images, deploy the
 
 - Wire contract: [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
 - Client/native contract: [apps-devhud-foundation](apps-devhud-foundation.md).
+- The DeliDev settings client contract is [apps-delidev-app-foundation](apps-delidev-app-foundation.md) and is limited to `DeckIntegrationService`.
 - Shared service utilities may come from `servers/internal`; Deck business policy remains under `servers/devhud-deck`.
 - External boundaries are Logto/DeliDev authentication, delibase reservation/commit/release, PostgreSQL, the separate Deck GitHub App on GitHub.com, and opaque push delivery. The canonical API origin is future and inactive.
 

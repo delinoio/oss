@@ -16,7 +16,7 @@
 
 ## Services and RPCs
 
-- `DeckViewService`: `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `RefreshView`, `MutatePullRequest`.
+- `DeckViewService`: `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `RefreshView`, `MutatePullRequest`, `DeleteFeatureData`.
 - `DeckIntegrationService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`.
 - `DeckDeviceService`: `RegisterDevice`, `UpdateDevice`, `UnregisterDevice`, `UpdateViewNotificationPreference`.
 
@@ -32,6 +32,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 - Mutations are a closed union for assign/unassign, reviewer request/removal, label add/remove, draft/ready, close/reopen, merge, and native auto-merge enable/cancel. Merge requests carry explicit user confirmation.
 - Refresh requests distinguish automatic/widget/manual origin, client request identity, and cache behavior. Responses expose freshness, outcome, cache/coalescing state, and billing disposition without exposing provider credentials.
 - Device registration returns a bounded server lease and an opaque registration ID. `UnregisterDevice` is idempotent and revokes delivery for the authenticated account/device; a new or renewed registration is rejected while a credential-free cleanup tombstone for that device remains pending. Opaque push events are usable only by the matching active local account/device registration.
+- `DeleteFeatureData` carries a personal or organization owner scope plus an idempotency key scoped to the authenticated subject, operation, and owner scope. A personal caller may delete only their own Deck data; organization deletion requires an Owner. The first accepted request immediately blocks new scope access and mutations and starts asynchronous hard deletion of all data owned by that scope, including view definitions and attached connection/provider, cache, notification, widget, and shortcut data. Exact replays return the same deletion-job result while only required pseudonymized financial/security records survive.
 - Every mutation that changes synchronized data carries the expected revision and returns a new revision. Stable conflict details support reload/compare/reapply.
 - Authenticated messages identify personal/organization/team resources by IDs only; client-provided roles, repository permission, billing authority, provider access, and price are never authoritative.
 
@@ -58,14 +59,15 @@ Checks do not publish the TypeScript package, deploy `https://deck.deli.dev`, re
 
 ## Dependencies and Change Triggers
 
-- Owned by `devhud`; consumed only by `servers/devhud-deck` and the authenticated Deck client under `apps/devhud`.
-- Update this document, [project-devhud](project-devhud.md), [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, generated package, or compatibility change.
+- Owned by `devhud`; consumed by `servers/devhud-deck`, the authenticated Deck client under `apps/devhud`, and the authenticated DeliDev settings client under `apps/delidev-app` only for `DeckIntegrationService`.
+- Update this document, [project-devhud](project-devhud.md), [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), [apps-delidev-app-foundation](apps-delidev-app-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, generated package, or compatibility change.
 
 ## References
 
 - [Project devhud](project-devhud.md)
 - [Deck server](servers-devhud-deck-foundation.md)
 - [DevHud app](apps-devhud-foundation.md)
+- [DeliDev app](apps-delidev-app-foundation.md)
 - [Issue #755](https://github.com/delinoio/oss/issues/755)
 
 ## Out of Scope
