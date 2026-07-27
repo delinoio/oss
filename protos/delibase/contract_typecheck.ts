@@ -3,6 +3,9 @@ import type { Client } from "@connectrpc/connect";
 
 import {
   AccountService,
+  AuthorizedUsageContextSchema,
+  BackgroundUsagePeriod,
+  BackgroundUsagePurpose,
   BillingService,
   CatalogService,
   OrganizationService,
@@ -23,5 +26,9 @@ export const canonicalServiceDescriptors = [
 
 export const tenUsd = create(UsdMicrosSchema, { value: 10_000_000n });
 export const oneUsageUnit = create(UsageUnitsSchema, { value: 1n });
+export const realQAStorageDay = create(AuthorizedUsageContextSchema, {
+  purpose: BackgroundUsagePurpose.REALQA_STORAGE,
+  period: BackgroundUsagePeriod.UTC_DAY,
+});
 
 export type UsageClient = Client<typeof UsageService>;

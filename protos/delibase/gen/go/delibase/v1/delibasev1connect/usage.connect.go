@@ -42,6 +42,18 @@ const (
 	// UsageServiceReleaseUsageProcedure is the fully-qualified name of the UsageService's ReleaseUsage
 	// RPC.
 	UsageServiceReleaseUsageProcedure = "/delibase.v1.UsageService/ReleaseUsage"
+	// UsageServiceReserveAuthorizedUsageProcedure is the fully-qualified name of the UsageService's
+	// ReserveAuthorizedUsage RPC.
+	UsageServiceReserveAuthorizedUsageProcedure = "/delibase.v1.UsageService/ReserveAuthorizedUsage"
+	// UsageServiceCommitAuthorizedUsageProcedure is the fully-qualified name of the UsageService's
+	// CommitAuthorizedUsage RPC.
+	UsageServiceCommitAuthorizedUsageProcedure = "/delibase.v1.UsageService/CommitAuthorizedUsage"
+	// UsageServiceReleaseAuthorizedUsageProcedure is the fully-qualified name of the UsageService's
+	// ReleaseAuthorizedUsage RPC.
+	UsageServiceReleaseAuthorizedUsageProcedure = "/delibase.v1.UsageService/ReleaseAuthorizedUsage"
+	// UsageServiceMarkBackgroundUsageResourceDeletedProcedure is the fully-qualified name of the
+	// UsageService's MarkBackgroundUsageResourceDeleted RPC.
+	UsageServiceMarkBackgroundUsageResourceDeletedProcedure = "/delibase.v1.UsageService/MarkBackgroundUsageResourceDeleted"
 )
 
 // UsageServiceClient is a client for the delibase.v1.UsageService service.
@@ -52,6 +64,22 @@ type UsageServiceClient interface {
 	CommitUsage(context.Context, *connect.Request[v1.CommitUsageRequest]) (*connect.Response[v1.CommitUsageResponse], error)
 	// Requires M2M delibase:usage:release and forwarded-user delibase:usage:execute.
 	ReleaseUsage(context.Context, *connect.Request[v1.ReleaseUsageRequest]) (*connect.Response[v1.ReleaseUsageResponse], error)
+	// M2M-only. Requires delibase:usage:reserve; revalidates current access and
+	// the per-period ceiling before creating a normal reservation. No forwarded
+	// user bearer is accepted or persisted.
+	ReserveAuthorizedUsage(context.Context, *connect.Request[v1.ReserveAuthorizedUsageRequest]) (*connect.Response[v1.ReserveAuthorizedUsageResponse], error)
+	// M2M-only. Requires delibase:usage:commit; the reservation must have the
+	// same authorization and authenticated service. No forwarded user bearer is
+	// accepted or persisted.
+	CommitAuthorizedUsage(context.Context, *connect.Request[v1.CommitAuthorizedUsageRequest]) (*connect.Response[v1.CommitAuthorizedUsageResponse], error)
+	// M2M-only. Requires delibase:usage:release; the reservation must have the
+	// same authorization and authenticated service. No forwarded user bearer is
+	// accepted or persisted.
+	ReleaseAuthorizedUsage(context.Context, *connect.Request[v1.ReleaseAuthorizedUsageRequest]) (*connect.Response[v1.ReleaseAuthorizedUsageResponse], error)
+	// M2M-only. Requires delibase:usage:release. The authenticated bound service
+	// idempotently transitions the matching grant to RESOURCE_DELETED before the
+	// external feature resource disappears.
+	MarkBackgroundUsageResourceDeleted(context.Context, *connect.Request[v1.MarkBackgroundUsageResourceDeletedRequest]) (*connect.Response[v1.MarkBackgroundUsageResourceDeletedResponse], error)
 }
 
 // NewUsageServiceClient constructs a client for the delibase.v1.UsageService service. By default,
@@ -83,14 +111,42 @@ func NewUsageServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(usageServiceMethods.ByName("ReleaseUsage")),
 			connect.WithClientOptions(opts...),
 		),
+		reserveAuthorizedUsage: connect.NewClient[v1.ReserveAuthorizedUsageRequest, v1.ReserveAuthorizedUsageResponse](
+			httpClient,
+			baseURL+UsageServiceReserveAuthorizedUsageProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("ReserveAuthorizedUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		commitAuthorizedUsage: connect.NewClient[v1.CommitAuthorizedUsageRequest, v1.CommitAuthorizedUsageResponse](
+			httpClient,
+			baseURL+UsageServiceCommitAuthorizedUsageProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("CommitAuthorizedUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		releaseAuthorizedUsage: connect.NewClient[v1.ReleaseAuthorizedUsageRequest, v1.ReleaseAuthorizedUsageResponse](
+			httpClient,
+			baseURL+UsageServiceReleaseAuthorizedUsageProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("ReleaseAuthorizedUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		markBackgroundUsageResourceDeleted: connect.NewClient[v1.MarkBackgroundUsageResourceDeletedRequest, v1.MarkBackgroundUsageResourceDeletedResponse](
+			httpClient,
+			baseURL+UsageServiceMarkBackgroundUsageResourceDeletedProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("MarkBackgroundUsageResourceDeleted")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // usageServiceClient implements UsageServiceClient.
 type usageServiceClient struct {
-	reserveUsage *connect.Client[v1.ReserveUsageRequest, v1.ReserveUsageResponse]
-	commitUsage  *connect.Client[v1.CommitUsageRequest, v1.CommitUsageResponse]
-	releaseUsage *connect.Client[v1.ReleaseUsageRequest, v1.ReleaseUsageResponse]
+	reserveUsage                       *connect.Client[v1.ReserveUsageRequest, v1.ReserveUsageResponse]
+	commitUsage                        *connect.Client[v1.CommitUsageRequest, v1.CommitUsageResponse]
+	releaseUsage                       *connect.Client[v1.ReleaseUsageRequest, v1.ReleaseUsageResponse]
+	reserveAuthorizedUsage             *connect.Client[v1.ReserveAuthorizedUsageRequest, v1.ReserveAuthorizedUsageResponse]
+	commitAuthorizedUsage              *connect.Client[v1.CommitAuthorizedUsageRequest, v1.CommitAuthorizedUsageResponse]
+	releaseAuthorizedUsage             *connect.Client[v1.ReleaseAuthorizedUsageRequest, v1.ReleaseAuthorizedUsageResponse]
+	markBackgroundUsageResourceDeleted *connect.Client[v1.MarkBackgroundUsageResourceDeletedRequest, v1.MarkBackgroundUsageResourceDeletedResponse]
 }
 
 // ReserveUsage calls delibase.v1.UsageService.ReserveUsage.
@@ -108,6 +164,27 @@ func (c *usageServiceClient) ReleaseUsage(ctx context.Context, req *connect.Requ
 	return c.releaseUsage.CallUnary(ctx, req)
 }
 
+// ReserveAuthorizedUsage calls delibase.v1.UsageService.ReserveAuthorizedUsage.
+func (c *usageServiceClient) ReserveAuthorizedUsage(ctx context.Context, req *connect.Request[v1.ReserveAuthorizedUsageRequest]) (*connect.Response[v1.ReserveAuthorizedUsageResponse], error) {
+	return c.reserveAuthorizedUsage.CallUnary(ctx, req)
+}
+
+// CommitAuthorizedUsage calls delibase.v1.UsageService.CommitAuthorizedUsage.
+func (c *usageServiceClient) CommitAuthorizedUsage(ctx context.Context, req *connect.Request[v1.CommitAuthorizedUsageRequest]) (*connect.Response[v1.CommitAuthorizedUsageResponse], error) {
+	return c.commitAuthorizedUsage.CallUnary(ctx, req)
+}
+
+// ReleaseAuthorizedUsage calls delibase.v1.UsageService.ReleaseAuthorizedUsage.
+func (c *usageServiceClient) ReleaseAuthorizedUsage(ctx context.Context, req *connect.Request[v1.ReleaseAuthorizedUsageRequest]) (*connect.Response[v1.ReleaseAuthorizedUsageResponse], error) {
+	return c.releaseAuthorizedUsage.CallUnary(ctx, req)
+}
+
+// MarkBackgroundUsageResourceDeleted calls
+// delibase.v1.UsageService.MarkBackgroundUsageResourceDeleted.
+func (c *usageServiceClient) MarkBackgroundUsageResourceDeleted(ctx context.Context, req *connect.Request[v1.MarkBackgroundUsageResourceDeletedRequest]) (*connect.Response[v1.MarkBackgroundUsageResourceDeletedResponse], error) {
+	return c.markBackgroundUsageResourceDeleted.CallUnary(ctx, req)
+}
+
 // UsageServiceHandler is an implementation of the delibase.v1.UsageService service.
 type UsageServiceHandler interface {
 	// Requires M2M delibase:usage:reserve and forwarded-user delibase:usage:execute.
@@ -116,6 +193,22 @@ type UsageServiceHandler interface {
 	CommitUsage(context.Context, *connect.Request[v1.CommitUsageRequest]) (*connect.Response[v1.CommitUsageResponse], error)
 	// Requires M2M delibase:usage:release and forwarded-user delibase:usage:execute.
 	ReleaseUsage(context.Context, *connect.Request[v1.ReleaseUsageRequest]) (*connect.Response[v1.ReleaseUsageResponse], error)
+	// M2M-only. Requires delibase:usage:reserve; revalidates current access and
+	// the per-period ceiling before creating a normal reservation. No forwarded
+	// user bearer is accepted or persisted.
+	ReserveAuthorizedUsage(context.Context, *connect.Request[v1.ReserveAuthorizedUsageRequest]) (*connect.Response[v1.ReserveAuthorizedUsageResponse], error)
+	// M2M-only. Requires delibase:usage:commit; the reservation must have the
+	// same authorization and authenticated service. No forwarded user bearer is
+	// accepted or persisted.
+	CommitAuthorizedUsage(context.Context, *connect.Request[v1.CommitAuthorizedUsageRequest]) (*connect.Response[v1.CommitAuthorizedUsageResponse], error)
+	// M2M-only. Requires delibase:usage:release; the reservation must have the
+	// same authorization and authenticated service. No forwarded user bearer is
+	// accepted or persisted.
+	ReleaseAuthorizedUsage(context.Context, *connect.Request[v1.ReleaseAuthorizedUsageRequest]) (*connect.Response[v1.ReleaseAuthorizedUsageResponse], error)
+	// M2M-only. Requires delibase:usage:release. The authenticated bound service
+	// idempotently transitions the matching grant to RESOURCE_DELETED before the
+	// external feature resource disappears.
+	MarkBackgroundUsageResourceDeleted(context.Context, *connect.Request[v1.MarkBackgroundUsageResourceDeletedRequest]) (*connect.Response[v1.MarkBackgroundUsageResourceDeletedResponse], error)
 }
 
 // NewUsageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -143,6 +236,30 @@ func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(usageServiceMethods.ByName("ReleaseUsage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	usageServiceReserveAuthorizedUsageHandler := connect.NewUnaryHandler(
+		UsageServiceReserveAuthorizedUsageProcedure,
+		svc.ReserveAuthorizedUsage,
+		connect.WithSchema(usageServiceMethods.ByName("ReserveAuthorizedUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceCommitAuthorizedUsageHandler := connect.NewUnaryHandler(
+		UsageServiceCommitAuthorizedUsageProcedure,
+		svc.CommitAuthorizedUsage,
+		connect.WithSchema(usageServiceMethods.ByName("CommitAuthorizedUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceReleaseAuthorizedUsageHandler := connect.NewUnaryHandler(
+		UsageServiceReleaseAuthorizedUsageProcedure,
+		svc.ReleaseAuthorizedUsage,
+		connect.WithSchema(usageServiceMethods.ByName("ReleaseAuthorizedUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceMarkBackgroundUsageResourceDeletedHandler := connect.NewUnaryHandler(
+		UsageServiceMarkBackgroundUsageResourceDeletedProcedure,
+		svc.MarkBackgroundUsageResourceDeleted,
+		connect.WithSchema(usageServiceMethods.ByName("MarkBackgroundUsageResourceDeleted")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delibase.v1.UsageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UsageServiceReserveUsageProcedure:
@@ -151,6 +268,14 @@ func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOpti
 			usageServiceCommitUsageHandler.ServeHTTP(w, r)
 		case UsageServiceReleaseUsageProcedure:
 			usageServiceReleaseUsageHandler.ServeHTTP(w, r)
+		case UsageServiceReserveAuthorizedUsageProcedure:
+			usageServiceReserveAuthorizedUsageHandler.ServeHTTP(w, r)
+		case UsageServiceCommitAuthorizedUsageProcedure:
+			usageServiceCommitAuthorizedUsageHandler.ServeHTTP(w, r)
+		case UsageServiceReleaseAuthorizedUsageProcedure:
+			usageServiceReleaseAuthorizedUsageHandler.ServeHTTP(w, r)
+		case UsageServiceMarkBackgroundUsageResourceDeletedProcedure:
+			usageServiceMarkBackgroundUsageResourceDeletedHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -170,4 +295,20 @@ func (UnimplementedUsageServiceHandler) CommitUsage(context.Context, *connect.Re
 
 func (UnimplementedUsageServiceHandler) ReleaseUsage(context.Context, *connect.Request[v1.ReleaseUsageRequest]) (*connect.Response[v1.ReleaseUsageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.UsageService.ReleaseUsage is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) ReserveAuthorizedUsage(context.Context, *connect.Request[v1.ReserveAuthorizedUsageRequest]) (*connect.Response[v1.ReserveAuthorizedUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.UsageService.ReserveAuthorizedUsage is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) CommitAuthorizedUsage(context.Context, *connect.Request[v1.CommitAuthorizedUsageRequest]) (*connect.Response[v1.CommitAuthorizedUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.UsageService.CommitAuthorizedUsage is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) ReleaseAuthorizedUsage(context.Context, *connect.Request[v1.ReleaseAuthorizedUsageRequest]) (*connect.Response[v1.ReleaseAuthorizedUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.UsageService.ReleaseAuthorizedUsage is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) MarkBackgroundUsageResourceDeleted(context.Context, *connect.Request[v1.MarkBackgroundUsageResourceDeletedRequest]) (*connect.Response[v1.MarkBackgroundUsageResourceDeletedResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.UsageService.MarkBackgroundUsageResourceDeleted is not implemented"))
 }

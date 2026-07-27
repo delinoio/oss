@@ -59,6 +59,34 @@ message UsageRecord {
   string client_reference = 15;
   UsageRecordStatus status = 16;
   google.protobuf.Timestamp committed_at = 17;
+  AuthorizedUsageContext authorized_usage = 18;
+}
+
+// BackgroundUsageAuthorization is a durable, bounded grant created by a human
+// user. It contains identifiers and limits only: user bearers, refresh tokens,
+// client secrets, provider credentials, and user content are forbidden.
+message BackgroundUsageAuthorization {
+  UuidV7 authorization_id = 1;
+  UuidV7 authorizer_account_id = 2;
+  BackgroundUsageOwner owner = 3;
+  UuidV7 organization_id = 4;
+  UuidV7 team_id = 5;
+  UuidV7 service_identity_id = 6;
+  UuidV7 meter_id = 7;
+  BackgroundUsagePurpose purpose = 8;
+  UuidV7 feature_resource_id = 9;
+  BackgroundUsagePeriod period = 10;
+  UsageUnits maximum_units = 11;
+  BackgroundUsageAuthorizationStatus status = 12;
+  int64 revision = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+  google.protobuf.Timestamp revoked_at = 16;
+}
+
+message BackgroundUsageAuthorizationView {
+  BackgroundUsageAuthorization authorization = 1;
+  BackgroundUsagePeriodUsage current_period_usage = 2;
 }
 
 message GetBillingSummaryRequest {
@@ -133,6 +161,60 @@ message ListUsageRecordsResponse {
   PageResponse page = 2;
 }
 
+message CreateBackgroundUsageAuthorizationRequest {
+  BackgroundUsageOwner owner = 1;
+  UuidV7 organization_id = 2;
+  UuidV7 team_id = 3;
+  UuidV7 service_identity_id = 4;
+  UuidV7 meter_id = 5;
+  BackgroundUsagePurpose purpose = 6;
+  UuidV7 feature_resource_id = 7;
+  BackgroundUsagePeriod period = 8;
+  UsageUnits maximum_units = 9;
+  IdempotencyKey idempotency = 10;
+}
+
+message CreateBackgroundUsageAuthorizationResponse {
+  BackgroundUsageAuthorizationView authorization = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message GetBackgroundUsageAuthorizationRequest {
+  UuidV7 authorization_id = 1;
+}
+
+message GetBackgroundUsageAuthorizationResponse {
+  BackgroundUsageAuthorizationView authorization = 1;
+}
+
+message ListBackgroundUsageAuthorizationsRequest {
+  BackgroundUsageOwner owner = 1;
+  UuidV7 organization_id = 2;
+  UuidV7 team_id = 3;
+  UuidV7 service_identity_id = 4;
+  UuidV7 meter_id = 5;
+  BackgroundUsagePurpose purpose = 6;
+  UuidV7 feature_resource_id = 7;
+  BackgroundUsageAuthorizationStatus status = 8;
+  PageRequest page = 9;
+}
+
+message ListBackgroundUsageAuthorizationsResponse {
+  repeated BackgroundUsageAuthorizationView authorizations = 1;
+  PageResponse page = 2;
+}
+
+message RevokeBackgroundUsageAuthorizationRequest {
+  UuidV7 authorization_id = 1;
+  int64 expected_revision = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message RevokeBackgroundUsageAuthorizationResponse {
+  BackgroundUsageAuthorizationView authorization = 1;
+  IdempotencyResult idempotency = 2;
+}
+
 // BillingService requires a Logto user token on every RPC. Delibase enforces
 // role-specific visibility: Members cannot access invoices, the full ledger,
 // subscription controls, or overage controls.
@@ -149,4 +231,12 @@ service BillingService {
   rpc ListLedgerEntries(ListLedgerEntriesRequest) returns (ListLedgerEntriesResponse);
   // Requires delibase:billing:read. Members are limited to personal and effectively accessible team usage.
   rpc ListUsageRecords(ListUsageRecordsRequest) returns (ListUsageRecordsResponse);
+  // Requires delibase:billing:write. Any member may bind their own resource to an accessible team.
+  rpc CreateBackgroundUsageAuthorization(CreateBackgroundUsageAuthorizationRequest) returns (CreateBackgroundUsageAuthorizationResponse);
+  // Requires delibase:billing:read and authorization visibility.
+  rpc GetBackgroundUsageAuthorization(GetBackgroundUsageAuthorizationRequest) returns (GetBackgroundUsageAuthorizationResponse);
+  // Requires delibase:billing:read. Owners/Admins see their organization; Members see only grants they created.
+  rpc ListBackgroundUsageAuthorizations(ListBackgroundUsageAuthorizationsRequest) returns (ListBackgroundUsageAuthorizationsResponse);
+  // Requires delibase:billing:write. Owners/Admins may revoke organization grants; Members may revoke their own.
+  rpc RevokeBackgroundUsageAuthorization(RevokeBackgroundUsageAuthorizationRequest) returns (RevokeBackgroundUsageAuthorizationResponse);
 }

@@ -51,6 +51,18 @@ const (
 	// BillingServiceListUsageRecordsProcedure is the fully-qualified name of the BillingService's
 	// ListUsageRecords RPC.
 	BillingServiceListUsageRecordsProcedure = "/delibase.v1.BillingService/ListUsageRecords"
+	// BillingServiceCreateBackgroundUsageAuthorizationProcedure is the fully-qualified name of the
+	// BillingService's CreateBackgroundUsageAuthorization RPC.
+	BillingServiceCreateBackgroundUsageAuthorizationProcedure = "/delibase.v1.BillingService/CreateBackgroundUsageAuthorization"
+	// BillingServiceGetBackgroundUsageAuthorizationProcedure is the fully-qualified name of the
+	// BillingService's GetBackgroundUsageAuthorization RPC.
+	BillingServiceGetBackgroundUsageAuthorizationProcedure = "/delibase.v1.BillingService/GetBackgroundUsageAuthorization"
+	// BillingServiceListBackgroundUsageAuthorizationsProcedure is the fully-qualified name of the
+	// BillingService's ListBackgroundUsageAuthorizations RPC.
+	BillingServiceListBackgroundUsageAuthorizationsProcedure = "/delibase.v1.BillingService/ListBackgroundUsageAuthorizations"
+	// BillingServiceRevokeBackgroundUsageAuthorizationProcedure is the fully-qualified name of the
+	// BillingService's RevokeBackgroundUsageAuthorization RPC.
+	BillingServiceRevokeBackgroundUsageAuthorizationProcedure = "/delibase.v1.BillingService/RevokeBackgroundUsageAuthorization"
 )
 
 // BillingServiceClient is a client for the delibase.v1.BillingService service.
@@ -67,6 +79,14 @@ type BillingServiceClient interface {
 	ListLedgerEntries(context.Context, *connect.Request[v1.ListLedgerEntriesRequest]) (*connect.Response[v1.ListLedgerEntriesResponse], error)
 	// Requires delibase:billing:read. Members are limited to personal and effectively accessible team usage.
 	ListUsageRecords(context.Context, *connect.Request[v1.ListUsageRecordsRequest]) (*connect.Response[v1.ListUsageRecordsResponse], error)
+	// Requires delibase:billing:write. Any member may bind their own resource to an accessible team.
+	CreateBackgroundUsageAuthorization(context.Context, *connect.Request[v1.CreateBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.CreateBackgroundUsageAuthorizationResponse], error)
+	// Requires delibase:billing:read and authorization visibility.
+	GetBackgroundUsageAuthorization(context.Context, *connect.Request[v1.GetBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.GetBackgroundUsageAuthorizationResponse], error)
+	// Requires delibase:billing:read. Owners/Admins see their organization; Members see only grants they created.
+	ListBackgroundUsageAuthorizations(context.Context, *connect.Request[v1.ListBackgroundUsageAuthorizationsRequest]) (*connect.Response[v1.ListBackgroundUsageAuthorizationsResponse], error)
+	// Requires delibase:billing:write. Owners/Admins may revoke organization grants; Members may revoke their own.
+	RevokeBackgroundUsageAuthorization(context.Context, *connect.Request[v1.RevokeBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.RevokeBackgroundUsageAuthorizationResponse], error)
 }
 
 // NewBillingServiceClient constructs a client for the delibase.v1.BillingService service. By
@@ -116,17 +136,45 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("ListUsageRecords")),
 			connect.WithClientOptions(opts...),
 		),
+		createBackgroundUsageAuthorization: connect.NewClient[v1.CreateBackgroundUsageAuthorizationRequest, v1.CreateBackgroundUsageAuthorizationResponse](
+			httpClient,
+			baseURL+BillingServiceCreateBackgroundUsageAuthorizationProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("CreateBackgroundUsageAuthorization")),
+			connect.WithClientOptions(opts...),
+		),
+		getBackgroundUsageAuthorization: connect.NewClient[v1.GetBackgroundUsageAuthorizationRequest, v1.GetBackgroundUsageAuthorizationResponse](
+			httpClient,
+			baseURL+BillingServiceGetBackgroundUsageAuthorizationProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("GetBackgroundUsageAuthorization")),
+			connect.WithClientOptions(opts...),
+		),
+		listBackgroundUsageAuthorizations: connect.NewClient[v1.ListBackgroundUsageAuthorizationsRequest, v1.ListBackgroundUsageAuthorizationsResponse](
+			httpClient,
+			baseURL+BillingServiceListBackgroundUsageAuthorizationsProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("ListBackgroundUsageAuthorizations")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeBackgroundUsageAuthorization: connect.NewClient[v1.RevokeBackgroundUsageAuthorizationRequest, v1.RevokeBackgroundUsageAuthorizationResponse](
+			httpClient,
+			baseURL+BillingServiceRevokeBackgroundUsageAuthorizationProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("RevokeBackgroundUsageAuthorization")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // billingServiceClient implements BillingServiceClient.
 type billingServiceClient struct {
-	getBillingSummary          *connect.Client[v1.GetBillingSummaryRequest, v1.GetBillingSummaryResponse]
-	createSubscriptionCheckout *connect.Client[v1.CreateSubscriptionCheckoutRequest, v1.CreateSubscriptionCheckoutResponse]
-	createBillingPortalSession *connect.Client[v1.CreateBillingPortalSessionRequest, v1.CreateBillingPortalSessionResponse]
-	updateOverageLimit         *connect.Client[v1.UpdateOverageLimitRequest, v1.UpdateOverageLimitResponse]
-	listLedgerEntries          *connect.Client[v1.ListLedgerEntriesRequest, v1.ListLedgerEntriesResponse]
-	listUsageRecords           *connect.Client[v1.ListUsageRecordsRequest, v1.ListUsageRecordsResponse]
+	getBillingSummary                  *connect.Client[v1.GetBillingSummaryRequest, v1.GetBillingSummaryResponse]
+	createSubscriptionCheckout         *connect.Client[v1.CreateSubscriptionCheckoutRequest, v1.CreateSubscriptionCheckoutResponse]
+	createBillingPortalSession         *connect.Client[v1.CreateBillingPortalSessionRequest, v1.CreateBillingPortalSessionResponse]
+	updateOverageLimit                 *connect.Client[v1.UpdateOverageLimitRequest, v1.UpdateOverageLimitResponse]
+	listLedgerEntries                  *connect.Client[v1.ListLedgerEntriesRequest, v1.ListLedgerEntriesResponse]
+	listUsageRecords                   *connect.Client[v1.ListUsageRecordsRequest, v1.ListUsageRecordsResponse]
+	createBackgroundUsageAuthorization *connect.Client[v1.CreateBackgroundUsageAuthorizationRequest, v1.CreateBackgroundUsageAuthorizationResponse]
+	getBackgroundUsageAuthorization    *connect.Client[v1.GetBackgroundUsageAuthorizationRequest, v1.GetBackgroundUsageAuthorizationResponse]
+	listBackgroundUsageAuthorizations  *connect.Client[v1.ListBackgroundUsageAuthorizationsRequest, v1.ListBackgroundUsageAuthorizationsResponse]
+	revokeBackgroundUsageAuthorization *connect.Client[v1.RevokeBackgroundUsageAuthorizationRequest, v1.RevokeBackgroundUsageAuthorizationResponse]
 }
 
 // GetBillingSummary calls delibase.v1.BillingService.GetBillingSummary.
@@ -159,6 +207,29 @@ func (c *billingServiceClient) ListUsageRecords(ctx context.Context, req *connec
 	return c.listUsageRecords.CallUnary(ctx, req)
 }
 
+// CreateBackgroundUsageAuthorization calls
+// delibase.v1.BillingService.CreateBackgroundUsageAuthorization.
+func (c *billingServiceClient) CreateBackgroundUsageAuthorization(ctx context.Context, req *connect.Request[v1.CreateBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.CreateBackgroundUsageAuthorizationResponse], error) {
+	return c.createBackgroundUsageAuthorization.CallUnary(ctx, req)
+}
+
+// GetBackgroundUsageAuthorization calls delibase.v1.BillingService.GetBackgroundUsageAuthorization.
+func (c *billingServiceClient) GetBackgroundUsageAuthorization(ctx context.Context, req *connect.Request[v1.GetBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.GetBackgroundUsageAuthorizationResponse], error) {
+	return c.getBackgroundUsageAuthorization.CallUnary(ctx, req)
+}
+
+// ListBackgroundUsageAuthorizations calls
+// delibase.v1.BillingService.ListBackgroundUsageAuthorizations.
+func (c *billingServiceClient) ListBackgroundUsageAuthorizations(ctx context.Context, req *connect.Request[v1.ListBackgroundUsageAuthorizationsRequest]) (*connect.Response[v1.ListBackgroundUsageAuthorizationsResponse], error) {
+	return c.listBackgroundUsageAuthorizations.CallUnary(ctx, req)
+}
+
+// RevokeBackgroundUsageAuthorization calls
+// delibase.v1.BillingService.RevokeBackgroundUsageAuthorization.
+func (c *billingServiceClient) RevokeBackgroundUsageAuthorization(ctx context.Context, req *connect.Request[v1.RevokeBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.RevokeBackgroundUsageAuthorizationResponse], error) {
+	return c.revokeBackgroundUsageAuthorization.CallUnary(ctx, req)
+}
+
 // BillingServiceHandler is an implementation of the delibase.v1.BillingService service.
 type BillingServiceHandler interface {
 	// Requires delibase:billing:read.
@@ -173,6 +244,14 @@ type BillingServiceHandler interface {
 	ListLedgerEntries(context.Context, *connect.Request[v1.ListLedgerEntriesRequest]) (*connect.Response[v1.ListLedgerEntriesResponse], error)
 	// Requires delibase:billing:read. Members are limited to personal and effectively accessible team usage.
 	ListUsageRecords(context.Context, *connect.Request[v1.ListUsageRecordsRequest]) (*connect.Response[v1.ListUsageRecordsResponse], error)
+	// Requires delibase:billing:write. Any member may bind their own resource to an accessible team.
+	CreateBackgroundUsageAuthorization(context.Context, *connect.Request[v1.CreateBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.CreateBackgroundUsageAuthorizationResponse], error)
+	// Requires delibase:billing:read and authorization visibility.
+	GetBackgroundUsageAuthorization(context.Context, *connect.Request[v1.GetBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.GetBackgroundUsageAuthorizationResponse], error)
+	// Requires delibase:billing:read. Owners/Admins see their organization; Members see only grants they created.
+	ListBackgroundUsageAuthorizations(context.Context, *connect.Request[v1.ListBackgroundUsageAuthorizationsRequest]) (*connect.Response[v1.ListBackgroundUsageAuthorizationsResponse], error)
+	// Requires delibase:billing:write. Owners/Admins may revoke organization grants; Members may revoke their own.
+	RevokeBackgroundUsageAuthorization(context.Context, *connect.Request[v1.RevokeBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.RevokeBackgroundUsageAuthorizationResponse], error)
 }
 
 // NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -218,6 +297,30 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("ListUsageRecords")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServiceCreateBackgroundUsageAuthorizationHandler := connect.NewUnaryHandler(
+		BillingServiceCreateBackgroundUsageAuthorizationProcedure,
+		svc.CreateBackgroundUsageAuthorization,
+		connect.WithSchema(billingServiceMethods.ByName("CreateBackgroundUsageAuthorization")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceGetBackgroundUsageAuthorizationHandler := connect.NewUnaryHandler(
+		BillingServiceGetBackgroundUsageAuthorizationProcedure,
+		svc.GetBackgroundUsageAuthorization,
+		connect.WithSchema(billingServiceMethods.ByName("GetBackgroundUsageAuthorization")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceListBackgroundUsageAuthorizationsHandler := connect.NewUnaryHandler(
+		BillingServiceListBackgroundUsageAuthorizationsProcedure,
+		svc.ListBackgroundUsageAuthorizations,
+		connect.WithSchema(billingServiceMethods.ByName("ListBackgroundUsageAuthorizations")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceRevokeBackgroundUsageAuthorizationHandler := connect.NewUnaryHandler(
+		BillingServiceRevokeBackgroundUsageAuthorizationProcedure,
+		svc.RevokeBackgroundUsageAuthorization,
+		connect.WithSchema(billingServiceMethods.ByName("RevokeBackgroundUsageAuthorization")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delibase.v1.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BillingServiceGetBillingSummaryProcedure:
@@ -232,6 +335,14 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 			billingServiceListLedgerEntriesHandler.ServeHTTP(w, r)
 		case BillingServiceListUsageRecordsProcedure:
 			billingServiceListUsageRecordsHandler.ServeHTTP(w, r)
+		case BillingServiceCreateBackgroundUsageAuthorizationProcedure:
+			billingServiceCreateBackgroundUsageAuthorizationHandler.ServeHTTP(w, r)
+		case BillingServiceGetBackgroundUsageAuthorizationProcedure:
+			billingServiceGetBackgroundUsageAuthorizationHandler.ServeHTTP(w, r)
+		case BillingServiceListBackgroundUsageAuthorizationsProcedure:
+			billingServiceListBackgroundUsageAuthorizationsHandler.ServeHTTP(w, r)
+		case BillingServiceRevokeBackgroundUsageAuthorizationProcedure:
+			billingServiceRevokeBackgroundUsageAuthorizationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -263,4 +374,20 @@ func (UnimplementedBillingServiceHandler) ListLedgerEntries(context.Context, *co
 
 func (UnimplementedBillingServiceHandler) ListUsageRecords(context.Context, *connect.Request[v1.ListUsageRecordsRequest]) (*connect.Response[v1.ListUsageRecordsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.BillingService.ListUsageRecords is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) CreateBackgroundUsageAuthorization(context.Context, *connect.Request[v1.CreateBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.CreateBackgroundUsageAuthorizationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.BillingService.CreateBackgroundUsageAuthorization is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) GetBackgroundUsageAuthorization(context.Context, *connect.Request[v1.GetBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.GetBackgroundUsageAuthorizationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.BillingService.GetBackgroundUsageAuthorization is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) ListBackgroundUsageAuthorizations(context.Context, *connect.Request[v1.ListBackgroundUsageAuthorizationsRequest]) (*connect.Response[v1.ListBackgroundUsageAuthorizationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.BillingService.ListBackgroundUsageAuthorizations is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) RevokeBackgroundUsageAuthorization(context.Context, *connect.Request[v1.RevokeBackgroundUsageAuthorizationRequest]) (*connect.Response[v1.RevokeBackgroundUsageAuthorizationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delibase.v1.BillingService.RevokeBackgroundUsageAuthorization is not implemented"))
 }

@@ -73,6 +73,12 @@ enum IdempotentOperation {
   IDEMPOTENT_OPERATION_RESERVE_USAGE = 22;
   IDEMPOTENT_OPERATION_COMMIT_USAGE = 23;
   IDEMPOTENT_OPERATION_RELEASE_USAGE = 24;
+  IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION = 25;
+  IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION = 26;
+  IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE = 27;
+  IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE = 28;
+  IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE = 29;
+  IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED = 30;
 }
 
 enum AccountStatus {
@@ -169,6 +175,29 @@ enum UsageRecordStatus {
   USAGE_RECORD_STATUS_POLAR_REPORTED = 3;
 }
 
+// BackgroundUsagePurpose is closed for v1. RealQA screenshot storage is the
+// only allowed purpose; Deck is intentionally not represented.
+enum BackgroundUsagePurpose {
+  BACKGROUND_USAGE_PURPOSE_UNSPECIFIED = 0;
+  BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE = 1;
+}
+
+enum BackgroundUsageAuthorizationStatus {
+  BACKGROUND_USAGE_AUTHORIZATION_STATUS_UNSPECIFIED = 0;
+  BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACTIVE = 1;
+  BACKGROUND_USAGE_AUTHORIZATION_STATUS_REVOKED = 2;
+  BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACCESS_LOST = 3;
+  BACKGROUND_USAGE_AUTHORIZATION_STATUS_RESOURCE_DELETED = 4;
+  BACKGROUND_USAGE_AUTHORIZATION_STATUS_OWNER_DELETED = 5;
+}
+
+// BackgroundUsagePeriod is closed for v1. UTC_DAY starts at 00:00:00 UTC and
+// ends at the following UTC midnight.
+enum BackgroundUsagePeriod {
+  BACKGROUND_USAGE_PERIOD_UNSPECIFIED = 0;
+  BACKGROUND_USAGE_PERIOD_UTC_DAY = 1;
+}
+
 enum DeletionStatus {
   DELETION_STATUS_UNSPECIFIED = 0;
   DELETION_STATUS_ACCEPTED = 1;
@@ -261,6 +290,50 @@ enum ErrorReason {
   ERROR_REASON_IDEMPOTENCY_KEY_REQUIRED = 160;
   ERROR_REASON_IDEMPOTENCY_CONFLICT = 161;
   ERROR_REASON_IDEMPOTENCY_OPERATION_MISMATCH = 162;
+
+  // Bounded background-usage authorization failures.
+  ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION = 180;
+  ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST = 181;
+  ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID = 182;
+  ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED = 183;
+  ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT = 184;
+}
+
+// BackgroundUsageOwner binds a feature resource to exactly one personal
+// account or organization owner. The referenced UUID uses the persisted UUID
+// v7 representation.
+message BackgroundUsageOwner {
+  oneof owner {
+    UuidV7 personal_account_id = 1;
+    UuidV7 organization_id = 2;
+  }
+}
+
+// AuthorizedUsageContext repeats the authorization-bound values that an M2M
+// request may not substitute. period_start must be the canonical UTC midnight
+// for a UTC_DAY period. Reserve accepts only the current or immediately
+// preceding UTC day according to server time, so a caller cannot create
+// arbitrary past or future quota buckets. Commit and release use the period
+// stored with the reservation. The authenticated service identity is
+// intentionally not caller supplied and is added to the server-side digest.
+message AuthorizedUsageContext {
+  UuidV7 authorization_id = 1;
+  BackgroundUsagePurpose purpose = 2;
+  UuidV7 feature_resource_id = 3;
+  BackgroundUsagePeriod period = 4;
+  google.protobuf.Timestamp period_start = 5;
+}
+
+// BackgroundUsagePeriodUsage is an authoritative summary for one authorization
+// and UTC period. held_units plus committed_units count against maximum_units.
+message BackgroundUsagePeriodUsage {
+  AuthorizedUsageContext context = 1;
+  UsageUnits maximum_units = 2;
+  UsageUnits held_units = 3;
+  UsageUnits committed_units = 4;
+  UsageUnits remaining_units = 5;
+  google.protobuf.Timestamp period_end = 6;
+  google.protobuf.Timestamp updated_at = 7;
 }
 
 enum DeletionBlockerKind {

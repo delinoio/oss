@@ -182,25 +182,81 @@ func (x *CatalogPrice) GetEffectiveUntil() *timestamppb.Timestamp {
 	return nil
 }
 
+// CatalogAuthorizationTarget is a public, stable target that a human client
+// can bind to a background-usage authorization. It never exposes the backing
+// Logto client identifier or credentials.
+type CatalogAuthorizationTarget struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ServiceIdentityId *UuidV7                `protobuf:"bytes,1,opt,name=service_identity_id,json=serviceIdentityId,proto3" json:"service_identity_id,omitempty"`
+	Name              string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *CatalogAuthorizationTarget) Reset() {
+	*x = CatalogAuthorizationTarget{}
+	mi := &file_delibase_v1_catalog_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CatalogAuthorizationTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CatalogAuthorizationTarget) ProtoMessage() {}
+
+func (x *CatalogAuthorizationTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_catalog_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CatalogAuthorizationTarget.ProtoReflect.Descriptor instead.
+func (*CatalogAuthorizationTarget) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CatalogAuthorizationTarget) GetServiceIdentityId() *UuidV7 {
+	if x != nil {
+		return x.ServiceIdentityId
+	}
+	return nil
+}
+
+func (x *CatalogAuthorizationTarget) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 type CatalogMeter struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	MeterId               *UuidV7                `protobuf:"bytes,1,opt,name=meter_id,json=meterId,proto3" json:"meter_id,omitempty"`
-	AppId                 *UuidV7                `protobuf:"bytes,2,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Key                   string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
-	Name                  string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
-	Description           string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
-	UnitName              string                 `protobuf:"bytes,6,opt,name=unit_name,json=unitName,proto3" json:"unit_name,omitempty"`
-	UnitPrecision         int32                  `protobuf:"varint,7,opt,name=unit_precision,json=unitPrecision,proto3" json:"unit_precision,omitempty"`
-	ReservationTtlSeconds int64                  `protobuf:"varint,8,opt,name=reservation_ttl_seconds,json=reservationTtlSeconds,proto3" json:"reservation_ttl_seconds,omitempty"`
-	CurrentPrice          *CatalogPrice          `protobuf:"bytes,9,opt,name=current_price,json=currentPrice,proto3" json:"current_price,omitempty"`
-	Enabled               bool                   `protobuf:"varint,10,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	state                 protoimpl.MessageState        `protogen:"open.v1"`
+	MeterId               *UuidV7                       `protobuf:"bytes,1,opt,name=meter_id,json=meterId,proto3" json:"meter_id,omitempty"`
+	AppId                 *UuidV7                       `protobuf:"bytes,2,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	Key                   string                        `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	Name                  string                        `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	Description           string                        `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	UnitName              string                        `protobuf:"bytes,6,opt,name=unit_name,json=unitName,proto3" json:"unit_name,omitempty"`
+	UnitPrecision         int32                         `protobuf:"varint,7,opt,name=unit_precision,json=unitPrecision,proto3" json:"unit_precision,omitempty"`
+	ReservationTtlSeconds int64                         `protobuf:"varint,8,opt,name=reservation_ttl_seconds,json=reservationTtlSeconds,proto3" json:"reservation_ttl_seconds,omitempty"`
+	CurrentPrice          *CatalogPrice                 `protobuf:"bytes,9,opt,name=current_price,json=currentPrice,proto3" json:"current_price,omitempty"`
+	Enabled               bool                          `protobuf:"varint,10,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	AuthorizationTargets  []*CatalogAuthorizationTarget `protobuf:"bytes,11,rep,name=authorization_targets,json=authorizationTargets,proto3" json:"authorization_targets,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
 
 func (x *CatalogMeter) Reset() {
 	*x = CatalogMeter{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[2]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -212,7 +268,7 @@ func (x *CatalogMeter) String() string {
 func (*CatalogMeter) ProtoMessage() {}
 
 func (x *CatalogMeter) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[2]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -225,7 +281,7 @@ func (x *CatalogMeter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CatalogMeter.ProtoReflect.Descriptor instead.
 func (*CatalogMeter) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{2}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CatalogMeter) GetMeterId() *UuidV7 {
@@ -298,6 +354,13 @@ func (x *CatalogMeter) GetEnabled() bool {
 	return false
 }
 
+func (x *CatalogMeter) GetAuthorizationTargets() []*CatalogAuthorizationTarget {
+	if x != nil {
+		return x.AuthorizationTargets
+	}
+	return nil
+}
+
 type ListCatalogAppsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Page          *PageRequest           `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
@@ -307,7 +370,7 @@ type ListCatalogAppsRequest struct {
 
 func (x *ListCatalogAppsRequest) Reset() {
 	*x = ListCatalogAppsRequest{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[3]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -319,7 +382,7 @@ func (x *ListCatalogAppsRequest) String() string {
 func (*ListCatalogAppsRequest) ProtoMessage() {}
 
 func (x *ListCatalogAppsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[3]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -332,7 +395,7 @@ func (x *ListCatalogAppsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCatalogAppsRequest.ProtoReflect.Descriptor instead.
 func (*ListCatalogAppsRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{3}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListCatalogAppsRequest) GetPage() *PageRequest {
@@ -352,7 +415,7 @@ type ListCatalogAppsResponse struct {
 
 func (x *ListCatalogAppsResponse) Reset() {
 	*x = ListCatalogAppsResponse{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[4]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -364,7 +427,7 @@ func (x *ListCatalogAppsResponse) String() string {
 func (*ListCatalogAppsResponse) ProtoMessage() {}
 
 func (x *ListCatalogAppsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[4]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -377,7 +440,7 @@ func (x *ListCatalogAppsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCatalogAppsResponse.ProtoReflect.Descriptor instead.
 func (*ListCatalogAppsResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{4}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListCatalogAppsResponse) GetApps() []*CatalogApp {
@@ -403,7 +466,7 @@ type GetCatalogAppRequest struct {
 
 func (x *GetCatalogAppRequest) Reset() {
 	*x = GetCatalogAppRequest{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[5]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -415,7 +478,7 @@ func (x *GetCatalogAppRequest) String() string {
 func (*GetCatalogAppRequest) ProtoMessage() {}
 
 func (x *GetCatalogAppRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[5]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -428,7 +491,7 @@ func (x *GetCatalogAppRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCatalogAppRequest.ProtoReflect.Descriptor instead.
 func (*GetCatalogAppRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{5}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetCatalogAppRequest) GetAppSlug() string {
@@ -448,7 +511,7 @@ type GetCatalogAppResponse struct {
 
 func (x *GetCatalogAppResponse) Reset() {
 	*x = GetCatalogAppResponse{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[6]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -460,7 +523,7 @@ func (x *GetCatalogAppResponse) String() string {
 func (*GetCatalogAppResponse) ProtoMessage() {}
 
 func (x *GetCatalogAppResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[6]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -473,7 +536,7 @@ func (x *GetCatalogAppResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCatalogAppResponse.ProtoReflect.Descriptor instead.
 func (*GetCatalogAppResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{6}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetCatalogAppResponse) GetApp() *CatalogApp {
@@ -500,7 +563,7 @@ type ListCatalogMetersRequest struct {
 
 func (x *ListCatalogMetersRequest) Reset() {
 	*x = ListCatalogMetersRequest{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[7]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -512,7 +575,7 @@ func (x *ListCatalogMetersRequest) String() string {
 func (*ListCatalogMetersRequest) ProtoMessage() {}
 
 func (x *ListCatalogMetersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[7]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -525,7 +588,7 @@ func (x *ListCatalogMetersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCatalogMetersRequest.ProtoReflect.Descriptor instead.
 func (*ListCatalogMetersRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{7}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListCatalogMetersRequest) GetAppId() *UuidV7 {
@@ -552,7 +615,7 @@ type ListCatalogMetersResponse struct {
 
 func (x *ListCatalogMetersResponse) Reset() {
 	*x = ListCatalogMetersResponse{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[8]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -564,7 +627,7 @@ func (x *ListCatalogMetersResponse) String() string {
 func (*ListCatalogMetersResponse) ProtoMessage() {}
 
 func (x *ListCatalogMetersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[8]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -577,7 +640,7 @@ func (x *ListCatalogMetersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCatalogMetersResponse.ProtoReflect.Descriptor instead.
 func (*ListCatalogMetersResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{8}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListCatalogMetersResponse) GetMeters() []*CatalogMeter {
@@ -603,7 +666,7 @@ type GetCatalogMeterRequest struct {
 
 func (x *GetCatalogMeterRequest) Reset() {
 	*x = GetCatalogMeterRequest{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[9]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -615,7 +678,7 @@ func (x *GetCatalogMeterRequest) String() string {
 func (*GetCatalogMeterRequest) ProtoMessage() {}
 
 func (x *GetCatalogMeterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[9]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -628,7 +691,7 @@ func (x *GetCatalogMeterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCatalogMeterRequest.ProtoReflect.Descriptor instead.
 func (*GetCatalogMeterRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{9}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetCatalogMeterRequest) GetMeterId() *UuidV7 {
@@ -647,7 +710,7 @@ type GetCatalogMeterResponse struct {
 
 func (x *GetCatalogMeterResponse) Reset() {
 	*x = GetCatalogMeterResponse{}
-	mi := &file_delibase_v1_catalog_proto_msgTypes[10]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -659,7 +722,7 @@ func (x *GetCatalogMeterResponse) String() string {
 func (*GetCatalogMeterResponse) ProtoMessage() {}
 
 func (x *GetCatalogMeterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_catalog_proto_msgTypes[10]
+	mi := &file_delibase_v1_catalog_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -672,7 +735,7 @@ func (x *GetCatalogMeterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCatalogMeterResponse.ProtoReflect.Descriptor instead.
 func (*GetCatalogMeterResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{10}
+	return file_delibase_v1_catalog_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetCatalogMeterResponse) GetMeter() *CatalogMeter {
@@ -700,7 +763,10 @@ const file_delibase_v1_catalog_proto_rawDesc = "" +
 	"\x10price_version_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\x0epriceVersionId\x12E\n" +
 	"\x13usd_micros_per_unit\x18\x02 \x01(\v2\x16.delibase.v1.UsdMicrosR\x10usdMicrosPerUnit\x12A\n" +
 	"\x0eeffective_from\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\reffectiveFrom\x12C\n" +
-	"\x0feffective_until\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0eeffectiveUntil\"\x88\x03\n" +
+	"\x0feffective_until\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0eeffectiveUntil\"u\n" +
+	"\x1aCatalogAuthorizationTarget\x12C\n" +
+	"\x13service_identity_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\x11serviceIdentityId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xe6\x03\n" +
 	"\fCatalogMeter\x12.\n" +
 	"\bmeter_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\ameterId\x12*\n" +
 	"\x06app_id\x18\x02 \x01(\v2\x13.delibase.v1.UuidV7R\x05appId\x12\x10\n" +
@@ -712,7 +778,8 @@ const file_delibase_v1_catalog_proto_rawDesc = "" +
 	"\x17reservation_ttl_seconds\x18\b \x01(\x03R\x15reservationTtlSeconds\x12>\n" +
 	"\rcurrent_price\x18\t \x01(\v2\x19.delibase.v1.CatalogPriceR\fcurrentPrice\x12\x18\n" +
 	"\aenabled\x18\n" +
-	" \x01(\bR\aenabled\"F\n" +
+	" \x01(\bR\aenabled\x12\\\n" +
+	"\x15authorization_targets\x18\v \x03(\v2'.delibase.v1.CatalogAuthorizationTargetR\x14authorizationTargets\"F\n" +
 	"\x16ListCatalogAppsRequest\x12,\n" +
 	"\x04page\x18\x01 \x01(\v2\x18.delibase.v1.PageRequestR\x04page\"u\n" +
 	"\x17ListCatalogAppsResponse\x12+\n" +
@@ -751,58 +818,61 @@ func file_delibase_v1_catalog_proto_rawDescGZIP() []byte {
 	return file_delibase_v1_catalog_proto_rawDescData
 }
 
-var file_delibase_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_delibase_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_delibase_v1_catalog_proto_goTypes = []any{
-	(*CatalogApp)(nil),                // 0: delibase.v1.CatalogApp
-	(*CatalogPrice)(nil),              // 1: delibase.v1.CatalogPrice
-	(*CatalogMeter)(nil),              // 2: delibase.v1.CatalogMeter
-	(*ListCatalogAppsRequest)(nil),    // 3: delibase.v1.ListCatalogAppsRequest
-	(*ListCatalogAppsResponse)(nil),   // 4: delibase.v1.ListCatalogAppsResponse
-	(*GetCatalogAppRequest)(nil),      // 5: delibase.v1.GetCatalogAppRequest
-	(*GetCatalogAppResponse)(nil),     // 6: delibase.v1.GetCatalogAppResponse
-	(*ListCatalogMetersRequest)(nil),  // 7: delibase.v1.ListCatalogMetersRequest
-	(*ListCatalogMetersResponse)(nil), // 8: delibase.v1.ListCatalogMetersResponse
-	(*GetCatalogMeterRequest)(nil),    // 9: delibase.v1.GetCatalogMeterRequest
-	(*GetCatalogMeterResponse)(nil),   // 10: delibase.v1.GetCatalogMeterResponse
-	(*UuidV7)(nil),                    // 11: delibase.v1.UuidV7
-	(*UsdMicros)(nil),                 // 12: delibase.v1.UsdMicros
-	(*timestamppb.Timestamp)(nil),     // 13: google.protobuf.Timestamp
-	(*PageRequest)(nil),               // 14: delibase.v1.PageRequest
-	(*PageResponse)(nil),              // 15: delibase.v1.PageResponse
+	(*CatalogApp)(nil),                 // 0: delibase.v1.CatalogApp
+	(*CatalogPrice)(nil),               // 1: delibase.v1.CatalogPrice
+	(*CatalogAuthorizationTarget)(nil), // 2: delibase.v1.CatalogAuthorizationTarget
+	(*CatalogMeter)(nil),               // 3: delibase.v1.CatalogMeter
+	(*ListCatalogAppsRequest)(nil),     // 4: delibase.v1.ListCatalogAppsRequest
+	(*ListCatalogAppsResponse)(nil),    // 5: delibase.v1.ListCatalogAppsResponse
+	(*GetCatalogAppRequest)(nil),       // 6: delibase.v1.GetCatalogAppRequest
+	(*GetCatalogAppResponse)(nil),      // 7: delibase.v1.GetCatalogAppResponse
+	(*ListCatalogMetersRequest)(nil),   // 8: delibase.v1.ListCatalogMetersRequest
+	(*ListCatalogMetersResponse)(nil),  // 9: delibase.v1.ListCatalogMetersResponse
+	(*GetCatalogMeterRequest)(nil),     // 10: delibase.v1.GetCatalogMeterRequest
+	(*GetCatalogMeterResponse)(nil),    // 11: delibase.v1.GetCatalogMeterResponse
+	(*UuidV7)(nil),                     // 12: delibase.v1.UuidV7
+	(*UsdMicros)(nil),                  // 13: delibase.v1.UsdMicros
+	(*timestamppb.Timestamp)(nil),      // 14: google.protobuf.Timestamp
+	(*PageRequest)(nil),                // 15: delibase.v1.PageRequest
+	(*PageResponse)(nil),               // 16: delibase.v1.PageResponse
 }
 var file_delibase_v1_catalog_proto_depIdxs = []int32{
-	11, // 0: delibase.v1.CatalogApp.app_id:type_name -> delibase.v1.UuidV7
-	11, // 1: delibase.v1.CatalogPrice.price_version_id:type_name -> delibase.v1.UuidV7
-	12, // 2: delibase.v1.CatalogPrice.usd_micros_per_unit:type_name -> delibase.v1.UsdMicros
-	13, // 3: delibase.v1.CatalogPrice.effective_from:type_name -> google.protobuf.Timestamp
-	13, // 4: delibase.v1.CatalogPrice.effective_until:type_name -> google.protobuf.Timestamp
-	11, // 5: delibase.v1.CatalogMeter.meter_id:type_name -> delibase.v1.UuidV7
-	11, // 6: delibase.v1.CatalogMeter.app_id:type_name -> delibase.v1.UuidV7
-	1,  // 7: delibase.v1.CatalogMeter.current_price:type_name -> delibase.v1.CatalogPrice
-	14, // 8: delibase.v1.ListCatalogAppsRequest.page:type_name -> delibase.v1.PageRequest
-	0,  // 9: delibase.v1.ListCatalogAppsResponse.apps:type_name -> delibase.v1.CatalogApp
-	15, // 10: delibase.v1.ListCatalogAppsResponse.page:type_name -> delibase.v1.PageResponse
-	0,  // 11: delibase.v1.GetCatalogAppResponse.app:type_name -> delibase.v1.CatalogApp
-	2,  // 12: delibase.v1.GetCatalogAppResponse.meters:type_name -> delibase.v1.CatalogMeter
-	11, // 13: delibase.v1.ListCatalogMetersRequest.app_id:type_name -> delibase.v1.UuidV7
-	14, // 14: delibase.v1.ListCatalogMetersRequest.page:type_name -> delibase.v1.PageRequest
-	2,  // 15: delibase.v1.ListCatalogMetersResponse.meters:type_name -> delibase.v1.CatalogMeter
-	15, // 16: delibase.v1.ListCatalogMetersResponse.page:type_name -> delibase.v1.PageResponse
-	11, // 17: delibase.v1.GetCatalogMeterRequest.meter_id:type_name -> delibase.v1.UuidV7
-	2,  // 18: delibase.v1.GetCatalogMeterResponse.meter:type_name -> delibase.v1.CatalogMeter
-	3,  // 19: delibase.v1.CatalogService.ListCatalogApps:input_type -> delibase.v1.ListCatalogAppsRequest
-	5,  // 20: delibase.v1.CatalogService.GetCatalogApp:input_type -> delibase.v1.GetCatalogAppRequest
-	7,  // 21: delibase.v1.CatalogService.ListCatalogMeters:input_type -> delibase.v1.ListCatalogMetersRequest
-	9,  // 22: delibase.v1.CatalogService.GetCatalogMeter:input_type -> delibase.v1.GetCatalogMeterRequest
-	4,  // 23: delibase.v1.CatalogService.ListCatalogApps:output_type -> delibase.v1.ListCatalogAppsResponse
-	6,  // 24: delibase.v1.CatalogService.GetCatalogApp:output_type -> delibase.v1.GetCatalogAppResponse
-	8,  // 25: delibase.v1.CatalogService.ListCatalogMeters:output_type -> delibase.v1.ListCatalogMetersResponse
-	10, // 26: delibase.v1.CatalogService.GetCatalogMeter:output_type -> delibase.v1.GetCatalogMeterResponse
-	23, // [23:27] is the sub-list for method output_type
-	19, // [19:23] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	12, // 0: delibase.v1.CatalogApp.app_id:type_name -> delibase.v1.UuidV7
+	12, // 1: delibase.v1.CatalogPrice.price_version_id:type_name -> delibase.v1.UuidV7
+	13, // 2: delibase.v1.CatalogPrice.usd_micros_per_unit:type_name -> delibase.v1.UsdMicros
+	14, // 3: delibase.v1.CatalogPrice.effective_from:type_name -> google.protobuf.Timestamp
+	14, // 4: delibase.v1.CatalogPrice.effective_until:type_name -> google.protobuf.Timestamp
+	12, // 5: delibase.v1.CatalogAuthorizationTarget.service_identity_id:type_name -> delibase.v1.UuidV7
+	12, // 6: delibase.v1.CatalogMeter.meter_id:type_name -> delibase.v1.UuidV7
+	12, // 7: delibase.v1.CatalogMeter.app_id:type_name -> delibase.v1.UuidV7
+	1,  // 8: delibase.v1.CatalogMeter.current_price:type_name -> delibase.v1.CatalogPrice
+	2,  // 9: delibase.v1.CatalogMeter.authorization_targets:type_name -> delibase.v1.CatalogAuthorizationTarget
+	15, // 10: delibase.v1.ListCatalogAppsRequest.page:type_name -> delibase.v1.PageRequest
+	0,  // 11: delibase.v1.ListCatalogAppsResponse.apps:type_name -> delibase.v1.CatalogApp
+	16, // 12: delibase.v1.ListCatalogAppsResponse.page:type_name -> delibase.v1.PageResponse
+	0,  // 13: delibase.v1.GetCatalogAppResponse.app:type_name -> delibase.v1.CatalogApp
+	3,  // 14: delibase.v1.GetCatalogAppResponse.meters:type_name -> delibase.v1.CatalogMeter
+	12, // 15: delibase.v1.ListCatalogMetersRequest.app_id:type_name -> delibase.v1.UuidV7
+	15, // 16: delibase.v1.ListCatalogMetersRequest.page:type_name -> delibase.v1.PageRequest
+	3,  // 17: delibase.v1.ListCatalogMetersResponse.meters:type_name -> delibase.v1.CatalogMeter
+	16, // 18: delibase.v1.ListCatalogMetersResponse.page:type_name -> delibase.v1.PageResponse
+	12, // 19: delibase.v1.GetCatalogMeterRequest.meter_id:type_name -> delibase.v1.UuidV7
+	3,  // 20: delibase.v1.GetCatalogMeterResponse.meter:type_name -> delibase.v1.CatalogMeter
+	4,  // 21: delibase.v1.CatalogService.ListCatalogApps:input_type -> delibase.v1.ListCatalogAppsRequest
+	6,  // 22: delibase.v1.CatalogService.GetCatalogApp:input_type -> delibase.v1.GetCatalogAppRequest
+	8,  // 23: delibase.v1.CatalogService.ListCatalogMeters:input_type -> delibase.v1.ListCatalogMetersRequest
+	10, // 24: delibase.v1.CatalogService.GetCatalogMeter:input_type -> delibase.v1.GetCatalogMeterRequest
+	5,  // 25: delibase.v1.CatalogService.ListCatalogApps:output_type -> delibase.v1.ListCatalogAppsResponse
+	7,  // 26: delibase.v1.CatalogService.GetCatalogApp:output_type -> delibase.v1.GetCatalogAppResponse
+	9,  // 27: delibase.v1.CatalogService.ListCatalogMeters:output_type -> delibase.v1.ListCatalogMetersResponse
+	11, // 28: delibase.v1.CatalogService.GetCatalogMeter:output_type -> delibase.v1.GetCatalogMeterResponse
+	25, // [25:29] is the sub-list for method output_type
+	21, // [21:25] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_delibase_v1_catalog_proto_init() }
@@ -817,7 +887,7 @@ func file_delibase_v1_catalog_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delibase_v1_catalog_proto_rawDesc), len(file_delibase_v1_catalog_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -24,6 +24,14 @@ message CatalogPrice {
   google.protobuf.Timestamp effective_until = 4;
 }
 
+// CatalogAuthorizationTarget is a public, stable target that a human client
+// can bind to a background-usage authorization. It never exposes the backing
+// Logto client identifier or credentials.
+message CatalogAuthorizationTarget {
+  UuidV7 service_identity_id = 1;
+  string name = 2;
+}
+
 message CatalogMeter {
   UuidV7 meter_id = 1;
   UuidV7 app_id = 2;
@@ -35,6 +43,7 @@ message CatalogMeter {
   int64 reservation_ttl_seconds = 8;
   CatalogPrice current_price = 9;
   bool enabled = 10;
+  repeated CatalogAuthorizationTarget authorization_targets = 11;
 }
 
 message ListCatalogAppsRequest {

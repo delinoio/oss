@@ -1,9 +1,9 @@
 /* DeliDev service worker: shell and anonymous catalog responses only. */
-const SHELL_VERSION = "e5b2dade6f1e";
+const SHELL_VERSION = "98e00added3a";
 const SHELL_CACHE = `delidev-shell-${SHELL_VERSION}`;
 const PUBLIC_CATALOG_CACHE = `delidev-public-catalog-${SHELL_VERSION}`;
 const PUBLIC_CATALOG_ORIGIN = "https://delibase.deli.dev";
-const SHELL_FILES = ["/","/icons/delidev-192.png","/icons/delidev-512.png","/icons/delidev-maskable-512.png","/icons/delidev.svg","/index.html","/manifest.webmanifest","/static/css/index.4efc193faa.css","/static/js/386.00ebdc340e.js","/static/js/386.00ebdc340e.js.LICENSE.txt","/static/js/index.613687c264.js","/static/js/lib-react.2f531ee03e.js","/static/js/lib-react.2f531ee03e.js.LICENSE.txt","/static/js/lib-router.a751045bad.js","/static/js/lib-router.a751045bad.js.LICENSE.txt"];
+const SHELL_FILES = ["/","/icons/delidev-192.png","/icons/delidev-512.png","/icons/delidev-maskable-512.png","/icons/delidev.svg","/index.html","/manifest.webmanifest","/static/css/index.4efc193faa.css","/static/js/386.00ebdc340e.js","/static/js/386.00ebdc340e.js.LICENSE.txt","/static/js/index.2d98dba5b6.js","/static/js/lib-react.2f531ee03e.js","/static/js/lib-react.2f531ee03e.js.LICENSE.txt","/static/js/lib-router.a751045bad.js","/static/js/lib-router.a751045bad.js.LICENSE.txt"];
 const SHELL_PATHS = new Set(SHELL_FILES.map((path) => new URL(path, self.location.origin).pathname));
 const PUBLIC_CATALOG_METHODS = new Set([
   "ListCatalogApps",
