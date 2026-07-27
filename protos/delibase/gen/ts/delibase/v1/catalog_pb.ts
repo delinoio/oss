@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delibase/v1/catalog.proto.
  */
 export const file_delibase_v1_catalog: GenFile = /*@__PURE__*/
-  fileDesc("ChlkZWxpYmFzZS92MS9jYXRhbG9nLnByb3RvEgtkZWxpYmFzZS52MSKWAQoKQ2F0YWxvZ0FwcBIjCgZhcHBfaWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSDAoEc2x1ZxgCIAEoCRIMCgRuYW1lGAMgASgJEg8KB3N1bW1hcnkYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSEAoIaWNvbl91cmwYBiABKAkSDwoHZW5hYmxlZBgHIAEoCCLbAQoMQ2F0YWxvZ1ByaWNlEi0KEHByaWNlX3ZlcnNpb25faWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSMwoTdXNkX21pY3Jvc19wZXJfdW5pdBgCIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxIyCg5lZmZlY3RpdmVfZnJvbRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoPZWZmZWN0aXZlX3VudGlsGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKZAgoMQ2F0YWxvZ01ldGVyEiUKCG1ldGVyX2lkGAEgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EiMKBmFwcF9pZBgCIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxILCgNrZXkYAyABKAkSDAoEbmFtZRgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIRCgl1bml0X25hbWUYBiABKAkSFgoOdW5pdF9wcmVjaXNpb24YByABKAUSHwoXcmVzZXJ2YXRpb25fdHRsX3NlY29uZHMYCCABKAMSMAoNY3VycmVudF9wcmljZRgJIAEoCzIZLmRlbGliYXNlLnYxLkNhdGFsb2dQcmljZRIPCgdlbmFibGVkGAogASgIIkAKFkxpc3RDYXRhbG9nQXBwc1JlcXVlc3QSJgoEcGFnZRgBIAEoCzIYLmRlbGliYXNlLnYxLlBhZ2VSZXF1ZXN0ImkKF0xpc3RDYXRhbG9nQXBwc1Jlc3BvbnNlEiUKBGFwcHMYASADKAsyFy5kZWxpYmFzZS52MS5DYXRhbG9nQXBwEicKBHBhZ2UYAiABKAsyGS5kZWxpYmFzZS52MS5QYWdlUmVzcG9uc2UiKAoUR2V0Q2F0YWxvZ0FwcFJlcXVlc3QSEAoIYXBwX3NsdWcYASABKAkiaAoVR2V0Q2F0YWxvZ0FwcFJlc3BvbnNlEiQKA2FwcBgBIAEoCzIXLmRlbGliYXNlLnYxLkNhdGFsb2dBcHASKQoGbWV0ZXJzGAIgAygLMhkuZGVsaWJhc2UudjEuQ2F0YWxvZ01ldGVyImcKGExpc3RDYXRhbG9nTWV0ZXJzUmVxdWVzdBIjCgZhcHBfaWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSJgoEcGFnZRgCIAEoCzIYLmRlbGliYXNlLnYxLlBhZ2VSZXF1ZXN0Im8KGUxpc3RDYXRhbG9nTWV0ZXJzUmVzcG9uc2USKQoGbWV0ZXJzGAEgAygLMhkuZGVsaWJhc2UudjEuQ2F0YWxvZ01ldGVyEicKBHBhZ2UYAiABKAsyGS5kZWxpYmFzZS52MS5QYWdlUmVzcG9uc2UiPwoWR2V0Q2F0YWxvZ01ldGVyUmVxdWVzdBIlCghtZXRlcl9pZBgBIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNyJDChdHZXRDYXRhbG9nTWV0ZXJSZXNwb25zZRIoCgVtZXRlchgBIAEoCzIZLmRlbGliYXNlLnYxLkNhdGFsb2dNZXRlcjKIAwoOQ2F0YWxvZ1NlcnZpY2USXAoPTGlzdENhdGFsb2dBcHBzEiMuZGVsaWJhc2UudjEuTGlzdENhdGFsb2dBcHBzUmVxdWVzdBokLmRlbGliYXNlLnYxLkxpc3RDYXRhbG9nQXBwc1Jlc3BvbnNlElYKDUdldENhdGFsb2dBcHASIS5kZWxpYmFzZS52MS5HZXRDYXRhbG9nQXBwUmVxdWVzdBoiLmRlbGliYXNlLnYxLkdldENhdGFsb2dBcHBSZXNwb25zZRJiChFMaXN0Q2F0YWxvZ01ldGVycxIlLmRlbGliYXNlLnYxLkxpc3RDYXRhbG9nTWV0ZXJzUmVxdWVzdBomLmRlbGliYXNlLnYxLkxpc3RDYXRhbG9nTWV0ZXJzUmVzcG9uc2USXAoPR2V0Q2F0YWxvZ01ldGVyEiMuZGVsaWJhc2UudjEuR2V0Q2F0YWxvZ01ldGVyUmVxdWVzdBokLmRlbGliYXNlLnYxLkdldENhdGFsb2dNZXRlclJlc3BvbnNlQkdaRWdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9kZWxpYmFzZS9nZW4vZ28vZGVsaWJhc2UvdjE7ZGVsaWJhc2V2MWIGcHJvdG8z", [file_delibase_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChlkZWxpYmFzZS92MS9jYXRhbG9nLnByb3RvEgtkZWxpYmFzZS52MSKWAQoKQ2F0YWxvZ0FwcBIjCgZhcHBfaWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSDAoEc2x1ZxgCIAEoCRIMCgRuYW1lGAMgASgJEg8KB3N1bW1hcnkYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSEAoIaWNvbl91cmwYBiABKAkSDwoHZW5hYmxlZBgHIAEoCCLbAQoMQ2F0YWxvZ1ByaWNlEi0KEHByaWNlX3ZlcnNpb25faWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSMwoTdXNkX21pY3Jvc19wZXJfdW5pdBgCIAEoCzIWLmRlbGliYXNlLnYxLlVzZE1pY3JvcxIyCg5lZmZlY3RpdmVfZnJvbRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoPZWZmZWN0aXZlX3VudGlsGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJcChpDYXRhbG9nQXV0aG9yaXphdGlvblRhcmdldBIwChNzZXJ2aWNlX2lkZW50aXR5X2lkGAEgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EgwKBG5hbWUYAiABKAki4QIKDENhdGFsb2dNZXRlchIlCghtZXRlcl9pZBgBIAEoCzITLmRlbGliYXNlLnYxLlV1aWRWNxIjCgZhcHBfaWQYAiABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjcSCwoDa2V5GAMgASgJEgwKBG5hbWUYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSEQoJdW5pdF9uYW1lGAYgASgJEhYKDnVuaXRfcHJlY2lzaW9uGAcgASgFEh8KF3Jlc2VydmF0aW9uX3R0bF9zZWNvbmRzGAggASgDEjAKDWN1cnJlbnRfcHJpY2UYCSABKAsyGS5kZWxpYmFzZS52MS5DYXRhbG9nUHJpY2USDwoHZW5hYmxlZBgKIAEoCBJGChVhdXRob3JpemF0aW9uX3RhcmdldHMYCyADKAsyJy5kZWxpYmFzZS52MS5DYXRhbG9nQXV0aG9yaXphdGlvblRhcmdldCJAChZMaXN0Q2F0YWxvZ0FwcHNSZXF1ZXN0EiYKBHBhZ2UYASABKAsyGC5kZWxpYmFzZS52MS5QYWdlUmVxdWVzdCJpChdMaXN0Q2F0YWxvZ0FwcHNSZXNwb25zZRIlCgRhcHBzGAEgAygLMhcuZGVsaWJhc2UudjEuQ2F0YWxvZ0FwcBInCgRwYWdlGAIgASgLMhkuZGVsaWJhc2UudjEuUGFnZVJlc3BvbnNlIigKFEdldENhdGFsb2dBcHBSZXF1ZXN0EhAKCGFwcF9zbHVnGAEgASgJImgKFUdldENhdGFsb2dBcHBSZXNwb25zZRIkCgNhcHAYASABKAsyFy5kZWxpYmFzZS52MS5DYXRhbG9nQXBwEikKBm1ldGVycxgCIAMoCzIZLmRlbGliYXNlLnYxLkNhdGFsb2dNZXRlciJnChhMaXN0Q2F0YWxvZ01ldGVyc1JlcXVlc3QSIwoGYXBwX2lkGAEgASgLMhMuZGVsaWJhc2UudjEuVXVpZFY3EiYKBHBhZ2UYAiABKAsyGC5kZWxpYmFzZS52MS5QYWdlUmVxdWVzdCJvChlMaXN0Q2F0YWxvZ01ldGVyc1Jlc3BvbnNlEikKBm1ldGVycxgBIAMoCzIZLmRlbGliYXNlLnYxLkNhdGFsb2dNZXRlchInCgRwYWdlGAIgASgLMhkuZGVsaWJhc2UudjEuUGFnZVJlc3BvbnNlIj8KFkdldENhdGFsb2dNZXRlclJlcXVlc3QSJQoIbWV0ZXJfaWQYASABKAsyEy5kZWxpYmFzZS52MS5VdWlkVjciQwoXR2V0Q2F0YWxvZ01ldGVyUmVzcG9uc2USKAoFbWV0ZXIYASABKAsyGS5kZWxpYmFzZS52MS5DYXRhbG9nTWV0ZXIyiAMKDkNhdGFsb2dTZXJ2aWNlElwKD0xpc3RDYXRhbG9nQXBwcxIjLmRlbGliYXNlLnYxLkxpc3RDYXRhbG9nQXBwc1JlcXVlc3QaJC5kZWxpYmFzZS52MS5MaXN0Q2F0YWxvZ0FwcHNSZXNwb25zZRJWCg1HZXRDYXRhbG9nQXBwEiEuZGVsaWJhc2UudjEuR2V0Q2F0YWxvZ0FwcFJlcXVlc3QaIi5kZWxpYmFzZS52MS5HZXRDYXRhbG9nQXBwUmVzcG9uc2USYgoRTGlzdENhdGFsb2dNZXRlcnMSJS5kZWxpYmFzZS52MS5MaXN0Q2F0YWxvZ01ldGVyc1JlcXVlc3QaJi5kZWxpYmFzZS52MS5MaXN0Q2F0YWxvZ01ldGVyc1Jlc3BvbnNlElwKD0dldENhdGFsb2dNZXRlchIjLmRlbGliYXNlLnYxLkdldENhdGFsb2dNZXRlclJlcXVlc3QaJC5kZWxpYmFzZS52MS5HZXRDYXRhbG9nTWV0ZXJSZXNwb25zZUJHWkVnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZGVsaWJhc2UvZ2VuL2dvL2RlbGliYXNlL3YxO2RlbGliYXNldjFiBnByb3RvMw", [file_delibase_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message delibase.v1.CatalogApp
@@ -96,6 +96,32 @@ export const CatalogPriceSchema: GenMessage<CatalogPrice> = /*@__PURE__*/
   messageDesc(file_delibase_v1_catalog, 1);
 
 /**
+ * CatalogAuthorizationTarget is a public, stable target that a human client
+ * can bind to a background-usage authorization. It never exposes the backing
+ * Logto client identifier or credentials.
+ *
+ * @generated from message delibase.v1.CatalogAuthorizationTarget
+ */
+export type CatalogAuthorizationTarget = Message<"delibase.v1.CatalogAuthorizationTarget"> & {
+  /**
+   * @generated from field: delibase.v1.UuidV7 service_identity_id = 1;
+   */
+  serviceIdentityId?: UuidV7 | undefined;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message delibase.v1.CatalogAuthorizationTarget.
+ * Use `create(CatalogAuthorizationTargetSchema)` to create a new message.
+ */
+export const CatalogAuthorizationTargetSchema: GenMessage<CatalogAuthorizationTarget> = /*@__PURE__*/
+  messageDesc(file_delibase_v1_catalog, 2);
+
+/**
  * @generated from message delibase.v1.CatalogMeter
  */
 export type CatalogMeter = Message<"delibase.v1.CatalogMeter"> & {
@@ -148,6 +174,11 @@ export type CatalogMeter = Message<"delibase.v1.CatalogMeter"> & {
    * @generated from field: bool enabled = 10;
    */
   enabled: boolean;
+
+  /**
+   * @generated from field: repeated delibase.v1.CatalogAuthorizationTarget authorization_targets = 11;
+   */
+  authorizationTargets: CatalogAuthorizationTarget[];
 };
 
 /**
@@ -155,7 +186,7 @@ export type CatalogMeter = Message<"delibase.v1.CatalogMeter"> & {
  * Use `create(CatalogMeterSchema)` to create a new message.
  */
 export const CatalogMeterSchema: GenMessage<CatalogMeter> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 2);
+  messageDesc(file_delibase_v1_catalog, 3);
 
 /**
  * @generated from message delibase.v1.ListCatalogAppsRequest
@@ -172,7 +203,7 @@ export type ListCatalogAppsRequest = Message<"delibase.v1.ListCatalogAppsRequest
  * Use `create(ListCatalogAppsRequestSchema)` to create a new message.
  */
 export const ListCatalogAppsRequestSchema: GenMessage<ListCatalogAppsRequest> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 3);
+  messageDesc(file_delibase_v1_catalog, 4);
 
 /**
  * @generated from message delibase.v1.ListCatalogAppsResponse
@@ -194,7 +225,7 @@ export type ListCatalogAppsResponse = Message<"delibase.v1.ListCatalogAppsRespon
  * Use `create(ListCatalogAppsResponseSchema)` to create a new message.
  */
 export const ListCatalogAppsResponseSchema: GenMessage<ListCatalogAppsResponse> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 4);
+  messageDesc(file_delibase_v1_catalog, 5);
 
 /**
  * @generated from message delibase.v1.GetCatalogAppRequest
@@ -211,7 +242,7 @@ export type GetCatalogAppRequest = Message<"delibase.v1.GetCatalogAppRequest"> &
  * Use `create(GetCatalogAppRequestSchema)` to create a new message.
  */
 export const GetCatalogAppRequestSchema: GenMessage<GetCatalogAppRequest> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 5);
+  messageDesc(file_delibase_v1_catalog, 6);
 
 /**
  * @generated from message delibase.v1.GetCatalogAppResponse
@@ -233,7 +264,7 @@ export type GetCatalogAppResponse = Message<"delibase.v1.GetCatalogAppResponse">
  * Use `create(GetCatalogAppResponseSchema)` to create a new message.
  */
 export const GetCatalogAppResponseSchema: GenMessage<GetCatalogAppResponse> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 6);
+  messageDesc(file_delibase_v1_catalog, 7);
 
 /**
  * @generated from message delibase.v1.ListCatalogMetersRequest
@@ -255,7 +286,7 @@ export type ListCatalogMetersRequest = Message<"delibase.v1.ListCatalogMetersReq
  * Use `create(ListCatalogMetersRequestSchema)` to create a new message.
  */
 export const ListCatalogMetersRequestSchema: GenMessage<ListCatalogMetersRequest> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 7);
+  messageDesc(file_delibase_v1_catalog, 8);
 
 /**
  * @generated from message delibase.v1.ListCatalogMetersResponse
@@ -277,7 +308,7 @@ export type ListCatalogMetersResponse = Message<"delibase.v1.ListCatalogMetersRe
  * Use `create(ListCatalogMetersResponseSchema)` to create a new message.
  */
 export const ListCatalogMetersResponseSchema: GenMessage<ListCatalogMetersResponse> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 8);
+  messageDesc(file_delibase_v1_catalog, 9);
 
 /**
  * @generated from message delibase.v1.GetCatalogMeterRequest
@@ -294,7 +325,7 @@ export type GetCatalogMeterRequest = Message<"delibase.v1.GetCatalogMeterRequest
  * Use `create(GetCatalogMeterRequestSchema)` to create a new message.
  */
 export const GetCatalogMeterRequestSchema: GenMessage<GetCatalogMeterRequest> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 9);
+  messageDesc(file_delibase_v1_catalog, 10);
 
 /**
  * @generated from message delibase.v1.GetCatalogMeterResponse
@@ -311,7 +342,7 @@ export type GetCatalogMeterResponse = Message<"delibase.v1.GetCatalogMeterRespon
  * Use `create(GetCatalogMeterResponseSchema)` to create a new message.
  */
 export const GetCatalogMeterResponseSchema: GenMessage<GetCatalogMeterResponse> = /*@__PURE__*/
-  messageDesc(file_delibase_v1_catalog, 10);
+  messageDesc(file_delibase_v1_catalog, 11);
 
 /**
  * CatalogService exposes enabled public catalog data without authentication.

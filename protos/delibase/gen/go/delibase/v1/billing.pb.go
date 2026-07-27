@@ -331,24 +331,25 @@ func (x *LedgerEntry) GetCreatedAt() *timestamppb.Timestamp {
 }
 
 type UsageRecord struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	UsageRecordId     *UuidV7                `protobuf:"bytes,1,opt,name=usage_record_id,json=usageRecordId,proto3" json:"usage_record_id,omitempty"`
-	OrganizationId    *UuidV7                `protobuf:"bytes,2,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
-	ReservationId     *UuidV7                `protobuf:"bytes,3,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	MeterId           *UuidV7                `protobuf:"bytes,4,opt,name=meter_id,json=meterId,proto3" json:"meter_id,omitempty"`
-	PriceVersionId    *UuidV7                `protobuf:"bytes,5,opt,name=price_version_id,json=priceVersionId,proto3" json:"price_version_id,omitempty"`
-	TeamIdSnapshot    *UuidV7                `protobuf:"bytes,6,opt,name=team_id_snapshot,json=teamIdSnapshot,proto3" json:"team_id_snapshot,omitempty"`
-	TeamNameSnapshot  string                 `protobuf:"bytes,7,opt,name=team_name_snapshot,json=teamNameSnapshot,proto3" json:"team_name_snapshot,omitempty"`
-	UserAccountId     *UuidV7                `protobuf:"bytes,8,opt,name=user_account_id,json=userAccountId,proto3" json:"user_account_id,omitempty"`
-	ServiceIdentityId *UuidV7                `protobuf:"bytes,9,opt,name=service_identity_id,json=serviceIdentityId,proto3" json:"service_identity_id,omitempty"`
-	Units             *UsageUnits            `protobuf:"bytes,10,opt,name=units,proto3" json:"units,omitempty"`
-	UsdMicrosPerUnit  *UsdMicros             `protobuf:"bytes,11,opt,name=usd_micros_per_unit,json=usdMicrosPerUnit,proto3" json:"usd_micros_per_unit,omitempty"`
-	TotalCost         *UsdMicros             `protobuf:"bytes,12,opt,name=total_cost,json=totalCost,proto3" json:"total_cost,omitempty"`
-	CreditApplied     *UsdMicros             `protobuf:"bytes,13,opt,name=credit_applied,json=creditApplied,proto3" json:"credit_applied,omitempty"`
-	OverageApplied    *UsdMicros             `protobuf:"bytes,14,opt,name=overage_applied,json=overageApplied,proto3" json:"overage_applied,omitempty"`
-	ClientReference   string                 `protobuf:"bytes,15,opt,name=client_reference,json=clientReference,proto3" json:"client_reference,omitempty"`
-	Status            UsageRecordStatus      `protobuf:"varint,16,opt,name=status,proto3,enum=delibase.v1.UsageRecordStatus" json:"status,omitempty"`
-	CommittedAt       *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=committed_at,json=committedAt,proto3" json:"committed_at,omitempty"`
+	state             protoimpl.MessageState  `protogen:"open.v1"`
+	UsageRecordId     *UuidV7                 `protobuf:"bytes,1,opt,name=usage_record_id,json=usageRecordId,proto3" json:"usage_record_id,omitempty"`
+	OrganizationId    *UuidV7                 `protobuf:"bytes,2,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	ReservationId     *UuidV7                 `protobuf:"bytes,3,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	MeterId           *UuidV7                 `protobuf:"bytes,4,opt,name=meter_id,json=meterId,proto3" json:"meter_id,omitempty"`
+	PriceVersionId    *UuidV7                 `protobuf:"bytes,5,opt,name=price_version_id,json=priceVersionId,proto3" json:"price_version_id,omitempty"`
+	TeamIdSnapshot    *UuidV7                 `protobuf:"bytes,6,opt,name=team_id_snapshot,json=teamIdSnapshot,proto3" json:"team_id_snapshot,omitempty"`
+	TeamNameSnapshot  string                  `protobuf:"bytes,7,opt,name=team_name_snapshot,json=teamNameSnapshot,proto3" json:"team_name_snapshot,omitempty"`
+	UserAccountId     *UuidV7                 `protobuf:"bytes,8,opt,name=user_account_id,json=userAccountId,proto3" json:"user_account_id,omitempty"`
+	ServiceIdentityId *UuidV7                 `protobuf:"bytes,9,opt,name=service_identity_id,json=serviceIdentityId,proto3" json:"service_identity_id,omitempty"`
+	Units             *UsageUnits             `protobuf:"bytes,10,opt,name=units,proto3" json:"units,omitempty"`
+	UsdMicrosPerUnit  *UsdMicros              `protobuf:"bytes,11,opt,name=usd_micros_per_unit,json=usdMicrosPerUnit,proto3" json:"usd_micros_per_unit,omitempty"`
+	TotalCost         *UsdMicros              `protobuf:"bytes,12,opt,name=total_cost,json=totalCost,proto3" json:"total_cost,omitempty"`
+	CreditApplied     *UsdMicros              `protobuf:"bytes,13,opt,name=credit_applied,json=creditApplied,proto3" json:"credit_applied,omitempty"`
+	OverageApplied    *UsdMicros              `protobuf:"bytes,14,opt,name=overage_applied,json=overageApplied,proto3" json:"overage_applied,omitempty"`
+	ClientReference   string                  `protobuf:"bytes,15,opt,name=client_reference,json=clientReference,proto3" json:"client_reference,omitempty"`
+	Status            UsageRecordStatus       `protobuf:"varint,16,opt,name=status,proto3,enum=delibase.v1.UsageRecordStatus" json:"status,omitempty"`
+	CommittedAt       *timestamppb.Timestamp  `protobuf:"bytes,17,opt,name=committed_at,json=committedAt,proto3" json:"committed_at,omitempty"`
+	AuthorizedUsage   *AuthorizedUsageContext `protobuf:"bytes,18,opt,name=authorized_usage,json=authorizedUsage,proto3" json:"authorized_usage,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -502,6 +503,232 @@ func (x *UsageRecord) GetCommittedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *UsageRecord) GetAuthorizedUsage() *AuthorizedUsageContext {
+	if x != nil {
+		return x.AuthorizedUsage
+	}
+	return nil
+}
+
+// BackgroundUsageAuthorization is a durable, bounded grant created by a human
+// user. It contains identifiers and limits only: user bearers, refresh tokens,
+// client secrets, provider credentials, and user content are forbidden.
+type BackgroundUsageAuthorization struct {
+	state               protoimpl.MessageState             `protogen:"open.v1"`
+	AuthorizationId     *UuidV7                            `protobuf:"bytes,1,opt,name=authorization_id,json=authorizationId,proto3" json:"authorization_id,omitempty"`
+	AuthorizerAccountId *UuidV7                            `protobuf:"bytes,2,opt,name=authorizer_account_id,json=authorizerAccountId,proto3" json:"authorizer_account_id,omitempty"`
+	Owner               *BackgroundUsageOwner              `protobuf:"bytes,3,opt,name=owner,proto3" json:"owner,omitempty"`
+	OrganizationId      *UuidV7                            `protobuf:"bytes,4,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	TeamId              *UuidV7                            `protobuf:"bytes,5,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	ServiceIdentityId   *UuidV7                            `protobuf:"bytes,6,opt,name=service_identity_id,json=serviceIdentityId,proto3" json:"service_identity_id,omitempty"`
+	MeterId             *UuidV7                            `protobuf:"bytes,7,opt,name=meter_id,json=meterId,proto3" json:"meter_id,omitempty"`
+	Purpose             BackgroundUsagePurpose             `protobuf:"varint,8,opt,name=purpose,proto3,enum=delibase.v1.BackgroundUsagePurpose" json:"purpose,omitempty"`
+	FeatureResourceId   *UuidV7                            `protobuf:"bytes,9,opt,name=feature_resource_id,json=featureResourceId,proto3" json:"feature_resource_id,omitempty"`
+	Period              BackgroundUsagePeriod              `protobuf:"varint,10,opt,name=period,proto3,enum=delibase.v1.BackgroundUsagePeriod" json:"period,omitempty"`
+	MaximumUnits        *UsageUnits                        `protobuf:"bytes,11,opt,name=maximum_units,json=maximumUnits,proto3" json:"maximum_units,omitempty"`
+	Status              BackgroundUsageAuthorizationStatus `protobuf:"varint,12,opt,name=status,proto3,enum=delibase.v1.BackgroundUsageAuthorizationStatus" json:"status,omitempty"`
+	Revision            int64                              `protobuf:"varint,13,opt,name=revision,proto3" json:"revision,omitempty"`
+	CreatedAt           *timestamppb.Timestamp             `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt           *timestamppb.Timestamp             `protobuf:"bytes,15,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	RevokedAt           *timestamppb.Timestamp             `protobuf:"bytes,16,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *BackgroundUsageAuthorization) Reset() {
+	*x = BackgroundUsageAuthorization{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackgroundUsageAuthorization) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackgroundUsageAuthorization) ProtoMessage() {}
+
+func (x *BackgroundUsageAuthorization) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackgroundUsageAuthorization.ProtoReflect.Descriptor instead.
+func (*BackgroundUsageAuthorization) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *BackgroundUsageAuthorization) GetAuthorizationId() *UuidV7 {
+	if x != nil {
+		return x.AuthorizationId
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetAuthorizerAccountId() *UuidV7 {
+	if x != nil {
+		return x.AuthorizerAccountId
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetOwner() *BackgroundUsageOwner {
+	if x != nil {
+		return x.Owner
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetOrganizationId() *UuidV7 {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetTeamId() *UuidV7 {
+	if x != nil {
+		return x.TeamId
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetServiceIdentityId() *UuidV7 {
+	if x != nil {
+		return x.ServiceIdentityId
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetMeterId() *UuidV7 {
+	if x != nil {
+		return x.MeterId
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetPurpose() BackgroundUsagePurpose {
+	if x != nil {
+		return x.Purpose
+	}
+	return BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_UNSPECIFIED
+}
+
+func (x *BackgroundUsageAuthorization) GetFeatureResourceId() *UuidV7 {
+	if x != nil {
+		return x.FeatureResourceId
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetPeriod() BackgroundUsagePeriod {
+	if x != nil {
+		return x.Period
+	}
+	return BackgroundUsagePeriod_BACKGROUND_USAGE_PERIOD_UNSPECIFIED
+}
+
+func (x *BackgroundUsageAuthorization) GetMaximumUnits() *UsageUnits {
+	if x != nil {
+		return x.MaximumUnits
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetStatus() BackgroundUsageAuthorizationStatus {
+	if x != nil {
+		return x.Status
+	}
+	return BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_UNSPECIFIED
+}
+
+func (x *BackgroundUsageAuthorization) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *BackgroundUsageAuthorization) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorization) GetRevokedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return nil
+}
+
+type BackgroundUsageAuthorizationView struct {
+	state              protoimpl.MessageState        `protogen:"open.v1"`
+	Authorization      *BackgroundUsageAuthorization `protobuf:"bytes,1,opt,name=authorization,proto3" json:"authorization,omitempty"`
+	CurrentPeriodUsage *BackgroundUsagePeriodUsage   `protobuf:"bytes,2,opt,name=current_period_usage,json=currentPeriodUsage,proto3" json:"current_period_usage,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *BackgroundUsageAuthorizationView) Reset() {
+	*x = BackgroundUsageAuthorizationView{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackgroundUsageAuthorizationView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackgroundUsageAuthorizationView) ProtoMessage() {}
+
+func (x *BackgroundUsageAuthorizationView) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackgroundUsageAuthorizationView.ProtoReflect.Descriptor instead.
+func (*BackgroundUsageAuthorizationView) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *BackgroundUsageAuthorizationView) GetAuthorization() *BackgroundUsageAuthorization {
+	if x != nil {
+		return x.Authorization
+	}
+	return nil
+}
+
+func (x *BackgroundUsageAuthorizationView) GetCurrentPeriodUsage() *BackgroundUsagePeriodUsage {
+	if x != nil {
+		return x.CurrentPeriodUsage
+	}
+	return nil
+}
+
 type GetBillingSummaryRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	OrganizationId *UuidV7                `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
@@ -511,7 +738,7 @@ type GetBillingSummaryRequest struct {
 
 func (x *GetBillingSummaryRequest) Reset() {
 	*x = GetBillingSummaryRequest{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[4]
+	mi := &file_delibase_v1_billing_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -523,7 +750,7 @@ func (x *GetBillingSummaryRequest) String() string {
 func (*GetBillingSummaryRequest) ProtoMessage() {}
 
 func (x *GetBillingSummaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[4]
+	mi := &file_delibase_v1_billing_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -536,7 +763,7 @@ func (x *GetBillingSummaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBillingSummaryRequest.ProtoReflect.Descriptor instead.
 func (*GetBillingSummaryRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{4}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetBillingSummaryRequest) GetOrganizationId() *UuidV7 {
@@ -555,7 +782,7 @@ type GetBillingSummaryResponse struct {
 
 func (x *GetBillingSummaryResponse) Reset() {
 	*x = GetBillingSummaryResponse{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[5]
+	mi := &file_delibase_v1_billing_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -567,7 +794,7 @@ func (x *GetBillingSummaryResponse) String() string {
 func (*GetBillingSummaryResponse) ProtoMessage() {}
 
 func (x *GetBillingSummaryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[5]
+	mi := &file_delibase_v1_billing_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -580,7 +807,7 @@ func (x *GetBillingSummaryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBillingSummaryResponse.ProtoReflect.Descriptor instead.
 func (*GetBillingSummaryResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{5}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetBillingSummaryResponse) GetSummary() *BillingSummary {
@@ -602,7 +829,7 @@ type CreateSubscriptionCheckoutRequest struct {
 
 func (x *CreateSubscriptionCheckoutRequest) Reset() {
 	*x = CreateSubscriptionCheckoutRequest{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[6]
+	mi := &file_delibase_v1_billing_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -614,7 +841,7 @@ func (x *CreateSubscriptionCheckoutRequest) String() string {
 func (*CreateSubscriptionCheckoutRequest) ProtoMessage() {}
 
 func (x *CreateSubscriptionCheckoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[6]
+	mi := &file_delibase_v1_billing_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -627,7 +854,7 @@ func (x *CreateSubscriptionCheckoutRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CreateSubscriptionCheckoutRequest.ProtoReflect.Descriptor instead.
 func (*CreateSubscriptionCheckoutRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{6}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreateSubscriptionCheckoutRequest) GetOrganizationId() *UuidV7 {
@@ -669,7 +896,7 @@ type CreateSubscriptionCheckoutResponse struct {
 
 func (x *CreateSubscriptionCheckoutResponse) Reset() {
 	*x = CreateSubscriptionCheckoutResponse{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[7]
+	mi := &file_delibase_v1_billing_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -681,7 +908,7 @@ func (x *CreateSubscriptionCheckoutResponse) String() string {
 func (*CreateSubscriptionCheckoutResponse) ProtoMessage() {}
 
 func (x *CreateSubscriptionCheckoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[7]
+	mi := &file_delibase_v1_billing_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -694,7 +921,7 @@ func (x *CreateSubscriptionCheckoutResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use CreateSubscriptionCheckoutResponse.ProtoReflect.Descriptor instead.
 func (*CreateSubscriptionCheckoutResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{7}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CreateSubscriptionCheckoutResponse) GetCheckoutUrl() string {
@@ -729,7 +956,7 @@ type CreateBillingPortalSessionRequest struct {
 
 func (x *CreateBillingPortalSessionRequest) Reset() {
 	*x = CreateBillingPortalSessionRequest{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[8]
+	mi := &file_delibase_v1_billing_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -741,7 +968,7 @@ func (x *CreateBillingPortalSessionRequest) String() string {
 func (*CreateBillingPortalSessionRequest) ProtoMessage() {}
 
 func (x *CreateBillingPortalSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[8]
+	mi := &file_delibase_v1_billing_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -754,7 +981,7 @@ func (x *CreateBillingPortalSessionRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CreateBillingPortalSessionRequest.ProtoReflect.Descriptor instead.
 func (*CreateBillingPortalSessionRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{8}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CreateBillingPortalSessionRequest) GetOrganizationId() *UuidV7 {
@@ -789,7 +1016,7 @@ type CreateBillingPortalSessionResponse struct {
 
 func (x *CreateBillingPortalSessionResponse) Reset() {
 	*x = CreateBillingPortalSessionResponse{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[9]
+	mi := &file_delibase_v1_billing_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -801,7 +1028,7 @@ func (x *CreateBillingPortalSessionResponse) String() string {
 func (*CreateBillingPortalSessionResponse) ProtoMessage() {}
 
 func (x *CreateBillingPortalSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[9]
+	mi := &file_delibase_v1_billing_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -814,7 +1041,7 @@ func (x *CreateBillingPortalSessionResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use CreateBillingPortalSessionResponse.ProtoReflect.Descriptor instead.
 func (*CreateBillingPortalSessionResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{9}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CreateBillingPortalSessionResponse) GetPortalUrl() string {
@@ -849,7 +1076,7 @@ type UpdateOverageLimitRequest struct {
 
 func (x *UpdateOverageLimitRequest) Reset() {
 	*x = UpdateOverageLimitRequest{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[10]
+	mi := &file_delibase_v1_billing_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -861,7 +1088,7 @@ func (x *UpdateOverageLimitRequest) String() string {
 func (*UpdateOverageLimitRequest) ProtoMessage() {}
 
 func (x *UpdateOverageLimitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[10]
+	mi := &file_delibase_v1_billing_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -874,7 +1101,7 @@ func (x *UpdateOverageLimitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateOverageLimitRequest.ProtoReflect.Descriptor instead.
 func (*UpdateOverageLimitRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{10}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UpdateOverageLimitRequest) GetOrganizationId() *UuidV7 {
@@ -908,7 +1135,7 @@ type UpdateOverageLimitResponse struct {
 
 func (x *UpdateOverageLimitResponse) Reset() {
 	*x = UpdateOverageLimitResponse{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[11]
+	mi := &file_delibase_v1_billing_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -920,7 +1147,7 @@ func (x *UpdateOverageLimitResponse) String() string {
 func (*UpdateOverageLimitResponse) ProtoMessage() {}
 
 func (x *UpdateOverageLimitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[11]
+	mi := &file_delibase_v1_billing_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -933,7 +1160,7 @@ func (x *UpdateOverageLimitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateOverageLimitResponse.ProtoReflect.Descriptor instead.
 func (*UpdateOverageLimitResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{11}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpdateOverageLimitResponse) GetSummary() *BillingSummary {
@@ -963,7 +1190,7 @@ type ListLedgerEntriesRequest struct {
 
 func (x *ListLedgerEntriesRequest) Reset() {
 	*x = ListLedgerEntriesRequest{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[12]
+	mi := &file_delibase_v1_billing_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -975,7 +1202,7 @@ func (x *ListLedgerEntriesRequest) String() string {
 func (*ListLedgerEntriesRequest) ProtoMessage() {}
 
 func (x *ListLedgerEntriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[12]
+	mi := &file_delibase_v1_billing_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -988,7 +1215,7 @@ func (x *ListLedgerEntriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLedgerEntriesRequest.ProtoReflect.Descriptor instead.
 func (*ListLedgerEntriesRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{12}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListLedgerEntriesRequest) GetOrganizationId() *UuidV7 {
@@ -1036,7 +1263,7 @@ type ListLedgerEntriesResponse struct {
 
 func (x *ListLedgerEntriesResponse) Reset() {
 	*x = ListLedgerEntriesResponse{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[13]
+	mi := &file_delibase_v1_billing_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1048,7 +1275,7 @@ func (x *ListLedgerEntriesResponse) String() string {
 func (*ListLedgerEntriesResponse) ProtoMessage() {}
 
 func (x *ListLedgerEntriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[13]
+	mi := &file_delibase_v1_billing_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1061,7 +1288,7 @@ func (x *ListLedgerEntriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLedgerEntriesResponse.ProtoReflect.Descriptor instead.
 func (*ListLedgerEntriesResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{13}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListLedgerEntriesResponse) GetEntries() []*LedgerEntry {
@@ -1093,7 +1320,7 @@ type ListUsageRecordsRequest struct {
 
 func (x *ListUsageRecordsRequest) Reset() {
 	*x = ListUsageRecordsRequest{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[14]
+	mi := &file_delibase_v1_billing_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1105,7 +1332,7 @@ func (x *ListUsageRecordsRequest) String() string {
 func (*ListUsageRecordsRequest) ProtoMessage() {}
 
 func (x *ListUsageRecordsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[14]
+	mi := &file_delibase_v1_billing_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1118,7 +1345,7 @@ func (x *ListUsageRecordsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsageRecordsRequest.ProtoReflect.Descriptor instead.
 func (*ListUsageRecordsRequest) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{14}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListUsageRecordsRequest) GetOrganizationId() *UuidV7 {
@@ -1180,7 +1407,7 @@ type ListUsageRecordsResponse struct {
 
 func (x *ListUsageRecordsResponse) Reset() {
 	*x = ListUsageRecordsResponse{}
-	mi := &file_delibase_v1_billing_proto_msgTypes[15]
+	mi := &file_delibase_v1_billing_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1192,7 +1419,7 @@ func (x *ListUsageRecordsResponse) String() string {
 func (*ListUsageRecordsResponse) ProtoMessage() {}
 
 func (x *ListUsageRecordsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_billing_proto_msgTypes[15]
+	mi := &file_delibase_v1_billing_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1205,7 +1432,7 @@ func (x *ListUsageRecordsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsageRecordsResponse.ProtoReflect.Descriptor instead.
 func (*ListUsageRecordsResponse) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{15}
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListUsageRecordsResponse) GetRecords() []*UsageRecord {
@@ -1218,6 +1445,534 @@ func (x *ListUsageRecordsResponse) GetRecords() []*UsageRecord {
 func (x *ListUsageRecordsResponse) GetPage() *PageResponse {
 	if x != nil {
 		return x.Page
+	}
+	return nil
+}
+
+type CreateBackgroundUsageAuthorizationRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Owner             *BackgroundUsageOwner  `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	OrganizationId    *UuidV7                `protobuf:"bytes,2,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	TeamId            *UuidV7                `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	ServiceIdentityId *UuidV7                `protobuf:"bytes,4,opt,name=service_identity_id,json=serviceIdentityId,proto3" json:"service_identity_id,omitempty"`
+	MeterId           *UuidV7                `protobuf:"bytes,5,opt,name=meter_id,json=meterId,proto3" json:"meter_id,omitempty"`
+	Purpose           BackgroundUsagePurpose `protobuf:"varint,6,opt,name=purpose,proto3,enum=delibase.v1.BackgroundUsagePurpose" json:"purpose,omitempty"`
+	FeatureResourceId *UuidV7                `protobuf:"bytes,7,opt,name=feature_resource_id,json=featureResourceId,proto3" json:"feature_resource_id,omitempty"`
+	Period            BackgroundUsagePeriod  `protobuf:"varint,8,opt,name=period,proto3,enum=delibase.v1.BackgroundUsagePeriod" json:"period,omitempty"`
+	MaximumUnits      *UsageUnits            `protobuf:"bytes,9,opt,name=maximum_units,json=maximumUnits,proto3" json:"maximum_units,omitempty"`
+	Idempotency       *IdempotencyKey        `protobuf:"bytes,10,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) Reset() {
+	*x = CreateBackgroundUsageAuthorizationRequest{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBackgroundUsageAuthorizationRequest) ProtoMessage() {}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBackgroundUsageAuthorizationRequest.ProtoReflect.Descriptor instead.
+func (*CreateBackgroundUsageAuthorizationRequest) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetOwner() *BackgroundUsageOwner {
+	if x != nil {
+		return x.Owner
+	}
+	return nil
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetOrganizationId() *UuidV7 {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return nil
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetTeamId() *UuidV7 {
+	if x != nil {
+		return x.TeamId
+	}
+	return nil
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetServiceIdentityId() *UuidV7 {
+	if x != nil {
+		return x.ServiceIdentityId
+	}
+	return nil
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetMeterId() *UuidV7 {
+	if x != nil {
+		return x.MeterId
+	}
+	return nil
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetPurpose() BackgroundUsagePurpose {
+	if x != nil {
+		return x.Purpose
+	}
+	return BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_UNSPECIFIED
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetFeatureResourceId() *UuidV7 {
+	if x != nil {
+		return x.FeatureResourceId
+	}
+	return nil
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetPeriod() BackgroundUsagePeriod {
+	if x != nil {
+		return x.Period
+	}
+	return BackgroundUsagePeriod_BACKGROUND_USAGE_PERIOD_UNSPECIFIED
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetMaximumUnits() *UsageUnits {
+	if x != nil {
+		return x.MaximumUnits
+	}
+	return nil
+}
+
+func (x *CreateBackgroundUsageAuthorizationRequest) GetIdempotency() *IdempotencyKey {
+	if x != nil {
+		return x.Idempotency
+	}
+	return nil
+}
+
+type CreateBackgroundUsageAuthorizationResponse struct {
+	state         protoimpl.MessageState            `protogen:"open.v1"`
+	Authorization *BackgroundUsageAuthorizationView `protobuf:"bytes,1,opt,name=authorization,proto3" json:"authorization,omitempty"`
+	Idempotency   *IdempotencyResult                `protobuf:"bytes,2,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateBackgroundUsageAuthorizationResponse) Reset() {
+	*x = CreateBackgroundUsageAuthorizationResponse{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBackgroundUsageAuthorizationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBackgroundUsageAuthorizationResponse) ProtoMessage() {}
+
+func (x *CreateBackgroundUsageAuthorizationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBackgroundUsageAuthorizationResponse.ProtoReflect.Descriptor instead.
+func (*CreateBackgroundUsageAuthorizationResponse) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CreateBackgroundUsageAuthorizationResponse) GetAuthorization() *BackgroundUsageAuthorizationView {
+	if x != nil {
+		return x.Authorization
+	}
+	return nil
+}
+
+func (x *CreateBackgroundUsageAuthorizationResponse) GetIdempotency() *IdempotencyResult {
+	if x != nil {
+		return x.Idempotency
+	}
+	return nil
+}
+
+type GetBackgroundUsageAuthorizationRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	AuthorizationId *UuidV7                `protobuf:"bytes,1,opt,name=authorization_id,json=authorizationId,proto3" json:"authorization_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetBackgroundUsageAuthorizationRequest) Reset() {
+	*x = GetBackgroundUsageAuthorizationRequest{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBackgroundUsageAuthorizationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBackgroundUsageAuthorizationRequest) ProtoMessage() {}
+
+func (x *GetBackgroundUsageAuthorizationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBackgroundUsageAuthorizationRequest.ProtoReflect.Descriptor instead.
+func (*GetBackgroundUsageAuthorizationRequest) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetBackgroundUsageAuthorizationRequest) GetAuthorizationId() *UuidV7 {
+	if x != nil {
+		return x.AuthorizationId
+	}
+	return nil
+}
+
+type GetBackgroundUsageAuthorizationResponse struct {
+	state         protoimpl.MessageState            `protogen:"open.v1"`
+	Authorization *BackgroundUsageAuthorizationView `protobuf:"bytes,1,opt,name=authorization,proto3" json:"authorization,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBackgroundUsageAuthorizationResponse) Reset() {
+	*x = GetBackgroundUsageAuthorizationResponse{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBackgroundUsageAuthorizationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBackgroundUsageAuthorizationResponse) ProtoMessage() {}
+
+func (x *GetBackgroundUsageAuthorizationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBackgroundUsageAuthorizationResponse.ProtoReflect.Descriptor instead.
+func (*GetBackgroundUsageAuthorizationResponse) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *GetBackgroundUsageAuthorizationResponse) GetAuthorization() *BackgroundUsageAuthorizationView {
+	if x != nil {
+		return x.Authorization
+	}
+	return nil
+}
+
+type ListBackgroundUsageAuthorizationsRequest struct {
+	state             protoimpl.MessageState             `protogen:"open.v1"`
+	Owner             *BackgroundUsageOwner              `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	OrganizationId    *UuidV7                            `protobuf:"bytes,2,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	TeamId            *UuidV7                            `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	ServiceIdentityId *UuidV7                            `protobuf:"bytes,4,opt,name=service_identity_id,json=serviceIdentityId,proto3" json:"service_identity_id,omitempty"`
+	MeterId           *UuidV7                            `protobuf:"bytes,5,opt,name=meter_id,json=meterId,proto3" json:"meter_id,omitempty"`
+	Purpose           BackgroundUsagePurpose             `protobuf:"varint,6,opt,name=purpose,proto3,enum=delibase.v1.BackgroundUsagePurpose" json:"purpose,omitempty"`
+	FeatureResourceId *UuidV7                            `protobuf:"bytes,7,opt,name=feature_resource_id,json=featureResourceId,proto3" json:"feature_resource_id,omitempty"`
+	Status            BackgroundUsageAuthorizationStatus `protobuf:"varint,8,opt,name=status,proto3,enum=delibase.v1.BackgroundUsageAuthorizationStatus" json:"status,omitempty"`
+	Page              *PageRequest                       `protobuf:"bytes,9,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) Reset() {
+	*x = ListBackgroundUsageAuthorizationsRequest{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBackgroundUsageAuthorizationsRequest) ProtoMessage() {}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBackgroundUsageAuthorizationsRequest.ProtoReflect.Descriptor instead.
+func (*ListBackgroundUsageAuthorizationsRequest) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetOwner() *BackgroundUsageOwner {
+	if x != nil {
+		return x.Owner
+	}
+	return nil
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetOrganizationId() *UuidV7 {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return nil
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetTeamId() *UuidV7 {
+	if x != nil {
+		return x.TeamId
+	}
+	return nil
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetServiceIdentityId() *UuidV7 {
+	if x != nil {
+		return x.ServiceIdentityId
+	}
+	return nil
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetMeterId() *UuidV7 {
+	if x != nil {
+		return x.MeterId
+	}
+	return nil
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetPurpose() BackgroundUsagePurpose {
+	if x != nil {
+		return x.Purpose
+	}
+	return BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_UNSPECIFIED
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetFeatureResourceId() *UuidV7 {
+	if x != nil {
+		return x.FeatureResourceId
+	}
+	return nil
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetStatus() BackgroundUsageAuthorizationStatus {
+	if x != nil {
+		return x.Status
+	}
+	return BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_UNSPECIFIED
+}
+
+func (x *ListBackgroundUsageAuthorizationsRequest) GetPage() *PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListBackgroundUsageAuthorizationsResponse struct {
+	state          protoimpl.MessageState              `protogen:"open.v1"`
+	Authorizations []*BackgroundUsageAuthorizationView `protobuf:"bytes,1,rep,name=authorizations,proto3" json:"authorizations,omitempty"`
+	Page           *PageResponse                       `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListBackgroundUsageAuthorizationsResponse) Reset() {
+	*x = ListBackgroundUsageAuthorizationsResponse{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBackgroundUsageAuthorizationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBackgroundUsageAuthorizationsResponse) ProtoMessage() {}
+
+func (x *ListBackgroundUsageAuthorizationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBackgroundUsageAuthorizationsResponse.ProtoReflect.Descriptor instead.
+func (*ListBackgroundUsageAuthorizationsResponse) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ListBackgroundUsageAuthorizationsResponse) GetAuthorizations() []*BackgroundUsageAuthorizationView {
+	if x != nil {
+		return x.Authorizations
+	}
+	return nil
+}
+
+func (x *ListBackgroundUsageAuthorizationsResponse) GetPage() *PageResponse {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type RevokeBackgroundUsageAuthorizationRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AuthorizationId  *UuidV7                `protobuf:"bytes,1,opt,name=authorization_id,json=authorizationId,proto3" json:"authorization_id,omitempty"`
+	ExpectedRevision int64                  `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Idempotency      *IdempotencyKey        `protobuf:"bytes,3,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *RevokeBackgroundUsageAuthorizationRequest) Reset() {
+	*x = RevokeBackgroundUsageAuthorizationRequest{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeBackgroundUsageAuthorizationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeBackgroundUsageAuthorizationRequest) ProtoMessage() {}
+
+func (x *RevokeBackgroundUsageAuthorizationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeBackgroundUsageAuthorizationRequest.ProtoReflect.Descriptor instead.
+func (*RevokeBackgroundUsageAuthorizationRequest) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *RevokeBackgroundUsageAuthorizationRequest) GetAuthorizationId() *UuidV7 {
+	if x != nil {
+		return x.AuthorizationId
+	}
+	return nil
+}
+
+func (x *RevokeBackgroundUsageAuthorizationRequest) GetExpectedRevision() int64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *RevokeBackgroundUsageAuthorizationRequest) GetIdempotency() *IdempotencyKey {
+	if x != nil {
+		return x.Idempotency
+	}
+	return nil
+}
+
+type RevokeBackgroundUsageAuthorizationResponse struct {
+	state         protoimpl.MessageState            `protogen:"open.v1"`
+	Authorization *BackgroundUsageAuthorizationView `protobuf:"bytes,1,opt,name=authorization,proto3" json:"authorization,omitempty"`
+	Idempotency   *IdempotencyResult                `protobuf:"bytes,2,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeBackgroundUsageAuthorizationResponse) Reset() {
+	*x = RevokeBackgroundUsageAuthorizationResponse{}
+	mi := &file_delibase_v1_billing_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeBackgroundUsageAuthorizationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeBackgroundUsageAuthorizationResponse) ProtoMessage() {}
+
+func (x *RevokeBackgroundUsageAuthorizationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_billing_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeBackgroundUsageAuthorizationResponse.ProtoReflect.Descriptor instead.
+func (*RevokeBackgroundUsageAuthorizationResponse) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_billing_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *RevokeBackgroundUsageAuthorizationResponse) GetAuthorization() *BackgroundUsageAuthorizationView {
+	if x != nil {
+		return x.Authorization
+	}
+	return nil
+}
+
+func (x *RevokeBackgroundUsageAuthorizationResponse) GetIdempotency() *IdempotencyResult {
+	if x != nil {
+		return x.Idempotency
 	}
 	return nil
 }
@@ -1258,7 +2013,7 @@ const file_delibase_v1_billing_proto_rawDesc = "" +
 	"\x12team_name_snapshot\x18\n" +
 	" \x01(\tR\x10teamNameSnapshot\x129\n" +
 	"\n" +
-	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xf1\a\n" +
+	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xc1\b\n" +
 	"\vUsageRecord\x12;\n" +
 	"\x0fusage_record_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\rusageRecordId\x12<\n" +
 	"\x0forganization_id\x18\x02 \x01(\v2\x13.delibase.v1.UuidV7R\x0eorganizationId\x12:\n" +
@@ -1278,7 +2033,32 @@ const file_delibase_v1_billing_proto_rawDesc = "" +
 	"\x0foverage_applied\x18\x0e \x01(\v2\x16.delibase.v1.UsdMicrosR\x0eoverageApplied\x12)\n" +
 	"\x10client_reference\x18\x0f \x01(\tR\x0fclientReference\x126\n" +
 	"\x06status\x18\x10 \x01(\x0e2\x1e.delibase.v1.UsageRecordStatusR\x06status\x12=\n" +
-	"\fcommitted_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\vcommittedAt\"X\n" +
+	"\fcommitted_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\vcommittedAt\x12N\n" +
+	"\x10authorized_usage\x18\x12 \x01(\v2#.delibase.v1.AuthorizedUsageContextR\x0fauthorizedUsage\"\xd5\a\n" +
+	"\x1cBackgroundUsageAuthorization\x12>\n" +
+	"\x10authorization_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\x0fauthorizationId\x12G\n" +
+	"\x15authorizer_account_id\x18\x02 \x01(\v2\x13.delibase.v1.UuidV7R\x13authorizerAccountId\x127\n" +
+	"\x05owner\x18\x03 \x01(\v2!.delibase.v1.BackgroundUsageOwnerR\x05owner\x12<\n" +
+	"\x0forganization_id\x18\x04 \x01(\v2\x13.delibase.v1.UuidV7R\x0eorganizationId\x12,\n" +
+	"\ateam_id\x18\x05 \x01(\v2\x13.delibase.v1.UuidV7R\x06teamId\x12C\n" +
+	"\x13service_identity_id\x18\x06 \x01(\v2\x13.delibase.v1.UuidV7R\x11serviceIdentityId\x12.\n" +
+	"\bmeter_id\x18\a \x01(\v2\x13.delibase.v1.UuidV7R\ameterId\x12=\n" +
+	"\apurpose\x18\b \x01(\x0e2#.delibase.v1.BackgroundUsagePurposeR\apurpose\x12C\n" +
+	"\x13feature_resource_id\x18\t \x01(\v2\x13.delibase.v1.UuidV7R\x11featureResourceId\x12:\n" +
+	"\x06period\x18\n" +
+	" \x01(\x0e2\".delibase.v1.BackgroundUsagePeriodR\x06period\x12<\n" +
+	"\rmaximum_units\x18\v \x01(\v2\x17.delibase.v1.UsageUnitsR\fmaximumUnits\x12G\n" +
+	"\x06status\x18\f \x01(\x0e2/.delibase.v1.BackgroundUsageAuthorizationStatusR\x06status\x12\x1a\n" +
+	"\brevision\x18\r \x01(\x03R\brevision\x129\n" +
+	"\n" +
+	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x129\n" +
+	"\n" +
+	"revoked_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\"\xce\x01\n" +
+	" BackgroundUsageAuthorizationView\x12O\n" +
+	"\rauthorization\x18\x01 \x01(\v2).delibase.v1.BackgroundUsageAuthorizationR\rauthorization\x12Y\n" +
+	"\x14current_period_usage\x18\x02 \x01(\v2'.delibase.v1.BackgroundUsagePeriodUsageR\x12currentPeriodUsage\"X\n" +
 	"\x18GetBillingSummaryRequest\x12<\n" +
 	"\x0forganization_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\x0eorganizationId\"R\n" +
 	"\x19GetBillingSummaryResponse\x125\n" +
@@ -1332,14 +2112,57 @@ const file_delibase_v1_billing_proto_rawDesc = "" +
 	"\x04page\x18\a \x01(\v2\x18.delibase.v1.PageRequestR\x04page\"}\n" +
 	"\x18ListUsageRecordsResponse\x122\n" +
 	"\arecords\x18\x01 \x03(\v2\x18.delibase.v1.UsageRecordR\arecords\x12-\n" +
-	"\x04page\x18\x02 \x01(\v2\x19.delibase.v1.PageResponseR\x04page2\x9e\x05\n" +
+	"\x04page\x18\x02 \x01(\v2\x19.delibase.v1.PageResponseR\x04page\"\x82\x05\n" +
+	")CreateBackgroundUsageAuthorizationRequest\x127\n" +
+	"\x05owner\x18\x01 \x01(\v2!.delibase.v1.BackgroundUsageOwnerR\x05owner\x12<\n" +
+	"\x0forganization_id\x18\x02 \x01(\v2\x13.delibase.v1.UuidV7R\x0eorganizationId\x12,\n" +
+	"\ateam_id\x18\x03 \x01(\v2\x13.delibase.v1.UuidV7R\x06teamId\x12C\n" +
+	"\x13service_identity_id\x18\x04 \x01(\v2\x13.delibase.v1.UuidV7R\x11serviceIdentityId\x12.\n" +
+	"\bmeter_id\x18\x05 \x01(\v2\x13.delibase.v1.UuidV7R\ameterId\x12=\n" +
+	"\apurpose\x18\x06 \x01(\x0e2#.delibase.v1.BackgroundUsagePurposeR\apurpose\x12C\n" +
+	"\x13feature_resource_id\x18\a \x01(\v2\x13.delibase.v1.UuidV7R\x11featureResourceId\x12:\n" +
+	"\x06period\x18\b \x01(\x0e2\".delibase.v1.BackgroundUsagePeriodR\x06period\x12<\n" +
+	"\rmaximum_units\x18\t \x01(\v2\x17.delibase.v1.UsageUnitsR\fmaximumUnits\x12=\n" +
+	"\vidempotency\x18\n" +
+	" \x01(\v2\x1b.delibase.v1.IdempotencyKeyR\vidempotency\"\xc3\x01\n" +
+	"*CreateBackgroundUsageAuthorizationResponse\x12S\n" +
+	"\rauthorization\x18\x01 \x01(\v2-.delibase.v1.BackgroundUsageAuthorizationViewR\rauthorization\x12@\n" +
+	"\vidempotency\x18\x02 \x01(\v2\x1e.delibase.v1.IdempotencyResultR\vidempotency\"h\n" +
+	"&GetBackgroundUsageAuthorizationRequest\x12>\n" +
+	"\x10authorization_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\x0fauthorizationId\"~\n" +
+	"'GetBackgroundUsageAuthorizationResponse\x12S\n" +
+	"\rauthorization\x18\x01 \x01(\v2-.delibase.v1.BackgroundUsageAuthorizationViewR\rauthorization\"\xbf\x04\n" +
+	"(ListBackgroundUsageAuthorizationsRequest\x127\n" +
+	"\x05owner\x18\x01 \x01(\v2!.delibase.v1.BackgroundUsageOwnerR\x05owner\x12<\n" +
+	"\x0forganization_id\x18\x02 \x01(\v2\x13.delibase.v1.UuidV7R\x0eorganizationId\x12,\n" +
+	"\ateam_id\x18\x03 \x01(\v2\x13.delibase.v1.UuidV7R\x06teamId\x12C\n" +
+	"\x13service_identity_id\x18\x04 \x01(\v2\x13.delibase.v1.UuidV7R\x11serviceIdentityId\x12.\n" +
+	"\bmeter_id\x18\x05 \x01(\v2\x13.delibase.v1.UuidV7R\ameterId\x12=\n" +
+	"\apurpose\x18\x06 \x01(\x0e2#.delibase.v1.BackgroundUsagePurposeR\apurpose\x12C\n" +
+	"\x13feature_resource_id\x18\a \x01(\v2\x13.delibase.v1.UuidV7R\x11featureResourceId\x12G\n" +
+	"\x06status\x18\b \x01(\x0e2/.delibase.v1.BackgroundUsageAuthorizationStatusR\x06status\x12,\n" +
+	"\x04page\x18\t \x01(\v2\x18.delibase.v1.PageRequestR\x04page\"\xb1\x01\n" +
+	")ListBackgroundUsageAuthorizationsResponse\x12U\n" +
+	"\x0eauthorizations\x18\x01 \x03(\v2-.delibase.v1.BackgroundUsageAuthorizationViewR\x0eauthorizations\x12-\n" +
+	"\x04page\x18\x02 \x01(\v2\x19.delibase.v1.PageResponseR\x04page\"\xd7\x01\n" +
+	")RevokeBackgroundUsageAuthorizationRequest\x12>\n" +
+	"\x10authorization_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\x0fauthorizationId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x03R\x10expectedRevision\x12=\n" +
+	"\vidempotency\x18\x03 \x01(\v2\x1b.delibase.v1.IdempotencyKeyR\vidempotency\"\xc3\x01\n" +
+	"*RevokeBackgroundUsageAuthorizationResponse\x12S\n" +
+	"\rauthorization\x18\x01 \x01(\v2-.delibase.v1.BackgroundUsageAuthorizationViewR\rauthorization\x12@\n" +
+	"\vidempotency\x18\x02 \x01(\v2\x1e.delibase.v1.IdempotencyResultR\vidempotency2\xf2\t\n" +
 	"\x0eBillingService\x12b\n" +
 	"\x11GetBillingSummary\x12%.delibase.v1.GetBillingSummaryRequest\x1a&.delibase.v1.GetBillingSummaryResponse\x12}\n" +
 	"\x1aCreateSubscriptionCheckout\x12..delibase.v1.CreateSubscriptionCheckoutRequest\x1a/.delibase.v1.CreateSubscriptionCheckoutResponse\x12}\n" +
 	"\x1aCreateBillingPortalSession\x12..delibase.v1.CreateBillingPortalSessionRequest\x1a/.delibase.v1.CreateBillingPortalSessionResponse\x12e\n" +
 	"\x12UpdateOverageLimit\x12&.delibase.v1.UpdateOverageLimitRequest\x1a'.delibase.v1.UpdateOverageLimitResponse\x12b\n" +
 	"\x11ListLedgerEntries\x12%.delibase.v1.ListLedgerEntriesRequest\x1a&.delibase.v1.ListLedgerEntriesResponse\x12_\n" +
-	"\x10ListUsageRecords\x12$.delibase.v1.ListUsageRecordsRequest\x1a%.delibase.v1.ListUsageRecordsResponseBGZEgithub.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1b\x06proto3"
+	"\x10ListUsageRecords\x12$.delibase.v1.ListUsageRecordsRequest\x1a%.delibase.v1.ListUsageRecordsResponse\x12\x95\x01\n" +
+	"\"CreateBackgroundUsageAuthorization\x126.delibase.v1.CreateBackgroundUsageAuthorizationRequest\x1a7.delibase.v1.CreateBackgroundUsageAuthorizationResponse\x12\x8c\x01\n" +
+	"\x1fGetBackgroundUsageAuthorization\x123.delibase.v1.GetBackgroundUsageAuthorizationRequest\x1a4.delibase.v1.GetBackgroundUsageAuthorizationResponse\x12\x92\x01\n" +
+	"!ListBackgroundUsageAuthorizations\x125.delibase.v1.ListBackgroundUsageAuthorizationsRequest\x1a6.delibase.v1.ListBackgroundUsageAuthorizationsResponse\x12\x95\x01\n" +
+	"\"RevokeBackgroundUsageAuthorization\x126.delibase.v1.RevokeBackgroundUsageAuthorizationRequest\x1a7.delibase.v1.RevokeBackgroundUsageAuthorizationResponseBGZEgithub.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1b\x06proto3"
 
 var (
 	file_delibase_v1_billing_proto_rawDescOnce sync.Once
@@ -1353,123 +2176,194 @@ func file_delibase_v1_billing_proto_rawDescGZIP() []byte {
 	return file_delibase_v1_billing_proto_rawDescData
 }
 
-var file_delibase_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_delibase_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_delibase_v1_billing_proto_goTypes = []any{
-	(*BillingPeriod)(nil),                      // 0: delibase.v1.BillingPeriod
-	(*BillingSummary)(nil),                     // 1: delibase.v1.BillingSummary
-	(*LedgerEntry)(nil),                        // 2: delibase.v1.LedgerEntry
-	(*UsageRecord)(nil),                        // 3: delibase.v1.UsageRecord
-	(*GetBillingSummaryRequest)(nil),           // 4: delibase.v1.GetBillingSummaryRequest
-	(*GetBillingSummaryResponse)(nil),          // 5: delibase.v1.GetBillingSummaryResponse
-	(*CreateSubscriptionCheckoutRequest)(nil),  // 6: delibase.v1.CreateSubscriptionCheckoutRequest
-	(*CreateSubscriptionCheckoutResponse)(nil), // 7: delibase.v1.CreateSubscriptionCheckoutResponse
-	(*CreateBillingPortalSessionRequest)(nil),  // 8: delibase.v1.CreateBillingPortalSessionRequest
-	(*CreateBillingPortalSessionResponse)(nil), // 9: delibase.v1.CreateBillingPortalSessionResponse
-	(*UpdateOverageLimitRequest)(nil),          // 10: delibase.v1.UpdateOverageLimitRequest
-	(*UpdateOverageLimitResponse)(nil),         // 11: delibase.v1.UpdateOverageLimitResponse
-	(*ListLedgerEntriesRequest)(nil),           // 12: delibase.v1.ListLedgerEntriesRequest
-	(*ListLedgerEntriesResponse)(nil),          // 13: delibase.v1.ListLedgerEntriesResponse
-	(*ListUsageRecordsRequest)(nil),            // 14: delibase.v1.ListUsageRecordsRequest
-	(*ListUsageRecordsResponse)(nil),           // 15: delibase.v1.ListUsageRecordsResponse
-	(*UuidV7)(nil),                             // 16: delibase.v1.UuidV7
-	(BillingPeriodStatus)(0),                   // 17: delibase.v1.BillingPeriodStatus
-	(*timestamppb.Timestamp)(nil),              // 18: google.protobuf.Timestamp
-	(SubscriptionStatus)(0),                    // 19: delibase.v1.SubscriptionStatus
-	(*UsdMicros)(nil),                          // 20: delibase.v1.UsdMicros
-	(LedgerOperation)(0),                       // 21: delibase.v1.LedgerOperation
-	(*UsageUnits)(nil),                         // 22: delibase.v1.UsageUnits
-	(UsageRecordStatus)(0),                     // 23: delibase.v1.UsageRecordStatus
-	(*IdempotencyKey)(nil),                     // 24: delibase.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),                  // 25: delibase.v1.IdempotencyResult
-	(*PageRequest)(nil),                        // 26: delibase.v1.PageRequest
-	(*PageResponse)(nil),                       // 27: delibase.v1.PageResponse
+	(*BillingPeriod)(nil),                              // 0: delibase.v1.BillingPeriod
+	(*BillingSummary)(nil),                             // 1: delibase.v1.BillingSummary
+	(*LedgerEntry)(nil),                                // 2: delibase.v1.LedgerEntry
+	(*UsageRecord)(nil),                                // 3: delibase.v1.UsageRecord
+	(*BackgroundUsageAuthorization)(nil),               // 4: delibase.v1.BackgroundUsageAuthorization
+	(*BackgroundUsageAuthorizationView)(nil),           // 5: delibase.v1.BackgroundUsageAuthorizationView
+	(*GetBillingSummaryRequest)(nil),                   // 6: delibase.v1.GetBillingSummaryRequest
+	(*GetBillingSummaryResponse)(nil),                  // 7: delibase.v1.GetBillingSummaryResponse
+	(*CreateSubscriptionCheckoutRequest)(nil),          // 8: delibase.v1.CreateSubscriptionCheckoutRequest
+	(*CreateSubscriptionCheckoutResponse)(nil),         // 9: delibase.v1.CreateSubscriptionCheckoutResponse
+	(*CreateBillingPortalSessionRequest)(nil),          // 10: delibase.v1.CreateBillingPortalSessionRequest
+	(*CreateBillingPortalSessionResponse)(nil),         // 11: delibase.v1.CreateBillingPortalSessionResponse
+	(*UpdateOverageLimitRequest)(nil),                  // 12: delibase.v1.UpdateOverageLimitRequest
+	(*UpdateOverageLimitResponse)(nil),                 // 13: delibase.v1.UpdateOverageLimitResponse
+	(*ListLedgerEntriesRequest)(nil),                   // 14: delibase.v1.ListLedgerEntriesRequest
+	(*ListLedgerEntriesResponse)(nil),                  // 15: delibase.v1.ListLedgerEntriesResponse
+	(*ListUsageRecordsRequest)(nil),                    // 16: delibase.v1.ListUsageRecordsRequest
+	(*ListUsageRecordsResponse)(nil),                   // 17: delibase.v1.ListUsageRecordsResponse
+	(*CreateBackgroundUsageAuthorizationRequest)(nil),  // 18: delibase.v1.CreateBackgroundUsageAuthorizationRequest
+	(*CreateBackgroundUsageAuthorizationResponse)(nil), // 19: delibase.v1.CreateBackgroundUsageAuthorizationResponse
+	(*GetBackgroundUsageAuthorizationRequest)(nil),     // 20: delibase.v1.GetBackgroundUsageAuthorizationRequest
+	(*GetBackgroundUsageAuthorizationResponse)(nil),    // 21: delibase.v1.GetBackgroundUsageAuthorizationResponse
+	(*ListBackgroundUsageAuthorizationsRequest)(nil),   // 22: delibase.v1.ListBackgroundUsageAuthorizationsRequest
+	(*ListBackgroundUsageAuthorizationsResponse)(nil),  // 23: delibase.v1.ListBackgroundUsageAuthorizationsResponse
+	(*RevokeBackgroundUsageAuthorizationRequest)(nil),  // 24: delibase.v1.RevokeBackgroundUsageAuthorizationRequest
+	(*RevokeBackgroundUsageAuthorizationResponse)(nil), // 25: delibase.v1.RevokeBackgroundUsageAuthorizationResponse
+	(*UuidV7)(nil),                          // 26: delibase.v1.UuidV7
+	(BillingPeriodStatus)(0),                // 27: delibase.v1.BillingPeriodStatus
+	(*timestamppb.Timestamp)(nil),           // 28: google.protobuf.Timestamp
+	(SubscriptionStatus)(0),                 // 29: delibase.v1.SubscriptionStatus
+	(*UsdMicros)(nil),                       // 30: delibase.v1.UsdMicros
+	(LedgerOperation)(0),                    // 31: delibase.v1.LedgerOperation
+	(*UsageUnits)(nil),                      // 32: delibase.v1.UsageUnits
+	(UsageRecordStatus)(0),                  // 33: delibase.v1.UsageRecordStatus
+	(*AuthorizedUsageContext)(nil),          // 34: delibase.v1.AuthorizedUsageContext
+	(*BackgroundUsageOwner)(nil),            // 35: delibase.v1.BackgroundUsageOwner
+	(BackgroundUsagePurpose)(0),             // 36: delibase.v1.BackgroundUsagePurpose
+	(BackgroundUsagePeriod)(0),              // 37: delibase.v1.BackgroundUsagePeriod
+	(BackgroundUsageAuthorizationStatus)(0), // 38: delibase.v1.BackgroundUsageAuthorizationStatus
+	(*BackgroundUsagePeriodUsage)(nil),      // 39: delibase.v1.BackgroundUsagePeriodUsage
+	(*IdempotencyKey)(nil),                  // 40: delibase.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),               // 41: delibase.v1.IdempotencyResult
+	(*PageRequest)(nil),                     // 42: delibase.v1.PageRequest
+	(*PageResponse)(nil),                    // 43: delibase.v1.PageResponse
 }
 var file_delibase_v1_billing_proto_depIdxs = []int32{
-	16, // 0: delibase.v1.BillingPeriod.billing_period_id:type_name -> delibase.v1.UuidV7
-	17, // 1: delibase.v1.BillingPeriod.status:type_name -> delibase.v1.BillingPeriodStatus
-	18, // 2: delibase.v1.BillingPeriod.starts_at:type_name -> google.protobuf.Timestamp
-	18, // 3: delibase.v1.BillingPeriod.ends_at:type_name -> google.protobuf.Timestamp
-	16, // 4: delibase.v1.BillingSummary.organization_id:type_name -> delibase.v1.UuidV7
-	19, // 5: delibase.v1.BillingSummary.subscription_status:type_name -> delibase.v1.SubscriptionStatus
-	0,  // 6: delibase.v1.BillingSummary.current_period:type_name -> delibase.v1.BillingPeriod
-	20, // 7: delibase.v1.BillingSummary.available_credit:type_name -> delibase.v1.UsdMicros
-	20, // 8: delibase.v1.BillingSummary.held_credit:type_name -> delibase.v1.UsdMicros
-	20, // 9: delibase.v1.BillingSummary.committed_overage:type_name -> delibase.v1.UsdMicros
-	20, // 10: delibase.v1.BillingSummary.held_overage:type_name -> delibase.v1.UsdMicros
-	20, // 11: delibase.v1.BillingSummary.monthly_overage_limit:type_name -> delibase.v1.UsdMicros
-	16, // 12: delibase.v1.LedgerEntry.ledger_entry_id:type_name -> delibase.v1.UuidV7
-	16, // 13: delibase.v1.LedgerEntry.organization_id:type_name -> delibase.v1.UuidV7
-	21, // 14: delibase.v1.LedgerEntry.operation:type_name -> delibase.v1.LedgerOperation
-	20, // 15: delibase.v1.LedgerEntry.amount:type_name -> delibase.v1.UsdMicros
-	20, // 16: delibase.v1.LedgerEntry.balance_after:type_name -> delibase.v1.UsdMicros
-	16, // 17: delibase.v1.LedgerEntry.billing_period_id:type_name -> delibase.v1.UuidV7
-	16, // 18: delibase.v1.LedgerEntry.reservation_id:type_name -> delibase.v1.UuidV7
-	16, // 19: delibase.v1.LedgerEntry.usage_record_id:type_name -> delibase.v1.UuidV7
-	16, // 20: delibase.v1.LedgerEntry.team_id_snapshot:type_name -> delibase.v1.UuidV7
-	18, // 21: delibase.v1.LedgerEntry.created_at:type_name -> google.protobuf.Timestamp
-	16, // 22: delibase.v1.UsageRecord.usage_record_id:type_name -> delibase.v1.UuidV7
-	16, // 23: delibase.v1.UsageRecord.organization_id:type_name -> delibase.v1.UuidV7
-	16, // 24: delibase.v1.UsageRecord.reservation_id:type_name -> delibase.v1.UuidV7
-	16, // 25: delibase.v1.UsageRecord.meter_id:type_name -> delibase.v1.UuidV7
-	16, // 26: delibase.v1.UsageRecord.price_version_id:type_name -> delibase.v1.UuidV7
-	16, // 27: delibase.v1.UsageRecord.team_id_snapshot:type_name -> delibase.v1.UuidV7
-	16, // 28: delibase.v1.UsageRecord.user_account_id:type_name -> delibase.v1.UuidV7
-	16, // 29: delibase.v1.UsageRecord.service_identity_id:type_name -> delibase.v1.UuidV7
-	22, // 30: delibase.v1.UsageRecord.units:type_name -> delibase.v1.UsageUnits
-	20, // 31: delibase.v1.UsageRecord.usd_micros_per_unit:type_name -> delibase.v1.UsdMicros
-	20, // 32: delibase.v1.UsageRecord.total_cost:type_name -> delibase.v1.UsdMicros
-	20, // 33: delibase.v1.UsageRecord.credit_applied:type_name -> delibase.v1.UsdMicros
-	20, // 34: delibase.v1.UsageRecord.overage_applied:type_name -> delibase.v1.UsdMicros
-	23, // 35: delibase.v1.UsageRecord.status:type_name -> delibase.v1.UsageRecordStatus
-	18, // 36: delibase.v1.UsageRecord.committed_at:type_name -> google.protobuf.Timestamp
-	16, // 37: delibase.v1.GetBillingSummaryRequest.organization_id:type_name -> delibase.v1.UuidV7
-	1,  // 38: delibase.v1.GetBillingSummaryResponse.summary:type_name -> delibase.v1.BillingSummary
-	16, // 39: delibase.v1.CreateSubscriptionCheckoutRequest.organization_id:type_name -> delibase.v1.UuidV7
-	24, // 40: delibase.v1.CreateSubscriptionCheckoutRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
-	18, // 41: delibase.v1.CreateSubscriptionCheckoutResponse.expires_at:type_name -> google.protobuf.Timestamp
-	25, // 42: delibase.v1.CreateSubscriptionCheckoutResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	16, // 43: delibase.v1.CreateBillingPortalSessionRequest.organization_id:type_name -> delibase.v1.UuidV7
-	24, // 44: delibase.v1.CreateBillingPortalSessionRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
-	18, // 45: delibase.v1.CreateBillingPortalSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	25, // 46: delibase.v1.CreateBillingPortalSessionResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	16, // 47: delibase.v1.UpdateOverageLimitRequest.organization_id:type_name -> delibase.v1.UuidV7
-	20, // 48: delibase.v1.UpdateOverageLimitRequest.monthly_limit:type_name -> delibase.v1.UsdMicros
-	24, // 49: delibase.v1.UpdateOverageLimitRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
-	1,  // 50: delibase.v1.UpdateOverageLimitResponse.summary:type_name -> delibase.v1.BillingSummary
-	25, // 51: delibase.v1.UpdateOverageLimitResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	16, // 52: delibase.v1.ListLedgerEntriesRequest.organization_id:type_name -> delibase.v1.UuidV7
-	21, // 53: delibase.v1.ListLedgerEntriesRequest.operation:type_name -> delibase.v1.LedgerOperation
-	18, // 54: delibase.v1.ListLedgerEntriesRequest.from_time:type_name -> google.protobuf.Timestamp
-	18, // 55: delibase.v1.ListLedgerEntriesRequest.to_time:type_name -> google.protobuf.Timestamp
-	26, // 56: delibase.v1.ListLedgerEntriesRequest.page:type_name -> delibase.v1.PageRequest
-	2,  // 57: delibase.v1.ListLedgerEntriesResponse.entries:type_name -> delibase.v1.LedgerEntry
-	27, // 58: delibase.v1.ListLedgerEntriesResponse.page:type_name -> delibase.v1.PageResponse
-	16, // 59: delibase.v1.ListUsageRecordsRequest.organization_id:type_name -> delibase.v1.UuidV7
-	16, // 60: delibase.v1.ListUsageRecordsRequest.team_id:type_name -> delibase.v1.UuidV7
-	16, // 61: delibase.v1.ListUsageRecordsRequest.meter_id:type_name -> delibase.v1.UuidV7
-	16, // 62: delibase.v1.ListUsageRecordsRequest.user_account_id:type_name -> delibase.v1.UuidV7
-	18, // 63: delibase.v1.ListUsageRecordsRequest.from_time:type_name -> google.protobuf.Timestamp
-	18, // 64: delibase.v1.ListUsageRecordsRequest.to_time:type_name -> google.protobuf.Timestamp
-	26, // 65: delibase.v1.ListUsageRecordsRequest.page:type_name -> delibase.v1.PageRequest
-	3,  // 66: delibase.v1.ListUsageRecordsResponse.records:type_name -> delibase.v1.UsageRecord
-	27, // 67: delibase.v1.ListUsageRecordsResponse.page:type_name -> delibase.v1.PageResponse
-	4,  // 68: delibase.v1.BillingService.GetBillingSummary:input_type -> delibase.v1.GetBillingSummaryRequest
-	6,  // 69: delibase.v1.BillingService.CreateSubscriptionCheckout:input_type -> delibase.v1.CreateSubscriptionCheckoutRequest
-	8,  // 70: delibase.v1.BillingService.CreateBillingPortalSession:input_type -> delibase.v1.CreateBillingPortalSessionRequest
-	10, // 71: delibase.v1.BillingService.UpdateOverageLimit:input_type -> delibase.v1.UpdateOverageLimitRequest
-	12, // 72: delibase.v1.BillingService.ListLedgerEntries:input_type -> delibase.v1.ListLedgerEntriesRequest
-	14, // 73: delibase.v1.BillingService.ListUsageRecords:input_type -> delibase.v1.ListUsageRecordsRequest
-	5,  // 74: delibase.v1.BillingService.GetBillingSummary:output_type -> delibase.v1.GetBillingSummaryResponse
-	7,  // 75: delibase.v1.BillingService.CreateSubscriptionCheckout:output_type -> delibase.v1.CreateSubscriptionCheckoutResponse
-	9,  // 76: delibase.v1.BillingService.CreateBillingPortalSession:output_type -> delibase.v1.CreateBillingPortalSessionResponse
-	11, // 77: delibase.v1.BillingService.UpdateOverageLimit:output_type -> delibase.v1.UpdateOverageLimitResponse
-	13, // 78: delibase.v1.BillingService.ListLedgerEntries:output_type -> delibase.v1.ListLedgerEntriesResponse
-	15, // 79: delibase.v1.BillingService.ListUsageRecords:output_type -> delibase.v1.ListUsageRecordsResponse
-	74, // [74:80] is the sub-list for method output_type
-	68, // [68:74] is the sub-list for method input_type
-	68, // [68:68] is the sub-list for extension type_name
-	68, // [68:68] is the sub-list for extension extendee
-	0,  // [0:68] is the sub-list for field type_name
+	26,  // 0: delibase.v1.BillingPeriod.billing_period_id:type_name -> delibase.v1.UuidV7
+	27,  // 1: delibase.v1.BillingPeriod.status:type_name -> delibase.v1.BillingPeriodStatus
+	28,  // 2: delibase.v1.BillingPeriod.starts_at:type_name -> google.protobuf.Timestamp
+	28,  // 3: delibase.v1.BillingPeriod.ends_at:type_name -> google.protobuf.Timestamp
+	26,  // 4: delibase.v1.BillingSummary.organization_id:type_name -> delibase.v1.UuidV7
+	29,  // 5: delibase.v1.BillingSummary.subscription_status:type_name -> delibase.v1.SubscriptionStatus
+	0,   // 6: delibase.v1.BillingSummary.current_period:type_name -> delibase.v1.BillingPeriod
+	30,  // 7: delibase.v1.BillingSummary.available_credit:type_name -> delibase.v1.UsdMicros
+	30,  // 8: delibase.v1.BillingSummary.held_credit:type_name -> delibase.v1.UsdMicros
+	30,  // 9: delibase.v1.BillingSummary.committed_overage:type_name -> delibase.v1.UsdMicros
+	30,  // 10: delibase.v1.BillingSummary.held_overage:type_name -> delibase.v1.UsdMicros
+	30,  // 11: delibase.v1.BillingSummary.monthly_overage_limit:type_name -> delibase.v1.UsdMicros
+	26,  // 12: delibase.v1.LedgerEntry.ledger_entry_id:type_name -> delibase.v1.UuidV7
+	26,  // 13: delibase.v1.LedgerEntry.organization_id:type_name -> delibase.v1.UuidV7
+	31,  // 14: delibase.v1.LedgerEntry.operation:type_name -> delibase.v1.LedgerOperation
+	30,  // 15: delibase.v1.LedgerEntry.amount:type_name -> delibase.v1.UsdMicros
+	30,  // 16: delibase.v1.LedgerEntry.balance_after:type_name -> delibase.v1.UsdMicros
+	26,  // 17: delibase.v1.LedgerEntry.billing_period_id:type_name -> delibase.v1.UuidV7
+	26,  // 18: delibase.v1.LedgerEntry.reservation_id:type_name -> delibase.v1.UuidV7
+	26,  // 19: delibase.v1.LedgerEntry.usage_record_id:type_name -> delibase.v1.UuidV7
+	26,  // 20: delibase.v1.LedgerEntry.team_id_snapshot:type_name -> delibase.v1.UuidV7
+	28,  // 21: delibase.v1.LedgerEntry.created_at:type_name -> google.protobuf.Timestamp
+	26,  // 22: delibase.v1.UsageRecord.usage_record_id:type_name -> delibase.v1.UuidV7
+	26,  // 23: delibase.v1.UsageRecord.organization_id:type_name -> delibase.v1.UuidV7
+	26,  // 24: delibase.v1.UsageRecord.reservation_id:type_name -> delibase.v1.UuidV7
+	26,  // 25: delibase.v1.UsageRecord.meter_id:type_name -> delibase.v1.UuidV7
+	26,  // 26: delibase.v1.UsageRecord.price_version_id:type_name -> delibase.v1.UuidV7
+	26,  // 27: delibase.v1.UsageRecord.team_id_snapshot:type_name -> delibase.v1.UuidV7
+	26,  // 28: delibase.v1.UsageRecord.user_account_id:type_name -> delibase.v1.UuidV7
+	26,  // 29: delibase.v1.UsageRecord.service_identity_id:type_name -> delibase.v1.UuidV7
+	32,  // 30: delibase.v1.UsageRecord.units:type_name -> delibase.v1.UsageUnits
+	30,  // 31: delibase.v1.UsageRecord.usd_micros_per_unit:type_name -> delibase.v1.UsdMicros
+	30,  // 32: delibase.v1.UsageRecord.total_cost:type_name -> delibase.v1.UsdMicros
+	30,  // 33: delibase.v1.UsageRecord.credit_applied:type_name -> delibase.v1.UsdMicros
+	30,  // 34: delibase.v1.UsageRecord.overage_applied:type_name -> delibase.v1.UsdMicros
+	33,  // 35: delibase.v1.UsageRecord.status:type_name -> delibase.v1.UsageRecordStatus
+	28,  // 36: delibase.v1.UsageRecord.committed_at:type_name -> google.protobuf.Timestamp
+	34,  // 37: delibase.v1.UsageRecord.authorized_usage:type_name -> delibase.v1.AuthorizedUsageContext
+	26,  // 38: delibase.v1.BackgroundUsageAuthorization.authorization_id:type_name -> delibase.v1.UuidV7
+	26,  // 39: delibase.v1.BackgroundUsageAuthorization.authorizer_account_id:type_name -> delibase.v1.UuidV7
+	35,  // 40: delibase.v1.BackgroundUsageAuthorization.owner:type_name -> delibase.v1.BackgroundUsageOwner
+	26,  // 41: delibase.v1.BackgroundUsageAuthorization.organization_id:type_name -> delibase.v1.UuidV7
+	26,  // 42: delibase.v1.BackgroundUsageAuthorization.team_id:type_name -> delibase.v1.UuidV7
+	26,  // 43: delibase.v1.BackgroundUsageAuthorization.service_identity_id:type_name -> delibase.v1.UuidV7
+	26,  // 44: delibase.v1.BackgroundUsageAuthorization.meter_id:type_name -> delibase.v1.UuidV7
+	36,  // 45: delibase.v1.BackgroundUsageAuthorization.purpose:type_name -> delibase.v1.BackgroundUsagePurpose
+	26,  // 46: delibase.v1.BackgroundUsageAuthorization.feature_resource_id:type_name -> delibase.v1.UuidV7
+	37,  // 47: delibase.v1.BackgroundUsageAuthorization.period:type_name -> delibase.v1.BackgroundUsagePeriod
+	32,  // 48: delibase.v1.BackgroundUsageAuthorization.maximum_units:type_name -> delibase.v1.UsageUnits
+	38,  // 49: delibase.v1.BackgroundUsageAuthorization.status:type_name -> delibase.v1.BackgroundUsageAuthorizationStatus
+	28,  // 50: delibase.v1.BackgroundUsageAuthorization.created_at:type_name -> google.protobuf.Timestamp
+	28,  // 51: delibase.v1.BackgroundUsageAuthorization.updated_at:type_name -> google.protobuf.Timestamp
+	28,  // 52: delibase.v1.BackgroundUsageAuthorization.revoked_at:type_name -> google.protobuf.Timestamp
+	4,   // 53: delibase.v1.BackgroundUsageAuthorizationView.authorization:type_name -> delibase.v1.BackgroundUsageAuthorization
+	39,  // 54: delibase.v1.BackgroundUsageAuthorizationView.current_period_usage:type_name -> delibase.v1.BackgroundUsagePeriodUsage
+	26,  // 55: delibase.v1.GetBillingSummaryRequest.organization_id:type_name -> delibase.v1.UuidV7
+	1,   // 56: delibase.v1.GetBillingSummaryResponse.summary:type_name -> delibase.v1.BillingSummary
+	26,  // 57: delibase.v1.CreateSubscriptionCheckoutRequest.organization_id:type_name -> delibase.v1.UuidV7
+	40,  // 58: delibase.v1.CreateSubscriptionCheckoutRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	28,  // 59: delibase.v1.CreateSubscriptionCheckoutResponse.expires_at:type_name -> google.protobuf.Timestamp
+	41,  // 60: delibase.v1.CreateSubscriptionCheckoutResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	26,  // 61: delibase.v1.CreateBillingPortalSessionRequest.organization_id:type_name -> delibase.v1.UuidV7
+	40,  // 62: delibase.v1.CreateBillingPortalSessionRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	28,  // 63: delibase.v1.CreateBillingPortalSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	41,  // 64: delibase.v1.CreateBillingPortalSessionResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	26,  // 65: delibase.v1.UpdateOverageLimitRequest.organization_id:type_name -> delibase.v1.UuidV7
+	30,  // 66: delibase.v1.UpdateOverageLimitRequest.monthly_limit:type_name -> delibase.v1.UsdMicros
+	40,  // 67: delibase.v1.UpdateOverageLimitRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	1,   // 68: delibase.v1.UpdateOverageLimitResponse.summary:type_name -> delibase.v1.BillingSummary
+	41,  // 69: delibase.v1.UpdateOverageLimitResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	26,  // 70: delibase.v1.ListLedgerEntriesRequest.organization_id:type_name -> delibase.v1.UuidV7
+	31,  // 71: delibase.v1.ListLedgerEntriesRequest.operation:type_name -> delibase.v1.LedgerOperation
+	28,  // 72: delibase.v1.ListLedgerEntriesRequest.from_time:type_name -> google.protobuf.Timestamp
+	28,  // 73: delibase.v1.ListLedgerEntriesRequest.to_time:type_name -> google.protobuf.Timestamp
+	42,  // 74: delibase.v1.ListLedgerEntriesRequest.page:type_name -> delibase.v1.PageRequest
+	2,   // 75: delibase.v1.ListLedgerEntriesResponse.entries:type_name -> delibase.v1.LedgerEntry
+	43,  // 76: delibase.v1.ListLedgerEntriesResponse.page:type_name -> delibase.v1.PageResponse
+	26,  // 77: delibase.v1.ListUsageRecordsRequest.organization_id:type_name -> delibase.v1.UuidV7
+	26,  // 78: delibase.v1.ListUsageRecordsRequest.team_id:type_name -> delibase.v1.UuidV7
+	26,  // 79: delibase.v1.ListUsageRecordsRequest.meter_id:type_name -> delibase.v1.UuidV7
+	26,  // 80: delibase.v1.ListUsageRecordsRequest.user_account_id:type_name -> delibase.v1.UuidV7
+	28,  // 81: delibase.v1.ListUsageRecordsRequest.from_time:type_name -> google.protobuf.Timestamp
+	28,  // 82: delibase.v1.ListUsageRecordsRequest.to_time:type_name -> google.protobuf.Timestamp
+	42,  // 83: delibase.v1.ListUsageRecordsRequest.page:type_name -> delibase.v1.PageRequest
+	3,   // 84: delibase.v1.ListUsageRecordsResponse.records:type_name -> delibase.v1.UsageRecord
+	43,  // 85: delibase.v1.ListUsageRecordsResponse.page:type_name -> delibase.v1.PageResponse
+	35,  // 86: delibase.v1.CreateBackgroundUsageAuthorizationRequest.owner:type_name -> delibase.v1.BackgroundUsageOwner
+	26,  // 87: delibase.v1.CreateBackgroundUsageAuthorizationRequest.organization_id:type_name -> delibase.v1.UuidV7
+	26,  // 88: delibase.v1.CreateBackgroundUsageAuthorizationRequest.team_id:type_name -> delibase.v1.UuidV7
+	26,  // 89: delibase.v1.CreateBackgroundUsageAuthorizationRequest.service_identity_id:type_name -> delibase.v1.UuidV7
+	26,  // 90: delibase.v1.CreateBackgroundUsageAuthorizationRequest.meter_id:type_name -> delibase.v1.UuidV7
+	36,  // 91: delibase.v1.CreateBackgroundUsageAuthorizationRequest.purpose:type_name -> delibase.v1.BackgroundUsagePurpose
+	26,  // 92: delibase.v1.CreateBackgroundUsageAuthorizationRequest.feature_resource_id:type_name -> delibase.v1.UuidV7
+	37,  // 93: delibase.v1.CreateBackgroundUsageAuthorizationRequest.period:type_name -> delibase.v1.BackgroundUsagePeriod
+	32,  // 94: delibase.v1.CreateBackgroundUsageAuthorizationRequest.maximum_units:type_name -> delibase.v1.UsageUnits
+	40,  // 95: delibase.v1.CreateBackgroundUsageAuthorizationRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	5,   // 96: delibase.v1.CreateBackgroundUsageAuthorizationResponse.authorization:type_name -> delibase.v1.BackgroundUsageAuthorizationView
+	41,  // 97: delibase.v1.CreateBackgroundUsageAuthorizationResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	26,  // 98: delibase.v1.GetBackgroundUsageAuthorizationRequest.authorization_id:type_name -> delibase.v1.UuidV7
+	5,   // 99: delibase.v1.GetBackgroundUsageAuthorizationResponse.authorization:type_name -> delibase.v1.BackgroundUsageAuthorizationView
+	35,  // 100: delibase.v1.ListBackgroundUsageAuthorizationsRequest.owner:type_name -> delibase.v1.BackgroundUsageOwner
+	26,  // 101: delibase.v1.ListBackgroundUsageAuthorizationsRequest.organization_id:type_name -> delibase.v1.UuidV7
+	26,  // 102: delibase.v1.ListBackgroundUsageAuthorizationsRequest.team_id:type_name -> delibase.v1.UuidV7
+	26,  // 103: delibase.v1.ListBackgroundUsageAuthorizationsRequest.service_identity_id:type_name -> delibase.v1.UuidV7
+	26,  // 104: delibase.v1.ListBackgroundUsageAuthorizationsRequest.meter_id:type_name -> delibase.v1.UuidV7
+	36,  // 105: delibase.v1.ListBackgroundUsageAuthorizationsRequest.purpose:type_name -> delibase.v1.BackgroundUsagePurpose
+	26,  // 106: delibase.v1.ListBackgroundUsageAuthorizationsRequest.feature_resource_id:type_name -> delibase.v1.UuidV7
+	38,  // 107: delibase.v1.ListBackgroundUsageAuthorizationsRequest.status:type_name -> delibase.v1.BackgroundUsageAuthorizationStatus
+	42,  // 108: delibase.v1.ListBackgroundUsageAuthorizationsRequest.page:type_name -> delibase.v1.PageRequest
+	5,   // 109: delibase.v1.ListBackgroundUsageAuthorizationsResponse.authorizations:type_name -> delibase.v1.BackgroundUsageAuthorizationView
+	43,  // 110: delibase.v1.ListBackgroundUsageAuthorizationsResponse.page:type_name -> delibase.v1.PageResponse
+	26,  // 111: delibase.v1.RevokeBackgroundUsageAuthorizationRequest.authorization_id:type_name -> delibase.v1.UuidV7
+	40,  // 112: delibase.v1.RevokeBackgroundUsageAuthorizationRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	5,   // 113: delibase.v1.RevokeBackgroundUsageAuthorizationResponse.authorization:type_name -> delibase.v1.BackgroundUsageAuthorizationView
+	41,  // 114: delibase.v1.RevokeBackgroundUsageAuthorizationResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	6,   // 115: delibase.v1.BillingService.GetBillingSummary:input_type -> delibase.v1.GetBillingSummaryRequest
+	8,   // 116: delibase.v1.BillingService.CreateSubscriptionCheckout:input_type -> delibase.v1.CreateSubscriptionCheckoutRequest
+	10,  // 117: delibase.v1.BillingService.CreateBillingPortalSession:input_type -> delibase.v1.CreateBillingPortalSessionRequest
+	12,  // 118: delibase.v1.BillingService.UpdateOverageLimit:input_type -> delibase.v1.UpdateOverageLimitRequest
+	14,  // 119: delibase.v1.BillingService.ListLedgerEntries:input_type -> delibase.v1.ListLedgerEntriesRequest
+	16,  // 120: delibase.v1.BillingService.ListUsageRecords:input_type -> delibase.v1.ListUsageRecordsRequest
+	18,  // 121: delibase.v1.BillingService.CreateBackgroundUsageAuthorization:input_type -> delibase.v1.CreateBackgroundUsageAuthorizationRequest
+	20,  // 122: delibase.v1.BillingService.GetBackgroundUsageAuthorization:input_type -> delibase.v1.GetBackgroundUsageAuthorizationRequest
+	22,  // 123: delibase.v1.BillingService.ListBackgroundUsageAuthorizations:input_type -> delibase.v1.ListBackgroundUsageAuthorizationsRequest
+	24,  // 124: delibase.v1.BillingService.RevokeBackgroundUsageAuthorization:input_type -> delibase.v1.RevokeBackgroundUsageAuthorizationRequest
+	7,   // 125: delibase.v1.BillingService.GetBillingSummary:output_type -> delibase.v1.GetBillingSummaryResponse
+	9,   // 126: delibase.v1.BillingService.CreateSubscriptionCheckout:output_type -> delibase.v1.CreateSubscriptionCheckoutResponse
+	11,  // 127: delibase.v1.BillingService.CreateBillingPortalSession:output_type -> delibase.v1.CreateBillingPortalSessionResponse
+	13,  // 128: delibase.v1.BillingService.UpdateOverageLimit:output_type -> delibase.v1.UpdateOverageLimitResponse
+	15,  // 129: delibase.v1.BillingService.ListLedgerEntries:output_type -> delibase.v1.ListLedgerEntriesResponse
+	17,  // 130: delibase.v1.BillingService.ListUsageRecords:output_type -> delibase.v1.ListUsageRecordsResponse
+	19,  // 131: delibase.v1.BillingService.CreateBackgroundUsageAuthorization:output_type -> delibase.v1.CreateBackgroundUsageAuthorizationResponse
+	21,  // 132: delibase.v1.BillingService.GetBackgroundUsageAuthorization:output_type -> delibase.v1.GetBackgroundUsageAuthorizationResponse
+	23,  // 133: delibase.v1.BillingService.ListBackgroundUsageAuthorizations:output_type -> delibase.v1.ListBackgroundUsageAuthorizationsResponse
+	25,  // 134: delibase.v1.BillingService.RevokeBackgroundUsageAuthorization:output_type -> delibase.v1.RevokeBackgroundUsageAuthorizationResponse
+	125, // [125:135] is the sub-list for method output_type
+	115, // [115:125] is the sub-list for method input_type
+	115, // [115:115] is the sub-list for extension type_name
+	115, // [115:115] is the sub-list for extension extendee
+	0,   // [0:115] is the sub-list for field type_name
 }
 
 func init() { file_delibase_v1_billing_proto_init() }
@@ -1484,7 +2378,7 @@ func file_delibase_v1_billing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delibase_v1_billing_proto_rawDesc), len(file_delibase_v1_billing_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

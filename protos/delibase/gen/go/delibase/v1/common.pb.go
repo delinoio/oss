@@ -25,30 +25,36 @@ const (
 type IdempotentOperation int32
 
 const (
-	IdempotentOperation_IDEMPOTENT_OPERATION_UNSPECIFIED                     IdempotentOperation = 0
-	IdempotentOperation_IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING             IdempotentOperation = 1
-	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ACCOUNT                  IdempotentOperation = 2
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_ORGANIZATION             IdempotentOperation = 3
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION             IdempotentOperation = 4
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_SLUG        IdempotentOperation = 5
-	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ORGANIZATION             IdempotentOperation = 6
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_MEMBER_ROLE IdempotentOperation = 7
-	IdempotentOperation_IDEMPOTENT_OPERATION_REMOVE_ORGANIZATION_MEMBER      IdempotentOperation = 8
-	IdempotentOperation_IDEMPOTENT_OPERATION_LEAVE_ORGANIZATION              IdempotentOperation = 9
-	IdempotentOperation_IDEMPOTENT_OPERATION_ACCEPT_INVITATION               IdempotentOperation = 11
-	IdempotentOperation_IDEMPOTENT_OPERATION_REVOKE_INVITATION               IdempotentOperation = 12
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_TEAM                     IdempotentOperation = 13
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_TEAM                     IdempotentOperation = 14
-	IdempotentOperation_IDEMPOTENT_OPERATION_MOVE_TEAM                       IdempotentOperation = 15
-	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_TEAM_SUBTREE             IdempotentOperation = 16
-	IdempotentOperation_IDEMPOTENT_OPERATION_SET_TEAM_MEMBERSHIP             IdempotentOperation = 17
-	IdempotentOperation_IDEMPOTENT_OPERATION_REMOVE_TEAM_MEMBERSHIP          IdempotentOperation = 18
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT    IdempotentOperation = 19
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION   IdempotentOperation = 20
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT            IdempotentOperation = 21
-	IdempotentOperation_IDEMPOTENT_OPERATION_RESERVE_USAGE                   IdempotentOperation = 22
-	IdempotentOperation_IDEMPOTENT_OPERATION_COMMIT_USAGE                    IdempotentOperation = 23
-	IdempotentOperation_IDEMPOTENT_OPERATION_RELEASE_USAGE                   IdempotentOperation = 24
+	IdempotentOperation_IDEMPOTENT_OPERATION_UNSPECIFIED                            IdempotentOperation = 0
+	IdempotentOperation_IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING                    IdempotentOperation = 1
+	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ACCOUNT                         IdempotentOperation = 2
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_ORGANIZATION                    IdempotentOperation = 3
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION                    IdempotentOperation = 4
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_SLUG               IdempotentOperation = 5
+	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ORGANIZATION                    IdempotentOperation = 6
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_MEMBER_ROLE        IdempotentOperation = 7
+	IdempotentOperation_IDEMPOTENT_OPERATION_REMOVE_ORGANIZATION_MEMBER             IdempotentOperation = 8
+	IdempotentOperation_IDEMPOTENT_OPERATION_LEAVE_ORGANIZATION                     IdempotentOperation = 9
+	IdempotentOperation_IDEMPOTENT_OPERATION_ACCEPT_INVITATION                      IdempotentOperation = 11
+	IdempotentOperation_IDEMPOTENT_OPERATION_REVOKE_INVITATION                      IdempotentOperation = 12
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_TEAM                            IdempotentOperation = 13
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_TEAM                            IdempotentOperation = 14
+	IdempotentOperation_IDEMPOTENT_OPERATION_MOVE_TEAM                              IdempotentOperation = 15
+	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_TEAM_SUBTREE                    IdempotentOperation = 16
+	IdempotentOperation_IDEMPOTENT_OPERATION_SET_TEAM_MEMBERSHIP                    IdempotentOperation = 17
+	IdempotentOperation_IDEMPOTENT_OPERATION_REMOVE_TEAM_MEMBERSHIP                 IdempotentOperation = 18
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT           IdempotentOperation = 19
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION          IdempotentOperation = 20
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT                   IdempotentOperation = 21
+	IdempotentOperation_IDEMPOTENT_OPERATION_RESERVE_USAGE                          IdempotentOperation = 22
+	IdempotentOperation_IDEMPOTENT_OPERATION_COMMIT_USAGE                           IdempotentOperation = 23
+	IdempotentOperation_IDEMPOTENT_OPERATION_RELEASE_USAGE                          IdempotentOperation = 24
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION  IdempotentOperation = 25
+	IdempotentOperation_IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION  IdempotentOperation = 26
+	IdempotentOperation_IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE               IdempotentOperation = 27
+	IdempotentOperation_IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE                IdempotentOperation = 28
+	IdempotentOperation_IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE               IdempotentOperation = 29
+	IdempotentOperation_IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED IdempotentOperation = 30
 )
 
 // Enum value maps for IdempotentOperation.
@@ -78,32 +84,44 @@ var (
 		22: "IDEMPOTENT_OPERATION_RESERVE_USAGE",
 		23: "IDEMPOTENT_OPERATION_COMMIT_USAGE",
 		24: "IDEMPOTENT_OPERATION_RELEASE_USAGE",
+		25: "IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION",
+		26: "IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION",
+		27: "IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE",
+		28: "IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE",
+		29: "IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE",
+		30: "IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED",
 	}
 	IdempotentOperation_value = map[string]int32{
-		"IDEMPOTENT_OPERATION_UNSPECIFIED":                     0,
-		"IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING":             1,
-		"IDEMPOTENT_OPERATION_DELETE_ACCOUNT":                  2,
-		"IDEMPOTENT_OPERATION_CREATE_ORGANIZATION":             3,
-		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION":             4,
-		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_SLUG":        5,
-		"IDEMPOTENT_OPERATION_DELETE_ORGANIZATION":             6,
-		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_MEMBER_ROLE": 7,
-		"IDEMPOTENT_OPERATION_REMOVE_ORGANIZATION_MEMBER":      8,
-		"IDEMPOTENT_OPERATION_LEAVE_ORGANIZATION":              9,
-		"IDEMPOTENT_OPERATION_ACCEPT_INVITATION":               11,
-		"IDEMPOTENT_OPERATION_REVOKE_INVITATION":               12,
-		"IDEMPOTENT_OPERATION_CREATE_TEAM":                     13,
-		"IDEMPOTENT_OPERATION_UPDATE_TEAM":                     14,
-		"IDEMPOTENT_OPERATION_MOVE_TEAM":                       15,
-		"IDEMPOTENT_OPERATION_DELETE_TEAM_SUBTREE":             16,
-		"IDEMPOTENT_OPERATION_SET_TEAM_MEMBERSHIP":             17,
-		"IDEMPOTENT_OPERATION_REMOVE_TEAM_MEMBERSHIP":          18,
-		"IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT":    19,
-		"IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION":   20,
-		"IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT":            21,
-		"IDEMPOTENT_OPERATION_RESERVE_USAGE":                   22,
-		"IDEMPOTENT_OPERATION_COMMIT_USAGE":                    23,
-		"IDEMPOTENT_OPERATION_RELEASE_USAGE":                   24,
+		"IDEMPOTENT_OPERATION_UNSPECIFIED":                            0,
+		"IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING":                    1,
+		"IDEMPOTENT_OPERATION_DELETE_ACCOUNT":                         2,
+		"IDEMPOTENT_OPERATION_CREATE_ORGANIZATION":                    3,
+		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION":                    4,
+		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_SLUG":               5,
+		"IDEMPOTENT_OPERATION_DELETE_ORGANIZATION":                    6,
+		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_MEMBER_ROLE":        7,
+		"IDEMPOTENT_OPERATION_REMOVE_ORGANIZATION_MEMBER":             8,
+		"IDEMPOTENT_OPERATION_LEAVE_ORGANIZATION":                     9,
+		"IDEMPOTENT_OPERATION_ACCEPT_INVITATION":                      11,
+		"IDEMPOTENT_OPERATION_REVOKE_INVITATION":                      12,
+		"IDEMPOTENT_OPERATION_CREATE_TEAM":                            13,
+		"IDEMPOTENT_OPERATION_UPDATE_TEAM":                            14,
+		"IDEMPOTENT_OPERATION_MOVE_TEAM":                              15,
+		"IDEMPOTENT_OPERATION_DELETE_TEAM_SUBTREE":                    16,
+		"IDEMPOTENT_OPERATION_SET_TEAM_MEMBERSHIP":                    17,
+		"IDEMPOTENT_OPERATION_REMOVE_TEAM_MEMBERSHIP":                 18,
+		"IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT":           19,
+		"IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION":          20,
+		"IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT":                   21,
+		"IDEMPOTENT_OPERATION_RESERVE_USAGE":                          22,
+		"IDEMPOTENT_OPERATION_COMMIT_USAGE":                           23,
+		"IDEMPOTENT_OPERATION_RELEASE_USAGE":                          24,
+		"IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION":  25,
+		"IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION":  26,
+		"IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE":               27,
+		"IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE":                28,
+		"IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE":               29,
+		"IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED": 30,
 	}
 )
 
@@ -788,6 +806,160 @@ func (UsageRecordStatus) EnumDescriptor() ([]byte, []int) {
 	return file_delibase_v1_common_proto_rawDescGZIP(), []int{12}
 }
 
+// BackgroundUsagePurpose is closed for v1. RealQA screenshot storage is the
+// only allowed purpose; Deck is intentionally not represented.
+type BackgroundUsagePurpose int32
+
+const (
+	BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_UNSPECIFIED    BackgroundUsagePurpose = 0
+	BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE BackgroundUsagePurpose = 1
+)
+
+// Enum value maps for BackgroundUsagePurpose.
+var (
+	BackgroundUsagePurpose_name = map[int32]string{
+		0: "BACKGROUND_USAGE_PURPOSE_UNSPECIFIED",
+		1: "BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE",
+	}
+	BackgroundUsagePurpose_value = map[string]int32{
+		"BACKGROUND_USAGE_PURPOSE_UNSPECIFIED":    0,
+		"BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE": 1,
+	}
+)
+
+func (x BackgroundUsagePurpose) Enum() *BackgroundUsagePurpose {
+	p := new(BackgroundUsagePurpose)
+	*p = x
+	return p
+}
+
+func (x BackgroundUsagePurpose) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (BackgroundUsagePurpose) Descriptor() protoreflect.EnumDescriptor {
+	return file_delibase_v1_common_proto_enumTypes[13].Descriptor()
+}
+
+func (BackgroundUsagePurpose) Type() protoreflect.EnumType {
+	return &file_delibase_v1_common_proto_enumTypes[13]
+}
+
+func (x BackgroundUsagePurpose) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use BackgroundUsagePurpose.Descriptor instead.
+func (BackgroundUsagePurpose) EnumDescriptor() ([]byte, []int) {
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{13}
+}
+
+type BackgroundUsageAuthorizationStatus int32
+
+const (
+	BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_UNSPECIFIED      BackgroundUsageAuthorizationStatus = 0
+	BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACTIVE           BackgroundUsageAuthorizationStatus = 1
+	BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_REVOKED          BackgroundUsageAuthorizationStatus = 2
+	BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACCESS_LOST      BackgroundUsageAuthorizationStatus = 3
+	BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_RESOURCE_DELETED BackgroundUsageAuthorizationStatus = 4
+	BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_OWNER_DELETED    BackgroundUsageAuthorizationStatus = 5
+)
+
+// Enum value maps for BackgroundUsageAuthorizationStatus.
+var (
+	BackgroundUsageAuthorizationStatus_name = map[int32]string{
+		0: "BACKGROUND_USAGE_AUTHORIZATION_STATUS_UNSPECIFIED",
+		1: "BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACTIVE",
+		2: "BACKGROUND_USAGE_AUTHORIZATION_STATUS_REVOKED",
+		3: "BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACCESS_LOST",
+		4: "BACKGROUND_USAGE_AUTHORIZATION_STATUS_RESOURCE_DELETED",
+		5: "BACKGROUND_USAGE_AUTHORIZATION_STATUS_OWNER_DELETED",
+	}
+	BackgroundUsageAuthorizationStatus_value = map[string]int32{
+		"BACKGROUND_USAGE_AUTHORIZATION_STATUS_UNSPECIFIED":      0,
+		"BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACTIVE":           1,
+		"BACKGROUND_USAGE_AUTHORIZATION_STATUS_REVOKED":          2,
+		"BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACCESS_LOST":      3,
+		"BACKGROUND_USAGE_AUTHORIZATION_STATUS_RESOURCE_DELETED": 4,
+		"BACKGROUND_USAGE_AUTHORIZATION_STATUS_OWNER_DELETED":    5,
+	}
+)
+
+func (x BackgroundUsageAuthorizationStatus) Enum() *BackgroundUsageAuthorizationStatus {
+	p := new(BackgroundUsageAuthorizationStatus)
+	*p = x
+	return p
+}
+
+func (x BackgroundUsageAuthorizationStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (BackgroundUsageAuthorizationStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_delibase_v1_common_proto_enumTypes[14].Descriptor()
+}
+
+func (BackgroundUsageAuthorizationStatus) Type() protoreflect.EnumType {
+	return &file_delibase_v1_common_proto_enumTypes[14]
+}
+
+func (x BackgroundUsageAuthorizationStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use BackgroundUsageAuthorizationStatus.Descriptor instead.
+func (BackgroundUsageAuthorizationStatus) EnumDescriptor() ([]byte, []int) {
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{14}
+}
+
+// BackgroundUsagePeriod is closed for v1. UTC_DAY starts at 00:00:00 UTC and
+// ends at the following UTC midnight.
+type BackgroundUsagePeriod int32
+
+const (
+	BackgroundUsagePeriod_BACKGROUND_USAGE_PERIOD_UNSPECIFIED BackgroundUsagePeriod = 0
+	BackgroundUsagePeriod_BACKGROUND_USAGE_PERIOD_UTC_DAY     BackgroundUsagePeriod = 1
+)
+
+// Enum value maps for BackgroundUsagePeriod.
+var (
+	BackgroundUsagePeriod_name = map[int32]string{
+		0: "BACKGROUND_USAGE_PERIOD_UNSPECIFIED",
+		1: "BACKGROUND_USAGE_PERIOD_UTC_DAY",
+	}
+	BackgroundUsagePeriod_value = map[string]int32{
+		"BACKGROUND_USAGE_PERIOD_UNSPECIFIED": 0,
+		"BACKGROUND_USAGE_PERIOD_UTC_DAY":     1,
+	}
+)
+
+func (x BackgroundUsagePeriod) Enum() *BackgroundUsagePeriod {
+	p := new(BackgroundUsagePeriod)
+	*p = x
+	return p
+}
+
+func (x BackgroundUsagePeriod) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (BackgroundUsagePeriod) Descriptor() protoreflect.EnumDescriptor {
+	return file_delibase_v1_common_proto_enumTypes[15].Descriptor()
+}
+
+func (BackgroundUsagePeriod) Type() protoreflect.EnumType {
+	return &file_delibase_v1_common_proto_enumTypes[15]
+}
+
+func (x BackgroundUsagePeriod) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use BackgroundUsagePeriod.Descriptor instead.
+func (BackgroundUsagePeriod) EnumDescriptor() ([]byte, []int) {
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{15}
+}
+
 type DeletionStatus int32
 
 const (
@@ -824,11 +996,11 @@ func (x DeletionStatus) String() string {
 }
 
 func (DeletionStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_delibase_v1_common_proto_enumTypes[13].Descriptor()
+	return file_delibase_v1_common_proto_enumTypes[16].Descriptor()
 }
 
 func (DeletionStatus) Type() protoreflect.EnumType {
-	return &file_delibase_v1_common_proto_enumTypes[13]
+	return &file_delibase_v1_common_proto_enumTypes[16]
 }
 
 func (x DeletionStatus) Number() protoreflect.EnumNumber {
@@ -837,7 +1009,7 @@ func (x DeletionStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DeletionStatus.Descriptor instead.
 func (DeletionStatus) EnumDescriptor() ([]byte, []int) {
-	return file_delibase_v1_common_proto_rawDescGZIP(), []int{13}
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{16}
 }
 
 // ErrorReason is the stable machine-readable reason carried in ErrorDetail.
@@ -918,6 +1090,12 @@ const (
 	ErrorReason_ERROR_REASON_IDEMPOTENCY_KEY_REQUIRED       ErrorReason = 160
 	ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT           ErrorReason = 161
 	ErrorReason_ERROR_REASON_IDEMPOTENCY_OPERATION_MISMATCH ErrorReason = 162
+	// Bounded background-usage authorization failures.
+	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION   ErrorReason = 180
+	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST    ErrorReason = 181
+	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID ErrorReason = 182
+	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED        ErrorReason = 183
+	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT              ErrorReason = 184
 )
 
 // Enum value maps for ErrorReason.
@@ -987,72 +1165,82 @@ var (
 		160: "ERROR_REASON_IDEMPOTENCY_KEY_REQUIRED",
 		161: "ERROR_REASON_IDEMPOTENCY_CONFLICT",
 		162: "ERROR_REASON_IDEMPOTENCY_OPERATION_MISMATCH",
+		180: "ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION",
+		181: "ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST",
+		182: "ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID",
+		183: "ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED",
+		184: "ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT",
 	}
 	ErrorReason_value = map[string]int32{
-		"ERROR_REASON_UNSPECIFIED":                          0,
-		"ERROR_REASON_AUTHENTICATION_REQUIRED":              1,
-		"ERROR_REASON_AUTHENTICATION_INVALID":               2,
-		"ERROR_REASON_AUTHENTICATION_EXPIRED":               3,
-		"ERROR_REASON_AUTHENTICATION_ISSUER_MISMATCH":       4,
-		"ERROR_REASON_AUTHENTICATION_AUDIENCE_MISMATCH":     5,
-		"ERROR_REASON_AUTHENTICATION_SCOPE_MISSING":         6,
-		"ERROR_REASON_FORWARDED_USER_TOKEN_REQUIRED":        7,
-		"ERROR_REASON_FORWARDED_USER_TOKEN_INVALID":         8,
-		"ERROR_REASON_FORWARDED_USER_TOKEN_EXPIRED":         9,
-		"ERROR_REASON_PERMISSION_DENIED":                    20,
-		"ERROR_REASON_ORGANIZATION_MEMBERSHIP_REQUIRED":     21,
-		"ERROR_REASON_TEAM_ACCESS_DENIED":                   22,
-		"ERROR_REASON_SERVICE_METER_NOT_ALLOWED":            23,
-		"ERROR_REASON_OWNER_ROLE_REQUIRED":                  24,
-		"ERROR_REASON_ADMIN_ROLE_REQUIRED":                  25,
-		"ERROR_REASON_RESOURCE_NOT_FOUND":                   40,
-		"ERROR_REASON_RESOURCE_DELETED":                     41,
-		"ERROR_REASON_RESOURCE_CONFLICT":                    42,
-		"ERROR_REASON_SLUG_CONFLICT":                        43,
-		"ERROR_REASON_SLUG_INVALID":                         44,
-		"ERROR_REASON_MEMBER_ALREADY_EXISTS":                45,
-		"ERROR_REASON_MEMBER_NOT_FOUND":                     46,
-		"ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS":       47,
-		"ERROR_REASON_INVITATION_INVALID":                   60,
-		"ERROR_REASON_INVITATION_EXPIRED":                   61,
-		"ERROR_REASON_INVITATION_REVOKED":                   62,
-		"ERROR_REASON_INVITATION_ROLE_INVALID":              63,
-		"ERROR_REASON_INVITATION_TEAM_REQUIRED":             64,
-		"ERROR_REASON_INVITATION_EXISTING_MEMBER":           65,
-		"ERROR_REASON_TEAM_DEPTH_EXCEEDED":                  80,
-		"ERROR_REASON_TEAM_CYCLE":                           81,
-		"ERROR_REASON_TEAM_CROSS_ORGANIZATION_PARENT":       82,
-		"ERROR_REASON_GENERAL_TEAM_PROTECTED":               83,
-		"ERROR_REASON_TEAM_SUBTREE_HAS_ACTIVE_RESERVATIONS": 84,
-		"ERROR_REASON_SUBSCRIPTION_INACTIVE":                100,
-		"ERROR_REASON_SUBSCRIPTION_PAST_DUE":                101,
-		"ERROR_REASON_SUBSCRIPTION_CANCELED":                102,
-		"ERROR_REASON_SUBSCRIPTION_REVOKED":                 103,
-		"ERROR_REASON_OVERAGE_NOT_CONFIGURED":               104,
-		"ERROR_REASON_OVERAGE_DISABLED":                     105,
-		"ERROR_REASON_OVERAGE_LIMIT_EXHAUSTED":              106,
-		"ERROR_REASON_AVAILABLE_FUNDS_EXHAUSTED":            107,
-		"ERROR_REASON_PRICE_UNAVAILABLE":                    108,
-		"ERROR_REASON_MONEY_OVERFLOW":                       109,
-		"ERROR_REASON_USAGE_UNITS_INVALID":                  110,
-		"ERROR_REASON_USAGE_UNITS_OVERFLOW":                 111,
-		"ERROR_REASON_CATALOG_PRECISION_INVALID":            112,
-		"ERROR_REASON_OVERAGE_LIMIT_INVALID":                113,
-		"ERROR_REASON_RESERVATION_NOT_FOUND":                120,
-		"ERROR_REASON_RESERVATION_EXPIRED":                  121,
-		"ERROR_REASON_RESERVATION_ALREADY_COMMITTED":        122,
-		"ERROR_REASON_RESERVATION_ALREADY_RELEASED":         123,
-		"ERROR_REASON_RESERVATION_FINALIZED":                124,
-		"ERROR_REASON_COMMIT_UNITS_EXCEED_RESERVED":         125,
-		"ERROR_REASON_CLIENT_REFERENCE_CONFLICT":            126,
-		"ERROR_REASON_RESERVATION_UNITS_NEGATIVE":           127,
-		"ERROR_REASON_LAST_OWNER_BLOCKER":                   140,
-		"ERROR_REASON_ACCOUNT_DELETION_BLOCKED":             141,
-		"ERROR_REASON_ORGANIZATION_DELETION_BLOCKED":        142,
-		"ERROR_REASON_DELETION_ALREADY_PENDING":             143,
-		"ERROR_REASON_IDEMPOTENCY_KEY_REQUIRED":             160,
-		"ERROR_REASON_IDEMPOTENCY_CONFLICT":                 161,
-		"ERROR_REASON_IDEMPOTENCY_OPERATION_MISMATCH":       162,
+		"ERROR_REASON_UNSPECIFIED":                                   0,
+		"ERROR_REASON_AUTHENTICATION_REQUIRED":                       1,
+		"ERROR_REASON_AUTHENTICATION_INVALID":                        2,
+		"ERROR_REASON_AUTHENTICATION_EXPIRED":                        3,
+		"ERROR_REASON_AUTHENTICATION_ISSUER_MISMATCH":                4,
+		"ERROR_REASON_AUTHENTICATION_AUDIENCE_MISMATCH":              5,
+		"ERROR_REASON_AUTHENTICATION_SCOPE_MISSING":                  6,
+		"ERROR_REASON_FORWARDED_USER_TOKEN_REQUIRED":                 7,
+		"ERROR_REASON_FORWARDED_USER_TOKEN_INVALID":                  8,
+		"ERROR_REASON_FORWARDED_USER_TOKEN_EXPIRED":                  9,
+		"ERROR_REASON_PERMISSION_DENIED":                             20,
+		"ERROR_REASON_ORGANIZATION_MEMBERSHIP_REQUIRED":              21,
+		"ERROR_REASON_TEAM_ACCESS_DENIED":                            22,
+		"ERROR_REASON_SERVICE_METER_NOT_ALLOWED":                     23,
+		"ERROR_REASON_OWNER_ROLE_REQUIRED":                           24,
+		"ERROR_REASON_ADMIN_ROLE_REQUIRED":                           25,
+		"ERROR_REASON_RESOURCE_NOT_FOUND":                            40,
+		"ERROR_REASON_RESOURCE_DELETED":                              41,
+		"ERROR_REASON_RESOURCE_CONFLICT":                             42,
+		"ERROR_REASON_SLUG_CONFLICT":                                 43,
+		"ERROR_REASON_SLUG_INVALID":                                  44,
+		"ERROR_REASON_MEMBER_ALREADY_EXISTS":                         45,
+		"ERROR_REASON_MEMBER_NOT_FOUND":                              46,
+		"ERROR_REASON_MEMBER_HAS_ACTIVE_RESERVATIONS":                47,
+		"ERROR_REASON_INVITATION_INVALID":                            60,
+		"ERROR_REASON_INVITATION_EXPIRED":                            61,
+		"ERROR_REASON_INVITATION_REVOKED":                            62,
+		"ERROR_REASON_INVITATION_ROLE_INVALID":                       63,
+		"ERROR_REASON_INVITATION_TEAM_REQUIRED":                      64,
+		"ERROR_REASON_INVITATION_EXISTING_MEMBER":                    65,
+		"ERROR_REASON_TEAM_DEPTH_EXCEEDED":                           80,
+		"ERROR_REASON_TEAM_CYCLE":                                    81,
+		"ERROR_REASON_TEAM_CROSS_ORGANIZATION_PARENT":                82,
+		"ERROR_REASON_GENERAL_TEAM_PROTECTED":                        83,
+		"ERROR_REASON_TEAM_SUBTREE_HAS_ACTIVE_RESERVATIONS":          84,
+		"ERROR_REASON_SUBSCRIPTION_INACTIVE":                         100,
+		"ERROR_REASON_SUBSCRIPTION_PAST_DUE":                         101,
+		"ERROR_REASON_SUBSCRIPTION_CANCELED":                         102,
+		"ERROR_REASON_SUBSCRIPTION_REVOKED":                          103,
+		"ERROR_REASON_OVERAGE_NOT_CONFIGURED":                        104,
+		"ERROR_REASON_OVERAGE_DISABLED":                              105,
+		"ERROR_REASON_OVERAGE_LIMIT_EXHAUSTED":                       106,
+		"ERROR_REASON_AVAILABLE_FUNDS_EXHAUSTED":                     107,
+		"ERROR_REASON_PRICE_UNAVAILABLE":                             108,
+		"ERROR_REASON_MONEY_OVERFLOW":                                109,
+		"ERROR_REASON_USAGE_UNITS_INVALID":                           110,
+		"ERROR_REASON_USAGE_UNITS_OVERFLOW":                          111,
+		"ERROR_REASON_CATALOG_PRECISION_INVALID":                     112,
+		"ERROR_REASON_OVERAGE_LIMIT_INVALID":                         113,
+		"ERROR_REASON_RESERVATION_NOT_FOUND":                         120,
+		"ERROR_REASON_RESERVATION_EXPIRED":                           121,
+		"ERROR_REASON_RESERVATION_ALREADY_COMMITTED":                 122,
+		"ERROR_REASON_RESERVATION_ALREADY_RELEASED":                  123,
+		"ERROR_REASON_RESERVATION_FINALIZED":                         124,
+		"ERROR_REASON_COMMIT_UNITS_EXCEED_RESERVED":                  125,
+		"ERROR_REASON_CLIENT_REFERENCE_CONFLICT":                     126,
+		"ERROR_REASON_RESERVATION_UNITS_NEGATIVE":                    127,
+		"ERROR_REASON_LAST_OWNER_BLOCKER":                            140,
+		"ERROR_REASON_ACCOUNT_DELETION_BLOCKED":                      141,
+		"ERROR_REASON_ORGANIZATION_DELETION_BLOCKED":                 142,
+		"ERROR_REASON_DELETION_ALREADY_PENDING":                      143,
+		"ERROR_REASON_IDEMPOTENCY_KEY_REQUIRED":                      160,
+		"ERROR_REASON_IDEMPOTENCY_CONFLICT":                          161,
+		"ERROR_REASON_IDEMPOTENCY_OPERATION_MISMATCH":                162,
+		"ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION":   180,
+		"ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST":    181,
+		"ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID": 182,
+		"ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED":        183,
+		"ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT":              184,
 	}
 )
 
@@ -1067,11 +1255,11 @@ func (x ErrorReason) String() string {
 }
 
 func (ErrorReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_delibase_v1_common_proto_enumTypes[14].Descriptor()
+	return file_delibase_v1_common_proto_enumTypes[17].Descriptor()
 }
 
 func (ErrorReason) Type() protoreflect.EnumType {
-	return &file_delibase_v1_common_proto_enumTypes[14]
+	return &file_delibase_v1_common_proto_enumTypes[17]
 }
 
 func (x ErrorReason) Number() protoreflect.EnumNumber {
@@ -1080,7 +1268,7 @@ func (x ErrorReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ErrorReason.Descriptor instead.
 func (ErrorReason) EnumDescriptor() ([]byte, []int) {
-	return file_delibase_v1_common_proto_rawDescGZIP(), []int{14}
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{17}
 }
 
 type DeletionBlockerKind int32
@@ -1119,11 +1307,11 @@ func (x DeletionBlockerKind) String() string {
 }
 
 func (DeletionBlockerKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_delibase_v1_common_proto_enumTypes[15].Descriptor()
+	return file_delibase_v1_common_proto_enumTypes[18].Descriptor()
 }
 
 func (DeletionBlockerKind) Type() protoreflect.EnumType {
-	return &file_delibase_v1_common_proto_enumTypes[15]
+	return &file_delibase_v1_common_proto_enumTypes[18]
 }
 
 func (x DeletionBlockerKind) Number() protoreflect.EnumNumber {
@@ -1132,7 +1320,7 @@ func (x DeletionBlockerKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DeletionBlockerKind.Descriptor instead.
 func (DeletionBlockerKind) EnumDescriptor() ([]byte, []int) {
-	return file_delibase_v1_common_proto_rawDescGZIP(), []int{15}
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{18}
 }
 
 // UuidV7 carries the canonical lowercase string form of a persisted UUID v7.
@@ -1476,6 +1664,268 @@ func (x *IdempotencyResult) GetOriginallyCompletedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// BackgroundUsageOwner binds a feature resource to exactly one personal
+// account or organization owner. The referenced UUID uses the persisted UUID
+// v7 representation.
+type BackgroundUsageOwner struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Owner:
+	//
+	//	*BackgroundUsageOwner_PersonalAccountId
+	//	*BackgroundUsageOwner_OrganizationId
+	Owner         isBackgroundUsageOwner_Owner `protobuf_oneof:"owner"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BackgroundUsageOwner) Reset() {
+	*x = BackgroundUsageOwner{}
+	mi := &file_delibase_v1_common_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackgroundUsageOwner) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackgroundUsageOwner) ProtoMessage() {}
+
+func (x *BackgroundUsageOwner) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_common_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackgroundUsageOwner.ProtoReflect.Descriptor instead.
+func (*BackgroundUsageOwner) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *BackgroundUsageOwner) GetOwner() isBackgroundUsageOwner_Owner {
+	if x != nil {
+		return x.Owner
+	}
+	return nil
+}
+
+func (x *BackgroundUsageOwner) GetPersonalAccountId() *UuidV7 {
+	if x != nil {
+		if x, ok := x.Owner.(*BackgroundUsageOwner_PersonalAccountId); ok {
+			return x.PersonalAccountId
+		}
+	}
+	return nil
+}
+
+func (x *BackgroundUsageOwner) GetOrganizationId() *UuidV7 {
+	if x != nil {
+		if x, ok := x.Owner.(*BackgroundUsageOwner_OrganizationId); ok {
+			return x.OrganizationId
+		}
+	}
+	return nil
+}
+
+type isBackgroundUsageOwner_Owner interface {
+	isBackgroundUsageOwner_Owner()
+}
+
+type BackgroundUsageOwner_PersonalAccountId struct {
+	PersonalAccountId *UuidV7 `protobuf:"bytes,1,opt,name=personal_account_id,json=personalAccountId,proto3,oneof"`
+}
+
+type BackgroundUsageOwner_OrganizationId struct {
+	OrganizationId *UuidV7 `protobuf:"bytes,2,opt,name=organization_id,json=organizationId,proto3,oneof"`
+}
+
+func (*BackgroundUsageOwner_PersonalAccountId) isBackgroundUsageOwner_Owner() {}
+
+func (*BackgroundUsageOwner_OrganizationId) isBackgroundUsageOwner_Owner() {}
+
+// AuthorizedUsageContext repeats the authorization-bound values that an M2M
+// request may not substitute. period_start must be the canonical UTC midnight
+// for a UTC_DAY period. Reserve accepts only the current or immediately
+// preceding UTC day according to server time, so a caller cannot create
+// arbitrary past or future quota buckets. Commit and release use the period
+// stored with the reservation. The authenticated service identity is
+// intentionally not caller supplied and is added to the server-side digest.
+type AuthorizedUsageContext struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	AuthorizationId   *UuidV7                `protobuf:"bytes,1,opt,name=authorization_id,json=authorizationId,proto3" json:"authorization_id,omitempty"`
+	Purpose           BackgroundUsagePurpose `protobuf:"varint,2,opt,name=purpose,proto3,enum=delibase.v1.BackgroundUsagePurpose" json:"purpose,omitempty"`
+	FeatureResourceId *UuidV7                `protobuf:"bytes,3,opt,name=feature_resource_id,json=featureResourceId,proto3" json:"feature_resource_id,omitempty"`
+	Period            BackgroundUsagePeriod  `protobuf:"varint,4,opt,name=period,proto3,enum=delibase.v1.BackgroundUsagePeriod" json:"period,omitempty"`
+	PeriodStart       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=period_start,json=periodStart,proto3" json:"period_start,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AuthorizedUsageContext) Reset() {
+	*x = AuthorizedUsageContext{}
+	mi := &file_delibase_v1_common_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorizedUsageContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorizedUsageContext) ProtoMessage() {}
+
+func (x *AuthorizedUsageContext) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_common_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorizedUsageContext.ProtoReflect.Descriptor instead.
+func (*AuthorizedUsageContext) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AuthorizedUsageContext) GetAuthorizationId() *UuidV7 {
+	if x != nil {
+		return x.AuthorizationId
+	}
+	return nil
+}
+
+func (x *AuthorizedUsageContext) GetPurpose() BackgroundUsagePurpose {
+	if x != nil {
+		return x.Purpose
+	}
+	return BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_UNSPECIFIED
+}
+
+func (x *AuthorizedUsageContext) GetFeatureResourceId() *UuidV7 {
+	if x != nil {
+		return x.FeatureResourceId
+	}
+	return nil
+}
+
+func (x *AuthorizedUsageContext) GetPeriod() BackgroundUsagePeriod {
+	if x != nil {
+		return x.Period
+	}
+	return BackgroundUsagePeriod_BACKGROUND_USAGE_PERIOD_UNSPECIFIED
+}
+
+func (x *AuthorizedUsageContext) GetPeriodStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodStart
+	}
+	return nil
+}
+
+// BackgroundUsagePeriodUsage is an authoritative summary for one authorization
+// and UTC period. held_units plus committed_units count against maximum_units.
+type BackgroundUsagePeriodUsage struct {
+	state          protoimpl.MessageState  `protogen:"open.v1"`
+	Context        *AuthorizedUsageContext `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	MaximumUnits   *UsageUnits             `protobuf:"bytes,2,opt,name=maximum_units,json=maximumUnits,proto3" json:"maximum_units,omitempty"`
+	HeldUnits      *UsageUnits             `protobuf:"bytes,3,opt,name=held_units,json=heldUnits,proto3" json:"held_units,omitempty"`
+	CommittedUnits *UsageUnits             `protobuf:"bytes,4,opt,name=committed_units,json=committedUnits,proto3" json:"committed_units,omitempty"`
+	RemainingUnits *UsageUnits             `protobuf:"bytes,5,opt,name=remaining_units,json=remainingUnits,proto3" json:"remaining_units,omitempty"`
+	PeriodEnd      *timestamppb.Timestamp  `protobuf:"bytes,6,opt,name=period_end,json=periodEnd,proto3" json:"period_end,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp  `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BackgroundUsagePeriodUsage) Reset() {
+	*x = BackgroundUsagePeriodUsage{}
+	mi := &file_delibase_v1_common_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackgroundUsagePeriodUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackgroundUsagePeriodUsage) ProtoMessage() {}
+
+func (x *BackgroundUsagePeriodUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_common_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackgroundUsagePeriodUsage.ProtoReflect.Descriptor instead.
+func (*BackgroundUsagePeriodUsage) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *BackgroundUsagePeriodUsage) GetContext() *AuthorizedUsageContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+func (x *BackgroundUsagePeriodUsage) GetMaximumUnits() *UsageUnits {
+	if x != nil {
+		return x.MaximumUnits
+	}
+	return nil
+}
+
+func (x *BackgroundUsagePeriodUsage) GetHeldUnits() *UsageUnits {
+	if x != nil {
+		return x.HeldUnits
+	}
+	return nil
+}
+
+func (x *BackgroundUsagePeriodUsage) GetCommittedUnits() *UsageUnits {
+	if x != nil {
+		return x.CommittedUnits
+	}
+	return nil
+}
+
+func (x *BackgroundUsagePeriodUsage) GetRemainingUnits() *UsageUnits {
+	if x != nil {
+		return x.RemainingUnits
+	}
+	return nil
+}
+
+func (x *BackgroundUsagePeriodUsage) GetPeriodEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodEnd
+	}
+	return nil
+}
+
+func (x *BackgroundUsagePeriodUsage) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
 type DeletionBlocker struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Kind             DeletionBlockerKind    `protobuf:"varint,1,opt,name=kind,proto3,enum=delibase.v1.DeletionBlockerKind" json:"kind,omitempty"`
@@ -1489,7 +1939,7 @@ type DeletionBlocker struct {
 
 func (x *DeletionBlocker) Reset() {
 	*x = DeletionBlocker{}
-	mi := &file_delibase_v1_common_proto_msgTypes[7]
+	mi := &file_delibase_v1_common_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1501,7 +1951,7 @@ func (x *DeletionBlocker) String() string {
 func (*DeletionBlocker) ProtoMessage() {}
 
 func (x *DeletionBlocker) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_common_proto_msgTypes[7]
+	mi := &file_delibase_v1_common_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1514,7 +1964,7 @@ func (x *DeletionBlocker) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletionBlocker.ProtoReflect.Descriptor instead.
 func (*DeletionBlocker) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_common_proto_rawDescGZIP(), []int{7}
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DeletionBlocker) GetKind() DeletionBlockerKind {
@@ -1568,7 +2018,7 @@ type ErrorDetail struct {
 
 func (x *ErrorDetail) Reset() {
 	*x = ErrorDetail{}
-	mi := &file_delibase_v1_common_proto_msgTypes[8]
+	mi := &file_delibase_v1_common_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1580,7 +2030,7 @@ func (x *ErrorDetail) String() string {
 func (*ErrorDetail) ProtoMessage() {}
 
 func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_delibase_v1_common_proto_msgTypes[8]
+	mi := &file_delibase_v1_common_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1593,7 +2043,7 @@ func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorDetail.ProtoReflect.Descriptor instead.
 func (*ErrorDetail) Descriptor() ([]byte, []int) {
-	return file_delibase_v1_common_proto_rawDescGZIP(), []int{8}
+	return file_delibase_v1_common_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ErrorDetail) GetReason() ErrorReason {
@@ -1661,7 +2111,28 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	"\x11IdempotencyResult\x12\x1a\n" +
 	"\breplayed\x18\x01 \x01(\bR\breplayed\x12>\n" +
 	"\toperation\x18\x02 \x01(\x0e2 .delibase.v1.IdempotentOperationR\toperation\x12R\n" +
-	"\x17originally_completed_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x15originallyCompletedAt\"\xfd\x01\n" +
+	"\x17originally_completed_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x15originallyCompletedAt\"\xa6\x01\n" +
+	"\x14BackgroundUsageOwner\x12E\n" +
+	"\x13personal_account_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7H\x00R\x11personalAccountId\x12>\n" +
+	"\x0forganization_id\x18\x02 \x01(\v2\x13.delibase.v1.UuidV7H\x00R\x0eorganizationIdB\a\n" +
+	"\x05owner\"\xd7\x02\n" +
+	"\x16AuthorizedUsageContext\x12>\n" +
+	"\x10authorization_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\x0fauthorizationId\x12=\n" +
+	"\apurpose\x18\x02 \x01(\x0e2#.delibase.v1.BackgroundUsagePurposeR\apurpose\x12C\n" +
+	"\x13feature_resource_id\x18\x03 \x01(\v2\x13.delibase.v1.UuidV7R\x11featureResourceId\x12:\n" +
+	"\x06period\x18\x04 \x01(\x0e2\".delibase.v1.BackgroundUsagePeriodR\x06period\x12=\n" +
+	"\fperiod_start\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\"\xcb\x03\n" +
+	"\x1aBackgroundUsagePeriodUsage\x12=\n" +
+	"\acontext\x18\x01 \x01(\v2#.delibase.v1.AuthorizedUsageContextR\acontext\x12<\n" +
+	"\rmaximum_units\x18\x02 \x01(\v2\x17.delibase.v1.UsageUnitsR\fmaximumUnits\x126\n" +
+	"\n" +
+	"held_units\x18\x03 \x01(\v2\x17.delibase.v1.UsageUnitsR\theldUnits\x12@\n" +
+	"\x0fcommitted_units\x18\x04 \x01(\v2\x17.delibase.v1.UsageUnitsR\x0ecommittedUnits\x12@\n" +
+	"\x0fremaining_units\x18\x05 \x01(\v2\x17.delibase.v1.UsageUnitsR\x0eremainingUnits\x129\n" +
+	"\n" +
+	"period_end\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\x129\n" +
+	"\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xfd\x01\n" +
 	"\x0fDeletionBlocker\x124\n" +
 	"\x04kind\x18\x01 \x01(\x0e2 .delibase.v1.DeletionBlockerKindR\x04kind\x12<\n" +
 	"\x0forganization_id\x18\x02 \x01(\v2\x13.delibase.v1.UuidV7R\x0eorganizationId\x12,\n" +
@@ -1678,7 +2149,7 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	"\bmetadata\x18\x06 \x03(\v2&.delibase.v1.ErrorDetail.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x83\t\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xdc\v\n" +
 	"\x13IdempotentOperation\x12$\n" +
 	" IDEMPOTENT_OPERATION_UNSPECIFIED\x10\x00\x12,\n" +
 	"(IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING\x10\x01\x12'\n" +
@@ -1703,7 +2174,13 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	")IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT\x10\x15\x12&\n" +
 	"\"IDEMPOTENT_OPERATION_RESERVE_USAGE\x10\x16\x12%\n" +
 	"!IDEMPOTENT_OPERATION_COMMIT_USAGE\x10\x17\x12&\n" +
-	"\"IDEMPOTENT_OPERATION_RELEASE_USAGE\x10\x18\"\x04\b\n" +
+	"\"IDEMPOTENT_OPERATION_RELEASE_USAGE\x10\x18\x12>\n" +
+	":IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION\x10\x19\x12>\n" +
+	":IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION\x10\x1a\x121\n" +
+	"-IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE\x10\x1b\x120\n" +
+	",IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE\x10\x1c\x121\n" +
+	"-IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE\x10\x1d\x12?\n" +
+	";IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED\x10\x1e\"\x04\b\n" +
 	"\x10\n" +
 	"*&IDEMPOTENT_OPERATION_CREATE_INVITATION*\xa8\x01\n" +
 	"\rAccountStatus\x12\x1e\n" +
@@ -1775,12 +2252,25 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	"\x1fUSAGE_RECORD_STATUS_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dUSAGE_RECORD_STATUS_COMMITTED\x10\x01\x12%\n" +
 	"!USAGE_RECORD_STATUS_POLAR_PENDING\x10\x02\x12&\n" +
-	"\"USAGE_RECORD_STATUS_POLAR_REPORTED\x10\x03*\x9a\x01\n" +
+	"\"USAGE_RECORD_STATUS_POLAR_REPORTED\x10\x03*o\n" +
+	"\x16BackgroundUsagePurpose\x12(\n" +
+	"$BACKGROUND_USAGE_PURPOSE_UNSPECIFIED\x10\x00\x12+\n" +
+	"'BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE\x10\x01*\xec\x02\n" +
+	"\"BackgroundUsageAuthorizationStatus\x125\n" +
+	"1BACKGROUND_USAGE_AUTHORIZATION_STATUS_UNSPECIFIED\x10\x00\x120\n" +
+	",BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACTIVE\x10\x01\x121\n" +
+	"-BACKGROUND_USAGE_AUTHORIZATION_STATUS_REVOKED\x10\x02\x125\n" +
+	"1BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACCESS_LOST\x10\x03\x12:\n" +
+	"6BACKGROUND_USAGE_AUTHORIZATION_STATUS_RESOURCE_DELETED\x10\x04\x127\n" +
+	"3BACKGROUND_USAGE_AUTHORIZATION_STATUS_OWNER_DELETED\x10\x05*e\n" +
+	"\x15BackgroundUsagePeriod\x12'\n" +
+	"#BACKGROUND_USAGE_PERIOD_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fBACKGROUND_USAGE_PERIOD_UTC_DAY\x10\x01*\x9a\x01\n" +
 	"\x0eDeletionStatus\x12\x1f\n" +
 	"\x1bDELETION_STATUS_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18DELETION_STATUS_ACCEPTED\x10\x01\x12+\n" +
 	"'DELETION_STATUS_EXTERNAL_ACTION_PENDING\x10\x02\x12\x1c\n" +
-	"\x18DELETION_STATUS_COMPLETE\x10\x03*\xe1\x14\n" +
+	"\x18DELETION_STATUS_COMPLETE\x10\x03*\x8d\x17\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12(\n" +
 	"$ERROR_REASON_AUTHENTICATION_REQUIRED\x10\x01\x12'\n" +
@@ -1845,7 +2335,12 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	"%ERROR_REASON_DELETION_ALREADY_PENDING\x10\x8f\x01\x12*\n" +
 	"%ERROR_REASON_IDEMPOTENCY_KEY_REQUIRED\x10\xa0\x01\x12&\n" +
 	"!ERROR_REASON_IDEMPOTENCY_CONFLICT\x10\xa1\x01\x120\n" +
-	"+ERROR_REASON_IDEMPOTENCY_OPERATION_MISMATCH\x10\xa2\x01*\xd5\x01\n" +
+	"+ERROR_REASON_IDEMPOTENCY_OPERATION_MISMATCH\x10\xa2\x01\x12=\n" +
+	"8ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION\x10\xb4\x01\x12<\n" +
+	"7ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST\x10\xb5\x01\x12?\n" +
+	":ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID\x10\xb6\x01\x128\n" +
+	"3ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED\x10\xb7\x01\x122\n" +
+	"-ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT\x10\xb8\x01*\xd5\x01\n" +
 	"\x13DeletionBlockerKind\x12%\n" +
 	"!DELETION_BLOCKER_KIND_UNSPECIFIED\x10\x00\x121\n" +
 	"-DELETION_BLOCKER_KIND_LAST_ORGANIZATION_OWNER\x10\x01\x122\n" +
@@ -1864,52 +2359,72 @@ func file_delibase_v1_common_proto_rawDescGZIP() []byte {
 	return file_delibase_v1_common_proto_rawDescData
 }
 
-var file_delibase_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 16)
-var file_delibase_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_delibase_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 19)
+var file_delibase_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_delibase_v1_common_proto_goTypes = []any{
-	(IdempotentOperation)(0),      // 0: delibase.v1.IdempotentOperation
-	(AccountStatus)(0),            // 1: delibase.v1.AccountStatus
-	(OrganizationStatus)(0),       // 2: delibase.v1.OrganizationStatus
-	(OrganizationRole)(0),         // 3: delibase.v1.OrganizationRole
-	(TeamRole)(0),                 // 4: delibase.v1.TeamRole
-	(TeamAccessSource)(0),         // 5: delibase.v1.TeamAccessSource
-	(InvitationStatus)(0),         // 6: delibase.v1.InvitationStatus
-	(SubscriptionStatus)(0),       // 7: delibase.v1.SubscriptionStatus
-	(BillingPeriodStatus)(0),      // 8: delibase.v1.BillingPeriodStatus
-	(LedgerOperation)(0),          // 9: delibase.v1.LedgerOperation
-	(ReservationStatus)(0),        // 10: delibase.v1.ReservationStatus
-	(UsageOperation)(0),           // 11: delibase.v1.UsageOperation
-	(UsageRecordStatus)(0),        // 12: delibase.v1.UsageRecordStatus
-	(DeletionStatus)(0),           // 13: delibase.v1.DeletionStatus
-	(ErrorReason)(0),              // 14: delibase.v1.ErrorReason
-	(DeletionBlockerKind)(0),      // 15: delibase.v1.DeletionBlockerKind
-	(*UuidV7)(nil),                // 16: delibase.v1.UuidV7
-	(*UsdMicros)(nil),             // 17: delibase.v1.UsdMicros
-	(*UsageUnits)(nil),            // 18: delibase.v1.UsageUnits
-	(*PageRequest)(nil),           // 19: delibase.v1.PageRequest
-	(*PageResponse)(nil),          // 20: delibase.v1.PageResponse
-	(*IdempotencyKey)(nil),        // 21: delibase.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),     // 22: delibase.v1.IdempotencyResult
-	(*DeletionBlocker)(nil),       // 23: delibase.v1.DeletionBlocker
-	(*ErrorDetail)(nil),           // 24: delibase.v1.ErrorDetail
-	nil,                           // 25: delibase.v1.ErrorDetail.MetadataEntry
-	(*timestamppb.Timestamp)(nil), // 26: google.protobuf.Timestamp
+	(IdempotentOperation)(0),                // 0: delibase.v1.IdempotentOperation
+	(AccountStatus)(0),                      // 1: delibase.v1.AccountStatus
+	(OrganizationStatus)(0),                 // 2: delibase.v1.OrganizationStatus
+	(OrganizationRole)(0),                   // 3: delibase.v1.OrganizationRole
+	(TeamRole)(0),                           // 4: delibase.v1.TeamRole
+	(TeamAccessSource)(0),                   // 5: delibase.v1.TeamAccessSource
+	(InvitationStatus)(0),                   // 6: delibase.v1.InvitationStatus
+	(SubscriptionStatus)(0),                 // 7: delibase.v1.SubscriptionStatus
+	(BillingPeriodStatus)(0),                // 8: delibase.v1.BillingPeriodStatus
+	(LedgerOperation)(0),                    // 9: delibase.v1.LedgerOperation
+	(ReservationStatus)(0),                  // 10: delibase.v1.ReservationStatus
+	(UsageOperation)(0),                     // 11: delibase.v1.UsageOperation
+	(UsageRecordStatus)(0),                  // 12: delibase.v1.UsageRecordStatus
+	(BackgroundUsagePurpose)(0),             // 13: delibase.v1.BackgroundUsagePurpose
+	(BackgroundUsageAuthorizationStatus)(0), // 14: delibase.v1.BackgroundUsageAuthorizationStatus
+	(BackgroundUsagePeriod)(0),              // 15: delibase.v1.BackgroundUsagePeriod
+	(DeletionStatus)(0),                     // 16: delibase.v1.DeletionStatus
+	(ErrorReason)(0),                        // 17: delibase.v1.ErrorReason
+	(DeletionBlockerKind)(0),                // 18: delibase.v1.DeletionBlockerKind
+	(*UuidV7)(nil),                          // 19: delibase.v1.UuidV7
+	(*UsdMicros)(nil),                       // 20: delibase.v1.UsdMicros
+	(*UsageUnits)(nil),                      // 21: delibase.v1.UsageUnits
+	(*PageRequest)(nil),                     // 22: delibase.v1.PageRequest
+	(*PageResponse)(nil),                    // 23: delibase.v1.PageResponse
+	(*IdempotencyKey)(nil),                  // 24: delibase.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),               // 25: delibase.v1.IdempotencyResult
+	(*BackgroundUsageOwner)(nil),            // 26: delibase.v1.BackgroundUsageOwner
+	(*AuthorizedUsageContext)(nil),          // 27: delibase.v1.AuthorizedUsageContext
+	(*BackgroundUsagePeriodUsage)(nil),      // 28: delibase.v1.BackgroundUsagePeriodUsage
+	(*DeletionBlocker)(nil),                 // 29: delibase.v1.DeletionBlocker
+	(*ErrorDetail)(nil),                     // 30: delibase.v1.ErrorDetail
+	nil,                                     // 31: delibase.v1.ErrorDetail.MetadataEntry
+	(*timestamppb.Timestamp)(nil),           // 32: google.protobuf.Timestamp
 }
 var file_delibase_v1_common_proto_depIdxs = []int32{
 	0,  // 0: delibase.v1.IdempotencyResult.operation:type_name -> delibase.v1.IdempotentOperation
-	26, // 1: delibase.v1.IdempotencyResult.originally_completed_at:type_name -> google.protobuf.Timestamp
-	15, // 2: delibase.v1.DeletionBlocker.kind:type_name -> delibase.v1.DeletionBlockerKind
-	16, // 3: delibase.v1.DeletionBlocker.organization_id:type_name -> delibase.v1.UuidV7
-	16, // 4: delibase.v1.DeletionBlocker.team_id:type_name -> delibase.v1.UuidV7
-	14, // 5: delibase.v1.ErrorDetail.reason:type_name -> delibase.v1.ErrorReason
-	16, // 6: delibase.v1.ErrorDetail.resource_id:type_name -> delibase.v1.UuidV7
-	23, // 7: delibase.v1.ErrorDetail.deletion_blockers:type_name -> delibase.v1.DeletionBlocker
-	25, // 8: delibase.v1.ErrorDetail.metadata:type_name -> delibase.v1.ErrorDetail.MetadataEntry
-	9,  // [9:9] is the sub-list for method output_type
-	9,  // [9:9] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	32, // 1: delibase.v1.IdempotencyResult.originally_completed_at:type_name -> google.protobuf.Timestamp
+	19, // 2: delibase.v1.BackgroundUsageOwner.personal_account_id:type_name -> delibase.v1.UuidV7
+	19, // 3: delibase.v1.BackgroundUsageOwner.organization_id:type_name -> delibase.v1.UuidV7
+	19, // 4: delibase.v1.AuthorizedUsageContext.authorization_id:type_name -> delibase.v1.UuidV7
+	13, // 5: delibase.v1.AuthorizedUsageContext.purpose:type_name -> delibase.v1.BackgroundUsagePurpose
+	19, // 6: delibase.v1.AuthorizedUsageContext.feature_resource_id:type_name -> delibase.v1.UuidV7
+	15, // 7: delibase.v1.AuthorizedUsageContext.period:type_name -> delibase.v1.BackgroundUsagePeriod
+	32, // 8: delibase.v1.AuthorizedUsageContext.period_start:type_name -> google.protobuf.Timestamp
+	27, // 9: delibase.v1.BackgroundUsagePeriodUsage.context:type_name -> delibase.v1.AuthorizedUsageContext
+	21, // 10: delibase.v1.BackgroundUsagePeriodUsage.maximum_units:type_name -> delibase.v1.UsageUnits
+	21, // 11: delibase.v1.BackgroundUsagePeriodUsage.held_units:type_name -> delibase.v1.UsageUnits
+	21, // 12: delibase.v1.BackgroundUsagePeriodUsage.committed_units:type_name -> delibase.v1.UsageUnits
+	21, // 13: delibase.v1.BackgroundUsagePeriodUsage.remaining_units:type_name -> delibase.v1.UsageUnits
+	32, // 14: delibase.v1.BackgroundUsagePeriodUsage.period_end:type_name -> google.protobuf.Timestamp
+	32, // 15: delibase.v1.BackgroundUsagePeriodUsage.updated_at:type_name -> google.protobuf.Timestamp
+	18, // 16: delibase.v1.DeletionBlocker.kind:type_name -> delibase.v1.DeletionBlockerKind
+	19, // 17: delibase.v1.DeletionBlocker.organization_id:type_name -> delibase.v1.UuidV7
+	19, // 18: delibase.v1.DeletionBlocker.team_id:type_name -> delibase.v1.UuidV7
+	17, // 19: delibase.v1.ErrorDetail.reason:type_name -> delibase.v1.ErrorReason
+	19, // 20: delibase.v1.ErrorDetail.resource_id:type_name -> delibase.v1.UuidV7
+	29, // 21: delibase.v1.ErrorDetail.deletion_blockers:type_name -> delibase.v1.DeletionBlocker
+	31, // 22: delibase.v1.ErrorDetail.metadata:type_name -> delibase.v1.ErrorDetail.MetadataEntry
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_delibase_v1_common_proto_init() }
@@ -1917,13 +2432,17 @@ func file_delibase_v1_common_proto_init() {
 	if File_delibase_v1_common_proto != nil {
 		return
 	}
+	file_delibase_v1_common_proto_msgTypes[7].OneofWrappers = []any{
+		(*BackgroundUsageOwner_PersonalAccountId)(nil),
+		(*BackgroundUsageOwner_OrganizationId)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delibase_v1_common_proto_rawDesc), len(file_delibase_v1_common_proto_rawDesc)),
-			NumEnums:      16,
-			NumMessages:   10,
+			NumEnums:      19,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

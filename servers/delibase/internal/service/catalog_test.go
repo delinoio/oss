@@ -3,9 +3,11 @@ package service
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
+	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -53,5 +55,27 @@ func TestCatalogNotFoundHasStableReason(t *testing.T) {
 	detail, ok := value.(*delibasev1.ErrorDetail)
 	if !ok || detail.Reason != delibasev1.ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND {
 		t.Fatalf("detail = %#v", value)
+	}
+}
+
+func TestCatalogMeterExposesAuthorizationTargets(t *testing.T) {
+	t.Parallel()
+
+	meterID := uuid.MustParse("0198a000-0000-7000-8000-000000000011")
+	appID := uuid.MustParse("0198a000-0000-7000-8000-000000000001")
+	priceID := uuid.MustParse("0198a000-0000-7000-8000-000000000021")
+	serviceID := uuid.MustParse("0198a000-0000-7000-8000-000000000031")
+	meter := catalogMeter(dbgen.ListPublicCatalogMetersRow{
+		ID:                              pgtype.UUID{Bytes: [16]byte(meterID), Valid: true},
+		AppID:                           pgtype.UUID{Bytes: [16]byte(appID), Valid: true},
+		PriceVersionID:                  pgtype.UUID{Bytes: [16]byte(priceID), Valid: true},
+		EffectiveFrom:                   pgtype.Timestamptz{Time: time.Unix(0, 0), Valid: true},
+		AuthorizationServiceIdentityIds: []pgtype.UUID{{Bytes: [16]byte(serviceID), Valid: true}},
+		AuthorizationServiceNames:       []string{"RealQA"},
+	})
+	if len(meter.AuthorizationTargets) != 1 ||
+		meter.AuthorizationTargets[0].GetServiceIdentityId().GetValue() != serviceID.String() ||
+		meter.AuthorizationTargets[0].GetName() != "RealQA" {
+		t.Fatalf("authorization targets = %#v", meter.AuthorizationTargets)
 	}
 }

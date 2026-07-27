@@ -173,11 +173,15 @@ func connectPolicy(procedure string) authmiddleware.Requirement {
 		return userRequirement("delibase:teams:write")
 	case delibasev1connect.BillingServiceGetBillingSummaryProcedure,
 		delibasev1connect.BillingServiceListLedgerEntriesProcedure,
-		delibasev1connect.BillingServiceListUsageRecordsProcedure:
+		delibasev1connect.BillingServiceListUsageRecordsProcedure,
+		delibasev1connect.BillingServiceGetBackgroundUsageAuthorizationProcedure,
+		delibasev1connect.BillingServiceListBackgroundUsageAuthorizationsProcedure:
 		return userRequirement("delibase:billing:read")
 	case delibasev1connect.BillingServiceCreateSubscriptionCheckoutProcedure,
 		delibasev1connect.BillingServiceCreateBillingPortalSessionProcedure,
-		delibasev1connect.BillingServiceUpdateOverageLimitProcedure:
+		delibasev1connect.BillingServiceUpdateOverageLimitProcedure,
+		delibasev1connect.BillingServiceCreateBackgroundUsageAuthorizationProcedure,
+		delibasev1connect.BillingServiceRevokeBackgroundUsageAuthorizationProcedure:
 		return userRequirement("delibase:billing:write")
 	case delibasev1connect.UsageServiceReserveUsageProcedure:
 		return usageRequirement("delibase:usage:reserve")
@@ -185,6 +189,14 @@ func connectPolicy(procedure string) authmiddleware.Requirement {
 		return usageRequirement("delibase:usage:commit")
 	case delibasev1connect.UsageServiceReleaseUsageProcedure:
 		return usageRequirement("delibase:usage:release")
+	case delibasev1connect.UsageServiceReserveAuthorizedUsageProcedure:
+		return authorizedUsageRequirement("delibase:usage:reserve")
+	case delibasev1connect.UsageServiceCommitAuthorizedUsageProcedure:
+		return authorizedUsageRequirement("delibase:usage:commit")
+	case delibasev1connect.UsageServiceReleaseAuthorizedUsageProcedure:
+		return authorizedUsageRequirement("delibase:usage:release")
+	case delibasev1connect.UsageServiceMarkBackgroundUsageResourceDeletedProcedure:
+		return authorizedUsageRequirement("delibase:usage:release")
 	default:
 		// The invalid zero mode is intentional: any newly generated procedure
 		// must be added explicitly before it is reachable.
@@ -204,6 +216,13 @@ func usageRequirement(serviceScope string) authmiddleware.Requirement {
 		Mode:       authmiddleware.ModeM2MWithForwardedUser,
 		M2MScopes:  []string{serviceScope},
 		UserScopes: []string{"delibase:usage:execute"},
+	}
+}
+
+func authorizedUsageRequirement(serviceScope string) authmiddleware.Requirement {
+	return authmiddleware.Requirement{
+		Mode:      authmiddleware.ModeM2M,
+		M2MScopes: []string{serviceScope},
 	}
 }
 

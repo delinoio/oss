@@ -205,5 +205,12 @@ func catalogMeter(row dbgen.ListPublicCatalogMetersRow) *delibasev1.CatalogMeter
 	if row.EffectiveUntil.Valid {
 		price.EffectiveUntil = timestamppb.New(row.EffectiveUntil.Time)
 	}
-	return &delibasev1.CatalogMeter{MeterId: &delibasev1.UuidV7{Value: uuid.UUID(row.ID.Bytes).String()}, AppId: &delibasev1.UuidV7{Value: uuid.UUID(row.AppID.Bytes).String()}, Key: row.MeterKey, Name: row.Name, Description: row.Description, UnitName: row.UnitName, UnitPrecision: row.UnitPrecision, ReservationTtlSeconds: row.ReservationTtlSeconds, CurrentPrice: price, Enabled: row.Enabled}
+	meter := &delibasev1.CatalogMeter{MeterId: &delibasev1.UuidV7{Value: uuid.UUID(row.ID.Bytes).String()}, AppId: &delibasev1.UuidV7{Value: uuid.UUID(row.AppID.Bytes).String()}, Key: row.MeterKey, Name: row.Name, Description: row.Description, UnitName: row.UnitName, UnitPrecision: row.UnitPrecision, ReservationTtlSeconds: row.ReservationTtlSeconds, CurrentPrice: price, Enabled: row.Enabled}
+	for index, serviceID := range row.AuthorizationServiceIdentityIds {
+		meter.AuthorizationTargets = append(meter.AuthorizationTargets, &delibasev1.CatalogAuthorizationTarget{
+			ServiceIdentityId: &delibasev1.UuidV7{Value: uuid.UUID(serviceID.Bytes).String()},
+			Name:              row.AuthorizationServiceNames[index],
+		})
+	}
+	return meter
 }

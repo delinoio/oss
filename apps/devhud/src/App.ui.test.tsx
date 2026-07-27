@@ -175,7 +175,9 @@ describe("DevHud application surfaces", () => {
     renderApp({ desktopBridge: bridge, storage });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Reset DevHud");
-    expect(document.documentElement.dataset.theme).toBe(ThemePreference.Dark);
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe(ThemePreference.Dark),
+    );
     const settingsReadsBeforeReset = read.mock.calls.filter(
       ([key]) => key === SETTINGS_STORAGE_KEY,
     ).length;
@@ -186,7 +188,9 @@ describe("DevHud application surfaces", () => {
     act(() => publishReset?.({ status: "complete" }));
 
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
-    expect(document.documentElement.dataset.theme).toBe(ThemePreference.System);
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe(ThemePreference.System),
+    );
     expect(
       read.mock.calls.filter(([key]) => key === SETTINGS_STORAGE_KEY),
     ).toHaveLength(settingsReadsBeforeReset + 1);
