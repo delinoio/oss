@@ -371,37 +371,22 @@ func (service *Billing) ListBackgroundUsageAuthorizations(
 			if transactionErr != nil {
 				return transactionErr
 			}
-			visibilityOrganizationID := filters.organizationID
-			if visibilityOrganizationID == uuid.Nil {
-				visibilityOrganizationID = filters.ownerOrganizationID
-			}
-			fullOrganizationAccess, transactionErr := backgroundOrganizationWideAccess(
-				ctx,
-				queries,
-				visibilityOrganizationID,
-				account.ID,
-			)
-			if transactionErr != nil {
-				return transactionErr
-			}
 			rows, transactionErr := queries.ListVisibleBackgroundUsageAuthorizations(
 				ctx,
 				dbgen.ListVisibleBackgroundUsageAuthorizationsParams{
-					AfterID:                afterID,
-					CallerAccountID:        account.ID,
-					FullOrganizationAccess: fullOrganizationAccess,
-					CallerOrganizationID:   optionalPGUUID(visibilityOrganizationID),
-					OwnerType:              filters.ownerType,
-					OwnerAccountID:         optionalPGUUID(filters.ownerAccountID),
-					OwnerOrganizationID:    optionalPGUUID(filters.ownerOrganizationID),
-					OrganizationID:         optionalPGUUID(filters.organizationID),
-					TeamID:                 optionalPGUUID(filters.teamID),
-					ServiceIdentityID:      optionalPGUUID(filters.serviceIdentityID),
-					MeterID:                optionalPGUUID(filters.meterID),
-					Purpose:                filters.purpose,
-					FeatureResourceID:      optionalPGUUID(filters.featureResourceID),
-					Status:                 filters.status,
-					PageLimit:              pageSize + 1,
+					AfterID:             afterID,
+					CallerAccountID:     account.ID,
+					OwnerType:           filters.ownerType,
+					OwnerAccountID:      optionalPGUUID(filters.ownerAccountID),
+					OwnerOrganizationID: optionalPGUUID(filters.ownerOrganizationID),
+					OrganizationID:      optionalPGUUID(filters.organizationID),
+					TeamID:              optionalPGUUID(filters.teamID),
+					ServiceIdentityID:   optionalPGUUID(filters.serviceIdentityID),
+					MeterID:             optionalPGUUID(filters.meterID),
+					Purpose:             filters.purpose,
+					FeatureResourceID:   optionalPGUUID(filters.featureResourceID),
+					Status:              filters.status,
+					PageLimit:           pageSize + 1,
 				},
 			)
 			if transactionErr != nil {

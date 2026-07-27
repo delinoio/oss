@@ -187,8 +187,7 @@ func TestPostgreSQLBackgroundAuthorizationHumanPolicyAndIdempotency(t *testing.T
 	ownerList, err := fixture.billing.ListBackgroundUsageAuthorizations(
 		ownerContext,
 		connect.NewRequest(&delibasev1.ListBackgroundUsageAuthorizationsRequest{
-			OrganizationId: usageUUID(fixture.organizationID),
-			Page:           &delibasev1.PageRequest{PageSize: 100},
+			Page: &delibasev1.PageRequest{PageSize: 100},
 		}),
 	)
 	if err != nil || len(ownerList.Msg.Authorizations) != 2 {
@@ -227,8 +226,7 @@ func TestPostgreSQLBackgroundAuthorizationHumanPolicyAndIdempotency(t *testing.T
 	adminList, err := fixture.billing.ListBackgroundUsageAuthorizations(
 		memberContext,
 		connect.NewRequest(&delibasev1.ListBackgroundUsageAuthorizationsRequest{
-			OrganizationId: usageUUID(fixture.organizationID),
-			Page:           &delibasev1.PageRequest{PageSize: 100},
+			Page: &delibasev1.PageRequest{PageSize: 100},
 		}),
 	)
 	if err != nil || len(adminList.Msg.Authorizations) != 2 {

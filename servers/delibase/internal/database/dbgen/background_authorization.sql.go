@@ -569,80 +569,82 @@ FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id > $1
   AND (
       grant_row.authorizer_account_id = $2
-      OR (
-          $3::boolean
-          AND grant_row.organization_id = $4
+      OR EXISTS (
+          SELECT 1
+          FROM organization_memberships AS caller_membership
+          JOIN organizations AS caller_organization
+            ON caller_organization.id = caller_membership.organization_id
+          WHERE caller_membership.organization_id = grant_row.organization_id
+            AND caller_membership.account_id = $2
+            AND caller_membership.role IN ('owner', 'admin')
+            AND caller_organization.deleted_at IS NULL
       )
   )
   AND (
-      $5::text = ''
-      OR grant_row.owner_type = $5
+      $3::text = ''
+      OR grant_row.owner_type = $3
+  )
+  AND (
+      $4::uuid IS NULL
+      OR grant_row.owner_account_id = $4
+  )
+  AND (
+      $5::uuid IS NULL
+      OR grant_row.owner_organization_id
+          = $5
   )
   AND (
       $6::uuid IS NULL
-      OR grant_row.owner_account_id = $6
+      OR grant_row.organization_id = $6
   )
   AND (
       $7::uuid IS NULL
-      OR grant_row.owner_organization_id
-          = $7
+      OR grant_row.team_id = $7
   )
   AND (
       $8::uuid IS NULL
-      OR grant_row.organization_id = $8
+      OR grant_row.service_identity_id = $8
   )
   AND (
       $9::uuid IS NULL
-      OR grant_row.team_id = $9
+      OR grant_row.meter_id = $9
   )
   AND (
-      $10::uuid IS NULL
-      OR grant_row.service_identity_id = $10
+      $10::text = ''
+      OR grant_row.purpose = $10
   )
   AND (
       $11::uuid IS NULL
-      OR grant_row.meter_id = $11
+      OR grant_row.feature_resource_id = $11
   )
   AND (
       $12::text = ''
-      OR grant_row.purpose = $12
-  )
-  AND (
-      $13::uuid IS NULL
-      OR grant_row.feature_resource_id = $13
-  )
-  AND (
-      $14::text = ''
-      OR grant_row.status = $14
+      OR grant_row.status = $12
   )
 ORDER BY grant_row.id
-LIMIT $15
+LIMIT $13
 `
 
 type ListVisibleBackgroundUsageAuthorizationsParams struct {
-	AfterID                pgtype.UUID
-	CallerAccountID        pgtype.UUID
-	FullOrganizationAccess bool
-	CallerOrganizationID   pgtype.UUID
-	OwnerType              string
-	OwnerAccountID         pgtype.UUID
-	OwnerOrganizationID    pgtype.UUID
-	OrganizationID         pgtype.UUID
-	TeamID                 pgtype.UUID
-	ServiceIdentityID      pgtype.UUID
-	MeterID                pgtype.UUID
-	Purpose                string
-	FeatureResourceID      pgtype.UUID
-	Status                 string
-	PageLimit              int32
+	AfterID             pgtype.UUID
+	CallerAccountID     pgtype.UUID
+	OwnerType           string
+	OwnerAccountID      pgtype.UUID
+	OwnerOrganizationID pgtype.UUID
+	OrganizationID      pgtype.UUID
+	TeamID              pgtype.UUID
+	ServiceIdentityID   pgtype.UUID
+	MeterID             pgtype.UUID
+	Purpose             string
+	FeatureResourceID   pgtype.UUID
+	Status              string
+	PageLimit           int32
 }
 
 func (q *Queries) ListVisibleBackgroundUsageAuthorizations(ctx context.Context, arg ListVisibleBackgroundUsageAuthorizationsParams) ([]BackgroundUsageAuthorization, error) {
 	rows, err := q.db.Query(ctx, listVisibleBackgroundUsageAuthorizations,
 		arg.AfterID,
 		arg.CallerAccountID,
-		arg.FullOrganizationAccess,
-		arg.CallerOrganizationID,
 		arg.OwnerType,
 		arg.OwnerAccountID,
 		arg.OwnerOrganizationID,

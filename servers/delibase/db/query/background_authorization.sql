@@ -55,9 +55,15 @@ FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id > sqlc.arg(after_id)
   AND (
       grant_row.authorizer_account_id = sqlc.arg(caller_account_id)
-      OR (
-          sqlc.arg(full_organization_access)::boolean
-          AND grant_row.organization_id = sqlc.arg(caller_organization_id)
+      OR EXISTS (
+          SELECT 1
+          FROM organization_memberships AS caller_membership
+          JOIN organizations AS caller_organization
+            ON caller_organization.id = caller_membership.organization_id
+          WHERE caller_membership.organization_id = grant_row.organization_id
+            AND caller_membership.account_id = sqlc.arg(caller_account_id)
+            AND caller_membership.role IN ('owner', 'admin')
+            AND caller_organization.deleted_at IS NULL
       )
   )
   AND (
