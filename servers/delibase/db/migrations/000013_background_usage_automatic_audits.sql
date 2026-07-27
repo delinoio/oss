@@ -1,7 +1,8 @@
 -- Migration 000011 may already be recorded in deployed databases, so add the
 -- immutable team snapshot without changing that migration's checksum. Prefer
 -- the creation audit's historical name and fall back to the current team for
--- rows created outside the service transaction.
+-- rows created outside the service transaction, then the newest retained
+-- audit snapshot when the referenced team is already gone.
 ALTER TABLE background_usage_authorizations
     ADD COLUMN team_name_snapshot text;
 
@@ -28,6 +29,15 @@ SET team_name_snapshot = COALESCE(
         FROM teams AS team
         WHERE team.organization_id = grant_row.organization_id
           AND team.id = grant_row.team_id
+    ),
+    (
+        SELECT audit.team_name_snapshot
+        FROM audit_events AS audit
+        WHERE audit.organization_id = grant_row.organization_id
+          AND audit.team_id = grant_row.team_id
+          AND audit.team_name_snapshot IS NOT NULL
+        ORDER BY audit.occurred_at DESC, audit.id DESC
+        LIMIT 1
     )
 );
 
@@ -37,9 +47,20 @@ ALTER TABLE background_usage_authorizations
     ENABLE TRIGGER background_usage_authorizations_preserve;
 
 ALTER TABLE background_usage_authorizations
-    ALTER COLUMN team_name_snapshot SET NOT NULL,
     ADD CONSTRAINT background_usage_authorizations_team_name_snapshot_check
-        CHECK (length(team_name_snapshot) BETWEEN 1 AND 120);
+        CHECK (
+            (
+                team_name_snapshot IS NOT NULL
+                AND length(team_name_snapshot) BETWEEN 1 AND 120
+            )
+            OR (
+                -- A terminal pre-000013 grant may outlive a directly deleted
+                -- team without any retained name snapshot. Active grants and
+                -- every new grant must still carry the authoritative name.
+                team_name_snapshot IS NULL
+                AND status <> 'active'
+            )
+        );
 
 CREATE OR REPLACE FUNCTION validate_new_background_usage_authorization()
 RETURNS trigger

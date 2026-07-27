@@ -10,6 +10,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestEmbeddedMigrationsAreOrdered(t *testing.T) {
@@ -148,6 +149,13 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	creditOnlyOutboxID := uuidv7.MustNew()
 	duplicateReservationAID := uuidv7.MustNew()
 	duplicateReservationBID := uuidv7.MustNew()
+	auditedAuthorizationID := uuidv7.MustNew()
+	unknownAuthorizationID := uuidv7.MustNew()
+	auditedDeletedTeamID := uuidv7.MustNew()
+	unknownDeletedTeamID := uuidv7.MustNew()
+	auditedFeatureResourceID := uuidv7.MustNew()
+	unknownFeatureResourceID := uuidv7.MustNew()
+	teamDeletedAuditID := uuidv7.MustNew()
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
 		if _, transactionErr := transaction.Exec(
@@ -553,10 +561,82 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err = apply(ctx, connection, ordered[usageServiceMigrationIndex]); err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range ordered[usageServiceMigrationIndex+1:] {
+	for _, item := range ordered[usageServiceMigrationIndex+1 : len(ordered)-1] {
 		if err = apply(ctx, connection, item); err != nil {
 			t.Fatal(err)
 		}
+	}
+	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
+		if _, transactionErr := transaction.Exec(
+			ctx,
+			"SET LOCAL session_replication_role = replica",
+		); transactionErr != nil {
+			return transactionErr
+		}
+		for _, authorization := range []struct {
+			id                uuid.UUID
+			teamID            uuid.UUID
+			featureResourceID uuid.UUID
+		}{
+			{
+				id:                auditedAuthorizationID,
+				teamID:            auditedDeletedTeamID,
+				featureResourceID: auditedFeatureResourceID,
+			},
+			{
+				id:                unknownAuthorizationID,
+				teamID:            unknownDeletedTeamID,
+				featureResourceID: unknownFeatureResourceID,
+			},
+		} {
+			if _, transactionErr := transaction.Exec(ctx, `
+				INSERT INTO background_usage_authorizations (
+					id, authorizer_account_id, owner_type, owner_account_id,
+					organization_id, team_id, service_identity_id, meter_id,
+					purpose, feature_resource_id, period, maximum_units,
+					status, revision, created_at, updated_at, revoked_at,
+					retain_until
+				) VALUES (
+					$1, $2, 'personal_account', $2, $3, $4, $5, $6,
+					'realqa_storage', $7, 'utc_day', 1, 'access_lost', 2,
+					$8, $8, $8, $8 + interval '7 years'
+				)
+			`,
+				authorization.id,
+				accountID,
+				organizationID,
+				authorization.teamID,
+				serviceID,
+				meterID,
+				authorization.featureResourceID,
+				createdAt,
+			); transactionErr != nil {
+				return transactionErr
+			}
+		}
+		_, transactionErr := transaction.Exec(ctx, `
+			INSERT INTO audit_events (
+				id, occurred_at, event_type, actor_reference,
+				organization_id, team_id, team_name_snapshot,
+				decision, result, metadata, retain_until
+			) VALUES (
+				$1, $2, 'team.deleted', '', $3, $4,
+				'Deleted Migration Team', 'allow', 'success', '{}'::jsonb,
+				$2 + interval '7 years'
+			)
+		`,
+			teamDeletedAuditID,
+			createdAt,
+			organizationID,
+			auditedDeletedTeamID,
+		)
+		return transactionErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = apply(ctx, connection, ordered[len(ordered)-1]); err != nil {
+		t.Fatal(err)
 	}
 	var eventName string
 	var backfilledPeriodID uuid.UUID
@@ -605,6 +685,29 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 			"grandfathered duplicate count = %d, want 2",
 			grandfatheredDuplicateCount,
 		)
+	}
+	var auditedSnapshot pgtype.Text
+	if err = connection.QueryRow(ctx, `
+		SELECT team_name_snapshot
+		FROM background_usage_authorizations
+		WHERE id = $1
+	`, auditedAuthorizationID).Scan(&auditedSnapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !auditedSnapshot.Valid ||
+		auditedSnapshot.String != "Deleted Migration Team" {
+		t.Fatalf("audited deleted-team snapshot = %#v", auditedSnapshot)
+	}
+	var unknownSnapshot pgtype.Text
+	if err = connection.QueryRow(ctx, `
+		SELECT team_name_snapshot
+		FROM background_usage_authorizations
+		WHERE id = $1
+	`, unknownAuthorizationID).Scan(&unknownSnapshot); err != nil {
+		t.Fatal(err)
+	}
+	if unknownSnapshot.Valid {
+		t.Fatalf("unknown deleted-team snapshot = %#v", unknownSnapshot)
 	}
 	var outboxAggregateID uuid.UUID
 	var outboxEventName string

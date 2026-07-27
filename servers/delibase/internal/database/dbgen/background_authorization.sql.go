@@ -342,7 +342,20 @@ SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, gran
 FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id = $1
   AND (
-      grant_row.authorizer_account_id = $2
+      (
+          grant_row.authorizer_account_id = $2
+          AND EXISTS (
+              SELECT 1
+              FROM organization_memberships AS caller_membership
+              JOIN organizations AS caller_organization
+                ON caller_organization.id = caller_membership.organization_id
+              WHERE caller_membership.organization_id
+                      = grant_row.organization_id
+                AND caller_membership.account_id
+                      = $2
+                AND caller_organization.deleted_at IS NULL
+          )
+      )
       OR (
           $3::boolean
           AND grant_row.organization_id = $4
@@ -570,18 +583,18 @@ const listVisibleBackgroundUsageAuthorizations = `-- name: ListVisibleBackground
 SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until, grant_row.team_name_snapshot
 FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id > $1
-  AND (
-      grant_row.authorizer_account_id = $2
-      OR EXISTS (
-          SELECT 1
-          FROM organization_memberships AS caller_membership
-          JOIN organizations AS caller_organization
-            ON caller_organization.id = caller_membership.organization_id
-          WHERE caller_membership.organization_id = grant_row.organization_id
-            AND caller_membership.account_id = $2
-            AND caller_membership.role IN ('owner', 'admin')
-            AND caller_organization.deleted_at IS NULL
-      )
+  AND EXISTS (
+      SELECT 1
+      FROM organization_memberships AS caller_membership
+      JOIN organizations AS caller_organization
+        ON caller_organization.id = caller_membership.organization_id
+      WHERE caller_membership.organization_id = grant_row.organization_id
+        AND caller_membership.account_id = $2
+        AND (
+            grant_row.authorizer_account_id = $2
+            OR caller_membership.role IN ('owner', 'admin')
+        )
+        AND caller_organization.deleted_at IS NULL
   )
   AND (
       $3::text = ''

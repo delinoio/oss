@@ -365,6 +365,77 @@ func TestPostgreSQLBackgroundIdempotencyInsertRaceRetainsReplayReason(
 	}
 }
 
+func TestPostgreSQLBackgroundAuthorizationFormerAuthorizerCannotRead(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	ownerContext := authenticatedContext(ctx, fixture.ownerSubject)
+	memberContext := authenticatedContext(ctx, fixture.memberSubject)
+	grant := createBackgroundGrant(
+		t,
+		memberContext,
+		fixture.billing,
+		fixture,
+		fixture.memberID,
+		fixture.parentTeamID,
+		uuidv7.MustNew(),
+		10,
+		"former-authorizer-create-"+fixture.organizationID.String(),
+		false,
+	)
+
+	organizationService := NewOrganization(fixture.dependencies)
+	if _, err := organizationService.RemoveOrganizationMember(
+		ownerContext,
+		connect.NewRequest(&delibasev1.RemoveOrganizationMemberRequest{
+			OrganizationId: usageUUID(fixture.organizationID),
+			AccountId:      usageUUID(fixture.memberID),
+			Idempotency: idempotency(
+				"remove-background-authorizer-" + fixture.organizationID.String(),
+			),
+		}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := fixture.store.Queries().GetBackgroundUsageAuthorization(
+		ctx,
+		pgUUID(mustUUID(t, grant.Authorization.AuthorizationId)),
+	)
+	if err != nil || closed.Status != "access_lost" {
+		t.Fatalf("removed authorizer grant = %#v, %v", closed, err)
+	}
+
+	_, err = fixture.billing.GetBackgroundUsageAuthorization(
+		memberContext,
+		connect.NewRequest(&delibasev1.GetBackgroundUsageAuthorizationRequest{
+			AuthorizationId: grant.Authorization.AuthorizationId,
+		}),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeNotFound,
+		delibasev1.ErrorReason_ERROR_REASON_RESOURCE_NOT_FOUND,
+	)
+	list, err := fixture.billing.ListBackgroundUsageAuthorizations(
+		memberContext,
+		connect.NewRequest(&delibasev1.ListBackgroundUsageAuthorizationsRequest{
+			OrganizationId: usageUUID(fixture.organizationID),
+			Page:           &delibasev1.PageRequest{PageSize: 100},
+		}),
+	)
+	if err != nil || len(list.Msg.Authorizations) != 0 {
+		t.Fatalf("former authorizer list = %#v, %v", list, err)
+	}
+}
+
 func TestPostgreSQLAuthorizedUsageFinancialPathsAndSubstitution(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
