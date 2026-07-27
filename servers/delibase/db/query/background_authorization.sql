@@ -188,12 +188,15 @@ SELECT
         committed.has_settlement,
         false
     )::boolean AS has_committed_settlement,
-    GREATEST(
-        grant_row.maximum_units
-            - COALESCE(held.units, 0)
-            - COALESCE(committed.units, 0),
-        0
-    )::bigint AS remaining_units,
+    CASE
+        WHEN COALESCE(committed.has_settlement, false) THEN 0
+        ELSE GREATEST(
+            grant_row.maximum_units
+                - COALESCE(held.units, 0)
+                - COALESCE(committed.units, 0),
+            0
+        )
+    END::bigint AS remaining_units,
     (
         sqlc.arg(period_start)::timestamptz + interval '1 day'
     )::timestamptz AS period_end,

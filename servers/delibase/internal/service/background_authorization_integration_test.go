@@ -1094,6 +1094,12 @@ func TestPostgreSQLAuthorizedUsageReleaseLimitSettlementAndRevokeRace(
 	for range 2 {
 		result := <-results
 		if result.err == nil {
+			if result.response.Msg.PeriodUsage.RemainingUnits.Value != 0 {
+				t.Fatalf(
+					"remaining units after zero-unit settlement = %d",
+					result.response.Msg.PeriodUsage.RemainingUnits.Value,
+				)
+			}
 			successes++
 			continue
 		}
