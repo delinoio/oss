@@ -296,6 +296,8 @@ enum ErrorReason {
   ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST = 181;
   ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID = 182;
   ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED = 183;
+  // A different idempotency key attempted to repeat an already recorded,
+  // logically unique authorized settlement for the bound period/reservation.
   ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT = 184;
 }
 

@@ -18,6 +18,10 @@ import (
 const (
 	currentVersion  = 1
 	maxDocumentSize = 1 << 20
+
+	// BackgroundUsagePurposeRealQAStorage is the only service capability that
+	// may be advertised by the v1 catalog.
+	BackgroundUsagePurposeRealQAStorage BackgroundUsagePurpose = "realqa_storage"
 )
 
 var (
@@ -66,12 +70,18 @@ type Price struct {
 }
 
 type Service struct {
-	ID              string   `json:"id"`
-	LogtoClientID   string   `json:"logto_client_id"`
-	Name            string   `json:"name"`
-	Enabled         *bool    `json:"enabled"`
-	AllowedMeterIDs []string `json:"allowed_meter_ids"`
+	ID                      string   `json:"id"`
+	LogtoClientID           string   `json:"logto_client_id"`
+	Name                    string   `json:"name"`
+	Enabled                 *bool    `json:"enabled"`
+	AllowedMeterIDs         []string `json:"allowed_meter_ids"`
+	BackgroundUsageMeterIDs []string `json:"background_usage_meter_ids"`
 }
+
+// BackgroundUsagePurpose is the closed catalog representation of a background
+// capability. It mirrors delibase.v1.BackgroundUsagePurpose without importing
+// generated transport types into catalog validation.
+type BackgroundUsagePurpose string
 
 type PolarMeter struct {
 	MeterID      string `json:"meter_id"`
@@ -205,7 +215,8 @@ func (specification Specification) validate() error {
 		if !validID(service.ID) || len(service.LogtoClientID) < 1 ||
 			len(service.LogtoClientID) > 255 || len(service.Name) < 1 ||
 			len(service.Name) > 120 || service.Enabled == nil ||
-			service.AllowedMeterIDs == nil {
+			service.AllowedMeterIDs == nil ||
+			service.BackgroundUsageMeterIDs == nil {
 			return errors.New("catalog: invalid service")
 		}
 		if _, duplicate := serviceIDs[service.ID]; duplicate {
@@ -228,6 +239,23 @@ func (specification Specification) validate() error {
 			if *service.Enabled {
 				meterServiceMappings[meterID] = struct{}{}
 			}
+		}
+		backgroundUsage := make(
+			map[string]struct{},
+			len(service.BackgroundUsageMeterIDs),
+		)
+		for _, meterID := range service.BackgroundUsageMeterIDs {
+			if _, exists := allowed[meterID]; !exists {
+				return errors.New(
+					"catalog: background usage references a meter not allowed for the service",
+				)
+			}
+			if _, duplicate := backgroundUsage[meterID]; duplicate {
+				return errors.New(
+					"catalog: duplicate background usage meter mapping",
+				)
+			}
+			backgroundUsage[meterID] = struct{}{}
 		}
 	}
 

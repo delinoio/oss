@@ -69,6 +69,9 @@ requirement. They authenticate only the M2M bearer and revalidate the durable
 state, or persist `x-delibase-forwarded-user-token`. A supplied credential
 header is stripped by authentication middleware and never reaches the handler.
 The authenticated service identity, rather than a caller-supplied service ID,
-is included in the operation digest. Authorized commit/release digests also
-include the reservation ID. Existing `ReserveUsage`, `CommitUsage`, and
-`ReleaseUsage` continue to require both credentials.
+is included in the operation digest. Authorized reserve digests also include
+`client_reference`, and authorized commit/release digests include the
+reservation ID. Before deleting a bound external resource, the service durably
+records a tombstone, stops reserving for it, and retries the idempotent deletion
+notification until delibase acknowledges it. Existing `ReserveUsage`,
+`CommitUsage`, and `ReleaseUsage` continue to require both credentials.

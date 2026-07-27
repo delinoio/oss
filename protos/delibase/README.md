@@ -52,18 +52,24 @@ There is intentionally no Deck purpose.
 `ReleaseAuthorizedUsage`, plus `MarkBackgroundUsageResourceDeleted`, are
 M2M-only. They do not accept, require, forward, or store a user bearer.
 Reserve/commit/release replay digests bind the authorization, authenticated
-service identity, purpose, feature resource, UTC period, and units;
-commit/release also bind the reservation ID. Resource-deletion digests bind
-authorization, service, purpose, resource, and expected revision. Reserve accepts
-only the current or immediately preceding canonical UTC day according to server
-time, while commit/release use the reservation's stored period. Public catalog
-meters expose stable service authorization target UUIDs and safe names without
-Logto client IDs or credentials. The resource-deletion method lets the bound
-service idempotently transition the matching grant to `RESOURCE_DELETED`.
+service identity, purpose, feature resource, UTC period, and units; reserve also
+binds `client_reference`, while commit/release bind the reservation ID.
+Resource-deletion digests bind authorization, service, purpose, resource, and
+expected revision. Reserve accepts only the current or immediately preceding
+canonical UTC day according to server time, while commit/release use the
+reservation's stored period. Public catalog meters expose only services with an
+explicit `REALQA_STORAGE` capability for that meter as stable authorization
+target UUIDs and safe names, without Logto client IDs or credentials. Before
+deleting the external resource, the bound service durably tombstones the
+deletion, stops reserving for that resource, and retries the idempotent
+resource-deletion method until delibase acknowledges `RESOURCE_DELETED`.
 The server rejects substitutions, stale access or status, period-limit overflow,
-and altered replays with stable background-usage `ErrorReason` values. These
-additions do not create another service: the package still contains exactly the
-existing six services.
+and conflicting replays. Reusing one idempotency key with an altered request
+payload returns the shared `ERROR_REASON_IDEMPOTENCY_CONFLICT`; using a
+different key to repeat a logically unique authorized settlement already
+recorded for the bound period/reservation returns
+`ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT`. These additions do not create
+another service: the package still contains exactly the existing six services.
 
 See [AUTHENTICATION.md](AUTHENTICATION.md) for token metadata and scopes.
 

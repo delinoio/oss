@@ -411,6 +411,8 @@ export type ReserveAuthorizedUsageRequest = Message<"delibase.v1.ReserveAuthoriz
   maximumUnits?: UsageUnits | undefined;
 
   /**
+   * Included in the service-scoped replay digest.
+   *
    * @generated from field: string client_reference = 3;
    */
   clientReference: string;
@@ -596,6 +598,10 @@ export const ReleaseAuthorizedUsageResponseSchema: GenMessage<ReleaseAuthorizedU
  */
 export type MarkBackgroundUsageResourceDeletedRequest = Message<"delibase.v1.MarkBackgroundUsageResourceDeletedRequest"> & {
   /**
+   * The bound service durably records the deletion intent before the external
+   * resource disappears, stops reserving usage for that tombstoned resource,
+   * and retries this idempotent request until delibase acknowledges it.
+   *
    * @generated from field: delibase.v1.UuidV7 authorization_id = 1;
    */
   authorizationId?: UuidV7 | undefined;
@@ -729,8 +735,9 @@ export const UsageService: GenService<{
   },
   /**
    * M2M-only. Requires delibase:usage:release. The authenticated bound service
-   * idempotently transitions the matching grant to RESOURCE_DELETED before the
-   * external feature resource disappears.
+   * durably tombstones the deletion before the external resource disappears,
+   * stops reserving for it, and retries this idempotent transition until
+   * delibase acknowledges RESOURCE_DELETED.
    *
    * @generated from rpc delibase.v1.UsageService.MarkBackgroundUsageResourceDeleted
    */

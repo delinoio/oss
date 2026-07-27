@@ -1095,7 +1095,9 @@ const (
 	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST    ErrorReason = 181
 	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID ErrorReason = 182
 	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED        ErrorReason = 183
-	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT              ErrorReason = 184
+	// A different idempotency key attempted to repeat an already recorded,
+	// logically unique authorized settlement for the bound period/reservation.
+	ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT ErrorReason = 184
 )
 
 // Enum value maps for ErrorReason.

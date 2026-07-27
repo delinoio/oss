@@ -1445,6 +1445,9 @@ export enum ErrorReason {
   BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED = 183,
 
   /**
+   * A different idempotency key attempted to repeat an already recorded,
+   * logically unique authorized settlement for the bound period/reservation.
+   *
    * @generated from enum value: ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT = 184;
    */
   BACKGROUND_USAGE_REPLAY_CONFLICT = 184,

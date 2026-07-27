@@ -18,8 +18,8 @@ func TestEmbeddedMigrationsAreOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ordered) != 10 {
-		t.Fatalf("migration count = %d, want 10", len(ordered))
+	if len(ordered) != 11 {
+		t.Fatalf("migration count = %d, want 11", len(ordered))
 	}
 	for index, item := range ordered {
 		want := int64(index + 1)
@@ -120,11 +120,13 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range ordered[:len(ordered)-1] {
+	const usageMigrationIndex = 9
+	for _, item := range ordered[:usageMigrationIndex] {
 		if err = apply(ctx, connection, item); err != nil {
 			t.Fatal(err)
 		}
 	}
+	usageMigration := ordered[usageMigrationIndex]
 
 	appID := uuidv7.MustNew()
 	meterID := uuidv7.MustNew()
@@ -442,7 +444,7 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = apply(ctx, connection, ordered[len(ordered)-1]); err == nil {
+	if err = apply(ctx, connection, usageMigration); err == nil {
 		t.Fatal("usage migration accepted a replacement historical Polar mapping")
 	}
 	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
@@ -462,7 +464,7 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = apply(ctx, connection, ordered[len(ordered)-1]); err == nil {
+	if err = apply(ctx, connection, usageMigration); err == nil {
 		t.Fatal("usage migration accepted a credit-only Polar outbox event")
 	}
 	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
@@ -501,7 +503,7 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = apply(ctx, connection, ordered[len(ordered)-1]); err == nil {
+	if err = apply(ctx, connection, usageMigration); err == nil {
 		t.Fatal("usage migration accepted an invalid persisted Polar mapping")
 	}
 	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
@@ -524,7 +526,7 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = apply(ctx, connection, ordered[len(ordered)-1]); err == nil {
+	if err = apply(ctx, connection, usageMigration); err == nil {
 		t.Fatal("usage migration accepted Unicode edge whitespace in a Polar mapping")
 	}
 	err = pgx.BeginFunc(ctx, connection, func(transaction pgx.Tx) error {
@@ -546,7 +548,7 @@ func TestPostgreSQLUsageMigrationPreservesLegacyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = apply(ctx, connection, ordered[len(ordered)-1]); err != nil {
+	if err = apply(ctx, connection, usageMigration); err != nil {
 		t.Fatal(err)
 	}
 	var eventName string

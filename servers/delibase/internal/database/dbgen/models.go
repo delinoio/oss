@@ -307,10 +307,11 @@ type ServiceIdentity struct {
 }
 
 type ServiceMeterAllowlist struct {
-	ServiceIdentityID pgtype.UUID
-	MeterID           pgtype.UUID
-	Enabled           bool
-	CreatedAt         pgtype.Timestamptz
+	ServiceIdentityID      pgtype.UUID
+	MeterID                pgtype.UUID
+	Enabled                bool
+	CreatedAt              pgtype.Timestamptz
+	BackgroundUsagePurpose pgtype.Text
 }
 
 type Subscription struct {

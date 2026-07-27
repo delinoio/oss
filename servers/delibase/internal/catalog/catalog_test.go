@@ -22,7 +22,7 @@ const validCatalog = `{
     {"id":"0198a000-0000-7000-8000-000000000022","meter_id":"0198a000-0000-7000-8000-000000000012","usd_micros_per_unit":20,"effective_from":"2026-01-01T00:00:00Z","effective_until":null}
   ],
   "services": [
-    {"id":"0198a000-0000-7000-8000-000000000031","logto_client_id":"fixture-service","name":"Fixture","enabled":true,"allowed_meter_ids":["0198a000-0000-7000-8000-000000000011","0198a000-0000-7000-8000-000000000012"]}
+    {"id":"0198a000-0000-7000-8000-000000000031","logto_client_id":"fixture-service","name":"Fixture","enabled":true,"allowed_meter_ids":["0198a000-0000-7000-8000-000000000011","0198a000-0000-7000-8000-000000000012"],"background_usage_meter_ids":["0198a000-0000-7000-8000-000000000011"]}
   ],
   "polar_meters": [
     {"meter_id":"0198a000-0000-7000-8000-000000000011","polar_meter_id":"polar-one"},
@@ -57,6 +57,8 @@ func TestParseRejectsIncompleteOrUnsafeCatalogs(t *testing.T) {
 		{name: "duplicate app ID", document: strings.Replace(validCatalog, `000000000002","slug":"app-two`, `000000000001","slug":"app-two`, 1)},
 		{name: "overlapping price dates", document: strings.Replace(strings.Replace(validCatalog, `"effective_from":"2026-01-01T00:00:00Z","effective_until":null}`, `"effective_from":"2026-01-01T00:00:00Z","effective_until":"2027-01-01T00:00:00Z"}`, 1), `"meter_id":"0198a000-0000-7000-8000-000000000012"`, `"meter_id":"0198a000-0000-7000-8000-000000000011"`, 1)},
 		{name: "missing service mapping", document: strings.Replace(validCatalog, `"allowed_meter_ids":["0198a000-0000-7000-8000-000000000011","0198a000-0000-7000-8000-000000000012"]`, `"allowed_meter_ids":[]`, 1)},
+		{name: "background meter not ordinarily allowed", document: strings.Replace(validCatalog, `"background_usage_meter_ids":["0198a000-0000-7000-8000-000000000011"]`, `"background_usage_meter_ids":["0198a000-0000-7000-8000-000000000099"]`, 1)},
+		{name: "duplicate background meter", document: strings.Replace(validCatalog, `"background_usage_meter_ids":["0198a000-0000-7000-8000-000000000011"]`, `"background_usage_meter_ids":["0198a000-0000-7000-8000-000000000011","0198a000-0000-7000-8000-000000000011"]`, 1)},
 		{name: "duplicate Polar mapping", document: strings.Replace(validCatalog, `"polar_meter_id":"polar-two"`, `"polar_meter_id":"polar-one"`, 1)},
 		{name: "Polar mapping with surrounding whitespace", document: strings.Replace(validCatalog, `"polar_meter_id":"polar-one"`, `"polar_meter_id":" polar-one"`, 1)},
 		{name: "Polar mapping with slash", document: strings.Replace(validCatalog, `"polar_meter_id":"polar-one"`, `"polar_meter_id":"polar/one"`, 1)},

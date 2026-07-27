@@ -210,6 +210,7 @@ SELECT
          AND service.enabled
         WHERE allowlist.meter_id = meter.id
           AND allowlist.enabled
+          AND allowlist.background_usage_purpose = 'realqa_storage'
         ORDER BY service.id
     )::uuid[] AS authorization_service_identity_ids,
     ARRAY(
@@ -220,6 +221,7 @@ SELECT
          AND service.enabled
         WHERE allowlist.meter_id = meter.id
           AND allowlist.enabled
+          AND allowlist.background_usage_purpose = 'realqa_storage'
         ORDER BY service.id
     )::text[] AS authorization_service_names
 FROM catalog_meters AS meter
@@ -346,6 +348,7 @@ SELECT
          AND service.enabled
         WHERE allowlist.meter_id = meter.id
           AND allowlist.enabled
+          AND allowlist.background_usage_purpose = 'realqa_storage'
         ORDER BY service.id
     )::uuid[] AS authorization_service_identity_ids,
     ARRAY(
@@ -356,6 +359,7 @@ SELECT
          AND service.enabled
         WHERE allowlist.meter_id = meter.id
           AND allowlist.enabled
+          AND allowlist.background_usage_purpose = 'realqa_storage'
         ORDER BY service.id
     )::text[] AS authorization_service_names
 FROM catalog_meters AS meter
@@ -562,18 +566,25 @@ func (q *Queries) UpsertServiceIdentity(ctx context.Context, arg UpsertServiceId
 }
 
 const upsertServiceMeterAllowlist = `-- name: UpsertServiceMeterAllowlist :exec
-INSERT INTO service_meter_allowlists (service_identity_id, meter_id, enabled)
-VALUES ($1, $2, true)
+INSERT INTO service_meter_allowlists (
+    service_identity_id,
+    meter_id,
+    enabled,
+    background_usage_purpose
+)
+VALUES ($1, $2, true, $3)
 ON CONFLICT (service_identity_id, meter_id) DO UPDATE
-SET enabled = true
+SET enabled = true,
+    background_usage_purpose = EXCLUDED.background_usage_purpose
 `
 
 type UpsertServiceMeterAllowlistParams struct {
-	ServiceIdentityID pgtype.UUID
-	MeterID           pgtype.UUID
+	ServiceIdentityID      pgtype.UUID
+	MeterID                pgtype.UUID
+	BackgroundUsagePurpose pgtype.Text
 }
 
 func (q *Queries) UpsertServiceMeterAllowlist(ctx context.Context, arg UpsertServiceMeterAllowlistParams) error {
-	_, err := q.db.Exec(ctx, upsertServiceMeterAllowlist, arg.ServiceIdentityID, arg.MeterID)
+	_, err := q.db.Exec(ctx, upsertServiceMeterAllowlist, arg.ServiceIdentityID, arg.MeterID, arg.BackgroundUsagePurpose)
 	return err
 }

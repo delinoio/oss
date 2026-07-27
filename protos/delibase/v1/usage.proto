@@ -92,6 +92,7 @@ message ReleaseUsageResponse {
 message ReserveAuthorizedUsageRequest {
   AuthorizedUsageContext context = 1;
   UsageUnits maximum_units = 2;
+  // Included in the service-scoped replay digest.
   string client_reference = 3;
   IdempotencyKey idempotency = 4;
 }
@@ -136,6 +137,9 @@ message ReleaseAuthorizedUsageResponse {
 }
 
 message MarkBackgroundUsageResourceDeletedRequest {
+  // The bound service durably records the deletion intent before the external
+  // resource disappears, stops reserving usage for that tombstoned resource,
+  // and retries this idempotent request until delibase acknowledges it.
   UuidV7 authorization_id = 1;
   BackgroundUsagePurpose purpose = 2;
   UuidV7 feature_resource_id = 3;
@@ -174,7 +178,8 @@ service UsageService {
   // accepted or persisted.
   rpc ReleaseAuthorizedUsage(ReleaseAuthorizedUsageRequest) returns (ReleaseAuthorizedUsageResponse);
   // M2M-only. Requires delibase:usage:release. The authenticated bound service
-  // idempotently transitions the matching grant to RESOURCE_DELETED before the
-  // external feature resource disappears.
+  // durably tombstones the deletion before the external resource disappears,
+  // stops reserving for it, and retries this idempotent transition until
+  // delibase acknowledges RESOURCE_DELETED.
   rpc MarkBackgroundUsageResourceDeleted(MarkBackgroundUsageResourceDeletedRequest) returns (MarkBackgroundUsageResourceDeletedResponse);
 }

@@ -34,6 +34,7 @@ SELECT
          AND service.enabled
         WHERE allowlist.meter_id = meter.id
           AND allowlist.enabled
+          AND allowlist.background_usage_purpose = 'realqa_storage'
         ORDER BY service.id
     )::uuid[] AS authorization_service_identity_ids,
     ARRAY(
@@ -44,6 +45,7 @@ SELECT
          AND service.enabled
         WHERE allowlist.meter_id = meter.id
           AND allowlist.enabled
+          AND allowlist.background_usage_purpose = 'realqa_storage'
         ORDER BY service.id
     )::text[] AS authorization_service_names
 FROM catalog_meters AS meter
@@ -77,6 +79,7 @@ SELECT
          AND service.enabled
         WHERE allowlist.meter_id = meter.id
           AND allowlist.enabled
+          AND allowlist.background_usage_purpose = 'realqa_storage'
         ORDER BY service.id
     )::uuid[] AS authorization_service_identity_ids,
     ARRAY(
@@ -87,6 +90,7 @@ SELECT
          AND service.enabled
         WHERE allowlist.meter_id = meter.id
           AND allowlist.enabled
+          AND allowlist.background_usage_purpose = 'realqa_storage'
         ORDER BY service.id
     )::text[] AS authorization_service_names
 FROM catalog_meters AS meter
@@ -215,10 +219,16 @@ SET logto_client_id = EXCLUDED.logto_client_id,
     updated_at = transaction_timestamp();
 
 -- name: UpsertServiceMeterAllowlist :exec
-INSERT INTO service_meter_allowlists (service_identity_id, meter_id, enabled)
-VALUES ($1, $2, true)
+INSERT INTO service_meter_allowlists (
+    service_identity_id,
+    meter_id,
+    enabled,
+    background_usage_purpose
+)
+VALUES ($1, $2, true, $3)
 ON CONFLICT (service_identity_id, meter_id) DO UPDATE
-SET enabled = true;
+SET enabled = true,
+    background_usage_purpose = EXCLUDED.background_usage_purpose;
 
 -- name: EnsurePolarMeterMapping :execrows
 INSERT INTO polar_meter_mappings (meter_id, polar_meter_id)

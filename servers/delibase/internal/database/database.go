@@ -247,16 +247,28 @@ func (store *Store) SyncCatalog(
 			}); err != nil {
 				return err
 			}
+			backgroundUsageMeterIDs := make(
+				map[string]struct{},
+				len(service.BackgroundUsageMeterIDs),
+			)
+			for _, meterID := range service.BackgroundUsageMeterIDs {
+				backgroundUsageMeterIDs[meterID] = struct{}{}
+			}
 			for _, allowedMeterID := range service.AllowedMeterIDs {
 				meterID, err := catalogUUID(allowedMeterID)
 				if err != nil {
 					return err
 				}
+				_, allowsBackgroundUsage := backgroundUsageMeterIDs[allowedMeterID]
 				if err := queries.UpsertServiceMeterAllowlist(
 					ctx,
 					dbgen.UpsertServiceMeterAllowlistParams{
 						ServiceIdentityID: id,
 						MeterID:           meterID,
+						BackgroundUsagePurpose: pgtype.Text{
+							String: string(catalog.BackgroundUsagePurposeRealQAStorage),
+							Valid:  allowsBackgroundUsage,
+						},
 					},
 				); err != nil {
 					return err

@@ -779,11 +779,12 @@ func (x *ReleaseUsageResponse) GetIdempotency() *IdempotencyResult {
 }
 
 type ReserveAuthorizedUsageRequest struct {
-	state           protoimpl.MessageState  `protogen:"open.v1"`
-	Context         *AuthorizedUsageContext `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
-	MaximumUnits    *UsageUnits             `protobuf:"bytes,2,opt,name=maximum_units,json=maximumUnits,proto3" json:"maximum_units,omitempty"`
-	ClientReference string                  `protobuf:"bytes,3,opt,name=client_reference,json=clientReference,proto3" json:"client_reference,omitempty"`
-	Idempotency     *IdempotencyKey         `protobuf:"bytes,4,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
+	state        protoimpl.MessageState  `protogen:"open.v1"`
+	Context      *AuthorizedUsageContext `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	MaximumUnits *UsageUnits             `protobuf:"bytes,2,opt,name=maximum_units,json=maximumUnits,proto3" json:"maximum_units,omitempty"`
+	// Included in the service-scoped replay digest.
+	ClientReference string          `protobuf:"bytes,3,opt,name=client_reference,json=clientReference,proto3" json:"client_reference,omitempty"`
+	Idempotency     *IdempotencyKey `protobuf:"bytes,4,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1184,7 +1185,10 @@ func (x *ReleaseAuthorizedUsageResponse) GetIdempotency() *IdempotencyResult {
 }
 
 type MarkBackgroundUsageResourceDeletedRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The bound service durably records the deletion intent before the external
+	// resource disappears, stops reserving usage for that tombstoned resource,
+	// and retries this idempotent request until delibase acknowledges it.
 	AuthorizationId   *UuidV7                `protobuf:"bytes,1,opt,name=authorization_id,json=authorizationId,proto3" json:"authorization_id,omitempty"`
 	Purpose           BackgroundUsagePurpose `protobuf:"varint,2,opt,name=purpose,proto3,enum=delibase.v1.BackgroundUsagePurpose" json:"purpose,omitempty"`
 	FeatureResourceId *UuidV7                `protobuf:"bytes,3,opt,name=feature_resource_id,json=featureResourceId,proto3" json:"feature_resource_id,omitempty"`

@@ -335,11 +335,12 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 			EffectiveFrom:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		}},
 		Services: []catalog.Service{{
-			ID:              "0198a000-0000-7000-8000-000000000304",
-			LogtoClientID:   "sync-service",
-			Name:            "Sync Service",
-			Enabled:         &enabled,
-			AllowedMeterIDs: []string{"0198a000-0000-7000-8000-000000000302"},
+			ID:                      "0198a000-0000-7000-8000-000000000304",
+			LogtoClientID:           "sync-service",
+			Name:                    "Sync Service",
+			Enabled:                 &enabled,
+			AllowedMeterIDs:         []string{"0198a000-0000-7000-8000-000000000302"},
+			BackgroundUsageMeterIDs: []string{"0198a000-0000-7000-8000-000000000302"},
 		}},
 		PolarMeters: []catalog.PolarMeter{{
 			MeterID:      "0198a000-0000-7000-8000-000000000302",
@@ -348,6 +349,50 @@ func TestPostgreSQLCatalogSyncIsIdempotentAndDisablesStaleState(t *testing.T) {
 	}
 	if err := store.SyncCatalog(ctx, specification); err != nil {
 		t.Fatal(err)
+	}
+	if err := store.SyncCatalog(ctx, specification); err != nil {
+		t.Fatal(err)
+	}
+	appID, err := catalogUUID(specification.Apps[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicMeters, err := store.queries.ListPublicCatalogMeters(
+		ctx,
+		dbgen.ListPublicCatalogMetersParams{
+			AppID: appID,
+			ID:    pgtype.UUID{Valid: true},
+			Limit: 10,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(publicMeters) != 1 ||
+		len(publicMeters[0].AuthorizationServiceIdentityIds) != 1 {
+		t.Fatalf("background authorization targets = %#v", publicMeters)
+	}
+	specification.Services[0].BackgroundUsageMeterIDs = []string{}
+	if err := store.SyncCatalog(ctx, specification); err != nil {
+		t.Fatal(err)
+	}
+	publicMeters, err = store.queries.ListPublicCatalogMeters(
+		ctx,
+		dbgen.ListPublicCatalogMetersParams{
+			AppID: appID,
+			ID:    pgtype.UUID{Valid: true},
+			Limit: 10,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(publicMeters) != 1 ||
+		len(publicMeters[0].AuthorizationServiceIdentityIds) != 0 {
+		t.Fatalf("ordinary meter allowlist exposed as background target: %#v", publicMeters)
+	}
+	specification.Services[0].BackgroundUsageMeterIDs = []string{
+		specification.Meters[0].ID,
 	}
 	if err := store.SyncCatalog(ctx, specification); err != nil {
 		t.Fatal(err)
