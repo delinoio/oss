@@ -140,7 +140,7 @@ INSERT INTO background_usage_authorizations (
     $13,
     $14
 )
-RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, team_name_snapshot, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 `
 
 type CreateBackgroundUsageAuthorizationParams struct {
@@ -186,7 +186,6 @@ func (q *Queries) CreateBackgroundUsageAuthorization(ctx context.Context, arg Cr
 		&i.OwnerOrganizationID,
 		&i.OrganizationID,
 		&i.TeamID,
-		&i.TeamNameSnapshot,
 		&i.ServiceIdentityID,
 		&i.MeterID,
 		&i.Purpose,
@@ -200,12 +199,13 @@ func (q *Queries) CreateBackgroundUsageAuthorization(ctx context.Context, arg Cr
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
 
 const getBackgroundUsageAuthorization = `-- name: GetBackgroundUsageAuthorization :one
-SELECT id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, team_name_snapshot, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+SELECT id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 FROM background_usage_authorizations
 WHERE id = $1
 `
@@ -221,7 +221,6 @@ func (q *Queries) GetBackgroundUsageAuthorization(ctx context.Context, authoriza
 		&i.OwnerOrganizationID,
 		&i.OrganizationID,
 		&i.TeamID,
-		&i.TeamNameSnapshot,
 		&i.ServiceIdentityID,
 		&i.MeterID,
 		&i.Purpose,
@@ -235,6 +234,7 @@ func (q *Queries) GetBackgroundUsageAuthorization(ctx context.Context, authoriza
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -338,7 +338,7 @@ func (q *Queries) GetBackgroundUsagePeriodUsage(ctx context.Context, arg GetBack
 }
 
 const getVisibleBackgroundUsageAuthorization = `-- name: GetVisibleBackgroundUsageAuthorization :one
-SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.team_name_snapshot, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until
+SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until, grant_row.team_name_snapshot
 FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id = $1
   AND (
@@ -373,7 +373,6 @@ func (q *Queries) GetVisibleBackgroundUsageAuthorization(ctx context.Context, ar
 		&i.OwnerOrganizationID,
 		&i.OrganizationID,
 		&i.TeamID,
-		&i.TeamNameSnapshot,
 		&i.ServiceIdentityID,
 		&i.MeterID,
 		&i.Purpose,
@@ -387,6 +386,7 @@ func (q *Queries) GetVisibleBackgroundUsageAuthorization(ctx context.Context, ar
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -567,7 +567,7 @@ func (q *Queries) ListBackgroundUsageAuthorizationTransitions(ctx context.Contex
 }
 
 const listVisibleBackgroundUsageAuthorizations = `-- name: ListVisibleBackgroundUsageAuthorizations :many
-SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.team_name_snapshot, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until
+SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until, grant_row.team_name_snapshot
 FROM background_usage_authorizations AS grant_row
 WHERE grant_row.id > $1
   AND (
@@ -675,7 +675,6 @@ func (q *Queries) ListVisibleBackgroundUsageAuthorizations(ctx context.Context, 
 			&i.OwnerOrganizationID,
 			&i.OrganizationID,
 			&i.TeamID,
-			&i.TeamNameSnapshot,
 			&i.ServiceIdentityID,
 			&i.MeterID,
 			&i.Purpose,
@@ -689,6 +688,7 @@ func (q *Queries) ListVisibleBackgroundUsageAuthorizations(ctx context.Context, 
 			&i.UpdatedAt,
 			&i.RevokedAt,
 			&i.RetainUntil,
+			&i.TeamNameSnapshot,
 		); err != nil {
 			return nil, err
 		}
@@ -778,7 +778,7 @@ func (q *Queries) LockAuthorizedUsageReservation(ctx context.Context, arg LockAu
 }
 
 const lockBackgroundUsageAuthorizationForMutation = `-- name: LockBackgroundUsageAuthorizationForMutation :one
-SELECT id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, team_name_snapshot, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+SELECT id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 FROM background_usage_authorizations
 WHERE id = $1
 FOR UPDATE
@@ -795,7 +795,6 @@ func (q *Queries) LockBackgroundUsageAuthorizationForMutation(ctx context.Contex
 		&i.OwnerOrganizationID,
 		&i.OrganizationID,
 		&i.TeamID,
-		&i.TeamNameSnapshot,
 		&i.ServiceIdentityID,
 		&i.MeterID,
 		&i.Purpose,
@@ -809,6 +808,7 @@ func (q *Queries) LockBackgroundUsageAuthorizationForMutation(ctx context.Contex
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -823,7 +823,7 @@ WITH payer AS MATERIALIZED (
       AND organization.deleted_at IS NULL
     FOR UPDATE OF organization
 )
-SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.team_name_snapshot, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until
+SELECT grant_row.id, grant_row.authorizer_account_id, grant_row.owner_type, grant_row.owner_account_id, grant_row.owner_organization_id, grant_row.organization_id, grant_row.team_id, grant_row.service_identity_id, grant_row.meter_id, grant_row.purpose, grant_row.feature_resource_id, grant_row.period, grant_row.maximum_units, grant_row.status, grant_row.revision, grant_row.actor_reference, grant_row.created_at, grant_row.updated_at, grant_row.revoked_at, grant_row.retain_until, grant_row.team_name_snapshot
 FROM background_usage_authorizations AS grant_row
 JOIN payer ON payer.id = grant_row.organization_id
 WHERE grant_row.id = $1
@@ -861,7 +861,6 @@ func (q *Queries) LockBackgroundUsageAuthorizationForReserve(ctx context.Context
 		&i.OwnerOrganizationID,
 		&i.OrganizationID,
 		&i.TeamID,
-		&i.TeamNameSnapshot,
 		&i.ServiceIdentityID,
 		&i.MeterID,
 		&i.Purpose,
@@ -875,6 +874,7 @@ func (q *Queries) LockBackgroundUsageAuthorizationForReserve(ctx context.Context
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -890,7 +890,7 @@ WHERE id = $1
   AND feature_resource_id = $4
   AND revision = $5
   AND status = 'active'
-RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, team_name_snapshot, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 `
 
 type MarkBackgroundUsageAuthorizationResourceDeletedParams struct {
@@ -918,7 +918,6 @@ func (q *Queries) MarkBackgroundUsageAuthorizationResourceDeleted(ctx context.Co
 		&i.OwnerOrganizationID,
 		&i.OrganizationID,
 		&i.TeamID,
-		&i.TeamNameSnapshot,
 		&i.ServiceIdentityID,
 		&i.MeterID,
 		&i.Purpose,
@@ -932,6 +931,7 @@ func (q *Queries) MarkBackgroundUsageAuthorizationResourceDeleted(ctx context.Co
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
@@ -944,7 +944,7 @@ SET status = 'revoked',
 WHERE id = $2
   AND revision = $3
   AND status = 'active'
-RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, team_name_snapshot, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until
+RETURNING id, authorizer_account_id, owner_type, owner_account_id, owner_organization_id, organization_id, team_id, service_identity_id, meter_id, purpose, feature_resource_id, period, maximum_units, status, revision, actor_reference, created_at, updated_at, revoked_at, retain_until, team_name_snapshot
 `
 
 type RevokeBackgroundUsageAuthorizationParams struct {
@@ -964,7 +964,6 @@ func (q *Queries) RevokeBackgroundUsageAuthorization(ctx context.Context, arg Re
 		&i.OwnerOrganizationID,
 		&i.OrganizationID,
 		&i.TeamID,
-		&i.TeamNameSnapshot,
 		&i.ServiceIdentityID,
 		&i.MeterID,
 		&i.Purpose,
@@ -978,6 +977,7 @@ func (q *Queries) RevokeBackgroundUsageAuthorization(ctx context.Context, arg Re
 		&i.UpdatedAt,
 		&i.RevokedAt,
 		&i.RetainUntil,
+		&i.TeamNameSnapshot,
 	)
 	return i, err
 }
