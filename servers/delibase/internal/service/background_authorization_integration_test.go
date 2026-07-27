@@ -32,6 +32,36 @@ func TestPostgreSQLBackgroundAuthorizationHumanPolicyAndIdempotency(t *testing.T
 	ownerContext := authenticatedContext(ctx, fixture.ownerSubject)
 	memberContext := authenticatedContext(ctx, fixture.memberSubject)
 	sharedCreateKey := "shared-create-" + fixture.organizationID.String()
+	outsiderID := uuidv7.MustNew()
+	outsiderSubject := "background-outsider-" + outsiderID.String()
+	if _, err := fixture.store.Queries().CreateAccount(
+		ctx,
+		dbgen.CreateAccountParams{
+			ID:           pgUUID(outsiderID),
+			LogtoSubject: outsiderSubject,
+			DisplayName:  "Background Outsider",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	_, err := fixture.billing.CreateBackgroundUsageAuthorization(
+		authenticatedContext(ctx, outsiderSubject),
+		backgroundGrantRequest(
+			fixture,
+			outsiderID,
+			fixture.generalTeamID,
+			uuidv7.MustNew(),
+			10,
+			"outsider-create-"+fixture.organizationID.String(),
+			false,
+		),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodePermissionDenied,
+		delibasev1.ErrorReason_ERROR_REASON_ORGANIZATION_MEMBERSHIP_REQUIRED,
+	)
 
 	memberGrant := createBackgroundGrant(
 		t,
