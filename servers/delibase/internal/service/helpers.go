@@ -576,6 +576,7 @@ func persistIdempotency(
 		key,
 		digest,
 		response,
+		delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
 	)
 }
 
@@ -589,6 +590,7 @@ func persistIdempotencyForCaller(
 	key string,
 	digest []byte,
 	response proto.Message,
+	conflictReason delibasev1.ErrorReason,
 ) (time.Time, error) {
 	encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(response)
 	if err != nil {
@@ -609,9 +611,22 @@ func persistIdempotencyForCaller(
 		ConnectCode:     pgtype.Int4{},
 	})
 	if err != nil {
-		return time.Time{}, databaseError(err)
+		return time.Time{}, idempotencyInsertError(err, conflictReason)
 	}
 	return record.CreatedAt.Time.UTC(), nil
+}
+
+func idempotencyInsertError(
+	err error,
+	conflictReason delibasev1.ErrorReason,
+) error {
+	var postgres *pgconn.PgError
+	if errors.As(err, &postgres) &&
+		postgres.Code == "23505" &&
+		strings.Contains(postgres.ConstraintName, "idempotency_records") {
+		return serviceError(connect.CodeAborted, conflictReason)
+	}
+	return databaseError(err)
 }
 
 func idempotencyCallerID(subject string) string {
@@ -965,6 +980,12 @@ func databaseError(err error) error {
 			}
 			return invalidArgument()
 		case "23503":
+			if strings.Contains(
+				postgres.Message,
+				"background authorization connection is unavailable",
+			) {
+				return serviceMeterNotAllowed()
+			}
 			return serviceError(
 				connect.CodeFailedPrecondition,
 				delibasev1.ErrorReason_ERROR_REASON_ORGANIZATION_DELETION_BLOCKED,

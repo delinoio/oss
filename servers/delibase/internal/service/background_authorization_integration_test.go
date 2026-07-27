@@ -297,6 +297,76 @@ func TestPostgreSQLBackgroundAuthorizationHumanPolicyAndIdempotency(t *testing.T
 	)
 }
 
+func TestPostgreSQLBackgroundIdempotencyInsertRaceRetainsReplayReason(
+	t *testing.T,
+) {
+	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DELIBASE_TEST_DATABASE_URL is not set; run scripts/test-postgres.sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := newUsageFixture(t, ctx, databaseURL)
+	defer fixture.store.Close()
+	dependencies := fixture.dependencies.withDefaults()
+	key := "background-race-" + fixture.organizationID.String()
+	digests := [][]byte{
+		requestDigest("first"),
+		requestDigest("second"),
+	}
+	results := make(chan error, len(digests))
+	var start sync.WaitGroup
+	start.Add(1)
+	for _, digest := range digests {
+		digest := digest
+		go func() {
+			start.Wait()
+			results <- fixture.store.WithinTransaction(
+				ctx,
+				pgx.TxOptions{},
+				func(queries *dbgen.Queries) error {
+					_, err := persistIdempotencyForCaller(
+						ctx,
+						dependencies,
+						queries,
+						"service",
+						"caller:v1:11111111111111111111111111111111",
+						reserveAuthorizedUsageOperation,
+						key,
+						digest,
+						&delibasev1.ReserveAuthorizedUsageResponse{},
+						delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
+					)
+					return err
+				},
+			)
+		}()
+	}
+	start.Done()
+	successes, conflicts := 0, 0
+	for range digests {
+		err := <-results
+		if err == nil {
+			successes++
+			continue
+		}
+		requireConnectReason(
+			t,
+			err,
+			connect.CodeAborted,
+			delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
+		)
+		conflicts++
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf(
+			"idempotency insert race = %d success, %d conflicts",
+			successes,
+			conflicts,
+		)
+	}
+}
+
 func TestPostgreSQLAuthorizedUsageFinancialPathsAndSubstitution(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -934,7 +1004,7 @@ func TestPostgreSQLAuthorizedUsageReleaseLimitSettlementAndRevokeRace(
 				connect.NewRequest(&delibasev1.CommitAuthorizedUsageRequest{
 					Context:       concurrentContext,
 					ReservationId: reservation.ReservationId,
-					ActualUnits:   &delibasev1.UsageUnits{Value: 1},
+					ActualUnits:   &delibasev1.UsageUnits{Value: 0},
 					Idempotency: idempotency(
 						"concurrent-commit-" +
 							string(rune('a'+index)) + "-" +
@@ -983,6 +1053,23 @@ func TestPostgreSQLAuthorizedUsageReleaseLimitSettlementAndRevokeRace(
 	); err != nil {
 		t.Fatal(err)
 	}
+	_, err = fixture.usage.ReserveAuthorizedUsage(
+		m2mContext,
+		connect.NewRequest(&delibasev1.ReserveAuthorizedUsageRequest{
+			Context:         concurrentContext,
+			MaximumUnits:    &delibasev1.UsageUnits{Value: 1},
+			ClientReference: "post-settlement-" + fixture.organizationID.String(),
+			Idempotency: idempotency(
+				"post-settlement-" + fixture.organizationID.String(),
+			),
+		}),
+	)
+	requireConnectReason(
+		t,
+		err,
+		connect.CodeResourceExhausted,
+		delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED,
+	)
 
 	raceResourceID := uuidv7.MustNew()
 	raceGrant := createBackgroundGrant(

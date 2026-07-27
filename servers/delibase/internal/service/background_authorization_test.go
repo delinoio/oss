@@ -5,10 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -107,6 +109,31 @@ func TestAuthorizedUsageRequiresM2MWithoutForwardedUser(t *testing.T) {
 	if _, err := authorizedUsageServiceClientID(withUser); err == nil {
 		t.Fatal("authorized usage accepted a live forwarded user")
 	}
+}
+
+func TestBackgroundPersistenceErrorsRetainStableReasons(t *testing.T) {
+	t.Parallel()
+	requireConnectReason(
+		t,
+		idempotencyInsertError(
+			&pgconn.PgError{
+				Code:           "23505",
+				ConstraintName: "idempotency_records_caller_scope_key",
+			},
+			delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
+		),
+		connect.CodeAborted,
+		delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
+	)
+	requireConnectReason(
+		t,
+		databaseError(&pgconn.PgError{
+			Code:    "23503",
+			Message: "background authorization connection is unavailable",
+		}),
+		connect.CodePermissionDenied,
+		delibasev1.ErrorReason_ERROR_REASON_SERVICE_METER_NOT_ALLOWED,
+	)
 }
 
 func TestUsageMessagesPreserveLiveUsageAndExposeAuthorizedBinding(t *testing.T) {

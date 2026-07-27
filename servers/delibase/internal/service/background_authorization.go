@@ -258,15 +258,17 @@ func (service *Billing) CreateBackgroundUsageAuthorization(
 				false,
 				completedAt,
 			)
-			_, transactionErr = persistIdempotency(
+			_, transactionErr = persistIdempotencyForCaller(
 				ctx,
 				service.dependencies,
 				queries,
-				subject,
+				"user",
+				idempotencyCallerID(subject),
 				backgroundAuthorizationCreateOperation,
 				key,
 				digest,
 				response,
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
 			)
 			return transactionErr
 		},
@@ -604,15 +606,17 @@ func (service *Billing) RevokeBackgroundUsageAuthorization(
 				false,
 				completedAt,
 			)
-			_, transactionErr = persistIdempotency(
+			_, transactionErr = persistIdempotencyForCaller(
 				ctx,
 				service.dependencies,
 				queries,
-				subject,
+				"user",
+				idempotencyCallerID(subject),
 				backgroundAuthorizationRevokeOperation,
 				key,
 				digest,
 				response,
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
 			)
 			loggedAuthorization = authorization
 			return transactionErr

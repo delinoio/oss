@@ -165,6 +165,10 @@ SELECT
     grant_row.maximum_units,
     COALESCE(held.units, 0)::bigint AS held_units,
     COALESCE(committed.units, 0)::bigint AS committed_units,
+    COALESCE(
+        committed.has_settlement,
+        false
+    )::boolean AS has_committed_settlement,
     GREATEST(
         grant_row.maximum_units
             - COALESCE(held.units, 0)
@@ -193,7 +197,8 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
     SELECT
         COALESCE(sum(record.committed_units), 0)::bigint AS units,
-        max(record.committed_at) AS updated_at
+        max(record.committed_at) AS updated_at,
+        (count(*) > 0)::boolean AS has_settlement
     FROM usage_records AS record
     WHERE record.background_usage_authorization_id = grant_row.id
       AND record.background_period_start

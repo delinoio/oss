@@ -498,6 +498,39 @@ func TestPostgreSQLBackgroundAuthorizationDeletionTriggers(t *testing.T) {
 				transitions[1].ToStatus != testCase.expectedStatus {
 				t.Fatalf("deletion transitions = %#v, %v", transitions, err)
 			}
+			var auditCount int
+			if err = fixture.store.pool.QueryRow(ctx, `
+				SELECT count(*)
+				FROM audit_events
+				WHERE background_usage_authorization_id = $1
+				  AND event_type = $2
+				  AND actor_reference = ''
+				  AND organization_id = $3
+				  AND team_id = $4
+				  AND service_identity_id = $5
+				  AND meter_id = $6
+				  AND decision = 'allow'
+				  AND result = 'success'
+				  AND metadata = '{}'::jsonb
+				  AND is_uuid_v7(id)
+				  AND retain_until >= occurred_at + interval '7 years'
+			`,
+				grant.ID,
+				"background_authorization."+testCase.expectedStatus,
+				fixture.organizationID,
+				fixture.teamID,
+				fixture.serviceID,
+				fixture.meterID,
+			).Scan(&auditCount); err != nil {
+				t.Fatal(err)
+			}
+			if auditCount != 1 {
+				t.Fatalf(
+					"automatic %s audits = %d; want 1",
+					testCase.expectedStatus,
+					auditCount,
+				)
+			}
 		})
 	}
 }

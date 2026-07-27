@@ -241,6 +241,7 @@ func (service *Usage) ReserveUsage(
 			_, transactionErr = persistIdempotencyForCaller(
 				ctx, service.dependencies, queries, "service", callerID,
 				"reserve_usage", key, digest, response,
+				delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
 			)
 			return transactionErr
 		},
@@ -533,6 +534,7 @@ func (service *Usage) CommitUsage(
 			_, transactionErr = persistIdempotencyForCaller(
 				ctx, service.dependencies, queries, "service", callerID,
 				"commit_usage", key, digest, response,
+				delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
 			)
 			return transactionErr
 		},
@@ -701,6 +703,7 @@ func (service *Usage) ReleaseUsage(
 			_, transactionErr = persistIdempotencyForCaller(
 				ctx, service.dependencies, queries, "service", callerID,
 				"release_usage", key, digest, response,
+				delibasev1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
 			)
 			return transactionErr
 		},

@@ -166,7 +166,8 @@ func (service *Usage) ReserveAuthorizedUsage(
 			if transactionErr != nil {
 				return databaseError(transactionErr)
 			}
-			if maximumUnits > periodUsage.RemainingUnits {
+			if periodUsage.HasCommittedSettlement ||
+				maximumUnits > periodUsage.RemainingUnits {
 				return backgroundPeriodLimitExceeded()
 			}
 			team, transactionErr := queries.GetTeamInOrganization(
@@ -329,6 +330,7 @@ func (service *Usage) ReserveAuthorizedUsage(
 				key,
 				digest,
 				response,
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
 			)
 			loggedAuthorization = authorization
 			return transactionErr
@@ -667,6 +669,7 @@ func (service *Usage) CommitAuthorizedUsage(
 				key,
 				digest,
 				response,
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
 			)
 			loggedAuthorization = authorization
 			return transactionErr
@@ -883,6 +886,7 @@ func (service *Usage) ReleaseAuthorizedUsage(
 				key,
 				digest,
 				response,
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
 			)
 			loggedAuthorization = authorization
 			return transactionErr
@@ -1100,6 +1104,7 @@ func (service *Usage) MarkBackgroundUsageResourceDeleted(
 				key,
 				digest,
 				response,
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
 			)
 			loggedAuthorization = authorization
 			return transactionErr

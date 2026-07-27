@@ -247,6 +247,10 @@ SELECT
     grant_row.maximum_units,
     COALESCE(held.units, 0)::bigint AS held_units,
     COALESCE(committed.units, 0)::bigint AS committed_units,
+    COALESCE(
+        committed.has_settlement,
+        false
+    )::boolean AS has_committed_settlement,
     GREATEST(
         grant_row.maximum_units
             - COALESCE(held.units, 0)
@@ -275,7 +279,8 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
     SELECT
         COALESCE(sum(record.committed_units), 0)::bigint AS units,
-        max(record.committed_at) AS updated_at
+        max(record.committed_at) AS updated_at,
+        (count(*) > 0)::boolean AS has_settlement
     FROM usage_records AS record
     WHERE record.background_usage_authorization_id = grant_row.id
       AND record.background_period_start
@@ -296,17 +301,18 @@ type GetBackgroundUsagePeriodUsageParams struct {
 }
 
 type GetBackgroundUsagePeriodUsageRow struct {
-	AuthorizationID   pgtype.UUID
-	Purpose           string
-	FeatureResourceID pgtype.UUID
-	Period            string
-	PeriodStart       pgtype.Timestamptz
-	MaximumUnits      int64
-	HeldUnits         int64
-	CommittedUnits    int64
-	RemainingUnits    int64
-	PeriodEnd         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
+	AuthorizationID        pgtype.UUID
+	Purpose                string
+	FeatureResourceID      pgtype.UUID
+	Period                 string
+	PeriodStart            pgtype.Timestamptz
+	MaximumUnits           int64
+	HeldUnits              int64
+	CommittedUnits         int64
+	HasCommittedSettlement bool
+	RemainingUnits         int64
+	PeriodEnd              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
 }
 
 func (q *Queries) GetBackgroundUsagePeriodUsage(ctx context.Context, arg GetBackgroundUsagePeriodUsageParams) (GetBackgroundUsagePeriodUsageRow, error) {
@@ -321,6 +327,7 @@ func (q *Queries) GetBackgroundUsagePeriodUsage(ctx context.Context, arg GetBack
 		&i.MaximumUnits,
 		&i.HeldUnits,
 		&i.CommittedUnits,
+		&i.HasCommittedSettlement,
 		&i.RemainingUnits,
 		&i.PeriodEnd,
 		&i.UpdatedAt,
