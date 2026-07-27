@@ -2,6 +2,8 @@ const COMMANDS: &[&str] = &[
     "get_runtime_info",
     "read_settings",
     "write_settings",
+    "read_shortcut_effective_state",
+    "write_shortcut_effective_state",
     "read_widget_configuration",
     "write_widget_configuration",
     "export_diagnostics",
