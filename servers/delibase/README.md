@@ -161,7 +161,11 @@ invitations, revocation/expiration, and retention-safe deletion integration
 tests. Usage coverage includes exact-boundary concurrent holds, partial
 commit/release, refund shortfall, expiration and late commits, idempotency,
 role-filtered visibility, immutable snapshots, Polar outage recovery, and
-active-reservation subtree-deletion blocking:
+active-reservation subtree-deletion blocking. Background-authorization
+coverage includes membership-removal/reserve races, terminal access and owner
+loss, resource deletion, immutable bindings and transitions, connection
+revalidation, credential-shape rejection, authorization/UTC-day settlement
+uniqueness, append-only audits, and migration reproducibility:
 
 ```sh
 servers/delibase/scripts/test-postgres.sh

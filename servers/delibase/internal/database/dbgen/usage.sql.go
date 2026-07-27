@@ -35,7 +35,7 @@ SET status = $1
 WHERE organization_id = $2
   AND id = $3
   AND status = 'held'
-RETURNING id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered
+RETURNING id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered, background_usage_authorization_id, background_usage_purpose, background_feature_resource_id, background_usage_period, background_period_start
 `
 
 type FinalizeUsageReservationParams struct {
@@ -79,6 +79,11 @@ func (q *Queries) FinalizeUsageReservation(ctx context.Context, arg FinalizeUsag
 		&i.PriceEffectiveUntilSnapshot,
 		&i.OverageBillingPeriodID,
 		&i.ClientReferenceGrandfathered,
+		&i.BackgroundUsageAuthorizationID,
+		&i.BackgroundUsagePurpose,
+		&i.BackgroundFeatureResourceID,
+		&i.BackgroundUsagePeriod,
+		&i.BackgroundPeriodStart,
 	)
 	return i, err
 }
@@ -316,7 +321,7 @@ func (q *Queries) GetUsageMeterAuthorization(ctx context.Context, arg GetUsageMe
 }
 
 const getUsageRecordByReservation = `-- name: GetUsageRecordByReservation :one
-SELECT id, reservation_id, organization_id, team_id, team_name_snapshot, meter_id, account_id, service_identity_id, committed_units, total_cost_micros, credit_applied_micros, overage_applied_micros, committed_at, retain_until, price_version_id, usd_micros_per_unit, client_reference, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, billing_period_id, billing_period_starts_at_snapshot, billing_period_ends_at_snapshot
+SELECT id, reservation_id, organization_id, team_id, team_name_snapshot, meter_id, account_id, service_identity_id, committed_units, total_cost_micros, credit_applied_micros, overage_applied_micros, committed_at, retain_until, price_version_id, usd_micros_per_unit, client_reference, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, billing_period_id, billing_period_starts_at_snapshot, billing_period_ends_at_snapshot, background_usage_authorization_id, background_usage_purpose, background_feature_resource_id, background_usage_period, background_period_start
 FROM usage_records
 WHERE organization_id = $1
   AND reservation_id = $2
@@ -357,6 +362,11 @@ func (q *Queries) GetUsageRecordByReservation(ctx context.Context, arg GetUsageR
 		&i.BillingPeriodID,
 		&i.BillingPeriodStartsAtSnapshot,
 		&i.BillingPeriodEndsAtSnapshot,
+		&i.BackgroundUsageAuthorizationID,
+		&i.BackgroundUsagePurpose,
+		&i.BackgroundFeatureResourceID,
+		&i.BackgroundUsagePeriod,
+		&i.BackgroundPeriodStart,
 	)
 	return i, err
 }
@@ -461,7 +471,7 @@ INSERT INTO usage_records (
     $9, $10,
     $11, $12
 )
-RETURNING id, reservation_id, organization_id, team_id, team_name_snapshot, meter_id, account_id, service_identity_id, committed_units, total_cost_micros, credit_applied_micros, overage_applied_micros, committed_at, retain_until, price_version_id, usd_micros_per_unit, client_reference, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, billing_period_id, billing_period_starts_at_snapshot, billing_period_ends_at_snapshot
+RETURNING id, reservation_id, organization_id, team_id, team_name_snapshot, meter_id, account_id, service_identity_id, committed_units, total_cost_micros, credit_applied_micros, overage_applied_micros, committed_at, retain_until, price_version_id, usd_micros_per_unit, client_reference, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, billing_period_id, billing_period_starts_at_snapshot, billing_period_ends_at_snapshot, background_usage_authorization_id, background_usage_purpose, background_feature_resource_id, background_usage_period, background_period_start
 `
 
 type InsertUsageRecordParams struct {
@@ -522,6 +532,11 @@ func (q *Queries) InsertUsageRecord(ctx context.Context, arg InsertUsageRecordPa
 		&i.BillingPeriodID,
 		&i.BillingPeriodStartsAtSnapshot,
 		&i.BillingPeriodEndsAtSnapshot,
+		&i.BackgroundUsageAuthorizationID,
+		&i.BackgroundUsagePurpose,
+		&i.BackgroundFeatureResourceID,
+		&i.BackgroundUsagePeriod,
+		&i.BackgroundPeriodStart,
 	)
 	return i, err
 }
@@ -545,7 +560,7 @@ INSERT INTO usage_reservations (
         * interval '1 second',
     $16
 )
-RETURNING id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered
+RETURNING id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered, background_usage_authorization_id, background_usage_purpose, background_feature_resource_id, background_usage_period, background_period_start
 `
 
 type InsertUsageReservationParams struct {
@@ -619,6 +634,11 @@ func (q *Queries) InsertUsageReservation(ctx context.Context, arg InsertUsageRes
 		&i.PriceEffectiveUntilSnapshot,
 		&i.OverageBillingPeriodID,
 		&i.ClientReferenceGrandfathered,
+		&i.BackgroundUsageAuthorizationID,
+		&i.BackgroundUsagePurpose,
+		&i.BackgroundFeatureResourceID,
+		&i.BackgroundUsagePeriod,
+		&i.BackgroundPeriodStart,
 	)
 	return i, err
 }
@@ -680,7 +700,7 @@ func (q *Queries) ListExpiredUsageReservationCandidates(ctx context.Context, arg
 }
 
 const listExpiredUsageReservationsForAccountInOrganization = `-- name: ListExpiredUsageReservationsForAccountInOrganization :many
-SELECT id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered
+SELECT id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered, background_usage_authorization_id, background_usage_purpose, background_feature_resource_id, background_usage_period, background_period_start
 FROM usage_reservations
 WHERE organization_id = $1
   AND account_id = $2
@@ -741,6 +761,11 @@ func (q *Queries) ListExpiredUsageReservationsForAccountInOrganization(ctx conte
 			&i.PriceEffectiveUntilSnapshot,
 			&i.OverageBillingPeriodID,
 			&i.ClientReferenceGrandfathered,
+			&i.BackgroundUsageAuthorizationID,
+			&i.BackgroundUsagePurpose,
+			&i.BackgroundFeatureResourceID,
+			&i.BackgroundUsagePeriod,
+			&i.BackgroundPeriodStart,
 		); err != nil {
 			return nil, err
 		}
@@ -753,7 +778,7 @@ func (q *Queries) ListExpiredUsageReservationsForAccountInOrganization(ctx conte
 }
 
 const listExpiredUsageReservationsForOrganization = `-- name: ListExpiredUsageReservationsForOrganization :many
-SELECT id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered
+SELECT id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered, background_usage_authorization_id, background_usage_purpose, background_feature_resource_id, background_usage_period, background_period_start
 FROM usage_reservations
 WHERE organization_id = $1
   AND status = 'held'
@@ -812,6 +837,11 @@ func (q *Queries) ListExpiredUsageReservationsForOrganization(ctx context.Contex
 			&i.PriceEffectiveUntilSnapshot,
 			&i.OverageBillingPeriodID,
 			&i.ClientReferenceGrandfathered,
+			&i.BackgroundUsageAuthorizationID,
+			&i.BackgroundUsagePurpose,
+			&i.BackgroundFeatureResourceID,
+			&i.BackgroundUsagePeriod,
+			&i.BackgroundPeriodStart,
 		); err != nil {
 			return nil, err
 		}
@@ -825,7 +855,7 @@ func (q *Queries) ListExpiredUsageReservationsForOrganization(ctx context.Contex
 
 const listVisibleUsageRecords = `-- name: ListVisibleUsageRecords :many
 SELECT
-    record.id, record.reservation_id, record.organization_id, record.team_id, record.team_name_snapshot, record.meter_id, record.account_id, record.service_identity_id, record.committed_units, record.total_cost_micros, record.credit_applied_micros, record.overage_applied_micros, record.committed_at, record.retain_until, record.price_version_id, record.usd_micros_per_unit, record.client_reference, record.user_actor_reference_snapshot, record.service_name_snapshot, record.meter_name_snapshot, record.polar_event_name_snapshot, record.price_effective_from_snapshot, record.price_effective_until_snapshot, record.billing_period_id, record.billing_period_starts_at_snapshot, record.billing_period_ends_at_snapshot,
+    record.id, record.reservation_id, record.organization_id, record.team_id, record.team_name_snapshot, record.meter_id, record.account_id, record.service_identity_id, record.committed_units, record.total_cost_micros, record.credit_applied_micros, record.overage_applied_micros, record.committed_at, record.retain_until, record.price_version_id, record.usd_micros_per_unit, record.client_reference, record.user_actor_reference_snapshot, record.service_name_snapshot, record.meter_name_snapshot, record.polar_event_name_snapshot, record.price_effective_from_snapshot, record.price_effective_until_snapshot, record.billing_period_id, record.billing_period_starts_at_snapshot, record.billing_period_ends_at_snapshot, record.background_usage_authorization_id, record.background_usage_purpose, record.background_feature_resource_id, record.background_usage_period, record.background_period_start,
     CASE
         WHEN outbox.delivered_at IS NOT NULL THEN 'polar_reported'
         WHEN outbox.id IS NOT NULL THEN 'polar_pending'
@@ -880,33 +910,38 @@ type ListVisibleUsageRecordsParams struct {
 }
 
 type ListVisibleUsageRecordsRow struct {
-	ID                            pgtype.UUID
-	ReservationID                 pgtype.UUID
-	OrganizationID                pgtype.UUID
-	TeamID                        pgtype.UUID
-	TeamNameSnapshot              string
-	MeterID                       pgtype.UUID
-	AccountID                     pgtype.UUID
-	ServiceIdentityID             pgtype.UUID
-	CommittedUnits                int64
-	TotalCostMicros               int64
-	CreditAppliedMicros           int64
-	OverageAppliedMicros          int64
-	CommittedAt                   pgtype.Timestamptz
-	RetainUntil                   pgtype.Timestamptz
-	PriceVersionID                pgtype.UUID
-	UsdMicrosPerUnit              int64
-	ClientReference               string
-	UserActorReferenceSnapshot    string
-	ServiceNameSnapshot           string
-	MeterNameSnapshot             string
-	PolarEventNameSnapshot        string
-	PriceEffectiveFromSnapshot    pgtype.Timestamptz
-	PriceEffectiveUntilSnapshot   pgtype.Timestamptz
-	BillingPeriodID               pgtype.UUID
-	BillingPeriodStartsAtSnapshot pgtype.Timestamptz
-	BillingPeriodEndsAtSnapshot   pgtype.Timestamptz
-	DeliveryStatus                string
+	ID                             pgtype.UUID
+	ReservationID                  pgtype.UUID
+	OrganizationID                 pgtype.UUID
+	TeamID                         pgtype.UUID
+	TeamNameSnapshot               string
+	MeterID                        pgtype.UUID
+	AccountID                      pgtype.UUID
+	ServiceIdentityID              pgtype.UUID
+	CommittedUnits                 int64
+	TotalCostMicros                int64
+	CreditAppliedMicros            int64
+	OverageAppliedMicros           int64
+	CommittedAt                    pgtype.Timestamptz
+	RetainUntil                    pgtype.Timestamptz
+	PriceVersionID                 pgtype.UUID
+	UsdMicrosPerUnit               int64
+	ClientReference                string
+	UserActorReferenceSnapshot     string
+	ServiceNameSnapshot            string
+	MeterNameSnapshot              string
+	PolarEventNameSnapshot         string
+	PriceEffectiveFromSnapshot     pgtype.Timestamptz
+	PriceEffectiveUntilSnapshot    pgtype.Timestamptz
+	BillingPeriodID                pgtype.UUID
+	BillingPeriodStartsAtSnapshot  pgtype.Timestamptz
+	BillingPeriodEndsAtSnapshot    pgtype.Timestamptz
+	BackgroundUsageAuthorizationID pgtype.UUID
+	BackgroundUsagePurpose         pgtype.Text
+	BackgroundFeatureResourceID    pgtype.UUID
+	BackgroundUsagePeriod          pgtype.Text
+	BackgroundPeriodStart          pgtype.Timestamptz
+	DeliveryStatus                 string
 }
 
 func (q *Queries) ListVisibleUsageRecords(ctx context.Context, arg ListVisibleUsageRecordsParams) ([]ListVisibleUsageRecordsRow, error) {
@@ -956,6 +991,11 @@ func (q *Queries) ListVisibleUsageRecords(ctx context.Context, arg ListVisibleUs
 			&i.BillingPeriodID,
 			&i.BillingPeriodStartsAtSnapshot,
 			&i.BillingPeriodEndsAtSnapshot,
+			&i.BackgroundUsageAuthorizationID,
+			&i.BackgroundUsagePurpose,
+			&i.BackgroundFeatureResourceID,
+			&i.BackgroundUsagePeriod,
+			&i.BackgroundPeriodStart,
 			&i.DeliveryStatus,
 		); err != nil {
 			return nil, err
@@ -969,7 +1009,7 @@ func (q *Queries) ListVisibleUsageRecords(ctx context.Context, arg ListVisibleUs
 }
 
 const lockUsageReservation = `-- name: LockUsageReservation :one
-SELECT id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered
+SELECT id, organization_id, team_id, team_name_snapshot, meter_id, price_version_id, account_id, service_identity_id, maximum_units, usd_micros_per_unit, maximum_cost_micros, held_credit_micros, held_overage_micros, client_reference, status, active_organization_id, active_team_id, active_account_id, active_service_identity_id, active_meter_id, expires_at, finalized_at, created_at, user_actor_reference_snapshot, service_name_snapshot, meter_name_snapshot, polar_event_name_snapshot, price_effective_from_snapshot, price_effective_until_snapshot, overage_billing_period_id, client_reference_grandfathered, background_usage_authorization_id, background_usage_purpose, background_feature_resource_id, background_usage_period, background_period_start
 FROM usage_reservations
 WHERE organization_id = $1
   AND id = $2
@@ -1016,6 +1056,11 @@ func (q *Queries) LockUsageReservation(ctx context.Context, arg LockUsageReserva
 		&i.PriceEffectiveUntilSnapshot,
 		&i.OverageBillingPeriodID,
 		&i.ClientReferenceGrandfathered,
+		&i.BackgroundUsageAuthorizationID,
+		&i.BackgroundUsagePurpose,
+		&i.BackgroundFeatureResourceID,
+		&i.BackgroundUsagePeriod,
+		&i.BackgroundPeriodStart,
 	)
 	return i, err
 }
