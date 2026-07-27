@@ -108,6 +108,28 @@ describe("delibase error details", () => {
     ).toContain("reserved units");
   });
 
+  it("maps background authorization conflict and access-loss recovery", () => {
+    expect(
+      describeDelibaseError(
+        delibaseError(
+          ErrorReason.BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST,
+        ),
+      ),
+    ).toContain("Restore access");
+    expect(
+      describeDelibaseError(
+        delibaseError(ErrorReason.BACKGROUND_USAGE_REPLAY_CONFLICT),
+      ),
+    ).toContain("does not match the original");
+    expect(
+      describeDelibaseError(
+        delibaseError(
+          ErrorReason.BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION,
+        ),
+      ),
+    ).toContain("exact resource");
+  });
+
   it("prefers actionable code guidance over generic server diagnostics", () => {
     expect(
       describeDelibaseError(

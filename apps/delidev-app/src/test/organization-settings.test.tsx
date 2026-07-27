@@ -113,6 +113,9 @@ describe("organization settings", () => {
           },
         });
       }
+      if (url.endsWith("/ListBackgroundUsageAuthorizations")) {
+        return connectJsonResponse({ authorizations: [] });
+      }
       if (url.endsWith("/UpdateOrganization")) {
         return connectJsonResponse({
           organization: {
@@ -172,6 +175,9 @@ describe("organization settings", () => {
             slug: currentSlug,
           },
         });
+      }
+      if (url.endsWith("/ListBackgroundUsageAuthorizations")) {
+        return connectJsonResponse({ authorizations: [] });
       }
       if (url.endsWith("/UpdateOrganizationSlug")) {
         const body = (await new Response(
@@ -247,6 +253,9 @@ describe("organization settings", () => {
             slug: "acme",
           },
         });
+      }
+      if (url.endsWith("/ListBackgroundUsageAuthorizations")) {
+        return connectJsonResponse({ authorizations: [] });
       }
       if (url.endsWith("/DeleteOrganization")) {
         const body = (await new Response(

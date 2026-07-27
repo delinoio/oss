@@ -1915,6 +1915,58 @@ tr:last-child td {
   }
 }
 
+.background-authorizations {
+  display: grid;
+  gap: 22px;
+}
+
+.background-authorizations > div:first-child > p {
+  margin: 8px 0 0;
+  color: var(--gray-600);
+}
+
+.authorization-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 22px 0;
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  border-radius: 14px;
+  background: var(--gray-200);
+}
+
+.authorization-facts > div {
+  min-width: 0;
+  padding: 14px;
+  background: #fff;
+}
+
+.authorization-facts dt {
+  color: var(--gray-600);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.authorization-facts dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.authorization-facts .authorization-guidance {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .authorization-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .authorization-facts .authorization-guidance {
+    grid-column: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

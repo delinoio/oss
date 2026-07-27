@@ -186,6 +186,26 @@ const reasonMessages = new Map<ErrorReason, string>([
     ErrorReason.RESOURCE_CONFLICT,
     "This resource changed or an operation is already in progress. Refresh the page and try again.",
   ],
+  [
+    ErrorReason.BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION,
+    "The authorization binding does not match this resource, service, meter, purpose, owner, team, or period. Refresh and rebind the exact resource before retrying.",
+  ],
+  [
+    ErrorReason.BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST,
+    "The authorizer no longer has the required organization or team access. Restore access, then create a new authorization.",
+  ],
+  [
+    ErrorReason.BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID,
+    "This authorization is no longer active. Review its status and rebind with a new authorization if usage should resume.",
+  ],
+  [
+    ErrorReason.BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED,
+    "Current-period usage has reached this authorization’s maximum units. Wait for the next UTC period or rebind with an appropriate limit.",
+  ],
+  [
+    ErrorReason.BACKGROUND_USAGE_REPLAY_CONFLICT,
+    "This retry does not match the original background-usage operation. Refresh before starting a new action.",
+  ],
 ]);
 
 function accountDeletionBlockerMessage(

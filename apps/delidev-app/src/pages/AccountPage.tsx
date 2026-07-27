@@ -9,6 +9,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { useAuthSession } from "../auth/AuthSession";
 import { describeDelibaseError } from "../api/errors";
+import { BackgroundUsageAuthorizations } from "../components/BackgroundUsageAuthorizations";
 import { Dialog } from "../components/Dialog";
 import { useAccountState } from "../components/ProtectedRoute";
 import {
@@ -232,6 +233,12 @@ export function AccountPage() {
         </button>
         {!online ? <OfflineActionHint /> : null}
       </form>
+      {auth.transport ? (
+        <BackgroundUsageAuthorizations
+          scope={{ kind: "account" }}
+          transport={auth.transport}
+        />
+      ) : null}
       <section className="content-card danger-zone">
         <div>
           <h2>Delete account</h2>
