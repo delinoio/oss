@@ -12,7 +12,7 @@
 
 - RealQA is available only to DevHud desktop on macOS 14+, Windows 11, and Ubuntu 24.04. Ubuntu capture covers X11/XWayland and native Wayland through `xdg-desktop-portal`. iOS and Android are excluded.
 - The signed-out base shell remains usable. Entering RealQA requires DeliDev Logto Authorization Code with PKCE through a system browser and a one-shot random `127.0.0.1` callback.
-- The service accepts a RealQA-audience bearer and a memory-only delibase-audience forwarded bearer, validates matching subjects/scopes, and never stores or logs them.
+- Human RPCs accept a RealQA-audience bearer and a memory-only delibase-audience forwarded bearer and validate matching subjects/scopes. `DeleteFeatureData` alone also accepts the exact RealQA lifecycle M2M identity used by delibase for a typed account/organization-deletion trigger. No other procedure accepts that identity, and no credential is stored or logged.
 - Personal users manage personal presets/destinations. Organization Owners/Admins manage organization destinations, presets, and mappings; members may submit only when their GitHub identity can access the selected repository.
 - Personal resources may select an accessible billing organization/team; organization resources use their owning organization/team.
 - Synchronized mutations use revisions/ETags with typed reload/compare/reapply conflicts.
@@ -30,7 +30,7 @@
 - RealQA uses a dedicated minimal-permission GitHub App separate from Deck and acts with GitHub App user authorization tokens.
 - Only GitHub.com is supported. GHES, custom GitHub hosts, on-premises trackers, and non-GitHub adapters fail closed.
 - Minimum permissions are Issues write, Metadata read, Contents read for templates/forms, and the relevant project permission only for a configured GitHub Projects submission.
-- One installation binds to exactly one DeliDev personal or organization owner scope. Connections may be managed from DevHud and existing DeliDev `/account` or `/o/:orgSlug/settings`, with no new top-level route.
+- One installation binds to exactly one DeliDev personal or organization owner scope. Connections may be managed only from authenticated RealQA settings in DevHud; DeliDev has no RealQA client or management route.
 - Disconnect immediately deletes provider tokens while preserving presets/mappings as disconnected records.
 - RealQA creates new issues only. It does not comment on or update an existing issue.
 - Support repository Markdown issue templates and Issue Forms with provider-required validation. Final body order is template/form response, `RealQA capture` with user-approved environment/URL/DOM metadata, then inline Markdown images.
@@ -91,14 +91,15 @@ The exact sequence is:
 - Logout hides and locks drafts without deleting them; signing into the same account restores access. Another account cannot see or decrypt them.
 - `Reset DevHud` deletes local drafts, tokens, RealQA shortcut state, and extension pairing. It cannot revoke Chrome-owned tab/origin permission and must direct the user to Chrome extension settings.
 - Provider disconnect follows the token-deletion/preset-preservation rule above.
-- `RealQAPresetService.DeleteFeatureData` is the only feature-deletion mutation. It is owner-scoped and idempotent: a personal caller removes their personal presets, submissions, and assets; an organization Owner removes organization RealQA data. Acceptance immediately blocks new scope access/mutations and starts asynchronous hard deletion while preserving only required pseudonymized financial/security records.
-- Account/organization deletion blocks access immediately and asynchronously deletes feature data/assets, retaining only required pseudonymized financial/security records.
+- `RealQAPresetService.DeleteFeatureData` is the only feature-deletion mutation. In owner-request mode it is idempotent by authenticated subject, operation, and owner scope: a personal caller removes their personal presets, submissions, and assets, while an organization Owner removes organization RealQA data. In lifecycle mode it requires the exact RealQA-scoped delibase M2M identity, accepts only a typed account or organization target plus the immutable delibase deletion-job UUID, and treats that UUID as its replay identity; DeliDev and ordinary feature users cannot select this mode.
+- Acceptance in either mode immediately tombstones the target scope, blocks new access/mutations, and starts asynchronous hard deletion. Exact replays return the same deletion-job result, absent feature data succeeds idempotently, and only required pseudonymized financial/security records survive. Delibase transactionally enqueues the lifecycle call when it accepts account/organization deletion and retries ambiguous or failed delivery through its immutable retained outbox/dead-letter contract.
 
 ## Security and Observability
 
 - Remote DevHud/extension telemetry, analytics, crash reporting, advertising, and user tracking remain prohibited. The service may use redacted structured operational logs, metrics, traces, and audits.
 - Never log/persist authorization/provider tokens, signed upload URLs, object keys, screenshot content, title/body/URL/DOM data, repository names, raw process/window values, or user content outside the explicitly retained encrypted draft/asset/provider state.
 - Validate callback state and webhook signatures, use least-privilege R2/database/provider identities, and expose typed safe errors.
+- DevHud reaches Connect and the signed image PUT through its private native transports, not browser fetch. Do not allow `http://tauri.localhost` in CORS; RealQA has no browser RPC client.
 - Public assets are intentionally unauthenticated only after per-submission confirmation and verified promotion; no listing/index exists.
 
 ## Build and Test
@@ -113,7 +114,7 @@ Once implementation exists, canonical server checks are:
 - fixture GitHub App, R2, callback/webhook, permission, reconciliation, WAF/rate, billing, retention, and deletion tests;
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
 
-Coverage must include all size/body boundaries, verification failures and bombs, templates/forms, marker reconciliation without duplicates, private staging/promotion/24-hour cleanup, explicit deletion/placeholder/best-effort issue update, transfer/storage rounding and commit semantics, payer rebind/30-day grace/no back-billing/deletion, rate limits, redaction, feature/account deletion, and GitHub.com-only rejection.
+Coverage must include all size/body boundaries, verification failures and bombs, templates/forms, marker reconciliation without duplicates, private staging/promotion/24-hour cleanup, explicit deletion/placeholder/best-effort issue update, transfer/storage rounding and commit semantics, payer rebind/30-day grace/no back-billing/deletion, rate limits, redaction, owner and delibase-lifecycle deletion authorization, deletion-job replay/absent data, browser-origin rejection, and GitHub.com-only rejection.
 
 These checks use fixture production substitutes and a fixture extension ID. They must not publish images, deploy services, configure DNS/R2, register a GitHub App, publish a Chrome extension, inject a production extension ID, ship stores, activate catalog entries, or begin operations.
 
@@ -122,7 +123,7 @@ These checks use fixture production substitutes and a fixture extension ID. They
 - Wire contract: [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 - Client/native/Chrome contract: [apps-devhud-foundation](apps-devhud-foundation.md).
 - Shared service utilities may come from `servers/internal`; RealQA business policy remains under `servers/devhud-realqa`.
-- External boundaries are Logto/DeliDev authentication, delibase live usage plus the issue #756 background-usage prerequisite, PostgreSQL, the separate RealQA GitHub App on GitHub.com, and same-origin signed upload/public delivery backed by R2 at the exact future asset origin.
+- External boundaries are Logto/DeliDev authentication, delibase live usage plus the issue #756 background-usage prerequisite and durable account/organization-deletion lifecycle calls, PostgreSQL, the separate RealQA GitHub App on GitHub.com, and same-origin signed upload/public delivery backed by R2 at the exact future asset origin.
 
 ## Change Triggers
 

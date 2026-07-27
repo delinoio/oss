@@ -11,7 +11,7 @@
 ## Users and Authorization
 
 - The signed-out DevHud base shell never depends on Deck. A user must complete DeliDev Logto Authorization Code with PKCE before entering Deck.
-- The service accepts a Deck-audience bearer and a memory-only delibase-audience forwarded bearer. It validates issuer, audience, expiry, scopes, and matching subjects and strips credentials before business handlers. Neither bearer may be stored or logged.
+- Human RPCs accept a Deck-audience bearer and a memory-only delibase-audience forwarded bearer. The service validates issuer, audience, expiry, scopes, and matching subjects and strips credentials before business handlers. `DeleteFeatureData` alone also accepts the exact Deck lifecycle M2M identity used by delibase for a typed account/organization-deletion trigger. No other procedure accepts that identity, and no credential may be stored or logged.
 - One DeliDev account is active per OS user/device. Personal views are managed by their owner. Organization Owners/Admins create, edit, and delete organization views; members may use them only when DeliDev membership and that member's own GitHub authorization both permit every underlying repository.
 - Personal resources may select an accessible organization/team for billing. Organization resources bill their owning organization/team.
 - Every synchronized mutation uses a revision/ETag. Stale writes fail with a typed conflict suitable for reload, compare, and reapply.
@@ -66,14 +66,15 @@
 - Logout revokes the device push registration as described above, then deletes Deck tokens, PR data, and widget snapshots from that device.
 - `Reset DevHud` revokes the device push registration as described above, then remains device-local: it deletes tokens, Deck snapshots, and shortcut effective state and does not delete server views or GitHub connections.
 - Disconnect follows the immediate provider-data deletion boundary above and preserves disconnected view definitions.
-- `DeckViewService.DeleteFeatureData` is the only feature-deletion mutation. It is owner-scoped and idempotent by authenticated subject, operation, and owner scope: a personal caller may delete only their personal Deck data, while an organization Owner may delete organization Deck data. The first accepted request immediately blocks new scope access and mutations and starts asynchronous hard deletion of all data owned by that scope, including view definitions and attached connection/provider, cache, notification, widget, and shortcut data. Exact replays return the same deletion-job result, and only required pseudonymized financial/security records survive.
-- Account/organization deletion blocks access immediately and starts asynchronous hard deletion. Only minimal pseudonymized financial/security records required by the delibase contract survive.
+- `DeckViewService.DeleteFeatureData` is the only feature-deletion mutation. In owner-request mode it is idempotent by authenticated subject, operation, and owner scope: a personal caller may delete only their personal Deck data, while an organization Owner may delete organization Deck data. In lifecycle mode it requires the exact Deck-scoped delibase M2M identity, accepts only a typed account or organization target plus the immutable delibase deletion-job UUID, and treats that UUID as its replay identity; DeliDev and ordinary feature users cannot select this mode.
+- The first accepted request in either mode immediately tombstones the target scope, blocks new scope access/mutations, and starts asynchronous hard deletion of all data owned by that scope, including view definitions and attached connection/provider, cache, notification, widget, and shortcut data. Exact replays return the same deletion-job result, absent feature data succeeds idempotently, and only required pseudonymized financial/security records survive. Delibase transactionally enqueues the lifecycle call when it accepts account/organization deletion and retries ambiguous or failed delivery through its immutable retained outbox/dead-letter contract.
 
 ## Security and Observability
 
 - Remote client telemetry remains prohibited. The service may use redacted structured logs, metrics, traces, and audit events for operations and authorization.
 - Never persist or log bearer/provider tokens, authorization headers, URLs, push content, or user content outside the explicit data contract. Canonical raw queries may persist only in view definitions, and repository names/PR titles may persist only in current matching PR snapshots; encrypt those fields at rest with managed environment-scoped keys, authorize every read before decryption, and delete them at the retention boundaries above. Never place those fields in logs, telemetry, traces, audits, notification history, or uncontracted caches. Audit only typed safe decisions and pseudonymized actors.
 - Use least-privilege database/provider identities, fail-closed authorization, CSRF/state validation for callbacks, webhook signature validation, rate/concurrency limits, and explicit safe error enums.
+- DevHud reaches Connect through its private native transport, not browser fetch. Do not allow `http://tauri.localhost` in CORS. The exact `https://deli.dev` browser origin may call only `DeckIntegrationService`; all other procedures reject browser-origin requests.
 - Measure refresh latency, query latency, mutation latency, and widget snapshot size in CI/fixtures only. This contract defines no production SLO, alert threshold, dashboard, or telemetry pipeline.
 
 ## Build and Test
@@ -88,7 +89,7 @@ Once implementation exists, canonical server checks are:
 - mock GitHub App callback, webhook, permission, rate-limit, and provider tests;
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
 
-Coverage must include unknown-clause preservation, per-viewer `@me`, repository non-disclosure, limits/pagination/truncation, stale revisions, multi-device coalescing and billing, provider timeout charging, reservation failure, zero refresh after all clients stop, every supported mutation and merge confirmation, widget privacy/staleness, DND-safe notifications, shortcut conflicts, redaction, disconnect/logout/reset, feature-deletion authorization and idempotent replay, GitHub.com-only rejection, and a fixture GitHub App.
+Coverage must include unknown-clause preservation, per-viewer `@me`, repository non-disclosure, limits/pagination/truncation, stale revisions, multi-device coalescing and billing, provider timeout charging, reservation failure, zero refresh after all clients stop, every supported mutation and merge confirmation, widget privacy/staleness, DND-safe notifications, shortcut conflicts, redaction, disconnect/logout/reset, owner and delibase-lifecycle deletion authorization, deletion-job replay/absent data, browser-origin rejection outside exact DeliDev `DeckIntegrationService`, GitHub.com-only rejection, and a fixture GitHub App.
 
 These checks validate artifacts only. They must not push GHCR images, deploy the API, configure DNS, create production secrets, register a GitHub App, enable catalog records, publish widgets, release an app, or begin operations.
 
@@ -98,7 +99,7 @@ These checks validate artifacts only. They must not push GHCR images, deploy the
 - Client/native contract: [apps-devhud-foundation](apps-devhud-foundation.md).
 - The DeliDev settings client contract is [apps-delidev-app-foundation](apps-delidev-app-foundation.md) and is limited to `DeckIntegrationService`.
 - Shared service utilities may come from `servers/internal`; Deck business policy remains under `servers/devhud-deck`.
-- External boundaries are Logto/DeliDev authentication, delibase reservation/commit/release, PostgreSQL, the separate Deck GitHub App on GitHub.com, and opaque push delivery. The canonical API origin is future and inactive.
+- External boundaries are Logto/DeliDev authentication, delibase reservation/commit/release plus its durable account/organization-deletion lifecycle calls, PostgreSQL, the separate Deck GitHub App on GitHub.com, and opaque push delivery. The canonical API origin is future and inactive.
 
 ## Change Triggers
 
