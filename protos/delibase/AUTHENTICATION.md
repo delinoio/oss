@@ -55,6 +55,7 @@ user scope `delibase:usage:execute`. The M2M token requires the operation scope:
 | `UsageService.ReserveAuthorizedUsage` | `delibase:usage:reserve` |
 | `UsageService.CommitAuthorizedUsage` | `delibase:usage:commit` |
 | `UsageService.ReleaseAuthorizedUsage` | `delibase:usage:release` |
+| `UsageService.MarkBackgroundUsageResourceDeleted` | `delibase:usage:release` |
 
 For the three live-user usage RPCs, possession of both tokens and scopes is
 necessary but not sufficient. Delibase also validates issuer, audience, expiry,
@@ -62,11 +63,12 @@ the authenticated service's catalog meter allowlist, organization membership,
 and the forwarded user's direct or inherited access to the requested team. The
 browser must never call `UsageService` or hold an M2M credential.
 
-The three authorized-usage RPCs are the bounded exception to the forwarded-user
+The authorized-usage and resource-deletion RPCs are the bounded exception to the forwarded-user
 requirement. They authenticate only the M2M bearer and revalidate the durable
 `BackgroundUsageAuthorization`; they must not request, accept as application
 state, or persist `x-delibase-forwarded-user-token`. A supplied credential
 header is stripped by authentication middleware and never reaches the handler.
 The authenticated service identity, rather than a caller-supplied service ID,
-is included in the operation digest. Existing `ReserveUsage`, `CommitUsage`,
-and `ReleaseUsage` continue to require both credentials.
+is included in the operation digest. Authorized commit/release digests also
+include the reservation ID. Existing `ReserveUsage`, `CommitUsage`, and
+`ReleaseUsage` continue to require both credentials.

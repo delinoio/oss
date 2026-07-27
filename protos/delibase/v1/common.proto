@@ -78,6 +78,7 @@ enum IdempotentOperation {
   IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE = 27;
   IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE = 28;
   IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE = 29;
+  IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED = 30;
 }
 
 enum AccountStatus {
@@ -310,8 +311,11 @@ message BackgroundUsageOwner {
 
 // AuthorizedUsageContext repeats the authorization-bound values that an M2M
 // request may not substitute. period_start must be the canonical UTC midnight
-// for a UTC_DAY period. The authenticated service identity is intentionally not
-// caller supplied and is added to the server-side request digest.
+// for a UTC_DAY period. Reserve accepts only the current or immediately
+// preceding UTC day according to server time, so a caller cannot create
+// arbitrary past or future quota buckets. Commit and release use the period
+// stored with the reservation. The authenticated service identity is
+// intentionally not caller supplied and is added to the server-side digest.
 message AuthorizedUsageContext {
   UuidV7 authorization_id = 1;
   BackgroundUsagePurpose purpose = 2;

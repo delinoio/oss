@@ -907,11 +907,12 @@ func (x *ReserveAuthorizedUsageResponse) GetIdempotency() *IdempotencyResult {
 }
 
 type CommitAuthorizedUsageRequest struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Context       *AuthorizedUsageContext `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
-	ReservationId *UuidV7                 `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	ActualUnits   *UsageUnits             `protobuf:"bytes,3,opt,name=actual_units,json=actualUnits,proto3" json:"actual_units,omitempty"`
-	Idempotency   *IdempotencyKey         `protobuf:"bytes,4,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
+	state   protoimpl.MessageState  `protogen:"open.v1"`
+	Context *AuthorizedUsageContext `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	// Included in the service-scoped replay digest.
+	ReservationId *UuidV7         `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	ActualUnits   *UsageUnits     `protobuf:"bytes,3,opt,name=actual_units,json=actualUnits,proto3" json:"actual_units,omitempty"`
+	Idempotency   *IdempotencyKey `protobuf:"bytes,4,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1043,9 +1044,10 @@ func (x *CommitAuthorizedUsageResponse) GetIdempotency() *IdempotencyResult {
 }
 
 type ReleaseAuthorizedUsageRequest struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Context       *AuthorizedUsageContext `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
-	ReservationId *UuidV7                 `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	state   protoimpl.MessageState  `protogen:"open.v1"`
+	Context *AuthorizedUsageContext `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	// Included in the service-scoped replay digest.
+	ReservationId *UuidV7 `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
 	// Must equal the reservation's authorized maximum so the release replay
 	// digest binds units as well as authorization, service, purpose, resource,
 	// and period.
@@ -1181,11 +1183,139 @@ func (x *ReleaseAuthorizedUsageResponse) GetIdempotency() *IdempotencyResult {
 	return nil
 }
 
+type MarkBackgroundUsageResourceDeletedRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	AuthorizationId   *UuidV7                `protobuf:"bytes,1,opt,name=authorization_id,json=authorizationId,proto3" json:"authorization_id,omitempty"`
+	Purpose           BackgroundUsagePurpose `protobuf:"varint,2,opt,name=purpose,proto3,enum=delibase.v1.BackgroundUsagePurpose" json:"purpose,omitempty"`
+	FeatureResourceId *UuidV7                `protobuf:"bytes,3,opt,name=feature_resource_id,json=featureResourceId,proto3" json:"feature_resource_id,omitempty"`
+	ExpectedRevision  int64                  `protobuf:"varint,4,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Idempotency       *IdempotencyKey        `protobuf:"bytes,5,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *MarkBackgroundUsageResourceDeletedRequest) Reset() {
+	*x = MarkBackgroundUsageResourceDeletedRequest{}
+	mi := &file_delibase_v1_usage_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarkBackgroundUsageResourceDeletedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarkBackgroundUsageResourceDeletedRequest) ProtoMessage() {}
+
+func (x *MarkBackgroundUsageResourceDeletedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_usage_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarkBackgroundUsageResourceDeletedRequest.ProtoReflect.Descriptor instead.
+func (*MarkBackgroundUsageResourceDeletedRequest) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_usage_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *MarkBackgroundUsageResourceDeletedRequest) GetAuthorizationId() *UuidV7 {
+	if x != nil {
+		return x.AuthorizationId
+	}
+	return nil
+}
+
+func (x *MarkBackgroundUsageResourceDeletedRequest) GetPurpose() BackgroundUsagePurpose {
+	if x != nil {
+		return x.Purpose
+	}
+	return BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_UNSPECIFIED
+}
+
+func (x *MarkBackgroundUsageResourceDeletedRequest) GetFeatureResourceId() *UuidV7 {
+	if x != nil {
+		return x.FeatureResourceId
+	}
+	return nil
+}
+
+func (x *MarkBackgroundUsageResourceDeletedRequest) GetExpectedRevision() int64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *MarkBackgroundUsageResourceDeletedRequest) GetIdempotency() *IdempotencyKey {
+	if x != nil {
+		return x.Idempotency
+	}
+	return nil
+}
+
+type MarkBackgroundUsageResourceDeletedResponse struct {
+	state         protoimpl.MessageState            `protogen:"open.v1"`
+	Authorization *BackgroundUsageAuthorizationView `protobuf:"bytes,1,opt,name=authorization,proto3" json:"authorization,omitempty"`
+	Idempotency   *IdempotencyResult                `protobuf:"bytes,2,opt,name=idempotency,proto3" json:"idempotency,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MarkBackgroundUsageResourceDeletedResponse) Reset() {
+	*x = MarkBackgroundUsageResourceDeletedResponse{}
+	mi := &file_delibase_v1_usage_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarkBackgroundUsageResourceDeletedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarkBackgroundUsageResourceDeletedResponse) ProtoMessage() {}
+
+func (x *MarkBackgroundUsageResourceDeletedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delibase_v1_usage_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarkBackgroundUsageResourceDeletedResponse.ProtoReflect.Descriptor instead.
+func (*MarkBackgroundUsageResourceDeletedResponse) Descriptor() ([]byte, []int) {
+	return file_delibase_v1_usage_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *MarkBackgroundUsageResourceDeletedResponse) GetAuthorization() *BackgroundUsageAuthorizationView {
+	if x != nil {
+		return x.Authorization
+	}
+	return nil
+}
+
+func (x *MarkBackgroundUsageResourceDeletedResponse) GetIdempotency() *IdempotencyResult {
+	if x != nil {
+		return x.Idempotency
+	}
+	return nil
+}
+
 var File_delibase_v1_usage_proto protoreflect.FileDescriptor
 
 const file_delibase_v1_usage_proto_rawDesc = "" +
 	"\n" +
-	"\x17delibase/v1/usage.proto\x12\vdelibase.v1\x1a\x18delibase/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf5\b\n" +
+	"\x17delibase/v1/usage.proto\x12\vdelibase.v1\x1a\x19delibase/v1/billing.proto\x1a\x18delibase/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf5\b\n" +
 	"\x10UsageReservation\x12:\n" +
 	"\x0ereservation_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\rreservationId\x12<\n" +
 	"\x0forganization_id\x18\x02 \x01(\v2\x13.delibase.v1.UuidV7R\x0eorganizationId\x12,\n" +
@@ -1282,14 +1412,24 @@ const file_delibase_v1_usage_proto_rawDesc = "" +
 	"\vreservation\x18\x01 \x01(\v2\x1d.delibase.v1.UsageReservationR\vreservation\x123\n" +
 	"\arelease\x18\x02 \x01(\v2\x19.delibase.v1.UsageReleaseR\arelease\x12J\n" +
 	"\fperiod_usage\x18\x03 \x01(\v2'.delibase.v1.BackgroundUsagePeriodUsageR\vperiodUsage\x12@\n" +
-	"\vidempotency\x18\x04 \x01(\v2\x1e.delibase.v1.IdempotencyResultR\vidempotency2\xe0\x04\n" +
+	"\vidempotency\x18\x04 \x01(\v2\x1e.delibase.v1.IdempotencyResultR\vidempotency\"\xdb\x02\n" +
+	")MarkBackgroundUsageResourceDeletedRequest\x12>\n" +
+	"\x10authorization_id\x18\x01 \x01(\v2\x13.delibase.v1.UuidV7R\x0fauthorizationId\x12=\n" +
+	"\apurpose\x18\x02 \x01(\x0e2#.delibase.v1.BackgroundUsagePurposeR\apurpose\x12C\n" +
+	"\x13feature_resource_id\x18\x03 \x01(\v2\x13.delibase.v1.UuidV7R\x11featureResourceId\x12+\n" +
+	"\x11expected_revision\x18\x04 \x01(\x03R\x10expectedRevision\x12=\n" +
+	"\vidempotency\x18\x05 \x01(\v2\x1b.delibase.v1.IdempotencyKeyR\vidempotency\"\xc3\x01\n" +
+	"*MarkBackgroundUsageResourceDeletedResponse\x12S\n" +
+	"\rauthorization\x18\x01 \x01(\v2-.delibase.v1.BackgroundUsageAuthorizationViewR\rauthorization\x12@\n" +
+	"\vidempotency\x18\x02 \x01(\v2\x1e.delibase.v1.IdempotencyResultR\vidempotency2\xf8\x05\n" +
 	"\fUsageService\x12S\n" +
 	"\fReserveUsage\x12 .delibase.v1.ReserveUsageRequest\x1a!.delibase.v1.ReserveUsageResponse\x12P\n" +
 	"\vCommitUsage\x12\x1f.delibase.v1.CommitUsageRequest\x1a .delibase.v1.CommitUsageResponse\x12S\n" +
 	"\fReleaseUsage\x12 .delibase.v1.ReleaseUsageRequest\x1a!.delibase.v1.ReleaseUsageResponse\x12q\n" +
 	"\x16ReserveAuthorizedUsage\x12*.delibase.v1.ReserveAuthorizedUsageRequest\x1a+.delibase.v1.ReserveAuthorizedUsageResponse\x12n\n" +
 	"\x15CommitAuthorizedUsage\x12).delibase.v1.CommitAuthorizedUsageRequest\x1a*.delibase.v1.CommitAuthorizedUsageResponse\x12q\n" +
-	"\x16ReleaseAuthorizedUsage\x12*.delibase.v1.ReleaseAuthorizedUsageRequest\x1a+.delibase.v1.ReleaseAuthorizedUsageResponseBGZEgithub.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1b\x06proto3"
+	"\x16ReleaseAuthorizedUsage\x12*.delibase.v1.ReleaseAuthorizedUsageRequest\x1a+.delibase.v1.ReleaseAuthorizedUsageResponse\x12\x95\x01\n" +
+	"\"MarkBackgroundUsageResourceDeleted\x126.delibase.v1.MarkBackgroundUsageResourceDeletedRequest\x1a7.delibase.v1.MarkBackgroundUsageResourceDeletedResponseBGZEgithub.com/delinoio/oss/protos/delibase/gen/go/delibase/v1;delibasev1b\x06proto3"
 
 var (
 	file_delibase_v1_usage_proto_rawDescOnce sync.Once
@@ -1303,124 +1443,136 @@ func file_delibase_v1_usage_proto_rawDescGZIP() []byte {
 	return file_delibase_v1_usage_proto_rawDescData
 }
 
-var file_delibase_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_delibase_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_delibase_v1_usage_proto_goTypes = []any{
-	(*UsageReservation)(nil),               // 0: delibase.v1.UsageReservation
-	(*UsageCommit)(nil),                    // 1: delibase.v1.UsageCommit
-	(*UsageRelease)(nil),                   // 2: delibase.v1.UsageRelease
-	(*ReserveUsageRequest)(nil),            // 3: delibase.v1.ReserveUsageRequest
-	(*ReserveUsageResponse)(nil),           // 4: delibase.v1.ReserveUsageResponse
-	(*CommitUsageRequest)(nil),             // 5: delibase.v1.CommitUsageRequest
-	(*CommitUsageResponse)(nil),            // 6: delibase.v1.CommitUsageResponse
-	(*ReleaseUsageRequest)(nil),            // 7: delibase.v1.ReleaseUsageRequest
-	(*ReleaseUsageResponse)(nil),           // 8: delibase.v1.ReleaseUsageResponse
-	(*ReserveAuthorizedUsageRequest)(nil),  // 9: delibase.v1.ReserveAuthorizedUsageRequest
-	(*ReserveAuthorizedUsageResponse)(nil), // 10: delibase.v1.ReserveAuthorizedUsageResponse
-	(*CommitAuthorizedUsageRequest)(nil),   // 11: delibase.v1.CommitAuthorizedUsageRequest
-	(*CommitAuthorizedUsageResponse)(nil),  // 12: delibase.v1.CommitAuthorizedUsageResponse
-	(*ReleaseAuthorizedUsageRequest)(nil),  // 13: delibase.v1.ReleaseAuthorizedUsageRequest
-	(*ReleaseAuthorizedUsageResponse)(nil), // 14: delibase.v1.ReleaseAuthorizedUsageResponse
-	(*UuidV7)(nil),                         // 15: delibase.v1.UuidV7
-	(*UsageUnits)(nil),                     // 16: delibase.v1.UsageUnits
-	(*UsdMicros)(nil),                      // 17: delibase.v1.UsdMicros
-	(ReservationStatus)(0),                 // 18: delibase.v1.ReservationStatus
-	(*timestamppb.Timestamp)(nil),          // 19: google.protobuf.Timestamp
-	(*AuthorizedUsageContext)(nil),         // 20: delibase.v1.AuthorizedUsageContext
-	(*IdempotencyKey)(nil),                 // 21: delibase.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),              // 22: delibase.v1.IdempotencyResult
-	(*BackgroundUsagePeriodUsage)(nil),     // 23: delibase.v1.BackgroundUsagePeriodUsage
+	(*UsageReservation)(nil),                           // 0: delibase.v1.UsageReservation
+	(*UsageCommit)(nil),                                // 1: delibase.v1.UsageCommit
+	(*UsageRelease)(nil),                               // 2: delibase.v1.UsageRelease
+	(*ReserveUsageRequest)(nil),                        // 3: delibase.v1.ReserveUsageRequest
+	(*ReserveUsageResponse)(nil),                       // 4: delibase.v1.ReserveUsageResponse
+	(*CommitUsageRequest)(nil),                         // 5: delibase.v1.CommitUsageRequest
+	(*CommitUsageResponse)(nil),                        // 6: delibase.v1.CommitUsageResponse
+	(*ReleaseUsageRequest)(nil),                        // 7: delibase.v1.ReleaseUsageRequest
+	(*ReleaseUsageResponse)(nil),                       // 8: delibase.v1.ReleaseUsageResponse
+	(*ReserveAuthorizedUsageRequest)(nil),              // 9: delibase.v1.ReserveAuthorizedUsageRequest
+	(*ReserveAuthorizedUsageResponse)(nil),             // 10: delibase.v1.ReserveAuthorizedUsageResponse
+	(*CommitAuthorizedUsageRequest)(nil),               // 11: delibase.v1.CommitAuthorizedUsageRequest
+	(*CommitAuthorizedUsageResponse)(nil),              // 12: delibase.v1.CommitAuthorizedUsageResponse
+	(*ReleaseAuthorizedUsageRequest)(nil),              // 13: delibase.v1.ReleaseAuthorizedUsageRequest
+	(*ReleaseAuthorizedUsageResponse)(nil),             // 14: delibase.v1.ReleaseAuthorizedUsageResponse
+	(*MarkBackgroundUsageResourceDeletedRequest)(nil),  // 15: delibase.v1.MarkBackgroundUsageResourceDeletedRequest
+	(*MarkBackgroundUsageResourceDeletedResponse)(nil), // 16: delibase.v1.MarkBackgroundUsageResourceDeletedResponse
+	(*UuidV7)(nil),                                     // 17: delibase.v1.UuidV7
+	(*UsageUnits)(nil),                                 // 18: delibase.v1.UsageUnits
+	(*UsdMicros)(nil),                                  // 19: delibase.v1.UsdMicros
+	(ReservationStatus)(0),                             // 20: delibase.v1.ReservationStatus
+	(*timestamppb.Timestamp)(nil),                      // 21: google.protobuf.Timestamp
+	(*AuthorizedUsageContext)(nil),                     // 22: delibase.v1.AuthorizedUsageContext
+	(*IdempotencyKey)(nil),                             // 23: delibase.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),                          // 24: delibase.v1.IdempotencyResult
+	(*BackgroundUsagePeriodUsage)(nil),                 // 25: delibase.v1.BackgroundUsagePeriodUsage
+	(BackgroundUsagePurpose)(0),                        // 26: delibase.v1.BackgroundUsagePurpose
+	(*BackgroundUsageAuthorizationView)(nil),           // 27: delibase.v1.BackgroundUsageAuthorizationView
 }
 var file_delibase_v1_usage_proto_depIdxs = []int32{
-	15, // 0: delibase.v1.UsageReservation.reservation_id:type_name -> delibase.v1.UuidV7
-	15, // 1: delibase.v1.UsageReservation.organization_id:type_name -> delibase.v1.UuidV7
-	15, // 2: delibase.v1.UsageReservation.team_id:type_name -> delibase.v1.UuidV7
-	15, // 3: delibase.v1.UsageReservation.meter_id:type_name -> delibase.v1.UuidV7
-	15, // 4: delibase.v1.UsageReservation.price_version_id:type_name -> delibase.v1.UuidV7
-	15, // 5: delibase.v1.UsageReservation.user_account_id:type_name -> delibase.v1.UuidV7
-	15, // 6: delibase.v1.UsageReservation.service_identity_id:type_name -> delibase.v1.UuidV7
-	16, // 7: delibase.v1.UsageReservation.maximum_units:type_name -> delibase.v1.UsageUnits
-	17, // 8: delibase.v1.UsageReservation.usd_micros_per_unit:type_name -> delibase.v1.UsdMicros
-	17, // 9: delibase.v1.UsageReservation.maximum_cost:type_name -> delibase.v1.UsdMicros
-	17, // 10: delibase.v1.UsageReservation.held_credit:type_name -> delibase.v1.UsdMicros
-	17, // 11: delibase.v1.UsageReservation.held_overage:type_name -> delibase.v1.UsdMicros
-	18, // 12: delibase.v1.UsageReservation.status:type_name -> delibase.v1.ReservationStatus
-	19, // 13: delibase.v1.UsageReservation.created_at:type_name -> google.protobuf.Timestamp
-	19, // 14: delibase.v1.UsageReservation.expires_at:type_name -> google.protobuf.Timestamp
-	19, // 15: delibase.v1.UsageReservation.finalized_at:type_name -> google.protobuf.Timestamp
-	20, // 16: delibase.v1.UsageReservation.authorized_usage:type_name -> delibase.v1.AuthorizedUsageContext
-	15, // 17: delibase.v1.UsageCommit.usage_record_id:type_name -> delibase.v1.UuidV7
-	15, // 18: delibase.v1.UsageCommit.reservation_id:type_name -> delibase.v1.UuidV7
-	16, // 19: delibase.v1.UsageCommit.committed_units:type_name -> delibase.v1.UsageUnits
-	17, // 20: delibase.v1.UsageCommit.total_cost:type_name -> delibase.v1.UsdMicros
-	17, // 21: delibase.v1.UsageCommit.credit_applied:type_name -> delibase.v1.UsdMicros
-	17, // 22: delibase.v1.UsageCommit.overage_applied:type_name -> delibase.v1.UsdMicros
-	17, // 23: delibase.v1.UsageCommit.credit_hold_released:type_name -> delibase.v1.UsdMicros
-	17, // 24: delibase.v1.UsageCommit.overage_hold_released:type_name -> delibase.v1.UsdMicros
-	19, // 25: delibase.v1.UsageCommit.committed_at:type_name -> google.protobuf.Timestamp
-	15, // 26: delibase.v1.UsageRelease.reservation_id:type_name -> delibase.v1.UuidV7
-	17, // 27: delibase.v1.UsageRelease.credit_hold_released:type_name -> delibase.v1.UsdMicros
-	17, // 28: delibase.v1.UsageRelease.overage_hold_released:type_name -> delibase.v1.UsdMicros
-	18, // 29: delibase.v1.UsageRelease.reservation_status:type_name -> delibase.v1.ReservationStatus
-	19, // 30: delibase.v1.UsageRelease.finalized_at:type_name -> google.protobuf.Timestamp
-	15, // 31: delibase.v1.ReserveUsageRequest.organization_id:type_name -> delibase.v1.UuidV7
-	15, // 32: delibase.v1.ReserveUsageRequest.team_id:type_name -> delibase.v1.UuidV7
-	15, // 33: delibase.v1.ReserveUsageRequest.meter_id:type_name -> delibase.v1.UuidV7
-	16, // 34: delibase.v1.ReserveUsageRequest.maximum_units:type_name -> delibase.v1.UsageUnits
-	21, // 35: delibase.v1.ReserveUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	17, // 0: delibase.v1.UsageReservation.reservation_id:type_name -> delibase.v1.UuidV7
+	17, // 1: delibase.v1.UsageReservation.organization_id:type_name -> delibase.v1.UuidV7
+	17, // 2: delibase.v1.UsageReservation.team_id:type_name -> delibase.v1.UuidV7
+	17, // 3: delibase.v1.UsageReservation.meter_id:type_name -> delibase.v1.UuidV7
+	17, // 4: delibase.v1.UsageReservation.price_version_id:type_name -> delibase.v1.UuidV7
+	17, // 5: delibase.v1.UsageReservation.user_account_id:type_name -> delibase.v1.UuidV7
+	17, // 6: delibase.v1.UsageReservation.service_identity_id:type_name -> delibase.v1.UuidV7
+	18, // 7: delibase.v1.UsageReservation.maximum_units:type_name -> delibase.v1.UsageUnits
+	19, // 8: delibase.v1.UsageReservation.usd_micros_per_unit:type_name -> delibase.v1.UsdMicros
+	19, // 9: delibase.v1.UsageReservation.maximum_cost:type_name -> delibase.v1.UsdMicros
+	19, // 10: delibase.v1.UsageReservation.held_credit:type_name -> delibase.v1.UsdMicros
+	19, // 11: delibase.v1.UsageReservation.held_overage:type_name -> delibase.v1.UsdMicros
+	20, // 12: delibase.v1.UsageReservation.status:type_name -> delibase.v1.ReservationStatus
+	21, // 13: delibase.v1.UsageReservation.created_at:type_name -> google.protobuf.Timestamp
+	21, // 14: delibase.v1.UsageReservation.expires_at:type_name -> google.protobuf.Timestamp
+	21, // 15: delibase.v1.UsageReservation.finalized_at:type_name -> google.protobuf.Timestamp
+	22, // 16: delibase.v1.UsageReservation.authorized_usage:type_name -> delibase.v1.AuthorizedUsageContext
+	17, // 17: delibase.v1.UsageCommit.usage_record_id:type_name -> delibase.v1.UuidV7
+	17, // 18: delibase.v1.UsageCommit.reservation_id:type_name -> delibase.v1.UuidV7
+	18, // 19: delibase.v1.UsageCommit.committed_units:type_name -> delibase.v1.UsageUnits
+	19, // 20: delibase.v1.UsageCommit.total_cost:type_name -> delibase.v1.UsdMicros
+	19, // 21: delibase.v1.UsageCommit.credit_applied:type_name -> delibase.v1.UsdMicros
+	19, // 22: delibase.v1.UsageCommit.overage_applied:type_name -> delibase.v1.UsdMicros
+	19, // 23: delibase.v1.UsageCommit.credit_hold_released:type_name -> delibase.v1.UsdMicros
+	19, // 24: delibase.v1.UsageCommit.overage_hold_released:type_name -> delibase.v1.UsdMicros
+	21, // 25: delibase.v1.UsageCommit.committed_at:type_name -> google.protobuf.Timestamp
+	17, // 26: delibase.v1.UsageRelease.reservation_id:type_name -> delibase.v1.UuidV7
+	19, // 27: delibase.v1.UsageRelease.credit_hold_released:type_name -> delibase.v1.UsdMicros
+	19, // 28: delibase.v1.UsageRelease.overage_hold_released:type_name -> delibase.v1.UsdMicros
+	20, // 29: delibase.v1.UsageRelease.reservation_status:type_name -> delibase.v1.ReservationStatus
+	21, // 30: delibase.v1.UsageRelease.finalized_at:type_name -> google.protobuf.Timestamp
+	17, // 31: delibase.v1.ReserveUsageRequest.organization_id:type_name -> delibase.v1.UuidV7
+	17, // 32: delibase.v1.ReserveUsageRequest.team_id:type_name -> delibase.v1.UuidV7
+	17, // 33: delibase.v1.ReserveUsageRequest.meter_id:type_name -> delibase.v1.UuidV7
+	18, // 34: delibase.v1.ReserveUsageRequest.maximum_units:type_name -> delibase.v1.UsageUnits
+	23, // 35: delibase.v1.ReserveUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
 	0,  // 36: delibase.v1.ReserveUsageResponse.reservation:type_name -> delibase.v1.UsageReservation
-	22, // 37: delibase.v1.ReserveUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	15, // 38: delibase.v1.CommitUsageRequest.organization_id:type_name -> delibase.v1.UuidV7
-	15, // 39: delibase.v1.CommitUsageRequest.reservation_id:type_name -> delibase.v1.UuidV7
-	16, // 40: delibase.v1.CommitUsageRequest.actual_units:type_name -> delibase.v1.UsageUnits
-	21, // 41: delibase.v1.CommitUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	24, // 37: delibase.v1.ReserveUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	17, // 38: delibase.v1.CommitUsageRequest.organization_id:type_name -> delibase.v1.UuidV7
+	17, // 39: delibase.v1.CommitUsageRequest.reservation_id:type_name -> delibase.v1.UuidV7
+	18, // 40: delibase.v1.CommitUsageRequest.actual_units:type_name -> delibase.v1.UsageUnits
+	23, // 41: delibase.v1.CommitUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
 	0,  // 42: delibase.v1.CommitUsageResponse.reservation:type_name -> delibase.v1.UsageReservation
 	1,  // 43: delibase.v1.CommitUsageResponse.commit:type_name -> delibase.v1.UsageCommit
-	22, // 44: delibase.v1.CommitUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	15, // 45: delibase.v1.ReleaseUsageRequest.organization_id:type_name -> delibase.v1.UuidV7
-	15, // 46: delibase.v1.ReleaseUsageRequest.reservation_id:type_name -> delibase.v1.UuidV7
-	21, // 47: delibase.v1.ReleaseUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	24, // 44: delibase.v1.CommitUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	17, // 45: delibase.v1.ReleaseUsageRequest.organization_id:type_name -> delibase.v1.UuidV7
+	17, // 46: delibase.v1.ReleaseUsageRequest.reservation_id:type_name -> delibase.v1.UuidV7
+	23, // 47: delibase.v1.ReleaseUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
 	0,  // 48: delibase.v1.ReleaseUsageResponse.reservation:type_name -> delibase.v1.UsageReservation
 	2,  // 49: delibase.v1.ReleaseUsageResponse.release:type_name -> delibase.v1.UsageRelease
-	22, // 50: delibase.v1.ReleaseUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	20, // 51: delibase.v1.ReserveAuthorizedUsageRequest.context:type_name -> delibase.v1.AuthorizedUsageContext
-	16, // 52: delibase.v1.ReserveAuthorizedUsageRequest.maximum_units:type_name -> delibase.v1.UsageUnits
-	21, // 53: delibase.v1.ReserveAuthorizedUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	24, // 50: delibase.v1.ReleaseUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	22, // 51: delibase.v1.ReserveAuthorizedUsageRequest.context:type_name -> delibase.v1.AuthorizedUsageContext
+	18, // 52: delibase.v1.ReserveAuthorizedUsageRequest.maximum_units:type_name -> delibase.v1.UsageUnits
+	23, // 53: delibase.v1.ReserveAuthorizedUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
 	0,  // 54: delibase.v1.ReserveAuthorizedUsageResponse.reservation:type_name -> delibase.v1.UsageReservation
-	23, // 55: delibase.v1.ReserveAuthorizedUsageResponse.period_usage:type_name -> delibase.v1.BackgroundUsagePeriodUsage
-	22, // 56: delibase.v1.ReserveAuthorizedUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	20, // 57: delibase.v1.CommitAuthorizedUsageRequest.context:type_name -> delibase.v1.AuthorizedUsageContext
-	15, // 58: delibase.v1.CommitAuthorizedUsageRequest.reservation_id:type_name -> delibase.v1.UuidV7
-	16, // 59: delibase.v1.CommitAuthorizedUsageRequest.actual_units:type_name -> delibase.v1.UsageUnits
-	21, // 60: delibase.v1.CommitAuthorizedUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	25, // 55: delibase.v1.ReserveAuthorizedUsageResponse.period_usage:type_name -> delibase.v1.BackgroundUsagePeriodUsage
+	24, // 56: delibase.v1.ReserveAuthorizedUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	22, // 57: delibase.v1.CommitAuthorizedUsageRequest.context:type_name -> delibase.v1.AuthorizedUsageContext
+	17, // 58: delibase.v1.CommitAuthorizedUsageRequest.reservation_id:type_name -> delibase.v1.UuidV7
+	18, // 59: delibase.v1.CommitAuthorizedUsageRequest.actual_units:type_name -> delibase.v1.UsageUnits
+	23, // 60: delibase.v1.CommitAuthorizedUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
 	0,  // 61: delibase.v1.CommitAuthorizedUsageResponse.reservation:type_name -> delibase.v1.UsageReservation
 	1,  // 62: delibase.v1.CommitAuthorizedUsageResponse.commit:type_name -> delibase.v1.UsageCommit
-	23, // 63: delibase.v1.CommitAuthorizedUsageResponse.period_usage:type_name -> delibase.v1.BackgroundUsagePeriodUsage
-	22, // 64: delibase.v1.CommitAuthorizedUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	20, // 65: delibase.v1.ReleaseAuthorizedUsageRequest.context:type_name -> delibase.v1.AuthorizedUsageContext
-	15, // 66: delibase.v1.ReleaseAuthorizedUsageRequest.reservation_id:type_name -> delibase.v1.UuidV7
-	16, // 67: delibase.v1.ReleaseAuthorizedUsageRequest.reserved_units:type_name -> delibase.v1.UsageUnits
-	21, // 68: delibase.v1.ReleaseAuthorizedUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	25, // 63: delibase.v1.CommitAuthorizedUsageResponse.period_usage:type_name -> delibase.v1.BackgroundUsagePeriodUsage
+	24, // 64: delibase.v1.CommitAuthorizedUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	22, // 65: delibase.v1.ReleaseAuthorizedUsageRequest.context:type_name -> delibase.v1.AuthorizedUsageContext
+	17, // 66: delibase.v1.ReleaseAuthorizedUsageRequest.reservation_id:type_name -> delibase.v1.UuidV7
+	18, // 67: delibase.v1.ReleaseAuthorizedUsageRequest.reserved_units:type_name -> delibase.v1.UsageUnits
+	23, // 68: delibase.v1.ReleaseAuthorizedUsageRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
 	0,  // 69: delibase.v1.ReleaseAuthorizedUsageResponse.reservation:type_name -> delibase.v1.UsageReservation
 	2,  // 70: delibase.v1.ReleaseAuthorizedUsageResponse.release:type_name -> delibase.v1.UsageRelease
-	23, // 71: delibase.v1.ReleaseAuthorizedUsageResponse.period_usage:type_name -> delibase.v1.BackgroundUsagePeriodUsage
-	22, // 72: delibase.v1.ReleaseAuthorizedUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
-	3,  // 73: delibase.v1.UsageService.ReserveUsage:input_type -> delibase.v1.ReserveUsageRequest
-	5,  // 74: delibase.v1.UsageService.CommitUsage:input_type -> delibase.v1.CommitUsageRequest
-	7,  // 75: delibase.v1.UsageService.ReleaseUsage:input_type -> delibase.v1.ReleaseUsageRequest
-	9,  // 76: delibase.v1.UsageService.ReserveAuthorizedUsage:input_type -> delibase.v1.ReserveAuthorizedUsageRequest
-	11, // 77: delibase.v1.UsageService.CommitAuthorizedUsage:input_type -> delibase.v1.CommitAuthorizedUsageRequest
-	13, // 78: delibase.v1.UsageService.ReleaseAuthorizedUsage:input_type -> delibase.v1.ReleaseAuthorizedUsageRequest
-	4,  // 79: delibase.v1.UsageService.ReserveUsage:output_type -> delibase.v1.ReserveUsageResponse
-	6,  // 80: delibase.v1.UsageService.CommitUsage:output_type -> delibase.v1.CommitUsageResponse
-	8,  // 81: delibase.v1.UsageService.ReleaseUsage:output_type -> delibase.v1.ReleaseUsageResponse
-	10, // 82: delibase.v1.UsageService.ReserveAuthorizedUsage:output_type -> delibase.v1.ReserveAuthorizedUsageResponse
-	12, // 83: delibase.v1.UsageService.CommitAuthorizedUsage:output_type -> delibase.v1.CommitAuthorizedUsageResponse
-	14, // 84: delibase.v1.UsageService.ReleaseAuthorizedUsage:output_type -> delibase.v1.ReleaseAuthorizedUsageResponse
-	79, // [79:85] is the sub-list for method output_type
-	73, // [73:79] is the sub-list for method input_type
-	73, // [73:73] is the sub-list for extension type_name
-	73, // [73:73] is the sub-list for extension extendee
-	0,  // [0:73] is the sub-list for field type_name
+	25, // 71: delibase.v1.ReleaseAuthorizedUsageResponse.period_usage:type_name -> delibase.v1.BackgroundUsagePeriodUsage
+	24, // 72: delibase.v1.ReleaseAuthorizedUsageResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	17, // 73: delibase.v1.MarkBackgroundUsageResourceDeletedRequest.authorization_id:type_name -> delibase.v1.UuidV7
+	26, // 74: delibase.v1.MarkBackgroundUsageResourceDeletedRequest.purpose:type_name -> delibase.v1.BackgroundUsagePurpose
+	17, // 75: delibase.v1.MarkBackgroundUsageResourceDeletedRequest.feature_resource_id:type_name -> delibase.v1.UuidV7
+	23, // 76: delibase.v1.MarkBackgroundUsageResourceDeletedRequest.idempotency:type_name -> delibase.v1.IdempotencyKey
+	27, // 77: delibase.v1.MarkBackgroundUsageResourceDeletedResponse.authorization:type_name -> delibase.v1.BackgroundUsageAuthorizationView
+	24, // 78: delibase.v1.MarkBackgroundUsageResourceDeletedResponse.idempotency:type_name -> delibase.v1.IdempotencyResult
+	3,  // 79: delibase.v1.UsageService.ReserveUsage:input_type -> delibase.v1.ReserveUsageRequest
+	5,  // 80: delibase.v1.UsageService.CommitUsage:input_type -> delibase.v1.CommitUsageRequest
+	7,  // 81: delibase.v1.UsageService.ReleaseUsage:input_type -> delibase.v1.ReleaseUsageRequest
+	9,  // 82: delibase.v1.UsageService.ReserveAuthorizedUsage:input_type -> delibase.v1.ReserveAuthorizedUsageRequest
+	11, // 83: delibase.v1.UsageService.CommitAuthorizedUsage:input_type -> delibase.v1.CommitAuthorizedUsageRequest
+	13, // 84: delibase.v1.UsageService.ReleaseAuthorizedUsage:input_type -> delibase.v1.ReleaseAuthorizedUsageRequest
+	15, // 85: delibase.v1.UsageService.MarkBackgroundUsageResourceDeleted:input_type -> delibase.v1.MarkBackgroundUsageResourceDeletedRequest
+	4,  // 86: delibase.v1.UsageService.ReserveUsage:output_type -> delibase.v1.ReserveUsageResponse
+	6,  // 87: delibase.v1.UsageService.CommitUsage:output_type -> delibase.v1.CommitUsageResponse
+	8,  // 88: delibase.v1.UsageService.ReleaseUsage:output_type -> delibase.v1.ReleaseUsageResponse
+	10, // 89: delibase.v1.UsageService.ReserveAuthorizedUsage:output_type -> delibase.v1.ReserveAuthorizedUsageResponse
+	12, // 90: delibase.v1.UsageService.CommitAuthorizedUsage:output_type -> delibase.v1.CommitAuthorizedUsageResponse
+	14, // 91: delibase.v1.UsageService.ReleaseAuthorizedUsage:output_type -> delibase.v1.ReleaseAuthorizedUsageResponse
+	16, // 92: delibase.v1.UsageService.MarkBackgroundUsageResourceDeleted:output_type -> delibase.v1.MarkBackgroundUsageResourceDeletedResponse
+	86, // [86:93] is the sub-list for method output_type
+	79, // [79:86] is the sub-list for method input_type
+	79, // [79:79] is the sub-list for extension type_name
+	79, // [79:79] is the sub-list for extension extendee
+	0,  // [0:79] is the sub-list for field type_name
 }
 
 func init() { file_delibase_v1_usage_proto_init() }
@@ -1428,6 +1580,7 @@ func file_delibase_v1_usage_proto_init() {
 	if File_delibase_v1_usage_proto != nil {
 		return
 	}
+	file_delibase_v1_billing_proto_init()
 	file_delibase_v1_common_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1435,7 +1588,7 @@ func file_delibase_v1_usage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delibase_v1_usage_proto_rawDesc), len(file_delibase_v1_usage_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

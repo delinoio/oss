@@ -194,6 +194,10 @@ func TestAuthorizedUsageProceduresRequireOnlyDedicatedServiceScopes(t *testing.T
 			procedure: delibasev1connect.UsageServiceReleaseAuthorizedUsageProcedure,
 			scope:     "delibase:usage:release",
 		},
+		{
+			procedure: delibasev1connect.UsageServiceMarkBackgroundUsageResourceDeletedProcedure,
+			scope:     "delibase:usage:release",
+		},
 	}
 	for _, test := range tests {
 		test := test

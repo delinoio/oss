@@ -25,7 +25,27 @@ SELECT
     meter.id, meter.app_id, meter.meter_key, meter.name, meter.description,
     meter.unit_name, meter.unit_precision, meter.reservation_ttl_seconds,
     meter.enabled, price.id AS price_version_id, price.usd_micros_per_unit,
-    price.effective_from, price.effective_until
+    price.effective_from, price.effective_until,
+    ARRAY(
+        SELECT service.id
+        FROM service_meter_allowlists AS allowlist
+        JOIN service_identities AS service
+          ON service.id = allowlist.service_identity_id
+         AND service.enabled
+        WHERE allowlist.meter_id = meter.id
+          AND allowlist.enabled
+        ORDER BY service.id
+    )::uuid[] AS authorization_service_identity_ids,
+    ARRAY(
+        SELECT service.name
+        FROM service_meter_allowlists AS allowlist
+        JOIN service_identities AS service
+          ON service.id = allowlist.service_identity_id
+         AND service.enabled
+        WHERE allowlist.meter_id = meter.id
+          AND allowlist.enabled
+        ORDER BY service.id
+    )::text[] AS authorization_service_names
 FROM catalog_meters AS meter
 JOIN catalog_apps AS app ON app.id = meter.app_id AND app.enabled
 JOIN LATERAL (
@@ -48,7 +68,27 @@ SELECT
     meter.id, meter.app_id, meter.meter_key, meter.name, meter.description,
     meter.unit_name, meter.unit_precision, meter.reservation_ttl_seconds,
     meter.enabled, price.id AS price_version_id, price.usd_micros_per_unit,
-    price.effective_from, price.effective_until
+    price.effective_from, price.effective_until,
+    ARRAY(
+        SELECT service.id
+        FROM service_meter_allowlists AS allowlist
+        JOIN service_identities AS service
+          ON service.id = allowlist.service_identity_id
+         AND service.enabled
+        WHERE allowlist.meter_id = meter.id
+          AND allowlist.enabled
+        ORDER BY service.id
+    )::uuid[] AS authorization_service_identity_ids,
+    ARRAY(
+        SELECT service.name
+        FROM service_meter_allowlists AS allowlist
+        JOIN service_identities AS service
+          ON service.id = allowlist.service_identity_id
+         AND service.enabled
+        WHERE allowlist.meter_id = meter.id
+          AND allowlist.enabled
+        ORDER BY service.id
+    )::text[] AS authorization_service_names
 FROM catalog_meters AS meter
 JOIN catalog_apps AS app ON app.id = meter.app_id AND app.enabled
 JOIN LATERAL (

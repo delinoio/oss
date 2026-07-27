@@ -112,13 +112,14 @@ func TestBackgroundUsageContract(t *testing.T) {
 			ByName("UsageService").
 			Methods(),
 	)
-	if len(usageMethods) != 6 {
+	if len(usageMethods) != 7 {
 		t.Errorf("UsageService methods = %v", usageMethods)
 	}
 	for _, method := range []string{
 		"ReserveAuthorizedUsage",
 		"CommitAuthorizedUsage",
 		"ReleaseAuthorizedUsage",
+		"MarkBackgroundUsageResourceDeleted",
 	} {
 		if !slices.Contains(usageMethods, method) {
 			t.Errorf("UsageService missing %s", method)
@@ -160,6 +161,7 @@ func TestBackgroundUsageContract(t *testing.T) {
 		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE,
 		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE,
 		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE,
+		delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED,
 	} {
 		if operation == delibasev1.IdempotentOperation_IDEMPOTENT_OPERATION_UNSPECIFIED {
 			t.Fatal("a background usage idempotency operation resolved to unspecified")
@@ -221,6 +223,23 @@ func TestBackgroundUsageAuthorizationShape(t *testing.T) {
 	if listRequest.Fields().ByName("page") == nil ||
 		listResponse.Fields().ByName("page") == nil {
 		t.Error("background usage authorization list is missing opaque pagination")
+	}
+
+	catalogMeter := delibasev1.File_delibase_v1_catalog_proto.
+		Messages().
+		ByName("CatalogMeter")
+	if catalogMeter.Fields().ByName("authorization_targets") == nil {
+		t.Error("CatalogMeter is missing public background-authorization targets")
+	}
+
+	for _, messageName := range []protoreflect.Name{
+		"CommitAuthorizedUsageRequest",
+		"ReleaseAuthorizedUsageRequest",
+	} {
+		request := delibasev1.File_delibase_v1_usage_proto.Messages().ByName(messageName)
+		if request.Fields().ByName("reservation_id") == nil {
+			t.Errorf("%s is missing reservation_id", messageName)
+		}
 	}
 }
 

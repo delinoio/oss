@@ -25,35 +25,36 @@ const (
 type IdempotentOperation int32
 
 const (
-	IdempotentOperation_IDEMPOTENT_OPERATION_UNSPECIFIED                           IdempotentOperation = 0
-	IdempotentOperation_IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING                   IdempotentOperation = 1
-	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ACCOUNT                        IdempotentOperation = 2
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_ORGANIZATION                   IdempotentOperation = 3
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION                   IdempotentOperation = 4
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_SLUG              IdempotentOperation = 5
-	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ORGANIZATION                   IdempotentOperation = 6
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_MEMBER_ROLE       IdempotentOperation = 7
-	IdempotentOperation_IDEMPOTENT_OPERATION_REMOVE_ORGANIZATION_MEMBER            IdempotentOperation = 8
-	IdempotentOperation_IDEMPOTENT_OPERATION_LEAVE_ORGANIZATION                    IdempotentOperation = 9
-	IdempotentOperation_IDEMPOTENT_OPERATION_ACCEPT_INVITATION                     IdempotentOperation = 11
-	IdempotentOperation_IDEMPOTENT_OPERATION_REVOKE_INVITATION                     IdempotentOperation = 12
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_TEAM                           IdempotentOperation = 13
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_TEAM                           IdempotentOperation = 14
-	IdempotentOperation_IDEMPOTENT_OPERATION_MOVE_TEAM                             IdempotentOperation = 15
-	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_TEAM_SUBTREE                   IdempotentOperation = 16
-	IdempotentOperation_IDEMPOTENT_OPERATION_SET_TEAM_MEMBERSHIP                   IdempotentOperation = 17
-	IdempotentOperation_IDEMPOTENT_OPERATION_REMOVE_TEAM_MEMBERSHIP                IdempotentOperation = 18
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT          IdempotentOperation = 19
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION         IdempotentOperation = 20
-	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT                  IdempotentOperation = 21
-	IdempotentOperation_IDEMPOTENT_OPERATION_RESERVE_USAGE                         IdempotentOperation = 22
-	IdempotentOperation_IDEMPOTENT_OPERATION_COMMIT_USAGE                          IdempotentOperation = 23
-	IdempotentOperation_IDEMPOTENT_OPERATION_RELEASE_USAGE                         IdempotentOperation = 24
-	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION IdempotentOperation = 25
-	IdempotentOperation_IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION IdempotentOperation = 26
-	IdempotentOperation_IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE              IdempotentOperation = 27
-	IdempotentOperation_IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE               IdempotentOperation = 28
-	IdempotentOperation_IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE              IdempotentOperation = 29
+	IdempotentOperation_IDEMPOTENT_OPERATION_UNSPECIFIED                            IdempotentOperation = 0
+	IdempotentOperation_IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING                    IdempotentOperation = 1
+	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ACCOUNT                         IdempotentOperation = 2
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_ORGANIZATION                    IdempotentOperation = 3
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION                    IdempotentOperation = 4
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_SLUG               IdempotentOperation = 5
+	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_ORGANIZATION                    IdempotentOperation = 6
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_MEMBER_ROLE        IdempotentOperation = 7
+	IdempotentOperation_IDEMPOTENT_OPERATION_REMOVE_ORGANIZATION_MEMBER             IdempotentOperation = 8
+	IdempotentOperation_IDEMPOTENT_OPERATION_LEAVE_ORGANIZATION                     IdempotentOperation = 9
+	IdempotentOperation_IDEMPOTENT_OPERATION_ACCEPT_INVITATION                      IdempotentOperation = 11
+	IdempotentOperation_IDEMPOTENT_OPERATION_REVOKE_INVITATION                      IdempotentOperation = 12
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_TEAM                            IdempotentOperation = 13
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_TEAM                            IdempotentOperation = 14
+	IdempotentOperation_IDEMPOTENT_OPERATION_MOVE_TEAM                              IdempotentOperation = 15
+	IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_TEAM_SUBTREE                    IdempotentOperation = 16
+	IdempotentOperation_IDEMPOTENT_OPERATION_SET_TEAM_MEMBERSHIP                    IdempotentOperation = 17
+	IdempotentOperation_IDEMPOTENT_OPERATION_REMOVE_TEAM_MEMBERSHIP                 IdempotentOperation = 18
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT           IdempotentOperation = 19
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION          IdempotentOperation = 20
+	IdempotentOperation_IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT                   IdempotentOperation = 21
+	IdempotentOperation_IDEMPOTENT_OPERATION_RESERVE_USAGE                          IdempotentOperation = 22
+	IdempotentOperation_IDEMPOTENT_OPERATION_COMMIT_USAGE                           IdempotentOperation = 23
+	IdempotentOperation_IDEMPOTENT_OPERATION_RELEASE_USAGE                          IdempotentOperation = 24
+	IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION  IdempotentOperation = 25
+	IdempotentOperation_IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION  IdempotentOperation = 26
+	IdempotentOperation_IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE               IdempotentOperation = 27
+	IdempotentOperation_IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE                IdempotentOperation = 28
+	IdempotentOperation_IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE               IdempotentOperation = 29
+	IdempotentOperation_IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED IdempotentOperation = 30
 )
 
 // Enum value maps for IdempotentOperation.
@@ -88,37 +89,39 @@ var (
 		27: "IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE",
 		28: "IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE",
 		29: "IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE",
+		30: "IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED",
 	}
 	IdempotentOperation_value = map[string]int32{
-		"IDEMPOTENT_OPERATION_UNSPECIFIED":                           0,
-		"IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING":                   1,
-		"IDEMPOTENT_OPERATION_DELETE_ACCOUNT":                        2,
-		"IDEMPOTENT_OPERATION_CREATE_ORGANIZATION":                   3,
-		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION":                   4,
-		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_SLUG":              5,
-		"IDEMPOTENT_OPERATION_DELETE_ORGANIZATION":                   6,
-		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_MEMBER_ROLE":       7,
-		"IDEMPOTENT_OPERATION_REMOVE_ORGANIZATION_MEMBER":            8,
-		"IDEMPOTENT_OPERATION_LEAVE_ORGANIZATION":                    9,
-		"IDEMPOTENT_OPERATION_ACCEPT_INVITATION":                     11,
-		"IDEMPOTENT_OPERATION_REVOKE_INVITATION":                     12,
-		"IDEMPOTENT_OPERATION_CREATE_TEAM":                           13,
-		"IDEMPOTENT_OPERATION_UPDATE_TEAM":                           14,
-		"IDEMPOTENT_OPERATION_MOVE_TEAM":                             15,
-		"IDEMPOTENT_OPERATION_DELETE_TEAM_SUBTREE":                   16,
-		"IDEMPOTENT_OPERATION_SET_TEAM_MEMBERSHIP":                   17,
-		"IDEMPOTENT_OPERATION_REMOVE_TEAM_MEMBERSHIP":                18,
-		"IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT":          19,
-		"IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION":         20,
-		"IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT":                  21,
-		"IDEMPOTENT_OPERATION_RESERVE_USAGE":                         22,
-		"IDEMPOTENT_OPERATION_COMMIT_USAGE":                          23,
-		"IDEMPOTENT_OPERATION_RELEASE_USAGE":                         24,
-		"IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION": 25,
-		"IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION": 26,
-		"IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE":              27,
-		"IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE":               28,
-		"IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE":              29,
+		"IDEMPOTENT_OPERATION_UNSPECIFIED":                            0,
+		"IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING":                    1,
+		"IDEMPOTENT_OPERATION_DELETE_ACCOUNT":                         2,
+		"IDEMPOTENT_OPERATION_CREATE_ORGANIZATION":                    3,
+		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION":                    4,
+		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_SLUG":               5,
+		"IDEMPOTENT_OPERATION_DELETE_ORGANIZATION":                    6,
+		"IDEMPOTENT_OPERATION_UPDATE_ORGANIZATION_MEMBER_ROLE":        7,
+		"IDEMPOTENT_OPERATION_REMOVE_ORGANIZATION_MEMBER":             8,
+		"IDEMPOTENT_OPERATION_LEAVE_ORGANIZATION":                     9,
+		"IDEMPOTENT_OPERATION_ACCEPT_INVITATION":                      11,
+		"IDEMPOTENT_OPERATION_REVOKE_INVITATION":                      12,
+		"IDEMPOTENT_OPERATION_CREATE_TEAM":                            13,
+		"IDEMPOTENT_OPERATION_UPDATE_TEAM":                            14,
+		"IDEMPOTENT_OPERATION_MOVE_TEAM":                              15,
+		"IDEMPOTENT_OPERATION_DELETE_TEAM_SUBTREE":                    16,
+		"IDEMPOTENT_OPERATION_SET_TEAM_MEMBERSHIP":                    17,
+		"IDEMPOTENT_OPERATION_REMOVE_TEAM_MEMBERSHIP":                 18,
+		"IDEMPOTENT_OPERATION_CREATE_SUBSCRIPTION_CHECKOUT":           19,
+		"IDEMPOTENT_OPERATION_CREATE_BILLING_PORTAL_SESSION":          20,
+		"IDEMPOTENT_OPERATION_UPDATE_OVERAGE_LIMIT":                   21,
+		"IDEMPOTENT_OPERATION_RESERVE_USAGE":                          22,
+		"IDEMPOTENT_OPERATION_COMMIT_USAGE":                           23,
+		"IDEMPOTENT_OPERATION_RELEASE_USAGE":                          24,
+		"IDEMPOTENT_OPERATION_CREATE_BACKGROUND_USAGE_AUTHORIZATION":  25,
+		"IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION":  26,
+		"IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE":               27,
+		"IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE":                28,
+		"IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE":               29,
+		"IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED": 30,
 	}
 )
 
@@ -1748,8 +1751,11 @@ func (*BackgroundUsageOwner_OrganizationId) isBackgroundUsageOwner_Owner() {}
 
 // AuthorizedUsageContext repeats the authorization-bound values that an M2M
 // request may not substitute. period_start must be the canonical UTC midnight
-// for a UTC_DAY period. The authenticated service identity is intentionally not
-// caller supplied and is added to the server-side request digest.
+// for a UTC_DAY period. Reserve accepts only the current or immediately
+// preceding UTC day according to server time, so a caller cannot create
+// arbitrary past or future quota buckets. Commit and release use the period
+// stored with the reservation. The authenticated service identity is
+// intentionally not caller supplied and is added to the server-side digest.
 type AuthorizedUsageContext struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	AuthorizationId   *UuidV7                `protobuf:"bytes,1,opt,name=authorization_id,json=authorizationId,proto3" json:"authorization_id,omitempty"`
@@ -2143,7 +2149,7 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	"\bmetadata\x18\x06 \x03(\v2&.delibase.v1.ErrorDetail.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x9b\v\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xdc\v\n" +
 	"\x13IdempotentOperation\x12$\n" +
 	" IDEMPOTENT_OPERATION_UNSPECIFIED\x10\x00\x12,\n" +
 	"(IDEMPOTENT_OPERATION_COMPLETE_ONBOARDING\x10\x01\x12'\n" +
@@ -2173,7 +2179,8 @@ const file_delibase_v1_common_proto_rawDesc = "" +
 	":IDEMPOTENT_OPERATION_REVOKE_BACKGROUND_USAGE_AUTHORIZATION\x10\x1a\x121\n" +
 	"-IDEMPOTENT_OPERATION_RESERVE_AUTHORIZED_USAGE\x10\x1b\x120\n" +
 	",IDEMPOTENT_OPERATION_COMMIT_AUTHORIZED_USAGE\x10\x1c\x121\n" +
-	"-IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE\x10\x1d\"\x04\b\n" +
+	"-IDEMPOTENT_OPERATION_RELEASE_AUTHORIZED_USAGE\x10\x1d\x12?\n" +
+	";IDEMPOTENT_OPERATION_MARK_BACKGROUND_USAGE_RESOURCE_DELETED\x10\x1e\"\x04\b\n" +
 	"\x10\n" +
 	"*&IDEMPOTENT_OPERATION_CREATE_INVITATION*\xa8\x01\n" +
 	"\rAccountStatus\x12\x1e\n" +

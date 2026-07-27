@@ -195,6 +195,8 @@ func connectPolicy(procedure string) authmiddleware.Requirement {
 		return authorizedUsageRequirement("delibase:usage:commit")
 	case delibasev1connect.UsageServiceReleaseAuthorizedUsageProcedure:
 		return authorizedUsageRequirement("delibase:usage:release")
+	case delibasev1connect.UsageServiceMarkBackgroundUsageResourceDeletedProcedure:
+		return authorizedUsageRequirement("delibase:usage:release")
 	default:
 		// The invalid zero mode is intentional: any newly generated procedure
 		// must be added explicitly before it is reachable.

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package delibase.v1;
 
+import "delibase/v1/billing.proto";
 import "delibase/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -103,6 +104,7 @@ message ReserveAuthorizedUsageResponse {
 
 message CommitAuthorizedUsageRequest {
   AuthorizedUsageContext context = 1;
+  // Included in the service-scoped replay digest.
   UuidV7 reservation_id = 2;
   UsageUnits actual_units = 3;
   IdempotencyKey idempotency = 4;
@@ -117,6 +119,7 @@ message CommitAuthorizedUsageResponse {
 
 message ReleaseAuthorizedUsageRequest {
   AuthorizedUsageContext context = 1;
+  // Included in the service-scoped replay digest.
   UuidV7 reservation_id = 2;
   // Must equal the reservation's authorized maximum so the release replay
   // digest binds units as well as authorization, service, purpose, resource,
@@ -130,6 +133,19 @@ message ReleaseAuthorizedUsageResponse {
   UsageRelease release = 2;
   BackgroundUsagePeriodUsage period_usage = 3;
   IdempotencyResult idempotency = 4;
+}
+
+message MarkBackgroundUsageResourceDeletedRequest {
+  UuidV7 authorization_id = 1;
+  BackgroundUsagePurpose purpose = 2;
+  UuidV7 feature_resource_id = 3;
+  int64 expected_revision = 4;
+  IdempotencyKey idempotency = 5;
+}
+
+message MarkBackgroundUsageResourceDeletedResponse {
+  BackgroundUsageAuthorizationView authorization = 1;
+  IdempotencyResult idempotency = 2;
 }
 
 // UsageService is server-to-server only. Every RPC requires a Logto M2M bearer
@@ -157,4 +173,8 @@ service UsageService {
   // same authorization and authenticated service. No forwarded user bearer is
   // accepted or persisted.
   rpc ReleaseAuthorizedUsage(ReleaseAuthorizedUsageRequest) returns (ReleaseAuthorizedUsageResponse);
+  // M2M-only. Requires delibase:usage:release. The authenticated bound service
+  // idempotently transitions the matching grant to RESOURCE_DELETED before the
+  // external feature resource disappears.
+  rpc MarkBackgroundUsageResourceDeleted(MarkBackgroundUsageResourceDeletedRequest) returns (MarkBackgroundUsageResourceDeletedResponse);
 }
