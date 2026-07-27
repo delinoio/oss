@@ -174,7 +174,8 @@ service UsageService {
   // accepted or persisted.
   rpc ReleaseAuthorizedUsage(ReleaseAuthorizedUsageRequest) returns (ReleaseAuthorizedUsageResponse);
   // M2M-only. Requires delibase:usage:release. The authenticated bound service
-  // idempotently transitions the matching grant to RESOURCE_DELETED before the
-  // external feature resource disappears.
+  // idempotently transitions a matching ACTIVE grant to RESOURCE_DELETED before
+  // the external feature resource disappears. An already closed matching grant
+  // returns its current status and revision without another transition.
   rpc MarkBackgroundUsageResourceDeleted(MarkBackgroundUsageResourceDeletedRequest) returns (MarkBackgroundUsageResourceDeletedResponse);
 }

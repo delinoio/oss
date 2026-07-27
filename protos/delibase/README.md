@@ -59,11 +59,14 @@ only the current or immediately preceding canonical UTC day according to server
 time, while commit/release use the reservation's stored period. Public catalog
 meters expose stable service authorization target UUIDs and safe names without
 Logto client IDs or credentials. The resource-deletion method lets the bound
-service idempotently transition the matching grant to `RESOURCE_DELETED`.
-The server rejects substitutions, stale access or status, period-limit overflow,
-and altered replays with stable background-usage `ErrorReason` values. These
-additions do not create another service: the package still contains exactly the
-existing six services.
+service idempotently transition a matching `ACTIVE` grant to
+`RESOURCE_DELETED`. For an exact matching grant already closed as `REVOKED`,
+`ACCESS_LOST`, `RESOURCE_DELETED`, or `OWNER_DELETED`, it returns the current
+status and revision without transition even when the expected revision predates
+closure; future revisions and substitutions fail closed. The server rejects
+stale active revisions, period-limit overflow, and altered replays with stable
+background-usage `ErrorReason` values. These additions do not create another
+service: the package still contains exactly the existing six services.
 
 See [AUTHENTICATION.md](AUTHENTICATION.md) for token metadata and scopes.
 

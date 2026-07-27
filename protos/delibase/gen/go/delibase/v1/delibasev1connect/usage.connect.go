@@ -77,8 +77,9 @@ type UsageServiceClient interface {
 	// accepted or persisted.
 	ReleaseAuthorizedUsage(context.Context, *connect.Request[v1.ReleaseAuthorizedUsageRequest]) (*connect.Response[v1.ReleaseAuthorizedUsageResponse], error)
 	// M2M-only. Requires delibase:usage:release. The authenticated bound service
-	// idempotently transitions the matching grant to RESOURCE_DELETED before the
-	// external feature resource disappears.
+	// idempotently transitions a matching ACTIVE grant to RESOURCE_DELETED before
+	// the external feature resource disappears. An already closed matching grant
+	// returns its current status and revision without another transition.
 	MarkBackgroundUsageResourceDeleted(context.Context, *connect.Request[v1.MarkBackgroundUsageResourceDeletedRequest]) (*connect.Response[v1.MarkBackgroundUsageResourceDeletedResponse], error)
 }
 
@@ -206,8 +207,9 @@ type UsageServiceHandler interface {
 	// accepted or persisted.
 	ReleaseAuthorizedUsage(context.Context, *connect.Request[v1.ReleaseAuthorizedUsageRequest]) (*connect.Response[v1.ReleaseAuthorizedUsageResponse], error)
 	// M2M-only. Requires delibase:usage:release. The authenticated bound service
-	// idempotently transitions the matching grant to RESOURCE_DELETED before the
-	// external feature resource disappears.
+	// idempotently transitions a matching ACTIVE grant to RESOURCE_DELETED before
+	// the external feature resource disappears. An already closed matching grant
+	// returns its current status and revision without another transition.
 	MarkBackgroundUsageResourceDeleted(context.Context, *connect.Request[v1.MarkBackgroundUsageResourceDeletedRequest]) (*connect.Response[v1.MarkBackgroundUsageResourceDeletedResponse], error)
 }
 

@@ -990,7 +990,7 @@ func (service *Usage) MarkBackgroundUsageResourceDeleted(
 			); transactionErr != nil {
 				return transactionErr
 			}
-			if _, transactionErr = queries.LockOrganizationForBilling(
+			if _, transactionErr = queries.LockOrganizationForBillingHistory(
 				ctx,
 				current.OrganizationID,
 			); transactionErr != nil {
@@ -1032,32 +1032,43 @@ func (service *Usage) MarkBackgroundUsageResourceDeleted(
 			); transactionErr != nil {
 				return transactionErr
 			}
-			if current.Status != "active" {
-				return backgroundAuthorizationStatusInvalid()
-			}
-			if current.Revision != request.Msg.ExpectedRevision {
+			if request.Msg.ExpectedRevision > current.Revision {
 				return serviceError(
 					connect.CodeAborted,
 					delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
 				)
 			}
-			authorization, transactionErr :=
-				queries.MarkBackgroundUsageAuthorizationResourceDeleted(
-					ctx,
-					dbgen.MarkBackgroundUsageAuthorizationResourceDeletedParams{
-						AuthorizationID:   pgUUID(authorizationID),
-						ServiceIdentityID: serviceIdentity.ID,
-						Purpose:           backgroundPurposeRealQAStorage,
-						FeatureResourceID: pgUUID(featureResourceID),
-						ExpectedRevision:  request.Msg.ExpectedRevision,
-					},
-				)
-			if transactionErr != nil {
-				return databaseError(transactionErr)
-			}
-			team, transactionErr := queries.GetTeamByID(ctx, authorization.TeamID)
-			if transactionErr != nil {
-				return databaseError(transactionErr)
+			authorization := current
+			transitioned := false
+			switch current.Status {
+			case "active":
+				if current.Revision != request.Msg.ExpectedRevision {
+					return serviceError(
+						connect.CodeAborted,
+						delibasev1.ErrorReason_ERROR_REASON_RESOURCE_CONFLICT,
+					)
+				}
+				authorization, transactionErr =
+					queries.MarkBackgroundUsageAuthorizationResourceDeleted(
+						ctx,
+						dbgen.MarkBackgroundUsageAuthorizationResourceDeletedParams{
+							AuthorizationID:   pgUUID(authorizationID),
+							ServiceIdentityID: serviceIdentity.ID,
+							Purpose:           backgroundPurposeRealQAStorage,
+							FeatureResourceID: pgUUID(featureResourceID),
+							ExpectedRevision:  request.Msg.ExpectedRevision,
+						},
+					)
+				if transactionErr != nil {
+					return databaseError(transactionErr)
+				}
+				transitioned = true
+			case "revoked", "access_lost", "resource_deleted", "owner_deleted":
+				// A lifecycle transition may have advanced the revision after
+				// RealQA persisted its mapping. The exact bound service may
+				// observe that closed result, but never rewrite the grant.
+			default:
+				return backgroundAuthorizationStatusInvalid()
 			}
 			serviceActor, transactionErr = actorFor(
 				service.dependencies,
@@ -1075,17 +1086,23 @@ func (service *Usage) MarkBackgroundUsageResourceDeleted(
 			if transactionErr != nil {
 				return transactionErr
 			}
-			if transactionErr = appendBackgroundAuthorizationAudit(
-				ctx,
-				service.dependencies,
-				queries,
-				reliability.AuditBackgroundAuthorizationResourceDeleted,
-				serviceActor,
-				authorization,
-				team.Name,
-				uuid.Nil,
-			); transactionErr != nil {
-				return transactionErr
+			if transitioned {
+				team, teamErr := queries.GetTeamByID(ctx, authorization.TeamID)
+				if teamErr != nil {
+					return databaseError(teamErr)
+				}
+				if transactionErr = appendBackgroundAuthorizationAudit(
+					ctx,
+					service.dependencies,
+					queries,
+					reliability.AuditBackgroundAuthorizationResourceDeleted,
+					serviceActor,
+					authorization,
+					team.Name,
+					uuid.Nil,
+				); transactionErr != nil {
+					return transactionErr
+				}
 			}
 			completedAt = service.dependencies.Clock.Now().UTC()
 			setIdempotency(
