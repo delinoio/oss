@@ -9,6 +9,8 @@ export enum ToolPlatform {
 export enum ToolCapability {
   Diagnostics = "diagnostics",
   LocalStorage = "local-storage",
+  RealQaCapture = "realqa-capture",
+  RealQaComposer = "realqa-composer",
   WindowControl = "window-control",
 }
 

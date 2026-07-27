@@ -23,6 +23,14 @@ const paths = {
   ),
   packageLock: resolve(repositoryRoot, "pnpm-lock.yaml"),
   packageManifest: resolve(appRoot, "package.json"),
+  realqaCaptureCapability: resolve(
+    appRoot,
+    "src-tauri/capabilities/realqa-capture.json",
+  ),
+  realqaComposerCapability: resolve(
+    appRoot,
+    "src-tauri/capabilities/realqa-composer.json",
+  ),
   rootCargoManifest: resolve(repositoryRoot, "Cargo.toml"),
   rustShell: resolve(appRoot, "src-tauri/src/lib.rs"),
   settingsCapability: resolve(appRoot, "src-tauri/capabilities/settings.json"),
@@ -42,6 +50,8 @@ const [
   mobileMainCapability,
   packageLock,
   packageManifest,
+  realqaCaptureCapability,
+  realqaComposerCapability,
   rootCargoManifest,
   rustShell,
   settingsCapability,
@@ -56,6 +66,8 @@ const [
   readFile(paths.mobileMainCapability, "utf8"),
   readFile(paths.packageLock, "utf8"),
   readFile(paths.packageManifest, "utf8"),
+  readFile(paths.realqaCaptureCapability, "utf8"),
+  readFile(paths.realqaComposerCapability, "utf8"),
   readFile(paths.rootCargoManifest, "utf8"),
   readFile(paths.rustShell, "utf8"),
   readFile(paths.settingsCapability, "utf8"),
@@ -67,6 +79,8 @@ const [
 const packageJson = JSON.parse(packageManifest);
 const desktopMainCapabilityJson = JSON.parse(desktopMainCapability);
 const mobileMainCapabilityJson = JSON.parse(mobileMainCapability);
+const realqaCaptureCapabilityJson = JSON.parse(realqaCaptureCapability);
+const realqaComposerCapabilityJson = JSON.parse(realqaComposerCapability);
 const settingsCapabilityJson = JSON.parse(settingsCapability);
 const tauriJson = JSON.parse(tauriConfig);
 const failures = [];
@@ -235,6 +249,17 @@ const expectedSettingsPermissions = [
   "allow-complete-first-run",
   "allow-request-update-action",
 ];
+const expectedRealqaCapturePermissions = [
+  "allow-realqa-list-capture-sources",
+  "allow-realqa-adjust-capture-selection",
+  "allow-realqa-begin-capture",
+  "allow-realqa-cancel-capture",
+];
+const expectedRealqaComposerPermissions = [
+  "allow-realqa-composer-accept-image",
+  "allow-realqa-composer-remove-image",
+  "allow-realqa-composer-reset-session",
+];
 requireCondition(
   JSON.stringify(mobileMainCapabilityJson.windows) === JSON.stringify(["main"]) &&
     JSON.stringify(mobileMainCapabilityJson.platforms) ===
@@ -258,9 +283,33 @@ requireCondition(
   "the settings capability must expose only its scoped settings commands",
 );
 requireCondition(
+  JSON.stringify(realqaCaptureCapabilityJson.windows) ===
+      JSON.stringify(["realqa-capture"]) &&
+    JSON.stringify(realqaCaptureCapabilityJson.platforms) ===
+      JSON.stringify(["linux", "macOS", "windows"]) &&
+    JSON.stringify(realqaCaptureCapabilityJson.permissions) ===
+      JSON.stringify(expectedRealqaCapturePermissions),
+  "the RealQA capture capability must expose only capture-window commands",
+);
+requireCondition(
+  JSON.stringify(realqaComposerCapabilityJson.windows) ===
+      JSON.stringify(["realqa-composer"]) &&
+    JSON.stringify(realqaComposerCapabilityJson.platforms) ===
+      JSON.stringify(["linux", "macOS", "windows"]) &&
+    JSON.stringify(realqaComposerCapabilityJson.permissions) ===
+      JSON.stringify(expectedRealqaComposerPermissions),
+  "the RealQA composer capability must expose only composer-window commands",
+);
+requireCondition(
   JSON.stringify(tauriJson.app?.security?.capabilities) ===
-    JSON.stringify(["desktop-main", "settings", "mobile-main"]),
-  "the Tauri configuration must enable only desktop HUD, settings, and mobile capabilities",
+    JSON.stringify([
+      "desktop-main",
+      "settings",
+      "mobile-main",
+      "realqa-capture",
+      "realqa-composer",
+    ]),
+  "the Tauri configuration must enable only the five exact window capabilities",
 );
 for (const action of [
   "Open DevHud",

@@ -13,6 +13,13 @@ const COMMANDS: &[&str] = &[
     "set_launch_at_login",
     "complete_first_run",
     "request_update_action",
+    "realqa_list_capture_sources",
+    "realqa_adjust_capture_selection",
+    "realqa_begin_capture",
+    "realqa_cancel_capture",
+    "realqa_composer_accept_image",
+    "realqa_composer_remove_image",
+    "realqa_composer_reset_session",
 ];
 
 fn main() {
