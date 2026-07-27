@@ -44,6 +44,7 @@ type BackgroundUsageAuthorization struct {
 	OwnerOrganizationID pgtype.UUID
 	OrganizationID      pgtype.UUID
 	TeamID              pgtype.UUID
+	TeamNameSnapshot    string
 	ServiceIdentityID   pgtype.UUID
 	MeterID             pgtype.UUID
 	Purpose             string

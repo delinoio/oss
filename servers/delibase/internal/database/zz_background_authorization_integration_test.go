@@ -59,6 +59,13 @@ func TestPostgreSQLBackgroundAuthorizationLifecycleAndSecurity(t *testing.T) {
 	`, grant.ID, uuidv7.MustNew()); err == nil {
 		t.Fatal("mutable authorization meter binding was accepted")
 	}
+	if _, err := fixture.store.pool.Exec(ctx, `
+		UPDATE background_usage_authorizations
+		SET team_name_snapshot = 'rewritten'
+		WHERE id = $1
+	`, grant.ID); err == nil {
+		t.Fatal("mutable authorization team-name snapshot was accepted")
+	}
 
 	deleted, err := fixture.store.Queries().
 		MarkBackgroundUsageAuthorizationResourceDeleted(
@@ -507,6 +514,7 @@ func TestPostgreSQLBackgroundAuthorizationDeletionTriggers(t *testing.T) {
 				  AND actor_reference = ''
 				  AND organization_id = $3
 				  AND team_id = $4
+				  AND team_name_snapshot = 'Background Team'
 				  AND service_identity_id = $5
 				  AND meter_id = $6
 				  AND decision = 'allow'
