@@ -1,9 +1,11 @@
 import {
+  createConnectQueryKey,
   useInfiniteQuery,
   useMutation,
   useQuery,
 } from "@connectrpc/connect-query";
 import { Code, type Transport } from "@connectrpc/connect";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BackgroundUsageAuthorizationStatus,
   BackgroundUsagePeriod,
@@ -115,14 +117,6 @@ function ownerLabel(authorization: BackgroundUsageAuthorization): string {
   return "Unavailable";
 }
 
-function billingFailureLabel(
-  status: BackgroundUsageAuthorizationStatus,
-): string {
-  return status === BackgroundUsageAuthorizationStatus.ACTIVE
-    ? "None reported"
-    : "Authorization inactive";
-}
-
 function AuthorizationFacts({
   view,
 }: {
@@ -181,7 +175,7 @@ function AuthorizationFacts({
       </div>
       <div>
         <dt>Billing failure</dt>
-        <dd>{billingFailureLabel(authorization.status)}</dd>
+        <dd>Unavailable</dd>
       </div>
       <div>
         <dt>Revision</dt>
@@ -199,24 +193,30 @@ function AuthorizationDialog({
   authorizationId,
   initialView,
   onClose,
+  onRefresh,
   onRevoked,
   transport,
 }: {
   authorizationId: string;
   initialView: BackgroundUsageAuthorizationView;
   onClose: () => void;
-  onRevoked: () => Promise<void>;
+  onRefresh: () => Promise<void>;
+  onRevoked: (view: BackgroundUsageAuthorizationView) => void;
   transport: Transport;
 }) {
   const online = useOnline();
   const [confirming, setConfirming] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
   const [revokeError, setRevokeError] = useState("");
+  const [updatedView, setUpdatedView] = useState<
+    BackgroundUsageAuthorizationView | undefined
+  >(undefined);
   const confirmationFocusRef = useRef<HTMLButtonElement>(null);
   const revokeKey = useRef<{ key: string } | undefined>(undefined);
+  const detailInput = { authorizationId: uuid(authorizationId) };
   const detail = useQuery(
     BillingService.method.getBackgroundUsageAuthorization,
-    { authorizationId: uuid(authorizationId) },
+    detailInput,
     {
       gcTime: 0,
       retry: false,
@@ -228,7 +228,7 @@ function AuthorizationDialog({
     BillingService.method.revokeBackgroundUsageAuthorization,
     { gcTime: 0, transport },
   );
-  const view = detail.data?.authorization ?? initialView;
+  const view = updatedView ?? detail.data?.authorization ?? initialView;
   const authorization = view.authorization;
 
   useEffect(() => {
@@ -259,6 +259,10 @@ function AuthorizationDialog({
       });
       revokeKey.current = undefined;
       setConfirming(false);
+      if (response.authorization) {
+        setUpdatedView(response.authorization);
+        onRevoked(response.authorization);
+      }
       setResultMessage(
         response.idempotency?.replayed
           ? "Revocation confirmed from the original safe retry."
@@ -266,11 +270,17 @@ function AuthorizationDialog({
       );
       await Promise.all([
         detail.refetch({ throwOnError: true }),
-        onRevoked(),
+        onRefresh(),
       ]).catch(() => undefined);
     } catch (error) {
       const typed = getDelibaseError(error);
       setRevokeError(describeDelibaseError(error));
+      if (
+        typed.reason === ErrorReason.IDEMPOTENCY_CONFLICT ||
+        typed.reason === ErrorReason.BACKGROUND_USAGE_REPLAY_CONFLICT
+      ) {
+        revokeKey.current = undefined;
+      }
       if (
         typed.code === Code.PermissionDenied ||
         typed.reason ===
@@ -283,7 +293,7 @@ function AuthorizationDialog({
       ) {
         await Promise.all([
           detail.refetch(),
-          onRevoked(),
+          onRefresh(),
         ]).catch(() => undefined);
       }
     }
@@ -376,6 +386,7 @@ export function BackgroundUsageAuthorizations({
   transport: Transport;
 }) {
   const online = useOnline();
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<
     BackgroundUsageAuthorizationView | undefined
   >(undefined);
@@ -388,6 +399,13 @@ export function BackgroundUsageAuthorizations({
           organizationId: { value: scope.organizationId },
           page: { cursor: "", pageSize: 25 },
         };
+  const authorizationsQueryKey = createConnectQueryKey({
+    cardinality: "infinite",
+    input,
+    pageParamKey: "page",
+    schema: BillingService.method.listBackgroundUsageAuthorizations,
+    transport,
+  });
   const authorizations = useInfiniteQuery(
     BillingService.method.listBackgroundUsageAuthorizations,
     input,
@@ -535,8 +553,27 @@ export function BackgroundUsageAuthorizations({
           authorizationId={selected.authorization.authorizationId.value}
           initialView={selected}
           onClose={() => setSelected(undefined)}
-          onRevoked={async () => {
+          onRefresh={async () => {
             await authorizations.refetch({ throwOnError: true });
+          }}
+          onRevoked={(updatedView) => {
+            const updatedId =
+              updatedView.authorization?.authorizationId?.value;
+            queryClient.setQueryData(authorizationsQueryKey, (current) =>
+              current
+                ? {
+                    ...current,
+                    pages: current.pages.map((page) => ({
+                      ...page,
+                      authorizations: page.authorizations.map((view) =>
+                        view.authorization?.authorizationId?.value === updatedId
+                          ? updatedView
+                          : view,
+                      ),
+                    })),
+                  }
+                : current,
+            );
           }}
           transport={transport}
         />

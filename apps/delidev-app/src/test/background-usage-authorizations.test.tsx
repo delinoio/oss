@@ -1,6 +1,11 @@
+import { create, toBinary } from "@bufbuild/protobuf";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  ErrorDetailSchema,
+  ErrorReason,
+} from "@delinoio/delibase-connect";
 import axe from "axe-core";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -13,6 +18,26 @@ function connectJsonResponse(body: unknown, status = 200): Response {
     headers: { "content-type": "application/json" },
     status,
   });
+}
+
+function connectErrorResponse(reason: ErrorReason): Response {
+  const detail = toBinary(
+    ErrorDetailSchema,
+    create(ErrorDetailSchema, { reason }),
+  );
+  return connectJsonResponse(
+    {
+      code: "already_exists",
+      details: [
+        {
+          type: "delibase.v1.ErrorDetail",
+          value: btoa(String.fromCharCode(...detail)),
+        },
+      ],
+      message: "Request conflict.",
+    },
+    409,
+  );
 }
 
 function methodName(request: Parameters<typeof fetch>[0]): string {
@@ -121,12 +146,19 @@ describe("background usage authorization management", () => {
     const listBodies: Record<string, unknown>[] = [];
     const revokeBodies: Record<string, unknown>[] = [];
     let revoked = false;
+    let reconciliationUnavailable = false;
     let revokeAttempts = 0;
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
       const method = methodName(request);
       const body = await requestBody(request, init);
       if (method === "ListBackgroundUsageAuthorizations") {
         listBodies.push(body);
+        if (reconciliationUnavailable) {
+          return connectJsonResponse(
+            { code: "unavailable", message: "Response unavailable." },
+            503,
+          );
+        }
         const cursor = (body.page as { cursor?: string } | undefined)?.cursor;
         if (cursor === "next-page") {
           return connectJsonResponse({ authorizations: [second] });
@@ -145,6 +177,12 @@ describe("background usage authorization management", () => {
         });
       }
       if (method === "GetBackgroundUsageAuthorization") {
+        if (reconciliationUnavailable) {
+          return connectJsonResponse(
+            { code: "unavailable", message: "Response unavailable." },
+            503,
+          );
+        }
         return connectJsonResponse({
           authorization: revoked
             ? authorizationView({
@@ -164,6 +202,7 @@ describe("background usage authorization management", () => {
           );
         }
         revoked = true;
+        reconciliationUnavailable = true;
         return connectJsonResponse({
           authorization: authorizationView({
             revision: "5",
@@ -219,7 +258,7 @@ describe("background usage authorization management", () => {
     expect(dialog).toHaveTextContent("…00000099");
     expect(dialog).toHaveTextContent("Current-period units320");
     expect(dialog).toHaveTextContent("Maximum units per UTC day1,000");
-    expect(dialog).toHaveTextContent("Billing failureNone reported");
+    expect(dialog).toHaveTextContent("Billing failureUnavailable");
     expect(dialog).toHaveTextContent("Revision4");
     expect(dialog).not.toHaveTextContent(/secret|credential value|provider id/i);
 
@@ -277,6 +316,13 @@ describe("background usage authorization management", () => {
     expect(
       screen.queryByRole("button", { name: "Review revocation" }),
     ).not.toBeInTheDocument();
+    const revokedDialog = screen.getByRole("dialog");
+    expect(revokedDialog).toHaveTextContent("StatusRevoked");
+    expect(revokedDialog).toHaveTextContent("Revision5");
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    const firstAuthorizationRow = screen.getAllByRole("row")[1]!;
+    expect(within(firstAuthorizationRow).getByText("Revoked")).toBeVisible();
+    expect(within(firstAuthorizationRow).getByText("5")).toBeVisible();
 
     const result = await axe.run(container, {
       runOnly: {
@@ -285,6 +331,59 @@ describe("background usage authorization management", () => {
       },
     });
     expect(result.violations).toEqual([]);
+  });
+
+  it("replaces a revoke key after a definitive idempotency conflict", async () => {
+    const active = authorizationView();
+    const revoked = authorizationView({
+      revision: "5",
+      status: "BACKGROUND_USAGE_AUTHORIZATION_STATUS_REVOKED",
+    });
+    const revokeBodies: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
+      const method = methodName(request);
+      if (method === "ListBackgroundUsageAuthorizations") {
+        return connectJsonResponse({ authorizations: [active] });
+      }
+      if (method === "GetBackgroundUsageAuthorization") {
+        return connectJsonResponse({ authorization: active });
+      }
+      if (method === "RevokeBackgroundUsageAuthorization") {
+        revokeBodies.push(await requestBody(request, init));
+        if (revokeBodies.length === 1) {
+          return connectErrorResponse(ErrorReason.IDEMPOTENCY_CONFLICT);
+        }
+        return connectJsonResponse({
+          authorization: revoked,
+          idempotency: { replayed: false },
+        });
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    renderAuthorizations(fetchMock, { kind: "account" });
+
+    await user.click(
+      await screen.findByRole("button", { name: /View details/ }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Review revocation" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Revoke authorization" }),
+    );
+    expect(
+      await screen.findByText(/retry key was already used/),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Revoke authorization" }),
+    );
+    expect(await screen.findByText("Authorization revoked.")).toBeVisible();
+
+    expect(revokeBodies).toHaveLength(2);
+    expect(
+      (revokeBodies[0]!.idempotency as { key: string }).key,
+    ).not.toBe((revokeBodies[1]!.idempotency as { key: string }).key);
   });
 
   it("uses the account-wide server filter and explains member visibility", async () => {
