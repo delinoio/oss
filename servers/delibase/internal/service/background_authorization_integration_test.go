@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
+	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
@@ -477,6 +478,36 @@ func TestPostgreSQLAuthorizedUsageFinancialPathsAndSubstitution(t *testing.T) {
 		record.BackgroundUsageAuthorizationID.Bytes !=
 			mustUUID(t, grant.Authorization.AuthorizationId) {
 		t.Fatalf("authorized usage record = %#v, %v", record, err)
+	}
+	storage, err := reliability.NewPostgreSQLStorage(fixture.store.Queries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimAt := time.Now().UTC().Add(time.Second)
+	outboxItem, ok, err := storage.Claim(
+		ctx,
+		reliability.QueueIntegrationOutbox,
+		uuidv7.MustNew(),
+		claimAt,
+		claimAt.Add(time.Minute),
+	)
+	if err != nil || !ok ||
+		outboxItem.HandlerID != reliability.HandlerPolarReportUsage ||
+		outboxItem.EntityID != uuid.UUID(record.ID.Bytes) {
+		t.Fatalf("authorized usage outbox = %#v, %t, %v", outboxItem, ok, err)
+	}
+	if err = storage.Complete(ctx, outboxItem, claimAt); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, ok, err := storage.Claim(
+		ctx,
+		reliability.QueueIntegrationOutbox,
+		uuidv7.MustNew(),
+		claimAt.Add(time.Second),
+		claimAt.Add(time.Minute),
+	)
+	if err != nil || ok {
+		t.Fatalf("duplicate authorized usage outbox = %#v, %t, %v", duplicate, ok, err)
 	}
 }
 
