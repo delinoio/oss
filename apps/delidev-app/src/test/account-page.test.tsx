@@ -32,6 +32,9 @@ describe("account organization creation", () => {
           organizations: [],
         });
       }
+      if (url.endsWith("/ListBackgroundUsageAuthorizations")) {
+        return connectJsonResponse({ authorizations: [] });
+      }
       const body = await new Response(
         init?.body ?? (request instanceof Request ? request.clone().body : null),
       ).json();
@@ -130,6 +133,9 @@ describe("account deletion", () => {
       if (url.endsWith("/GetAccountDeletionImpact")) {
         return connectJsonResponse({ blockers: [], canDelete: true });
       }
+      if (url.endsWith("/ListBackgroundUsageAuthorizations")) {
+        return connectJsonResponse({ authorizations: [] });
+      }
       return pendingDeletion;
     });
     const transport = createAuthenticatedTransport({
@@ -203,6 +209,9 @@ describe("account deletion", () => {
       }
       if (url.endsWith("/GetAccountDeletionImpact")) {
         return connectJsonResponse({ blockers: [], canDelete: true });
+      }
+      if (url.endsWith("/ListBackgroundUsageAuthorizations")) {
+        return connectJsonResponse({ authorizations: [] });
       }
       const body = await new Response(
         init?.body ?? (request instanceof Request ? request.clone().body : null),

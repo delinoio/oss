@@ -42,6 +42,7 @@ import { useNavigate } from "react-router-dom";
 import { usePublicTransport } from "../api/ApiContext";
 import { describeDelibaseError } from "../api/errors";
 import { CatalogCard } from "../components/CatalogCard";
+import { BackgroundUsageAuthorizations } from "../components/BackgroundUsageAuthorizations";
 import { Dialog } from "../components/Dialog";
 import { useAccountState } from "../components/ProtectedRoute";
 import {
@@ -3095,6 +3096,17 @@ export function OrganizationSettingsPage() {
           An organization owner or admin can update organization details.
         </p>
       )}
+      {organization.organizationId?.value ? (
+        <BackgroundUsageAuthorizations
+          scope={{
+            kind: "organization",
+            organizationId: organization.organizationId.value,
+            organizationName: organization.name,
+            showOrganizationWide: canManage,
+          }}
+          transport={transport}
+        />
+      ) : null}
       <OrganizationLifecycleActions
         callerRole={callerRole}
         onOrganizationRemoved={async () => {
