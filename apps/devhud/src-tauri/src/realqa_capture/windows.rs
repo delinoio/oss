@@ -1146,12 +1146,12 @@ mod system {
         let monitor_key = monitor
             .device_name()
             .map_err(|_| WindowsAdapterFailure::Failed)?;
-        let Some(display) = displays.iter().find(|display| {
+        if !displays.iter().any(|display| {
             display.stable_key == monitor_key
                 && display.source == NativeSourceId(monitor.as_raw_hmonitor() as usize)
-        }) else {
+        }) {
             return Ok(None);
-        };
+        }
         let Some((process_id, process_started_at)) = window_process_identity(window) else {
             return Ok(None);
         };
