@@ -308,8 +308,8 @@ fn blend_pixel(image: &mut DecodedImage, x: i64, y: i64, color: [u8; 4]) {
 fn stamp(image: &mut DecodedImage, point: EditorPoint, color: [u8; 4], width: u32) {
     let lower = -i64::from(width.saturating_sub(1) / 2);
     let upper = i64::from(width / 2);
-    let center_offset = i64::from(width % 2 == 0);
-    let doubled_radius = i64::from(if width % 2 == 0 {
+    let center_offset = i64::from(width.is_multiple_of(2));
+    let doubled_radius = i64::from(if width.is_multiple_of(2) {
         width
     } else {
         width.saturating_sub(1)
