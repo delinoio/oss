@@ -351,8 +351,8 @@ async function inspectIosApplication(path) {
       `distributed iOS provisioning payload claims the widget extension: ${file}`,
     );
     requireCondition(
-      hasExactIosAssociatedDomainEntitlement(source, false),
-      `distributed iOS provisioning payload contains an unexpected associated domain: ${file}`,
+      hasExactIosAssociatedDomainEntitlement(source, true),
+      `distributed iOS provisioning payload does not preserve the exact DeliDev associated domain: ${file}`,
     );
   }
   if (existsSync(resolve(path, "_CodeSignature"))) {
@@ -362,8 +362,8 @@ async function inspectIosApplication(path) {
       `distributed iOS code signature claims the widget extension: ${path}`,
     );
     requireCondition(
-      hasExactIosAssociatedDomainEntitlement(entitlements, false),
-      `distributed iOS code signature contains an unexpected associated domain: ${path}`,
+      hasExactIosAssociatedDomainEntitlement(entitlements, true),
+      `distributed iOS code signature does not preserve the exact DeliDev associated domain: ${path}`,
     );
   }
 }
