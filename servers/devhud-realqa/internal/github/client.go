@@ -455,20 +455,12 @@ func (client *Client) reconcile(
 	repository Repository,
 	marker string,
 ) (Issue, bool, error) {
-	var user apiAccount
-	if err := client.getJSON(ctx, token, "/user", &user); err != nil {
-		return Issue{}, false, err
-	}
-	if _, err := cleanName(user.Login); err != nil {
-		return Issue{}, false, errors.New("realqa github: provider user identity is invalid")
-	}
 	needle := "<!-- " + marker + " -->"
 	var found *Issue
 	complete := false
 	for pageNumber := 1; pageNumber <= maxReconcilePages; pageNumber++ {
 		query := url.Values{}
 		query.Set("state", "all")
-		query.Set("creator", user.Login)
 		query.Set("sort", "created")
 		query.Set("direction", "desc")
 		query.Set("since", client.now().UTC().Add(-reconciliationAge).Format(time.RFC3339))
@@ -525,6 +517,7 @@ func (client *Client) attachProjects(
 	issue Issue,
 	projects []Project,
 ) (Issue, error) {
+	issue.ProjectAssignments = make([]ProjectAssignment, 0, len(projects))
 	for _, project := range projects {
 		payload := map[string]any{
 			"query":     `mutation($project:ID!,$content:ID!){addProjectV2ItemById(input:{projectId:$project,contentId:$content}){item{id}}}`,
@@ -535,9 +528,14 @@ func (client *Client) attachProjects(
 		}
 		status, err := client.requestJSON(ctx, token, http.MethodPost,
 			"/graphql", payload, &response)
+		disposition := ProjectAssignmentApplied
 		if err != nil || status != http.StatusOK || len(response.Errors) != 0 {
-			return Issue{}, errors.New("realqa github: project assignment failed")
+			disposition = ProjectAssignmentFailed
 		}
+		issue.ProjectAssignments = append(issue.ProjectAssignments, ProjectAssignment{
+			ProjectNodeID: project.NodeID,
+			Disposition:   disposition,
+		})
 	}
 	return issue, nil
 }

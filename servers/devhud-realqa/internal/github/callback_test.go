@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ type fixtureCallbackStore struct {
 	deleteCalls      int
 	deleteFailures   int
 	disconnectedUser int64
+	connectErr       error
 }
 
 func newFixtureCallbackStore() *fixtureCallbackStore {
@@ -57,23 +59,26 @@ func (store *fixtureCallbackStore) ConsumeCallbackState(
 func (store *fixtureCallbackStore) ConnectUser(
 	_ context.Context, owner Owner, accountID uuid.UUID, user UserIdentity,
 	credential EncryptedCredential,
+	installationID int64,
 	installations []Installation,
-) error {
-	store.connectedOwner, store.connectedUser, store.credential = owner, user, credential
-	store.connectedAccount = accountID
-	store.installations = append([]Installation(nil), installations...)
-	return nil
-}
-
-func (store *fixtureCallbackStore) BindInstallation(
-	_ context.Context, owner Owner, installationID int64,
 ) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if existing, ok := store.bindings[installationID]; ok && existing != owner {
-		return ErrInstallationAlreadyBound
+	if store.connectErr != nil {
+		return store.connectErr
 	}
-	store.bindings[installationID] = owner
+	if installationID > 0 {
+		if len(installations) != 1 || installations[0].ID != installationID {
+			return errors.New("fixture installation was not authorized")
+		}
+		if existing, ok := store.bindings[installationID]; ok && existing != owner {
+			return ErrInstallationAlreadyBound
+		}
+		store.bindings[installationID] = owner
+	}
+	store.connectedOwner, store.connectedUser, store.credential = owner, user, credential
+	store.connectedAccount = accountID
+	store.installations = append([]Installation(nil), installations...)
 	return nil
 }
 
@@ -234,47 +239,123 @@ func TestSignedOAuthCallbackStoresOnlyEncryptedUserCredential(t *testing.T) {
 	}
 }
 
-func TestAppCallbackBindsOneInstallationToOneOwner(t *testing.T) {
+func TestAppCallbackDefersInstallationBindingUntilOAuthVerification(t *testing.T) {
 	t.Parallel()
 	store := newFixtureCallbackStore()
 	handler, state, _, now := fixtureCallbackHandler(t, store,
 		fixtureHTTPClient(func(*http.Request) (*http.Response, error) {
 			return nil, errors.New("provider request not expected")
 		}))
-	first := Owner{Kind: OwnerKindPersonal, ID: fixtureSubmissionID}
-	second := Owner{
-		Kind: OwnerKindOrganization,
-		ID:   uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51609"),
+	owner := Owner{Kind: OwnerKindPersonal, ID: fixtureSubmissionID}
+	accountID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51610")
+	value, err := state.Issue(owner, accountID, CallbackPurposeApp, now)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for index, owner := range []Owner{first, second} {
-		accountID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51610")
-		value, err := state.Issue(owner, accountID, CallbackPurposeApp, now)
-		if err != nil {
-			t.Fatal(err)
+	request := httptest.NewRequest(http.MethodGet,
+		"/github/app/callback?installation_id=991&setup_action=install&state="+value, nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("expected OAuth continuation, got %d", response.Code)
+	}
+	location := response.Header().Get("Location")
+	target, err := url.Parse(location)
+	if err != nil || target.Scheme != "https" || target.Host != "github.com" ||
+		target.Path != "/login/oauth/authorize" {
+		t.Fatalf("unexpected OAuth continuation %q", location)
+	}
+	_, _, _, installationID, err := state.verify(
+		target.Query().Get("state"), CallbackPurposeOAuth, now)
+	if err != nil || installationID != 991 {
+		t.Fatalf("setup installation was not signed into OAuth state: id=%d err=%v",
+			installationID, err)
+	}
+	if len(store.bindings) != 0 {
+		t.Fatalf("unverified setup installation was bound: %#v", store.bindings)
+	}
+}
+
+func TestOAuthCallbackRejectsSpoofedSetupInstallation(t *testing.T) {
+	t.Parallel()
+	store := newFixtureCallbackStore()
+	accessToken := "ghu_fixture_callback_access_token_123456"
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path {
+		case "/login/oauth/access_token":
+			return jsonResponse(request, http.StatusOK, map[string]any{
+				"access_token": accessToken, "refresh_token": "ghr_fixture_refresh_token_123456",
+				"expires_in": 28800, "refresh_token_expires_in": 15897600,
+			}), nil
+		case "/user":
+			return jsonResponse(request, http.StatusOK,
+				map[string]any{"id": 7, "login": "fixture-user", "type": "User"}), nil
+		case "/user/installations":
+			return jsonResponse(request, http.StatusOK, map[string]any{
+				"installations": []any{map[string]any{
+					"id": 992,
+					"account": map[string]any{
+						"id": 9, "login": "fixture-user", "type": "User",
+					},
+					"permissions": map[string]any{
+						"issues": "write", "metadata": "read", "contents": "read",
+					},
+				}},
+			}), nil
+		default:
+			t.Fatalf("unexpected callback provider request %s", request.URL)
+			return nil, nil
 		}
-		request := httptest.NewRequest(http.MethodGet,
-			"/github/app/callback?installation_id=991&setup_action=install&state="+value, nil)
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		expected := http.StatusSeeOther
-		if index == 1 {
-			expected = http.StatusConflict
-		}
-		if response.Code != expected {
-			t.Fatalf("owner %d expected %d got %d", index, expected, response.Code)
-		}
-		if index == 0 {
-			location := response.Header().Get("Location")
-			if !strings.HasPrefix(location,
-				"https://github.com/login/oauth/authorize?") ||
-				!strings.Contains(location, "client_id=fixture-realqa-client") ||
-				!strings.Contains(location, "state=") {
-				t.Fatalf("unexpected OAuth continuation %q", location)
-			}
+	})
+	handler, state, _, now := fixtureCallbackHandler(t, store, httpClient)
+	owner := Owner{Kind: OwnerKindPersonal, ID: fixtureSubmissionID}
+	accountID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51610")
+	appState, err := state.Issue(owner, accountID, CallbackPurposeApp, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appResponse := httptest.NewRecorder()
+	handler.ServeHTTP(appResponse, httptest.NewRequest(http.MethodGet,
+		"/github/app/callback?installation_id=991&setup_action=install&state="+appState,
+		nil))
+	target, err := url.Parse(appResponse.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oauthResponse := httptest.NewRecorder()
+	handler.ServeHTTP(oauthResponse, httptest.NewRequest(http.MethodGet,
+		"/github/oauth/callback?code=fixture-code-123&state="+
+			url.QueryEscape(target.Query().Get("state")), nil))
+	if oauthResponse.Code != http.StatusForbidden {
+		t.Fatalf("expected spoofed installation rejection, got %d", oauthResponse.Code)
+	}
+	if len(store.bindings) != 0 || store.connectedOwner.ID != uuid.Nil {
+		t.Fatalf("spoofed installation mutated storage: %#v", store.bindings)
+	}
+}
+
+func TestCallbackOwnerAccessPolicy(t *testing.T) {
+	t.Parallel()
+	personalID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51608")
+	otherID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51609")
+	organizationID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51610")
+	if !callbackOwnerAccessAllowed(
+		Owner{Kind: OwnerKindPersonal, ID: personalID}, personalID, "owner") {
+		t.Fatal("personal owner lost access to their own scope")
+	}
+	if callbackOwnerAccessAllowed(
+		Owner{Kind: OwnerKindPersonal, ID: personalID}, otherID, "owner") {
+		t.Fatal("different account retained personal owner access")
+	}
+	for _, role := range []string{"owner", "admin"} {
+		if !callbackOwnerAccessAllowed(
+			Owner{Kind: OwnerKindOrganization, ID: organizationID}, personalID, role) {
+			t.Fatalf("organization %s lost management access", role)
 		}
 	}
-	if store.bindings[991] != first {
-		t.Fatalf("installation ownership changed: %#v", store.bindings[991])
+	if callbackOwnerAccessAllowed(
+		Owner{Kind: OwnerKindOrganization, ID: organizationID}, personalID, "member") {
+		t.Fatal("organization member retained callback management access")
 	}
 }
 

@@ -15,7 +15,8 @@ WHERE binding.account_id = sqlc.arg(account_id)
   AND binding.owner_kind = sqlc.arg(owner_kind)
   AND binding.owner_id = sqlc.arg(owner_id)
   AND identity.deleted_at IS NULL
-  AND tombstone.owner_id IS NULL;
+  AND tombstone.owner_id IS NULL
+FOR SHARE OF binding;
 
 -- name: ScopeIsTombstoned :one
 SELECT EXISTS (

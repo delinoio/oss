@@ -78,6 +78,7 @@ WHERE binding.account_id = $1
   AND binding.owner_id = $3
   AND identity.deleted_at IS NULL
   AND tombstone.owner_id IS NULL
+FOR SHARE OF binding
 `
 
 type GetOwnerAccessParams struct {

@@ -29,6 +29,10 @@ var ErrInstallationAlreadyBound = errors.New(
 	"realqa github: installation is already bound to another owner",
 )
 
+var ErrCallbackOwnerAccessUnavailable = errors.New(
+	"realqa github: callback owner access is unavailable",
+)
+
 var errWebhookStorage = errors.New("realqa github: webhook storage failed")
 
 type CallbackPurpose string
@@ -39,12 +43,13 @@ const (
 )
 
 type callbackState struct {
-	OwnerKind OwnerKind       `json:"owner_kind"`
-	OwnerID   string          `json:"owner_id"`
-	AccountID string          `json:"account_id"`
-	Purpose   CallbackPurpose `json:"purpose"`
-	Nonce     string          `json:"nonce"`
-	ExpiresAt int64           `json:"expires_at"`
+	OwnerKind      OwnerKind       `json:"owner_kind"`
+	OwnerID        string          `json:"owner_id"`
+	AccountID      string          `json:"account_id"`
+	Purpose        CallbackPurpose `json:"purpose"`
+	Nonce          string          `json:"nonce"`
+	ExpiresAt      int64           `json:"expires_at"`
+	InstallationID int64           `json:"installation_id,omitempty"`
 }
 
 type StateCodec struct{ key []byte }
@@ -62,8 +67,20 @@ func (codec *StateCodec) Issue(
 	purpose CallbackPurpose,
 	now time.Time,
 ) (string, error) {
+	return codec.issue(owner, accountID, purpose, now, 0)
+}
+
+func (codec *StateCodec) issue(
+	owner Owner,
+	accountID uuid.UUID,
+	purpose CallbackPurpose,
+	now time.Time,
+	installationID int64,
+) (string, error) {
 	if codec == nil || owner.Validate() != nil || accountID == uuid.Nil ||
-		(purpose != CallbackPurposeOAuth && purpose != CallbackPurposeApp) {
+		(purpose != CallbackPurposeOAuth && purpose != CallbackPurposeApp) ||
+		installationID < 0 ||
+		(purpose == CallbackPurposeApp && installationID != 0) {
 		return "", errors.New("realqa github: callback state input is invalid")
 	}
 	nonce := make([]byte, 24)
@@ -73,8 +90,9 @@ func (codec *StateCodec) Issue(
 	payload, err := json.Marshal(callbackState{
 		OwnerKind: owner.Kind, OwnerID: owner.ID.String(),
 		AccountID: accountID.String(), Purpose: purpose,
-		Nonce:     base64.RawURLEncoding.EncodeToString(nonce),
-		ExpiresAt: now.UTC().Add(callbackStateTTL).Unix(),
+		Nonce:          base64.RawURLEncoding.EncodeToString(nonce),
+		ExpiresAt:      now.UTC().Add(callbackStateTTL).Unix(),
+		InstallationID: installationID,
 	})
 	if err != nil {
 		return "", errors.New("realqa github: callback state creation failed")
@@ -89,28 +107,41 @@ func (codec *StateCodec) Verify(
 	purpose CallbackPurpose,
 	now time.Time,
 ) (Owner, uuid.UUID, string, error) {
+	owner, accountID, nonce, _, err := codec.verify(value, purpose, now)
+	return owner, accountID, nonce, err
+}
+
+func (codec *StateCodec) verify(
+	value string,
+	purpose CallbackPurpose,
+	now time.Time,
+) (Owner, uuid.UUID, string, int64, error) {
 	if codec == nil || len(value) > 2048 {
-		return Owner{}, uuid.Nil, "", errors.New("realqa github: callback state is invalid")
+		return Owner{}, uuid.Nil, "", 0,
+			errors.New("realqa github: callback state is invalid")
 	}
 	parts := strings.Split(value, ".")
 	if len(parts) != 2 {
-		return Owner{}, uuid.Nil, "", errors.New("realqa github: callback state is invalid")
+		return Owner{}, uuid.Nil, "", 0,
+			errors.New("realqa github: callback state is invalid")
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil || !hmac.Equal(signature, codec.sign(parts[0])) {
-		return Owner{}, uuid.Nil, "",
+		return Owner{}, uuid.Nil, "", 0,
 			errors.New("realqa github: callback state signature is invalid")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return Owner{}, uuid.Nil, "", errors.New("realqa github: callback state is invalid")
+		return Owner{}, uuid.Nil, "", 0,
+			errors.New("realqa github: callback state is invalid")
 	}
 	var state callbackState
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(&state); err != nil || state.Purpose != purpose ||
-		now.UTC().Unix() >= state.ExpiresAt {
-		return Owner{}, uuid.Nil, "",
+		now.UTC().Unix() >= state.ExpiresAt || state.InstallationID < 0 ||
+		(purpose == CallbackPurposeApp && state.InstallationID != 0) {
+		return Owner{}, uuid.Nil, "", 0,
 			errors.New("realqa github: callback state is invalid or expired")
 	}
 	id, err := uuid.Parse(state.OwnerID)
@@ -119,9 +150,10 @@ func (codec *StateCodec) Verify(
 	nonce, nonceErr := base64.RawURLEncoding.DecodeString(state.Nonce)
 	if err != nil || owner.Validate() != nil || accountErr != nil ||
 		accountID == uuid.Nil || nonceErr != nil || len(nonce) != 24 {
-		return Owner{}, uuid.Nil, "", errors.New("realqa github: callback state is invalid")
+		return Owner{}, uuid.Nil, "", 0,
+			errors.New("realqa github: callback state is invalid")
 	}
-	return owner, accountID, state.Nonce, nil
+	return owner, accountID, state.Nonce, state.InstallationID, nil
 }
 
 func (codec *StateCodec) sign(value string) []byte {
@@ -170,9 +202,9 @@ type CallbackStore interface {
 		uuid.UUID,
 		UserIdentity,
 		EncryptedCredential,
+		int64,
 		[]Installation,
 	) error
-	BindInstallation(context.Context, Owner, int64) error
 	ProcessWebhookDelivery(
 		context.Context,
 		uuid.UUID,
@@ -248,7 +280,7 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 	}
 	code := request.URL.Query().Get("code")
 	stateValue := request.URL.Query().Get("state")
-	owner, accountID, nonce, err := handler.config.State.Verify(
+	owner, accountID, nonce, installationID, err := handler.config.State.verify(
 		stateValue, CallbackPurposeOAuth, handler.config.Now(),
 	)
 	if err != nil || len(code) < 8 || len(code) > 2048 ||
@@ -276,6 +308,20 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 		writeCallbackError(writer, http.StatusBadGateway)
 		return
 	}
+	if installationID > 0 {
+		matched := make([]Installation, 0, 1)
+		for _, installation := range installations {
+			if installation.ID == installationID {
+				matched = append(matched, installation)
+				break
+			}
+		}
+		if len(matched) == 0 {
+			writeCallbackError(writer, http.StatusForbidden)
+			return
+		}
+		installations = matched
+	}
 	plaintext, err := json.Marshal(credential)
 	if err != nil {
 		writeCallbackError(writer, http.StatusInternalServerError)
@@ -284,9 +330,22 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 	associatedData := []byte(string(owner.Kind) + ":" + owner.ID.String())
 	encrypted, err := handler.config.Vault.Seal(plaintext, associatedData)
 	clear(plaintext)
-	if err != nil || handler.config.Store.ConnectUser(
-		request.Context(), owner, accountID, identity, encrypted, installations,
-	) != nil {
+	if err != nil {
+		writeCallbackError(writer, http.StatusInternalServerError)
+		return
+	}
+	err = handler.config.Store.ConnectUser(
+		request.Context(), owner, accountID, identity, encrypted,
+		installationID, installations,
+	)
+	switch {
+	case errors.Is(err, ErrInstallationAlreadyBound):
+		writeCallbackError(writer, http.StatusConflict)
+		return
+	case errors.Is(err, ErrCallbackOwnerAccessUnavailable):
+		writeCallbackError(writer, http.StatusForbidden)
+		return
+	case err != nil:
 		writeCallbackError(writer, http.StatusInternalServerError)
 		return
 	}
@@ -312,19 +371,10 @@ func (handler *CallbackHandler) app(writer http.ResponseWriter, request *http.Re
 		writeCallbackError(writer, http.StatusConflict)
 		return
 	}
-	// The signed callback establishes only ownership. The signed installation
-	// webhook supplies and validates the provider account and permissions.
-	err = handler.config.Store.BindInstallation(request.Context(), owner, installationID)
-	if errors.Is(err, ErrInstallationAlreadyBound) {
-		writeCallbackError(writer, http.StatusConflict)
-		return
-	}
-	if err != nil {
-		writeCallbackError(writer, http.StatusInternalServerError)
-		return
-	}
-	oauthState, err := handler.config.State.Issue(
-		owner, accountID, CallbackPurposeOAuth, handler.config.Now())
+	// The setup installation ID is untrusted until the OAuth user token proves
+	// that the initiating user can access the installation.
+	oauthState, err := handler.config.State.issue(
+		owner, accountID, CallbackPurposeOAuth, handler.config.Now(), installationID)
 	authorization, authorizationErr := NewAuthorization(handler.config.ClientID)
 	if err != nil || authorizationErr != nil {
 		writeCallbackError(writer, http.StatusInternalServerError)

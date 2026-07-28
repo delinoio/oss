@@ -278,13 +278,12 @@ func TestAmbiguousCreateReconcilesMarkerBeforeRetry(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		switch {
-		case request.URL.Path == "/user":
-			sequence = append(sequence, "user")
-			return jsonResponse(request, http.StatusOK,
-				map[string]any{"id": 7, "login": "fixture-user", "type": "User"}), nil
 		case request.URL.Path == "/repos/delinoio/oss/issues" &&
 			request.Method == http.MethodGet:
 			sequence = append(sequence, "reconcile")
+			if request.URL.Query().Has("creator") {
+				t.Fatal("reconciliation was limited to the reauthorized user")
+			}
 			issueListCount++
 			if issueListCount == 1 {
 				return jsonResponse(request, http.StatusOK, []any{}), nil
@@ -321,7 +320,7 @@ func TestAmbiguousCreateReconcilesMarkerBeforeRetry(t *testing.T) {
 	if issue.Number != 757 || postCount != 1 {
 		t.Fatalf("expected one reconciled create, got issue=%#v posts=%d", issue, postCount)
 	}
-	if strings.Join(sequence, ",") != "user,reconcile,post,user,reconcile" {
+	if strings.Join(sequence, ",") != "reconcile,post,reconcile" {
 		t.Fatalf("unexpected ordering %v", sequence)
 	}
 }
@@ -333,10 +332,6 @@ func TestAmbiguousCreateRetriesOnlyAfterDefinitiveReconciliation(t *testing.T) {
 	postCount := 0
 	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
 		switch {
-		case request.URL.Path == "/user":
-			sequence = append(sequence, "user")
-			return jsonResponse(request, http.StatusOK,
-				map[string]any{"id": 7, "login": "fixture-user", "type": "User"}), nil
 		case request.URL.Path == "/repos/delinoio/oss/issues" &&
 			request.Method == http.MethodGet:
 			sequence = append(sequence, "reconcile")
@@ -375,7 +370,7 @@ func TestAmbiguousCreateRetriesOnlyAfterDefinitiveReconciliation(t *testing.T) {
 		t.Fatalf("unexpected result issue=%#v posts=%d", issue, postCount)
 	}
 	if strings.Join(sequence, ",") !=
-		"user,reconcile,post,user,reconcile,post" {
+		"reconcile,post,reconcile,post" {
 		t.Fatalf("retry occurred without reconciliation: %v", sequence)
 	}
 }
@@ -387,9 +382,6 @@ func TestAmbiguousCreateDoesNotRetryWhenReconciliationIsTruncated(t *testing.T) 
 	reconcileCount := 0
 	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
 		switch {
-		case request.URL.Path == "/user":
-			return jsonResponse(request, http.StatusOK,
-				map[string]any{"id": 7, "login": "fixture-user", "type": "User"}), nil
 		case request.URL.Path == "/repos/delinoio/oss/issues" &&
 			request.Method == http.MethodGet:
 			reconcileCount++
@@ -430,6 +422,56 @@ func TestAmbiguousCreateDoesNotRetryWhenReconciliationIsTruncated(t *testing.T) 
 	}
 	if postCount != 1 {
 		t.Fatalf("unsafe retry occurred after truncated reconciliation: %d posts", postCount)
+	}
+}
+
+func TestProjectAssignmentFailureDoesNotMaskCreatedIssue(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	postCount := 0
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		switch {
+		case request.URL.Path == "/repos/delinoio/oss/issues" &&
+			request.Method == http.MethodGet:
+			return jsonResponse(request, http.StatusOK, []any{}), nil
+		case request.URL.Path == "/repos/delinoio/oss/issues" &&
+			request.Method == http.MethodPost:
+			postCount++
+			return jsonResponse(request, http.StatusCreated, map[string]any{
+				"id": 99, "node_id": "I_fixture", "number": 758,
+				"html_url": "https://github.com/delinoio/oss/issues/758",
+				"body":     "", "created_at": now,
+			}), nil
+		case request.URL.Path == "/graphql":
+			return jsonResponse(request, http.StatusOK, map[string]any{
+				"errors": []any{map[string]any{"type": "NOT_FOUND"}},
+			}), nil
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.String())
+			return nil, nil
+		}
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionRepository,
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := fixtureIssueInput()
+	input.Extension.Projects = []Project{{
+		NodeID: "PVT_fixture", Permission: ProjectPermissionRepository,
+	}}
+	issue, err := client.CreateIssue(
+		context.Background(), fixtureToken(t), fixtureRepository(), input,
+	)
+	if err != nil {
+		t.Fatalf("created issue was reported as failed: %v", err)
+	}
+	if issue.Number != 758 || postCount != 1 ||
+		len(issue.ProjectAssignments) != 1 ||
+		issue.ProjectAssignments[0].Disposition != ProjectAssignmentFailed {
+		t.Fatalf("unexpected create disposition: %#v", issue)
 	}
 }
 

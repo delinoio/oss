@@ -265,13 +265,26 @@ type IssueInput struct {
 	Extension          ProviderExtension
 }
 
+type ProjectAssignmentDisposition string
+
+const (
+	ProjectAssignmentApplied ProjectAssignmentDisposition = "applied"
+	ProjectAssignmentFailed  ProjectAssignmentDisposition = "failed"
+)
+
+type ProjectAssignment struct {
+	ProjectNodeID string
+	Disposition   ProjectAssignmentDisposition
+}
+
 type Issue struct {
-	ID        int64
-	NodeID    string
-	Number    int64
-	URL       string
-	Body      string
-	CreatedAt time.Time
+	ID                 int64
+	NodeID             string
+	Number             int64
+	URL                string
+	Body               string
+	CreatedAt          time.Time
+	ProjectAssignments []ProjectAssignment
 }
 
 func validateGitHubIssueURL(value, owner, repository string, number int64) error {

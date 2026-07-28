@@ -89,6 +89,7 @@ type rawForm struct {
 	Name        string         `yaml:"name"`
 	Description string         `yaml:"description"`
 	Title       string         `yaml:"title"`
+	Type        string         `yaml:"type"`
 	Labels      stringList     `yaml:"labels"`
 	Assignees   stringList     `yaml:"assignees"`
 	Projects    stringList     `yaml:"projects"`
@@ -114,7 +115,8 @@ type rawFormAttributes struct {
 }
 
 type rawFormValidation struct {
-	Required bool `yaml:"required"`
+	Required bool   `yaml:"required"`
+	Accept   string `yaml:"accept"`
 }
 
 func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
@@ -141,13 +143,29 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 		DefaultLabels: []string(raw.Labels), DefaultAssignees: []string(raw.Assignees),
 		Fields: make([]FormField, 0, len(raw.Body)),
 	}
-	seen := make(map[string]struct{})
+	reservedIDs := make(map[string]struct{}, len(raw.Body))
 	for _, item := range raw.Body {
+		if id := strings.TrimSpace(item.ID); id != "" {
+			reservedIDs[id] = struct{}{}
+		}
+	}
+	seen := make(map[string]struct{})
+	for index, item := range raw.Body {
+		if item.Type == "upload" {
+			if err := validateSkippedUpload(item); err != nil {
+				return IssueForm{}, err
+			}
+			continue
+		}
 		field, parseErr := parseFormField(item)
 		if parseErr != nil {
 			return IssueForm{}, parseErr
 		}
 		if field.Kind != FormFieldMarkdown {
+			if field.ID == "" {
+				field.ID = generatedFormFieldID(index, reservedIDs)
+				reservedIDs[field.ID] = struct{}{}
+			}
 			if _, exists := seen[field.ID]; exists {
 				return IssueForm{}, errors.New("realqa github: Issue Form field IDs must be unique")
 			}
@@ -183,8 +201,12 @@ func parseFormField(raw rawFormField) (FormField, error) {
 	default:
 		return FormField{}, errors.New("realqa github: Issue Form field type is unsupported")
 	}
-	if !safeNamePattern.MatchString(field.ID) || field.Label == "" {
-		return FormField{}, errors.New("realqa github: Issue Form field ID and label are required")
+	if (field.ID != "" && !safeNamePattern.MatchString(field.ID)) || field.Label == "" {
+		return FormField{}, errors.New("realqa github: Issue Form field ID or label is invalid")
+	}
+	if raw.Validations.Accept != "" {
+		return FormField{}, errors.New(
+			"realqa github: Issue Form upload validation is not allowed for this field")
 	}
 	if field.Kind != FormFieldDropdown && field.Kind != FormFieldCheckboxes &&
 		len(raw.Attributes.Options) != 0 {
@@ -221,6 +243,34 @@ func parseFormField(raw rawFormField) (FormField, error) {
 	// RealQA validates provider preselection metadata but leaves the actual
 	// selection to the client response, so the default is not retained.
 	return field, nil
+}
+
+func validateSkippedUpload(raw rawFormField) error {
+	id := strings.TrimSpace(raw.ID)
+	if (id != "" && !safeNamePattern.MatchString(id)) ||
+		strings.TrimSpace(raw.Attributes.Label) == "" ||
+		raw.Validations.Required ||
+		raw.Attributes.Placeholder != "" ||
+		raw.Attributes.Value != "" ||
+		raw.Attributes.Render != "" ||
+		raw.Attributes.Multiple ||
+		len(raw.Attributes.Options) != 0 ||
+		raw.Attributes.Default != nil ||
+		strings.ContainsAny(raw.Validations.Accept, "\x00\r\n") {
+		return errors.New("realqa github: Issue Form upload field is unsupported")
+	}
+	return nil
+}
+
+func generatedFormFieldID(index int, reserved map[string]struct{}) string {
+	base := fmt.Sprintf("realqa-field-%d", index+1)
+	candidate := base
+	for suffix := 2; ; suffix++ {
+		if _, exists := reserved[candidate]; !exists {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s-%d", base, suffix)
+	}
 }
 
 func parseFormOption(node yaml.Node, kind FormFieldKind) (FormOption, error) {

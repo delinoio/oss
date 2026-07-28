@@ -129,3 +129,68 @@ body:
 		t.Fatalf("expected invalid dropdown default, got %v", err)
 	}
 }
+
+func TestIssueFormAcceptsCurrentGitHubMetadataAndOptionalFields(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+type: bug
+body:
+  - type: textarea
+    attributes:
+      label: Current behavior
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Add screenshots if available.
+    validations:
+      required: false
+      accept: ".png,.jpg,.log"
+  - type: input
+    id: realqa-field-1
+    attributes:
+      label: Expected behavior
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(form.Fields) != 2 ||
+		form.Fields[0].ID != "realqa-field-1-2" ||
+		form.Fields[1].ID != "realqa-field-1" {
+		t.Fatalf("unexpected normalized fields: %#v", form.Fields)
+	}
+	rendered, err := RenderIssueForm(form, []FormAnswer{
+		{FieldID: "realqa-field-1-2", Values: []string{"The window closes."}},
+		{FieldID: "realqa-field-1", Values: []string{"The window stays open."}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rendered, "Screenshots") {
+		t.Fatalf("optional upload field was rendered: %s", rendered)
+	}
+}
+
+func TestIssueFormRejectsRequiredUploadField(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: upload
+    attributes:
+      label: Screenshots
+    validations:
+      required: true
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err == nil || !strings.Contains(err.Error(), "upload field is unsupported") {
+		t.Fatalf("expected required upload rejection, got %v", err)
+	}
+}

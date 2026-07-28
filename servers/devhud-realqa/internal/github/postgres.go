@@ -38,15 +38,53 @@ func (store *PostgresCallbackStore) ConnectUser(
 	accountID uuid.UUID,
 	user UserIdentity,
 	credential EncryptedCredential,
+	installationID int64,
 	installations []Installation,
 ) error {
 	if owner.Validate() != nil || accountID == uuid.Nil || user.ID <= 0 ||
 		len(credential.Ciphertext) == 0 || len(credential.WrappedDataKey) == 0 ||
-		credential.KeyID == "" || len(installations) == 0 {
+		credential.KeyID == "" || installationID < 0 || len(installations) == 0 {
 		return errors.New("realqa github: connected credential is invalid")
+	}
+	var bindingID uuid.UUID
+	if installationID > 0 {
+		if len(installations) != 1 || installations[0].ID != installationID {
+			return errors.New("realqa github: authorized installation is invalid")
+		}
+		var err error
+		bindingID, err = uuidv7.New()
+		if err != nil {
+			return errors.New("realqa github: installation identity creation failed")
+		}
 	}
 	return store.store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			if err := queries.LockPresetOwner(ctx, dbgen.LockPresetOwnerParams{
+				OwnerKind: string(owner.Kind),
+				OwnerID:   providerPGUUID(owner.ID),
+			}); err != nil {
+				return err
+			}
+			access, err := queries.GetOwnerAccess(ctx, dbgen.GetOwnerAccessParams{
+				AccountID: providerPGUUID(accountID),
+				OwnerKind: string(owner.Kind),
+				OwnerID:   providerPGUUID(owner.ID),
+			})
+			if errors.Is(err, pgx.ErrNoRows) ||
+				(err == nil && !callbackOwnerAccessAllowed(
+					owner, accountID, access.Role)) {
+				return ErrCallbackOwnerAccessUnavailable
+			}
+			if err != nil {
+				return err
+			}
+			if installationID > 0 {
+				if err = bindInstallation(
+					ctx, queries, owner, installationID, bindingID,
+				); err != nil {
+					return err
+				}
+			}
 			count, err := queries.ConnectGitHubUser(ctx,
 				dbgen.ConnectGitHubUserParams{
 					GithubLogin:          user.Login,
@@ -119,45 +157,50 @@ func (store *PostgresCallbackStore) ConnectUser(
 		})
 }
 
-func (store *PostgresCallbackStore) BindInstallation(
+func bindInstallation(
 	ctx context.Context,
+	queries *dbgen.Queries,
 	owner Owner,
 	installationID int64,
+	id uuid.UUID,
 ) error {
-	if owner.Validate() != nil || installationID <= 0 {
+	if owner.Validate() != nil || installationID <= 0 || id == uuid.Nil {
 		return errors.New("realqa github: installation binding is invalid")
 	}
-	id, err := uuidv7.New()
-	if err != nil {
-		return errors.New("realqa github: installation identity creation failed")
-	}
-	return store.store.WithinTransaction(ctx, pgx.TxOptions{},
-		func(queries *dbgen.Queries) error {
-			count, createErr := queries.CreatePendingGitHubInstallation(ctx,
-				dbgen.CreatePendingGitHubInstallationParams{
-					ID: providerPGUUID(id), ProviderInstallationID: installationID,
-					OwnerKind: string(owner.Kind), OwnerID: providerPGUUID(owner.ID),
-				})
-			if createErr != nil {
-				return createErr
-			}
-			if count == 1 {
-				return nil
-			}
-			binding, lookupErr := queries.GetGitHubInstallationBinding(
-				ctx, installationID)
-			if lookupErr != nil {
-				return errors.New("realqa github: callback owner connection is unavailable")
-			}
-			boundOwner, convertErr := providerOwner(binding.OwnerKind, binding.OwnerID)
-			if convertErr != nil {
-				return convertErr
-			}
-			if boundOwner != owner {
-				return ErrInstallationAlreadyBound
-			}
-			return nil
+	count, err := queries.CreatePendingGitHubInstallation(ctx,
+		dbgen.CreatePendingGitHubInstallationParams{
+			ID: providerPGUUID(id), ProviderInstallationID: installationID,
+			OwnerKind: string(owner.Kind), OwnerID: providerPGUUID(owner.ID),
 		})
+	if err != nil {
+		return err
+	}
+	if count == 1 {
+		return nil
+	}
+	binding, err := queries.GetGitHubInstallationBinding(ctx, installationID)
+	if err != nil {
+		return errors.New("realqa github: callback owner connection is unavailable")
+	}
+	boundOwner, err := providerOwner(binding.OwnerKind, binding.OwnerID)
+	if err != nil {
+		return err
+	}
+	if boundOwner != owner {
+		return ErrInstallationAlreadyBound
+	}
+	return nil
+}
+
+func callbackOwnerAccessAllowed(owner Owner, accountID uuid.UUID, role string) bool {
+	switch owner.Kind {
+	case OwnerKindPersonal:
+		return owner.ID == accountID
+	case OwnerKindOrganization:
+		return role == "owner" || role == "admin"
+	default:
+		return false
+	}
 }
 
 func (store *PostgresCallbackStore) ProcessWebhookDelivery(

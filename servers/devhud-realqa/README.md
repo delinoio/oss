@@ -27,14 +27,19 @@ billing catalog records, or publish a tracker/plugin interface.
 - Repository enumeration and issue-schema reads use the caller's bound GitHub
   App user authorization token, or only that caller's short-lived cached access
   when another organization member owns the connection credential, and expose
-  only repositories in the user/App intersection. The signed callback binds
-  the encrypted credential to the initiating RealQA account, expiring
+  only repositories in the user/App intersection. The signed callback verifies
+  the setup installation through the OAuth user's live installation list,
+  rechecks the initiating account's current owner-management access inside the
+  storage transaction, and only then binds the encrypted credential. Expiring
   credentials are refreshed and transactionally re-sealed on demand, and live
   repository/schema results refresh the caller-scoped preset-validation cache.
   Preset creation also revalidates the selected repository and definition
   through the live adapter when the caller owns the credential. Markdown
   templates and Issue Forms are fetched through GitHub Contents, normalized,
-  and provider-required fields/options/defaults are enforced.
+  and provider-required fields/options/defaults are enforced. Current
+  top-level issue type metadata and ID-less inputs are accepted; optional
+  provider upload controls are omitted in favor of RealQA's bounded image
+  workflow.
 - `github-app-manifest.json` is the separate RealQA base manifest with Issues
   write, Metadata read, Contents read, and issue lifecycle delivery. Typed
   manifest generation adds only the explicitly configured repository- or
@@ -49,9 +54,11 @@ billing catalog records, or publish a tracker/plugin interface.
 - The internal adapter normalizes typed labels, assignees, milestone, and
   optional project extensions; composes repository response, `RealQA capture`,
   inline images, and the hidden UUID marker; enforces 60,000 UTF-8 bytes; and
-  performs new-issue-only creation. It reconciles recent issues by marker before
-  dispatch and after ambiguous results, and never retries when reconciliation
-  is unavailable.
+  performs new-issue-only creation. It reconciles recent visible repository
+  issues by marker across credential changes before dispatch and after
+  ambiguous results, and never retries when reconciliation is unavailable.
+  Post-create project assignment reports per-project applied/failed
+  dispositions without masking a successfully created or reconciled issue.
 - Submission creation revalidates all image declaration limits, then stops
   unavailable before persistence because transfer/storage catalog activation
   and the end-to-end submission orchestrator remain excluded.
