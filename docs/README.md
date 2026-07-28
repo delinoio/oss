@@ -104,9 +104,10 @@ typed seven-day/20 MB local diagnostics/export, device-local reset, and backup
 exclusions. The private `devhud.deck.v1` and `devhud.realqa.v1` sources, isolated
 descriptors, generated Go/TypeScript artifacts, and private
 `@delinoio/devhud-deck-connect` and `@delinoio/devhud-realqa-connect` workspace
-exports are implemented; both feature servers and product clients remain
-planned. Issues #755/#757 authorize two bounded authenticated exceptions: Deck
-on
+exports are implemented, including Deck's structured request-only shortcut
+configurations and server-authored shortcut/widget state; both feature servers
+and product clients remain planned. Issues #755/#757 authorize two bounded
+authenticated exceptions: Deck on
 desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is
 limited to Logto/DeliDev; bundled webviews remain offline while exact future
