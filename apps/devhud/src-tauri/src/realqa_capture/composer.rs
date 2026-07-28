@@ -3,7 +3,9 @@ use std::{collections::HashMap, sync::Mutex};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    CaptureFailure, EncodedImage, ImageMediaType, ImageSessionBudget, decode_image, sanitize_image,
+    CaptureFailure, EncodedImage, ImageMediaType, ImageSessionBudget, decode_image,
+    editor::{EditorOperation, flatten},
+    encode_image, sanitize_image,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
@@ -25,6 +27,15 @@ pub(crate) struct ComposerImageRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ComposerFlattenRequest {
+    pub(crate) session_id: ComposerSessionId,
+    pub(crate) image_id: ComposerImageId,
+    pub(crate) operations: Vec<EditorOperation>,
+    pub(crate) output_media_type: ImageMediaType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ComposerImage {
     pub(crate) image_id: ComposerImageId,
     pub(crate) content_type: &'static str,
@@ -38,7 +49,14 @@ pub(crate) struct ComposerImage {
 #[derive(Debug, Default)]
 struct ComposerSession {
     budget: ImageSessionBudget,
-    image_sizes: HashMap<ComposerImageId, u64>,
+    images: HashMap<ComposerImageId, ComposerSource>,
+}
+
+#[derive(Debug)]
+struct ComposerSource {
+    original: EncodedImage,
+    original_encoded_bytes: u64,
+    accounted_encoded_bytes: u64,
 }
 
 #[derive(Debug, Default)]
@@ -66,17 +84,22 @@ impl ComposerCore {
             .map_err(|_| CaptureFailure::CaptureFailed)?;
         let session = sessions.entry(request.session_id).or_default();
         let previous_encoded_bytes = session
-            .image_sizes
+            .images
             .get(&request.image_id)
-            .copied()
+            .map(|source| source.accounted_encoded_bytes)
             .unwrap_or(0);
         session
             .budget
             .replace(previous_encoded_bytes, encoded_bytes)
             .map_err(CaptureFailure::from)?;
-        session
-            .image_sizes
-            .insert(request.image_id.clone(), encoded_bytes);
+        session.images.insert(
+            request.image_id.clone(),
+            ComposerSource {
+                original: sanitized.clone(),
+                original_encoded_bytes: encoded_bytes,
+                accounted_encoded_bytes: encoded_bytes,
+            },
+        );
         Ok(ComposerImage {
             image_id: request.image_id,
             content_type: request.output_media_type.content_type(),
@@ -85,6 +108,56 @@ impl ComposerCore {
             encoded_bytes,
             session_encoded_bytes: session.budget.encoded_bytes(),
             image: sanitized,
+        })
+    }
+
+    pub(crate) fn flatten_image(
+        &self,
+        request: ComposerFlattenRequest,
+    ) -> Result<ComposerImage, CaptureFailure> {
+        validate_identifier(&request.session_id.0)?;
+        validate_identifier(&request.image_id.0)?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| CaptureFailure::CaptureFailed)?;
+        let session = sessions
+            .get_mut(&request.session_id)
+            .ok_or(CaptureFailure::InvalidEditSequence)?;
+        let source = session
+            .images
+            .get(&request.image_id)
+            .ok_or(CaptureFailure::InvalidEditSequence)?;
+        let previous_encoded_bytes = source.accounted_encoded_bytes;
+        let original_encoded_bytes = source.original_encoded_bytes;
+        let original = decode_image(&source.original).map_err(CaptureFailure::from)?;
+        let flattened = flatten(original, &request.operations)?;
+        let encoded =
+            encode_image(&flattened, request.output_media_type).map_err(CaptureFailure::from)?;
+        let encoded_bytes = u64::try_from(encoded.bytes.len())
+            .map_err(|_| CaptureFailure::ImageEncodedLimitExceeded)?;
+        // The retained source and current approved result represent one logical
+        // screenshot. Accounting the larger form prevents a crop from laundering
+        // retained source bytes out of the session limit while also bounding
+        // output growth.
+        let accounted_encoded_bytes = original_encoded_bytes.max(encoded_bytes);
+        session
+            .budget
+            .replace(previous_encoded_bytes, accounted_encoded_bytes)
+            .map_err(CaptureFailure::from)?;
+        session
+            .images
+            .get_mut(&request.image_id)
+            .ok_or(CaptureFailure::InvalidEditSequence)?
+            .accounted_encoded_bytes = accounted_encoded_bytes;
+        Ok(ComposerImage {
+            image_id: request.image_id,
+            content_type: request.output_media_type.content_type(),
+            width: flattened.width,
+            height: flattened.height,
+            encoded_bytes,
+            session_encoded_bytes: session.budget.encoded_bytes(),
+            image: encoded,
         })
     }
 
@@ -102,13 +175,13 @@ impl ComposerCore {
         let Some(session) = sessions.get_mut(session_id) else {
             return Ok(());
         };
-        if let Some(encoded_bytes) = session.image_sizes.remove(image_id) {
+        if let Some(source) = session.images.remove(image_id) {
             session
                 .budget
-                .remove(encoded_bytes)
+                .remove(source.accounted_encoded_bytes)
                 .map_err(CaptureFailure::from)?;
         }
-        if session.image_sizes.is_empty() {
+        if session.images.is_empty() {
             sessions.remove(session_id);
         }
         Ok(())
@@ -193,6 +266,79 @@ mod tests {
         assert_eq!(
             composer.accept_image(request("../session", "image-1")),
             Err(CaptureFailure::InvalidSelection)
+        );
+    }
+
+    #[test]
+    fn flatten_request_deserializes_the_frontend_tauri_fixture_shape() {
+        let request: ComposerFlattenRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "session-1",
+            "imageId": "image-1",
+            "operations": [{
+                "kind": "arrow",
+                "start": { "x": 0, "y": 0 },
+                "end": { "x": 1, "y": 0 },
+                "color": "#ff0000",
+                "lineWidth": 3
+            }],
+            "outputMediaType": "webp"
+        }))
+        .expect("frontend fixture must deserialize");
+        assert_eq!(
+            request,
+            ComposerFlattenRequest {
+                session_id: ComposerSessionId("session-1".to_owned()),
+                image_id: ComposerImageId("image-1".to_owned()),
+                operations: vec![EditorOperation::Arrow {
+                    start: super::super::editor::EditorPoint { x: 0, y: 0 },
+                    end: super::super::editor::EditorPoint { x: 1, y: 0 },
+                    color: "#ff0000".to_owned(),
+                    line_width: 3,
+                }],
+                output_media_type: ImageMediaType::Webp,
+            }
+        );
+    }
+
+    #[test]
+    fn flattens_from_the_retained_original_without_mutating_source_pixels() {
+        let composer = ComposerCore::default();
+        let accepted = composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("image must be accepted");
+        let operation = EditorOperation::Crop {
+            rect: super::super::editor::EditorRect {
+                x: 1,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+        };
+        let first = composer
+            .flatten_image(ComposerFlattenRequest {
+                session_id: ComposerSessionId("session-1".to_owned()),
+                image_id: ComposerImageId("image-1".to_owned()),
+                operations: vec![operation.clone()],
+                output_media_type: ImageMediaType::Png,
+            })
+            .expect("flatten must succeed");
+        let second = composer
+            .flatten_image(ComposerFlattenRequest {
+                session_id: ComposerSessionId("session-1".to_owned()),
+                image_id: ComposerImageId("image-1".to_owned()),
+                operations: vec![operation],
+                output_media_type: ImageMediaType::Png,
+            })
+            .expect("repeat flatten must succeed");
+        assert_eq!(first.image, second.image);
+        assert_eq!((first.width, first.height), (1, 1));
+        assert_eq!(
+            first.session_encoded_bytes,
+            accepted.encoded_bytes.max(first.encoded_bytes)
+        );
+        assert_eq!(
+            decode_image(&first.image).expect("output must decode").rgba,
+            vec![4, 5, 6, 255]
         );
     }
 }

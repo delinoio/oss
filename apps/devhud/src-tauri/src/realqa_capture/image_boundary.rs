@@ -311,6 +311,28 @@ mod tests {
     }
 
     #[test]
+    fn sanitizing_png_removes_ancillary_metadata_chunks() {
+        let mut original = one_pixel_png();
+        let insert_at = original.bytes.len() - 12;
+        let mut metadata = Vec::new();
+        append_png_chunk(&mut metadata, b"tEXt", b"source\0raw-original");
+        original.bytes.splice(insert_at..insert_at, metadata);
+        assert!(original.bytes.windows(4).any(|window| window == b"tEXt"));
+
+        let sanitized =
+            sanitize_image(&original, ImageMediaType::Png).expect("image must sanitize");
+        assert!(!sanitized.bytes.windows(4).any(|window| window == b"tEXt"));
+        assert_eq!(
+            decode_image(&sanitized).expect("sanitized image must decode"),
+            DecodedImage {
+                width: 1,
+                height: 1,
+                rgba: vec![1, 2, 3, 255],
+            }
+        );
+    }
+
+    #[test]
     fn malformed_and_unsupported_images_fail_closed() {
         assert_eq!(
             decode_image(&EncodedImage {

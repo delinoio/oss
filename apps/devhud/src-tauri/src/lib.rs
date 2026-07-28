@@ -2828,6 +2828,18 @@ fn realqa_composer_accept_image(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
+fn realqa_composer_flatten_image(
+    request: realqa_capture::ComposerFlattenRequest,
+    state: State<'_, realqa_capture::ComposerCore>,
+) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
+    state.flatten_image(request)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
 fn realqa_composer_remove_image(
     session_id: realqa_capture::ComposerSessionId,
     image_id: realqa_capture::ComposerImageId,
@@ -2874,6 +2886,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             realqa_begin_capture,
             realqa_cancel_capture,
             realqa_composer_accept_image,
+            realqa_composer_flatten_image,
             realqa_composer_remove_image,
             realqa_composer_reset_session
         ])

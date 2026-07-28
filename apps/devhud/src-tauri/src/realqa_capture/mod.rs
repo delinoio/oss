@@ -1,4 +1,5 @@
 mod composer;
+mod editor;
 mod geometry;
 mod image_boundary;
 
@@ -6,7 +7,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "desktop-cef")]
 pub(crate) use composer::{
-    ComposerCore, ComposerImage, ComposerImageId, ComposerImageRequest, ComposerSessionId,
+    ComposerCore, ComposerFlattenRequest, ComposerImage, ComposerImageId, ComposerImageRequest,
+    ComposerSessionId,
 };
 pub(crate) use geometry::{
     DisplayDescriptor, DisplayId, DisplayPixelRegion, DisplaySnapshot, DisplaySnapshotId,
@@ -66,6 +68,8 @@ pub(crate) enum CaptureFailure {
     DisplaySnapshotChanged,
     InvalidDisplaySnapshot,
     InvalidSelection,
+    InvalidEditorOperation,
+    InvalidEditSequence,
     MalformedImage,
     UnsupportedImage,
     DecompressionBomb,
@@ -562,7 +566,10 @@ impl CaptureDiagnostic {
             CaptureFailure::DisplaySnapshotChanged => {
                 CaptureDiagnosticClassification::DisplayChanged
             }
-            CaptureFailure::InvalidDisplaySnapshot | CaptureFailure::InvalidSelection => {
+            CaptureFailure::InvalidDisplaySnapshot
+            | CaptureFailure::InvalidSelection
+            | CaptureFailure::InvalidEditorOperation
+            | CaptureFailure::InvalidEditSequence => {
                 CaptureDiagnosticClassification::InvalidRequest
             }
             CaptureFailure::MalformedImage
