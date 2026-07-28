@@ -10,6 +10,9 @@
     "allow-read-settings",
     "allow-read-widget-configuration",
     "allow-hide-hud",
-    "allow-show-settings"
+    "allow-show-settings",
+    "allow-get-auth-session",
+    "allow-start-authentication",
+    "allow-logout-authentication"
   ]
 }

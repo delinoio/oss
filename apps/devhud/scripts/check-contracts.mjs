@@ -13,6 +13,7 @@ const paths = {
     appRoot,
     "src-tauri/diagnostics-bridge/Cargo.toml",
   ),
+  authBridgeManifest: resolve(appRoot, "src-tauri/auth-bridge/Cargo.toml"),
   desktopMainCapability: resolve(
     appRoot,
     "src-tauri/capabilities/desktop-main.json",
@@ -37,6 +38,7 @@ const paths = {
 const [
   cargoLock,
   cargoManifest,
+  authBridgeManifest,
   diagnosticsBridgeManifest,
   desktopMainCapability,
   mobileMainCapability,
@@ -51,6 +53,7 @@ const [
 ] = await Promise.all([
   readFile(paths.cargoLock, "utf8"),
   readFile(paths.cargoManifest, "utf8"),
+  readFile(paths.authBridgeManifest, "utf8"),
   readFile(paths.diagnosticsBridgeManifest, "utf8"),
   readFile(paths.desktopMainCapability, "utf8"),
   readFile(paths.mobileMainCapability, "utf8"),
@@ -97,10 +100,23 @@ requireCondition(
   "pnpm-lock.yaml must lock @tauri-apps/cli-cef 3.0.0-alpha.6",
 );
 requireCondition(
-  !/\bbranch\s*=/u.test(cargoManifest) &&
+    !/\bbranch\s*=/u.test(cargoManifest) &&
+    !/\bbranch\s*=/u.test(authBridgeManifest) &&
     !/\bbranch\s*=/u.test(diagnosticsBridgeManifest) &&
     !/\bbranch\s*=/u.test(widgetBridgeManifest),
   "Cargo.toml must not follow a moving Git branch",
+);
+requireCondition(
+  rootCargoManifest.includes('"apps/devhud/src-tauri/auth-bridge"') &&
+    new RegExp(
+      `tauri-plugin\\s*=\\s*\\{[^}]*git\\s*=\\s*"${repository}"[^}]*rev\\s*=\\s*"${revision}"`,
+      "u",
+    ).test(authBridgeManifest) &&
+    new RegExp(
+      `tauri\\s*=\\s*\\{[^}]*git\\s*=\\s*"${repository}"[^}]*rev\\s*=\\s*"${revision}"`,
+      "u",
+    ).test(authBridgeManifest),
+  "the private mobile authentication plugin must be a workspace member pinned to the same Tauri revision",
 );
 requireCondition(
   !cargoManifest.includes("[patch") && !rootCargoManifest.includes("[patch"),
@@ -214,6 +230,9 @@ const expectedMobileMainPermissions = [
   "allow-write-widget-configuration",
   "allow-export-diagnostics",
   "allow-reset-dev-hud",
+  "allow-get-auth-session",
+  "allow-start-authentication",
+  "allow-logout-authentication",
 ];
 const expectedDesktopMainPermissions = [
   "allow-get-runtime-info",
@@ -221,6 +240,9 @@ const expectedDesktopMainPermissions = [
   "allow-read-widget-configuration",
   "allow-hide-hud",
   "allow-show-settings",
+  "allow-get-auth-session",
+  "allow-start-authentication",
+  "allow-logout-authentication",
 ];
 const expectedSettingsPermissions = [
   "allow-get-runtime-info",
@@ -234,6 +256,9 @@ const expectedSettingsPermissions = [
   "allow-set-launch-at-login",
   "allow-complete-first-run",
   "allow-request-update-action",
+  "allow-get-auth-session",
+  "allow-start-authentication",
+  "allow-logout-authentication",
 ];
 requireCondition(
   JSON.stringify(mobileMainCapabilityJson.windows) === JSON.stringify(["main"]) &&

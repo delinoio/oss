@@ -13,6 +13,9 @@ const COMMANDS: &[&str] = &[
     "set_launch_at_login",
     "complete_first_run",
     "request_update_action",
+    "get_auth_session",
+    "start_authentication",
+    "logout_authentication",
 ];
 
 fn main() {

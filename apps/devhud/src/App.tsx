@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { SessionProvider } from "./auth/SessionProvider";
+import type { NativeSessionBridge } from "./auth/contracts";
 import type {
   LocalStorageAdapter,
   PersistenceResetOutcome,
@@ -913,24 +915,28 @@ export function App({
   desktopBridge,
   platform,
   runtimeBridge = tauriRuntimeBridge,
+  sessionBridge,
   storage,
 }: {
   readonly desktopBridge?: DesktopBridge | null;
   readonly platform?: ApplicationPlatform;
   readonly runtimeBridge?: RuntimeBridge;
+  readonly sessionBridge?: NativeSessionBridge;
   readonly storage?: LocalStorageAdapter;
 }) {
   const synchronizePlatform = platform === undefined;
   const initialPlatform =
     platform ?? detectApplicationPlatform(navigator.userAgent);
   return (
-    <ApplicationProvider storage={storage}>
-      <ApplicationSurface
-        desktopBridge={desktopBridge}
-        initialPlatform={initialPlatform}
-        runtimeBridge={runtimeBridge}
-        synchronizePlatform={synchronizePlatform}
-      />
-    </ApplicationProvider>
+    <SessionProvider bridge={sessionBridge}>
+      <ApplicationProvider storage={storage}>
+        <ApplicationSurface
+          desktopBridge={desktopBridge}
+          initialPlatform={initialPlatform}
+          runtimeBridge={runtimeBridge}
+          synchronizePlatform={synchronizePlatform}
+        />
+      </ApplicationProvider>
+    </SessionProvider>
   );
 }

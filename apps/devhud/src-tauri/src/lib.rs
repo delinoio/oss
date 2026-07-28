@@ -1,3 +1,9 @@
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[allow(dead_code)]
+mod auth;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[allow(dead_code)]
+mod auth_native;
 #[cfg(any(feature = "desktop-cef", test))]
 mod autostart;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -2510,10 +2516,14 @@ fn export_diagnostics(
 fn reset_dev_hud(
     app: AppHandle<ActiveRuntime>,
     persistence: State<'_, PersistenceState>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
     shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
+    auth_state
+        .preflight()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     persistence
         .preflight_reset()
         .map_err(reset_preflight_failure)?;
@@ -2526,6 +2536,9 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
+    auth_state
+        .reset()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     clear_browsing_data_for_reset(&app)?;
     let mut shortcuts = shortcut_state.lock().map_err(|_| {
         log_shortcut_integration_failure(
@@ -2721,7 +2734,11 @@ fn reset_dev_hud(
     app: AppHandle<ActiveRuntime>,
     webview: Webview<ActiveRuntime>,
     state: State<'_, PersistenceState>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
+    auth_state
+        .preflight()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     state.preflight_reset().map_err(reset_preflight_failure)?;
     app.devhud_widget_bridge()
         .prepare_reset()
@@ -2732,6 +2749,9 @@ fn reset_dev_hud(
         .app_log_dir()
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
+    auth_state
+        .reset()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     clear_browsing_data_for_reset(webview)?;
     clear_local_logs_for_reset(&log_directory)?;
     let reset_outcome = match state.reset() {
@@ -2765,6 +2785,85 @@ fn reset_dev_hud(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+#[tauri::command]
+fn get_auth_session(
+    state: State<'_, auth_native::NativeAuthState>,
+) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    state.snapshot()
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn get_auth_session(
+    app: AppHandle<ActiveRuntime>,
+    state: State<'_, auth_native::NativeAuthState>,
+) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    state.poll_mobile_callback(&app)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+async fn start_authentication(
+    feature: auth::AuthFeature,
+    state: State<'_, auth_native::NativeAuthState>,
+) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    auth_native::feature_supported(feature)?;
+    let (authorization_url, callback) = state.begin_desktop()?;
+    if let Err(error) = auth_native::open_authorization_url(&authorization_url) {
+        state.cancel_pending();
+        return Err(error);
+    }
+    let callback = match tauri::async_runtime::spawn_blocking(move || callback.receive()).await {
+        Ok(Ok(callback)) => callback,
+        Ok(Err(error)) => {
+            state.cancel_pending();
+            return Err(error);
+        }
+        Err(_) => {
+            state.cancel_pending();
+            return Err(auth::AuthError::CallbackListenerUnavailable);
+        }
+    };
+    state.finish_desktop(callback)
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn start_authentication(
+    feature: auth::AuthFeature,
+    app: AppHandle<ActiveRuntime>,
+    state: State<'_, auth_native::NativeAuthState>,
+) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    auth_native::feature_supported(feature)?;
+    let authorization_url = state.begin_mobile()?;
+    if let Err(error) = auth_native::open_mobile_authorization(&app, &authorization_url) {
+        state.cancel_pending();
+        return Err(error);
+    }
+    Ok(auth::SessionSnapshot::Authenticating)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn logout_authentication(
+    state: State<'_, auth_native::NativeAuthState>,
+) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    state.logout()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
     builder
         .invoke_handler(tauri::generate_handler![
@@ -2781,7 +2880,10 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             replace_global_shortcut,
             set_launch_at_login,
             complete_first_run,
-            request_update_action
+            request_update_action,
+            get_auth_session,
+            start_authentication,
+            logout_authentication
         ])
         .setup(|app| {
             let persistence = match app.path().app_local_data_dir() {
@@ -2807,6 +2909,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 .ok()
                 .and_then(|record| native_settings(record.as_deref()));
             app.manage(persistence);
+            app.manage(auth_native::NativeAuthState::initialize());
             app.manage(QuittingState(AtomicBool::new(false)));
             app.manage(updater::UpdateActionBoundary);
 
@@ -2904,7 +3007,10 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             read_widget_configuration,
             write_widget_configuration,
             export_diagnostics,
-            reset_dev_hud
+            reset_dev_hud,
+            get_auth_session,
+            start_authentication,
+            logout_authentication
         ])
         .setup(|app| {
             if let Ok(directory) = app.path().app_log_dir() {
@@ -2935,6 +3041,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 }
             };
             app.manage(persistence);
+            app.manage(auth_native::NativeAuthState::initialize(app.handle()));
             app.manage(Mutex::new(StartupDiagnostics::default()));
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("DevHud")
@@ -2979,6 +3086,7 @@ fn platform_builder() -> Result<tauri::Builder<ActiveRuntime>, RuntimeInitializa
 ))]
 fn platform_builder() -> Result<tauri::Builder<ActiveRuntime>, RuntimeInitializationFailure> {
     Ok(tauri::Builder::<ActiveRuntime>::new()
+        .plugin(tauri_plugin_devhud_auth::init())
         .plugin(tauri_plugin_devhud_diagnostics::init())
         .plugin(tauri_plugin_devhud_widget::init()))
 }
@@ -3065,7 +3173,22 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
     let app = configure_builder(platform_builder()?)
         .build(tauri::generate_context!())
         .map_err(|_| RuntimeInitializationFailure::SystemWebviewInitialization)?;
-    app.run(|_, _| {});
+    app.run(|app, event| {
+        #[cfg(target_os = "ios")]
+        if let tauri::RunEvent::Opened { urls } = event {
+            for callback in urls {
+                if auth::is_mobile_callback_boundary(&callback) {
+                    // The callback remains native-only and one-shot. The
+                    // foreground provider observes completion through the
+                    // narrow get_auth_session command.
+                    let _ = app
+                        .state::<auth_native::NativeAuthState>()
+                        .accept_mobile_callback(callback);
+                    break;
+                }
+            }
+        }
+    });
     Ok(())
 }
 

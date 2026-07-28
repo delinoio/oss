@@ -11,6 +11,9 @@
     "allow-read-widget-configuration",
     "allow-write-widget-configuration",
     "allow-export-diagnostics",
-    "allow-reset-dev-hud"
+    "allow-reset-dev-hud",
+    "allow-get-auth-session",
+    "allow-start-authentication",
+    "allow-logout-authentication"
   ]
 }

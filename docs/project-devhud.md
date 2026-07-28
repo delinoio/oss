@@ -6,6 +6,8 @@ Define DevHud as a developer-tool shell with a usable signed-out, bundled-asset 
 
 The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild, the exact pinned Tauri desktop CEF runtime, standard mobile system webviews, tray/shortcut/autostart behavior, a closed internal tool registry, typed local persistence, bounded diagnostics, device-local reset, and non-distributed native-widget fixtures. Deck may later add authenticated GitHub.com pull-request workflows on desktop, iOS, Android, tray, shortcuts, notifications, and native widgets. RealQA may later add authenticated screenshot capture and new-GitHub.com-issue submission on supported desktop systems plus an exact-origin Chrome MV3/native-host bridge. Neither feature is part of the signed-out base shell.
 
+The shared authentication foundation is now implemented under `apps/devhud` as dependency-injected frontend/native session providers, native Logto Authorization Code with PKCE, a one-shot random desktop loopback callback, verified mobile link declarations, OS secure-vault refresh/device binding, and memory-only paired feature/delibase bearer validation. Deck and RealQA feature clients remain future work.
+
 ## Stable Project Identifier
 
 `devhud`
