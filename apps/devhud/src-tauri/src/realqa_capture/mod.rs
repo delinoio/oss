@@ -686,6 +686,10 @@ impl PlatformCaptureBackend {
                 macos::SystemMacosNativeAdapter::new(),
             ));
         }
+        #[cfg(all(target_os = "macos", not(feature = "realqa-macos-capture")))]
+        {
+            Self::new(CapturePlatform::Macos)
+        }
         #[cfg(target_os = "windows")]
         {
             Self::new(CapturePlatform::Windows)

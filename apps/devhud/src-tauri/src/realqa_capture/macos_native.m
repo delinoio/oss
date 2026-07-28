@@ -76,6 +76,8 @@ static bool realqa_system_stopped_stream(NSError *error) {
   if (@available(macOS 15.0, *)) {
     return error.code == SCStreamErrorSystemStoppedStream;
   }
+#else
+  (void)error;
 #endif
   return false;
 }
