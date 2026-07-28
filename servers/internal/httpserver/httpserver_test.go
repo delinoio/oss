@@ -54,20 +54,25 @@ func TestServerAndTimeoutDefaults(t *testing.T) {
 		t.Fatalf("unsafe server defaults: %#v", server)
 	}
 
+	// Block explicitly instead of racing short sleeps against Windows timer granularity.
+	releaseHandler := make(chan struct{})
 	handler := Timeout(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		time.Sleep(20 * time.Millisecond)
+		<-releaseHandler
 	}), time.Millisecond)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	close(releaseHandler)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("timeout status = %d, body = %s", response.Code, response.Body)
 	}
 
+	releaseHandler = make(chan struct{})
 	server = Server(":8080", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		time.Sleep(20 * time.Millisecond)
+		<-releaseHandler
 	}), Defaults{HandlerTimeout: time.Millisecond})
 	response = httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	close(releaseHandler)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("server handler timeout status = %d, body = %s", response.Code, response.Body)
 	}
