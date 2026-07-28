@@ -93,8 +93,29 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-devhud.md`
 - `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell and all Deck/RealQA client/native/Chrome surfaces)
 - `docs/servers-devhud-deck-foundation.md` (planned `servers/devhud-deck`; future `https://deck.deli.dev`)
-- `docs/protos-devhud-deck-api-contract.md` (planned `protos/devhud-deck/v1`; `devhud.deck.v1`, including the non-dispatching manual-refresh quote)
+- `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, and non-dispatching all-origin refresh preflight)
 - `docs/servers-devhud-realqa-foundation.md` (planned `servers/devhud-realqa`; future `https://realqa.deli.dev` and `https://assets.realqa.deli.dev`)
-- `docs/protos-devhud-realqa-api-contract.md` (planned `protos/devhud-realqa/v1`; `devhud.realqa.v1`)
+- `docs/protos-devhud-realqa-api-contract.md` (implemented `protos/devhud-realqa/v1`; `devhud.realqa.v1`, isolated descriptor and private generated package)
 
-DevHud's implemented signed-out base shell remains bundled, usable without an account, and protected by the exact pinned sandboxed Tauri CEF runtime, standard mobile system webviews, closed internal registry, least-privilege capabilities, typed seven-day/20 MB local diagnostics/export, device-local reset, and backup exclusions. Issues #755/#757 authorize two planned authenticated exceptions: Deck on desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is limited to Logto/DeliDev; bundled webviews remain offline while exact future feature RPCs and RealQA signed upload PUTs cross closed native transports. Provider work stays behind separate least-privilege GitHub Apps, RealQA management stays in DevHud, and delibase account/organization deletion durably invokes both features' service-authenticated cleanup mode. No public plugin SDK, arbitrary remote UI, client/extension telemetry, DNS/deployment, production app registration, catalog activation, widget/extension/store publication, or rollout is claimed. Production-facing Deck and RealQA catalog records remain disabled.
+DevHud's implemented signed-out base shell remains bundled, usable without an
+account, and protected by the exact pinned sandboxed Tauri CEF runtime, standard
+mobile system webviews, closed internal registry, least-privilege capabilities,
+typed seven-day/20 MB local diagnostics/export, device-local reset, and backup
+exclusions. The private `devhud.deck.v1` and `devhud.realqa.v1` sources, isolated
+descriptors, generated Go/TypeScript artifacts, and private
+`@delinoio/devhud-deck-connect` and `@delinoio/devhud-realqa-connect` workspace
+exports are implemented, including Deck's structured request-only shortcut
+configurations and server-authored shortcut/widget state; both feature servers
+and product clients remain planned. Issues #755/#757 authorize two bounded
+authenticated exceptions: Deck on
+desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
+RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is
+limited to Logto/DeliDev; bundled webviews remain offline while exact future
+feature RPCs and RealQA signed upload PUTs cross closed native transports.
+Provider work stays behind separate least-privilege GitHub Apps, RealQA
+management stays in DevHud, and delibase account/organization deletion durably
+invokes both features' service-authenticated cleanup mode. No public plugin SDK,
+arbitrary remote UI, client/extension telemetry, DNS/deployment, production app
+registration, catalog activation, widget/extension/store publication, or
+rollout is claimed. Production-facing Deck and RealQA catalog records remain
+disabled.

@@ -4,7 +4,7 @@
 
 - Project/component: `devhud` / `realqa-server`
 - Canonical implementation path: `servers/devhud-realqa`
-- Status: planned contract for issue #757; no service directory, deployment, DNS, R2 production bucket, production secret, registered GitHub App, published image/extension, enabled catalog record, or production operation is claimed.
+- Status: planned server for issue #757 backed by the implemented `devhud.realqa.v1` source contract and private generated-client package; no service directory, deployment, DNS, R2 production bucket, production secret, registered GitHub App, published image/extension, enabled catalog record, or production operation is claimed.
 - Future canonical API origin and Logto audience: `https://realqa.deli.dev`; future public-image origin: `https://assets.realqa.deli.dev`. Both are inactive contract identifiers.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrow HTTP handlers, Cloudflare R2 signed uploads/public delivery, and shared `servers/internal` infrastructure where its generic contracts apply.
 
@@ -41,7 +41,7 @@
 
 ## Tracker, Submission, and HTTP Boundaries
 
-- Implement exactly the `RealQAPresetService`, `RealQATrackerService`, and `RealQASubmissionService` RPC sets in [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
+- Implement exactly the generated `RealQAPresetService`, `RealQATrackerService`, and `RealQASubmissionService` RPC sets from [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md). Server code must consume generated Go artifacts and must not copy or redefine wire messages.
 - The internal tracker interface normalizes title, body, attachments, labels, and assignees plus typed provider extensions. Only GitHub is registered in v1; adapter contract tests are required. It is not a public tracker/plugin SDK.
 - HTTP handlers are limited to GitHub OAuth/App callbacks, installation/issue-lifecycle webhooks, a short-lived signed image PUT at the exact asset origin, and public image GET. The PUT accepts only the object, content type, checksum, and size bound by `CreateImageUpload`; all business mutations use Connect RPC.
 - Persisted IDs and preset-creation and local draft/submission idempotency keys are UUID v7. Preserve each idempotency key across retries. Owner scope, capture mode, selector mode, tracker kind, submission state, upload state, failure class, and asset state are closed enums.

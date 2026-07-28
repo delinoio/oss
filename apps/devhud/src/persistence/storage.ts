@@ -1,18 +1,22 @@
 import {
   decodeFailureFromKind,
   decodeSettings,
+  decodeShortcutEffectiveState,
   decodeWidgetConfiguration,
   defaultSettings,
   defaultWidgetConfiguration,
   encodeSettings,
+  encodeShortcutEffectiveState,
   encodeWidgetConfiguration,
   SETTINGS_STORAGE_KEY,
+  SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY,
   WIDGET_CONFIGURATION_STORAGE_KEY,
   type DecodeFailure,
   type DecodeFailureKind,
   type DevHudSettings,
   type PersistenceKey,
   type StructuredShortcut,
+  type ShortcutEffectiveState,
   type WidgetConfiguration,
 } from "./contracts";
 
@@ -34,8 +38,10 @@ export type PersistenceResetOutcome =
 
 export interface TauriPersistenceBridge {
   readSettings(): Promise<string | null>;
+  readShortcutEffectiveState(): Promise<string | null>;
   resetDevHud(): Promise<PersistenceResetOutcome>;
   writeSettings(record: string): Promise<void>;
+  writeShortcutEffectiveState(record: string): Promise<void>;
   readWidgetConfiguration(): Promise<string | null>;
   writeWidgetConfiguration(record: string): Promise<void>;
 }
@@ -70,21 +76,50 @@ export function createTauriPersistenceAdapter(
 ): LocalStorageAdapter {
   return {
     read(key) {
-      return key === SETTINGS_STORAGE_KEY
-        ? bridge.readSettings()
-        : bridge.readWidgetConfiguration().catch((error: unknown) => {
+      if (key === SETTINGS_STORAGE_KEY) return bridge.readSettings();
+      if (key === SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY) {
+        return bridge.readShortcutEffectiveState();
+      }
+      return bridge.readWidgetConfiguration().catch((error: unknown) => {
             throw nativeRecordReadError(error) ?? error;
-          });
+      });
     },
     reset() {
       return bridge.resetDevHud();
     },
     write(key, value) {
-      return key === SETTINGS_STORAGE_KEY
-        ? bridge.writeSettings(value)
-        : bridge.writeWidgetConfiguration(value);
+      if (key === SETTINGS_STORAGE_KEY) return bridge.writeSettings(value);
+      if (key === SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY) {
+        return bridge.writeShortcutEffectiveState(value);
+      }
+      return bridge.writeWidgetConfiguration(value);
     },
   };
+}
+
+/**
+ * Migrates only the old generic binding into the v2 device-effective record.
+ * The v1 base settings record is retained for compatibility and no feature
+ * definition, account data, or arbitrary key/value access is introduced.
+ */
+export async function loadShortcutEffectiveState(
+  storage: Pick<LocalStorageAdapter, "read" | "write">,
+): Promise<ShortcutEffectiveState> {
+  const existing = await storage.read(SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY);
+  if (existing !== null) {
+    const decoded = decodeShortcutEffectiveState(existing);
+    if (!decoded.ok) throw new NativeRecordReadError(decoded.failure);
+    return decoded.value;
+  }
+  const legacy = await storage.read(SETTINGS_STORAGE_KEY);
+  const genericShortcut = legacy === null ? null : (() => {
+    const decoded = decodeSettings(legacy);
+    if (!decoded.ok) throw new NativeRecordReadError(decoded.failure);
+    return decoded.value.shortcut;
+  })();
+  const state: ShortcutEffectiveState = { version: 2, genericShortcut, inactive: [] };
+  await storage.write(SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY, encodeShortcutEffectiveState(state));
+  return state;
 }
 
 export class MemoryStorageAdapter implements LocalStorageAdapter {

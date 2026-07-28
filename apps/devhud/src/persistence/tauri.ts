@@ -10,6 +10,8 @@ interface NativeCommandResults {
   read_settings: string | null;
   reset_dev_hud: PersistenceResetOutcome;
   write_settings: void;
+  read_shortcut_effective_state: string | null;
+  write_shortcut_effective_state: void;
   read_widget_configuration: string | null;
   write_widget_configuration: void;
 }
@@ -19,6 +21,12 @@ export const tauriPersistenceBridge: TauriPersistenceBridge = {
   resetDevHud: () => invoke<NativeCommandResults["reset_dev_hud"]>("reset_dev_hud"),
   writeSettings: (record) =>
     invoke<NativeCommandResults["write_settings"]>("write_settings", { record }),
+  readShortcutEffectiveState: () =>
+    invoke<NativeCommandResults["read_shortcut_effective_state"]>("read_shortcut_effective_state"),
+  writeShortcutEffectiveState: (record) =>
+    invoke<NativeCommandResults["write_shortcut_effective_state"]>(
+      "write_shortcut_effective_state", { record },
+    ),
   readWidgetConfiguration: () =>
     invoke<NativeCommandResults["read_widget_configuration"]>(
       "read_widget_configuration",
