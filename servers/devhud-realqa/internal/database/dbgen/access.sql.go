@@ -221,3 +221,24 @@ func (q *Queries) LockShortcutAccount(ctx context.Context, accountID pgtype.UUID
 	_, err := q.db.Exec(ctx, lockShortcutAccount, accountID)
 	return err
 }
+
+const scopeIsTombstoned = `-- name: ScopeIsTombstoned :one
+SELECT EXISTS (
+    SELECT 1
+    FROM realqa_scope_tombstones
+    WHERE owner_kind = $1
+      AND owner_id = $2
+)
+`
+
+type ScopeIsTombstonedParams struct {
+	OwnerKind string
+	OwnerID   pgtype.UUID
+}
+
+func (q *Queries) ScopeIsTombstoned(ctx context.Context, arg ScopeIsTombstonedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, scopeIsTombstoned, arg.OwnerKind, arg.OwnerID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}

@@ -97,11 +97,19 @@ func (service *Tracker) StartGitHubConnection(
 		return nil, err
 	}
 	expires := service.dependencies.Clock.Now().UTC().Add(10 * time.Minute)
-	record, err := service.dependencies.Store.Queries().StartGitHubConnection(
-		ctx, dbgen.StartGitHubConnectionParams{
-			ID: toPGUUID(connectionID), OwnerKind: scope.kind,
-			OwnerID: toPGUUID(scope.id), OauthStateDigest: stateDigest,
-			OauthStateExpiresAt: pgtype.Timestamptz{Time: expires, Valid: true},
+	var record dbgen.RealqaGithubConnection
+	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if lockErr := lockActiveOwnerScope(ctx, queries, scope); lockErr != nil {
+				return lockErr
+			}
+			record, err = queries.StartGitHubConnection(
+				ctx, dbgen.StartGitHubConnectionParams{
+					ID: toPGUUID(connectionID), OwnerKind: scope.kind,
+					OwnerID: toPGUUID(scope.id), OauthStateDigest: stateDigest,
+					OauthStateExpiresAt: pgtype.Timestamptz{Time: expires, Valid: true},
+				})
+			return err
 		})
 	if err != nil {
 		return nil, err

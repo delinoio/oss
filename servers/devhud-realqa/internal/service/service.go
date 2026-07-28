@@ -163,6 +163,38 @@ type owner struct {
 	id   uuid.UUID
 }
 
+func lockOwnerScope(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	scope owner,
+) (bool, error) {
+	if err := queries.LockPresetOwner(ctx, dbgen.LockPresetOwnerParams{
+		OwnerKind: scope.kind,
+		OwnerID:   toPGUUID(scope.id),
+	}); err != nil {
+		return false, err
+	}
+	return queries.ScopeIsTombstoned(ctx, dbgen.ScopeIsTombstonedParams{
+		OwnerKind: scope.kind,
+		OwnerID:   toPGUUID(scope.id),
+	})
+}
+
+func lockActiveOwnerScope(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	scope owner,
+) error {
+	tombstoned, err := lockOwnerScope(ctx, queries, scope)
+	if err != nil {
+		return err
+	}
+	if tombstoned {
+		return permissionDenied()
+	}
+	return nil
+}
+
 func parseOwner(value *realqav1.OwnerScope) (owner, error) {
 	if value == nil {
 		return owner{}, invalid(realqav1.ErrorReason_ERROR_REASON_OWNER_SCOPE_NOT_FOUND)

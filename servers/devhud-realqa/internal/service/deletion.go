@@ -149,6 +149,13 @@ func (service *Preset) DeleteFeatureData(
 	}
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			tombstoned, lockErr := lockOwnerScope(ctx, queries, scope)
+			if lockErr != nil {
+				return lockErr
+			}
+			if tombstoned {
+				return errIdempotencyReplay
+			}
 			if ownerRequest {
 				record, lookupErr := queries.GetIdempotencyRecord(
 					ctx, dbgen.GetIdempotencyRecordParams{

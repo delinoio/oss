@@ -17,6 +17,14 @@ WHERE binding.account_id = sqlc.arg(account_id)
   AND identity.deleted_at IS NULL
   AND tombstone.owner_id IS NULL;
 
+-- name: ScopeIsTombstoned :one
+SELECT EXISTS (
+    SELECT 1
+    FROM realqa_scope_tombstones
+    WHERE owner_kind = sqlc.arg(owner_kind)
+      AND owner_id = sqlc.arg(owner_id)
+);
+
 -- name: HasPayerTeamAccess :one
 SELECT EXISTS (
     SELECT 1

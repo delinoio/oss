@@ -50,6 +50,7 @@ type Querier interface {
 	LockPresetOwner(ctx context.Context, arg LockPresetOwnerParams) error
 	LockShortcutAccount(ctx context.Context, accountID pgtype.UUID) error
 	Ping(ctx context.Context) (int64, error)
+	ScopeIsTombstoned(ctx context.Context, arg ScopeIsTombstonedParams) (bool, error)
 	StartGitHubConnection(ctx context.Context, arg StartGitHubConnectionParams) (RealqaGithubConnection, error)
 	TombstoneLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	UpdatePreset(ctx context.Context, arg UpdatePresetParams) (RealqaPreset, error)

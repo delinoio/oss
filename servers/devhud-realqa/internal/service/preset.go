@@ -49,17 +49,6 @@ func (service *Preset) CreatePreset(
 	if err != nil {
 		return nil, err
 	}
-	scope, err := parseOwner(request.Msg.Owner)
-	if err != nil {
-		return nil, err
-	}
-	if _, err = authorizeOwner(ctx, service.dependencies, actor, scope, true, false); err != nil {
-		return nil, err
-	}
-	input, err := service.validateCreateInput(ctx, actor, scope, request.Msg)
-	if err != nil {
-		return nil, err
-	}
 	idempotencyID, err := parseIdempotency(request.Msg.Idempotency)
 	if err != nil {
 		return nil, err
@@ -70,6 +59,17 @@ func (service *Preset) CreatePreset(
 	}
 	if replay, ok, replayErr := service.createReplay(ctx, actor, idempotencyID, digest); ok {
 		return replay, replayErr
+	}
+	scope, err := parseOwner(request.Msg.Owner)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = authorizeOwner(ctx, service.dependencies, actor, scope, true, false); err != nil {
+		return nil, err
+	}
+	input, err := service.validateCreateInput(ctx, actor, scope, request.Msg)
+	if err != nil {
+		return nil, err
 	}
 	presetID, err := newID(service.dependencies)
 	if err != nil {
@@ -82,9 +82,7 @@ func (service *Preset) CreatePreset(
 	var created *realqav1.Preset
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			if err := queries.LockPresetOwner(ctx, dbgen.LockPresetOwnerParams{
-				OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-			}); err != nil {
+			if err := lockActiveOwnerScope(ctx, queries, scope); err != nil {
 				return err
 			}
 			if existing, lookupErr := queries.GetIdempotencyRecord(
@@ -613,12 +611,12 @@ func (service *Preset) UpdatePreset(
 			}
 			if input.shortcut != nil && input.shortcut.Active {
 				if shortcutErr := queries.LockShortcutAccount(
-					ctx, toPGUUID(actor.accountID)); shortcutErr != nil {
+					ctx, locked.CreatedByAccountID); shortcutErr != nil {
 					return shortcutErr
 				}
 				shortcuts, shortcutErr := queries.CountOtherActiveShortcutsForAccount(
 					ctx, dbgen.CountOtherActiveShortcutsForAccountParams{
-						AccountID: toPGUUID(actor.accountID),
+						AccountID: locked.CreatedByAccountID,
 						PresetID:  toPGUUID(presetID),
 					})
 				if shortcutErr != nil {

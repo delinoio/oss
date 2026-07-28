@@ -210,6 +210,15 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if updated.Msg.Preset.Shortcut != nil {
 		t.Fatalf("shortcut was not removed: %#v", updated.Msg.Preset.Shortcut)
 	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_repository_access
+		SET checked_at = transaction_timestamp() - interval '10 minutes'
+		WHERE installation_id = $1
+		  AND account_id = $2
+		  AND repository_id = 'repo-1'
+	`, installationID, accountID); err != nil {
+		t.Fatal(err)
+	}
 	replayed, err = service.CreatePreset(authCtx, connect.NewRequest(request))
 	if err != nil {
 		t.Fatal(err)
@@ -218,6 +227,15 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		replayed.Msg.Preset.Name != created.Msg.Preset.Name ||
 		replayed.Msg.Preset.Shortcut == nil {
 		t.Fatalf("create replay did not preserve original snapshot: %#v", replayed.Msg.Preset)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_repository_access
+		SET checked_at = transaction_timestamp()
+		WHERE installation_id = $1
+		  AND account_id = $2
+		  AND repository_id = 'repo-1'
+	`, installationID, accountID); err != nil {
+		t.Fatal(err)
 	}
 	_, err = service.UpdatePreset(authCtx, connect.NewRequest(
 		&realqav1.UpdatePresetRequest{
@@ -377,6 +395,46 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		`, uuidv7.MustNew(), presetID); err != nil {
 			t.Fatal(err)
 		}
+	}
+	secondAdminSubject := "fixture-second-admin"
+	secondAdminID := uuidv7.MustNew()
+	secondAdminDigest := hmac.New(sha256.New, identityKey)
+	_, _ = secondAdminDigest.Write([]byte(secondAdminSubject))
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($1, $2);
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($1, 'organization', $3, 'admin');
+		INSERT INTO realqa_payer_team_bindings (
+			account_id, organization_id, team_id
+		) VALUES ($1, $3, $4);
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id,
+			repository_owner, repository_name, issues_enabled, can_submit
+		) VALUES ($5, $1, 'repo-org', 'delinoio', 'private', true, true)
+	`, secondAdminID, secondAdminDigest.Sum(nil), organizationID, teamID,
+		organizationInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	organizationActivation := proto.Clone(organizationPreset.Msg.Preset).(*realqav1.Preset)
+	organizationActivation.Shortcut = &realqav1.ShortcutDefinition{
+		ShortcutId:  &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		Accelerator: "Ctrl+Shift+0",
+		Active:      true,
+	}
+	secondAdminCtx := auth.WithPrincipal(ctx, auth.Principal{
+		User: &auth.UserClaims{
+			TokenClaims: auth.TokenClaims{Subject: secondAdminSubject},
+			UserID:      secondAdminSubject,
+		},
+	})
+	_, err = service.UpdatePreset(secondAdminCtx, connect.NewRequest(
+		&realqav1.UpdatePresetRequest{
+			Preset: organizationActivation, ExpectedRevision: organizationPreset.Msg.Preset.Revision,
+		}))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("cross-admin shortcut activation limit code = %v", connect.CodeOf(err))
 	}
 	activation := proto.Clone(updated.Msg.Preset).(*realqav1.Preset)
 	activation.Shortcut = &realqav1.ShortcutDefinition{
