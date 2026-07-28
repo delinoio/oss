@@ -53,6 +53,7 @@ CREATE TABLE realqa_deletion_jobs (
     )),
     status text NOT NULL DEFAULT 'completed'
         CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    already_absent boolean NOT NULL,
     accepted_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     completed_at timestamptz,
     UNIQUE (owner_kind, owner_id),
@@ -70,6 +71,7 @@ BEGIN
        OR NEW.owner_kind IS DISTINCT FROM OLD.owner_kind
        OR NEW.owner_id IS DISTINCT FROM OLD.owner_id
        OR NEW.trigger_kind IS DISTINCT FROM OLD.trigger_kind
+       OR NEW.already_absent IS DISTINCT FROM OLD.already_absent
        OR NEW.accepted_at IS DISTINCT FROM OLD.accepted_at THEN
         RAISE EXCEPTION 'RealQA deletion job identity is immutable'
             USING ERRCODE = 'check_violation';

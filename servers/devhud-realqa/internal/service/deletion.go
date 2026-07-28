@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (service *Preset) DeleteFeatureData(
@@ -65,7 +64,16 @@ func (service *Preset) DeleteFeatureData(
 			if conversionErr != nil {
 				return nil, conversionErr
 			}
-			return deletionReplay(existingID, record.CompletedAt), nil
+			existing, getErr := service.dependencies.Store.Queries().GetDeletionJob(
+				ctx, dbgen.GetDeletionJobParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			if getErr != nil {
+				return nil, getErr
+			}
+			return deletionReplay(
+				existingID, record.CompletedAt, existing.AlreadyAbsent,
+			), nil
 		}
 		if !errors.Is(lookupErr, pgx.ErrNoRows) {
 			return nil, lookupErr
@@ -137,12 +145,15 @@ func (service *Preset) DeleteFeatureData(
 				Accepted:      true, AlreadyAbsent: true,
 			}), nil
 		}
-		return deletionReplay(existingID, existing.AcceptedAt), nil
+		return deletionReplay(
+			existingID, existing.AcceptedAt, existing.AlreadyAbsent,
+		), nil
 	} else if !errors.Is(getErr, pgx.ErrNoRows) {
 		return nil, getErr
 	}
 
 	var removed int64
+	var deletionJob dbgen.RealqaDeletionJob
 	idempotencyRecordID, err := newID(service.dependencies)
 	if err != nil {
 		return nil, err
@@ -228,13 +239,16 @@ func (service *Preset) DeleteFeatureData(
 					return deleteErr
 				}
 			}
-			if _, insertErr := queries.InsertDeletionJob(ctx,
+			insertedJob, insertErr := queries.InsertDeletionJob(ctx,
 				dbgen.InsertDeletionJobParams{
 					ID: toPGUUID(jobID), OwnerKind: scope.kind,
 					OwnerID: toPGUUID(scope.id), TriggerKind: trigger,
-				}); insertErr != nil {
+					AlreadyAbsent: removed == 0,
+				})
+			if insertErr != nil {
 				return insertErr
 			}
+			deletionJob = insertedJob
 			if ownerRequest {
 				_, insertErr := queries.CreateIdempotencyRecord(ctx,
 					dbgen.CreateIdempotencyRecordParams{
@@ -253,7 +267,9 @@ func (service *Preset) DeleteFeatureData(
 				OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
 			}); getErr == nil {
 			existingID, _ := fromPGUUID(existing.ID)
-			return deletionReplay(existingID, existing.AcceptedAt), nil
+			return deletionReplay(
+				existingID, existing.AcceptedAt, existing.AlreadyAbsent,
+			), nil
 		}
 		return nil, err
 	}
@@ -264,7 +280,7 @@ func (service *Preset) DeleteFeatureData(
 		Accepted:      true, AlreadyAbsent: removed == 0,
 		Idempotency: &realqav1.IdempotencyResult{
 			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_FEATURE_DATA,
-			OriginallyCompletedAt: timestamppb.New(service.dependencies.Clock.Now()),
+			OriginallyCompletedAt: timestamp(deletionJob.AcceptedAt),
 		},
 	}), nil
 }
@@ -272,10 +288,11 @@ func (service *Preset) DeleteFeatureData(
 func deletionReplay(
 	jobID uuid.UUID,
 	completed pgtype.Timestamptz,
+	alreadyAbsent bool,
 ) *connect.Response[realqav1.DeleteFeatureDataResponse] {
 	return connect.NewResponse(&realqav1.DeleteFeatureDataResponse{
 		DeletionJobId: &realqav1.UuidV7{Value: jobID.String()},
-		Accepted:      true, AlreadyAbsent: true,
+		Accepted:      true, AlreadyAbsent: alreadyAbsent,
 		Idempotency: &realqav1.IdempotencyResult{
 			Replayed:              true,
 			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_FEATURE_DATA,

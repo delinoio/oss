@@ -12,6 +12,8 @@ import (
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
@@ -179,8 +181,12 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if len(listed.Msg.Presets) != 1 {
 		t.Fatalf("first preset page length = %d", len(listed.Msg.Presets))
 	}
+	githubAuthorization, err := realqagithub.NewAuthorization("fixture-realqa-client")
+	if err != nil {
+		t.Fatal(err)
+	}
 	tracker := NewTracker(Dependencies{
-		Store: store, Pseudonymizer: pseudonymizer,
+		Store: store, Pseudonymizer: pseudonymizer, GitHub: githubAuthorization,
 	})
 	installations, err := tracker.ListGitHubInstallations(authCtx, connect.NewRequest(
 		&realqav1.ListGitHubInstallationsRequest{Owner: personalOwnerScope(accountID)}))
@@ -190,6 +196,50 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if len(installations.Msg.Installations) != 1 ||
 		installations.Msg.Installations[0].InstallationId.Value != installationID.String() {
 		t.Fatalf("first installation page = %#v", installations.Msg.Installations)
+	}
+	if _, err = tracker.StartGitHubConnection(authCtx, connect.NewRequest(
+		&realqav1.StartGitHubConnectionRequest{
+			Owner: personalOwnerScope(accountID),
+		})); err != nil {
+		t.Fatal(err)
+	}
+	activeConnection, err := store.Queries().GetGitHubConnectionForOwner(
+		ctx, dbgen.GetGitHubConnectionForOwnerParams{
+			OwnerKind: "personal", OwnerID: toPGUUID(accountID),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activeConnection.State != "connected" ||
+		len(activeConnection.CredentialCiphertext) == 0 ||
+		len(activeConnection.WrappedDataKey) == 0 ||
+		len(activeConnection.OauthStateDigest) == 0 ||
+		!activeConnection.OauthStateExpiresAt.Valid {
+		t.Fatalf("reconnection replaced active credential = %#v", activeConnection)
+	}
+	installations, err = tracker.ListGitHubInstallations(authCtx, connect.NewRequest(
+		&realqav1.ListGitHubInstallationsRequest{Owner: personalOwnerScope(accountID)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installations.Msg.Installations) != 1 {
+		t.Fatalf("reconnection hid active installations = %#v", installations.Msg.Installations)
+	}
+	schemaResponse, err := tracker.GetRepositoryIssueSchema(authCtx, connect.NewRequest(
+		&realqav1.GetRepositoryIssueSchemaRequest{
+			InstallationId: &realqav1.UuidV7{Value: installationID.String()},
+			Repository: &realqav1.GitHubRepositoryRef{
+				RepositoryId: "repo-1",
+				Owner:        "spoofed-owner",
+				Name:         "spoofed-name",
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if schemaResponse.Msg.Schema.Repository.Owner != "delinoio" ||
+		schemaResponse.Msg.Schema.Repository.Name != "oss" {
+		t.Fatalf("schema repository = %#v", schemaResponse.Msg.Schema.Repository)
 	}
 	replayed, err := service.CreatePreset(authCtx, connect.NewRequest(request))
 	if err != nil {
@@ -461,6 +511,39 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("shortcut activation limit code = %v", connect.CodeOf(err))
 	}
+	disconnectRequest := &realqav1.DisconnectGitHubConnectionRequest{
+		Owner: organizationOwnerScope(organizationID),
+		ExpectedRevision: &realqav1.Revision{
+			Value: 1,
+		},
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	disconnected, err := tracker.DisconnectGitHubConnection(
+		secondAdminCtx, connect.NewRequest(disconnectRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'member'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, secondAdminID, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	disconnectReplay, err := tracker.DisconnectGitHubConnection(
+		secondAdminCtx, connect.NewRequest(disconnectRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !disconnectReplay.Msg.Idempotency.Replayed ||
+		disconnectReplay.Msg.Connection.Revision.Value !=
+			disconnected.Msg.Connection.Revision.Value {
+		t.Fatalf("disconnect replay after role change = %#v", disconnectReplay.Msg)
+	}
 	deletedPayerOrganizationID := uuidv7.MustNew()
 	deletedPayerTeamID := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `
@@ -502,7 +585,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !deletionReplay.Msg.Idempotency.Replayed ||
+	if deleted.Msg.AlreadyAbsent ||
+		deletionReplay.Msg.AlreadyAbsent != deleted.Msg.AlreadyAbsent ||
+		!deletionReplay.Msg.Idempotency.Replayed ||
 		deletionReplay.Msg.DeletionJobId.Value != deleted.Msg.DeletionJobId.Value {
 		t.Fatalf("unexpected deletion replay = %#v", deletionReplay.Msg)
 	}

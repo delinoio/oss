@@ -102,6 +102,44 @@ func (q *Queries) GetOwnerAccess(ctx context.Context, arg GetOwnerAccessParams) 
 	return i, err
 }
 
+const getRepositorySubmitAccess = `-- name: GetRepositorySubmitAccess :one
+SELECT access.installation_id, access.account_id, access.repository_id, access.repository_owner, access.repository_name, access.issues_enabled, access.can_submit, access.checked_at
+FROM realqa_repository_access AS access
+JOIN realqa_github_installations AS installation
+  ON installation.id = access.installation_id
+JOIN realqa_github_connections AS connection
+  ON connection.id = installation.connection_id
+ AND connection.state = 'connected'
+WHERE access.installation_id = $1
+  AND access.account_id = $2
+  AND access.repository_id = $3
+  AND access.issues_enabled
+  AND access.can_submit
+  AND access.checked_at >= statement_timestamp() - interval '5 minutes'
+`
+
+type GetRepositorySubmitAccessParams struct {
+	InstallationID pgtype.UUID
+	AccountID      pgtype.UUID
+	RepositoryID   string
+}
+
+func (q *Queries) GetRepositorySubmitAccess(ctx context.Context, arg GetRepositorySubmitAccessParams) (RealqaRepositoryAccess, error) {
+	row := q.db.QueryRow(ctx, getRepositorySubmitAccess, arg.InstallationID, arg.AccountID, arg.RepositoryID)
+	var i RealqaRepositoryAccess
+	err := row.Scan(
+		&i.InstallationID,
+		&i.AccountID,
+		&i.RepositoryID,
+		&i.RepositoryOwner,
+		&i.RepositoryName,
+		&i.IssuesEnabled,
+		&i.CanSubmit,
+		&i.CheckedAt,
+	)
+	return i, err
+}
+
 const getRepositorySubmitAccessForOwner = `-- name: GetRepositorySubmitAccessForOwner :one
 SELECT access.installation_id, access.account_id, access.repository_id, access.repository_owner, access.repository_name, access.issues_enabled, access.can_submit, access.checked_at
 FROM realqa_repository_access AS access
@@ -172,37 +210,6 @@ type HasPayerTeamAccessParams struct {
 
 func (q *Queries) HasPayerTeamAccess(ctx context.Context, arg HasPayerTeamAccessParams) (bool, error) {
 	row := q.db.QueryRow(ctx, hasPayerTeamAccess, arg.AccountID, arg.OrganizationID, arg.TeamID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
-const hasRepositorySubmitAccess = `-- name: HasRepositorySubmitAccess :one
-SELECT EXISTS (
-    SELECT 1
-    FROM realqa_repository_access AS access
-    JOIN realqa_github_installations AS installation
-      ON installation.id = access.installation_id
-    JOIN realqa_github_connections AS connection
-      ON connection.id = installation.connection_id
-     AND connection.state = 'connected'
-    WHERE access.installation_id = $1
-      AND access.account_id = $2
-      AND access.repository_id = $3
-      AND access.issues_enabled
-      AND access.can_submit
-      AND access.checked_at >= statement_timestamp() - interval '5 minutes'
-)
-`
-
-type HasRepositorySubmitAccessParams struct {
-	InstallationID pgtype.UUID
-	AccountID      pgtype.UUID
-	RepositoryID   string
-}
-
-func (q *Queries) HasRepositorySubmitAccess(ctx context.Context, arg HasRepositorySubmitAccessParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasRepositorySubmitAccess, arg.InstallationID, arg.AccountID, arg.RepositoryID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

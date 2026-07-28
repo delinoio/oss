@@ -125,7 +125,7 @@ func (q *Queries) DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSub
 }
 
 const getDeletionJob = `-- name: GetDeletionJob :one
-SELECT id, owner_kind, owner_id, trigger_kind, status, accepted_at, completed_at
+SELECT id, owner_kind, owner_id, trigger_kind, status, already_absent, accepted_at, completed_at
 FROM realqa_deletion_jobs
 WHERE owner_kind = $1
   AND owner_id = $2
@@ -145,6 +145,7 @@ func (q *Queries) GetDeletionJob(ctx context.Context, arg GetDeletionJobParams) 
 		&i.OwnerID,
 		&i.TriggerKind,
 		&i.Status,
+		&i.AlreadyAbsent,
 		&i.AcceptedAt,
 		&i.CompletedAt,
 	)
@@ -194,19 +195,21 @@ func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) error 
 
 const insertDeletionJob = `-- name: InsertDeletionJob :one
 INSERT INTO realqa_deletion_jobs (
-    id, owner_kind, owner_id, trigger_kind, status, completed_at
+    id, owner_kind, owner_id, trigger_kind, status, already_absent, completed_at
 ) VALUES (
     $1, $2, $3,
-    $4, 'completed', transaction_timestamp()
+    $4, 'completed', $5,
+    transaction_timestamp()
 )
-RETURNING id, owner_kind, owner_id, trigger_kind, status, accepted_at, completed_at
+RETURNING id, owner_kind, owner_id, trigger_kind, status, already_absent, accepted_at, completed_at
 `
 
 type InsertDeletionJobParams struct {
-	ID          pgtype.UUID
-	OwnerKind   string
-	OwnerID     pgtype.UUID
-	TriggerKind string
+	ID            pgtype.UUID
+	OwnerKind     string
+	OwnerID       pgtype.UUID
+	TriggerKind   string
+	AlreadyAbsent bool
 }
 
 func (q *Queries) InsertDeletionJob(ctx context.Context, arg InsertDeletionJobParams) (RealqaDeletionJob, error) {
@@ -215,6 +218,7 @@ func (q *Queries) InsertDeletionJob(ctx context.Context, arg InsertDeletionJobPa
 		arg.OwnerKind,
 		arg.OwnerID,
 		arg.TriggerKind,
+		arg.AlreadyAbsent,
 	)
 	var i RealqaDeletionJob
 	err := row.Scan(
@@ -223,6 +227,7 @@ func (q *Queries) InsertDeletionJob(ctx context.Context, arg InsertDeletionJobPa
 		&i.OwnerID,
 		&i.TriggerKind,
 		&i.Status,
+		&i.AlreadyAbsent,
 		&i.AcceptedAt,
 		&i.CompletedAt,
 	)

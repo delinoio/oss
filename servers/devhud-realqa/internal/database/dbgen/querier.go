@@ -35,9 +35,9 @@ type Querier interface {
 	GetIdentityBySubjectDigest(ctx context.Context, subjectDigest []byte) (RealqaIdentity, error)
 	GetOwnerAccess(ctx context.Context, arg GetOwnerAccessParams) (RealqaOwnerBinding, error)
 	GetPresetRecord(ctx context.Context, id pgtype.UUID) (GetPresetRecordRow, error)
+	GetRepositorySubmitAccess(ctx context.Context, arg GetRepositorySubmitAccessParams) (RealqaRepositoryAccess, error)
 	GetRepositorySubmitAccessForOwner(ctx context.Context, arg GetRepositorySubmitAccessForOwnerParams) (RealqaRepositoryAccess, error)
 	HasPayerTeamAccess(ctx context.Context, arg HasPayerTeamAccessParams) (bool, error)
-	HasRepositorySubmitAccess(ctx context.Context, arg HasRepositorySubmitAccessParams) (bool, error)
 	InsertAudit(ctx context.Context, arg InsertAuditParams) error
 	InsertDeletionJob(ctx context.Context, arg InsertDeletionJobParams) (RealqaDeletionJob, error)
 	InsertScopeTombstone(ctx context.Context, arg InsertScopeTombstoneParams) error

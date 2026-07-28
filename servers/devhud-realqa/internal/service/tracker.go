@@ -189,13 +189,6 @@ func (service *Tracker) DisconnectGitHubConnection(
 	if err != nil {
 		return nil, err
 	}
-	scope, err := parseOwner(request.Msg.Owner)
-	if err != nil {
-		return nil, err
-	}
-	if _, err = authorizeOwner(ctx, service.dependencies, actor, scope, true, false); err != nil {
-		return nil, err
-	}
 	idempotencyID, err := parseIdempotency(request.Msg.Idempotency)
 	if err != nil {
 		return nil, err
@@ -208,6 +201,13 @@ func (service *Tracker) DisconnectGitHubConnection(
 		ctx, actor, idempotencyID, digest,
 	); ok {
 		return replay, replayErr
+	}
+	scope, err := parseOwner(request.Msg.Owner)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = authorizeOwner(ctx, service.dependencies, actor, scope, true, false); err != nil {
+		return nil, err
 	}
 	idempotencyRecordID, err := newID(service.dependencies)
 	if err != nil {
@@ -399,16 +399,16 @@ func (service *Tracker) GetRepositoryIssueSchema(
 	if err != nil {
 		return nil, err
 	}
-	allowed, err := service.dependencies.Store.Queries().HasRepositorySubmitAccess(
-		ctx, dbgen.HasRepositorySubmitAccessParams{
+	access, err := service.dependencies.Store.Queries().GetRepositorySubmitAccess(
+		ctx, dbgen.GetRepositorySubmitAccessParams{
 			InstallationID: toPGUUID(installation), AccountID: toPGUUID(actor.accountID),
 			RepositoryID: request.Msg.Repository.RepositoryId,
 		})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, permissionDenied()
+	}
 	if err != nil {
 		return nil, err
-	}
-	if !allowed {
-		return nil, permissionDenied()
 	}
 	rows, err := service.dependencies.Store.Queries().ListRepositoryDefinitions(
 		ctx, dbgen.ListRepositoryDefinitionsParams{
@@ -419,7 +419,11 @@ func (service *Tracker) GetRepositoryIssueSchema(
 		return nil, err
 	}
 	schema := &realqav1.RepositoryIssueSchema{
-		Repository:        request.Msg.Repository,
+		Repository: &realqav1.GitHubRepositoryRef{
+			RepositoryId: access.RepositoryID,
+			Owner:        access.RepositoryOwner,
+			Name:         access.RepositoryName,
+		},
 		MarkdownTemplates: []*realqav1.MarkdownIssueTemplate{},
 		IssueForms:        []*realqav1.IssueForm{},
 	}

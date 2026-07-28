@@ -32,7 +32,7 @@ CREATE TABLE realqa_github_connections (
         (oauth_state_digest IS NULL AND oauth_state_expires_at IS NULL)
         OR
         (
-            state = 'pending'
+            state IN ('pending', 'connected')
             AND octet_length(oauth_state_digest) = 32
             AND oauth_state_expires_at > created_at
         )

@@ -17,10 +17,11 @@ WHERE owner_kind = sqlc.arg(owner_kind)
 
 -- name: InsertDeletionJob :one
 INSERT INTO realqa_deletion_jobs (
-    id, owner_kind, owner_id, trigger_kind, status, completed_at
+    id, owner_kind, owner_id, trigger_kind, status, already_absent, completed_at
 ) VALUES (
     sqlc.arg(id), sqlc.arg(owner_kind), sqlc.arg(owner_id),
-    sqlc.arg(trigger_kind), 'completed', transaction_timestamp()
+    sqlc.arg(trigger_kind), 'completed', sqlc.arg(already_absent),
+    transaction_timestamp()
 )
 RETURNING *;
 

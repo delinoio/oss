@@ -35,13 +35,14 @@ type RealqaAudit struct {
 }
 
 type RealqaDeletionJob struct {
-	ID          pgtype.UUID
-	OwnerKind   string
-	OwnerID     pgtype.UUID
-	TriggerKind string
-	Status      string
-	AcceptedAt  pgtype.Timestamptz
-	CompletedAt pgtype.Timestamptz
+	ID            pgtype.UUID
+	OwnerKind     string
+	OwnerID       pgtype.UUID
+	TriggerKind   string
+	Status        string
+	AlreadyAbsent bool
+	AcceptedAt    pgtype.Timestamptz
+	CompletedAt   pgtype.Timestamptz
 }
 
 type RealqaDestination struct {

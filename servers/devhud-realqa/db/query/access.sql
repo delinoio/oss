@@ -38,22 +38,20 @@ SELECT EXISTS (
       AND tombstone.owner_id IS NULL
 );
 
--- name: HasRepositorySubmitAccess :one
-SELECT EXISTS (
-    SELECT 1
-    FROM realqa_repository_access AS access
-    JOIN realqa_github_installations AS installation
-      ON installation.id = access.installation_id
-    JOIN realqa_github_connections AS connection
-      ON connection.id = installation.connection_id
-     AND connection.state = 'connected'
-    WHERE access.installation_id = sqlc.arg(installation_id)
-      AND access.account_id = sqlc.arg(account_id)
-      AND access.repository_id = sqlc.arg(repository_id)
-      AND access.issues_enabled
-      AND access.can_submit
-      AND access.checked_at >= statement_timestamp() - interval '5 minutes'
-);
+-- name: GetRepositorySubmitAccess :one
+SELECT access.*
+FROM realqa_repository_access AS access
+JOIN realqa_github_installations AS installation
+  ON installation.id = access.installation_id
+JOIN realqa_github_connections AS connection
+  ON connection.id = installation.connection_id
+ AND connection.state = 'connected'
+WHERE access.installation_id = sqlc.arg(installation_id)
+  AND access.account_id = sqlc.arg(account_id)
+  AND access.repository_id = sqlc.arg(repository_id)
+  AND access.issues_enabled
+  AND access.can_submit
+  AND access.checked_at >= statement_timestamp() - interval '5 minutes';
 
 -- name: GetRepositorySubmitAccessForOwner :one
 SELECT access.*

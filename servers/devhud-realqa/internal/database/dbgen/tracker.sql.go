@@ -286,10 +286,11 @@ VALUES (
     $4, $5
 )
 ON CONFLICT (owner_kind, owner_id)
-DO UPDATE SET state = 'pending',
-              credential_ciphertext = NULL,
-              wrapped_data_key = NULL,
-              key_id = NULL,
+DO UPDATE SET state = CASE
+                  WHEN realqa_github_connections.state = 'connected'
+                  THEN 'connected'
+                  ELSE 'pending'
+              END,
               oauth_state_digest = EXCLUDED.oauth_state_digest,
               oauth_state_expires_at = EXCLUDED.oauth_state_expires_at,
               revision = realqa_github_connections.revision + 1,
