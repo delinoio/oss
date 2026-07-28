@@ -6,6 +6,7 @@
   "platforms": ["linux", "macOS", "windows"],
   "windows": ["realqa-capture"],
   "permissions": [
+    "allow-realqa-inspect-capture-capabilities",
     "allow-realqa-list-capture-sources",
     "allow-realqa-adjust-capture-selection",
     "allow-realqa-begin-capture",
