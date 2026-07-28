@@ -279,7 +279,11 @@ pub(crate) enum ResizeHandle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub(crate) enum SelectionAdjustment {
     Move {
         delta_x: f64,
@@ -526,6 +530,34 @@ mod tests {
                     },
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn selection_adjustment_deserializes_camel_case_variant_fields() {
+        assert_eq!(
+            serde_json::from_value::<SelectionAdjustment>(
+                serde_json::json!({"kind": "move", "deltaX": 2.5, "deltaY": -1.0})
+            )
+            .expect("camel-case move adjustment must deserialize"),
+            SelectionAdjustment::Move {
+                delta_x: 2.5,
+                delta_y: -1.0,
+            }
+        );
+        assert_eq!(
+            serde_json::from_value::<SelectionAdjustment>(serde_json::json!({
+                "kind": "resize",
+                "handle": "south-east",
+                "deltaX": 3.0,
+                "deltaY": 4.0
+            }))
+            .expect("camel-case resize adjustment must deserialize"),
+            SelectionAdjustment::Resize {
+                handle: ResizeHandle::SouthEast,
+                delta_x: 3.0,
+                delta_y: 4.0,
+            }
         );
     }
 

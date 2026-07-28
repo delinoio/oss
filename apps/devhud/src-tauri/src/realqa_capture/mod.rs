@@ -160,7 +160,11 @@ pub(crate) struct CaptureSourceCatalog {
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(tag = "mode", rename_all = "kebab-case")]
+#[serde(
+    tag = "mode",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub(crate) enum CaptureSourceSelection {
     Region { selection: SelectionGeometry },
     Window { window_id: WindowSourceId },
@@ -377,7 +381,32 @@ impl CaptureCore {
                 .ok_or(CaptureFailure::InvalidSelection)?
             }
         };
-        let pixel_regions = snapshot.pixel_regions(logical_bounds)?;
+        let pixel_regions = match &request.source {
+            CaptureSourceSelection::MultiMonitor { display_ids } => {
+                let mut regions = display_ids
+                    .iter()
+                    .map(|display_id| {
+                        let display = snapshot
+                            .display(display_id)
+                            .ok_or(CaptureFailure::DisplaySnapshotChanged)?;
+                        Ok(DisplayPixelRegion {
+                            display_id: display.id.clone(),
+                            pixels: geometry::PixelRect {
+                                x: 0,
+                                y: 0,
+                                width: display.physical_size.width,
+                                height: display.physical_size.height,
+                            },
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CaptureFailure>>()?;
+                regions.sort_by(|left, right| left.display_id.0.cmp(&right.display_id.0));
+                regions
+            }
+            CaptureSourceSelection::Region { .. }
+            | CaptureSourceSelection::Window { .. }
+            | CaptureSourceSelection::Display { .. } => snapshot.pixel_regions(logical_bounds)?,
+        };
         let mode = request.source.mode();
         Ok(ResolvedCaptureRequest {
             session_id: request.session_id,
@@ -522,7 +551,7 @@ impl CaptureBackend for PlatformCaptureBackend {
 mod tests {
     use std::sync::Mutex;
 
-    use geometry::{PhysicalSize, ScaleFactor};
+    use geometry::{PhysicalSize, PixelRect, ScaleFactor};
 
     use super::*;
 
@@ -680,6 +709,117 @@ mod tests {
             core.cancel(&CaptureSessionId("session-1".to_owned()))
                 .expect("fixture cancellation must work");
         }
+    }
+
+    #[test]
+    fn source_selection_deserializes_camel_case_variant_fields() {
+        for (value, expected) in [
+            (
+                serde_json::json!({"mode": "window", "windowId": "window-1"}),
+                CaptureSourceSelection::Window {
+                    window_id: WindowSourceId("window-1".to_owned()),
+                },
+            ),
+            (
+                serde_json::json!({"mode": "display", "displayId": "display-1"}),
+                CaptureSourceSelection::Display {
+                    display_id: DisplayId("display-1".to_owned()),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "mode": "multi-monitor",
+                    "displayIds": ["display-1", "display-2"]
+                }),
+                CaptureSourceSelection::MultiMonitor {
+                    display_ids: vec![
+                        DisplayId("display-1".to_owned()),
+                        DisplayId("display-2".to_owned()),
+                    ],
+                },
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_value::<CaptureSourceSelection>(value)
+                    .expect("camel-case source selection must deserialize"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn multi_monitor_capture_excludes_unselected_displays() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
+        *backend.displays.lock().expect("display lock") = ["left", "middle", "right"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, id)| DisplayDescriptor {
+                id: DisplayId(id.to_owned()),
+                logical_bounds: LogicalRect {
+                    x: index as f64 * 100.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 100,
+                    height: 100,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: index == 1,
+            })
+            .collect();
+        backend.windows.lock().expect("window lock").clear();
+
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::MultiMonitor {
+            display_ids: vec![DisplayId("left".to_owned()), DisplayId("right".to_owned())],
+        };
+        core.begin(capture_request).expect("capture must work");
+
+        let backend_request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .clone()
+            .expect("backend must receive request");
+        assert_eq!(
+            backend_request.logical_bounds,
+            LogicalRect {
+                x: 0.0,
+                y: 0.0,
+                width: 300.0,
+                height: 100.0,
+            }
+        );
+        assert_eq!(
+            backend_request.pixel_regions,
+            vec![
+                DisplayPixelRegion {
+                    display_id: DisplayId("left".to_owned()),
+                    pixels: PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: 100,
+                        height: 100,
+                    },
+                },
+                DisplayPixelRegion {
+                    display_id: DisplayId("right".to_owned()),
+                    pixels: PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: 100,
+                        height: 100,
+                    },
+                },
+            ]
+        );
     }
 
     #[test]
