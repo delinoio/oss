@@ -117,7 +117,10 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		return &startupError{value: "github"}
 	}
 	githubProvider, err := github.NewAdapter(
-		store, githubCredentialVault, githubClient, nil)
+		store, githubCredentialVault, githubClient,
+		configuration.GitHubOAuthClientID,
+		configuration.GitHubOAuthClientSecret,
+		nil)
 	if err != nil {
 		return &startupError{value: "github"}
 	}

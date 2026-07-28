@@ -61,6 +61,57 @@ func fixtureIssueInput() IssueInput {
 	}
 }
 
+func TestRefreshUserCredentialRotatesAccessAndRefreshTokens(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	oldRefreshToken := "ghr_fixture_old_refresh_token_123456"
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Scheme != "https" || request.URL.Host != "github.com" ||
+			request.URL.Path != "/login/oauth/access_token" {
+			t.Fatalf("unexpected refresh URL %s", request.URL)
+		}
+		var payload map[string]string
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["client_id"] != "fixture-realqa-client" ||
+			payload["client_secret"] != "fixture-realqa-client-secret-value" ||
+			payload["grant_type"] != "refresh_token" ||
+			payload["refresh_token"] != oldRefreshToken {
+			t.Fatalf("unexpected refresh payload %#v", payload)
+		}
+		return jsonResponse(request, http.StatusOK, map[string]any{
+			"access_token":             "ghu_fixture_new_access_token_123456",
+			"refresh_token":            "ghr_fixture_new_refresh_token_123456",
+			"expires_in":               28800,
+			"refresh_token_expires_in": 15897600,
+		}), nil
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, token, err := client.RefreshUserCredential(
+		context.Background(),
+		"fixture-realqa-client",
+		"fixture-realqa-client-secret-value",
+		oldRefreshToken,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.AccessToken != "ghu_fixture_new_access_token_123456" ||
+		credential.RefreshToken != "ghr_fixture_new_refresh_token_123456" ||
+		!credential.ExpiresAt.Equal(now.Add(8*time.Hour)) ||
+		!credential.RefreshExpiresAt.Equal(now.Add(184*24*time.Hour)) ||
+		token.value != credential.AccessToken {
+		t.Fatalf("unexpected refreshed credential %#v", credential)
+	}
+}
+
 func TestListInstallationsAndRepositoriesUsesUserAuthorization(t *testing.T) {
 	t.Parallel()
 	var authorizationHeaders []string

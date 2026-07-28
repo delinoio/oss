@@ -77,6 +77,7 @@ type RealqaGithubConnection struct {
 	CreatedAt            pgtype.Timestamptz
 	UpdatedAt            pgtype.Timestamptz
 	GithubUserID         pgtype.Int8
+	ConnectedByAccountID pgtype.UUID
 }
 
 type RealqaGithubInstallation struct {

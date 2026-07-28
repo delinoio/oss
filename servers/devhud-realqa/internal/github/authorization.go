@@ -65,12 +65,14 @@ func NewSignedAuthorization(
 func (authorization *Authorization) OAuthState(
 	ownerKind string,
 	ownerID uuid.UUID,
+	accountID uuid.UUID,
 ) (string, error) {
 	if authorization == nil || authorization.state == nil || authorization.now == nil {
 		return "", errors.New("realqa github: signed OAuth state is unavailable")
 	}
 	return authorization.state.Issue(
 		Owner{Kind: OwnerKind(ownerKind), ID: ownerID},
+		accountID,
 		CallbackPurposeOAuth,
 		authorization.now(),
 	)
@@ -79,6 +81,7 @@ func (authorization *Authorization) OAuthState(
 func (authorization *Authorization) ConnectionTarget(
 	ownerKind string,
 	ownerID uuid.UUID,
+	accountID uuid.UUID,
 ) (string, string, error) {
 	if authorization == nil || !validAppSlug(authorization.appSlug) ||
 		authorization.state == nil || authorization.now == nil {
@@ -86,6 +89,7 @@ func (authorization *Authorization) ConnectionTarget(
 	}
 	state, err := authorization.state.Issue(
 		Owner{Kind: OwnerKind(ownerKind), ID: ownerID},
+		accountID,
 		CallbackPurposeApp,
 		authorization.now(),
 	)

@@ -110,6 +110,7 @@ type rawFormAttributes struct {
 	Render      string      `yaml:"render"`
 	Multiple    bool        `yaml:"multiple"`
 	Options     []yaml.Node `yaml:"options"`
+	Default     *int        `yaml:"default"`
 }
 
 type rawFormValidation struct {
@@ -211,6 +212,14 @@ func parseFormField(raw rawFormField) (FormField, error) {
 			field.Options = append(field.Options, parsed)
 		}
 	}
+	if raw.Attributes.Default != nil &&
+		(field.Kind != FormFieldDropdown || *raw.Attributes.Default < 0 ||
+			*raw.Attributes.Default >= len(field.Options)) {
+		return FormField{}, errors.New(
+			"realqa github: Issue Form dropdown default is invalid")
+	}
+	// RealQA validates provider preselection metadata but leaves the actual
+	// selection to the client response, so the default is not retained.
 	return field, nil
 }
 

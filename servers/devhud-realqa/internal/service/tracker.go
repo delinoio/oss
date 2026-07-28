@@ -89,9 +89,9 @@ func (service *Tracker) StartGitHubConnection(
 	state, stateDigest, err := newOAuthState()
 	target := ""
 	if issuer, ok := service.dependencies.GitHub.(GitHubConnectionTargetIssuer); ok {
-		target, state, err = issuer.ConnectionTarget(scope.kind, scope.id)
+		target, state, err = issuer.ConnectionTarget(scope.kind, scope.id, actor.accountID)
 	} else if issuer, ok := service.dependencies.GitHub.(GitHubOAuthStateIssuer); ok {
-		state, err = issuer.OAuthState(scope.kind, scope.id)
+		state, err = issuer.OAuthState(scope.kind, scope.id, actor.accountID)
 	}
 	if err != nil {
 		return nil, err
@@ -370,56 +370,59 @@ func (service *Tracker) ListRepositories(
 	}
 	if service.dependencies.GitHubProvider != nil {
 		rows, providerErr := service.dependencies.GitHubProvider.ListRepositories(
-			ctx, installation)
-		if providerErr != nil {
+			ctx, actor.accountID, installation)
+		if providerErr != nil &&
+			!errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
 			return nil, rqerr.New(connect.CodeUnavailable,
 				realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
 				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 		}
-		query := strings.ToLower(request.Msg.Query)
-		filtered := make([]realqagithub.Repository, 0, len(rows))
-		for _, row := range rows {
-			if query == "" ||
-				strings.Contains(strings.ToLower(row.Owner), query) ||
-				strings.Contains(strings.ToLower(row.Name), query) {
-				filtered = append(filtered, row)
+		if providerErr == nil {
+			query := strings.ToLower(request.Msg.Query)
+			filtered := make([]realqagithub.Repository, 0, len(rows))
+			for _, row := range rows {
+				if query == "" ||
+					strings.Contains(strings.ToLower(row.Owner), query) ||
+					strings.Contains(strings.ToLower(row.Name), query) {
+					filtered = append(filtered, row)
+				}
 			}
-		}
-		sort.Slice(filtered, func(left, right int) bool {
-			return filtered[left].ID < filtered[right].ID
-		})
-		var afterID int64
-		if after != "" {
-			afterID, err = strconv.ParseInt(after, 10, 64)
-			if err != nil || afterID <= 0 {
-				return nil, invalid(
-					realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
-			}
-		}
-		response := &realqav1.ListRepositoriesResponse{
-			Repositories: []*realqav1.Repository{}, Page: &realqav1.PageResponse{},
-		}
-		var nextID int64
-		for _, row := range filtered {
-			if row.ID <= afterID {
-				continue
-			}
-			if len(response.Repositories) == int(size) {
-				response.Page.NextCursor = base64.RawURLEncoding.EncodeToString(
-					[]byte(strconv.FormatInt(nextID, 10)))
-				break
-			}
-			nextID = row.ID
-			response.Repositories = append(response.Repositories, &realqav1.Repository{
-				Repository: &realqav1.GitHubRepositoryRef{
-					RepositoryId: strconv.FormatInt(row.ID, 10),
-					Owner:        row.Owner, Name: row.Name,
-				},
-				InstallationId: &realqav1.UuidV7{Value: installation.String()},
-				IssuesEnabled:  row.IssuesEnabled, CallerCanSubmit: row.CanSubmit,
+			sort.Slice(filtered, func(left, right int) bool {
+				return filtered[left].ID < filtered[right].ID
 			})
+			var afterID int64
+			if after != "" {
+				afterID, err = strconv.ParseInt(after, 10, 64)
+				if err != nil || afterID <= 0 {
+					return nil, invalid(
+						realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+				}
+			}
+			response := &realqav1.ListRepositoriesResponse{
+				Repositories: []*realqav1.Repository{}, Page: &realqav1.PageResponse{},
+			}
+			var nextID int64
+			for _, row := range filtered {
+				if row.ID <= afterID {
+					continue
+				}
+				if len(response.Repositories) == int(size) {
+					response.Page.NextCursor = base64.RawURLEncoding.EncodeToString(
+						[]byte(strconv.FormatInt(nextID, 10)))
+					break
+				}
+				nextID = row.ID
+				response.Repositories = append(response.Repositories, &realqav1.Repository{
+					Repository: &realqav1.GitHubRepositoryRef{
+						RepositoryId: strconv.FormatInt(row.ID, 10),
+						Owner:        row.Owner, Name: row.Name,
+					},
+					InstallationId: &realqav1.UuidV7{Value: installation.String()},
+					IssuesEnabled:  row.IssuesEnabled, CallerCanSubmit: row.CanSubmit,
+				})
+			}
+			return connect.NewResponse(response), nil
 		}
-		return connect.NewResponse(response), nil
 	}
 	rows, err := service.dependencies.Store.Queries().ListAccessibleRepositories(
 		ctx, dbgen.ListAccessibleRepositoriesParams{
@@ -480,15 +483,24 @@ func (service *Tracker) GetRepositoryIssueSchema(
 		}
 		definitions, providerErr :=
 			service.dependencies.GitHubProvider.GetRepositoryDefinitions(
-				ctx, installation, repository)
-		if providerErr != nil {
+				ctx, actor.accountID, installation, repository)
+		if providerErr != nil &&
+			!errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
 			return nil, rqerr.New(connect.CodeUnavailable,
 				realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
 				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 		}
-		return connect.NewResponse(&realqav1.GetRepositoryIssueSchemaResponse{
-			Schema: repositoryDefinitionsProto(request.Msg.Repository, definitions),
-		}), nil
+		if providerErr == nil {
+			schema := repositoryDefinitionsProto(request.Msg.Repository, definitions)
+			if err = service.persistRepositoryDefinitions(
+				ctx, installation, request.Msg.Repository.RepositoryId, schema,
+			); err != nil {
+				return nil, err
+			}
+			return connect.NewResponse(&realqav1.GetRepositoryIssueSchemaResponse{
+				Schema: schema,
+			}), nil
+		}
 	}
 	access, err := service.dependencies.Store.Queries().GetRepositorySubmitAccess(
 		ctx, dbgen.GetRepositorySubmitAccessParams{
@@ -561,6 +573,76 @@ func (service *Tracker) GetRepositoryIssueSchema(
 	return connect.NewResponse(&realqav1.GetRepositoryIssueSchemaResponse{
 		Schema: schema,
 	}), nil
+}
+
+func (service *Tracker) persistRepositoryDefinitions(
+	ctx context.Context,
+	installationID uuid.UUID,
+	repositoryID string,
+	schema *realqav1.RepositoryIssueSchema,
+) error {
+	if schema == nil {
+		return errors.New("realqa tracker: provider schema is unavailable")
+	}
+	return service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			parameters := dbgen.DeleteRepositoryDefinitionsParams{
+				InstallationID: toPGUUID(installationID),
+				RepositoryID:   repositoryID,
+			}
+			if _, err := queries.DeleteRepositoryDefinitions(
+				ctx, parameters,
+			); err != nil {
+				return err
+			}
+			for _, item := range schema.MarkdownTemplates {
+				payload, err := protojson.Marshal(item)
+				if err != nil {
+					return err
+				}
+				definition := item.Definition
+				if definition == nil {
+					return errors.New("realqa tracker: provider definition is invalid")
+				}
+				if err = queries.UpsertRepositoryDefinition(
+					ctx, dbgen.UpsertRepositoryDefinitionParams{
+						InstallationID: toPGUUID(installationID),
+						RepositoryID:   repositoryID,
+						Kind:           "markdown_template",
+						DefinitionID:   definition.DefinitionId,
+						Name:           definition.Name,
+						Path:           definition.Path,
+						Etag:           definition.Etag,
+						SchemaPayload:  payload,
+					}); err != nil {
+					return err
+				}
+			}
+			for _, item := range schema.IssueForms {
+				payload, err := protojson.Marshal(item)
+				if err != nil {
+					return err
+				}
+				definition := item.Definition
+				if definition == nil {
+					return errors.New("realqa tracker: provider definition is invalid")
+				}
+				if err = queries.UpsertRepositoryDefinition(
+					ctx, dbgen.UpsertRepositoryDefinitionParams{
+						InstallationID: toPGUUID(installationID),
+						RepositoryID:   repositoryID,
+						Kind:           "issue_form",
+						DefinitionID:   definition.DefinitionId,
+						Name:           definition.Name,
+						Path:           definition.Path,
+						Etag:           definition.Etag,
+						SchemaPayload:  payload,
+					}); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 }
 
 func (service *Tracker) authorizeInstallation(

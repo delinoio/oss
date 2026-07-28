@@ -88,6 +88,91 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}, nil
 }
 
+func (client *Client) RefreshUserCredential(
+	ctx context.Context,
+	clientID string,
+	clientSecret string,
+	refreshToken string,
+) (OAuthCredential, UserToken, error) {
+	if client == nil || client.httpClient == nil {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh is unavailable")
+	}
+	if _, err := NewAuthorization(clientID); err != nil ||
+		len(clientSecret) < 20 || len(clientSecret) > 1024 ||
+		strings.ContainsAny(clientSecret, "\r\n") ||
+		len(refreshToken) < 20 || len(refreshToken) > 1024 ||
+		strings.TrimSpace(refreshToken) != refreshToken ||
+		strings.ContainsAny(refreshToken, " \t\r\n") {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh input is invalid")
+	}
+	encoded, err := json.Marshal(map[string]string{
+		"client_id":     clientID,
+		"client_secret": clientSecret,
+		"grant_type":    "refresh_token",
+		"refresh_token": refreshToken,
+	})
+	if err != nil {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh failed")
+	}
+	defer clear(encoded)
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, WebOrigin+"/login/oauth/access_token", bytes.NewReader(encoded))
+	if err != nil {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh failed")
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh failed")
+	}
+	defer response.Body.Close()
+	if response.Request == nil || response.Request.URL.Scheme != "https" ||
+		response.Request.URL.Host != "github.com" ||
+		response.Request.URL.Path != "/login/oauth/access_token" {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh response host is invalid")
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBody+1))
+	if err != nil || len(data) > maximumResponseBody {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh response is invalid")
+	}
+	defer clear(data)
+	var result struct {
+		AccessToken      string `json:"access_token"`
+		RefreshToken     string `json:"refresh_token"`
+		ExpiresIn        int64  `json:"expires_in"`
+		RefreshExpiresIn int64  `json:"refresh_token_expires_in"`
+		Error            string `json:"error"`
+	}
+	if err = json.Unmarshal(data, &result); err != nil ||
+		response.StatusCode != http.StatusOK || result.Error != "" ||
+		result.ExpiresIn <= 0 || result.RefreshExpiresIn <= 0 {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh response is invalid")
+	}
+	token, err := NewUserToken(result.AccessToken)
+	if err != nil || len(result.RefreshToken) < 20 ||
+		len(result.RefreshToken) > 1024 ||
+		strings.TrimSpace(result.RefreshToken) != result.RefreshToken ||
+		strings.ContainsAny(result.RefreshToken, " \t\r\n") {
+		return OAuthCredential{}, UserToken{},
+			errors.New("realqa github: OAuth refresh response is invalid")
+	}
+	now := client.now().UTC()
+	return OAuthCredential{
+		AccessToken: result.AccessToken, RefreshToken: result.RefreshToken,
+		ExpiresAt:        now.Add(time.Duration(result.ExpiresIn) * time.Second),
+		RefreshExpiresAt: now.Add(time.Duration(result.RefreshExpiresIn) * time.Second),
+	}, token, nil
+}
+
 func (client *Client) ListInstallations(
 	ctx context.Context,
 	token UserToken,

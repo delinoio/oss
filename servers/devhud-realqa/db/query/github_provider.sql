@@ -8,6 +8,7 @@ UPDATE realqa_github_connections
 SET state = 'connected',
     github_login = sqlc.arg(github_login),
     github_user_id = sqlc.arg(github_user_id),
+    connected_by_account_id = sqlc.arg(connected_by_account_id),
     credential_ciphertext = sqlc.arg(credential_ciphertext),
     wrapped_data_key = sqlc.arg(wrapped_data_key),
     key_id = sqlc.arg(key_id),
@@ -39,6 +40,7 @@ WHERE provider_installation_id = sqlc.arg(provider_installation_id);
 
 -- name: GetGitHubUserCredentialForInstallation :one
 SELECT
+    connection.id AS connection_id,
     installation.provider_installation_id,
     installation.owner_kind,
     installation.owner_id,
@@ -50,7 +52,81 @@ JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
 WHERE installation.id = sqlc.arg(installation_id)
+  AND connection.connected_by_account_id = sqlc.arg(account_id)
   AND installation.state = 'active';
+
+-- name: GetGitHubUserCredentialForInstallationForUpdate :one
+SELECT
+    connection.id AS connection_id,
+    installation.provider_installation_id,
+    installation.owner_kind,
+    installation.owner_id,
+    connection.credential_ciphertext,
+    connection.wrapped_data_key,
+    connection.key_id
+FROM realqa_github_installations AS installation
+JOIN realqa_github_connections AS connection
+  ON connection.id = installation.connection_id
+ AND connection.state = 'connected'
+WHERE installation.id = sqlc.arg(installation_id)
+  AND connection.connected_by_account_id = sqlc.arg(account_id)
+  AND installation.state = 'active'
+FOR UPDATE OF connection;
+
+-- name: UpdateGitHubUserCredential :execrows
+UPDATE realqa_github_connections
+SET credential_ciphertext = sqlc.arg(credential_ciphertext),
+    wrapped_data_key = sqlc.arg(wrapped_data_key),
+    key_id = sqlc.arg(key_id),
+    updated_at = transaction_timestamp()
+WHERE id = sqlc.arg(connection_id)
+  AND connected_by_account_id = sqlc.arg(account_id)
+  AND state = 'connected';
+
+-- name: DeleteRepositoryAccessForAccount :execrows
+DELETE FROM realqa_repository_access
+WHERE installation_id = sqlc.arg(installation_id)
+  AND account_id = sqlc.arg(account_id);
+
+-- name: UpsertRepositoryAccess :exec
+INSERT INTO realqa_repository_access (
+    installation_id, account_id, repository_id, repository_owner,
+    repository_name, issues_enabled, can_submit
+)
+VALUES (
+    sqlc.arg(installation_id), sqlc.arg(account_id), sqlc.arg(repository_id),
+    sqlc.arg(repository_owner), sqlc.arg(repository_name),
+    sqlc.arg(issues_enabled), sqlc.arg(can_submit)
+)
+ON CONFLICT (installation_id, account_id, repository_id)
+DO UPDATE SET repository_owner = EXCLUDED.repository_owner,
+              repository_name = EXCLUDED.repository_name,
+              issues_enabled = EXCLUDED.issues_enabled,
+              can_submit = EXCLUDED.can_submit,
+              checked_at = transaction_timestamp();
+
+-- name: DeleteRepositoryDefinitions :execrows
+DELETE FROM realqa_repository_definitions
+WHERE installation_id = sqlc.arg(installation_id)
+  AND repository_id = sqlc.arg(repository_id);
+
+-- name: UpsertRepositoryDefinition :exec
+INSERT INTO realqa_repository_definitions (
+    installation_id, repository_id, kind, definition_id, name, path, etag,
+    schema_payload
+)
+VALUES (
+    sqlc.arg(installation_id), sqlc.arg(repository_id), sqlc.arg(kind),
+    sqlc.arg(definition_id), sqlc.arg(name), sqlc.arg(path), sqlc.arg(etag),
+    sqlc.arg(schema_payload)
+)
+ON CONFLICT (installation_id, repository_id, kind, definition_id)
+DO UPDATE SET name = EXCLUDED.name,
+              path = EXCLUDED.path,
+              etag = EXCLUDED.etag,
+              schema_payload = EXCLUDED.schema_payload,
+              revision = realqa_repository_definitions.revision + 1,
+              updated_at = transaction_timestamp();
 
 -- name: ActivateGitHubInstallation :execrows
 UPDATE realqa_github_installations
@@ -114,6 +190,7 @@ WHERE asset.submission_id = submission.id
 -- name: DisconnectGitHubUserCredentials :execrows
 UPDATE realqa_github_connections
 SET state = 'disconnected',
+    connected_by_account_id = NULL,
     credential_ciphertext = NULL,
     wrapped_data_key = NULL,
     key_id = NULL,

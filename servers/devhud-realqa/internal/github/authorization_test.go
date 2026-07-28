@@ -47,7 +47,8 @@ func TestConnectionTargetIsPinnedToConfiguredGitHubApp(t *testing.T) {
 	}
 	target, signedState, err := authorization.ConnectionTarget(
 		string(OwnerKindPersonal),
-		uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51608"))
+		uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51608"),
+		uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51609"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,8 +61,11 @@ func TestConnectionTargetIsPinnedToConfiguredGitHubApp(t *testing.T) {
 		parsed.Query().Get("state") != signedState {
 		t.Fatalf("unexpected installation target %q", target)
 	}
-	if _, _, err = state.Verify(
+	if _, accountID, _, err := state.Verify(
 		signedState, CallbackPurposeApp, now); err != nil {
 		t.Fatal(err)
+	} else if accountID !=
+		uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51609") {
+		t.Fatalf("callback account = %s", accountID)
 	}
 }

@@ -51,21 +51,23 @@ UPDATE realqa_github_connections
 SET state = 'connected',
     github_login = $1,
     github_user_id = $2,
-    credential_ciphertext = $3,
-    wrapped_data_key = $4,
-    key_id = $5,
+    connected_by_account_id = $3,
+    credential_ciphertext = $4,
+    wrapped_data_key = $5,
+    key_id = $6,
     oauth_state_digest = NULL,
     oauth_state_expires_at = NULL,
     connected_at = transaction_timestamp(),
     revision = revision + 1,
     updated_at = transaction_timestamp()
-WHERE owner_kind = $6
-  AND owner_id = $7
+WHERE owner_kind = $7
+  AND owner_id = $8
 `
 
 type ConnectGitHubUserParams struct {
 	GithubLogin          string
 	GithubUserID         pgtype.Int8
+	ConnectedByAccountID pgtype.UUID
 	CredentialCiphertext []byte
 	WrappedDataKey       []byte
 	KeyID                pgtype.Text
@@ -77,6 +79,7 @@ func (q *Queries) ConnectGitHubUser(ctx context.Context, arg ConnectGitHubUserPa
 	result, err := q.db.Exec(ctx, connectGitHubUser,
 		arg.GithubLogin,
 		arg.GithubUserID,
+		arg.ConnectedByAccountID,
 		arg.CredentialCiphertext,
 		arg.WrappedDataKey,
 		arg.KeyID,
@@ -137,9 +140,48 @@ func (q *Queries) CreatePendingGitHubInstallation(ctx context.Context, arg Creat
 	return result.RowsAffected(), nil
 }
 
+const deleteRepositoryAccessForAccount = `-- name: DeleteRepositoryAccessForAccount :execrows
+DELETE FROM realqa_repository_access
+WHERE installation_id = $1
+  AND account_id = $2
+`
+
+type DeleteRepositoryAccessForAccountParams struct {
+	InstallationID pgtype.UUID
+	AccountID      pgtype.UUID
+}
+
+func (q *Queries) DeleteRepositoryAccessForAccount(ctx context.Context, arg DeleteRepositoryAccessForAccountParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRepositoryAccessForAccount, arg.InstallationID, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteRepositoryDefinitions = `-- name: DeleteRepositoryDefinitions :execrows
+DELETE FROM realqa_repository_definitions
+WHERE installation_id = $1
+  AND repository_id = $2
+`
+
+type DeleteRepositoryDefinitionsParams struct {
+	InstallationID pgtype.UUID
+	RepositoryID   string
+}
+
+func (q *Queries) DeleteRepositoryDefinitions(ctx context.Context, arg DeleteRepositoryDefinitionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRepositoryDefinitions, arg.InstallationID, arg.RepositoryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const disconnectGitHubUserCredentials = `-- name: DisconnectGitHubUserCredentials :execrows
 UPDATE realqa_github_connections
 SET state = 'disconnected',
+    connected_by_account_id = NULL,
     credential_ciphertext = NULL,
     wrapped_data_key = NULL,
     key_id = NULL,
@@ -179,6 +221,7 @@ func (q *Queries) GetGitHubInstallationBinding(ctx context.Context, providerInst
 
 const getGitHubUserCredentialForInstallation = `-- name: GetGitHubUserCredentialForInstallation :one
 SELECT
+    connection.id AS connection_id,
     installation.provider_installation_id,
     installation.owner_kind,
     installation.owner_id,
@@ -190,10 +233,17 @@ JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
 WHERE installation.id = $1
+  AND connection.connected_by_account_id = $2
   AND installation.state = 'active'
 `
 
+type GetGitHubUserCredentialForInstallationParams struct {
+	InstallationID pgtype.UUID
+	AccountID      pgtype.UUID
+}
+
 type GetGitHubUserCredentialForInstallationRow struct {
+	ConnectionID           pgtype.UUID
 	ProviderInstallationID int64
 	OwnerKind              string
 	OwnerID                pgtype.UUID
@@ -202,10 +252,60 @@ type GetGitHubUserCredentialForInstallationRow struct {
 	KeyID                  pgtype.Text
 }
 
-func (q *Queries) GetGitHubUserCredentialForInstallation(ctx context.Context, installationID pgtype.UUID) (GetGitHubUserCredentialForInstallationRow, error) {
-	row := q.db.QueryRow(ctx, getGitHubUserCredentialForInstallation, installationID)
+func (q *Queries) GetGitHubUserCredentialForInstallation(ctx context.Context, arg GetGitHubUserCredentialForInstallationParams) (GetGitHubUserCredentialForInstallationRow, error) {
+	row := q.db.QueryRow(ctx, getGitHubUserCredentialForInstallation, arg.InstallationID, arg.AccountID)
 	var i GetGitHubUserCredentialForInstallationRow
 	err := row.Scan(
+		&i.ConnectionID,
+		&i.ProviderInstallationID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CredentialCiphertext,
+		&i.WrappedDataKey,
+		&i.KeyID,
+	)
+	return i, err
+}
+
+const getGitHubUserCredentialForInstallationForUpdate = `-- name: GetGitHubUserCredentialForInstallationForUpdate :one
+SELECT
+    connection.id AS connection_id,
+    installation.provider_installation_id,
+    installation.owner_kind,
+    installation.owner_id,
+    connection.credential_ciphertext,
+    connection.wrapped_data_key,
+    connection.key_id
+FROM realqa_github_installations AS installation
+JOIN realqa_github_connections AS connection
+  ON connection.id = installation.connection_id
+ AND connection.state = 'connected'
+WHERE installation.id = $1
+  AND connection.connected_by_account_id = $2
+  AND installation.state = 'active'
+FOR UPDATE OF connection
+`
+
+type GetGitHubUserCredentialForInstallationForUpdateParams struct {
+	InstallationID pgtype.UUID
+	AccountID      pgtype.UUID
+}
+
+type GetGitHubUserCredentialForInstallationForUpdateRow struct {
+	ConnectionID           pgtype.UUID
+	ProviderInstallationID int64
+	OwnerKind              string
+	OwnerID                pgtype.UUID
+	CredentialCiphertext   []byte
+	WrappedDataKey         []byte
+	KeyID                  pgtype.Text
+}
+
+func (q *Queries) GetGitHubUserCredentialForInstallationForUpdate(ctx context.Context, arg GetGitHubUserCredentialForInstallationForUpdateParams) (GetGitHubUserCredentialForInstallationForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getGitHubUserCredentialForInstallationForUpdate, arg.InstallationID, arg.AccountID)
+	var i GetGitHubUserCredentialForInstallationForUpdateRow
+	err := row.Scan(
+		&i.ConnectionID,
 		&i.ProviderInstallationID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -327,4 +427,122 @@ func (q *Queries) SetGitHubInstallationState(ctx context.Context, arg SetGitHubI
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateGitHubUserCredential = `-- name: UpdateGitHubUserCredential :execrows
+UPDATE realqa_github_connections
+SET credential_ciphertext = $1,
+    wrapped_data_key = $2,
+    key_id = $3,
+    updated_at = transaction_timestamp()
+WHERE id = $4
+  AND connected_by_account_id = $5
+  AND state = 'connected'
+`
+
+type UpdateGitHubUserCredentialParams struct {
+	CredentialCiphertext []byte
+	WrappedDataKey       []byte
+	KeyID                pgtype.Text
+	ConnectionID         pgtype.UUID
+	AccountID            pgtype.UUID
+}
+
+func (q *Queries) UpdateGitHubUserCredential(ctx context.Context, arg UpdateGitHubUserCredentialParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateGitHubUserCredential,
+		arg.CredentialCiphertext,
+		arg.WrappedDataKey,
+		arg.KeyID,
+		arg.ConnectionID,
+		arg.AccountID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertRepositoryAccess = `-- name: UpsertRepositoryAccess :exec
+INSERT INTO realqa_repository_access (
+    installation_id, account_id, repository_id, repository_owner,
+    repository_name, issues_enabled, can_submit
+)
+VALUES (
+    $1, $2, $3,
+    $4, $5,
+    $6, $7
+)
+ON CONFLICT (installation_id, account_id, repository_id)
+DO UPDATE SET repository_owner = EXCLUDED.repository_owner,
+              repository_name = EXCLUDED.repository_name,
+              issues_enabled = EXCLUDED.issues_enabled,
+              can_submit = EXCLUDED.can_submit,
+              checked_at = transaction_timestamp()
+`
+
+type UpsertRepositoryAccessParams struct {
+	InstallationID  pgtype.UUID
+	AccountID       pgtype.UUID
+	RepositoryID    string
+	RepositoryOwner string
+	RepositoryName  string
+	IssuesEnabled   bool
+	CanSubmit       bool
+}
+
+func (q *Queries) UpsertRepositoryAccess(ctx context.Context, arg UpsertRepositoryAccessParams) error {
+	_, err := q.db.Exec(ctx, upsertRepositoryAccess,
+		arg.InstallationID,
+		arg.AccountID,
+		arg.RepositoryID,
+		arg.RepositoryOwner,
+		arg.RepositoryName,
+		arg.IssuesEnabled,
+		arg.CanSubmit,
+	)
+	return err
+}
+
+const upsertRepositoryDefinition = `-- name: UpsertRepositoryDefinition :exec
+INSERT INTO realqa_repository_definitions (
+    installation_id, repository_id, kind, definition_id, name, path, etag,
+    schema_payload
+)
+VALUES (
+    $1, $2, $3,
+    $4, $5, $6, $7,
+    $8
+)
+ON CONFLICT (installation_id, repository_id, kind, definition_id)
+DO UPDATE SET name = EXCLUDED.name,
+              path = EXCLUDED.path,
+              etag = EXCLUDED.etag,
+              schema_payload = EXCLUDED.schema_payload,
+              revision = realqa_repository_definitions.revision + 1,
+              updated_at = transaction_timestamp()
+`
+
+type UpsertRepositoryDefinitionParams struct {
+	InstallationID pgtype.UUID
+	RepositoryID   string
+	Kind           string
+	DefinitionID   string
+	Name           string
+	Path           string
+	Etag           string
+	SchemaPayload  []byte
+}
+
+func (q *Queries) UpsertRepositoryDefinition(ctx context.Context, arg UpsertRepositoryDefinitionParams) error {
+	_, err := q.db.Exec(ctx, upsertRepositoryDefinition,
+		arg.InstallationID,
+		arg.RepositoryID,
+		arg.Kind,
+		arg.DefinitionID,
+		arg.Name,
+		arg.Path,
+		arg.Etag,
+		arg.SchemaPayload,
+	)
+	return err
 }

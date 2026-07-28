@@ -1,5 +1,7 @@
 ALTER TABLE realqa_github_connections
-    ADD COLUMN github_user_id bigint;
+    ADD COLUMN github_user_id bigint,
+    ADD COLUMN connected_by_account_id uuid
+        REFERENCES realqa_identities(account_id) ON DELETE SET NULL;
 
 ALTER TABLE realqa_github_connections
     ADD CONSTRAINT realqa_github_connections_user_id_valid
@@ -60,6 +62,10 @@ CREATE TABLE realqa_github_webhook_deliveries (
 CREATE INDEX realqa_github_connections_user_idx
     ON realqa_github_connections(github_user_id)
     WHERE github_user_id IS NOT NULL;
+
+CREATE INDEX realqa_github_connections_account_idx
+    ON realqa_github_connections(connected_by_account_id)
+    WHERE connected_by_account_id IS NOT NULL;
 
 CREATE INDEX realqa_github_installations_provider_state_idx
     ON realqa_github_installations(provider_installation_id, state);

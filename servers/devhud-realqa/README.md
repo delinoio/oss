@@ -24,10 +24,17 @@ billing catalog records, or publish a tracker/plugin interface.
   50/250 limits, UUID-v7 creation replay, and typed stale-revision ETags.
 - Organization Owner/Admin management; Owner-only organization feature
   deletion; and live account/organization/repository access bindings.
-- Repository enumeration and issue-schema reads use the caller's GitHub App
-  user authorization token and expose only repositories in the user/App
-  intersection. Markdown templates and Issue Forms are fetched through GitHub
-  Contents, normalized, and provider-required fields/options are enforced.
+- Repository enumeration and issue-schema reads use the caller's bound GitHub
+  App user authorization token, or only that caller's short-lived cached access
+  when another organization member owns the connection credential, and expose
+  only repositories in the user/App intersection. The signed callback binds
+  the encrypted credential to the initiating RealQA account, expiring
+  credentials are refreshed and transactionally re-sealed on demand, and live
+  repository/schema results refresh the caller-scoped preset-validation cache.
+  Preset creation also revalidates the selected repository and definition
+  through the live adapter when the caller owns the credential. Markdown
+  templates and Issue Forms are fetched through GitHub Contents, normalized,
+  and provider-required fields/options/defaults are enforced.
 - `github-app-manifest.json` is the separate RealQA base manifest with Issues
   write, Metadata read, Contents read, and issue lifecycle delivery. Typed
   manifest generation adds only the explicitly configured repository- or
@@ -35,8 +42,10 @@ billing catalog records, or publish a tracker/plugin interface.
 - `GET /github/oauth/callback`, `GET /github/app/callback`, and
   `POST /github/webhooks` enforce signed, replay-protected state or
   `X-Hub-Signature-256`. Installation/repository, issue deletion, and user
-  authorization-revocation events are durable and idempotent. One provider
-  installation can bind to only one personal or organization owner.
+  authorization-revocation events record the delivery and apply all side
+  effects in one transaction, so they are durable and idempotent under
+  duplicate or racing deliveries. One provider installation can bind to only
+  one personal or organization owner.
 - The internal adapter normalizes typed labels, assignees, milestone, and
   optional project extensions; composes repository response, `RealQA capture`,
   inline images, and the hidden UUID marker; enforces 60,000 UTF-8 bytes; and

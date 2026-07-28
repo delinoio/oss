@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
@@ -34,11 +35,12 @@ func (store *PostgresCallbackStore) ConsumeCallbackState(
 func (store *PostgresCallbackStore) ConnectUser(
 	ctx context.Context,
 	owner Owner,
+	accountID uuid.UUID,
 	user UserIdentity,
 	credential EncryptedCredential,
 	installations []Installation,
 ) error {
-	if owner.Validate() != nil || user.ID <= 0 ||
+	if owner.Validate() != nil || accountID == uuid.Nil || user.ID <= 0 ||
 		len(credential.Ciphertext) == 0 || len(credential.WrappedDataKey) == 0 ||
 		credential.KeyID == "" || len(installations) == 0 {
 		return errors.New("realqa github: connected credential is invalid")
@@ -52,6 +54,7 @@ func (store *PostgresCallbackStore) ConnectUser(
 					CredentialCiphertext: credential.Ciphertext,
 					WrappedDataKey:       credential.WrappedDataKey,
 					KeyID:                pgtype.Text{String: credential.KeyID, Valid: true},
+					ConnectedByAccountID: providerPGUUID(accountID),
 					OwnerKind:            string(owner.Kind),
 					OwnerID:              providerPGUUID(owner.ID),
 				})
@@ -157,19 +160,36 @@ func (store *PostgresCallbackStore) BindInstallation(
 		})
 }
 
-func (store *PostgresCallbackStore) RecordDelivery(
+func (store *PostgresCallbackStore) ProcessWebhookDelivery(
 	ctx context.Context,
 	deliveryID uuid.UUID,
+	process func(WebhookStore) error,
 ) (bool, error) {
-	if deliveryID == uuid.Nil {
+	if deliveryID == uuid.Nil || process == nil {
 		return false, errors.New("realqa github: webhook delivery ID is invalid")
 	}
-	count, err := store.store.Queries().RecordGitHubWebhookDelivery(
-		ctx, providerPGUUID(deliveryID))
-	return count == 1, err
+	fresh := false
+	var processingErr error
+	err := store.store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			count, err := queries.RecordGitHubWebhookDelivery(
+				ctx, providerPGUUID(deliveryID))
+			if err != nil || count == 0 {
+				return err
+			}
+			fresh = true
+			processingErr = process(&postgresWebhookStore{queries: queries})
+			return processingErr
+		})
+	if err != nil && processingErr == nil {
+		err = fmt.Errorf("%w: %v", errWebhookStorage, err)
+	}
+	return fresh, err
 }
 
-func (store *PostgresCallbackStore) ApplyInstallation(
+type postgresWebhookStore struct{ queries dbgen.Querier }
+
+func (store *postgresWebhookStore) ApplyInstallation(
 	ctx context.Context,
 	event InstallationEvent,
 ) error {
@@ -179,7 +199,7 @@ func (store *PostgresCallbackStore) ApplyInstallation(
 		if err != nil {
 			return errors.New("realqa github: installation permissions are invalid")
 		}
-		count, err := store.store.Queries().ActivateGitHubInstallation(ctx,
+		count, err := store.queries.ActivateGitHubInstallation(ctx,
 			dbgen.ActivateGitHubInstallationParams{
 				ProviderAccountID: pgtype.Int8{
 					Int64: event.Installation.AccountID, Valid: true,
@@ -203,7 +223,7 @@ func (store *PostgresCallbackStore) ApplyInstallation(
 		if event.Action == "deleted" {
 			state = "deleted"
 		}
-		count, err := store.store.Queries().SetGitHubInstallationState(ctx,
+		count, err := store.queries.SetGitHubInstallationState(ctx,
 			dbgen.SetGitHubInstallationStateParams{
 				State: state, ProviderInstallationID: event.Installation.ID,
 			})
@@ -219,7 +239,7 @@ func (store *PostgresCallbackStore) ApplyInstallation(
 	}
 }
 
-func (store *PostgresCallbackStore) ApplyRepositories(
+func (store *postgresWebhookStore) ApplyRepositories(
 	ctx context.Context,
 	event RepositoryEvent,
 ) error {
@@ -230,37 +250,34 @@ func (store *PostgresCallbackStore) ApplyRepositories(
 	if event.Action == "removed" && len(removed) == 0 {
 		removed = event.Added
 	}
-	return store.store.WithinTransaction(ctx, pgx.TxOptions{},
-		func(queries *dbgen.Queries) error {
-			for _, repository := range removed {
-				if repository.ID <= 0 {
-					return errors.New("realqa github: removed repository is invalid")
-				}
-				repositoryID := strconv.FormatInt(repository.ID, 10)
-				parameters := dbgen.RemoveGitHubRepositoryAccessParams{
-					ProviderInstallationID: event.InstallationID,
-					RepositoryID:           repositoryID,
-				}
-				if _, err := queries.RemoveGitHubRepositoryAccess(ctx, parameters); err != nil {
-					return err
-				}
-				if _, err := queries.RemoveGitHubRepositoryDefinitions(ctx,
-					dbgen.RemoveGitHubRepositoryDefinitionsParams(parameters)); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
+	for _, repository := range removed {
+		if repository.ID <= 0 {
+			return errors.New("realqa github: removed repository is invalid")
+		}
+		repositoryID := strconv.FormatInt(repository.ID, 10)
+		parameters := dbgen.RemoveGitHubRepositoryAccessParams{
+			ProviderInstallationID: event.InstallationID,
+			RepositoryID:           repositoryID,
+		}
+		if _, err := store.queries.RemoveGitHubRepositoryAccess(ctx, parameters); err != nil {
+			return err
+		}
+		if _, err := store.queries.RemoveGitHubRepositoryDefinitions(ctx,
+			dbgen.RemoveGitHubRepositoryDefinitionsParams(parameters)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (store *PostgresCallbackStore) DeleteIssueAssets(
+func (store *postgresWebhookStore) DeleteIssueAssets(
 	ctx context.Context,
 	event DeletedIssueEvent,
 ) error {
 	if event.InstallationID <= 0 || event.RepositoryID <= 0 || event.IssueID <= 0 {
 		return errors.New("realqa github: deleted issue reference is invalid")
 	}
-	_, err := store.store.Queries().MarkAssetsRemovedForDeletedGitHubIssue(ctx,
+	_, err := store.queries.MarkAssetsRemovedForDeletedGitHubIssue(ctx,
 		dbgen.MarkAssetsRemovedForDeletedGitHubIssueParams{
 			ProviderInstallationID: event.InstallationID,
 			RepositoryID:           strconv.FormatInt(event.RepositoryID, 10),
@@ -271,14 +288,14 @@ func (store *PostgresCallbackStore) DeleteIssueAssets(
 	return err
 }
 
-func (store *PostgresCallbackStore) DisconnectGitHubUser(
+func (store *postgresWebhookStore) DisconnectGitHubUser(
 	ctx context.Context,
 	userID int64,
 ) error {
 	if userID <= 0 {
 		return errors.New("realqa github: disconnected user is invalid")
 	}
-	_, err := store.store.Queries().DisconnectGitHubUserCredentials(
+	_, err := store.queries.DisconnectGitHubUserCredentials(
 		ctx, pgtype.Int8{Int64: userID, Valid: true})
 	return err
 }
@@ -312,3 +329,4 @@ func projectPermissionFor(permissions Permissions) (ProjectPermission, error) {
 }
 
 var _ CallbackStore = (*PostgresCallbackStore)(nil)
+var _ WebhookStore = (*postgresWebhookStore)(nil)

@@ -25,6 +25,8 @@ type Querier interface {
 	DeleteLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DeletePresetAtRevision(ctx context.Context, arg DeletePresetAtRevisionParams) (int64, error)
 	DeleteProcessURLRules(ctx context.Context, presetID pgtype.UUID) error
+	DeleteRepositoryAccessForAccount(ctx context.Context, arg DeleteRepositoryAccessForAccountParams) (int64, error)
+	DeleteRepositoryDefinitions(ctx context.Context, arg DeleteRepositoryDefinitionsParams) (int64, error)
 	DeleteScopeConnections(ctx context.Context, arg DeleteScopeConnectionsParams) (int64, error)
 	DeleteScopeDestinations(ctx context.Context, arg DeleteScopeDestinationsParams) (int64, error)
 	DeleteScopeDisconnectIdempotencySnapshots(ctx context.Context, arg DeleteScopeDisconnectIdempotencySnapshotsParams) (int64, error)
@@ -37,7 +39,8 @@ type Querier interface {
 	GetGitHubConnectionForOwner(ctx context.Context, arg GetGitHubConnectionForOwnerParams) (RealqaGithubConnection, error)
 	GetGitHubInstallation(ctx context.Context, id pgtype.UUID) (RealqaGithubInstallation, error)
 	GetGitHubInstallationBinding(ctx context.Context, providerInstallationID int64) (GetGitHubInstallationBindingRow, error)
-	GetGitHubUserCredentialForInstallation(ctx context.Context, installationID pgtype.UUID) (GetGitHubUserCredentialForInstallationRow, error)
+	GetGitHubUserCredentialForInstallation(ctx context.Context, arg GetGitHubUserCredentialForInstallationParams) (GetGitHubUserCredentialForInstallationRow, error)
+	GetGitHubUserCredentialForInstallationForUpdate(ctx context.Context, arg GetGitHubUserCredentialForInstallationForUpdateParams) (GetGitHubUserCredentialForInstallationForUpdateRow, error)
 	GetIdempotencyRecord(ctx context.Context, arg GetIdempotencyRecordParams) (RealqaIdempotencyRecord, error)
 	GetIdentityBySubjectDigest(ctx context.Context, subjectDigest []byte) (RealqaIdentity, error)
 	GetOwnerAccess(ctx context.Context, arg GetOwnerAccessParams) (RealqaOwnerBinding, error)
@@ -65,8 +68,11 @@ type Querier interface {
 	SetGitHubInstallationState(ctx context.Context, arg SetGitHubInstallationStateParams) (int64, error)
 	StartGitHubConnection(ctx context.Context, arg StartGitHubConnectionParams) (RealqaGithubConnection, error)
 	TombstoneLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)
+	UpdateGitHubUserCredential(ctx context.Context, arg UpdateGitHubUserCredentialParams) (int64, error)
 	UpdatePreset(ctx context.Context, arg UpdatePresetParams) (RealqaPreset, error)
 	UpsertDestination(ctx context.Context, arg UpsertDestinationParams) (RealqaDestination, error)
+	UpsertRepositoryAccess(ctx context.Context, arg UpsertRepositoryAccessParams) error
+	UpsertRepositoryDefinition(ctx context.Context, arg UpsertRepositoryDefinitionParams) error
 	UpsertShortcut(ctx context.Context, arg UpsertShortcutParams) error
 }
 

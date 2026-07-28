@@ -14,6 +14,7 @@ import (
 const disconnectGitHubConnection = `-- name: DisconnectGitHubConnection :one
 UPDATE realqa_github_connections
 SET state = 'disconnected',
+    connected_by_account_id = NULL,
     credential_ciphertext = NULL,
     wrapped_data_key = NULL,
     key_id = NULL,
@@ -24,7 +25,7 @@ SET state = 'disconnected',
 WHERE owner_kind = $1
   AND owner_id = $2
   AND revision = $3
-RETURNING id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id
+RETURNING id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id, connected_by_account_id
 `
 
 type DisconnectGitHubConnectionParams struct {
@@ -52,12 +53,13 @@ func (q *Queries) DisconnectGitHubConnection(ctx context.Context, arg Disconnect
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GithubUserID,
+		&i.ConnectedByAccountID,
 	)
 	return i, err
 }
 
 const getGitHubConnectionForOwner = `-- name: GetGitHubConnectionForOwner :one
-SELECT id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id
+SELECT id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id, connected_by_account_id
 FROM realqa_github_connections
 WHERE owner_kind = $1
   AND owner_id = $2
@@ -87,6 +89,7 @@ func (q *Queries) GetGitHubConnectionForOwner(ctx context.Context, arg GetGitHub
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GithubUserID,
+		&i.ConnectedByAccountID,
 	)
 	return i, err
 }
@@ -308,7 +311,7 @@ DO UPDATE SET state = CASE
               oauth_state_expires_at = EXCLUDED.oauth_state_expires_at,
               revision = realqa_github_connections.revision + 1,
               updated_at = transaction_timestamp()
-RETURNING id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id
+RETURNING id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id, connected_by_account_id
 `
 
 type StartGitHubConnectionParams struct {
@@ -344,6 +347,7 @@ func (q *Queries) StartGitHubConnection(ctx context.Context, arg StartGitHubConn
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GithubUserID,
+		&i.ConnectedByAccountID,
 	)
 	return i, err
 }

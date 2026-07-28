@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -93,5 +94,38 @@ func TestIssueFormRejectsProviderRequiredCheckboxOmission(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "required checkbox") {
 		t.Fatalf("expected required checkbox validation, got %v", err)
+	}
+}
+
+func TestIssueFormAcceptsDropdownDefault(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Low
+        - High
+      default: 1
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(form.Fields) != 1 || len(form.Fields[0].Options) != 2 {
+		t.Fatalf("unexpected form: %#v", form)
+	}
+
+	invalid := bytes.Replace(contents, []byte("default: 1"), []byte("default: 2"), 1)
+	if _, err = ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, invalid,
+	); err == nil || !strings.Contains(err.Error(), "dropdown default") {
+		t.Fatalf("expected invalid dropdown default, got %v", err)
 	}
 }

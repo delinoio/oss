@@ -20,10 +20,12 @@ import (
 
 type fixtureCallbackStore struct {
 	mu               sync.Mutex
+	deliveryMu       sync.Mutex
 	nonces           map[string]bool
 	bindings         map[int64]Owner
 	deliveries       map[uuid.UUID]bool
 	connectedOwner   Owner
+	connectedAccount uuid.UUID
 	connectedUser    UserIdentity
 	credential       EncryptedCredential
 	installations    []Installation
@@ -53,10 +55,12 @@ func (store *fixtureCallbackStore) ConsumeCallbackState(
 }
 
 func (store *fixtureCallbackStore) ConnectUser(
-	_ context.Context, owner Owner, user UserIdentity, credential EncryptedCredential,
+	_ context.Context, owner Owner, accountID uuid.UUID, user UserIdentity,
+	credential EncryptedCredential,
 	installations []Installation,
 ) error {
 	store.connectedOwner, store.connectedUser, store.credential = owner, user, credential
+	store.connectedAccount = accountID
 	store.installations = append([]Installation(nil), installations...)
 	return nil
 }
@@ -73,13 +77,18 @@ func (store *fixtureCallbackStore) BindInstallation(
 	return nil
 }
 
-func (store *fixtureCallbackStore) RecordDelivery(
-	_ context.Context, id uuid.UUID,
+func (store *fixtureCallbackStore) ProcessWebhookDelivery(
+	_ context.Context,
+	id uuid.UUID,
+	process func(WebhookStore) error,
 ) (bool, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
+	store.deliveryMu.Lock()
+	defer store.deliveryMu.Unlock()
 	if store.deliveries[id] {
 		return false, nil
+	}
+	if err := process(store); err != nil {
+		return false, err
 	}
 	store.deliveries[id] = true
 	return true, nil
@@ -185,7 +194,8 @@ func TestSignedOAuthCallbackStoresOnlyEncryptedUserCredential(t *testing.T) {
 	})
 	handler, state, vault, now := fixtureCallbackHandler(t, store, httpClient)
 	owner := Owner{Kind: OwnerKindPersonal, ID: fixtureSubmissionID}
-	value, err := state.Issue(owner, CallbackPurposeOAuth, now)
+	accountID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51609")
+	value, err := state.Issue(owner, accountID, CallbackPurposeOAuth, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +206,8 @@ func TestSignedOAuthCallbackStoresOnlyEncryptedUserCredential(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("unexpected callback status %d body %s", response.Code, response.Body)
 	}
-	if store.connectedOwner != owner || store.connectedUser.ID != 7 {
+	if store.connectedOwner != owner || store.connectedAccount != accountID ||
+		store.connectedUser.ID != 7 {
 		t.Fatalf("callback connection missing: %#v %#v",
 			store.connectedOwner, store.connectedUser)
 	}
@@ -236,7 +247,8 @@ func TestAppCallbackBindsOneInstallationToOneOwner(t *testing.T) {
 		ID:   uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51609"),
 	}
 	for index, owner := range []Owner{first, second} {
-		value, err := state.Issue(owner, CallbackPurposeApp, now)
+		accountID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51610")
+		value, err := state.Issue(owner, accountID, CallbackPurposeApp, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -294,6 +306,15 @@ func TestSignedIssueDeletionWebhookFixture(t *testing.T) {
 	}
 	if store.deletedIssue != expected {
 		t.Fatalf("issue deletion was not applied: %#v", store.deletedIssue)
+	}
+	duplicate := httptest.NewRequest(http.MethodPost, "/github/webhooks",
+		strings.NewReader(string(body)))
+	duplicate.Header = request.Header.Clone()
+	duplicateResponse := httptest.NewRecorder()
+	handler.ServeHTTP(duplicateResponse, duplicate)
+	if duplicateResponse.Code != http.StatusNoContent || store.deleteCalls != 1 {
+		t.Fatalf("duplicate delivery reapplied side effects: status=%d calls=%d",
+			duplicateResponse.Code, store.deleteCalls)
 	}
 
 	invalid := httptest.NewRequest(http.MethodPost, "/github/webhooks",

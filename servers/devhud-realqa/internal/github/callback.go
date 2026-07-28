@@ -41,6 +41,7 @@ const (
 type callbackState struct {
 	OwnerKind OwnerKind       `json:"owner_kind"`
 	OwnerID   string          `json:"owner_id"`
+	AccountID string          `json:"account_id"`
 	Purpose   CallbackPurpose `json:"purpose"`
 	Nonce     string          `json:"nonce"`
 	ExpiresAt int64           `json:"expires_at"`
@@ -57,10 +58,11 @@ func NewStateCodec(key []byte) (*StateCodec, error) {
 
 func (codec *StateCodec) Issue(
 	owner Owner,
+	accountID uuid.UUID,
 	purpose CallbackPurpose,
 	now time.Time,
 ) (string, error) {
-	if codec == nil || owner.Validate() != nil ||
+	if codec == nil || owner.Validate() != nil || accountID == uuid.Nil ||
 		(purpose != CallbackPurposeOAuth && purpose != CallbackPurposeApp) {
 		return "", errors.New("realqa github: callback state input is invalid")
 	}
@@ -69,7 +71,8 @@ func (codec *StateCodec) Issue(
 		return "", errors.New("realqa github: callback state creation failed")
 	}
 	payload, err := json.Marshal(callbackState{
-		OwnerKind: owner.Kind, OwnerID: owner.ID.String(), Purpose: purpose,
+		OwnerKind: owner.Kind, OwnerID: owner.ID.String(),
+		AccountID: accountID.String(), Purpose: purpose,
 		Nonce:     base64.RawURLEncoding.EncodeToString(nonce),
 		ExpiresAt: now.UTC().Add(callbackStateTTL).Unix(),
 	})
@@ -85,36 +88,40 @@ func (codec *StateCodec) Verify(
 	value string,
 	purpose CallbackPurpose,
 	now time.Time,
-) (Owner, string, error) {
+) (Owner, uuid.UUID, string, error) {
 	if codec == nil || len(value) > 2048 {
-		return Owner{}, "", errors.New("realqa github: callback state is invalid")
+		return Owner{}, uuid.Nil, "", errors.New("realqa github: callback state is invalid")
 	}
 	parts := strings.Split(value, ".")
 	if len(parts) != 2 {
-		return Owner{}, "", errors.New("realqa github: callback state is invalid")
+		return Owner{}, uuid.Nil, "", errors.New("realqa github: callback state is invalid")
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil || !hmac.Equal(signature, codec.sign(parts[0])) {
-		return Owner{}, "", errors.New("realqa github: callback state signature is invalid")
+		return Owner{}, uuid.Nil, "",
+			errors.New("realqa github: callback state signature is invalid")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return Owner{}, "", errors.New("realqa github: callback state is invalid")
+		return Owner{}, uuid.Nil, "", errors.New("realqa github: callback state is invalid")
 	}
 	var state callbackState
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(&state); err != nil || state.Purpose != purpose ||
 		now.UTC().Unix() >= state.ExpiresAt {
-		return Owner{}, "", errors.New("realqa github: callback state is invalid or expired")
+		return Owner{}, uuid.Nil, "",
+			errors.New("realqa github: callback state is invalid or expired")
 	}
 	id, err := uuid.Parse(state.OwnerID)
 	owner := Owner{Kind: state.OwnerKind, ID: id}
+	accountID, accountErr := uuid.Parse(state.AccountID)
 	nonce, nonceErr := base64.RawURLEncoding.DecodeString(state.Nonce)
-	if err != nil || owner.Validate() != nil || nonceErr != nil || len(nonce) != 24 {
-		return Owner{}, "", errors.New("realqa github: callback state is invalid")
+	if err != nil || owner.Validate() != nil || accountErr != nil ||
+		accountID == uuid.Nil || nonceErr != nil || len(nonce) != 24 {
+		return Owner{}, uuid.Nil, "", errors.New("realqa github: callback state is invalid")
 	}
-	return owner, state.Nonce, nil
+	return owner, accountID, state.Nonce, nil
 }
 
 func (codec *StateCodec) sign(value string) []byte {
@@ -160,12 +167,20 @@ type CallbackStore interface {
 	ConnectUser(
 		context.Context,
 		Owner,
+		uuid.UUID,
 		UserIdentity,
 		EncryptedCredential,
 		[]Installation,
 	) error
 	BindInstallation(context.Context, Owner, int64) error
-	RecordDelivery(context.Context, uuid.UUID) (bool, error)
+	ProcessWebhookDelivery(
+		context.Context,
+		uuid.UUID,
+		func(WebhookStore) error,
+	) (bool, error)
+}
+
+type WebhookStore interface {
 	ApplyInstallation(context.Context, InstallationEvent) error
 	ApplyRepositories(context.Context, RepositoryEvent) error
 	DeleteIssueAssets(context.Context, DeletedIssueEvent) error
@@ -233,7 +248,7 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 	}
 	code := request.URL.Query().Get("code")
 	stateValue := request.URL.Query().Get("state")
-	owner, nonce, err := handler.config.State.Verify(
+	owner, accountID, nonce, err := handler.config.State.Verify(
 		stateValue, CallbackPurposeOAuth, handler.config.Now(),
 	)
 	if err != nil || len(code) < 8 || len(code) > 2048 ||
@@ -270,7 +285,7 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 	encrypted, err := handler.config.Vault.Seal(plaintext, associatedData)
 	clear(plaintext)
 	if err != nil || handler.config.Store.ConnectUser(
-		request.Context(), owner, identity, encrypted, installations,
+		request.Context(), owner, accountID, identity, encrypted, installations,
 	) != nil {
 		writeCallbackError(writer, http.StatusInternalServerError)
 		return
@@ -280,7 +295,7 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 
 func (handler *CallbackHandler) app(writer http.ResponseWriter, request *http.Request) {
 	stateValue := request.URL.Query().Get("state")
-	owner, nonce, err := handler.config.State.Verify(
+	owner, accountID, nonce, err := handler.config.State.Verify(
 		stateValue, CallbackPurposeApp, handler.config.Now(),
 	)
 	installationID, parseErr := strconv.ParseInt(
@@ -309,7 +324,7 @@ func (handler *CallbackHandler) app(writer http.ResponseWriter, request *http.Re
 		return
 	}
 	oauthState, err := handler.config.State.Issue(
-		owner, CallbackPurposeOAuth, handler.config.Now())
+		owner, accountID, CallbackPurposeOAuth, handler.config.Now())
 	authorization, authorizationErr := NewAuthorization(handler.config.ClientID)
 	if err != nil || authorizationErr != nil {
 		writeCallbackError(writer, http.StatusInternalServerError)
@@ -338,19 +353,27 @@ func (handler *CallbackHandler) webhook(writer http.ResponseWriter, request *htt
 		return
 	}
 	event := request.Header.Get("X-GitHub-Event")
-	switch event {
-	case "installation":
-		err = handler.installationWebhook(request.Context(), body)
-	case "installation_repositories":
-		err = handler.repositoriesWebhook(request.Context(), body)
-	case "issues":
-		err = handler.issueWebhook(request.Context(), body)
-	case "github_app_authorization":
-		err = handler.authorizationWebhook(request.Context(), body)
-	default:
+	if event != "installation" && event != "installation_repositories" &&
+		event != "issues" && event != "github_app_authorization" {
 		writeCallbackError(writer, http.StatusBadRequest)
 		return
 	}
+	_, err = handler.config.Store.ProcessWebhookDelivery(
+		request.Context(),
+		deliveryID,
+		func(store WebhookStore) error {
+			switch event {
+			case "installation":
+				return handler.installationWebhook(request.Context(), store, body)
+			case "installation_repositories":
+				return handler.repositoriesWebhook(request.Context(), store, body)
+			case "issues":
+				return handler.issueWebhook(request.Context(), store, body)
+			default:
+				return handler.authorizationWebhook(request.Context(), store, body)
+			}
+		},
+	)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errWebhookStorage) {
@@ -359,21 +382,14 @@ func (handler *CallbackHandler) webhook(writer http.ResponseWriter, request *htt
 		writeCallbackError(writer, status)
 		return
 	}
-	fresh, err := handler.config.Store.RecordDelivery(request.Context(), deliveryID)
-	if err != nil {
-		writeCallbackError(writer, http.StatusInternalServerError)
-		return
-	}
-	// All lifecycle handlers are safe to reapply. Recording only after
-	// successful handling keeps a transient processing failure retryable.
-	if !fresh {
-		writer.WriteHeader(http.StatusNoContent)
-		return
-	}
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (handler *CallbackHandler) installationWebhook(ctx context.Context, body []byte) error {
+func (handler *CallbackHandler) installationWebhook(
+	ctx context.Context,
+	store WebhookStore,
+	body []byte,
+) error {
 	var payload struct {
 		Action       string `json:"action"`
 		Installation struct {
@@ -404,7 +420,7 @@ func (handler *CallbackHandler) installationWebhook(ctx context.Context, body []
 	default:
 		return errors.New("realqa github: installation action is unsupported")
 	}
-	if err := handler.config.Store.ApplyInstallation(ctx, InstallationEvent{
+	if err := store.ApplyInstallation(ctx, InstallationEvent{
 		Action: payload.Action, Installation: installation,
 		Repositories: modelRepositories(payload.Repositories),
 	}); err != nil {
@@ -413,7 +429,11 @@ func (handler *CallbackHandler) installationWebhook(ctx context.Context, body []
 	return nil
 }
 
-func (handler *CallbackHandler) repositoriesWebhook(ctx context.Context, body []byte) error {
+func (handler *CallbackHandler) repositoriesWebhook(
+	ctx context.Context,
+	store WebhookStore,
+	body []byte,
+) error {
 	var payload struct {
 		Action       string `json:"action"`
 		Installation struct {
@@ -427,7 +447,7 @@ func (handler *CallbackHandler) repositoriesWebhook(ctx context.Context, body []
 		payload.Installation.ID <= 0 {
 		return errors.New("realqa github: repository webhook is invalid")
 	}
-	if err := handler.config.Store.ApplyRepositories(ctx, RepositoryEvent{
+	if err := store.ApplyRepositories(ctx, RepositoryEvent{
 		Action: payload.Action, InstallationID: payload.Installation.ID,
 		Added: modelRepositories(payload.Added), Removed: modelRepositories(payload.Removed),
 	}); err != nil {
@@ -436,7 +456,11 @@ func (handler *CallbackHandler) repositoriesWebhook(ctx context.Context, body []
 	return nil
 }
 
-func (handler *CallbackHandler) issueWebhook(ctx context.Context, body []byte) error {
+func (handler *CallbackHandler) issueWebhook(
+	ctx context.Context,
+	store WebhookStore,
+	body []byte,
+) error {
 	var payload struct {
 		Action       string `json:"action"`
 		Installation struct {
@@ -464,13 +488,17 @@ func (handler *CallbackHandler) issueWebhook(ctx context.Context, body []byte) e
 		event.IssueID <= 0 || event.IssueNumber <= 0 {
 		return errors.New("realqa github: issue deletion webhook is invalid")
 	}
-	if err := handler.config.Store.DeleteIssueAssets(ctx, event); err != nil {
+	if err := store.DeleteIssueAssets(ctx, event); err != nil {
 		return fmt.Errorf("%w: %v", errWebhookStorage, err)
 	}
 	return nil
 }
 
-func (handler *CallbackHandler) authorizationWebhook(ctx context.Context, body []byte) error {
+func (handler *CallbackHandler) authorizationWebhook(
+	ctx context.Context,
+	store WebhookStore,
+	body []byte,
+) error {
 	var payload struct {
 		Action string     `json:"action"`
 		Sender apiAccount `json:"sender"`
@@ -479,7 +507,7 @@ func (handler *CallbackHandler) authorizationWebhook(ctx context.Context, body [
 		payload.Action != "revoked" || payload.Sender.ID <= 0 {
 		return errors.New("realqa github: authorization webhook is invalid")
 	}
-	if err := handler.config.Store.DisconnectGitHubUser(
+	if err := store.DisconnectGitHubUser(
 		ctx, payload.Sender.ID,
 	); err != nil {
 		return fmt.Errorf("%w: %v", errWebhookStorage, err)

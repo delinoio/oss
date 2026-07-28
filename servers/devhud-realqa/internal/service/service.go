@@ -59,20 +59,26 @@ type GitHubAuthorization interface {
 }
 
 type GitHubOAuthStateIssuer interface {
-	OAuthState(ownerKind string, ownerID uuid.UUID) (string, error)
+	OAuthState(ownerKind string, ownerID uuid.UUID, accountID uuid.UUID) (string, error)
 }
 
 type GitHubConnectionTargetIssuer interface {
 	ConnectionTarget(
 		ownerKind string,
 		ownerID uuid.UUID,
+		accountID uuid.UUID,
 	) (target string, state string, err error)
 }
 
 type GitHubProviderAdapter interface {
-	ListRepositories(context.Context, uuid.UUID) ([]realqagithub.Repository, error)
+	ListRepositories(
+		context.Context,
+		uuid.UUID,
+		uuid.UUID,
+	) ([]realqagithub.Repository, error)
 	GetRepositoryDefinitions(
 		context.Context,
+		uuid.UUID,
 		uuid.UUID,
 		realqagithub.Repository,
 	) (realqagithub.RepositoryDefinitions, error)

@@ -49,6 +49,7 @@ WHERE installation.id = sqlc.arg(id)
 -- name: DisconnectGitHubConnection :one
 UPDATE realqa_github_connections
 SET state = 'disconnected',
+    connected_by_account_id = NULL,
     credential_ciphertext = NULL,
     wrapped_data_key = NULL,
     key_id = NULL,
