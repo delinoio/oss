@@ -338,30 +338,40 @@ impl CaptureCore {
         request: CaptureRequest,
         snapshot: DisplaySnapshot,
     ) -> Result<ResolvedCaptureRequest, CaptureFailure> {
-        let logical_bounds = match &request.source {
+        let (logical_bounds, window_display_id) = match &request.source {
             CaptureSourceSelection::Region { selection } => {
                 if selection.snapshot_id != snapshot.snapshot_id {
                     return Err(CaptureFailure::DisplaySnapshotChanged);
                 }
-                selection.bounds.checked()?
+                (selection.bounds.checked()?, None)
             }
             CaptureSourceSelection::Window { window_id } => {
-                let window = self
+                let windows = self
                     .backend
                     .windows(&snapshot)
-                    .map_err(CaptureFailure::from)?
+                    .map_err(CaptureFailure::from)?;
+                let mut window_ids = windows.iter().map(|window| &window.id).collect::<Vec<_>>();
+                window_ids.sort_by(|left, right| left.0.cmp(&right.0));
+                if window_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+                    return Err(CaptureFailure::InvalidDisplaySnapshot);
+                }
+                let window = windows
                     .into_iter()
                     .find(|window| &window.id == window_id)
                     .ok_or(CaptureFailure::WindowLost)?;
                 if window.availability == WindowAvailability::Minimized {
                     return Err(CaptureFailure::WindowLost);
                 }
-                window.checked(&snapshot)?.bounds
+                let window = window.checked(&snapshot)?;
+                (window.bounds, Some(window.display_id))
             }
-            CaptureSourceSelection::Display { display_id } => snapshot
-                .display(display_id)
-                .map(|display| display.logical_bounds)
-                .ok_or(CaptureFailure::DisplaySnapshotChanged)?,
+            CaptureSourceSelection::Display { display_id } => (
+                snapshot
+                    .display(display_id)
+                    .map(|display| display.logical_bounds)
+                    .ok_or(CaptureFailure::DisplaySnapshotChanged)?,
+                None,
+            ),
             CaptureSourceSelection::MultiMonitor { display_ids } => {
                 if display_ids.is_empty() {
                     return Err(CaptureFailure::InvalidSelection);
@@ -372,19 +382,22 @@ impl CaptureCore {
                 if unique.len() != display_ids.len() {
                     return Err(CaptureFailure::InvalidSelection);
                 }
-                LogicalRect::bounding(
-                    display_ids
-                        .iter()
-                        .map(|id| {
-                            snapshot
-                                .display(id)
-                                .map(|display| display.logical_bounds)
-                                .ok_or(CaptureFailure::DisplaySnapshotChanged)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?
-                        .into_iter(),
+                (
+                    LogicalRect::bounding(
+                        display_ids
+                            .iter()
+                            .map(|id| {
+                                snapshot
+                                    .display(id)
+                                    .map(|display| display.logical_bounds)
+                                    .ok_or(CaptureFailure::DisplaySnapshotChanged)
+                            })
+                            .collect::<Result<Vec<_>, _>>()?
+                            .into_iter(),
+                    )
+                    .ok_or(CaptureFailure::InvalidSelection)?,
+                    None,
                 )
-                .ok_or(CaptureFailure::InvalidSelection)?
             }
         };
         let pixel_regions = match &request.source {
@@ -423,9 +436,15 @@ impl CaptureCore {
                 regions.sort_by(|left, right| left.display_id.0.cmp(&right.display_id.0));
                 regions
             }
-            CaptureSourceSelection::Region { .. } | CaptureSourceSelection::Window { .. } => {
-                snapshot.pixel_regions(logical_bounds)?
-            }
+            CaptureSourceSelection::Window { .. } => vec![
+                snapshot.pixel_region_for_display(
+                    window_display_id
+                        .as_ref()
+                        .ok_or(CaptureFailure::InvalidDisplaySnapshot)?,
+                    logical_bounds,
+                )?,
+            ],
+            CaptureSourceSelection::Region { .. } => snapshot.pixel_regions(logical_bounds)?,
         };
         let mode = request.source.mode();
         Ok(ResolvedCaptureRequest {
@@ -869,6 +888,102 @@ mod tests {
                 },
             }]
         );
+    }
+
+    #[test]
+    fn window_capture_excludes_overlapping_unselected_displays() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let overlapping_bounds = LogicalRect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+        };
+        *backend.displays.lock().expect("display lock") = vec![
+            DisplayDescriptor {
+                id: DisplayId("mirrored-1".to_owned()),
+                logical_bounds: overlapping_bounds,
+                physical_size: PhysicalSize {
+                    width: 100,
+                    height: 100,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: true,
+            },
+            DisplayDescriptor {
+                id: DisplayId("mirrored-2".to_owned()),
+                logical_bounds: overlapping_bounds,
+                physical_size: PhysicalSize {
+                    width: 200,
+                    height: 200,
+                },
+                scale: ScaleFactor {
+                    numerator: 2,
+                    denominator: 1,
+                },
+                primary: false,
+            },
+        ];
+        *backend.windows.lock().expect("window lock") = vec![WindowSource {
+            id: WindowSourceId("window-1".to_owned()),
+            display_id: DisplayId("mirrored-2".to_owned()),
+            bounds: LogicalRect {
+                x: 10.0,
+                y: 20.0,
+                width: 30.0,
+                height: 40.0,
+            },
+            availability: WindowAvailability::Available,
+        }];
+
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Window {
+            window_id: WindowSourceId("window-1".to_owned()),
+        };
+        core.begin(capture_request).expect("capture must work");
+
+        let backend_request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .clone()
+            .expect("backend must receive request");
+        assert_eq!(
+            backend_request.pixel_regions,
+            vec![DisplayPixelRegion {
+                display_id: DisplayId("mirrored-2".to_owned()),
+                pixels: PixelRect {
+                    x: 20,
+                    y: 40,
+                    width: 60,
+                    height: 80,
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn window_capture_rejects_duplicate_source_ids_at_begin() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let duplicate = backend.windows.lock().expect("window lock")[0].clone();
+        backend.windows.lock().expect("window lock").push(duplicate);
+
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Window {
+            window_id: WindowSourceId("window-1".to_owned()),
+        };
+        assert_eq!(
+            core.begin(capture_request),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+        assert!(backend.last_request.lock().expect("request lock").is_none());
     }
 
     #[test]

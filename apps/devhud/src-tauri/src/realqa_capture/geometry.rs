@@ -142,6 +142,38 @@ impl DisplayDescriptor {
         }
         Ok(self)
     }
+
+    fn pixel_region(
+        &self,
+        region: LogicalRect,
+    ) -> Result<Option<DisplayPixelRegion>, CaptureFailure> {
+        let Some(intersection) = region.intersection(self.logical_bounds) else {
+            return Ok(None);
+        };
+        let local_x = intersection.x - self.logical_bounds.x;
+        let local_y = intersection.y - self.logical_bounds.y;
+        let local_right = intersection.right() - self.logical_bounds.x;
+        let local_bottom = intersection.bottom() - self.logical_bounds.y;
+        let x = self.scale.apply_floor(local_x)?;
+        let y = self.scale.apply_floor(local_y)?;
+        let right = self
+            .scale
+            .apply_ceil(local_right)?
+            .min(self.physical_size.width);
+        let bottom = self
+            .scale
+            .apply_ceil(local_bottom)?
+            .min(self.physical_size.height);
+        Ok((right > x && bottom > y).then(|| DisplayPixelRegion {
+            display_id: self.id.clone(),
+            pixels: PixelRect {
+                x,
+                y,
+                width: right - x,
+                height: bottom - y,
+            },
+        }))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -208,39 +240,26 @@ impl DisplaySnapshot {
         let region = region.checked()?;
         let mut output = Vec::new();
         for display in &self.displays {
-            let Some(intersection) = region.intersection(display.logical_bounds) else {
-                continue;
-            };
-            let local_x = intersection.x - display.logical_bounds.x;
-            let local_y = intersection.y - display.logical_bounds.y;
-            let local_right = intersection.right() - display.logical_bounds.x;
-            let local_bottom = intersection.bottom() - display.logical_bounds.y;
-            let x = display.scale.apply_floor(local_x)?;
-            let y = display.scale.apply_floor(local_y)?;
-            let right = display
-                .scale
-                .apply_ceil(local_right)?
-                .min(display.physical_size.width);
-            let bottom = display
-                .scale
-                .apply_ceil(local_bottom)?
-                .min(display.physical_size.height);
-            if right > x && bottom > y {
-                output.push(DisplayPixelRegion {
-                    display_id: display.id.clone(),
-                    pixels: PixelRect {
-                        x,
-                        y,
-                        width: right - x,
-                        height: bottom - y,
-                    },
-                });
+            if let Some(pixel_region) = display.pixel_region(region)? {
+                output.push(pixel_region);
             }
         }
         if output.is_empty() {
             return Err(CaptureFailure::InvalidSelection);
         }
         Ok(output)
+    }
+
+    pub(crate) fn pixel_region_for_display(
+        &self,
+        display_id: &DisplayId,
+        region: LogicalRect,
+    ) -> Result<DisplayPixelRegion, CaptureFailure> {
+        let region = region.checked()?;
+        self.display(display_id)
+            .ok_or(CaptureFailure::InvalidDisplaySnapshot)?
+            .pixel_region(region)?
+            .ok_or(CaptureFailure::InvalidSelection)
     }
 }
 
