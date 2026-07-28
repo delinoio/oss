@@ -198,6 +198,13 @@ type RealqaRepositoryDefinition struct {
 	UpdatedAt      pgtype.Timestamptz
 }
 
+type RealqaRepositorySchemaRevision struct {
+	InstallationID pgtype.UUID
+	RepositoryID   string
+	Revision       int64
+	UpdatedAt      pgtype.Timestamptz
+}
+
 type RealqaScopeTombstone struct {
 	OwnerKind     string
 	OwnerID       pgtype.UUID

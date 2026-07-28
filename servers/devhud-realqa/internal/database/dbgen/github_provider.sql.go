@@ -79,6 +79,31 @@ func (q *Queries) AdvanceGitHubCallbackState(ctx context.Context, arg AdvanceGit
 	return result.RowsAffected(), nil
 }
 
+const bumpRepositorySchemaRevision = `-- name: BumpRepositorySchemaRevision :one
+INSERT INTO realqa_repository_schema_revisions (
+    installation_id, repository_id, revision
+)
+VALUES (
+    $1, $2, 1
+)
+ON CONFLICT (installation_id, repository_id)
+DO UPDATE SET revision = realqa_repository_schema_revisions.revision + 1,
+              updated_at = transaction_timestamp()
+RETURNING revision
+`
+
+type BumpRepositorySchemaRevisionParams struct {
+	InstallationID pgtype.UUID
+	RepositoryID   string
+}
+
+func (q *Queries) BumpRepositorySchemaRevision(ctx context.Context, arg BumpRepositorySchemaRevisionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, bumpRepositorySchemaRevision, arg.InstallationID, arg.RepositoryID)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
+}
+
 const connectGitHubUser = `-- name: ConnectGitHubUser :execrows
 UPDATE realqa_github_connections
 SET state = 'connected',
@@ -351,6 +376,25 @@ func (q *Queries) GetGitHubUserCredentialForInstallationForUpdate(ctx context.Co
 		&i.KeyID,
 	)
 	return i, err
+}
+
+const getRepositorySchemaRevision = `-- name: GetRepositorySchemaRevision :one
+SELECT revision
+FROM realqa_repository_schema_revisions
+WHERE installation_id = $1
+  AND repository_id = $2
+`
+
+type GetRepositorySchemaRevisionParams struct {
+	InstallationID pgtype.UUID
+	RepositoryID   string
+}
+
+func (q *Queries) GetRepositorySchemaRevision(ctx context.Context, arg GetRepositorySchemaRevisionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getRepositorySchemaRevision, arg.InstallationID, arg.RepositoryID)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
 }
 
 const markAssetsRemovedForDeletedGitHubIssue = `-- name: MarkAssetsRemovedForDeletedGitHubIssue :execrows

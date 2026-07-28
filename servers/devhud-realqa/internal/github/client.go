@@ -284,6 +284,35 @@ func (client *Client) ListRepositories(
 	}
 }
 
+func (client *Client) GetRepository(
+	ctx context.Context,
+	token UserToken,
+	expected Repository,
+) (Repository, error) {
+	if token.value == "" {
+		return Repository{}, errors.New("realqa github: user authorization is required")
+	}
+	if err := expected.Validate(); err != nil {
+		return Repository{}, err
+	}
+	var response apiRepository
+	endpoint := fmt.Sprintf("/repos/%s/%s", expected.Owner, expected.Name)
+	if err := client.getJSON(ctx, token, endpoint, &response); err != nil {
+		return Repository{}, err
+	}
+	repository, err := response.model()
+	if err != nil {
+		return Repository{}, err
+	}
+	if repository.ID != expected.ID ||
+		repository.Owner != expected.Owner ||
+		repository.Name != expected.Name {
+		return Repository{}, errors.New(
+			"realqa github: repository identity does not match the requested repository")
+	}
+	return repository, nil
+}
+
 func (client *Client) ListRepositoryPage(
 	ctx context.Context,
 	token UserToken,
@@ -771,6 +800,18 @@ type apiAccount struct {
 	ID    int64       `json:"id"`
 	Login string      `json:"login"`
 	Type  AccountKind `json:"type"`
+}
+
+func (repository apiRepository) model() (Repository, error) {
+	result := Repository{
+		ID: repository.ID, NodeID: repository.NodeID,
+		Owner: repository.Owner.Login, Name: repository.Name,
+		IssuesEnabled: repository.HasIssues, CanSubmit: repository.HasIssues,
+	}
+	if err := result.Validate(); err != nil {
+		return Repository{}, err
+	}
+	return result, nil
 }
 
 type apiInstallation struct {

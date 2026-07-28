@@ -119,27 +119,26 @@ func (adapter *Adapter) authorizedRepository(
 	if err != nil {
 		return Repository{}, UserToken{}, err
 	}
-	repositories, err := adapter.client.ListRepositories(ctx, token, providerID)
+	installation, err := adapter.store.Queries().GetGitHubInstallation(
+		ctx, providerPGUUID(installationID))
 	if err != nil {
 		return Repository{}, UserToken{}, err
 	}
-	if err = adapter.persistRepositories(
-		ctx, accountID, installationID, repositories,
+	if installation.ProviderInstallationID != providerID ||
+		installation.AccountLogin != repository.Owner {
+		return Repository{}, UserToken{}, errors.New(
+			"realqa github: repository identity does not match the installation")
+	}
+	authorized, err := adapter.client.GetRepository(ctx, token, repository)
+	if err != nil {
+		return Repository{}, UserToken{}, err
+	}
+	if err = adapter.persistRepositoryUpdates(
+		ctx, accountID, installationID, []Repository{authorized},
 	); err != nil {
 		return Repository{}, UserToken{}, err
 	}
-	for _, authorized := range repositories {
-		if authorized.ID != repository.ID {
-			continue
-		}
-		if authorized.Owner != repository.Owner || authorized.Name != repository.Name {
-			return Repository{}, UserToken{}, errors.New(
-				"realqa github: repository identity does not match the installation")
-		}
-		return authorized, token, nil
-	}
-	return Repository{}, UserToken{}, errors.New(
-		"realqa github: repository is not available to the installation")
+	return authorized, token, nil
 }
 
 func (adapter *Adapter) userToken(

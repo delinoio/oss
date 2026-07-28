@@ -65,6 +65,7 @@ func ParseMarkdownTemplate(filePath, etag string, contents []byte) (MarkdownTemp
 		Name      string     `yaml:"name"`
 		About     string     `yaml:"about"`
 		Title     string     `yaml:"title"`
+		Type      string     `yaml:"type"`
 		Labels    stringList `yaml:"labels"`
 		Assignees stringList `yaml:"assignees"`
 		Projects  stringList `yaml:"projects"`
@@ -136,6 +137,10 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 	if strings.TrimSpace(raw.Name) == "" || strings.TrimSpace(raw.Description) == "" ||
 		len(raw.Body) == 0 || len(raw.Body) > 100 {
 		return IssueForm{}, errors.New("realqa github: Issue Form name, description, and body are required")
+	}
+	if len(raw.Projects) != 0 {
+		return IssueForm{}, errors.New(
+			"realqa github: Issue Form project defaults are unsupported")
 	}
 	definition.Name = strings.TrimSpace(raw.Name)
 	result := IssueForm{

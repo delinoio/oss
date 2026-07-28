@@ -28,6 +28,25 @@ func TestParseMarkdownTemplateFixture(t *testing.T) {
 	}
 }
 
+func TestMarkdownTemplateAcceptsIssueTypeMetadata(t *testing.T) {
+	t.Parallel()
+	template, err := ParseMarkdownTemplate(
+		".github/ISSUE_TEMPLATE/bug.md", `"fixture-etag"`, []byte(`---
+name: Bug report
+about: Report a bug
+type: bug
+---
+Describe the bug.
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if template.Definition.Name != "Bug report" ||
+		template.Body != "Describe the bug.\n" {
+		t.Fatalf("unexpected template: %#v", template)
+	}
+}
+
 func TestParseAndValidateIssueFormFixture(t *testing.T) {
 	t.Parallel()
 	contents, err := os.ReadFile("testdata/bug.yml")
@@ -130,6 +149,37 @@ body:
 	}
 }
 
+func TestIssueFormPreservesMultipleDropdown(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: Browsers
+      multiple: true
+      options:
+        - Firefox
+        - Chrome
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(form.Fields) != 1 || !form.Fields[0].Multiple {
+		t.Fatalf("unexpected multiple dropdown: %#v", form.Fields)
+	}
+	if _, err = RenderIssueForm(form, []FormAnswer{{
+		FieldID: "browsers", Values: []string{"Firefox", "Chrome"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIssueFormAcceptsCurrentGitHubMetadataAndOptionalFields(t *testing.T) {
 	t.Parallel()
 	contents := []byte(`
@@ -173,6 +223,25 @@ body:
 	}
 	if strings.Contains(rendered, "Screenshots") {
 		t.Fatalf("optional upload field was rendered: %s", rendered)
+	}
+}
+
+func TestIssueFormRejectsProjectDefaults(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+projects: ["octo-org/1"]
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err == nil || !strings.Contains(err.Error(), "project defaults are unsupported") {
+		t.Fatalf("expected unsupported project defaults, got %v", err)
 	}
 }
 

@@ -398,6 +398,31 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("schema issue form definitions = %#v",
 			schemaResponse.Msg.Schema.IssueForms)
 	}
+	refreshedSchema := &realqav1.RepositoryIssueSchema{
+		Repository: schemaResponse.Msg.Schema.Repository,
+		MarkdownTemplates: []*realqav1.MarkdownIssueTemplate{{
+			Definition:   schemaResponse.Msg.Schema.MarkdownTemplates[0].Definition,
+			BodyTemplate: "first",
+		}},
+		IssueForms: []*realqav1.IssueForm{},
+	}
+	if err = tracker.persistRepositoryDefinitions(
+		ctx, installationID, "repo-1", refreshedSchema,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if refreshedSchema.Revision.Value != 1 {
+		t.Fatalf("first repository schema revision = %#v", refreshedSchema.Revision)
+	}
+	refreshedSchema.MarkdownTemplates[0].BodyTemplate = "second"
+	if err = tracker.persistRepositoryDefinitions(
+		ctx, installationID, "repo-1", refreshedSchema,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if refreshedSchema.Revision.Value != 2 {
+		t.Fatalf("refreshed repository schema revision = %#v", refreshedSchema.Revision)
+	}
 	replayed, err := service.CreatePreset(authCtx, connect.NewRequest(request))
 	if err != nil {
 		t.Fatal(err)

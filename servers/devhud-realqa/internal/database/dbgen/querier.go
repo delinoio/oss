@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	ActivateGitHubInstallation(ctx context.Context, arg ActivateGitHubInstallationParams) (int64, error)
 	AdvanceGitHubCallbackState(ctx context.Context, arg AdvanceGitHubCallbackStateParams) (int64, error)
+	BumpRepositorySchemaRevision(ctx context.Context, arg BumpRepositorySchemaRevisionParams) (int64, error)
 	ConnectGitHubUser(ctx context.Context, arg ConnectGitHubUserParams) (int64, error)
 	ConsumeGitHubCallbackState(ctx context.Context, nonce string) (int64, error)
 	CountActiveShortcutsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)
@@ -47,6 +48,7 @@ type Querier interface {
 	GetIdentityBySubjectDigest(ctx context.Context, subjectDigest []byte) (RealqaIdentity, error)
 	GetOwnerAccess(ctx context.Context, arg GetOwnerAccessParams) (RealqaOwnerBinding, error)
 	GetPresetRecord(ctx context.Context, id pgtype.UUID) (GetPresetRecordRow, error)
+	GetRepositorySchemaRevision(ctx context.Context, arg GetRepositorySchemaRevisionParams) (int64, error)
 	GetRepositorySubmitAccess(ctx context.Context, arg GetRepositorySubmitAccessParams) (RealqaRepositoryAccess, error)
 	GetRepositorySubmitAccessForOwner(ctx context.Context, arg GetRepositorySubmitAccessForOwnerParams) (RealqaRepositoryAccess, error)
 	HasPayerTeamAccess(ctx context.Context, arg HasPayerTeamAccessParams) (bool, error)

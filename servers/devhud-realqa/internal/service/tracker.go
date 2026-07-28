@@ -507,9 +507,18 @@ func (service *Tracker) GetRepositoryIssueSchema(
 		MarkdownTemplates: []*realqav1.MarkdownIssueTemplate{},
 		IssueForms:        []*realqav1.IssueForm{},
 	}
-	var revision int64 = 1
+	revision, revisionErr := service.dependencies.Store.Queries().
+		GetRepositorySchemaRevision(ctx, dbgen.GetRepositorySchemaRevisionParams{
+			InstallationID: toPGUUID(installation),
+			RepositoryID:   request.Msg.Repository.RepositoryId,
+		})
+	if errors.Is(revisionErr, pgx.ErrNoRows) {
+		revision = 1
+	} else if revisionErr != nil {
+		return nil, revisionErr
+	}
 	for _, row := range rows {
-		if row.Revision > revision {
+		if revisionErr != nil && row.Revision > revision {
 			revision = row.Revision
 		}
 		kind, kindErr := definitionKindValue(row.Kind)
@@ -618,6 +627,15 @@ func (service *Tracker) persistRepositoryDefinitions(
 					return err
 				}
 			}
+			revision, err := queries.BumpRepositorySchemaRevision(
+				ctx, dbgen.BumpRepositorySchemaRevisionParams{
+					InstallationID: toPGUUID(installationID),
+					RepositoryID:   repositoryID,
+				})
+			if err != nil {
+				return err
+			}
+			schema.Revision = rqerr.Revision(revision)
 			return nil
 		})
 }
@@ -716,7 +734,7 @@ func repositoryDefinitionsProto(
 				FieldId: field.ID, Kind: issueFormFieldKindProto(field.Kind),
 				Label: field.Label, Description: field.Description,
 				Placeholder: field.Placeholder, Required: field.Required,
-				Options: []*realqav1.IssueFormOption{},
+				Multiple: field.Multiple, Options: []*realqav1.IssueFormOption{},
 			}
 			if field.Kind == realqagithub.FormFieldMarkdown {
 				protoField.Description = field.Markdown

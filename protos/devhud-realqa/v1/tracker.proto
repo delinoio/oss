@@ -121,6 +121,7 @@ message IssueFormField {
   string placeholder = 5;
   bool required = 6;
   repeated IssueFormOption options = 7;
+  bool multiple = 8;
 }
 
 message IssueForm {
@@ -155,4 +156,3 @@ service RealQATrackerService {
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   rpc GetRepositoryIssueSchema(GetRepositoryIssueSchemaRequest) returns (GetRepositoryIssueSchemaResponse);
 }
-

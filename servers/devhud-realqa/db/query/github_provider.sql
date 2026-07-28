@@ -122,6 +122,24 @@ DELETE FROM realqa_repository_definitions
 WHERE installation_id = sqlc.arg(installation_id)
   AND repository_id = sqlc.arg(repository_id);
 
+-- name: GetRepositorySchemaRevision :one
+SELECT revision
+FROM realqa_repository_schema_revisions
+WHERE installation_id = sqlc.arg(installation_id)
+  AND repository_id = sqlc.arg(repository_id);
+
+-- name: BumpRepositorySchemaRevision :one
+INSERT INTO realqa_repository_schema_revisions (
+    installation_id, repository_id, revision
+)
+VALUES (
+    sqlc.arg(installation_id), sqlc.arg(repository_id), 1
+)
+ON CONFLICT (installation_id, repository_id)
+DO UPDATE SET revision = realqa_repository_schema_revisions.revision + 1,
+              updated_at = transaction_timestamp()
+RETURNING revision;
+
 -- name: UpsertRepositoryDefinition :exec
 INSERT INTO realqa_repository_definitions (
     installation_id, repository_id, kind, definition_id, name, path, etag,

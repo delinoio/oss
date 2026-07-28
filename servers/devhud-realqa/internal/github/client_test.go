@@ -266,6 +266,40 @@ func TestRepositoryPageStopsAfterEnoughProviderRows(t *testing.T) {
 	}
 }
 
+func TestGetRepositoryUsesTargetedEndpoint(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.URL.Path != "/repos/delinoio/oss" || request.URL.RawQuery != "" {
+			t.Fatalf("unexpected repository request %s", request.URL)
+		}
+		return jsonResponse(request, http.StatusOK, map[string]any{
+			"id": 1, "node_id": "R_fixture", "name": "oss",
+			"owner":      map[string]any{"id": 9, "login": "delinoio", "type": "Organization"},
+			"has_issues": true,
+		}), nil
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := client.GetRepository(
+		context.Background(), fixtureToken(t), Repository{
+			ID: 1, NodeID: "R_1", Owner: "delinoio", Name: "oss",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || repository.ID != 1 || !repository.CanSubmit {
+		t.Fatalf("unexpected targeted repository: requests=%d repository=%#v",
+			requests, repository)
+	}
+}
+
 func TestRepositorySearchBoundsProviderPageScan(t *testing.T) {
 	t.Parallel()
 	requests := 0

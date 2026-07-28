@@ -1019,6 +1019,7 @@ type IssueFormField struct {
 	Placeholder   string                 `protobuf:"bytes,5,opt,name=placeholder,proto3" json:"placeholder,omitempty"`
 	Required      bool                   `protobuf:"varint,6,opt,name=required,proto3" json:"required,omitempty"`
 	Options       []*IssueFormOption     `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
+	Multiple      bool                   `protobuf:"varint,8,opt,name=multiple,proto3" json:"multiple,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1100,6 +1101,13 @@ func (x *IssueFormField) GetOptions() []*IssueFormOption {
 		return x.Options
 	}
 	return nil
+}
+
+func (x *IssueFormField) GetMultiple() bool {
+	if x != nil {
+		return x.Multiple
+	}
+	return false
 }
 
 type IssueForm struct {
@@ -1413,7 +1421,7 @@ const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\x0fIssueFormOption\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1a\n" +
-	"\brequired\x18\x03 \x01(\bR\brequired\"\x98\x02\n" +
+	"\brequired\x18\x03 \x01(\bR\brequired\"\xb4\x02\n" +
 	"\x0eIssueFormField\x12\x19\n" +
 	"\bfield_id\x18\x01 \x01(\tR\afieldId\x128\n" +
 	"\x04kind\x18\x02 \x01(\x0e2$.devhud.realqa.v1.IssueFormFieldKindR\x04kind\x12\x14\n" +
@@ -1421,7 +1429,8 @@ const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12 \n" +
 	"\vplaceholder\x18\x05 \x01(\tR\vplaceholder\x12\x1a\n" +
 	"\brequired\x18\x06 \x01(\bR\brequired\x12;\n" +
-	"\aoptions\x18\a \x03(\v2!.devhud.realqa.v1.IssueFormOptionR\aoptions\"\x8c\x02\n" +
+	"\aoptions\x18\a \x03(\v2!.devhud.realqa.v1.IssueFormOptionR\aoptions\x12\x1a\n" +
+	"\bmultiple\x18\b \x01(\bR\bmultiple\"\x8c\x02\n" +
 	"\tIssueForm\x12N\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2..devhud.realqa.v1.RepositoryIssueDefinitionRefR\n" +
