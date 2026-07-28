@@ -48,16 +48,8 @@ impl PortalCaptureProvider {
 
     async fn inspect_modes() -> Result<Vec<CaptureMode>, BackendFailure> {
         let proxy = ScreenshotProxy::new().await.map_err(map_portal_error)?;
-        if proxy.version() < 3 {
-            // Ubuntu 24.04 portal implementations predate the target property.
-            // Their interactive picker owns the final region/window/screen
-            // choice, so all picker modes remain portal-approved.
-            return Ok(vec![
-                CaptureMode::Region,
-                CaptureMode::Window,
-                CaptureMode::Display,
-                CaptureMode::MultiMonitor,
-            ]);
+        if !portal_supports_target_selection(proxy.version()) {
+            return Err(BackendFailure::ModeUnavailable);
         }
         let targets = proxy.available_targets().await.map_err(map_portal_error)?;
         let modes = modes_for_targets(
@@ -87,22 +79,23 @@ impl PortalCaptureProvider {
             .connection(Some(connection))
             .interactive(true)
             .modal(true);
-        if proxy.version() >= 3 {
-            let available = proxy.available_targets().await.map_err(map_portal_error)?;
-            let target = match request.mode {
-                CaptureMode::Region if available.contains(AvailableTargets::Area) => {
-                    AvailableTargets::Area
-                }
-                CaptureMode::Window if available.contains(AvailableTargets::Window) => {
-                    AvailableTargets::Window
-                }
-                CaptureMode::MultiMonitor if available.contains(AvailableTargets::Screen) => {
-                    AvailableTargets::Screen
-                }
-                _ => return Err(BackendFailure::ModeUnavailable),
-            };
-            builder = builder.target(target);
+        if !portal_supports_target_selection(proxy.version()) {
+            return Err(BackendFailure::ModeUnavailable);
         }
+        let available = proxy.available_targets().await.map_err(map_portal_error)?;
+        let target = match request.mode {
+            CaptureMode::Region if available.contains(AvailableTargets::Area) => {
+                AvailableTargets::Area
+            }
+            CaptureMode::Window if available.contains(AvailableTargets::Window) => {
+                AvailableTargets::Window
+            }
+            CaptureMode::MultiMonitor if available.contains(AvailableTargets::Screen) => {
+                AvailableTargets::Screen
+            }
+            _ => return Err(BackendFailure::ModeUnavailable),
+        };
+        builder = builder.target(target);
         let response = builder
             .send()
             .await
@@ -291,6 +284,10 @@ impl LinuxCaptureProvider for PortalCaptureProvider {
     }
 }
 
+fn portal_supports_target_selection(version: u32) -> bool {
+    version >= 3
+}
+
 fn modes_for_targets(
     area_available: bool,
     window_picker_available: bool,
@@ -330,6 +327,9 @@ mod tests {
 
     #[test]
     fn target_modes_preserve_portal_selection_semantics() {
+        assert!(!portal_supports_target_selection(1));
+        assert!(!portal_supports_target_selection(2));
+        assert!(portal_supports_target_selection(3));
         assert_eq!(
             modes_for_targets(true, true, true, true),
             [
