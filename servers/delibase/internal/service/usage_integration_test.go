@@ -2381,8 +2381,8 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 			fixture.privateTeamID,
 			fixture.meterID,
 			1,
-			"unauthorized-team-"+fixture.organizationID.String(),
-			"unauthorized-team-"+fixture.organizationID.String(),
+			"authorization-team-denied",
+			"authorization-team-denied",
 		),
 	)
 	requireConnectReason(
@@ -2398,8 +2398,8 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 			fixture.generalTeamID,
 			uuidv7.MustNew(),
 			1,
-			"unauthorized-meter-"+fixture.organizationID.String(),
-			"unauthorized-meter-"+fixture.organizationID.String(),
+			"authorization-meter-denied",
+			"authorization-meter-denied",
 		),
 	)
 	requireConnectReason(
@@ -2415,8 +2415,8 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 			fixture.generalTeamID,
 			fixture.meterID,
 			1,
-			"unauthorized-service-"+fixture.organizationID.String(),
-			"unauthorized-service-"+fixture.organizationID.String(),
+			"authorization-service-denied",
+			"authorization-service-denied",
 		),
 	)
 	requireConnectReason(
