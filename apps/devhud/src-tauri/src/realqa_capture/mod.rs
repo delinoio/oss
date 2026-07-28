@@ -664,19 +664,20 @@ impl PlatformCaptureBackend {
     pub(crate) fn current() -> Self {
         #[cfg(target_os = "windows")]
         {
-            return Self {
+            Self {
                 platform: CapturePlatform::Windows,
                 windows: Some(windows::WindowsCaptureBackend::system()),
-            };
+            }
         }
         #[cfg(not(target_os = "windows"))]
-        let platform = if cfg!(target_os = "macos") {
-            CapturePlatform::Macos
-        } else {
-            CapturePlatform::Linux
-        };
-        #[cfg(not(target_os = "windows"))]
-        Self::new(platform)
+        {
+            let platform = if cfg!(target_os = "macos") {
+                CapturePlatform::Macos
+            } else {
+                CapturePlatform::Linux
+            };
+            Self::new(platform)
+        }
     }
 }
 

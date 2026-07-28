@@ -621,10 +621,10 @@ mod system {
         Graphics::Capture::GraphicsCaptureSession,
         Win32::{
             Foundation::{HWND, RECT},
-            Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO, MONITORINFOF_PRIMARY},
+            Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO},
             UI::{
                 HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
-                WindowsAndMessaging::{GetWindowDisplayAffinity, IsIconic},
+                WindowsAndMessaging::{GetWindowDisplayAffinity, IsIconic, MONITORINFOF_PRIMARY},
             },
         },
     };
@@ -822,7 +822,7 @@ mod system {
     fn window_is_protected(window: Window) -> bool {
         let mut affinity = 0_u32;
         unsafe {
-            GetWindowDisplayAffinity(HWND(window.as_raw_hwnd()), &mut affinity).as_bool()
+            GetWindowDisplayAffinity(HWND(window.as_raw_hwnd()), &mut affinity).is_ok()
                 && affinity != 0
         }
     }
@@ -892,7 +892,7 @@ mod system {
             } else {
                 let width = frame.width();
                 let height = frame.height();
-                let mut buffer = frame.buffer().map_err(|_| WindowsAdapterFailure::Failed)?;
+                let buffer = frame.buffer().map_err(|_| WindowsAdapterFailure::Failed)?;
                 let mut contiguous = Vec::new();
                 let rgba = buffer.as_nopadding_buffer(&mut contiguous).to_vec();
                 Ok(NativeFrame {
@@ -967,13 +967,12 @@ mod system {
             thread::sleep(Duration::from_millis(2));
         }
         control.wait().map_err(|_| WindowsAdapterFailure::Failed)?;
-        let result = shared
+        shared
             .result
             .lock()
             .map_err(|_| WindowsAdapterFailure::Failed)?
             .take()
-            .ok_or(WindowsAdapterFailure::Failed)?;
-        result
+            .ok_or(WindowsAdapterFailure::Failed)?
     }
 }
 
