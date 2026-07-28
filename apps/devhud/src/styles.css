@@ -200,7 +200,7 @@ kbd { display:inline-block; padding:.25rem .45rem; border:1px solid #a1a1aa; bor
   }
 }
 
-:root[data-theme="dark"] .editor-toolbar button,
+:root[data-theme="dark"] .editor-toolbar button:not([aria-pressed="true"]),
 :root[data-theme="dark"] .editor-inspector {
   border-color: #69717c;
   background: #25282d;
@@ -212,7 +212,7 @@ kbd { display:inline-block; padding:.25rem .45rem; border:1px solid #a1a1aa; bor
 }
 
 @media (prefers-color-scheme: dark) {
-  :root[data-theme="system"] .editor-toolbar button,
+  :root[data-theme="system"] .editor-toolbar button:not([aria-pressed="true"]),
   :root[data-theme="system"] .editor-inspector {
     border-color: #69717c;
     background: #25282d;

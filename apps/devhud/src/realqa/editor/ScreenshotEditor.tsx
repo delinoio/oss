@@ -19,6 +19,7 @@ import {
   type ComposerImage,
   type EditorOperation,
   type EditorPoint,
+  type EditorRect,
   type RealQaComposerBridge,
 } from "../capture";
 import {
@@ -53,6 +54,8 @@ interface ScreenshotEditorValue {
   readonly status: string;
   readonly approving: boolean;
   readonly sourceUrl: string;
+  readonly sourceEffectAvailable: boolean;
+  readonly viewport: EditorRect;
   readonly setTool: (tool: EditorTool) => void;
   readonly setColor: (color: string) => void;
   readonly setLineWidth: (width: number) => void;
@@ -87,6 +90,19 @@ function bytesToDataUrl(image: ComposerImage): string {
     binary += String.fromCharCode(...bytes.slice(index, index + chunkSize));
   }
   return `data:${image.contentType};base64,${btoa(binary)}`;
+}
+
+function isSourceEffect(
+  operation: EditorOperation,
+): operation is Extract<EditorOperation, { readonly kind: "blur" | "pixelate" }> {
+  return operation.kind === "blur" || operation.kind === "pixelate";
+}
+
+function clampPointToRect(point: EditorPoint, rect: EditorRect): EditorPoint {
+  return {
+    x: Math.max(rect.x, Math.min(rect.x + rect.width - 1, point.x)),
+    y: Math.max(rect.y, Math.min(rect.y + rect.height - 1, point.y)),
+  };
 }
 
 function operationForGesture(
@@ -184,7 +200,7 @@ function ScreenshotEditorStateProvider({
   const [text, setText] = useState("Note");
   const [outputMediaType, setOutputMediaType] = useState(ImageMediaType.Png);
   const [pending, setPending] = useState<PendingGesture | null>(null);
-  const [keyboardCursor, setKeyboardCursor] = useState<EditorPoint>({
+  const [keyboardCursorState, setKeyboardCursor] = useState<EditorPoint>({
     x: Math.floor(source.width / 2),
     y: Math.floor(source.height / 2),
   });
@@ -194,6 +210,16 @@ function ScreenshotEditorStateProvider({
   const bounds = useMemo(
     () => ({ width: source.width, height: source.height }),
     [source.height, source.width],
+  );
+  const fullViewport = useMemo(
+    () => ({ x: 0, y: 0, width: source.width, height: source.height }),
+    [source.height, source.width],
+  );
+  const crop = history.present.find((operation) => operation.kind === "crop");
+  const viewport = crop?.rect ?? fullViewport;
+  const keyboardCursor = clampPointToRect(keyboardCursorState, viewport);
+  const sourceEffectAvailable = history.present.every(
+    (operation) => operation.kind === "crop",
   );
 
   const markerNumber =
@@ -214,10 +240,24 @@ function ScreenshotEditorStateProvider({
         setStatus("That edit is outside the image or has no drawable size.");
         return;
       }
+      if (isSourceEffect(operation) && !sourceEffectAvailable) {
+        setStatus("Blur or pixelate must be the first image edit.");
+        return;
+      }
       dispatch({ type: "commit", operation });
+      if (isSourceEffect(operation)) setTool(EditorTool.Arrow);
       setStatus(`${tool} edit added.`);
     },
-    [bounds, color, lineWidth, markerNumber, source, text, tool],
+    [
+      bounds,
+      color,
+      lineWidth,
+      markerNumber,
+      source,
+      sourceEffectAvailable,
+      text,
+      tool,
+    ],
   );
 
   const begin = useCallback(
@@ -296,12 +336,15 @@ function ScreenshotEditorStateProvider({
   ]);
   const moveKeyboardCursor = useCallback(
     (deltaX: number, deltaY: number) => {
-      setKeyboardCursor((current) => ({
-        x: Math.max(0, Math.min(source.width - 1, current.x + deltaX)),
-        y: Math.max(0, Math.min(source.height - 1, current.y + deltaY)),
-      }));
+      setKeyboardCursor((current) => {
+        const visible = clampPointToRect(current, viewport);
+        return clampPointToRect(
+          { x: visible.x + deltaX, y: visible.y + deltaY },
+          viewport,
+        );
+      });
     },
-    [source.height, source.width],
+    [viewport],
   );
   const activateKeyboardCursor = useCallback(() => {
     if (pending === null) {
@@ -326,6 +369,8 @@ function ScreenshotEditorStateProvider({
     status,
     approving,
     sourceUrl,
+    sourceEffectAvailable,
+    viewport,
     setTool,
     setColor,
     setLineWidth,
@@ -363,6 +408,7 @@ export function ScreenshotEditorToolbar() {
     canUndo,
     redo,
     setTool,
+    sourceEffectAvailable,
     tool,
     undo,
   } = useScreenshotEditor();
@@ -372,6 +418,10 @@ export function ScreenshotEditorToolbar() {
         <button
           aria-pressed={tool === candidate}
           className="editor-tool"
+          disabled={
+            !sourceEffectAvailable &&
+            (candidate === EditorTool.Blur || candidate === EditorTool.Pixelate)
+          }
           key={candidate}
           onClick={() => setTool(candidate)}
           type="button"
@@ -402,35 +452,44 @@ export function ScreenshotEditorToolbar() {
 
 function pointFromPointer(
   event: PointerEvent<SVGSVGElement>,
-  source: ComposerImage,
+  viewport: EditorRect,
 ): EditorPoint {
   const screenTransform = event.currentTarget.getScreenCTM?.();
   if (screenTransform !== undefined && screenTransform !== null) {
     const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(
       screenTransform.inverse(),
     );
-    return {
-      x: Math.max(0, Math.min(source.width - 1, Math.round(point.x))),
-      y: Math.max(0, Math.min(source.height - 1, Math.round(point.y))),
-    };
+    return clampPointToRect(
+      { x: Math.round(point.x), y: Math.round(point.y) },
+      viewport,
+    );
   }
 
   const rect = event.currentTarget.getBoundingClientRect();
   const scale = Math.min(
-    rect.width / source.width,
-    rect.height / source.height,
+    rect.width / viewport.width,
+    rect.height / viewport.height,
   );
-  const renderedWidth = source.width * scale;
-  const renderedHeight = source.height * scale;
+  const renderedWidth = viewport.width * scale;
+  const renderedHeight = viewport.height * scale;
   const left = rect.left + (rect.width - renderedWidth) / 2;
   const top = rect.top + (rect.height - renderedHeight) / 2;
   const x = renderedWidth > 0 ? (event.clientX - left) / renderedWidth : 0;
   const y = renderedHeight > 0 ? (event.clientY - top) / renderedHeight : 0;
   return {
-    x: Math.max(0, Math.min(source.width - 1, Math.round(x * (source.width - 1)))),
+    x: Math.max(
+      viewport.x,
+      Math.min(
+        viewport.x + viewport.width - 1,
+        viewport.x + Math.round(x * (viewport.width - 1)),
+      ),
+    ),
     y: Math.max(
-      0,
-      Math.min(source.height - 1, Math.round(y * (source.height - 1))),
+      viewport.y,
+      Math.min(
+        viewport.y + viewport.height - 1,
+        viewport.y + Math.round(y * (viewport.height - 1)),
+      ),
     ),
   };
 }
@@ -542,11 +601,13 @@ function OperationOverlay({
   effectPrefix,
   index,
   operation,
+  source,
   sourceUrl,
 }: {
   readonly effectPrefix: string;
   readonly index: number;
   readonly operation: EditorOperation;
+  readonly source: ComposerImage;
   readonly sourceUrl: string;
 }) {
   switch (operation.kind) {
@@ -646,9 +707,9 @@ function OperationOverlay({
           <image
             clipPath={`url(#${effectPrefix}-clip-${index})`}
             filter={`url(#${effectPrefix}-blur-${index})`}
-            height="100%"
+            height={source.height}
             href={sourceUrl}
-            width="100%"
+            width={source.width}
             x="0"
             y="0"
           />
@@ -683,6 +744,7 @@ export function ScreenshotEditorCanvas() {
     tool,
     undo,
     activateKeyboardCursor,
+    viewport,
   } = editor;
   const pointerActive = useRef(false);
   const effectPrefix = useId().replaceAll(":", "");
@@ -751,20 +813,20 @@ export function ScreenshotEditorCanvas() {
         onPointerDown={(event) => {
           pointerActive.current = true;
           event.currentTarget.setPointerCapture?.(event.pointerId);
-          begin(pointFromPointer(event, source));
+          begin(pointFromPointer(event, viewport));
         }}
         onPointerMove={(event) => {
-          if (pointerActive.current) move(pointFromPointer(event, source));
+          if (pointerActive.current) move(pointFromPointer(event, viewport));
         }}
         onPointerUp={(event) => {
           if (!pointerActive.current) return;
           pointerActive.current = false;
           event.currentTarget.releasePointerCapture?.(event.pointerId);
-          finish(pointFromPointer(event, source));
+          finish(pointFromPointer(event, viewport));
         }}
         role="application"
         tabIndex={0}
-        viewBox={`0 0 ${source.width} ${source.height}`}
+        viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
       >
         <defs>
           <marker
@@ -778,13 +840,20 @@ export function ScreenshotEditorCanvas() {
             <path d="M0,0 L0,6 L7,3 z" fill="context-stroke" />
           </marker>
         </defs>
-        <image height="100%" href={sourceUrl} width="100%" x="0" y="0" />
+        <image
+          height={source.height}
+          href={sourceUrl}
+          width={source.width}
+          x="0"
+          y="0"
+        />
         {operations.map((operation, index) => (
           <OperationOverlay
             key={`${index}-${operation.kind}`}
             effectPrefix={effectPrefix}
             index={index}
             operation={operation}
+            source={source}
             sourceUrl={sourceUrl}
           />
         ))}

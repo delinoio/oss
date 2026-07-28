@@ -183,6 +183,34 @@ describe("ScreenshotEditor", () => {
     );
   });
 
+  it("uses the active crop as the preview and input viewport", async () => {
+    const user = userEvent.setup();
+    const { bridge, canvas } = fixture();
+
+    await user.click(screen.getByRole("button", { name: "Crop" }));
+    fireEvent.pointerDown(canvas, { clientX: 100, clientY: 80, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 400, clientY: 320, pointerId: 1 });
+    expect(canvas).toHaveAttribute("viewBox", "20 16 60 48");
+
+    await user.click(screen.getByRole("button", { name: "Arrow" }));
+    fireEvent.pointerDown(canvas, { clientX: 0, clientY: 0, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 500, clientY: 400, pointerId: 2 });
+    await user.click(screen.getByRole("button", { name: "Approve 2 edits" }));
+
+    expect(bridge.flattenImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operations: [
+          { kind: "crop", rect: { x: 20, y: 16, width: 60, height: 48 } },
+          expect.objectContaining({
+            kind: "arrow",
+            start: { x: 20, y: 16 },
+            end: { x: 79, y: 63 },
+          }),
+        ],
+      }),
+    );
+  });
+
   it("resets image-specific state when the source identity changes", async () => {
     const user = userEvent.setup();
     const { bridge, canvas, renderEditor, rerender } = fixture();
@@ -236,6 +264,7 @@ describe("ScreenshotEditor", () => {
       "10",
     );
 
+    await user.click(screen.getByRole("button", { name: "Undo" }));
     await user.click(screen.getByRole("button", { name: "Pixelate" }));
     fireEvent.change(lineWidth, { target: { value: "7" } });
     fireEvent.pointerDown(canvas, { clientX: 250, clientY: 200, pointerId: 2 });
@@ -247,6 +276,35 @@ describe("ScreenshotEditor", () => {
     expect(pixelPreview?.parentElement).toHaveAttribute("height", "42");
     expect(pixelPreview?.parentElement).toHaveAttribute("width", "42");
     expect(container.querySelector("pattern")).not.toBeInTheDocument();
+  });
+
+  it("keeps source-derived effects before annotations", async () => {
+    const user = userEvent.setup();
+    const { bridge, canvas } = fixture();
+
+    await user.click(screen.getByRole("button", { name: "Blur" }));
+    fireEvent.pointerDown(canvas, { clientX: 50, clientY: 40, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 250, clientY: 200, pointerId: 1 });
+
+    expect(screen.getByRole("button", { name: "Arrow" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Blur" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Pixelate" })).toBeDisabled();
+
+    fireEvent.pointerDown(canvas, { clientX: 250, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 450, clientY: 360, pointerId: 2 });
+    await user.click(screen.getByRole("button", { name: "Approve 2 edits" }));
+
+    expect(bridge.flattenImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operations: [
+          expect.objectContaining({ kind: "blur" }),
+          expect.objectContaining({ kind: "arrow" }),
+        ],
+      }),
+    );
   });
 
   it("normalizes unsupported text before previewing the operation", async () => {
