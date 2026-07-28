@@ -2629,13 +2629,13 @@ fn reset_dev_hud(
                 shortcut::ShortcutFailure::RegistrationFailed,
                 "unknown",
             );
-            return Ok(PersistenceResetOutcome::CleanupFailed);
+            return Ok(PersistenceResetOutcome::PartiallyRetained);
         }
     };
     let previous_shortcut = shortcuts.active_shortcut();
     if let Err(reason) = shortcuts.clear() {
         log_shortcut_integration_failure("reset", reason, "configured");
-        return Ok(PersistenceResetOutcome::CleanupFailed);
+        return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
 
     let Some(previous_autostart) = autostart_state.current() else {
@@ -2662,7 +2662,7 @@ fn reset_dev_hud(
                 launch_at_login: None,
             });
         }
-        return Ok(PersistenceResetOutcome::CleanupFailed);
+        return Ok(PersistenceResetOutcome::PartiallyRetained);
     };
     let autostart_outcome = autostart_state.apply(false);
     if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_outcome {
@@ -2685,7 +2685,7 @@ fn reset_dev_hud(
                 launch_at_login: Some(enabled),
             });
         }
-        return Ok(PersistenceResetOutcome::CleanupFailed);
+        return Ok(PersistenceResetOutcome::PartiallyRetained);
     } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_outcome {
         log_autostart_integration_failure("reset", reason, None);
         let shortcut_rollback = shortcuts.rollback(previous_shortcut);
@@ -2736,7 +2736,7 @@ fn reset_dev_hud(
                 launch_at_login: autostart_rollback.enabled(),
             });
         }
-        return Ok(PersistenceResetOutcome::CleanupFailed);
+        return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
 
     let mut reset_outcome = match persistence.reset() {
@@ -2771,7 +2771,7 @@ fn reset_dev_hud(
                     launch_at_login: autostart_rollback.enabled(),
                 });
             }
-            return Ok(PersistenceResetOutcome::CleanupFailed);
+            return Ok(PersistenceResetOutcome::PartiallyRetained);
         }
         Err(PersistenceResetFailure::PartiallyRetained) => {
             PersistenceResetOutcome::PartiallyRetained
@@ -2836,12 +2836,12 @@ fn reset_dev_hud(
     if clear_browsing_data_for_reset(webview).is_err()
         || clear_local_logs_for_reset(&log_directory).is_err()
     {
-        return Ok(PersistenceResetOutcome::CleanupFailed);
+        return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     let reset_outcome = match state.reset() {
         Ok(()) => PersistenceResetOutcome::Complete,
         Err(PersistenceResetFailure::BeforeRecordsRemoved(_)) => {
-            return Ok(PersistenceResetOutcome::CleanupFailed);
+            return Ok(PersistenceResetOutcome::PartiallyRetained);
         }
         Err(PersistenceResetFailure::PartiallyRetained) => {
             PersistenceResetOutcome::PartiallyRetained
