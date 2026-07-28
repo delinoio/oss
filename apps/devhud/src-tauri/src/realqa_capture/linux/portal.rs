@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs, sync::Mutex, time::Duration};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    fs,
+    sync::Mutex,
+    time::Duration,
+};
 
 use ashpd::{
     Error as PortalError, PortalError as PortalMethodError,
@@ -170,6 +175,24 @@ impl PortalCaptureProvider {
             .copied()
             .ok_or(BackendFailure::Cancelled)
     }
+
+    fn register_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| BackendFailure::CaptureFailed)?;
+        match sessions.entry(session_id.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(false);
+                Ok(())
+            }
+            Entry::Occupied(entry) if *entry.get() => {
+                entry.remove();
+                Err(BackendFailure::Cancelled)
+            }
+            Entry::Occupied(_) => Err(BackendFailure::CaptureFailed),
+        }
+    }
 }
 
 impl LinuxCaptureProvider for PortalCaptureProvider {
@@ -249,15 +272,7 @@ impl LinuxCaptureProvider for PortalCaptureProvider {
         {
             return Err(BackendFailure::ModeUnavailable);
         }
-        {
-            let mut sessions = self
-                .sessions
-                .lock()
-                .map_err(|_| BackendFailure::CaptureFailed)?;
-            if sessions.insert(request.session_id.clone(), false).is_some() {
-                return Err(BackendFailure::CaptureFailed);
-            }
-        }
+        self.register_session(&request.session_id)?;
         let result = Self::run(self.capture_with_cancellation(request));
         let cancelled = self.session_cancelled(&request.session_id)?;
         self.sessions
@@ -272,14 +287,12 @@ impl LinuxCaptureProvider for PortalCaptureProvider {
     }
 
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
-        if let Some(cancelled) = self
-            .sessions
+        self.sessions
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?
-            .get_mut(session_id)
-        {
-            *cancelled = true;
-        }
+            .entry(session_id.clone())
+            .and_modify(|cancelled| *cancelled = true)
+            .or_insert(true);
         Ok(())
     }
 }
@@ -346,24 +359,24 @@ mod tests {
     }
 
     #[test]
-    fn application_cancellation_marks_only_the_active_portal_request() {
+    fn application_cancellation_is_preserved_until_portal_request_registration() {
         let provider = PortalCaptureProvider::new().expect("portal provider");
         let active = CaptureSessionId("active".to_owned());
-        let unrelated = CaptureSessionId("unrelated".to_owned());
+        let early = CaptureSessionId("early".to_owned());
         provider
-            .sessions
-            .lock()
-            .expect("sessions lock")
-            .insert(active.clone(), false);
+            .register_session(&active)
+            .expect("register active request");
 
         provider.cancel(&active).expect("cancel active request");
-        provider
-            .cancel(&unrelated)
-            .expect("unknown cancellation is idempotent");
+        provider.cancel(&early).expect("cancel pending request");
 
         assert!(provider.session_cancelled(&active).expect("active request"));
         assert_eq!(
-            provider.session_cancelled(&unrelated),
+            provider.register_session(&early),
+            Err(BackendFailure::Cancelled)
+        );
+        assert_eq!(
+            provider.session_cancelled(&early),
             Err(BackendFailure::Cancelled)
         );
     }
