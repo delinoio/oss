@@ -8,6 +8,7 @@ import {
   emptyEditorHistory,
   normalizeEditorText,
   validateEditorOperation,
+  validateEditorOperationBudgets,
 } from "./model";
 
 const bounds = { width: 100, height: 80 };
@@ -167,6 +168,27 @@ describe("screenshot editor model", () => {
         largeBounds,
       ),
     ).toBe(false);
+  });
+
+  it("matches native aggregate freehand-point and raster-work budgets", () => {
+    const points = Array.from({ length: 20_000 }, () => ({ x: 0, y: 0 }));
+    const freehand: EditorOperation = {
+      kind: "freehand",
+      points,
+      color: "#ffffff",
+      lineWidth: 1,
+    };
+    expect(validateEditorOperationBudgets(Array(5).fill(freehand))).toBe(true);
+    expect(validateEditorOperationBudgets(Array(6).fill(freehand))).toBe(false);
+
+    const expensiveArrow: EditorOperation = {
+      kind: "arrow",
+      start: { x: 0, y: 0 },
+      end: { x: 9_999, y: 0 },
+      color: "#ffffff",
+      lineWidth: 100,
+    };
+    expect(validateEditorOperationBudgets([expensiveArrow])).toBe(false);
   });
 
   it("preserves supported text casing and normalizes unsupported glyphs", () => {

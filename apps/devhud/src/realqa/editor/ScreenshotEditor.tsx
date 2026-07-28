@@ -31,6 +31,7 @@ import {
   normalizeEditorText,
   rectFromPoints,
   validateEditorOperation,
+  validateEditorOperationBudgets,
 } from "./model";
 
 interface PendingGesture {
@@ -246,6 +247,19 @@ function ScreenshotEditorStateProvider({
         setStatus("Blur or pixelate must be the first image edit.");
         return;
       }
+      const nextOperations =
+        operation.kind === "crop"
+          ? [
+              ...history.present.filter(
+                (presentOperation) => presentOperation.kind !== "crop",
+              ),
+              operation,
+            ]
+          : [...history.present, operation];
+      if (!validateEditorOperationBudgets(nextOperations)) {
+        setStatus("That edit exceeds the combined processing limit.");
+        return;
+      }
       dispatch({ type: "commit", operation });
       if (isSourceEffect(operation)) setTool(EditorTool.Arrow);
       setStatus(`${tool} edit added.`);
@@ -253,6 +267,7 @@ function ScreenshotEditorStateProvider({
     [
       bounds,
       color,
+      history.present,
       lineWidth,
       markerNumber,
       source,
@@ -620,17 +635,14 @@ function bitmapTextPath(text: string): string {
   return pixels.join("");
 }
 
-const MAX_BLUR_PREVIEW_TILE_EDGE = 1_024;
+const MAX_BLUR_PREVIEW_EDGE = 2_048;
 const MAX_BLUR_PREVIEW_PIXELS = 4 * 1_024 * 1_024;
 
 interface BlurPreviewTile {
   readonly height: number;
   readonly previewHeight: number;
+  readonly previewRadius: number;
   readonly previewWidth: number;
-  readonly sourceHeight: number;
-  readonly sourceWidth: number;
-  readonly sourceX: number;
-  readonly sourceY: number;
   readonly width: number;
   readonly x: number;
   readonly y: number;
@@ -640,35 +652,28 @@ export function blurPreviewTiles(
   width: number,
   height: number,
   radius: number,
-): readonly BlurPreviewTile[] {
-  const previewScale =
-    width * height > MAX_BLUR_PREVIEW_PIXELS
-      ? Math.sqrt(MAX_BLUR_PREVIEW_PIXELS / (width * height))
-      : 1;
-  const tiles: BlurPreviewTile[] = [];
-  for (let y = 0; y < height; y += MAX_BLUR_PREVIEW_TILE_EDGE) {
-    const tileHeight = Math.min(MAX_BLUR_PREVIEW_TILE_EDGE, height - y);
-    const sourceY = Math.max(0, y - radius);
-    const sourceBottom = Math.min(height, y + tileHeight + radius);
-    for (let x = 0; x < width; x += MAX_BLUR_PREVIEW_TILE_EDGE) {
-      const tileWidth = Math.min(MAX_BLUR_PREVIEW_TILE_EDGE, width - x);
-      const sourceX = Math.max(0, x - radius);
-      const sourceRight = Math.min(width, x + tileWidth + radius);
-      tiles.push({
-        height: tileHeight,
-        previewHeight: Math.max(1, Math.floor(tileHeight * previewScale)),
-        previewWidth: Math.max(1, Math.floor(tileWidth * previewScale)),
-        sourceHeight: sourceBottom - sourceY,
-        sourceWidth: sourceRight - sourceX,
-        sourceX,
-        sourceY,
-        width: tileWidth,
-        x,
-        y,
-      });
-    }
-  }
-  return tiles;
+): readonly [BlurPreviewTile] {
+  const previewScale = Math.min(
+    1,
+    MAX_BLUR_PREVIEW_EDGE / width,
+    MAX_BLUR_PREVIEW_EDGE / height,
+    Math.sqrt(MAX_BLUR_PREVIEW_PIXELS / (width * height)),
+  );
+  const previewWidth = Math.max(1, Math.floor(width * previewScale));
+  const previewHeight = Math.max(1, Math.floor(height * previewScale));
+  return [
+    {
+      height,
+      previewHeight,
+      previewRadius: Math.round(
+        radius * Math.min(previewWidth / width, previewHeight / height),
+      ),
+      previewWidth,
+      width,
+      x: 0,
+      y: 0,
+    },
+  ];
 }
 
 export function boxBlurPreviewPixels(
@@ -927,112 +932,87 @@ function BlurredOverlay({
   readonly operation: Extract<EditorOperation, { readonly kind: "blur" }>;
   readonly sourceUrl: string;
 }) {
-  const canvases = useRef(new Map<string, HTMLCanvasElement>());
-  const tiles = useMemo(
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const tile = useMemo(
     () =>
       blurPreviewTiles(
         operation.rect.width,
         operation.rect.height,
         operation.radius,
-      ),
+      )[0],
     [operation.radius, operation.rect.height, operation.rect.width],
   );
 
   useEffect(() => {
     const preview = new Image();
     preview.onload = () => {
-      const sourceCanvas = document.createElement("canvas");
-      const sourceContext = sourceCanvas.getContext("2d", {
+      const canvas = canvasRef.current;
+      if (canvas === null) return;
+      const context = canvas.getContext("2d", {
         willReadFrequently: true,
       });
-      if (sourceContext === null) return;
-      for (const tile of tiles) {
-        const canvas = canvases.current.get(`${tile.x}-${tile.y}`);
-        const context = canvas?.getContext("2d");
-        if (canvas === undefined || context === null || context === undefined) {
-          continue;
-        }
-        sourceCanvas.width = tile.sourceWidth;
-        sourceCanvas.height = tile.sourceHeight;
-        sourceContext.drawImage(
-          preview,
-          operation.rect.x + tile.sourceX,
-          operation.rect.y + tile.sourceY,
-          tile.sourceWidth,
-          tile.sourceHeight,
-          0,
-          0,
-          tile.sourceWidth,
-          tile.sourceHeight,
-        );
-        const sourcePixels = sourceContext.getImageData(
-          0,
-          0,
-          tile.sourceWidth,
-          tile.sourceHeight,
-        );
-        const blurred = boxBlurPreviewPixels(
-          sourcePixels.data,
-          tile.sourceWidth,
-          tile.sourceHeight,
-          operation.radius,
-          {
-            x: tile.x - tile.sourceX,
-            y: tile.y - tile.sourceY,
-            width: tile.width,
-            height: tile.height,
-          },
-        );
-        const imageData = sourceContext.createImageData(tile.width, tile.height);
-        imageData.data.set(blurred);
-        sourceCanvas.width = tile.width;
-        sourceCanvas.height = tile.height;
-        sourceContext.putImageData(imageData, 0, 0);
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = "high";
-        context.drawImage(
-          sourceCanvas,
-          0,
-          0,
-          tile.width,
-          tile.height,
-          0,
-          0,
-          tile.previewWidth,
-          tile.previewHeight,
-        );
-      }
+      if (context === null) return;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(
+        preview,
+        operation.rect.x,
+        operation.rect.y,
+        operation.rect.width,
+        operation.rect.height,
+        0,
+        0,
+        tile.previewWidth,
+        tile.previewHeight,
+      );
+      const sourcePixels = context.getImageData(
+        0,
+        0,
+        tile.previewWidth,
+        tile.previewHeight,
+      );
+      const blurred = boxBlurPreviewPixels(
+        sourcePixels.data,
+        tile.previewWidth,
+        tile.previewHeight,
+        tile.previewRadius,
+        {
+          x: 0,
+          y: 0,
+          width: tile.previewWidth,
+          height: tile.previewHeight,
+        },
+      );
+      const imageData = context.createImageData(
+        tile.previewWidth,
+        tile.previewHeight,
+      );
+      imageData.data.set(blurred);
+      context.putImageData(imageData, 0, 0);
     };
     preview.src = sourceUrl;
     return () => {
       preview.onload = null;
     };
-  }, [operation, sourceUrl, tiles]);
+  }, [operation, sourceUrl, tile]);
 
-  return tiles.map((tile) => {
-    const key = `${tile.x}-${tile.y}`;
-    return (
-      <foreignObject
-        height={tile.height}
-        key={key}
-        width={tile.width}
-        x={operation.rect.x + tile.x}
-        y={operation.rect.y + tile.y}
-      >
-        <canvas
-          aria-hidden="true"
-          className="editor-blur"
-          height={tile.previewHeight}
-          ref={(canvas) => {
-            if (canvas === null) canvases.current.delete(key);
-            else canvases.current.set(key, canvas);
-          }}
-          width={tile.previewWidth}
-        />
-      </foreignObject>
-    );
-  });
+  return (
+    <foreignObject
+      height={tile.height}
+      width={tile.width}
+      x={operation.rect.x}
+      y={operation.rect.y}
+    >
+      <canvas
+        aria-hidden="true"
+        className="editor-blur"
+        height={tile.previewHeight}
+        ref={canvasRef}
+        width={tile.previewWidth}
+      />
+    </foreignObject>
+  );
 }
 
 function PixelatedOverlay({
@@ -1122,7 +1102,7 @@ function OperationOverlay({
     case "arrow": {
       const wings = arrowPreviewWings(operation, source);
       return (
-        <g>
+        <g strokeLinecap="round" strokeLinejoin="round">
           <line
             stroke={operation.color}
             strokeWidth={operation.lineWidth}

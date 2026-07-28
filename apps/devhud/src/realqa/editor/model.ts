@@ -6,7 +6,10 @@ import type {
 
 export const MAX_EDITOR_OPERATIONS = 1_000;
 export const MAX_FREEHAND_POINTS = 20_000;
+const MAX_TOTAL_FREEHAND_POINTS = 100_000;
 const MAX_RASTER_WORK = 100_000_000;
+const MAX_ARROW_HEAD_STAMPS = 98;
+const MAX_GLYPH_CELLS = 35;
 const BLUR_PIXEL_PASSES = 4;
 const PIXELATE_PIXEL_PASSES = 2;
 
@@ -224,4 +227,76 @@ export function validateEditorOperation(
         validEffectWork(operation.rect, PIXELATE_PIXEL_PASSES)
       );
   }
+}
+
+function lineRasterWork(
+  start: EditorPoint,
+  end: EditorPoint,
+  lineWidth: number,
+): number {
+  const stamps =
+    Math.max(Math.abs(start.x - end.x), Math.abs(start.y - end.y)) + 1;
+  return stamps * lineWidth * lineWidth;
+}
+
+function operationRasterWork(operation: EditorOperation): number {
+  switch (operation.kind) {
+    case "crop":
+    case "marker":
+      return 0;
+    case "arrow":
+      return (
+        lineRasterWork(operation.start, operation.end, operation.lineWidth) +
+        MAX_ARROW_HEAD_STAMPS * operation.lineWidth * operation.lineWidth
+      );
+    case "rectangle":
+      return (
+        (operation.rect.width + operation.rect.height) *
+        2 *
+        operation.lineWidth *
+        operation.lineWidth
+      );
+    case "freehand":
+      return operation.points.slice(1).reduce(
+        (work, point, index) =>
+          work +
+          lineRasterWork(
+            operation.points[index] ?? point,
+            point,
+            operation.lineWidth,
+          ),
+        0,
+      );
+    case "text": {
+      const scale = Math.max(1, Math.floor(operation.fontSize / 7));
+      return (
+        new TextEncoder().encode(operation.text).length *
+        MAX_GLYPH_CELLS *
+        scale *
+        scale
+      );
+    }
+    case "blur":
+      return operation.rect.width * operation.rect.height * BLUR_PIXEL_PASSES;
+    case "pixelate":
+      return operation.rect.width * operation.rect.height * PIXELATE_PIXEL_PASSES;
+  }
+}
+
+export function validateEditorOperationBudgets(
+  operations: readonly EditorOperation[],
+): boolean {
+  let totalFreehandPoints = 0;
+  let rasterWork = 0;
+  for (const operation of operations) {
+    if (operation.kind === "freehand") {
+      totalFreehandPoints += operation.points.length;
+      if (totalFreehandPoints > MAX_TOTAL_FREEHAND_POINTS) return false;
+    }
+    rasterWork += operationRasterWork(operation);
+    if (!Number.isSafeInteger(rasterWork) || rasterWork > MAX_RASTER_WORK) {
+      return false;
+    }
+  }
+  return true;
 }

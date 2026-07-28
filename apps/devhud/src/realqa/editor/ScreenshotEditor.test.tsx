@@ -342,7 +342,7 @@ describe("ScreenshotEditor", () => {
     expect(container.querySelector("pattern")).not.toBeInTheDocument();
   });
 
-  it("matches the native separable box average and bounds blur scratch tiles", () => {
+  it("matches the native separable box average and bounds blur previews", () => {
     const pixels = new Uint8ClampedArray(8 * 8 * 4);
     for (let y = 0; y < 8; y += 1) {
       for (let x = 0; x < 8; x += 1) {
@@ -365,15 +365,7 @@ describe("ScreenshotEditor", () => {
     ]);
 
     const tiles = blurPreviewTiles(10_000, 10_000, 128);
-    expect(tiles).toHaveLength(100);
-    expect(
-      tiles.every(
-        (tile) =>
-          tile.width * tile.height <= 1_024 * 1_024 &&
-          tile.sourceWidth <= 1_024 + 256 &&
-          tile.sourceHeight <= 1_024 + 256,
-      ),
-    ).toBe(true);
+    expect(tiles).toHaveLength(1);
     expect(
       tiles.reduce(
         (pixels, tile) =>
@@ -382,6 +374,26 @@ describe("ScreenshotEditor", () => {
       ),
     ).toBeLessThanOrEqual(4 * 1_024 * 1_024);
     expect(tiles.some((tile) => tile.previewWidth < tile.width)).toBe(true);
+
+    for (const skinnyTiles of [
+      blurPreviewTiles(25_000_000, 1, 128),
+      blurPreviewTiles(1, 25_000_000, 128),
+    ]) {
+      expect(skinnyTiles).toHaveLength(1);
+      expect(
+        skinnyTiles.reduce(
+          (pixels, tile) =>
+            pixels + tile.previewWidth * tile.previewHeight,
+          0,
+        ),
+      ).toBeLessThanOrEqual(4 * 1_024 * 1_024);
+      expect(
+        skinnyTiles.every(
+          (tile) =>
+            tile.previewWidth <= 2_048 && tile.previewHeight <= 2_048,
+        ),
+      ).toBe(true);
+    }
   });
 
   it("averages partial pixelation edge blocks independently", () => {
@@ -478,6 +490,14 @@ describe("ScreenshotEditor", () => {
     expect(arrowWings[0]).toHaveAttribute("x2", "76");
     expect(arrowWings[0]).toHaveAttribute("y1", "40");
     expect(arrowWings[0]).toHaveAttribute("y2", "49");
+    expect(arrowWings.item(0).parentElement).toHaveAttribute(
+      "stroke-linecap",
+      "round",
+    );
+    expect(arrowWings.item(0).parentElement).toHaveAttribute(
+      "stroke-linejoin",
+      "round",
+    );
     expect(canvas.querySelector("marker")).not.toBeInTheDocument();
   });
 
