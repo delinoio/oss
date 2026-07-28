@@ -258,12 +258,14 @@ requireCondition(
       "allow-get-runtime-info",
       "allow-read-settings",
       "allow-write-settings",
+      "allow-read-shortcut-effective-state",
+      "allow-write-shortcut-effective-state",
       "allow-read-widget-configuration",
       "allow-write-widget-configuration",
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
     ]),
-  "mobile IPC must remain limited to diagnostics, the two versioned records, and confirmed reset",
+  "mobile IPC must remain limited to diagnostics, the three versioned records, and confirmed reset",
 );
 requireCondition(
   runtimeSource.includes('"Unsupported"') &&
