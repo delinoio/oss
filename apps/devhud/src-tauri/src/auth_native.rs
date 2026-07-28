@@ -422,19 +422,26 @@ impl NativeAuthState {
         }
     }
 
-    pub(crate) fn begin_desktop(&self) -> Result<(Url, LoopbackCallback), AuthError> {
+    pub(crate) fn begin_desktop(
+        &self,
+        feature: AuthFeature,
+    ) -> Result<(Url, LoopbackCallback), AuthError> {
         let callback = LoopbackCallback::bind()?;
         let mut guard = self
             .manager
             .lock()
             .map_err(|_| AuthError::SecureVaultUnavailable)?;
         let manager = guard.as_mut().ok_or(AuthError::ConfigurationUnavailable)?;
-        let request = manager.begin(AuthPlatform::Desktop, callback.redirect_uri().clone())?;
+        let request = manager.begin(
+            feature,
+            AuthPlatform::Desktop,
+            callback.redirect_uri().clone(),
+        )?;
         Ok((request.authorization_url, callback))
     }
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    pub(crate) fn begin_mobile(&self) -> Result<Url, AuthError> {
+    pub(crate) fn begin_mobile(&self, feature: AuthFeature) -> Result<Url, AuthError> {
         let mut guard = self
             .manager
             .lock()
@@ -446,6 +453,7 @@ impl NativeAuthState {
         }
         manager
             .begin(
+                feature,
                 AuthPlatform::Mobile,
                 Url::parse("https://deli.dev/auth/devhud/callback")
                     .map_err(|_| AuthError::InvalidConfiguration)?,

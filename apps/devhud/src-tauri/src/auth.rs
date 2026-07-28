@@ -411,14 +411,16 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
 
     pub(crate) fn begin(
         &mut self,
+        feature: AuthFeature,
         platform: AuthPlatform,
         redirect_uri: Url,
     ) -> Result<AuthorizationRequest, AuthError> {
-        self.begin_at(platform, redirect_uri, unix_time_now())
+        self.begin_at(feature, platform, redirect_uri, unix_time_now())
     }
 
     fn begin_at(
         &mut self,
+        feature: AuthFeature,
         platform: AuthPlatform,
         redirect_uri: Url,
         now_unix_seconds: u64,
@@ -434,6 +436,14 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         let verifier = random_secret(64)?;
         let nonce = random_secret(32)?;
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.expose().as_bytes()));
+        let authorization_scopes = ["openid", "offline_access", "profile"]
+            .into_iter()
+            .chain(feature.scopes().iter().copied())
+            .chain(feature.delibase_scopes().iter().copied())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(" ");
         let mut authorization_url = self.configuration.authorization_endpoint.clone();
         {
             let mut query = authorization_url.query_pairs_mut();
@@ -441,7 +451,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 .append_pair("client_id", &self.configuration.client_id)
                 .append_pair("redirect_uri", redirect_uri.as_str())
                 .append_pair("response_type", "code")
-                .append_pair("scope", "openid offline_access profile")
+                .append_pair("scope", &authorization_scopes)
+                .append_pair("resource", feature.audience())
+                .append_pair("resource", DELIBASE_AUDIENCE)
                 .append_pair("code_challenge_method", "S256")
                 .append_pair("code_challenge", &challenge)
                 .append_pair("state", state.expose())
@@ -649,8 +661,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         // Drop access and ID tokens before touching fallible storage or the
         // network. Logout always locks feature use locally.
         self.state = SessionState::SignedOut;
-        let retained = self.vault.load()?;
-        if let Some(session) = retained.as_ref() {
+        if let Ok(Some(session)) = self.vault.load() {
             let revocation_endpoint = self.configuration.revocation_endpoint.clone();
             let _ = self.transport.revoke(
                 &revocation_endpoint,
@@ -1225,7 +1236,11 @@ mod tests {
         )));
         let mut session = manager(transport, FakeVault::default());
         let request = session
-            .begin(AuthPlatform::Mobile, Url::parse(MOBILE_CALLBACK).unwrap())
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
             .unwrap();
         let query: std::collections::BTreeMap<_, _> = request
             .authorization_url
@@ -1233,6 +1248,44 @@ mod tests {
             .map(|(key, value)| (key.into_owned(), value.into_owned()))
             .collect();
         assert_eq!(query.get("code_challenge_method"), Some(&"S256".to_owned()));
+        assert_eq!(
+            query.get("scope"),
+            Some(&"deck:access delibase:deck:forward offline_access openid profile".to_owned())
+        );
+        assert_eq!(
+            request
+                .authorization_url
+                .query_pairs()
+                .filter(|(key, _)| key == "resource")
+                .map(|(_, value)| value.into_owned())
+                .collect::<Vec<_>>(),
+            [DECK_AUDIENCE, DELIBASE_AUDIENCE]
+        );
+        let realqa_request = manager(FakeTransport::default(), FakeVault::default())
+            .begin(
+                AuthFeature::RealQa,
+                AuthPlatform::Desktop,
+                Url::parse("http://127.0.0.1:3000/auth/random-enough-path").unwrap(),
+            )
+            .unwrap();
+        let realqa_query: std::collections::BTreeMap<_, _> = realqa_request
+            .authorization_url
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        assert_eq!(
+            realqa_query.get("scope"),
+            Some(&"delibase:realqa:forward offline_access openid profile realqa:access".to_owned())
+        );
+        assert_eq!(
+            realqa_request
+                .authorization_url
+                .query_pairs()
+                .filter(|(key, _)| key == "resource")
+                .map(|(_, value)| value.into_owned())
+                .collect::<Vec<_>>(),
+            [REALQA_AUDIENCE, DELIBASE_AUDIENCE]
+        );
         assert!(query["state"].len() >= 40);
         assert!(query["code_challenge"].len() >= 40);
         let wrong = callback_for(&request, "code", Some("wrong-state"));
@@ -1254,7 +1307,11 @@ mod tests {
         )));
         let mut duplicate_manager = manager(duplicate_transport, FakeVault::default());
         let duplicate_request = duplicate_manager
-            .begin(AuthPlatform::Mobile, Url::parse(MOBILE_CALLBACK).unwrap())
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
             .unwrap();
         let mut duplicate_callback = callback_for(&duplicate_request, "code", None);
         let state = duplicate_callback
@@ -1277,6 +1334,7 @@ mod tests {
         let mut session = manager(FakeTransport::default(), FakeVault::default());
         session
             .begin_at(
+                AuthFeature::Deck,
                 AuthPlatform::Mobile,
                 Url::parse(MOBILE_CALLBACK).unwrap(),
                 NOW,
@@ -1290,6 +1348,7 @@ mod tests {
         assert!(
             session
                 .begin_at(
+                    AuthFeature::Deck,
                     AuthPlatform::Mobile,
                     Url::parse(MOBILE_CALLBACK).unwrap(),
                     NOW + CALLBACK_TIMEOUT.as_secs(),
@@ -1314,7 +1373,11 @@ mod tests {
         )));
         let mut manager = manager(transport, vault);
         let request = manager
-            .begin(AuthPlatform::Mobile, Url::parse(MOBILE_CALLBACK).unwrap())
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
             .unwrap();
         let callback = callback_for(&request, "code", None);
         assert_eq!(
@@ -1359,7 +1422,11 @@ mod tests {
         )));
         let mut manager = manager(transport, vault);
         let request = manager
-            .begin(AuthPlatform::Mobile, Url::parse(MOBILE_CALLBACK).unwrap())
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
             .unwrap();
         let callback = callback_for(&request, "code", None);
         assert_eq!(
@@ -1396,7 +1463,11 @@ mod tests {
         )));
         let mut manager = manager(transport, vault);
         let request = manager
-            .begin(AuthPlatform::Mobile, Url::parse(MOBILE_CALLBACK).unwrap())
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
             .unwrap();
         manager
             .complete_callback(&callback_for(&request, "code", None), NOW)
@@ -1541,7 +1612,11 @@ mod tests {
         };
         let mut write_failure_manager = manager(transport, vault);
         let request = write_failure_manager
-            .begin(AuthPlatform::Mobile, Url::parse(MOBILE_CALLBACK).unwrap())
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
             .unwrap();
         assert_eq!(
             write_failure_manager.complete_callback(&callback_for(&request, "code", None), NOW),
@@ -1574,18 +1649,38 @@ mod tests {
         )));
         let mut load_failure_manager = manager(transport, FakeVault::default());
         let request = load_failure_manager
-            .begin(AuthPlatform::Mobile, Url::parse(MOBILE_CALLBACK).unwrap())
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
             .unwrap();
         load_failure_manager
             .complete_callback(&callback_for(&request, "code", None), NOW)
             .unwrap();
         load_failure_manager.vault.fail_load = true;
         assert_eq!(
-            load_failure_manager.logout(),
-            Err(AuthError::SecureVaultUnavailable)
+            load_failure_manager.logout().unwrap(),
+            SessionSnapshot::SignedOut
         );
         assert!(!load_failure_manager.memory_tokens_present());
         assert_eq!(load_failure_manager.snapshot(), SessionSnapshot::SignedOut);
+        load_failure_manager.vault.retained = Some((
+            "refresh".to_owned(),
+            new_device_session_key("account-a")
+                .unwrap()
+                .expose()
+                .to_owned(),
+        ));
+        load_failure_manager.vault.fail_clear = true;
+        assert_eq!(
+            load_failure_manager.logout(),
+            Err(AuthError::SecureVaultDeleteFailed)
+        );
+        assert_eq!(
+            load_failure_manager.snapshot(),
+            SessionSnapshot::CleanupRequired
+        );
     }
 
     #[test]
@@ -1602,7 +1697,11 @@ mod tests {
         )));
         let mut manager = manager(transport, FakeVault::default());
         let request = manager
-            .begin(AuthPlatform::Mobile, Url::parse(MOBILE_CALLBACK).unwrap())
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
             .unwrap();
         manager
             .complete_callback(&callback_for(&request, "code", None), NOW)

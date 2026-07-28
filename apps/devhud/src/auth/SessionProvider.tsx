@@ -49,14 +49,9 @@ export function SessionProvider({
 
   useEffect(() => {
     let active = true;
-    const unsubscribeReset = subscribeToPersistenceReset((outcome) => {
-      if (
-        outcome.status === "complete" ||
-        outcome.status === "cleanup-failed"
-      ) {
-        setFailure(null);
-        setSession({ status: "signed-out" });
-      }
+    const unsubscribeReset = subscribeToPersistenceReset(() => {
+      setFailure(null);
+      setSession({ status: "signed-out" });
     });
     void bridge.restore().then(
       (snapshot) => {

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -11,8 +11,12 @@ import type {
   NativeSessionBridge,
   NativeSessionSnapshot,
 } from "./contracts";
+import { publishPersistenceReset } from "../runtime/theme";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function bridge(
   overrides: Partial<NativeSessionBridge> = {},
@@ -147,6 +151,43 @@ describe("dependency-injected DevHud session provider", () => {
       "cleanup-required",
     );
     expect(screen.getByRole("alert")).not.toHaveTextContent("account-a");
+  });
+
+  it("clears frontend account state after a partially retained reset", async () => {
+    const resetListeners = new Set<(event: MessageEvent<unknown>) => void>();
+    class TestBroadcastChannel {
+      addEventListener(
+        _type: "message",
+        listener: (event: MessageEvent<unknown>) => void,
+      ) {
+        resetListeners.add(listener);
+      }
+
+      postMessage(data: unknown) {
+        for (const listener of resetListeners) {
+          listener({ data } as MessageEvent<unknown>);
+        }
+      }
+
+      close() {}
+    }
+    vi.stubGlobal("BroadcastChannel", TestBroadcastChannel);
+    const native = bridge({
+      restore: vi.fn(async () => ({
+        status: "signed-in" as const,
+        subject: "account-a",
+      })),
+    });
+    render(
+      <SessionProvider bridge={native}>
+        <SessionHarness />
+      </SessionProvider>,
+    );
+    expect(await screen.findByTestId("session")).toHaveTextContent("signed-in");
+
+    act(() => publishPersistenceReset({ status: "partially-retained" }));
+
+    expect(screen.getByTestId("session")).toHaveTextContent("signed-out");
   });
 
   it("never reads or writes browser persistence", async () => {
