@@ -3155,11 +3155,7 @@ fn platform_builder() -> Result<tauri::Builder<ActiveRuntime>, RuntimeInitializa
     {
         // GitHub-hosted Windows runners have no usable GPU; keep the smoke
         // focused on lifecycle behavior until it runs on GPU-backed hosts.
-        arguments.extend([
-            ("--disable-gpu", None),
-            ("--disable-gpu-compositing", None),
-            ("--disable-direct-composition", None),
-        ]);
+        arguments.push(("--disable-gpu", None));
     }
     Ok(tauri::Builder::<ActiveRuntime>::new()
         .root_cache_path(profile)

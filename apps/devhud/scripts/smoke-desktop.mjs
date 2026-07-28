@@ -264,6 +264,11 @@ async function runSmokeIteration(iteration) {
 
 for (let iteration = 1; iteration <= 3; iteration += 1) {
   await runSmokeIteration(iteration);
+  if (process.platform === "win32" && iteration < 3) {
+    // Windows CEF releases profile and graphics resources after its processes
+    // exit. Keep this hosted-runner workaround until teardown is synchronous.
+    await delay(5_000);
+  }
 }
 
 console.log(
