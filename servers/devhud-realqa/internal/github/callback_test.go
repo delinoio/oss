@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -452,9 +453,10 @@ func TestFailedWebhookProcessingLeavesDeliveryRetryable(t *testing.T) {
 	}
 }
 
-func TestCredentialVaultBindsCiphertextToOwnerAndKeyVersion(t *testing.T) {
+func TestCredentialVaultSupportsRotationAndBindsCiphertextToOwner(t *testing.T) {
 	t.Parallel()
-	vault, err := NewAESCredentialVault("fixture-v1", []byte(strings.Repeat("k", 32)))
+	oldKey := []byte(strings.Repeat("o", 32))
+	vault, err := NewAESCredentialVault("fixture-v1", oldKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,12 +467,40 @@ func TestCredentialVaultBindsCiphertextToOwnerAndKeyVersion(t *testing.T) {
 	if _, err = vault.Open(credential, []byte("owner-b")); err == nil {
 		t.Fatal("credential opened under a substituted owner")
 	}
-	other, err := NewAESCredentialVault("fixture-v2", []byte(strings.Repeat("k", 32)))
+	rotatedVault, err := NewAESCredentialVaultWithPreviousKeys(
+		"fixture-v2",
+		[]byte(strings.Repeat("n", 32)),
+		map[string][]byte{"fixture-v1": oldKey},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = other.Open(credential, []byte("owner-a")); err == nil {
-		t.Fatal("credential opened under a substituted key version")
+	if plaintext, openErr := rotatedVault.Open(
+		credential, []byte("owner-a"),
+	); openErr != nil || string(plaintext) != "ghu_secret" {
+		t.Fatalf("old credential did not open during rotation: %v", openErr)
+	}
+	rewrapped, err := rotatedVault.Rewrap(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rewrapped.KeyID != "fixture-v2" ||
+		!bytes.Equal(rewrapped.Ciphertext, credential.Ciphertext) ||
+		bytes.Equal(rewrapped.WrappedDataKey, credential.WrappedDataKey) {
+		t.Fatalf("unexpected rewrapped credential: %#v", rewrapped)
+	}
+	if plaintext, openErr := rotatedVault.Open(
+		rewrapped, []byte("owner-a"),
+	); openErr != nil || string(plaintext) != "ghu_secret" {
+		t.Fatalf("rewrapped credential did not open: %v", openErr)
+	}
+	activeOnly, err := NewAESCredentialVault(
+		"fixture-v2", []byte(strings.Repeat("n", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = activeOnly.Open(credential, []byte("owner-a")); err == nil {
+		t.Fatal("credential opened without its previous key version")
 	}
 }
 

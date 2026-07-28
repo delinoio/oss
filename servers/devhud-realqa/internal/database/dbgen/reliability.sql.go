@@ -124,6 +124,28 @@ func (q *Queries) DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSub
 	return result.RowsAffected(), nil
 }
 
+const disconnectGitHubConnectionsForAccount = `-- name: DisconnectGitHubConnectionsForAccount :execrows
+UPDATE realqa_github_connections
+SET state = 'disconnected',
+    connected_by_account_id = NULL,
+    credential_ciphertext = NULL,
+    wrapped_data_key = NULL,
+    key_id = NULL,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE connected_by_account_id = $1
+`
+
+func (q *Queries) DisconnectGitHubConnectionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, disconnectGitHubConnectionsForAccount, accountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getDeletionJob = `-- name: GetDeletionJob :one
 SELECT id, owner_kind, owner_id, trigger_kind, status, already_absent, accepted_at, completed_at
 FROM realqa_deletion_jobs

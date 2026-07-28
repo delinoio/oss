@@ -99,9 +99,10 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{value: "github"}
 	}
-	githubCredentialVault, err := github.NewAESCredentialVault(
+	githubCredentialVault, err := github.NewAESCredentialVaultWithPreviousKeys(
 		configuration.GitHubCredentialKeyID,
-		configuration.GitHubCredentialWrappingKey)
+		configuration.GitHubCredentialWrappingKey,
+		configuration.GitHubCredentialPreviousKeys)
 	if err != nil {
 		return &startupError{value: "github"}
 	}

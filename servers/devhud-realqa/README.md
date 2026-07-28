@@ -63,8 +63,10 @@ billing catalog records, or publish a tracker/plugin interface.
   unavailable before persistence because transfer/storage catalog activation
   and the end-to-end submission orchestrator remain excluded.
 - Application-envelope columns store GitHub credentials only as ciphertext,
-  wrapped data keys, and a versioned key ID. Bearers and OAuth state plaintext
-  have no persistence fields; OAuth state is stored only as a digest.
+  wrapped data keys, and a versioned key ID. The active wrapping key seals new
+  records while configured previous key versions remain decryptable and are
+  transactionally rewrapped on the next authorized use. Bearers and OAuth state
+  plaintext have no persistence fields; OAuth state is stored only as a digest.
 - Append-only typed audits and redacted structured operational logging.
 - Owner/account/organization feature deletion tombstones access first and
   removes scoped presets, submissions/assets, destinations, installation
@@ -117,6 +119,13 @@ Required secrets:
 - `REALQA_GITHUB_WEBHOOK_SECRET` (at least 32 bytes)
 - `REALQA_GITHUB_CALLBACK_SIGNING_KEY` (at least 32 bytes)
 - `REALQA_GITHUB_CREDENTIAL_WRAPPING_KEY_BASE64` (exactly 32 decoded bytes)
+
+Optional rotation secret:
+
+- `REALQA_GITHUB_CREDENTIAL_PREVIOUS_KEYS_BASE64_JSON` is an optional
+  JSON object mapping up to 32 previous key IDs to their base64-encoded
+  32-byte wrapping keys. Retain an old entry until all rows using that key ID
+  have been rewrapped.
 
 Optional process settings are `REALQA_HTTP_ADDRESS` (default `:8080`) and
 `REALQA_SHUTDOWN_TIMEOUT` (default `10s`). Optional

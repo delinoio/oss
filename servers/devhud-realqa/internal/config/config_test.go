@@ -60,6 +60,41 @@ func TestLoadRejectsGitHubCustomHostsAndInvalidProjectPermission(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsPreviousGitHubCredentialKeys(t *testing.T) {
+	t.Parallel()
+	values := validValues()
+	values["REALQA_GITHUB_CREDENTIAL_PREVIOUS_KEYS_BASE64_JSON"] =
+		`{"fixture-key-v0":"` +
+			base64.StdEncoding.EncodeToString([]byte(strings.Repeat("o", 32))) +
+			`"}`
+	configuration, err := Load(func(key string) (string, bool) {
+		value, ok := values[key]
+		return value, ok
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key := configuration.GitHubCredentialPreviousKeys["fixture-key-v0"]; string(key) != strings.Repeat("o", 32) {
+		t.Fatalf("unexpected previous key: %q", key)
+	}
+
+	for _, value := range []string{
+		`{"fixture-key-v0":"invalid"}`,
+		`{"fixture-key-v1":"` +
+			base64.StdEncoding.EncodeToString([]byte(strings.Repeat("o", 32))) +
+			`"}`,
+	} {
+		invalid := validValues()
+		invalid["REALQA_GITHUB_CREDENTIAL_PREVIOUS_KEYS_BASE64_JSON"] = value
+		if _, err = Load(func(key string) (string, bool) {
+			result, ok := invalid[key]
+			return result, ok
+		}); err == nil {
+			t.Fatalf("Load() accepted previous keyring %s", value)
+		}
+	}
+}
+
 func validValues() map[string]string {
 	return map[string]string{
 		"REALQA_API_ORIGIN":                             CanonicalAPIOrigin,

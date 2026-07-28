@@ -34,6 +34,7 @@ type Querier interface {
 	DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSubmissionsParams) (int64, error)
 	DeleteShortcut(ctx context.Context, presetID pgtype.UUID) error
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (RealqaGithubConnection, error)
+	DisconnectGitHubConnectionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DisconnectGitHubUserCredentials(ctx context.Context, githubUserID pgtype.Int8) (int64, error)
 	GetDeletionJob(ctx context.Context, arg GetDeletionJobParams) (RealqaDeletionJob, error)
 	GetGitHubConnectionForOwner(ctx context.Context, arg GetGitHubConnectionForOwnerParams) (RealqaGithubConnection, error)

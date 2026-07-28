@@ -368,6 +368,29 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_installations
+		SET state = 'suspended'
+		WHERE id = $1
+	`, organizationInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	suspendedInstallationRequest := proto.Clone(
+		organizationRequest).(*realqav1.CreatePresetRequest)
+	suspendedInstallationRequest.Name = "Suspended installation"
+	renewCreateIdentities(suspendedInstallationRequest)
+	_, err = service.CreatePreset(
+		authCtx, connect.NewRequest(suspendedInstallationRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("suspended installation code = %v", connect.CodeOf(err))
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_installations
+		SET state = 'active'
+		WHERE id = $1
+	`, organizationInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_owner_bindings
 		SET role = 'member'
 		WHERE account_id = $1
@@ -667,6 +690,71 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if !replayed.Msg.Idempotency.Replayed ||
 		replayed.Msg.Preset.PresetId.Value != created.Msg.Preset.PresetId.Value {
 		t.Fatalf("create replay after feature deletion = %#v", replayed.Msg)
+	}
+
+	lifecycleAccountID := uuidv7.MustNew()
+	lifecycleOrganizationID := uuidv7.MustNew()
+	lifecycleConnectionID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($1, $2);
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state, connected_by_account_id,
+			credential_ciphertext, wrapped_data_key, key_id
+		) VALUES (
+			$3, 'organization', $4, 'connected', $1,
+			decode('05', 'hex'), decode('06', 'hex'), 'fixture-key'
+		)
+	`, lifecycleAccountID, []byte("lifecycle-digest"),
+		lifecycleConnectionID, lifecycleOrganizationID); err != nil {
+		t.Fatal(err)
+	}
+	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{
+		M2M: &auth.M2MClaims{},
+	})
+	_, err = service.DeleteFeatureData(lifecycleCtx, connect.NewRequest(
+		&realqav1.DeleteFeatureDataRequest{
+			TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_DELIBASE_ACCOUNT_LIFECYCLE,
+			Trigger: &realqav1.DeleteFeatureDataRequest_DelibaseAccountLifecycle{
+				DelibaseAccountLifecycle: &realqav1.DelibaseAccountLifecycleDeletion{
+					AccountId: &realqav1.UuidV7{
+						Value: lifecycleAccountID.String(),
+					},
+					DeletionJobId: &realqav1.UuidV7{
+						Value: uuidv7.MustNew().String(),
+					},
+				},
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lifecycleConnectionState string
+	var lifecycleConnectedBy uuid.NullUUID
+	var lifecycleCiphertext, lifecycleWrappedKey []byte
+	var lifecycleKeyID *string
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			state, connected_by_account_id, credential_ciphertext,
+			wrapped_data_key, key_id
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, lifecycleConnectionID).Scan(
+		&lifecycleConnectionState, &lifecycleConnectedBy,
+		&lifecycleCiphertext, &lifecycleWrappedKey, &lifecycleKeyID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycleConnectionState != "disconnected" ||
+		lifecycleConnectedBy.Valid ||
+		lifecycleCiphertext != nil || lifecycleWrappedKey != nil ||
+		lifecycleKeyID != nil {
+		t.Fatalf(
+			"account lifecycle retained organization credential: state=%q account=%v ciphertext=%t wrapped=%t key=%v",
+			lifecycleConnectionState, lifecycleConnectedBy.Valid,
+			lifecycleCiphertext != nil, lifecycleWrappedKey != nil,
+			lifecycleKeyID,
+		)
 	}
 }
 

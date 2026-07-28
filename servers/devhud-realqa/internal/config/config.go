@@ -3,6 +3,7 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -34,21 +35,22 @@ type Config struct {
 	DatabaseURL     string
 	APIOrigin       string
 
-	LogtoIssuer                 string
-	LogtoJWKSURL                string
-	LogtoAudience               string
-	DelibaseLogtoAudience       string
-	LifecycleLogtoClientID      string
-	IdentityHashKey             []byte
-	LogPseudonymKey             []byte
-	GitHubOAuthClientID         string
-	GitHubAppSlug               string
-	GitHubOAuthClientSecret     string
-	GitHubWebhookSecret         []byte
-	GitHubCallbackSigningKey    []byte
-	GitHubCredentialKeyID       string
-	GitHubCredentialWrappingKey []byte
-	GitHubProjectPermission     GitHubProjectPermission
+	LogtoIssuer                  string
+	LogtoJWKSURL                 string
+	LogtoAudience                string
+	DelibaseLogtoAudience        string
+	LifecycleLogtoClientID       string
+	IdentityHashKey              []byte
+	LogPseudonymKey              []byte
+	GitHubOAuthClientID          string
+	GitHubAppSlug                string
+	GitHubOAuthClientSecret      string
+	GitHubWebhookSecret          []byte
+	GitHubCallbackSigningKey     []byte
+	GitHubCredentialKeyID        string
+	GitHubCredentialWrappingKey  []byte
+	GitHubCredentialPreviousKeys map[string][]byte
+	GitHubProjectPermission      GitHubProjectPermission
 }
 
 func Load(lookup LookupEnv) (Config, error) {
@@ -172,7 +174,7 @@ func Load(lookup LookupEnv) (Config, error) {
 		"REALQA_GITHUB_CREDENTIAL_KEY_ID"); err != nil {
 		return Config{}, err
 	}
-	if !validIdentifier(result.GitHubCredentialKeyID) {
+	if !validCredentialKeyID(result.GitHubCredentialKeyID) {
 		return Config{}, errors.New(
 			"realqa config: REALQA_GITHUB_CREDENTIAL_KEY_ID is invalid")
 	}
@@ -184,6 +186,28 @@ func Load(lookup LookupEnv) (Config, error) {
 	if err != nil || len(result.GitHubCredentialWrappingKey) != 32 {
 		return Config{}, errors.New(
 			"realqa config: REALQA_GITHUB_CREDENTIAL_WRAPPING_KEY_BASE64 is invalid")
+	}
+	if previousKeys, ok := lookup(
+		"REALQA_GITHUB_CREDENTIAL_PREVIOUS_KEYS_BASE64_JSON",
+	); ok && strings.TrimSpace(previousKeys) != "" {
+		var encoded map[string]string
+		if err = json.Unmarshal([]byte(previousKeys), &encoded); err != nil ||
+			len(encoded) == 0 || len(encoded) > 32 {
+			return Config{}, errors.New(
+				"realqa config: REALQA_GITHUB_CREDENTIAL_PREVIOUS_KEYS_BASE64_JSON is invalid")
+		}
+		result.GitHubCredentialPreviousKeys = make(
+			map[string][]byte, len(encoded))
+		for keyID, encodedKey := range encoded {
+			key, decodeErr := base64.StdEncoding.DecodeString(encodedKey)
+			if !validCredentialKeyID(keyID) ||
+				keyID == result.GitHubCredentialKeyID ||
+				decodeErr != nil || len(key) != 32 {
+				return Config{}, errors.New(
+					"realqa config: REALQA_GITHUB_CREDENTIAL_PREVIOUS_KEYS_BASE64_JSON is invalid")
+			}
+			result.GitHubCredentialPreviousKeys[keyID] = key
+		}
 	}
 	result.GitHubProjectPermission = GitHubProjectPermissionNone
 	if value, ok := lookup("REALQA_GITHUB_PROJECT_PERMISSION"); ok && value != "" {
@@ -241,6 +265,10 @@ func validIdentifier(value string) bool {
 	return value != "" && len(value) <= 255 &&
 		strings.TrimSpace(value) == value &&
 		!strings.ContainsAny(value, " \t\r\n:/")
+}
+
+func validCredentialKeyID(value string) bool {
+	return len(value) <= 128 && validIdentifier(value)
 }
 
 func validGitHubAppSlug(value string) bool {

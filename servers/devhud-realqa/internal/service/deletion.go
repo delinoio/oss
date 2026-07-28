@@ -232,6 +232,12 @@ func (service *Preset) DeleteFeatureData(
 				return deleteErr
 			}
 			if accountLifecycle {
+				count, deleteErr = queries.DisconnectGitHubConnectionsForAccount(
+					ctx, toPGUUID(scope.id))
+				removed += count
+				if deleteErr != nil {
+					return deleteErr
+				}
 				count, deleteErr = queries.TombstoneLifecycleAccountIdentity(
 					ctx, toPGUUID(scope.id))
 				removed += count

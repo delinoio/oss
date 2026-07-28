@@ -165,7 +165,8 @@ func (adapter *Adapter) userToken(
 	if err != nil {
 		return 0, UserToken{}, err
 	}
-	if adapter.shouldRefresh(credential) {
+	if adapter.shouldRefresh(credential) ||
+		record.KeyID.String != adapter.vault.ActiveKeyID() {
 		return adapter.refreshUserToken(ctx, accountID, installationID)
 	}
 	token, err := NewUserToken(credential.AccessToken)
@@ -205,7 +206,22 @@ func (adapter *Adapter) refreshUserToken(
 			providerID = record.ProviderInstallationID
 			if !adapter.shouldRefresh(credential) {
 				token, err = NewUserToken(credential.AccessToken)
-				return err
+				if err != nil {
+					return err
+				}
+				if record.KeyID.String == adapter.vault.ActiveKeyID() {
+					return nil
+				}
+				rewrapped, rewrapErr := adapter.vault.Rewrap(EncryptedCredential{
+					Ciphertext:     record.CredentialCiphertext,
+					WrappedDataKey: record.WrappedDataKey,
+					KeyID:          record.KeyID.String,
+				})
+				if rewrapErr != nil {
+					return rewrapErr
+				}
+				return adapter.updateUserCredential(
+					ctx, queries, record.ConnectionID, accountID, rewrapped)
 			}
 			now := adapter.now().UTC()
 			if credential.RefreshToken == "" ||
@@ -234,19 +250,10 @@ func (adapter *Adapter) refreshUserToken(
 			if err != nil {
 				return err
 			}
-			count, err := queries.UpdateGitHubUserCredential(
-				ctx, dbgen.UpdateGitHubUserCredentialParams{
-					CredentialCiphertext: encrypted.Ciphertext,
-					WrappedDataKey:       encrypted.WrappedDataKey,
-					KeyID: pgtype.Text{
-						String: encrypted.KeyID, Valid: true,
-					},
-					ConnectionID: record.ConnectionID,
-					AccountID:    providerPGUUID(accountID),
-				})
-			if err != nil || count != 1 {
-				return errors.New(
-					"realqa github: refreshed credential could not be stored")
+			if err = adapter.updateUserCredential(
+				ctx, queries, record.ConnectionID, accountID, encrypted,
+			); err != nil {
+				return err
 			}
 			token = refreshedToken
 			return nil
@@ -255,6 +262,30 @@ func (adapter *Adapter) refreshUserToken(
 		return 0, UserToken{}, err
 	}
 	return providerID, token, nil
+}
+
+func (adapter *Adapter) updateUserCredential(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	connectionID pgtype.UUID,
+	accountID uuid.UUID,
+	credential EncryptedCredential,
+) error {
+	count, err := queries.UpdateGitHubUserCredential(
+		ctx, dbgen.UpdateGitHubUserCredentialParams{
+			CredentialCiphertext: credential.Ciphertext,
+			WrappedDataKey:       credential.WrappedDataKey,
+			KeyID: pgtype.Text{
+				String: credential.KeyID, Valid: true,
+			},
+			ConnectionID: connectionID,
+			AccountID:    providerPGUUID(accountID),
+		})
+	if err != nil || count != 1 {
+		return errors.New(
+			"realqa github: connected user credential could not be stored")
+	}
+	return nil
 }
 
 func (adapter *Adapter) openCredential(

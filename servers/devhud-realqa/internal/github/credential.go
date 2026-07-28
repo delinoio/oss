@@ -17,6 +17,8 @@ type EncryptedCredential struct {
 type CredentialVault interface {
 	Seal(plaintext []byte, associatedData []byte) (EncryptedCredential, error)
 	Open(credential EncryptedCredential, associatedData []byte) ([]byte, error)
+	Rewrap(credential EncryptedCredential) (EncryptedCredential, error)
+	ActiveKeyID() string
 }
 
 // AESCredentialVault is a fixture/development implementation of the same
@@ -24,15 +26,38 @@ type CredentialVault interface {
 // Production key material is externally injected; it is never persisted with
 // the resulting credential.
 type AESCredentialVault struct {
-	keyID string
-	key   []byte
+	activeKeyID string
+	keys        map[string][]byte
 }
 
 func NewAESCredentialVault(keyID string, key []byte) (*AESCredentialVault, error) {
-	if keyID == "" || len(keyID) > 128 || len(key) != 32 {
+	return NewAESCredentialVaultWithPreviousKeys(keyID, key, nil)
+}
+
+func NewAESCredentialVaultWithPreviousKeys(
+	activeKeyID string,
+	activeKey []byte,
+	previousKeys map[string][]byte,
+) (*AESCredentialVault, error) {
+	if !validWrappingKey(activeKeyID, activeKey) || len(previousKeys) > 32 {
 		return nil, errors.New("realqa github: credential wrapping key is invalid")
 	}
-	return &AESCredentialVault{keyID: keyID, key: append([]byte(nil), key...)}, nil
+	keys := make(map[string][]byte, len(previousKeys)+1)
+	keys[activeKeyID] = append([]byte(nil), activeKey...)
+	for keyID, key := range previousKeys {
+		if keyID == activeKeyID || !validWrappingKey(keyID, key) {
+			return nil, errors.New("realqa github: credential wrapping key is invalid")
+		}
+		keys[keyID] = append([]byte(nil), key...)
+	}
+	return &AESCredentialVault{activeKeyID: activeKeyID, keys: keys}, nil
+}
+
+func (vault *AESCredentialVault) ActiveKeyID() string {
+	if vault == nil {
+		return ""
+	}
+	return vault.activeKeyID
 }
 
 func (vault *AESCredentialVault) Seal(
@@ -51,12 +76,13 @@ func (vault *AESCredentialVault) Seal(
 	if err != nil {
 		return EncryptedCredential{}, err
 	}
-	wrapped, err := sealAES(vault.key, dataKey, []byte(vault.keyID))
+	activeKey := vault.keys[vault.activeKeyID]
+	wrapped, err := sealAES(activeKey, dataKey, []byte(vault.activeKeyID))
 	if err != nil {
 		return EncryptedCredential{}, err
 	}
 	return EncryptedCredential{
-		Ciphertext: ciphertext, WrappedDataKey: wrapped, KeyID: vault.keyID,
+		Ciphertext: ciphertext, WrappedDataKey: wrapped, KeyID: vault.activeKeyID,
 	}, nil
 }
 
@@ -64,11 +90,15 @@ func (vault *AESCredentialVault) Open(
 	credential EncryptedCredential,
 	associatedData []byte,
 ) ([]byte, error) {
-	if vault == nil || credential.KeyID != vault.keyID ||
+	if vault == nil {
+		return nil, errors.New("realqa github: credential key is unavailable")
+	}
+	key, available := vault.keys[credential.KeyID]
+	if !available ||
 		len(credential.Ciphertext) == 0 || len(credential.WrappedDataKey) == 0 {
 		return nil, errors.New("realqa github: credential key is unavailable")
 	}
-	dataKey, err := openAES(vault.key, credential.WrappedDataKey, []byte(vault.keyID))
+	dataKey, err := openAES(key, credential.WrappedDataKey, []byte(credential.KeyID))
 	if err != nil {
 		return nil, errors.New("realqa github: credential unwrap failed")
 	}
@@ -78,6 +108,44 @@ func (vault *AESCredentialVault) Open(
 		return nil, errors.New("realqa github: credential decrypt failed")
 	}
 	return plaintext, nil
+}
+
+func (vault *AESCredentialVault) Rewrap(
+	credential EncryptedCredential,
+) (EncryptedCredential, error) {
+	if vault == nil {
+		return EncryptedCredential{}, errors.New(
+			"realqa github: credential key is unavailable")
+	}
+	key, available := vault.keys[credential.KeyID]
+	if !available ||
+		len(credential.Ciphertext) == 0 || len(credential.WrappedDataKey) == 0 {
+		return EncryptedCredential{}, errors.New(
+			"realqa github: credential key is unavailable")
+	}
+	if credential.KeyID == vault.activeKeyID {
+		return credential, nil
+	}
+	dataKey, err := openAES(key, credential.WrappedDataKey, []byte(credential.KeyID))
+	if err != nil {
+		return EncryptedCredential{}, errors.New(
+			"realqa github: credential unwrap failed")
+	}
+	defer clear(dataKey)
+	wrapped, err := sealAES(
+		vault.keys[vault.activeKeyID], dataKey, []byte(vault.activeKeyID))
+	if err != nil {
+		return EncryptedCredential{}, err
+	}
+	return EncryptedCredential{
+		Ciphertext:     credential.Ciphertext,
+		WrappedDataKey: wrapped,
+		KeyID:          vault.activeKeyID,
+	}, nil
+}
+
+func validWrappingKey(keyID string, key []byte) bool {
+	return keyID != "" && len(keyID) <= 128 && len(key) == 32
 }
 
 func sealAES(key, plaintext, associatedData []byte) ([]byte, error) {

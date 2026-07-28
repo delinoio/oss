@@ -44,6 +44,7 @@ SELECT access.*
 FROM realqa_repository_access AS access
 JOIN realqa_github_installations AS installation
   ON installation.id = access.installation_id
+ AND installation.state = 'active'
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
@@ -59,6 +60,7 @@ SELECT access.*
 FROM realqa_repository_access AS access
 JOIN realqa_github_installations AS installation
   ON installation.id = access.installation_id
+ AND installation.state = 'active'
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
