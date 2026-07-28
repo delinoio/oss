@@ -1,6 +1,7 @@
 mod composer;
 mod geometry;
 mod image_boundary;
+mod windows;
 
 use std::sync::Arc;
 
@@ -17,6 +18,11 @@ pub(crate) use image_boundary::{
     decode_image, decoded_byte_len, encode_image, sanitize_image,
 };
 use serde::{Deserialize, Serialize};
+
+const MAX_CAPTURE_DISPLAYS: usize = 64;
+const MAX_CAPTURE_WINDOWS: usize = 512;
+const MAX_SAFE_PROCESS_NAME_BYTES: usize = 128;
+const MAX_SAFE_WINDOW_TITLE_BYTES: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -62,7 +68,10 @@ pub(crate) enum CaptureFailure {
     Cancelled,
     PortalCancelled,
     ProtectedContent,
+    WindowMinimized,
+    WindowClosed,
     WindowLost,
+    DisplayRemoved,
     DisplaySnapshotChanged,
     InvalidDisplaySnapshot,
     InvalidSelection,
@@ -97,7 +106,10 @@ pub(crate) enum BackendFailure {
     Cancelled,
     PortalCancelled,
     ProtectedContent,
+    WindowMinimized,
+    WindowClosed,
     WindowLost,
+    DisplayRemoved,
     DisplayChanged,
     CaptureFailed,
 }
@@ -111,7 +123,10 @@ impl From<BackendFailure> for CaptureFailure {
             BackendFailure::Cancelled => Self::Cancelled,
             BackendFailure::PortalCancelled => Self::PortalCancelled,
             BackendFailure::ProtectedContent => Self::ProtectedContent,
+            BackendFailure::WindowMinimized => Self::WindowMinimized,
+            BackendFailure::WindowClosed => Self::WindowClosed,
             BackendFailure::WindowLost => Self::WindowLost,
+            BackendFailure::DisplayRemoved => Self::DisplayRemoved,
             BackendFailure::DisplayChanged => Self::DisplaySnapshotChanged,
             BackendFailure::CaptureFailed => Self::CaptureFailed,
         }
@@ -136,10 +151,42 @@ pub(crate) struct WindowSource {
     pub(crate) display_id: DisplayId,
     pub(crate) bounds: LogicalRect,
     pub(crate) availability: WindowAvailability,
+    pub(crate) metadata: WindowMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct WindowMetadata {
+    pub(crate) process_name: Option<String>,
+    pub(crate) title: Option<String>,
+}
+
+impl WindowMetadata {
+    fn checked(self) -> Result<Self, CaptureFailure> {
+        if !safe_metadata_field(
+            self.process_name.as_deref(),
+            MAX_SAFE_PROCESS_NAME_BYTES,
+            true,
+        ) || !safe_metadata_field(self.title.as_deref(), MAX_SAFE_WINDOW_TITLE_BYTES, false)
+        {
+            return Err(CaptureFailure::InvalidDisplaySnapshot);
+        }
+        Ok(self)
+    }
+}
+
+fn safe_metadata_field(value: Option<&str>, maximum_bytes: usize, process_name: bool) -> bool {
+    value.is_none_or(|value| {
+        !value.is_empty()
+            && value.len() <= maximum_bytes
+            && value.trim() == value
+            && !value.chars().any(char::is_control)
+            && (!process_name || !value.contains(['/', '\\', ':']))
+    })
 }
 
 impl WindowSource {
-    fn checked(self, snapshot: &DisplaySnapshot) -> Result<Self, CaptureFailure> {
+    fn checked(mut self, snapshot: &DisplaySnapshot) -> Result<Self, CaptureFailure> {
         if self.id.0.is_empty()
             || self.id.0.len() > 128
             || snapshot.display(&self.display_id).is_none()
@@ -149,6 +196,7 @@ impl WindowSource {
         if self.availability == WindowAvailability::Available {
             self.bounds.checked()?;
         }
+        self.metadata = self.metadata.checked()?;
         Ok(self)
     }
 }
@@ -258,6 +306,9 @@ impl CaptureCore {
             .into_iter()
             .map(|window| window.checked(&snapshot))
             .collect::<Result<Vec<_>, _>>()?;
+        if windows.len() > MAX_CAPTURE_WINDOWS {
+            return Err(CaptureFailure::InvalidDisplaySnapshot);
+        }
         windows.sort_by(|left, right| left.id.0.cmp(&right.id.0));
         if windows.windows(2).any(|pair| pair[0].id == pair[1].id) {
             return Err(CaptureFailure::InvalidDisplaySnapshot);
@@ -335,7 +386,11 @@ impl CaptureCore {
     }
 
     fn current_snapshot(&self) -> Result<DisplaySnapshot, CaptureFailure> {
-        DisplaySnapshot::checked(self.backend.displays().map_err(CaptureFailure::from)?)
+        let displays = self.backend.displays().map_err(CaptureFailure::from)?;
+        if displays.len() > MAX_CAPTURE_DISPLAYS {
+            return Err(CaptureFailure::InvalidDisplaySnapshot);
+        }
+        DisplaySnapshot::checked(displays)
     }
 
     fn require_granted_permission(&self) -> Result<CapturePermission, CaptureFailure> {
@@ -363,6 +418,9 @@ impl CaptureCore {
                     .backend
                     .windows(&snapshot)
                     .map_err(CaptureFailure::from)?;
+                if windows.len() > MAX_CAPTURE_WINDOWS {
+                    return Err(CaptureFailure::InvalidDisplaySnapshot);
+                }
                 let mut window_ids = windows.iter().map(|window| &window.id).collect::<Vec<_>>();
                 window_ids.sort_by(|left, right| left.0.cmp(&right.0));
                 if window_ids.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -371,9 +429,9 @@ impl CaptureCore {
                 let window = windows
                     .into_iter()
                     .find(|window| &window.id == window_id)
-                    .ok_or(CaptureFailure::WindowLost)?;
+                    .ok_or(CaptureFailure::WindowClosed)?;
                 if window.availability == WindowAvailability::Minimized {
-                    return Err(CaptureFailure::WindowLost);
+                    return Err(CaptureFailure::WindowMinimized);
                 }
                 let window = window.checked(&snapshot)?;
                 (window.bounds, Some(window.display_id))
@@ -518,7 +576,10 @@ pub(crate) enum CaptureDiagnosticClassification {
     Cancelled,
     PortalCancelled,
     ProtectedContent,
+    WindowMinimized,
+    WindowClosed,
     WindowLost,
+    DisplayRemoved,
     DisplayChanged,
     InvalidRequest,
     ImageRejected,
@@ -558,7 +619,10 @@ impl CaptureDiagnostic {
             CaptureFailure::Cancelled => CaptureDiagnosticClassification::Cancelled,
             CaptureFailure::PortalCancelled => CaptureDiagnosticClassification::PortalCancelled,
             CaptureFailure::ProtectedContent => CaptureDiagnosticClassification::ProtectedContent,
+            CaptureFailure::WindowMinimized => CaptureDiagnosticClassification::WindowMinimized,
+            CaptureFailure::WindowClosed => CaptureDiagnosticClassification::WindowClosed,
             CaptureFailure::WindowLost => CaptureDiagnosticClassification::WindowLost,
+            CaptureFailure::DisplayRemoved => CaptureDiagnosticClassification::DisplayRemoved,
             CaptureFailure::DisplaySnapshotChanged => {
                 CaptureDiagnosticClassification::DisplayChanged
             }
@@ -582,22 +646,35 @@ impl CaptureDiagnostic {
 
 pub(crate) struct PlatformCaptureBackend {
     platform: CapturePlatform,
+    #[cfg(target_os = "windows")]
+    windows: Option<windows::WindowsCaptureBackend>,
 }
 
 impl PlatformCaptureBackend {
     pub(crate) const fn new(platform: CapturePlatform) -> Self {
-        Self { platform }
+        Self {
+            platform,
+            #[cfg(target_os = "windows")]
+            windows: None,
+        }
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub(crate) const fn current() -> Self {
+    pub(crate) fn current() -> Self {
+        #[cfg(target_os = "windows")]
+        {
+            return Self {
+                platform: CapturePlatform::Windows,
+                windows: Some(windows::WindowsCaptureBackend::system()),
+            };
+        }
+        #[cfg(not(target_os = "windows"))]
         let platform = if cfg!(target_os = "macos") {
             CapturePlatform::Macos
-        } else if cfg!(target_os = "windows") {
-            CapturePlatform::Windows
         } else {
             CapturePlatform::Linux
         };
+        #[cfg(not(target_os = "windows"))]
         Self::new(platform)
     }
 }
@@ -608,22 +685,45 @@ impl CaptureBackend for PlatformCaptureBackend {
     }
 
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {
+        #[cfg(target_os = "windows")]
+        if let Some(backend) = &self.windows {
+            return backend.permission();
+        }
         Err(BackendFailure::Unavailable)
     }
 
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
+        #[cfg(target_os = "windows")]
+        if let Some(backend) = &self.windows {
+            return backend.displays();
+        }
         Err(BackendFailure::Unavailable)
     }
 
-    fn windows(&self, _snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure> {
+    fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure> {
+        #[cfg(target_os = "windows")]
+        if let Some(backend) = &self.windows {
+            return backend.windows(snapshot);
+        }
+        let _ = snapshot;
         Err(BackendFailure::Unavailable)
     }
 
-    fn capture(&self, _request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
+    fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
+        #[cfg(target_os = "windows")]
+        if let Some(backend) = &self.windows {
+            return backend.capture(request);
+        }
+        let _ = request;
         Err(BackendFailure::Unavailable)
     }
 
-    fn cancel(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+    fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        #[cfg(target_os = "windows")]
+        if let Some(backend) = &self.windows {
+            return backend.cancel(session_id);
+        }
+        let _ = session_id;
         Err(BackendFailure::Unavailable)
     }
 }
@@ -683,6 +783,7 @@ mod tests {
                         height: 50.0,
                     },
                     availability: WindowAvailability::Available,
+                    metadata: WindowMetadata::default(),
                 }]),
                 display_calls: AtomicUsize::new(0),
                 window_calls: AtomicUsize::new(0),
@@ -896,6 +997,75 @@ mod tests {
     }
 
     #[test]
+    fn source_catalog_bounds_display_and_window_enumeration() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let core = CaptureCore::new(backend.clone());
+        *backend.displays.lock().expect("display lock") = (0..=MAX_CAPTURE_DISPLAYS)
+            .map(|index| DisplayDescriptor {
+                id: DisplayId(format!("display-{index}")),
+                logical_bounds: LogicalRect {
+                    x: f64::from(u32::try_from(index).expect("bounded index")) * 10.0,
+                    y: 0.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 10,
+                    height: 10,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: index == 0,
+            })
+            .collect();
+        assert_eq!(
+            core.source_catalog(),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+
+        *backend.displays.lock().expect("display lock") =
+            FixtureBackend::new(CapturePlatform::Windows)
+                .displays
+                .into_inner()
+                .expect("fixture displays");
+        let display_id = backend.displays.lock().expect("display lock")[0].id.clone();
+        *backend.windows.lock().expect("window lock") = (0..=MAX_CAPTURE_WINDOWS)
+            .map(|index| WindowSource {
+                id: WindowSourceId(format!("window-{index}")),
+                display_id: display_id.clone(),
+                bounds: LogicalRect {
+                    x: -10.0,
+                    y: 0.0,
+                    width: 2.0,
+                    height: 2.0,
+                },
+                availability: WindowAvailability::Available,
+                metadata: WindowMetadata::default(),
+            })
+            .collect();
+        assert_eq!(
+            core.source_catalog(),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+    }
+
+    #[test]
+    fn source_catalog_rejects_path_bearing_or_control_character_metadata() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let core = CaptureCore::new(backend.clone());
+        backend.windows.lock().expect("window lock")[0].metadata = WindowMetadata {
+            process_name: Some(r"C:\private\capture.exe".to_owned()),
+            title: Some("private\nwindow".to_owned()),
+        };
+        assert_eq!(
+            core.source_catalog(),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+    }
+
+    #[test]
     fn selection_adjustment_rejects_revoked_permission_before_reading_displays() {
         for (permission, expected) in [
             (
@@ -1082,6 +1252,7 @@ mod tests {
                 height: 40.0,
             },
             availability: WindowAvailability::Available,
+            metadata: WindowMetadata::default(),
         }];
 
         let core = CaptureCore::new(backend.clone());
@@ -1170,6 +1341,7 @@ mod tests {
                 height: 40.0,
             },
             availability: WindowAvailability::Available,
+            metadata: WindowMetadata::default(),
         }];
 
         let core = CaptureCore::new(backend.clone());
@@ -1624,7 +1796,10 @@ mod tests {
             window_id: WindowSourceId("window-1".to_owned()),
         };
         backend.windows.lock().expect("window lock").clear();
-        assert_eq!(core.begin(window_request), Err(CaptureFailure::WindowLost));
+        assert_eq!(
+            core.begin(window_request),
+            Err(CaptureFailure::WindowClosed)
+        );
     }
 
     #[test]
@@ -1639,6 +1814,15 @@ mod tests {
                 CaptureFailure::PermissionLost,
             ),
             (BackendFailure::WindowLost, CaptureFailure::WindowLost),
+            (
+                BackendFailure::WindowMinimized,
+                CaptureFailure::WindowMinimized,
+            ),
+            (BackendFailure::WindowClosed, CaptureFailure::WindowClosed),
+            (
+                BackendFailure::DisplayRemoved,
+                CaptureFailure::DisplayRemoved,
+            ),
             (
                 BackendFailure::DisplayChanged,
                 CaptureFailure::DisplaySnapshotChanged,
@@ -1704,6 +1888,15 @@ mod tests {
                 CaptureFailure::ProtectedContent,
             ),
             (BackendFailure::WindowLost, CaptureFailure::WindowLost),
+            (
+                BackendFailure::WindowMinimized,
+                CaptureFailure::WindowMinimized,
+            ),
+            (BackendFailure::WindowClosed, CaptureFailure::WindowClosed),
+            (
+                BackendFailure::DisplayRemoved,
+                CaptureFailure::DisplayRemoved,
+            ),
             (
                 BackendFailure::DisplayChanged,
                 CaptureFailure::DisplaySnapshotChanged,

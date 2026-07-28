@@ -46,6 +46,10 @@ tauri-plugin-devhud-widget = { path = "widget-bridge" }
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSError", "NSString", "NSURL", "NSValue", "std"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "=0.62.2", features = ["Graphics_Capture", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
+windows-capture = "=2.0.0"
+
 [features]
 default = []
 custom-protocol = ["tauri?/custom-protocol"]

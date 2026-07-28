@@ -835,6 +835,83 @@ jobs:
           pnpm --filter devhud check:mobile
           pnpm --filter devhud test:mobile
 
+  devhud-windows-capture:
+    name: DevHud Windows capture
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            devhud:
+              - .github/workflows/CI.yml
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain
+              - package.json
+              - pnpm-lock.yaml
+              - apps/AGENTS.md
+              - apps/devhud/**
+              - docs/project-devhud.md
+              - docs/apps-devhud-foundation.md
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEVHUD_CHANGED: ${{ steps.filter.outputs.devhud }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DEVHUD_CHANGED}" = "true" ]; then
+            run=true
+          fi
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+      - name: Skip (DevHud Windows capture unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: echo "Skipping DevHud Windows capture checks"
+      - name: Install Rust toolchain and Windows targets
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+      - name: Cache Rust dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: Swatinem/rust-cache@v2
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+      - name: Inspect capabilities and run native fixtures
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter devhud test:realqa:native
+      - name: Compile Windows x64 and ARM64 capture libraries
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          cargo check -p devhud --lib --target x86_64-pc-windows-msvc --locked
+          cargo check -p devhud --lib --target aarch64-pc-windows-msvc --locked
+      - name: Smoke Windows CEF sandbox and tray lifecycle
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter devhud smoke:desktop
+
   devhud-widget-android:
     name: DevHud Widget Android
     runs-on: ubuntu-latest
@@ -1299,6 +1376,7 @@ jobs:
       - node-mpapp-test
       - node-mpapp-lint
       - node-devhud
+      - devhud-windows-capture
       - devhud-widget-android
       - devhud-widget-ios
       - node-binpm-docs-test

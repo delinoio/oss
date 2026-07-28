@@ -38,7 +38,10 @@ export enum CaptureFailure {
   Cancelled = "cancelled",
   PortalCancelled = "portal-cancelled",
   ProtectedContent = "protected-content",
+  WindowMinimized = "window-minimized",
+  WindowClosed = "window-closed",
   WindowLost = "window-lost",
+  DisplayRemoved = "display-removed",
   DisplaySnapshotChanged = "display-snapshot-changed",
   InvalidDisplaySnapshot = "invalid-display-snapshot",
   InvalidSelection = "invalid-selection",
@@ -91,6 +94,12 @@ export interface WindowSource {
   readonly displayId: string;
   readonly bounds: LogicalRect;
   readonly availability: WindowAvailability;
+  readonly metadata: WindowMetadata;
+}
+
+export interface WindowMetadata {
+  readonly processName?: string;
+  readonly title?: string;
 }
 
 export interface CaptureSourceCatalog {
