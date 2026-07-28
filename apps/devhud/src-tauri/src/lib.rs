@@ -2534,7 +2534,7 @@ fn reset_dev_hud(
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
     if auth_state.reset().is_err() {
-        return Ok(PersistenceResetOutcome::CleanupFailed);
+        return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     if clear_browsing_data_for_reset(&app).is_err() {
         return Ok(PersistenceResetOutcome::CleanupFailed);
@@ -2749,7 +2749,7 @@ fn reset_dev_hud(
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
     if auth_state.reset().is_err() {
-        return Ok(PersistenceResetOutcome::CleanupFailed);
+        return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     if clear_browsing_data_for_reset(webview).is_err()
         || clear_local_logs_for_reset(&log_directory).is_err()

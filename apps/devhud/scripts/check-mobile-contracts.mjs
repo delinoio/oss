@@ -216,9 +216,12 @@ requireCondition(
     androidAuthPlugin.includes('it.host == "deli.dev"') &&
     androidAuthPlugin.includes('it.path == "/auth/devhud/callback"') &&
     androidAuthPlugin.includes("pendingCallback = null") &&
+    /override fun onNewIntent\(intent: Intent\) \{\s*validatedCallback\(intent\.data\)\?\.let \{ pendingCallback = it \}\s*\}/u.test(
+      androidAuthPlugin,
+    ) &&
     androidMainActivity.includes("override fun onNewIntent(intent: Intent)") &&
     androidMainActivity.includes("super.onNewIntent(intent)"),
-  "Android auth must use a Keystore-backed vault and consume only the exact app link once",
+  "Android auth must use a Keystore-backed vault, preserve queued callbacks, and consume only the exact app link once",
 );
 requireCondition(
   /fn begin_mobile[\s\S]*?manager\s*\.begin[\s\S]*?take_callback\(\)[\s\S]*?cancel_pending\(\)/u.test(

@@ -74,7 +74,7 @@ class DevHudAuthPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     override fun onNewIntent(intent: Intent) {
-        pendingCallback = validatedCallback(intent.data)
+        validatedCallback(intent.data)?.let { pendingCallback = it }
     }
 
     private fun validatedCallback(callback: Uri?): String? =

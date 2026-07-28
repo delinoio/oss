@@ -470,11 +470,14 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             };
             return Ok(self.snapshot());
         }
+        if let Some(error) = grant_error {
+            return Err(error);
+        }
         if transport_unavailable {
             self.state = SessionState::PriorSessionOffline;
             return Ok(self.snapshot());
         }
-        Err(grant_error.unwrap_or(AuthError::TokenInvalid))
+        Err(AuthError::TokenInvalid)
     }
 
     pub(crate) fn begin(
@@ -1999,6 +2002,37 @@ mod tests {
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
             SessionSnapshot::PriorSessionOffline
+        );
+        assert!(!prior.memory_tokens_present());
+    }
+
+    #[test]
+    fn retained_session_does_not_mask_invalid_grant_with_transport_failure() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some((
+                [
+                    (AuthFeature::Deck, "refresh-deck".to_owned()),
+                    (AuthFeature::RealQa, "refresh-realqa".to_owned()),
+                ]
+                .into_iter()
+                .collect(),
+                key.expose().to_owned(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport
+            .refresh
+            .push_back(Err(AuthError::ReauthenticationRequired));
+        transport
+            .refresh
+            .push_back(Err(AuthError::TransportUnavailable));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW),
+            Err(AuthError::ReauthenticationRequired)
         );
         assert!(!prior.memory_tokens_present());
     }
