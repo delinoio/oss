@@ -6,5 +6,9 @@
 	<array>
 		<string>group.dev.deli.devhud</string>
 	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:deli.dev</string>
+	</array>
 </dict>
 </plist>

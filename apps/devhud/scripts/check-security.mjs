@@ -29,6 +29,8 @@ async function filesUnder(directory, excludedDirectories = new Set()) {
 
 const [
   androidManifest,
+  authCoreSource,
+  authNativeSource,
   cargoManifest,
   desktopCapabilitySource,
   diagnosticsSource,
@@ -46,6 +48,8 @@ const [
   updaterSource,
 ] = await Promise.all([
   read("src-tauri/gen/android/app/src/main/AndroidManifest.xml"),
+  read("src-tauri/src/auth.rs"),
+  read("src-tauri/src/auth_native.rs"),
   read("src-tauri/Cargo.toml"),
   read("src-tauri/capabilities/desktop-main.json"),
   read("src-tauri/src/diagnostics.rs"),
@@ -82,6 +86,9 @@ const expectedCapabilities = {
       "allow-read-widget-configuration",
       "allow-hide-hud",
       "allow-show-settings",
+      "allow-get-auth-session",
+      "allow-start-authentication",
+      "allow-logout-authentication",
     ],
   },
   settings: {
@@ -101,6 +108,9 @@ const expectedCapabilities = {
       "allow-set-launch-at-login",
       "allow-complete-first-run",
       "allow-request-update-action",
+      "allow-get-auth-session",
+      "allow-start-authentication",
+      "allow-logout-authentication",
     ],
   },
   "mobile-main": {
@@ -116,6 +126,9 @@ const expectedCapabilities = {
       "allow-write-widget-configuration",
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
+      "allow-get-auth-session",
+      "allow-start-authentication",
+      "allow-logout-authentication",
     ],
   },
   "realqa-capture": {
@@ -355,7 +368,6 @@ for (const surface of [
 }
 
 for (const dependency of [
-  "reqwest",
   "ureq",
   "hyper",
   "tauri-plugin-fs",
@@ -378,6 +390,41 @@ requireCondition(
     updaterSource.includes("InstallationFailed"),
   "the updater must remain networkless while preserving closed future failure enums",
 );
+for (const boundary of [
+  'endpoint("/oidc/auth")',
+  'endpoint("/oidc/token")',
+  'endpoint("/oidc/token/revocation")',
+  'endpoint.set_path("/oidc/jwks")',
+  '"https://deli.dev/auth/devhud/callback"',
+  'const DESKTOP_CALLBACK_PATH: &str = "/auth/callback"',
+  '"http://127.0.0.1:{port}{DESKTOP_CALLBACK_PATH}"',
+  "CallbackAlreadyConsumed",
+  "AccountSwitchRequiresLogout",
+]) {
+  requireCondition(
+    authCoreSource.includes(boundary),
+    `the native auth core must retain ${boundary}`,
+  );
+}
+for (const boundary of [
+  ".https_only(true)",
+  ".redirect(Policy::none())",
+  '("resource", audience)',
+  "validation.set_issuer",
+  "validation.set_audience",
+  "VAULT_ACCOUNT",
+]) {
+  requireCondition(
+    authNativeSource.includes(boundary),
+    `the native authentication adapter must retain ${boundary}`,
+  );
+}
+requireCondition(
+  !/telemetry|analytics|sentry|datadog|segment|newrelic/iu.test(
+    `${cargoManifest}\n${packageSource}`,
+  ),
+  "DevHud must not add a client telemetry dependency",
+);
 
 const declaredCommands = new Set(
   [...rustBuildSource.matchAll(/^\s*"([a-z][a-z0-9_]*)",$/gmu)].map(
@@ -389,6 +436,27 @@ const frontendText = await Promise.all(
   frontendFiles
     .filter((path) => [".ts", ".tsx"].includes(extname(path)))
     .map((path) => readFile(path, "utf8")),
+);
+const authFrontendText = (
+  await Promise.all(
+    frontendFiles
+      .filter((path) => path.includes("/src/auth/"))
+      .filter((path) => !path.includes(".test."))
+      .filter((path) => [".ts", ".tsx"].includes(extname(path)))
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+requireCondition(
+  !/\b(?:localStorage|sessionStorage|indexedDB|caches\.|serviceWorker|persistQueryClient|createSyncStoragePersister)\b/u.test(
+    authFrontendText,
+  ),
+  "authentication must not use browser, service-worker, or React Query persistence",
+);
+requireCondition(
+  !/\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\b/u.test(authFrontendText) &&
+    !authFrontendText.includes("getAccessToken") &&
+    !authFrontendText.includes("getIdToken"),
+  "frontend authentication must have no network or token getter",
 );
 const invokedCommands = new Set(
   frontendText.flatMap((source) =>
@@ -412,20 +480,24 @@ for (const command of invokedCommands) {
 }
 
 requireCondition(
-  !androidManifest.includes("android.permission.INTERNET") &&
-    !androidManifest.includes("android.intent.category.BROWSABLE") &&
-    !androidManifest.includes("android:scheme=") &&
+  (androidManifest.match(/android\.permission\.INTERNET/gu) ?? []).length === 1 &&
+    (androidManifest.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 1 &&
+    androidManifest.includes('android:scheme="https"') &&
+    androidManifest.includes('android:host="deli.dev"') &&
+    androidManifest.includes('android:path="/auth/devhud/callback"') &&
     androidManifest.includes('android:usesCleartextTraffic="false"') &&
     androidManifest.includes('android:allowBackup="false"'),
-  "Android must deny network, deep links, cleartext, cloud backup, and device transfer",
+  "Android must limit network/deep-link authority to native auth and deny cleartext/backup",
 );
 requireCondition(
   !iosInfo.includes("CFBundleURLTypes") &&
     !iosInfo.includes("CFBundleURLSchemes") &&
-    !iosEntitlements.includes("com.apple.developer.associated-domains") &&
+    iosEntitlements.includes("com.apple.developer.associated-domains") &&
+    (iosEntitlements.match(/applinks:/gu) ?? []).length === 1 &&
+    iosEntitlements.includes("applinks:deli.dev") &&
     !iosProject.includes("WidgetKit") &&
     !iosProject.includes(".appex"),
-  "iOS must contain no deep-link, associated-domain, or embedded-widget authority",
+  "iOS must contain only the verified DeliDev associated-domain and no custom scheme/widget",
 );
 
 requireCondition(

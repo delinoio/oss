@@ -195,20 +195,27 @@ requireCondition(
   "DevHud 0.1.0 must keep production tools empty",
 );
 
-const prohibitedReleaseSurface =
-  /(?:CFBundleURLTypes|CFBundleURLSchemes|com\.apple\.developer\.associated-domains|android\.intent\.category\.BROWSABLE|android:scheme=|android:autoVerify|https?:\/\/(?!(?:schemas\.android\.com|www\.apple\.com\/DTDs\/)))/u;
-const prohibitedIosEntitlement =
-  /com\.apple\.developer\.associated-domains/u;
-for (const [name, source] of [
-  ["distributed iOS project", iosAppProject],
-  ["distributed iOS entitlements", iosAppEntitlements],
-  ["distributed Android manifest", androidAppManifest],
-]) {
-  requireCondition(
-    !prohibitedReleaseSurface.test(source),
-    `${name} contains a deep link, associated domain, or remote endpoint`,
-  );
-}
+const prohibitedRemoteEndpoint =
+  /https?:\/\/(?!(?:schemas\.android\.com|www\.apple\.com\/DTDs\/))/u;
+const prohibitedIosInfoSurface =
+  /(?:CFBundleURLTypes|CFBundleURLSchemes)/u;
+requireCondition(
+  !prohibitedIosInfoSurface.test(iosAppProject) &&
+    !prohibitedRemoteEndpoint.test(iosAppProject) &&
+    (iosAppProject.match(/com\.apple\.developer\.associated-domains/gu) ?? [])
+      .length === 1 &&
+    (iosAppProject.match(/applinks:/gu) ?? []).length === 1 &&
+    iosAppProject.includes("applinks:deli.dev"),
+  "distributed iOS project must contain only the exact DeliDev associated domain",
+);
+requireCondition(
+  hasExactIosAssociatedDomainEntitlement(iosAppEntitlements, true),
+  "distributed iOS entitlements must contain only the exact DeliDev associated domain",
+);
+requireCondition(
+  hasExactAndroidAuthSurface(androidAppManifest),
+  "distributed Android manifest must contain only the exact verified DeliDev callback",
+);
 
 const mergedManifestRoots = [
   "src-tauri/gen/android/app/build/intermediates/merged_manifests",
@@ -275,10 +282,8 @@ function inspectAndroidManifest(source, path) {
     `distributed Android artifact registers receiver metadata: ${path}`,
   );
   requireCondition(
-    !/(android\.intent\.category\.BROWSABLE|android:scheme=|android:autoVerify|android\.permission\.INTERNET)/u.test(
-      source,
-    ),
-    `distributed Android artifact contains a prohibited release surface: ${path}`,
+    hasExactAndroidAuthSurface(source),
+    `distributed Android artifact does not preserve the exact native auth surface: ${path}`,
   );
   const application = source.match(/<application\b[^>]*>/su)?.[0] ?? "";
   const dataExtractionRules =
@@ -319,7 +324,8 @@ async function inspectIosApplication(path) {
   const infoPlist = resolve(path, "Info.plist");
   const infoSource = readPropertyList(infoPlist);
   requireCondition(
-    !prohibitedReleaseSurface.test(infoSource),
+    !prohibitedIosInfoSurface.test(infoSource) &&
+      !prohibitedRemoteEndpoint.test(infoSource),
     `distributed iOS application contains prohibited Info.plist metadata: ${infoPlist}`,
   );
   requireCondition(
@@ -345,8 +351,8 @@ async function inspectIosApplication(path) {
       `distributed iOS provisioning payload claims the widget extension: ${file}`,
     );
     requireCondition(
-      !prohibitedIosEntitlement.test(source),
-      `distributed iOS provisioning payload contains a prohibited release surface: ${file}`,
+      hasExactIosAssociatedDomainEntitlement(source, true),
+      `distributed iOS provisioning payload does not preserve the exact DeliDev associated domain: ${file}`,
     );
   }
   if (existsSync(resolve(path, "_CodeSignature"))) {
@@ -356,10 +362,53 @@ async function inspectIosApplication(path) {
       `distributed iOS code signature claims the widget extension: ${path}`,
     );
     requireCondition(
-      !prohibitedIosEntitlement.test(entitlements),
-      `distributed iOS code signature contains a prohibited release surface: ${path}`,
+      hasExactIosAssociatedDomainEntitlement(entitlements, true),
+      `distributed iOS code signature does not preserve the exact DeliDev associated domain: ${path}`,
     );
   }
+}
+
+function hasExactAndroidAuthSurface(source) {
+  return (
+    !prohibitedRemoteEndpoint.test(source) &&
+    (source.match(/android\.permission\.INTERNET/gu) ?? []).length === 1 &&
+    (source.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 1 &&
+    (source.match(/android:autoVerify\s*=\s*["']true["']/gu) ?? []).length === 1 &&
+    (source.match(/android:scheme\s*=/gu) ?? []).length === 1 &&
+    /android:scheme\s*=\s*["']https["']/u.test(source) &&
+    (source.match(/android:host\s*=/gu) ?? []).length === 1 &&
+    /android:host\s*=\s*["']deli\.dev["']/u.test(source) &&
+    (source.match(/android:path\s*=/gu) ?? []).length === 1 &&
+    /android:path\s*=\s*["']\/auth\/devhud\/callback["']/u.test(source) &&
+    !/android:path(?:Prefix|Pattern)\s*=/u.test(source)
+  );
+}
+
+function hasExactIosAssociatedDomainEntitlement(source, required) {
+  if (
+    prohibitedIosInfoSurface.test(source) ||
+    prohibitedRemoteEndpoint.test(source)
+  ) {
+    return false;
+  }
+  const arrays = [
+    ...source.matchAll(
+      /<key>com\.apple\.developer\.associated-domains<\/key>\s*<array>([\s\S]*?)<\/array>/gu,
+    ),
+  ];
+  if (arrays.length === 0) {
+    return !required && !source.includes("applinks:");
+  }
+  const domains = arrays.flatMap(([, contents]) =>
+    [...contents.matchAll(/<string>([^<]+)<\/string>/gu)].map(
+      ([, domain]) => domain,
+    ),
+  );
+  return (
+    arrays.length === 1 &&
+    domains.length === 1 &&
+    domains[0] === "applinks:deli.dev"
+  );
 }
 
 function readPropertyList(path) {
