@@ -1176,11 +1176,8 @@ func TestPostgreSQLExpirationContinuesAfterOrganizationFailure(t *testing.T) {
 						MaximumCostMicros: 2,
 						HeldCreditMicros:  2,
 						HeldOverageMicros: 0,
-						ClientReference: fmt.Sprintf(
-							"poison-expiration-%03d-%s",
-							index,
-							poisonFixture.organizationID,
-						),
+						// A UUID with a numeric tail can resemble a card number.
+						ClientReference:            fmt.Sprintf("poison-expiration-%03d", index),
 						ReservationTtlSeconds:      meter.ReservationTtlSeconds,
 						UserActorReferenceSnapshot: string(actor),
 					},
