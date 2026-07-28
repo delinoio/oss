@@ -5,11 +5,12 @@
 Define DevHud as a developer-tool shell with a usable signed-out, bundled-asset
 base experience and two explicitly bounded future authenticated features: Deck
 and RealQA. The private `devhud.deck.v1` and `devhud.realqa.v1` source contracts
-and generated Connect packages are implemented; both feature servers and product
-integrations remain planned. This contract authorizes implementation for issues
-#755 and #757; it does not claim that either feature, service, origin, provider
-registration, catalog entry, extension, widget, or release artifact exists or
-is active.
+and generated Connect packages are implemented, as is the inactive RealQA
+preset/tracker/auth/deletion server foundation. The Deck server, RealQA
+submission/provider/image/billing slices, and product integrations remain
+planned. This contract authorizes implementation for issues #755 and #757; it
+does not claim that either feature or origin is deployed, registered, published,
+catalog-enabled, or active.
 
 The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild, the exact pinned Tauri desktop CEF runtime, standard mobile system webviews, tray/shortcut/autostart behavior, a closed internal tool registry, typed local persistence, bounded diagnostics, device-local reset, non-distributed native-widget fixtures, and an inactive dependency-injected RealQA capture/composer core with exact window capabilities and fixture backends. RealQA source enumeration remains closed until capture permission is granted, and the core rejects backend frames that do not match the resolved capture geometry. The production tool registry remains empty and the default capture adapter fails unavailable until a concrete macOS, Windows, or Linux backend is injected. Deck may later add authenticated GitHub.com pull-request workflows on desktop, iOS, Android, tray, shortcuts, notifications, and native widgets. RealQA may later add its authenticated capture/editor product, new-GitHub.com-issue submission, and exact-origin Chrome MV3/native-host bridge. Neither feature is part of the signed-out base shell.
 
@@ -24,7 +25,7 @@ The shared authentication foundation is now implemented under `apps/devhud` as d
 - `apps/devhud` (`app`): the sole full DevHud feature client and native-integration path. It owns the signed-out base shell; shared authentication client; Deck desktop/mobile/tray/shortcut/notification/widget UI; RealQA desktop capture/editor, encrypted local drafts, Chrome extension, and native-host source.
 - `servers/devhud-deck` (`deck-server`, planned): the Go/PostgreSQL/sqlc Deck service described by [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md).
 - `protos/devhud-deck` (`deck-api`, implemented private contract): the versioned `devhud.deck.v1` source, isolated descriptor, generated Go/TypeScript Connect artifacts, and private workspace export described by [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
-- `servers/devhud-realqa` (`realqa-server`, planned): the Go/PostgreSQL/sqlc RealQA service described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
+- `servers/devhud-realqa` (`realqa-server`): the implemented inactive Go/PostgreSQL/sqlc preset/tracker/auth/deletion foundation and planned submission/image/billing service described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
 - `protos/devhud-realqa` (`realqa-api`): the implemented versioned `devhud.realqa.v1` source, isolated descriptor, reproducible Go/TypeScript Connect artifacts, and private `@delinoio/devhud-realqa-connect` workspace package described by [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 
 No full DevHud feature client or native implementation belongs under `apps/delidev-app`, `servers/delibase`, `protos/delibase`, `crates/`, `cmds/`, or a public plugin/package path. DeliDev may consume only `DeckIntegrationService` to expose connection management through its existing `/account` and `/o/:orgSlug/settings` sections. It also owns the planned `/auth/devhud/callback` static route and exact-path Apple/Android association artifacts required to verify the Deck mobile link; these narrow responsibilities do not transfer DevHud ownership or authorize another top-level DeliDev feature route.

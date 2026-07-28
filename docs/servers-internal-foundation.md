@@ -30,7 +30,7 @@
 - `servers/internal/uuidv7`: RFC 9562 UUID v7 generation with injectable clock/random sources, same-millisecond monotonic ordering, and timestamp decoding.
 
 ### Authentication Contract
-- `auth.NewValidator` requires an exact Logto issuer, a `KeySource`, and the canonical `https://delibase.deli.dev` audience. Construction rejects any other audience. A `KeySource` returns `auth.ErrKeyUnavailable` only when a provider outage prevents it from determining whether a key exists; missing keys and algorithm/key mismatches are invalid credentials.
+- `auth.NewValidator` requires an exact Logto issuer, a `KeySource`, and the canonical `https://delibase.deli.dev` audience. Construction rejects any other audience, preserving the delibase compatibility contract. The explicitly reviewed `auth.NewValidatorForAudience` constructor is available to repository-owned feature servers: it accepts only an exact HTTPS origin without credentials, path, query, or fragment, while the consuming server must still pin that value to its documented canonical audience before construction. A `KeySource` returns `auth.ErrKeyUnavailable` only when a provider outage prevents it from determining whether a key exists; missing keys and algorithm/key mismatches are invalid credentials.
 - Validation requires an expiration claim, exact issuer/audience match, an allowed asymmetric algorithm (`RS256` by default), a non-empty `kid`, and a JWT header type of `JWT` or `at+jwt` by default. Clocks, leeway, algorithms, and accepted header types are injectable/configurable.
 - Logto scopes are a required-subset check supplied per route. Scope success authenticates the token only; it never grants a local organization role, team access, meter allowlist, billing permission, or reservation decision.
 - Every HTTP path and Connect procedure must select an explicit authentication mode. The zero-value requirement is invalid, public access requires `ModePublic`, and missing policy entries fail closed as internal configuration errors.
@@ -82,7 +82,7 @@
 - Current focused validation is `go test ./servers/internal/...`; repository server validation remains `go vet ./servers/...` and `go test ./servers/...`.
 
 ## Dependencies and Integrations
-- Consumed by `servers/delibase`; future server consumers require an explicit ownership and compatibility review.
+- Consumed by `servers/delibase` and the inactive `servers/devhud-realqa` foundation. RealQA's compatibility review permits the provider-agnostic JWT/JWKS claims, request/trace metadata, HTTP defaults, redaction, structured logging, and UUID-v7 packages. RealQA uses its own dual-audience interceptor and `devhud.realqa.v1.ErrorDetail` sanitizer because the existing shared middleware modes and safe-error details are delibase-specific; no RealQA role, tracker, preset, or deletion policy moved into the shared boundary. Future consumers still require an explicit ownership and compatibility review.
 - Coordinates with `protos/delibase/v1` for transport metadata but does not own Protobuf sources.
 - Configuration ownership: shared packages own safe defaults and typed configuration contracts; each consuming service owns provider endpoints, credentials, and product-specific policy.
 
