@@ -571,9 +571,15 @@ func (client *Client) CreateIssue(
 	} else if found {
 		return client.attachProjects(ctx, token, existing, normalized.Extension.Projects)
 	}
+	if !repository.CanSetIssueMetadata &&
+		(normalized.IssueType != "" || len(normalized.Labels) != 0 ||
+			len(normalized.Assignees) != 0 || normalized.Extension.Milestone != nil) {
+		return Issue{}, errors.New(
+			"realqa github: caller lacks push access for issue metadata")
+	}
 
 	payload := createIssueRequest{
-		Title: normalized.Title, Body: body,
+		Title: normalized.Title, Body: body, Type: normalized.IssueType,
 		Labels: names(normalized.Labels), Assignees: logins(normalized.Assignees),
 	}
 	if normalized.Extension.Milestone != nil {
@@ -605,6 +611,7 @@ func (client *Client) CreateIssue(
 type createIssueRequest struct {
 	Title     string   `json:"title"`
 	Body      string   `json:"body"`
+	Type      string   `json:"type,omitempty"`
 	Labels    []string `json:"labels,omitempty"`
 	Assignees []string `json:"assignees,omitempty"`
 	Milestone int64    `json:"milestone,omitempty"`
@@ -807,6 +814,7 @@ func (repository apiRepository) model() (Repository, error) {
 		ID: repository.ID, NodeID: repository.NodeID,
 		Owner: repository.Owner.Login, Name: repository.Name,
 		IssuesEnabled: repository.HasIssues, CanSubmit: repository.HasIssues,
+		CanSetIssueMetadata: repository.Permissions.Push,
 	}
 	if err := result.Validate(); err != nil {
 		return Repository{}, err

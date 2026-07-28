@@ -719,11 +719,14 @@ func strictJSON(body []byte, target any) error {
 }
 
 type apiRepository struct {
-	ID        int64      `json:"id"`
-	NodeID    string     `json:"node_id"`
-	Name      string     `json:"name"`
-	Owner     apiAccount `json:"owner"`
-	HasIssues bool       `json:"has_issues"`
+	ID          int64      `json:"id"`
+	NodeID      string     `json:"node_id"`
+	Name        string     `json:"name"`
+	Owner       apiAccount `json:"owner"`
+	HasIssues   bool       `json:"has_issues"`
+	Permissions struct {
+		Push bool `json:"push"`
+	} `json:"permissions"`
 }
 
 func modelRepositories(values []apiRepository) []Repository {

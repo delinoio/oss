@@ -881,6 +881,7 @@ type MarkdownIssueTemplate struct {
 	DefaultLabels    []string                      `protobuf:"bytes,3,rep,name=default_labels,json=defaultLabels,proto3" json:"default_labels,omitempty"`
 	DefaultAssignees []string                      `protobuf:"bytes,4,rep,name=default_assignees,json=defaultAssignees,proto3" json:"default_assignees,omitempty"`
 	BodyTemplate     string                        `protobuf:"bytes,5,opt,name=body_template,json=bodyTemplate,proto3" json:"body_template,omitempty"`
+	IssueType        string                        `protobuf:"bytes,6,opt,name=issue_type,json=issueType,proto3" json:"issue_type,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -946,6 +947,13 @@ func (x *MarkdownIssueTemplate) GetDefaultAssignees() []string {
 func (x *MarkdownIssueTemplate) GetBodyTemplate() string {
 	if x != nil {
 		return x.BodyTemplate
+	}
+	return ""
+}
+
+func (x *MarkdownIssueTemplate) GetIssueType() string {
+	if x != nil {
+		return x.IssueType
 	}
 	return ""
 }
@@ -1020,6 +1028,7 @@ type IssueFormField struct {
 	Required      bool                   `protobuf:"varint,6,opt,name=required,proto3" json:"required,omitempty"`
 	Options       []*IssueFormOption     `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
 	Multiple      bool                   `protobuf:"varint,8,opt,name=multiple,proto3" json:"multiple,omitempty"`
+	DefaultValue  string                 `protobuf:"bytes,9,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1110,6 +1119,13 @@ func (x *IssueFormField) GetMultiple() bool {
 	return false
 }
 
+func (x *IssueFormField) GetDefaultValue() string {
+	if x != nil {
+		return x.DefaultValue
+	}
+	return ""
+}
+
 type IssueForm struct {
 	state            protoimpl.MessageState        `protogen:"open.v1"`
 	Definition       *RepositoryIssueDefinitionRef `protobuf:"bytes,1,opt,name=definition,proto3" json:"definition,omitempty"`
@@ -1117,6 +1133,7 @@ type IssueForm struct {
 	DefaultLabels    []string                      `protobuf:"bytes,3,rep,name=default_labels,json=defaultLabels,proto3" json:"default_labels,omitempty"`
 	DefaultAssignees []string                      `protobuf:"bytes,4,rep,name=default_assignees,json=defaultAssignees,proto3" json:"default_assignees,omitempty"`
 	Fields           []*IssueFormField             `protobuf:"bytes,5,rep,name=fields,proto3" json:"fields,omitempty"`
+	IssueType        string                        `protobuf:"bytes,6,opt,name=issue_type,json=issueType,proto3" json:"issue_type,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1184,6 +1201,13 @@ func (x *IssueForm) GetFields() []*IssueFormField {
 		return x.Fields
 	}
 	return nil
+}
+
+func (x *IssueForm) GetIssueType() string {
+	if x != nil {
+		return x.IssueType
+	}
+	return ""
 }
 
 type RepositoryIssueSchema struct {
@@ -1409,7 +1433,7 @@ const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\x04page\x18\x03 \x01(\v2\x1d.devhud.realqa.v1.PageRequestR\x04page\"\x90\x01\n" +
 	"\x18ListRepositoriesResponse\x12@\n" +
 	"\frepositories\x18\x01 \x03(\v2\x1c.devhud.realqa.v1.RepositoryR\frepositories\x122\n" +
-	"\x04page\x18\x02 \x01(\v2\x1e.devhud.realqa.v1.PageResponseR\x04page\"\x83\x02\n" +
+	"\x04page\x18\x02 \x01(\v2\x1e.devhud.realqa.v1.PageResponseR\x04page\"\xa2\x02\n" +
 	"\x15MarkdownIssueTemplate\x12N\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2..devhud.realqa.v1.RepositoryIssueDefinitionRefR\n" +
@@ -1417,11 +1441,13 @@ const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\ftitle_prefix\x18\x02 \x01(\tR\vtitlePrefix\x12%\n" +
 	"\x0edefault_labels\x18\x03 \x03(\tR\rdefaultLabels\x12+\n" +
 	"\x11default_assignees\x18\x04 \x03(\tR\x10defaultAssignees\x12#\n" +
-	"\rbody_template\x18\x05 \x01(\tR\fbodyTemplate\"Y\n" +
+	"\rbody_template\x18\x05 \x01(\tR\fbodyTemplate\x12\x1d\n" +
+	"\n" +
+	"issue_type\x18\x06 \x01(\tR\tissueType\"Y\n" +
 	"\x0fIssueFormOption\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1a\n" +
-	"\brequired\x18\x03 \x01(\bR\brequired\"\xb4\x02\n" +
+	"\brequired\x18\x03 \x01(\bR\brequired\"\xd9\x02\n" +
 	"\x0eIssueFormField\x12\x19\n" +
 	"\bfield_id\x18\x01 \x01(\tR\afieldId\x128\n" +
 	"\x04kind\x18\x02 \x01(\x0e2$.devhud.realqa.v1.IssueFormFieldKindR\x04kind\x12\x14\n" +
@@ -1430,7 +1456,8 @@ const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\vplaceholder\x18\x05 \x01(\tR\vplaceholder\x12\x1a\n" +
 	"\brequired\x18\x06 \x01(\bR\brequired\x12;\n" +
 	"\aoptions\x18\a \x03(\v2!.devhud.realqa.v1.IssueFormOptionR\aoptions\x12\x1a\n" +
-	"\bmultiple\x18\b \x01(\bR\bmultiple\"\x8c\x02\n" +
+	"\bmultiple\x18\b \x01(\bR\bmultiple\x12#\n" +
+	"\rdefault_value\x18\t \x01(\tR\fdefaultValue\"\xab\x02\n" +
 	"\tIssueForm\x12N\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2..devhud.realqa.v1.RepositoryIssueDefinitionRefR\n" +
@@ -1438,7 +1465,9 @@ const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\ftitle_prefix\x18\x02 \x01(\tR\vtitlePrefix\x12%\n" +
 	"\x0edefault_labels\x18\x03 \x03(\tR\rdefaultLabels\x12+\n" +
 	"\x11default_assignees\x18\x04 \x03(\tR\x10defaultAssignees\x128\n" +
-	"\x06fields\x18\x05 \x03(\v2 .devhud.realqa.v1.IssueFormFieldR\x06fields\"\xac\x02\n" +
+	"\x06fields\x18\x05 \x03(\v2 .devhud.realqa.v1.IssueFormFieldR\x06fields\x12\x1d\n" +
+	"\n" +
+	"issue_type\x18\x06 \x01(\tR\tissueType\"\xac\x02\n" +
 	"\x15RepositoryIssueSchema\x12E\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2%.devhud.realqa.v1.GitHubRepositoryRefR\n" +

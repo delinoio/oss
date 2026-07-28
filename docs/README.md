@@ -112,8 +112,9 @@ desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is
 limited to Logto/DeliDev; bundled webviews remain offline while exact future
 feature RPCs and RealQA signed upload PUTs cross closed native transports.
-Provider work stays behind separate least-privilege GitHub Apps, RealQA
-management stays in DevHud, and delibase account/organization deletion durably
+Provider work stays behind separate least-privilege GitHub Apps; RealQA's
+private schema preserves issue types, Issue Form text prefills, and dropdown
+multiplicity; RealQA management stays in DevHud; and delibase account/organization deletion durably
 invokes both features' service-authenticated cleanup mode. No public plugin SDK,
 arbitrary remote UI, client/extension telemetry, DNS/deployment, production app
 registration, catalog activation, widget/extension/store publication, or

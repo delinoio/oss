@@ -716,6 +716,7 @@ func repositoryDefinitionsProto(
 			&realqav1.MarkdownIssueTemplate{
 				Definition:       repositoryDefinitionRefProto(template.Definition),
 				TitlePrefix:      template.TitlePrefix,
+				IssueType:        template.IssueType,
 				DefaultLabels:    append([]string(nil), template.DefaultLabels...),
 				DefaultAssignees: append([]string(nil), template.DefaultAssignees...),
 				BodyTemplate:     template.Body,
@@ -725,6 +726,7 @@ func repositoryDefinitionsProto(
 		item := &realqav1.IssueForm{
 			Definition:       repositoryDefinitionRefProto(form.Definition),
 			TitlePrefix:      form.TitlePrefix,
+			IssueType:        form.IssueType,
 			DefaultLabels:    append([]string(nil), form.DefaultLabels...),
 			DefaultAssignees: append([]string(nil), form.DefaultAssignees...),
 			Fields:           []*realqav1.IssueFormField{},
@@ -733,7 +735,8 @@ func repositoryDefinitionsProto(
 			protoField := &realqav1.IssueFormField{
 				FieldId: field.ID, Kind: issueFormFieldKindProto(field.Kind),
 				Label: field.Label, Description: field.Description,
-				Placeholder: field.Placeholder, Required: field.Required,
+				Placeholder: field.Placeholder, DefaultValue: field.DefaultValue,
+				Required: field.Required,
 				Multiple: field.Multiple, Options: []*realqav1.IssueFormOption{},
 			}
 			if field.Kind == realqagithub.FormFieldMarkdown {

@@ -131,6 +131,11 @@ func normalizeIssueInput(input IssueInput) (IssueInput, error) {
 		strings.ContainsAny(input.Title, "\x00\r\n") {
 		return IssueInput{}, errors.New("realqa github: issue title is invalid")
 	}
+	issueType, err := cleanIssueType(input.IssueType)
+	if err != nil {
+		return IssueInput{}, err
+	}
+	input.IssueType = issueType
 	labelValues := make([]string, 0, len(input.Labels))
 	for _, label := range input.Labels {
 		labelValues = append(labelValues, label.Name)

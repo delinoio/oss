@@ -78,9 +78,13 @@ func ParseMarkdownTemplate(filePath, etag string, contents []byte) (MarkdownTemp
 	if strings.TrimSpace(header.Name) == "" || strings.TrimSpace(header.About) == "" {
 		return MarkdownTemplate{}, errors.New("realqa github: Markdown template name and about are required")
 	}
+	issueType, err := cleanIssueType(header.Type)
+	if err != nil {
+		return MarkdownTemplate{}, errors.New("realqa github: Markdown issue type is invalid")
+	}
 	definition.Name = strings.TrimSpace(header.Name)
 	return MarkdownTemplate{
-		Definition: definition, TitlePrefix: header.Title,
+		Definition: definition, TitlePrefix: header.Title, IssueType: issueType,
 		DefaultLabels: []string(header.Labels), DefaultAssignees: []string(header.Assignees),
 		Body: strings.TrimPrefix(normalized[end+5:], "\n"),
 	}, nil
@@ -142,9 +146,13 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 		return IssueForm{}, errors.New(
 			"realqa github: Issue Form project defaults are unsupported")
 	}
+	issueType, err := cleanIssueType(raw.Type)
+	if err != nil {
+		return IssueForm{}, errors.New("realqa github: Issue Form issue type is invalid")
+	}
 	definition.Name = strings.TrimSpace(raw.Name)
 	result := IssueForm{
-		Definition: definition, TitlePrefix: raw.Title,
+		Definition: definition, TitlePrefix: raw.Title, IssueType: issueType,
 		DefaultLabels: []string(raw.Labels), DefaultAssignees: []string(raw.Assignees),
 		Fields: make([]FormField, 0, len(raw.Body)),
 	}
@@ -225,6 +233,18 @@ func parseFormField(raw rawFormField) (FormField, error) {
 		if field.Kind != FormFieldTextarea || !safeRenderLanguage(field.Render) {
 			return FormField{}, errors.New(
 				"realqa github: Issue Form render language is invalid")
+		}
+	}
+	if raw.Attributes.Value != "" {
+		if field.Kind != FormFieldInput && field.Kind != FormFieldTextarea {
+			return FormField{}, errors.New(
+				"realqa github: Issue Form default value is not allowed for this field")
+		}
+		field.DefaultValue = normalizeNewlines(raw.Attributes.Value)
+		if strings.Contains(field.DefaultValue, "\x00") ||
+			(field.Kind == FormFieldInput && strings.Contains(field.DefaultValue, "\n")) {
+			return FormField{}, errors.New(
+				"realqa github: Issue Form default value is invalid")
 		}
 	}
 	if field.Kind == FormFieldDropdown || field.Kind == FormFieldCheckboxes {
@@ -403,6 +423,15 @@ func safeRenderLanguage(value string) bool {
 		}
 	}
 	return true
+}
+
+func cleanIssueType(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if len(value) > 255 || !utf8.ValidString(value) ||
+		strings.ContainsAny(value, "\x00\r\n") {
+		return "", errors.New("realqa github: issue type is invalid")
+	}
+	return value, nil
 }
 
 func definitionRef(kind DefinitionKind, filePath, etag string) (DefinitionRef, error) {

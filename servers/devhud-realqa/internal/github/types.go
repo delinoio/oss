@@ -130,12 +130,13 @@ func (installation Installation) Validate(project ProjectPermission) error {
 }
 
 type Repository struct {
-	ID            int64
-	NodeID        string
-	Owner         string
-	Name          string
-	IssuesEnabled bool
-	CanSubmit     bool
+	ID                  int64
+	NodeID              string
+	Owner               string
+	Name                string
+	IssuesEnabled       bool
+	CanSubmit           bool
+	CanSetIssueMetadata bool
 }
 
 type RepositoryPageRequest struct {
@@ -177,6 +178,7 @@ type DefinitionRef struct {
 type MarkdownTemplate struct {
 	Definition       DefinitionRef
 	TitlePrefix      string
+	IssueType        string
 	DefaultLabels    []string
 	DefaultAssignees []string
 	Body             string
@@ -198,21 +200,23 @@ type FormOption struct {
 }
 
 type FormField struct {
-	ID          string
-	Kind        FormFieldKind
-	Label       string
-	Description string
-	Placeholder string
-	Required    bool
-	Multiple    bool
-	Render      string
-	Options     []FormOption
-	Markdown    string
+	ID           string
+	Kind         FormFieldKind
+	Label        string
+	Description  string
+	Placeholder  string
+	DefaultValue string
+	Required     bool
+	Multiple     bool
+	Render       string
+	Options      []FormOption
+	Markdown     string
 }
 
 type IssueForm struct {
 	Definition       DefinitionRef
 	TitlePrefix      string
+	IssueType        string
 	DefaultLabels    []string
 	DefaultAssignees []string
 	Fields           []FormField
@@ -269,6 +273,7 @@ type InlineImage struct {
 type IssueInput struct {
 	SubmissionID       uuid.UUID
 	Title              string
+	IssueType          string
 	RepositoryResponse string
 	Capture            CaptureMetadata
 	Images             []InlineImage

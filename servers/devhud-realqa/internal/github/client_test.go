@@ -45,7 +45,7 @@ func fixtureToken(t *testing.T) UserToken {
 func fixtureRepository() Repository {
 	return Repository{
 		ID: 1, NodeID: "R_fixture", Owner: "delinoio", Name: "oss",
-		IssuesEnabled: true, CanSubmit: true,
+		IssuesEnabled: true, CanSubmit: true, CanSetIssueMetadata: true,
 	}
 }
 
@@ -277,7 +277,7 @@ func TestGetRepositoryUsesTargetedEndpoint(t *testing.T) {
 		return jsonResponse(request, http.StatusOK, map[string]any{
 			"id": 1, "node_id": "R_fixture", "name": "oss",
 			"owner":      map[string]any{"id": 9, "login": "delinoio", "type": "Organization"},
-			"has_issues": true,
+			"has_issues": true, "permissions": map[string]any{"push": true},
 		}), nil
 	})
 	client, err := NewClient(ClientConfig{
@@ -294,9 +294,121 @@ func TestGetRepositoryUsesTargetedEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requests != 1 || repository.ID != 1 || !repository.CanSubmit {
+	if requests != 1 || repository.ID != 1 || !repository.CanSubmit ||
+		!repository.CanSetIssueMetadata {
 		t.Fatalf("unexpected targeted repository: requests=%d repository=%#v",
 			requests, repository)
+	}
+}
+
+func TestCreateIssuePropagatesTypeAndMetadata(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		switch request.Method {
+		case http.MethodGet:
+			return jsonResponse(request, http.StatusOK, []any{}), nil
+		case http.MethodPost:
+			var payload createIssueRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Type != "Bug" ||
+				strings.Join(payload.Labels, ",") != "bug" ||
+				strings.Join(payload.Assignees, ",") != "octocat" ||
+				payload.Milestone != 7 {
+				t.Fatalf("unexpected create payload: %#v", payload)
+			}
+			return jsonResponse(request, http.StatusCreated, map[string]any{
+				"id": 99, "node_id": "I_fixture", "number": 758,
+				"html_url": "https://github.com/delinoio/oss/issues/758",
+				"body":     "", "created_at": now,
+			}), nil
+		default:
+			t.Fatalf("unexpected request %s", request.Method)
+			return nil, nil
+		}
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := fixtureIssueInput()
+	input.IssueType = "Bug"
+	input.Extension.Milestone = &Milestone{Number: 7}
+	if _, err = client.CreateIssue(
+		context.Background(), fixtureToken(t), fixtureRepository(), input,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateIssueRejectsMetadataWithoutPushAccess(t *testing.T) {
+	t.Parallel()
+	postCount := 0
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		if request.Method == http.MethodGet {
+			return jsonResponse(request, http.StatusOK, []any{}), nil
+		}
+		postCount++
+		return nil, errors.New("unexpected create")
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := fixtureRepository()
+	repository.CanSetIssueMetadata = false
+	_, err = client.CreateIssue(
+		context.Background(), fixtureToken(t), repository, fixtureIssueInput(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "lacks push access") {
+		t.Fatalf("expected metadata permission failure, got %v", err)
+	}
+	if postCount != 0 {
+		t.Fatalf("metadata was dispatched without push access")
+	}
+}
+
+func TestCreateIssueAllowsBasicIssueWithoutPushAccess(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	postCount := 0
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		if request.Method == http.MethodGet {
+			return jsonResponse(request, http.StatusOK, []any{}), nil
+		}
+		postCount++
+		return jsonResponse(request, http.StatusCreated, map[string]any{
+			"id": 99, "node_id": "I_fixture", "number": 758,
+			"html_url": "https://github.com/delinoio/oss/issues/758",
+			"body":     "", "created_at": now,
+		}), nil
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := fixtureRepository()
+	repository.CanSetIssueMetadata = false
+	input := fixtureIssueInput()
+	input.Labels = nil
+	input.Assignees = nil
+	if _, err = client.CreateIssue(
+		context.Background(), fixtureToken(t), repository, input,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if postCount != 1 {
+		t.Fatalf("expected one basic issue create, got %d", postCount)
 	}
 }
 

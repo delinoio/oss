@@ -41,9 +41,40 @@ Describe the bug.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if template.Definition.Name != "Bug report" ||
+	if template.Definition.Name != "Bug report" || template.IssueType != "bug" ||
 		template.Body != "Describe the bug.\n" {
 		t.Fatalf("unexpected template: %#v", template)
+	}
+}
+
+func TestIssueFormPreservesTypeAndTextDefaults(t *testing.T) {
+	t.Parallel()
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, []byte(`
+name: Bug report
+description: Report a bug
+type: Bug
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      value: A bug happened
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      value: |
+        1. Start
+        2. Observe
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if form.IssueType != "Bug" || len(form.Fields) != 2 ||
+		form.Fields[0].DefaultValue != "A bug happened" ||
+		form.Fields[1].DefaultValue != "1. Start\n2. Observe\n" {
+		t.Fatalf("defaults were not preserved: %#v", form)
 	}
 }
 
