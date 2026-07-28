@@ -58,6 +58,8 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.dev.deli.devhud
+        com.apple.developer.associated-domains:
+          - applinks:deli.dev
     settings:
       base:
         ENABLE_BITCODE: false

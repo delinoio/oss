@@ -85,10 +85,6 @@ if (platform === "android") {
   await update("gen/android/app/src/main/AndroidManifest.xml", (source) => {
     let updated = source
       .replace(
-        /\s*<uses-permission android:name="android\.permission\.INTERNET" \/>\s*/u,
-        "\n",
-      )
-      .replace(
         /\s*<!-- AndroidTV support -->\s*<uses-feature[^>]+android\.software\.leanback[^>]+\/>\s*/u,
         "\n",
       )
@@ -111,6 +107,20 @@ if (platform === "android") {
       updated = updated.replace(
         /(<application\b[^>]*>)/su,
         '$1\n        <!-- The distributed application intentionally exposes no broadcast receivers. -->\n        <receiver tools:node="removeAll" />',
+      );
+    }
+    if (!updated.includes('android:path="/auth/devhud/callback"')) {
+      updated = updated.replace(
+        /(\s*<\/activity>)/u,
+        `            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="deli.dev"
+                    android:path="/auth/devhud/callback"
+                    android:scheme="https" />
+            </intent-filter>$1`,
       );
     }
     for (const [attribute, value] of [
@@ -228,6 +238,12 @@ if (platform === "ios") {
         "$1        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon\n",
       );
     }
+    if (!updated.includes("com.apple.developer.associated-domains")) {
+      updated = updated.replace(
+        /(\s+com\.apple\.security\.application-groups:\n\s+- group\.dev\.deli\.devhud\n)/u,
+        "$1        com.apple.developer.associated-domains:\n          - applinks:deli.dev\n",
+      );
+    }
     return updated;
   });
   await writeFile(
@@ -293,15 +309,26 @@ if (platform === "ios") {
   await update(
     "gen/apple/devhud_iOS/devhud_iOS.entitlements",
     (source) => {
-      if (source.includes("group.dev.deli.devhud")) return source;
-      const entitlement =
-        "\t<key>com.apple.security.application-groups</key>\n" +
-        "\t<array>\n" +
-        "\t\t<string>group.dev.deli.devhud</string>\n" +
-        "\t</array>";
-      return source.includes("<dict/>")
-        ? source.replace("<dict/>", `<dict>\n${entitlement}\n</dict>`)
-        : source.replace("<dict>", `<dict>\n${entitlement}`);
+      let updated = source;
+      if (!updated.includes("group.dev.deli.devhud")) {
+        const entitlement =
+          "\t<key>com.apple.security.application-groups</key>\n" +
+          "\t<array>\n" +
+          "\t\t<string>group.dev.deli.devhud</string>\n" +
+          "\t</array>";
+        updated = updated.includes("<dict/>")
+          ? updated.replace("<dict/>", `<dict>\n${entitlement}\n</dict>`)
+          : updated.replace("<dict>", `<dict>\n${entitlement}`);
+      }
+      if (!updated.includes("applinks:deli.dev")) {
+        const associatedDomains =
+          "\t<key>com.apple.developer.associated-domains</key>\n" +
+          "\t<array>\n" +
+          "\t\t<string>applinks:deli.dev</string>\n" +
+          "\t</array>";
+        updated = updated.replace("</dict>", `${associatedDomains}\n</dict>`);
+      }
+      return updated;
     },
   );
 }
