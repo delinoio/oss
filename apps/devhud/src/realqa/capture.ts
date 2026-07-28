@@ -249,6 +249,7 @@ export type EditorOperation =
 export interface ComposerFlattenRequest {
   readonly sessionId: string;
   readonly imageId: string;
+  readonly sourceRevision: number;
   readonly operations: readonly EditorOperation[];
   readonly outputMediaType: ImageMediaType;
 }

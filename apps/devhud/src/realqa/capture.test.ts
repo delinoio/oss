@@ -93,6 +93,7 @@ describe("RealQA native boundaries", () => {
     const flattenRequest = {
       sessionId: "session-1",
       imageId: "image-1",
+      sourceRevision: 1,
       operations: [
         {
           kind: "crop",

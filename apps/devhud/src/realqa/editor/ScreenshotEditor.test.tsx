@@ -121,6 +121,7 @@ describe("ScreenshotEditor", () => {
     expect(bridge.flattenImage).toHaveBeenCalledWith({
       sessionId: "session-1",
       imageId: "image-1",
+      sourceRevision: 1,
       operations: [
         {
           kind: "arrow",
@@ -306,6 +307,7 @@ describe("ScreenshotEditor", () => {
     expect(bridge.flattenImage).toHaveBeenCalledWith({
       sessionId: "session-1",
       imageId: "image-1",
+      sourceRevision: 2,
       operations: [],
       outputMediaType: ImageMediaType.Png,
     });
@@ -372,6 +374,14 @@ describe("ScreenshotEditor", () => {
           tile.sourceHeight <= 1_024 + 256,
       ),
     ).toBe(true);
+    expect(
+      tiles.reduce(
+        (pixels, tile) =>
+          pixels + tile.previewWidth * tile.previewHeight,
+        0,
+      ),
+    ).toBeLessThanOrEqual(4 * 1_024 * 1_024);
+    expect(tiles.some((tile) => tile.previewWidth < tile.width)).toBe(true);
   });
 
   it("averages partial pixelation edge blocks independently", () => {

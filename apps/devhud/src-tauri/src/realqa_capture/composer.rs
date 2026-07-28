@@ -36,6 +36,7 @@ pub(crate) struct ComposerImageRequest {
 pub(crate) struct ComposerFlattenRequest {
     pub(crate) session_id: ComposerSessionId,
     pub(crate) image_id: ComposerImageId,
+    pub(crate) source_revision: u64,
     pub(crate) operations: Vec<EditorOperation>,
     pub(crate) output_media_type: ImageMediaType,
 }
@@ -168,6 +169,9 @@ impl ComposerCore {
                 .get(&request.session_id)
                 .and_then(|session| session.images.get(&request.image_id))
                 .ok_or(CaptureFailure::InvalidEditSequence)?;
+            if source.revision != request.source_revision {
+                return Err(CaptureFailure::InvalidEditSequence);
+            }
             (
                 source.original.clone(),
                 source.original_encoded_bytes,
@@ -451,6 +455,7 @@ mod tests {
         let request: ComposerFlattenRequest = serde_json::from_value(serde_json::json!({
             "sessionId": "session-1",
             "imageId": "image-1",
+            "sourceRevision": 7,
             "operations": [{
                 "kind": "arrow",
                 "start": { "x": 0, "y": 0 },
@@ -466,6 +471,7 @@ mod tests {
             ComposerFlattenRequest {
                 session_id: ComposerSessionId("session-1".to_owned()),
                 image_id: ComposerImageId("image-1".to_owned()),
+                source_revision: 7,
                 operations: vec![EditorOperation::Arrow {
                     start: super::super::editor::EditorPoint { x: 0, y: 0 },
                     end: super::super::editor::EditorPoint { x: 1, y: 0 },
@@ -495,6 +501,7 @@ mod tests {
             .flatten_image(ComposerFlattenRequest {
                 session_id: ComposerSessionId("session-1".to_owned()),
                 image_id: ComposerImageId("image-1".to_owned()),
+                source_revision: accepted.source_revision,
                 operations: vec![operation.clone()],
                 output_media_type: ImageMediaType::Png,
             })
@@ -503,6 +510,7 @@ mod tests {
             .flatten_image(ComposerFlattenRequest {
                 session_id: ComposerSessionId("session-1".to_owned()),
                 image_id: ComposerImageId("image-1".to_owned()),
+                source_revision: accepted.source_revision,
                 operations: vec![operation],
                 output_media_type: ImageMediaType::Png,
             })
@@ -516,6 +524,28 @@ mod tests {
         assert_eq!(
             decode_image(&first.image).expect("output must decode").rgba,
             vec![4, 5, 6, 255]
+        );
+    }
+
+    #[test]
+    fn rejects_a_stale_source_revision_before_flattening() {
+        let composer = ComposerCore::default();
+        let first = composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("image must be accepted");
+        composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("replacement must be accepted");
+
+        assert_eq!(
+            composer.flatten_image(ComposerFlattenRequest {
+                session_id: ComposerSessionId("session-1".to_owned()),
+                image_id: ComposerImageId("image-1".to_owned()),
+                source_revision: first.source_revision,
+                operations: Vec::new(),
+                output_media_type: ImageMediaType::Png,
+            }),
+            Err(CaptureFailure::InvalidEditSequence)
         );
     }
 }

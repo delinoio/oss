@@ -318,6 +318,7 @@ function ScreenshotEditorStateProvider({
       const approved = await bridge.flattenImage({
         sessionId,
         imageId,
+        sourceRevision: source.sourceRevision,
         operations: history.present,
         outputMediaType,
       });
@@ -336,6 +337,7 @@ function ScreenshotEditorStateProvider({
     onApprove,
     outputMediaType,
     sessionId,
+    source.sourceRevision,
   ]);
   const moveKeyboardCursor = useCallback(
     (deltaX: number, deltaY: number) => {
@@ -617,9 +619,12 @@ function bitmapTextPath(text: string): string {
 }
 
 const MAX_BLUR_PREVIEW_TILE_EDGE = 1_024;
+const MAX_BLUR_PREVIEW_PIXELS = 4 * 1_024 * 1_024;
 
 interface BlurPreviewTile {
   readonly height: number;
+  readonly previewHeight: number;
+  readonly previewWidth: number;
   readonly sourceHeight: number;
   readonly sourceWidth: number;
   readonly sourceX: number;
@@ -634,6 +639,10 @@ export function blurPreviewTiles(
   height: number,
   radius: number,
 ): readonly BlurPreviewTile[] {
+  const previewScale =
+    width * height > MAX_BLUR_PREVIEW_PIXELS
+      ? Math.sqrt(MAX_BLUR_PREVIEW_PIXELS / (width * height))
+      : 1;
   const tiles: BlurPreviewTile[] = [];
   for (let y = 0; y < height; y += MAX_BLUR_PREVIEW_TILE_EDGE) {
     const tileHeight = Math.min(MAX_BLUR_PREVIEW_TILE_EDGE, height - y);
@@ -645,6 +654,8 @@ export function blurPreviewTiles(
       const sourceRight = Math.min(width, x + tileWidth + radius);
       tiles.push({
         height: tileHeight,
+        previewHeight: Math.max(1, Math.floor(tileHeight * previewScale)),
+        previewWidth: Math.max(1, Math.floor(tileWidth * previewScale)),
         sourceHeight: sourceBottom - sourceY,
         sourceWidth: sourceRight - sourceX,
         sourceX,
@@ -970,9 +981,25 @@ function BlurredOverlay({
             height: tile.height,
           },
         );
-        const imageData = context.createImageData(tile.width, tile.height);
+        const imageData = sourceContext.createImageData(tile.width, tile.height);
         imageData.data.set(blurred);
-        context.putImageData(imageData, 0, 0);
+        sourceCanvas.width = tile.width;
+        sourceCanvas.height = tile.height;
+        sourceContext.putImageData(imageData, 0, 0);
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        context.drawImage(
+          sourceCanvas,
+          0,
+          0,
+          tile.width,
+          tile.height,
+          0,
+          0,
+          tile.previewWidth,
+          tile.previewHeight,
+        );
       }
     };
     preview.src = sourceUrl;
@@ -994,12 +1021,12 @@ function BlurredOverlay({
         <canvas
           aria-hidden="true"
           className="editor-blur"
-          height={tile.height}
+          height={tile.previewHeight}
           ref={(canvas) => {
             if (canvas === null) canvases.current.delete(key);
             else canvases.current.set(key, canvas);
           }}
-          width={tile.width}
+          width={tile.previewWidth}
         />
       </foreignObject>
     );

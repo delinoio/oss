@@ -3019,11 +3019,16 @@ fn realqa_composer_accept_image(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_composer_flatten_image(
+async fn realqa_composer_flatten_image(
     request: realqa_capture::ComposerFlattenRequest,
-    state: State<'_, realqa_capture::ComposerCore>,
+    app: AppHandle<ActiveRuntime>,
 ) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
-    state.flatten_image(request)
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<realqa_capture::ComposerCore>()
+            .flatten_image(request)
+    })
+    .await
+    .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)?
 }
 
 #[cfg(all(
