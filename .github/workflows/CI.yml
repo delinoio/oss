@@ -715,10 +715,8 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
-      - name: Test both macOS architectures and desktop permission smoke
+      - name: Test macOS fixtures and both architectures
         if: ${{ steps.gate.outputs.run == 'true' }}
-        env:
-          DEVHUD_REALQA_MACOS_SMOKE: "1"
         run: pnpm --filter devhud test:realqa:native
 
   node-mpapp-test:
