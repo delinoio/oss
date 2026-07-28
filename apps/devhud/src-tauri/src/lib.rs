@@ -1567,6 +1567,14 @@ fn get_runtime_info(
                 Duration::from_secs(1)
             };
             std::thread::sleep(shutdown_delay);
+            if cfg!(target_os = "windows")
+                && std::env::var_os("GITHUB_ACTIONS").is_some_and(|value| value == "true")
+            {
+                // GPU-less GitHub-hosted Windows runners can access-violate
+                // inside CEF after the requested shutdown. This exact marker
+                // lets the smoke distinguish that teardown from an app crash.
+                eprintln!(r#"{"eventId":"smoke-shutdown-requested"}"#);
+            }
             #[cfg(all(
                 feature = "desktop-cef",
                 not(any(target_os = "android", target_os = "ios"))
