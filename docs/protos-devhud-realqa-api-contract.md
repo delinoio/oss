@@ -5,13 +5,13 @@
 - Project/component: `devhud` / `realqa-api`
 - Canonical source path: `protos/devhud-realqa/v1`
 - Contract identity: `devhud.realqa.v1`
-- Status: planned for issue #757; no source, generated package, deployed API, or published client is claimed.
+- Status: implemented source contract and private workspace package for issue #757; no server implementation, deployed API, public client publication, or production activation is claimed.
 
 ## Runtime and Language
 
 - Versioned Protobuf is authoritative.
 - Generate reproducible Connect-compatible Go and protobuf-es v2 TypeScript artifacts under `protos/devhud-realqa/gen/go` and `protos/devhud-realqa/gen/ts`; generated files are derived and never a second contract.
-- The future workspace TypeScript package is `@delinoio/devhud-realqa-connect`.
+- The private workspace TypeScript package is `@delinoio/devhud-realqa-connect`. Its root export and versioned `./devhud-realqa/v1/*` subpath exports are repository-internal and must not be published.
 - Preserve released v1 fields additively. Breaking changes require `devhud.realqa.v2` and synchronized consumer migration docs.
 
 ## Services and RPCs
@@ -42,7 +42,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook, same-origin
 
 ## Authentication, Privacy, and Errors
 
-- Human RPCs require the RealQA-audience user token and dedicated memory-only delibase-audience forwarded bearer metadata. Only `DeleteFeatureData` in delibase-lifecycle mode instead requires the exact RealQA-scoped delibase M2M identity; that identity is rejected by every other procedure. Generated clients keep all credentials out of messages, logs, errors, caches, persistence, and diagnostics.
+- Human RPCs use `Authorization: Bearer <realqa-audience-user-access-token>` plus the exact dedicated `x-delibase-forwarded-user-token: <delibase-audience-user-access-token>` Connect metadata. Both are memory-only, their subjects must match, and neither may appear in a protobuf message. Only `DeleteFeatureData` in delibase-lifecycle mode instead requires the exact RealQA-scoped delibase M2M identity and rejects the forwarded-user header; that identity is rejected by every other procedure. The package-local `AUTHENTICATION.md` owns the scope table. Generated clients keep all credentials out of messages, logs, errors, caches, persistence, and diagnostics.
 - The DevHud generated client runs through the private native Connect transport's closed procedure/origin mapping rather than browser fetch. The separately scoped native uploader validates the exact signed asset-origin PUT capability returned by `CreateImageUpload`. Neither path grants an arbitrary URL, header, method, redirect, or `http://tauri.localhost` CORS access.
 - Errors distinguish authentication/reauthentication, authorization, stale revision or storage-authorization mapping, idempotency conflict, disconnected/unsupported host, provider permission/schema/validation, body/image/session limits, malformed/unsupported/decompression-bomb input, upload deadline/expiry or verification, ambiguous reconciliation, rate/concurrency limit, billing reservation/background-authorization/rebind/grace, asset removed, and retention state.
 - Messages must not carry GitHub tokens, webhook/R2 secrets, raw authorization headers, production secrets, raw originals, arbitrary HTML/page text, or remotely supplied UI/code.
@@ -50,7 +50,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook, same-origin
 
 ## Build and Test
 
-Once implementation exists, canonical checks are:
+Canonical checks are:
 
 - `pnpm generate:proto`;
 - `pnpm check:proto`;
@@ -60,14 +60,14 @@ Once implementation exists, canonical checks are:
 - `go vet ./protos/devhud-realqa/...`;
 - `pnpm --filter @delinoio/devhud-realqa-connect typecheck`.
 
-The future workspace package must own `buf.gen.yaml`, component-local generation/check scripts, `gen/go`, `gen/ts`, and `devhud.realqa.v1.binpb`. Generation must scope every Buf operation to `protos/devhud-realqa/v1`, clean and write only those owned outputs, lint, check only the immutable RealQA descriptor baseline, generate Go/TypeScript artifacts, build the TypeScript package, and reject nondeterminism or a component-local generated diff. The fixed-order root aggregate and `proto-contracts` CI job activate when that package exists. CI fails on compatibility, service/RPC/enum drift, stale artifacts, sensitive metadata leakage, cross-component writes, or missing cross-consumer generation.
+The workspace package owns `buf.gen.yaml`, component-local generation/check scripts, `gen/go`, `gen/ts`, and `devhud.realqa.v1.binpb`. Generation scopes every Buf operation to `protos/devhud-realqa/v1`, cleans and writes only those owned outputs, lints, checks only the immutable RealQA descriptor baseline, generates Go/TypeScript artifacts, builds the TypeScript package, and rejects nondeterminism or a component-local generated diff. Because component ownership requires `protos/devhud-realqa/v1` while the public package is `devhud.realqa.v1`, the shared Buf policy grants only that directory a `PACKAGE_DIRECTORY_MATCH` exception; every other `STANDARD` rule remains enabled. The fixed-order root aggregate and `proto-contracts` CI job include this package. CI fails on compatibility, service/RPC/enum drift, stale artifacts, sensitive metadata leakage, cross-component writes, or missing cross-consumer generation.
 
 Checks do not publish the TypeScript package, deploy either RealQA origin, create R2 infrastructure, register the GitHub App, publish the extension, activate a catalog entry, or publish a server image.
 
 ## Dependencies and Change Triggers
 
 - Owned by `devhud`; consumed by `servers/devhud-realqa`, authenticated RealQA code under `apps/devhud`, and `servers/delibase` only for service-authenticated `DeleteFeatureData` lifecycle delivery. DeliDev has no RealQA client.
-- Recurring storage settlement depends on the separately synchronized delibase background-usage contract implemented by issue #756. RealQA implementation and activation remain future work and require its own planned server/client plus a separate catalog activation; the existing live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute.
+- Recurring storage settlement depends on the separately synchronized delibase background-usage contract implemented by issue #756. RealQA server/client implementation and activation remain future work and require a separate catalog activation; the existing live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute.
 - Update this document, [project-devhud](project-devhud.md), [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, idempotency, generated package, or compatibility change.
 
 ## References
