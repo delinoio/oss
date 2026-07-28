@@ -9,6 +9,7 @@ const appRoot = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(appRoot, "../..");
 const supportedHosts = new Set(["darwin", "linux", "win32"]);
 const applicationId = "dev.deli.devhud";
+const runtimeReadyMarker = '"eventId":"runtime-ready"';
 
 if (!supportedHosts.has(process.platform)) {
   console.log(
@@ -175,7 +176,7 @@ function newLogsContainReadyEvent(previousLogs) {
   for (const [name, path] of managedLogFiles()) {
     if (
       !previousLogs.has(name) &&
-      readFileSync(path, "utf8").includes("devhud.runtime.ready")
+      readFileSync(path, "utf8").includes(runtimeReadyMarker)
     ) {
       return true;
     }
@@ -229,7 +230,7 @@ async function runSmokeIteration(iteration) {
 
   const combinedOutput = output.join("");
   const observedReady =
-    combinedOutput.includes("devhud.runtime.ready") ||
+    combinedOutput.includes(runtimeReadyMarker) ||
     newLogsContainReadyEvent(previousLogs);
   if (exitCode !== 0 || !observedReady) {
     throw new Error(
