@@ -117,6 +117,15 @@ export function rectFromPoints(
   return width > 0 && height > 0 ? { x: left, y: top, width, height } : null;
 }
 
+export function completeFreehandPoints(
+  points: readonly EditorPoint[],
+  current: EditorPoint,
+): readonly EditorPoint[] {
+  return points.length >= MAX_FREEHAND_POINTS
+    ? [...points.slice(0, MAX_FREEHAND_POINTS - 1), current]
+    : [...points, current];
+}
+
 export function validateEditorOperation(
   operation: EditorOperation,
   bounds: ImageBounds,

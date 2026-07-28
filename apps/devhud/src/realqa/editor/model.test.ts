@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { EditorOperation } from "../capture";
 import {
+  MAX_FREEHAND_POINTS,
+  completeFreehandPoints,
   editorHistoryReducer,
   emptyEditorHistory,
   normalizeEditorText,
@@ -61,6 +63,19 @@ const operations: readonly EditorOperation[] = [
 ];
 
 describe("screenshot editor model", () => {
+  it("caps completed freehand strokes while preserving the release point", () => {
+    const points = Array.from({ length: MAX_FREEHAND_POINTS }, (_, index) => ({
+      x: index % bounds.width,
+      y: 0,
+    }));
+    const releasePoint = { x: 4, y: 3 };
+
+    const completed = completeFreehandPoints(points, releasePoint);
+
+    expect(completed).toHaveLength(MAX_FREEHAND_POINTS);
+    expect(completed.at(-1)).toEqual(releasePoint);
+  });
+
   it("validates every closed operation kind", () => {
     expect(operations.map((operation) => validateEditorOperation(operation, bounds)))
       .toEqual(operations.map(() => true));

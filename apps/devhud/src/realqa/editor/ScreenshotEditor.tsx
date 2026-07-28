@@ -22,6 +22,8 @@ import {
 } from "../capture";
 import {
   EditorTool,
+  MAX_FREEHAND_POINTS,
+  completeFreehandPoints,
   editorHistoryReducer,
   emptyEditorHistory,
   normalizeEditorText,
@@ -113,7 +115,7 @@ function operationForGesture(
     case EditorTool.Freehand:
       return {
         kind: "freehand",
-        points: [...gesture.points, gesture.current],
+        points: completeFreehandPoints(gesture.points, gesture.current),
         color,
         lineWidth,
       };
@@ -236,7 +238,7 @@ function ScreenshotEditorStateProvider({
         ...current,
         current: point,
         points:
-          current.points.length < 20_000
+          current.points.length < MAX_FREEHAND_POINTS
             ? [...current.points, point]
             : current.points,
       };
@@ -401,9 +403,28 @@ function pointFromPointer(
   event: PointerEvent<SVGSVGElement>,
   source: ComposerImage,
 ): EditorPoint {
+  const screenTransform = event.currentTarget.getScreenCTM?.();
+  if (screenTransform !== undefined && screenTransform !== null) {
+    const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(
+      screenTransform.inverse(),
+    );
+    return {
+      x: Math.max(0, Math.min(source.width - 1, Math.round(point.x))),
+      y: Math.max(0, Math.min(source.height - 1, Math.round(point.y))),
+    };
+  }
+
   const rect = event.currentTarget.getBoundingClientRect();
-  const x = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
-  const y = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0;
+  const scale = Math.min(
+    rect.width / source.width,
+    rect.height / source.height,
+  );
+  const renderedWidth = source.width * scale;
+  const renderedHeight = source.height * scale;
+  const left = rect.left + (rect.width - renderedWidth) / 2;
+  const top = rect.top + (rect.height - renderedHeight) / 2;
+  const x = renderedWidth > 0 ? (event.clientX - left) / renderedWidth : 0;
+  const y = renderedHeight > 0 ? (event.clientY - top) / renderedHeight : 0;
   return {
     x: Math.max(0, Math.min(source.width - 1, Math.round(x * (source.width - 1)))),
     y: Math.max(

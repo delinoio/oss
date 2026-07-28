@@ -25,7 +25,25 @@ const source: ComposerImage = {
   },
 };
 
-function fixture() {
+const defaultCanvasRect: DOMRect = {
+  x: 0,
+  y: 0,
+  left: 0,
+  top: 0,
+  right: 500,
+  bottom: 400,
+  width: 500,
+  height: 400,
+  toJSON: () => ({}),
+};
+
+function fixture({
+  canvasRect = defaultCanvasRect,
+  initialSource = source,
+}: {
+  readonly canvasRect?: DOMRect;
+  readonly initialSource?: ComposerImage;
+} = {}) {
   const flattened = {
     ...source,
     encodedBytes: 4,
@@ -63,21 +81,11 @@ function fixture() {
       </ScreenshotEditor.Frame>
     </ScreenshotEditor.Provider>
   );
-  const result = render(renderEditor());
+  const result = render(renderEditor({ sourceValue: initialSource }));
   const canvas = screen.getByRole("application", {
     name: /Screenshot editor canvas/u,
   });
-  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
-    x: 0,
-    y: 0,
-    left: 0,
-    top: 0,
-    right: 500,
-    bottom: 400,
-    width: 500,
-    height: 400,
-    toJSON: () => ({}),
-  });
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(canvasRect);
   return { ...result, bridge, flattened, onApprove, canvas, renderEditor };
 }
 
@@ -144,6 +152,35 @@ describe("ScreenshotEditor", () => {
     );
     await user.keyboard("{Escape}");
     expect(screen.getByText("Pending edit cancelled.")).toBeVisible();
+  });
+
+  it("maps pointer input through letterboxed screenshot bounds", async () => {
+    const user = userEvent.setup();
+    const squareSource = { ...source, width: 100, height: 100 };
+    const { bridge, canvas } = fixture({
+      initialSource: squareSource,
+      canvasRect: {
+        ...defaultCanvasRect,
+        height: 400,
+        width: 500,
+      },
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 50, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 450, clientY: 200, pointerId: 1 });
+    await user.click(screen.getByRole("button", { name: "Approve 1 edits" }));
+
+    expect(bridge.flattenImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operations: [
+          expect.objectContaining({
+            kind: "arrow",
+            start: { x: 0, y: 50 },
+            end: { x: 99, y: 50 },
+          }),
+        ],
+      }),
+    );
   });
 
   it("resets image-specific state when the source identity changes", async () => {

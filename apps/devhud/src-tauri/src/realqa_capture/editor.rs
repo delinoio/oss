@@ -306,11 +306,22 @@ fn blend_pixel(image: &mut DecodedImage, x: i64, y: i64, color: [u8; 4]) {
 }
 
 fn stamp(image: &mut DecodedImage, point: EditorPoint, color: [u8; 4], width: u32) {
-    let radius = i64::from(width.saturating_sub(1) / 2);
-    let radius_squared = radius * radius;
-    for y in -radius..=radius {
-        for x in -radius..=radius {
-            if x * x + y * y <= radius_squared {
+    let lower = -i64::from(width.saturating_sub(1) / 2);
+    let upper = i64::from(width / 2);
+    let center_offset = i64::from(width % 2 == 0);
+    let doubled_radius = i64::from(if width % 2 == 0 {
+        width
+    } else {
+        width.saturating_sub(1)
+    });
+    let doubled_radius_squared = doubled_radius * doubled_radius;
+    for y in lower..=upper {
+        for x in lower..=upper {
+            let x_from_center = x * 2 - center_offset;
+            let y_from_center = y * 2 - center_offset;
+            if x_from_center * x_from_center + y_from_center * y_from_center
+                <= doubled_radius_squared
+            {
                 blend_pixel(image, i64::from(point.x) + x, i64::from(point.y) + y, color);
             }
         }
@@ -798,6 +809,34 @@ mod tests {
             flatten(fixture(), &[text_operation("é")]),
             Err(CaptureFailure::InvalidEditorOperation)
         );
+    }
+
+    #[test]
+    fn rasterizes_even_stroke_widths_at_the_requested_diameter() {
+        let mut image = DecodedImage {
+            width: 8,
+            height: 8,
+            rgba: vec![0; 8 * 8 * 4],
+        };
+
+        stamp(
+            &mut image,
+            EditorPoint { x: 3, y: 3 },
+            [255, 255, 255, 255],
+            4,
+        );
+
+        let touched = (0..image.height)
+            .flat_map(|y| (0..image.width).map(move |x| (x, y)))
+            .filter(|(x, y)| image.rgba[pixel_offset(&image, *x, *y) + 3] != 0)
+            .collect::<Vec<_>>();
+        let min_x = touched.iter().map(|(x, _)| *x).min();
+        let max_x = touched.iter().map(|(x, _)| *x).max();
+        let min_y = touched.iter().map(|(_, y)| *y).min();
+        let max_y = touched.iter().map(|(_, y)| *y).max();
+
+        assert_eq!((min_x, max_x), (Some(2), Some(5)));
+        assert_eq!((min_y, max_y), (Some(2), Some(5)));
     }
 
     #[test]
