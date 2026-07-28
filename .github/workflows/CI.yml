@@ -703,14 +703,24 @@ jobs:
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
+          targets: aarch64-unknown-linux-gnu
 
       - name: Cache Rust dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
 
+      - name: Install AArch64 cross compiler
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-aarch64-linux-gnu
+
       - name: Run cargo test
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: cargo test --workspace --all-targets
+        run: |
+          cargo test --workspace --all-targets
+          cargo test -p devhud --lib --features linux-capture-backend realqa_capture
+          cargo check -p devhud --lib --features linux-capture-backend --target aarch64-unknown-linux-gnu
 
   node-mpapp-test:
     name: Node mpapp test
