@@ -10,17 +10,47 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     CaptureFailure, EncodedImage, ImageMediaType, ImageSessionBudget, decode_image,
-    editor::{EditorOperation, flatten},
+    editor::{EditorOperation, deserialize_bounded_string, deserialize_operations, flatten},
     encode_image, sanitize_image,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
+const MAX_IDENTIFIER_BYTES: usize = 128;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub(crate) struct ComposerSessionId(pub(crate) String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
+impl<'de> Deserialize<'de> for ComposerSessionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserialize_bounded_string(
+            deserializer,
+            MAX_IDENTIFIER_BYTES,
+            "at most 128 session identifier bytes",
+        )
+        .map(Self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub(crate) struct ComposerImageId(pub(crate) String);
+
+impl<'de> Deserialize<'de> for ComposerImageId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserialize_bounded_string(
+            deserializer,
+            MAX_IDENTIFIER_BYTES,
+            "at most 128 image identifier bytes",
+        )
+        .map(Self)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +67,7 @@ pub(crate) struct ComposerFlattenRequest {
     pub(crate) session_id: ComposerSessionId,
     pub(crate) image_id: ComposerImageId,
     pub(crate) source_revision: u64,
+    #[serde(deserialize_with = "deserialize_operations")]
     pub(crate) operations: Vec<EditorOperation>,
     pub(crate) output_media_type: ImageMediaType,
 }
@@ -299,7 +330,7 @@ impl ComposerCore {
 
 fn validate_identifier(identifier: &str) -> Result<(), CaptureFailure> {
     if identifier.is_empty()
-        || identifier.len() > 128
+        || identifier.len() > MAX_IDENTIFIER_BYTES
         || !identifier
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
@@ -480,6 +511,59 @@ mod tests {
                 }],
                 output_media_type: ImageMediaType::Webp,
             }
+        );
+    }
+
+    #[test]
+    fn flatten_request_rejects_oversized_values_during_deserialization() {
+        let request = |operations: serde_json::Value| {
+            serde_json::from_value::<ComposerFlattenRequest>(serde_json::json!({
+                "sessionId": "session-1",
+                "imageId": "image-1",
+                "sourceRevision": 7,
+                "operations": operations,
+                "outputMediaType": "webp"
+            }))
+        };
+        let crop = serde_json::json!({
+            "kind": "crop",
+            "rect": { "x": 0, "y": 0, "width": 1, "height": 1 }
+        });
+        assert!(
+            request(serde_json::Value::Array(vec![
+                crop;
+                super::super::editor::MAX_OPERATIONS
+                    + 1
+            ]))
+            .is_err()
+        );
+        let freehand_points = vec![serde_json::json!({"x": 0, "y": 0}); 20_001];
+        assert!(
+            request(serde_json::json!([{
+                "kind": "freehand",
+                "points": freehand_points,
+                "color": "#ffffff",
+                "lineWidth": 1
+            }]))
+            .is_err()
+        );
+        let aggregate_points = vec![serde_json::json!({"x": 0, "y": 0}); 16_667];
+        let aggregate_freehand = serde_json::json!({
+            "kind": "freehand",
+            "points": aggregate_points,
+            "color": "#ffffff",
+            "lineWidth": 1
+        });
+        assert!(request(serde_json::Value::Array(vec![aggregate_freehand; 6])).is_err());
+        assert!(
+            request(serde_json::json!([{
+                "kind": "text",
+                "origin": {"x": 0, "y": 0},
+                "text": "A".repeat(4_097),
+                "color": "#ffffff",
+                "fontSize": 8
+            }]))
+            .is_err()
         );
     }
 

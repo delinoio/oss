@@ -1,18 +1,24 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt, marker::PhantomData};
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, SeqAccess, Visitor},
+};
 
 use super::{CaptureFailure, DecodedImage, decoded_byte_len};
 
-const MAX_OPERATIONS: usize = 1_000;
+pub(super) const MAX_OPERATIONS: usize = 1_000;
 const MAX_FREEHAND_POINTS: usize = 20_000;
 const MAX_TOTAL_FREEHAND_POINTS: usize = 100_000;
 const MAX_TEXT_BYTES: usize = 4_096;
+const MAX_COLOR_BYTES: usize = 7;
 const MAX_LINE_WIDTH: u32 = 128;
 const MAX_EFFECT_SIZE: u32 = 128;
 const MAX_RASTER_WORK: u64 = 100_000_000;
 const MAX_ARROW_HEAD_STAMPS: u64 = 98;
 const MAX_GLYPH_CELLS: u64 = 35;
+const BLUR_PIXEL_PASSES: u64 = 4;
+const PIXELATE_PIXEL_PASSES: u64 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,28 +80,35 @@ pub(crate) enum EditorOperation {
     Arrow {
         start: EditorPoint,
         end: EditorPoint,
+        #[serde(deserialize_with = "deserialize_color")]
         color: String,
         line_width: u32,
     },
     Rectangle {
         rect: EditorRect,
+        #[serde(deserialize_with = "deserialize_color")]
         color: String,
         line_width: u32,
     },
     Freehand {
+        #[serde(deserialize_with = "deserialize_freehand_points")]
         points: Vec<EditorPoint>,
+        #[serde(deserialize_with = "deserialize_color")]
         color: String,
         line_width: u32,
     },
     Text {
         origin: EditorPoint,
+        #[serde(deserialize_with = "deserialize_text")]
         text: String,
+        #[serde(deserialize_with = "deserialize_color")]
         color: String,
         font_size: u32,
     },
     Marker {
         center: EditorPoint,
         number: u32,
+        #[serde(deserialize_with = "deserialize_color")]
         color: String,
         size: u32,
     },
@@ -107,6 +120,171 @@ pub(crate) enum EditorOperation {
         rect: EditorRect,
         block_size: u32,
     },
+}
+
+pub(super) fn deserialize_operations<'de, D>(
+    deserializer: D,
+) -> Result<Vec<EditorOperation>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct EditorOperationsVisitor;
+
+    impl<'de> Visitor<'de> for EditorOperationsVisitor {
+        type Value = Vec<EditorOperation>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("at most 1000 bounded editor operations")
+        }
+
+        fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut operations =
+                Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(MAX_OPERATIONS));
+            let mut total_freehand_points = 0_usize;
+            while operations.len() < MAX_OPERATIONS {
+                let Some(operation) = sequence.next_element()? else {
+                    return Ok(operations);
+                };
+                if let EditorOperation::Freehand { points, .. } = &operation {
+                    total_freehand_points = total_freehand_points
+                        .checked_add(points.len())
+                        .ok_or_else(|| de::Error::custom("too many total freehand points"))?;
+                    if total_freehand_points > MAX_TOTAL_FREEHAND_POINTS {
+                        return Err(de::Error::custom("too many total freehand points"));
+                    }
+                }
+                operations.push(operation);
+            }
+            if sequence.next_element::<de::IgnoredAny>()?.is_some() {
+                return Err(de::Error::invalid_length(MAX_OPERATIONS + 1, &self));
+            }
+            Ok(operations)
+        }
+    }
+
+    deserializer.deserialize_seq(EditorOperationsVisitor)
+}
+
+fn deserialize_freehand_points<'de, D>(deserializer: D) -> Result<Vec<EditorPoint>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_vec(
+        deserializer,
+        MAX_FREEHAND_POINTS,
+        "at most 20000 freehand points",
+    )
+}
+
+fn deserialize_bounded_vec<'de, D, T>(
+    deserializer: D,
+    limit: usize,
+    expectation: &'static str,
+) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    struct BoundedVecVisitor<T> {
+        limit: usize,
+        expectation: &'static str,
+        value: PhantomData<T>,
+    }
+
+    impl<'de, T> Visitor<'de> for BoundedVecVisitor<T>
+    where
+        T: Deserialize<'de>,
+    {
+        type Value = Vec<T>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str(self.expectation)
+        }
+
+        fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut values = Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(self.limit));
+            while values.len() < self.limit {
+                let Some(value) = sequence.next_element()? else {
+                    return Ok(values);
+                };
+                values.push(value);
+            }
+            if sequence.next_element::<de::IgnoredAny>()?.is_some() {
+                return Err(de::Error::invalid_length(self.limit + 1, &self));
+            }
+            Ok(values)
+        }
+    }
+
+    deserializer.deserialize_seq(BoundedVecVisitor {
+        limit,
+        expectation,
+        value: PhantomData,
+    })
+}
+
+fn deserialize_text<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_string(deserializer, MAX_TEXT_BYTES, "at most 4096 text bytes")
+}
+
+fn deserialize_color<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_string(deserializer, MAX_COLOR_BYTES, "at most 7 color bytes")
+}
+
+pub(super) fn deserialize_bounded_string<'de, D>(
+    deserializer: D,
+    limit: usize,
+    expectation: &'static str,
+) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct BoundedStringVisitor {
+        limit: usize,
+        expectation: &'static str,
+    }
+
+    impl Visitor<'_> for BoundedStringVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str(self.expectation)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if value.len() > self.limit {
+                return Err(E::invalid_length(value.len(), &self));
+            }
+            Ok(value.to_owned())
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if value.len() > self.limit {
+                return Err(E::invalid_length(value.len(), &self));
+            }
+            Ok(value)
+        }
+    }
+
+    deserializer.deserialize_string(BoundedStringVisitor { limit, expectation })
 }
 
 pub(crate) fn flatten(
@@ -295,12 +473,14 @@ fn validate_operations(
                 if !(1..=MAX_EFFECT_SIZE).contains(radius) {
                     return Err(CaptureFailure::InvalidEditorOperation);
                 }
+                add_effect_work(&mut raster_work, *rect, BLUR_PIXEL_PASSES)?;
             }
             EditorOperation::Pixelate { rect, block_size } => {
                 rect.checked(width, height)?;
                 if !(2..=MAX_EFFECT_SIZE).contains(block_size) {
                     return Err(CaptureFailure::InvalidEditorOperation);
                 }
+                add_effect_work(&mut raster_work, *rect, PIXELATE_PIXEL_PASSES)?;
             }
         }
         if active_crop.is_some_and(|crop| !operation_within_crop(operation, crop)) {
@@ -353,6 +533,18 @@ fn add_raster_work(raster_work: &mut u64, work: u64) -> Result<(), CaptureFailur
         return Err(CaptureFailure::InvalidEditSequence);
     }
     Ok(())
+}
+
+fn add_effect_work(
+    raster_work: &mut u64,
+    rect: EditorRect,
+    pixel_passes: u64,
+) -> Result<(), CaptureFailure> {
+    let work = u64::from(rect.width)
+        .checked_mul(u64::from(rect.height))
+        .and_then(|area| area.checked_mul(pixel_passes))
+        .ok_or(CaptureFailure::InvalidEditSequence)?;
+    add_raster_work(raster_work, work)
 }
 
 fn operation_within_crop(operation: &EditorOperation, crop: EditorRect) -> bool {
@@ -1016,6 +1208,35 @@ mod tests {
             ),
             Err(CaptureFailure::InvalidEditSequence)
         );
+    }
+
+    #[test]
+    fn rejects_excessive_source_effect_raster_work_before_processing_pixels() {
+        for operation in [
+            EditorOperation::Blur {
+                rect: EditorRect {
+                    x: 0,
+                    y: 0,
+                    width: 10_000,
+                    height: 10_000,
+                },
+                radius: 1,
+            },
+            EditorOperation::Pixelate {
+                rect: EditorRect {
+                    x: 0,
+                    y: 0,
+                    width: 10_000,
+                    height: 10_000,
+                },
+                block_size: 2,
+            },
+        ] {
+            assert_eq!(
+                validate_operations(10_000, 10_000, &[operation]),
+                Err(CaptureFailure::InvalidEditSequence)
+            );
+        }
     }
 
     #[test]
