@@ -11,6 +11,7 @@ import {
   ThemePreference,
   WidgetSlot,
   SETTINGS_STORAGE_KEY,
+  SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY,
   WIDGET_CONFIGURATION_STORAGE_KEY,
   type PersistenceKey,
 } from "./contracts";
@@ -18,10 +19,24 @@ import {
   createTauriPersistenceAdapter,
   DevHudPersistence,
   MemoryStorageAdapter,
+  loadShortcutEffectiveState,
   type LocalStorageAdapter,
 } from "./storage";
 
 describe("DevHud local persistence", () => {
+  it("migrates only the valid v1 generic shortcut into device-local effective state", async () => {
+    const storage = new MemoryStorageAdapter();
+    const shortcut = { modifiers: [ShortcutModifier.Control], key: ShortcutKey.K };
+    await storage.write(SETTINGS_STORAGE_KEY, encodeSettings({ ...defaultSettings, shortcut }));
+
+    await expect(loadShortcutEffectiveState(storage)).resolves.toEqual({
+      version: 2,
+      genericShortcut: shortcut,
+      inactive: [],
+    });
+    expect(storage.values.get(SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY)).toContain('"version":2');
+  });
+
   it("uses the default state until a record exists", async () => {
     const persistence = new DevHudPersistence(new MemoryStorageAdapter());
 
@@ -355,6 +370,8 @@ describe("DevHud local persistence", () => {
       readSettings: vi.fn(async () => null),
       resetDevHud: vi.fn(async () => ({ status: "complete" as const })),
       writeSettings: vi.fn(async () => undefined),
+      readShortcutEffectiveState: vi.fn(async () => null),
+      writeShortcutEffectiveState: vi.fn(async () => undefined),
       readWidgetConfiguration: vi.fn(async () => null),
       writeWidgetConfiguration: vi.fn(async () => undefined),
     };
@@ -377,6 +394,8 @@ describe("DevHud local persistence", () => {
         readSettings: vi.fn(async () => null),
         resetDevHud: vi.fn(async () => ({ status: "complete" as const })),
         writeSettings: vi.fn(async () => undefined),
+        readShortcutEffectiveState: vi.fn(async () => null),
+        writeShortcutEffectiveState: vi.fn(async () => undefined),
         readWidgetConfiguration: vi.fn(async () => Promise.reject(kind)),
         writeWidgetConfiguration: vi.fn(async () => undefined),
       };
