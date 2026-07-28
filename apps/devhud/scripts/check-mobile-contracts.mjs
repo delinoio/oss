@@ -286,12 +286,14 @@ requireCondition(
   iosAuthPlugin.includes("kSecClassGenericPassword") &&
     iosAuthPlugin.includes("kSecAttrSynchronizable as String: false") &&
     iosAuthPlugin.includes("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly") &&
+    iosAuthPlugin.includes("SecItemUpdate") &&
+    !iosAuthPlugin.includes("try clear()") &&
     iosAuthPlugin.includes('target.scheme == "https"') &&
     iosAuthPlugin.includes('target.path == "/oidc/auth"') &&
     runtimeSource.includes("tauri::RunEvent::Opened { urls }") &&
     runtimeSource.includes("auth::is_mobile_callback_boundary(&callback)") &&
     runtimeSource.includes(".accept_mobile_callback(callback)"),
-  "iOS auth must use a this-device-only Keychain item and consume the verified universal link natively",
+  "iOS auth must atomically update a this-device-only Keychain item and consume the verified universal link natively",
 );
 requireCondition(
   (iosProject.split("\ntargets:\n")[1]?.match(/^ {2}[A-Za-z0-9_]+:\s*$/gmu) ?? [])

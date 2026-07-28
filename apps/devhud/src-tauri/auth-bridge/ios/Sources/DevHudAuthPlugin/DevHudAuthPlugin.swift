@@ -77,11 +77,20 @@ final class DevHudAuthPlugin: Plugin {
     }
 
     private func write(_ value: String) throws {
-        try clear()
-        var query = baseQuery()
-        query[kSecValueData as String] = Data(value.utf8)
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else {
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let status = SecItemUpdate(baseQuery() as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var query = baseQuery()
+            attributes.forEach { query[$0.key] = $0.value }
+            guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else {
+                throw VaultError.storage
+            }
+            return
+        }
+        guard status == errSecSuccess else {
             throw VaultError.storage
         }
     }

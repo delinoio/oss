@@ -440,6 +440,10 @@ impl NativeAuthState {
             .lock()
             .map_err(|_| AuthError::SecureVaultUnavailable)?;
         let manager = guard.as_mut().ok_or(AuthError::ConfigurationUnavailable)?;
+        match manager.expire_pending(unix_time_now()) {
+            Ok(()) | Err(AuthError::CallbackTimedOut) => {}
+            Err(error) => return Err(error),
+        }
         manager
             .begin(
                 AuthPlatform::Mobile,
@@ -468,6 +472,16 @@ impl NativeAuthState {
             .devhud_auth_bridge()
             .take_callback()
             .map_err(|_| AuthError::InvalidCallback)?;
+
+        {
+            let mut guard = self
+                .manager
+                .lock()
+                .map_err(|_| AuthError::SecureVaultUnavailable)?;
+            if let Some(manager) = guard.as_mut() {
+                manager.expire_pending(unix_time_now())?;
+            }
+        }
 
         let Some(callback) = callback else {
             return self.snapshot();
@@ -541,10 +555,7 @@ impl NativeAuthState {
             .lock()
             .map_err(|_| AuthError::SecureVaultUnavailable)?;
         if let Some(manager) = guard.as_mut() {
-            match manager.restore(Connectivity::Offline) {
-                Ok(_) | Err(AuthError::FirstTimeOffline) => {}
-                Err(error) => return Err(error),
-            }
+            manager.preflight_vault()?;
         } else {
             let _ = self
                 .fallback_vault
