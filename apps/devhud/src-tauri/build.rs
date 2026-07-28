@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "set_launch_at_login",
     "complete_first_run",
     "request_update_action",
+    "realqa_inspect_capture_capabilities",
     "realqa_list_capture_sources",
     "realqa_adjust_capture_selection",
     "realqa_begin_capture",

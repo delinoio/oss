@@ -1,11 +1,21 @@
 #[cfg(any(feature = "desktop-cef", test))]
 mod autostart;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg(any(
+    feature = "desktop-cef",
+    feature = "linux-capture-backend",
+    feature = "mobile-system-webview",
+    test
+))]
 #[cfg_attr(test, allow(dead_code))]
 mod diagnostics;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg(any(
+    feature = "desktop-cef",
+    feature = "linux-capture-backend",
+    feature = "mobile-system-webview",
+    test
+))]
 mod local_log;
-#[cfg(any(feature = "desktop-cef", test))]
+#[cfg(any(feature = "desktop-cef", feature = "linux-capture-backend", test))]
 mod realqa_capture;
 #[cfg(any(feature = "desktop-cef", test))]
 mod shortcut;
@@ -2768,10 +2778,25 @@ fn reset_dev_hud(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
+fn realqa_inspect_capture_capabilities(
+    state: State<'_, realqa_capture::CaptureCore>,
+) -> Result<realqa_capture::CaptureCapabilities, realqa_capture::CaptureFailure> {
+    let result = state.inspect_capabilities();
+    realqa_capture::record_outcome(&result);
+    result
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
 fn realqa_list_capture_sources(
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureSourceCatalog, realqa_capture::CaptureFailure> {
-    state.source_catalog()
+    let result = state.source_catalog();
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -2784,7 +2809,9 @@ fn realqa_adjust_capture_selection(
     adjustment: realqa_capture::SelectionAdjustment,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::SelectionGeometry, realqa_capture::CaptureFailure> {
-    state.adjust_selection(&selection, adjustment)
+    let result = state.adjust_selection(&selection, adjustment);
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -2796,7 +2823,9 @@ fn realqa_begin_capture(
     request: realqa_capture::CaptureRequest,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
-    state.begin(request)
+    let result = state.begin(request);
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -2808,7 +2837,9 @@ fn realqa_cancel_capture(
     session_id: realqa_capture::CaptureSessionId,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<(), realqa_capture::CaptureFailure> {
-    state.cancel(&session_id)
+    let result = state.cancel(&session_id);
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -2869,6 +2900,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             set_launch_at_login,
             complete_first_run,
             request_update_action,
+            realqa_inspect_capture_capabilities,
             realqa_list_capture_sources,
             realqa_adjust_capture_selection,
             realqa_begin_capture,

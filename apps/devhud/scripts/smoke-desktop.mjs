@@ -23,13 +23,14 @@ if (!supportedHosts.has(process.platform)) {
 
 if (
   process.platform === "linux" &&
-  !process.env.DISPLAY
+  !process.env.DISPLAY &&
+  !process.env.WAYLAND_DISPLAY
 ) {
   console.log(
     JSON.stringify({
       check: "devhud-desktop-smoke",
       status: "skipped",
-      reason: "headless-linux-host-without-x11",
+      reason: "headless-linux-host-without-display-server",
       compileValidation: "run pnpm build:desktop on this host",
     }),
   );
@@ -262,5 +263,11 @@ console.log(
     status: "passed",
     startupShutdownIterations: 3,
     helperLifecycle: "observed-before-zero-after",
+    displayFamily:
+      process.platform !== "linux"
+        ? "native"
+        : process.env.WAYLAND_DISPLAY
+          ? "wayland"
+          : "x11",
   }),
 );

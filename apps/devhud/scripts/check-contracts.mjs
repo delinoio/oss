@@ -154,8 +154,11 @@ requireCondition(
 );
 requireCondition(
   cargoManifest.includes(
-    'desktop-cef = ["dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
+    'desktop-cef = ["linux-capture-backend", "dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
   ) &&
+    cargoManifest.includes(
+      'linux-capture-backend = ["dep:ashpd", "dep:tokio", "dep:x11rb"]',
+    ) &&
     cargoManifest.includes(
       'mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]',
     ),
@@ -250,6 +253,7 @@ const expectedSettingsPermissions = [
   "allow-request-update-action",
 ];
 const expectedRealqaCapturePermissions = [
+  "allow-realqa-inspect-capture-capabilities",
   "allow-realqa-list-capture-sources",
   "allow-realqa-adjust-capture-selection",
   "allow-realqa-begin-capture",
