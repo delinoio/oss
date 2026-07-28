@@ -1,0 +1,40 @@
+{
+  "name": "@delinoio/devhud-realqa-connect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./devhud-realqa/v1/*": {
+      "types": "./dist/gen/ts/devhud-realqa/v1/*.d.ts",
+      "import": "./dist/gen/ts/devhud-realqa/v1/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "v1",
+    "AUTHENTICATION.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:api": "pnpm run generate:proto",
+    "check:proto": "../../scripts/check-proto-component.sh devhud-realqa devhud.realqa.v1.binpb",
+    "generate": "../../scripts/generate-proto-component.sh devhud-realqa devhud.realqa.v1.binpb",
+    "generate:proto": "pnpm run generate && pnpm run build",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.13.0",
+    "@connectrpc/connect": "2.1.2"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.13.0",
+    "typescript": "5.9.3"
+  }
+}
+

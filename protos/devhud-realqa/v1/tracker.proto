@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package devhud.realqa.v1;
+
+import "devhud-realqa/v1/common.proto";
+import "devhud-realqa/v1/preset.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1;realqav1";
+
+enum GitHubConnectionState {
+  GIT_HUB_CONNECTION_STATE_UNSPECIFIED = 0;
+  GIT_HUB_CONNECTION_STATE_DISCONNECTED = 1;
+  GIT_HUB_CONNECTION_STATE_PENDING = 2;
+  GIT_HUB_CONNECTION_STATE_CONNECTED = 3;
+}
+
+message GitHubConnection {
+  UuidV7 connection_id = 1;
+  OwnerScope owner = 2;
+  GitHubConnectionState state = 3;
+  string github_login = 4;
+  Revision revision = 5;
+  google.protobuf.Timestamp connected_at = 6;
+}
+
+message GetGitHubConnectionRequest {
+  OwnerScope owner = 1;
+}
+
+message GetGitHubConnectionResponse {
+  GitHubConnection connection = 1;
+}
+
+message StartGitHubConnectionRequest {
+  OwnerScope owner = 1;
+}
+
+message StartGitHubConnectionResponse {
+  // authorization_target is an ephemeral exact GitHub.com OAuth/App target for
+  // the typed native browser action, not a general-purpose navigation URL.
+  string authorization_target = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message GitHubInstallation {
+  UuidV7 installation_id = 1;
+  OwnerScope owner = 2;
+  int64 provider_installation_id = 3;
+  string account_login = 4;
+  Revision revision = 5;
+}
+
+message ListGitHubInstallationsRequest {
+  OwnerScope owner = 1;
+  PageRequest page = 2;
+}
+
+message ListGitHubInstallationsResponse {
+  repeated GitHubInstallation installations = 1;
+  PageResponse page = 2;
+}
+
+message DisconnectGitHubConnectionRequest {
+  OwnerScope owner = 1;
+  Revision expected_revision = 2;
+  IdempotencyKey idempotency = 3;
+}
+
+message DisconnectGitHubConnectionResponse {
+  GitHubConnection connection = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message Repository {
+  GitHubRepositoryRef repository = 1;
+  UuidV7 installation_id = 2;
+  bool issues_enabled = 3;
+  bool caller_can_submit = 4;
+}
+
+message ListRepositoriesRequest {
+  UuidV7 installation_id = 1;
+  string query = 2;
+  PageRequest page = 3;
+}
+
+message ListRepositoriesResponse {
+  repeated Repository repositories = 1;
+  PageResponse page = 2;
+}
+
+message MarkdownIssueTemplate {
+  RepositoryIssueDefinitionRef definition = 1;
+  string title_prefix = 2;
+  repeated string default_labels = 3;
+  repeated string default_assignees = 4;
+  string body_template = 5;
+}
+
+enum IssueFormFieldKind {
+  ISSUE_FORM_FIELD_KIND_UNSPECIFIED = 0;
+  ISSUE_FORM_FIELD_KIND_MARKDOWN = 1;
+  ISSUE_FORM_FIELD_KIND_INPUT = 2;
+  ISSUE_FORM_FIELD_KIND_TEXTAREA = 3;
+  ISSUE_FORM_FIELD_KIND_DROPDOWN = 4;
+  ISSUE_FORM_FIELD_KIND_CHECKBOXES = 5;
+}
+
+message IssueFormOption {
+  string value = 1;
+  string label = 2;
+  bool required = 3;
+}
+
+message IssueFormField {
+  string field_id = 1;
+  IssueFormFieldKind kind = 2;
+  string label = 3;
+  string description = 4;
+  string placeholder = 5;
+  bool required = 6;
+  repeated IssueFormOption options = 7;
+}
+
+message IssueForm {
+  RepositoryIssueDefinitionRef definition = 1;
+  string title_prefix = 2;
+  repeated string default_labels = 3;
+  repeated string default_assignees = 4;
+  repeated IssueFormField fields = 5;
+}
+
+message RepositoryIssueSchema {
+  GitHubRepositoryRef repository = 1;
+  repeated MarkdownIssueTemplate markdown_templates = 2;
+  repeated IssueForm issue_forms = 3;
+  Revision revision = 4;
+}
+
+message GetRepositoryIssueSchemaRequest {
+  UuidV7 installation_id = 1;
+  GitHubRepositoryRef repository = 2;
+}
+
+message GetRepositoryIssueSchemaResponse {
+  RepositoryIssueSchema schema = 1;
+}
+
+service RealQATrackerService {
+  rpc GetGitHubConnection(GetGitHubConnectionRequest) returns (GetGitHubConnectionResponse);
+  rpc StartGitHubConnection(StartGitHubConnectionRequest) returns (StartGitHubConnectionResponse);
+  rpc ListGitHubInstallations(ListGitHubInstallationsRequest) returns (ListGitHubInstallationsResponse);
+  rpc DisconnectGitHubConnection(DisconnectGitHubConnectionRequest) returns (DisconnectGitHubConnectionResponse);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+  rpc GetRepositoryIssueSchema(GetRepositoryIssueSchemaRequest) returns (GetRepositoryIssueSchemaResponse);
+}
+

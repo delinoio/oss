@@ -4,6 +4,12 @@ modules:
 lint:
   use:
     - STANDARD
+  ignore_only:
+    # Component ownership uses protos/devhud-realqa/v1 while its public package
+    # follows the domain namespace devhud.realqa.v1. Keep every other STANDARD
+    # rule and scope this directory/package exception to the component root.
+    PACKAGE_DIRECTORY_MATCH:
+      - devhud-realqa/v1
 breaking:
   use:
     - FILE
