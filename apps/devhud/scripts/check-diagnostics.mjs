@@ -18,6 +18,7 @@ const [
   mobileCapabilitySource,
   nativeSource,
   packageSource,
+  realqaCaptureSource,
   settingsCapabilitySource,
 ] = await Promise.all([
   read(
@@ -33,6 +34,7 @@ const [
   read("src-tauri/capabilities/mobile-main.json"),
   read("src-tauri/src/lib.rs"),
   read("package.json"),
+  read("src-tauri/src/realqa_capture/mod.rs"),
   read("src-tauri/capabilities/settings.json"),
 ]);
 
@@ -73,6 +75,19 @@ requireCondition(
   diagnosticsSource.includes("export_recursively_rejects_unknown_and_adversarial_values") &&
     diagnosticsSource.includes("fatal_initialization_is_one_safe_record_without_an_exception"),
   "Rust diagnostics tests must cover recursive adversarial redaction and fatal events",
+);
+const captureOutcome =
+  realqaCaptureSource.match(
+    /pub\(crate\) fn record_outcome[\s\S]*?\n\}\n\n#\[cfg\(test\)\]/u,
+  )?.[0] ?? "";
+requireCondition(
+  captureOutcome.includes("RealqaCaptureOutcome") &&
+    captureOutcome.includes("RealqaCapturePortalCancelled") &&
+    captureOutcome.includes("RealqaCaptureProtectedContent") &&
+    !/(process_name|session_id|title|window_id|display_id|logical_bounds|rgba|bytes)/u.test(
+      captureOutcome,
+    ),
+  "capture diagnostics must emit only closed outcome classifications without source, pixel, session, or geometry values",
 );
 requireCondition(
   (nativeSource.match(/tracing::/gu) ?? []).length === 0 &&

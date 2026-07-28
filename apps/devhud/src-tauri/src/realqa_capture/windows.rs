@@ -7,11 +7,12 @@ use std::{
 };
 
 use super::{
-    BackendFailure, BackendFrame, CaptureBackend, CapturePermission, CapturePlatform,
-    CaptureSessionId, CaptureSourceSelection, DisplayDescriptor, DisplayId, DisplaySnapshot,
-    LogicalRect, MAX_SAFE_PROCESS_NAME_BYTES, MAX_SAFE_WINDOW_TITLE_BYTES, PointerInclusion,
-    ResolvedCaptureRequest, ResolvedWindowSource, WindowAvailability, WindowMetadata, WindowSource,
-    WindowSourceId,
+    BackendFailure, BackendFrame, CaptureBackend, CaptureCapabilities, CaptureDisplayProtocol,
+    CaptureMode, CaptureModeCapability, CapturePermission, CapturePlatform, CaptureSessionId,
+    CaptureSourceSelection, DisplayDescriptor, DisplayId, DisplaySnapshot, LogicalRect,
+    MAX_SAFE_PROCESS_NAME_BYTES, MAX_SAFE_WINDOW_TITLE_BYTES, PointerInclusion,
+    ResolvedCaptureRequest, ResolvedWindowSource, SelectionAdjustmentAuthority, WindowAvailability,
+    WindowMetadata, WindowSource, WindowSourceId,
     geometry::{PhysicalSize, PixelRect, ScaleFactor},
     image_boundary::{MAX_DECODED_PIXELS, decoded_byte_len},
 };
@@ -465,6 +466,7 @@ impl WindowsCaptureBackend {
             width: request.expected_frame_size.width,
             height: request.expected_frame_size.height,
             rgba: vec![0; output_len],
+            approved_layout: None,
         };
         let displays = self
             .sources
@@ -498,6 +500,7 @@ impl WindowsCaptureBackend {
             width: request.expected_frame_size.width,
             height: request.expected_frame_size.height,
             rgba: vec![0; output_len],
+            approved_layout: None,
         };
 
         let displays = self
@@ -566,6 +569,31 @@ fn validate_window_state(
 impl CaptureBackend for WindowsCaptureBackend {
     fn platform(&self) -> CapturePlatform {
         CapturePlatform::Windows
+    }
+
+    fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure> {
+        Ok(CaptureCapabilities {
+            platform: CapturePlatform::Windows,
+            display_protocol: CaptureDisplayProtocol::Native,
+            modes: [
+                CaptureMode::Region,
+                CaptureMode::Window,
+                CaptureMode::Display,
+                CaptureMode::MultiMonitor,
+            ]
+            .into_iter()
+            .map(|mode| CaptureModeCapability {
+                mode,
+                pointer_options: vec![PointerInclusion::Include, PointerInclusion::Exclude],
+                portal_approval_required: false,
+                selection_adjustment: if mode == CaptureMode::Region {
+                    SelectionAdjustmentAuthority::Application
+                } else {
+                    SelectionAdjustmentAuthority::Unavailable
+                },
+            })
+            .collect(),
+        })
     }
 
     fn start_capture(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {

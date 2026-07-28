@@ -36,10 +36,7 @@ if (!supportedHosts.has(process.platform)) {
   process.exit(0);
 }
 
-if (
-  process.platform === "linux" &&
-  !process.env.DISPLAY
-) {
+if (process.platform === "linux" && !process.env.DISPLAY) {
   console.log(
     JSON.stringify({
       check: "devhud-desktop-smoke",
@@ -345,5 +342,11 @@ console.log(
     status: "passed",
     startupShutdownIterations: 3,
     helperLifecycle: "observed-before-zero-after",
+    displayFamily:
+      process.platform !== "linux"
+        ? "native"
+        : process.env.WAYLAND_DISPLAY
+          ? "xwayland"
+          : "x11",
   }),
 );

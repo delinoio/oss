@@ -27,6 +27,7 @@ const [
 const capability = JSON.parse(capabilitySource);
 const packageJson = JSON.parse(packageSource);
 const exactCommands = [
+  "allow-realqa-inspect-capture-capabilities",
   "allow-realqa-list-capture-sources",
   "allow-realqa-adjust-capture-selection",
   "allow-realqa-begin-capture",

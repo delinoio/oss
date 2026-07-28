@@ -63,7 +63,7 @@ describe("RealQA native boundaries", () => {
     ]);
   });
 
-  it("uses only the four closed capture commands and exact argument shapes", async () => {
+  it("uses only the five closed capture commands and exact argument shapes", async () => {
     const { calls, invokeCommand } = invokeFixture();
     const bridge = createRealQaCaptureBridge(invokeCommand);
     const selection = {
@@ -81,6 +81,7 @@ describe("RealQA native boundaries", () => {
       outputMediaType: ImageMediaType.Png,
     };
 
+    await bridge.inspectCapabilities();
     await bridge.listSources();
     await bridge.adjustSelection(selection, {
       kind: "resize",
@@ -92,6 +93,7 @@ describe("RealQA native boundaries", () => {
     await bridge.cancelCapture("session-1");
 
     expect(calls).toEqual([
+      ["realqa_inspect_capture_capabilities", undefined],
       ["realqa_list_capture_sources", undefined],
       [
         "realqa_adjust_capture_selection",
