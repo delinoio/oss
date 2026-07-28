@@ -99,6 +99,10 @@ fn classify_oauth_error(status: StatusCode, response: Option<&OAuthErrorResponse
     }
 }
 
+fn classify_jwks_error(status: StatusCode) -> AuthError {
+    classify_oauth_error(status, None)
+}
+
 fn snapshot_without_configuration(
     has_retained_session: bool,
 ) -> Result<SessionSnapshot, AuthError> {
@@ -151,7 +155,7 @@ impl HttpTokenTransport {
             .send()
             .map_err(|_| AuthError::TransportUnavailable)?;
         if !response.status().is_success() {
-            return Err(AuthError::TokenExchangeFailed);
+            return Err(classify_jwks_error(response.status()));
         }
         let set: JwkSet = response.json().map_err(|_| AuthError::TokenInvalid)?;
         let jwk = set.find(&key_id).ok_or(AuthError::TokenInvalid)?;
@@ -777,6 +781,20 @@ mod tests {
                 AuthError::TransportUnavailable
             );
         }
+    }
+
+    #[test]
+    fn retryable_jwks_failures_are_transport_unavailable() {
+        for status in [
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::SERVICE_UNAVAILABLE,
+        ] {
+            assert_eq!(classify_jwks_error(status), AuthError::TransportUnavailable);
+        }
+        assert_eq!(
+            classify_jwks_error(StatusCode::BAD_REQUEST),
+            AuthError::TokenExchangeFailed
+        );
     }
 
     #[test]

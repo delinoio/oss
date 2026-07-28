@@ -742,20 +742,23 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         // Drop access and ID tokens before touching fallible storage or the
         // network. Logout always locks feature use locally.
         self.state = SessionState::SignedOut;
-        if let Ok(Some(session)) = self.vault.load() {
-            let revocation_endpoint = self.configuration.revocation_endpoint.clone();
-            for refresh_token in session.refresh_tokens.values() {
-                let _ = self.transport.revoke(
-                    &revocation_endpoint,
-                    &self.configuration.client_id,
-                    refresh_token,
-                );
-            }
-        }
-        // Local logout is authoritative. A revocation network error cannot
-        // retain access/ID tokens or permit continued feature use.
+        let retained = self.vault.load().ok().flatten();
+        // Local logout is authoritative, so secure-vault deletion must finish
+        // before best-effort network revocation can delay or interrupt logout.
         match self.vault.clear() {
-            Ok(()) => Ok(self.snapshot()),
+            Ok(()) => {
+                if let Some(session) = retained {
+                    let revocation_endpoint = self.configuration.revocation_endpoint.clone();
+                    for refresh_token in session.refresh_tokens.values() {
+                        let _ = self.transport.revoke(
+                            &revocation_endpoint,
+                            &self.configuration.client_id,
+                            refresh_token,
+                        );
+                    }
+                }
+                Ok(self.snapshot())
+            }
             Err(_) => {
                 self.state = SessionState::CleanupRequired;
                 Err(AuthError::SecureVaultDeleteFailed)
@@ -2192,6 +2195,21 @@ mod tests {
         assert_eq!(manager.logout().unwrap(), SessionSnapshot::SignedOut);
         assert!(!manager.memory_tokens_present());
         assert!(manager.vault.load().unwrap().is_none());
+        assert_eq!(manager.transport.revoked, 1);
+    }
+
+    #[test]
+    fn logout_clears_the_vault_before_remote_revocation() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
+            fail_clear: true,
+            ..FakeVault::default()
+        };
+        let mut manager = manager(FakeTransport::default(), vault);
+
+        assert_eq!(manager.logout(), Err(AuthError::SecureVaultDeleteFailed));
+        assert_eq!(manager.transport.revoked, 0);
     }
 
     #[test]

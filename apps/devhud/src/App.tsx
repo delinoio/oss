@@ -541,7 +541,11 @@ function MobileWidgets() {
   );
 }
 
-function MobileSettings() {
+function MobileSettings({
+  onResetComplete,
+}: {
+  readonly onResetComplete: (outcome: PersistenceResetOutcome) => void;
+}) {
   const { persistenceIssues, persistenceReady } = useApplication();
   const settingsIssue = persistenceIssues.find(
     (issue) => issue.key === "devhud.settings.v1",
@@ -565,7 +569,7 @@ function MobileSettings() {
           Your System, Light, or Dark choice stays on this device. DevHud has no account or
           cloud sync.
         </p>
-        <ResetDevHudControl />
+        <ResetDevHudControl onResetComplete={onResetComplete} />
       </div>
     </section>
   );
@@ -691,10 +695,12 @@ function MobileDiagnostics({
 
 function MobileContent({
   diagnosticsBridge,
+  onResetComplete,
   retryRuntime,
   runtime,
 }: {
   diagnosticsBridge: RuntimeBridge;
+  onResetComplete: (outcome: PersistenceResetOutcome) => void;
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
@@ -705,7 +711,7 @@ function MobileContent({
     case MobileScreen.Widgets:
       return <MobileWidgets />;
     case MobileScreen.Settings:
-      return <MobileSettings />;
+      return <MobileSettings onResetComplete={onResetComplete} />;
     case MobileScreen.Diagnostics:
       return (
         <MobileDiagnostics
@@ -719,10 +725,12 @@ function MobileContent({
 
 function MobileShell({
   diagnosticsBridge,
+  onResetComplete,
   retryRuntime,
   runtime,
 }: {
   diagnosticsBridge: RuntimeBridge;
+  onResetComplete: (outcome: PersistenceResetOutcome) => void;
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
@@ -748,6 +756,7 @@ function MobileShell({
         <div className="mobile-content" key={mobileScreen}>
           <MobileContent
             diagnosticsBridge={diagnosticsBridge}
+            onResetComplete={onResetComplete}
             retryRuntime={retryRuntime}
             runtime={runtime}
           />
@@ -892,6 +901,7 @@ function ApplicationSurface({
         ) : (
           <MobileShell
             diagnosticsBridge={runtimeBridge}
+            onResetComplete={reconcileReset}
             retryRuntime={retryRuntime}
             runtime={runtime}
           />
