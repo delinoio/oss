@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +10,7 @@ import {
   type ComposerImage,
   type RealQaComposerBridge,
 } from "../capture";
-import { ScreenshotEditor } from "./ScreenshotEditor";
+import { ScreenshotEditor, pixelatePreviewPixels } from "./ScreenshotEditor";
 
 const source: ComposerImage = {
   imageId: "image-1",
@@ -133,6 +133,38 @@ describe("ScreenshotEditor", () => {
       height: 80,
     });
     expect(approvedImagePayload(flattened).bytes).not.toEqual(source.image.bytes);
+  });
+
+  it("freezes editing while native approval is in flight", async () => {
+    const user = userEvent.setup();
+    const { bridge, canvas, flattened, onApprove } = fixture();
+    let resolveApproval: ((image: ApprovedComposerImage) => void) | undefined;
+    vi.mocked(bridge.flattenImage).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApproval = resolve;
+        }),
+    );
+
+    fireEvent.pointerDown(canvas, { clientX: 50, clientY: 40, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 350, clientY: 240, pointerId: 1 });
+    await user.click(screen.getByRole("button", { name: "Approve 1 edits" }));
+
+    expect(canvas).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Arrow" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: /Line width/u })).toBeDisabled();
+    fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 90, clientY: 70, pointerId: 2 });
+    expect(screen.getByRole("list", { name: "Applied edits" })).toHaveTextContent(
+      "1. Arrow",
+    );
+    expect(screen.getByRole("list", { name: "Applied edits" })).not.toHaveTextContent(
+      "2. Arrow",
+    );
+
+    resolveApproval?.(flattened);
+    await waitFor(() => expect(onApprove).toHaveBeenCalledWith(flattened));
   });
 
   it("supports keyboard drawing, tool selection, and shortcuts", async () => {
@@ -276,6 +308,28 @@ describe("ScreenshotEditor", () => {
     expect(pixelPreview?.parentElement).toHaveAttribute("height", "42");
     expect(pixelPreview?.parentElement).toHaveAttribute("width", "42");
     expect(container.querySelector("pattern")).not.toBeInTheDocument();
+  });
+
+  it("averages partial pixelation edge blocks independently", () => {
+    const pixels = new Uint8ClampedArray(6 * 5 * 4);
+    for (let y = 0; y < 5; y += 1) {
+      for (let x = 0; x < 6; x += 1) {
+        const offset = (y * 6 + x) * 4;
+        const value = y * 10 + x;
+        pixels.set([value, value, value, 255], offset);
+      }
+    }
+
+    const preview = pixelatePreviewPixels(pixels, 6, 5, 4);
+
+    expect(preview.columns).toBe(2);
+    expect(preview.rows).toBe(2);
+    expect(Array.from(preview.data)).toEqual([
+      16, 16, 16, 255,
+      19, 19, 19, 255,
+      41, 41, 41, 255,
+      44, 44, 44, 255,
+    ]);
   });
 
   it("keeps source-derived effects before annotations", async () => {

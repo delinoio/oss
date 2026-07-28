@@ -310,7 +310,9 @@ function ScreenshotEditorStateProvider({
     setStatus("Edit restored.");
   }, [history.future.length]);
   const approve = useCallback(async () => {
+    if (approving) return;
     setApproving(true);
+    setPending(null);
     setStatus("Creating approved image.");
     try {
       const approved = await bridge.flattenImage({
@@ -327,6 +329,7 @@ function ScreenshotEditorStateProvider({
       setApproving(false);
     }
   }, [
+    approving,
     bridge,
     history.present,
     imageId,
@@ -404,6 +407,7 @@ const toolLabels: Record<EditorTool, string> = {
 
 export function ScreenshotEditorToolbar() {
   const {
+    approving,
     canRedo,
     canUndo,
     redo,
@@ -419,8 +423,9 @@ export function ScreenshotEditorToolbar() {
           aria-pressed={tool === candidate}
           className="editor-tool"
           disabled={
-            !sourceEffectAvailable &&
-            (candidate === EditorTool.Blur || candidate === EditorTool.Pixelate)
+            approving ||
+            (!sourceEffectAvailable &&
+              (candidate === EditorTool.Blur || candidate === EditorTool.Pixelate))
           }
           key={candidate}
           onClick={() => setTool(candidate)}
@@ -432,7 +437,7 @@ export function ScreenshotEditorToolbar() {
       <span aria-hidden="true" className="editor-toolbar-separator" />
       <button
         aria-keyshortcuts="Control+Z Meta+Z"
-        disabled={!canUndo}
+        disabled={approving || !canUndo}
         onClick={undo}
         type="button"
       >
@@ -440,7 +445,7 @@ export function ScreenshotEditorToolbar() {
       </button>
       <button
         aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
-        disabled={!canRedo}
+        disabled={approving || !canRedo}
         onClick={redo}
         type="button"
       >
@@ -515,6 +520,43 @@ function operationDescription(operation: EditorOperation, index: number): string
   }
 }
 
+export function pixelatePreviewPixels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  blockSize: number,
+) {
+  const columns = Math.ceil(width / blockSize);
+  const rows = Math.ceil(height / blockSize);
+  const data = new Uint8ClampedArray(columns * rows * 4);
+
+  for (let blockY = 0; blockY < height; blockY += blockSize) {
+    const blockBottom = Math.min(blockY + blockSize, height);
+    for (let blockX = 0; blockX < width; blockX += blockSize) {
+      const blockRight = Math.min(blockX + blockSize, width);
+      const totals: [number, number, number, number] = [0, 0, 0, 0];
+      for (let y = blockY; y < blockBottom; y += 1) {
+        for (let x = blockX; x < blockRight; x += 1) {
+          const offset = (y * width + x) * 4;
+          totals[0] += pixels[offset] ?? 0;
+          totals[1] += pixels[offset + 1] ?? 0;
+          totals[2] += pixels[offset + 2] ?? 0;
+          totals[3] += pixels[offset + 3] ?? 0;
+        }
+      }
+      const count = (blockRight - blockX) * (blockBottom - blockY);
+      const outputOffset =
+        ((blockY / blockSize) * columns + blockX / blockSize) * 4;
+      data[outputOffset] = Math.floor(totals[0] / count);
+      data[outputOffset + 1] = Math.floor(totals[1] / count);
+      data[outputOffset + 2] = Math.floor(totals[2] / count);
+      data[outputOffset + 3] = Math.floor(totals[3] / count);
+    }
+  }
+
+  return { columns, data, rows };
+}
+
 function renderPixelatedPreview(
   preview: HTMLImageElement,
   canvas: HTMLCanvasElement,
@@ -522,10 +564,12 @@ function renderPixelatedPreview(
 ) {
   const context = canvas.getContext("2d");
   if (context === null) return;
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = operation.rect.width;
+  sourceCanvas.height = operation.rect.height;
+  const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
+  if (sourceContext === null) return;
+  sourceContext.drawImage(
     preview,
     operation.rect.x,
     operation.rect.y,
@@ -533,9 +577,25 @@ function renderPixelatedPreview(
     operation.rect.height,
     0,
     0,
-    canvas.width,
-    canvas.height,
+    operation.rect.width,
+    operation.rect.height,
   );
+  const sourcePixels = sourceContext.getImageData(
+    0,
+    0,
+    operation.rect.width,
+    operation.rect.height,
+  );
+  const pixelated = pixelatePreviewPixels(
+    sourcePixels.data,
+    operation.rect.width,
+    operation.rect.height,
+    operation.blockSize,
+  );
+  const imageData = context.createImageData(pixelated.columns, pixelated.rows);
+  imageData.data.set(pixelated.data);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.putImageData(imageData, 0, 0);
 }
 
 function PixelatedOverlay({
@@ -745,6 +805,7 @@ export function ScreenshotEditorCanvas() {
     undo,
     activateKeyboardCursor,
     viewport,
+    approving,
   } = editor;
   const pointerActive = useRef(false);
   const effectPrefix = useId().replaceAll(":", "");
@@ -752,6 +813,7 @@ export function ScreenshotEditorCanvas() {
   const instructionsId = `${effectPrefix}-instructions`;
 
   const onKeyDown = (event: KeyboardEvent<SVGSVGElement>) => {
+    if (approving) return;
     const modifier = event.ctrlKey || event.metaKey;
     if (modifier && event.key.toLowerCase() === "z") {
       event.preventDefault();
@@ -803,29 +865,35 @@ export function ScreenshotEditorCanvas() {
       </p>
       <svg
         aria-describedby={instructionsId}
+        aria-disabled={approving}
         aria-label={`Screenshot editor canvas. ${toolLabels[tool]} selected. Cursor at ${keyboardCursor.x}, ${keyboardCursor.y}.`}
         className="editor-canvas"
         onKeyDown={onKeyDown}
         onPointerCancel={() => {
           pointerActive.current = false;
+          if (approving) return;
           cancelGesture();
         }}
         onPointerDown={(event) => {
+          if (approving) return;
           pointerActive.current = true;
           event.currentTarget.setPointerCapture?.(event.pointerId);
           begin(pointFromPointer(event, viewport));
         }}
         onPointerMove={(event) => {
-          if (pointerActive.current) move(pointFromPointer(event, viewport));
+          if (!approving && pointerActive.current) {
+            move(pointFromPointer(event, viewport));
+          }
         }}
         onPointerUp={(event) => {
           if (!pointerActive.current) return;
           pointerActive.current = false;
           event.currentTarget.releasePointerCapture?.(event.pointerId);
+          if (approving) return;
           finish(pointFromPointer(event, viewport));
         }}
         role="application"
-        tabIndex={0}
+        tabIndex={approving ? -1 : 0}
         viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
       >
         <defs>
@@ -878,6 +946,7 @@ export function ScreenshotEditorCanvas() {
 
 export function ScreenshotEditorInspector() {
   const {
+    approving,
     color,
     lineWidth,
     outputMediaType,
@@ -889,7 +958,7 @@ export function ScreenshotEditorInspector() {
     tool,
   } = useScreenshotEditor();
   return (
-    <fieldset className="editor-inspector">
+    <fieldset className="editor-inspector" disabled={approving}>
       <legend>Tool options</legend>
       <label>
         Color

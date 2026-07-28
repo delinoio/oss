@@ -162,6 +162,8 @@ fn validate_operations(
         return Err(CaptureFailure::InvalidEditSequence);
     }
     let mut crop_count = 0_usize;
+    let mut source_effect_seen = false;
+    let mut annotation_seen = false;
     for operation in operations {
         match operation {
             EditorOperation::Crop { rect } => {
@@ -247,6 +249,16 @@ fn validate_operations(
                     return Err(CaptureFailure::InvalidEditorOperation);
                 }
             }
+        }
+        match operation {
+            EditorOperation::Crop { .. } => {}
+            EditorOperation::Blur { .. } | EditorOperation::Pixelate { .. } => {
+                if source_effect_seen || annotation_seen {
+                    return Err(CaptureFailure::InvalidEditSequence);
+                }
+                source_effect_seen = true;
+            }
+            _ => annotation_seen = true,
         }
     }
     if crop_count > 1 {
@@ -743,8 +755,17 @@ mod tests {
     }
 
     #[test]
-    fn validates_every_operation_and_flattens_deterministically() {
+    fn validates_annotations_and_flattens_deterministically() {
         let operations = vec![
+            EditorOperation::Blur {
+                rect: EditorRect {
+                    x: 0,
+                    y: 0,
+                    width: 4,
+                    height: 4,
+                },
+                radius: 1,
+            },
             EditorOperation::Rectangle {
                 rect: EditorRect {
                     x: 1,
@@ -777,24 +798,6 @@ mod tests {
                 number: 1,
                 color: "#ff0000".to_owned(),
                 size: 12,
-            },
-            EditorOperation::Blur {
-                rect: EditorRect {
-                    x: 0,
-                    y: 0,
-                    width: 4,
-                    height: 4,
-                },
-                radius: 1,
-            },
-            EditorOperation::Pixelate {
-                rect: EditorRect {
-                    x: 4,
-                    y: 4,
-                    width: 4,
-                    height: 4,
-                },
-                block_size: 2,
             },
             EditorOperation::Crop {
                 rect: EditorRect {
@@ -933,6 +936,44 @@ mod tests {
         assert_eq!(
             flatten(fixture(), &invalid_blur),
             Err(CaptureFailure::InvalidEditorOperation)
+        );
+
+        let arrow = EditorOperation::Arrow {
+            start: EditorPoint { x: 0, y: 0 },
+            end: EditorPoint { x: 7, y: 7 },
+            color: "#ffffff".to_owned(),
+            line_width: 1,
+        };
+        let blur = EditorOperation::Blur {
+            rect: EditorRect {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 4,
+            },
+            radius: 1,
+        };
+        assert_eq!(
+            flatten(fixture(), &[arrow, blur.clone()]),
+            Err(CaptureFailure::InvalidEditSequence)
+        );
+        assert_eq!(
+            flatten(
+                fixture(),
+                &[
+                    blur,
+                    EditorOperation::Pixelate {
+                        rect: EditorRect {
+                            x: 4,
+                            y: 4,
+                            width: 4,
+                            height: 4,
+                        },
+                        block_size: 2,
+                    },
+                ],
+            ),
+            Err(CaptureFailure::InvalidEditSequence)
         );
     }
 
