@@ -417,45 +417,62 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             self.state = SessionState::PriorSessionOffline;
             return Ok(self.snapshot());
         }
-        let (&feature, refresh_token) = retained
-            .refresh_tokens
-            .first_key_value()
-            .ok_or(AuthError::TokenInvalid)?;
         let token_endpoint = self.configuration.token_endpoint.clone();
-        let tokens = match self.transport.refresh(
-            &token_endpoint,
-            &self.configuration.client_id,
-            refresh_token,
-            feature.audience(),
-            feature.scopes(),
-        ) {
-            Ok(tokens) => tokens,
-            Err(AuthError::TokenExchangeFailed) => {
-                self.state = SessionState::PriorSessionOffline;
-                return Ok(self.snapshot());
+        let retained_features = retained.refresh_tokens.keys().copied().collect::<Vec<_>>();
+        let mut grant_error = None;
+        let mut transport_unavailable = false;
+        for feature in retained_features {
+            let refresh_token = retained
+                .refresh_tokens
+                .get(&feature)
+                .ok_or(AuthError::TokenInvalid)?;
+            let tokens = match self.transport.refresh(
+                &token_endpoint,
+                &self.configuration.client_id,
+                refresh_token,
+                feature.audience(),
+                feature.scopes(),
+            ) {
+                Ok(tokens) => tokens,
+                Err(AuthError::TokenExchangeFailed) => {
+                    transport_unavailable = true;
+                    continue;
+                }
+                Err(error) => {
+                    grant_error.get_or_insert(error);
+                    continue;
+                }
+            };
+            if let Err(error) = validate_restored_bearer(
+                &tokens.claims,
+                &self.configuration,
+                feature,
+                now_unix_seconds,
+            ) {
+                grant_error.get_or_insert(error);
+                continue;
             }
-            Err(error) => return Err(error),
-        };
-        validate_restored_bearer(
-            &tokens.claims,
-            &self.configuration,
-            feature,
-            now_unix_seconds,
-        )?;
-        let subject = tokens.claims.subject.clone();
-        if !device_session_matches(retained.device_session_key.expose(), &subject)? {
-            return Err(AuthError::AccountSwitchRequiresLogout);
+            let subject = tokens.claims.subject.clone();
+            if !device_session_matches(retained.device_session_key.expose(), &subject)? {
+                grant_error.get_or_insert(AuthError::AccountSwitchRequiresLogout);
+                continue;
+            }
+            if let Some(rotated_refresh) = tokens.refresh_token {
+                retained.refresh_tokens.insert(feature, rotated_refresh);
+                self.vault.replace(&retained)?;
+            }
+            self.state = SessionState::SignedIn {
+                subject,
+                access_token: tokens.access_token,
+                id_token: tokens.id_token,
+            };
+            return Ok(self.snapshot());
         }
-        if let Some(rotated_refresh) = tokens.refresh_token {
-            retained.refresh_tokens.insert(feature, rotated_refresh);
-            self.vault.replace(&retained)?;
+        if transport_unavailable {
+            self.state = SessionState::PriorSessionOffline;
+            return Ok(self.snapshot());
         }
-        self.state = SessionState::SignedIn {
-            subject,
-            access_token: tokens.access_token,
-            id_token: tokens.id_token,
-        };
-        Ok(self.snapshot())
+        Err(grant_error.unwrap_or(AuthError::TokenInvalid))
     }
 
     pub(crate) fn begin(
@@ -1883,6 +1900,84 @@ mod tests {
                 .and_then(|retained| retained.0.get(&AuthFeature::Deck))
                 .map(String::as_str),
             Some("refresh-rotated")
+        );
+    }
+
+    #[test]
+    fn retained_session_tries_another_grant_after_transport_failure() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some((
+                [
+                    (AuthFeature::Deck, "refresh-deck".to_owned()),
+                    (AuthFeature::RealQa, "refresh-realqa".to_owned()),
+                ]
+                .into_iter()
+                .collect(),
+                key.expose().to_owned(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport
+            .refresh
+            .push_back(Err(AuthError::TokenExchangeFailed));
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            REALQA_AUDIENCE,
+            AuthFeature::RealQa.scopes(),
+            None,
+        )));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW).unwrap(),
+            SessionSnapshot::SignedIn {
+                subject: "account-a".to_owned()
+            }
+        );
+        assert_eq!(
+            prior.transport.refresh_inputs,
+            ["refresh-deck", "refresh-realqa"]
+        );
+    }
+
+    #[test]
+    fn retained_session_tries_another_grant_after_invalid_bearer() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some((
+                [
+                    (AuthFeature::Deck, "refresh-deck".to_owned()),
+                    (AuthFeature::RealQa, "refresh-realqa".to_owned()),
+                ]
+                .into_iter()
+                .collect(),
+                key.expose().to_owned(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut expired = tokens("account-a", DECK_AUDIENCE, AuthFeature::Deck.scopes(), None);
+        expired.claims.expires_at_unix_seconds = NOW;
+        let mut transport = FakeTransport::default();
+        transport.refresh.push_back(Ok(expired));
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            REALQA_AUDIENCE,
+            AuthFeature::RealQa.scopes(),
+            None,
+        )));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW).unwrap(),
+            SessionSnapshot::SignedIn {
+                subject: "account-a".to_owned()
+            }
+        );
+        assert_eq!(
+            prior.transport.refresh_inputs,
+            ["refresh-deck", "refresh-realqa"]
         );
     }
 

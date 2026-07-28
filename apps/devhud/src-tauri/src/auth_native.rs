@@ -9,7 +9,10 @@ use std::{
     time::Duration,
 };
 
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header, jwk::JwkSet};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, Validation, decode, decode_header,
+    jwk::{JwkSet, KeyAlgorithm},
+};
 use reqwest::{blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -30,6 +33,27 @@ const CLIENT_ID_VARIABLE: &str = "DEVHUD_LOGTO_APP_ID";
 const VAULT_SERVICE: &str = "dev.deli.devhud.auth";
 const VAULT_ACCOUNT: &str = "active-session";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+
+fn validated_signing_algorithm(
+    token_algorithm: Algorithm,
+    key_algorithm: Option<KeyAlgorithm>,
+) -> Result<Algorithm, AuthError> {
+    let advertised_algorithm = match key_algorithm {
+        Some(KeyAlgorithm::ES256) => Algorithm::ES256,
+        Some(KeyAlgorithm::ES384) => Algorithm::ES384,
+        Some(KeyAlgorithm::RS256) => Algorithm::RS256,
+        Some(KeyAlgorithm::RS384) => Algorithm::RS384,
+        Some(KeyAlgorithm::RS512) => Algorithm::RS512,
+        Some(KeyAlgorithm::PS256) => Algorithm::PS256,
+        Some(KeyAlgorithm::PS384) => Algorithm::PS384,
+        Some(KeyAlgorithm::PS512) => Algorithm::PS512,
+        _ => return Err(AuthError::TokenInvalid),
+    };
+    if token_algorithm != advertised_algorithm {
+        return Err(AuthError::TokenInvalid);
+    }
+    Ok(advertised_algorithm)
+}
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -90,9 +114,6 @@ impl HttpTokenTransport {
         expected_nonce: Option<&str>,
     ) -> Result<TokenClaims, AuthError> {
         let header = decode_header(encoded).map_err(|_| AuthError::TokenInvalid)?;
-        if header.alg != Algorithm::RS256 {
-            return Err(AuthError::TokenInvalid);
-        }
         let key_id = header.kid.ok_or(AuthError::TokenInvalid)?;
         let response = self
             .client
@@ -106,8 +127,9 @@ impl HttpTokenTransport {
         }
         let set: JwkSet = response.json().map_err(|_| AuthError::TokenInvalid)?;
         let jwk = set.find(&key_id).ok_or(AuthError::TokenInvalid)?;
+        let algorithm = validated_signing_algorithm(header.alg, jwk.common.key_algorithm)?;
         let key = DecodingKey::from_jwk(jwk).map_err(|_| AuthError::TokenInvalid)?;
-        let mut validation = Validation::new(Algorithm::RS256);
+        let mut validation = Validation::new(algorithm);
         validation.set_issuer(&[self.issuer.as_str()]);
         validation.set_audience(&[expected_audience]);
         validation.set_required_spec_claims(&["exp", "iss", "sub", "aud"]);
@@ -684,4 +706,33 @@ pub(crate) fn feature_supported(feature: AuthFeature) -> Result<(), AuthError> {
     }
     let _ = feature;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signing_algorithm_must_be_asymmetric_and_match_the_jwk() {
+        assert_eq!(
+            validated_signing_algorithm(Algorithm::ES256, Some(KeyAlgorithm::ES256)),
+            Ok(Algorithm::ES256)
+        );
+        assert_eq!(
+            validated_signing_algorithm(Algorithm::ES384, Some(KeyAlgorithm::ES384)),
+            Ok(Algorithm::ES384)
+        );
+        assert_eq!(
+            validated_signing_algorithm(Algorithm::RS256, Some(KeyAlgorithm::RS256)),
+            Ok(Algorithm::RS256)
+        );
+        assert_eq!(
+            validated_signing_algorithm(Algorithm::ES256, Some(KeyAlgorithm::RS256)),
+            Err(AuthError::TokenInvalid)
+        );
+        assert_eq!(
+            validated_signing_algorithm(Algorithm::HS256, Some(KeyAlgorithm::HS256)),
+            Err(AuthError::TokenInvalid)
+        );
+    }
 }
