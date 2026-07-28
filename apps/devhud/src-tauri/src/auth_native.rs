@@ -13,7 +13,7 @@ use jsonwebtoken::{
     Algorithm, DecodingKey, Validation, decode, decode_header,
     jwk::{JwkSet, KeyAlgorithm},
 };
-use reqwest::{blocking::Client, redirect::Policy};
+use reqwest::{StatusCode, blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use tauri::{AppHandle, Manager};
@@ -88,10 +88,24 @@ struct OAuthErrorResponse {
     error: String,
 }
 
-fn classify_oauth_error(response: Option<&OAuthErrorResponse>) -> AuthError {
+fn classify_oauth_error(status: StatusCode, response: Option<&OAuthErrorResponse>) -> AuthError {
+    if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+        return AuthError::TransportUnavailable;
+    }
     match response.map(|body| body.error.as_str()) {
         Some("invalid_grant") => AuthError::ReauthenticationRequired,
+        Some("server_error" | "temporarily_unavailable") => AuthError::TransportUnavailable,
         _ => AuthError::TokenExchangeFailed,
+    }
+}
+
+fn snapshot_without_configuration(
+    has_retained_session: bool,
+) -> Result<SessionSnapshot, AuthError> {
+    if has_retained_session {
+        Err(AuthError::ConfigurationUnavailable)
+    } else {
+        Ok(SessionSnapshot::SignedOut)
     }
 }
 
@@ -184,8 +198,9 @@ impl HttpTokenTransport {
             .send()
             .map_err(|_| AuthError::TransportUnavailable)?;
         if !response.status().is_success() {
+            let status = response.status();
             let error = response.json::<OAuthErrorResponse>().ok();
-            return Err(classify_oauth_error(error.as_ref()));
+            return Err(classify_oauth_error(status, error.as_ref()));
         }
         let response: OAuthTokenResponse = response.json().map_err(|_| AuthError::TokenInvalid)?;
         if response.token_type != "Bearer" {
@@ -461,18 +476,13 @@ impl NativeAuthState {
             .lock()
             .map_err(|_| AuthError::SecureVaultUnavailable)?;
         let Some(manager) = guard.as_mut() else {
-            return self
+            let has_retained_session = self
                 .fallback_vault
                 .lock()
                 .map_err(|_| AuthError::SecureVaultUnavailable)?
                 .load()
-                .map(|session| {
-                    if session.is_some() {
-                        SessionSnapshot::PriorSessionOffline
-                    } else {
-                        SessionSnapshot::SignedOut
-                    }
-                });
+                .map(|session| session.is_some())?;
+            return snapshot_without_configuration(has_retained_session);
         };
         let current = manager.snapshot();
         if matches!(
@@ -738,10 +748,47 @@ mod tests {
         let response: OAuthErrorResponse =
             serde_json::from_str(r#"{"error":"invalid_grant"}"#).unwrap();
         assert_eq!(
-            classify_oauth_error(Some(&response)),
+            classify_oauth_error(StatusCode::BAD_REQUEST, Some(&response)),
             AuthError::ReauthenticationRequired
         );
-        assert_eq!(classify_oauth_error(None), AuthError::TokenExchangeFailed);
+        assert_eq!(
+            classify_oauth_error(StatusCode::BAD_REQUEST, None),
+            AuthError::TokenExchangeFailed
+        );
+    }
+
+    #[test]
+    fn retryable_oauth_failures_are_transport_unavailable() {
+        for status in [
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::SERVICE_UNAVAILABLE,
+        ] {
+            assert_eq!(
+                classify_oauth_error(status, None),
+                AuthError::TransportUnavailable
+            );
+        }
+        for error in ["server_error", "temporarily_unavailable"] {
+            let response = OAuthErrorResponse {
+                error: error.to_owned(),
+            };
+            assert_eq!(
+                classify_oauth_error(StatusCode::BAD_REQUEST, Some(&response)),
+                AuthError::TransportUnavailable
+            );
+        }
+    }
+
+    #[test]
+    fn retained_session_without_configuration_is_not_offline() {
+        assert_eq!(
+            snapshot_without_configuration(true),
+            Err(AuthError::ConfigurationUnavailable)
+        );
+        assert_eq!(
+            snapshot_without_configuration(false),
+            Ok(SessionSnapshot::SignedOut)
+        );
     }
 
     #[test]

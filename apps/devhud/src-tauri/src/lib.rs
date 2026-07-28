@@ -2619,7 +2619,7 @@ fn reset_dev_hud(
         return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     if clear_browsing_data_for_reset(&app).is_err() {
-        return Ok(PersistenceResetOutcome::CleanupFailed);
+        return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     let mut shortcuts = match shortcut_state.lock() {
         Ok(shortcuts) => shortcuts,
