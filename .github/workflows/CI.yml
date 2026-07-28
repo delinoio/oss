@@ -323,9 +323,6 @@ jobs:
             for contract in "${contracts[@]}"; do
               IFS=: read -r component descriptor baseline_variable <<< "${contract}"
               baseline_path="protos/${component}/${descriptor}"
-              if [ ! -f "${baseline_path}" ]; then
-                continue
-              fi
               if git cat-file -e "${BASELINE_COMMIT}:${baseline_path}"; then
                 immutable_baseline="${RUNNER_TEMP}/${component}.v1.binpb"
                 git show "${BASELINE_COMMIT}:${baseline_path}" > "${immutable_baseline}"

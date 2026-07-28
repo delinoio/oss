@@ -31,9 +31,26 @@ validate_arguments() {
 
 	COMPONENT_ROOT="${REPO_ROOT}/protos/${COMPONENT}"
 	CONTRACT_PATH="protos/${COMPONENT}/v1"
+	GENERATED_PATH="protos/${COMPONENT}/gen"
+	DESCRIPTOR_PATH="protos/${COMPONENT}/${DESCRIPTOR_FILE}"
 	DESCRIPTOR="${COMPONENT_ROOT}/${DESCRIPTOR_FILE}"
 	BASELINE_VARIABLE="$(printf '%s_PROTO_BASELINE' "${COMPONENT}" | tr '[:lower:]-' '[:upper:]_')"
 	BASELINE="${!BASELINE_VARIABLE:-${DESCRIPTOR}}"
+}
+
+capture_unowned_worktree_state() {
+	local state_file="$1"
+	local path
+	{
+		git -C "${REPO_ROOT}" diff --binary --full-index --no-ext-diff HEAD -- . \
+			":(exclude)${GENERATED_PATH}" ":(exclude)${DESCRIPTOR_PATH}"
+		while IFS= read -r -d '' path; do
+			printf '%s\0%s\0' "$(git -C "${REPO_ROOT}" hash-object -- "${path}")" "${path}"
+		done < <(
+			git -C "${REPO_ROOT}" ls-files --others --exclude-standard -z -- . \
+				":(exclude)${GENERATED_PATH}" ":(exclude)${DESCRIPTOR_PATH}"
+		)
+	} >"${state_file}"
 }
 
 copy_generated_snapshot() {
@@ -64,6 +81,7 @@ main() {
 		buf breaking "${SNAPSHOT_DIR}/current.binpb" --against "${BASELINE}"
 	)
 
+	capture_unowned_worktree_state "${SNAPSHOT_DIR}/unowned-before"
 	"${SCRIPT_DIR}/generate-proto-component.sh" "${COMPONENT}" "${DESCRIPTOR_FILE}"
 	copy_generated_snapshot
 	"${SCRIPT_DIR}/generate-proto-component.sh" "${COMPONENT}" "${DESCRIPTOR_FILE}"
@@ -77,6 +95,15 @@ main() {
 			"${COMPONENT}" >&2
 		git -C "${REPO_ROOT}" status --short --untracked-files=all -- \
 			"${COMPONENT_ROOT}/gen" "${DESCRIPTOR}" >&2
+		exit 1
+	fi
+
+	capture_unowned_worktree_state "${SNAPSHOT_DIR}/unowned-after"
+	if ! cmp -s "${SNAPSHOT_DIR}/unowned-before" "${SNAPSHOT_DIR}/unowned-after"; then
+		printf 'generator for %s modified paths outside its owned generated artifacts\n' \
+			"${COMPONENT}" >&2
+		git -C "${REPO_ROOT}" status --short --untracked-files=all -- . \
+			":(exclude)${GENERATED_PATH}" ":(exclude)${DESCRIPTOR_PATH}" >&2
 		exit 1
 	fi
 }
