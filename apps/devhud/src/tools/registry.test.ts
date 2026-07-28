@@ -22,6 +22,19 @@ const desktopFixture = defineTool({
   EntryPoint: FixtureEntryPoint,
 });
 
+const realQaFixture = defineTool({
+  toolId: "fixture-realqa",
+  name: "Fixture RealQA",
+  description: "A test-only capture and composer tool.",
+  searchKeywords: ["fixture", "capture"],
+  supportedPlatforms: new Set([ToolPlatform.Desktop]),
+  requiredCapabilities: new Set([
+    ToolCapability.RealQaCapture,
+    ToolCapability.RealQaComposer,
+  ]),
+  EntryPoint: FixtureEntryPoint,
+});
+
 describe("internal tool registry", () => {
   it("keeps production registration empty", () => {
     expect(productionTools).toEqual([]);
@@ -52,5 +65,29 @@ describe("internal tool registry", () => {
     expect(() =>
       defineTool({ ...desktopFixture, toolId: "Fixture Diagnostics" }),
     ).toThrow("lowercase kebab-case");
+  });
+
+  it("requires both disjoint RealQA window capabilities", () => {
+    for (const grantedCapabilities of [
+      new Set<ToolCapability>(),
+      new Set([ToolCapability.RealQaCapture]),
+      new Set([ToolCapability.RealQaComposer]),
+    ]) {
+      expect(
+        filterTools([realQaFixture], {
+          platform: ToolPlatform.Desktop,
+          grantedCapabilities,
+        }),
+      ).toEqual([]);
+    }
+    expect(
+      filterTools([realQaFixture], {
+        platform: ToolPlatform.Desktop,
+        grantedCapabilities: new Set([
+          ToolCapability.RealQaCapture,
+          ToolCapability.RealQaComposer,
+        ]),
+      }),
+    ).toEqual([realQaFixture]);
   });
 });
