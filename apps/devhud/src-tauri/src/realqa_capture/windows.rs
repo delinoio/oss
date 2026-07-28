@@ -26,6 +26,20 @@ const fn is_supported_windows_version(major: u32, build: u32) -> bool {
 struct NativeSourceId(usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeCaptureSource {
+    Display(NativeSourceId),
+    Window(NativeSourceId),
+}
+
+impl NativeCaptureSource {
+    const fn id(self) -> NativeSourceId {
+        match self {
+            Self::Display(id) | Self::Window(id) => id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NativeRect {
     left: i32,
     top: i32,
@@ -172,7 +186,7 @@ trait WindowsPlatformAdapter: Send + Sync {
     fn windows(&self) -> Result<Vec<WindowsWindow>, WindowsAdapterFailure>;
     fn capture(
         &self,
-        source: NativeSourceId,
+        source: NativeCaptureSource,
         pointer: PointerInclusion,
         cancel: Arc<AtomicBool>,
     ) -> Result<NativeFrame, WindowsAdapterFailure>;
@@ -361,7 +375,11 @@ impl WindowsCaptureBackend {
         validate_window_state(&registered, &window)?;
         let frame = self
             .adapter
-            .capture(window.source, request.pointer, cancel.clone())
+            .capture(
+                NativeCaptureSource::Window(window.source),
+                request.pointer,
+                cancel.clone(),
+            )
             .map_err(BackendFailure::from)?;
         checked_native_frame(&frame)?;
         let captured = self
@@ -443,7 +461,11 @@ impl WindowsCaptureBackend {
             } else {
                 let frame = self
                     .adapter
-                    .capture(display.source, request.pointer, cancel.clone())
+                    .capture(
+                        NativeCaptureSource::Display(display.source),
+                        request.pointer,
+                        cancel.clone(),
+                    )
                     .map_err(BackendFailure::from)?;
                 self.revalidate_snapshot(request)?;
                 checked_native_frame(&frame)?;
@@ -569,7 +591,8 @@ fn sanitize_metadata(value: Option<&str>, maximum_bytes: usize) -> Option<String
     while !trimmed.is_char_boundary(end) {
         end -= 1;
     }
-    Some(trimmed[..end].to_owned())
+    let truncated = trimmed[..end].trim();
+    (!truncated.is_empty()).then(|| truncated.to_owned())
 }
 
 fn checked_native_frame(frame: &NativeFrame) -> Result<(), BackendFailure> {
@@ -1043,7 +1066,7 @@ mod system {
 
         fn capture(
             &self,
-            source: NativeSourceId,
+            source: NativeCaptureSource,
             pointer: PointerInclusion,
             cancel: Arc<AtomicBool>,
         ) -> Result<NativeFrame, WindowsAdapterFailure> {
@@ -1132,9 +1155,9 @@ mod system {
         let Some((process_id, process_started_at)) = window_process_identity(window) else {
             return Ok(None);
         };
-        let rect = window
-            .rect()
-            .map_err(|_| WindowsAdapterFailure::WindowClosed)?;
+        let Ok(rect) = window.rect() else {
+            return Ok(None);
+        };
         let native_bounds = native_rect(rect);
         let width = native_bounds.right - native_bounds.left;
         let height = native_bounds.bottom - native_bounds.top;
@@ -1150,8 +1173,10 @@ mod system {
                 height: 0.0,
             }
         } else {
-            logical_window_bounds(native_bounds, displays)?
-                .ok_or(WindowsAdapterFailure::WindowClosed)?
+            let Some(bounds) = logical_window_bounds(native_bounds, displays)? else {
+                return Ok(None);
+            };
+            bounds
         };
         let state = if minimized {
             WindowsWindowState::Minimized
@@ -1215,20 +1240,25 @@ mod system {
     }
 
     impl SystemCaptureSource {
-        fn from_token(source: NativeSourceId) -> Result<Self, WindowsAdapterFailure> {
-            let raw = source.0 as *mut std::ffi::c_void;
-            let window = Window::from_raw_hwnd(raw);
-            if window.is_valid() {
-                return Ok(Self::Window(window));
+        fn from_token(source: NativeCaptureSource) -> Result<Self, WindowsAdapterFailure> {
+            let raw = source.id().0 as *mut std::ffi::c_void;
+            match source {
+                NativeCaptureSource::Window(_) => {
+                    let window = Window::from_raw_hwnd(raw);
+                    window
+                        .is_valid()
+                        .then_some(Self::Window(window))
+                        .ok_or(WindowsAdapterFailure::WindowClosed)
+                }
+                NativeCaptureSource::Display(_) => {
+                    let monitor = Monitor::from_raw_hmonitor(raw);
+                    Monitor::enumerate()
+                        .map_err(|_| WindowsAdapterFailure::Failed)?
+                        .contains(&monitor)
+                        .then_some(Self::Monitor(monitor))
+                        .ok_or(WindowsAdapterFailure::DisplayRemoved)
+                }
             }
-            let monitor = Monitor::from_raw_hmonitor(raw);
-            if Monitor::enumerate()
-                .map_err(|_| WindowsAdapterFailure::Failed)?
-                .contains(&monitor)
-            {
-                return Ok(Self::Monitor(monitor));
-            }
-            Err(WindowsAdapterFailure::DisplayRemoved)
         }
     }
 
@@ -1370,7 +1400,7 @@ mod tests {
         displays: Mutex<Vec<WindowsDisplay>>,
         windows: Mutex<Vec<WindowsWindow>>,
         frames: Mutex<HashMap<NativeSourceId, Result<NativeFrame, WindowsAdapterFailure>>>,
-        captures: Mutex<Vec<(NativeSourceId, PointerInclusion)>>,
+        captures: Mutex<Vec<(NativeCaptureSource, PointerInclusion)>>,
         display_calls: AtomicUsize,
         remove_display_on_call: Mutex<Option<usize>>,
         displays_after_capture: Mutex<Option<Vec<WindowsDisplay>>>,
@@ -1477,7 +1507,7 @@ mod tests {
 
         fn capture(
             &self,
-            source: NativeSourceId,
+            source: NativeCaptureSource,
             pointer: PointerInclusion,
             cancel: Arc<AtomicBool>,
         ) -> Result<NativeFrame, WindowsAdapterFailure> {
@@ -1492,7 +1522,7 @@ mod tests {
                 .frames
                 .lock()
                 .expect("frames lock")
-                .get(&source)
+                .get(&source.id())
                 .cloned()
                 .unwrap_or(Err(WindowsAdapterFailure::Failed));
             if let Some(displays) = self
@@ -1756,8 +1786,14 @@ mod tests {
         assert_eq!(
             adapter.captures.lock().expect("captures lock").as_slice(),
             &[
-                (NativeSourceId(1), PointerInclusion::Exclude),
-                (NativeSourceId(2), PointerInclusion::Exclude),
+                (
+                    NativeCaptureSource::Display(NativeSourceId(1)),
+                    PointerInclusion::Exclude,
+                ),
+                (
+                    NativeCaptureSource::Display(NativeSourceId(2)),
+                    PointerInclusion::Exclude,
+                ),
             ]
         );
     }
@@ -1827,7 +1863,7 @@ mod tests {
                 &[[255, 0, 0, 255], [0, 255, 0, 255], [0, 255, 0, 255]],
             )),
         );
-        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter)));
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
         let catalog = core.source_catalog().expect("catalog");
         let result = core
             .begin(window_request(&catalog, "spanning-window"))
@@ -1853,6 +1889,13 @@ mod tests {
             &decoded.rgba[pixel_offset(decoded.width, 3, 5).expect("bottom right")
                 ..pixel_offset(decoded.width, 3, 5).expect("bottom right") + 4],
             &[0, 255, 0, 255]
+        );
+        assert_eq!(
+            adapter.captures.lock().expect("captures lock").as_slice(),
+            &[(
+                NativeCaptureSource::Window(NativeSourceId(3)),
+                PointerInclusion::Exclude,
+            )]
         );
     }
 
@@ -2093,6 +2136,14 @@ mod tests {
         assert_eq!(
             serde_json::to_value(WindowMetadata::default()).expect("serialize empty metadata"),
             serde_json::json!({})
+        );
+    }
+
+    #[test]
+    fn metadata_truncation_drops_trailing_whitespace() {
+        assert_eq!(
+            sanitize_metadata(Some("abcd ef"), 5).as_deref(),
+            Some("abcd")
         );
     }
 
