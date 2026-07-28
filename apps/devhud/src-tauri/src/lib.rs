@@ -37,11 +37,10 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::borrow::Cow;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+use std::sync::Mutex;
 #[cfg(feature = "desktop-cef")]
-use std::sync::{
-    Mutex,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(all(
     any(feature = "desktop-cef", feature = "mobile-system-webview"),
     debug_assertions

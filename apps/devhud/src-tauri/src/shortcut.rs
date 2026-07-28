@@ -1,3 +1,4 @@
+#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "desktop-cef")]
@@ -7,7 +8,9 @@ use global_hotkey::{
 };
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
 pub(crate) const MAX_DECK_SHORTCUT_DEFINITIONS: usize = 20;
+#[cfg(test)]
 pub(crate) const MAX_REALQA_SHORTCUT_DEFINITIONS: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -148,6 +151,7 @@ enum BackendError {
 /// Account and definition strings are opaque identifiers: no diagnostic or
 /// serialized outcome includes them.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(test)]
 enum ShortcutOwner {
     DevHud,
     Deck { account: String, view: String },
@@ -156,6 +160,7 @@ enum ShortcutOwner {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[cfg(test)]
 enum FeatureShortcutOutcome {
     Active,
     InactiveConflict,
@@ -269,6 +274,7 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
 /// One device-local registry for generic DevHud and future feature bindings.
 /// It intentionally stores effective registrations only; synchronizable Deck
 /// definitions and device-scoped RealQA presets remain feature-owned data.
+#[cfg(test)]
 struct UnifiedShortcutRegistry<B: ShortcutBackend> {
     backend: B,
     active: BTreeMap<ShortcutOwner, (StructuredShortcut, B::Binding)>,
@@ -276,6 +282,7 @@ struct UnifiedShortcutRegistry<B: ShortcutBackend> {
     pending_cleanup: Vec<B::Binding>,
 }
 
+#[cfg(test)]
 impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
     fn new(backend: B) -> Self {
         Self {
