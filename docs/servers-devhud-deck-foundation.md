@@ -4,14 +4,40 @@
 
 - Project/component: `devhud` / `deck-server`
 - Canonical implementation path: `servers/devhud-deck`
-- Status: planned contract for issue #755; no service directory, deployment, DNS, production secret, registered GitHub App, published image, enabled catalog record, or production operation is claimed.
+- Status: planned server contract for issue #755. The consumed
+  `devhud.deck.v1` source and private generated Connect package exist, but no
+  service directory, deployment, DNS, production secret, registered GitHub
+  App, published image, enabled catalog record, or production operation is
+  claimed.
 - Future canonical API origin and Logto audience: `https://deck.deli.dev`; documenting it does not create or activate the origin.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrowly scoped HTTP handlers, and shared `servers/internal` infrastructure where its generic contracts apply.
 
 ## Users and Authorization
 
 - The signed-out DevHud base shell never depends on Deck. A user must complete DeliDev Logto Authorization Code with PKCE before entering Deck.
-- Human RPCs accept a Deck-audience bearer and a memory-only delibase-audience forwarded bearer. The service validates issuer, audience, expiry, scopes, and matching subjects and strips credentials before business handlers. `UnregisterDevice` additionally accepts only the opaque, single-registration revocation grant issued by `RegisterDevice`; that grant authorizes no other procedure or registration. `DeleteFeatureData` alone also accepts the exact Deck lifecycle M2M identity used by delibase for a typed account/organization-deletion trigger. Its token must have the client-credentials shape (`sub == client_id`) and both values must equal the configured `DECK_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID` in addition to passing issuer, Deck audience, expiry, and lifecycle-scope validation; another M2M client with the same audience/scope is rejected. No other procedure accepts that identity. No credential may be logged. The registration record retains only a non-reversible verifier for the revocation grant; a separate application-level encrypted idempotency result may retain replay material only through the registration lease so an exact lost-response `RegisterDevice` retry can return the same grant, and must delete it on unregister or lease expiry. The client retains the grant only in the OS secure vault as described below.
+- Human RPCs accept a Deck-audience bearer in `authorization` and a
+  memory-only delibase-audience forwarded bearer only in
+  `x-devhud-deck-forwarded-delibase-token`. The service validates issuer,
+  audience, expiry, scopes, and matching subjects and strips credentials before
+  business handlers. `RegisterDevice` returns its opaque single-registration
+  revocation grant only in
+  `x-devhud-deck-device-revocation-grant` response metadata;
+  `UnregisterDevice` additionally accepts only that same key as alternate
+  request authorization. The grant authorizes no other procedure or
+  registration. `DeleteFeatureData` alone also accepts the exact Deck lifecycle
+  M2M identity used by delibase for a typed account/organization-deletion
+  trigger. Its token must have the client-credentials shape
+  (`sub == client_id`) and both values must equal the configured
+  `DECK_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID` in addition to passing issuer,
+  Deck audience, expiry, and lifecycle-scope validation; another M2M client with
+  the same audience/scope is rejected. No other procedure accepts that identity.
+  No credential may be logged. The registration record retains only a
+  non-reversible verifier for the revocation grant; a separate
+  application-level encrypted idempotency result may retain replay material only
+  through the registration lease so an exact lost-response `RegisterDevice`
+  retry can return the same grant, and must delete it on unregister or lease
+  expiry. The client retains the grant only in the OS secure vault as described
+  below.
 - One DeliDev account is active per OS user/device. Personal views are managed by their owner. Organization Owners/Admins create, edit, and delete organization views; members may use them only when DeliDev membership and that member's own GitHub authorization both permit every underlying repository.
 - Personal resources may select an accessible organization/team for billing. Organization resources bill their owning organization/team.
 - Every synchronized mutation uses a revision/ETag. Stale writes fail with a typed conflict suitable for reload, compare, and reapply.
@@ -82,7 +108,8 @@
 
 ## Build and Test
 
-Once implementation exists, canonical server checks are:
+The shared wire contract already runs its package-local checks. Once the server
+implementation exists, canonical server checks are:
 
 - `gofmt`/format verification for `servers/devhud-deck`;
 - `go vet ./servers/devhud-deck/...`;
@@ -98,7 +125,8 @@ These checks validate artifacts only. They must not push GHCR images, deploy the
 
 ## Dependencies and Integrations
 
-- Wire contract: [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
+- Implemented private wire contract:
+  [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
 - Client/native contract: [apps-devhud-foundation](apps-devhud-foundation.md).
 - The DeliDev settings client contract is [apps-delidev-app-foundation](apps-delidev-app-foundation.md) and is limited to `DeckIntegrationService`.
 - Shared service utilities may come from `servers/internal`; Deck business policy remains under `servers/devhud-deck`.

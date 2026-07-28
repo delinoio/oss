@@ -4,7 +4,21 @@
 
 - Project/component: `devhud` / `app`
 - Canonical client/native implementation path: `apps/devhud`
-- Status: active base application plus an inactive RealQA capture-core foundation and planned Deck/RealQA product contracts. The current `apps/devhud` implementation contains the bundled-asset package, internal empty production tool registry, production desktop shell, sign-ready desktop bundle configuration, stable mobile empty-state UI, maintained native iOS and Android hosts, a private mobile widget-state plugin, independently built WidgetKit/AppWidgetProvider source targets, and a platform-neutral dependency-injected RealQA capture/composer core with fixture backends. It has no activated production tool, visible/distributed widget, authenticated Deck/RealQA UI, concrete platform capture backend, authentication flow, feature networking, Chrome extension/native host, scoped updater network implementation, published release, publisher automation, or public support implementation. Issues #755/#757 authorize those bounded feature implementations without claiming activation or publication.
+- Status: active base application plus an inactive RealQA capture-core
+  foundation and planned Deck/RealQA product clients. The private generated
+  `@delinoio/devhud-deck-connect` package exists, but `apps/devhud` does not yet
+  consume it. The current implementation contains the bundled-asset package,
+  internal empty production tool registry, production desktop shell, sign-ready
+  desktop bundle configuration, stable mobile empty-state UI, maintained native
+  iOS and Android hosts, a private mobile widget-state plugin, independently
+  built WidgetKit/AppWidgetProvider source targets, and a platform-neutral
+  dependency-injected RealQA capture/composer core with fixture backends. It has
+  no activated production tool, visible/distributed widget, authenticated
+  Deck/RealQA UI, concrete platform capture backend, authentication flow,
+  feature networking, Chrome extension/native host, scoped updater network
+  implementation, published release, publisher automation, or public support
+  implementation. Issues #755/#757 authorize those bounded feature
+  implementations without claiming activation or publication.
 - The current implementation includes tray-resident desktop window lifecycle, transactional global shortcuts, explicit autostart, pointer-monitor HUD placement, preview DevTools, a typed local update action, cross-window theme reconciliation, surfaced startup integration failures, provider-owned persisted System/Light/Dark state, internal registry filtering, target-isolated desktop CEF and mobile system-webview runtimes, five exact window/platform capability manifests, bundled-resource response hardening, deny-by-default CEF networking, scoped native commands, Swift/Kotlin shared-data adapters, non-distributed native widget fixtures, generated native host sources, and deterministic local and host validation commands.
 
 ## Runtime and Language
@@ -70,13 +84,25 @@ Authenticated Deck and RealQA windows receive no generic opener, but they may in
 
 - Base Home, Settings, Diagnostics, reset, tray access, and the foundation empty state remain usable while signed out. Deck and RealQA entry points require authentication and do not inject account state, provider results, or remote UI into the signed-out shell.
 - Use Logto Authorization Code with PKCE in the system browser. Desktop opens a one-shot random `127.0.0.1` loopback listener. Deck on iOS/Android uses only the verified `https://deli.dev/auth/devhud/callback` universal/app link. RealQA has no mobile callback because it is desktop-only.
-- Persist only the refresh token, device-session key, and an active or cleanup-pending Deck registration's single-purpose `UnregisterDevice` revocation grant in the OS secure vault. Access, ID, and forwarded tokens remain in memory. Permit one active DeliDev account per OS user/device.
+- Persist only the refresh token, device-session key, and an active or
+  cleanup-pending Deck registration's single-purpose `UnregisterDevice`
+  revocation grant in the OS secure vault. Access and ID tokens plus the
+  `x-devhud-deck-forwarded-delibase-token` value remain in memory. Native
+  transport injects the Deck bearer through `authorization`; it receives and
+  submits the device cleanup grant only through
+  `x-devhud-deck-device-revocation-grant`. Permit one active DeliDev account per
+  OS user/device.
 - Each feature uses its exact feature-audience bearer plus a memory-only delibase-audience forwarded bearer. No client log, diagnostic, local record, webview cache, widget snapshot, draft metadata, or Chrome message may contain these tokens.
 - Authentication authorizes Deck/RealQA entry, not arbitrary DeliDev pages, browser navigation, remote frontend assets, or a generic account/plugin surface.
 
 ### Deck client contract
 
-- Deck is planned for desktop, iOS, Android, desktop tray, global shortcuts, opt-in notifications, WidgetKit on iPhone/macOS, and Android widgets. It consumes `devhud.deck.v1` at the future exact origin `https://deck.deli.dev` through the private native Connect transport.
+- Deck product surfaces remain planned for desktop, iOS, Android, desktop tray,
+  global shortcuts, opt-in notifications, WidgetKit on iPhone/macOS, and
+  Android widgets. Their implemented private client contract is
+  `@delinoio/devhud-deck-connect`; future runtime calls use
+  `devhud.deck.v1` at the exact inactive origin `https://deck.deli.dev` through
+  the private native Connect transport.
 - When the manual-refresh confirmation opens, the client generates the prospective logical refresh's UUID v7 identity and calls `DeckViewService.GetManualRefreshQuote`. Only a successful quote may display its server-derived 50-USD-micro price and enable confirmation; the client never substitutes a hard-coded or cached price. The quote is an opaque short-lived token bound to the authenticated subject, view, billing scope, refresh identity, and authoritative `(app key: devhud, meter key: deck_github_pull_request_refresh)` precision-zero `provider_refresh` mapping. Cancelling performs no reservation, provider request, or charge. A confirmed manual `RefreshView` carries that token and preserves both it and the refresh identity across an ambiguous retry until the original outcome and billing disposition are recovered. Missing, disabled, divergent, expired, substituted, or stale preflight state makes creation of a new refresh attempt unavailable before reservation/provider dispatch; an exact identity-and-digest retry of an already-created attempt remains recoverable after token expiry or catalog change. The delibase single-reservation finalization grant is server-only: the client never receives or stores it and does not need to remain connected for the server's billing-only recovery worker to finish an already-started refresh attempt.
 - Deck maintains one unified shortcut-conflict registry with the generic DevHud shortcut and future RealQA shortcuts. Up to 20 synchronized per-view definitions/account/device are registered locally; conflicts become inactive and never silently replace another binding.
 - Notifications are view-specific opt-in and DND-aware. Default text is exactly `Deck view updated`; detailed repository/PR titles require per-device opt-in, and push payloads contain opaque event IDs only. An online authenticated client may call `DeckDeviceService.ResolveNotificationEvent` for its matching active registration; it displays detail only after the server revalidates current view/repository access and otherwise falls back to the generic text without refreshing provider data.

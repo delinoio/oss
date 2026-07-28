@@ -4,6 +4,11 @@ modules:
 lint:
   use:
     - STANDARD
+  ignore_only:
+    PACKAGE_DIRECTORY_MATCH:
+      # Component roots use repository ownership names while the wire packages
+      # keep their independently versioned dotted identities.
+      - devhud-deck/v1
 breaking:
   use:
     - FILE

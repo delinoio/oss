@@ -2,7 +2,13 @@
 
 ## Purpose
 
-Define DevHud as a developer-tool shell with a usable signed-out, bundled-asset base experience and two explicitly bounded future authenticated features: Deck and RealQA. This contract authorizes implementation for issues #755 and #757; it does not claim that either feature, service, origin, provider registration, catalog entry, extension, widget, or release artifact exists or is active.
+Define DevHud as a developer-tool shell with a usable signed-out, bundled-asset
+base experience and two explicitly bounded future authenticated features: Deck
+and RealQA. The private `devhud.deck.v1` source and generated Connect package are
+implemented; the Deck server and product clients remain planned. This contract
+authorizes implementation for issues #755 and #757; it does not claim that
+either feature, service, origin, provider registration, catalog entry,
+extension, widget, or release artifact exists or is active.
 
 The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild, the exact pinned Tauri desktop CEF runtime, standard mobile system webviews, tray/shortcut/autostart behavior, a closed internal tool registry, typed local persistence, bounded diagnostics, device-local reset, non-distributed native-widget fixtures, and an inactive dependency-injected RealQA capture/composer core with exact window capabilities and fixture backends. RealQA source enumeration remains closed until capture permission is granted, and the core rejects backend frames that do not match the resolved capture geometry. The production tool registry remains empty and the default capture adapter fails unavailable until a concrete macOS, Windows, or Linux backend is injected. Deck may later add authenticated GitHub.com pull-request workflows on desktop, iOS, Android, tray, shortcuts, notifications, and native widgets. RealQA may later add its authenticated capture/editor product, new-GitHub.com-issue submission, and exact-origin Chrome MV3/native-host bridge. Neither feature is part of the signed-out base shell.
 
@@ -14,7 +20,7 @@ The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild
 
 - `apps/devhud` (`app`): the sole full DevHud feature client and native-integration path. It owns the signed-out base shell; shared authentication client; Deck desktop/mobile/tray/shortcut/notification/widget UI; RealQA desktop capture/editor, encrypted local drafts, Chrome extension, and native-host source.
 - `servers/devhud-deck` (`deck-server`, planned): the Go/PostgreSQL/sqlc Deck service described by [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md).
-- `protos/devhud-deck` (`deck-api`, planned): the versioned `devhud.deck.v1` Connect contract described by [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
+- `protos/devhud-deck` (`deck-api`, implemented private contract): the versioned `devhud.deck.v1` source, isolated descriptor, generated Go/TypeScript Connect artifacts, and private workspace export described by [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
 - `servers/devhud-realqa` (`realqa-server`, planned): the Go/PostgreSQL/sqlc RealQA service described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
 - `protos/devhud-realqa` (`realqa-api`, planned): the versioned `devhud.realqa.v1` Connect contract described by [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 
@@ -35,7 +41,25 @@ No full DevHud feature client or native implementation belongs under `apps/delid
 - Tauri, `tauri-build`, `tauri-runtime-cef`, `tauri-runtime-wry`, `@tauri-apps/cli-cef`, and the standard aliased mobile CLI retain the exact versions in the app contract. In particular, the upstream revision remains `f49ebda2fdba5755456b0f049e32593ca0ea331a`, `@tauri-apps/cli-cef` remains `3.0.0-alpha.6`, and `@tauri-apps/cli-mobile` remains exactly `2.11.4`; no Tauri, WRY, or `cef-rs` fork, local patch, or moving branch is allowed.
 - Existing bundled-resource, sandbox, least-privilege capability, diagnostics, redaction, backup exclusion, and destructive-path validation guarantees remain in force. Feature implementation must add narrow window/command/network policies; it must not replace them with generic HTTP, filesystem, screen, process, store, opener, shell, or environment authority exposed to frontend JavaScript. Bundled webviews remain offline from remote origins. Generated feature clients cross a private native Connect transport that maps a closed service/procedure enum to its compile-time exact HTTPS origin, injects memory-only credentials natively, enforces body bounds, rejects redirects, and accepts no arbitrary URL, method, or header. RealQA upload uses a separate native operation that accepts only a server-issued short-lived PUT capability after exact-origin, method, content-type, checksum, and size validation. Authenticated feature windows may hand an ephemeral `StartGitHubConnection` target to a typed native system-browser action only after exact HTTPS GitHub.com OAuth/configured-App path validation; Deck may separately open only a natively constructed `https://github.com/<owner>/<repository>/pull/<positive-number>` target for comment/review workflows. These actions never navigate a webview or grant a generic opener.
 - The only authenticated account boundary is DeliDev identity through Logto Authorization Code with PKCE in the system browser. Desktop uses a one-shot random `127.0.0.1` callback; Deck mobile uses the exact verified `https://deli.dev/auth/devhud/callback` universal/app link. Only a refresh token, device-session key, and an active or cleanup-pending Deck registration's single-purpose `UnregisterDevice` revocation grant may persist in the OS secure vault; access, ID, and forwarded tokens remain memory-only; one DeliDev account is active per OS user or device.
-- Feature calls use a feature-audience bearer plus a memory-only delibase-audience forwarded bearer. Servers verify matching subjects and required scopes and never persist or log either token. Deck and RealQA each configure a dedicated outbound delibase service identity and client-credentials secret for live usage; RealQA uses its same feature-scoped outbound identity with separate least-privilege token scopes for recurring authorized usage. Live reservation uses that M2M bearer with the current forwarded user bearer, while authorized usage is M2M-only. Deck's post-reservation commit/release may additionally use only the planned exact single-reservation finalization grant defined by its server contract with a fresh same-service M2M bearer; that grant is not a user token or general background-usage authority. Each service validates its exact delibase origin/audience/service UUID/client mapping and scoped token acquisition before accepting the corresponding billed work. Deck and RealQA use separate GitHub Apps and user authorization tokens; neither production GitHub App is registered by this documentation change.
+- Feature calls use a feature-audience bearer plus a memory-only
+  delibase-audience forwarded bearer. Deck carries them only in
+  `authorization` and `x-devhud-deck-forwarded-delibase-token`; its
+  single-registration cleanup grant uses only
+  `x-devhud-deck-device-revocation-grant` metadata. Servers verify matching
+  subjects and required scopes and never persist or log either token. Deck and
+  RealQA each configure a dedicated outbound delibase service identity and
+  client-credentials secret for live usage; RealQA uses its same feature-scoped
+  outbound identity with separate least-privilege token scopes for recurring
+  authorized usage. Live reservation uses that M2M bearer with the current
+  forwarded user bearer, while authorized usage is M2M-only. Deck's
+  post-reservation commit/release may additionally use only the planned exact
+  single-reservation finalization grant defined by its server contract with a
+  fresh same-service M2M bearer; that grant is not a user token or general
+  background-usage authority. Each service validates its exact delibase
+  origin/audience/service UUID/client mapping and scoped token acquisition
+  before accepting the corresponding billed work. Deck and RealQA use separate
+  GitHub Apps and user authorization tokens; neither production GitHub App is
+  registered by this documentation change.
 - Each server envelope-encrypts retained GitHub App user authorization credentials at the application layer with per-record data keys wrapped by versioned managed environment-scoped keys. Only the provider adapter may decrypt for a current authorized operation; rotation rewraps old records, plaintext never reaches PostgreSQL/backups/logs, and database/storage encryption alone is insufficient.
 - Deck encrypts canonical raw queries, identity-bearing typed builder clauses, and retained current-snapshot repository names, PR titles, and PR authors at rest with managed environment-scoped keys, authorizes every read before decryption, and excludes those fields from plaintext backups and observability.
 - Future canonical origins are `https://deck.deli.dev`, `https://realqa.deli.dev`, and `https://assets.realqa.deli.dev`. They are contract identifiers only: no DNS, deployment, R2 production bucket, production secret, public image, or service activation is claimed or authorized here.
@@ -56,7 +80,7 @@ No full DevHud feature client or native implementation belongs under `apps/delid
 
 ## Validation Contract
 
-Documentation-only changes run link/path/status consistency checks and `git diff --check`. Once implementation exists, the synchronized validation set is:
+Documentation-only changes run link/path/status consistency checks and `git diff --check`. Implemented proto validation runs now; the remaining app/server checks activate with their implementations. The synchronized validation set is:
 
 - app: `pnpm --filter devhud typecheck`, `pnpm --filter devhud lint`, `pnpm --filter devhud test`, `pnpm --filter devhud test:a11y`, `pnpm --filter devhud build`, `pnpm --filter devhud test:security`, `pnpm --filter devhud test:diagnostics`, `pnpm --filter devhud test:deck`, `pnpm --filter devhud test:deck:widgets`, `pnpm --filter devhud test:realqa`, `pnpm --filter devhud test:realqa:native`, `pnpm --filter devhud test:realqa:extension`, and `pnpm --filter devhud check:realqa:package`;
 - shared APIs: fixed-order root `pnpm generate:proto`/`pnpm check:proto` aggregates, component-local generation/check commands for each implemented feature root, Go test/vet for both proto roots, and TypeScript typechecks for both generated Connect packages; each feature owns and may clean only its generated trees and uses only its own immutable descriptor baseline;

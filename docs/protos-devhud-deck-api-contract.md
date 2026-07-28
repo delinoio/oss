@@ -5,13 +5,19 @@
 - Project/component: `devhud` / `deck-api`
 - Canonical source path: `protos/devhud-deck/v1`
 - Contract identity: `devhud.deck.v1`
-- Status: planned for issue #755; no source, generated package, deployed API, or published client is claimed.
+- Status: implemented source contract and private generated workspace package for
+  issue #755; no Deck server, deployed API, published client, or activated
+  feature is claimed.
 
 ## Runtime and Language
 
 - Versioned Protobuf is authoritative.
 - Generate reproducible Connect-compatible Go and protobuf-es v2 TypeScript artifacts under `protos/devhud-deck/gen/go` and `protos/devhud-deck/gen/ts`; generated files are derived and never a second contract.
-- The future workspace TypeScript package is `@delinoio/devhud-deck-connect`.
+- The private workspace TypeScript package is
+  `@delinoio/devhud-deck-connect`. It exports all v1 messages and service
+  descriptors at its root and exposes
+  `@delinoio/devhud-deck-connect/devhud-deck/v1/*_pb` generated subpaths; it is
+  not published and is not a public SDK.
 - Preserve released v1 fields additively. Breaking changes require `devhud.deck.v2` and synchronized consumer migration docs.
 
 ## Services and RPCs
@@ -43,7 +49,18 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 
 ## Authentication, Privacy, and Errors
 
-- Human RPCs require the Deck-audience user token plus the dedicated memory-only delibase-audience forwarded bearer metadata defined by the server contract. `UnregisterDevice` alone may instead accept the single-registration revocation grant, and `DeleteFeatureData` in delibase-lifecycle mode instead requires the exact Deck-scoped delibase M2M identity; each alternate credential is rejected by every other procedure. Generated clients must treat all credentials as sensitive and keep them out of messages, logs, errors, caches, persistence, and diagnostics except for the revocation grant's narrowly scoped OS-vault cleanup tombstone.
+- Human RPCs use `authorization: Bearer <deck-token>` plus the dedicated
+  memory-only `x-devhud-deck-forwarded-delibase-token` metadata key.
+  `RegisterDevice` returns its single-registration grant only in sensitive
+  `x-devhud-deck-device-revocation-grant` response metadata;
+  `UnregisterDevice` alone may accept that key as request authorization.
+  `DeleteFeatureData` in delibase-lifecycle mode instead requires the exact
+  Deck-scoped delibase M2M bearer. Each alternate credential is rejected by
+  every other procedure. Generated clients must treat all credentials as
+  sensitive and keep them out of messages, logs, errors, caches, persistence,
+  and diagnostics except for the revocation grant's narrowly scoped OS-vault
+  cleanup tombstone. `protos/devhud-deck/AUTHENTICATION.md` is the package-local
+  metadata and scope reference.
 - The future delibase single-reservation billing-finalization grant is an internal delibase-to-Deck server credential, not a `devhud.deck.v1` field or metadata value. Deck clients never receive, retain, or submit it; server-side recovery uses it only under the Deck server contract.
 - The DevHud generated client runs through the private native Connect transport's closed procedure/origin mapping rather than browser fetch. This changes no Connect wire shape and grants no arbitrary URL, header, method, redirect, or `http://tauri.localhost` CORS access.
 - The server verifies matching subjects, DeliDev role/scope, and the viewer's GitHub permission. Error enums distinguish authentication, authorization, provider permission, stale revision, limits, truncation, rate/concurrency limits, billing catalog/preflight, billing reservation, provider failure/rate limit/timeout, offline/stale, disconnected, and unsupported host/action.
@@ -52,7 +69,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 
 ## Build and Test
 
-Once implementation exists, canonical checks are:
+Canonical checks are:
 
 - `pnpm generate:proto`;
 - `pnpm check:proto`;
@@ -62,7 +79,15 @@ Once implementation exists, canonical checks are:
 - `go vet ./protos/devhud-deck/...`;
 - `pnpm --filter @delinoio/devhud-deck-connect typecheck`.
 
-The future workspace package must own `buf.gen.yaml`, component-local generation/check scripts, `gen/go`, `gen/ts`, and `devhud.deck.v1.binpb`. Generation must scope every Buf operation to `protos/devhud-deck/v1`, clean and write only those owned outputs, lint, check only the immutable Deck descriptor baseline, generate Go/TypeScript artifacts, build the TypeScript package, and reject nondeterminism or a component-local generated diff. The fixed-order root aggregate and `proto-contracts` CI job activate when that package exists. CI fails on compatibility, service/RPC/enum drift, stale artifacts, sensitive metadata leakage, cross-component writes, or missing cross-consumer generation.
+The workspace package owns `buf.gen.yaml`, component-local generation/check
+scripts, `gen/go`, `gen/ts`, and `devhud.deck.v1.binpb`. Generation scopes every
+Buf operation to `protos/devhud-deck/v1`, cleans and writes only those owned
+outputs, lints, checks only the immutable Deck descriptor baseline, generates
+Go/TypeScript artifacts, builds the TypeScript package, and rejects
+nondeterminism or a component-local generated diff. The fixed-order root
+aggregate and `proto-contracts` CI job include Deck. CI fails on compatibility,
+service/RPC/enum drift, stale artifacts, sensitive metadata leakage,
+cross-component writes, or missing cross-consumer generation.
 
 Checks do not publish the TypeScript package, deploy `https://deck.deli.dev`, register the GitHub App, activate a catalog entry, or publish a server image.
 
