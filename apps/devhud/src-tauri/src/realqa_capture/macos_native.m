@@ -63,17 +63,21 @@ static NSDictionary *realqa_rect(CGRect frame) {
   };
 }
 
+static bool realqa_is_path_like_metadata(NSString *value) {
+  NSCharacterSet *pathSeparators =
+      [NSCharacterSet characterSetWithCharactersInString:@"/\\"];
+  return [value rangeOfCharacterFromSet:pathSeparators].location != NSNotFound ||
+         [value rangeOfString:@"file:"
+                      options:NSCaseInsensitiveSearch | NSAnchoredSearch]
+                 .location != NSNotFound;
+}
+
 static NSString *realqa_safe_metadata(NSString *value,
                                       NSUInteger maximumUtf16Units) {
   if (value == nil || maximumUtf16Units == 0) {
     return nil;
   }
-  NSCharacterSet *pathSeparators =
-      [NSCharacterSet characterSetWithCharactersInString:@"/\\"];
-  if ([value rangeOfCharacterFromSet:pathSeparators].location != NSNotFound ||
-      [value rangeOfString:@"file:"
-                   options:NSCaseInsensitiveSearch | NSAnchoredSearch]
-              .location != NSNotFound) {
+  if (realqa_is_path_like_metadata(value)) {
     return nil;
   }
 
@@ -97,7 +101,8 @@ static NSString *realqa_safe_metadata(NSString *value,
   NSString *trimmed = [sanitized
       stringByTrimmingCharactersInSet:NSCharacterSet
                                           .whitespaceAndNewlineCharacterSet];
-  return trimmed.length == 0 ? nil : trimmed;
+  return trimmed.length == 0 || realqa_is_path_like_metadata(trimmed) ? nil
+                                                                      : trimmed;
 }
 
 bool realqa_macos_preflight_permission(void) {

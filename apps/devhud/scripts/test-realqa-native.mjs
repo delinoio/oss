@@ -44,9 +44,11 @@ requireCondition(
 );
 requireCondition(
   nativeBackend.includes("realqa_safe_metadata(") &&
+    nativeBackend.includes("realqa_is_path_like_metadata(value)") &&
+    nativeBackend.includes("realqa_is_path_like_metadata(trimmed)") &&
     nativeBackend.includes("REALQA_MAX_PROCESS_NAME_UTF16_UNITS") &&
     nativeBackend.includes("REALQA_MAX_WINDOW_TITLE_UTF16_UNITS"),
-  "macOS capture must bound and sanitize metadata before native JSON serialization",
+  "macOS capture must bound and sanitize metadata, including after normalization, before native JSON serialization",
 );
 requireCondition(
   nativeBackend.includes("@synchronized(captureStateLock)") &&
