@@ -25,6 +25,37 @@ const fn is_supported_windows_version(major: u32, build: u32) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct NativeSourceId(usize);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeRect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+impl NativeRect {
+    fn width(self) -> Result<u32, WindowsAdapterFailure> {
+        u32::try_from(self.right - self.left).map_err(|_| WindowsAdapterFailure::Failed)
+    }
+
+    fn height(self) -> Result<u32, WindowsAdapterFailure> {
+        u32::try_from(self.bottom - self.top).map_err(|_| WindowsAdapterFailure::Failed)
+    }
+
+    fn intersection(self, other: Self) -> Option<Self> {
+        let left = self.left.max(other.left);
+        let top = self.top.max(other.top);
+        let right = self.right.min(other.right);
+        let bottom = self.bottom.min(other.bottom);
+        (right > left && bottom > top).then_some(Self {
+            left,
+            top,
+            right,
+            bottom,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DisplayIdentity {
     stable_key: String,
@@ -35,6 +66,7 @@ struct DisplayIdentity {
 struct WindowsDisplay {
     source: NativeSourceId,
     stable_key: String,
+    native_bounds: NativeRect,
     logical_bounds: LogicalRect,
     physical_size: PhysicalSize,
     scale: ScaleFactor,
@@ -64,6 +96,7 @@ struct WindowsWindow {
     process_started_at: u64,
     display_key: String,
     display_source: NativeSourceId,
+    native_bounds: NativeRect,
     bounds: LogicalRect,
     state: WindowsWindowState,
     process_name: Option<String>,
@@ -141,7 +174,7 @@ trait WindowsPlatformAdapter: Send + Sync {
         &self,
         source: NativeSourceId,
         pointer: PointerInclusion,
-        cancel: &AtomicBool,
+        cancel: Arc<AtomicBool>,
     ) -> Result<NativeFrame, WindowsAdapterFailure>;
 }
 
@@ -293,7 +326,7 @@ impl WindowsCaptureBackend {
     fn capture_inner(
         &self,
         request: &ResolvedCaptureRequest,
-        cancel: &AtomicBool,
+        cancel: &Arc<AtomicBool>,
     ) -> Result<BackendFrame, BackendFailure> {
         self.revalidate_snapshot(request)?;
         if cancel.load(Ordering::Acquire) {
@@ -310,7 +343,7 @@ impl WindowsCaptureBackend {
         &self,
         request: &ResolvedCaptureRequest,
         window_id: &WindowSourceId,
-        cancel: &AtomicBool,
+        cancel: &Arc<AtomicBool>,
     ) -> Result<BackendFrame, BackendFailure> {
         let registered = self
             .sources
@@ -328,7 +361,7 @@ impl WindowsCaptureBackend {
         validate_window_state(&registered, &window)?;
         let frame = self
             .adapter
-            .capture(window.source, request.pointer, cancel)
+            .capture(window.source, request.pointer, cancel.clone())
             .map_err(BackendFailure::from)?;
         checked_native_frame(&frame)?;
         let captured = self
@@ -337,12 +370,13 @@ impl WindowsCaptureBackend {
             .find(|candidate| candidate.identity() == window.identity())
             .ok_or(BackendFailure::WindowClosed)?;
         validate_window_state(&window, &captured)?;
-        self.compose_window_frame(request, &frame)
+        self.compose_window_frame(request, &captured, &frame)
     }
 
     fn compose_window_frame(
         &self,
         request: &ResolvedCaptureRequest,
+        window: &WindowsWindow,
         frame: &NativeFrame,
     ) -> Result<BackendFrame, BackendFailure> {
         let output_len = decoded_byte_len(
@@ -366,7 +400,7 @@ impl WindowsCaptureBackend {
             let display = displays
                 .get(&region.display_id)
                 .ok_or(BackendFailure::DisplayRemoved)?;
-            let source = window_source_rect(request, display, region.pixels, frame)?;
+            let source = window_source_rect(window, display, region.pixels, frame)?;
             let destination = destination_rect(request, display, region.pixels, canvas_scale)?;
             blit_scaled(frame, source, &mut output, destination)?;
         }
@@ -376,7 +410,7 @@ impl WindowsCaptureBackend {
     fn capture_display_regions(
         &self,
         request: &ResolvedCaptureRequest,
-        cancel: &AtomicBool,
+        cancel: &Arc<AtomicBool>,
     ) -> Result<BackendFrame, BackendFailure> {
         let output_len = decoded_byte_len(
             request.expected_frame_size.width,
@@ -409,8 +443,9 @@ impl WindowsCaptureBackend {
             } else {
                 let frame = self
                     .adapter
-                    .capture(display.source, request.pointer, cancel)
+                    .capture(display.source, request.pointer, cancel.clone())
                     .map_err(BackendFailure::from)?;
+                self.revalidate_snapshot(request)?;
                 checked_native_frame(&frame)?;
                 if frame.width != display.physical_size.width
                     || frame.height != display.physical_size.height
@@ -439,6 +474,7 @@ fn validate_window_state(
         WindowsWindowState::Protected => return Err(BackendFailure::ProtectedContent),
     }
     if current.display_identity() != registered.display_identity()
+        || current.native_bounds != registered.native_bounds
         || current.bounds != registered.bounds
     {
         return Err(BackendFailure::DisplayChanged);
@@ -551,6 +587,164 @@ fn checked_native_frame(frame: &NativeFrame) -> Result<(), BackendFailure> {
     Ok(())
 }
 
+fn normalize_display_layout(displays: &mut [WindowsDisplay]) -> Result<(), WindowsAdapterFailure> {
+    let primary_indices = displays
+        .iter()
+        .enumerate()
+        .filter_map(|(index, display)| display.primary.then_some(index))
+        .collect::<Vec<_>>();
+    let [primary_index] = primary_indices.as_slice() else {
+        return Err(WindowsAdapterFailure::Failed);
+    };
+    for display in displays.iter_mut() {
+        let width = display.native_bounds.width()?;
+        let height = display.native_bounds.height()?;
+        if width != display.physical_size.width || height != display.physical_size.height {
+            return Err(WindowsAdapterFailure::Failed);
+        }
+        let scale = scale_value(display.scale)?;
+        display.logical_bounds.width = f64::from(width) / scale;
+        display.logical_bounds.height = f64::from(height) / scale;
+    }
+
+    let primary_scale = scale_value(displays[*primary_index].scale)?;
+    displays[*primary_index].logical_bounds.x =
+        f64::from(displays[*primary_index].native_bounds.left) / primary_scale;
+    displays[*primary_index].logical_bounds.y =
+        f64::from(displays[*primary_index].native_bounds.top) / primary_scale;
+
+    let mut resolved = vec![false; displays.len()];
+    resolved[*primary_index] = true;
+    while resolved.iter().any(|is_resolved| !is_resolved) {
+        let mut nearest = None;
+        for (candidate_index, candidate) in displays.iter().enumerate() {
+            if resolved[candidate_index] {
+                continue;
+            }
+            for (reference_index, reference) in displays.iter().enumerate() {
+                if !resolved[reference_index] {
+                    continue;
+                }
+                let distance =
+                    native_rect_distance(candidate.native_bounds, reference.native_bounds);
+                let key = (distance, candidate_index, reference_index);
+                if nearest.is_none_or(|current: (u64, usize, usize)| key < current) {
+                    nearest = Some(key);
+                }
+            }
+        }
+        let Some((_, candidate_index, reference_index)) = nearest else {
+            return Err(WindowsAdapterFailure::Failed);
+        };
+        let reference = displays[reference_index].clone();
+        let candidate = &mut displays[candidate_index];
+        let candidate_scale = scale_value(candidate.scale)?;
+        let reference_scale = scale_value(reference.scale)?;
+        candidate.logical_bounds.x = logical_axis_origin(
+            candidate.native_bounds.left,
+            candidate.native_bounds.right,
+            candidate.logical_bounds.width,
+            candidate_scale,
+            reference.native_bounds.left,
+            reference.native_bounds.right,
+            reference.logical_bounds.x,
+            reference.logical_bounds.width,
+            reference_scale,
+        );
+        candidate.logical_bounds.y = logical_axis_origin(
+            candidate.native_bounds.top,
+            candidate.native_bounds.bottom,
+            candidate.logical_bounds.height,
+            candidate_scale,
+            reference.native_bounds.top,
+            reference.native_bounds.bottom,
+            reference.logical_bounds.y,
+            reference.logical_bounds.height,
+            reference_scale,
+        );
+        resolved[candidate_index] = true;
+    }
+    Ok(())
+}
+
+fn scale_value(scale: ScaleFactor) -> Result<f64, WindowsAdapterFailure> {
+    if scale.numerator == 0 || scale.denominator == 0 {
+        return Err(WindowsAdapterFailure::Failed);
+    }
+    Ok(f64::from(scale.numerator) / f64::from(scale.denominator))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn logical_axis_origin(
+    candidate_start: i32,
+    candidate_end: i32,
+    candidate_extent: f64,
+    candidate_scale: f64,
+    reference_start: i32,
+    reference_end: i32,
+    reference_logical_start: f64,
+    reference_logical_extent: f64,
+    reference_scale: f64,
+) -> f64 {
+    if candidate_start == reference_start {
+        return reference_logical_start;
+    }
+    if candidate_end == reference_end {
+        return reference_logical_start + reference_logical_extent - candidate_extent;
+    }
+    if candidate_start >= reference_end {
+        return reference_logical_start
+            + reference_logical_extent
+            + f64::from(candidate_start - reference_end) / reference_scale;
+    }
+    if candidate_end <= reference_start {
+        return reference_logical_start
+            - candidate_extent
+            - f64::from(reference_start - candidate_end) / candidate_scale;
+    }
+    reference_logical_start + f64::from(candidate_start - reference_start) / reference_scale
+}
+
+fn native_rect_distance(left: NativeRect, right: NativeRect) -> u64 {
+    let horizontal = if left.left >= right.right {
+        i64::from(left.left) - i64::from(right.right)
+    } else if right.left >= left.right {
+        i64::from(right.left) - i64::from(left.right)
+    } else {
+        0
+    };
+    let vertical = if left.top >= right.bottom {
+        i64::from(left.top) - i64::from(right.bottom)
+    } else if right.top >= left.bottom {
+        i64::from(right.top) - i64::from(left.bottom)
+    } else {
+        0
+    };
+    u64::try_from(horizontal * horizontal + vertical * vertical).unwrap_or(u64::MAX)
+}
+
+fn logical_window_bounds(
+    native_bounds: NativeRect,
+    displays: &[WindowsDisplay],
+) -> Result<Option<LogicalRect>, WindowsAdapterFailure> {
+    let mut logical_regions = Vec::new();
+    for display in displays {
+        let Some(intersection) = native_bounds.intersection(display.native_bounds) else {
+            continue;
+        };
+        let scale = scale_value(display.scale)?;
+        logical_regions.push(LogicalRect {
+            x: display.logical_bounds.x
+                + f64::from(intersection.left - display.native_bounds.left) / scale,
+            y: display.logical_bounds.y
+                + f64::from(intersection.top - display.native_bounds.top) / scale,
+            width: f64::from(intersection.right - intersection.left) / scale,
+            height: f64::from(intersection.bottom - intersection.top) / scale,
+        });
+    }
+    Ok(LogicalRect::bounding(logical_regions.into_iter()))
+}
+
 fn highest_scale(
     snapshot: &DisplaySnapshot,
     regions: &[super::DisplayPixelRegion],
@@ -626,50 +820,72 @@ fn destination_rect(
 }
 
 fn window_source_rect(
-    request: &ResolvedCaptureRequest,
+    window: &WindowsWindow,
     display: &WindowsDisplay,
     region: PixelRect,
     frame: &NativeFrame,
 ) -> Result<PixelRect, BackendFailure> {
-    let display_scale = f64::from(display.scale.numerator) / f64::from(display.scale.denominator);
-    let logical_left = (display.logical_bounds.x + f64::from(region.x) / display_scale)
-        .max(request.logical_bounds.x);
-    let logical_top = (display.logical_bounds.y + f64::from(region.y) / display_scale)
-        .max(request.logical_bounds.y);
-    let logical_right = (display.logical_bounds.x
-        + f64::from(region.x + region.width) / display_scale)
-        .min(request.logical_bounds.right());
-    let logical_bottom = (display.logical_bounds.y
-        + f64::from(region.y + region.height) / display_scale)
-        .min(request.logical_bounds.bottom());
-    let left = ((logical_left - request.logical_bounds.x) * f64::from(frame.width)
-        / request.logical_bounds.width)
-        .floor();
-    let top = ((logical_top - request.logical_bounds.y) * f64::from(frame.height)
-        / request.logical_bounds.height)
-        .floor();
-    let right = ((logical_right - request.logical_bounds.x) * f64::from(frame.width)
-        / request.logical_bounds.width)
-        .ceil();
-    let bottom = ((logical_bottom - request.logical_bounds.y) * f64::from(frame.height)
-        / request.logical_bounds.height)
-        .ceil();
-    let values = [left, top, right, bottom];
-    if values
-        .iter()
-        .any(|value| !value.is_finite() || *value < 0.0)
-    {
-        return Err(BackendFailure::CaptureFailed);
-    }
-    let left = left as u64;
-    let top = top as u64;
-    let right = right as u64;
-    let bottom = bottom as u64;
-    if right <= left
-        || bottom <= top
-        || right > u64::from(frame.width)
-        || bottom > u64::from(frame.height)
-    {
+    let region_right = region
+        .x
+        .checked_add(region.width)
+        .ok_or(BackendFailure::CaptureFailed)?;
+    let region_bottom = region
+        .y
+        .checked_add(region.height)
+        .ok_or(BackendFailure::CaptureFailed)?;
+    let native_region = NativeRect {
+        left: display
+            .native_bounds
+            .left
+            .checked_add(i32::try_from(region.x).map_err(|_| BackendFailure::CaptureFailed)?)
+            .ok_or(BackendFailure::CaptureFailed)?,
+        top: display
+            .native_bounds
+            .top
+            .checked_add(i32::try_from(region.y).map_err(|_| BackendFailure::CaptureFailed)?)
+            .ok_or(BackendFailure::CaptureFailed)?,
+        right: display
+            .native_bounds
+            .left
+            .checked_add(i32::try_from(region_right).map_err(|_| BackendFailure::CaptureFailed)?)
+            .ok_or(BackendFailure::CaptureFailed)?,
+        bottom: display
+            .native_bounds
+            .top
+            .checked_add(i32::try_from(region_bottom).map_err(|_| BackendFailure::CaptureFailed)?)
+            .ok_or(BackendFailure::CaptureFailed)?,
+    };
+    let intersection = native_region
+        .intersection(window.native_bounds)
+        .ok_or(BackendFailure::CaptureFailed)?;
+    let window_width = u64::from(window.native_bounds.width().map_err(BackendFailure::from)?);
+    let window_height = u64::from(
+        window
+            .native_bounds
+            .height()
+            .map_err(BackendFailure::from)?,
+    );
+    let left_offset = u64::try_from(intersection.left - window.native_bounds.left)
+        .map_err(|_| BackendFailure::CaptureFailed)?;
+    let top_offset = u64::try_from(intersection.top - window.native_bounds.top)
+        .map_err(|_| BackendFailure::CaptureFailed)?;
+    let right_offset = u64::try_from(intersection.right - window.native_bounds.left)
+        .map_err(|_| BackendFailure::CaptureFailed)?;
+    let bottom_offset = u64::try_from(intersection.bottom - window.native_bounds.top)
+        .map_err(|_| BackendFailure::CaptureFailed)?;
+    let left = left_offset * u64::from(frame.width) / window_width;
+    let top = top_offset * u64::from(frame.height) / window_height;
+    let right = right_offset
+        .checked_mul(u64::from(frame.width))
+        .and_then(|value| value.checked_add(window_width - 1))
+        .ok_or(BackendFailure::CaptureFailed)?
+        / window_width;
+    let bottom = bottom_offset
+        .checked_mul(u64::from(frame.height))
+        .and_then(|value| value.checked_add(window_height - 1))
+        .ok_or(BackendFailure::CaptureFailed)?
+        / window_height;
+    if right <= left || bottom <= top {
         return Err(BackendFailure::CaptureFailed);
     }
     Ok(PixelRect {
@@ -795,11 +1011,25 @@ mod system {
         }
 
         fn displays(&self) -> Result<Vec<WindowsDisplay>, WindowsAdapterFailure> {
-            Monitor::enumerate()
+            let mut displays = Monitor::enumerate()
                 .map_err(|_| WindowsAdapterFailure::Failed)?
                 .into_iter()
                 .map(display_record)
-                .collect()
+                .collect::<Result<Vec<_>, _>>()?;
+            displays.sort_by(|left, right| {
+                (
+                    left.native_bounds.left,
+                    left.native_bounds.top,
+                    &left.stable_key,
+                )
+                    .cmp(&(
+                        right.native_bounds.left,
+                        right.native_bounds.top,
+                        &right.stable_key,
+                    ))
+            });
+            normalize_display_layout(&mut displays)?;
+            Ok(displays)
         }
 
         fn windows(&self) -> Result<Vec<WindowsWindow>, WindowsAdapterFailure> {
@@ -815,7 +1045,7 @@ mod system {
             &self,
             source: NativeSourceId,
             pointer: PointerInclusion,
-            cancel: &AtomicBool,
+            cancel: Arc<AtomicBool>,
         ) -> Result<NativeFrame, WindowsAdapterFailure> {
             let source = SystemCaptureSource::from_token(source)?;
             if let SystemCaptureSource::Window(window) = source {
@@ -840,10 +1070,9 @@ mod system {
         if !unsafe { GetMonitorInfoW(HMONITOR(raw), &mut info).as_bool() } {
             return Err(WindowsAdapterFailure::Failed);
         }
-        let width = u32::try_from(info.rcMonitor.right - info.rcMonitor.left)
-            .map_err(|_| WindowsAdapterFailure::Failed)?;
-        let height = u32::try_from(info.rcMonitor.bottom - info.rcMonitor.top)
-            .map_err(|_| WindowsAdapterFailure::Failed)?;
+        let native_bounds = native_rect(info.rcMonitor);
+        let width = native_bounds.width()?;
+        let height = native_bounds.height()?;
         let mut dpi_x = 0;
         let mut dpi_y = 0;
         unsafe { GetDpiForMonitor(HMONITOR(raw), MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) }
@@ -862,9 +1091,10 @@ mod system {
             stable_key: monitor
                 .device_name()
                 .map_err(|_| WindowsAdapterFailure::Failed)?,
+            native_bounds,
             logical_bounds: LogicalRect {
-                x: f64::from(info.rcMonitor.left) / scale_value,
-                y: f64::from(info.rcMonitor.top) / scale_value,
+                x: 0.0,
+                y: 0.0,
                 width: f64::from(width) / scale_value,
                 height: f64::from(height) / scale_value,
             },
@@ -905,13 +1135,13 @@ mod system {
         let rect = window
             .rect()
             .map_err(|_| WindowsAdapterFailure::WindowClosed)?;
-        let width = rect.right - rect.left;
-        let height = rect.bottom - rect.top;
+        let native_bounds = native_rect(rect);
+        let width = native_bounds.right - native_bounds.left;
+        let height = native_bounds.bottom - native_bounds.top;
         let minimized = unsafe { IsIconic(HWND(window.as_raw_hwnd())).as_bool() };
         if !minimized && (width <= 0 || height <= 0) {
             return Ok(None);
         }
-        let scale = f64::from(display.scale.numerator) / f64::from(display.scale.denominator);
         let bounds = if minimized {
             LogicalRect {
                 x: 0.0,
@@ -920,13 +1150,8 @@ mod system {
                 height: 0.0,
             }
         } else {
-            let monitor_rect = physical_monitor_rect(monitor)?;
-            LogicalRect {
-                x: display.logical_bounds.x + f64::from(rect.left - monitor_rect.left) / scale,
-                y: display.logical_bounds.y + f64::from(rect.top - monitor_rect.top) / scale,
-                width: f64::from(width) / scale,
-                height: f64::from(height) / scale,
-            }
+            logical_window_bounds(native_bounds, displays)?
+                .ok_or(WindowsAdapterFailure::WindowClosed)?
         };
         let state = if minimized {
             WindowsWindowState::Minimized
@@ -942,6 +1167,7 @@ mod system {
             process_started_at,
             display_key: monitor_key,
             display_source: NativeSourceId(monitor.as_raw_hmonitor() as usize),
+            native_bounds,
             bounds,
             state,
             process_name: window.process_name().ok(),
@@ -965,16 +1191,13 @@ mod system {
         Some((process_id, started_at))
     }
 
-    fn physical_monitor_rect(monitor: Monitor) -> Result<RECT, WindowsAdapterFailure> {
-        let mut info = MONITORINFO {
-            cbSize: u32::try_from(mem::size_of::<MONITORINFO>())
-                .map_err(|_| WindowsAdapterFailure::Failed)?,
-            ..MONITORINFO::default()
-        };
-        if !unsafe { GetMonitorInfoW(HMONITOR(monitor.as_raw_hmonitor()), &mut info).as_bool() } {
-            return Err(WindowsAdapterFailure::Failed);
+    const fn native_rect(rect: RECT) -> NativeRect {
+        NativeRect {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
         }
-        Ok(info.rcMonitor)
     }
 
     fn window_is_protected(window: Window) -> bool {
@@ -1081,16 +1304,15 @@ mod system {
     fn capture_one(
         source: SystemCaptureSource,
         pointer: PointerInclusion,
-        cancel: &AtomicBool,
+        cancel: Arc<AtomicBool>,
     ) -> Result<NativeFrame, WindowsAdapterFailure> {
         let source_lost = match source {
             SystemCaptureSource::Monitor(_) => WindowsAdapterFailure::DisplayRemoved,
             SystemCaptureSource::Window(_) => WindowsAdapterFailure::WindowClosed,
         };
-        let cancelled = Arc::new(AtomicBool::new(cancel.load(Ordering::Acquire)));
         let shared = Arc::new(CaptureShared {
             result: Mutex::new(None),
-            cancelled: cancelled.clone(),
+            cancelled: cancel.clone(),
             source_lost,
         });
         let settings = Settings::new(
@@ -1114,7 +1336,6 @@ mod system {
         let started = Instant::now();
         while !control.is_finished() {
             if cancel.load(Ordering::Acquire) {
-                cancelled.store(true, Ordering::Release);
                 control.stop().map_err(|_| WindowsAdapterFailure::Failed)?;
                 return Err(WindowsAdapterFailure::Cancelled);
             }
@@ -1152,6 +1373,7 @@ mod tests {
         captures: Mutex<Vec<(NativeSourceId, PointerInclusion)>>,
         display_calls: AtomicUsize,
         remove_display_on_call: Mutex<Option<usize>>,
+        displays_after_capture: Mutex<Option<Vec<WindowsDisplay>>>,
         window_after_capture: Mutex<Option<WindowsWindow>>,
     }
 
@@ -1160,6 +1382,12 @@ mod tests {
             let left = WindowsDisplay {
                 source: NativeSourceId(1),
                 stable_key: "private-device-left".to_owned(),
+                native_bounds: NativeRect {
+                    left: -2,
+                    top: 0,
+                    right: 0,
+                    bottom: 2,
+                },
                 logical_bounds: LogicalRect {
                     x: -2.0,
                     y: 0.0,
@@ -1179,6 +1407,12 @@ mod tests {
             let right = WindowsDisplay {
                 source: NativeSourceId(2),
                 stable_key: "private-device-right".to_owned(),
+                native_bounds: NativeRect {
+                    left: 0,
+                    top: 0,
+                    right: 4,
+                    bottom: 4,
+                },
                 logical_bounds: LogicalRect {
                     x: 0.0,
                     y: 0.0,
@@ -1212,6 +1446,7 @@ mod tests {
                 captures: Mutex::new(Vec::new()),
                 display_calls: AtomicUsize::new(0),
                 remove_display_on_call: Mutex::new(None),
+                displays_after_capture: Mutex::new(None),
                 window_after_capture: Mutex::new(None),
             }
         }
@@ -1244,7 +1479,7 @@ mod tests {
             &self,
             source: NativeSourceId,
             pointer: PointerInclusion,
-            cancel: &AtomicBool,
+            cancel: Arc<AtomicBool>,
         ) -> Result<NativeFrame, WindowsAdapterFailure> {
             if cancel.load(Ordering::Acquire) {
                 return Err(WindowsAdapterFailure::Cancelled);
@@ -1260,6 +1495,14 @@ mod tests {
                 .get(&source)
                 .cloned()
                 .unwrap_or(Err(WindowsAdapterFailure::Failed));
+            if let Some(displays) = self
+                .displays_after_capture
+                .lock()
+                .expect("displays after capture lock")
+                .take()
+            {
+                *self.displays.lock().expect("display lock") = displays;
+            }
             if let Some(window) = self
                 .window_after_capture
                 .lock()
@@ -1284,11 +1527,27 @@ mod tests {
         }
     }
 
+    fn vertical_stripes_frame(height: u32, pixels: &[[u8; 4]]) -> NativeFrame {
+        let width = u32::try_from(pixels.len()).expect("fixture width");
+        let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+        for _ in 0..height {
+            for pixel in pixels {
+                rgba.extend_from_slice(pixel);
+            }
+        }
+        NativeFrame {
+            width,
+            height,
+            rgba,
+        }
+    }
+
     fn available_window(
         source: NativeSourceId,
         display: &WindowsDisplay,
         bounds: LogicalRect,
     ) -> WindowsWindow {
+        let scale = scale_value(display.scale).expect("fixture scale");
         WindowsWindow {
             source,
             stable_key: format!("private-window-{}", source.0),
@@ -1296,6 +1555,16 @@ mod tests {
             process_started_at: 300,
             display_key: display.stable_key.clone(),
             display_source: display.source,
+            native_bounds: NativeRect {
+                left: display.native_bounds.left
+                    + ((bounds.x - display.logical_bounds.x) * scale) as i32,
+                top: display.native_bounds.top
+                    + ((bounds.y - display.logical_bounds.y) * scale) as i32,
+                right: display.native_bounds.left
+                    + ((bounds.right() - display.logical_bounds.x) * scale) as i32,
+                bottom: display.native_bounds.top
+                    + ((bounds.bottom() - display.logical_bounds.y) * scale) as i32,
+            },
             bounds,
             state: WindowsWindowState::Available,
             process_name: Some("safe.exe".to_owned()),
@@ -1333,6 +1602,129 @@ mod tests {
             pointer: PointerInclusion::Exclude,
             output_media_type: ImageMediaType::Png,
         }
+    }
+
+    #[test]
+    fn normalizes_adjacent_mixed_dpi_origins_in_one_logical_space() {
+        let mut displays = vec![
+            WindowsDisplay {
+                source: NativeSourceId(1),
+                stable_key: "high-dpi-primary".to_owned(),
+                native_bounds: NativeRect {
+                    left: 0,
+                    top: 0,
+                    right: 3840,
+                    bottom: 2160,
+                },
+                logical_bounds: LogicalRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 0.0,
+                    height: 0.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 3840,
+                    height: 2160,
+                },
+                scale: ScaleFactor {
+                    numerator: 2,
+                    denominator: 1,
+                },
+                primary: true,
+            },
+            WindowsDisplay {
+                source: NativeSourceId(2),
+                stable_key: "low-dpi-right".to_owned(),
+                native_bounds: NativeRect {
+                    left: 3840,
+                    top: 0,
+                    right: 5760,
+                    bottom: 1080,
+                },
+                logical_bounds: LogicalRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 0.0,
+                    height: 0.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 1920,
+                    height: 1080,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: false,
+            },
+            WindowsDisplay {
+                source: NativeSourceId(3),
+                stable_key: "low-dpi-below".to_owned(),
+                native_bounds: NativeRect {
+                    left: 0,
+                    top: 2160,
+                    right: 1920,
+                    bottom: 3240,
+                },
+                logical_bounds: LogicalRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 0.0,
+                    height: 0.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 1920,
+                    height: 1080,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: false,
+            },
+        ];
+
+        normalize_display_layout(&mut displays).expect("normalize layout");
+
+        assert_eq!(
+            displays[0].logical_bounds,
+            LogicalRect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            }
+        );
+        assert_eq!(displays[1].logical_bounds.x, 1920.0);
+        assert_eq!(displays[1].logical_bounds.y, 0.0);
+        assert_eq!(displays[2].logical_bounds.x, 0.0);
+        assert_eq!(displays[2].logical_bounds.y, 1080.0);
+    }
+
+    #[test]
+    fn derives_spanning_window_bounds_per_display_scale() {
+        let mut adapter = FixtureAdapter::mixed_dpi();
+        let displays = adapter.displays.get_mut().expect("display lock");
+        let bounds = logical_window_bounds(
+            NativeRect {
+                left: -1,
+                top: 0,
+                right: 2,
+                bottom: 2,
+            },
+            displays,
+        )
+        .expect("logical bounds")
+        .expect("visible window");
+        assert_eq!(
+            bounds,
+            LogicalRect {
+                x: -1.0,
+                y: 0.0,
+                width: 2.0,
+                height: 2.0,
+            }
+        );
     }
 
     #[test]
@@ -1409,9 +1801,11 @@ mod tests {
         {
             let mut displays = adapter.displays.lock().expect("display lock");
             displays[1].logical_bounds.y = 1.0;
+            displays[1].native_bounds.top = 2;
+            displays[1].native_bounds.bottom = 6;
         }
         let displays = adapter.displays.lock().expect("display lock").clone();
-        let window = available_window(
+        let mut window = available_window(
             NativeSourceId(3),
             &displays[1],
             LogicalRect {
@@ -1421,15 +1815,16 @@ mod tests {
                 height: 3.0,
             },
         );
+        window.native_bounds.left = -1;
+        window.bounds = logical_window_bounds(window.native_bounds, &displays)
+            .expect("logical bounds")
+            .expect("visible window");
         adapter.windows.lock().expect("window lock").push(window);
         adapter.frames.lock().expect("frames lock").insert(
             NativeSourceId(3),
-            Ok(solid_frame(
-                PhysicalSize {
-                    width: 4,
-                    height: 6,
-                },
-                [0, 255, 0, 255],
+            Ok(vertical_stripes_frame(
+                6,
+                &[[255, 0, 0, 255], [0, 255, 0, 255], [0, 255, 0, 255]],
             )),
         );
         let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter)));
@@ -1442,7 +1837,7 @@ mod tests {
         assert_eq!(
             &decoded.rgba[pixel_offset(decoded.width, 0, 0).expect("top left")
                 ..pixel_offset(decoded.width, 0, 0).expect("top left") + 4],
-            &[0, 255, 0, 255]
+            &[255, 0, 0, 255]
         );
         assert_eq!(
             &decoded.rgba[pixel_offset(decoded.width, 3, 0).expect("top gap")
@@ -1539,6 +1934,26 @@ mod tests {
     }
 
     #[test]
+    fn rejects_display_topology_changed_while_waiting_for_a_frame() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        let mut changed = adapter.displays.lock().expect("display lock").clone();
+        changed[1].native_bounds.left += 1;
+        changed[1].native_bounds.right += 1;
+        changed[1].logical_bounds.x += 1.0;
+        *adapter
+            .displays_after_capture
+            .lock()
+            .expect("displays after capture lock") = Some(changed);
+
+        assert_eq!(
+            core.begin(multi_monitor_request(&catalog)),
+            Err(CaptureFailure::DisplaySnapshotChanged)
+        );
+    }
+
+    #[test]
     fn forwards_each_explicit_pointer_override() {
         let adapter = Arc::new(FixtureAdapter::mixed_dpi());
         let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
@@ -1594,6 +2009,7 @@ mod tests {
                 process_started_at: 300,
                 display_key: display.stable_key.clone(),
                 display_source: display.source,
+                native_bounds: display.native_bounds,
                 bounds: display.logical_bounds,
                 state: WindowsWindowState::Protected,
                 process_name: Some("safe.exe".to_owned()),
@@ -1653,6 +2069,7 @@ mod tests {
                 process_started_at: 300,
                 display_key: display.stable_key,
                 display_source: display.source,
+                native_bounds: display.native_bounds,
                 bounds: display.logical_bounds,
                 state: WindowsWindowState::Available,
                 process_name: Some("safe\u{0}process.exe".to_owned()),
@@ -1673,6 +2090,10 @@ mod tests {
         for private_value in ["private-window-handle", "secret-path", "safeprocess.exe"] {
             assert!(!diagnostic.contains(private_value));
         }
+        assert_eq!(
+            serde_json::to_value(WindowMetadata::default()).expect("serialize empty metadata"),
+            serde_json::json!({})
+        );
     }
 
     #[test]
@@ -1790,6 +2211,12 @@ mod tests {
             process_started_at: 300,
             display_key: "private-device-right".to_owned(),
             display_source: NativeSourceId(2),
+            native_bounds: NativeRect {
+                left: 0,
+                top: 0,
+                right: 4,
+                bottom: 4,
+            },
             bounds: LogicalRect {
                 x: 0.0,
                 y: 0.0,

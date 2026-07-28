@@ -158,7 +158,9 @@ pub(crate) struct WindowSource {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct WindowMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) process_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) title: Option<String>,
 }
 
