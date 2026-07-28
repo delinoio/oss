@@ -1,0 +1,166 @@
+syntax = "proto3";
+
+package devhud.realqa.v1;
+
+import "devhud-realqa/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1;realqav1";
+
+enum RepositoryIssueDefinitionKind {
+  REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED = 0;
+  REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE = 1;
+  REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM = 2;
+}
+
+message RepositoryIssueDefinitionRef {
+  RepositoryIssueDefinitionKind kind = 1;
+  string definition_id = 2;
+  string name = 3;
+  string path = 4;
+  string etag = 5;
+}
+
+message ProcessUrlRule {
+  UuidV7 rule_id = 1;
+  string exact_process_name = 2;
+  // safe_window_title_pattern uses the bounded Rust regex crate syntax. It is
+  // compiled without backtracking and is subject to server length/complexity limits.
+  string safe_window_title_pattern = 3;
+  string url_template = 4;
+  bool enabled = 5;
+}
+
+message ShortcutDefinition {
+  UuidV7 shortcut_id = 1;
+  string accelerator = 2;
+  bool active = 3;
+}
+
+message Preset {
+  UuidV7 preset_id = 1;
+  OwnerScope owner = 2;
+  BillingScope billing = 3;
+  string name = 4;
+  CaptureMode default_capture_mode = 5;
+  bool include_pointer_by_default = 6;
+  SelectorMode default_selector_mode = 7;
+  TrackerDestination destination = 8;
+  RepositoryIssueDefinitionRef issue_definition = 9;
+  repeated string default_labels = 10;
+  repeated string default_assignees = 11;
+  ProviderExtension provider_extension = 12;
+  // Rules are resolved in declaration order.
+  repeated ProcessUrlRule process_url_rules = 13;
+  ShortcutDefinition shortcut = 14;
+  Revision revision = 15;
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp updated_at = 17;
+}
+
+message ListPresetsRequest {
+  OwnerScope owner = 1;
+  PageRequest page = 2;
+}
+
+message ListPresetsResponse {
+  repeated Preset presets = 1;
+  PageResponse page = 2;
+}
+
+message GetPresetRequest {
+  UuidV7 preset_id = 1;
+}
+
+message GetPresetResponse {
+  Preset preset = 1;
+}
+
+message CreatePresetRequest {
+  OwnerScope owner = 1;
+  BillingScope billing = 2;
+  string name = 3;
+  CaptureMode default_capture_mode = 4;
+  bool include_pointer_by_default = 5;
+  SelectorMode default_selector_mode = 6;
+  TrackerDestination destination = 7;
+  RepositoryIssueDefinitionRef issue_definition = 8;
+  repeated string default_labels = 9;
+  repeated string default_assignees = 10;
+  ProviderExtension provider_extension = 11;
+  repeated ProcessUrlRule process_url_rules = 12;
+  ShortcutDefinition shortcut = 13;
+  IdempotencyKey idempotency = 14;
+}
+
+message CreatePresetResponse {
+  Preset preset = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message UpdatePresetRequest {
+  Preset preset = 1;
+  Revision expected_revision = 2;
+}
+
+message UpdatePresetResponse {
+  Preset preset = 1;
+}
+
+message DeletePresetRequest {
+  UuidV7 preset_id = 1;
+  Revision expected_revision = 2;
+}
+
+message DeletePresetResponse {
+  UuidV7 preset_id = 1;
+  Revision deleted_revision = 2;
+}
+
+enum FeatureDeletionTriggerKind {
+  FEATURE_DELETION_TRIGGER_KIND_UNSPECIFIED = 0;
+  FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST = 1;
+  FEATURE_DELETION_TRIGGER_KIND_DELIBASE_ACCOUNT_LIFECYCLE = 2;
+  FEATURE_DELETION_TRIGGER_KIND_DELIBASE_ORGANIZATION_LIFECYCLE = 3;
+}
+
+message OwnerFeatureDeletion {
+  OwnerScope owner = 1;
+  IdempotencyKey idempotency = 2;
+}
+
+message DelibaseAccountLifecycleDeletion {
+  UuidV7 account_id = 1;
+  UuidV7 deletion_job_id = 2;
+}
+
+message DelibaseOrganizationLifecycleDeletion {
+  UuidV7 organization_id = 1;
+  UuidV7 deletion_job_id = 2;
+}
+
+message DeleteFeatureDataRequest {
+  FeatureDeletionTriggerKind trigger_kind = 1;
+  oneof trigger {
+    OwnerFeatureDeletion owner_request = 2;
+    DelibaseAccountLifecycleDeletion delibase_account_lifecycle = 3;
+    DelibaseOrganizationLifecycleDeletion delibase_organization_lifecycle = 4;
+  }
+}
+
+message DeleteFeatureDataResponse {
+  UuidV7 deletion_job_id = 1;
+  bool accepted = 2;
+  bool already_absent = 3;
+  IdempotencyResult idempotency = 4;
+}
+
+service RealQAPresetService {
+  rpc ListPresets(ListPresetsRequest) returns (ListPresetsResponse);
+  rpc GetPreset(GetPresetRequest) returns (GetPresetResponse);
+  rpc CreatePreset(CreatePresetRequest) returns (CreatePresetResponse);
+  rpc UpdatePreset(UpdatePresetRequest) returns (UpdatePresetResponse);
+  rpc DeletePreset(DeletePresetRequest) returns (DeletePresetResponse);
+  rpc DeleteFeatureData(DeleteFeatureDataRequest) returns (DeleteFeatureDataResponse);
+}
+

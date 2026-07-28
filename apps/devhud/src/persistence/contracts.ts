@@ -1,9 +1,12 @@
 export const SETTINGS_STORAGE_KEY = "devhud.settings.v1" as const;
+/** Device-only registrations. Feature definitions deliberately never live here. */
+export const SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY = "devhud.shortcut-effective-state.v2" as const;
 export const WIDGET_CONFIGURATION_STORAGE_KEY = "devhud.widget-configuration.v1" as const;
 export const PERSISTENCE_SCHEMA_VERSION = 1 as const;
 
 export type PersistenceKey =
   | typeof SETTINGS_STORAGE_KEY
+  | typeof SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY
   | typeof WIDGET_CONFIGURATION_STORAGE_KEY;
 
 export enum ThemePreference {
@@ -77,6 +80,36 @@ export interface StructuredShortcut {
   readonly key: ShortcutKey;
 }
 
+export const MAX_DECK_SHORTCUT_DEFINITIONS = 20;
+export const MAX_REALQA_SHORTCUT_DEFINITIONS = 20;
+
+declare const opaqueShortcutDefinitionId: unique symbol;
+/** Opaque server/client definition IDs are never included in diagnostics. */
+export type ShortcutDefinitionId = string & {
+  readonly [opaqueShortcutDefinitionId]: "ShortcutDefinitionId";
+};
+
+export type ShortcutOwner =
+  | { readonly feature: "devhud" }
+  | { readonly feature: "deck"; readonly accountId: string; readonly definitionId: ShortcutDefinitionId }
+  | { readonly feature: "realqa"; readonly definitionId: ShortcutDefinitionId };
+
+export interface ShortcutDefinition {
+  readonly owner: ShortcutOwner;
+  readonly shortcut: StructuredShortcut;
+}
+
+/**
+ * This is local effective state only. Deck definitions synchronize through its
+ * feature API and RealQA definitions remain device scoped; neither is copied
+ * into the base shell's persistence boundary.
+ */
+export interface ShortcutEffectiveState {
+  readonly version: 2;
+  readonly genericShortcut: StructuredShortcut | null;
+  readonly inactive: readonly ShortcutOwner[];
+}
+
 declare const stableToolId: unique symbol;
 
 /** A persisted tool reference is accepted only after the stable-ID validation below. */
@@ -111,6 +144,11 @@ export interface SettingsRecord {
 export interface WidgetConfigurationRecord {
   readonly version: typeof PERSISTENCE_SCHEMA_VERSION;
   readonly configuration: WidgetConfiguration;
+}
+
+export interface ShortcutEffectiveStateRecord {
+  readonly version: 2;
+  readonly state: ShortcutEffectiveState;
 }
 
 export const defaultSettings: DevHudSettings = Object.freeze({
@@ -160,6 +198,28 @@ export function isStructuredShortcut(
         typeof modifier === "string" && modifiers.has(modifier),
     )
   );
+}
+
+function isShortcutOwner(value: unknown): value is ShortcutOwner {
+  if (!isRecord(value) || typeof value.feature !== "string") return false;
+  if (value.feature === "devhud") return hasExactKeys(value, ["feature"]);
+  if (value.feature === "deck") {
+    return hasExactKeys(value, ["feature", "accountId", "definitionId"])
+      && typeof value.accountId === "string" && value.accountId.length > 0
+      && typeof value.definitionId === "string" && value.definitionId.length > 0;
+  }
+  return value.feature === "realqa"
+    && hasExactKeys(value, ["feature", "definitionId"])
+    && typeof value.definitionId === "string" && value.definitionId.length > 0;
+}
+
+function isShortcutEffectiveState(value: unknown): value is ShortcutEffectiveState {
+  return isRecord(value)
+    && hasExactKeys(value, ["version", "genericShortcut", "inactive"])
+    && value.version === 2
+    && (value.genericShortcut === null || isStructuredShortcut(value.genericShortcut))
+    && Array.isArray(value.inactive)
+    && value.inactive.every(isShortcutOwner);
 }
 
 export function parseStableToolId(value: unknown): StableToolId | null {
@@ -267,6 +327,25 @@ export function decodeWidgetConfiguration(raw: string): DecodeResult<WidgetConfi
   return { ok: true, value: parsed.value.configuration };
 }
 
+export function decodeShortcutEffectiveState(raw: string): DecodeResult<ShortcutEffectiveState> {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!isRecord(value) || !hasExactKeys(value, ["version", "state"])) {
+      return { ok: false, failure: decodeFailureFromKind("incompatible") };
+    }
+    if (typeof value.version !== "number") {
+      return { ok: false, failure: decodeFailureFromKind("incompatible") };
+    }
+    if (value.version > 2) return { ok: false, failure: decodeFailureFromKind("future-version") };
+    if (value.version !== 2 || !isShortcutEffectiveState(value.state)) {
+      return { ok: false, failure: decodeFailureFromKind("incompatible") };
+    }
+    return { ok: true, value: value.state };
+  } catch {
+    return { ok: false, failure: decodeFailureFromKind("corrupt") };
+  }
+}
+
 export function encodeSettings(settings: DevHudSettings): string {
   if (!isSettings(settings)) {
     throw new Error("DevHud settings do not satisfy the local persistence contract.");
@@ -283,5 +362,13 @@ export function encodeWidgetConfiguration(configuration: WidgetConfiguration): s
     version: PERSISTENCE_SCHEMA_VERSION,
     configuration,
   };
+  return JSON.stringify(record);
+}
+
+export function encodeShortcutEffectiveState(state: ShortcutEffectiveState): string {
+  if (!isShortcutEffectiveState(state)) {
+    throw new Error("DevHud shortcut effective state does not satisfy the local persistence contract.");
+  }
+  const record: ShortcutEffectiveStateRecord = { version: 2, state };
   return JSON.stringify(record);
 }
