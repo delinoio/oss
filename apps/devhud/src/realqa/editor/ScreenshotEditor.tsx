@@ -520,6 +520,142 @@ function operationDescription(operation: EditorOperation, index: number): string
   }
 }
 
+const fallbackEditorGlyph = [14, 17, 1, 2, 4, 0, 4] as const;
+
+const editorGlyphs: Readonly<Record<string, readonly number[]>> = {
+  "0": [14, 17, 19, 21, 25, 17, 14],
+  "1": [4, 12, 4, 4, 4, 4, 14],
+  "2": [14, 17, 1, 2, 4, 8, 31],
+  "3": [30, 1, 1, 14, 1, 1, 30],
+  "4": [2, 6, 10, 18, 31, 2, 2],
+  "5": [31, 16, 16, 30, 1, 1, 30],
+  "6": [14, 16, 16, 30, 17, 17, 14],
+  "7": [31, 1, 2, 4, 8, 8, 8],
+  "8": [14, 17, 17, 14, 17, 17, 14],
+  "9": [14, 17, 17, 15, 1, 1, 14],
+  A: [14, 17, 17, 31, 17, 17, 17],
+  B: [30, 17, 17, 30, 17, 17, 30],
+  C: [14, 17, 16, 16, 16, 17, 14],
+  D: [30, 17, 17, 17, 17, 17, 30],
+  E: [31, 16, 16, 30, 16, 16, 31],
+  F: [31, 16, 16, 30, 16, 16, 16],
+  G: [14, 16, 16, 23, 17, 17, 15],
+  H: [17, 17, 17, 31, 17, 17, 17],
+  I: [14, 4, 4, 4, 4, 4, 14],
+  J: [7, 2, 2, 2, 18, 18, 12],
+  K: [17, 18, 20, 24, 20, 18, 17],
+  L: [16, 16, 16, 16, 16, 16, 31],
+  M: [17, 27, 21, 21, 17, 17, 17],
+  N: [17, 25, 21, 19, 17, 17, 17],
+  O: [14, 17, 17, 17, 17, 17, 14],
+  P: [30, 17, 17, 30, 16, 16, 16],
+  Q: [14, 17, 17, 17, 21, 18, 13],
+  R: [30, 17, 17, 30, 20, 18, 17],
+  S: [15, 16, 16, 14, 1, 1, 30],
+  T: [31, 4, 4, 4, 4, 4, 4],
+  U: [17, 17, 17, 17, 17, 17, 14],
+  V: [17, 17, 17, 17, 17, 10, 4],
+  W: [17, 17, 17, 21, 21, 21, 10],
+  X: [17, 17, 10, 4, 10, 17, 17],
+  Y: [17, 17, 10, 4, 4, 4, 4],
+  Z: [31, 1, 2, 4, 8, 16, 31],
+  a: [0, 0, 14, 1, 15, 17, 15],
+  b: [16, 16, 30, 17, 17, 17, 30],
+  c: [0, 0, 14, 16, 16, 17, 14],
+  d: [1, 1, 15, 17, 17, 17, 15],
+  e: [0, 0, 14, 17, 31, 16, 14],
+  f: [6, 8, 30, 8, 8, 8, 8],
+  g: [0, 0, 15, 17, 15, 1, 14],
+  h: [16, 16, 30, 17, 17, 17, 17],
+  i: [4, 0, 12, 4, 4, 4, 14],
+  j: [2, 0, 6, 2, 2, 18, 12],
+  k: [16, 16, 18, 20, 24, 20, 18],
+  l: [12, 4, 4, 4, 4, 4, 14],
+  m: [0, 0, 26, 21, 21, 21, 21],
+  n: [0, 0, 30, 17, 17, 17, 17],
+  o: [0, 0, 14, 17, 17, 17, 14],
+  p: [0, 0, 30, 17, 30, 16, 16],
+  q: [0, 0, 15, 17, 15, 1, 1],
+  r: [0, 0, 22, 25, 16, 16, 16],
+  s: [0, 0, 15, 16, 14, 1, 30],
+  t: [8, 8, 30, 8, 8, 9, 6],
+  u: [0, 0, 17, 17, 17, 19, 13],
+  v: [0, 0, 17, 17, 17, 10, 4],
+  w: [0, 0, 17, 17, 21, 21, 10],
+  x: [0, 0, 17, 10, 4, 10, 17],
+  y: [0, 0, 17, 17, 15, 1, 14],
+  z: [0, 0, 31, 2, 4, 8, 31],
+  " ": [0, 0, 0, 0, 0, 0, 0],
+  "-": [0, 0, 0, 31, 0, 0, 0],
+  ".": [0, 0, 0, 0, 0, 12, 12],
+  ":": [0, 12, 12, 0, 12, 12, 0],
+  "!": [4, 4, 4, 4, 4, 0, 4],
+  "?": fallbackEditorGlyph,
+};
+
+function bitmapTextPath(text: string): string {
+  const pixels: string[] = [];
+  let cursorX = 0;
+  let cursorY = 0;
+  for (const character of text) {
+    if (character === "\n") {
+      cursorX = 0;
+      cursorY += 8;
+      continue;
+    }
+    const glyph = editorGlyphs[character] ?? fallbackEditorGlyph;
+    for (const [row, bits] of glyph.entries()) {
+      for (let column = 0; column < 5; column += 1) {
+        if ((bits & (1 << (4 - column))) !== 0) {
+          pixels.push(`M${cursorX + column} ${cursorY + row}h1v1h-1z`);
+        }
+      }
+    }
+    cursorX += 6;
+  }
+  return pixels.join("");
+}
+
+const MAX_PIXELATE_PREVIEW_TILE_EDGE = 1_024;
+
+interface PixelatePreviewTile {
+  readonly columns: number;
+  readonly height: number;
+  readonly outputX: number;
+  readonly outputY: number;
+  readonly rows: number;
+  readonly width: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+export function pixelatePreviewTiles(
+  width: number,
+  height: number,
+  blockSize: number,
+): readonly PixelatePreviewTile[] {
+  const tileSpan =
+    Math.floor(MAX_PIXELATE_PREVIEW_TILE_EDGE / blockSize) * blockSize;
+  const tiles: PixelatePreviewTile[] = [];
+  for (let y = 0; y < height; y += tileSpan) {
+    const tileHeight = Math.min(tileSpan, height - y);
+    for (let x = 0; x < width; x += tileSpan) {
+      const tileWidth = Math.min(tileSpan, width - x);
+      tiles.push({
+        columns: Math.ceil(tileWidth / blockSize),
+        height: tileHeight,
+        outputX: x / blockSize,
+        outputY: y / blockSize,
+        rows: Math.ceil(tileHeight / blockSize),
+        width: tileWidth,
+        x,
+        y,
+      });
+    }
+  }
+  return tiles;
+}
+
 export function pixelatePreviewPixels(
   pixels: Uint8ClampedArray,
   width: number,
@@ -565,37 +701,73 @@ function renderPixelatedPreview(
   const context = canvas.getContext("2d");
   if (context === null) return;
   const sourceCanvas = document.createElement("canvas");
-  sourceCanvas.width = operation.rect.width;
-  sourceCanvas.height = operation.rect.height;
   const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
   if (sourceContext === null) return;
-  sourceContext.drawImage(
-    preview,
-    operation.rect.x,
-    operation.rect.y,
-    operation.rect.width,
-    operation.rect.height,
-    0,
-    0,
-    operation.rect.width,
-    operation.rect.height,
-  );
-  const sourcePixels = sourceContext.getImageData(
-    0,
-    0,
-    operation.rect.width,
-    operation.rect.height,
-  );
-  const pixelated = pixelatePreviewPixels(
-    sourcePixels.data,
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  for (const tile of pixelatePreviewTiles(
     operation.rect.width,
     operation.rect.height,
     operation.blockSize,
+  )) {
+    sourceCanvas.width = tile.width;
+    sourceCanvas.height = tile.height;
+    sourceContext.drawImage(
+      preview,
+      operation.rect.x + tile.x,
+      operation.rect.y + tile.y,
+      tile.width,
+      tile.height,
+      0,
+      0,
+      tile.width,
+      tile.height,
+    );
+    const sourcePixels = sourceContext.getImageData(
+      0,
+      0,
+      tile.width,
+      tile.height,
+    );
+    const pixelated = pixelatePreviewPixels(
+      sourcePixels.data,
+      tile.width,
+      tile.height,
+      operation.blockSize,
+    );
+    const imageData = context.createImageData(tile.columns, tile.rows);
+    imageData.data.set(pixelated.data);
+    context.putImageData(imageData, tile.outputX, tile.outputY);
+  }
+}
+
+function arrowPreviewWings(
+  operation: Extract<EditorOperation, { readonly kind: "arrow" }>,
+  source: ComposerImage,
+): readonly EditorPoint[] {
+  const deltaX = operation.end.x - operation.start.x;
+  const deltaY = operation.end.y - operation.start.y;
+  const length = Math.hypot(deltaX, deltaY);
+  const head = Math.min(
+    Math.max(8, Math.min(48, operation.lineWidth * 4)),
+    length * 0.6,
   );
-  const imageData = context.createImageData(pixelated.columns, pixelated.rows);
-  imageData.data.set(pixelated.data);
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.putImageData(imageData, 0, 0);
+  const angle = Math.atan2(deltaY, deltaX);
+  return [2.55, -2.55].map((offset) => ({
+    x: Math.max(
+      0,
+      Math.min(
+        source.width - 1,
+        Math.round(operation.end.x + head * Math.cos(angle + offset)),
+      ),
+    ),
+    y: Math.max(
+      0,
+      Math.min(
+        source.height - 1,
+        Math.round(operation.end.y + head * Math.sin(angle + offset)),
+      ),
+    ),
+  }));
 }
 
 function PixelatedOverlay({
@@ -682,18 +854,33 @@ function OperationOverlay({
           y={operation.rect.y}
         />
       );
-    case "arrow":
+    case "arrow": {
+      const wings = arrowPreviewWings(operation, source);
       return (
-        <line
-          markerEnd={`url(#${effectPrefix}-arrow-head)`}
-          stroke={operation.color}
-          strokeWidth={operation.lineWidth}
-          x1={operation.start.x}
-          x2={operation.end.x}
-          y1={operation.start.y}
-          y2={operation.end.y}
-        />
+        <g>
+          <line
+            stroke={operation.color}
+            strokeWidth={operation.lineWidth}
+            x1={operation.start.x}
+            x2={operation.end.x}
+            y1={operation.start.y}
+            y2={operation.end.y}
+          />
+          {wings.map((wing, wingIndex) => (
+            <line
+              className="editor-arrow-head"
+              key={wingIndex}
+              stroke={operation.color}
+              strokeWidth={operation.lineWidth}
+              x1={operation.end.x}
+              x2={wing.x}
+              y1={operation.end.y}
+              y2={wing.y}
+            />
+          ))}
+        </g>
       );
+    }
     case "rectangle":
       return (
         <rect
@@ -719,14 +906,12 @@ function OperationOverlay({
       );
     case "text":
       return (
-        <text
+        <path
+          className="editor-bitmap-text"
+          d={bitmapTextPath(operation.text)}
           fill={operation.color}
-          fontSize={operation.fontSize}
-          x={operation.origin.x}
-          y={operation.origin.y + operation.fontSize}
-        >
-          {operation.text}
-        </text>
+          transform={`translate(${operation.origin.x} ${operation.origin.y}) scale(${Math.max(1, Math.floor(operation.fontSize / 7))})`}
+        />
       );
     case "marker":
       return (
@@ -847,10 +1032,17 @@ export function ScreenshotEditorCanvas() {
     if (delta !== undefined) {
       event.preventDefault();
       moveKeyboardCursor(delta[0], delta[1]);
-      if (pending !== null) move({
-        x: Math.max(0, Math.min(source.width - 1, keyboardCursor.x + delta[0])),
-        y: Math.max(0, Math.min(source.height - 1, keyboardCursor.y + delta[1])),
-      });
+      if (pending !== null) {
+        move(
+          clampPointToRect(
+            {
+              x: keyboardCursor.x + delta[0],
+              y: keyboardCursor.y + delta[1],
+            },
+            viewport,
+          ),
+        );
+      }
     }
   };
 
@@ -896,18 +1088,6 @@ export function ScreenshotEditorCanvas() {
         tabIndex={approving ? -1 : 0}
         viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
       >
-        <defs>
-          <marker
-            id={`${effectPrefix}-arrow-head`}
-            markerHeight="8"
-            markerWidth="8"
-            orient="auto"
-            refX="6"
-            refY="3"
-          >
-            <path d="M0,0 L0,6 L7,3 z" fill="context-stroke" />
-          </marker>
-        </defs>
         <image
           height={source.height}
           href={sourceUrl}

@@ -10,7 +10,11 @@ import {
   type ComposerImage,
   type RealQaComposerBridge,
 } from "../capture";
-import { ScreenshotEditor, pixelatePreviewPixels } from "./ScreenshotEditor";
+import {
+  ScreenshotEditor,
+  pixelatePreviewPixels,
+  pixelatePreviewTiles,
+} from "./ScreenshotEditor";
 
 const source: ComposerImage = {
   imageId: "image-1",
@@ -243,6 +247,35 @@ describe("ScreenshotEditor", () => {
     );
   });
 
+  it("clamps keyboard drawing to the active crop viewport", async () => {
+    const user = userEvent.setup();
+    const { bridge, canvas } = fixture();
+
+    await user.click(screen.getByRole("button", { name: "Crop" }));
+    fireEvent.pointerDown(canvas, { clientX: 100, clientY: 80, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 400, clientY: 320, pointerId: 1 });
+
+    await user.click(screen.getByRole("button", { name: "Arrow" }));
+    canvas.focus();
+    await user.keyboard(
+      "{Enter}{Shift>}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{/Shift}{Enter}",
+    );
+    await user.click(screen.getByRole("button", { name: "Approve 2 edits" }));
+
+    expect(bridge.flattenImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operations: [
+          { kind: "crop", rect: { x: 20, y: 16, width: 60, height: 48 } },
+          expect.objectContaining({
+            kind: "arrow",
+            start: { x: 50, y: 40 },
+            end: { x: 79, y: 40 },
+          }),
+        ],
+      }),
+    );
+  });
+
   it("resets image-specific state when the source identity changes", async () => {
     const user = userEvent.setup();
     const { bridge, canvas, renderEditor, rerender } = fixture();
@@ -332,6 +365,20 @@ describe("ScreenshotEditor", () => {
     ]);
   });
 
+  it("bounds pixelation scratch canvases for maximum-size images", () => {
+    const tiles = pixelatePreviewTiles(10_000, 10_000, 4);
+
+    expect(
+      tiles.every((tile) => tile.width * tile.height <= 1_024 * 1_024),
+    ).toBe(true);
+    expect(
+      tiles.reduce((pixels, tile) => pixels + tile.width * tile.height, 0),
+    ).toBe(100_000_000);
+    expect(
+      tiles.reduce((pixels, tile) => pixels + tile.columns * tile.rows, 0),
+    ).toBe(2_500 * 2_500);
+  });
+
   it("keeps source-derived effects before annotations", async () => {
     const user = userEvent.setup();
     const { bridge, canvas } = fixture();
@@ -373,6 +420,24 @@ describe("ScreenshotEditor", () => {
     expect(screen.getByRole("list", { name: "Applied edits" })).toHaveTextContent(
       "Text: caf?",
     );
+    expect(
+      canvas.querySelector("path.editor-bitmap-text"),
+    ).toHaveAttribute("transform", "translate(10 8) scale(2)");
+    expect(canvas.querySelector("text")).not.toBeInTheDocument();
+  });
+
+  it("previews arrowheads with the native pixel sizing formula", () => {
+    const { canvas } = fixture();
+    fireEvent.pointerDown(canvas, { clientX: 50, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 450, clientY: 200, pointerId: 1 });
+
+    const arrowWings = canvas.querySelectorAll("line.editor-arrow-head");
+    expect(arrowWings).toHaveLength(2);
+    expect(arrowWings[0]).toHaveAttribute("x1", "89");
+    expect(arrowWings[0]).toHaveAttribute("x2", "76");
+    expect(arrowWings[0]).toHaveAttribute("y1", "40");
+    expect(arrowWings[0]).toHaveAttribute("y2", "49");
+    expect(canvas.querySelector("marker")).not.toBeInTheDocument();
   });
 
   it("has no automated WCAG violations at mobile width", async () => {
