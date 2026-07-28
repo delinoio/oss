@@ -904,6 +904,9 @@ jobs:
       - name: Inspect capabilities and run native fixtures
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter devhud test:realqa:native
+      - name: Build DevHud frontend
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter devhud build
       - name: Compile Windows x64 and ARM64 capture libraries
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
