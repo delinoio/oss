@@ -367,6 +367,7 @@ pub(crate) trait CaptureBackend: Send + Sync {
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure>;
 }
 
+#[derive(Clone)]
 pub(crate) struct CaptureCore {
     backend: Arc<dyn CaptureBackend>,
 }
@@ -444,6 +445,11 @@ impl CaptureCore {
             return Err(CaptureFailure::DisplaySnapshotChanged);
         }
         let resolved = self.resolve(request, snapshot)?;
+        decoded_byte_len(
+            resolved.expected_frame_size.width,
+            resolved.expected_frame_size.height,
+        )
+        .map_err(CaptureFailure::from)?;
         let frame = self
             .backend
             .capture(&resolved)
@@ -1118,6 +1124,42 @@ mod tests {
             core.cancel(&CaptureSessionId("session-1".to_owned()))
                 .expect("fixture cancellation must work");
         }
+    }
+
+    #[test]
+    fn begin_rejects_oversized_frames_before_backend_capture() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
+        *backend.displays.lock().expect("display lock") = vec![DisplayDescriptor {
+            id: DisplayId("oversized".to_owned()),
+            logical_bounds: LogicalRect {
+                x: 0.0,
+                y: 0.0,
+                width: 10_001.0,
+                height: 10_000.0,
+            },
+            physical_size: PhysicalSize {
+                width: 10_001,
+                height: 10_000,
+            },
+            scale: ScaleFactor {
+                numerator: 1,
+                denominator: 1,
+            },
+            primary: true,
+        }];
+        backend.windows.lock().expect("window lock").clear();
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Display {
+            display_id: DisplayId("oversized".to_owned()),
+        };
+
+        assert_eq!(
+            core.begin(capture_request),
+            Err(CaptureFailure::DecompressionBomb)
+        );
+        assert!(backend.last_request.lock().expect("request lock").is_none());
     }
 
     #[test]

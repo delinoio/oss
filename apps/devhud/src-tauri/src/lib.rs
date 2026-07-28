@@ -2899,11 +2899,15 @@ fn realqa_adjust_capture_selection(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_begin_capture(
+async fn realqa_begin_capture(
     request: realqa_capture::CaptureRequest,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
-    let result = state.begin(request);
+    let capture_core = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || capture_core.begin(request))
+        .await
+        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+        .and_then(|result| result);
     realqa_capture::record_outcome(&result);
     result
 }

@@ -20,8 +20,8 @@ use super::{
     super::{
         BackendFailure, BackendFrame, CaptureCapabilities, CaptureDisplayProtocol, CaptureMode,
         CapturePermission, CaptureSessionId, CaptureSourceSelection, DisplayDescriptor, DisplayId,
-        DisplaySnapshot, LogicalRect, PointerInclusion, ResolvedCaptureRequest, WindowAvailability,
-        WindowMetadata, WindowSource, WindowSourceId,
+        DisplayPixelRegion, DisplaySnapshot, LogicalRect, PointerInclusion, ResolvedCaptureRequest,
+        WindowAvailability, WindowMetadata, WindowSource, WindowSourceId, decoded_byte_len,
         geometry::{PhysicalSize, ScaleFactor},
     },
     LinuxCaptureProvider, direct_capabilities,
@@ -264,6 +264,8 @@ impl X11CaptureProvider {
         let y = checked_i16(bounds.y)?;
         let width = checked_u16(bounds.width)?;
         let height = checked_u16(bounds.height)?;
+        let rgba_len = decoded_byte_len(u32::from(width), u32::from(height))
+            .map_err(|_| BackendFailure::CaptureFailed)?;
         let cursor = if pointer == PointerInclusion::Include {
             Some(
                 connection
@@ -280,7 +282,7 @@ impl X11CaptureProvider {
         let visual = self
             .visual(connection, visual_id)
             .ok_or(BackendFailure::CaptureFailed)?;
-        let mut rgba = Vec::with_capacity(usize::from(width) * usize::from(height) * 4);
+        let mut rgba = Vec::with_capacity(rgba_len);
         for row in 0..height {
             for column in 0..width {
                 let pixel = image.get_pixel(column, row);
@@ -313,6 +315,34 @@ impl X11CaptureProvider {
             rgba,
             approved_layout: None,
         })
+    }
+
+    fn capture_multi_monitor(
+        &self,
+        connection: &RustConnection,
+        root: Window,
+        request: &ResolvedCaptureRequest,
+    ) -> Result<BackendFrame, BackendFailure> {
+        let rgba_len = decoded_byte_len(
+            request.expected_frame_size.width,
+            request.expected_frame_size.height,
+        )
+        .map_err(|_| BackendFailure::CaptureFailed)?;
+        let mut frame = BackendFrame {
+            width: request.expected_frame_size.width,
+            height: request.expected_frame_size.height,
+            rgba: vec![0; rgba_len],
+            approved_layout: None,
+        };
+        for region in &request.pixel_regions {
+            let bounds = root_bounds_for_region(&request.snapshot, region)?;
+            let captured =
+                self.capture_drawable(connection, root, bounds, bounds, request.pointer)?;
+            let destination_x = checked_output_offset(bounds.x - request.logical_bounds.x.floor())?;
+            let destination_y = checked_output_offset(bounds.y - request.logical_bounds.y.floor())?;
+            copy_frame_at(&mut frame, &captured, destination_x, destination_y)?;
+        }
+        Ok(frame)
     }
 }
 
@@ -432,6 +462,11 @@ impl LinuxCaptureProvider for X11CaptureProvider {
     }
 
     fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
+        decoded_byte_len(
+            request.expected_frame_size.width,
+            request.expected_frame_size.height,
+        )
+        .map_err(|_| BackendFailure::CaptureFailed)?;
         let connection = self
             .connection
             .lock()
@@ -442,6 +477,9 @@ impl LinuxCaptureProvider for X11CaptureProvider {
             return Err(BackendFailure::DisplayChanged);
         }
         let root = self.root(&connection)?;
+        if request.mode == CaptureMode::MultiMonitor {
+            return self.capture_multi_monitor(&connection, root, request);
+        }
         let (drawable, drawable_bounds, desktop_bounds) = match &request.source {
             CaptureSourceSelection::Window { window_id } => {
                 let window = self
@@ -476,16 +514,13 @@ impl LinuxCaptureProvider for X11CaptureProvider {
                 (root, bounds, bounds)
             }
         };
-        let mut frame = self.capture_drawable(
+        let frame = self.capture_drawable(
             &connection,
             drawable,
             drawable_bounds,
             desktop_bounds,
             request.pointer,
         )?;
-        if request.mode == CaptureMode::MultiMonitor {
-            blank_unselected_gaps(&mut frame, request);
-        }
         if frame.width != request.expected_frame_size.width
             || frame.height != request.expected_frame_size.height
         {
@@ -649,28 +684,90 @@ fn opaque_window_id(hasher: &RandomState, window: Window) -> WindowSourceId {
     WindowSourceId(format!("x11-source-{:016x}", hasher.hash_one(window)))
 }
 
-fn blank_unselected_gaps(frame: &mut BackendFrame, request: &ResolvedCaptureRequest) {
-    let CaptureSourceSelection::MultiMonitor { display_ids } = &request.source else {
-        return;
-    };
-    for y in 0..frame.height {
-        for x in 0..frame.width {
-            let desktop_x = request.logical_bounds.x.floor() + f64::from(x);
-            let desktop_y = request.logical_bounds.y.floor() + f64::from(y);
-            let selected = display_ids.iter().any(|display_id| {
-                request.snapshot.display(display_id).is_some_and(|display| {
-                    desktop_x >= display.logical_bounds.x
-                        && desktop_x < display.logical_bounds.right()
-                        && desktop_y >= display.logical_bounds.y
-                        && desktop_y < display.logical_bounds.bottom()
-                })
-            });
-            if !selected {
-                let index = (y as usize * frame.width as usize + x as usize) * 4;
-                frame.rgba[index..index + 4].copy_from_slice(&[0, 0, 0, 0]);
-            }
-        }
+fn root_bounds_for_region(
+    snapshot: &DisplaySnapshot,
+    region: &DisplayPixelRegion,
+) -> Result<LogicalRect, BackendFailure> {
+    let display = snapshot
+        .display(&region.display_id)
+        .ok_or(BackendFailure::DisplayChanged)?;
+    if display.scale.numerator != 1
+        || display.scale.denominator != 1
+        || region.pixels.width == 0
+        || region.pixels.height == 0
+        || region
+            .pixels
+            .x
+            .checked_add(region.pixels.width)
+            .is_none_or(|right| right > display.physical_size.width)
+        || region
+            .pixels
+            .y
+            .checked_add(region.pixels.height)
+            .is_none_or(|bottom| bottom > display.physical_size.height)
+    {
+        return Err(BackendFailure::CaptureFailed);
     }
+    Ok(LogicalRect {
+        x: display.logical_bounds.x + f64::from(region.pixels.x),
+        y: display.logical_bounds.y + f64::from(region.pixels.y),
+        width: f64::from(region.pixels.width),
+        height: f64::from(region.pixels.height),
+    })
+}
+
+fn checked_output_offset(value: f64) -> Result<u32, BackendFailure> {
+    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > f64::from(u32::MAX) {
+        return Err(BackendFailure::CaptureFailed);
+    }
+    Ok(value as u32)
+}
+
+fn copy_frame_at(
+    destination: &mut BackendFrame,
+    source: &BackendFrame,
+    destination_x: u32,
+    destination_y: u32,
+) -> Result<(), BackendFailure> {
+    if source.approved_layout.is_some()
+        || source.rgba.len()
+            != decoded_byte_len(source.width, source.height)
+                .map_err(|_| BackendFailure::CaptureFailed)?
+        || destination_x
+            .checked_add(source.width)
+            .is_none_or(|right| right > destination.width)
+        || destination_y
+            .checked_add(source.height)
+            .is_none_or(|bottom| bottom > destination.height)
+    {
+        return Err(BackendFailure::CaptureFailed);
+    }
+    let source_stride = usize::try_from(source.width)
+        .ok()
+        .and_then(|width| width.checked_mul(4))
+        .ok_or(BackendFailure::CaptureFailed)?;
+    let destination_stride = usize::try_from(destination.width)
+        .ok()
+        .and_then(|width| width.checked_mul(4))
+        .ok_or(BackendFailure::CaptureFailed)?;
+    let destination_x = usize::try_from(destination_x)
+        .ok()
+        .and_then(|x| x.checked_mul(4))
+        .ok_or(BackendFailure::CaptureFailed)?;
+    for row in 0..usize::try_from(source.height).map_err(|_| BackendFailure::CaptureFailed)? {
+        let source_start = row
+            .checked_mul(source_stride)
+            .ok_or(BackendFailure::CaptureFailed)?;
+        let destination_start = usize::try_from(destination_y)
+            .ok()
+            .and_then(|y| y.checked_add(row))
+            .and_then(|y| y.checked_mul(destination_stride))
+            .and_then(|offset| offset.checked_add(destination_x))
+            .ok_or(BackendFailure::CaptureFailed)?;
+        destination.rgba[destination_start..destination_start + source_stride]
+            .copy_from_slice(&source.rgba[source_start..source_start + source_stride]);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -745,5 +842,27 @@ mod tests {
         );
         assert_eq!(metadata.process_name, Some("process".to_owned()));
         assert_eq!(metadata.title, Some("title".to_owned()));
+    }
+
+    #[test]
+    fn selected_regions_compose_without_filling_unselected_gaps() {
+        let mut destination = BackendFrame {
+            width: 5,
+            height: 1,
+            rgba: vec![0; 20],
+            approved_layout: None,
+        };
+        let source = BackendFrame {
+            width: 2,
+            height: 1,
+            rgba: vec![1, 2, 3, 255, 4, 5, 6, 255],
+            approved_layout: None,
+        };
+
+        copy_frame_at(&mut destination, &source, 0, 0).expect("left region");
+        copy_frame_at(&mut destination, &source, 3, 0).expect("right region");
+
+        assert_eq!(&destination.rgba[8..12], &[0, 0, 0, 0]);
+        assert_eq!(&destination.rgba[12..20], &source.rgba);
     }
 }
