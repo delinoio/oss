@@ -695,6 +695,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	lifecycleAccountID := uuidv7.MustNew()
 	lifecycleOrganizationID := uuidv7.MustNew()
 	lifecycleConnectionID := uuidv7.MustNew()
+	lifecycleDigest := hmac.New(sha256.New, identityKey)
+	_, _ = lifecycleDigest.Write([]byte("fixture-lifecycle-user"))
 	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_identities (account_id, subject_digest)
 		VALUES ($1, $2);
@@ -705,7 +707,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			$3, 'organization', $4, 'connected', $1,
 			decode('05', 'hex'), decode('06', 'hex'), 'fixture-key'
 		)
-	`, lifecycleAccountID, []byte("lifecycle-digest"),
+	`, lifecycleAccountID, lifecycleDigest.Sum(nil),
 		lifecycleConnectionID, lifecycleOrganizationID); err != nil {
 		t.Fatal(err)
 	}
