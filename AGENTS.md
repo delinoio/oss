@@ -356,6 +356,14 @@ enum RustiaComponent {
 - Rust code should use `tracing` (or a compatible structured logging facade).
 - CLI and operator-facing logs should enable ANSI color by default; allow opt-out with documented flags or environment variables.
 
+### Renovate Dependency Updates
+
+- The Mend-hosted Renovate GitHub App manages repository dependency updates through root `renovate.json`; do not add a self-hosted Renovate workflow, token, or secret without synchronizing `docs/repository-defaults.md`.
+- Root Renovate configuration must extend the unversioned `github>delinoio/renovate-config` default preset, enable semantic commits, and use the `deps` scope so generated pull request titles satisfy the repository Conventional Commit contract.
+- The shared preset owns the `America/New_York` Monday 00:00-03:00 schedule, seven-day minimum release age, Dependency Dashboard, peer-dependency exclusion, and automatic merge behavior for minor, patch, pin, digest, lock-file maintenance, and all vulnerability updates, including pre-1.0 non-major updates.
+- Automatic merges depend on the protected default branch's required `CI Result` status check. Preserve the GitHub `dependencies` and `security` labels used by the shared preset.
+- Use Renovate's built-in managers for supported package, lock, workflow, container, build, and runtime-version files. Do not add broad custom managers for shell snippets or documentation examples without documenting their exact file and dependency boundaries in `docs/repository-defaults.md`.
+
 ### CI Baseline
 
 Repository-wide quality CI is defined in `.github/workflows/CI.yml`.
