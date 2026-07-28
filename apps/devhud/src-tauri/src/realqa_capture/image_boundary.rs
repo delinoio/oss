@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(image.bytes, vec![1, 2, 3]);
 
         let oversized = serde::de::value::SeqDeserializer::<_, serde::de::value::Error>::new(
-            std::iter::repeat(0_u8).take(MAX_ENCODED_IMAGE_BYTES_USIZE + 1),
+            std::iter::repeat_n(0_u8, MAX_ENCODED_IMAGE_BYTES_USIZE + 1),
         );
         assert!(deserialize_bounded_image_bytes(oversized).is_err());
     }
