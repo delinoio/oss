@@ -56,15 +56,15 @@ impl AuthFeature {
 
     const fn scopes(self) -> &'static [&'static str] {
         match self {
-            Self::Deck => &["openid", "deck:access"],
-            Self::RealQa => &["openid", "realqa:access"],
+            Self::Deck => &["deck:access"],
+            Self::RealQa => &["realqa:access"],
         }
     }
 
     const fn delibase_scopes(self) -> &'static [&'static str] {
         match self {
-            Self::Deck => &["openid", "delibase:deck:forward"],
-            Self::RealQa => &["openid", "delibase:realqa:forward"],
+            Self::Deck => &["delibase:deck:forward"],
+            Self::RealQa => &["delibase:realqa:forward"],
         }
     }
 }
@@ -340,6 +340,7 @@ struct PendingAuthorization {
     nonce: Secret,
     redirect_uri: Url,
     expires_at_unix_seconds: u64,
+    resume_state: SessionState,
 }
 
 pub(crate) struct AuthorizationRequest {
@@ -428,9 +429,6 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         if self.pending.is_some() || matches!(self.state, SessionState::Authenticating) {
             return Err(AuthError::SignInAlreadyActive);
         }
-        if matches!(self.state, SessionState::SignedIn { .. }) {
-            return Err(AuthError::AccountSwitchRequiresLogout);
-        }
         validate_redirect(platform, &redirect_uri)?;
         let state = random_secret(32)?;
         let verifier = random_secret(64)?;
@@ -460,14 +458,15 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 .append_pair("nonce", nonce.expose())
                 .append_pair("prompt", "select_account");
         }
+        let resume_state = std::mem::replace(&mut self.state, SessionState::Authenticating);
         self.pending = Some(PendingAuthorization {
             state,
             verifier,
             nonce,
             redirect_uri: redirect_uri.clone(),
             expires_at_unix_seconds: now_unix_seconds.saturating_add(CALLBACK_TIMEOUT.as_secs()),
+            resume_state,
         });
-        self.state = SessionState::Authenticating;
         Ok(AuthorizationRequest {
             authorization_url,
             redirect_uri,
@@ -475,8 +474,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
     }
 
     pub(crate) fn cancel_pending(&mut self) {
-        self.pending = None;
-        if matches!(self.state, SessionState::Authenticating) {
+        if let Some(pending) = self.pending.take() {
+            self.state = pending.resume_state;
+        } else if matches!(self.state, SessionState::Authenticating) {
             self.state = SessionState::SignedOut;
         }
     }
@@ -500,12 +500,21 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
     ) -> Result<SessionSnapshot, AuthError> {
         // Taking first makes callback processing one-shot even when validation
         // or exchange fails. A retry starts a fresh authorization transaction.
-        let pending = self
+        let PendingAuthorization {
+            state,
+            verifier,
+            nonce,
+            redirect_uri,
+            resume_state,
+            ..
+        } = self
             .pending
             .take()
             .ok_or(AuthError::CallbackAlreadyConsumed)?;
-        self.state = SessionState::SignedOut;
-        validate_callback_origin(callback, &pending.redirect_uri)?;
+        // Incremental authorization for another feature retains the existing
+        // same-account session if validation, exchange, or consent fails.
+        self.state = resume_state;
+        validate_callback_origin(callback, &redirect_uri)?;
         if callback.as_str().len() > MAX_CALLBACK_REQUEST_LINE_BYTES {
             return Err(AuthError::InvalidCallback);
         }
@@ -530,7 +539,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             }
         }
         let callback_state = callback_state.ok_or(AuthError::InvalidCallback)?;
-        if !constant_time_equal(callback_state.as_bytes(), pending.state.expose().as_bytes()) {
+        if !constant_time_equal(callback_state.as_bytes(), state.expose().as_bytes()) {
             return Err(AuthError::CallbackStateMismatch);
         }
         if authorization_error {
@@ -547,9 +556,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             &token_endpoint,
             &self.configuration.client_id,
             &code,
-            &pending.verifier,
-            &pending.redirect_uri,
-            &pending.nonce,
+            &verifier,
+            &redirect_uri,
+            &nonce,
         )?;
         validate_identity_token(&tokens.claims, &self.configuration, now_unix_seconds)?;
         let subject = tokens.claims.subject.clone();
@@ -690,13 +699,6 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 Err(AuthError::SecureVaultDeleteFailed)
             }
         }
-    }
-
-    pub(crate) fn preflight_vault(&mut self) -> Result<(), AuthError> {
-        if let Some(retained) = self.vault.load()? {
-            validate_device_session_shape(retained.device_session_key.expose())?;
-        }
-        Ok(())
     }
 
     fn reject_account_switch(&mut self, subject: &str) -> Result<(), AuthError> {
@@ -1087,6 +1089,7 @@ mod tests {
         exchange: VecDeque<Result<TokenSet, AuthError>>,
         refresh: VecDeque<Result<TokenSet, AuthError>>,
         refresh_inputs: Vec<String>,
+        refresh_requests: Vec<(String, Vec<String>)>,
         revoked: usize,
         fail_revoke: bool,
     }
@@ -1110,11 +1113,15 @@ mod tests {
             endpoint: &Url,
             _client_id: &str,
             refresh_token: &Secret,
-            _audience: &str,
-            _scopes: &[&str],
+            audience: &str,
+            scopes: &[&str],
         ) -> Result<TokenSet, AuthError> {
             assert_eq!(endpoint.as_str(), "https://tenant.logto.app/oidc/token");
             self.refresh_inputs.push(refresh_token.expose().to_owned());
+            self.refresh_requests.push((
+                audience.to_owned(),
+                scopes.iter().map(|scope| (*scope).to_owned()).collect(),
+            ));
             self.refresh.pop_front().unwrap()
         }
 
@@ -1395,6 +1402,130 @@ mod tests {
         assert!(!format!("{manager:?}").contains("memory-access-token"));
     }
 
+    #[test]
+    fn signed_in_account_can_authorize_another_feature_incrementally() {
+        let mut transport = FakeTransport::default();
+        transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("refresh-deck"),
+        )));
+        transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("refresh-realqa"),
+        )));
+        let mut manager = manager(transport, FakeVault::default());
+        let deck_request = manager
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Desktop,
+                Url::parse("http://127.0.0.1:3000/auth/random-enough-path").unwrap(),
+            )
+            .unwrap();
+        manager
+            .complete_callback(&callback_for(&deck_request, "deck-code", None), NOW)
+            .unwrap();
+
+        let realqa_request = manager
+            .begin(
+                AuthFeature::RealQa,
+                AuthPlatform::Desktop,
+                Url::parse("http://127.0.0.1:3001/auth/another-random-path").unwrap(),
+            )
+            .unwrap();
+        assert_eq!(manager.snapshot(), SessionSnapshot::Authenticating);
+        assert_eq!(
+            realqa_request
+                .authorization_url
+                .query_pairs()
+                .filter(|(key, _)| key == "resource")
+                .map(|(_, value)| value.into_owned())
+                .collect::<Vec<_>>(),
+            [REALQA_AUDIENCE, DELIBASE_AUDIENCE]
+        );
+        assert_eq!(
+            manager
+                .complete_callback(&callback_for(&realqa_request, "realqa-code", None), NOW)
+                .unwrap(),
+            SessionSnapshot::SignedIn {
+                subject: "account-a".to_owned()
+            }
+        );
+        assert_eq!(
+            manager
+                .vault
+                .retained
+                .as_ref()
+                .map(|retained| retained.0.as_str()),
+            Some("refresh-realqa")
+        );
+    }
+
+    #[test]
+    fn incremental_authorization_failure_restores_the_active_session() {
+        let mut transport = FakeTransport::default();
+        transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("refresh-a"),
+        )));
+        transport.exchange.push_back(Ok(tokens(
+            "account-b",
+            "devhud-client",
+            &["openid"],
+            Some("refresh-b"),
+        )));
+        let mut manager = manager(transport, FakeVault::default());
+        let initial = manager
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
+            .unwrap();
+        manager
+            .complete_callback(&callback_for(&initial, "deck-code", None), NOW)
+            .unwrap();
+
+        let cancelled = manager
+            .begin(
+                AuthFeature::RealQa,
+                AuthPlatform::Desktop,
+                Url::parse("http://127.0.0.1:3000/auth/random-enough-path").unwrap(),
+            )
+            .unwrap();
+        manager.cancel_pending();
+        assert_eq!(
+            manager.snapshot(),
+            SessionSnapshot::SignedIn {
+                subject: "account-a".to_owned()
+            }
+        );
+
+        let rejected_switch = manager
+            .begin(
+                AuthFeature::RealQa,
+                AuthPlatform::Desktop,
+                cancelled.redirect_uri,
+            )
+            .unwrap();
+        assert_eq!(
+            manager.complete_callback(&callback_for(&rejected_switch, "realqa-code", None), NOW),
+            Err(AuthError::AccountSwitchRequiresLogout)
+        );
+        assert_eq!(
+            manager.snapshot(),
+            SessionSnapshot::SignedIn {
+                subject: "account-a".to_owned()
+            }
+        );
+        assert!(manager.memory_tokens_present());
+    }
+
     impl<T: TokenTransport, V: SecureVault> fmt::Debug for SessionManager<T, V> {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             formatter
@@ -1476,6 +1607,16 @@ mod tests {
             manager.bearer_pair(AuthFeature::Deck, NOW),
             Err(AuthError::SubjectMismatch)
         ));
+        assert_eq!(
+            manager.transport.refresh_requests,
+            [
+                (DECK_AUDIENCE.to_owned(), vec!["deck:access".to_owned()]),
+                (
+                    DELIBASE_AUDIENCE.to_owned(),
+                    vec!["delibase:deck:forward".to_owned()]
+                ),
+            ]
+        );
     }
 
     #[test]
@@ -1573,10 +1714,10 @@ mod tests {
     }
 
     #[test]
-    fn vault_preflight_preserves_signed_in_memory_tokens() {
-        let key = new_device_session_key("account-a").unwrap();
+    fn reset_clears_a_vault_that_cannot_be_deserialized() {
         let vault = FakeVault {
-            retained: Some(("refresh".to_owned(), key.expose().to_owned())),
+            retained: Some(("corrupt".to_owned(), "future-schema".to_owned())),
+            fail_load: true,
             ..FakeVault::default()
         };
         let mut manager = manager(FakeTransport::default(), vault);
@@ -1586,15 +1727,10 @@ mod tests {
             id_token: Some(Secret::new("memory-id-token").unwrap()),
         };
 
-        manager.preflight_vault().unwrap();
-
-        assert!(manager.memory_tokens_present());
-        assert_eq!(
-            manager.snapshot(),
-            SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
-            }
-        );
+        assert_eq!(manager.reset().unwrap(), SessionSnapshot::SignedOut);
+        assert!(manager.vault.retained.is_none());
+        assert!(!manager.memory_tokens_present());
+        assert_eq!(manager.snapshot(), SessionSnapshot::SignedOut);
     }
 
     #[test]

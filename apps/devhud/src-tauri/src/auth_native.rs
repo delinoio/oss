@@ -557,23 +557,6 @@ impl NativeAuthState {
         }
     }
 
-    pub(crate) fn preflight(&self) -> Result<(), AuthError> {
-        let mut guard = self
-            .manager
-            .lock()
-            .map_err(|_| AuthError::SecureVaultUnavailable)?;
-        if let Some(manager) = guard.as_mut() {
-            manager.preflight_vault()?;
-        } else {
-            let _ = self
-                .fallback_vault
-                .lock()
-                .map_err(|_| AuthError::SecureVaultUnavailable)?
-                .load()?;
-        }
-        Ok(())
-    }
-
     pub(crate) fn reset(&self) -> Result<(), AuthError> {
         let mut guard = self
             .manager

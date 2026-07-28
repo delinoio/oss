@@ -123,6 +123,32 @@ describe("dependency-injected DevHud session provider", () => {
     expect(restore).toHaveBeenCalledTimes(3);
   });
 
+  it("restores the active account after incremental authorization is rejected", async () => {
+    const restore = vi
+      .fn<NativeSessionBridge["restore"]>()
+      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a" })
+      .mockRejectedValueOnce("authorization-rejected")
+      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a" });
+    const native = bridge({ restore });
+    const user = userEvent.setup();
+    render(
+      <SessionProvider bridge={native}>
+        <SessionHarness />
+      </SessionProvider>,
+    );
+    expect(await screen.findByTestId("session")).toHaveTextContent("signed-in");
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Sign-in was cancelled or rejected",
+      ),
+    );
+    expect(screen.getByTestId("session")).toHaveTextContent("signed-in");
+    expect(restore).toHaveBeenCalledTimes(3);
+  });
+
   it("clears frontend account state before a failing vault logout finishes", async () => {
     let rejectLogout: ((reason: unknown) => void) | undefined;
     const native = bridge({

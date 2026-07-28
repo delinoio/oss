@@ -98,7 +98,20 @@ export function SessionProvider({
       } catch (error: unknown) {
         if (!active) return;
         setFailure(safeAuthFailure(error));
-        setSession({ status: "signed-out" });
+        try {
+          const snapshot = await bridge.restore();
+          if (!active) return;
+          setSession(snapshot);
+        } catch (restoreError: unknown) {
+          if (!active) return;
+          const restoredFailure = safeAuthFailure(restoreError);
+          setSession({
+            status:
+              restoredFailure.code === "secure-vault-delete-failed"
+                ? "cleanup-required"
+                : "signed-out",
+          });
+        }
       } finally {
         polling = false;
       }

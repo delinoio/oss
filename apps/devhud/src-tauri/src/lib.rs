@@ -2521,9 +2521,6 @@ fn reset_dev_hud(
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
-    auth_state
-        .preflight()
-        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     persistence
         .preflight_reset()
         .map_err(reset_preflight_failure)?;
@@ -2536,22 +2533,27 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
-    auth_state
-        .reset()
-        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
-    clear_browsing_data_for_reset(&app)?;
-    let mut shortcuts = shortcut_state.lock().map_err(|_| {
-        log_shortcut_integration_failure(
-            "reset",
-            shortcut::ShortcutFailure::RegistrationFailed,
-            "unknown",
-        );
-        PersistenceCommandError::ResetFailed
-    })?;
+    if auth_state.reset().is_err() {
+        return Ok(PersistenceResetOutcome::CleanupFailed);
+    }
+    if clear_browsing_data_for_reset(&app).is_err() {
+        return Ok(PersistenceResetOutcome::CleanupFailed);
+    }
+    let mut shortcuts = match shortcut_state.lock() {
+        Ok(shortcuts) => shortcuts,
+        Err(_) => {
+            log_shortcut_integration_failure(
+                "reset",
+                shortcut::ShortcutFailure::RegistrationFailed,
+                "unknown",
+            );
+            return Ok(PersistenceResetOutcome::CleanupFailed);
+        }
+    };
     let previous_shortcut = shortcuts.active_shortcut();
     if let Err(reason) = shortcuts.clear() {
         log_shortcut_integration_failure("reset", reason, "configured");
-        return Err(PersistenceCommandError::ResetFailed);
+        return Ok(PersistenceResetOutcome::CleanupFailed);
     }
 
     let Some(previous_autostart) = autostart_state.current() else {
@@ -2578,7 +2580,7 @@ fn reset_dev_hud(
                 launch_at_login: None,
             });
         }
-        return Err(PersistenceCommandError::ResetFailed);
+        return Ok(PersistenceResetOutcome::CleanupFailed);
     };
     let autostart_outcome = autostart_state.apply(false);
     if let autostart::AutostartOutcome::Unchanged { enabled, reason } = autostart_outcome {
@@ -2601,7 +2603,7 @@ fn reset_dev_hud(
                 launch_at_login: Some(enabled),
             });
         }
-        return Err(PersistenceCommandError::ResetFailed);
+        return Ok(PersistenceResetOutcome::CleanupFailed);
     } else if let autostart::AutostartOutcome::Unknown { reason } = autostart_outcome {
         log_autostart_integration_failure("reset", reason, None);
         let shortcut_rollback = shortcuts.rollback(previous_shortcut);
@@ -2622,7 +2624,7 @@ fn reset_dev_hud(
         });
     }
 
-    if let Err(reason) = clear_local_logs_for_reset(&log_directory) {
+    if clear_local_logs_for_reset(&log_directory).is_err() {
         let autostart_rollback = autostart_state.apply(previous_autostart);
         let autostart_rollback_failed = !matches!(
             autostart_rollback,
@@ -2652,12 +2654,12 @@ fn reset_dev_hud(
                 launch_at_login: autostart_rollback.enabled(),
             });
         }
-        return Err(reason);
+        return Ok(PersistenceResetOutcome::CleanupFailed);
     }
 
     let mut reset_outcome = match persistence.reset() {
         Ok(()) => PersistenceResetOutcome::Complete,
-        Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => {
+        Err(PersistenceResetFailure::BeforeRecordsRemoved(_)) => {
             let autostart_rollback = autostart_state.apply(previous_autostart);
             let autostart_rollback_failed = !matches!(
                 autostart_rollback,
@@ -2687,7 +2689,7 @@ fn reset_dev_hud(
                     launch_at_login: autostart_rollback.enabled(),
                 });
             }
-            return Err(error);
+            return Ok(PersistenceResetOutcome::CleanupFailed);
         }
         Err(PersistenceResetFailure::PartiallyRetained) => {
             PersistenceResetOutcome::PartiallyRetained
@@ -2736,9 +2738,6 @@ fn reset_dev_hud(
     state: State<'_, PersistenceState>,
     auth_state: State<'_, auth_native::NativeAuthState>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
-    auth_state
-        .preflight()
-        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     state.preflight_reset().map_err(reset_preflight_failure)?;
     app.devhud_widget_bridge()
         .prepare_reset()
@@ -2749,14 +2748,19 @@ fn reset_dev_hud(
         .app_log_dir()
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
-    auth_state
-        .reset()
-        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
-    clear_browsing_data_for_reset(webview)?;
-    clear_local_logs_for_reset(&log_directory)?;
+    if auth_state.reset().is_err() {
+        return Ok(PersistenceResetOutcome::CleanupFailed);
+    }
+    if clear_browsing_data_for_reset(webview).is_err()
+        || clear_local_logs_for_reset(&log_directory).is_err()
+    {
+        return Ok(PersistenceResetOutcome::CleanupFailed);
+    }
     let reset_outcome = match state.reset() {
         Ok(()) => PersistenceResetOutcome::Complete,
-        Err(PersistenceResetFailure::BeforeRecordsRemoved(error)) => return Err(error),
+        Err(PersistenceResetFailure::BeforeRecordsRemoved(_)) => {
+            return Ok(PersistenceResetOutcome::CleanupFailed);
+        }
         Err(PersistenceResetFailure::PartiallyRetained) => {
             PersistenceResetOutcome::PartiallyRetained
         }
