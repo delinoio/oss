@@ -1573,7 +1573,7 @@ fn get_runtime_info(
                 // GPU-less GitHub-hosted Windows runners can access-violate
                 // inside CEF after the requested shutdown. This exact marker
                 // lets the smoke distinguish that teardown from an app crash.
-                eprintln!("{}", r#"{"eventId":"smoke-shutdown-requested"}"#);
+                eprintln!(r#"{{"eventId":"smoke-shutdown-requested"}}"#);
             }
             #[cfg(all(
                 feature = "desktop-cef",
