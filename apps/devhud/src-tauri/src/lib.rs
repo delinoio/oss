@@ -3066,6 +3066,11 @@ fn platform_builder() -> Result<tauri::Builder<ActiveRuntime>, RuntimeInitializa
             Some("MAP * ~NOTFOUND, EXCLUDE tauri.localhost"),
         ),
     ]);
+    if std::env::var_os("DEVHUD_SMOKE").is_some_and(|value| value == "1") {
+        // GitHub-hosted Windows runners have no usable GPU; keep the smoke
+        // focused on lifecycle behavior until it runs on GPU-backed hosts.
+        arguments.push(("--disable-gpu", None));
+    }
     Ok(tauri::Builder::<ActiveRuntime>::new()
         .root_cache_path(profile)
         .command_line_args(arguments))
