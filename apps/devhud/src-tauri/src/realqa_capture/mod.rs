@@ -252,10 +252,18 @@ pub(crate) struct CaptureRequest {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ResolvedWindowSource {
+    pub(crate) id: WindowSourceId,
+    pub(crate) display_id: DisplayId,
+    pub(crate) bounds: LogicalRect,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedCaptureRequest {
     pub(crate) session_id: CaptureSessionId,
     pub(crate) snapshot: DisplaySnapshot,
     pub(crate) source: CaptureSourceSelection,
+    pub(crate) window: Option<ResolvedWindowSource>,
     pub(crate) mode: CaptureMode,
     pub(crate) pointer: PointerInclusion,
     pub(crate) output_media_type: ImageMediaType,
@@ -431,7 +439,7 @@ impl CaptureCore {
         request: CaptureRequest,
         snapshot: DisplaySnapshot,
     ) -> Result<ResolvedCaptureRequest, CaptureFailure> {
-        let (logical_bounds, window_display_id) = match &request.source {
+        let (logical_bounds, window) = match &request.source {
             CaptureSourceSelection::Region { selection } => {
                 if selection.snapshot_id != snapshot.snapshot_id {
                     return Err(CaptureFailure::DisplaySnapshotChanged);
@@ -459,7 +467,14 @@ impl CaptureCore {
                     return Err(CaptureFailure::WindowMinimized);
                 }
                 let window = window.checked(&snapshot)?;
-                (window.bounds, Some(window.display_id))
+                (
+                    window.bounds,
+                    Some(ResolvedWindowSource {
+                        id: window.id,
+                        display_id: window.display_id,
+                        bounds: window.bounds,
+                    }),
+                )
             }
             CaptureSourceSelection::Display { display_id } => (
                 snapshot
@@ -515,9 +530,10 @@ impl CaptureCore {
                 snapshot.selected_pixel_regions(display_ids, logical_bounds)?
             }
             CaptureSourceSelection::Window { .. } => snapshot.non_overlapping_pixel_regions(
-                window_display_id
+                &window
                     .as_ref()
-                    .ok_or(CaptureFailure::InvalidDisplaySnapshot)?,
+                    .ok_or(CaptureFailure::InvalidDisplaySnapshot)?
+                    .display_id,
                 logical_bounds,
             )?,
             CaptureSourceSelection::Region { .. } => snapshot.pixel_regions(logical_bounds)?,
@@ -528,6 +544,7 @@ impl CaptureCore {
             session_id: request.session_id,
             snapshot,
             source: request.source,
+            window,
             mode,
             pointer: request.pointer,
             output_media_type: request.output_media_type,

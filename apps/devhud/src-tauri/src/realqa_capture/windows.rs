@@ -10,7 +10,8 @@ use super::{
     BackendFailure, BackendFrame, CaptureBackend, CapturePermission, CapturePlatform,
     CaptureSessionId, CaptureSourceSelection, DisplayDescriptor, DisplayId, DisplaySnapshot,
     LogicalRect, MAX_SAFE_PROCESS_NAME_BYTES, MAX_SAFE_WINDOW_TITLE_BYTES, PointerInclusion,
-    ResolvedCaptureRequest, WindowAvailability, WindowMetadata, WindowSource, WindowSourceId,
+    ResolvedCaptureRequest, ResolvedWindowSource, WindowAvailability, WindowMetadata, WindowSource,
+    WindowSourceId,
     geometry::{PhysicalSize, PixelRect, ScaleFactor},
     image_boundary::{MAX_DECODED_PIXELS, decoded_byte_len},
 };
@@ -388,7 +389,15 @@ impl WindowsCaptureBackend {
         }
 
         if let CaptureSourceSelection::Window { window_id } = &request.source {
-            return self.capture_window(request, window_id, cancel);
+            let window = request
+                .window
+                .as_ref()
+                .filter(|window| &window.id == window_id)
+                .ok_or(BackendFailure::CaptureFailed)?;
+            return self.capture_window(request, window, cancel);
+        }
+        if request.window.is_some() {
+            return Err(BackendFailure::CaptureFailed);
         }
         self.capture_display_regions(request, cancel)
     }
@@ -396,17 +405,26 @@ impl WindowsCaptureBackend {
     fn capture_window(
         &self,
         request: &ResolvedCaptureRequest,
-        window_id: &WindowSourceId,
+        resolved: &ResolvedWindowSource,
         cancel: &Arc<AtomicBool>,
     ) -> Result<BackendFrame, BackendFailure> {
-        let registered = self
-            .sources
-            .lock()
-            .map_err(|_| BackendFailure::CaptureFailed)?
-            .windows
-            .get(window_id)
-            .cloned()
-            .ok_or(BackendFailure::WindowClosed)?;
+        let registered = {
+            let sources = self
+                .sources
+                .lock()
+                .map_err(|_| BackendFailure::CaptureFailed)?;
+            let registered = sources
+                .windows
+                .get(&resolved.id)
+                .ok_or(BackendFailure::WindowClosed)?;
+            if registered.bounds != resolved.bounds
+                || sources.display_ids.get(&registered.display_identity())
+                    != Some(&resolved.display_id)
+            {
+                return Err(BackendFailure::DisplayChanged);
+            }
+            registered.clone()
+        };
         let window = self
             .current_windows()?
             .into_iter()
@@ -572,6 +590,11 @@ impl CaptureBackend for WindowsCaptureBackend {
 
     fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure> {
         let windows = self.current_windows()?;
+        let current_snapshot = DisplaySnapshot::checked(self.displays()?)
+            .map_err(|_| BackendFailure::DisplayChanged)?;
+        if current_snapshot.snapshot_id != snapshot.snapshot_id {
+            return Err(BackendFailure::DisplayChanged);
+        }
         let mut sources = self
             .sources
             .lock()
@@ -1865,6 +1888,21 @@ mod tests {
     }
 
     #[test]
+    fn rejects_display_topology_changed_during_window_enumeration() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        *adapter
+            .remove_display_on_call
+            .lock()
+            .expect("remove call lock") = Some(2);
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter)));
+
+        assert_eq!(
+            core.source_catalog(),
+            Err(CaptureFailure::DisplaySnapshotChanged)
+        );
+    }
+
+    #[test]
     fn preserves_desktop_gap_when_region_intersects_only_one_display() {
         let adapter = Arc::new(FixtureAdapter::mixed_dpi());
         adapter.displays.lock().expect("display lock")[1]
@@ -2060,6 +2098,68 @@ mod tests {
             core.begin(window_request(&catalog, "moved-during-capture")),
             Err(CaptureFailure::DisplaySnapshotChanged)
         );
+    }
+
+    #[test]
+    fn rejects_catalog_refresh_that_replaces_resolved_window_geometry() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let display = adapter.displays.lock().expect("display lock")[1].clone();
+        let window = available_window(
+            NativeSourceId(3),
+            &display,
+            LogicalRect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+        );
+        adapter
+            .windows
+            .lock()
+            .expect("window lock")
+            .push(window.clone());
+        adapter.frames.lock().expect("frames lock").insert(
+            window.source,
+            Ok(solid_frame(
+                PhysicalSize {
+                    width: 2,
+                    height: 2,
+                },
+                [0, 255, 0, 255],
+            )),
+        );
+        let backend = Arc::new(WindowsCaptureBackend::new(adapter.clone()));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog");
+        let resolved = core
+            .resolve(
+                window_request(&catalog, "catalog-refresh"),
+                catalog.snapshot.clone(),
+            )
+            .expect("resolved request");
+
+        let mut moved = window;
+        moved.native_bounds.left += 2;
+        moved.native_bounds.right += 2;
+        moved.bounds.x += 1.0;
+        adapter.windows.lock().expect("window lock")[0] = moved;
+        core.source_catalog().expect("refreshed catalog");
+        backend
+            .start_capture(&resolved.session_id)
+            .expect("start capture");
+
+        assert_eq!(
+            backend.capture(&resolved),
+            Err(BackendFailure::DisplayChanged)
+        );
+        assert!(
+            adapter.captures.lock().expect("captures lock").is_empty(),
+            "stale resolved geometry must be rejected before native capture"
+        );
+        backend
+            .finish_capture(&resolved.session_id)
+            .expect("finish capture");
     }
 
     #[test]
