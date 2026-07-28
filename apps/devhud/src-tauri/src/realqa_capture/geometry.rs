@@ -250,17 +250,90 @@ impl DisplaySnapshot {
         Ok(output)
     }
 
-    pub(crate) fn pixel_region_for_display(
+    pub(crate) fn non_overlapping_pixel_regions(
         &self,
-        display_id: &DisplayId,
+        preferred_display_id: &DisplayId,
         region: LogicalRect,
-    ) -> Result<DisplayPixelRegion, CaptureFailure> {
+    ) -> Result<Vec<DisplayPixelRegion>, CaptureFailure> {
         let region = region.checked()?;
-        self.display(display_id)
-            .ok_or(CaptureFailure::InvalidDisplaySnapshot)?
-            .pixel_region(region)?
-            .ok_or(CaptureFailure::InvalidSelection)
+        let preferred_display = self
+            .display(preferred_display_id)
+            .ok_or(CaptureFailure::InvalidDisplaySnapshot)?;
+        if region
+            .intersection(preferred_display.logical_bounds)
+            .is_none()
+        {
+            return Err(CaptureFailure::InvalidSelection);
+        }
+
+        let displays = std::iter::once(preferred_display).chain(
+            self.displays
+                .iter()
+                .filter(|display| display.id != *preferred_display_id),
+        );
+        let mut covered = Vec::new();
+        let mut output = Vec::new();
+        for display in displays {
+            let Some(intersection) = region.intersection(display.logical_bounds) else {
+                continue;
+            };
+            let mut uncovered = vec![intersection];
+            for covered_region in &covered {
+                uncovered = uncovered
+                    .into_iter()
+                    .flat_map(|candidate| subtract_rect(candidate, *covered_region))
+                    .collect();
+            }
+            for uncovered_region in uncovered {
+                if let Some(pixel_region) = display.pixel_region(uncovered_region)? {
+                    output.push(pixel_region);
+                }
+            }
+            covered.push(intersection);
+        }
+        if output.is_empty() {
+            return Err(CaptureFailure::InvalidSelection);
+        }
+        Ok(output)
     }
+}
+
+fn subtract_rect(region: LogicalRect, covered: LogicalRect) -> Vec<LogicalRect> {
+    let Some(intersection) = region.intersection(covered) else {
+        return vec![region];
+    };
+    let mut output = Vec::with_capacity(4);
+    for candidate in [
+        LogicalRect {
+            x: region.x,
+            y: region.y,
+            width: region.width,
+            height: intersection.y - region.y,
+        },
+        LogicalRect {
+            x: region.x,
+            y: intersection.bottom(),
+            width: region.width,
+            height: region.bottom() - intersection.bottom(),
+        },
+        LogicalRect {
+            x: region.x,
+            y: intersection.y,
+            width: intersection.x - region.x,
+            height: intersection.height,
+        },
+        LogicalRect {
+            x: intersection.right(),
+            y: intersection.y,
+            width: region.right() - intersection.right(),
+            height: intersection.height,
+        },
+    ] {
+        if candidate.width > 0.0 && candidate.height > 0.0 {
+            output.push(candidate);
+        }
+    }
+    output
 }
 
 fn fingerprint_bytes(fingerprint: &mut u64, bytes: &[u8]) {

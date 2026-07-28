@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{self, Cursor, Seek, SeekFrom, Write};
 
 use image::{DynamicImage, ImageFormat, ImageReader};
 use serde::{Deserialize, Serialize};
@@ -110,21 +110,83 @@ pub(crate) fn encode_image(
     decoded: &DecodedImage,
     media_type: ImageMediaType,
 ) -> Result<EncodedImage, ImageBoundaryFailure> {
+    encode_image_with_limit(decoded, media_type, MAX_ENCODED_IMAGE_BYTES)
+}
+
+fn encode_image_with_limit(
+    decoded: &DecodedImage,
+    media_type: ImageMediaType,
+    encoded_limit: u64,
+) -> Result<EncodedImage, ImageBoundaryFailure> {
     let expected_len = decoded_byte_len(decoded.width, decoded.height)?;
     if decoded.rgba.len() != expected_len {
         return Err(ImageBoundaryFailure::MalformedImage);
     }
     let buffer = image::RgbaImage::from_raw(decoded.width, decoded.height, decoded.rgba.clone())
         .ok_or(ImageBoundaryFailure::MalformedImage)?;
-    let mut output = Cursor::new(Vec::new());
-    DynamicImage::ImageRgba8(buffer)
-        .write_to(&mut output, media_type.image_format())
-        .map_err(|_| ImageBoundaryFailure::EncodingFailed)?;
-    let bytes = output.into_inner();
-    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_ENCODED_IMAGE_BYTES {
+    let mut output = BoundedWriter::new(encoded_limit);
+    let encode_result =
+        DynamicImage::ImageRgba8(buffer).write_to(&mut output, media_type.image_format());
+    if output.limit_exceeded {
         return Err(ImageBoundaryFailure::ImageEncodedLimitExceeded);
     }
+    encode_result.map_err(|_| ImageBoundaryFailure::EncodingFailed)?;
+    let bytes = output.into_inner();
     Ok(EncodedImage { media_type, bytes })
+}
+
+struct BoundedWriter {
+    inner: Cursor<Vec<u8>>,
+    limit: u64,
+    limit_exceeded: bool,
+}
+
+impl BoundedWriter {
+    fn new(limit: u64) -> Self {
+        Self {
+            inner: Cursor::new(Vec::new()),
+            limit,
+            limit_exceeded: false,
+        }
+    }
+
+    fn into_inner(self) -> Vec<u8> {
+        self.inner.into_inner()
+    }
+
+    fn limit_error(&mut self) -> io::Error {
+        self.limit_exceeded = true;
+        io::Error::other("encoded image limit exceeded")
+    }
+}
+
+impl Write for BoundedWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let buffer_len = u64::try_from(buffer.len()).map_err(|_| self.limit_error())?;
+        let end = self
+            .inner
+            .position()
+            .checked_add(buffer_len)
+            .ok_or_else(|| self.limit_error())?;
+        if end > self.limit {
+            return Err(self.limit_error());
+        }
+        self.inner.write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl Seek for BoundedWriter {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        let next = self.inner.seek(position)?;
+        if next > self.limit {
+            return Err(self.limit_error());
+        }
+        Ok(next)
+    }
 }
 
 pub(crate) fn sanitize_image(
@@ -307,6 +369,27 @@ mod tests {
             ),
             Err(ImageBoundaryFailure::ImageEncodedLimitExceeded)
         );
+    }
+
+    #[test]
+    fn encoding_stops_writing_as_soon_as_the_per_image_limit_is_crossed() {
+        let decoded = DecodedImage {
+            width: 1,
+            height: 1,
+            rgba: vec![1, 2, 3, 255],
+        };
+        assert_eq!(
+            encode_image_with_limit(&decoded, ImageMediaType::Png, 8),
+            Err(ImageBoundaryFailure::ImageEncodedLimitExceeded)
+        );
+
+        let mut output = BoundedWriter::new(4);
+        output
+            .write_all(&[1, 2, 3, 4])
+            .expect("bytes through the limit must fit");
+        assert!(output.write_all(&[5]).is_err());
+        assert!(output.limit_exceeded);
+        assert_eq!(output.inner.get_ref(), &[1, 2, 3, 4]);
     }
 
     #[test]

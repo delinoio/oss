@@ -249,14 +249,7 @@ impl CaptureCore {
     }
 
     pub(crate) fn source_catalog(&self) -> Result<CaptureSourceCatalog, CaptureFailure> {
-        let permission = self.backend.permission().map_err(CaptureFailure::from)?;
-        match permission {
-            CapturePermission::Granted => {}
-            CapturePermission::PromptRequired => {
-                return Err(CaptureFailure::PermissionRequired);
-            }
-            CapturePermission::Denied => return Err(CaptureFailure::PermissionDenied),
-        }
+        let permission = self.require_granted_permission()?;
         let snapshot = self.current_snapshot()?;
         let mut windows = self
             .backend
@@ -282,6 +275,7 @@ impl CaptureCore {
         selection: &SelectionGeometry,
         adjustment: SelectionAdjustment,
     ) -> Result<SelectionGeometry, CaptureFailure> {
+        self.require_granted_permission()?;
         let snapshot = self.current_snapshot()?;
         adjust_selection(&snapshot, selection, adjustment)
     }
@@ -290,13 +284,10 @@ impl CaptureCore {
         if request.session_id.0.is_empty() || request.session_id.0.len() > 128 {
             return Err(CaptureFailure::InvalidSelection);
         }
+        self.require_granted_permission()?;
         let snapshot = self.current_snapshot()?;
         if snapshot.snapshot_id != request.snapshot_id {
             return Err(CaptureFailure::DisplaySnapshotChanged);
-        }
-        match self.backend.permission().map_err(CaptureFailure::from)? {
-            CapturePermission::Denied => return Err(CaptureFailure::PermissionDenied),
-            CapturePermission::Granted | CapturePermission::PromptRequired => {}
         }
         let resolved = self.resolve(request, snapshot)?;
         let expected_len = decoded_byte_len(
@@ -345,6 +336,14 @@ impl CaptureCore {
 
     fn current_snapshot(&self) -> Result<DisplaySnapshot, CaptureFailure> {
         DisplaySnapshot::checked(self.backend.displays().map_err(CaptureFailure::from)?)
+    }
+
+    fn require_granted_permission(&self) -> Result<CapturePermission, CaptureFailure> {
+        match self.backend.permission().map_err(CaptureFailure::from)? {
+            CapturePermission::Granted => Ok(CapturePermission::Granted),
+            CapturePermission::PromptRequired => Err(CaptureFailure::PermissionRequired),
+            CapturePermission::Denied => Err(CaptureFailure::PermissionDenied),
+        }
     }
 
     fn resolve(
@@ -450,14 +449,12 @@ impl CaptureCore {
                 regions.sort_by(|left, right| left.display_id.0.cmp(&right.display_id.0));
                 regions
             }
-            CaptureSourceSelection::Window { .. } => vec![
-                snapshot.pixel_region_for_display(
-                    window_display_id
-                        .as_ref()
-                        .ok_or(CaptureFailure::InvalidDisplaySnapshot)?,
-                    logical_bounds,
-                )?,
-            ],
+            CaptureSourceSelection::Window { .. } => snapshot.non_overlapping_pixel_regions(
+                window_display_id
+                    .as_ref()
+                    .ok_or(CaptureFailure::InvalidDisplaySnapshot)?,
+                logical_bounds,
+            )?,
             CaptureSourceSelection::Region { .. } => snapshot.pixel_regions(logical_bounds)?,
         };
         let mode = request.source.mode();
@@ -908,6 +905,72 @@ mod tests {
     }
 
     #[test]
+    fn selection_adjustment_rejects_revoked_permission_before_reading_displays() {
+        for (permission, expected) in [
+            (
+                CapturePermission::PromptRequired,
+                CaptureFailure::PermissionRequired,
+            ),
+            (CapturePermission::Denied, CaptureFailure::PermissionDenied),
+        ] {
+            let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+            let core = CaptureCore::new(backend.clone());
+            let catalog = core.source_catalog().expect("catalog must load");
+            backend.display_calls.store(0, Ordering::Relaxed);
+            backend.window_calls.store(0, Ordering::Relaxed);
+            *backend.permission.lock().expect("permission lock") = Ok(permission);
+
+            assert_eq!(
+                core.adjust_selection(
+                    &SelectionGeometry {
+                        snapshot_id: catalog.snapshot.snapshot_id,
+                        bounds: LogicalRect {
+                            x: -25.0,
+                            y: 10.0,
+                            width: 50.0,
+                            height: 25.0,
+                        },
+                    },
+                    SelectionAdjustment::Move {
+                        delta_x: 1.0,
+                        delta_y: 1.0,
+                    },
+                ),
+                Err(expected)
+            );
+            assert_eq!(backend.display_calls.load(Ordering::Relaxed), 0);
+            assert_eq!(backend.window_calls.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    #[test]
+    fn begin_rejects_revoked_permission_before_resolving_sources() {
+        for (permission, expected) in [
+            (
+                CapturePermission::PromptRequired,
+                CaptureFailure::PermissionRequired,
+            ),
+            (CapturePermission::Denied, CaptureFailure::PermissionDenied),
+        ] {
+            let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+            let core = CaptureCore::new(backend.clone());
+            let catalog = core.source_catalog().expect("catalog must load");
+            let mut capture_request = request(&catalog);
+            capture_request.source = CaptureSourceSelection::Window {
+                window_id: WindowSourceId("window-1".to_owned()),
+            };
+            backend.display_calls.store(0, Ordering::Relaxed);
+            backend.window_calls.store(0, Ordering::Relaxed);
+            *backend.permission.lock().expect("permission lock") = Ok(permission);
+
+            assert_eq!(core.begin(capture_request), Err(expected));
+            assert_eq!(backend.display_calls.load(Ordering::Relaxed), 0);
+            assert_eq!(backend.window_calls.load(Ordering::Relaxed), 0);
+            assert!(backend.last_request.lock().expect("request lock").is_none());
+        }
+    }
+
+    #[test]
     fn display_capture_excludes_overlapping_unselected_displays() {
         let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
         let overlapping_bounds = LogicalRect {
@@ -1060,6 +1123,105 @@ mod tests {
             backend_request.expected_frame_size,
             PhysicalSize {
                 width: 60,
+                height: 80,
+            }
+        );
+    }
+
+    #[test]
+    fn window_capture_includes_each_display_spanned_by_the_window() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        *backend.displays.lock().expect("display lock") = vec![
+            DisplayDescriptor {
+                id: DisplayId("left".to_owned()),
+                logical_bounds: LogicalRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 100,
+                    height: 100,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: true,
+            },
+            DisplayDescriptor {
+                id: DisplayId("right".to_owned()),
+                logical_bounds: LogicalRect {
+                    x: 100.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 200,
+                    height: 200,
+                },
+                scale: ScaleFactor {
+                    numerator: 2,
+                    denominator: 1,
+                },
+                primary: false,
+            },
+        ];
+        *backend.windows.lock().expect("window lock") = vec![WindowSource {
+            id: WindowSourceId("window-1".to_owned()),
+            display_id: DisplayId("left".to_owned()),
+            bounds: LogicalRect {
+                x: 50.0,
+                y: 10.0,
+                width: 100.0,
+                height: 40.0,
+            },
+            availability: WindowAvailability::Available,
+        }];
+
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Window {
+            window_id: WindowSourceId("window-1".to_owned()),
+        };
+        core.begin(capture_request).expect("capture must work");
+
+        let backend_request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .clone()
+            .expect("backend must receive request");
+        assert_eq!(
+            backend_request.pixel_regions,
+            vec![
+                DisplayPixelRegion {
+                    display_id: DisplayId("left".to_owned()),
+                    pixels: PixelRect {
+                        x: 50,
+                        y: 10,
+                        width: 50,
+                        height: 40,
+                    },
+                },
+                DisplayPixelRegion {
+                    display_id: DisplayId("right".to_owned()),
+                    pixels: PixelRect {
+                        x: 0,
+                        y: 20,
+                        width: 100,
+                        height: 80,
+                    },
+                },
+            ]
+        );
+        assert_eq!(
+            backend_request.expected_frame_size,
+            PhysicalSize {
+                width: 200,
                 height: 80,
             }
         );
