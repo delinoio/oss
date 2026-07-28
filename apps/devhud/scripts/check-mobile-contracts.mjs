@@ -216,7 +216,7 @@ requireCondition(
     androidAuthPlugin.includes('it.host == "deli.dev"') &&
     androidAuthPlugin.includes('it.path == "/auth/devhud/callback"') &&
     androidAuthPlugin.includes("pendingCallback = null") &&
-    /override fun onNewIntent\(intent: Intent\) \{\s*validatedCallback\(intent\.data\)\?\.let \{ pendingCallback = it \}\s*\}/u.test(
+    /override fun onNewIntent\(intent: Intent\) \{\s*pendingCallback = pendingCallback \?: validatedCallback\(intent\.data\)\s*\}/u.test(
       androidAuthPlugin,
     ) &&
     androidMainActivity.includes("override fun onNewIntent(intent: Intent)") &&

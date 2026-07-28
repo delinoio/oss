@@ -672,7 +672,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         let subject = tokens.claims.subject.clone();
         self.reject_account_switch(&subject)?;
 
-        let refresh_token = tokens.refresh_token.ok_or(AuthError::TokenInvalid)?;
+        let mut refresh_token = tokens.refresh_token.ok_or(AuthError::TokenInvalid)?;
         let mut retained = match self.vault.load()? {
             Some(existing) => {
                 validate_retained_session_shape(&existing)?;
@@ -686,6 +686,42 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 device_session_key: new_device_session_key(&subject)?,
             },
         };
+        let feature_tokens = self.transport.refresh(
+            &token_endpoint,
+            &self.configuration.client_id,
+            &refresh_token,
+            feature.audience(),
+            feature.scopes(),
+        )?;
+        validate_bearer(
+            &feature_tokens.claims,
+            &self.configuration,
+            &subject,
+            feature.audience(),
+            feature.scopes(),
+            now_unix_seconds,
+        )?;
+        if let Some(rotated_refresh) = feature_tokens.refresh_token {
+            refresh_token = rotated_refresh;
+        }
+        let delibase_tokens = self.transport.refresh(
+            &token_endpoint,
+            &self.configuration.client_id,
+            &refresh_token,
+            DELIBASE_AUDIENCE,
+            feature.delibase_scopes(),
+        )?;
+        validate_bearer(
+            &delibase_tokens.claims,
+            &self.configuration,
+            &subject,
+            DELIBASE_AUDIENCE,
+            feature.delibase_scopes(),
+            now_unix_seconds,
+        )?;
+        if let Some(rotated_refresh) = delibase_tokens.refresh_token {
+            refresh_token = rotated_refresh;
+        }
         retained.refresh_tokens.insert(feature, refresh_token);
         self.vault.replace(&retained)?;
         self.state = SessionState::SignedIn {
@@ -1314,6 +1350,27 @@ mod tests {
         }
     }
 
+    fn queue_valid_grant_pair(
+        transport: &mut FakeTransport,
+        subject: &str,
+        feature: AuthFeature,
+        feature_refresh: Option<&str>,
+        delibase_refresh: Option<&str>,
+    ) {
+        transport.refresh.push_back(Ok(tokens(
+            subject,
+            feature.audience(),
+            feature.scopes(),
+            feature_refresh,
+        )));
+        transport.refresh.push_back(Ok(tokens(
+            subject,
+            DELIBASE_AUDIENCE,
+            feature.delibase_scopes(),
+            delibase_refresh,
+        )));
+    }
+
     fn manager(
         transport: FakeTransport,
         vault: FakeVault,
@@ -1541,6 +1598,13 @@ mod tests {
             &["openid"],
             Some("refresh-a"),
         )));
+        queue_valid_grant_pair(
+            &mut transport,
+            "account-a",
+            AuthFeature::Deck,
+            Some("refresh-feature-rotated"),
+            Some("refresh-delibase-rotated"),
+        );
         let mut manager = manager(transport, vault);
         let request = manager
             .begin(
@@ -1561,7 +1625,7 @@ mod tests {
         assert_eq!(writes.len(), 1);
         assert_eq!(
             writes[0].0.get(&AuthFeature::Deck).map(String::as_str),
-            Some("refresh-a")
+            Some("refresh-delibase-rotated")
         );
         assert!(writes[0].1.starts_with("v1."));
         assert!(!writes[0].1.contains("account-a"));
@@ -1583,6 +1647,8 @@ mod tests {
             &["openid"],
             Some("refresh-realqa"),
         )));
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::RealQa, None, None);
         let mut manager = manager(transport, FakeVault::default());
         let deck_request = manager
             .begin(
@@ -1648,6 +1714,7 @@ mod tests {
             &["openid"],
             Some("refresh-b"),
         )));
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
         let mut manager = manager(transport, FakeVault::default());
         let initial = manager
             .begin(
@@ -1753,6 +1820,7 @@ mod tests {
             &["openid"],
             Some("refresh"),
         )));
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
         transport.refresh.push_back(Ok(tokens(
             "account-a",
             DECK_AUDIENCE,
@@ -1776,6 +1844,7 @@ mod tests {
         manager
             .complete_callback(&callback_for(&request, "code", None), NOW)
             .unwrap();
+        manager.transport.refresh_requests.clear();
         assert!(matches!(
             manager.bearer_pair(AuthFeature::Deck, NOW),
             Err(AuthError::SubjectMismatch)
@@ -1790,6 +1859,75 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn callback_requires_valid_feature_and_delibase_grants_before_vaulting() {
+        let mut invalid_feature_transport = FakeTransport::default();
+        invalid_feature_transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("refresh"),
+        )));
+        invalid_feature_transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DECK_AUDIENCE,
+            &["openid"],
+            None,
+        )));
+        let mut invalid_feature = manager(invalid_feature_transport, FakeVault::default());
+        let request = invalid_feature
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            invalid_feature.complete_callback(&callback_for(&request, "code", None), NOW),
+            Err(AuthError::ScopeMismatch)
+        );
+        assert!(invalid_feature.vault.retained.is_none());
+        assert_eq!(invalid_feature.snapshot(), SessionSnapshot::SignedOut);
+
+        let mut invalid_delibase_transport = FakeTransport::default();
+        invalid_delibase_transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("refresh"),
+        )));
+        invalid_delibase_transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DECK_AUDIENCE,
+            AuthFeature::Deck.scopes(),
+            Some("refresh-rotated"),
+        )));
+        invalid_delibase_transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DELIBASE_AUDIENCE,
+            &["openid"],
+            None,
+        )));
+        let mut invalid_delibase = manager(invalid_delibase_transport, FakeVault::default());
+        let request = invalid_delibase
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            invalid_delibase.complete_callback(&callback_for(&request, "code", None), NOW),
+            Err(AuthError::ScopeMismatch)
+        );
+        assert_eq!(
+            invalid_delibase.transport.refresh_inputs,
+            ["refresh", "refresh-rotated"]
+        );
+        assert!(invalid_delibase.vault.retained.is_none());
+        assert_eq!(invalid_delibase.snapshot(), SessionSnapshot::SignedOut);
     }
 
     #[test]
@@ -2212,6 +2350,7 @@ mod tests {
             &["openid"],
             Some("refresh"),
         )));
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
         let vault = FakeVault {
             fail_write: true,
             ..FakeVault::default()
@@ -2253,6 +2392,7 @@ mod tests {
             &["openid"],
             Some("refresh"),
         )));
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
         let mut load_failure_manager = manager(transport, FakeVault::default());
         let request = load_failure_manager
             .begin(
@@ -2299,6 +2439,7 @@ mod tests {
             &["openid"],
             Some("refresh"),
         )));
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
         let mut manager = manager(transport, FakeVault::default());
         let request = manager
             .begin(
