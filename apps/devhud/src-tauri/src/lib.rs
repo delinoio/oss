@@ -1552,7 +1552,15 @@ fn get_runtime_info(
     if std::env::var_os("DEVHUD_SMOKE").is_some_and(|value| value == "1") {
         let app = _app.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(1));
+            // CEF can still be initializing renderer frames when the frontend
+            // invokes this command on Windows. Keep the hosted-runner delay
+            // until a renderer-ready lifecycle signal is available.
+            let shutdown_delay = if cfg!(target_os = "windows") {
+                Duration::from_secs(10)
+            } else {
+                Duration::from_secs(1)
+            };
+            std::thread::sleep(shutdown_delay);
             #[cfg(all(
                 feature = "desktop-cef",
                 not(any(target_os = "android", target_os = "ios"))
