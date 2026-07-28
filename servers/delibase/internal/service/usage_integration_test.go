@@ -2374,6 +2374,8 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 	ownerContext := usageContext(ctx, fixture.serviceClient, fixture.ownerSubject)
 	memberContext := usageContext(ctx, fixture.serviceClient, fixture.memberSubject)
 
+	// UUID numeric tails can match the credential redactor's card-number pattern
+	// before the authorization checks under test are reached.
 	_, err := fixture.usage.ReserveUsage(
 		memberContext,
 		usageReserveRequest(
