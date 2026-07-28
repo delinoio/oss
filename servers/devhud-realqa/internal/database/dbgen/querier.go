@@ -11,10 +11,14 @@ import (
 )
 
 type Querier interface {
+	ActivateGitHubInstallation(ctx context.Context, arg ActivateGitHubInstallationParams) (int64, error)
+	ConnectGitHubUser(ctx context.Context, arg ConnectGitHubUserParams) (int64, error)
+	ConsumeGitHubCallbackState(ctx context.Context, nonce string) (int64, error)
 	CountActiveShortcutsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	CountOtherActiveShortcutsForAccount(ctx context.Context, arg CountOtherActiveShortcutsForAccountParams) (int64, error)
 	CountPresetsForOwner(ctx context.Context, arg CountPresetsForOwnerParams) (int64, error)
 	CreateIdempotencyRecord(ctx context.Context, arg CreateIdempotencyRecordParams) (RealqaIdempotencyRecord, error)
+	CreatePendingGitHubInstallation(ctx context.Context, arg CreatePendingGitHubInstallationParams) (int64, error)
 	CreatePreset(ctx context.Context, arg CreatePresetParams) (RealqaPreset, error)
 	CreateProcessURLRule(ctx context.Context, arg CreateProcessURLRuleParams) error
 	CreateShortcut(ctx context.Context, arg CreateShortcutParams) error
@@ -28,9 +32,12 @@ type Querier interface {
 	DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSubmissionsParams) (int64, error)
 	DeleteShortcut(ctx context.Context, presetID pgtype.UUID) error
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (RealqaGithubConnection, error)
+	DisconnectGitHubUserCredentials(ctx context.Context, githubUserID pgtype.Int8) (int64, error)
 	GetDeletionJob(ctx context.Context, arg GetDeletionJobParams) (RealqaDeletionJob, error)
 	GetGitHubConnectionForOwner(ctx context.Context, arg GetGitHubConnectionForOwnerParams) (RealqaGithubConnection, error)
 	GetGitHubInstallation(ctx context.Context, id pgtype.UUID) (RealqaGithubInstallation, error)
+	GetGitHubInstallationBinding(ctx context.Context, providerInstallationID int64) (GetGitHubInstallationBindingRow, error)
+	GetGitHubUserCredentialForInstallation(ctx context.Context, installationID pgtype.UUID) (GetGitHubUserCredentialForInstallationRow, error)
 	GetIdempotencyRecord(ctx context.Context, arg GetIdempotencyRecordParams) (RealqaIdempotencyRecord, error)
 	GetIdentityBySubjectDigest(ctx context.Context, subjectDigest []byte) (RealqaIdentity, error)
 	GetOwnerAccess(ctx context.Context, arg GetOwnerAccessParams) (RealqaOwnerBinding, error)
@@ -49,8 +56,13 @@ type Querier interface {
 	LockPreset(ctx context.Context, id pgtype.UUID) (RealqaPreset, error)
 	LockPresetOwner(ctx context.Context, arg LockPresetOwnerParams) error
 	LockShortcutAccount(ctx context.Context, accountID pgtype.UUID) error
+	MarkAssetsRemovedForDeletedGitHubIssue(ctx context.Context, arg MarkAssetsRemovedForDeletedGitHubIssueParams) (int64, error)
 	Ping(ctx context.Context) (int64, error)
+	RecordGitHubWebhookDelivery(ctx context.Context, deliveryID pgtype.UUID) (int64, error)
+	RemoveGitHubRepositoryAccess(ctx context.Context, arg RemoveGitHubRepositoryAccessParams) (int64, error)
+	RemoveGitHubRepositoryDefinitions(ctx context.Context, arg RemoveGitHubRepositoryDefinitionsParams) (int64, error)
 	ScopeIsTombstoned(ctx context.Context, arg ScopeIsTombstonedParams) (bool, error)
+	SetGitHubInstallationState(ctx context.Context, arg SetGitHubInstallationStateParams) (int64, error)
 	StartGitHubConnection(ctx context.Context, arg StartGitHubConnectionParams) (RealqaGithubConnection, error)
 	TombstoneLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	UpdatePreset(ctx context.Context, arg UpdatePresetParams) (RealqaPreset, error)

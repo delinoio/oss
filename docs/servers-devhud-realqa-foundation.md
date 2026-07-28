@@ -4,7 +4,7 @@
 
 - Project/component: `devhud` / `realqa-server`
 - Canonical implementation path: `servers/devhud-realqa`
-- Status: implemented inactive server foundation for issue #757 backed by the implemented `devhud.realqa.v1` source contract and private generated-client package. PostgreSQL/sqlc persistence, preset/destination/repository-schema synchronization, dual-audience authentication, typed deletion, and health endpoints exist under `servers/devhud-realqa`; submission execution, uploads, provider callbacks/webhooks, R2/public-image delivery, recurring billing, deployment, DNS, production secrets, registered GitHub App, published image/extension, enabled catalog records, and production operation remain unimplemented or inactive.
+- Status: implemented inactive server foundation for issue #757 backed by the implemented `devhud.realqa.v1` source contract and private generated-client package. PostgreSQL/sqlc persistence, preset/destination synchronization, dual-audience authentication, typed deletion, health endpoints, and the internal RealQA-only GitHub.com adapter now exist under `servers/devhud-realqa`. The provider slice includes the separate least-permission manifest artifact, signed OAuth/App callbacks, signed installation/repository/issue/authorization lifecycle webhooks, one-owner installation bindings, application-encrypted user authorization credentials, live installation/repository/template/form reads, strict issue-schema parsing, exact body composition, new-issue-only dispatch, and hidden-marker reconciliation. Submission orchestration remains inactive behind the unimplemented transfer/storage/image slices; uploads, R2/public-image delivery, recurring billing, deployment, DNS, production secrets, registered GitHub App, published image/extension, enabled catalog records, and production operation remain unimplemented or inactive.
 - Future canonical API origin and Logto audience: `https://realqa.deli.dev`; future public-image origin: `https://assets.realqa.deli.dev`. Both are inactive contract identifiers.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrow HTTP handlers, Cloudflare R2 signed uploads/public delivery, and shared `servers/internal` infrastructure where its generic contracts apply.
 
@@ -30,6 +30,7 @@
 ## GitHub.com Tracker Boundary
 
 - RealQA uses a dedicated minimal-permission GitHub App separate from Deck and acts with GitHub App user authorization tokens.
+- `servers/devhud-realqa/github-app-manifest.json` is the checked base manifest artifact. It requests only Issues write, Metadata read, Contents read, and the `issues` event; installation, installation-repository, and authorization lifecycle delivery remains provider-mandatory. The typed manifest builder adds repository- or organization-project write only when `REALQA_GITHUB_PROJECT_PERMISSION` explicitly configures the matching project extension. Tests inspect these fixture artifacts only and never submit the manifest to GitHub.
 - Only GitHub.com is supported. GHES, custom GitHub hosts, on-premises trackers, and non-GitHub adapters fail closed.
 - Minimum permissions are Issues write, Metadata read, Contents read for templates/forms, and the relevant project permission only for a configured GitHub Projects submission.
 - One installation binds to exactly one DeliDev personal or organization owner scope. Connections may be managed only from authenticated RealQA settings in DevHud; DeliDev has no RealQA client or management route.
@@ -39,6 +40,7 @@
 - Support repository Markdown issue templates and Issue Forms with provider-required validation. Final body order is template/form response, `RealQA capture` with user-approved environment/URL/DOM metadata, then inline Markdown images.
 - Include a hidden `realqa:submission:<UUID>` marker. Serialize before submission and enforce 60,000 UTF-8 bytes. There is no image-count cap inside the session limits; overflow stays a draft and requires manual removal/splitting, never automatic multi-issue creation.
 - On an ambiguous create result, reconcile recent user-created issues by hidden marker before retrying; never silently duplicate an issue.
+- The adapter reconciles before its first POST as well as after every ambiguous timeout/5xx result. It performs at most one bounded retry after a successful recent-user-issue search proves the marker absent; an unavailable reconciliation or a second unresolved ambiguous result returns a typed ambiguous failure without another dispatch.
 
 ## Tracker, Submission, and HTTP Boundaries
 
@@ -123,10 +125,12 @@ Canonical implemented-foundation checks are:
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
 
 The current CI slice runs format/vet/tests, sqlc reproducibility, ordered
-migration checks, and PostgreSQL concurrent/idempotent migration application.
-Provider, R2, billing, retention, public-image, and image-build checks in the
-remaining list become mandatory with those implementation slices; the current
-inactive server does not simulate successful submission or catalog activation.
+migration checks, PostgreSQL concurrent/idempotent migration application, and
+fixture-only GitHub manifest/permission/host/listing/schema/body/create/
+reconciliation/callback/webhook/credential/redaction checks. R2, billing,
+retention, public-image, and image-build checks in the remaining list become
+mandatory with those implementation slices; the current inactive server does
+not simulate successful end-to-end submission or catalog activation.
 
 Coverage must include all size/body boundaries, verification failures and bombs, replay-safe preset creation, templates/forms, marker reconciliation without duplicates, crash-safe post-provider attempt recovery without a client retry, idempotent promotion or 24-hour removed-placeholder cleanup, private staging/promotion/23-hour upload deadline/authenticated one-hour finalization/24-hour cleanup, disconnect before finalization with no background live-usage call and natural reservation expiry, short transfer-TTL rejection and no late commit, lost initial storage-authorization response replay through the durable create attempt before cleanup, abandoned-submission authorization closure without orphan grants, authorized paginated submission/asset discovery after local draft deletion, explicit deletion/placeholder and same-submission image-reference-only best-effort issue update, declared-upload-versus-sanitized byte accounting with commit-at-most-reservation, transfer/storage rounding and zero-unit mutation skipping, completed-day durable checkpoint/oldest-first retry/reservation-before-age-out recovery, explicit grace transition for an unreservable missed period without silent skip or back-billing, serialized current-day deletion/rebind cutoffs without missed or double accrual, live/background outbound delibase client-credentials acquisition/startup failure and service-binding rejection, serialized payer rebind replay/concurrency/stale-mapping/substitution plus `ACTIVE`/`REVOKED`/`ACCESS_LOST` source grants, deletion closure for `RESOURCE_DELETED`/`REVOKED`/`ACCESS_LOST`/`OWNER_DELETED`, 30-day grace/no back-billing and public tombstone/object deletion during a delibase outage with later billing teardown, rate limits, provider-credential envelope encryption/rotation and ciphertext-only backups, redaction, exact lifecycle-client pinning and peer-M2M rejection, owner and delibase-lifecycle deletion authorization including scoped connection/installation/credential removal, deletion-job replay/absent data, browser-origin rejection, and GitHub.com-only rejection.
 

@@ -19,8 +19,8 @@ func TestEmbeddedMigrationsAreStrictlyOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ordered) != 3 {
-		t.Fatalf("migration count = %d, want 3", len(ordered))
+	if len(ordered) != 4 {
+		t.Fatalf("migration count = %d, want 4", len(ordered))
 	}
 	for index, item := range ordered {
 		if item.version != int64(index+1) {
@@ -91,8 +91,8 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		"SELECT count(*) FROM realqa_schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 3 {
-		t.Fatalf("applied migration count = %d, want 3", count)
+	if count != 4 {
+		t.Fatalf("applied migration count = %d, want 4", count)
 	}
 	if _, err = pool.Exec(ctx, `
 		INSERT INTO realqa_github_connections (

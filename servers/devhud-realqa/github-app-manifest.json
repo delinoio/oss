@@ -1,0 +1,23 @@
+{
+  "name": "RealQA",
+  "url": "https://realqa.deli.dev",
+  "callback_urls": [
+    "https://realqa.deli.dev/github/oauth/callback"
+  ],
+  "setup_url": "https://realqa.deli.dev/github/app/callback",
+  "hook_attributes": {
+    "url": "https://realqa.deli.dev/github/webhooks",
+    "active": true
+  },
+  "public": true,
+  "request_oauth_on_install": false,
+  "setup_on_update": false,
+  "default_events": [
+    "issues"
+  ],
+  "default_permissions": {
+    "issues": "write",
+    "metadata": "read",
+    "contents": "read"
+  }
+}

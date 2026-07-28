@@ -3,14 +3,18 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -83,10 +87,20 @@ func (service *Tracker) StartGitHubConnection(
 		return nil, err
 	}
 	state, stateDigest, err := newOAuthState()
+	target := ""
+	if issuer, ok := service.dependencies.GitHub.(GitHubConnectionTargetIssuer); ok {
+		target, state, err = issuer.ConnectionTarget(scope.kind, scope.id)
+	} else if issuer, ok := service.dependencies.GitHub.(GitHubOAuthStateIssuer); ok {
+		state, err = issuer.OAuthState(scope.kind, scope.id)
+	}
 	if err != nil {
 		return nil, err
 	}
-	target, err := service.dependencies.GitHub.Target(state)
+	digest := sha256.Sum256([]byte(state))
+	stateDigest = digest[:]
+	if target == "" {
+		target, err = service.dependencies.GitHub.Target(state)
+	}
 	if err != nil || validateAuthorizationTarget(target) != nil {
 		return nil, rqerr.New(connect.CodeUnavailable,
 			realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
@@ -354,6 +368,59 @@ func (service *Tracker) ListRepositories(
 		}
 		after = string(decoded)
 	}
+	if service.dependencies.GitHubProvider != nil {
+		rows, providerErr := service.dependencies.GitHubProvider.ListRepositories(
+			ctx, installation)
+		if providerErr != nil {
+			return nil, rqerr.New(connect.CodeUnavailable,
+				realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
+				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+		}
+		query := strings.ToLower(request.Msg.Query)
+		filtered := make([]realqagithub.Repository, 0, len(rows))
+		for _, row := range rows {
+			if query == "" ||
+				strings.Contains(strings.ToLower(row.Owner), query) ||
+				strings.Contains(strings.ToLower(row.Name), query) {
+				filtered = append(filtered, row)
+			}
+		}
+		sort.Slice(filtered, func(left, right int) bool {
+			return filtered[left].ID < filtered[right].ID
+		})
+		var afterID int64
+		if after != "" {
+			afterID, err = strconv.ParseInt(after, 10, 64)
+			if err != nil || afterID <= 0 {
+				return nil, invalid(
+					realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+			}
+		}
+		response := &realqav1.ListRepositoriesResponse{
+			Repositories: []*realqav1.Repository{}, Page: &realqav1.PageResponse{},
+		}
+		var nextID int64
+		for _, row := range filtered {
+			if row.ID <= afterID {
+				continue
+			}
+			if len(response.Repositories) == int(size) {
+				response.Page.NextCursor = base64.RawURLEncoding.EncodeToString(
+					[]byte(strconv.FormatInt(nextID, 10)))
+				break
+			}
+			nextID = row.ID
+			response.Repositories = append(response.Repositories, &realqav1.Repository{
+				Repository: &realqav1.GitHubRepositoryRef{
+					RepositoryId: strconv.FormatInt(row.ID, 10),
+					Owner:        row.Owner, Name: row.Name,
+				},
+				InstallationId: &realqav1.UuidV7{Value: installation.String()},
+				IssuesEnabled:  row.IssuesEnabled, CallerCanSubmit: row.CanSubmit,
+			})
+		}
+		return connect.NewResponse(response), nil
+	}
 	rows, err := service.dependencies.Store.Queries().ListAccessibleRepositories(
 		ctx, dbgen.ListAccessibleRepositoriesParams{
 			InstallationID: toPGUUID(installation), AccountID: toPGUUID(actor.accountID),
@@ -398,6 +465,30 @@ func (service *Tracker) GetRepositoryIssueSchema(
 	actor, installation, err := service.authorizeInstallation(ctx, request.Msg.InstallationId)
 	if err != nil {
 		return nil, err
+	}
+	if service.dependencies.GitHubProvider != nil {
+		repositoryID, parseErr := strconv.ParseInt(
+			request.Msg.Repository.RepositoryId, 10, 64)
+		if parseErr != nil || repositoryID <= 0 {
+			return nil, invalid(
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID)
+		}
+		repository := realqagithub.Repository{
+			ID: repositoryID, NodeID: "R_" + strconv.FormatInt(repositoryID, 10),
+			Owner: request.Msg.Repository.Owner, Name: request.Msg.Repository.Name,
+			IssuesEnabled: true, CanSubmit: true,
+		}
+		definitions, providerErr :=
+			service.dependencies.GitHubProvider.GetRepositoryDefinitions(
+				ctx, installation, repository)
+		if providerErr != nil {
+			return nil, rqerr.New(connect.CodeUnavailable,
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
+				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+		}
+		return connect.NewResponse(&realqav1.GetRepositoryIssueSchemaResponse{
+			Schema: repositoryDefinitionsProto(request.Msg.Repository, definitions),
+		}), nil
 	}
 	access, err := service.dependencies.Store.Queries().GetRepositorySubmitAccess(
 		ctx, dbgen.GetRepositorySubmitAccessParams{
@@ -533,4 +624,86 @@ func connectionProto(record dbgen.RealqaGithubConnection) (*realqav1.GitHubConne
 		Revision:    rqerr.Revision(record.Revision),
 		ConnectedAt: timestamp(record.ConnectedAt),
 	}, nil
+}
+
+func repositoryDefinitionsProto(
+	repository *realqav1.GitHubRepositoryRef,
+	definitions realqagithub.RepositoryDefinitions,
+) *realqav1.RepositoryIssueSchema {
+	result := &realqav1.RepositoryIssueSchema{
+		Repository: repository, MarkdownTemplates: []*realqav1.MarkdownIssueTemplate{},
+		IssueForms: []*realqav1.IssueForm{}, Revision: rqerr.Revision(1),
+	}
+	for _, template := range definitions.Markdown {
+		result.MarkdownTemplates = append(result.MarkdownTemplates,
+			&realqav1.MarkdownIssueTemplate{
+				Definition:       repositoryDefinitionRefProto(template.Definition),
+				TitlePrefix:      template.TitlePrefix,
+				DefaultLabels:    append([]string(nil), template.DefaultLabels...),
+				DefaultAssignees: append([]string(nil), template.DefaultAssignees...),
+				BodyTemplate:     template.Body,
+			})
+	}
+	for _, form := range definitions.Forms {
+		item := &realqav1.IssueForm{
+			Definition:       repositoryDefinitionRefProto(form.Definition),
+			TitlePrefix:      form.TitlePrefix,
+			DefaultLabels:    append([]string(nil), form.DefaultLabels...),
+			DefaultAssignees: append([]string(nil), form.DefaultAssignees...),
+			Fields:           []*realqav1.IssueFormField{},
+		}
+		for _, field := range form.Fields {
+			protoField := &realqav1.IssueFormField{
+				FieldId: field.ID, Kind: issueFormFieldKindProto(field.Kind),
+				Label: field.Label, Description: field.Description,
+				Placeholder: field.Placeholder, Required: field.Required,
+				Options: []*realqav1.IssueFormOption{},
+			}
+			if field.Kind == realqagithub.FormFieldMarkdown {
+				protoField.Description = field.Markdown
+			}
+			for _, option := range field.Options {
+				protoField.Options = append(protoField.Options,
+					&realqav1.IssueFormOption{
+						Value: option.Label, Label: option.Label,
+						Required: option.Required,
+					})
+			}
+			item.Fields = append(item.Fields, protoField)
+		}
+		result.IssueForms = append(result.IssueForms, item)
+	}
+	return result
+}
+
+func repositoryDefinitionRefProto(
+	definition realqagithub.DefinitionRef,
+) *realqav1.RepositoryIssueDefinitionRef {
+	kind := realqav1.RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE
+	if definition.Kind == realqagithub.DefinitionForm {
+		kind = realqav1.RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM
+	}
+	return &realqav1.RepositoryIssueDefinitionRef{
+		Kind: kind, DefinitionId: definition.ID, Name: definition.Name,
+		Path: definition.Path, Etag: definition.ETag,
+	}
+}
+
+func issueFormFieldKindProto(
+	kind realqagithub.FormFieldKind,
+) realqav1.IssueFormFieldKind {
+	switch kind {
+	case realqagithub.FormFieldMarkdown:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_MARKDOWN
+	case realqagithub.FormFieldInput:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_INPUT
+	case realqagithub.FormFieldTextarea:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_TEXTAREA
+	case realqagithub.FormFieldDropdown:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_DROPDOWN
+	case realqagithub.FormFieldCheckboxes:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_CHECKBOXES
+	default:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_UNSPECIFIED
+	}
 }

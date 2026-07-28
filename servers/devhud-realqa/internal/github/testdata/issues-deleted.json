@@ -1,0 +1,7 @@
+{
+  "action": "deleted",
+  "installation": {"id": 991},
+  "repository": {"id": 1001, "full_name": "delinoio/oss"},
+  "issue": {"id": 2002, "number": 757},
+  "sender": {"id": 3003, "login": "fixture-user"}
+}

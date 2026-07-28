@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1/realqav1connect"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
@@ -57,13 +58,34 @@ type GitHubAuthorization interface {
 	Target(state string) (string, error)
 }
 
+type GitHubOAuthStateIssuer interface {
+	OAuthState(ownerKind string, ownerID uuid.UUID) (string, error)
+}
+
+type GitHubConnectionTargetIssuer interface {
+	ConnectionTarget(
+		ownerKind string,
+		ownerID uuid.UUID,
+	) (target string, state string, err error)
+}
+
+type GitHubProviderAdapter interface {
+	ListRepositories(context.Context, uuid.UUID) ([]realqagithub.Repository, error)
+	GetRepositoryDefinitions(
+		context.Context,
+		uuid.UUID,
+		realqagithub.Repository,
+	) (realqagithub.RepositoryDefinitions, error)
+}
+
 type Dependencies struct {
-	Store         *database.Store
-	IDs           IDGenerator
-	Clock         Clock
-	GitHub        GitHubAuthorization
-	Pseudonymizer *safelog.Pseudonymizer
-	Logger        *slog.Logger
+	Store          *database.Store
+	IDs            IDGenerator
+	Clock          Clock
+	GitHub         GitHubAuthorization
+	GitHubProvider GitHubProviderAdapter
+	Pseudonymizer  *safelog.Pseudonymizer
+	Logger         *slog.Logger
 }
 
 func (dependencies Dependencies) defaults() Dependencies {
@@ -509,11 +531,40 @@ func newOAuthState() (string, []byte, error) {
 func validateAuthorizationTarget(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" ||
-		parsed.User != nil || parsed.Fragment != "" ||
-		(parsed.Path != "/login/oauth/authorize" && parsed.Path != "/apps/realqa/installations/new") {
+		parsed.User != nil || parsed.Fragment != "" {
+		return errors.New("realqa service: invalid GitHub authorization target")
+	}
+	query := parsed.Query()
+	switch {
+	case parsed.Path == "/login/oauth/authorize":
+		if len(query) != 2 || query.Get("client_id") == "" || query.Get("state") == "" {
+			return errors.New("realqa service: invalid GitHub authorization target")
+		}
+	case strings.HasPrefix(parsed.Path, "/apps/") &&
+		strings.HasSuffix(parsed.Path, "/installations/new"):
+		slug := strings.TrimSuffix(strings.TrimPrefix(
+			parsed.Path, "/apps/"), "/installations/new")
+		if !validGitHubAppSlug(slug) || len(query) != 1 || query.Get("state") == "" {
+			return errors.New("realqa service: invalid GitHub authorization target")
+		}
+	default:
 		return errors.New("realqa service: invalid GitHub authorization target")
 	}
 	return nil
+}
+
+func validGitHubAppSlug(value string) bool {
+	if value == "" || len(value) > 100 || value[0] == '-' ||
+		value[len(value)-1] == '-' {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') && character != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func timestamp(value pgtype.Timestamptz) *timestamppb.Timestamp {

@@ -32,6 +32,7 @@ JOIN realqa_github_connections AS connection
  AND connection.state = 'connected'
 WHERE installation.owner_kind = sqlc.arg(owner_kind)
   AND installation.owner_id = sqlc.arg(owner_id)
+  AND installation.state = 'active'
   AND installation.id > sqlc.arg(after_id)
 ORDER BY installation.id
 LIMIT sqlc.arg(page_limit);
@@ -42,7 +43,8 @@ FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
-WHERE installation.id = sqlc.arg(id);
+WHERE installation.id = sqlc.arg(id)
+  AND installation.state = 'active';
 
 -- name: DisconnectGitHubConnection :one
 UPDATE realqa_github_connections
@@ -68,6 +70,7 @@ JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
 WHERE access.installation_id = sqlc.arg(installation_id)
+  AND installation.state = 'active'
   AND access.account_id = sqlc.arg(account_id)
   AND (
       sqlc.arg(query)::text = ''

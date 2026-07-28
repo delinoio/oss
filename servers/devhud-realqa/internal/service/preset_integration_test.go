@@ -567,6 +567,31 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnected.Msg.Connection.Revision.Value {
 		t.Fatalf("disconnect replay after role change = %#v", disconnectReplay.Msg)
 	}
+	var disconnectedState string
+	var credentialCiphertext []byte
+	var retainedPresets, retainedDestinations int
+	if err = connection.QueryRow(ctx, `
+		SELECT state, credential_ciphertext
+		FROM realqa_github_connections
+		WHERE owner_kind = 'organization' AND owner_id = $1
+	`, organizationID).Scan(&disconnectedState, &credentialCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM realqa_presets
+			 WHERE owner_kind = 'organization' AND owner_id = $1),
+			(SELECT count(*) FROM realqa_destinations
+			 WHERE owner_kind = 'organization' AND owner_id = $1)
+	`, organizationID).Scan(&retainedPresets, &retainedDestinations); err != nil {
+		t.Fatal(err)
+	}
+	if disconnectedState != "disconnected" || credentialCiphertext != nil ||
+		retainedPresets == 0 || retainedDestinations == 0 {
+		t.Fatalf("disconnect lifecycle state=%q credential=%v presets=%d destinations=%d",
+			disconnectedState, credentialCiphertext != nil,
+			retainedPresets, retainedDestinations)
+	}
 	deletedPayerOrganizationID := uuidv7.MustNew()
 	deletedPayerTeamID := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `

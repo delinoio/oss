@@ -24,7 +24,7 @@ SET state = 'disconnected',
 WHERE owner_kind = $1
   AND owner_id = $2
   AND revision = $3
-RETURNING id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at
+RETURNING id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id
 `
 
 type DisconnectGitHubConnectionParams struct {
@@ -51,12 +51,13 @@ func (q *Queries) DisconnectGitHubConnection(ctx context.Context, arg Disconnect
 		&i.ConnectedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GithubUserID,
 	)
 	return i, err
 }
 
 const getGitHubConnectionForOwner = `-- name: GetGitHubConnectionForOwner :one
-SELECT id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at
+SELECT id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id
 FROM realqa_github_connections
 WHERE owner_kind = $1
   AND owner_id = $2
@@ -85,17 +86,19 @@ func (q *Queries) GetGitHubConnectionForOwner(ctx context.Context, arg GetGitHub
 		&i.ConnectedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GithubUserID,
 	)
 	return i, err
 }
 
 const getGitHubInstallation = `-- name: GetGitHubInstallation :one
-SELECT installation.id, installation.connection_id, installation.owner_kind, installation.owner_id, installation.provider_installation_id, installation.account_login, installation.revision, installation.created_at, installation.updated_at
+SELECT installation.id, installation.connection_id, installation.owner_kind, installation.owner_id, installation.provider_installation_id, installation.account_login, installation.revision, installation.created_at, installation.updated_at, installation.provider_account_id, installation.account_kind, installation.state, installation.permissions
 FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
 WHERE installation.id = $1
+  AND installation.state = 'active'
 `
 
 func (q *Queries) GetGitHubInstallation(ctx context.Context, id pgtype.UUID) (RealqaGithubInstallation, error) {
@@ -111,6 +114,10 @@ func (q *Queries) GetGitHubInstallation(ctx context.Context, id pgtype.UUID) (Re
 		&i.Revision,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProviderAccountID,
+		&i.AccountKind,
+		&i.State,
+		&i.Permissions,
 	)
 	return i, err
 }
@@ -124,6 +131,7 @@ JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
 WHERE access.installation_id = $1
+  AND installation.state = 'active'
   AND access.account_id = $2
   AND (
       $3::text = ''
@@ -179,13 +187,14 @@ func (q *Queries) ListAccessibleRepositories(ctx context.Context, arg ListAccess
 }
 
 const listGitHubInstallations = `-- name: ListGitHubInstallations :many
-SELECT installation.id, installation.connection_id, installation.owner_kind, installation.owner_id, installation.provider_installation_id, installation.account_login, installation.revision, installation.created_at, installation.updated_at
+SELECT installation.id, installation.connection_id, installation.owner_kind, installation.owner_id, installation.provider_installation_id, installation.account_login, installation.revision, installation.created_at, installation.updated_at, installation.provider_account_id, installation.account_kind, installation.state, installation.permissions
 FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
 WHERE installation.owner_kind = $1
   AND installation.owner_id = $2
+  AND installation.state = 'active'
   AND installation.id > $3
 ORDER BY installation.id
 LIMIT $4
@@ -222,6 +231,10 @@ func (q *Queries) ListGitHubInstallations(ctx context.Context, arg ListGitHubIns
 			&i.Revision,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProviderAccountID,
+			&i.AccountKind,
+			&i.State,
+			&i.Permissions,
 		); err != nil {
 			return nil, err
 		}
@@ -295,7 +308,7 @@ DO UPDATE SET state = CASE
               oauth_state_expires_at = EXCLUDED.oauth_state_expires_at,
               revision = realqa_github_connections.revision + 1,
               updated_at = transaction_timestamp()
-RETURNING id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at
+RETURNING id, owner_kind, owner_id, state, github_login, credential_ciphertext, wrapped_data_key, key_id, oauth_state_digest, oauth_state_expires_at, revision, connected_at, created_at, updated_at, github_user_id
 `
 
 type StartGitHubConnectionParams struct {
@@ -330,6 +343,7 @@ func (q *Queries) StartGitHubConnection(ctx context.Context, arg StartGitHubConn
 		&i.ConnectedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GithubUserID,
 	)
 	return i, err
 }

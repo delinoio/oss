@@ -24,10 +24,28 @@ billing catalog records, or publish a tracker/plugin interface.
   50/250 limits, UUID-v7 creation replay, and typed stale-revision ETags.
 - Organization Owner/Admin management; Owner-only organization feature
   deletion; and live account/organization/repository access bindings.
-- Repository enumeration and issue-schema reads expose only repositories the
-  caller's GitHub identity can access. Submission creation revalidates the same
-  access and all image declaration limits, then stops unavailable before
-  persistence because transfer/storage catalog activation is excluded.
+- Repository enumeration and issue-schema reads use the caller's GitHub App
+  user authorization token and expose only repositories in the user/App
+  intersection. Markdown templates and Issue Forms are fetched through GitHub
+  Contents, normalized, and provider-required fields/options are enforced.
+- `github-app-manifest.json` is the separate RealQA base manifest with Issues
+  write, Metadata read, Contents read, and issue lifecycle delivery. Typed
+  manifest generation adds only the explicitly configured repository- or
+  organization-project permission.
+- `GET /github/oauth/callback`, `GET /github/app/callback`, and
+  `POST /github/webhooks` enforce signed, replay-protected state or
+  `X-Hub-Signature-256`. Installation/repository, issue deletion, and user
+  authorization-revocation events are durable and idempotent. One provider
+  installation can bind to only one personal or organization owner.
+- The internal adapter normalizes typed labels, assignees, milestone, and
+  optional project extensions; composes repository response, `RealQA capture`,
+  inline images, and the hidden UUID marker; enforces 60,000 UTF-8 bytes; and
+  performs new-issue-only creation. It reconciles recent issues by marker before
+  dispatch and after ambiguous results, and never retries when reconciliation
+  is unavailable.
+- Submission creation revalidates all image declaration limits, then stops
+  unavailable before persistence because transfer/storage catalog activation
+  and the end-to-end submission orchestrator remain excluded.
 - Application-envelope columns store GitHub credentials only as ciphertext,
   wrapped data keys, and a versioned key ID. Bearers and OAuth state plaintext
   have no persistence fields; OAuth state is stored only as a digest.
@@ -71,16 +89,25 @@ Required non-secret values:
 - `REALQA_DELIBASE_LOGTO_AUDIENCE=https://delibase.deli.dev`
 - `REALQA_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID`
 - `REALQA_GITHUB_OAUTH_CLIENT_ID`
+- `REALQA_GITHUB_APP_SLUG`
+- `REALQA_GITHUB_CREDENTIAL_KEY_ID`
 
 Required secrets:
 
 - `REALQA_DATABASE_URL`
 - `REALQA_IDENTITY_HASH_KEY` (at least 32 bytes)
 - `REALQA_LOG_PSEUDONYM_KEY` (at least 32 bytes)
+- `REALQA_GITHUB_OAUTH_CLIENT_SECRET`
+- `REALQA_GITHUB_WEBHOOK_SECRET` (at least 32 bytes)
+- `REALQA_GITHUB_CALLBACK_SIGNING_KEY` (at least 32 bytes)
+- `REALQA_GITHUB_CREDENTIAL_WRAPPING_KEY_BASE64` (exactly 32 decoded bytes)
 
 Optional process settings are `REALQA_HTTP_ADDRESS` (default `:8080`) and
-`REALQA_SHUTDOWN_TIMEOUT` (default `10s`). Configuration values are never
-logged.
+`REALQA_SHUTDOWN_TIMEOUT` (default `10s`). Optional
+`REALQA_GITHUB_PROJECT_PERMISSION` accepts only `none` (default), `repository`,
+or `organization`. Optional GitHub origin assertions accept only exact
+`https://github.com` and `https://api.github.com`; GHES and custom hosts fail
+startup. Configuration values are never logged.
 
 ## Validation
 

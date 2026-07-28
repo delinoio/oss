@@ -25,10 +25,11 @@ type HealthChecker interface {
 }
 
 type Dependencies struct {
-	Authentication *authn.Interceptor
-	Health         HealthChecker
-	Services       service.Dependencies
-	Logger         *slog.Logger
+	Authentication  *authn.Interceptor
+	Health          HealthChecker
+	Services        service.Dependencies
+	GitHubCallbacks http.Handler
+	Logger          *slog.Logger
 }
 
 func New(dependencies Dependencies) (http.Handler, error) {
@@ -48,6 +49,9 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", live)
 	mux.Handle("GET /readyz", ready(dependencies.Health))
+	if dependencies.GitHubCallbacks != nil {
+		mux.Handle("/github/", dependencies.GitHubCallbacks)
+	}
 	path, handler := realqav1connect.NewRealQAPresetServiceHandler(
 		service.NewPreset(dependencies.Services), options...)
 	mux.Handle(path, handler)

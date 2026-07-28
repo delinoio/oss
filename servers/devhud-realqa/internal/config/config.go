@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -19,20 +20,35 @@ const (
 
 type LookupEnv func(string) (string, bool)
 
+type GitHubProjectPermission string
+
+const (
+	GitHubProjectPermissionNone         GitHubProjectPermission = "none"
+	GitHubProjectPermissionRepository   GitHubProjectPermission = "repository"
+	GitHubProjectPermissionOrganization GitHubProjectPermission = "organization"
+)
+
 type Config struct {
 	HTTPAddress     string
 	ShutdownTimeout time.Duration
 	DatabaseURL     string
 	APIOrigin       string
 
-	LogtoIssuer            string
-	LogtoJWKSURL           string
-	LogtoAudience          string
-	DelibaseLogtoAudience  string
-	LifecycleLogtoClientID string
-	IdentityHashKey        []byte
-	LogPseudonymKey        []byte
-	GitHubOAuthClientID    string
+	LogtoIssuer                 string
+	LogtoJWKSURL                string
+	LogtoAudience               string
+	DelibaseLogtoAudience       string
+	LifecycleLogtoClientID      string
+	IdentityHashKey             []byte
+	LogPseudonymKey             []byte
+	GitHubOAuthClientID         string
+	GitHubAppSlug               string
+	GitHubOAuthClientSecret     string
+	GitHubWebhookSecret         []byte
+	GitHubCallbackSigningKey    []byte
+	GitHubCredentialKeyID       string
+	GitHubCredentialWrappingKey []byte
+	GitHubProjectPermission     GitHubProjectPermission
 }
 
 func Load(lookup LookupEnv) (Config, error) {
@@ -118,6 +134,77 @@ func Load(lookup LookupEnv) (Config, error) {
 	if !validIdentifier(result.GitHubOAuthClientID) {
 		return Config{}, errors.New("realqa config: REALQA_GITHUB_OAUTH_CLIENT_ID is invalid")
 	}
+	if result.GitHubAppSlug, err = required("REALQA_GITHUB_APP_SLUG"); err != nil {
+		return Config{}, err
+	}
+	if !validGitHubAppSlug(result.GitHubAppSlug) {
+		return Config{}, errors.New("realqa config: REALQA_GITHUB_APP_SLUG is invalid")
+	}
+	if result.GitHubOAuthClientSecret, err = required(
+		"REALQA_GITHUB_OAUTH_CLIENT_SECRET"); err != nil {
+		return Config{}, err
+	}
+	if len(result.GitHubOAuthClientSecret) < 20 ||
+		len(result.GitHubOAuthClientSecret) > 1024 ||
+		strings.ContainsAny(result.GitHubOAuthClientSecret, "\r\n") {
+		return Config{}, errors.New(
+			"realqa config: REALQA_GITHUB_OAUTH_CLIENT_SECRET is invalid")
+	}
+	webhookSecret, err := required("REALQA_GITHUB_WEBHOOK_SECRET")
+	if err != nil {
+		return Config{}, err
+	}
+	if len([]byte(webhookSecret)) < 32 {
+		return Config{}, errors.New(
+			"realqa config: REALQA_GITHUB_WEBHOOK_SECRET must contain at least 32 bytes")
+	}
+	result.GitHubWebhookSecret = []byte(webhookSecret)
+	callbackKey, err := required("REALQA_GITHUB_CALLBACK_SIGNING_KEY")
+	if err != nil {
+		return Config{}, err
+	}
+	if len([]byte(callbackKey)) < 32 {
+		return Config{}, errors.New(
+			"realqa config: REALQA_GITHUB_CALLBACK_SIGNING_KEY must contain at least 32 bytes")
+	}
+	result.GitHubCallbackSigningKey = []byte(callbackKey)
+	if result.GitHubCredentialKeyID, err = required(
+		"REALQA_GITHUB_CREDENTIAL_KEY_ID"); err != nil {
+		return Config{}, err
+	}
+	if !validIdentifier(result.GitHubCredentialKeyID) {
+		return Config{}, errors.New(
+			"realqa config: REALQA_GITHUB_CREDENTIAL_KEY_ID is invalid")
+	}
+	wrappingKey, err := required("REALQA_GITHUB_CREDENTIAL_WRAPPING_KEY_BASE64")
+	if err != nil {
+		return Config{}, err
+	}
+	result.GitHubCredentialWrappingKey, err = base64.StdEncoding.DecodeString(wrappingKey)
+	if err != nil || len(result.GitHubCredentialWrappingKey) != 32 {
+		return Config{}, errors.New(
+			"realqa config: REALQA_GITHUB_CREDENTIAL_WRAPPING_KEY_BASE64 is invalid")
+	}
+	result.GitHubProjectPermission = GitHubProjectPermissionNone
+	if value, ok := lookup("REALQA_GITHUB_PROJECT_PERMISSION"); ok && value != "" {
+		result.GitHubProjectPermission = GitHubProjectPermission(value)
+	}
+	switch result.GitHubProjectPermission {
+	case GitHubProjectPermissionNone, GitHubProjectPermissionRepository,
+		GitHubProjectPermissionOrganization:
+	default:
+		return Config{}, errors.New(
+			"realqa config: REALQA_GITHUB_PROJECT_PERMISSION is invalid")
+	}
+	for name, canonical := range map[string]string{
+		"REALQA_GITHUB_WEB_ORIGIN": "https://github.com",
+		"REALQA_GITHUB_API_ORIGIN": "https://api.github.com",
+	} {
+		if value, ok := lookup(name); ok && value != "" && value != canonical {
+			return Config{}, fmt.Errorf(
+				"realqa config: %s rejects GHES and custom hosts", name)
+		}
+	}
 	result.HTTPAddress = defaultHTTPAddress
 	if value, ok := lookup("REALQA_HTTP_ADDRESS"); ok && value != "" {
 		result.HTTPAddress = value
@@ -154,6 +241,20 @@ func validIdentifier(value string) bool {
 	return value != "" && len(value) <= 255 &&
 		strings.TrimSpace(value) == value &&
 		!strings.ContainsAny(value, " \t\r\n:/")
+}
+
+func validGitHubAppSlug(value string) bool {
+	if value == "" || len(value) > 100 || value[0] == '-' ||
+		value[len(value)-1] == '-' {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') && character != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func validAddress(value string) error {
