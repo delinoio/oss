@@ -69,6 +69,17 @@ bool realqa_macos_request_permission(void) {
   return CGRequestScreenCaptureAccess();
 }
 
+static bool realqa_system_stopped_stream(NSError *error) {
+  // This enum is absent from macOS 14 SDKs. Remove the compatibility guard when
+  // macOS 15 is the minimum build SDK and deployment target.
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+  if (@available(macOS 15.0, *)) {
+    return error.code == SCStreamErrorSystemStoppedStream;
+  }
+#endif
+  return false;
+}
+
 char *realqa_macos_copy_catalog_json(void) {
   @autoreleasepool {
     NSError *captureError = nil;
@@ -133,7 +144,7 @@ static int32_t realqa_error_status(NSError *error, int32_t sourceKind) {
       return REALQA_PERMISSION_LOST;
     }
     if (error.code == SCStreamErrorUserStopped ||
-        error.code == SCStreamErrorSystemStoppedStream) {
+        realqa_system_stopped_stream(error)) {
       return REALQA_CANCELLED;
     }
     if (error.code == SCStreamErrorNoCaptureSource ||

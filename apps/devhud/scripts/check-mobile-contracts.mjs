@@ -132,7 +132,7 @@ requireCondition(
 );
 requireCondition(
   cargoManifest.includes(
-    'desktop-cef = ["dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
+    'desktop-cef = ["dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "realqa-macos-capture", "tauri/devtools"]',
   ) &&
     cargoManifest.includes(
       'mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]',
