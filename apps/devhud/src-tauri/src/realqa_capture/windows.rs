@@ -572,7 +572,12 @@ fn destination_rect(
     source: PixelRect,
     canvas_scale: ScaleFactor,
 ) -> Result<PixelRect, BackendFailure> {
-    if request.pixel_regions.len() == 1 {
+    if request.pixel_regions.len() == 1
+        && request.logical_bounds.x >= display.logical_bounds.x
+        && request.logical_bounds.y >= display.logical_bounds.y
+        && request.logical_bounds.right() <= display.logical_bounds.right()
+        && request.logical_bounds.bottom() <= display.logical_bounds.bottom()
+    {
         return Ok(PixelRect {
             x: 0,
             y: 0,
@@ -1363,6 +1368,39 @@ mod tests {
                 (NativeSourceId(2), PointerInclusion::Exclude),
             ]
         );
+    }
+
+    #[test]
+    fn preserves_desktop_gap_when_region_intersects_only_one_display() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        adapter.displays.lock().expect("display lock")[1]
+            .logical_bounds
+            .x = 1.0;
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter)));
+        let catalog = core.source_catalog().expect("catalog");
+        let result = core
+            .begin(CaptureRequest {
+                session_id: CaptureSessionId("single-display-gap".to_owned()),
+                snapshot_id: catalog.snapshot.snapshot_id.clone(),
+                source: CaptureSourceSelection::Region {
+                    selection: SelectionGeometry {
+                        snapshot_id: catalog.snapshot.snapshot_id.clone(),
+                        bounds: LogicalRect {
+                            x: -1.0,
+                            y: 0.0,
+                            width: 2.0,
+                            height: 1.0,
+                        },
+                    },
+                },
+                pointer: PointerInclusion::Exclude,
+                output_media_type: ImageMediaType::Png,
+            })
+            .expect("capture");
+        let decoded = decode_image(&result.image).expect("decode capture");
+        assert_eq!((decoded.width, decoded.height), (2, 1));
+        assert_eq!(&decoded.rgba[0..4], &[255, 0, 0, 255]);
+        assert_eq!(&decoded.rgba[4..8], &[0, 0, 0, 0]);
     }
 
     #[test]
