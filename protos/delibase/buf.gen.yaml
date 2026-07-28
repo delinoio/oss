@@ -1,4 +1,5 @@
 version: v2
+clean: true
 plugins:
   - local: protoc-gen-go
     out: protos/delibase/gen/go
@@ -13,5 +14,3 @@ plugins:
     opt:
       - target=ts
       - import_extension=js
-inputs:
-  - directory: protos

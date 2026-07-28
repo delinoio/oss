@@ -19,8 +19,10 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "build:api": "../../scripts/generate-delibase-proto.sh && tsc -p tsconfig.json",
-    "generate": "../../scripts/generate-delibase-proto.sh",
+    "build:api": "pnpm run generate:proto",
+    "check:proto": "../../scripts/check-proto-component.sh delibase delibase.v1.binpb",
+    "generate": "../../scripts/generate-proto-component.sh delibase delibase.v1.binpb",
+    "generate:proto": "pnpm run generate && pnpm run build",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
