@@ -286,7 +286,9 @@ pub(crate) trait CaptureBackend: Send + Sync {
     fn start_capture(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
         Ok(())
     }
-    fn finish_capture(&self, _session_id: &CaptureSessionId) {}
+    fn finish_capture(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        Ok(())
+    }
     fn permission(&self) -> Result<CapturePermission, BackendFailure>;
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure>;
     fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure>;
@@ -347,8 +349,14 @@ impl CaptureCore {
             .start_capture(&session_id)
             .map_err(CaptureFailure::from)?;
         let result = self.begin_started(request);
-        self.backend.finish_capture(&session_id);
-        result
+        let finish_result = self
+            .backend
+            .finish_capture(&session_id)
+            .map_err(CaptureFailure::from);
+        match result {
+            Err(failure) => Err(failure),
+            Ok(result) => finish_result.map(|()| result),
+        }
     }
 
     fn begin_started(&self, request: CaptureRequest) -> Result<CaptureResult, CaptureFailure> {
@@ -711,13 +719,13 @@ impl CaptureBackend for PlatformCaptureBackend {
         Ok(())
     }
 
-    fn finish_capture(&self, session_id: &CaptureSessionId) {
+    fn finish_capture(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
         #[cfg(target_os = "windows")]
         if let Some(backend) = &self.windows {
-            backend.finish_capture(session_id);
-            return;
+            return backend.finish_capture(session_id);
         }
         let _ = session_id;
+        Ok(())
     }
 
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {
@@ -783,6 +791,7 @@ mod tests {
         display_calls: AtomicUsize,
         window_calls: AtomicUsize,
         capture_result: Mutex<Result<Option<BackendFrame>, BackendFailure>>,
+        finish_result: Mutex<Result<(), BackendFailure>>,
         last_request: Mutex<Option<ResolvedCaptureRequest>>,
     }
 
@@ -824,6 +833,7 @@ mod tests {
                 display_calls: AtomicUsize::new(0),
                 window_calls: AtomicUsize::new(0),
                 capture_result: Mutex::new(Ok(None)),
+                finish_result: Mutex::new(Ok(())),
                 last_request: Mutex::new(None),
             }
         }
@@ -875,6 +885,10 @@ mod tests {
                     })
                 }
             }
+        }
+
+        fn finish_capture(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+            *self.finish_result.lock().expect("finish lock")
         }
 
         fn cancel(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
@@ -1771,6 +1785,23 @@ mod tests {
         assert_eq!(
             core.begin(request(&catalog)),
             Err(CaptureFailure::MalformedImage)
+        );
+    }
+
+    #[test]
+    fn cancellation_observed_during_encoding_discards_the_capture_result() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        *backend.finish_result.lock().expect("finish lock") = Err(BackendFailure::Cancelled);
+
+        assert_eq!(
+            core.begin(request(&catalog)),
+            Err(CaptureFailure::Cancelled)
+        );
+        assert!(
+            backend.last_request.lock().expect("request lock").is_some(),
+            "the backend frame must be captured before final cancellation is observed"
         );
     }
 

@@ -57,6 +57,15 @@ requireCondition(
     cargoSource.includes('"Win32_UI_HiDpi"'),
   "the backend must use pinned Windows-only Graphics Capture and DPI APIs",
 );
+requireCondition(
+  windowsSource.includes(
+    'any(target_arch = "x86_64", target_arch = "aarch64")',
+  ) &&
+    windowsSource.includes(
+      'not(any(target_arch = "x86_64", target_arch = "aarch64"))',
+    ),
+  "the Windows capture backend must activate only on x64 and ARM64",
+);
 for (const contract of [
   "GraphicsCaptureSession::IsSupported",
   "CursorCaptureSettings::WithCursor",

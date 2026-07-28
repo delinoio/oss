@@ -251,9 +251,20 @@ impl WindowsCaptureBackend {
         }
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(all(
+        target_os = "windows",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     pub(super) fn system() -> Option<Self> {
         system::is_supported().then(|| Self::new(Arc::new(system::SystemWindowsAdapter)))
+    }
+
+    #[cfg(all(
+        target_os = "windows",
+        not(any(target_arch = "x86_64", target_arch = "aarch64"))
+    ))]
+    pub(super) fn system() -> Option<Self> {
+        None
     }
 
     fn checked_displays(
@@ -275,6 +286,9 @@ impl WindowsCaptureBackend {
             .sources
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?;
+        sources
+            .display_ids
+            .retain(|identity, _| identities.contains(identity));
         let mut current = HashMap::with_capacity(displays.len());
         let descriptors = displays
             .into_iter()
@@ -336,10 +350,14 @@ impl WindowsCaptureBackend {
             .ok_or(BackendFailure::CaptureFailed)
     }
 
-    fn unregister_capture(&self, session_id: &CaptureSessionId) {
-        if let Ok(mut active) = self.active_captures.lock() {
-            active.remove(session_id);
-        }
+    fn unregister_capture(&self, session_id: &CaptureSessionId) -> Result<bool, BackendFailure> {
+        let cancelled = self
+            .active_captures
+            .lock()
+            .map_err(|_| BackendFailure::CaptureFailed)?
+            .remove(session_id)
+            .is_some_and(|cancel| cancel.load(Ordering::Acquire));
+        Ok(cancelled)
     }
 
     fn revalidate_snapshot(&self, request: &ResolvedCaptureRequest) -> Result<(), BackendFailure> {
@@ -536,8 +554,11 @@ impl CaptureBackend for WindowsCaptureBackend {
         self.register_capture(session_id).map(|_| ())
     }
 
-    fn finish_capture(&self, session_id: &CaptureSessionId) {
-        self.unregister_capture(session_id);
+    fn finish_capture(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        if self.unregister_capture(session_id)? {
+            return Err(BackendFailure::Cancelled);
+        }
+        Ok(())
     }
 
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {
@@ -2100,6 +2121,45 @@ mod tests {
         adapter.displays.lock().expect("display lock")[0].source = NativeSourceId(99);
         assert_eq!(
             core.begin(multi_monitor_request(&catalog)),
+            Err(CaptureFailure::DisplaySnapshotChanged)
+        );
+    }
+
+    #[test]
+    fn retired_hmonitor_identity_does_not_reuse_a_stale_display_id() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let backend = Arc::new(WindowsCaptureBackend::new(adapter.clone()));
+        let core = CaptureCore::new(backend);
+        let catalog = core.source_catalog().expect("catalog");
+        let stale_request = multi_monitor_request(&catalog);
+        let displays = adapter.displays.lock().expect("display lock").clone();
+        let retired_bounds = displays[0].logical_bounds;
+        let stale_id = catalog
+            .snapshot
+            .displays
+            .iter()
+            .find(|display| display.logical_bounds == retired_bounds)
+            .expect("retired display")
+            .id
+            .clone();
+
+        *adapter.displays.lock().expect("display lock") = vec![displays[1].clone()];
+        core.source_catalog()
+            .expect("catalog without retired display");
+        *adapter.displays.lock().expect("display lock") = displays;
+        let replacement_catalog = core.source_catalog().expect("replacement catalog");
+        let replacement_id = replacement_catalog
+            .snapshot
+            .displays
+            .iter()
+            .find(|display| display.logical_bounds == retired_bounds)
+            .expect("replacement display")
+            .id
+            .clone();
+
+        assert_ne!(replacement_id, stale_id);
+        assert_eq!(
+            core.begin(stale_request),
             Err(CaptureFailure::DisplaySnapshotChanged)
         );
     }
