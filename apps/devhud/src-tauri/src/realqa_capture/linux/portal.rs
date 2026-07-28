@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, hash_map::Entry},
     fs,
+    io::Read,
     sync::Mutex,
     time::Duration,
 };
@@ -112,11 +113,8 @@ impl PortalCaptureProvider {
         let path = uri
             .to_file_path()
             .map_err(|()| BackendFailure::CaptureFailed)?;
-        let metadata = fs::metadata(&path).map_err(|_| BackendFailure::CaptureFailed)?;
-        if metadata.len() == 0 || metadata.len() > MAX_ENCODED_IMAGE_BYTES {
-            return Err(BackendFailure::CaptureFailed);
-        }
-        let bytes = fs::read(path).map_err(|_| BackendFailure::CaptureFailed)?;
+        let file = fs::File::open(path).map_err(|_| BackendFailure::CaptureFailed)?;
+        let bytes = read_bounded(file, MAX_ENCODED_IMAGE_BYTES)?;
         let DecodedImage {
             width,
             height,
@@ -297,6 +295,20 @@ impl LinuxCaptureProvider for PortalCaptureProvider {
     }
 }
 
+fn read_bounded(reader: impl Read, limit: u64) -> Result<Vec<u8>, BackendFailure> {
+    let read_limit = limit.checked_add(1).ok_or(BackendFailure::CaptureFailed)?;
+    let mut bytes = Vec::new();
+    reader
+        .take(read_limit)
+        .read_to_end(&mut bytes)
+        .map_err(|_| BackendFailure::CaptureFailed)?;
+    let encoded_len = u64::try_from(bytes.len()).map_err(|_| BackendFailure::CaptureFailed)?;
+    if encoded_len == 0 || encoded_len > limit {
+        return Err(BackendFailure::CaptureFailed);
+    }
+    Ok(bytes)
+}
+
 fn portal_supports_target_selection(version: u32) -> bool {
     version >= 3
 }
@@ -336,7 +348,25 @@ fn map_portal_error(error: PortalError) -> BackendFailure {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
+
+    #[test]
+    fn portal_file_reads_are_bounded() {
+        assert_eq!(
+            read_bounded(Cursor::new([1, 2, 3, 4]), 4),
+            Ok(vec![1, 2, 3, 4])
+        );
+        assert_eq!(
+            read_bounded(Cursor::new([1, 2, 3, 4, 5]), 4),
+            Err(BackendFailure::CaptureFailed)
+        );
+        assert_eq!(
+            read_bounded(Cursor::new(Vec::<u8>::new()), 4),
+            Err(BackendFailure::CaptureFailed)
+        );
+    }
 
     #[test]
     fn target_modes_preserve_portal_selection_semantics() {
