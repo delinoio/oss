@@ -194,7 +194,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if len(listed.Msg.Presets) != 1 {
 		t.Fatalf("first preset page length = %d", len(listed.Msg.Presets))
 	}
-	githubAuthorization, err := realqagithub.NewAuthorization("fixture-realqa-client")
+	githubState, err := realqagithub.NewStateCodec(
+		[]byte(strings.Repeat("s", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	githubAuthorization, err := realqagithub.NewAppAuthorization(
+		"fixture-realqa-client", "fixture-realqa", githubState, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
