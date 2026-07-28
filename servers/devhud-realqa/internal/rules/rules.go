@@ -94,7 +94,7 @@ func validatePatternText(pattern string) error {
 	}
 	for _, forbidden := range []string{
 		"(?=", "(?!", "(?<=", "(?<!", "(?P<", "(?<", `\k`, `\g`,
-		`\C`, `\Q`, `\E`, "&&", "~~", "(?x", "(?x:",
+		`\C`, `\Q`, `\E`, "&&", "--", "~~", "(?x", "(?x:",
 	} {
 		if strings.Contains(pattern, forbidden) {
 			return errors.New("safe title pattern uses unsupported syntax")

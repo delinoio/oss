@@ -68,7 +68,8 @@ WHERE access.installation_id = sqlc.arg(installation_id)
   AND access.repository_id = sqlc.arg(repository_id)
   AND access.issues_enabled
   AND access.can_submit
-  AND access.checked_at >= statement_timestamp() - interval '5 minutes';
+  AND access.checked_at >= statement_timestamp() - interval '5 minutes'
+FOR SHARE OF connection;
 
 -- name: LockShortcutAccount :exec
 SELECT pg_advisory_xact_lock(

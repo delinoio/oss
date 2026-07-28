@@ -113,6 +113,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		) VALUES (
 			$6, 'repo-1', 'markdown_template', 'bug',
 			'Bug', '.github/ISSUE_TEMPLATE/bug.md', 'schema-etag', '{}'::jsonb
+		), (
+			$6, 'repo-1', 'issue_form', 'feature',
+			'Feature', '.github/ISSUE_TEMPLATE/feature.yml', 'form-etag', '{}'::jsonb
 		);
 		INSERT INTO realqa_github_connections (
 			id, owner_kind, owner_id, state,
@@ -240,6 +243,26 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if schemaResponse.Msg.Schema.Repository.Owner != "delinoio" ||
 		schemaResponse.Msg.Schema.Repository.Name != "oss" {
 		t.Fatalf("schema repository = %#v", schemaResponse.Msg.Schema.Repository)
+	}
+	if len(schemaResponse.Msg.Schema.MarkdownTemplates) != 1 ||
+		!proto.Equal(schemaResponse.Msg.Schema.MarkdownTemplates[0].Definition,
+			&realqav1.RepositoryIssueDefinitionRef{
+				Kind:         realqav1.RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE,
+				DefinitionId: "bug", Name: "Bug",
+				Path: ".github/ISSUE_TEMPLATE/bug.md", Etag: "schema-etag",
+			}) {
+		t.Fatalf("schema markdown definitions = %#v",
+			schemaResponse.Msg.Schema.MarkdownTemplates)
+	}
+	if len(schemaResponse.Msg.Schema.IssueForms) != 1 ||
+		!proto.Equal(schemaResponse.Msg.Schema.IssueForms[0].Definition,
+			&realqav1.RepositoryIssueDefinitionRef{
+				Kind:         realqav1.RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM,
+				DefinitionId: "feature", Name: "Feature",
+				Path: ".github/ISSUE_TEMPLATE/feature.yml", Etag: "form-etag",
+			}) {
+		t.Fatalf("schema issue form definitions = %#v",
+			schemaResponse.Msg.Schema.IssueForms)
 	}
 	replayed, err := service.CreatePreset(authCtx, connect.NewRequest(request))
 	if err != nil {

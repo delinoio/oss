@@ -156,6 +156,7 @@ WHERE access.installation_id = $1
   AND access.issues_enabled
   AND access.can_submit
   AND access.checked_at >= statement_timestamp() - interval '5 minutes'
+FOR SHARE OF connection
 `
 
 type GetRepositorySubmitAccessForOwnerParams struct {

@@ -112,6 +112,9 @@ func (service *Preset) CreatePreset(
 					realqav1.ErrorReason_ERROR_REASON_PRESET_LIMIT_EXCEEDED,
 					realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
 			}
+			if accessErr := revalidatePresetAccess(ctx, queries, actor, &input); accessErr != nil {
+				return accessErr
+			}
 			if input.shortcut != nil && input.shortcut.Active {
 				if shortcutErr := queries.LockShortcutAccount(
 					ctx, toPGUUID(actor.accountID)); shortcutErr != nil {
@@ -300,6 +303,54 @@ func (service *Preset) validateInput(
 		}
 	}
 	return input, nil
+}
+
+func revalidatePresetAccess(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	actor caller,
+	input *presetInput,
+) error {
+	payer := owner{kind: "organization", id: input.billingOrg}
+	if payer != input.scope {
+		if err := lockActiveOwnerScope(ctx, queries, payer); err != nil {
+			return err
+		}
+	}
+	allowed, err := queries.HasPayerTeamAccess(ctx, dbgen.HasPayerTeamAccessParams{
+		AccountID:      toPGUUID(actor.accountID),
+		OrganizationID: toPGUUID(input.billingOrg),
+		TeamID:         toPGUUID(input.billingTeam),
+	})
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return permissionDenied()
+	}
+	repository, err := queries.GetRepositorySubmitAccessForOwner(
+		ctx, dbgen.GetRepositorySubmitAccessForOwnerParams{
+			InstallationID: toPGUUID(input.installation),
+			AccountID:      toPGUUID(actor.accountID),
+			RepositoryID:   input.destination.Repository.RepositoryId,
+			OwnerKind:      input.scope.kind,
+			OwnerID:        toPGUUID(input.scope.id),
+		},
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return rqerr.New(connect.CodePermissionDenied,
+			realqav1.ErrorReason_ERROR_REASON_PROVIDER_PERMISSION_DENIED,
+			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+	}
+	if err != nil {
+		return err
+	}
+	input.destination.Repository = &realqav1.GitHubRepositoryRef{
+		RepositoryId: repository.RepositoryID,
+		Owner:        repository.RepositoryOwner,
+		Name:         repository.RepositoryName,
+	}
+	return nil
 }
 
 func (service *Preset) validateDefinition(ctx context.Context, input *presetInput) error {
@@ -616,12 +667,18 @@ func (service *Preset) UpdatePreset(
 	}
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			if lockErr := lockActiveOwnerScope(ctx, queries, scope); lockErr != nil {
+				return lockErr
+			}
 			locked, lockErr := queries.LockPreset(ctx, toPGUUID(presetID))
 			if lockErr != nil {
 				return lockErr
 			}
 			if locked.Revision != request.Msg.ExpectedRevision.Value {
 				return stale(locked.Revision)
+			}
+			if accessErr := revalidatePresetAccess(ctx, queries, actor, &input); accessErr != nil {
+				return accessErr
 			}
 			if input.shortcut != nil && input.shortcut.Active {
 				if shortcutErr := queries.LockShortcutAccount(

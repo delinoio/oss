@@ -432,6 +432,17 @@ func (service *Tracker) GetRepositoryIssueSchema(
 		if row.Revision > revision {
 			revision = row.Revision
 		}
+		kind, kindErr := definitionKindValue(row.Kind)
+		if kindErr != nil {
+			return nil, kindErr
+		}
+		definition := &realqav1.RepositoryIssueDefinitionRef{
+			Kind:         kind,
+			DefinitionId: row.DefinitionID,
+			Name:         row.Name,
+			Path:         row.Path,
+			Etag:         row.Etag,
+		}
 		switch row.Kind {
 		case "markdown_template":
 			item := &realqav1.MarkdownIssueTemplate{}
@@ -440,6 +451,7 @@ func (service *Tracker) GetRepositoryIssueSchema(
 					realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
 					realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 			}
+			item.Definition = definition
 			schema.MarkdownTemplates = append(schema.MarkdownTemplates, item)
 		case "issue_form":
 			item := &realqav1.IssueForm{}
@@ -448,6 +460,7 @@ func (service *Tracker) GetRepositoryIssueSchema(
 					realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
 					realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 			}
+			item.Definition = definition
 			schema.IssueForms = append(schema.IssueForms, item)
 		default:
 			return nil, errors.New("realqa tracker: invalid stored definition")
