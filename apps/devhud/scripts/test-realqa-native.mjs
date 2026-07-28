@@ -43,6 +43,18 @@ requireCondition(
   "macOS capture must use ScreenCaptureKit with explicit permission and pointer controls",
 );
 requireCondition(
+  nativeBackend.includes("realqa_safe_metadata(") &&
+    nativeBackend.includes("REALQA_MAX_PROCESS_NAME_UTF16_UNITS") &&
+    nativeBackend.includes("REALQA_MAX_WINDOW_TITLE_UTF16_UNITS"),
+  "macOS capture must bound and sanitize metadata before native JSON serialization",
+);
+requireCondition(
+  nativeBackend.includes("@synchronized(captureStateLock)") &&
+    nativeBackend.includes("__block bool acceptsResult = true") &&
+    nativeBackend.includes("acceptsResult = false"),
+  "macOS capture must reject and release screenshot results that arrive after timeout",
+);
+requireCondition(
   /<key>NSScreenCaptureUsageDescription<\/key>\s*<string>[^<]+<\/string>/u.test(
     infoPlist,
   ),

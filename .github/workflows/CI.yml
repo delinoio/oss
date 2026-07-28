@@ -660,6 +660,7 @@ jobs:
               - apps/devhud/scripts/check-contracts.mjs
               - apps/devhud/scripts/check-diagnostics.mjs
               - apps/devhud/scripts/check-security.mjs
+              - apps/devhud/scripts/process.mjs
               - apps/devhud/scripts/test-realqa-native.mjs
               - apps/devhud/src/realqa/**
               - apps/devhud/src-tauri/Cargo.toml

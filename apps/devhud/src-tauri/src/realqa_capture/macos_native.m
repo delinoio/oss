@@ -20,6 +20,8 @@ static const int32_t REALQA_CANCELLED = 2;
 static const int32_t REALQA_PROTECTED_CONTENT = 3;
 static const int32_t REALQA_SOURCE_LOST = 4;
 static const int32_t REALQA_CAPTURE_FAILED = 5;
+static const NSUInteger REALQA_MAX_PROCESS_NAME_UTF16_UNITS = 128;
+static const NSUInteger REALQA_MAX_WINDOW_TITLE_UTF16_UNITS = 256;
 
 static bool realqa_wait(dispatch_semaphore_t semaphore) {
   return dispatch_semaphore_wait(
@@ -59,6 +61,43 @@ static NSDictionary *realqa_rect(CGRect frame) {
     @"width" : @(frame.size.width),
     @"height" : @(frame.size.height),
   };
+}
+
+static NSString *realqa_safe_metadata(NSString *value,
+                                      NSUInteger maximumUtf16Units) {
+  if (value == nil || maximumUtf16Units == 0) {
+    return nil;
+  }
+  NSCharacterSet *pathSeparators =
+      [NSCharacterSet characterSetWithCharactersInString:@"/\\"];
+  if ([value rangeOfCharacterFromSet:pathSeparators].location != NSNotFound ||
+      [value rangeOfString:@"file:"
+                   options:NSCaseInsensitiveSearch | NSAnchoredSearch]
+              .location != NSNotFound) {
+    return nil;
+  }
+
+  NSMutableString *sanitized =
+      [NSMutableString stringWithCapacity:MIN(value.length,
+                                               maximumUtf16Units)];
+  NSCharacterSet *controlCharacters = NSCharacterSet.controlCharacterSet;
+  for (NSUInteger index = 0; index < value.length;) {
+    NSRange sequenceRange =
+        [value rangeOfComposedCharacterSequenceAtIndex:index];
+    index = NSMaxRange(sequenceRange);
+    if (sequenceRange.length > maximumUtf16Units - sanitized.length) {
+      break;
+    }
+    NSString *sequence = [value substringWithRange:sequenceRange];
+    if ([sequence rangeOfCharacterFromSet:controlCharacters].location ==
+        NSNotFound) {
+      [sanitized appendString:sequence];
+    }
+  }
+  NSString *trimmed = [sanitized
+      stringByTrimmingCharactersInSet:NSCharacterSet
+                                          .whitespaceAndNewlineCharacterSet];
+  return trimmed.length == 0 ? nil : trimmed;
 }
 
 bool realqa_macos_preflight_permission(void) {
@@ -108,8 +147,11 @@ char *realqa_macos_copy_catalog_json(void) {
       if (window.windowLayer != 0 || window.owningApplication == nil) {
         continue;
       }
-      NSString *processName = window.owningApplication.applicationName;
-      NSString *title = window.title;
+      NSString *processName = realqa_safe_metadata(
+          window.owningApplication.applicationName,
+          REALQA_MAX_PROCESS_NAME_UTF16_UNITS);
+      NSString *title = realqa_safe_metadata(
+          window.title, REALQA_MAX_WINDOW_TITLE_UTF16_UNITS);
       [windows addObject:@{
         @"id" : @(window.windowID),
         @"frame" : realqa_rect(window.frame),
@@ -230,19 +272,33 @@ RealQAMacosBytes realqa_macos_capture(
     }
 
     dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    NSObject *captureStateLock = [[NSObject alloc] init];
     __block CGImageRef image = NULL;
     __block NSError *captureError = nil;
+    __block bool acceptsResult = true;
     [SCScreenshotManager
         captureImageWithFilter:filter
                  configuration:configuration
              completionHandler:^(CGImageRef value, NSError *valueError) {
-               if (value != NULL) {
-                 image = CGImageRetain(value);
+               @synchronized(captureStateLock) {
+                 if (acceptsResult) {
+                   acceptsResult = false;
+                   if (value != NULL) {
+                     image = CGImageRetain(value);
+                   }
+                   captureError = valueError;
+                 }
                }
-               captureError = valueError;
                dispatch_semaphore_signal(semaphore);
              }];
     if (!realqa_wait(semaphore)) {
+      @synchronized(captureStateLock) {
+        acceptsResult = false;
+        if (image != NULL) {
+          CGImageRelease(image);
+          image = NULL;
+        }
+      }
       return realqa_empty_result(REALQA_CAPTURE_FAILED);
     }
     if (image == NULL || captureError != nil) {
