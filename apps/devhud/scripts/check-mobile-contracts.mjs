@@ -56,6 +56,7 @@ const [
   iosInfo,
   iosProject,
   productionRegistry,
+  authNativeSource,
   runtimeSource,
 ] = await Promise.all([
   read("src-tauri/tauri.android.conf.json"),
@@ -83,6 +84,7 @@ const [
   read("src-tauri/gen/apple/devhud_iOS/Info.plist"),
   read("src-tauri/gen/apple/project.yml"),
   read("src/tools/registry.ts"),
+  read("src-tauri/src/auth_native.rs"),
   read("src-tauri/src/lib.rs"),
 ]);
 
@@ -217,6 +219,12 @@ requireCondition(
     androidMainActivity.includes("override fun onNewIntent(intent: Intent)") &&
     androidMainActivity.includes("super.onNewIntent(intent)"),
   "Android auth must use a Keystore-backed vault and consume only the exact app link once",
+);
+requireCondition(
+  /fn begin_mobile[\s\S]*?manager\s*\.begin[\s\S]*?take_callback\(\)[\s\S]*?cancel_pending\(\)/u.test(
+    authNativeSource,
+  ),
+  "mobile auth must discard a stale callback before starting a new authorization transaction",
 );
 const backupDomains = [
   "root",

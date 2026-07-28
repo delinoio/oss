@@ -6,7 +6,7 @@
 //! lifecycle.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     io::{self, BufRead, BufReader, Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream},
@@ -25,6 +25,7 @@ const MOBILE_CALLBACK: &str = "https://deli.dev/auth/devhud/callback";
 const DELIBASE_AUDIENCE: &str = "https://delibase.deli.dev";
 const DECK_AUDIENCE: &str = "https://deck.deli.dev";
 const REALQA_AUDIENCE: &str = "https://realqa.deli.dev";
+const DESKTOP_CALLBACK_PATH: &str = "/auth/callback";
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_CALLBACK_REQUEST_LINE_BYTES: usize = 4096;
 const MAX_SUBJECT_BYTES: usize = 512;
@@ -39,7 +40,7 @@ pub(crate) enum AuthPlatform {
     Mobile,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Ord, PartialEq, PartialOrd, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum AuthFeature {
     Deck,
@@ -242,7 +243,7 @@ pub(crate) trait TokenTransport: Send {
 }
 
 pub(crate) struct VaultSession {
-    pub(crate) refresh_token: Secret,
+    pub(crate) refresh_tokens: BTreeMap<AuthFeature, Secret>,
     pub(crate) device_session_key: Secret,
 }
 
@@ -336,6 +337,7 @@ enum SessionState {
 }
 
 struct PendingAuthorization {
+    feature: AuthFeature,
     state: Secret,
     verifier: Secret,
     nonce: Secret,
@@ -394,8 +396,15 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         &mut self,
         connectivity: Connectivity,
     ) -> Result<SessionSnapshot, AuthError> {
-        let retained = self.vault.load()?;
-        let Some(retained) = retained else {
+        self.restore_at(connectivity, unix_time_now())
+    }
+
+    fn restore_at(
+        &mut self,
+        connectivity: Connectivity,
+        now_unix_seconds: u64,
+    ) -> Result<SessionSnapshot, AuthError> {
+        let Some(mut retained) = self.vault.load()? else {
             self.state = SessionState::SignedOut;
             return if connectivity == Connectivity::Offline {
                 Err(AuthError::FirstTimeOffline)
@@ -403,12 +412,50 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 Ok(self.snapshot())
             };
         };
+        validate_retained_session_shape(&retained)?;
         if connectivity == Connectivity::Offline {
-            validate_device_session_shape(retained.device_session_key.expose())?;
             self.state = SessionState::PriorSessionOffline;
             return Ok(self.snapshot());
         }
-        Err(AuthError::ReauthenticationRequired)
+        let (&feature, refresh_token) = retained
+            .refresh_tokens
+            .first_key_value()
+            .ok_or(AuthError::TokenInvalid)?;
+        let token_endpoint = self.configuration.token_endpoint.clone();
+        let tokens = match self.transport.refresh(
+            &token_endpoint,
+            &self.configuration.client_id,
+            refresh_token,
+            feature.audience(),
+            feature.scopes(),
+        ) {
+            Ok(tokens) => tokens,
+            Err(AuthError::TokenExchangeFailed) => {
+                self.state = SessionState::PriorSessionOffline;
+                return Ok(self.snapshot());
+            }
+            Err(error) => return Err(error),
+        };
+        validate_restored_bearer(
+            &tokens.claims,
+            &self.configuration,
+            feature,
+            now_unix_seconds,
+        )?;
+        let subject = tokens.claims.subject.clone();
+        if !device_session_matches(retained.device_session_key.expose(), &subject)? {
+            return Err(AuthError::AccountSwitchRequiresLogout);
+        }
+        if let Some(rotated_refresh) = tokens.refresh_token {
+            retained.refresh_tokens.insert(feature, rotated_refresh);
+            self.vault.replace(&retained)?;
+        }
+        self.state = SessionState::SignedIn {
+            subject,
+            access_token: tokens.access_token,
+            id_token: tokens.id_token,
+        };
+        Ok(self.snapshot())
     }
 
     pub(crate) fn begin(
@@ -461,6 +508,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         }
         let resume_state = std::mem::replace(&mut self.state, SessionState::Authenticating);
         self.pending = Some(PendingAuthorization {
+            feature,
             state,
             verifier,
             nonce,
@@ -502,6 +550,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         // Taking first makes callback processing one-shot even when validation
         // or exchange fails. A retry starts a fresh authorization transaction.
         let PendingAuthorization {
+            feature,
             state,
             verifier,
             nonce,
@@ -566,19 +615,20 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         self.reject_account_switch(&subject)?;
 
         let refresh_token = tokens.refresh_token.ok_or(AuthError::TokenInvalid)?;
-        let device_session_key = match self.vault.load()? {
+        let mut retained = match self.vault.load()? {
             Some(existing) => {
+                validate_retained_session_shape(&existing)?;
                 if !device_session_matches(existing.device_session_key.expose(), &subject)? {
                     return Err(AuthError::AccountSwitchRequiresLogout);
                 }
-                existing.device_session_key
+                existing
             }
-            None => new_device_session_key(&subject)?,
+            None => VaultSession {
+                refresh_tokens: BTreeMap::new(),
+                device_session_key: new_device_session_key(&subject)?,
+            },
         };
-        let retained = VaultSession {
-            refresh_token,
-            device_session_key,
-        };
+        retained.refresh_tokens.insert(feature, refresh_token);
         self.vault.replace(&retained)?;
         self.state = SessionState::SignedIn {
             subject,
@@ -605,14 +655,19 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             .vault
             .load()?
             .ok_or(AuthError::ReauthenticationRequired)?;
+        validate_retained_session_shape(&retained)?;
         if !device_session_matches(retained.device_session_key.expose(), &subject)? {
             return Err(AuthError::AccountSwitchRequiresLogout);
         }
+        let mut retained = retained;
         let token_endpoint = self.configuration.token_endpoint.clone();
         let feature_tokens = self.transport.refresh(
             &token_endpoint,
             &self.configuration.client_id,
-            &retained.refresh_token,
+            retained
+                .refresh_tokens
+                .get(&feature)
+                .ok_or(AuthError::ReauthenticationRequired)?,
             feature.audience(),
             feature.scopes(),
         )?;
@@ -624,21 +679,17 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             feature.scopes(),
             now_unix_seconds,
         )?;
-        let refresh_after_feature = match feature_tokens.refresh_token {
-            Some(refresh_token) => {
-                let retained = VaultSession {
-                    refresh_token,
-                    device_session_key: retained.device_session_key,
-                };
-                self.vault.replace(&retained)?;
-                retained
-            }
-            None => retained,
-        };
+        if let Some(refresh_token) = feature_tokens.refresh_token {
+            retained.refresh_tokens.insert(feature, refresh_token);
+            self.vault.replace(&retained)?;
+        }
         let delibase_tokens = self.transport.refresh(
             &token_endpoint,
             &self.configuration.client_id,
-            &refresh_after_feature.refresh_token,
+            retained
+                .refresh_tokens
+                .get(&feature)
+                .ok_or(AuthError::ReauthenticationRequired)?,
             DELIBASE_AUDIENCE,
             feature.delibase_scopes(),
         )?;
@@ -654,10 +705,8 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             return Err(AuthError::SubjectMismatch);
         }
         if let Some(rotated_refresh) = delibase_tokens.refresh_token {
-            self.vault.replace(&VaultSession {
-                refresh_token: rotated_refresh,
-                device_session_key: refresh_after_feature.device_session_key,
-            })?;
+            retained.refresh_tokens.insert(feature, rotated_refresh);
+            self.vault.replace(&retained)?;
         }
         Ok(BearerPair {
             feature: feature_tokens.access_token,
@@ -673,11 +722,13 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         self.state = SessionState::SignedOut;
         if let Ok(Some(session)) = self.vault.load() {
             let revocation_endpoint = self.configuration.revocation_endpoint.clone();
-            let _ = self.transport.revoke(
-                &revocation_endpoint,
-                &self.configuration.client_id,
-                &session.refresh_token,
-            );
+            for refresh_token in session.refresh_tokens.values() {
+                let _ = self.transport.revoke(
+                    &revocation_endpoint,
+                    &self.configuration.client_id,
+                    refresh_token,
+                );
+            }
         }
         // Local logout is authoritative. A revocation network error cannot
         // retain access/ID tokens or permit continued feature use.
@@ -711,10 +762,11 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         {
             return Err(AuthError::AccountSwitchRequiresLogout);
         }
-        if let Some(retained) = self.vault.load()?
-            && !device_session_matches(retained.device_session_key.expose(), subject)?
-        {
-            return Err(AuthError::AccountSwitchRequiresLogout);
+        if let Some(retained) = self.vault.load()? {
+            validate_retained_session_shape(&retained)?;
+            if !device_session_matches(retained.device_session_key.expose(), subject)? {
+                return Err(AuthError::AccountSwitchRequiresLogout);
+            }
         }
         Ok(())
     }
@@ -730,6 +782,10 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             }
         )
     }
+
+    pub(crate) fn has_pending_authorization(&self) -> bool {
+        self.pending.is_some()
+    }
 }
 
 fn validate_redirect(platform: AuthPlatform, redirect: &Url) -> Result<(), AuthError> {
@@ -738,8 +794,7 @@ fn validate_redirect(platform: AuthPlatform, redirect: &Url) -> Result<(), AuthE
             if redirect.scheme() != "http"
                 || redirect.host_str() != Some("127.0.0.1")
                 || redirect.port().is_none()
-                || redirect.path() == "/"
-                || redirect.path().len() < 20
+                || redirect.path() != DESKTOP_CALLBACK_PATH
                 || redirect.query().is_some()
                 || redirect.fragment().is_some()
                 || !redirect.username().is_empty()
@@ -788,6 +843,25 @@ fn validate_identity_token(
         return Err(AuthError::AudienceMismatch);
     }
     Ok(())
+}
+
+fn validate_restored_bearer(
+    claims: &TokenClaims,
+    configuration: &AuthConfiguration,
+    feature: AuthFeature,
+    now: u64,
+) -> Result<(), AuthError> {
+    if claims.subject.is_empty() || claims.subject.len() > MAX_SUBJECT_BYTES {
+        return Err(AuthError::TokenInvalid);
+    }
+    validate_bearer(
+        claims,
+        configuration,
+        &claims.subject,
+        feature.audience(),
+        feature.scopes(),
+        now,
+    )
 }
 
 fn validate_bearer(
@@ -875,6 +949,13 @@ fn validate_device_session_shape(value: &str) -> Result<(), AuthError> {
     Ok(())
 }
 
+fn validate_retained_session_shape(session: &VaultSession) -> Result<(), AuthError> {
+    if session.refresh_tokens.is_empty() {
+        return Err(AuthError::TokenInvalid);
+    }
+    validate_device_session_shape(session.device_session_key.expose())
+}
+
 fn device_session_matches(value: &str, subject: &str) -> Result<bool, AuthError> {
     validate_device_session_shape(value)?;
     let mut parts = value.split('.');
@@ -908,12 +989,8 @@ impl LoopbackCallback {
             .local_addr()
             .map_err(|_| AuthError::CallbackListenerUnavailable)?
             .port();
-        let path_secret = random_secret(24)?;
-        let redirect_uri = Url::parse(&format!(
-            "http://127.0.0.1:{port}/auth/{}",
-            path_secret.expose()
-        ))
-        .map_err(|_| AuthError::CallbackListenerUnavailable)?;
+        let redirect_uri = Url::parse(&format!("http://127.0.0.1:{port}{DESKTOP_CALLBACK_PATH}",))
+            .map_err(|_| AuthError::CallbackListenerUnavailable)?;
         Ok(Self {
             listener,
             redirect_uri,
@@ -1041,13 +1118,15 @@ mod tests {
     const OIDC_ISSUER: &str = "https://tenant.logto.app/oidc";
     const NOW: u64 = 1_800_000_000;
 
+    type FakeRetainedSession = (BTreeMap<AuthFeature, String>, String);
+
     #[derive(Default)]
     struct FakeVault {
-        retained: Option<(String, String)>,
+        retained: Option<FakeRetainedSession>,
         fail_load: bool,
         fail_write: bool,
         fail_clear: bool,
-        writes: Arc<Mutex<Vec<(String, String)>>>,
+        writes: Arc<Mutex<Vec<FakeRetainedSession>>>,
     }
 
     impl SecureVault for FakeVault {
@@ -1057,9 +1136,12 @@ mod tests {
             }
             self.retained
                 .as_ref()
-                .map(|(refresh, device)| {
+                .map(|(refresh_tokens, device)| {
                     Ok(VaultSession {
-                        refresh_token: Secret::new(refresh.clone())?,
+                        refresh_tokens: refresh_tokens
+                            .iter()
+                            .map(|(feature, token)| Ok((*feature, Secret::new(token.clone())?)))
+                            .collect::<Result<_, AuthError>>()?,
                         device_session_key: Secret::new(device.clone())?,
                     })
                 })
@@ -1071,7 +1153,11 @@ mod tests {
                 return Err(AuthError::SecureVaultWriteFailed);
             }
             let next = (
-                session.refresh_token.expose().to_owned(),
+                session
+                    .refresh_tokens
+                    .iter()
+                    .map(|(feature, token)| (*feature, token.expose().to_owned()))
+                    .collect(),
                 session.device_session_key.expose().to_owned(),
             );
             self.writes.lock().unwrap().push(next.clone());
@@ -1178,6 +1264,17 @@ mod tests {
         )
     }
 
+    fn retained_grant(
+        feature: AuthFeature,
+        refresh_token: &str,
+        device_session_key: &str,
+    ) -> FakeRetainedSession {
+        (
+            [(feature, refresh_token.to_owned())].into_iter().collect(),
+            device_session_key.to_owned(),
+        )
+    }
+
     fn callback_for(
         request: &AuthorizationRequest,
         code: &str,
@@ -1277,7 +1374,7 @@ mod tests {
             .begin(
                 AuthFeature::RealQa,
                 AuthPlatform::Desktop,
-                Url::parse("http://127.0.0.1:3000/auth/random-enough-path").unwrap(),
+                Url::parse("http://127.0.0.1:3000/auth/callback").unwrap(),
             )
             .unwrap();
         let realqa_query: std::collections::BTreeMap<_, _> = realqa_request
@@ -1401,7 +1498,10 @@ mod tests {
         assert!(manager.memory_tokens_present());
         let writes = writes.lock().unwrap();
         assert_eq!(writes.len(), 1);
-        assert_eq!(writes[0].0, "refresh-a");
+        assert_eq!(
+            writes[0].0.get(&AuthFeature::Deck).map(String::as_str),
+            Some("refresh-a")
+        );
         assert!(writes[0].1.starts_with("v1."));
         assert!(!writes[0].1.contains("account-a"));
         assert!(!format!("{manager:?}").contains("memory-access-token"));
@@ -1427,7 +1527,7 @@ mod tests {
             .begin(
                 AuthFeature::Deck,
                 AuthPlatform::Desktop,
-                Url::parse("http://127.0.0.1:3000/auth/random-enough-path").unwrap(),
+                Url::parse("http://127.0.0.1:3000/auth/callback").unwrap(),
             )
             .unwrap();
         manager
@@ -1438,7 +1538,7 @@ mod tests {
             .begin(
                 AuthFeature::RealQa,
                 AuthPlatform::Desktop,
-                Url::parse("http://127.0.0.1:3001/auth/another-random-path").unwrap(),
+                Url::parse("http://127.0.0.1:3001/auth/callback").unwrap(),
             )
             .unwrap();
         assert_eq!(manager.snapshot(), SessionSnapshot::Authenticating);
@@ -1460,12 +1560,15 @@ mod tests {
             }
         );
         assert_eq!(
-            manager
-                .vault
-                .retained
-                .as_ref()
-                .map(|retained| retained.0.as_str()),
-            Some("refresh-realqa")
+            manager.vault.retained.as_ref().map(|retained| &retained.0),
+            Some(
+                &[
+                    (AuthFeature::Deck, "refresh-deck".to_owned()),
+                    (AuthFeature::RealQa, "refresh-realqa".to_owned())
+                ]
+                .into_iter()
+                .collect()
+            )
         );
     }
 
@@ -1500,7 +1603,7 @@ mod tests {
             .begin(
                 AuthFeature::RealQa,
                 AuthPlatform::Desktop,
-                Url::parse("http://127.0.0.1:3000/auth/random-enough-path").unwrap(),
+                Url::parse("http://127.0.0.1:3000/auth/callback").unwrap(),
             )
             .unwrap();
         manager.cancel_pending();
@@ -1546,7 +1649,11 @@ mod tests {
     fn existing_device_binding_rejects_account_switch_until_logout() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
-            retained: Some(("old-refresh".to_owned(), key.expose().to_owned())),
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "old-refresh",
+                key.expose(),
+            )),
             ..FakeVault::default()
         };
         let mut transport = FakeTransport::default();
@@ -1575,7 +1682,7 @@ mod tests {
     fn bearer_pair_requires_matching_subject_audience_and_scope() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
-            retained: Some(("refresh".to_owned(), key.expose().to_owned())),
+            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
             ..FakeVault::default()
         };
         let mut transport = FakeTransport::default();
@@ -1628,7 +1735,11 @@ mod tests {
     fn feature_refresh_rotation_is_vaulted_before_delibase_refresh() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
-            retained: Some(("refresh-original".to_owned(), key.expose().to_owned())),
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "refresh-original",
+                key.expose(),
+            )),
             ..FakeVault::default()
         };
         let mut transport = FakeTransport::default();
@@ -1661,7 +1772,8 @@ mod tests {
                 .vault
                 .retained
                 .as_ref()
-                .map(|retained| retained.0.as_str()),
+                .and_then(|retained| retained.0.get(&AuthFeature::Deck))
+                .map(String::as_str),
             Some("refresh-rotated")
         );
     }
@@ -1718,7 +1830,7 @@ mod tests {
         );
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
-            retained: Some(("refresh".to_owned(), key.expose().to_owned())),
+            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
             ..FakeVault::default()
         };
         let mut prior = manager(FakeTransport::default(), vault);
@@ -1733,9 +1845,75 @@ mod tests {
     }
 
     #[test]
+    fn retained_session_rehydrates_online_and_persists_rotation() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "refresh-original",
+                key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DECK_AUDIENCE,
+            AuthFeature::Deck.scopes(),
+            Some("refresh-rotated"),
+        )));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW).unwrap(),
+            SessionSnapshot::SignedIn {
+                subject: "account-a".to_owned()
+            }
+        );
+        assert!(prior.memory_tokens_present());
+        assert_eq!(
+            prior.transport.refresh_requests,
+            [(DECK_AUDIENCE.to_owned(), vec!["deck:access".to_owned()])]
+        );
+        assert_eq!(
+            prior
+                .vault
+                .retained
+                .as_ref()
+                .and_then(|retained| retained.0.get(&AuthFeature::Deck))
+                .map(String::as_str),
+            Some("refresh-rotated")
+        );
+    }
+
+    #[test]
+    fn retained_session_falls_back_offline_when_refresh_is_unavailable() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport
+            .refresh
+            .push_back(Err(AuthError::TokenExchangeFailed));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW).unwrap(),
+            SessionSnapshot::PriorSessionOffline
+        );
+        assert!(!prior.memory_tokens_present());
+    }
+
+    #[test]
     fn reset_clears_a_vault_that_cannot_be_deserialized() {
         let vault = FakeVault {
-            retained: Some(("corrupt".to_owned(), "future-schema".to_owned())),
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "corrupt",
+                "future-schema",
+            )),
             fail_load: true,
             ..FakeVault::default()
         };
@@ -1781,7 +1959,7 @@ mod tests {
 
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
-            retained: Some(("refresh".to_owned(), key.expose().to_owned())),
+            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
             fail_clear: true,
             ..FakeVault::default()
         };
@@ -1820,12 +1998,10 @@ mod tests {
         );
         assert!(!load_failure_manager.memory_tokens_present());
         assert_eq!(load_failure_manager.snapshot(), SessionSnapshot::SignedOut);
-        load_failure_manager.vault.retained = Some((
-            "refresh".to_owned(),
-            new_device_session_key("account-a")
-                .unwrap()
-                .expose()
-                .to_owned(),
+        load_failure_manager.vault.retained = Some(retained_grant(
+            AuthFeature::Deck,
+            "refresh",
+            new_device_session_key("account-a").unwrap().expose(),
         ));
         load_failure_manager.vault.fail_clear = true;
         assert_eq!(
@@ -1868,12 +2044,12 @@ mod tests {
     }
 
     #[test]
-    fn loopback_is_random_one_shot_and_shuts_down_after_callback() {
+    fn loopback_uses_random_port_stable_path_and_shuts_down_after_callback() {
         let callback = LoopbackCallback::bind().unwrap();
         let redirect = callback.redirect_uri().clone();
         assert_eq!(redirect.host_str(), Some("127.0.0.1"));
         assert!(redirect.port().unwrap() > 0);
-        assert!(redirect.path().len() > 20);
+        assert_eq!(redirect.path(), DESKTOP_CALLBACK_PATH);
         let address = format!("127.0.0.1:{}", redirect.port().unwrap());
         let target = format!("{}?code=test&state=test", redirect.path());
         let writer = thread::spawn(move || {
@@ -1898,7 +2074,7 @@ mod tests {
     }
 
     #[test]
-    fn callback_rejects_wrong_random_path_and_listener_still_closes() {
+    fn callback_rejects_wrong_path_and_listener_still_closes() {
         let callback = LoopbackCallback::bind().unwrap();
         let port = callback.redirect_uri().port().unwrap();
         let writer = thread::spawn(move || {

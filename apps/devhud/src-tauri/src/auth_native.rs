@@ -3,7 +3,11 @@
 //! Only this module owns HTTP and OS-vault implementations. Callers supply no
 //! URL, method, header, issuer, audience, scope, or vault key.
 
-use std::{collections::BTreeSet, sync::Mutex, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Mutex,
+    time::Duration,
+};
 
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header, jwk::JwkSet};
 use reqwest::{blocking::Client, redirect::Policy};
@@ -245,7 +249,7 @@ struct PlatformVault;
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RetainedVaultSession {
-    refresh_token: String,
+    refresh_tokens: BTreeMap<AuthFeature, String>,
     device_session_key: String,
 }
 
@@ -269,7 +273,11 @@ impl SecureVault for PlatformVault {
         let retained: RetainedVaultSession =
             serde_json::from_str(&encoded).map_err(|_| AuthError::SecureVaultUnavailable)?;
         Ok(Some(VaultSession {
-            refresh_token: Secret::new(retained.refresh_token)?,
+            refresh_tokens: retained
+                .refresh_tokens
+                .into_iter()
+                .map(|(feature, token)| Ok((feature, Secret::new(token)?)))
+                .collect::<Result<_, AuthError>>()?,
             device_session_key: Secret::new(retained.device_session_key)?,
         }))
     }
@@ -277,7 +285,11 @@ impl SecureVault for PlatformVault {
     fn replace(&mut self, session: &VaultSession) -> Result<(), AuthError> {
         let encoded = Zeroizing::new(
             serde_json::to_string(&RetainedVaultSession {
-                refresh_token: session.refresh_token.expose().to_owned(),
+                refresh_tokens: session
+                    .refresh_tokens
+                    .iter()
+                    .map(|(feature, token)| (*feature, token.expose().to_owned()))
+                    .collect(),
                 device_session_key: session.device_session_key.expose().to_owned(),
             })
             .map_err(|_| AuthError::SecureVaultWriteFailed)?,
@@ -315,7 +327,11 @@ impl SecureVault for PlatformVault {
         let retained: RetainedMobileVaultSession =
             serde_json::from_str(&encoded).map_err(|_| AuthError::SecureVaultUnavailable)?;
         Ok(Some(VaultSession {
-            refresh_token: Secret::new(retained.refresh_token)?,
+            refresh_tokens: retained
+                .refresh_tokens
+                .into_iter()
+                .map(|(feature, token)| Ok((feature, Secret::new(token)?)))
+                .collect::<Result<_, AuthError>>()?,
             device_session_key: Secret::new(retained.device_session_key)?,
         }))
     }
@@ -323,7 +339,11 @@ impl SecureVault for PlatformVault {
     fn replace(&mut self, session: &VaultSession) -> Result<(), AuthError> {
         let encoded = Zeroizing::new(
             serde_json::to_string(&RetainedMobileVaultSession {
-                refresh_token: session.refresh_token.expose().to_owned(),
+                refresh_tokens: session
+                    .refresh_tokens
+                    .iter()
+                    .map(|(feature, token)| (*feature, token.expose().to_owned()))
+                    .collect(),
                 device_session_key: session.device_session_key.expose().to_owned(),
             })
             .map_err(|_| AuthError::SecureVaultWriteFailed)?,
@@ -346,7 +366,7 @@ impl SecureVault for PlatformVault {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RetainedMobileVaultSession {
-    refresh_token: String,
+    refresh_tokens: BTreeMap<AuthFeature, String>,
     device_session_key: String,
 }
 
@@ -412,10 +432,15 @@ impl NativeAuthState {
                 });
         };
         let current = manager.snapshot();
-        if current != SessionSnapshot::SignedOut {
+        if matches!(
+            current,
+            SessionSnapshot::Authenticating
+                | SessionSnapshot::SignedIn { .. }
+                | SessionSnapshot::CleanupRequired
+        ) {
             return Ok(current);
         }
-        match manager.restore(Connectivity::Offline) {
+        match manager.restore(Connectivity::Online) {
             Ok(snapshot) => Ok(snapshot),
             Err(AuthError::FirstTimeOffline) => Ok(SessionSnapshot::SignedOut),
             Err(error) => Err(error),
@@ -441,24 +466,51 @@ impl NativeAuthState {
     }
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    pub(crate) fn begin_mobile(&self, feature: AuthFeature) -> Result<Url, AuthError> {
-        let mut guard = self
-            .manager
-            .lock()
-            .map_err(|_| AuthError::SecureVaultUnavailable)?;
-        let manager = guard.as_mut().ok_or(AuthError::ConfigurationUnavailable)?;
-        match manager.expire_pending(unix_time_now()) {
-            Ok(()) | Err(AuthError::CallbackTimedOut) => {}
-            Err(error) => return Err(error),
+    pub(crate) fn begin_mobile(
+        &self,
+        app: &AppHandle<crate::ActiveRuntime>,
+        feature: AuthFeature,
+    ) -> Result<Url, AuthError> {
+        let authorization_url = {
+            let mut guard = self
+                .manager
+                .lock()
+                .map_err(|_| AuthError::SecureVaultUnavailable)?;
+            let manager = guard.as_mut().ok_or(AuthError::ConfigurationUnavailable)?;
+            match manager.expire_pending(unix_time_now()) {
+                Ok(()) | Err(AuthError::CallbackTimedOut) => {}
+                Err(error) => return Err(error),
+            }
+            manager
+                .begin(
+                    feature,
+                    AuthPlatform::Mobile,
+                    Url::parse("https://deli.dev/auth/devhud/callback")
+                        .map_err(|_| AuthError::InvalidConfiguration)?,
+                )?
+                .authorization_url
+        };
+        #[cfg(target_os = "ios")]
+        let discarded = {
+            let _ = app;
+            self.mobile_callback
+                .lock()
+                .map_err(|_| AuthError::InvalidCallback)?
+                .take();
+            Ok::<(), AuthError>(())
+        };
+        #[cfg(target_os = "android")]
+        let discarded = {
+            app.devhud_auth_bridge()
+                .take_callback()
+                .map(|_| ())
+                .map_err(|_| AuthError::InvalidCallback)
+        };
+        if let Err(error) = discarded {
+            self.cancel_pending();
+            return Err(error);
         }
-        manager
-            .begin(
-                feature,
-                AuthPlatform::Mobile,
-                Url::parse("https://deli.dev/auth/devhud/callback")
-                    .map_err(|_| AuthError::InvalidConfiguration)?,
-            )
-            .map(|request| request.authorization_url)
+        Ok(authorization_url)
     }
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -509,6 +561,15 @@ impl NativeAuthState {
     pub(crate) fn accept_mobile_callback(&self, callback: Url) -> Result<(), AuthError> {
         if !crate::auth::is_mobile_callback_boundary(&callback) {
             return Err(AuthError::InvalidCallback);
+        }
+        let has_pending = self
+            .manager
+            .lock()
+            .map_err(|_| AuthError::SecureVaultUnavailable)?
+            .as_ref()
+            .is_some_and(SessionManager::has_pending_authorization);
+        if !has_pending {
+            return Err(AuthError::CallbackAlreadyConsumed);
         }
         let mut pending = self
             .mobile_callback

@@ -2848,7 +2848,7 @@ fn start_authentication(
     state: State<'_, auth_native::NativeAuthState>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
     auth_native::feature_supported(feature)?;
-    let authorization_url = state.begin_mobile(feature)?;
+    let authorization_url = state.begin_mobile(&app, feature)?;
     if let Err(error) = auth_native::open_mobile_authorization(&app, &authorization_url) {
         state.cancel_pending();
         return Err(error);

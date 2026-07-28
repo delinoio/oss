@@ -328,7 +328,8 @@ for (const boundary of [
   'endpoint("/oidc/token/revocation")',
   'endpoint.set_path("/oidc/jwks")',
   '"https://deli.dev/auth/devhud/callback"',
-  '"http://127.0.0.1:{port}/auth/{}"',
+  'const DESKTOP_CALLBACK_PATH: &str = "/auth/callback"',
+  '"http://127.0.0.1:{port}{DESKTOP_CALLBACK_PATH}"',
   "CallbackAlreadyConsumed",
   "AccountSwitchRequiresLogout",
 ]) {
