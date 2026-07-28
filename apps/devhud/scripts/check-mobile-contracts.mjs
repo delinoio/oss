@@ -48,10 +48,15 @@ const [
   androidBackupRules,
   androidDataExtractionRules,
   gradleWrapper,
+  androidAuthBuild,
+  androidAuthPlugin,
+  androidMainActivity,
+  iosAuthPlugin,
   iosEntitlements,
   iosInfo,
   iosProject,
   productionRegistry,
+  authNativeSource,
   runtimeSource,
 ] = await Promise.all([
   read("src-tauri/tauri.android.conf.json"),
@@ -65,10 +70,21 @@ const [
   read("src-tauri/gen/android/app/src/main/res/xml/backup_rules.xml"),
   read("src-tauri/gen/android/app/src/main/res/xml/data_extraction_rules.xml"),
   read("src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties"),
+  read("src-tauri/auth-bridge/android/build.gradle.kts"),
+  read(
+    "src-tauri/auth-bridge/android/src/main/java/dev/deli/devhud/auth/DevHudAuthPlugin.kt",
+  ),
+  read(
+    "src-tauri/gen/android/app/src/main/java/dev/deli/devhud/MainActivity.kt",
+  ),
+  read(
+    "src-tauri/auth-bridge/ios/Sources/DevHudAuthPlugin/DevHudAuthPlugin.swift",
+  ),
   read("src-tauri/gen/apple/devhud_iOS/devhud_iOS.entitlements"),
   read("src-tauri/gen/apple/devhud_iOS/Info.plist"),
   read("src-tauri/gen/apple/project.yml"),
   read("src/tools/registry.ts"),
+  read("src-tauri/src/auth_native.rs"),
   read("src-tauri/src/lib.rs"),
 ]);
 
@@ -162,11 +178,15 @@ requireCondition(
   "the generated Android project must preserve minSdk 29",
 );
 requireCondition(
-  !androidManifest.includes("android.permission.INTERNET") &&
-    !androidManifest.includes("android.intent.category.BROWSABLE") &&
-    !androidManifest.includes("android:scheme=") &&
-    !androidManifest.includes("android:autoVerify"),
-  "the distributed Android manifest must not grant network access or register deep links",
+  (androidManifest.match(/android\.permission\.INTERNET/gu) ?? []).length === 1 &&
+    (androidManifest.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 1 &&
+    (androidManifest.match(/android:autoVerify="true"/gu) ?? []).length === 1 &&
+    androidManifest.includes('android:scheme="https"') &&
+    androidManifest.includes('android:host="deli.dev"') &&
+    androidManifest.includes('android:path="/auth/devhud/callback"') &&
+    !androidManifest.includes("android:pathPrefix") &&
+    !androidManifest.includes("android:pathPattern"),
+  "Android must grant native auth networking and register only the exact verified DeliDev callback",
 );
 requireCondition(
   androidManifest.includes(
@@ -184,6 +204,35 @@ requireCondition(
     ) &&
     androidManifest.includes('android:fullBackupContent="@xml/backup_rules"'),
   "the distributed Android host must disable backup and declare exclusions",
+);
+requireCondition(
+  androidAuthBuild.includes(
+    'implementation("androidx.security:security-crypto:1.1.0")',
+  ) &&
+    androidAuthPlugin.includes("MasterKey.KeyScheme.AES256_GCM") &&
+    androidAuthPlugin.includes("EncryptedSharedPreferences.create") &&
+    androidAuthPlugin.includes('"active-session"') &&
+    androidAuthPlugin.includes('it.scheme == "https"') &&
+    androidAuthPlugin.includes('it.host == "deli.dev"') &&
+    androidAuthPlugin.includes('it.path == "/auth/devhud/callback"') &&
+    androidAuthPlugin.includes("pendingCallback = null") &&
+    /override fun onNewIntent\(intent: Intent\) \{\s*pendingCallback = pendingCallback \?: validatedCallback\(intent\.data\)\s*\}/u.test(
+      androidAuthPlugin,
+    ) &&
+    androidMainActivity.includes("override fun onNewIntent(intent: Intent)") &&
+    androidMainActivity.includes("super.onNewIntent(intent)"),
+  "Android auth must use a Keystore-backed vault, preserve queued callbacks, and consume only the exact app link once",
+);
+requireCondition(
+  /fn begin_mobile[\s\S]*?manager\s*\.begin[\s\S]*?take_callback\(\)[\s\S]*?cancel_pending\(\)/u.test(
+    authNativeSource,
+  ),
+  "mobile auth must discard a stale callback before starting a new authorization transaction",
+);
+requireCondition(
+  authNativeSource.includes('option_env!("DEVHUD_LOGTO_ENDPOINT")') &&
+    authNativeSource.includes('option_env!("DEVHUD_LOGTO_APP_ID")'),
+  "mobile auth must embed its public Logto issuer and app ID at Rust build time",
 );
 const backupDomains = [
   "root",
@@ -234,17 +283,33 @@ requireCondition(
   !iosProject.includes("WidgetKit") &&
     !iosProject.includes(".appex") &&
     !iosProject.includes("dev.deli.devhud.widget") &&
-    !iosProject.includes("com.apple.developer.associated-domains"),
-  "the distributed iOS project must not embed widgets or associated domains",
+    iosProject.includes("com.apple.developer.associated-domains") &&
+    iosProject.includes("applinks:deli.dev"),
+  "the distributed iOS project must embed no widget and declare only the DeliDev associated domain",
 );
 requireCondition(
   !iosInfo.includes("CFBundleURLTypes") &&
     !iosInfo.includes("CFBundleURLSchemes") &&
-    !iosEntitlements.includes("com.apple.developer.associated-domains") &&
+    iosEntitlements.includes("com.apple.developer.associated-domains") &&
+    (iosEntitlements.match(/applinks:/gu) ?? []).length === 1 &&
+    iosEntitlements.includes("applinks:deli.dev") &&
     iosEntitlements.includes("com.apple.security.application-groups") &&
     iosEntitlements.includes("group.dev.deli.devhud") &&
     !iosEntitlements.includes("dev.deli.devhud.widget"),
-  "the distributed iOS target must have only the future shared App Group and no deep-link or widget-extension identity",
+  "the distributed iOS target must have the shared App Group, exact associated domain, and no custom scheme or widget identity",
+);
+requireCondition(
+  iosAuthPlugin.includes("kSecClassGenericPassword") &&
+    iosAuthPlugin.includes("kSecAttrSynchronizable as String: false") &&
+    iosAuthPlugin.includes("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly") &&
+    iosAuthPlugin.includes("SecItemUpdate") &&
+    !iosAuthPlugin.includes("try clear()") &&
+    iosAuthPlugin.includes('target.scheme == "https"') &&
+    iosAuthPlugin.includes('target.path == "/oidc/auth"') &&
+    runtimeSource.includes("tauri::RunEvent::Opened { urls }") &&
+    runtimeSource.includes("auth::is_mobile_callback_boundary(&callback)") &&
+    runtimeSource.includes(".accept_mobile_callback(callback)"),
+  "iOS auth must atomically update a this-device-only Keychain item and consume the verified universal link natively",
 );
 requireCondition(
   (iosProject.split("\ntargets:\n")[1]?.match(/^ {2}[A-Za-z0-9_]+:\s*$/gmu) ?? [])
@@ -264,8 +329,11 @@ requireCondition(
       "allow-write-widget-configuration",
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
+      "allow-get-auth-session",
+      "allow-start-authentication",
+      "allow-logout-authentication",
     ]),
-  "mobile IPC must remain limited to diagnostics, the three versioned records, and confirmed reset",
+  "mobile IPC must remain limited to diagnostics, the three versioned records, confirmed reset, and closed authentication session commands",
 );
 requireCondition(
   runtimeSource.includes('"Unsupported"') &&
@@ -308,9 +376,10 @@ for (const path of nativeFiles.filter((file) =>
     `native project contains an unintended network endpoint: ${path}`,
   );
   requireCondition(
-    !/(CFBundleURLSchemes|com\.apple\.developer\.associated-domains|android\.intent\.action\.VIEW|AppWidgetProvider|WidgetKit)/u.test(
-      source,
-    ),
+    !/(CFBundleURLSchemes|AppWidgetProvider|WidgetKit)/u.test(source) &&
+      (!/(com\.apple\.developer\.associated-domains|android\.intent\.action\.VIEW)/u.test(source) ||
+        ((source.match(/applinks:/gu) ?? []).length <= 1 &&
+          (source.match(/android\.intent\.action\.VIEW/gu) ?? []).length <= 1)),
     `native project contains a prohibited deep-link or widget registration: ${path}`,
   );
 }
@@ -330,9 +399,14 @@ for (const path of mergedManifestFiles.filter((file) =>
 )) {
   const source = await readFile(path, "utf8");
   requireCondition(
-    !/(android\.permission\.INTERNET|android\.intent\.category\.BROWSABLE|android:scheme=|android:autoVerify|AppWidgetProvider|APPWIDGET_UPDATE|android\.appwidget)/u.test(
-      source,
-    ),
+    !/(AppWidgetProvider|APPWIDGET_UPDATE|android\.appwidget)/u.test(source) &&
+      (source.match(/android\.permission\.INTERNET/gu) ?? []).length <= 1 &&
+      (source.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length <= 1 &&
+      (source.match(/android:autoVerify/gu) ?? []).length <= 1 &&
+      (!source.includes("android:autoVerify") ||
+        (source.includes('android:scheme="https"') &&
+          source.includes('android:host="deli.dev"') &&
+          source.includes('android:path="/auth/devhud/callback"'))),
     `merged Android artifact contains network, deep-link, or app-widget authority: ${path}`,
   );
 }
