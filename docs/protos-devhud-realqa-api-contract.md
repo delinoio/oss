@@ -54,11 +54,13 @@ Once implementation exists, canonical checks are:
 
 - `pnpm generate:proto`;
 - `pnpm check:proto`;
+- `pnpm --dir protos/devhud-realqa generate:proto`;
+- `pnpm --dir protos/devhud-realqa check:proto`;
 - `go test ./protos/devhud-realqa/...`;
 - `go vet ./protos/devhud-realqa/...`;
 - `pnpm --filter @delinoio/devhud-realqa-connect typecheck`.
 
-Generation must lint, check the immutable descriptor baseline, generate Go/TypeScript artifacts, build the TypeScript package, and reject a generated diff. CI fails on compatibility, service/RPC/enum drift, stale artifacts, sensitive metadata leakage, or missing cross-consumer generation.
+The future workspace package must own `buf.gen.yaml`, component-local generation/check scripts, `gen/go`, `gen/ts`, and `devhud.realqa.v1.binpb`. Generation must scope every Buf operation to `protos/devhud-realqa/v1`, clean and write only those owned outputs, lint, check only the immutable RealQA descriptor baseline, generate Go/TypeScript artifacts, build the TypeScript package, and reject nondeterminism or a component-local generated diff. The fixed-order root aggregate and `proto-contracts` CI job activate when that package exists. CI fails on compatibility, service/RPC/enum drift, stale artifacts, sensitive metadata leakage, cross-component writes, or missing cross-consumer generation.
 
 Checks do not publish the TypeScript package, deploy either RealQA origin, create R2 infrastructure, register the GitHub App, publish the extension, activate a catalog entry, or publish a server image.
 

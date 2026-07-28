@@ -37,6 +37,8 @@ const [
   iosProject,
   mobileCapabilitySource,
   packageSource,
+  realqaCaptureCapabilitySource,
+  realqaComposerCapabilitySource,
   rustBuildSource,
   rustSource,
   settingsCapabilitySource,
@@ -52,6 +54,8 @@ const [
   read("src-tauri/gen/apple/project.yml"),
   read("src-tauri/capabilities/mobile-main.json"),
   read("package.json"),
+  read("src-tauri/capabilities/realqa-capture.json"),
+  read("src-tauri/capabilities/realqa-composer.json"),
   read("src-tauri/build.rs"),
   read("src-tauri/src/lib.rs"),
   read("src-tauri/capabilities/settings.json"),
@@ -65,6 +69,8 @@ const capabilities = {
   "desktop-main": JSON.parse(desktopCapabilitySource),
   settings: JSON.parse(settingsCapabilitySource),
   "mobile-main": JSON.parse(mobileCapabilitySource),
+  "realqa-capture": JSON.parse(realqaCaptureCapabilitySource),
+  "realqa-composer": JSON.parse(realqaComposerCapabilitySource),
 };
 const expectedCapabilities = {
   "desktop-main": {
@@ -112,12 +118,31 @@ const expectedCapabilities = {
       "allow-reset-dev-hud",
     ],
   },
+  "realqa-capture": {
+    platforms: ["linux", "macOS", "windows"],
+    windows: ["realqa-capture"],
+    permissions: [
+      "allow-realqa-list-capture-sources",
+      "allow-realqa-adjust-capture-selection",
+      "allow-realqa-begin-capture",
+      "allow-realqa-cancel-capture",
+    ],
+  },
+  "realqa-composer": {
+    platforms: ["linux", "macOS", "windows"],
+    windows: ["realqa-composer"],
+    permissions: [
+      "allow-realqa-composer-accept-image",
+      "allow-realqa-composer-remove-image",
+      "allow-realqa-composer-reset-session",
+    ],
+  },
 };
 
 requireCondition(
   JSON.stringify(tauriConfig.app?.security?.capabilities) ===
     JSON.stringify(Object.keys(expectedCapabilities)),
-  "Tauri must enable only the three window- and platform-specific capabilities",
+  "Tauri must enable only the five window- and platform-specific capabilities",
 );
 for (const [identifier, expected] of Object.entries(expectedCapabilities)) {
   const actual = capabilities[identifier];
@@ -135,7 +160,7 @@ for (const [identifier, expected] of Object.entries(expectedCapabilities)) {
   }
 }
 
-const prohibitedPermission = /(?:^|:)(?:default|fs|http|opener|os|process|shell|store)(?::|$)|(?:dialog|download|upload)/u;
+const prohibitedPermission = /(?:^|:)(?:default|fs|http|opener|os|process|screen|shell|store)(?::|$)|(?:dialog|download|upload)/u;
 for (const [identifier, capability] of Object.entries(capabilities)) {
   requireCondition(
     capability.permissions.every(
@@ -154,6 +179,7 @@ const maliciousCommands = [
   "plugin:os|hostname",
   "plugin:os|locale",
   "plugin:process|relaunch",
+  "plugin:screen|capture",
   "plugin:shell|execute",
   "plugin:store|get",
   "undeclared_command",
@@ -164,6 +190,10 @@ for (const [surface, capabilityId] of [
   ["desktop-settings-normal-view", "settings"],
   ["desktop-settings-devtools", "settings"],
   ["mobile-normal-view", "mobile-main"],
+  ["realqa-capture-normal-view", "realqa-capture"],
+  ["realqa-capture-devtools", "realqa-capture"],
+  ["realqa-composer-normal-view", "realqa-composer"],
+  ["realqa-composer-devtools", "realqa-composer"],
 ]) {
   const commands = new Set(
     capabilities[capabilityId].permissions.map(commandFromPermission),
@@ -172,6 +202,39 @@ for (const [surface, capabilityId] of [
     requireCondition(!commands.has(command), `${surface} granted malicious IPC ${command}`);
   }
 }
+
+const captureCommands = new Set(
+  capabilities["realqa-capture"].permissions.map(commandFromPermission),
+);
+const composerCommands = new Set(
+  capabilities["realqa-composer"].permissions.map(commandFromPermission),
+);
+for (const capabilityId of ["desktop-main", "settings", "mobile-main"]) {
+  const commands = new Set(
+    capabilities[capabilityId].permissions.map(commandFromPermission),
+  );
+  requireCondition(
+    [...commands].every((command) => !command.startsWith("realqa_")),
+    `${capabilityId} must deny every RealQA command`,
+  );
+}
+requireCondition(
+  [...captureCommands].every((command) => !command.startsWith("realqa_composer_")),
+  "the capture window must deny composer image/session commands",
+);
+requireCondition(
+  [...composerCommands].every(
+    (command) =>
+      command.startsWith("realqa_composer_") &&
+      ![
+        "realqa_list_capture_sources",
+        "realqa_adjust_capture_selection",
+        "realqa_begin_capture",
+        "realqa_cancel_capture",
+      ].includes(command),
+  ),
+  "the composer window must deny capture source and pixel commands",
+);
 
 const csp = tauriConfig.app?.security?.csp ?? "";
 for (const directive of [
@@ -328,9 +391,11 @@ const frontendText = await Promise.all(
 );
 const invokedCommands = new Set(
   frontendText.flatMap((source) =>
-    [...source.matchAll(/\binvoke(?:<[^;]*?>)?\(\s*"([a-z][a-z0-9_]*)"/gu)].map(
-      (match) => match[1],
-    ),
+    [
+      ...source.matchAll(
+        /\b(?:invoke|invokeCommand)(?:<[^;]*?>)?\(\s*"([a-z][a-z0-9_]*)"/gu,
+      ),
+    ].map((match) => match[1]),
   ),
 );
 for (const command of invokedCommands) {
