@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// DeckDeviceServiceGetDeviceProcedure is the fully-qualified name of the DeckDeviceService's
+	// GetDevice RPC.
+	DeckDeviceServiceGetDeviceProcedure = "/devhud.deck.v1.DeckDeviceService/GetDevice"
 	// DeckDeviceServiceRegisterDeviceProcedure is the fully-qualified name of the DeckDeviceService's
 	// RegisterDevice RPC.
 	DeckDeviceServiceRegisterDeviceProcedure = "/devhud.deck.v1.DeckDeviceService/RegisterDevice"
@@ -52,6 +55,7 @@ const (
 
 // DeckDeviceServiceClient is a client for the devhud.deck.v1.DeckDeviceService service.
 type DeckDeviceServiceClient interface {
+	GetDevice(context.Context, *connect.Request[v1.GetDeviceRequest]) (*connect.Response[v1.GetDeviceResponse], error)
 	RegisterDevice(context.Context, *connect.Request[v1.RegisterDeviceRequest]) (*connect.Response[v1.RegisterDeviceResponse], error)
 	UpdateDevice(context.Context, *connect.Request[v1.UpdateDeviceRequest]) (*connect.Response[v1.UpdateDeviceResponse], error)
 	UnregisterDevice(context.Context, *connect.Request[v1.UnregisterDeviceRequest]) (*connect.Response[v1.UnregisterDeviceResponse], error)
@@ -70,6 +74,12 @@ func NewDeckDeviceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 	baseURL = strings.TrimRight(baseURL, "/")
 	deckDeviceServiceMethods := v1.File_devhud_deck_v1_device_proto.Services().ByName("DeckDeviceService").Methods()
 	return &deckDeviceServiceClient{
+		getDevice: connect.NewClient[v1.GetDeviceRequest, v1.GetDeviceResponse](
+			httpClient,
+			baseURL+DeckDeviceServiceGetDeviceProcedure,
+			connect.WithSchema(deckDeviceServiceMethods.ByName("GetDevice")),
+			connect.WithClientOptions(opts...),
+		),
 		registerDevice: connect.NewClient[v1.RegisterDeviceRequest, v1.RegisterDeviceResponse](
 			httpClient,
 			baseURL+DeckDeviceServiceRegisterDeviceProcedure,
@@ -105,11 +115,17 @@ func NewDeckDeviceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // deckDeviceServiceClient implements DeckDeviceServiceClient.
 type deckDeviceServiceClient struct {
+	getDevice                        *connect.Client[v1.GetDeviceRequest, v1.GetDeviceResponse]
 	registerDevice                   *connect.Client[v1.RegisterDeviceRequest, v1.RegisterDeviceResponse]
 	updateDevice                     *connect.Client[v1.UpdateDeviceRequest, v1.UpdateDeviceResponse]
 	unregisterDevice                 *connect.Client[v1.UnregisterDeviceRequest, v1.UnregisterDeviceResponse]
 	updateViewNotificationPreference *connect.Client[v1.UpdateViewNotificationPreferenceRequest, v1.UpdateViewNotificationPreferenceResponse]
 	resolveNotificationEvent         *connect.Client[v1.ResolveNotificationEventRequest, v1.ResolveNotificationEventResponse]
+}
+
+// GetDevice calls devhud.deck.v1.DeckDeviceService.GetDevice.
+func (c *deckDeviceServiceClient) GetDevice(ctx context.Context, req *connect.Request[v1.GetDeviceRequest]) (*connect.Response[v1.GetDeviceResponse], error) {
+	return c.getDevice.CallUnary(ctx, req)
 }
 
 // RegisterDevice calls devhud.deck.v1.DeckDeviceService.RegisterDevice.
@@ -140,6 +156,7 @@ func (c *deckDeviceServiceClient) ResolveNotificationEvent(ctx context.Context, 
 
 // DeckDeviceServiceHandler is an implementation of the devhud.deck.v1.DeckDeviceService service.
 type DeckDeviceServiceHandler interface {
+	GetDevice(context.Context, *connect.Request[v1.GetDeviceRequest]) (*connect.Response[v1.GetDeviceResponse], error)
 	RegisterDevice(context.Context, *connect.Request[v1.RegisterDeviceRequest]) (*connect.Response[v1.RegisterDeviceResponse], error)
 	UpdateDevice(context.Context, *connect.Request[v1.UpdateDeviceRequest]) (*connect.Response[v1.UpdateDeviceResponse], error)
 	UnregisterDevice(context.Context, *connect.Request[v1.UnregisterDeviceRequest]) (*connect.Response[v1.UnregisterDeviceResponse], error)
@@ -154,6 +171,12 @@ type DeckDeviceServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDeckDeviceServiceHandler(svc DeckDeviceServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	deckDeviceServiceMethods := v1.File_devhud_deck_v1_device_proto.Services().ByName("DeckDeviceService").Methods()
+	deckDeviceServiceGetDeviceHandler := connect.NewUnaryHandler(
+		DeckDeviceServiceGetDeviceProcedure,
+		svc.GetDevice,
+		connect.WithSchema(deckDeviceServiceMethods.ByName("GetDevice")),
+		connect.WithHandlerOptions(opts...),
+	)
 	deckDeviceServiceRegisterDeviceHandler := connect.NewUnaryHandler(
 		DeckDeviceServiceRegisterDeviceProcedure,
 		svc.RegisterDevice,
@@ -186,6 +209,8 @@ func NewDeckDeviceServiceHandler(svc DeckDeviceServiceHandler, opts ...connect.H
 	)
 	return "/devhud.deck.v1.DeckDeviceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case DeckDeviceServiceGetDeviceProcedure:
+			deckDeviceServiceGetDeviceHandler.ServeHTTP(w, r)
 		case DeckDeviceServiceRegisterDeviceProcedure:
 			deckDeviceServiceRegisterDeviceHandler.ServeHTTP(w, r)
 		case DeckDeviceServiceUpdateDeviceProcedure:
@@ -204,6 +229,10 @@ func NewDeckDeviceServiceHandler(svc DeckDeviceServiceHandler, opts ...connect.H
 
 // UnimplementedDeckDeviceServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDeckDeviceServiceHandler struct{}
+
+func (UnimplementedDeckDeviceServiceHandler) GetDevice(context.Context, *connect.Request[v1.GetDeviceRequest]) (*connect.Response[v1.GetDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devhud.deck.v1.DeckDeviceService.GetDevice is not implemented"))
+}
 
 func (UnimplementedDeckDeviceServiceHandler) RegisterDevice(context.Context, *connect.Request[v1.RegisterDeviceRequest]) (*connect.Response[v1.RegisterDeviceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devhud.deck.v1.DeckDeviceService.RegisterDevice is not implemented"))

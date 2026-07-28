@@ -27,7 +27,8 @@ func TestCanonicalServicesAndMethods(t *testing.T) {
 				"UpdateView",
 				"DeleteView",
 				"ListPullRequests",
-				"GetManualRefreshQuote",
+				"ListPullRequestMutationCandidates",
+				"GetRefreshPreflight",
 				"RefreshView",
 				"MutatePullRequest",
 				"DeleteFeatureData",
@@ -47,6 +48,7 @@ func TestCanonicalServicesAndMethods(t *testing.T) {
 			file:    deckv1.File_devhud_deck_v1_device_proto,
 			service: "DeckDeviceService",
 			methods: []string{
+				"GetDevice",
 				"RegisterDevice",
 				"UpdateDevice",
 				"UnregisterDevice",
@@ -230,6 +232,29 @@ func TestPullRequestResultAndMutationShape(t *testing.T) {
 	if merge.Fields().ByName("confirmed") == nil {
 		t.Error("merge mutation is missing explicit confirmation")
 	}
+
+	candidate := messages.ByName("PullRequestMutationCandidate")
+	if candidate.Oneofs().Len() != 1 || candidate.Oneofs().Get(0).Fields().Len() != 3 {
+		t.Error("PullRequestMutationCandidate must carry a user, team, or label")
+	}
+	candidateRequest := messages.ByName("ListPullRequestMutationCandidatesRequest")
+	for _, field := range []protoreflect.Name{
+		"view_id",
+		"pull_request",
+		"mutation_kind",
+		"query",
+		"page",
+	} {
+		if candidateRequest.Fields().ByName(field) == nil {
+			t.Errorf("ListPullRequestMutationCandidatesRequest missing %s", field)
+		}
+	}
+	candidateResponse := messages.ByName("ListPullRequestMutationCandidatesResponse")
+	for _, field := range []protoreflect.Name{"candidates", "page", "pull_request_revision"} {
+		if candidateResponse.Fields().ByName(field) == nil {
+			t.Errorf("ListPullRequestMutationCandidatesResponse missing %s", field)
+		}
+	}
 }
 
 func TestDeviceNotificationAndWidgetShape(t *testing.T) {
@@ -338,6 +363,14 @@ func TestDeviceNotificationAndWidgetShape(t *testing.T) {
 	if messages.ByName("RegisterDeviceRequest").Fields().ByName("expected_revision") == nil {
 		t.Error("RegisterDeviceRequest cannot protect an existing lease renewal with a revision")
 	}
+	getDeviceRequest := messages.ByName("GetDeviceRequest")
+	if getDeviceRequest.Fields().ByName("device_id") == nil {
+		t.Error("GetDeviceRequest cannot identify the current device registration")
+	}
+	getDeviceResponse := messages.ByName("GetDeviceResponse")
+	if getDeviceResponse.Fields().ByName("registration") == nil {
+		t.Error("GetDeviceResponse cannot reload server-authored device state")
+	}
 
 	registerResponse := messages.ByName("RegisterDeviceResponse")
 	for index := range registerResponse.Fields().Len() {
@@ -345,6 +378,38 @@ func TestDeviceNotificationAndWidgetShape(t *testing.T) {
 		if strings.Contains(name, "grant") {
 			t.Errorf("RegisterDeviceResponse leaks cleanup grant in field %q", name)
 		}
+	}
+}
+
+func TestInstallationIdentityAndRefreshPreflightShape(t *testing.T) {
+	t.Parallel()
+
+	integrationMessages := deckv1.File_devhud_deck_v1_integration_proto.Messages()
+	installation := integrationMessages.ByName("GitHubInstallation")
+	account := installation.Fields().ByName("account")
+	if account == nil || account.Message() != integrationMessages.ByName("GitHubAccountIdentity") {
+		t.Fatal("GitHubInstallation does not expose a displayable account identity")
+	}
+	accountIdentity := account.Message()
+	for _, field := range []protoreflect.Name{"github_account_id", "login", "kind"} {
+		if accountIdentity.Fields().ByName(field) == nil {
+			t.Errorf("GitHubAccountIdentity missing %s", field)
+		}
+	}
+
+	viewMessages := deckv1.File_devhud_deck_v1_view_proto.Messages()
+	preflightRequest := viewMessages.ByName("GetRefreshPreflightRequest")
+	for _, field := range []protoreflect.Name{"view_id", "refresh_request_id", "origin"} {
+		if preflightRequest.Fields().ByName(field) == nil {
+			t.Errorf("GetRefreshPreflightRequest missing %s", field)
+		}
+	}
+	refreshRequest := viewMessages.ByName("RefreshViewRequest")
+	if refreshRequest.Fields().ByName("billing_preflight_token") == nil {
+		t.Error("RefreshViewRequest does not require a billing preflight token")
+	}
+	if refreshRequest.Fields().ByName("manual_preflight_token") != nil {
+		t.Error("RefreshViewRequest limits billing preflight to manual refresh")
 	}
 }
 

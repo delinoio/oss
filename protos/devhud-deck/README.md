@@ -38,14 +38,22 @@ and delibase's typed lifecycle delivery may consume it.
   confirmation. List results expose individual/team reviewer identities for
   grouping, current assignees and labels for removal actions, open/closed/merged
   lifecycle state independently from draft state, supported mutations,
-  available merge methods, and the revision required by mutations; comments,
-  approvals, and change requests are not Deck actions.
+  available merge methods, and the revision required by mutations. Bounded
+  candidate search supplies permission-filtered users, teams, and labels for
+  advertised add actions; comments, approvals, and change requests are not Deck
+  actions.
+- Installation list rows include the stable GitHub account ID, login, and
+  user/organization kind needed for settings display.
 - Shortcut bindings use closed modifier/key enums shared with the DevHud native
   registry. Device writes carry request-only shortcut configurations; effective
   conflict state and synchronized revisions are server-authored response state.
 - Initial device registration omits `expected_revision`; lease renewal carries
   the current device revision so a stale renewal cannot overwrite newer mutable
-  device configuration.
+  device configuration. Authenticated `GetDevice` reloads current registration
+  and server-authored state by stable device ID after restart or stale conflict.
+- Every new refresh attempt requires a non-dispatching server-issued billing
+  preflight token bound to its UUID v7 identity and origin. Only manual UI
+  displays the returned price warning.
 - Widget actions are client behavior and cannot carry a mutation. Push payloads
   contain only opaque event identifiers. Device writes carry widget
   configuration only; widget snapshots and synchronized state are server-owned.

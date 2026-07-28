@@ -14,7 +14,8 @@ service DeckViewService {
   rpc UpdateView(UpdateViewRequest) returns (UpdateViewResponse);
   rpc DeleteView(DeleteViewRequest) returns (DeleteViewResponse);
   rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
-  rpc GetManualRefreshQuote(GetManualRefreshQuoteRequest) returns (GetManualRefreshQuoteResponse);
+  rpc ListPullRequestMutationCandidates(ListPullRequestMutationCandidatesRequest) returns (ListPullRequestMutationCandidatesResponse);
+  rpc GetRefreshPreflight(GetRefreshPreflightRequest) returns (GetRefreshPreflightResponse);
   rpc RefreshView(RefreshViewRequest) returns (RefreshViewResponse);
   rpc MutatePullRequest(MutatePullRequestRequest) returns (MutatePullRequestResponse);
   rpc DeleteFeatureData(DeleteFeatureDataRequest) returns (DeleteFeatureDataResponse);
@@ -306,12 +307,35 @@ message ListPullRequestsResponse {
   Revision view_revision = 7;
 }
 
-message GetManualRefreshQuoteRequest {
+message ListPullRequestMutationCandidatesRequest {
   UuidV7 view_id = 1;
-  IdempotencyKey refresh_request_id = 2;
+  PullRequestReference pull_request = 2;
+  PullRequestMutationKind mutation_kind = 3;
+  string query = 4;
+  PageRequest page = 5;
 }
 
-message GetManualRefreshQuoteResponse {
+message PullRequestMutationCandidate {
+  oneof candidate {
+    GitHubUser user = 1;
+    GitHubTeam team = 2;
+    string label = 3;
+  }
+}
+
+message ListPullRequestMutationCandidatesResponse {
+  repeated PullRequestMutationCandidate candidates = 1;
+  PageResponse page = 2;
+  Revision pull_request_revision = 3;
+}
+
+message GetRefreshPreflightRequest {
+  UuidV7 view_id = 1;
+  IdempotencyKey refresh_request_id = 2;
+  RefreshOrigin origin = 3;
+}
+
+message GetRefreshPreflightResponse {
   UsdMicros provider_refresh_price = 1;
   string preflight_token = 2;
   google.protobuf.Timestamp expires_at = 3;
@@ -340,7 +364,7 @@ message RefreshViewRequest {
   UuidV7 view_id = 1;
   IdempotencyKey refresh_request_id = 2;
   RefreshOrigin origin = 3;
-  string manual_preflight_token = 4;
+  string billing_preflight_token = 4;
 }
 
 message RefreshViewResponse {

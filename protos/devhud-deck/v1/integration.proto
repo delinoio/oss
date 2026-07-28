@@ -24,11 +24,24 @@ message GitHubConnection {
   google.protobuf.Timestamp updated_at = 7;
 }
 
+enum GitHubAccountKind {
+  GIT_HUB_ACCOUNT_KIND_UNSPECIFIED = 0;
+  GIT_HUB_ACCOUNT_KIND_USER = 1;
+  GIT_HUB_ACCOUNT_KIND_ORGANIZATION = 2;
+}
+
+message GitHubAccountIdentity {
+  uint64 github_account_id = 1;
+  string login = 2;
+  GitHubAccountKind kind = 3;
+}
+
 message GitHubInstallation {
   uint64 github_installation_id = 1;
   Owner owner = 2;
   ConnectionState state = 3;
   google.protobuf.Timestamp updated_at = 4;
+  GitHubAccountIdentity account = 5;
 }
 
 message GetGitHubConnectionRequest {

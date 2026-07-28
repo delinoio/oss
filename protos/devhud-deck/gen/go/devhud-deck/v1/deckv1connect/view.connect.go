@@ -50,9 +50,12 @@ const (
 	// DeckViewServiceListPullRequestsProcedure is the fully-qualified name of the DeckViewService's
 	// ListPullRequests RPC.
 	DeckViewServiceListPullRequestsProcedure = "/devhud.deck.v1.DeckViewService/ListPullRequests"
-	// DeckViewServiceGetManualRefreshQuoteProcedure is the fully-qualified name of the
-	// DeckViewService's GetManualRefreshQuote RPC.
-	DeckViewServiceGetManualRefreshQuoteProcedure = "/devhud.deck.v1.DeckViewService/GetManualRefreshQuote"
+	// DeckViewServiceListPullRequestMutationCandidatesProcedure is the fully-qualified name of the
+	// DeckViewService's ListPullRequestMutationCandidates RPC.
+	DeckViewServiceListPullRequestMutationCandidatesProcedure = "/devhud.deck.v1.DeckViewService/ListPullRequestMutationCandidates"
+	// DeckViewServiceGetRefreshPreflightProcedure is the fully-qualified name of the DeckViewService's
+	// GetRefreshPreflight RPC.
+	DeckViewServiceGetRefreshPreflightProcedure = "/devhud.deck.v1.DeckViewService/GetRefreshPreflight"
 	// DeckViewServiceRefreshViewProcedure is the fully-qualified name of the DeckViewService's
 	// RefreshView RPC.
 	DeckViewServiceRefreshViewProcedure = "/devhud.deck.v1.DeckViewService/RefreshView"
@@ -72,7 +75,8 @@ type DeckViewServiceClient interface {
 	UpdateView(context.Context, *connect.Request[v1.UpdateViewRequest]) (*connect.Response[v1.UpdateViewResponse], error)
 	DeleteView(context.Context, *connect.Request[v1.DeleteViewRequest]) (*connect.Response[v1.DeleteViewResponse], error)
 	ListPullRequests(context.Context, *connect.Request[v1.ListPullRequestsRequest]) (*connect.Response[v1.ListPullRequestsResponse], error)
-	GetManualRefreshQuote(context.Context, *connect.Request[v1.GetManualRefreshQuoteRequest]) (*connect.Response[v1.GetManualRefreshQuoteResponse], error)
+	ListPullRequestMutationCandidates(context.Context, *connect.Request[v1.ListPullRequestMutationCandidatesRequest]) (*connect.Response[v1.ListPullRequestMutationCandidatesResponse], error)
+	GetRefreshPreflight(context.Context, *connect.Request[v1.GetRefreshPreflightRequest]) (*connect.Response[v1.GetRefreshPreflightResponse], error)
 	RefreshView(context.Context, *connect.Request[v1.RefreshViewRequest]) (*connect.Response[v1.RefreshViewResponse], error)
 	MutatePullRequest(context.Context, *connect.Request[v1.MutatePullRequestRequest]) (*connect.Response[v1.MutatePullRequestResponse], error)
 	DeleteFeatureData(context.Context, *connect.Request[v1.DeleteFeatureDataRequest]) (*connect.Response[v1.DeleteFeatureDataResponse], error)
@@ -125,10 +129,16 @@ func NewDeckViewServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(deckViewServiceMethods.ByName("ListPullRequests")),
 			connect.WithClientOptions(opts...),
 		),
-		getManualRefreshQuote: connect.NewClient[v1.GetManualRefreshQuoteRequest, v1.GetManualRefreshQuoteResponse](
+		listPullRequestMutationCandidates: connect.NewClient[v1.ListPullRequestMutationCandidatesRequest, v1.ListPullRequestMutationCandidatesResponse](
 			httpClient,
-			baseURL+DeckViewServiceGetManualRefreshQuoteProcedure,
-			connect.WithSchema(deckViewServiceMethods.ByName("GetManualRefreshQuote")),
+			baseURL+DeckViewServiceListPullRequestMutationCandidatesProcedure,
+			connect.WithSchema(deckViewServiceMethods.ByName("ListPullRequestMutationCandidates")),
+			connect.WithClientOptions(opts...),
+		),
+		getRefreshPreflight: connect.NewClient[v1.GetRefreshPreflightRequest, v1.GetRefreshPreflightResponse](
+			httpClient,
+			baseURL+DeckViewServiceGetRefreshPreflightProcedure,
+			connect.WithSchema(deckViewServiceMethods.ByName("GetRefreshPreflight")),
 			connect.WithClientOptions(opts...),
 		),
 		refreshView: connect.NewClient[v1.RefreshViewRequest, v1.RefreshViewResponse](
@@ -154,16 +164,17 @@ func NewDeckViewServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // deckViewServiceClient implements DeckViewServiceClient.
 type deckViewServiceClient struct {
-	listViews             *connect.Client[v1.ListViewsRequest, v1.ListViewsResponse]
-	getView               *connect.Client[v1.GetViewRequest, v1.GetViewResponse]
-	createView            *connect.Client[v1.CreateViewRequest, v1.CreateViewResponse]
-	updateView            *connect.Client[v1.UpdateViewRequest, v1.UpdateViewResponse]
-	deleteView            *connect.Client[v1.DeleteViewRequest, v1.DeleteViewResponse]
-	listPullRequests      *connect.Client[v1.ListPullRequestsRequest, v1.ListPullRequestsResponse]
-	getManualRefreshQuote *connect.Client[v1.GetManualRefreshQuoteRequest, v1.GetManualRefreshQuoteResponse]
-	refreshView           *connect.Client[v1.RefreshViewRequest, v1.RefreshViewResponse]
-	mutatePullRequest     *connect.Client[v1.MutatePullRequestRequest, v1.MutatePullRequestResponse]
-	deleteFeatureData     *connect.Client[v1.DeleteFeatureDataRequest, v1.DeleteFeatureDataResponse]
+	listViews                         *connect.Client[v1.ListViewsRequest, v1.ListViewsResponse]
+	getView                           *connect.Client[v1.GetViewRequest, v1.GetViewResponse]
+	createView                        *connect.Client[v1.CreateViewRequest, v1.CreateViewResponse]
+	updateView                        *connect.Client[v1.UpdateViewRequest, v1.UpdateViewResponse]
+	deleteView                        *connect.Client[v1.DeleteViewRequest, v1.DeleteViewResponse]
+	listPullRequests                  *connect.Client[v1.ListPullRequestsRequest, v1.ListPullRequestsResponse]
+	listPullRequestMutationCandidates *connect.Client[v1.ListPullRequestMutationCandidatesRequest, v1.ListPullRequestMutationCandidatesResponse]
+	getRefreshPreflight               *connect.Client[v1.GetRefreshPreflightRequest, v1.GetRefreshPreflightResponse]
+	refreshView                       *connect.Client[v1.RefreshViewRequest, v1.RefreshViewResponse]
+	mutatePullRequest                 *connect.Client[v1.MutatePullRequestRequest, v1.MutatePullRequestResponse]
+	deleteFeatureData                 *connect.Client[v1.DeleteFeatureDataRequest, v1.DeleteFeatureDataResponse]
 }
 
 // ListViews calls devhud.deck.v1.DeckViewService.ListViews.
@@ -196,9 +207,15 @@ func (c *deckViewServiceClient) ListPullRequests(ctx context.Context, req *conne
 	return c.listPullRequests.CallUnary(ctx, req)
 }
 
-// GetManualRefreshQuote calls devhud.deck.v1.DeckViewService.GetManualRefreshQuote.
-func (c *deckViewServiceClient) GetManualRefreshQuote(ctx context.Context, req *connect.Request[v1.GetManualRefreshQuoteRequest]) (*connect.Response[v1.GetManualRefreshQuoteResponse], error) {
-	return c.getManualRefreshQuote.CallUnary(ctx, req)
+// ListPullRequestMutationCandidates calls
+// devhud.deck.v1.DeckViewService.ListPullRequestMutationCandidates.
+func (c *deckViewServiceClient) ListPullRequestMutationCandidates(ctx context.Context, req *connect.Request[v1.ListPullRequestMutationCandidatesRequest]) (*connect.Response[v1.ListPullRequestMutationCandidatesResponse], error) {
+	return c.listPullRequestMutationCandidates.CallUnary(ctx, req)
+}
+
+// GetRefreshPreflight calls devhud.deck.v1.DeckViewService.GetRefreshPreflight.
+func (c *deckViewServiceClient) GetRefreshPreflight(ctx context.Context, req *connect.Request[v1.GetRefreshPreflightRequest]) (*connect.Response[v1.GetRefreshPreflightResponse], error) {
+	return c.getRefreshPreflight.CallUnary(ctx, req)
 }
 
 // RefreshView calls devhud.deck.v1.DeckViewService.RefreshView.
@@ -224,7 +241,8 @@ type DeckViewServiceHandler interface {
 	UpdateView(context.Context, *connect.Request[v1.UpdateViewRequest]) (*connect.Response[v1.UpdateViewResponse], error)
 	DeleteView(context.Context, *connect.Request[v1.DeleteViewRequest]) (*connect.Response[v1.DeleteViewResponse], error)
 	ListPullRequests(context.Context, *connect.Request[v1.ListPullRequestsRequest]) (*connect.Response[v1.ListPullRequestsResponse], error)
-	GetManualRefreshQuote(context.Context, *connect.Request[v1.GetManualRefreshQuoteRequest]) (*connect.Response[v1.GetManualRefreshQuoteResponse], error)
+	ListPullRequestMutationCandidates(context.Context, *connect.Request[v1.ListPullRequestMutationCandidatesRequest]) (*connect.Response[v1.ListPullRequestMutationCandidatesResponse], error)
+	GetRefreshPreflight(context.Context, *connect.Request[v1.GetRefreshPreflightRequest]) (*connect.Response[v1.GetRefreshPreflightResponse], error)
 	RefreshView(context.Context, *connect.Request[v1.RefreshViewRequest]) (*connect.Response[v1.RefreshViewResponse], error)
 	MutatePullRequest(context.Context, *connect.Request[v1.MutatePullRequestRequest]) (*connect.Response[v1.MutatePullRequestResponse], error)
 	DeleteFeatureData(context.Context, *connect.Request[v1.DeleteFeatureDataRequest]) (*connect.Response[v1.DeleteFeatureDataResponse], error)
@@ -273,10 +291,16 @@ func NewDeckViewServiceHandler(svc DeckViewServiceHandler, opts ...connect.Handl
 		connect.WithSchema(deckViewServiceMethods.ByName("ListPullRequests")),
 		connect.WithHandlerOptions(opts...),
 	)
-	deckViewServiceGetManualRefreshQuoteHandler := connect.NewUnaryHandler(
-		DeckViewServiceGetManualRefreshQuoteProcedure,
-		svc.GetManualRefreshQuote,
-		connect.WithSchema(deckViewServiceMethods.ByName("GetManualRefreshQuote")),
+	deckViewServiceListPullRequestMutationCandidatesHandler := connect.NewUnaryHandler(
+		DeckViewServiceListPullRequestMutationCandidatesProcedure,
+		svc.ListPullRequestMutationCandidates,
+		connect.WithSchema(deckViewServiceMethods.ByName("ListPullRequestMutationCandidates")),
+		connect.WithHandlerOptions(opts...),
+	)
+	deckViewServiceGetRefreshPreflightHandler := connect.NewUnaryHandler(
+		DeckViewServiceGetRefreshPreflightProcedure,
+		svc.GetRefreshPreflight,
+		connect.WithSchema(deckViewServiceMethods.ByName("GetRefreshPreflight")),
 		connect.WithHandlerOptions(opts...),
 	)
 	deckViewServiceRefreshViewHandler := connect.NewUnaryHandler(
@@ -311,8 +335,10 @@ func NewDeckViewServiceHandler(svc DeckViewServiceHandler, opts ...connect.Handl
 			deckViewServiceDeleteViewHandler.ServeHTTP(w, r)
 		case DeckViewServiceListPullRequestsProcedure:
 			deckViewServiceListPullRequestsHandler.ServeHTTP(w, r)
-		case DeckViewServiceGetManualRefreshQuoteProcedure:
-			deckViewServiceGetManualRefreshQuoteHandler.ServeHTTP(w, r)
+		case DeckViewServiceListPullRequestMutationCandidatesProcedure:
+			deckViewServiceListPullRequestMutationCandidatesHandler.ServeHTTP(w, r)
+		case DeckViewServiceGetRefreshPreflightProcedure:
+			deckViewServiceGetRefreshPreflightHandler.ServeHTTP(w, r)
 		case DeckViewServiceRefreshViewProcedure:
 			deckViewServiceRefreshViewHandler.ServeHTTP(w, r)
 		case DeckViewServiceMutatePullRequestProcedure:
@@ -352,8 +378,12 @@ func (UnimplementedDeckViewServiceHandler) ListPullRequests(context.Context, *co
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devhud.deck.v1.DeckViewService.ListPullRequests is not implemented"))
 }
 
-func (UnimplementedDeckViewServiceHandler) GetManualRefreshQuote(context.Context, *connect.Request[v1.GetManualRefreshQuoteRequest]) (*connect.Response[v1.GetManualRefreshQuoteResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devhud.deck.v1.DeckViewService.GetManualRefreshQuote is not implemented"))
+func (UnimplementedDeckViewServiceHandler) ListPullRequestMutationCandidates(context.Context, *connect.Request[v1.ListPullRequestMutationCandidatesRequest]) (*connect.Response[v1.ListPullRequestMutationCandidatesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devhud.deck.v1.DeckViewService.ListPullRequestMutationCandidates is not implemented"))
+}
+
+func (UnimplementedDeckViewServiceHandler) GetRefreshPreflight(context.Context, *connect.Request[v1.GetRefreshPreflightRequest]) (*connect.Response[v1.GetRefreshPreflightResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devhud.deck.v1.DeckViewService.GetRefreshPreflight is not implemented"))
 }
 
 func (UnimplementedDeckViewServiceHandler) RefreshView(context.Context, *connect.Request[v1.RefreshViewRequest]) (*connect.Response[v1.RefreshViewResponse], error) {

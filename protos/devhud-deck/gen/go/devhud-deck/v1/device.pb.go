@@ -1159,6 +1159,94 @@ func (x *DeviceRegistration) GetLeaseExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type GetDeviceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId      *UuidV7                `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDeviceRequest) Reset() {
+	*x = GetDeviceRequest{}
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDeviceRequest) ProtoMessage() {}
+
+func (x *GetDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDeviceRequest.ProtoReflect.Descriptor instead.
+func (*GetDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetDeviceRequest) GetDeviceId() *UuidV7 {
+	if x != nil {
+		return x.DeviceId
+	}
+	return nil
+}
+
+type GetDeviceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Registration  *DeviceRegistration    `protobuf:"bytes,1,opt,name=registration,proto3" json:"registration,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDeviceResponse) Reset() {
+	*x = GetDeviceResponse{}
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDeviceResponse) ProtoMessage() {}
+
+func (x *GetDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDeviceResponse.ProtoReflect.Descriptor instead.
+func (*GetDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetDeviceResponse) GetRegistration() *DeviceRegistration {
+	if x != nil {
+		return x.Registration
+	}
+	return nil
+}
+
 type RegisterDeviceRequest struct {
 	state                           protoimpl.MessageState       `protogen:"open.v1"`
 	IdempotencyKey                  *IdempotencyKey              `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -1178,7 +1266,7 @@ type RegisterDeviceRequest struct {
 
 func (x *RegisterDeviceRequest) Reset() {
 	*x = RegisterDeviceRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[8]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1278,7 @@ func (x *RegisterDeviceRequest) String() string {
 func (*RegisterDeviceRequest) ProtoMessage() {}
 
 func (x *RegisterDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[8]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1291,7 @@ func (x *RegisterDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterDeviceRequest.ProtoReflect.Descriptor instead.
 func (*RegisterDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{8}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RegisterDeviceRequest) GetIdempotencyKey() *IdempotencyKey {
@@ -1281,7 +1369,7 @@ type RegisterDeviceResponse struct {
 
 func (x *RegisterDeviceResponse) Reset() {
 	*x = RegisterDeviceResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[9]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1293,7 +1381,7 @@ func (x *RegisterDeviceResponse) String() string {
 func (*RegisterDeviceResponse) ProtoMessage() {}
 
 func (x *RegisterDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[9]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1306,7 +1394,7 @@ func (x *RegisterDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterDeviceResponse.ProtoReflect.Descriptor instead.
 func (*RegisterDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{9}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RegisterDeviceResponse) GetRegistration() *DeviceRegistration {
@@ -1338,7 +1426,7 @@ type UpdateDeviceRequest struct {
 
 func (x *UpdateDeviceRequest) Reset() {
 	*x = UpdateDeviceRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[10]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1350,7 +1438,7 @@ func (x *UpdateDeviceRequest) String() string {
 func (*UpdateDeviceRequest) ProtoMessage() {}
 
 func (x *UpdateDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[10]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1363,7 +1451,7 @@ func (x *UpdateDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateDeviceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{10}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UpdateDeviceRequest) GetRegistrationId() *UuidV7 {
@@ -1424,7 +1512,7 @@ type UpdateDeviceResponse struct {
 
 func (x *UpdateDeviceResponse) Reset() {
 	*x = UpdateDeviceResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[11]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1436,7 +1524,7 @@ func (x *UpdateDeviceResponse) String() string {
 func (*UpdateDeviceResponse) ProtoMessage() {}
 
 func (x *UpdateDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[11]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1449,7 +1537,7 @@ func (x *UpdateDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateDeviceResponse.ProtoReflect.Descriptor instead.
 func (*UpdateDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{11}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpdateDeviceResponse) GetRegistration() *DeviceRegistration {
@@ -1468,7 +1556,7 @@ type UnregisterDeviceRequest struct {
 
 func (x *UnregisterDeviceRequest) Reset() {
 	*x = UnregisterDeviceRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[12]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1480,7 +1568,7 @@ func (x *UnregisterDeviceRequest) String() string {
 func (*UnregisterDeviceRequest) ProtoMessage() {}
 
 func (x *UnregisterDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[12]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1493,7 +1581,7 @@ func (x *UnregisterDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnregisterDeviceRequest.ProtoReflect.Descriptor instead.
 func (*UnregisterDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{12}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UnregisterDeviceRequest) GetRegistrationId() *UuidV7 {
@@ -1513,7 +1601,7 @@ type UnregisterDeviceResponse struct {
 
 func (x *UnregisterDeviceResponse) Reset() {
 	*x = UnregisterDeviceResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[13]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1525,7 +1613,7 @@ func (x *UnregisterDeviceResponse) String() string {
 func (*UnregisterDeviceResponse) ProtoMessage() {}
 
 func (x *UnregisterDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[13]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1538,7 +1626,7 @@ func (x *UnregisterDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnregisterDeviceResponse.ProtoReflect.Descriptor instead.
 func (*UnregisterDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{13}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UnregisterDeviceResponse) GetRegistrationId() *UuidV7 {
@@ -1568,7 +1656,7 @@ type ViewNotificationState struct {
 
 func (x *ViewNotificationState) Reset() {
 	*x = ViewNotificationState{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[14]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1580,7 +1668,7 @@ func (x *ViewNotificationState) String() string {
 func (*ViewNotificationState) ProtoMessage() {}
 
 func (x *ViewNotificationState) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[14]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1593,7 +1681,7 @@ func (x *ViewNotificationState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewNotificationState.ProtoReflect.Descriptor instead.
 func (*ViewNotificationState) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{14}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ViewNotificationState) GetRegistrationId() *UuidV7 {
@@ -1643,7 +1731,7 @@ type UpdateViewNotificationPreferenceRequest struct {
 
 func (x *UpdateViewNotificationPreferenceRequest) Reset() {
 	*x = UpdateViewNotificationPreferenceRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[15]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1655,7 +1743,7 @@ func (x *UpdateViewNotificationPreferenceRequest) String() string {
 func (*UpdateViewNotificationPreferenceRequest) ProtoMessage() {}
 
 func (x *UpdateViewNotificationPreferenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[15]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1668,7 +1756,7 @@ func (x *UpdateViewNotificationPreferenceRequest) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use UpdateViewNotificationPreferenceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateViewNotificationPreferenceRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{15}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpdateViewNotificationPreferenceRequest) GetRegistrationId() *UuidV7 {
@@ -1708,7 +1796,7 @@ type UpdateViewNotificationPreferenceResponse struct {
 
 func (x *UpdateViewNotificationPreferenceResponse) Reset() {
 	*x = UpdateViewNotificationPreferenceResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[16]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1720,7 +1808,7 @@ func (x *UpdateViewNotificationPreferenceResponse) String() string {
 func (*UpdateViewNotificationPreferenceResponse) ProtoMessage() {}
 
 func (x *UpdateViewNotificationPreferenceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[16]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1733,7 +1821,7 @@ func (x *UpdateViewNotificationPreferenceResponse) ProtoReflect() protoreflect.M
 
 // Deprecated: Use UpdateViewNotificationPreferenceResponse.ProtoReflect.Descriptor instead.
 func (*UpdateViewNotificationPreferenceResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{16}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *UpdateViewNotificationPreferenceResponse) GetNotification() *ViewNotificationState {
@@ -1753,7 +1841,7 @@ type ResolveNotificationEventRequest struct {
 
 func (x *ResolveNotificationEventRequest) Reset() {
 	*x = ResolveNotificationEventRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[17]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1765,7 +1853,7 @@ func (x *ResolveNotificationEventRequest) String() string {
 func (*ResolveNotificationEventRequest) ProtoMessage() {}
 
 func (x *ResolveNotificationEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[17]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1778,7 +1866,7 @@ func (x *ResolveNotificationEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveNotificationEventRequest.ProtoReflect.Descriptor instead.
 func (*ResolveNotificationEventRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{17}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ResolveNotificationEventRequest) GetRegistrationId() *UuidV7 {
@@ -1808,7 +1896,7 @@ type ResolveNotificationEventResponse struct {
 
 func (x *ResolveNotificationEventResponse) Reset() {
 	*x = ResolveNotificationEventResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[18]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1820,7 +1908,7 @@ func (x *ResolveNotificationEventResponse) String() string {
 func (*ResolveNotificationEventResponse) ProtoMessage() {}
 
 func (x *ResolveNotificationEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[18]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1833,7 +1921,7 @@ func (x *ResolveNotificationEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveNotificationEventResponse.ProtoReflect.Descriptor instead.
 func (*ResolveNotificationEventResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{18}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ResolveNotificationEventResponse) GetResolution() NotificationResolution {
@@ -1884,7 +1972,7 @@ type ViewShortcutConfiguration struct {
 
 func (x *ViewShortcutConfiguration) Reset() {
 	*x = ViewShortcutConfiguration{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[19]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1896,7 +1984,7 @@ func (x *ViewShortcutConfiguration) String() string {
 func (*ViewShortcutConfiguration) ProtoMessage() {}
 
 func (x *ViewShortcutConfiguration) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[19]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1909,7 +1997,7 @@ func (x *ViewShortcutConfiguration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewShortcutConfiguration.ProtoReflect.Descriptor instead.
 func (*ViewShortcutConfiguration) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{19}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ViewShortcutConfiguration) GetShortcutId() *UuidV7 {
@@ -1947,7 +2035,7 @@ type WidgetConfiguration struct {
 
 func (x *WidgetConfiguration) Reset() {
 	*x = WidgetConfiguration{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[20]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1959,7 +2047,7 @@ func (x *WidgetConfiguration) String() string {
 func (*WidgetConfiguration) ProtoMessage() {}
 
 func (x *WidgetConfiguration) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[20]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1972,7 +2060,7 @@ func (x *WidgetConfiguration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetConfiguration.ProtoReflect.Descriptor instead.
 func (*WidgetConfiguration) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{20}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *WidgetConfiguration) GetWidgetId() *UuidV7 {
@@ -2055,7 +2143,11 @@ const file_devhud_deck_v1_device_proto_rawDesc = "" +
 	"\x12DeviceRegistration\x12?\n" +
 	"\x0fregistration_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x0eregistrationId\x12.\n" +
 	"\x06device\x18\x02 \x01(\v2\x16.devhud.deck.v1.DeviceR\x06device\x12D\n" +
-	"\x10lease_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xc6\x04\n" +
+	"\x10lease_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"G\n" +
+	"\x10GetDeviceRequest\x123\n" +
+	"\tdevice_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\bdeviceId\"[\n" +
+	"\x11GetDeviceResponse\x12F\n" +
+	"\fregistration\x18\x01 \x01(\v2\".devhud.deck.v1.DeviceRegistrationR\fregistration\"\xc6\x04\n" +
 	"\x15RegisterDeviceRequest\x12G\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\v2\x1e.devhud.deck.v1.IdempotencyKeyR\x0eidempotencyKey\x123\n" +
 	"\tdevice_id\x18\x02 \x01(\v2\x16.devhud.deck.v1.UuidV7R\bdeviceId\x12:\n" +
@@ -2216,8 +2308,9 @@ const file_devhud_deck_v1_device_proto_rawDesc = "" +
 	"#NOTIFICATION_RESOLUTION_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fNOTIFICATION_RESOLUTION_GENERIC\x10\x01\x12$\n" +
 	" NOTIFICATION_RESOLUTION_DETAILED\x10\x02\x12'\n" +
-	"#NOTIFICATION_RESOLUTION_UNAVAILABLE\x10\x032\xcd\x04\n" +
-	"\x11DeckDeviceService\x12_\n" +
+	"#NOTIFICATION_RESOLUTION_UNAVAILABLE\x10\x032\x9f\x05\n" +
+	"\x11DeckDeviceService\x12P\n" +
+	"\tGetDevice\x12 .devhud.deck.v1.GetDeviceRequest\x1a!.devhud.deck.v1.GetDeviceResponse\x12_\n" +
 	"\x0eRegisterDevice\x12%.devhud.deck.v1.RegisterDeviceRequest\x1a&.devhud.deck.v1.RegisterDeviceResponse\x12Y\n" +
 	"\fUpdateDevice\x12#.devhud.deck.v1.UpdateDeviceRequest\x1a$.devhud.deck.v1.UpdateDeviceResponse\x12e\n" +
 	"\x10UnregisterDevice\x12'.devhud.deck.v1.UnregisterDeviceRequest\x1a(.devhud.deck.v1.UnregisterDeviceResponse\x12\x95\x01\n" +
@@ -2237,7 +2330,7 @@ func file_devhud_deck_v1_device_proto_rawDescGZIP() []byte {
 }
 
 var file_devhud_deck_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
-var file_devhud_deck_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_devhud_deck_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_devhud_deck_v1_device_proto_goTypes = []any{
 	(DevicePlatform)(0),                              // 0: devhud.deck.v1.DevicePlatform
 	(PushProvider)(0),                                // 1: devhud.deck.v1.PushProvider
@@ -2255,113 +2348,119 @@ var file_devhud_deck_v1_device_proto_goTypes = []any{
 	(*WidgetState)(nil),                              // 13: devhud.deck.v1.WidgetState
 	(*Device)(nil),                                   // 14: devhud.deck.v1.Device
 	(*DeviceRegistration)(nil),                       // 15: devhud.deck.v1.DeviceRegistration
-	(*RegisterDeviceRequest)(nil),                    // 16: devhud.deck.v1.RegisterDeviceRequest
-	(*RegisterDeviceResponse)(nil),                   // 17: devhud.deck.v1.RegisterDeviceResponse
-	(*UpdateDeviceRequest)(nil),                      // 18: devhud.deck.v1.UpdateDeviceRequest
-	(*UpdateDeviceResponse)(nil),                     // 19: devhud.deck.v1.UpdateDeviceResponse
-	(*UnregisterDeviceRequest)(nil),                  // 20: devhud.deck.v1.UnregisterDeviceRequest
-	(*UnregisterDeviceResponse)(nil),                 // 21: devhud.deck.v1.UnregisterDeviceResponse
-	(*ViewNotificationState)(nil),                    // 22: devhud.deck.v1.ViewNotificationState
-	(*UpdateViewNotificationPreferenceRequest)(nil),  // 23: devhud.deck.v1.UpdateViewNotificationPreferenceRequest
-	(*UpdateViewNotificationPreferenceResponse)(nil), // 24: devhud.deck.v1.UpdateViewNotificationPreferenceResponse
-	(*ResolveNotificationEventRequest)(nil),          // 25: devhud.deck.v1.ResolveNotificationEventRequest
-	(*ResolveNotificationEventResponse)(nil),         // 26: devhud.deck.v1.ResolveNotificationEventResponse
-	(*ViewShortcutConfiguration)(nil),                // 27: devhud.deck.v1.ViewShortcutConfiguration
-	(*WidgetConfiguration)(nil),                      // 28: devhud.deck.v1.WidgetConfiguration
-	(*UuidV7)(nil),                                   // 29: devhud.deck.v1.UuidV7
-	(*Revision)(nil),                                 // 30: devhud.deck.v1.Revision
-	(*RepositoryReference)(nil),                      // 31: devhud.deck.v1.RepositoryReference
-	(FreshnessState)(0),                              // 32: devhud.deck.v1.FreshnessState
-	(*timestamppb.Timestamp)(nil),                    // 33: google.protobuf.Timestamp
-	(*IdempotencyKey)(nil),                           // 34: devhud.deck.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),                        // 35: devhud.deck.v1.IdempotencyResult
-	(*ViewNotificationPreference)(nil),               // 36: devhud.deck.v1.ViewNotificationPreference
-	(*PullRequestDetail)(nil),                        // 37: devhud.deck.v1.PullRequestDetail
-	(NotificationTransition)(0),                      // 38: devhud.deck.v1.NotificationTransition
+	(*GetDeviceRequest)(nil),                         // 16: devhud.deck.v1.GetDeviceRequest
+	(*GetDeviceResponse)(nil),                        // 17: devhud.deck.v1.GetDeviceResponse
+	(*RegisterDeviceRequest)(nil),                    // 18: devhud.deck.v1.RegisterDeviceRequest
+	(*RegisterDeviceResponse)(nil),                   // 19: devhud.deck.v1.RegisterDeviceResponse
+	(*UpdateDeviceRequest)(nil),                      // 20: devhud.deck.v1.UpdateDeviceRequest
+	(*UpdateDeviceResponse)(nil),                     // 21: devhud.deck.v1.UpdateDeviceResponse
+	(*UnregisterDeviceRequest)(nil),                  // 22: devhud.deck.v1.UnregisterDeviceRequest
+	(*UnregisterDeviceResponse)(nil),                 // 23: devhud.deck.v1.UnregisterDeviceResponse
+	(*ViewNotificationState)(nil),                    // 24: devhud.deck.v1.ViewNotificationState
+	(*UpdateViewNotificationPreferenceRequest)(nil),  // 25: devhud.deck.v1.UpdateViewNotificationPreferenceRequest
+	(*UpdateViewNotificationPreferenceResponse)(nil), // 26: devhud.deck.v1.UpdateViewNotificationPreferenceResponse
+	(*ResolveNotificationEventRequest)(nil),          // 27: devhud.deck.v1.ResolveNotificationEventRequest
+	(*ResolveNotificationEventResponse)(nil),         // 28: devhud.deck.v1.ResolveNotificationEventResponse
+	(*ViewShortcutConfiguration)(nil),                // 29: devhud.deck.v1.ViewShortcutConfiguration
+	(*WidgetConfiguration)(nil),                      // 30: devhud.deck.v1.WidgetConfiguration
+	(*UuidV7)(nil),                                   // 31: devhud.deck.v1.UuidV7
+	(*Revision)(nil),                                 // 32: devhud.deck.v1.Revision
+	(*RepositoryReference)(nil),                      // 33: devhud.deck.v1.RepositoryReference
+	(FreshnessState)(0),                              // 34: devhud.deck.v1.FreshnessState
+	(*timestamppb.Timestamp)(nil),                    // 35: google.protobuf.Timestamp
+	(*IdempotencyKey)(nil),                           // 36: devhud.deck.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),                        // 37: devhud.deck.v1.IdempotencyResult
+	(*ViewNotificationPreference)(nil),               // 38: devhud.deck.v1.ViewNotificationPreference
+	(*PullRequestDetail)(nil),                        // 39: devhud.deck.v1.PullRequestDetail
+	(NotificationTransition)(0),                      // 40: devhud.deck.v1.NotificationTransition
 }
 var file_devhud_deck_v1_device_proto_depIdxs = []int32{
 	1,  // 0: devhud.deck.v1.PushRegistration.provider:type_name -> devhud.deck.v1.PushProvider
 	3,  // 1: devhud.deck.v1.ShortcutBinding.modifiers:type_name -> devhud.deck.v1.ShortcutModifier
 	4,  // 2: devhud.deck.v1.ShortcutBinding.key:type_name -> devhud.deck.v1.ShortcutKey
-	29, // 3: devhud.deck.v1.ViewShortcut.shortcut_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 4: devhud.deck.v1.ViewShortcut.view_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 3: devhud.deck.v1.ViewShortcut.shortcut_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 4: devhud.deck.v1.ViewShortcut.view_id:type_name -> devhud.deck.v1.UuidV7
 	9,  // 5: devhud.deck.v1.ViewShortcut.binding:type_name -> devhud.deck.v1.ShortcutBinding
 	2,  // 6: devhud.deck.v1.ViewShortcut.state:type_name -> devhud.deck.v1.ShortcutState
-	30, // 7: devhud.deck.v1.ViewShortcut.revision:type_name -> devhud.deck.v1.Revision
-	31, // 8: devhud.deck.v1.WidgetPullRequestItem.repository:type_name -> devhud.deck.v1.RepositoryReference
+	32, // 7: devhud.deck.v1.ViewShortcut.revision:type_name -> devhud.deck.v1.Revision
+	33, // 8: devhud.deck.v1.WidgetPullRequestItem.repository:type_name -> devhud.deck.v1.RepositoryReference
 	11, // 9: devhud.deck.v1.WidgetSnapshot.pull_requests:type_name -> devhud.deck.v1.WidgetPullRequestItem
-	32, // 10: devhud.deck.v1.WidgetSnapshot.freshness:type_name -> devhud.deck.v1.FreshnessState
-	33, // 11: devhud.deck.v1.WidgetSnapshot.generated_at:type_name -> google.protobuf.Timestamp
-	29, // 12: devhud.deck.v1.WidgetState.widget_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 13: devhud.deck.v1.WidgetState.view_id:type_name -> devhud.deck.v1.UuidV7
+	34, // 10: devhud.deck.v1.WidgetSnapshot.freshness:type_name -> devhud.deck.v1.FreshnessState
+	35, // 11: devhud.deck.v1.WidgetSnapshot.generated_at:type_name -> google.protobuf.Timestamp
+	31, // 12: devhud.deck.v1.WidgetState.widget_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 13: devhud.deck.v1.WidgetState.view_id:type_name -> devhud.deck.v1.UuidV7
 	5,  // 14: devhud.deck.v1.WidgetState.family:type_name -> devhud.deck.v1.WidgetFamily
 	6,  // 15: devhud.deck.v1.WidgetState.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
 	12, // 16: devhud.deck.v1.WidgetState.snapshot:type_name -> devhud.deck.v1.WidgetSnapshot
-	30, // 17: devhud.deck.v1.WidgetState.revision:type_name -> devhud.deck.v1.Revision
-	29, // 18: devhud.deck.v1.Device.device_id:type_name -> devhud.deck.v1.UuidV7
+	32, // 17: devhud.deck.v1.WidgetState.revision:type_name -> devhud.deck.v1.Revision
+	31, // 18: devhud.deck.v1.Device.device_id:type_name -> devhud.deck.v1.UuidV7
 	0,  // 19: devhud.deck.v1.Device.platform:type_name -> devhud.deck.v1.DevicePlatform
 	10, // 20: devhud.deck.v1.Device.shortcuts:type_name -> devhud.deck.v1.ViewShortcut
 	13, // 21: devhud.deck.v1.Device.widgets:type_name -> devhud.deck.v1.WidgetState
-	30, // 22: devhud.deck.v1.Device.revision:type_name -> devhud.deck.v1.Revision
-	33, // 23: devhud.deck.v1.Device.created_at:type_name -> google.protobuf.Timestamp
-	33, // 24: devhud.deck.v1.Device.updated_at:type_name -> google.protobuf.Timestamp
-	29, // 25: devhud.deck.v1.DeviceRegistration.registration_id:type_name -> devhud.deck.v1.UuidV7
+	32, // 22: devhud.deck.v1.Device.revision:type_name -> devhud.deck.v1.Revision
+	35, // 23: devhud.deck.v1.Device.created_at:type_name -> google.protobuf.Timestamp
+	35, // 24: devhud.deck.v1.Device.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 25: devhud.deck.v1.DeviceRegistration.registration_id:type_name -> devhud.deck.v1.UuidV7
 	14, // 26: devhud.deck.v1.DeviceRegistration.device:type_name -> devhud.deck.v1.Device
-	33, // 27: devhud.deck.v1.DeviceRegistration.lease_expires_at:type_name -> google.protobuf.Timestamp
-	34, // 28: devhud.deck.v1.RegisterDeviceRequest.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
-	29, // 29: devhud.deck.v1.RegisterDeviceRequest.device_id:type_name -> devhud.deck.v1.UuidV7
-	0,  // 30: devhud.deck.v1.RegisterDeviceRequest.platform:type_name -> devhud.deck.v1.DevicePlatform
-	8,  // 31: devhud.deck.v1.RegisterDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
-	27, // 32: devhud.deck.v1.RegisterDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
-	28, // 33: devhud.deck.v1.RegisterDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
-	30, // 34: devhud.deck.v1.RegisterDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	15, // 35: devhud.deck.v1.RegisterDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
-	35, // 36: devhud.deck.v1.RegisterDeviceResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	29, // 37: devhud.deck.v1.UpdateDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	30, // 38: devhud.deck.v1.UpdateDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	8,  // 39: devhud.deck.v1.UpdateDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
-	27, // 40: devhud.deck.v1.UpdateDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
-	28, // 41: devhud.deck.v1.UpdateDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
-	15, // 42: devhud.deck.v1.UpdateDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
-	29, // 43: devhud.deck.v1.UnregisterDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 44: devhud.deck.v1.UnregisterDeviceResponse.registration_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 45: devhud.deck.v1.ViewNotificationState.registration_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 46: devhud.deck.v1.ViewNotificationState.view_id:type_name -> devhud.deck.v1.UuidV7
-	36, // 47: devhud.deck.v1.ViewNotificationState.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	30, // 48: devhud.deck.v1.ViewNotificationState.revision:type_name -> devhud.deck.v1.Revision
-	33, // 49: devhud.deck.v1.ViewNotificationState.updated_at:type_name -> google.protobuf.Timestamp
-	29, // 50: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 51: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	30, // 52: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	36, // 53: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	22, // 54: devhud.deck.v1.UpdateViewNotificationPreferenceResponse.notification:type_name -> devhud.deck.v1.ViewNotificationState
-	29, // 55: devhud.deck.v1.ResolveNotificationEventRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	7,  // 56: devhud.deck.v1.ResolveNotificationEventResponse.resolution:type_name -> devhud.deck.v1.NotificationResolution
-	29, // 57: devhud.deck.v1.ResolveNotificationEventResponse.view_id:type_name -> devhud.deck.v1.UuidV7
-	37, // 58: devhud.deck.v1.ResolveNotificationEventResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
-	38, // 59: devhud.deck.v1.ResolveNotificationEventResponse.transition:type_name -> devhud.deck.v1.NotificationTransition
-	29, // 60: devhud.deck.v1.ViewShortcutConfiguration.shortcut_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 61: devhud.deck.v1.ViewShortcutConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
-	9,  // 62: devhud.deck.v1.ViewShortcutConfiguration.binding:type_name -> devhud.deck.v1.ShortcutBinding
-	29, // 63: devhud.deck.v1.WidgetConfiguration.widget_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 64: devhud.deck.v1.WidgetConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
-	5,  // 65: devhud.deck.v1.WidgetConfiguration.family:type_name -> devhud.deck.v1.WidgetFamily
-	6,  // 66: devhud.deck.v1.WidgetConfiguration.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
-	16, // 67: devhud.deck.v1.DeckDeviceService.RegisterDevice:input_type -> devhud.deck.v1.RegisterDeviceRequest
-	18, // 68: devhud.deck.v1.DeckDeviceService.UpdateDevice:input_type -> devhud.deck.v1.UpdateDeviceRequest
-	20, // 69: devhud.deck.v1.DeckDeviceService.UnregisterDevice:input_type -> devhud.deck.v1.UnregisterDeviceRequest
-	23, // 70: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:input_type -> devhud.deck.v1.UpdateViewNotificationPreferenceRequest
-	25, // 71: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:input_type -> devhud.deck.v1.ResolveNotificationEventRequest
-	17, // 72: devhud.deck.v1.DeckDeviceService.RegisterDevice:output_type -> devhud.deck.v1.RegisterDeviceResponse
-	19, // 73: devhud.deck.v1.DeckDeviceService.UpdateDevice:output_type -> devhud.deck.v1.UpdateDeviceResponse
-	21, // 74: devhud.deck.v1.DeckDeviceService.UnregisterDevice:output_type -> devhud.deck.v1.UnregisterDeviceResponse
-	24, // 75: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:output_type -> devhud.deck.v1.UpdateViewNotificationPreferenceResponse
-	26, // 76: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:output_type -> devhud.deck.v1.ResolveNotificationEventResponse
-	72, // [72:77] is the sub-list for method output_type
-	67, // [67:72] is the sub-list for method input_type
-	67, // [67:67] is the sub-list for extension type_name
-	67, // [67:67] is the sub-list for extension extendee
-	0,  // [0:67] is the sub-list for field type_name
+	35, // 27: devhud.deck.v1.DeviceRegistration.lease_expires_at:type_name -> google.protobuf.Timestamp
+	31, // 28: devhud.deck.v1.GetDeviceRequest.device_id:type_name -> devhud.deck.v1.UuidV7
+	15, // 29: devhud.deck.v1.GetDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
+	36, // 30: devhud.deck.v1.RegisterDeviceRequest.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
+	31, // 31: devhud.deck.v1.RegisterDeviceRequest.device_id:type_name -> devhud.deck.v1.UuidV7
+	0,  // 32: devhud.deck.v1.RegisterDeviceRequest.platform:type_name -> devhud.deck.v1.DevicePlatform
+	8,  // 33: devhud.deck.v1.RegisterDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
+	29, // 34: devhud.deck.v1.RegisterDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
+	30, // 35: devhud.deck.v1.RegisterDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
+	32, // 36: devhud.deck.v1.RegisterDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	15, // 37: devhud.deck.v1.RegisterDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
+	37, // 38: devhud.deck.v1.RegisterDeviceResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	31, // 39: devhud.deck.v1.UpdateDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	32, // 40: devhud.deck.v1.UpdateDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	8,  // 41: devhud.deck.v1.UpdateDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
+	29, // 42: devhud.deck.v1.UpdateDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
+	30, // 43: devhud.deck.v1.UpdateDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
+	15, // 44: devhud.deck.v1.UpdateDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
+	31, // 45: devhud.deck.v1.UnregisterDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 46: devhud.deck.v1.UnregisterDeviceResponse.registration_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 47: devhud.deck.v1.ViewNotificationState.registration_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 48: devhud.deck.v1.ViewNotificationState.view_id:type_name -> devhud.deck.v1.UuidV7
+	38, // 49: devhud.deck.v1.ViewNotificationState.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	32, // 50: devhud.deck.v1.ViewNotificationState.revision:type_name -> devhud.deck.v1.Revision
+	35, // 51: devhud.deck.v1.ViewNotificationState.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 52: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 53: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	32, // 54: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	38, // 55: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	24, // 56: devhud.deck.v1.UpdateViewNotificationPreferenceResponse.notification:type_name -> devhud.deck.v1.ViewNotificationState
+	31, // 57: devhud.deck.v1.ResolveNotificationEventRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	7,  // 58: devhud.deck.v1.ResolveNotificationEventResponse.resolution:type_name -> devhud.deck.v1.NotificationResolution
+	31, // 59: devhud.deck.v1.ResolveNotificationEventResponse.view_id:type_name -> devhud.deck.v1.UuidV7
+	39, // 60: devhud.deck.v1.ResolveNotificationEventResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
+	40, // 61: devhud.deck.v1.ResolveNotificationEventResponse.transition:type_name -> devhud.deck.v1.NotificationTransition
+	31, // 62: devhud.deck.v1.ViewShortcutConfiguration.shortcut_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 63: devhud.deck.v1.ViewShortcutConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
+	9,  // 64: devhud.deck.v1.ViewShortcutConfiguration.binding:type_name -> devhud.deck.v1.ShortcutBinding
+	31, // 65: devhud.deck.v1.WidgetConfiguration.widget_id:type_name -> devhud.deck.v1.UuidV7
+	31, // 66: devhud.deck.v1.WidgetConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
+	5,  // 67: devhud.deck.v1.WidgetConfiguration.family:type_name -> devhud.deck.v1.WidgetFamily
+	6,  // 68: devhud.deck.v1.WidgetConfiguration.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
+	16, // 69: devhud.deck.v1.DeckDeviceService.GetDevice:input_type -> devhud.deck.v1.GetDeviceRequest
+	18, // 70: devhud.deck.v1.DeckDeviceService.RegisterDevice:input_type -> devhud.deck.v1.RegisterDeviceRequest
+	20, // 71: devhud.deck.v1.DeckDeviceService.UpdateDevice:input_type -> devhud.deck.v1.UpdateDeviceRequest
+	22, // 72: devhud.deck.v1.DeckDeviceService.UnregisterDevice:input_type -> devhud.deck.v1.UnregisterDeviceRequest
+	25, // 73: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:input_type -> devhud.deck.v1.UpdateViewNotificationPreferenceRequest
+	27, // 74: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:input_type -> devhud.deck.v1.ResolveNotificationEventRequest
+	17, // 75: devhud.deck.v1.DeckDeviceService.GetDevice:output_type -> devhud.deck.v1.GetDeviceResponse
+	19, // 76: devhud.deck.v1.DeckDeviceService.RegisterDevice:output_type -> devhud.deck.v1.RegisterDeviceResponse
+	21, // 77: devhud.deck.v1.DeckDeviceService.UpdateDevice:output_type -> devhud.deck.v1.UpdateDeviceResponse
+	23, // 78: devhud.deck.v1.DeckDeviceService.UnregisterDevice:output_type -> devhud.deck.v1.UnregisterDeviceResponse
+	26, // 79: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:output_type -> devhud.deck.v1.UpdateViewNotificationPreferenceResponse
+	28, // 80: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:output_type -> devhud.deck.v1.ResolveNotificationEventResponse
+	75, // [75:81] is the sub-list for method output_type
+	69, // [69:75] is the sub-list for method input_type
+	69, // [69:69] is the sub-list for extension type_name
+	69, // [69:69] is the sub-list for extension extendee
+	0,  // [0:69] is the sub-list for field type_name
 }
 
 func init() { file_devhud_deck_v1_device_proto_init() }
@@ -2377,7 +2476,7 @@ func file_devhud_deck_v1_device_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_deck_v1_device_proto_rawDesc), len(file_devhud_deck_v1_device_proto_rawDesc)),
 			NumEnums:      8,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

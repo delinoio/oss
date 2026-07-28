@@ -22,9 +22,9 @@
 
 ## Services and RPCs
 
-- `DeckViewService`: `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `GetManualRefreshQuote`, `RefreshView`, `MutatePullRequest`, `DeleteFeatureData`.
+- `DeckViewService`: `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `ListPullRequestMutationCandidates`, `GetRefreshPreflight`, `RefreshView`, `MutatePullRequest`, `DeleteFeatureData`.
 - `DeckIntegrationService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`.
-- `DeckDeviceService`: `RegisterDevice`, `UpdateDevice`, `UnregisterDevice`, `UpdateViewNotificationPreference`, `ResolveNotificationEvent`.
+- `DeckDeviceService`: `GetDevice`, `RegisterDevice`, `UpdateDevice`, `UnregisterDevice`, `UpdateViewNotificationPreference`, `ResolveNotificationEvent`.
 
 No additional v1 service or RPC is implied. GitHub callback/webhook handlers and push delivery are HTTP/server boundaries, not public Connect services.
 
@@ -43,11 +43,46 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
   `MutatePullRequest`. They also expose the currently supported mutations and
   available merge methods so clients never guess or probe action availability
   or current removal operands.
+- `ListPullRequestMutationCandidates` is an authenticated, permission-filtered,
+  opaque-cursor search for the user, team, or label operands accepted by an
+  advertised assign-user, request-reviewer, or add-label action. Its response
+  carries the synchronized PR revision. Other mutation kinds are rejected, and
+  candidate discovery neither mutates nor refreshes the PR.
+- `ListGitHubInstallations` rows carry the provider installation ID plus the
+  stable GitHub account ID, login, and closed user/organization kind needed to
+  identify the installation in DevHud and DeliDev settings.
 - Device registration/update requests carry request-only shortcut configurations using closed modifier/key enums. Effective shortcut conflict state and synchronized shortcut revisions are server-authored response state; clients cannot submit either field or unchecked binding strings.
 - Device registration/update requests carry widget identity, selected view, family, and privacy configuration only. Widget snapshots, freshness/offline state, and synchronized widget revisions are server-authored response state.
+- `GetDevice` reloads the authenticated caller's current registration, bounded
+  lease, server-authored shortcut/widget state, and device revision by stable
+  device ID so a restarted or stale client can compare and reapply before
+  renewal.
 - Mutations are a closed union for assign/unassign, reviewer request/removal, label add/remove, draft/ready, close/reopen, merge, and native auto-merge enable/cancel. Merge requests carry explicit user confirmation.
-- `GetManualRefreshQuote` is the only manual-refresh billing preflight. Its request identifies the view and the client-generated UUID v7 identity for the prospective logical refresh. The server validates the authoritative `(devhud, deck_github_pull_request_refresh)` meter identity, Deck service mapping, precision-zero `provider_refresh` unit, and effective 50-USD-micro unit price before returning that server-derived display price, an opaque short-lived preflight token bound to the authenticated subject, view, billing scope, refresh identity, and validated catalog version, plus its expiry. It performs no usage reservation, provider dispatch, cache refresh, or charge; missing, disabled, or divergent catalog metadata returns a typed unavailable result with no quote.
-- `RefreshView` carries a stable client-generated UUID v7 request identity scoped to the authenticated subject, operation, and view and distinguishes automatic/widget/manual origin and cache behavior. For a manual request, the server first looks up the authenticated identity and request digest. An existing exact attempt returns or resumes its original freshness, outcome, cache/coalescing, and billing disposition even if its quote later expires or the catalog mapping changes; changed-input reuse returns the typed idempotency-conflict reason. Only creation of a new manual attempt additionally requires the unexpired preflight token from `GetManualRefreshQuote` for that same identity, revalidates the token and current authoritative mapping before reservation or provider dispatch, and rejects missing, expired, substituted, or stale preflight state. The client preserves the refresh identity and token across ambiguous retries. One durable attempt covers reservation, provider dispatch, and commit/release without another provider request or charge.
+- `GetRefreshPreflight` is the billing preflight for every prospective logical
+  refresh origin. Its request identifies the view, client-generated UUID v7
+  refresh identity, and origin. The server validates the authoritative
+  `(devhud, deck_github_pull_request_refresh)` meter identity, Deck service
+  mapping, precision-zero `provider_refresh` unit, and effective 50-USD-micro
+  unit price before returning that server-derived price, an opaque short-lived
+  token bound to the authenticated subject, view, billing scope, refresh
+  identity, origin, and validated catalog version, plus its expiry. It performs
+  no usage reservation, provider dispatch, cache refresh, or charge; missing,
+  disabled, or divergent catalog metadata returns a typed unavailable result
+  with no preflight. Only manual UI displays the returned price as a warning.
+- `RefreshView` carries a stable client-generated UUID v7 request identity
+  scoped to the authenticated subject, operation, and view and distinguishes
+  automatic/widget/manual origin and cache behavior. The server first looks up
+  the authenticated identity and request digest. An existing exact attempt
+  returns or resumes its original freshness, outcome, cache/coalescing, and
+  billing disposition even if its preflight later expires or the catalog
+  mapping changes; changed-input reuse returns the typed idempotency-conflict
+  reason. Creation of every new attempt requires the unexpired token from
+  `GetRefreshPreflight` for that same identity and origin, revalidates the token
+  and current authoritative mapping before reservation or provider dispatch,
+  and rejects missing, expired, substituted, or stale preflight state. The
+  client preserves the refresh identity and token across ambiguous retries. One
+  durable attempt covers reservation, provider dispatch, and commit/release
+  without another provider request or charge.
 - `StartGitHubConnection` returns an ephemeral GitHub.com authorization target. DevHud may pass it only to the scoped native system-browser action; the DeliDev settings client may pass a Deck target only to its separately contracted validated top-level browser handoff. It is never a general navigation field: each client applies the exact authorization host/path/App validation in its app contract and must not log, cache, persist, or reuse the query data.
 - Each logical `RegisterDevice` creation or lease renewal carries a stable client-generated UUID v7 idempotency key scoped to the authenticated subject, operation, account/device, and request input. Initial creation omits `expected_revision`; renewal carries the current device revision and a stale renewal fails without replacing newer display-name, push, shortcut, widget, or notification-detail configuration. While the original lease remains valid, an exact replay returns the original opaque registration ID, identical lease, and identical revocation grant in the same dedicated sensitive response metadata; changed-input reuse returns the typed idempotency-conflict reason. The grant remains valid through the lease and authorizes only idempotent `UnregisterDevice` when supplied as dedicated authorization metadata; ordinary matching-account authentication may also unregister. A new or renewed registration is rejected while cleanup remains pending, but a cleanup tombstone retains the registration ID, lease expiry, and grant in the OS secure vault so revocation can finish after logout or an account switch. Terminal unregister/absent-registration success or observed lease expiry permits the tombstone and grant to be deleted.
 - Push payloads carry only an opaque event ID. `ResolveNotificationEvent` requires human authentication and the matching active account/device registration, never accepts a cleanup revocation grant, and returns the affected view/PR detail only after current owner/repository authorization and the device's detailed-text opt-in are revalidated. Otherwise it returns a typed unavailable/generic result without identity-bearing fields and never initiates provider refresh.

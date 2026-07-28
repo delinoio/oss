@@ -9,6 +9,7 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1;deckv1";
 
 service DeckDeviceService {
+  rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
   rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
   rpc UpdateDevice(UpdateDeviceRequest) returns (UpdateDeviceResponse);
   rpc UnregisterDevice(UnregisterDeviceRequest) returns (UnregisterDeviceResponse);
@@ -173,6 +174,14 @@ message DeviceRegistration {
   UuidV7 registration_id = 1;
   Device device = 2;
   google.protobuf.Timestamp lease_expires_at = 3;
+}
+
+message GetDeviceRequest {
+  UuidV7 device_id = 1;
+}
+
+message GetDeviceResponse {
+  DeviceRegistration registration = 1;
 }
 
 message RegisterDeviceRequest {

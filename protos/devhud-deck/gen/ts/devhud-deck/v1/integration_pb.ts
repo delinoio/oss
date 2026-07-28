@@ -2,8 +2,8 @@
 // @generated from file devhud-deck/v1/integration.proto (package devhud.deck.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { ConnectionState, Owner, PageRequest, PageResponse, Revision, UuidV7 } from "./common_pb.js";
 import { file_devhud_deck_v1_common } from "./common_pb.js";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file devhud-deck/v1/integration.proto.
  */
 export const file_devhud_deck_v1_integration: GenFile = /*@__PURE__*/
-  fileDesc("CiBkZXZodWQtZGVjay92MS9pbnRlZ3JhdGlvbi5wcm90bxIOZGV2aHVkLmRlY2sudjEiwwIKEEdpdEh1YkNvbm5lY3Rpb24SLQoNY29ubmVjdGlvbl9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxIkCgVvd25lchgCIAEoCzIVLmRldmh1ZC5kZWNrLnYxLk93bmVyEi4KBXN0YXRlGAMgASgOMh8uZGV2aHVkLmRlY2sudjEuQ29ubmVjdGlvblN0YXRlEh4KFmdpdGh1Yl9pbnN0YWxsYXRpb25faWQYBCABKAQSKgoIcmV2aXNpb24YBSABKAsyGC5kZXZodWQuZGVjay52MS5SZXZpc2lvbhIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK6AQoSR2l0SHViSW5zdGFsbGF0aW9uEh4KFmdpdGh1Yl9pbnN0YWxsYXRpb25faWQYASABKAQSJAoFb3duZXIYAiABKAsyFS5kZXZodWQuZGVjay52MS5Pd25lchIuCgVzdGF0ZRgDIAEoDjIfLmRldmh1ZC5kZWNrLnYxLkNvbm5lY3Rpb25TdGF0ZRIuCgp1cGRhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJCChpHZXRHaXRIdWJDb25uZWN0aW9uUmVxdWVzdBIkCgVvd25lchgBIAEoCzIVLmRldmh1ZC5kZWNrLnYxLk93bmVyIlMKG0dldEdpdEh1YkNvbm5lY3Rpb25SZXNwb25zZRI0Cgpjb25uZWN0aW9uGAEgASgLMiAuZGV2aHVkLmRlY2sudjEuR2l0SHViQ29ubmVjdGlvbiJEChxTdGFydEdpdEh1YkNvbm5lY3Rpb25SZXF1ZXN0EiQKBW93bmVyGAEgASgLMhUuZGV2aHVkLmRlY2sudjEuT3duZXIibQodU3RhcnRHaXRIdWJDb25uZWN0aW9uUmVzcG9uc2USHAoUYXV0aG9yaXphdGlvbl90YXJnZXQYASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAicQoeTGlzdEdpdEh1Ykluc3RhbGxhdGlvbnNSZXF1ZXN0EiQKBW93bmVyGAEgASgLMhUuZGV2aHVkLmRlY2sudjEuT3duZXISKQoEcGFnZRgCIAEoCzIbLmRldmh1ZC5kZWNrLnYxLlBhZ2VSZXF1ZXN0IogBCh9MaXN0R2l0SHViSW5zdGFsbGF0aW9uc1Jlc3BvbnNlEjkKDWluc3RhbGxhdGlvbnMYASADKAsyIi5kZXZodWQuZGVjay52MS5HaXRIdWJJbnN0YWxsYXRpb24SKgoEcGFnZRgCIAEoCzIcLmRldmh1ZC5kZWNrLnYxLlBhZ2VSZXNwb25zZSKHAQohRGlzY29ubmVjdEdpdEh1YkNvbm5lY3Rpb25SZXF1ZXN0Ei0KDWNvbm5lY3Rpb25faWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSMwoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAsyGC5kZXZodWQuZGVjay52MS5SZXZpc2lvbiJaCiJEaXNjb25uZWN0R2l0SHViQ29ubmVjdGlvblJlc3BvbnNlEjQKCmNvbm5lY3Rpb24YASABKAsyIC5kZXZodWQuZGVjay52MS5HaXRIdWJDb25uZWN0aW9uMoAEChZEZWNrSW50ZWdyYXRpb25TZXJ2aWNlEm4KE0dldEdpdEh1YkNvbm5lY3Rpb24SKi5kZXZodWQuZGVjay52MS5HZXRHaXRIdWJDb25uZWN0aW9uUmVxdWVzdBorLmRldmh1ZC5kZWNrLnYxLkdldEdpdEh1YkNvbm5lY3Rpb25SZXNwb25zZRJ0ChVTdGFydEdpdEh1YkNvbm5lY3Rpb24SLC5kZXZodWQuZGVjay52MS5TdGFydEdpdEh1YkNvbm5lY3Rpb25SZXF1ZXN0Gi0uZGV2aHVkLmRlY2sudjEuU3RhcnRHaXRIdWJDb25uZWN0aW9uUmVzcG9uc2USegoXTGlzdEdpdEh1Ykluc3RhbGxhdGlvbnMSLi5kZXZodWQuZGVjay52MS5MaXN0R2l0SHViSW5zdGFsbGF0aW9uc1JlcXVlc3QaLy5kZXZodWQuZGVjay52MS5MaXN0R2l0SHViSW5zdGFsbGF0aW9uc1Jlc3BvbnNlEoMBChpEaXNjb25uZWN0R2l0SHViQ29ubmVjdGlvbhIxLmRldmh1ZC5kZWNrLnYxLkRpc2Nvbm5lY3RHaXRIdWJDb25uZWN0aW9uUmVxdWVzdBoyLmRldmh1ZC5kZWNrLnYxLkRpc2Nvbm5lY3RHaXRIdWJDb25uZWN0aW9uUmVzcG9uc2VCSVpHZ2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2Rldmh1ZC1kZWNrL2dlbi9nby9kZXZodWQtZGVjay92MTtkZWNrdjFiBnByb3RvMw", [file_devhud_deck_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("CiBkZXZodWQtZGVjay92MS9pbnRlZ3JhdGlvbi5wcm90bxIOZGV2aHVkLmRlY2sudjEiwwIKEEdpdEh1YkNvbm5lY3Rpb24SLQoNY29ubmVjdGlvbl9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxIkCgVvd25lchgCIAEoCzIVLmRldmh1ZC5kZWNrLnYxLk93bmVyEi4KBXN0YXRlGAMgASgOMh8uZGV2aHVkLmRlY2sudjEuQ29ubmVjdGlvblN0YXRlEh4KFmdpdGh1Yl9pbnN0YWxsYXRpb25faWQYBCABKAQSKgoIcmV2aXNpb24YBSABKAsyGC5kZXZodWQuZGVjay52MS5SZXZpc2lvbhIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJyChVHaXRIdWJBY2NvdW50SWRlbnRpdHkSGQoRZ2l0aHViX2FjY291bnRfaWQYASABKAQSDQoFbG9naW4YAiABKAkSLwoEa2luZBgDIAEoDjIhLmRldmh1ZC5kZWNrLnYxLkdpdEh1YkFjY291bnRLaW5kIvIBChJHaXRIdWJJbnN0YWxsYXRpb24SHgoWZ2l0aHViX2luc3RhbGxhdGlvbl9pZBgBIAEoBBIkCgVvd25lchgCIAEoCzIVLmRldmh1ZC5kZWNrLnYxLk93bmVyEi4KBXN0YXRlGAMgASgOMh8uZGV2aHVkLmRlY2sudjEuQ29ubmVjdGlvblN0YXRlEi4KCnVwZGF0ZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjYKB2FjY291bnQYBSABKAsyJS5kZXZodWQuZGVjay52MS5HaXRIdWJBY2NvdW50SWRlbnRpdHkiQgoaR2V0R2l0SHViQ29ubmVjdGlvblJlcXVlc3QSJAoFb3duZXIYASABKAsyFS5kZXZodWQuZGVjay52MS5Pd25lciJTChtHZXRHaXRIdWJDb25uZWN0aW9uUmVzcG9uc2USNAoKY29ubmVjdGlvbhgBIAEoCzIgLmRldmh1ZC5kZWNrLnYxLkdpdEh1YkNvbm5lY3Rpb24iRAocU3RhcnRHaXRIdWJDb25uZWN0aW9uUmVxdWVzdBIkCgVvd25lchgBIAEoCzIVLmRldmh1ZC5kZWNrLnYxLk93bmVyIm0KHVN0YXJ0R2l0SHViQ29ubmVjdGlvblJlc3BvbnNlEhwKFGF1dGhvcml6YXRpb25fdGFyZ2V0GAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInEKHkxpc3RHaXRIdWJJbnN0YWxsYXRpb25zUmVxdWVzdBIkCgVvd25lchgBIAEoCzIVLmRldmh1ZC5kZWNrLnYxLk93bmVyEikKBHBhZ2UYAiABKAsyGy5kZXZodWQuZGVjay52MS5QYWdlUmVxdWVzdCKIAQofTGlzdEdpdEh1Ykluc3RhbGxhdGlvbnNSZXNwb25zZRI5Cg1pbnN0YWxsYXRpb25zGAEgAygLMiIuZGV2aHVkLmRlY2sudjEuR2l0SHViSW5zdGFsbGF0aW9uEioKBHBhZ2UYAiABKAsyHC5kZXZodWQuZGVjay52MS5QYWdlUmVzcG9uc2UihwEKIURpc2Nvbm5lY3RHaXRIdWJDb25uZWN0aW9uUmVxdWVzdBItCg1jb25uZWN0aW9uX2lkGAEgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EjMKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgLMhguZGV2aHVkLmRlY2sudjEuUmV2aXNpb24iWgoiRGlzY29ubmVjdEdpdEh1YkNvbm5lY3Rpb25SZXNwb25zZRI0Cgpjb25uZWN0aW9uGAEgASgLMiAuZGV2aHVkLmRlY2sudjEuR2l0SHViQ29ubmVjdGlvbip/ChFHaXRIdWJBY2NvdW50S2luZBIkCiBHSVRfSFVCX0FDQ09VTlRfS0lORF9VTlNQRUNJRklFRBAAEh0KGUdJVF9IVUJfQUNDT1VOVF9LSU5EX1VTRVIQARIlCiFHSVRfSFVCX0FDQ09VTlRfS0lORF9PUkdBTklaQVRJT04QAjKABAoWRGVja0ludGVncmF0aW9uU2VydmljZRJuChNHZXRHaXRIdWJDb25uZWN0aW9uEiouZGV2aHVkLmRlY2sudjEuR2V0R2l0SHViQ29ubmVjdGlvblJlcXVlc3QaKy5kZXZodWQuZGVjay52MS5HZXRHaXRIdWJDb25uZWN0aW9uUmVzcG9uc2USdAoVU3RhcnRHaXRIdWJDb25uZWN0aW9uEiwuZGV2aHVkLmRlY2sudjEuU3RhcnRHaXRIdWJDb25uZWN0aW9uUmVxdWVzdBotLmRldmh1ZC5kZWNrLnYxLlN0YXJ0R2l0SHViQ29ubmVjdGlvblJlc3BvbnNlEnoKF0xpc3RHaXRIdWJJbnN0YWxsYXRpb25zEi4uZGV2aHVkLmRlY2sudjEuTGlzdEdpdEh1Ykluc3RhbGxhdGlvbnNSZXF1ZXN0Gi8uZGV2aHVkLmRlY2sudjEuTGlzdEdpdEh1Ykluc3RhbGxhdGlvbnNSZXNwb25zZRKDAQoaRGlzY29ubmVjdEdpdEh1YkNvbm5lY3Rpb24SMS5kZXZodWQuZGVjay52MS5EaXNjb25uZWN0R2l0SHViQ29ubmVjdGlvblJlcXVlc3QaMi5kZXZodWQuZGVjay52MS5EaXNjb25uZWN0R2l0SHViQ29ubmVjdGlvblJlc3BvbnNlQklaR2dpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9kZXZodWQtZGVjay9nZW4vZ28vZGV2aHVkLWRlY2svdjE7ZGVja3YxYgZwcm90bzM", [file_devhud_deck_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message devhud.deck.v1.GitHubConnection
@@ -64,6 +64,33 @@ export const GitHubConnectionSchema: GenMessage<GitHubConnection> = /*@__PURE__*
   messageDesc(file_devhud_deck_v1_integration, 0);
 
 /**
+ * @generated from message devhud.deck.v1.GitHubAccountIdentity
+ */
+export type GitHubAccountIdentity = Message<"devhud.deck.v1.GitHubAccountIdentity"> & {
+  /**
+   * @generated from field: uint64 github_account_id = 1;
+   */
+  githubAccountId: bigint;
+
+  /**
+   * @generated from field: string login = 2;
+   */
+  login: string;
+
+  /**
+   * @generated from field: devhud.deck.v1.GitHubAccountKind kind = 3;
+   */
+  kind: GitHubAccountKind;
+};
+
+/**
+ * Describes the message devhud.deck.v1.GitHubAccountIdentity.
+ * Use `create(GitHubAccountIdentitySchema)` to create a new message.
+ */
+export const GitHubAccountIdentitySchema: GenMessage<GitHubAccountIdentity> = /*@__PURE__*/
+  messageDesc(file_devhud_deck_v1_integration, 1);
+
+/**
  * @generated from message devhud.deck.v1.GitHubInstallation
  */
 export type GitHubInstallation = Message<"devhud.deck.v1.GitHubInstallation"> & {
@@ -86,6 +113,11 @@ export type GitHubInstallation = Message<"devhud.deck.v1.GitHubInstallation"> & 
    * @generated from field: google.protobuf.Timestamp updated_at = 4;
    */
   updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: devhud.deck.v1.GitHubAccountIdentity account = 5;
+   */
+  account?: GitHubAccountIdentity | undefined;
 };
 
 /**
@@ -93,7 +125,7 @@ export type GitHubInstallation = Message<"devhud.deck.v1.GitHubInstallation"> & 
  * Use `create(GitHubInstallationSchema)` to create a new message.
  */
 export const GitHubInstallationSchema: GenMessage<GitHubInstallation> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 1);
+  messageDesc(file_devhud_deck_v1_integration, 2);
 
 /**
  * @generated from message devhud.deck.v1.GetGitHubConnectionRequest
@@ -110,7 +142,7 @@ export type GetGitHubConnectionRequest = Message<"devhud.deck.v1.GetGitHubConnec
  * Use `create(GetGitHubConnectionRequestSchema)` to create a new message.
  */
 export const GetGitHubConnectionRequestSchema: GenMessage<GetGitHubConnectionRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 2);
+  messageDesc(file_devhud_deck_v1_integration, 3);
 
 /**
  * @generated from message devhud.deck.v1.GetGitHubConnectionResponse
@@ -127,7 +159,7 @@ export type GetGitHubConnectionResponse = Message<"devhud.deck.v1.GetGitHubConne
  * Use `create(GetGitHubConnectionResponseSchema)` to create a new message.
  */
 export const GetGitHubConnectionResponseSchema: GenMessage<GetGitHubConnectionResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 3);
+  messageDesc(file_devhud_deck_v1_integration, 4);
 
 /**
  * @generated from message devhud.deck.v1.StartGitHubConnectionRequest
@@ -144,7 +176,7 @@ export type StartGitHubConnectionRequest = Message<"devhud.deck.v1.StartGitHubCo
  * Use `create(StartGitHubConnectionRequestSchema)` to create a new message.
  */
 export const StartGitHubConnectionRequestSchema: GenMessage<StartGitHubConnectionRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 4);
+  messageDesc(file_devhud_deck_v1_integration, 5);
 
 /**
  * @generated from message devhud.deck.v1.StartGitHubConnectionResponse
@@ -169,7 +201,7 @@ export type StartGitHubConnectionResponse = Message<"devhud.deck.v1.StartGitHubC
  * Use `create(StartGitHubConnectionResponseSchema)` to create a new message.
  */
 export const StartGitHubConnectionResponseSchema: GenMessage<StartGitHubConnectionResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 5);
+  messageDesc(file_devhud_deck_v1_integration, 6);
 
 /**
  * @generated from message devhud.deck.v1.ListGitHubInstallationsRequest
@@ -191,7 +223,7 @@ export type ListGitHubInstallationsRequest = Message<"devhud.deck.v1.ListGitHubI
  * Use `create(ListGitHubInstallationsRequestSchema)` to create a new message.
  */
 export const ListGitHubInstallationsRequestSchema: GenMessage<ListGitHubInstallationsRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 6);
+  messageDesc(file_devhud_deck_v1_integration, 7);
 
 /**
  * @generated from message devhud.deck.v1.ListGitHubInstallationsResponse
@@ -213,7 +245,7 @@ export type ListGitHubInstallationsResponse = Message<"devhud.deck.v1.ListGitHub
  * Use `create(ListGitHubInstallationsResponseSchema)` to create a new message.
  */
 export const ListGitHubInstallationsResponseSchema: GenMessage<ListGitHubInstallationsResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 7);
+  messageDesc(file_devhud_deck_v1_integration, 8);
 
 /**
  * @generated from message devhud.deck.v1.DisconnectGitHubConnectionRequest
@@ -235,7 +267,7 @@ export type DisconnectGitHubConnectionRequest = Message<"devhud.deck.v1.Disconne
  * Use `create(DisconnectGitHubConnectionRequestSchema)` to create a new message.
  */
 export const DisconnectGitHubConnectionRequestSchema: GenMessage<DisconnectGitHubConnectionRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 8);
+  messageDesc(file_devhud_deck_v1_integration, 9);
 
 /**
  * @generated from message devhud.deck.v1.DisconnectGitHubConnectionResponse
@@ -252,7 +284,33 @@ export type DisconnectGitHubConnectionResponse = Message<"devhud.deck.v1.Disconn
  * Use `create(DisconnectGitHubConnectionResponseSchema)` to create a new message.
  */
 export const DisconnectGitHubConnectionResponseSchema: GenMessage<DisconnectGitHubConnectionResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_integration, 9);
+  messageDesc(file_devhud_deck_v1_integration, 10);
+
+/**
+ * @generated from enum devhud.deck.v1.GitHubAccountKind
+ */
+export enum GitHubAccountKind {
+  /**
+   * @generated from enum value: GIT_HUB_ACCOUNT_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: GIT_HUB_ACCOUNT_KIND_USER = 1;
+   */
+  USER = 1,
+
+  /**
+   * @generated from enum value: GIT_HUB_ACCOUNT_KIND_ORGANIZATION = 2;
+   */
+  ORGANIZATION = 2,
+}
+
+/**
+ * Describes the enum devhud.deck.v1.GitHubAccountKind.
+ */
+export const GitHubAccountKindSchema: GenEnum<GitHubAccountKind> = /*@__PURE__*/
+  enumDesc(file_devhud_deck_v1_integration, 0);
 
 /**
  * @generated from service devhud.deck.v1.DeckIntegrationService

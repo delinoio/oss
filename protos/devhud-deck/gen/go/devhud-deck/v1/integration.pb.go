@@ -22,6 +22,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type GitHubAccountKind int32
+
+const (
+	GitHubAccountKind_GIT_HUB_ACCOUNT_KIND_UNSPECIFIED  GitHubAccountKind = 0
+	GitHubAccountKind_GIT_HUB_ACCOUNT_KIND_USER         GitHubAccountKind = 1
+	GitHubAccountKind_GIT_HUB_ACCOUNT_KIND_ORGANIZATION GitHubAccountKind = 2
+)
+
+// Enum value maps for GitHubAccountKind.
+var (
+	GitHubAccountKind_name = map[int32]string{
+		0: "GIT_HUB_ACCOUNT_KIND_UNSPECIFIED",
+		1: "GIT_HUB_ACCOUNT_KIND_USER",
+		2: "GIT_HUB_ACCOUNT_KIND_ORGANIZATION",
+	}
+	GitHubAccountKind_value = map[string]int32{
+		"GIT_HUB_ACCOUNT_KIND_UNSPECIFIED":  0,
+		"GIT_HUB_ACCOUNT_KIND_USER":         1,
+		"GIT_HUB_ACCOUNT_KIND_ORGANIZATION": 2,
+	}
+)
+
+func (x GitHubAccountKind) Enum() *GitHubAccountKind {
+	p := new(GitHubAccountKind)
+	*p = x
+	return p
+}
+
+func (x GitHubAccountKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GitHubAccountKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_deck_v1_integration_proto_enumTypes[0].Descriptor()
+}
+
+func (GitHubAccountKind) Type() protoreflect.EnumType {
+	return &file_devhud_deck_v1_integration_proto_enumTypes[0]
+}
+
+func (x GitHubAccountKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GitHubAccountKind.Descriptor instead.
+func (GitHubAccountKind) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{0}
+}
+
 type GitHubConnection struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	ConnectionId         *UuidV7                `protobuf:"bytes,1,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
@@ -114,19 +163,80 @@ func (x *GitHubConnection) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type GitHubAccountIdentity struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	GithubAccountId uint64                 `protobuf:"varint,1,opt,name=github_account_id,json=githubAccountId,proto3" json:"github_account_id,omitempty"`
+	Login           string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	Kind            GitHubAccountKind      `protobuf:"varint,3,opt,name=kind,proto3,enum=devhud.deck.v1.GitHubAccountKind" json:"kind,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GitHubAccountIdentity) Reset() {
+	*x = GitHubAccountIdentity{}
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitHubAccountIdentity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitHubAccountIdentity) ProtoMessage() {}
+
+func (x *GitHubAccountIdentity) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitHubAccountIdentity.ProtoReflect.Descriptor instead.
+func (*GitHubAccountIdentity) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GitHubAccountIdentity) GetGithubAccountId() uint64 {
+	if x != nil {
+		return x.GithubAccountId
+	}
+	return 0
+}
+
+func (x *GitHubAccountIdentity) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+func (x *GitHubAccountIdentity) GetKind() GitHubAccountKind {
+	if x != nil {
+		return x.Kind
+	}
+	return GitHubAccountKind_GIT_HUB_ACCOUNT_KIND_UNSPECIFIED
+}
+
 type GitHubInstallation struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	GithubInstallationId uint64                 `protobuf:"varint,1,opt,name=github_installation_id,json=githubInstallationId,proto3" json:"github_installation_id,omitempty"`
 	Owner                *Owner                 `protobuf:"bytes,2,opt,name=owner,proto3" json:"owner,omitempty"`
 	State                ConnectionState        `protobuf:"varint,3,opt,name=state,proto3,enum=devhud.deck.v1.ConnectionState" json:"state,omitempty"`
 	UpdatedAt            *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Account              *GitHubAccountIdentity `protobuf:"bytes,5,opt,name=account,proto3" json:"account,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
 
 func (x *GitHubInstallation) Reset() {
 	*x = GitHubInstallation{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[1]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -138,7 +248,7 @@ func (x *GitHubInstallation) String() string {
 func (*GitHubInstallation) ProtoMessage() {}
 
 func (x *GitHubInstallation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[1]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -151,7 +261,7 @@ func (x *GitHubInstallation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubInstallation.ProtoReflect.Descriptor instead.
 func (*GitHubInstallation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{1}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GitHubInstallation) GetGithubInstallationId() uint64 {
@@ -182,6 +292,13 @@ func (x *GitHubInstallation) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *GitHubInstallation) GetAccount() *GitHubAccountIdentity {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
 type GetGitHubConnectionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Owner         *Owner                 `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
@@ -191,7 +308,7 @@ type GetGitHubConnectionRequest struct {
 
 func (x *GetGitHubConnectionRequest) Reset() {
 	*x = GetGitHubConnectionRequest{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[2]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -203,7 +320,7 @@ func (x *GetGitHubConnectionRequest) String() string {
 func (*GetGitHubConnectionRequest) ProtoMessage() {}
 
 func (x *GetGitHubConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[2]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -216,7 +333,7 @@ func (x *GetGitHubConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGitHubConnectionRequest.ProtoReflect.Descriptor instead.
 func (*GetGitHubConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{2}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetGitHubConnectionRequest) GetOwner() *Owner {
@@ -235,7 +352,7 @@ type GetGitHubConnectionResponse struct {
 
 func (x *GetGitHubConnectionResponse) Reset() {
 	*x = GetGitHubConnectionResponse{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[3]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -247,7 +364,7 @@ func (x *GetGitHubConnectionResponse) String() string {
 func (*GetGitHubConnectionResponse) ProtoMessage() {}
 
 func (x *GetGitHubConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[3]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -260,7 +377,7 @@ func (x *GetGitHubConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGitHubConnectionResponse.ProtoReflect.Descriptor instead.
 func (*GetGitHubConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{3}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetGitHubConnectionResponse) GetConnection() *GitHubConnection {
@@ -279,7 +396,7 @@ type StartGitHubConnectionRequest struct {
 
 func (x *StartGitHubConnectionRequest) Reset() {
 	*x = StartGitHubConnectionRequest{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[4]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -291,7 +408,7 @@ func (x *StartGitHubConnectionRequest) String() string {
 func (*StartGitHubConnectionRequest) ProtoMessage() {}
 
 func (x *StartGitHubConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[4]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -304,7 +421,7 @@ func (x *StartGitHubConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartGitHubConnectionRequest.ProtoReflect.Descriptor instead.
 func (*StartGitHubConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{4}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StartGitHubConnectionRequest) GetOwner() *Owner {
@@ -326,7 +443,7 @@ type StartGitHubConnectionResponse struct {
 
 func (x *StartGitHubConnectionResponse) Reset() {
 	*x = StartGitHubConnectionResponse{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[5]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -338,7 +455,7 @@ func (x *StartGitHubConnectionResponse) String() string {
 func (*StartGitHubConnectionResponse) ProtoMessage() {}
 
 func (x *StartGitHubConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[5]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -351,7 +468,7 @@ func (x *StartGitHubConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartGitHubConnectionResponse.ProtoReflect.Descriptor instead.
 func (*StartGitHubConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{5}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *StartGitHubConnectionResponse) GetAuthorizationTarget() string {
@@ -378,7 +495,7 @@ type ListGitHubInstallationsRequest struct {
 
 func (x *ListGitHubInstallationsRequest) Reset() {
 	*x = ListGitHubInstallationsRequest{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[6]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -390,7 +507,7 @@ func (x *ListGitHubInstallationsRequest) String() string {
 func (*ListGitHubInstallationsRequest) ProtoMessage() {}
 
 func (x *ListGitHubInstallationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[6]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -403,7 +520,7 @@ func (x *ListGitHubInstallationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGitHubInstallationsRequest.ProtoReflect.Descriptor instead.
 func (*ListGitHubInstallationsRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{6}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListGitHubInstallationsRequest) GetOwner() *Owner {
@@ -430,7 +547,7 @@ type ListGitHubInstallationsResponse struct {
 
 func (x *ListGitHubInstallationsResponse) Reset() {
 	*x = ListGitHubInstallationsResponse{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[7]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -442,7 +559,7 @@ func (x *ListGitHubInstallationsResponse) String() string {
 func (*ListGitHubInstallationsResponse) ProtoMessage() {}
 
 func (x *ListGitHubInstallationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[7]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -455,7 +572,7 @@ func (x *ListGitHubInstallationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGitHubInstallationsResponse.ProtoReflect.Descriptor instead.
 func (*ListGitHubInstallationsResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{7}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListGitHubInstallationsResponse) GetInstallations() []*GitHubInstallation {
@@ -482,7 +599,7 @@ type DisconnectGitHubConnectionRequest struct {
 
 func (x *DisconnectGitHubConnectionRequest) Reset() {
 	*x = DisconnectGitHubConnectionRequest{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[8]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +611,7 @@ func (x *DisconnectGitHubConnectionRequest) String() string {
 func (*DisconnectGitHubConnectionRequest) ProtoMessage() {}
 
 func (x *DisconnectGitHubConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[8]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +624,7 @@ func (x *DisconnectGitHubConnectionRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use DisconnectGitHubConnectionRequest.ProtoReflect.Descriptor instead.
 func (*DisconnectGitHubConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{8}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DisconnectGitHubConnectionRequest) GetConnectionId() *UuidV7 {
@@ -533,7 +650,7 @@ type DisconnectGitHubConnectionResponse struct {
 
 func (x *DisconnectGitHubConnectionResponse) Reset() {
 	*x = DisconnectGitHubConnectionResponse{}
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[9]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +662,7 @@ func (x *DisconnectGitHubConnectionResponse) String() string {
 func (*DisconnectGitHubConnectionResponse) ProtoMessage() {}
 
 func (x *DisconnectGitHubConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_integration_proto_msgTypes[9]
+	mi := &file_devhud_deck_v1_integration_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +675,7 @@ func (x *DisconnectGitHubConnectionResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use DisconnectGitHubConnectionResponse.ProtoReflect.Descriptor instead.
 func (*DisconnectGitHubConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{9}
+	return file_devhud_deck_v1_integration_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DisconnectGitHubConnectionResponse) GetConnection() *GitHubConnection {
@@ -582,13 +699,18 @@ const file_devhud_deck_v1_integration_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xe9\x01\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x90\x01\n" +
+	"\x15GitHubAccountIdentity\x12*\n" +
+	"\x11github_account_id\x18\x01 \x01(\x04R\x0fgithubAccountId\x12\x14\n" +
+	"\x05login\x18\x02 \x01(\tR\x05login\x125\n" +
+	"\x04kind\x18\x03 \x01(\x0e2!.devhud.deck.v1.GitHubAccountKindR\x04kind\"\xaa\x02\n" +
 	"\x12GitHubInstallation\x124\n" +
 	"\x16github_installation_id\x18\x01 \x01(\x04R\x14githubInstallationId\x12+\n" +
 	"\x05owner\x18\x02 \x01(\v2\x15.devhud.deck.v1.OwnerR\x05owner\x125\n" +
 	"\x05state\x18\x03 \x01(\x0e2\x1f.devhud.deck.v1.ConnectionStateR\x05state\x129\n" +
 	"\n" +
-	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"I\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12?\n" +
+	"\aaccount\x18\x05 \x01(\v2%.devhud.deck.v1.GitHubAccountIdentityR\aaccount\"I\n" +
 	"\x1aGetGitHubConnectionRequest\x12+\n" +
 	"\x05owner\x18\x01 \x01(\v2\x15.devhud.deck.v1.OwnerR\x05owner\"_\n" +
 	"\x1bGetGitHubConnectionResponse\x12@\n" +
@@ -613,7 +735,11 @@ const file_devhud_deck_v1_integration_proto_rawDesc = "" +
 	"\"DisconnectGitHubConnectionResponse\x12@\n" +
 	"\n" +
 	"connection\x18\x01 \x01(\v2 .devhud.deck.v1.GitHubConnectionR\n" +
-	"connection2\x80\x04\n" +
+	"connection*\x7f\n" +
+	"\x11GitHubAccountKind\x12$\n" +
+	" GIT_HUB_ACCOUNT_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19GIT_HUB_ACCOUNT_KIND_USER\x10\x01\x12%\n" +
+	"!GIT_HUB_ACCOUNT_KIND_ORGANIZATION\x10\x022\x80\x04\n" +
 	"\x16DeckIntegrationService\x12n\n" +
 	"\x13GetGitHubConnection\x12*.devhud.deck.v1.GetGitHubConnectionRequest\x1a+.devhud.deck.v1.GetGitHubConnectionResponse\x12t\n" +
 	"\x15StartGitHubConnection\x12,.devhud.deck.v1.StartGitHubConnectionRequest\x1a-.devhud.deck.v1.StartGitHubConnectionResponse\x12z\n" +
@@ -632,60 +758,65 @@ func file_devhud_deck_v1_integration_proto_rawDescGZIP() []byte {
 	return file_devhud_deck_v1_integration_proto_rawDescData
 }
 
-var file_devhud_deck_v1_integration_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_devhud_deck_v1_integration_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_devhud_deck_v1_integration_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_devhud_deck_v1_integration_proto_goTypes = []any{
-	(*GitHubConnection)(nil),                   // 0: devhud.deck.v1.GitHubConnection
-	(*GitHubInstallation)(nil),                 // 1: devhud.deck.v1.GitHubInstallation
-	(*GetGitHubConnectionRequest)(nil),         // 2: devhud.deck.v1.GetGitHubConnectionRequest
-	(*GetGitHubConnectionResponse)(nil),        // 3: devhud.deck.v1.GetGitHubConnectionResponse
-	(*StartGitHubConnectionRequest)(nil),       // 4: devhud.deck.v1.StartGitHubConnectionRequest
-	(*StartGitHubConnectionResponse)(nil),      // 5: devhud.deck.v1.StartGitHubConnectionResponse
-	(*ListGitHubInstallationsRequest)(nil),     // 6: devhud.deck.v1.ListGitHubInstallationsRequest
-	(*ListGitHubInstallationsResponse)(nil),    // 7: devhud.deck.v1.ListGitHubInstallationsResponse
-	(*DisconnectGitHubConnectionRequest)(nil),  // 8: devhud.deck.v1.DisconnectGitHubConnectionRequest
-	(*DisconnectGitHubConnectionResponse)(nil), // 9: devhud.deck.v1.DisconnectGitHubConnectionResponse
-	(*UuidV7)(nil),                             // 10: devhud.deck.v1.UuidV7
-	(*Owner)(nil),                              // 11: devhud.deck.v1.Owner
-	(ConnectionState)(0),                       // 12: devhud.deck.v1.ConnectionState
-	(*Revision)(nil),                           // 13: devhud.deck.v1.Revision
-	(*timestamppb.Timestamp)(nil),              // 14: google.protobuf.Timestamp
-	(*PageRequest)(nil),                        // 15: devhud.deck.v1.PageRequest
-	(*PageResponse)(nil),                       // 16: devhud.deck.v1.PageResponse
+	(GitHubAccountKind)(0),                     // 0: devhud.deck.v1.GitHubAccountKind
+	(*GitHubConnection)(nil),                   // 1: devhud.deck.v1.GitHubConnection
+	(*GitHubAccountIdentity)(nil),              // 2: devhud.deck.v1.GitHubAccountIdentity
+	(*GitHubInstallation)(nil),                 // 3: devhud.deck.v1.GitHubInstallation
+	(*GetGitHubConnectionRequest)(nil),         // 4: devhud.deck.v1.GetGitHubConnectionRequest
+	(*GetGitHubConnectionResponse)(nil),        // 5: devhud.deck.v1.GetGitHubConnectionResponse
+	(*StartGitHubConnectionRequest)(nil),       // 6: devhud.deck.v1.StartGitHubConnectionRequest
+	(*StartGitHubConnectionResponse)(nil),      // 7: devhud.deck.v1.StartGitHubConnectionResponse
+	(*ListGitHubInstallationsRequest)(nil),     // 8: devhud.deck.v1.ListGitHubInstallationsRequest
+	(*ListGitHubInstallationsResponse)(nil),    // 9: devhud.deck.v1.ListGitHubInstallationsResponse
+	(*DisconnectGitHubConnectionRequest)(nil),  // 10: devhud.deck.v1.DisconnectGitHubConnectionRequest
+	(*DisconnectGitHubConnectionResponse)(nil), // 11: devhud.deck.v1.DisconnectGitHubConnectionResponse
+	(*UuidV7)(nil),                             // 12: devhud.deck.v1.UuidV7
+	(*Owner)(nil),                              // 13: devhud.deck.v1.Owner
+	(ConnectionState)(0),                       // 14: devhud.deck.v1.ConnectionState
+	(*Revision)(nil),                           // 15: devhud.deck.v1.Revision
+	(*timestamppb.Timestamp)(nil),              // 16: google.protobuf.Timestamp
+	(*PageRequest)(nil),                        // 17: devhud.deck.v1.PageRequest
+	(*PageResponse)(nil),                       // 18: devhud.deck.v1.PageResponse
 }
 var file_devhud_deck_v1_integration_proto_depIdxs = []int32{
-	10, // 0: devhud.deck.v1.GitHubConnection.connection_id:type_name -> devhud.deck.v1.UuidV7
-	11, // 1: devhud.deck.v1.GitHubConnection.owner:type_name -> devhud.deck.v1.Owner
-	12, // 2: devhud.deck.v1.GitHubConnection.state:type_name -> devhud.deck.v1.ConnectionState
-	13, // 3: devhud.deck.v1.GitHubConnection.revision:type_name -> devhud.deck.v1.Revision
-	14, // 4: devhud.deck.v1.GitHubConnection.created_at:type_name -> google.protobuf.Timestamp
-	14, // 5: devhud.deck.v1.GitHubConnection.updated_at:type_name -> google.protobuf.Timestamp
-	11, // 6: devhud.deck.v1.GitHubInstallation.owner:type_name -> devhud.deck.v1.Owner
-	12, // 7: devhud.deck.v1.GitHubInstallation.state:type_name -> devhud.deck.v1.ConnectionState
-	14, // 8: devhud.deck.v1.GitHubInstallation.updated_at:type_name -> google.protobuf.Timestamp
-	11, // 9: devhud.deck.v1.GetGitHubConnectionRequest.owner:type_name -> devhud.deck.v1.Owner
-	0,  // 10: devhud.deck.v1.GetGitHubConnectionResponse.connection:type_name -> devhud.deck.v1.GitHubConnection
-	11, // 11: devhud.deck.v1.StartGitHubConnectionRequest.owner:type_name -> devhud.deck.v1.Owner
-	14, // 12: devhud.deck.v1.StartGitHubConnectionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	11, // 13: devhud.deck.v1.ListGitHubInstallationsRequest.owner:type_name -> devhud.deck.v1.Owner
-	15, // 14: devhud.deck.v1.ListGitHubInstallationsRequest.page:type_name -> devhud.deck.v1.PageRequest
-	1,  // 15: devhud.deck.v1.ListGitHubInstallationsResponse.installations:type_name -> devhud.deck.v1.GitHubInstallation
-	16, // 16: devhud.deck.v1.ListGitHubInstallationsResponse.page:type_name -> devhud.deck.v1.PageResponse
-	10, // 17: devhud.deck.v1.DisconnectGitHubConnectionRequest.connection_id:type_name -> devhud.deck.v1.UuidV7
-	13, // 18: devhud.deck.v1.DisconnectGitHubConnectionRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	0,  // 19: devhud.deck.v1.DisconnectGitHubConnectionResponse.connection:type_name -> devhud.deck.v1.GitHubConnection
-	2,  // 20: devhud.deck.v1.DeckIntegrationService.GetGitHubConnection:input_type -> devhud.deck.v1.GetGitHubConnectionRequest
-	4,  // 21: devhud.deck.v1.DeckIntegrationService.StartGitHubConnection:input_type -> devhud.deck.v1.StartGitHubConnectionRequest
-	6,  // 22: devhud.deck.v1.DeckIntegrationService.ListGitHubInstallations:input_type -> devhud.deck.v1.ListGitHubInstallationsRequest
-	8,  // 23: devhud.deck.v1.DeckIntegrationService.DisconnectGitHubConnection:input_type -> devhud.deck.v1.DisconnectGitHubConnectionRequest
-	3,  // 24: devhud.deck.v1.DeckIntegrationService.GetGitHubConnection:output_type -> devhud.deck.v1.GetGitHubConnectionResponse
-	5,  // 25: devhud.deck.v1.DeckIntegrationService.StartGitHubConnection:output_type -> devhud.deck.v1.StartGitHubConnectionResponse
-	7,  // 26: devhud.deck.v1.DeckIntegrationService.ListGitHubInstallations:output_type -> devhud.deck.v1.ListGitHubInstallationsResponse
-	9,  // 27: devhud.deck.v1.DeckIntegrationService.DisconnectGitHubConnection:output_type -> devhud.deck.v1.DisconnectGitHubConnectionResponse
-	24, // [24:28] is the sub-list for method output_type
-	20, // [20:24] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	12, // 0: devhud.deck.v1.GitHubConnection.connection_id:type_name -> devhud.deck.v1.UuidV7
+	13, // 1: devhud.deck.v1.GitHubConnection.owner:type_name -> devhud.deck.v1.Owner
+	14, // 2: devhud.deck.v1.GitHubConnection.state:type_name -> devhud.deck.v1.ConnectionState
+	15, // 3: devhud.deck.v1.GitHubConnection.revision:type_name -> devhud.deck.v1.Revision
+	16, // 4: devhud.deck.v1.GitHubConnection.created_at:type_name -> google.protobuf.Timestamp
+	16, // 5: devhud.deck.v1.GitHubConnection.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 6: devhud.deck.v1.GitHubAccountIdentity.kind:type_name -> devhud.deck.v1.GitHubAccountKind
+	13, // 7: devhud.deck.v1.GitHubInstallation.owner:type_name -> devhud.deck.v1.Owner
+	14, // 8: devhud.deck.v1.GitHubInstallation.state:type_name -> devhud.deck.v1.ConnectionState
+	16, // 9: devhud.deck.v1.GitHubInstallation.updated_at:type_name -> google.protobuf.Timestamp
+	2,  // 10: devhud.deck.v1.GitHubInstallation.account:type_name -> devhud.deck.v1.GitHubAccountIdentity
+	13, // 11: devhud.deck.v1.GetGitHubConnectionRequest.owner:type_name -> devhud.deck.v1.Owner
+	1,  // 12: devhud.deck.v1.GetGitHubConnectionResponse.connection:type_name -> devhud.deck.v1.GitHubConnection
+	13, // 13: devhud.deck.v1.StartGitHubConnectionRequest.owner:type_name -> devhud.deck.v1.Owner
+	16, // 14: devhud.deck.v1.StartGitHubConnectionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	13, // 15: devhud.deck.v1.ListGitHubInstallationsRequest.owner:type_name -> devhud.deck.v1.Owner
+	17, // 16: devhud.deck.v1.ListGitHubInstallationsRequest.page:type_name -> devhud.deck.v1.PageRequest
+	3,  // 17: devhud.deck.v1.ListGitHubInstallationsResponse.installations:type_name -> devhud.deck.v1.GitHubInstallation
+	18, // 18: devhud.deck.v1.ListGitHubInstallationsResponse.page:type_name -> devhud.deck.v1.PageResponse
+	12, // 19: devhud.deck.v1.DisconnectGitHubConnectionRequest.connection_id:type_name -> devhud.deck.v1.UuidV7
+	15, // 20: devhud.deck.v1.DisconnectGitHubConnectionRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	1,  // 21: devhud.deck.v1.DisconnectGitHubConnectionResponse.connection:type_name -> devhud.deck.v1.GitHubConnection
+	4,  // 22: devhud.deck.v1.DeckIntegrationService.GetGitHubConnection:input_type -> devhud.deck.v1.GetGitHubConnectionRequest
+	6,  // 23: devhud.deck.v1.DeckIntegrationService.StartGitHubConnection:input_type -> devhud.deck.v1.StartGitHubConnectionRequest
+	8,  // 24: devhud.deck.v1.DeckIntegrationService.ListGitHubInstallations:input_type -> devhud.deck.v1.ListGitHubInstallationsRequest
+	10, // 25: devhud.deck.v1.DeckIntegrationService.DisconnectGitHubConnection:input_type -> devhud.deck.v1.DisconnectGitHubConnectionRequest
+	5,  // 26: devhud.deck.v1.DeckIntegrationService.GetGitHubConnection:output_type -> devhud.deck.v1.GetGitHubConnectionResponse
+	7,  // 27: devhud.deck.v1.DeckIntegrationService.StartGitHubConnection:output_type -> devhud.deck.v1.StartGitHubConnectionResponse
+	9,  // 28: devhud.deck.v1.DeckIntegrationService.ListGitHubInstallations:output_type -> devhud.deck.v1.ListGitHubInstallationsResponse
+	11, // 29: devhud.deck.v1.DeckIntegrationService.DisconnectGitHubConnection:output_type -> devhud.deck.v1.DisconnectGitHubConnectionResponse
+	26, // [26:30] is the sub-list for method output_type
+	22, // [22:26] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_devhud_deck_v1_integration_proto_init() }
@@ -699,13 +830,14 @@ func file_devhud_deck_v1_integration_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_deck_v1_integration_proto_rawDesc), len(file_devhud_deck_v1_integration_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   10,
+			NumEnums:      1,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_devhud_deck_v1_integration_proto_goTypes,
 		DependencyIndexes: file_devhud_deck_v1_integration_proto_depIdxs,
+		EnumInfos:         file_devhud_deck_v1_integration_proto_enumTypes,
 		MessageInfos:      file_devhud_deck_v1_integration_proto_msgTypes,
 	}.Build()
 	File_devhud_deck_v1_integration_proto = out.File
