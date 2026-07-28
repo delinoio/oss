@@ -308,6 +308,12 @@ pub(crate) trait CaptureBackend: Send + Sync {
     fn request_permission(&self) -> Result<CapturePermissionStatus, BackendFailure> {
         Err(BackendFailure::Unavailable)
     }
+    fn start_session(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        Ok(())
+    }
+    fn finish_session(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        Ok(())
+    }
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure>;
     fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure>;
     fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure>;
@@ -316,6 +322,47 @@ pub(crate) trait CaptureBackend: Send + Sync {
 
 pub(crate) struct CaptureCore {
     backend: Arc<dyn CaptureBackend>,
+}
+
+struct CaptureSession<'a> {
+    backend: &'a dyn CaptureBackend,
+    session_id: CaptureSessionId,
+    finished: bool,
+}
+
+impl<'a> CaptureSession<'a> {
+    fn start(
+        backend: &'a dyn CaptureBackend,
+        session_id: CaptureSessionId,
+    ) -> Result<Self, CaptureFailure> {
+        backend
+            .start_session(&session_id)
+            .map_err(CaptureFailure::from)?;
+        Ok(Self {
+            backend,
+            session_id,
+            finished: false,
+        })
+    }
+
+    fn finish<T>(mut self, result: Result<T, CaptureFailure>) -> Result<T, CaptureFailure> {
+        self.finished = true;
+        let completion = self.backend.finish_session(&self.session_id);
+        match (result, completion) {
+            (_, Err(BackendFailure::Cancelled)) => Err(CaptureFailure::Cancelled),
+            (Err(failure), _) => Err(failure),
+            (Ok(value), Ok(())) => Ok(value),
+            (Ok(_), Err(failure)) => Err(CaptureFailure::from(failure)),
+        }
+    }
+}
+
+impl Drop for CaptureSession<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.backend.finish_session(&self.session_id);
+        }
+    }
 }
 
 impl CaptureCore {
@@ -371,6 +418,11 @@ impl CaptureCore {
         if request.session_id.0.is_empty() || request.session_id.0.len() > 128 {
             return Err(CaptureFailure::InvalidSelection);
         }
+        let session = CaptureSession::start(self.backend.as_ref(), request.session_id.clone())?;
+        session.finish(self.begin_started(request))
+    }
+
+    fn begin_started(&self, request: CaptureRequest) -> Result<CaptureResult, CaptureFailure> {
         self.require_granted_permission()?;
         let snapshot = self.current_snapshot()?;
         if snapshot.snapshot_id != request.snapshot_id {

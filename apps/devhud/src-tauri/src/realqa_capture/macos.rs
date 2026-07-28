@@ -139,37 +139,28 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
         Ok((displays, windows))
     }
 
-    fn begin_session(
+    fn active_capture(
         &self,
         session_id: &CaptureSessionId,
-    ) -> Result<ActiveCapture<'_, A>, BackendFailure> {
-        let mut active = self
+    ) -> Result<ActiveCapture, BackendFailure> {
+        let active = self
             .active
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?;
-        let cancelled = match active.remove(session_id) {
-            Some(CaptureSessionState::CancelledBeforeCapture) => Arc::new(AtomicBool::new(true)),
-            Some(state @ CaptureSessionState::Active(_)) => {
-                active.insert(session_id.clone(), state);
-                return Err(BackendFailure::CaptureFailed);
+        let cancelled = match active.get(session_id) {
+            Some(CaptureSessionState::Active(cancelled)) => cancelled.clone(),
+            Some(CaptureSessionState::CancelledBeforeCapture) => {
+                return Err(BackendFailure::Cancelled);
             }
-            None => Arc::new(AtomicBool::new(false)),
+            None => return Err(BackendFailure::CaptureFailed),
         };
-        active.insert(
-            session_id.clone(),
-            CaptureSessionState::Active(cancelled.clone()),
-        );
-        Ok(ActiveCapture {
-            backend: self,
-            session_id: session_id.clone(),
-            cancelled,
-        })
+        Ok(ActiveCapture { cancelled })
     }
 
     fn capture_display_regions(
         &self,
         request: &ResolvedCaptureRequest,
-        active: &ActiveCapture<'_, A>,
+        active: &ActiveCapture,
     ) -> Result<BackendFrame, BackendFailure> {
         let mut canvas = BackendFrame {
             width: request.expected_frame_size.width,
@@ -251,7 +242,7 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
     fn capture_native(
         &self,
         request: NativeCaptureRequest,
-        active: &ActiveCapture<'_, A>,
+        active: &ActiveCapture,
     ) -> Result<BackendFrame, BackendFailure> {
         let result = self.native.capture(request);
         active.check_cancelled()?;
@@ -284,6 +275,43 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
         })
     }
 
+    fn start_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| BackendFailure::CaptureFailed)?;
+        match active.remove(session_id) {
+            Some(CaptureSessionState::CancelledBeforeCapture) => Err(BackendFailure::Cancelled),
+            Some(state @ CaptureSessionState::Active(_)) => {
+                active.insert(session_id.clone(), state);
+                Err(BackendFailure::CaptureFailed)
+            }
+            None => {
+                active.insert(
+                    session_id.clone(),
+                    CaptureSessionState::Active(Arc::new(AtomicBool::new(false))),
+                );
+                Ok(())
+            }
+        }
+    }
+
+    fn finish_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        let state = self
+            .active
+            .lock()
+            .map_err(|_| BackendFailure::CaptureFailed)?
+            .remove(session_id)
+            .ok_or(BackendFailure::CaptureFailed)?;
+        match state {
+            CaptureSessionState::Active(cancelled) if cancelled.load(Ordering::Acquire) => {
+                Err(BackendFailure::Cancelled)
+            }
+            CaptureSessionState::Active(_) => Ok(()),
+            CaptureSessionState::CancelledBeforeCapture => Err(BackendFailure::Cancelled),
+        }
+    }
+
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
         let (displays, windows) = self.translated_catalog(self.native.catalog()?)?;
         let snapshot = DisplaySnapshot::checked(displays.clone())
@@ -311,7 +339,7 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
     }
 
     fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
-        let active = self.begin_session(&request.session_id)?;
+        let active = self.active_capture(&request.session_id)?;
         active.check_cancelled()?;
         let frame = match &request.source {
             CaptureSourceSelection::Window { window_id } => {
@@ -374,26 +402,16 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
     }
 }
 
-struct ActiveCapture<'a, A: MacosNativeAdapter> {
-    backend: &'a MacosCaptureBackend<A>,
-    session_id: CaptureSessionId,
+struct ActiveCapture {
     cancelled: Arc<AtomicBool>,
 }
 
-impl<A: MacosNativeAdapter> ActiveCapture<'_, A> {
+impl ActiveCapture {
     fn check_cancelled(&self) -> Result<(), BackendFailure> {
         if self.cancelled.load(Ordering::Acquire) {
             Err(BackendFailure::Cancelled)
         } else {
             Ok(())
-        }
-    }
-}
-
-impl<A: MacosNativeAdapter> Drop for ActiveCapture<'_, A> {
-    fn drop(&mut self) {
-        if let Ok(mut active) = self.backend.active.lock() {
-            active.remove(&self.session_id);
         }
     }
 }
@@ -891,6 +909,65 @@ mod tests {
         capture_release: Mutex<Option<Receiver<()>>>,
     }
 
+    struct FinishGateBackend {
+        inner: Arc<MacosCaptureBackend<Arc<FixtureNative>>>,
+        finish_started: Mutex<Option<Sender<()>>>,
+        finish_release: Mutex<Option<Receiver<()>>>,
+    }
+
+    impl CaptureBackend for FinishGateBackend {
+        fn platform(&self) -> CapturePlatform {
+            self.inner.platform()
+        }
+
+        fn permission(&self) -> Result<CapturePermission, BackendFailure> {
+            self.inner.permission()
+        }
+
+        fn start_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+            self.inner.start_session(session_id)
+        }
+
+        fn finish_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+            if let Some(started) = self
+                .finish_started
+                .lock()
+                .expect("finish started lock")
+                .take()
+            {
+                started.send(()).expect("finish start receiver");
+            }
+            if let Some(release) = self
+                .finish_release
+                .lock()
+                .expect("finish release lock")
+                .take()
+            {
+                release.recv().expect("finish release sender");
+            }
+            self.inner.finish_session(session_id)
+        }
+
+        fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
+            self.inner.displays()
+        }
+
+        fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure> {
+            self.inner.windows(snapshot)
+        }
+
+        fn capture(
+            &self,
+            request: &ResolvedCaptureRequest,
+        ) -> Result<BackendFrame, BackendFailure> {
+            self.inner.capture(request)
+        }
+
+        fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+            self.inner.cancel(session_id)
+        }
+    }
+
     impl FixtureNative {
         fn retina() -> Self {
             Self {
@@ -1148,6 +1225,44 @@ mod tests {
         core.cancel(&CaptureSessionId("macos-session".to_owned()))
             .expect("cancel");
         release_sender.send(()).expect("release capture");
+
+        assert_eq!(
+            capture.join().expect("capture thread"),
+            Err(CaptureFailure::Cancelled)
+        );
+        assert!(backend.active.lock().expect("active lock").is_empty());
+    }
+
+    #[test]
+    fn cancellation_after_encoding_finishes_the_registered_session_as_cancelled() {
+        let fixture = Arc::new(FixtureNative::retina());
+        let backend = Arc::new(MacosCaptureBackend::new(fixture));
+        let gated_backend = Arc::new(FinishGateBackend {
+            inner: backend.clone(),
+            finish_started: Mutex::new(None),
+            finish_release: Mutex::new(None),
+        });
+        let core = Arc::new(CaptureCore::new(gated_backend.clone()));
+        let catalog = core.source_catalog().expect("catalog");
+        let (started_sender, started_receiver) = std::sync::mpsc::channel();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel();
+        *gated_backend
+            .finish_started
+            .lock()
+            .expect("finish started lock") = Some(started_sender);
+        *gated_backend
+            .finish_release
+            .lock()
+            .expect("finish release lock") = Some(release_receiver);
+
+        let capture_core = core.clone();
+        let capture = std::thread::spawn(move || capture_core.begin(region_request(&catalog)));
+        started_receiver
+            .recv()
+            .expect("capture reached session finish after encoding");
+        core.cancel(&CaptureSessionId("macos-session".to_owned()))
+            .expect("cancel");
+        release_sender.send(()).expect("release session finish");
 
         assert_eq!(
             capture.join().expect("capture thread"),
