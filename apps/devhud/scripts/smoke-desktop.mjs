@@ -10,6 +10,18 @@ const repositoryRoot = resolve(appRoot, "../..");
 const supportedHosts = new Set(["darwin", "linux", "win32"]);
 const applicationId = "dev.deli.devhud";
 const runtimeReadyMarker = '"eventId":"runtime-ready"';
+const windowsAccessViolationExitCode = 0xc0000005;
+const windowsStartupAttemptLimit = 2;
+
+class DesktopSmokeStartupError extends Error {
+  constructor(iteration, attempt, exitCode, observedReady) {
+    super(
+      `desktop smoke ${iteration} attempt ${attempt} did not observe the ready runtime (exit ${exitCode ?? "signal"})`,
+    );
+    this.exitCode = exitCode;
+    this.observedReady = observedReady;
+  }
+}
 
 if (!supportedHosts.has(process.platform)) {
   console.log(
@@ -193,7 +205,7 @@ function newLogsContainReadyEvent(previousLogs) {
   return false;
 }
 
-async function runSmokeIteration(iteration) {
+async function runSmokeIteration(iteration, attempt) {
   const output = [];
   const observedHelperPids = new Set();
   const previousLogs = managedLogFiles();
@@ -241,16 +253,6 @@ async function runSmokeIteration(iteration) {
   const observedReady =
     combinedOutput.includes(runtimeReadyMarker) ||
     newLogsContainReadyEvent(previousLogs);
-  if (exitCode !== 0 || !observedReady) {
-    throw new Error(
-      `desktop smoke ${iteration} did not observe the ready runtime (exit ${exitCode ?? "signal"})`,
-    );
-  }
-  if (observedHelperPids.size === 0) {
-    throw new Error(
-      `desktop smoke ${iteration} did not observe a CEF helper before shutdown`,
-    );
-  }
 
   await delay(250);
   const remaining = new Set(processTable().map((row) => row.pid));
@@ -260,10 +262,52 @@ async function runSmokeIteration(iteration) {
       `desktop smoke ${iteration} observed orphaned CEF helper processes`,
     );
   }
+  if (exitCode !== 0 || !observedReady) {
+    throw new DesktopSmokeStartupError(
+      iteration,
+      attempt,
+      exitCode,
+      observedReady,
+    );
+  }
+  if (observedHelperPids.size === 0) {
+    throw new Error(
+      `desktop smoke ${iteration} did not observe a CEF helper before shutdown`,
+    );
+  }
 }
 
 for (let iteration = 1; iteration <= 3; iteration += 1) {
-  await runSmokeIteration(iteration);
+  for (let attempt = 1; attempt <= windowsStartupAttemptLimit; attempt += 1) {
+    try {
+      await runSmokeIteration(iteration, attempt);
+      break;
+    } catch (error) {
+      const retryableWindowsStartupFailure =
+        process.platform === "win32" &&
+        process.env.GITHUB_ACTIONS === "true" &&
+        error instanceof DesktopSmokeStartupError &&
+        !error.observedReady &&
+        error.exitCode === windowsAccessViolationExitCode &&
+        attempt < windowsStartupAttemptLimit;
+      if (!retryableWindowsStartupFailure) {
+        throw error;
+      }
+      // CEF can sporadically access-violate before renderer readiness on
+      // GPU-less GitHub-hosted Windows runners. Retry only that exact clean
+      // startup failure; remove this when the hosted runtime is stable.
+      console.warn(
+        JSON.stringify({
+          check: "devhud-desktop-smoke",
+          status: "retrying",
+          iteration,
+          attempt,
+          reason: "windows-cef-pre-ready-access-violation",
+        }),
+      );
+      await delay(5_000);
+    }
+  }
   if (process.platform === "win32" && iteration < 3) {
     // Windows CEF releases profile and graphics resources after its processes
     // exit. Keep this hosted-runner workaround until teardown is synchronous.
