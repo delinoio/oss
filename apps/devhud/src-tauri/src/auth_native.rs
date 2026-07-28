@@ -71,7 +71,7 @@ impl HttpTokenTransport {
         Ok(Self {
             client,
             issuer: configuration
-                .issuer()
+                .oidc_issuer()
                 .as_str()
                 .trim_end_matches('/')
                 .to_owned(),

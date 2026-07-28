@@ -254,7 +254,7 @@ pub(crate) trait SecureVault: Send {
 
 #[derive(Debug, Clone)]
 pub(crate) struct AuthConfiguration {
-    issuer: Url,
+    oidc_issuer: Url,
     authorization_endpoint: Url,
     token_endpoint: Url,
     revocation_endpoint: Url,
@@ -262,30 +262,31 @@ pub(crate) struct AuthConfiguration {
 }
 
 impl AuthConfiguration {
-    pub(crate) fn new(issuer: &str, client_id: &str) -> Result<Self, AuthError> {
-        let issuer = Url::parse(issuer).map_err(|_| AuthError::InvalidConfiguration)?;
-        if issuer.scheme() != "https"
-            || issuer.host_str().is_none()
-            || !issuer.username().is_empty()
-            || issuer.password().is_some()
-            || issuer.query().is_some()
-            || issuer.fragment().is_some()
-            || !matches!(issuer.path(), "" | "/")
+    pub(crate) fn new(logto_endpoint: &str, client_id: &str) -> Result<Self, AuthError> {
+        let logto_endpoint =
+            Url::parse(logto_endpoint).map_err(|_| AuthError::InvalidConfiguration)?;
+        if logto_endpoint.scheme() != "https"
+            || logto_endpoint.host_str().is_none()
+            || !logto_endpoint.username().is_empty()
+            || logto_endpoint.password().is_some()
+            || logto_endpoint.query().is_some()
+            || logto_endpoint.fragment().is_some()
+            || !matches!(logto_endpoint.path(), "" | "/")
             || client_id.trim().is_empty()
             || client_id.len() > 256
         {
             return Err(AuthError::InvalidConfiguration);
         }
         let endpoint = |path: &str| {
-            let mut url = issuer.clone();
+            let mut url = logto_endpoint.clone();
             url.set_path(path);
             url
         };
         Ok(Self {
+            oidc_issuer: endpoint("/oidc"),
             authorization_endpoint: endpoint("/oidc/auth"),
             token_endpoint: endpoint("/oidc/token"),
             revocation_endpoint: endpoint("/oidc/token/revocation"),
-            issuer,
             client_id: client_id.to_owned(),
         })
     }
@@ -297,8 +298,8 @@ impl AuthConfiguration {
             || endpoint == &self.jwks_endpoint()
     }
 
-    pub(crate) fn issuer(&self) -> &Url {
-        &self.issuer
+    pub(crate) fn oidc_issuer(&self) -> &Url {
+        &self.oidc_issuer
     }
 
     pub(crate) fn client_id(&self) -> &str {
@@ -306,7 +307,7 @@ impl AuthConfiguration {
     }
 
     pub(crate) fn jwks_endpoint(&self) -> Url {
-        let mut endpoint = self.issuer.clone();
+        let mut endpoint = self.oidc_issuer.clone();
         endpoint.set_path("/oidc/jwks");
         endpoint
     }
@@ -818,7 +819,9 @@ fn validate_common_claims(
     configuration: &AuthConfiguration,
     now: u64,
 ) -> Result<(), AuthError> {
-    if claims.issuer.trim_end_matches('/') != configuration.issuer.as_str().trim_end_matches('/') {
+    if claims.issuer.trim_end_matches('/')
+        != configuration.oidc_issuer.as_str().trim_end_matches('/')
+    {
         return Err(AuthError::TokenInvalid);
     }
     if claims.expires_at_unix_seconds <= now {
@@ -1034,7 +1037,8 @@ mod tests {
 
     use super::*;
 
-    const ISSUER: &str = "https://tenant.logto.app";
+    const LOGTO_ENDPOINT: &str = "https://tenant.logto.app";
+    const OIDC_ISSUER: &str = "https://tenant.logto.app/oidc";
     const NOW: u64 = 1_800_000_000;
 
     #[derive(Default)]
@@ -1146,7 +1150,7 @@ mod tests {
 
     fn claims(subject: &str, audience: &str, scopes: &[&str]) -> TokenClaims {
         TokenClaims {
-            issuer: ISSUER.to_owned(),
+            issuer: OIDC_ISSUER.to_owned(),
             subject: subject.to_owned(),
             audiences: [audience.to_owned()].into_iter().collect(),
             scopes: scopes.iter().map(|value| (*value).to_owned()).collect(),
@@ -1168,7 +1172,7 @@ mod tests {
         vault: FakeVault,
     ) -> SessionManager<FakeTransport, FakeVault> {
         SessionManager::new(
-            AuthConfiguration::new(ISSUER, "devhud-client").unwrap(),
+            AuthConfiguration::new(LOGTO_ENDPOINT, "devhud-client").unwrap(),
             transport,
             vault,
         )
@@ -1199,7 +1203,8 @@ mod tests {
         assert!(AuthConfiguration::new("http://tenant.logto.app", "id").is_err());
         assert!(AuthConfiguration::new("https://user@tenant.logto.app", "id").is_err());
         assert!(AuthConfiguration::new("https://tenant.logto.app/path", "id").is_err());
-        let config = AuthConfiguration::new(ISSUER, "id").unwrap();
+        let config = AuthConfiguration::new(LOGTO_ENDPOINT, "id").unwrap();
+        assert_eq!(config.oidc_issuer().as_str(), OIDC_ISSUER);
         assert!(
             config.endpoint_allowed(&Url::parse("https://tenant.logto.app/oidc/auth").unwrap())
         );
@@ -1662,8 +1667,22 @@ mod tests {
     }
 
     #[test]
-    fn bearer_validation_rejects_audience_and_scope_substitution() {
-        let configuration = AuthConfiguration::new(ISSUER, "devhud-client").unwrap();
+    fn bearer_validation_rejects_issuer_audience_and_scope_substitution() {
+        let configuration = AuthConfiguration::new(LOGTO_ENDPOINT, "devhud-client").unwrap();
+        let mut bare_endpoint_issuer =
+            claims("account-a", DECK_AUDIENCE, AuthFeature::Deck.scopes());
+        bare_endpoint_issuer.issuer = LOGTO_ENDPOINT.to_owned();
+        assert_eq!(
+            validate_bearer(
+                &bare_endpoint_issuer,
+                &configuration,
+                "account-a",
+                DECK_AUDIENCE,
+                AuthFeature::Deck.scopes(),
+                NOW,
+            ),
+            Err(AuthError::TokenInvalid)
+        );
         let wrong_audience = claims("account-a", REALQA_AUDIENCE, AuthFeature::Deck.scopes());
         assert_eq!(
             validate_bearer(
