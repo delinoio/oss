@@ -5,7 +5,7 @@
 - Project/component: `devhud` / `realqa-api`
 - Canonical source path: `protos/devhud-realqa/v1`
 - Contract identity: `devhud.realqa.v1`
-- Status: implemented source contract and private workspace package for issue #757; no server implementation, deployed API, public client publication, or production activation is claimed.
+- Status: implemented source contract and private workspace package for issue #757, consumed by the inactive `servers/devhud-realqa` preset/tracker/auth/deletion foundation; no deployed API, public client publication, successful submission/upload/provider implementation, or production activation is claimed.
 
 ## Runtime and Language
 

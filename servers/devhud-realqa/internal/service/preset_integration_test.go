@@ -1,0 +1,407 @@
+package service
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
+	"github.com/delinoio/oss/servers/internal/auth"
+	"github.com/delinoio/oss/servers/internal/safelog"
+	"github.com/delinoio/oss/servers/internal/uuidv7"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/proto"
+)
+
+func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
+	databaseURL := os.Getenv("REALQA_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("REALQA_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	admin, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "realqa_service_" + uuidv7.MustNew().String()[24:]
+	identifier := pgx.Identifier{schema}.Sanitize()
+	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+identifier); err != nil {
+		t.Fatal(err)
+	}
+	_ = admin.Close(ctx)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(
+			context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		connection, connectionErr := pgx.Connect(cleanupCtx, databaseURL)
+		if connectionErr == nil {
+			_, _ = connection.Exec(cleanupCtx, "DROP SCHEMA "+identifier+" CASCADE")
+			_ = connection.Close(cleanupCtx)
+		}
+	})
+	scopedURL := databaseURL
+	if strings.Contains(scopedURL, "?") {
+		scopedURL += "&search_path=" + schema
+	} else {
+		scopedURL += "?search_path=" + schema
+	}
+	identityKey := []byte(strings.Repeat("i", 32))
+	store, err := database.Open(ctx, scopedURL, identityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	connection, err := pgx.Connect(ctx, scopedURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close(ctx)
+
+	subject := "fixture-user"
+	accountID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
+	connectionID := uuidv7.MustNew()
+	installationID := uuidv7.MustNew()
+	organizationConnectionID := uuidv7.MustNew()
+	organizationInstallationID := uuidv7.MustNew()
+	digest := hmac.New(sha256.New, identityKey)
+	_, _ = digest.Write([]byte(subject))
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest) VALUES ($1, $2);
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES
+			($1, 'personal', $1, 'owner'),
+			($1, 'organization', $3, 'admin');
+		INSERT INTO realqa_payer_team_bindings (
+			account_id, organization_id, team_id
+		) VALUES ($1, $3, $4);
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state
+		) VALUES ($5, 'personal', $1, 'connected');
+		INSERT INTO realqa_github_installations (
+			id, connection_id, owner_kind, owner_id,
+			provider_installation_id, account_login
+		) VALUES ($6, $5, 'personal', $1, 757, 'fixture');
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id,
+			repository_owner, repository_name, issues_enabled, can_submit
+		) VALUES ($6, $1, 'repo-1', 'delinoio', 'oss', true, true);
+		INSERT INTO realqa_repository_definitions (
+			installation_id, repository_id, kind, definition_id,
+			name, path, etag, schema_payload
+		) VALUES (
+			$6, 'repo-1', 'markdown_template', 'bug',
+			'Bug', '.github/ISSUE_TEMPLATE/bug.md', 'schema-etag', '{}'::jsonb
+		);
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state
+		) VALUES ($7, 'organization', $3, 'connected');
+		INSERT INTO realqa_github_installations (
+			id, connection_id, owner_kind, owner_id,
+			provider_installation_id, account_login
+		) VALUES ($8, $7, 'organization', $3, 758, 'fixture-org');
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id,
+			repository_owner, repository_name, issues_enabled, can_submit
+		) VALUES ($8, $1, 'repo-org', 'delinoio', 'private', true, true);
+		INSERT INTO realqa_repository_definitions (
+			installation_id, repository_id, kind, definition_id,
+			name, path, etag, schema_payload
+		) VALUES (
+			$8, 'repo-org', 'markdown_template', 'bug',
+			'Bug', '.github/ISSUE_TEMPLATE/bug.md', 'schema-etag', '{}'::jsonb
+		)
+	`, accountID, digest.Sum(nil), organizationID, teamID,
+		connectionID, installationID, organizationConnectionID,
+		organizationInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	pseudonymizer, err := safelog.NewPseudonymizer(
+		[]byte(strings.Repeat("p", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewPreset(Dependencies{
+		Store: store, Pseudonymizer: pseudonymizer,
+	})
+	request := fixtureCreatePreset(accountID, organizationID, teamID, installationID)
+	authCtx := auth.WithPrincipal(ctx, auth.Principal{
+		User: &auth.UserClaims{
+			TokenClaims: auth.TokenClaims{Subject: subject}, UserID: subject,
+		},
+	})
+	created, err := service.CreatePreset(authCtx, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Msg.Preset.Revision.Value != 1 ||
+		created.Msg.Preset.Revision.Etag != `"realqa-r1"` {
+		t.Fatalf("created revision = %#v", created.Msg.Preset.Revision)
+	}
+	replayed, err := service.CreatePreset(authCtx, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayed.Msg.Idempotency.Replayed ||
+		replayed.Msg.Preset.PresetId.Value != created.Msg.Preset.PresetId.Value {
+		t.Fatalf("unexpected replay %#v", replayed.Msg)
+	}
+	conflicting := proto.Clone(request).(*realqav1.CreatePresetRequest)
+	conflicting.Name = "Changed"
+	_, err = service.CreatePreset(authCtx, connect.NewRequest(conflicting))
+	if connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("changed replay code = %v", connect.CodeOf(err))
+	}
+	update := proto.Clone(created.Msg.Preset).(*realqav1.Preset)
+	update.Name = "Updated"
+	update.Shortcut = nil
+	updated, err := service.UpdatePreset(authCtx, connect.NewRequest(
+		&realqav1.UpdatePresetRequest{
+			Preset: update, ExpectedRevision: created.Msg.Preset.Revision,
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Msg.Preset.Revision.Value != 2 ||
+		updated.Msg.Preset.Revision.Etag != `"realqa-r2"` {
+		t.Fatalf("updated revision = %#v", updated.Msg.Preset.Revision)
+	}
+	if updated.Msg.Preset.Shortcut != nil {
+		t.Fatalf("shortcut was not removed: %#v", updated.Msg.Preset.Shortcut)
+	}
+	replayed, err = service.CreatePreset(authCtx, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.Msg.Preset.Revision.Value != 1 ||
+		replayed.Msg.Preset.Name != created.Msg.Preset.Name ||
+		replayed.Msg.Preset.Shortcut == nil {
+		t.Fatalf("create replay did not preserve original snapshot: %#v", replayed.Msg.Preset)
+	}
+	_, err = service.UpdatePreset(authCtx, connect.NewRequest(
+		&realqav1.UpdatePresetRequest{
+			Preset: update, ExpectedRevision: created.Msg.Preset.Revision,
+		}))
+	if connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatalf("stale update code = %v", connect.CodeOf(err))
+	}
+	organizationRequest := fixtureCreatePreset(
+		accountID, organizationID, teamID, organizationInstallationID)
+	organizationRequest.Owner = organizationOwnerScope(organizationID)
+	organizationRequest.Destination.Repository = &realqav1.GitHubRepositoryRef{
+		RepositoryId: "repo-org", Owner: "delinoio", Name: "private",
+	}
+	renewCreateIdentities(organizationRequest)
+	organizationPreset, err := service.CreatePreset(
+		authCtx, connect.NewRequest(organizationRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'member'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, accountID, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	memberMutation := proto.Clone(organizationRequest).(*realqav1.CreatePresetRequest)
+	memberMutation.Name = "Member cannot manage"
+	renewCreateIdentities(memberMutation)
+	_, err = service.CreatePreset(authCtx, connect.NewRequest(memberMutation))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("member preset mutation code = %v", connect.CodeOf(err))
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_repository_access
+		SET can_submit = false, checked_at = transaction_timestamp()
+		WHERE installation_id = $1
+		  AND account_id = $2
+		  AND repository_id = 'repo-org'
+	`, organizationInstallationID, accountID); err != nil {
+		t.Fatal(err)
+	}
+	submissionService := NewSubmission(Dependencies{
+		Store: store, Pseudonymizer: pseudonymizer,
+	})
+	submissionRequest := &realqav1.CreateSubmissionRequest{
+		Owner:          organizationOwnerScope(organizationID),
+		Billing:        organizationRequest.Billing,
+		PresetId:       organizationPreset.Msg.Preset.PresetId,
+		PresetRevision: organizationPreset.Msg.Preset.Revision,
+		Destination:    organizationRequest.Destination,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(submissionRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("member inaccessible repository code = %v", connect.CodeOf(err))
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_repository_access
+		SET can_submit = true, checked_at = transaction_timestamp()
+		WHERE installation_id = $1
+		  AND account_id = $2
+		  AND repository_id = 'repo-org'
+	`, organizationInstallationID, accountID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(submissionRequest))
+	if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("member accessible repository code = %v", connect.CodeOf(err))
+	}
+	var personalDestinationID uuid.UUID
+	if err = connection.QueryRow(ctx, `
+		SELECT id
+		FROM realqa_destinations
+		WHERE owner_kind = 'personal' AND owner_id = $1
+	`, accountID).Scan(&personalDestinationID); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index < personalPresetLimit; index++ {
+		if _, err = connection.Exec(ctx, `
+			INSERT INTO realqa_presets (
+				id, owner_kind, owner_id, created_by_account_id,
+				payer_organization_id, payer_team_id, destination_id,
+				name, capture_mode, include_pointer, selector_mode,
+				issue_definition_kind, issue_definition_id,
+				issue_definition_name, issue_definition_path,
+				issue_definition_etag
+			) VALUES (
+				$1, 'personal', $2, $2, $3, $4, $5,
+				$6, 'region', false, 'normal',
+				'markdown_template', 'bug', 'Bug',
+				'.github/ISSUE_TEMPLATE/bug.md', 'schema-etag'
+			)
+		`, uuidv7.MustNew(), accountID, organizationID, teamID,
+			personalDestinationID, "Limit fixture"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	limitRequest := fixtureCreatePreset(
+		accountID, organizationID, teamID, installationID)
+	limitRequest.Name = "Over limit"
+	renewCreateIdentities(limitRequest)
+	_, err = service.CreatePreset(authCtx, connect.NewRequest(limitRequest))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("personal preset limit code = %v", connect.CodeOf(err))
+	}
+	_, err = service.DeleteFeatureData(authCtx, connect.NewRequest(
+		&realqav1.DeleteFeatureDataRequest{
+			TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,
+			Trigger: &realqav1.DeleteFeatureDataRequest_OwnerRequest{
+				OwnerRequest: &realqav1.OwnerFeatureDeletion{
+					Owner: personalOwnerScope(accountID),
+					Idempotency: &realqav1.IdempotencyKey{
+						Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+					},
+				},
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.GetPreset(authCtx, connect.NewRequest(
+		&realqav1.GetPresetRequest{PresetId: created.Msg.Preset.PresetId}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("deleted preset code = %v", connect.CodeOf(err))
+	}
+}
+
+func fixtureCreatePreset(
+	accountID, organizationID, teamID, installationID [16]byte,
+) *realqav1.CreatePresetRequest {
+	return &realqav1.CreatePresetRequest{
+		Owner: personalOwnerScope(accountID),
+		Billing: &realqav1.BillingScope{
+			OrganizationId: &realqav1.UuidV7{Value: uuidString(organizationID)},
+			TeamId:         &realqav1.UuidV7{Value: uuidString(teamID)},
+		},
+		Name:                "Bug preset",
+		DefaultCaptureMode:  realqav1.CaptureMode_CAPTURE_MODE_REGION,
+		DefaultSelectorMode: realqav1.SelectorMode_SELECTOR_MODE_NORMAL,
+		Destination: &realqav1.TrackerDestination{
+			Tracker:        realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM,
+			InstallationId: &realqav1.UuidV7{Value: uuidString(installationID)},
+			Repository: &realqav1.GitHubRepositoryRef{
+				RepositoryId: "repo-1", Owner: "delinoio", Name: "oss",
+			},
+		},
+		IssueDefinition: &realqav1.RepositoryIssueDefinitionRef{
+			Kind:         realqav1.RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE,
+			DefinitionId: "bug", Name: "Bug",
+			Path: ".github/ISSUE_TEMPLATE/bug.md", Etag: "schema-etag",
+		},
+		DefaultLabels:    []string{"bug"},
+		DefaultAssignees: []string{"maintainer"},
+		ProviderExtension: &realqav1.ProviderExtension{
+			Provider: &realqav1.ProviderExtension_Github{
+				Github: &realqav1.GitHubProviderExtension{
+					MilestoneNumber: 1, ProjectNodeIds: []string{"project-node"},
+				},
+			},
+		},
+		ProcessUrlRules: []*realqav1.ProcessUrlRule{{
+			RuleId:                 &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			ExactProcessName:       "chrome",
+			SafeWindowTitlePattern: `^Issue ([0-9]+)$`,
+			UrlTemplate:            "https://github.com/delinoio/oss/issues/$1",
+			Enabled:                true,
+		}},
+		Shortcut: &realqav1.ShortcutDefinition{
+			ShortcutId:  &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			Accelerator: "Ctrl+Shift+7", Active: true,
+		},
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+}
+
+func personalOwnerScope(accountID [16]byte) *realqav1.OwnerScope {
+	return &realqav1.OwnerScope{
+		Kind: realqav1.OwnerScopeKind_OWNER_SCOPE_KIND_PERSONAL,
+		Owner: &realqav1.OwnerScope_PersonalAccountId{
+			PersonalAccountId: &realqav1.UuidV7{Value: uuidString(accountID)},
+		},
+	}
+}
+
+func organizationOwnerScope(organizationID [16]byte) *realqav1.OwnerScope {
+	return &realqav1.OwnerScope{
+		Kind: realqav1.OwnerScopeKind_OWNER_SCOPE_KIND_ORGANIZATION,
+		Owner: &realqav1.OwnerScope_OrganizationId{
+			OrganizationId: &realqav1.UuidV7{Value: uuidString(organizationID)},
+		},
+	}
+}
+
+func renewCreateIdentities(request *realqav1.CreatePresetRequest) {
+	request.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	for _, rule := range request.ProcessUrlRules {
+		rule.RuleId = &realqav1.UuidV7{Value: uuidv7.MustNew().String()}
+	}
+	if request.Shortcut != nil {
+		request.Shortcut.ShortcutId = &realqav1.UuidV7{Value: uuidv7.MustNew().String()}
+	}
+}
+
+func uuidString(value [16]byte) string {
+	return uuid.UUID(value).String()
+}
