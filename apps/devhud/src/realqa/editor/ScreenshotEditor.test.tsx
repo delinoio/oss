@@ -221,7 +221,7 @@ describe("ScreenshotEditor", () => {
     });
   });
 
-  it("previews blur and pixelate using each operation's strength", async () => {
+  it("previews blur and source-derived pixelation using each operation's strength", async () => {
     const user = userEvent.setup();
     const { canvas, container } = fixture();
     const lineWidth = screen.getByRole("slider", { name: /Line width/u });
@@ -241,11 +241,12 @@ describe("ScreenshotEditor", () => {
     fireEvent.pointerDown(canvas, { clientX: 250, clientY: 200, pointerId: 2 });
     fireEvent.pointerMove(canvas, { clientX: 450, clientY: 360, pointerId: 2 });
     fireEvent.pointerUp(canvas, { clientX: 450, clientY: 360, pointerId: 2 });
-    const pattern = container.querySelector("pattern");
-    expect(pattern).toHaveAttribute("height", "28");
-    expect(pattern).toHaveAttribute("width", "28");
-    expect(pattern?.querySelector("rect")).toHaveAttribute("height", "14");
-    expect(pattern?.querySelector("rect")).toHaveAttribute("width", "14");
+    const pixelPreview = container.querySelector("canvas.editor-pixelate");
+    expect(pixelPreview).toHaveAttribute("height", "3");
+    expect(pixelPreview).toHaveAttribute("width", "3");
+    expect(pixelPreview?.parentElement).toHaveAttribute("height", "42");
+    expect(pixelPreview?.parentElement).toHaveAttribute("width", "42");
+    expect(container.querySelector("pattern")).not.toBeInTheDocument();
   });
 
   it("normalizes unsupported text before previewing the operation", async () => {

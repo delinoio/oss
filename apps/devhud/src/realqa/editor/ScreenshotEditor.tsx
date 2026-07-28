@@ -2,6 +2,7 @@ import {
   createContext,
   use,
   useCallback,
+  useEffect,
   useId,
   useMemo,
   useReducer,
@@ -455,6 +456,88 @@ function operationDescription(operation: EditorOperation, index: number): string
   }
 }
 
+function renderPixelatedPreview(
+  preview: HTMLImageElement,
+  canvas: HTMLCanvasElement,
+  operation: Extract<EditorOperation, { readonly kind: "pixelate" }>,
+) {
+  const context = canvas.getContext("2d");
+  if (context === null) return;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(
+    preview,
+    operation.rect.x,
+    operation.rect.y,
+    operation.rect.width,
+    operation.rect.height,
+    0,
+    0,
+    canvas.width,
+    canvas.height,
+  );
+}
+
+function PixelatedOverlay({
+  effectPrefix,
+  index,
+  operation,
+  sourceUrl,
+}: {
+  readonly effectPrefix: string;
+  readonly index: number;
+  readonly operation: Extract<EditorOperation, { readonly kind: "pixelate" }>;
+  readonly sourceUrl: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const columns = Math.ceil(operation.rect.width / operation.blockSize);
+  const rows = Math.ceil(operation.rect.height / operation.blockSize);
+  const clipId = `${effectPrefix}-pixel-clip-${index}`;
+
+  useEffect(() => {
+    const preview = new Image();
+    preview.onload = () => {
+      const canvas = canvasRef.current;
+      if (canvas !== null) renderPixelatedPreview(preview, canvas, operation);
+    };
+    preview.src = sourceUrl;
+    return () => {
+      preview.onload = null;
+    };
+  }, [operation, sourceUrl]);
+
+  return (
+    <>
+      <defs>
+        <clipPath id={clipId}>
+          <rect
+            height={operation.rect.height}
+            width={operation.rect.width}
+            x={operation.rect.x}
+            y={operation.rect.y}
+          />
+        </clipPath>
+      </defs>
+      <foreignObject
+        clipPath={`url(#${clipId})`}
+        height={rows * operation.blockSize}
+        width={columns * operation.blockSize}
+        x={operation.rect.x}
+        y={operation.rect.y}
+      >
+        <canvas
+          aria-hidden="true"
+          className="editor-pixelate"
+          height={rows}
+          ref={canvasRef}
+          width={columns}
+        />
+      </foreignObject>
+    </>
+  );
+}
+
 function OperationOverlay({
   effectPrefix,
   index,
@@ -573,53 +656,12 @@ function OperationOverlay({
       );
     case "pixelate":
       return (
-        <>
-          <defs>
-            <pattern
-              height={operation.blockSize * 2}
-              id={`${effectPrefix}-pixel-pattern-${index}`}
-              patternUnits="userSpaceOnUse"
-              width={operation.blockSize * 2}
-            >
-              <rect
-                fill="#747b87"
-                height={operation.blockSize}
-                width={operation.blockSize}
-                x="0"
-                y="0"
-              />
-              <rect
-                fill="#aeb4bd"
-                height={operation.blockSize}
-                width={operation.blockSize}
-                x={operation.blockSize}
-                y="0"
-              />
-              <rect
-                fill="#aeb4bd"
-                height={operation.blockSize}
-                width={operation.blockSize}
-                x="0"
-                y={operation.blockSize}
-              />
-              <rect
-                fill="#747b87"
-                height={operation.blockSize}
-                width={operation.blockSize}
-                x={operation.blockSize}
-                y={operation.blockSize}
-              />
-            </pattern>
-          </defs>
-          <rect
-            className="editor-pixelate"
-            fill={`url(#${effectPrefix}-pixel-pattern-${index})`}
-            height={operation.rect.height}
-            width={operation.rect.width}
-            x={operation.rect.x}
-            y={operation.rect.y}
-          />
-        </>
+        <PixelatedOverlay
+          effectPrefix={effectPrefix}
+          index={index}
+          operation={operation}
+          sourceUrl={sourceUrl}
+        />
       );
   }
 }

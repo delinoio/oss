@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use serde::{Deserialize, Serialize};
 
 use super::{CaptureFailure, DecodedImage, decoded_byte_len};
@@ -268,16 +270,25 @@ fn checked_line(line_width: u32) -> Result<(), CaptureFailure> {
 }
 
 fn parse_color(value: &str) -> Result<[u8; 4], CaptureFailure> {
-    if value.len() != 7 || !value.starts_with('#') {
+    let bytes = value.as_bytes();
+    if bytes.len() != 7 || bytes[0] != b'#' || !bytes[1..].iter().all(u8::is_ascii_hexdigit) {
         return Err(CaptureFailure::InvalidEditorOperation);
     }
-    let red =
-        u8::from_str_radix(&value[1..3], 16).map_err(|_| CaptureFailure::InvalidEditorOperation)?;
-    let green =
-        u8::from_str_radix(&value[3..5], 16).map_err(|_| CaptureFailure::InvalidEditorOperation)?;
-    let blue =
-        u8::from_str_radix(&value[5..7], 16).map_err(|_| CaptureFailure::InvalidEditorOperation)?;
-    Ok([red, green, blue, 255])
+    let component = |high: u8, low: u8| {
+        let nibble = |byte: u8| match byte {
+            b'0'..=b'9' => byte - b'0',
+            b'a'..=b'f' => byte - b'a' + 10,
+            b'A'..=b'F' => byte - b'A' + 10,
+            _ => unreachable!("hex digits were validated above"),
+        };
+        nibble(high) * 16 + nibble(low)
+    };
+    Ok([
+        component(bytes[1], bytes[2]),
+        component(bytes[3], bytes[4]),
+        component(bytes[5], bytes[6]),
+        255,
+    ])
 }
 
 fn pixel_offset(image: &DecodedImage, x: u32, y: u32) -> usize {
@@ -577,76 +588,90 @@ fn draw_marker(
 }
 
 fn blur_region(image: &mut DecodedImage, rect: EditorRect, radius: u32) {
-    let local_offset = |x: u32, y: u32| ((y as usize * rect.width as usize) + x as usize) * 4;
-    let mut horizontal = vec![0_u8; rect.width as usize * rect.height as usize * 4];
+    let mut window = VecDeque::<[u8; 4]>::with_capacity((radius as usize * 2) + 1);
 
     for local_y in 0..rect.height {
         let mut totals = [0_u64; 4];
         let initial_right = radius.min(rect.width - 1);
         for local_x in 0..=initial_right {
             let source_offset = pixel_offset(image, rect.x + local_x, rect.y + local_y);
+            let pixel = image.rgba[source_offset..source_offset + 4]
+                .try_into()
+                .expect("RGBA pixels always have four channels");
+            window.push_back(pixel);
             for (channel, total) in totals.iter_mut().enumerate() {
-                *total += u64::from(image.rgba[source_offset + channel]);
+                *total += u64::from(pixel[channel]);
             }
         }
-        let mut count = u64::from(initial_right + 1);
         for local_x in 0..rect.width {
-            let target_offset = local_offset(local_x, local_y);
+            let target_offset = pixel_offset(image, rect.x + local_x, rect.y + local_y);
             for (channel, total) in totals.iter().enumerate() {
-                horizontal[target_offset + channel] = (*total / count) as u8;
+                image.rgba[target_offset + channel] = (*total / window.len() as u64) as u8;
             }
             if local_x >= radius {
-                let remove_offset =
-                    pixel_offset(image, rect.x + local_x - radius, rect.y + local_y);
+                let removed = window
+                    .pop_front()
+                    .expect("the blur window contains the current pixel");
                 for (channel, total) in totals.iter_mut().enumerate() {
-                    *total -= u64::from(image.rgba[remove_offset + channel]);
+                    *total -= u64::from(removed[channel]);
                 }
-                count -= 1;
             }
             if let Some(add_x) = local_x.checked_add(radius + 1)
                 && add_x < rect.width
             {
                 let add_offset = pixel_offset(image, rect.x + add_x, rect.y + local_y);
+                let pixel = image.rgba[add_offset..add_offset + 4]
+                    .try_into()
+                    .expect("RGBA pixels always have four channels");
+                window.push_back(pixel);
                 for (channel, total) in totals.iter_mut().enumerate() {
-                    *total += u64::from(image.rgba[add_offset + channel]);
+                    *total += u64::from(pixel[channel]);
                 }
-                count += 1;
             }
         }
+        window.clear();
     }
 
     for local_x in 0..rect.width {
         let mut totals = [0_u64; 4];
         let initial_bottom = radius.min(rect.height - 1);
         for local_y in 0..=initial_bottom {
-            let source_offset = local_offset(local_x, local_y);
+            let source_offset = pixel_offset(image, rect.x + local_x, rect.y + local_y);
+            let pixel = image.rgba[source_offset..source_offset + 4]
+                .try_into()
+                .expect("RGBA pixels always have four channels");
+            window.push_back(pixel);
             for (channel, total) in totals.iter_mut().enumerate() {
-                *total += u64::from(horizontal[source_offset + channel]);
+                *total += u64::from(pixel[channel]);
             }
         }
-        let mut count = u64::from(initial_bottom + 1);
         for local_y in 0..rect.height {
             let target_offset = pixel_offset(image, rect.x + local_x, rect.y + local_y);
             for (channel, total) in totals.iter().enumerate() {
-                image.rgba[target_offset + channel] = (*total / count) as u8;
+                image.rgba[target_offset + channel] = (*total / window.len() as u64) as u8;
             }
             if local_y >= radius {
-                let remove_offset = local_offset(local_x, local_y - radius);
+                let removed = window
+                    .pop_front()
+                    .expect("the blur window contains the current pixel");
                 for (channel, total) in totals.iter_mut().enumerate() {
-                    *total -= u64::from(horizontal[remove_offset + channel]);
+                    *total -= u64::from(removed[channel]);
                 }
-                count -= 1;
             }
             if let Some(add_y) = local_y.checked_add(radius + 1)
                 && add_y < rect.height
             {
-                let add_offset = local_offset(local_x, add_y);
+                let add_offset = pixel_offset(image, rect.x + local_x, rect.y + add_y);
+                let pixel = image.rgba[add_offset..add_offset + 4]
+                    .try_into()
+                    .expect("RGBA pixels always have four channels");
+                window.push_back(pixel);
                 for (channel, total) in totals.iter_mut().enumerate() {
-                    *total += u64::from(horizontal[add_offset + channel]);
+                    *total += u64::from(pixel[channel]);
                 }
-                count += 1;
             }
         }
+        window.clear();
     }
 }
 
@@ -812,6 +837,25 @@ mod tests {
     }
 
     #[test]
+    fn rejects_non_ascii_colors_without_panicking() {
+        let operation = EditorOperation::Rectangle {
+            rect: EditorRect {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 4,
+            },
+            color: "#aé123".to_owned(),
+            line_width: 1,
+        };
+
+        assert_eq!(
+            flatten(fixture(), &[operation]),
+            Err(CaptureFailure::InvalidEditorOperation)
+        );
+    }
+
+    #[test]
     fn rasterizes_even_stroke_widths_at_the_requested_diameter() {
         let mut image = DecodedImage {
             width: 8,
@@ -919,5 +963,27 @@ mod tests {
             assert_eq!(&output.rgba[..32], &source.rgba[..32]);
             assert_eq!(&output.rgba[4 * 8 * 4..], &source.rgba[4 * 8 * 4..]);
         }
+    }
+
+    #[test]
+    fn blur_matches_the_separable_box_average() {
+        let output = flatten(
+            fixture(),
+            &[EditorOperation::Blur {
+                rect: EditorRect {
+                    x: 0,
+                    y: 0,
+                    width: 8,
+                    height: 8,
+                },
+                radius: 1,
+            }],
+        )
+        .expect("blur must flatten");
+
+        assert_eq!(
+            &output.rgba[pixel_offset(&output, 4, 4)..pixel_offset(&output, 4, 4) + 4],
+            &[80, 80, 44, 255]
+        );
     }
 }
