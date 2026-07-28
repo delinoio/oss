@@ -213,15 +213,18 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
                 width: exact_global.width,
                 height: exact_global.height,
             };
-            let captured = self.native.capture(NativeCaptureRequest {
-                source: NativeCaptureSource::Display {
-                    id: native_id,
-                    source_rect,
+            let captured = self.capture_native(
+                NativeCaptureRequest {
+                    source: NativeCaptureSource::Display {
+                        id: native_id,
+                        source_rect,
+                    },
+                    width: region.pixels.width,
+                    height: region.pixels.height,
+                    pointer: request.pointer,
                 },
-                width: region.pixels.width,
-                height: region.pixels.height,
-                pointer: request.pointer,
-            })?;
+                active,
+            )?;
             validate_native_frame(&captured, region.pixels.width, region.pixels.height)?;
 
             let destination =
@@ -230,6 +233,16 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
         }
         active.check_cancelled()?;
         Ok(canvas)
+    }
+
+    fn capture_native(
+        &self,
+        request: NativeCaptureRequest,
+        active: &ActiveCapture<'_, A>,
+    ) -> Result<BackendFrame, BackendFailure> {
+        let result = self.native.capture(request);
+        active.check_cancelled()?;
+        result
     }
 }
 
@@ -290,12 +303,15 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
             CaptureSourceSelection::Window { window_id } => {
                 let native_id = parse_source_id(&window_id.0, WINDOW_ID_PREFIX)
                     .ok_or(BackendFailure::WindowLost)?;
-                let frame = self.native.capture(NativeCaptureRequest {
-                    source: NativeCaptureSource::Window { id: native_id },
-                    width: request.expected_frame_size.width,
-                    height: request.expected_frame_size.height,
-                    pointer: request.pointer,
-                })?;
+                let frame = self.capture_native(
+                    NativeCaptureRequest {
+                        source: NativeCaptureSource::Window { id: native_id },
+                        width: request.expected_frame_size.width,
+                        height: request.expected_frame_size.height,
+                        pointer: request.pointer,
+                    },
+                    &active,
+                )?;
                 validate_native_frame(
                     &frame,
                     request.expected_frame_size.width,
@@ -1081,6 +1097,33 @@ mod tests {
         let catalog = core.source_catalog().expect("catalog");
         let (started_sender, started_receiver) = std::sync::mpsc::channel();
         let (release_sender, release_receiver) = std::sync::mpsc::channel();
+        *fixture.capture_started.lock().expect("started lock") = Some(started_sender);
+        *fixture.capture_release.lock().expect("release lock") = Some(release_receiver);
+
+        let capture_core = core.clone();
+        let capture = std::thread::spawn(move || capture_core.begin(region_request(&catalog)));
+        started_receiver.recv().expect("capture started");
+        core.cancel(&CaptureSessionId("macos-session".to_owned()))
+            .expect("cancel");
+        release_sender.send(()).expect("release capture");
+
+        assert_eq!(
+            capture.join().expect("capture thread"),
+            Err(CaptureFailure::Cancelled)
+        );
+        assert!(backend.active.lock().expect("active lock").is_empty());
+    }
+
+    #[test]
+    fn cancellation_wins_over_a_late_native_failure() {
+        let fixture = Arc::new(FixtureNative::retina());
+        let backend = Arc::new(MacosCaptureBackend::new(fixture.clone()));
+        let core = Arc::new(CaptureCore::new(backend.clone()));
+        let catalog = core.source_catalog().expect("catalog");
+        let (started_sender, started_receiver) = std::sync::mpsc::channel();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel();
+        *fixture.capture_failure.lock().expect("failure lock") =
+            Some(BackendFailure::CaptureFailed);
         *fixture.capture_started.lock().expect("started lock") = Some(started_sender);
         *fixture.capture_release.lock().expect("release lock") = Some(release_receiver);
 

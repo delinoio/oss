@@ -653,9 +653,12 @@ jobs:
           filters: |
             capture:
               - .github/workflows/CI.yml
+              - .nvmrc
               - Cargo.toml
               - Cargo.lock
+              - package.json
               - pnpm-lock.yaml
+              - pnpm-workspace.yaml
               - rust-toolchain
               - rust-toolchain.toml
               - apps/AGENTS.md
