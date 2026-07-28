@@ -49,6 +49,7 @@ describe("RealQA native boundaries", () => {
 
     await bridge.permissionStatus();
     await bridge.requestPermission();
+    await bridge.inspectCapabilities();
     await bridge.listSources();
     await bridge.adjustSelection(selection, {
       kind: "resize",
@@ -62,6 +63,7 @@ describe("RealQA native boundaries", () => {
     expect(calls).toEqual([
       ["realqa_capture_permission_status", undefined],
       ["realqa_request_capture_permission", undefined],
+      ["realqa_inspect_capture_capabilities", undefined],
       ["realqa_list_capture_sources", undefined],
       [
         "realqa_adjust_capture_selection",

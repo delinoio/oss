@@ -6,12 +6,27 @@ mod auth;
 mod auth_native;
 #[cfg(any(feature = "desktop-cef", test))]
 mod autostart;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg(any(
+    feature = "desktop-cef",
+    feature = "linux-capture-backend",
+    feature = "mobile-system-webview",
+    test
+))]
 #[cfg_attr(test, allow(dead_code))]
 mod diagnostics;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg(any(
+    feature = "desktop-cef",
+    feature = "linux-capture-backend",
+    feature = "mobile-system-webview",
+    test
+))]
 mod local_log;
-#[cfg(any(feature = "desktop-cef", feature = "realqa-macos-capture", test))]
+#[cfg(any(
+    feature = "desktop-cef",
+    feature = "linux-capture-backend",
+    feature = "realqa-macos-capture",
+    test
+))]
 mod realqa_capture;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod shortcut;
@@ -2875,7 +2890,9 @@ fn reset_dev_hud(
 fn realqa_capture_permission_status(
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CapturePermissionStatus, realqa_capture::CaptureFailure> {
-    state.permission_status()
+    let result = state.permission_status();
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -2886,7 +2903,22 @@ fn realqa_capture_permission_status(
 fn realqa_request_capture_permission(
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CapturePermissionStatus, realqa_capture::CaptureFailure> {
-    state.request_permission()
+    let result = state.request_permission();
+    realqa_capture::record_outcome(&result);
+    result
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_inspect_capture_capabilities(
+    state: State<'_, realqa_capture::CaptureCore>,
+) -> Result<realqa_capture::CaptureCapabilities, realqa_capture::CaptureFailure> {
+    let result = state.inspect_capabilities();
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -2928,7 +2960,9 @@ async fn get_auth_session(
 fn realqa_list_capture_sources(
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureSourceCatalog, realqa_capture::CaptureFailure> {
-    state.source_catalog()
+    let result = state.source_catalog();
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -2997,7 +3031,9 @@ fn realqa_adjust_capture_selection(
     adjustment: realqa_capture::SelectionAdjustment,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::SelectionGeometry, realqa_capture::CaptureFailure> {
-    state.adjust_selection(&selection, adjustment)
+    let result = state.adjust_selection(&selection, adjustment);
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -3005,11 +3041,17 @@ fn realqa_adjust_capture_selection(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_begin_capture(
+async fn realqa_begin_capture(
     request: realqa_capture::CaptureRequest,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
-    state.begin(request)
+    let capture_core = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || capture_core.begin(request))
+        .await
+        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+        .and_then(|result| result);
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -3021,7 +3063,9 @@ fn realqa_cancel_capture(
     session_id: realqa_capture::CaptureSessionId,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<(), realqa_capture::CaptureFailure> {
-    state.cancel(&session_id)
+    let result = state.cancel(&session_id);
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -3089,6 +3133,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             get_auth_session,
             start_authentication,
             logout_authentication,
+            realqa_inspect_capture_capabilities,
             realqa_list_capture_sources,
             realqa_adjust_capture_selection,
             realqa_begin_capture,

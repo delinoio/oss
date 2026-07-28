@@ -13,6 +13,19 @@ export enum CaptureMode {
   MultiMonitor = "multi-monitor",
 }
 
+export enum CaptureDisplayProtocol {
+  Native = "native",
+  X11 = "x11",
+  XWayland = "xwayland",
+  WaylandPortal = "wayland-portal",
+}
+
+export enum SelectionAdjustmentAuthority {
+  Application = "application",
+  Portal = "portal",
+  Unavailable = "unavailable",
+}
+
 export enum PointerInclusion {
   Include = "include",
   Exclude = "exclude",
@@ -51,6 +64,7 @@ export enum CaptureFailure {
   ProtectedContent = "protected-content",
   WindowLost = "window-lost",
   DisplayRemoved = "display-removed",
+  ModeUnavailable = "mode-unavailable",
   DisplaySnapshotChanged = "display-snapshot-changed",
   InvalidDisplaySnapshot = "invalid-display-snapshot",
   InvalidSelection = "invalid-selection",
@@ -109,9 +123,23 @@ export interface WindowSource {
   };
 }
 
+export interface CaptureModeCapability {
+  readonly mode: CaptureMode;
+  readonly pointerOptions: readonly PointerInclusion[];
+  readonly portalApprovalRequired: boolean;
+  readonly selectionAdjustment: SelectionAdjustmentAuthority;
+}
+
+export interface CaptureCapabilities {
+  readonly platform: CapturePlatform;
+  readonly displayProtocol: CaptureDisplayProtocol;
+  readonly modes: readonly CaptureModeCapability[];
+}
+
 export interface CaptureSourceCatalog {
   readonly platform: CapturePlatform;
   readonly permission: CapturePermission;
+  readonly capabilities: CaptureCapabilities;
   readonly snapshot: DisplaySnapshot;
   readonly windows: readonly WindowSource[];
 }
@@ -212,6 +240,7 @@ export type InvokeCommand = <T>(
 export interface RealQaCaptureBridge {
   permissionStatus(): Promise<CapturePermissionStatus>;
   requestPermission(): Promise<CapturePermissionStatus>;
+  inspectCapabilities(): Promise<CaptureCapabilities>;
   listSources(): Promise<CaptureSourceCatalog>;
   adjustSelection(
     selection: SelectionGeometry,
@@ -238,6 +267,10 @@ export function createRealQaCaptureBridge(
     requestPermission: () =>
       invokeCommand<CapturePermissionStatus>(
         "realqa_request_capture_permission",
+      ),
+    inspectCapabilities: () =>
+      invokeCommand<CaptureCapabilities>(
+        "realqa_inspect_capture_capabilities",
       ),
     listSources: () =>
       invokeCommand<CaptureSourceCatalog>("realqa_list_capture_sources"),

@@ -24,9 +24,11 @@ and diagnostics.
 | Submission reads | `realqa:submissions:read` |
 | Submission, upload, submit, rebind, and deletion mutations | `realqa:submissions:write` |
 
-The forwarded bearer additionally requires the delibase scope used by the
-server-side billing or authorization operation. It is never sent to GitHub,
-R2, or a public image handler, and the RealQA server never retains it.
+The implemented foundation requires `delibase:account:read` on the forwarded
+bearer for preset/tracker calls and submission reads. Submission mutations
+require `delibase:usage:execute`, matching the eventual live usage boundary.
+It is never sent to GitHub, R2, or a public image handler, and the RealQA server
+never retains it.
 
 `RealQAPresetService.DeleteFeatureData` in a delibase lifecycle mode is the sole
 exception. That mode uses only `Authorization: Bearer
@@ -36,4 +38,3 @@ Every other RealQA procedure rejects that lifecycle M2M identity.
 
 Raw Logto client secrets, refresh tokens, GitHub tokens, R2 credentials, signed
 upload headers, and webhook secrets are never accepted as protobuf fields.
-

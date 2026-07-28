@@ -4,7 +4,7 @@
 
 - Project/component: `devhud` / `realqa-server`
 - Canonical implementation path: `servers/devhud-realqa`
-- Status: planned server for issue #757 backed by the implemented `devhud.realqa.v1` source contract and private generated-client package; no service directory, deployment, DNS, R2 production bucket, production secret, registered GitHub App, published image/extension, enabled catalog record, or production operation is claimed.
+- Status: implemented inactive server foundation for issue #757 backed by the implemented `devhud.realqa.v1` source contract and private generated-client package. PostgreSQL/sqlc persistence, preset/destination/repository-schema synchronization, dual-audience authentication, typed deletion, and health endpoints exist under `servers/devhud-realqa`; submission execution, uploads, provider callbacks/webhooks, R2/public-image delivery, recurring billing, deployment, DNS, production secrets, registered GitHub App, published image/extension, enabled catalog records, and production operation remain unimplemented or inactive.
 - Future canonical API origin and Logto audience: `https://realqa.deli.dev`; future public-image origin: `https://assets.realqa.deli.dev`. Both are inactive contract identifiers.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrow HTTP handlers, Cloudflare R2 signed uploads/public delivery, and shared `servers/internal` infrastructure where its generic contracts apply.
 
@@ -25,6 +25,7 @@
 - A preset contains capture mode, pointer default, normal/DOM selector default, tracker destination/repository, template/form selection, supported default labels/assignees/milestone/project, ordered process/window-title URL rules, shortcut, owner/billing scope, and revision.
 - Preset creation requires a stable client-generated UUID v7 idempotency key scoped to the authenticated subject and operation. Exact replay returns the original preset and revision without consuming another limit slot; reuse with changed creation input fails with the typed idempotency-conflict reason.
 - Process/title rules use a Rust-compatible non-backtracking regex syntax with compilation and length limits. Resolve in order by exact process name plus an optional safe title match and URL template.
+- The implemented subset is documented in `servers/devhud-realqa/README.md`: 512 source bytes, 2,048 compiled instructions, bounded repetitions of at most 100, and at most 64 ordered rules. It permits the shared Rust `regex`/Go RE2 literal, class, Unicode-class, grouping, alternation, anchor, quantifier, and `i/m/s/U` flag subset; it rejects look-around, backreferences/numeric and octal escapes, named captures, `\C`, `\Q...\E`, class set algebra, and free-spacing mode. Process matching is exact and case-sensitive, title matching is optional, and the first valid expanded HTTP/HTTPS credential-free URL wins.
 
 ## GitHub.com Tracker Boundary
 
@@ -111,7 +112,7 @@ The exact sequence is:
 
 ## Build and Test
 
-Once implementation exists, canonical server checks are:
+Canonical implemented-foundation checks are:
 
 - `gofmt`/format verification for `servers/devhud-realqa`;
 - `go vet ./servers/devhud-realqa/...`;
@@ -120,6 +121,12 @@ Once implementation exists, canonical server checks are:
 - PostgreSQL integration/concurrency tests;
 - fixture GitHub App, R2, callback/webhook, permission, reconciliation, WAF/rate, billing, retention, and deletion tests;
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
+
+The current CI slice runs format/vet/tests, sqlc reproducibility, ordered
+migration checks, and PostgreSQL concurrent/idempotent migration application.
+Provider, R2, billing, retention, public-image, and image-build checks in the
+remaining list become mandatory with those implementation slices; the current
+inactive server does not simulate successful submission or catalog activation.
 
 Coverage must include all size/body boundaries, verification failures and bombs, replay-safe preset creation, templates/forms, marker reconciliation without duplicates, crash-safe post-provider attempt recovery without a client retry, idempotent promotion or 24-hour removed-placeholder cleanup, private staging/promotion/23-hour upload deadline/authenticated one-hour finalization/24-hour cleanup, disconnect before finalization with no background live-usage call and natural reservation expiry, short transfer-TTL rejection and no late commit, lost initial storage-authorization response replay through the durable create attempt before cleanup, abandoned-submission authorization closure without orphan grants, authorized paginated submission/asset discovery after local draft deletion, explicit deletion/placeholder and same-submission image-reference-only best-effort issue update, declared-upload-versus-sanitized byte accounting with commit-at-most-reservation, transfer/storage rounding and zero-unit mutation skipping, completed-day durable checkpoint/oldest-first retry/reservation-before-age-out recovery, explicit grace transition for an unreservable missed period without silent skip or back-billing, serialized current-day deletion/rebind cutoffs without missed or double accrual, live/background outbound delibase client-credentials acquisition/startup failure and service-binding rejection, serialized payer rebind replay/concurrency/stale-mapping/substitution plus `ACTIVE`/`REVOKED`/`ACCESS_LOST` source grants, deletion closure for `RESOURCE_DELETED`/`REVOKED`/`ACCESS_LOST`/`OWNER_DELETED`, 30-day grace/no back-billing and public tombstone/object deletion during a delibase outage with later billing teardown, rate limits, provider-credential envelope encryption/rotation and ciphertext-only backups, redaction, exact lifecycle-client pinning and peer-M2M rejection, owner and delibase-lifecycle deletion authorization including scoped connection/installation/credential removal, deletion-job replay/absent data, browser-origin rejection, and GitHub.com-only rejection.
 

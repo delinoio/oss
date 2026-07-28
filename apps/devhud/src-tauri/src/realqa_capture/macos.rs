@@ -12,11 +12,12 @@ use std::{
 use serde::Deserialize;
 
 use super::{
-    BackendFailure, BackendFrame, CaptureBackend, CapturePermission, CapturePermissionGuidance,
+    BackendFailure, BackendFrame, CaptureBackend, CaptureCapabilities, CaptureDisplayProtocol,
+    CaptureMode, CaptureModeCapability, CapturePermission, CapturePermissionGuidance,
     CapturePermissionStatus, CapturePlatform, CaptureSessionId, CaptureSourceSelection,
     DisplayDescriptor, DisplayId, DisplaySnapshot, LogicalRect, PointerInclusion,
-    ResolvedCaptureRequest, WindowAvailability, WindowMetadata, WindowSource, WindowSourceId,
-    decoded_byte_len,
+    ResolvedCaptureRequest, SelectionAdjustmentAuthority, WindowAvailability, WindowMetadata,
+    WindowSource, WindowSourceId, decoded_byte_len,
     geometry::{PhysicalSize, PixelRect, ScaleFactor},
 };
 
@@ -173,6 +174,7 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
                 )
                 .map_err(|_| BackendFailure::CaptureFailed)?
             ],
+            approved_layout: None,
         };
         let output_scale = request
             .pixel_regions
@@ -253,6 +255,31 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
 impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
     fn platform(&self) -> CapturePlatform {
         CapturePlatform::Macos
+    }
+
+    fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure> {
+        Ok(CaptureCapabilities {
+            platform: CapturePlatform::Macos,
+            display_protocol: CaptureDisplayProtocol::Native,
+            modes: [
+                CaptureMode::Region,
+                CaptureMode::Window,
+                CaptureMode::Display,
+                CaptureMode::MultiMonitor,
+            ]
+            .into_iter()
+            .map(|mode| CaptureModeCapability {
+                mode,
+                pointer_options: vec![PointerInclusion::Include, PointerInclusion::Exclude],
+                portal_approval_required: false,
+                selection_adjustment: if mode == CaptureMode::Region {
+                    SelectionAdjustmentAuthority::Application
+                } else {
+                    SelectionAdjustmentAuthority::Unavailable
+                },
+            })
+            .collect(),
+        })
     }
 
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {
@@ -785,6 +812,7 @@ impl MacosNativeAdapter for SystemMacosNativeAdapter {
             width: native.width,
             height: native.height,
             rgba,
+            approved_layout: None,
         })
     }
 }
@@ -918,6 +946,10 @@ mod tests {
     impl CaptureBackend for FinishGateBackend {
         fn platform(&self) -> CapturePlatform {
             self.inner.platform()
+        }
+
+        fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure> {
+            self.inner.capabilities()
         }
 
         fn permission(&self) -> Result<CapturePermission, BackendFailure> {
@@ -1073,6 +1105,7 @@ mod tests {
                 width: request.width,
                 height: request.height,
                 rgba,
+                approved_layout: None,
             })
         }
     }
@@ -1368,6 +1401,7 @@ mod tests {
             width: 1,
             height: 1,
             rgba: vec![0; 3],
+            approved_layout: None,
         });
         assert_eq!(
             core.begin(region_request(&catalog)),

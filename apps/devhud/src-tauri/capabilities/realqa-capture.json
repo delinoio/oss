@@ -8,6 +8,7 @@
   "permissions": [
     "allow-realqa-capture-permission-status",
     "allow-realqa-request-capture-permission",
+    "allow-realqa-inspect-capture-capabilities",
     "allow-realqa-list-capture-sources",
     "allow-realqa-adjust-capture-selection",
     "allow-realqa-begin-capture",

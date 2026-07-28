@@ -193,6 +193,7 @@ pub(crate) enum DiagnosticEventId {
     SignatureOutcome,
     InstallationOutcome,
     DiagnosticsExportOutcome,
+    RealqaCaptureOutcome,
 }
 
 impl DiagnosticEventId {
@@ -214,6 +215,7 @@ impl DiagnosticEventId {
             Self::SignatureOutcome => "signature-outcome",
             Self::InstallationOutcome => "installation-outcome",
             Self::DiagnosticsExportOutcome => "diagnostics-export-outcome",
+            Self::RealqaCaptureOutcome => "realqa-capture-outcome",
         }
     }
 }
@@ -260,6 +262,21 @@ pub(crate) enum DiagnosticClassification {
     InstallationFailed,
     DiagnosticsExported,
     DiagnosticsExportFailed,
+    RealqaCaptureCompleted,
+    RealqaCaptureUnsupportedPlatform,
+    RealqaCaptureBackendUnavailable,
+    RealqaCapturePermissionRequired,
+    RealqaCapturePermissionDenied,
+    RealqaCapturePermissionLost,
+    RealqaCaptureCancelled,
+    RealqaCapturePortalCancelled,
+    RealqaCaptureProtectedContent,
+    RealqaCaptureWindowLost,
+    RealqaCaptureModeUnavailable,
+    RealqaCaptureDisplayChanged,
+    RealqaCaptureInvalidRequest,
+    RealqaCaptureImageRejected,
+    RealqaCaptureFailed,
 }
 
 impl DiagnosticClassification {
@@ -306,6 +323,21 @@ impl DiagnosticClassification {
             Self::InstallationFailed => "installation-failed",
             Self::DiagnosticsExported => "diagnostics-exported",
             Self::DiagnosticsExportFailed => "diagnostics-export-failed",
+            Self::RealqaCaptureCompleted => "realqa-capture-completed",
+            Self::RealqaCaptureUnsupportedPlatform => "realqa-capture-unsupported-platform",
+            Self::RealqaCaptureBackendUnavailable => "realqa-capture-backend-unavailable",
+            Self::RealqaCapturePermissionRequired => "realqa-capture-permission-required",
+            Self::RealqaCapturePermissionDenied => "realqa-capture-permission-denied",
+            Self::RealqaCapturePermissionLost => "realqa-capture-permission-lost",
+            Self::RealqaCaptureCancelled => "realqa-capture-cancelled",
+            Self::RealqaCapturePortalCancelled => "realqa-capture-portal-cancelled",
+            Self::RealqaCaptureProtectedContent => "realqa-capture-protected-content",
+            Self::RealqaCaptureWindowLost => "realqa-capture-window-lost",
+            Self::RealqaCaptureModeUnavailable => "realqa-capture-mode-unavailable",
+            Self::RealqaCaptureDisplayChanged => "realqa-capture-display-changed",
+            Self::RealqaCaptureInvalidRequest => "realqa-capture-invalid-request",
+            Self::RealqaCaptureImageRejected => "realqa-capture-image-rejected",
+            Self::RealqaCaptureFailed => "realqa-capture-failed",
         }
     }
 }
@@ -748,8 +780,9 @@ mod tests {
             DiagnosticClassification::UpdaterUnavailable,
             DiagnosticClassification::SignatureInvalid,
             DiagnosticClassification::InstallationFailed,
+            DiagnosticClassification::RealqaCapturePortalCancelled,
         ];
-        assert_eq!(classifications.len(), 9);
+        assert_eq!(classifications.len(), 10);
         assert!(
             classifications
                 .iter()
