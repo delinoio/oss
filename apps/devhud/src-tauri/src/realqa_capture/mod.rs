@@ -283,6 +283,10 @@ pub(crate) struct CaptureResult {
 
 pub(crate) trait CaptureBackend: Send + Sync {
     fn platform(&self) -> CapturePlatform;
+    fn start_capture(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        Ok(())
+    }
+    fn finish_capture(&self, _session_id: &CaptureSessionId) {}
     fn permission(&self) -> Result<CapturePermission, BackendFailure>;
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure>;
     fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure>;
@@ -338,6 +342,16 @@ impl CaptureCore {
         if request.session_id.0.is_empty() || request.session_id.0.len() > 128 {
             return Err(CaptureFailure::InvalidSelection);
         }
+        let session_id = request.session_id.clone();
+        self.backend
+            .start_capture(&session_id)
+            .map_err(CaptureFailure::from)?;
+        let result = self.begin_started(request);
+        self.backend.finish_capture(&session_id);
+        result
+    }
+
+    fn begin_started(&self, request: CaptureRequest) -> Result<CaptureResult, CaptureFailure> {
         self.require_granted_permission()?;
         let snapshot = self.current_snapshot()?;
         if snapshot.snapshot_id != request.snapshot_id {
@@ -686,6 +700,24 @@ impl PlatformCaptureBackend {
 impl CaptureBackend for PlatformCaptureBackend {
     fn platform(&self) -> CapturePlatform {
         self.platform
+    }
+
+    fn start_capture(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        #[cfg(target_os = "windows")]
+        if let Some(backend) = &self.windows {
+            return backend.start_capture(session_id);
+        }
+        let _ = session_id;
+        Ok(())
+    }
+
+    fn finish_capture(&self, session_id: &CaptureSessionId) {
+        #[cfg(target_os = "windows")]
+        if let Some(backend) = &self.windows {
+            backend.finish_capture(session_id);
+            return;
+        }
+        let _ = session_id;
     }
 
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {

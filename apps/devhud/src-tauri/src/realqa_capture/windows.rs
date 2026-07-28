@@ -324,7 +324,19 @@ impl WindowsCaptureBackend {
         Ok(cancel)
     }
 
-    fn finish_capture(&self, session_id: &CaptureSessionId) {
+    fn capture_token(
+        &self,
+        session_id: &CaptureSessionId,
+    ) -> Result<Arc<AtomicBool>, BackendFailure> {
+        self.active_captures
+            .lock()
+            .map_err(|_| BackendFailure::CaptureFailed)?
+            .get(session_id)
+            .cloned()
+            .ok_or(BackendFailure::CaptureFailed)
+    }
+
+    fn unregister_capture(&self, session_id: &CaptureSessionId) {
         if let Ok(mut active) = self.active_captures.lock() {
             active.remove(session_id);
         }
@@ -520,6 +532,14 @@ impl CaptureBackend for WindowsCaptureBackend {
         CapturePlatform::Windows
     }
 
+    fn start_capture(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        self.register_capture(session_id).map(|_| ())
+    }
+
+    fn finish_capture(&self, session_id: &CaptureSessionId) {
+        self.unregister_capture(session_id);
+    }
+
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {
         self.adapter.permission().map_err(BackendFailure::from)
     }
@@ -578,10 +598,8 @@ impl CaptureBackend for WindowsCaptureBackend {
     }
 
     fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
-        let cancel = self.register_capture(&request.session_id)?;
-        let result = self.capture_inner(request, &cancel);
-        self.finish_capture(&request.session_id);
-        result
+        let cancel = self.capture_token(&request.session_id)?;
+        self.capture_inner(request, &cancel)
     }
 
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
@@ -1399,7 +1417,10 @@ mod system {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicUsize;
+    use std::{
+        sync::{Barrier, atomic::AtomicUsize},
+        thread,
+    };
 
     use super::*;
     use crate::realqa_capture::{
@@ -1417,6 +1438,7 @@ mod tests {
         remove_display_on_call: Mutex<Option<usize>>,
         displays_after_capture: Mutex<Option<Vec<WindowsDisplay>>>,
         window_after_capture: Mutex<Option<WindowsWindow>>,
+        permission_barrier: Mutex<Option<Arc<Barrier>>>,
     }
 
     impl FixtureAdapter {
@@ -1490,13 +1512,24 @@ mod tests {
                 remove_display_on_call: Mutex::new(None),
                 displays_after_capture: Mutex::new(None),
                 window_after_capture: Mutex::new(None),
+                permission_barrier: Mutex::new(None),
             }
         }
     }
 
     impl WindowsPlatformAdapter for FixtureAdapter {
         fn permission(&self) -> Result<CapturePermission, WindowsAdapterFailure> {
-            *self.permission.lock().expect("permission lock")
+            let permission = *self.permission.lock().expect("permission lock");
+            let barrier = self
+                .permission_barrier
+                .lock()
+                .expect("permission barrier lock")
+                .clone();
+            if let Some(barrier) = barrier {
+                barrier.wait();
+                barrier.wait();
+            }
+            permission
         }
 
         fn displays(&self) -> Result<Vec<WindowsDisplay>, WindowsAdapterFailure> {
@@ -2267,6 +2300,43 @@ mod tests {
         );
         core.cancel(&request.session_id)
             .expect("failed cleanup cancel");
+        assert!(
+            backend
+                .active_captures
+                .lock()
+                .expect("active lock")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn cancellation_during_request_resolution_prevents_native_capture() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let backend = Arc::new(WindowsCaptureBackend::new(adapter.clone()));
+        let core = Arc::new(CaptureCore::new(backend.clone()));
+        let catalog = core.source_catalog().expect("catalog");
+        let request = multi_monitor_request(&catalog);
+        let session_id = request.session_id.clone();
+        let permission_barrier = Arc::new(Barrier::new(2));
+        *adapter
+            .permission_barrier
+            .lock()
+            .expect("permission barrier lock") = Some(permission_barrier.clone());
+
+        let capture_core = core.clone();
+        let capture = thread::spawn(move || capture_core.begin(request));
+        permission_barrier.wait();
+        core.cancel(&session_id).expect("cancel during permission");
+        permission_barrier.wait();
+
+        assert_eq!(
+            capture.join().expect("capture thread"),
+            Err(CaptureFailure::Cancelled)
+        );
+        assert!(
+            adapter.captures.lock().expect("captures lock").is_empty(),
+            "native capture must not start after cancellation"
+        );
         assert!(
             backend
                 .active_captures
