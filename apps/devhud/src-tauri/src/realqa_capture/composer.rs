@@ -1,4 +1,10 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -57,10 +63,12 @@ struct ComposerSource {
     original: EncodedImage,
     original_encoded_bytes: u64,
     accounted_encoded_bytes: u64,
+    revision: u64,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct ComposerCore {
+    next_source_revision: AtomicU64,
     sessions: Mutex<HashMap<ComposerSessionId, ComposerSession>>,
 }
 
@@ -77,6 +85,13 @@ impl ComposerCore {
         let decoded = decode_image(&sanitized).map_err(CaptureFailure::from)?;
         let encoded_bytes = u64::try_from(sanitized.bytes.len())
             .map_err(|_| CaptureFailure::ImageEncodedLimitExceeded)?;
+        let revision = self
+            .next_source_revision
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+            .map_err(|_| CaptureFailure::CaptureFailed)?
+            + 1;
 
         let mut sessions = self
             .sessions
@@ -98,6 +113,7 @@ impl ComposerCore {
                 original: sanitized.clone(),
                 original_encoded_bytes: encoded_bytes,
                 accounted_encoded_bytes: encoded_bytes,
+                revision,
             },
         );
         Ok(ComposerImage {
@@ -117,20 +133,23 @@ impl ComposerCore {
     ) -> Result<ComposerImage, CaptureFailure> {
         validate_identifier(&request.session_id.0)?;
         validate_identifier(&request.image_id.0)?;
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| CaptureFailure::CaptureFailed)?;
-        let session = sessions
-            .get_mut(&request.session_id)
-            .ok_or(CaptureFailure::InvalidEditSequence)?;
-        let source = session
-            .images
-            .get(&request.image_id)
-            .ok_or(CaptureFailure::InvalidEditSequence)?;
-        let previous_encoded_bytes = source.accounted_encoded_bytes;
-        let original_encoded_bytes = source.original_encoded_bytes;
-        let original = decode_image(&source.original).map_err(CaptureFailure::from)?;
+        let (retained_source, original_encoded_bytes, source_revision) = {
+            let sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| CaptureFailure::CaptureFailed)?;
+            let source = sessions
+                .get(&request.session_id)
+                .and_then(|session| session.images.get(&request.image_id))
+                .ok_or(CaptureFailure::InvalidEditSequence)?;
+            (
+                source.original.clone(),
+                source.original_encoded_bytes,
+                source.revision,
+            )
+        };
+
+        let original = decode_image(&retained_source).map_err(CaptureFailure::from)?;
         let flattened = flatten(original, &request.operations)?;
         let encoded =
             encode_image(&flattened, request.output_media_type).map_err(CaptureFailure::from)?;
@@ -141,6 +160,19 @@ impl ComposerCore {
         // retained source bytes out of the session limit while also bounding
         // output growth.
         let accounted_encoded_bytes = original_encoded_bytes.max(encoded_bytes);
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| CaptureFailure::CaptureFailed)?;
+        let session = sessions
+            .get_mut(&request.session_id)
+            .ok_or(CaptureFailure::InvalidEditSequence)?;
+        let previous_encoded_bytes = session
+            .images
+            .get(&request.image_id)
+            .filter(|source| source.revision == source_revision)
+            .map(|source| source.accounted_encoded_bytes)
+            .ok_or(CaptureFailure::InvalidEditSequence)?;
         session
             .budget
             .replace(previous_encoded_bytes, accounted_encoded_bytes)
@@ -267,6 +299,39 @@ mod tests {
             composer.accept_image(request("../session", "image-1")),
             Err(CaptureFailure::InvalidSelection)
         );
+    }
+
+    #[test]
+    fn source_revisions_survive_session_reset_to_reject_stale_flatten_results() {
+        let composer = ComposerCore::default();
+        composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("image must be accepted");
+        let first_revision = composer
+            .sessions
+            .lock()
+            .expect("sessions lock must be available")
+            .get(&ComposerSessionId("session-1".to_owned()))
+            .and_then(|session| session.images.get(&ComposerImageId("image-1".to_owned())))
+            .expect("source must exist")
+            .revision;
+
+        composer
+            .reset_session(&ComposerSessionId("session-1".to_owned()))
+            .expect("session must reset");
+        composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("image must be accepted again");
+        let second_revision = composer
+            .sessions
+            .lock()
+            .expect("sessions lock must be available")
+            .get(&ComposerSessionId("session-1".to_owned()))
+            .and_then(|session| session.images.get(&ComposerImageId("image-1".to_owned())))
+            .expect("replacement source must exist")
+            .revision;
+
+        assert!(second_revision > first_revision);
     }
 
     #[test]

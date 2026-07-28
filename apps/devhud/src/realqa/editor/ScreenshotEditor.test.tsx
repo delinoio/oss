@@ -12,6 +12,8 @@ import {
 } from "../capture";
 import {
   ScreenshotEditor,
+  blurPreviewTiles,
+  boxBlurPreviewPixels,
   pixelatePreviewPixels,
   pixelatePreviewTiles,
 } from "./ScreenshotEditor";
@@ -314,7 +316,7 @@ describe("ScreenshotEditor", () => {
     });
   });
 
-  it("previews blur and source-derived pixelation using each operation's strength", async () => {
+  it("previews native box blur and source-derived pixelation", async () => {
     const user = userEvent.setup();
     const { canvas, container } = fixture();
     const lineWidth = screen.getByRole("slider", { name: /Line width/u });
@@ -324,10 +326,10 @@ describe("ScreenshotEditor", () => {
     fireEvent.pointerDown(canvas, { clientX: 50, clientY: 40, pointerId: 1 });
     fireEvent.pointerMove(canvas, { clientX: 250, clientY: 200, pointerId: 1 });
     fireEvent.pointerUp(canvas, { clientX: 250, clientY: 200, pointerId: 1 });
-    expect(container.querySelector("feGaussianBlur")).toHaveAttribute(
-      "stdDeviation",
-      "10",
-    );
+    const blurPreview = container.querySelector("canvas.editor-blur");
+    expect(blurPreview).toHaveAttribute("height", "33");
+    expect(blurPreview).toHaveAttribute("width", "41");
+    expect(container.querySelector("feGaussianBlur")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
     await user.click(screen.getByRole("button", { name: "Pixelate" }));
@@ -341,6 +343,40 @@ describe("ScreenshotEditor", () => {
     expect(pixelPreview?.parentElement).toHaveAttribute("height", "42");
     expect(pixelPreview?.parentElement).toHaveAttribute("width", "42");
     expect(container.querySelector("pattern")).not.toBeInTheDocument();
+  });
+
+  it("matches the native separable box average and bounds blur scratch tiles", () => {
+    const pixels = new Uint8ClampedArray(8 * 8 * 4);
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 8; x += 1) {
+        pixels.set(
+          [x * 20, y * 20, x * 10 + y, 255],
+          (y * 8 + x) * 4,
+        );
+      }
+    }
+
+    const blurred = boxBlurPreviewPixels(
+      pixels,
+      8,
+      8,
+      1,
+      { x: 0, y: 0, width: 8, height: 8 },
+    );
+    expect(Array.from(blurred.slice((4 * 8 + 4) * 4, (4 * 8 + 5) * 4))).toEqual([
+      80, 80, 44, 255,
+    ]);
+
+    const tiles = blurPreviewTiles(10_000, 10_000, 128);
+    expect(tiles).toHaveLength(100);
+    expect(
+      tiles.every(
+        (tile) =>
+          tile.width * tile.height <= 1_024 * 1_024 &&
+          tile.sourceWidth <= 1_024 + 256 &&
+          tile.sourceHeight <= 1_024 + 256,
+      ),
+    ).toBe(true);
   });
 
   it("averages partial pixelation edge blocks independently", () => {
@@ -438,6 +474,24 @@ describe("ScreenshotEditor", () => {
     expect(arrowWings[0]).toHaveAttribute("y1", "40");
     expect(arrowWings[0]).toHaveAttribute("y2", "49");
     expect(canvas.querySelector("marker")).not.toBeInTheDocument();
+  });
+
+  it("previews marker numbers with native bitmap metrics", async () => {
+    const user = userEvent.setup();
+    const { canvas } = fixture();
+    await user.click(screen.getByRole("button", { name: "Numbered marker" }));
+    for (let number = 1; number <= 10; number += 1) {
+      fireEvent.pointerDown(canvas, {
+        clientX: 250,
+        clientY: 200,
+        pointerId: number,
+      });
+    }
+
+    const labels = canvas.querySelectorAll("path.editor-marker-label");
+    expect(labels).toHaveLength(10);
+    expect(labels[9]).toHaveAttribute("transform", "translate(44 34) scale(1)");
+    expect(canvas.querySelector("text")).not.toBeInTheDocument();
   });
 
   it("has no automated WCAG violations at mobile width", async () => {

@@ -616,6 +616,143 @@ function bitmapTextPath(text: string): string {
   return pixels.join("");
 }
 
+const MAX_BLUR_PREVIEW_TILE_EDGE = 1_024;
+
+interface BlurPreviewTile {
+  readonly height: number;
+  readonly sourceHeight: number;
+  readonly sourceWidth: number;
+  readonly sourceX: number;
+  readonly sourceY: number;
+  readonly width: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+export function blurPreviewTiles(
+  width: number,
+  height: number,
+  radius: number,
+): readonly BlurPreviewTile[] {
+  const tiles: BlurPreviewTile[] = [];
+  for (let y = 0; y < height; y += MAX_BLUR_PREVIEW_TILE_EDGE) {
+    const tileHeight = Math.min(MAX_BLUR_PREVIEW_TILE_EDGE, height - y);
+    const sourceY = Math.max(0, y - radius);
+    const sourceBottom = Math.min(height, y + tileHeight + radius);
+    for (let x = 0; x < width; x += MAX_BLUR_PREVIEW_TILE_EDGE) {
+      const tileWidth = Math.min(MAX_BLUR_PREVIEW_TILE_EDGE, width - x);
+      const sourceX = Math.max(0, x - radius);
+      const sourceRight = Math.min(width, x + tileWidth + radius);
+      tiles.push({
+        height: tileHeight,
+        sourceHeight: sourceBottom - sourceY,
+        sourceWidth: sourceRight - sourceX,
+        sourceX,
+        sourceY,
+        width: tileWidth,
+        x,
+        y,
+      });
+    }
+  }
+  return tiles;
+}
+
+export function boxBlurPreviewPixels(
+  pixels: Uint8ClampedArray,
+  sourceWidth: number,
+  sourceHeight: number,
+  radius: number,
+  output: EditorRect,
+): Uint8ClampedArray {
+  const horizontal = new Uint8ClampedArray(output.width * sourceHeight * 4);
+  for (let y = 0; y < sourceHeight; y += 1) {
+    let x = output.x;
+    let left = Math.max(0, x - radius);
+    let right = Math.min(sourceWidth - 1, x + radius);
+    const totals = [0, 0, 0, 0];
+    for (let sourceX = left; sourceX <= right; sourceX += 1) {
+      const sourceOffset = (y * sourceWidth + sourceX) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        totals[channel] =
+          (totals[channel] ?? 0) + (pixels[sourceOffset + channel] ?? 0);
+      }
+    }
+    for (let outputX = 0; outputX < output.width; outputX += 1) {
+      const count = right - left + 1;
+      const targetOffset = (y * output.width + outputX) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        horizontal[targetOffset + channel] = Math.floor(
+          (totals[channel] ?? 0) / count,
+        );
+      }
+      x += 1;
+      const nextLeft = Math.max(0, x - radius);
+      const nextRight = Math.min(sourceWidth - 1, x + radius);
+      while (left < nextLeft) {
+        const sourceOffset = (y * sourceWidth + left) * 4;
+        for (let channel = 0; channel < 4; channel += 1) {
+          totals[channel] =
+            (totals[channel] ?? 0) - (pixels[sourceOffset + channel] ?? 0);
+        }
+        left += 1;
+      }
+      while (right < nextRight) {
+        right += 1;
+        const sourceOffset = (y * sourceWidth + right) * 4;
+        for (let channel = 0; channel < 4; channel += 1) {
+          totals[channel] =
+            (totals[channel] ?? 0) + (pixels[sourceOffset + channel] ?? 0);
+        }
+      }
+    }
+  }
+
+  const blurred = new Uint8ClampedArray(output.width * output.height * 4);
+  for (let x = 0; x < output.width; x += 1) {
+    let y = output.y;
+    let top = Math.max(0, y - radius);
+    let bottom = Math.min(sourceHeight - 1, y + radius);
+    const totals = [0, 0, 0, 0];
+    for (let sourceY = top; sourceY <= bottom; sourceY += 1) {
+      const sourceOffset = (sourceY * output.width + x) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        totals[channel] =
+          (totals[channel] ?? 0) + (horizontal[sourceOffset + channel] ?? 0);
+      }
+    }
+    for (let outputY = 0; outputY < output.height; outputY += 1) {
+      const count = bottom - top + 1;
+      const targetOffset = (outputY * output.width + x) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        blurred[targetOffset + channel] = Math.floor(
+          (totals[channel] ?? 0) / count,
+        );
+      }
+      y += 1;
+      const nextTop = Math.max(0, y - radius);
+      const nextBottom = Math.min(sourceHeight - 1, y + radius);
+      while (top < nextTop) {
+        const sourceOffset = (top * output.width + x) * 4;
+        for (let channel = 0; channel < 4; channel += 1) {
+          totals[channel] =
+            (totals[channel] ?? 0) - (horizontal[sourceOffset + channel] ?? 0);
+        }
+        top += 1;
+      }
+      while (bottom < nextBottom) {
+        bottom += 1;
+        const sourceOffset = (bottom * output.width + x) * 4;
+        for (let channel = 0; channel < 4; channel += 1) {
+          totals[channel] =
+            (totals[channel] ?? 0) + (horizontal[sourceOffset + channel] ?? 0);
+        }
+      }
+    }
+  }
+  return blurred;
+}
+
 const MAX_PIXELATE_PREVIEW_TILE_EDGE = 1_024;
 
 interface PixelatePreviewTile {
@@ -770,6 +907,105 @@ function arrowPreviewWings(
   }));
 }
 
+function BlurredOverlay({
+  operation,
+  sourceUrl,
+}: {
+  readonly operation: Extract<EditorOperation, { readonly kind: "blur" }>;
+  readonly sourceUrl: string;
+}) {
+  const canvases = useRef(new Map<string, HTMLCanvasElement>());
+  const tiles = useMemo(
+    () =>
+      blurPreviewTiles(
+        operation.rect.width,
+        operation.rect.height,
+        operation.radius,
+      ),
+    [operation.radius, operation.rect.height, operation.rect.width],
+  );
+
+  useEffect(() => {
+    const preview = new Image();
+    preview.onload = () => {
+      const sourceCanvas = document.createElement("canvas");
+      const sourceContext = sourceCanvas.getContext("2d", {
+        willReadFrequently: true,
+      });
+      if (sourceContext === null) return;
+      for (const tile of tiles) {
+        const canvas = canvases.current.get(`${tile.x}-${tile.y}`);
+        const context = canvas?.getContext("2d");
+        if (canvas === undefined || context === null || context === undefined) {
+          continue;
+        }
+        sourceCanvas.width = tile.sourceWidth;
+        sourceCanvas.height = tile.sourceHeight;
+        sourceContext.drawImage(
+          preview,
+          operation.rect.x + tile.sourceX,
+          operation.rect.y + tile.sourceY,
+          tile.sourceWidth,
+          tile.sourceHeight,
+          0,
+          0,
+          tile.sourceWidth,
+          tile.sourceHeight,
+        );
+        const sourcePixels = sourceContext.getImageData(
+          0,
+          0,
+          tile.sourceWidth,
+          tile.sourceHeight,
+        );
+        const blurred = boxBlurPreviewPixels(
+          sourcePixels.data,
+          tile.sourceWidth,
+          tile.sourceHeight,
+          operation.radius,
+          {
+            x: tile.x - tile.sourceX,
+            y: tile.y - tile.sourceY,
+            width: tile.width,
+            height: tile.height,
+          },
+        );
+        const imageData = context.createImageData(tile.width, tile.height);
+        imageData.data.set(blurred);
+        context.putImageData(imageData, 0, 0);
+      }
+    };
+    preview.src = sourceUrl;
+    return () => {
+      preview.onload = null;
+    };
+  }, [operation, sourceUrl, tiles]);
+
+  return tiles.map((tile) => {
+    const key = `${tile.x}-${tile.y}`;
+    return (
+      <foreignObject
+        height={tile.height}
+        key={key}
+        width={tile.width}
+        x={operation.rect.x + tile.x}
+        y={operation.rect.y + tile.y}
+      >
+        <canvas
+          aria-hidden="true"
+          className="editor-blur"
+          height={tile.height}
+          ref={(canvas) => {
+            if (canvas === null) canvases.current.delete(key);
+            else canvases.current.set(key, canvas);
+          }}
+          width={tile.width}
+        />
+      </foreignObject>
+    );
+  });
+}
+
 function PixelatedOverlay({
   effectPrefix,
   index,
@@ -914,51 +1150,35 @@ function OperationOverlay({
         />
       );
     case "marker":
-      return (
-        <g>
-          <circle
-            cx={operation.center.x}
-            cy={operation.center.y}
-            fill={operation.color}
-            r={operation.size / 2}
-          />
-          <text
-            fill="#ffffff"
-            fontSize={operation.size / 2}
-            textAnchor="middle"
-            x={operation.center.x}
-            y={operation.center.y + operation.size / 6}
-          >
-            {operation.number}
-          </text>
-        </g>
-      );
+      {
+        const label = operation.number.toString();
+        const fontSize = Math.max(8, Math.floor(operation.size / 2));
+        const scale = Math.max(1, Math.floor(fontSize / 7));
+        const textWidth = label.length * 6 * scale;
+        const origin = {
+          x: Math.max(0, operation.center.x - Math.floor(textWidth / 2)),
+          y: Math.max(0, operation.center.y - Math.floor(fontSize / 2)),
+        };
+        return (
+          <g>
+            <circle
+              cx={operation.center.x}
+              cy={operation.center.y}
+              fill={operation.color}
+              r={Math.floor(operation.size / 2)}
+            />
+            <path
+              className="editor-marker-label"
+              d={bitmapTextPath(label)}
+              fill="#ffffff"
+              transform={`translate(${origin.x} ${origin.y}) scale(${scale})`}
+            />
+          </g>
+        );
+      }
     case "blur":
       return (
-        <g>
-          <defs>
-            <clipPath id={`${effectPrefix}-clip-${index}`}>
-              <rect
-                height={operation.rect.height}
-                width={operation.rect.width}
-                x={operation.rect.x}
-                y={operation.rect.y}
-              />
-            </clipPath>
-            <filter id={`${effectPrefix}-blur-${index}`}>
-              <feGaussianBlur stdDeviation={operation.radius} />
-            </filter>
-          </defs>
-          <image
-            clipPath={`url(#${effectPrefix}-clip-${index})`}
-            filter={`url(#${effectPrefix}-blur-${index})`}
-            height={source.height}
-            href={sourceUrl}
-            width={source.width}
-            x="0"
-            y="0"
-          />
-        </g>
+        <BlurredOverlay operation={operation} sourceUrl={sourceUrl} />
       );
     case "pixelate":
       return (
