@@ -101,8 +101,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		);
 		INSERT INTO realqa_github_installations (
 			id, connection_id, owner_kind, owner_id,
-			provider_installation_id, account_login
-		) VALUES ($6, $5, 'personal', $1, 757, 'fixture');
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES (
+			$6, $5, 'personal', $1, 757, 'fixture', 757,
+			'User', 'active',
+			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+		);
 		INSERT INTO realqa_repository_access (
 			installation_id, account_id, repository_id,
 			repository_owner, repository_name, issues_enabled, can_submit
@@ -126,8 +131,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		);
 		INSERT INTO realqa_github_installations (
 			id, connection_id, owner_kind, owner_id,
-			provider_installation_id, account_login
-		) VALUES ($8, $7, 'organization', $3, 758, 'fixture-org');
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES (
+			$8, $7, 'organization', $3, 758, 'fixture-org', 758,
+			'Organization', 'active',
+			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+		);
 		INSERT INTO realqa_repository_access (
 			installation_id, account_id, repository_id,
 			repository_owner, repository_name, issues_enabled, can_submit
