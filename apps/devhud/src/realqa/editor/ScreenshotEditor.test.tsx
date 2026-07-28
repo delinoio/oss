@@ -438,10 +438,28 @@ describe("ScreenshotEditor", () => {
 
     expect(preview.columns).toBe(12_500_000);
     expect(preview.rows).toBe(1);
+    expect(preview.capped).toBe(true);
     expect(preview.width).toBeLessThanOrEqual(2_048);
     expect(preview.height).toBeLessThanOrEqual(2_048);
     expect(preview.width * preview.height).toBeLessThanOrEqual(
       4 * 1_024 * 1_024,
+    );
+  });
+
+  it("warns when a pixelation preview cannot represent the native block grid", async () => {
+    const user = userEvent.setup();
+    const hugeSource = { ...source, width: 50_000_000, height: 1 };
+    const { canvas } = fixture({ initialSource: hugeSource });
+
+    await user.click(screen.getByRole("button", { name: "Pixelate" }));
+    fireEvent.pointerDown(canvas, { clientX: 0, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 500, clientY: 200, pointerId: 1 });
+
+    expect(screen.getByText(/^Pixelate edit added\./u)).toHaveTextContent(
+      "approved image may show more detail",
+    );
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "scaled below the native block grid",
     );
   });
 

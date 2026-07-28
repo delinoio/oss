@@ -262,7 +262,20 @@ function ScreenshotEditorStateProvider({
       }
       dispatch({ type: "commit", operation });
       if (isSourceEffect(operation)) setTool(EditorTool.Arrow);
-      setStatus(`${tool} edit added.`);
+      if (
+        operation.kind === "pixelate" &&
+        pixelatePreviewSize(
+          operation.rect.width,
+          operation.rect.height,
+          operation.blockSize,
+        ).capped
+      ) {
+        setStatus(
+          "Pixelate edit added. This preview is scaled below the native block grid; the approved image may show more detail.",
+        );
+      } else {
+        setStatus(`${tool} edit added.`);
+      }
     },
     [
       bounds,
@@ -787,6 +800,7 @@ interface PixelatePreviewTile {
 }
 
 interface PixelatePreviewSize {
+  readonly capped: boolean;
   readonly columns: number;
   readonly height: number;
   readonly rows: number;
@@ -806,11 +820,14 @@ export function pixelatePreviewSize(
     MAX_PIXELATE_PREVIEW_EDGE / rows,
     Math.sqrt(MAX_PIXELATE_PREVIEW_PIXELS / (columns * rows)),
   );
+  const previewWidth = Math.max(1, Math.floor(columns * previewScale));
+  const previewHeight = Math.max(1, Math.floor(rows * previewScale));
   return {
+    capped: previewWidth < columns || previewHeight < rows,
     columns,
-    height: Math.max(1, Math.floor(rows * previewScale)),
+    height: previewHeight,
     rows,
-    width: Math.max(1, Math.floor(columns * previewScale)),
+    width: previewWidth,
   };
 }
 
@@ -887,10 +904,7 @@ function renderPixelatedPreview(
   const context = canvas.getContext("2d");
   if (context === null) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  if (
-    previewSize.width < previewSize.columns ||
-    previewSize.height < previewSize.rows
-  ) {
+  if (previewSize.capped) {
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
     context.drawImage(
@@ -1497,11 +1511,26 @@ export function ScreenshotEditorInspector() {
 
 export function ScreenshotEditorActions() {
   const { approve, approving, operations, status } = useScreenshotEditor();
+  const cappedPixelatePreview = operations.some(
+    (operation) =>
+      operation.kind === "pixelate" &&
+      pixelatePreviewSize(
+        operation.rect.width,
+        operation.rect.height,
+        operation.blockSize,
+      ).capped,
+  );
   return (
     <div className="editor-actions">
       <p aria-atomic="true" className="editor-status" role="status">
         {status}
       </p>
+      {cappedPixelatePreview ? (
+        <p className="editor-preview-warning" role="note">
+          This pixelate preview is scaled below the native block grid. The
+          approved image may show more detail.
+        </p>
+      ) : null}
       <p className="muted">
         Source pixels stay in this local draft. Only the flattened image created
         after approval can become an upload payload.

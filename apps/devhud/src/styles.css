@@ -193,6 +193,14 @@ kbd { display:inline-block; padding:.25rem .45rem; border:1px solid #a1a1aa; bor
   font-weight: 700;
 }
 
+.editor-preview-warning {
+  padding: 0.75rem;
+  border-left: 0.25rem solid #9a6700;
+  background: #fff4ce;
+  color: #5f4500;
+  line-height: 1.45;
+}
+
 @media (min-width: 62rem) {
   .screenshot-editor {
     grid-template-areas:

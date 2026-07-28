@@ -108,15 +108,15 @@ struct ComposerState {
 #[derive(Debug)]
 pub(crate) struct ComposerFlattenWork {
     request: ComposerFlattenRequest,
-    permit: ComposerFlattenPermit,
+    permit: ComposerImageProcessingPermit,
 }
 
 #[derive(Debug)]
-struct ComposerFlattenPermit {
+struct ComposerImageProcessingPermit {
     in_flight: Arc<AtomicBool>,
 }
 
-impl Drop for ComposerFlattenPermit {
+impl Drop for ComposerImageProcessingPermit {
     fn drop(&mut self) {
         self.in_flight.store(false, Ordering::Release);
     }
@@ -124,7 +124,7 @@ impl Drop for ComposerFlattenPermit {
 
 #[derive(Debug, Default)]
 pub(crate) struct ComposerCore {
-    flatten_in_flight: Arc<AtomicBool>,
+    image_processing_in_flight: Arc<AtomicBool>,
     next_source_revision: AtomicU64,
     state: Mutex<ComposerState>,
 }
@@ -136,6 +136,7 @@ impl ComposerCore {
     ) -> Result<ComposerImage, CaptureFailure> {
         validate_identifier(&request.session_id.0)?;
         validate_identifier(&request.image_id.0)?;
+        let _permit = self.begin_image_processing("realqa_composer_accept_rejected")?;
 
         let sanitized = sanitize_image(&request.image, request.output_media_type)
             .map_err(CaptureFailure::from)?;
@@ -206,20 +207,27 @@ impl ComposerCore {
         &self,
         request: ComposerFlattenRequest,
     ) -> Result<ComposerFlattenWork, CaptureFailure> {
-        self.flatten_in_flight
+        Ok(ComposerFlattenWork {
+            request,
+            permit: self.begin_image_processing("realqa_composer_flatten_rejected")?,
+        })
+    }
+
+    fn begin_image_processing(
+        &self,
+        event: &'static str,
+    ) -> Result<ComposerImageProcessingPermit, CaptureFailure> {
+        self.image_processing_in_flight
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| {
                 tracing::warn!(
-                    event = "realqa_composer_flatten_rejected",
-                    "a composer flatten worker is already running"
+                    event,
+                    "another composer image-processing operation is already running"
                 );
                 CaptureFailure::CaptureFailed
             })?;
-        Ok(ComposerFlattenWork {
-            request,
-            permit: ComposerFlattenPermit {
-                in_flight: Arc::clone(&self.flatten_in_flight),
-            },
+        Ok(ComposerImageProcessingPermit {
+            in_flight: Arc::clone(&self.image_processing_in_flight),
         })
     }
 
@@ -681,9 +689,9 @@ mod tests {
     }
 
     #[test]
-    fn permits_only_one_process_wide_flatten_worker() {
+    fn permits_only_one_process_wide_image_processing_operation() {
         let composer = ComposerCore::default();
-        let request = ComposerFlattenRequest {
+        let flatten_request = ComposerFlattenRequest {
             session_id: ComposerSessionId("session-1".to_owned()),
             image_id: ComposerImageId("image-1".to_owned()),
             source_revision: 1,
@@ -691,15 +699,22 @@ mod tests {
             output_media_type: ImageMediaType::Png,
         };
         let first = composer
-            .begin_flatten_image(request.clone())
+            .begin_flatten_image(flatten_request.clone())
             .expect("first worker must receive the permit");
 
         assert!(matches!(
-            composer.begin_flatten_image(request),
+            composer.begin_flatten_image(flatten_request),
             Err(CaptureFailure::CaptureFailed)
         ));
+        assert_eq!(
+            composer.accept_image(request("session-1", "image-1")),
+            Err(CaptureFailure::CaptureFailed)
+        );
 
         drop(first);
+        composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("acceptance must reacquire the permit");
         assert!(
             composer
                 .begin_flatten_image(ComposerFlattenRequest {
