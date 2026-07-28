@@ -7,20 +7,22 @@ const appRoot = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(appRoot, "../..");
 const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
 const rustup = process.platform === "win32" ? "rustup.exe" : "rustup";
-const [rustBackend, nativeBackend, capabilitySource] = await Promise.all([
-  readFile(
-    resolve(appRoot, "src-tauri/src/realqa_capture/macos.rs"),
-    "utf8",
-  ),
-  readFile(
-    resolve(appRoot, "src-tauri/src/realqa_capture/macos_native.m"),
-    "utf8",
-  ),
-  readFile(
-    resolve(appRoot, "src-tauri/capabilities/realqa-capture.json"),
-    "utf8",
-  ),
-]);
+const [rustBackend, nativeBackend, infoPlist, capabilitySource] =
+  await Promise.all([
+    readFile(
+      resolve(appRoot, "src-tauri/src/realqa_capture/macos.rs"),
+      "utf8",
+    ),
+    readFile(
+      resolve(appRoot, "src-tauri/src/realqa_capture/macos_native.m"),
+      "utf8",
+    ),
+    readFile(resolve(appRoot, "src-tauri/Info.plist"), "utf8"),
+    readFile(
+      resolve(appRoot, "src-tauri/capabilities/realqa-capture.json"),
+      "utf8",
+    ),
+  ]);
 const capability = JSON.parse(capabilitySource);
 const failures = [];
 const requireCondition = (condition, message) => {
@@ -39,6 +41,12 @@ requireCondition(
     nativeBackend.includes("CGRequestScreenCaptureAccess") &&
     nativeBackend.includes("configuration.showsCursor = showsCursor"),
   "macOS capture must use ScreenCaptureKit with explicit permission and pointer controls",
+);
+requireCondition(
+  /<key>NSScreenCaptureUsageDescription<\/key>\s*<string>[^<]+<\/string>/u.test(
+    infoPlist,
+  ),
+  "the macOS bundle must declare a screen-capture purpose string",
 );
 requireCondition(
   !/(?:NSTask|posix_spawn|system\s*\(|Command::new)/u.test(
