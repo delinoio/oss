@@ -13,7 +13,7 @@ mod diagnostics;
 mod local_log;
 #[cfg(any(feature = "desktop-cef", test))]
 mod realqa_capture;
-#[cfg(any(feature = "desktop-cef", test))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod shortcut;
 #[cfg(any(
     all(
@@ -45,12 +45,14 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::borrow::Cow;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-use std::sync::{
-    Mutex,
-    atomic::{AtomicBool, Ordering},
-};
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+use std::sync::Mutex;
+#[cfg(feature = "desktop-cef")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview"),
+    debug_assertions
+))]
 use std::time::Duration;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::{
@@ -137,6 +139,8 @@ const TRAY_ACTIONS: [(&str, &str); 5] = [
 ];
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const SETTINGS_STORAGE_KEY: &str = "devhud.settings.v1";
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+const SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY: &str = "devhud.shortcut-effective-state.v2";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const WIDGET_CONFIGURATION_STORAGE_KEY: &str = "devhud.widget-configuration.v1";
 #[cfg(any(
@@ -561,6 +565,16 @@ impl PersistenceState {
                         )
                     })?,
             ),
+            (
+                SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY,
+                self.path_for(SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY)
+                    .ok_or_else(|| {
+                        log_persistence_unavailable("reset", SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY);
+                        PersistenceResetFailure::BeforeRecordsRemoved(
+                            PersistenceCommandError::StorageUnavailable,
+                        )
+                    })?,
+            ),
         ];
         let directory =
             self.directory
@@ -573,7 +587,7 @@ impl PersistenceState {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
-type PersistenceResetPaths<'a> = (&'a Path, [(&'static str, PathBuf); 2]);
+type PersistenceResetPaths<'a> = (&'a Path, [(&'static str, PathBuf); 3]);
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 fn pending_reset_stage_paths<'a>(
@@ -981,7 +995,7 @@ fn log_persistence_unavailable(_operation: &'static str, _key: &str) {
     any(target_os = "android", target_os = "ios")
 ))]
 fn widget_bridge_failure(
-    operation: &'static str,
+    _operation: &'static str,
     error: &WidgetBridgeError,
 ) -> PersistenceCommandError {
     let failure = match error.code() {
@@ -1016,12 +1030,61 @@ fn widget_bridge_failure(
 fn validate_current_record(key: &str, record: &str) -> Option<()> {
     let value: serde_json::Value = serde_json::from_str(record).ok()?;
     let object = value.as_object()?;
-    (object.get("version")?.as_u64() == Some(1)).then_some(())?;
     match key {
-        SETTINGS_STORAGE_KEY => validate_settings_record(object),
-        WIDGET_CONFIGURATION_STORAGE_KEY => validate_widget_configuration_record(object),
+        SETTINGS_STORAGE_KEY if object.get("version")?.as_u64() == Some(1) => {
+            validate_settings_record(object)
+        }
+        WIDGET_CONFIGURATION_STORAGE_KEY if object.get("version")?.as_u64() == Some(1) => {
+            validate_widget_configuration_record(object)
+        }
+        SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY if object.get("version")?.as_u64() == Some(2) => {
+            validate_shortcut_effective_state_record(object)
+        }
         _ => None,
     }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+fn validate_shortcut_effective_state_record(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<()> {
+    has_exact_keys(object, &["version", "state"]).then_some(())?;
+    let state = object.get("state")?.as_object()?;
+    has_exact_keys(state, &["version", "genericShortcut", "inactive"]).then_some(())?;
+    (state.get("version")?.as_u64() == Some(2)).then_some(())?;
+    match state.get("genericShortcut")? {
+        serde_json::Value::Null => {}
+        serde_json::Value::Object(shortcut) => {
+            let shortcut: shortcut::StructuredShortcut =
+                serde_json::from_value(serde_json::Value::Object(shortcut.clone())).ok()?;
+            shortcut.validate().ok()?;
+        }
+        _ => return None,
+    }
+    for owner in state.get("inactive")?.as_array()? {
+        let owner = owner.as_object()?;
+        match owner.get("feature")?.as_str()? {
+            "devhud" if has_exact_keys(owner, &["feature"]) => {}
+            "deck"
+                if has_exact_keys(owner, &["feature", "accountId", "definitionId"])
+                    && owner
+                        .get("accountId")?
+                        .as_str()
+                        .is_some_and(|value| !value.is_empty())
+                    && owner
+                        .get("definitionId")?
+                        .as_str()
+                        .is_some_and(|value| !value.is_empty()) => {}
+            "realqa"
+                if has_exact_keys(owner, &["feature", "definitionId"])
+                    && owner
+                        .get("definitionId")?
+                        .as_str()
+                        .is_some_and(|value| !value.is_empty()) => {}
+            _ => return None,
+        }
+    }
+    Some(())
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
@@ -1570,6 +1633,23 @@ fn write_settings(
     {
         state.write(SETTINGS_STORAGE_KEY, &record)
     }
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn read_shortcut_effective_state(
+    state: State<'_, PersistenceState>,
+) -> Result<Option<String>, PersistenceCommandError> {
+    state.read(SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+fn write_shortcut_effective_state(
+    record: String,
+    state: State<'_, PersistenceState>,
+) -> Result<(), PersistenceCommandError> {
+    state.write(SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY, &record)
 }
 
 #[cfg(all(
@@ -2961,6 +3041,8 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             get_runtime_info,
             read_settings,
             write_settings,
+            read_shortcut_effective_state,
+            write_shortcut_effective_state,
             read_widget_configuration,
             write_widget_configuration,
             export_diagnostics,
@@ -3106,6 +3188,8 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             get_runtime_info,
             read_settings,
             write_settings,
+            read_shortcut_effective_state,
+            write_shortcut_effective_state,
             read_widget_configuration,
             write_widget_configuration,
             export_diagnostics,

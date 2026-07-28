@@ -323,6 +323,8 @@ requireCondition(
       "allow-get-runtime-info",
       "allow-read-settings",
       "allow-write-settings",
+      "allow-read-shortcut-effective-state",
+      "allow-write-shortcut-effective-state",
       "allow-read-widget-configuration",
       "allow-write-widget-configuration",
       "allow-export-diagnostics",
@@ -331,7 +333,7 @@ requireCondition(
       "allow-start-authentication",
       "allow-logout-authentication",
     ]),
-  "mobile IPC must remain limited to local state plus closed authentication session commands",
+  "mobile IPC must remain limited to diagnostics, the three versioned records, confirmed reset, and closed authentication session commands",
 );
 requireCondition(
   runtimeSource.includes('"Unsupported"') &&
