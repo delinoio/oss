@@ -26,6 +26,7 @@ const WINDOW_ID_PREFIX: &str = "macos-window-";
 const MAX_CATALOG_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PROCESS_NAME_CHARS: usize = 128;
 const MAX_WINDOW_TITLE_CHARS: usize = 256;
+const MAX_PENDING_CANCELLATIONS: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativePermission {
@@ -82,13 +83,18 @@ pub(crate) trait MacosNativeAdapter: Send + Sync {
 pub(crate) struct MacosCaptureBackend<A: MacosNativeAdapter> {
     native: A,
     catalog: Mutex<Option<CachedCatalog>>,
-    active: Mutex<HashMap<CaptureSessionId, Arc<AtomicBool>>>,
+    active: Mutex<HashMap<CaptureSessionId, CaptureSessionState>>,
 }
 
 #[derive(Debug, Clone)]
 struct CachedCatalog {
     snapshot_id: super::DisplaySnapshotId,
     windows: Vec<WindowSource>,
+}
+
+enum CaptureSessionState {
+    Active(Arc<AtomicBool>),
+    CancelledBeforeCapture,
 }
 
 impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
@@ -137,15 +143,22 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
         &self,
         session_id: &CaptureSessionId,
     ) -> Result<ActiveCapture<'_, A>, BackendFailure> {
-        let cancelled = Arc::new(AtomicBool::new(false));
         let mut active = self
             .active
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?;
-        if active.contains_key(session_id) {
-            return Err(BackendFailure::CaptureFailed);
-        }
-        active.insert(session_id.clone(), cancelled.clone());
+        let cancelled = match active.remove(session_id) {
+            Some(CaptureSessionState::CancelledBeforeCapture) => Arc::new(AtomicBool::new(true)),
+            Some(state @ CaptureSessionState::Active(_)) => {
+                active.insert(session_id.clone(), state);
+                return Err(BackendFailure::CaptureFailed);
+            }
+            None => Arc::new(AtomicBool::new(false)),
+        };
+        active.insert(
+            session_id.clone(),
+            CaptureSessionState::Active(cancelled.clone()),
+        );
         Ok(ActiveCapture {
             backend: self,
             session_id: session_id.clone(),
@@ -299,6 +312,7 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
 
     fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
         let active = self.begin_session(&request.session_id)?;
+        active.check_cancelled()?;
         let frame = match &request.source {
             CaptureSourceSelection::Window { window_id } => {
                 let native_id = parse_source_id(&window_id.0, WINDOW_ID_PREFIX)
@@ -330,13 +344,31 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
     }
 
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
-        if let Some(cancelled) = self
+        let mut active = self
             .active
             .lock()
-            .map_err(|_| BackendFailure::CaptureFailed)?
-            .get(session_id)
-        {
-            cancelled.store(true, Ordering::Release);
+            .map_err(|_| BackendFailure::CaptureFailed)?;
+        match active.get(session_id) {
+            Some(CaptureSessionState::Active(cancelled)) => {
+                cancelled.store(true, Ordering::Release);
+            }
+            Some(CaptureSessionState::CancelledBeforeCapture) => {}
+            None => {
+                // The begin command performs blocking permission and catalog refreshes before
+                // backend capture starts. Retain a bounded early cancellation so the later
+                // session registration cannot lose the user's cancel command.
+                let pending = active
+                    .values()
+                    .filter(|state| matches!(state, CaptureSessionState::CancelledBeforeCapture))
+                    .count();
+                if pending >= MAX_PENDING_CANCELLATIONS {
+                    return Err(BackendFailure::CaptureFailed);
+                }
+                active.insert(
+                    session_id.clone(),
+                    CaptureSessionState::CancelledBeforeCapture,
+                );
+            }
         }
         Ok(())
     }
@@ -853,6 +885,8 @@ mod tests {
         capture_failure: Mutex<Option<BackendFailure>>,
         capture_override: Mutex<Option<BackendFrame>>,
         active_calls: AtomicUsize,
+        catalog_started: Mutex<Option<Sender<()>>>,
+        catalog_release: Mutex<Option<Receiver<()>>>,
         capture_started: Mutex<Option<Sender<()>>>,
         capture_release: Mutex<Option<Receiver<()>>>,
     }
@@ -906,6 +940,8 @@ mod tests {
                 capture_failure: Mutex::new(None),
                 capture_override: Mutex::new(None),
                 active_calls: AtomicUsize::new(0),
+                catalog_started: Mutex::new(None),
+                catalog_release: Mutex::new(None),
                 capture_started: Mutex::new(None),
                 capture_release: Mutex::new(None),
             }
@@ -922,6 +958,12 @@ mod tests {
         }
 
         fn catalog(&self) -> Result<NativeCatalog, BackendFailure> {
+            if let Some(started) = self.catalog_started.lock().expect("started lock").take() {
+                started.send(()).expect("catalog start receiver");
+            }
+            if let Some(release) = self.catalog_release.lock().expect("release lock").take() {
+                release.recv().expect("catalog release sender");
+            }
             Ok(self.catalog.lock().expect("catalog lock").clone())
         }
 
@@ -1111,6 +1153,38 @@ mod tests {
             capture.join().expect("capture thread"),
             Err(CaptureFailure::Cancelled)
         );
+        assert!(backend.active.lock().expect("active lock").is_empty());
+    }
+
+    #[test]
+    fn cancellation_during_catalog_refresh_prevents_native_capture() {
+        let fixture = Arc::new(FixtureNative::retina());
+        let backend = Arc::new(MacosCaptureBackend::new(fixture.clone()));
+        let core = Arc::new(CaptureCore::new(backend.clone()));
+        let catalog = core.source_catalog().expect("catalog");
+        let (started_sender, started_receiver) = std::sync::mpsc::channel();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel();
+        *fixture.catalog_started.lock().expect("started lock") = Some(started_sender);
+        *fixture.catalog_release.lock().expect("release lock") = Some(release_receiver);
+
+        let capture_core = core.clone();
+        let capture = std::thread::spawn(move || {
+            let mut request = region_request(&catalog);
+            request.source = CaptureSourceSelection::Window {
+                window_id: catalog.windows[0].id.clone(),
+            };
+            capture_core.begin(request)
+        });
+        started_receiver.recv().expect("catalog refresh started");
+        core.cancel(&CaptureSessionId("macos-session".to_owned()))
+            .expect("cancel");
+        release_sender.send(()).expect("release catalog refresh");
+
+        assert_eq!(
+            capture.join().expect("capture thread"),
+            Err(CaptureFailure::Cancelled)
+        );
+        assert_eq!(fixture.active_calls.load(Ordering::Relaxed), 0);
         assert!(backend.active.lock().expect("active lock").is_empty());
     }
 
