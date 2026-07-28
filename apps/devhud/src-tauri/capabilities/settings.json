@@ -9,6 +9,8 @@
     "allow-get-runtime-info",
     "allow-read-settings",
     "allow-write-settings",
+    "allow-read-shortcut-effective-state",
+    "allow-write-shortcut-effective-state",
     "allow-read-widget-configuration",
     "allow-export-diagnostics",
     "allow-reset-dev-hud",
