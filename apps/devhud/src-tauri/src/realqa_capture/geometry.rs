@@ -102,7 +102,7 @@ impl ScaleFactor {
         checked_pixel(scaled.floor())
     }
 
-    fn apply_ceil(self, logical: f64) -> Result<u32, CaptureFailure> {
+    pub(crate) fn apply_ceil(self, logical: f64) -> Result<u32, CaptureFailure> {
         let scaled = logical * f64::from(self.numerator) / f64::from(self.denominator);
         checked_pixel(scaled.ceil())
     }

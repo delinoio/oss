@@ -32,6 +32,7 @@ export enum ImageMediaType {
 export enum CaptureFailure {
   UnsupportedPlatform = "unsupported-platform",
   BackendUnavailable = "backend-unavailable",
+  PermissionRequired = "permission-required",
   PermissionDenied = "permission-denied",
   PermissionLost = "permission-lost",
   Cancelled = "cancelled",

@@ -56,6 +56,7 @@ pub(crate) enum CapturePermission {
 pub(crate) enum CaptureFailure {
     UnsupportedPlatform,
     BackendUnavailable,
+    PermissionRequired,
     PermissionDenied,
     PermissionLost,
     Cancelled,
@@ -209,6 +210,7 @@ pub(crate) struct ResolvedCaptureRequest {
     pub(crate) output_media_type: ImageMediaType,
     pub(crate) logical_bounds: LogicalRect,
     pub(crate) pixel_regions: Vec<DisplayPixelRegion>,
+    pub(crate) expected_frame_size: geometry::PhysicalSize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,8 +250,12 @@ impl CaptureCore {
 
     pub(crate) fn source_catalog(&self) -> Result<CaptureSourceCatalog, CaptureFailure> {
         let permission = self.backend.permission().map_err(CaptureFailure::from)?;
-        if permission == CapturePermission::Denied {
-            return Err(CaptureFailure::PermissionDenied);
+        match permission {
+            CapturePermission::Granted => {}
+            CapturePermission::PromptRequired => {
+                return Err(CaptureFailure::PermissionRequired);
+            }
+            CapturePermission::Denied => return Err(CaptureFailure::PermissionDenied),
         }
         let snapshot = self.current_snapshot()?;
         let mut windows = self
@@ -293,12 +299,20 @@ impl CaptureCore {
             CapturePermission::Granted | CapturePermission::PromptRequired => {}
         }
         let resolved = self.resolve(request, snapshot)?;
+        let expected_len = decoded_byte_len(
+            resolved.expected_frame_size.width,
+            resolved.expected_frame_size.height,
+        )
+        .map_err(CaptureFailure::from)?;
         let frame = self
             .backend
             .capture(&resolved)
             .map_err(CaptureFailure::from)?;
-        let expected_len =
-            decoded_byte_len(frame.width, frame.height).map_err(CaptureFailure::from)?;
+        if frame.width != resolved.expected_frame_size.width
+            || frame.height != resolved.expected_frame_size.height
+        {
+            return Err(CaptureFailure::MalformedImage);
+        }
         if frame.rgba.len() != expected_len {
             return Err(CaptureFailure::MalformedImage);
         }
@@ -447,6 +461,7 @@ impl CaptureCore {
             CaptureSourceSelection::Region { .. } => snapshot.pixel_regions(logical_bounds)?,
         };
         let mode = request.source.mode();
+        let expected_frame_size = expected_frame_size(&snapshot, logical_bounds, &pixel_regions)?;
         Ok(ResolvedCaptureRequest {
             session_id: request.session_id,
             snapshot,
@@ -456,8 +471,43 @@ impl CaptureCore {
             output_media_type: request.output_media_type,
             logical_bounds,
             pixel_regions,
+            expected_frame_size,
         })
     }
+}
+
+fn expected_frame_size(
+    snapshot: &DisplaySnapshot,
+    logical_bounds: LogicalRect,
+    pixel_regions: &[DisplayPixelRegion],
+) -> Result<geometry::PhysicalSize, CaptureFailure> {
+    if let [pixel_region] = pixel_regions {
+        return Ok(geometry::PhysicalSize {
+            width: pixel_region.pixels.width,
+            height: pixel_region.pixels.height,
+        });
+    }
+
+    let scale = pixel_regions
+        .iter()
+        .map(|region| {
+            snapshot
+                .display(&region.display_id)
+                .map(|display| display.scale)
+                .ok_or(CaptureFailure::InvalidDisplaySnapshot)
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .max_by(|left, right| {
+            (u64::from(left.numerator) * u64::from(right.denominator))
+                .cmp(&(u64::from(right.numerator) * u64::from(left.denominator)))
+        })
+        .ok_or(CaptureFailure::InvalidSelection)?;
+
+    Ok(geometry::PhysicalSize {
+        width: scale.apply_ceil(logical_bounds.width)?,
+        height: scale.apply_ceil(logical_bounds.height)?,
+    })
 }
 
 #[cfg(test)]
@@ -474,6 +524,7 @@ pub(crate) enum CaptureDiagnosticClassification {
     Completed,
     UnsupportedPlatform,
     BackendUnavailable,
+    PermissionRequired,
     PermissionDenied,
     PermissionLost,
     Cancelled,
@@ -510,6 +561,9 @@ impl CaptureDiagnostic {
             }
             CaptureFailure::BackendUnavailable => {
                 CaptureDiagnosticClassification::BackendUnavailable
+            }
+            CaptureFailure::PermissionRequired => {
+                CaptureDiagnosticClassification::PermissionRequired
             }
             CaptureFailure::PermissionDenied => CaptureDiagnosticClassification::PermissionDenied,
             CaptureFailure::PermissionLost => CaptureDiagnosticClassification::PermissionLost,
@@ -602,8 +656,9 @@ mod tests {
         permission: Mutex<Result<CapturePermission, BackendFailure>>,
         displays: Mutex<Vec<DisplayDescriptor>>,
         windows: Mutex<Vec<WindowSource>>,
+        display_calls: AtomicUsize,
         window_calls: AtomicUsize,
-        capture_result: Mutex<Result<BackendFrame, BackendFailure>>,
+        capture_result: Mutex<Result<Option<BackendFrame>, BackendFailure>>,
         last_request: Mutex<Option<ResolvedCaptureRequest>>,
     }
 
@@ -641,12 +696,9 @@ mod tests {
                     },
                     availability: WindowAvailability::Available,
                 }]),
+                display_calls: AtomicUsize::new(0),
                 window_calls: AtomicUsize::new(0),
-                capture_result: Mutex::new(Ok(BackendFrame {
-                    width: 1,
-                    height: 1,
-                    rgba: vec![0, 1, 2, 255],
-                })),
+                capture_result: Mutex::new(Ok(None)),
                 last_request: Mutex::new(None),
             }
         }
@@ -662,6 +714,7 @@ mod tests {
         }
 
         fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
+            self.display_calls.fetch_add(1, Ordering::Relaxed);
             Ok(self.displays.lock().expect("display lock").clone())
         }
 
@@ -678,7 +731,25 @@ mod tests {
             request: &ResolvedCaptureRequest,
         ) -> Result<BackendFrame, BackendFailure> {
             *self.last_request.lock().expect("request lock") = Some(request.clone());
-            self.capture_result.lock().expect("capture lock").clone()
+            match self.capture_result.lock().expect("capture lock").clone()? {
+                Some(frame) => Ok(frame),
+                None => {
+                    let mut rgba = vec![
+                        0;
+                        decoded_byte_len(
+                            request.expected_frame_size.width,
+                            request.expected_frame_size.height,
+                        )
+                        .expect("fixture frame dimensions must be valid")
+                    ];
+                    rgba[..4].copy_from_slice(&[0, 1, 2, 255]);
+                    Ok(BackendFrame {
+                        width: request.expected_frame_size.width,
+                        height: request.expected_frame_size.height,
+                        rgba,
+                    })
+                }
+            }
         }
 
         fn cancel(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
@@ -720,12 +791,9 @@ mod tests {
             let result = core.begin(request(&catalog)).expect("capture must work");
             assert_eq!(result.mode, CaptureMode::Region);
             assert_eq!(result.pointer, PointerInclusion::Include);
-            assert_eq!(
-                decode_image(&result.image)
-                    .expect("result image must decode")
-                    .rgba,
-                vec![0, 1, 2, 255]
-            );
+            let decoded = decode_image(&result.image).expect("result image must decode");
+            assert_eq!((decoded.width, decoded.height), (100, 50));
+            assert_eq!(&decoded.rgba[..4], &[0, 1, 2, 255]);
             let backend_request = backend
                 .last_request
                 .lock()
@@ -733,6 +801,13 @@ mod tests {
                 .clone()
                 .expect("backend must receive request");
             assert_eq!(backend_request.pixel_regions[0].pixels.x, 150);
+            assert_eq!(
+                backend_request.expected_frame_size,
+                PhysicalSize {
+                    width: 100,
+                    height: 50,
+                }
+            );
             let adjusted = core
                 .adjust_selection(
                     &SelectionGeometry {
@@ -812,15 +887,24 @@ mod tests {
     }
 
     #[test]
-    fn source_catalog_rejects_denied_permission_before_enumerating_windows() {
-        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
-        *backend.permission.lock().expect("permission lock") = Ok(CapturePermission::Denied);
+    fn source_catalog_rejects_unauthorized_permission_before_enumerating_sources() {
+        for (permission, expected) in [
+            (
+                CapturePermission::PromptRequired,
+                CaptureFailure::PermissionRequired,
+            ),
+            (CapturePermission::Denied, CaptureFailure::PermissionDenied),
+        ] {
+            let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+            *backend.permission.lock().expect("permission lock") = Ok(permission);
 
-        assert_eq!(
-            CaptureCore::new(backend.clone()).source_catalog(),
-            Err(CaptureFailure::PermissionDenied)
-        );
-        assert_eq!(backend.window_calls.load(Ordering::Relaxed), 0);
+            assert_eq!(
+                CaptureCore::new(backend.clone()).source_catalog(),
+                Err(expected)
+            );
+            assert_eq!(backend.display_calls.load(Ordering::Relaxed), 0);
+            assert_eq!(backend.window_calls.load(Ordering::Relaxed), 0);
+        }
     }
 
     #[test]
@@ -887,6 +971,13 @@ mod tests {
                     height: 200,
                 },
             }]
+        );
+        assert_eq!(
+            backend_request.expected_frame_size,
+            PhysicalSize {
+                width: 200,
+                height: 200,
+            }
         );
     }
 
@@ -965,6 +1056,13 @@ mod tests {
                 },
             }]
         );
+        assert_eq!(
+            backend_request.expected_frame_size,
+            PhysicalSize {
+                width: 60,
+                height: 80,
+            }
+        );
     }
 
     #[test]
@@ -992,23 +1090,26 @@ mod tests {
         *backend.displays.lock().expect("display lock") = ["left", "middle", "right"]
             .into_iter()
             .enumerate()
-            .map(|(index, id)| DisplayDescriptor {
-                id: DisplayId(id.to_owned()),
-                logical_bounds: LogicalRect {
-                    x: index as f64 * 100.0,
-                    y: 0.0,
-                    width: 100.0,
-                    height: 100.0,
-                },
-                physical_size: PhysicalSize {
-                    width: 100,
-                    height: 100,
-                },
-                scale: ScaleFactor {
-                    numerator: 1,
-                    denominator: 1,
-                },
-                primary: index == 1,
+            .map(|(index, id)| {
+                let scale = if id == "right" { 2 } else { 1 };
+                DisplayDescriptor {
+                    id: DisplayId(id.to_owned()),
+                    logical_bounds: LogicalRect {
+                        x: index as f64 * 100.0,
+                        y: 0.0,
+                        width: 100.0,
+                        height: 100.0,
+                    },
+                    physical_size: PhysicalSize {
+                        width: 100 * scale,
+                        height: 100 * scale,
+                    },
+                    scale: ScaleFactor {
+                        numerator: scale,
+                        denominator: 1,
+                    },
+                    primary: index == 1,
+                }
             })
             .collect();
         backend.windows.lock().expect("window lock").clear();
@@ -1053,11 +1154,41 @@ mod tests {
                     pixels: PixelRect {
                         x: 0,
                         y: 0,
-                        width: 100,
-                        height: 100,
+                        width: 200,
+                        height: 200,
                     },
                 },
             ]
+        );
+        assert_eq!(
+            backend_request.expected_frame_size,
+            PhysicalSize {
+                width: 600,
+                height: 200,
+            }
+        );
+    }
+
+    #[test]
+    fn capture_rejects_backend_frame_dimensions_that_do_not_match_selection() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let width = 101;
+        let height = 50;
+        *backend.capture_result.lock().expect("capture lock") = Ok(Some(BackendFrame {
+            width,
+            height,
+            rgba: vec![
+                0;
+                decoded_byte_len(width, height)
+                    .expect("mismatched fixture dimensions must remain bounded")
+            ],
+        }));
+
+        assert_eq!(
+            core.begin(request(&catalog)),
+            Err(CaptureFailure::MalformedImage)
         );
     }
 
@@ -1167,6 +1298,10 @@ mod tests {
         assert_eq!(
             CaptureDiagnostic::failed(CaptureFailure::UnsupportedPlatform).classification,
             CaptureDiagnosticClassification::UnsupportedPlatform
+        );
+        assert_eq!(
+            CaptureDiagnostic::failed(CaptureFailure::PermissionRequired).classification,
+            CaptureDiagnosticClassification::PermissionRequired
         );
     }
 
