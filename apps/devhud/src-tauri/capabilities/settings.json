@@ -18,6 +18,9 @@
     "allow-replace-global-shortcut",
     "allow-set-launch-at-login",
     "allow-complete-first-run",
-    "allow-request-update-action"
+    "allow-request-update-action",
+    "allow-get-auth-session",
+    "allow-start-authentication",
+    "allow-logout-authentication"
   ]
 }
