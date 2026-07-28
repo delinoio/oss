@@ -62,34 +62,24 @@ func (q *Queries) DeleteScopeDestinations(ctx context.Context, arg DeleteScopeDe
 	return result.RowsAffected(), nil
 }
 
-const deleteScopeIdempotencySnapshots = `-- name: DeleteScopeIdempotencySnapshots :execrows
+const deleteScopeDisconnectIdempotencySnapshots = `-- name: DeleteScopeDisconnectIdempotencySnapshots :execrows
 DELETE FROM realqa_idempotency_records AS idempotency
-WHERE (
-    idempotency.operation = 'create_preset'
-    AND idempotency.resource_id IN (
-        SELECT preset.id
-        FROM realqa_presets AS preset
-        WHERE preset.owner_kind = $1
-          AND preset.owner_id = $2
-    )
-) OR (
-    idempotency.operation = 'disconnect_github_connection'
-    AND idempotency.resource_id IN (
-        SELECT connection.id
-        FROM realqa_github_connections AS connection
-        WHERE connection.owner_kind = $1
-          AND connection.owner_id = $2
-    )
+WHERE idempotency.operation = 'disconnect_github_connection'
+  AND idempotency.resource_id IN (
+    SELECT connection.id
+    FROM realqa_github_connections AS connection
+    WHERE connection.owner_kind = $1
+      AND connection.owner_id = $2
 )
 `
 
-type DeleteScopeIdempotencySnapshotsParams struct {
+type DeleteScopeDisconnectIdempotencySnapshotsParams struct {
 	ScopeOwnerKind string
 	ScopeOwnerID   pgtype.UUID
 }
 
-func (q *Queries) DeleteScopeIdempotencySnapshots(ctx context.Context, arg DeleteScopeIdempotencySnapshotsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteScopeIdempotencySnapshots, arg.ScopeOwnerKind, arg.ScopeOwnerID)
+func (q *Queries) DeleteScopeDisconnectIdempotencySnapshots(ctx context.Context, arg DeleteScopeDisconnectIdempotencySnapshotsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteScopeDisconnectIdempotencySnapshots, arg.ScopeOwnerKind, arg.ScopeOwnerID)
 	if err != nil {
 		return 0, err
 	}

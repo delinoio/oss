@@ -244,7 +244,10 @@ func (service *Preset) validateInput(
 		Owner:        repository.RepositoryOwner,
 		Name:         repository.RepositoryName,
 	}
-	if err = service.validateDefinition(ctx, input); err != nil {
+	if input.definition != nil {
+		input.definition = proto.Clone(input.definition).(*realqav1.RepositoryIssueDefinitionRef)
+	}
+	if err = service.validateDefinition(ctx, &input); err != nil {
 		return presetInput{}, err
 	}
 	input.labels, err = cleanStringList(input.labels, 100, 255)
@@ -299,8 +302,8 @@ func (service *Preset) validateInput(
 	return input, nil
 }
 
-func (service *Preset) validateDefinition(ctx context.Context, input presetInput) error {
-	if input.definition == nil || input.definition.DefinitionId == "" ||
+func (service *Preset) validateDefinition(ctx context.Context, input *presetInput) error {
+	if input == nil || input.definition == nil || input.definition.DefinitionId == "" ||
 		input.definition.Etag == "" || input.definition.Path == "" {
 		return invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID)
 	}
@@ -322,6 +325,7 @@ func (service *Preset) validateDefinition(ctx context.Context, input presetInput
 			definition.DefinitionID == input.definition.DefinitionId &&
 			definition.Etag == input.definition.Etag &&
 			definition.Path == input.definition.Path {
+			input.definition.Name = definition.Name
 			return nil
 		}
 	}
@@ -483,35 +487,45 @@ func (service *Preset) ListPresets(
 	if err != nil {
 		return nil, err
 	}
-	rows, err := service.dependencies.Store.Queries().ListPresetRecords(
-		ctx, dbgen.ListPresetRecordsParams{
-			OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-			AfterID: pageLowerBound(after), PageLimit: size + 1,
-		})
+	var response *realqav1.ListPresetsResponse
+	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{
+		IsoLevel:   pgx.RepeatableRead,
+		AccessMode: pgx.ReadOnly,
+	}, func(queries *dbgen.Queries) error {
+		rows, listErr := queries.ListPresetRecords(
+			ctx, dbgen.ListPresetRecordsParams{
+				OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				AfterID: pageLowerBound(after), PageLimit: size + 1,
+			})
+		if listErr != nil {
+			return listErr
+		}
+		hasMore := len(rows) > int(size)
+		if hasMore {
+			rows = rows[:size]
+		}
+		response = &realqav1.ListPresetsResponse{
+			Presets: make([]*realqav1.Preset, 0, len(rows)),
+			Page:    &realqav1.PageResponse{},
+		}
+		var last uuid.UUID
+		for _, row := range rows {
+			last, listErr = fromPGUUID(row.ID)
+			if listErr != nil {
+				return listErr
+			}
+			preset, loadErr := loadPresetWithQueries(ctx, queries, last)
+			if loadErr != nil {
+				return loadErr
+			}
+			response.Presets = append(response.Presets, preset)
+		}
+		response.Page.NextCursor = cursor(last, hasMore)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	hasMore := len(rows) > int(size)
-	if hasMore {
-		rows = rows[:size]
-	}
-	response := &realqav1.ListPresetsResponse{
-		Presets: make([]*realqav1.Preset, 0, len(rows)),
-		Page:    &realqav1.PageResponse{},
-	}
-	var last uuid.UUID
-	for _, row := range rows {
-		last, err = fromPGUUID(row.ID)
-		if err != nil {
-			return nil, err
-		}
-		preset, loadErr := service.loadPreset(ctx, last)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		response.Presets = append(response.Presets, preset)
-	}
-	response.Page.NextCursor = cursor(last, hasMore)
 	return connect.NewResponse(response), nil
 }
 
@@ -759,7 +773,16 @@ func (service *Preset) DeletePreset(
 }
 
 func (service *Preset) loadPreset(ctx context.Context, id uuid.UUID) (*realqav1.Preset, error) {
-	return loadPresetWithQueries(ctx, service.dependencies.Store.Queries(), id)
+	var preset *realqav1.Preset
+	err := service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{
+		IsoLevel:   pgx.RepeatableRead,
+		AccessMode: pgx.ReadOnly,
+	}, func(queries *dbgen.Queries) error {
+		var loadErr error
+		preset, loadErr = loadPresetWithQueries(ctx, queries, id)
+		return loadErr
+	})
+	return preset, err
 }
 
 func loadPresetWithQueries(

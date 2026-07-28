@@ -23,7 +23,7 @@ type Querier interface {
 	DeleteProcessURLRules(ctx context.Context, presetID pgtype.UUID) error
 	DeleteScopeConnections(ctx context.Context, arg DeleteScopeConnectionsParams) (int64, error)
 	DeleteScopeDestinations(ctx context.Context, arg DeleteScopeDestinationsParams) (int64, error)
-	DeleteScopeIdempotencySnapshots(ctx context.Context, arg DeleteScopeIdempotencySnapshotsParams) (int64, error)
+	DeleteScopeDisconnectIdempotencySnapshots(ctx context.Context, arg DeleteScopeDisconnectIdempotencySnapshotsParams) (int64, error)
 	DeleteScopePresets(ctx context.Context, arg DeleteScopePresetsParams) (int64, error)
 	DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSubmissionsParams) (int64, error)
 	DeleteShortcut(ctx context.Context, presetID pgtype.UUID) error

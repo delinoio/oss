@@ -180,8 +180,8 @@ func (service *Preset) DeleteFeatureData(
 				}); insertErr != nil {
 				return insertErr
 			}
-			count, deleteErr := queries.DeleteScopeIdempotencySnapshots(ctx,
-				dbgen.DeleteScopeIdempotencySnapshotsParams{
+			count, deleteErr := queries.DeleteScopeDisconnectIdempotencySnapshots(ctx,
+				dbgen.DeleteScopeDisconnectIdempotencySnapshotsParams{
 					ScopeOwnerKind: scope.kind, ScopeOwnerID: toPGUUID(scope.id),
 				})
 			removed += count

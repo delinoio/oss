@@ -27,7 +27,7 @@ CREATE TABLE realqa_github_connections (
             AND length(key_id) BETWEEN 1 AND 128
         )
     ),
-    CHECK (state = 'connected' OR credential_ciphertext IS NULL),
+    CHECK ((state = 'connected') = (credential_ciphertext IS NOT NULL)),
     CHECK (
         (oauth_state_digest IS NULL AND oauth_state_expires_at IS NULL)
         OR

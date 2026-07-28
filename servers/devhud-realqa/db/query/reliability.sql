@@ -33,24 +33,14 @@ INSERT INTO realqa_scope_tombstones (
 )
 ON CONFLICT (owner_kind, owner_id) DO NOTHING;
 
--- name: DeleteScopeIdempotencySnapshots :execrows
+-- name: DeleteScopeDisconnectIdempotencySnapshots :execrows
 DELETE FROM realqa_idempotency_records AS idempotency
-WHERE (
-    idempotency.operation = 'create_preset'
-    AND idempotency.resource_id IN (
-        SELECT preset.id
-        FROM realqa_presets AS preset
-        WHERE preset.owner_kind = sqlc.arg(scope_owner_kind)
-          AND preset.owner_id = sqlc.arg(scope_owner_id)
-    )
-) OR (
-    idempotency.operation = 'disconnect_github_connection'
-    AND idempotency.resource_id IN (
-        SELECT connection.id
-        FROM realqa_github_connections AS connection
-        WHERE connection.owner_kind = sqlc.arg(scope_owner_kind)
-          AND connection.owner_id = sqlc.arg(scope_owner_id)
-    )
+WHERE idempotency.operation = 'disconnect_github_connection'
+  AND idempotency.resource_id IN (
+    SELECT connection.id
+    FROM realqa_github_connections AS connection
+    WHERE connection.owner_kind = sqlc.arg(scope_owner_kind)
+      AND connection.owner_id = sqlc.arg(scope_owner_id)
 );
 
 -- name: DeleteScopePresets :execrows

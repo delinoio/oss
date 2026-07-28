@@ -94,6 +94,13 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 	if count != 3 {
 		t.Fatalf("applied migration count = %d, want 3", count)
 	}
+	if _, err = pool.Exec(ctx, `
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state
+		) VALUES ($1, 'personal', $2, 'connected')
+	`, uuidv7.MustNew(), uuidv7.MustNew()); err == nil {
+		t.Fatal("connected GitHub connection accepted without encrypted credentials")
+	}
 }
 
 func TestMigrationLoaderRejectsInvalidSets(t *testing.T) {

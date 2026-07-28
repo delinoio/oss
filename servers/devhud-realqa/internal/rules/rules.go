@@ -157,7 +157,7 @@ func (set *Set) Resolve(processName, windowTitle string) (string, bool) {
 				nil, candidate.rule.URLTemplate, windowTitle, match))
 		}
 		if len(expanded) > MaxExpandedURLBytes || validateResolvedURL(expanded) != nil {
-			return "", false
+			continue
 		}
 		return expanded, true
 	}

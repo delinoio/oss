@@ -32,6 +32,30 @@ func TestResolveUsesExactProcessAndFirstMatchingRule(t *testing.T) {
 	}
 }
 
+func TestResolveSkipsInvalidExpansionAndUsesFallback(t *testing.T) {
+	t.Parallel()
+	set, err := Compile([]Rule{
+		{
+			ExactProcessName: "chrome",
+			TitlePattern:     `^(.+)$`,
+			URLTemplate:      "https://$1.example.com/",
+			Enabled:          true,
+		},
+		{
+			ExactProcessName: "chrome",
+			URLTemplate:      "https://fallback.example/",
+			Enabled:          true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok := set.Resolve("chrome", "user@example")
+	if !ok || value != "https://fallback.example/" {
+		t.Fatalf("Resolve() = %q, %v", value, ok)
+	}
+}
+
 func TestCompileRejectsUnsafeOrDivergentRegexFeatures(t *testing.T) {
 	t.Parallel()
 	patterns := []string{

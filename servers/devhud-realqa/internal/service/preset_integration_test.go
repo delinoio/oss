@@ -91,8 +91,12 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			account_id, organization_id, team_id
 		) VALUES ($1, $3, $4);
 		INSERT INTO realqa_github_connections (
-			id, owner_kind, owner_id, state
-		) VALUES ($5, 'personal', $1, 'connected');
+			id, owner_kind, owner_id, state,
+			credential_ciphertext, wrapped_data_key, key_id
+		) VALUES (
+			$5, 'personal', $1, 'connected',
+			decode('01', 'hex'), decode('02', 'hex'), 'fixture-key'
+		);
 		INSERT INTO realqa_github_installations (
 			id, connection_id, owner_kind, owner_id,
 			provider_installation_id, account_login
@@ -109,8 +113,12 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			'Bug', '.github/ISSUE_TEMPLATE/bug.md', 'schema-etag', '{}'::jsonb
 		);
 		INSERT INTO realqa_github_connections (
-			id, owner_kind, owner_id, state
-		) VALUES ($7, 'organization', $3, 'connected');
+			id, owner_kind, owner_id, state,
+			credential_ciphertext, wrapped_data_key, key_id
+		) VALUES (
+			$7, 'organization', $3, 'connected',
+			decode('03', 'hex'), decode('04', 'hex'), 'fixture-key'
+		);
 		INSERT INTO realqa_github_installations (
 			id, connection_id, owner_kind, owner_id,
 			provider_installation_id, account_login
@@ -142,6 +150,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	request := fixtureCreatePreset(accountID, organizationID, teamID, installationID)
 	request.Destination.Repository.Owner = "spoofed-owner"
 	request.Destination.Repository.Name = "spoofed-name"
+	request.IssueDefinition.Name = "Spoofed definition"
 	authCtx := auth.WithPrincipal(ctx, auth.Principal{
 		User: &auth.UserClaims{
 			TokenClaims: auth.TokenClaims{Subject: subject}, UserID: subject,
@@ -158,6 +167,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if created.Msg.Preset.Destination.Repository.Owner != "delinoio" ||
 		created.Msg.Preset.Destination.Repository.Name != "oss" {
 		t.Fatalf("created repository = %#v", created.Msg.Preset.Destination.Repository)
+	}
+	if created.Msg.Preset.IssueDefinition.Name != "Bug" {
+		t.Fatalf("created issue definition = %#v", created.Msg.Preset.IssueDefinition)
 	}
 	listed, err := service.ListPresets(authCtx, connect.NewRequest(
 		&realqav1.ListPresetsRequest{Owner: personalOwnerScope(accountID)}))
@@ -498,6 +510,14 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		&realqav1.GetPresetRequest{PresetId: created.Msg.Preset.PresetId}))
 	if connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("deleted preset code = %v", connect.CodeOf(err))
+	}
+	replayed, err = service.CreatePreset(authCtx, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayed.Msg.Idempotency.Replayed ||
+		replayed.Msg.Preset.PresetId.Value != created.Msg.Preset.PresetId.Value {
+		t.Fatalf("create replay after feature deletion = %#v", replayed.Msg)
 	}
 }
 
