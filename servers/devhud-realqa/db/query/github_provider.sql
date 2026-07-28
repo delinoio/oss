@@ -170,6 +170,17 @@ SET provider_account_id = sqlc.arg(provider_account_id),
 WHERE provider_installation_id = sqlc.arg(provider_installation_id)
   AND state <> 'deleted';
 
+-- name: SuspendUnauthorizedGitHubInstallations :execrows
+UPDATE realqa_github_installations
+SET state = 'suspended',
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE owner_kind = sqlc.arg(owner_kind)
+  AND owner_id = sqlc.arg(owner_id)
+  AND state = 'active'
+  AND provider_installation_id
+      <> ALL(sqlc.arg(authorized_installation_ids)::bigint[]);
+
 -- name: SetGitHubInstallationState :execrows
 UPDATE realqa_github_installations
 SET state = CASE

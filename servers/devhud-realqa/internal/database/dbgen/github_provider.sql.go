@@ -519,6 +519,32 @@ func (q *Queries) SetGitHubInstallationState(ctx context.Context, arg SetGitHubI
 	return result.RowsAffected(), nil
 }
 
+const suspendUnauthorizedGitHubInstallations = `-- name: SuspendUnauthorizedGitHubInstallations :execrows
+UPDATE realqa_github_installations
+SET state = 'suspended',
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE owner_kind = $1
+  AND owner_id = $2
+  AND state = 'active'
+  AND provider_installation_id
+      <> ALL($3::bigint[])
+`
+
+type SuspendUnauthorizedGitHubInstallationsParams struct {
+	OwnerKind                 string
+	OwnerID                   pgtype.UUID
+	AuthorizedInstallationIds []int64
+}
+
+func (q *Queries) SuspendUnauthorizedGitHubInstallations(ctx context.Context, arg SuspendUnauthorizedGitHubInstallationsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, suspendUnauthorizedGitHubInstallations, arg.OwnerKind, arg.OwnerID, arg.AuthorizedInstallationIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateGitHubUserCredential = `-- name: UpdateGitHubUserCredential :execrows
 UPDATE realqa_github_connections
 SET credential_ciphertext = $1,

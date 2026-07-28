@@ -71,6 +71,7 @@ type Querier interface {
 	ScopeIsTombstoned(ctx context.Context, arg ScopeIsTombstonedParams) (bool, error)
 	SetGitHubInstallationState(ctx context.Context, arg SetGitHubInstallationStateParams) (int64, error)
 	StartGitHubConnection(ctx context.Context, arg StartGitHubConnectionParams) (RealqaGithubConnection, error)
+	SuspendUnauthorizedGitHubInstallations(ctx context.Context, arg SuspendUnauthorizedGitHubInstallationsParams) (int64, error)
 	TombstoneLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	UpdateGitHubUserCredential(ctx context.Context, arg UpdateGitHubUserCredentialParams) (int64, error)
 	UpdatePreset(ctx context.Context, arg UpdatePresetParams) (RealqaPreset, error)

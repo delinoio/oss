@@ -210,6 +210,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 
 	callbackOwnerID := uuidv7.MustNew()
 	callbackConnectionID := uuidv7.MustNew()
+	callbackInstallationID := uuidv7.MustNew()
+	staleCallbackInstallationID := uuidv7.MustNew()
 	currentStateDigest := sha256.Sum256([]byte("current callback state"))
 	staleStateDigest := sha256.Sum256([]byte("stale callback state"))
 	if _, err = connection.Exec(ctx, `
@@ -271,6 +273,103 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if callbackConnectionState != "pending" || callbackCiphertext != nil {
 		t.Fatalf("stale callback mutated connection: state=%q ciphertext=%v",
 			callbackConnectionState, callbackCiphertext)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_github_installations (
+			id, connection_id, owner_kind, owner_id,
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES
+			(
+				$1, $3, 'organization', $4, 760, 'callback-fixture', 760,
+				'Organization', 'active',
+				'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+			),
+			(
+				$2, $3, 'organization', $4, 761, 'stale-callback-fixture', 761,
+				'Organization', 'active',
+				'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+			)
+	`, callbackInstallationID, staleCallbackInstallationID,
+		callbackConnectionID, callbackOwnerID); err != nil {
+		t.Fatal(err)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		currentStateDigest[:],
+		realqagithub.UserIdentity{ID: 7, Login: "fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{1}, WrappedDataKey: []byte{2}, KeyID: "fixture-key",
+		},
+		0,
+		[]realqagithub.Installation{{
+			ID: 760, AccountID: 760, AccountLogin: "callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var callbackInstallationState, staleCallbackInstallationState string
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT state FROM realqa_github_installations WHERE id = $1),
+			(SELECT state FROM realqa_github_installations WHERE id = $2)
+	`, callbackInstallationID, staleCallbackInstallationID).Scan(
+		&callbackInstallationState, &staleCallbackInstallationState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if callbackInstallationState != "active" ||
+		staleCallbackInstallationState != "suspended" {
+		t.Fatalf("reconnect installation states = authorized:%q stale:%q",
+			callbackInstallationState, staleCallbackInstallationState)
+	}
+	setupStateDigest := sha256.Sum256([]byte("setup callback state"))
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET oauth_state_digest = $2,
+		    oauth_state_expires_at = transaction_timestamp() + interval '10 minutes'
+		WHERE id = $1
+	`, callbackConnectionID, setupStateDigest[:]); err != nil {
+		t.Fatal(err)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		setupStateDigest[:],
+		realqagithub.UserIdentity{ID: 7, Login: "fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{1}, WrappedDataKey: []byte{2}, KeyID: "fixture-key",
+		},
+		761,
+		[]realqagithub.Installation{{
+			ID: 761, AccountID: 761, AccountLogin: "stale-callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT state
+		FROM realqa_github_installations
+		WHERE id = $1
+	`, callbackInstallationID).Scan(&callbackInstallationState); err != nil {
+		t.Fatal(err)
+	}
+	if callbackInstallationState != "active" {
+		t.Fatalf("single-installation setup suspended an existing installation: %q",
+			callbackInstallationState)
 	}
 	pseudonymizer, err := safelog.NewPseudonymizer(
 		[]byte(strings.Repeat("p", 32)))

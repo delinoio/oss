@@ -132,6 +132,7 @@ func (store *PostgresCallbackStore) ConnectUser(
 				return ErrCallbackStateUnavailable
 			}
 			var activated int64
+			authorizedInstallationIDs := make([]int64, 0, len(installations))
 			for _, installation := range installations {
 				project, permissionErr := projectPermissionFor(
 					installation.Permissions)
@@ -176,10 +177,23 @@ func (store *PostgresCallbackStore) ConnectUser(
 					return activateErr
 				}
 				activated += rows
+				authorizedInstallationIDs = append(
+					authorizedInstallationIDs, installation.ID)
 			}
 			if activated == 0 {
 				return errors.New(
 					"realqa github: no authorized installation matched the owner")
+			}
+			if installationID == 0 {
+				_, err = queries.SuspendUnauthorizedGitHubInstallations(
+					ctx, dbgen.SuspendUnauthorizedGitHubInstallationsParams{
+						OwnerKind:                 string(owner.Kind),
+						OwnerID:                   providerPGUUID(owner.ID),
+						AuthorizedInstallationIds: authorizedInstallationIDs,
+					})
+				if err != nil {
+					return err
+				}
 			}
 			return nil
 		})
