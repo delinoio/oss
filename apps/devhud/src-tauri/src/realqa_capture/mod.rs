@@ -718,9 +718,12 @@ pub(crate) fn record_outcome<T>(result: &Result<T, CaptureFailure>) {
         Err(CaptureFailure::WindowLost) => Classification::RealqaCaptureWindowLost,
         Err(CaptureFailure::ModeUnavailable) => Classification::RealqaCaptureModeUnavailable,
         Err(CaptureFailure::DisplaySnapshotChanged) => Classification::RealqaCaptureDisplayChanged,
-        Err(CaptureFailure::InvalidDisplaySnapshot | CaptureFailure::InvalidSelection) => {
-            Classification::RealqaCaptureInvalidRequest
-        }
+        Err(
+            CaptureFailure::InvalidDisplaySnapshot
+            | CaptureFailure::InvalidSelection
+            | CaptureFailure::InvalidEditorOperation
+            | CaptureFailure::InvalidEditSequence,
+        ) => Classification::RealqaCaptureInvalidRequest,
         Err(
             CaptureFailure::MalformedImage
             | CaptureFailure::UnsupportedImage
