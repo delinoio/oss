@@ -115,15 +115,17 @@ func (service *Preset) CreatePreset(
 					realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
 			}
 			if input.shortcut != nil && input.shortcut.Active {
+				if shortcutErr := queries.LockShortcutAccount(
+					ctx, toPGUUID(actor.accountID)); shortcutErr != nil {
+					return shortcutErr
+				}
 				shortcuts, shortcutErr := queries.CountActiveShortcutsForAccount(
 					ctx, toPGUUID(actor.accountID))
 				if shortcutErr != nil {
 					return shortcutErr
 				}
 				if shortcuts >= deviceShortcutLimit {
-					return rqerr.New(connect.CodeResourceExhausted,
-						realqav1.ErrorReason_ERROR_REASON_DEVICE_SHORTCUT_LIMIT_EXCEEDED,
-						realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+					return shortcutLimitExceeded()
 				}
 			}
 			destinationID, destinationErr := newID(service.dependencies)
@@ -232,10 +234,17 @@ func (service *Preset) validateInput(
 	if err != nil {
 		return presetInput{}, err
 	}
-	input.installation, err = authorizeRepository(
-		ctx, service.dependencies, actor, input.destination)
+	var repository dbgen.RealqaRepositoryAccess
+	input.installation, repository, err = authorizeRepository(
+		ctx, service.dependencies, actor, scope, input.destination)
 	if err != nil {
 		return presetInput{}, err
+	}
+	input.destination = proto.Clone(input.destination).(*realqav1.TrackerDestination)
+	input.destination.Repository = &realqav1.GitHubRepositoryRef{
+		RepositoryId: repository.RepositoryID,
+		Owner:        repository.RepositoryOwner,
+		Name:         repository.RepositoryName,
 	}
 	if err = service.validateDefinition(ctx, input); err != nil {
 		return presetInput{}, err
@@ -479,7 +488,7 @@ func (service *Preset) ListPresets(
 	rows, err := service.dependencies.Store.Queries().ListPresetRecords(
 		ctx, dbgen.ListPresetRecordsParams{
 			OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-			AfterID: toPGUUID(after), PageLimit: size + 1,
+			AfterID: pageLowerBound(after), PageLimit: size + 1,
 		})
 	if err != nil {
 		return nil, err
@@ -601,6 +610,23 @@ func (service *Preset) UpdatePreset(
 			}
 			if locked.Revision != request.Msg.ExpectedRevision.Value {
 				return stale(locked.Revision)
+			}
+			if input.shortcut != nil && input.shortcut.Active {
+				if shortcutErr := queries.LockShortcutAccount(
+					ctx, toPGUUID(actor.accountID)); shortcutErr != nil {
+					return shortcutErr
+				}
+				shortcuts, shortcutErr := queries.CountOtherActiveShortcutsForAccount(
+					ctx, dbgen.CountOtherActiveShortcutsForAccountParams{
+						AccountID: toPGUUID(actor.accountID),
+						PresetID:  toPGUUID(presetID),
+					})
+				if shortcutErr != nil {
+					return shortcutErr
+				}
+				if shortcuts >= deviceShortcutLimit {
+					return shortcutLimitExceeded()
+				}
 			}
 			destinationID, destinationErr := newID(service.dependencies)
 			if destinationErr != nil {

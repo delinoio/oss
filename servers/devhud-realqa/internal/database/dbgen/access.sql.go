@@ -26,6 +26,27 @@ func (q *Queries) CountActiveShortcutsForAccount(ctx context.Context, accountID 
 	return column_1, err
 }
 
+const countOtherActiveShortcutsForAccount = `-- name: CountOtherActiveShortcutsForAccount :one
+SELECT count(*)::bigint
+FROM realqa_shortcuts AS shortcut
+JOIN realqa_presets AS preset ON preset.id = shortcut.preset_id
+WHERE preset.created_by_account_id = $1
+  AND preset.id <> $2
+  AND shortcut.active
+`
+
+type CountOtherActiveShortcutsForAccountParams struct {
+	AccountID pgtype.UUID
+	PresetID  pgtype.UUID
+}
+
+func (q *Queries) CountOtherActiveShortcutsForAccount(ctx context.Context, arg CountOtherActiveShortcutsForAccountParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOtherActiveShortcutsForAccount, arg.AccountID, arg.PresetID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getIdentityBySubjectDigest = `-- name: GetIdentityBySubjectDigest :one
 SELECT account_id, subject_digest, deleted_at, created_at
 FROM realqa_identities
@@ -81,13 +102,65 @@ func (q *Queries) GetOwnerAccess(ctx context.Context, arg GetOwnerAccessParams) 
 	return i, err
 }
 
+const getRepositorySubmitAccessForOwner = `-- name: GetRepositorySubmitAccessForOwner :one
+SELECT access.installation_id, access.account_id, access.repository_id, access.repository_owner, access.repository_name, access.issues_enabled, access.can_submit, access.checked_at
+FROM realqa_repository_access AS access
+JOIN realqa_github_installations AS installation
+  ON installation.id = access.installation_id
+JOIN realqa_github_connections AS connection
+  ON connection.id = installation.connection_id
+ AND connection.state = 'connected'
+WHERE access.installation_id = $1
+  AND installation.owner_kind = $2
+  AND installation.owner_id = $3
+  AND access.account_id = $4
+  AND access.repository_id = $5
+  AND access.issues_enabled
+  AND access.can_submit
+  AND access.checked_at >= statement_timestamp() - interval '5 minutes'
+`
+
+type GetRepositorySubmitAccessForOwnerParams struct {
+	InstallationID pgtype.UUID
+	OwnerKind      string
+	OwnerID        pgtype.UUID
+	AccountID      pgtype.UUID
+	RepositoryID   string
+}
+
+func (q *Queries) GetRepositorySubmitAccessForOwner(ctx context.Context, arg GetRepositorySubmitAccessForOwnerParams) (RealqaRepositoryAccess, error) {
+	row := q.db.QueryRow(ctx, getRepositorySubmitAccessForOwner,
+		arg.InstallationID,
+		arg.OwnerKind,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.RepositoryID,
+	)
+	var i RealqaRepositoryAccess
+	err := row.Scan(
+		&i.InstallationID,
+		&i.AccountID,
+		&i.RepositoryID,
+		&i.RepositoryOwner,
+		&i.RepositoryName,
+		&i.IssuesEnabled,
+		&i.CanSubmit,
+		&i.CheckedAt,
+	)
+	return i, err
+}
+
 const hasPayerTeamAccess = `-- name: HasPayerTeamAccess :one
 SELECT EXISTS (
     SELECT 1
-    FROM realqa_payer_team_bindings
-    WHERE account_id = $1
-      AND organization_id = $2
-      AND team_id = $3
+    FROM realqa_payer_team_bindings AS binding
+    LEFT JOIN realqa_scope_tombstones AS tombstone
+      ON tombstone.owner_kind = 'organization'
+     AND tombstone.owner_id = binding.organization_id
+    WHERE binding.account_id = $1
+      AND binding.organization_id = $2
+      AND binding.team_id = $3
+      AND tombstone.owner_id IS NULL
 )
 `
 
@@ -133,4 +206,18 @@ func (q *Queries) HasRepositorySubmitAccess(ctx context.Context, arg HasReposito
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const lockShortcutAccount = `-- name: LockShortcutAccount :exec
+SELECT pg_advisory_xact_lock(
+    hashtextextended(
+        'shortcut:' || $1::uuid::text,
+        757
+    )
+)
+`
+
+func (q *Queries) LockShortcutAccount(ctx context.Context, accountID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockShortcutAccount, accountID)
+	return err
 }

@@ -140,7 +140,7 @@ func (service *Tracker) ListGitHubInstallations(
 	rows, err := service.dependencies.Store.Queries().ListGitHubInstallations(
 		ctx, dbgen.ListGitHubInstallationsParams{
 			OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-			AfterID: toPGUUID(after), PageLimit: size + 1,
+			AfterID: pageLowerBound(after), PageLimit: size + 1,
 		})
 	if err != nil {
 		return nil, err

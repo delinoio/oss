@@ -47,16 +47,31 @@ func (service *Preset) DeleteFeatureData(
 		if err != nil {
 			return nil, err
 		}
-		if _, err = authorizeOwner(ctx, service.dependencies, actor, scope,
-			true, scope.kind == "organization"); err != nil {
-			return nil, err
-		}
 		idempotencyID, err = parseIdempotency(request.Msg.GetOwnerRequest().Idempotency)
 		if err != nil {
 			return nil, err
 		}
 		requestDigest, err = digestMessage(request.Msg)
 		if err != nil {
+			return nil, err
+		}
+		record, lookupErr := service.dependencies.Store.Queries().GetIdempotencyRecord(
+			ctx, idempotencyLookupFor(actor, idempotencyID, "delete_feature_data"))
+		if lookupErr == nil {
+			if !bytes.Equal(record.RequestDigest, requestDigest) {
+				return nil, idempotencyConflict()
+			}
+			existingID, conversionErr := fromPGUUID(record.ResourceID)
+			if conversionErr != nil {
+				return nil, conversionErr
+			}
+			return deletionReplay(existingID, record.CompletedAt), nil
+		}
+		if !errors.Is(lookupErr, pgx.ErrNoRows) {
+			return nil, lookupErr
+		}
+		if _, err = authorizeOwner(ctx, service.dependencies, actor, scope,
+			true, scope.kind == "organization"); err != nil {
 			return nil, err
 		}
 		jobID, err = newID(service.dependencies)

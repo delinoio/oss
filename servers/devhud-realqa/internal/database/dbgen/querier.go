@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	CountActiveShortcutsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)
+	CountOtherActiveShortcutsForAccount(ctx context.Context, arg CountOtherActiveShortcutsForAccountParams) (int64, error)
 	CountPresetsForOwner(ctx context.Context, arg CountPresetsForOwnerParams) (int64, error)
 	CreateIdempotencyRecord(ctx context.Context, arg CreateIdempotencyRecordParams) (RealqaIdempotencyRecord, error)
 	CreatePreset(ctx context.Context, arg CreatePresetParams) (RealqaPreset, error)
@@ -34,6 +35,7 @@ type Querier interface {
 	GetIdentityBySubjectDigest(ctx context.Context, subjectDigest []byte) (RealqaIdentity, error)
 	GetOwnerAccess(ctx context.Context, arg GetOwnerAccessParams) (RealqaOwnerBinding, error)
 	GetPresetRecord(ctx context.Context, id pgtype.UUID) (GetPresetRecordRow, error)
+	GetRepositorySubmitAccessForOwner(ctx context.Context, arg GetRepositorySubmitAccessForOwnerParams) (RealqaRepositoryAccess, error)
 	HasPayerTeamAccess(ctx context.Context, arg HasPayerTeamAccessParams) (bool, error)
 	HasRepositorySubmitAccess(ctx context.Context, arg HasRepositorySubmitAccessParams) (bool, error)
 	InsertAudit(ctx context.Context, arg InsertAuditParams) error
@@ -46,6 +48,7 @@ type Querier interface {
 	ListRepositoryDefinitions(ctx context.Context, arg ListRepositoryDefinitionsParams) ([]RealqaRepositoryDefinition, error)
 	LockPreset(ctx context.Context, id pgtype.UUID) (RealqaPreset, error)
 	LockPresetOwner(ctx context.Context, arg LockPresetOwnerParams) error
+	LockShortcutAccount(ctx context.Context, accountID pgtype.UUID) error
 	Ping(ctx context.Context) (int64, error)
 	StartGitHubConnection(ctx context.Context, arg StartGitHubConnectionParams) (RealqaGithubConnection, error)
 	TombstoneLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)

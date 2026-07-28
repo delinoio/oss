@@ -135,6 +135,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		Store: store, Pseudonymizer: pseudonymizer,
 	})
 	request := fixtureCreatePreset(accountID, organizationID, teamID, installationID)
+	request.Destination.Repository.Owner = "spoofed-owner"
+	request.Destination.Repository.Name = "spoofed-name"
 	authCtx := auth.WithPrincipal(ctx, auth.Principal{
 		User: &auth.UserClaims{
 			TokenClaims: auth.TokenClaims{Subject: subject}, UserID: subject,
@@ -147,6 +149,30 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if created.Msg.Preset.Revision.Value != 1 ||
 		created.Msg.Preset.Revision.Etag != `"realqa-r1"` {
 		t.Fatalf("created revision = %#v", created.Msg.Preset.Revision)
+	}
+	if created.Msg.Preset.Destination.Repository.Owner != "delinoio" ||
+		created.Msg.Preset.Destination.Repository.Name != "oss" {
+		t.Fatalf("created repository = %#v", created.Msg.Preset.Destination.Repository)
+	}
+	listed, err := service.ListPresets(authCtx, connect.NewRequest(
+		&realqav1.ListPresetsRequest{Owner: personalOwnerScope(accountID)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Msg.Presets) != 1 {
+		t.Fatalf("first preset page length = %d", len(listed.Msg.Presets))
+	}
+	tracker := NewTracker(Dependencies{
+		Store: store, Pseudonymizer: pseudonymizer,
+	})
+	installations, err := tracker.ListGitHubInstallations(authCtx, connect.NewRequest(
+		&realqav1.ListGitHubInstallationsRequest{Owner: personalOwnerScope(accountID)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installations.Msg.Installations) != 1 ||
+		installations.Msg.Installations[0].InstallationId.Value != installationID.String() {
+		t.Fatalf("first installation page = %#v", installations.Msg.Installations)
 	}
 	replayed, err := service.CreatePreset(authCtx, connect.NewRequest(request))
 	if err != nil {
@@ -201,7 +227,17 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	organizationRequest.Destination.Repository = &realqav1.GitHubRepositoryRef{
 		RepositoryId: "repo-org", Owner: "delinoio", Name: "private",
 	}
+	organizationRequest.Shortcut = nil
 	renewCreateIdentities(organizationRequest)
+	foreignInstallationRequest := fixtureCreatePreset(
+		accountID, organizationID, teamID, installationID)
+	foreignInstallationRequest.Owner = organizationOwnerScope(organizationID)
+	renewCreateIdentities(foreignInstallationRequest)
+	_, err = service.CreatePreset(
+		authCtx, connect.NewRequest(foreignInstallationRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("foreign installation code = %v", connect.CodeOf(err))
+	}
 	organizationPreset, err := service.CreatePreset(
 		authCtx, connect.NewRequest(organizationRequest))
 	if err != nil {
@@ -300,25 +336,116 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("personal preset limit code = %v", connect.CodeOf(err))
 	}
-	_, err = service.DeleteFeatureData(authCtx, connect.NewRequest(
-		&realqav1.DeleteFeatureDataRequest{
-			TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,
-			Trigger: &realqav1.DeleteFeatureDataRequest_OwnerRequest{
-				OwnerRequest: &realqav1.OwnerFeatureDeletion{
-					Owner: personalOwnerScope(accountID),
-					Idempotency: &realqav1.IdempotencyKey{
-						Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
-					},
-				},
-			},
-		}))
+	rows, err := connection.Query(ctx, `
+		SELECT id
+		FROM realqa_presets
+		WHERE owner_kind = 'personal'
+		  AND owner_id = $1
+		  AND id <> $2
+		ORDER BY id
+		LIMIT $3
+	`, accountID, created.Msg.Preset.PresetId.Value, deviceShortcutLimit)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var shortcutPresetIDs []uuid.UUID
+	for rows.Next() {
+		var presetID uuid.UUID
+		if err = rows.Scan(&presetID); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		shortcutPresetIDs = append(shortcutPresetIDs, presetID)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		t.Fatal(err)
+	}
+	rows.Close()
+	if len(shortcutPresetIDs) != deviceShortcutLimit {
+		t.Fatalf("shortcut fixture count = %d", len(shortcutPresetIDs))
+	}
+	for _, presetID := range shortcutPresetIDs {
+		if _, err = connection.Exec(ctx, `
+			INSERT INTO realqa_shortcuts (id, preset_id, accelerator, active)
+			VALUES ($1, $2, 'Ctrl+Shift+8', true)
+		`, uuidv7.MustNew(), presetID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	activation := proto.Clone(updated.Msg.Preset).(*realqav1.Preset)
+	activation.Shortcut = &realqav1.ShortcutDefinition{
+		ShortcutId:  &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		Accelerator: "Ctrl+Shift+9",
+		Active:      true,
+	}
+	_, err = service.UpdatePreset(authCtx, connect.NewRequest(
+		&realqav1.UpdatePresetRequest{
+			Preset: activation, ExpectedRevision: updated.Msg.Preset.Revision,
+		}))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("shortcut activation limit code = %v", connect.CodeOf(err))
+	}
+	deletedPayerOrganizationID := uuidv7.MustNew()
+	deletedPayerTeamID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_payer_team_bindings (
+			account_id, organization_id, team_id
+		) VALUES ($1, $2, $3);
+		INSERT INTO realqa_scope_tombstones (
+			owner_kind, owner_id, deletion_job_id, trigger_kind
+		) VALUES ('organization', $2, $4, 'delibase_organization_lifecycle')
+	`, accountID, deletedPayerOrganizationID, deletedPayerTeamID,
+		uuidv7.MustNew()); err != nil {
+		t.Fatal(err)
+	}
+	deletedPayerRequest := fixtureCreatePreset(
+		accountID, deletedPayerOrganizationID, deletedPayerTeamID, installationID)
+	renewCreateIdentities(deletedPayerRequest)
+	_, err = service.CreatePreset(authCtx, connect.NewRequest(deletedPayerRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("deleted payer organization code = %v", connect.CodeOf(err))
+	}
+	deletionRequest := &realqav1.DeleteFeatureDataRequest{
+		TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,
+		Trigger: &realqav1.DeleteFeatureDataRequest_OwnerRequest{
+			OwnerRequest: &realqav1.OwnerFeatureDeletion{
+				Owner: personalOwnerScope(accountID),
+				Idempotency: &realqav1.IdempotencyKey{
+					Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+				},
+			},
+		},
+	}
+	deleted, err := service.DeleteFeatureData(
+		authCtx, connect.NewRequest(deletionRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletionReplay, err := service.DeleteFeatureData(
+		authCtx, connect.NewRequest(deletionRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deletionReplay.Msg.Idempotency.Replayed ||
+		deletionReplay.Msg.DeletionJobId.Value != deleted.Msg.DeletionJobId.Value {
+		t.Fatalf("unexpected deletion replay = %#v", deletionReplay.Msg)
 	}
 	_, err = service.GetPreset(authCtx, connect.NewRequest(
 		&realqav1.GetPresetRequest{PresetId: created.Msg.Preset.PresetId}))
 	if connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("deleted preset code = %v", connect.CodeOf(err))
+	}
+}
+
+func TestFirstPageUsesNonNullUUIDLowerBound(t *testing.T) {
+	_, after, err := page(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lowerBound := pageLowerBound(after)
+	if !lowerBound.Valid || lowerBound.Bytes != uuid.Nil {
+		t.Fatalf("first-page lower bound = %#v", lowerBound)
 	}
 }
 

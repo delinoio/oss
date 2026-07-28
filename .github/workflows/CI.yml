@@ -1368,6 +1368,7 @@ jobs:
       - go-quality
       - go-test
       - delibase-server
+      - devhud-realqa-server
       - proto-contracts
       - rust-fmt
       - rust-clippy

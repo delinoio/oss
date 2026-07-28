@@ -37,7 +37,7 @@ func (service *Submission) CreateSubmission(
 		request.Msg.Billing); err != nil {
 		return nil, err
 	}
-	if _, err = authorizeRepository(ctx, service.dependencies, actor,
+	if _, _, err = authorizeRepository(ctx, service.dependencies, actor, scope,
 		request.Msg.Destination); err != nil {
 		return nil, err
 	}

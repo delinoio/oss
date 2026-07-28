@@ -278,39 +278,44 @@ func authorizeRepository(
 	ctx context.Context,
 	dependencies Dependencies,
 	actor caller,
+	scope owner,
 	destination *realqav1.TrackerDestination,
-) (uuid.UUID, error) {
+) (uuid.UUID, dbgen.RealqaRepositoryAccess, error) {
 	if destination == nil ||
 		destination.Tracker != realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM ||
 		destination.InstallationId == nil || destination.Repository == nil ||
 		destination.Repository.RepositoryId == "" ||
 		destination.Repository.Owner == "" || destination.Repository.Name == "" {
-		return uuid.Nil, invalid(realqav1.ErrorReason_ERROR_REASON_UNSUPPORTED_TRACKER_HOST)
+		return uuid.Nil, dbgen.RealqaRepositoryAccess{},
+			invalid(realqav1.ErrorReason_ERROR_REASON_UNSUPPORTED_TRACKER_HOST)
 	}
 	installationID, err := parseUUIDv7(destination.InstallationId.Value)
 	if err != nil {
-		return uuid.Nil, invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+		return uuid.Nil, dbgen.RealqaRepositoryAccess{},
+			invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
 	}
-	allowed, err := dependencies.Store.Queries().HasRepositorySubmitAccess(
-		ctx, dbgen.HasRepositorySubmitAccessParams{
+	repository, err := dependencies.Store.Queries().GetRepositorySubmitAccessForOwner(
+		ctx, dbgen.GetRepositorySubmitAccessForOwnerParams{
 			InstallationID: toPGUUID(installationID),
 			AccountID:      toPGUUID(actor.accountID),
 			RepositoryID:   destination.Repository.RepositoryId,
+			OwnerKind:      scope.kind,
+			OwnerID:        toPGUUID(scope.id),
 		},
 	)
-	if err != nil {
-		return uuid.Nil, err
-	}
-	if !allowed {
+	if errors.Is(err, pgx.ErrNoRows) {
 		audit(ctx, dependencies, actor, "repository_access_denied", owner{},
 			installationID, "deny", "failure")
-		return uuid.Nil, rqerr.New(
+		return uuid.Nil, dbgen.RealqaRepositoryAccess{}, rqerr.New(
 			connect.CodePermissionDenied,
 			realqav1.ErrorReason_ERROR_REASON_PROVIDER_PERMISSION_DENIED,
 			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0,
 		)
 	}
-	return installationID, nil
+	if err != nil {
+		return uuid.Nil, dbgen.RealqaRepositoryAccess{}, err
+	}
+	return installationID, repository, nil
 }
 
 func parseUUIDv7(value string) (uuid.UUID, error) {
@@ -323,6 +328,10 @@ func parseUUIDv7(value string) (uuid.UUID, error) {
 
 func toPGUUID(value uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: value, Valid: value != uuid.Nil}
+}
+
+func pageLowerBound(value uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: value, Valid: true}
 }
 
 func fromPGUUID(value pgtype.UUID) (uuid.UUID, error) {
@@ -400,6 +409,12 @@ func cursor(id uuid.UUID, hasMore bool) string {
 		return ""
 	}
 	return base64.RawURLEncoding.EncodeToString(id[:])
+}
+
+func shortcutLimitExceeded() error {
+	return rqerr.New(connect.CodeResourceExhausted,
+		realqav1.ErrorReason_ERROR_REASON_DEVICE_SHORTCUT_LIMIT_EXCEEDED,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
 }
 
 func audit(
