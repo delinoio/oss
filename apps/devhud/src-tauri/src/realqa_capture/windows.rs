@@ -25,6 +25,12 @@ const fn is_supported_windows_version(major: u32, build: u32) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct NativeSourceId(usize);
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct DisplayIdentity {
+    stable_key: String,
+    source: NativeSourceId,
+}
+
 #[derive(Debug, Clone)]
 struct WindowsDisplay {
     source: NativeSourceId,
@@ -42,15 +48,53 @@ enum WindowsWindowState {
     Protected,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct WindowIdentity {
+    stable_key: String,
+    source: NativeSourceId,
+    process_id: u32,
+    process_started_at: u64,
+}
+
 #[derive(Debug, Clone)]
 struct WindowsWindow {
     source: NativeSourceId,
     stable_key: String,
+    process_id: u32,
+    process_started_at: u64,
     display_key: String,
+    display_source: NativeSourceId,
     bounds: LogicalRect,
     state: WindowsWindowState,
     process_name: Option<String>,
     title: Option<String>,
+}
+
+impl WindowsDisplay {
+    fn identity(&self) -> DisplayIdentity {
+        DisplayIdentity {
+            stable_key: self.stable_key.clone(),
+            source: self.source,
+        }
+    }
+}
+
+impl WindowsWindow {
+    fn identity(&self) -> WindowIdentity {
+        WindowIdentity {
+            stable_key: self.stable_key.clone(),
+            source: self.source,
+            process_id: self.process_id,
+            process_started_at: self.process_started_at,
+        }
+    }
+
+    fn display_identity(&self) -> DisplayIdentity {
+        DisplayIdentity {
+            stable_key: self.display_key.clone(),
+            source: self.display_source,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,30 +149,32 @@ trait WindowsPlatformAdapter: Send + Sync {
 struct SourceRegistry {
     next_display_id: u64,
     next_window_id: u64,
-    display_ids: HashMap<String, DisplayId>,
-    window_ids: HashMap<String, WindowSourceId>,
+    display_ids: HashMap<DisplayIdentity, DisplayId>,
+    window_ids: HashMap<WindowIdentity, WindowSourceId>,
     displays: HashMap<DisplayId, WindowsDisplay>,
     windows: HashMap<WindowSourceId, WindowsWindow>,
 }
 
 impl SourceRegistry {
-    fn public_display_id(&mut self, stable_key: &str) -> DisplayId {
-        if let Some(id) = self.display_ids.get(stable_key) {
+    fn public_display_id(&mut self, display: &WindowsDisplay) -> DisplayId {
+        let identity = display.identity();
+        if let Some(id) = self.display_ids.get(&identity) {
             return id.clone();
         }
         self.next_display_id += 1;
         let id = DisplayId(format!("windows-display-{:016x}", self.next_display_id));
-        self.display_ids.insert(stable_key.to_owned(), id.clone());
+        self.display_ids.insert(identity, id.clone());
         id
     }
 
-    fn public_window_id(&mut self, stable_key: &str) -> WindowSourceId {
-        if let Some(id) = self.window_ids.get(stable_key) {
+    fn public_window_id(&mut self, window: &WindowsWindow) -> WindowSourceId {
+        let identity = window.identity();
+        if let Some(id) = self.window_ids.get(&identity) {
             return id.clone();
         }
         self.next_window_id += 1;
         let id = WindowSourceId(format!("windows-window-{:016x}", self.next_window_id));
-        self.window_ids.insert(stable_key.to_owned(), id.clone());
+        self.window_ids.insert(identity, id.clone());
         id
     }
 }
@@ -157,12 +203,12 @@ impl WindowsCaptureBackend {
         &self,
         displays: Vec<WindowsDisplay>,
     ) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
-        let mut stable_keys = HashSet::with_capacity(displays.len());
+        let mut identities = HashSet::with_capacity(displays.len());
         if displays.is_empty()
             || displays.iter().any(|display| {
                 display.stable_key.is_empty()
                     || display.stable_key.len() > MAX_INTERNAL_SOURCE_KEY_BYTES
-                    || !stable_keys.insert(display.stable_key.clone())
+                    || !identities.insert(display.identity())
             })
         {
             return Err(BackendFailure::DisplayChanged);
@@ -176,7 +222,7 @@ impl WindowsCaptureBackend {
         let descriptors = displays
             .into_iter()
             .map(|display| {
-                let id = sources.public_display_id(&display.stable_key);
+                let id = sources.public_display_id(&display);
                 let descriptor = DisplayDescriptor {
                     id: id.clone(),
                     logical_bounds: display.logical_bounds,
@@ -194,11 +240,11 @@ impl WindowsCaptureBackend {
 
     fn current_windows(&self) -> Result<Vec<WindowsWindow>, BackendFailure> {
         let windows = self.adapter.windows().map_err(BackendFailure::from)?;
-        let mut stable_keys = HashSet::with_capacity(windows.len());
+        let mut identities = HashSet::with_capacity(windows.len());
         if windows.iter().any(|window| {
             window.stable_key.is_empty()
                 || window.stable_key.len() > MAX_INTERNAL_SOURCE_KEY_BYTES
-                || !stable_keys.insert(window.stable_key.clone())
+                || !identities.insert(window.identity())
         }) {
             return Err(BackendFailure::CaptureFailed);
         }
@@ -277,7 +323,7 @@ impl WindowsCaptureBackend {
         let window = self
             .current_windows()?
             .into_iter()
-            .find(|candidate| candidate.stable_key == registered.stable_key)
+            .find(|candidate| candidate.identity() == registered.identity())
             .ok_or(BackendFailure::WindowClosed)?;
         validate_window_state(&registered, &window)?;
         let frame = self
@@ -285,11 +331,46 @@ impl WindowsCaptureBackend {
             .capture(window.source, request.pointer, cancel)
             .map_err(BackendFailure::from)?;
         checked_native_frame(&frame)?;
-        resize_frame(
-            &frame,
+        let captured = self
+            .current_windows()?
+            .into_iter()
+            .find(|candidate| candidate.identity() == window.identity())
+            .ok_or(BackendFailure::WindowClosed)?;
+        validate_window_state(&window, &captured)?;
+        self.compose_window_frame(request, &frame)
+    }
+
+    fn compose_window_frame(
+        &self,
+        request: &ResolvedCaptureRequest,
+        frame: &NativeFrame,
+    ) -> Result<BackendFrame, BackendFailure> {
+        let output_len = decoded_byte_len(
             request.expected_frame_size.width,
             request.expected_frame_size.height,
         )
+        .map_err(|_| BackendFailure::CaptureFailed)?;
+        let mut output = BackendFrame {
+            width: request.expected_frame_size.width,
+            height: request.expected_frame_size.height,
+            rgba: vec![0; output_len],
+        };
+        let displays = self
+            .sources
+            .lock()
+            .map_err(|_| BackendFailure::CaptureFailed)?
+            .displays
+            .clone();
+        let canvas_scale = highest_scale(&request.snapshot, &request.pixel_regions)?;
+        for region in &request.pixel_regions {
+            let display = displays
+                .get(&region.display_id)
+                .ok_or(BackendFailure::DisplayRemoved)?;
+            let source = window_source_rect(request, display, region.pixels, frame)?;
+            let destination = destination_rect(request, display, region.pixels, canvas_scale)?;
+            blit_scaled(frame, source, &mut output, destination)?;
+        }
+        Ok(output)
     }
 
     fn capture_display_regions(
@@ -349,7 +430,7 @@ fn validate_window_state(
     registered: &WindowsWindow,
     current: &WindowsWindow,
 ) -> Result<(), BackendFailure> {
-    if current.source != registered.source {
+    if current.identity() != registered.identity() {
         return Err(BackendFailure::WindowClosed);
     }
     match current.state {
@@ -357,7 +438,9 @@ fn validate_window_state(
         WindowsWindowState::Minimized => return Err(BackendFailure::WindowMinimized),
         WindowsWindowState::Protected => return Err(BackendFailure::ProtectedContent),
     }
-    if current.display_key != registered.display_key || current.bounds != registered.bounds {
+    if current.display_identity() != registered.display_identity()
+        || current.bounds != registered.bounds
+    {
         return Err(BackendFailure::DisplayChanged);
     }
     Ok(())
@@ -383,20 +466,16 @@ impl CaptureBackend for WindowsCaptureBackend {
             .sources
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?;
-        let display_ids = sources
-            .display_ids
-            .iter()
-            .map(|(stable, public)| (stable.clone(), public.clone()))
-            .collect::<HashMap<_, _>>();
+        let display_ids = sources.display_ids.clone();
         let mut current = HashMap::with_capacity(windows.len());
         let mut output = Vec::with_capacity(windows.len());
         for window in windows {
             let display_id = display_ids
-                .get(&window.display_key)
+                .get(&window.display_identity())
                 .filter(|id| snapshot.display(id).is_some())
                 .cloned()
                 .ok_or(BackendFailure::DisplayChanged)?;
-            let id = sources.public_window_id(&window.stable_key);
+            let id = sources.public_window_id(&window);
             let availability = match window.state {
                 WindowsWindowState::Available | WindowsWindowState::Protected => {
                     WindowAvailability::Available
@@ -541,33 +620,59 @@ fn destination_rect(
     })
 }
 
-fn resize_frame(
+fn window_source_rect(
+    request: &ResolvedCaptureRequest,
+    display: &WindowsDisplay,
+    region: PixelRect,
     frame: &NativeFrame,
-    width: u32,
-    height: u32,
-) -> Result<BackendFrame, BackendFailure> {
-    let mut output = BackendFrame {
-        width,
-        height,
-        rgba: vec![0; decoded_byte_len(width, height).map_err(|_| BackendFailure::CaptureFailed)?],
-    };
-    blit_scaled(
-        frame,
-        PixelRect {
-            x: 0,
-            y: 0,
-            width: frame.width,
-            height: frame.height,
-        },
-        &mut output,
-        PixelRect {
-            x: 0,
-            y: 0,
-            width,
-            height,
-        },
-    )?;
-    Ok(output)
+) -> Result<PixelRect, BackendFailure> {
+    let display_scale = f64::from(display.scale.numerator) / f64::from(display.scale.denominator);
+    let logical_left = (display.logical_bounds.x + f64::from(region.x) / display_scale)
+        .max(request.logical_bounds.x);
+    let logical_top = (display.logical_bounds.y + f64::from(region.y) / display_scale)
+        .max(request.logical_bounds.y);
+    let logical_right = (display.logical_bounds.x
+        + f64::from(region.x + region.width) / display_scale)
+        .min(request.logical_bounds.right());
+    let logical_bottom = (display.logical_bounds.y
+        + f64::from(region.y + region.height) / display_scale)
+        .min(request.logical_bounds.bottom());
+    let left = ((logical_left - request.logical_bounds.x) * f64::from(frame.width)
+        / request.logical_bounds.width)
+        .floor();
+    let top = ((logical_top - request.logical_bounds.y) * f64::from(frame.height)
+        / request.logical_bounds.height)
+        .floor();
+    let right = ((logical_right - request.logical_bounds.x) * f64::from(frame.width)
+        / request.logical_bounds.width)
+        .ceil();
+    let bottom = ((logical_bottom - request.logical_bounds.y) * f64::from(frame.height)
+        / request.logical_bounds.height)
+        .ceil();
+    let values = [left, top, right, bottom];
+    if values
+        .iter()
+        .any(|value| !value.is_finite() || *value < 0.0)
+    {
+        return Err(BackendFailure::CaptureFailed);
+    }
+    let left = left as u64;
+    let top = top as u64;
+    let right = right as u64;
+    let bottom = bottom as u64;
+    if right <= left
+        || bottom <= top
+        || right > u64::from(frame.width)
+        || bottom > u64::from(frame.height)
+    {
+        return Err(BackendFailure::CaptureFailed);
+    }
+    Ok(PixelRect {
+        x: u32::try_from(left).map_err(|_| BackendFailure::CaptureFailed)?,
+        y: u32::try_from(top).map_err(|_| BackendFailure::CaptureFailed)?,
+        width: u32::try_from(right - left).map_err(|_| BackendFailure::CaptureFailed)?,
+        height: u32::try_from(bottom - top).map_err(|_| BackendFailure::CaptureFailed)?,
+    })
 }
 
 fn blit_scaled(
@@ -639,13 +744,15 @@ mod system {
     use windows::{
         Graphics::Capture::GraphicsCaptureSession,
         Win32::{
-            Foundation::{HWND, RECT},
+            Foundation::{FILETIME, HWND, RECT},
             Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO},
+            System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
             UI::{
                 HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
                 WindowsAndMessaging::{GetWindowDisplayAffinity, IsIconic, MONITORINFOF_PRIMARY},
             },
         },
+        core::Owned,
     };
     use windows_capture::{
         capture::{Context, GraphicsCaptureApiError, GraphicsCaptureApiHandler},
@@ -781,10 +888,13 @@ mod system {
         let monitor_key = monitor
             .device_name()
             .map_err(|_| WindowsAdapterFailure::Failed)?;
-        let Some(display) = displays
-            .iter()
-            .find(|display| display.stable_key == monitor_key)
-        else {
+        let Some(display) = displays.iter().find(|display| {
+            display.stable_key == monitor_key
+                && display.source == NativeSourceId(monitor.as_raw_hmonitor() as usize)
+        }) else {
+            return Ok(None);
+        };
+        let Some((process_id, process_started_at)) = window_process_identity(window) else {
             return Ok(None);
         };
         let rect = window
@@ -823,12 +933,31 @@ mod system {
         Ok(Some(WindowsWindow {
             source: NativeSourceId(window.as_raw_hwnd() as usize),
             stable_key: format!("hwnd:{:016x}", window.as_raw_hwnd() as usize),
+            process_id,
+            process_started_at,
             display_key: monitor_key,
+            display_source: NativeSourceId(monitor.as_raw_hmonitor() as usize),
             bounds,
             state,
             process_name: window.process_name().ok(),
             title: window.title().ok(),
         }))
+    }
+
+    fn window_process_identity(window: Window) -> Option<(u32, u64)> {
+        let process_id = window.process_id().ok()?;
+        let process =
+            unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id) }.ok()?;
+        let process = unsafe { Owned::new(process) };
+        let mut created = FILETIME::default();
+        let mut exited = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        unsafe { GetProcessTimes(*process, &mut created, &mut exited, &mut kernel, &mut user) }
+            .ok()?;
+        let started_at =
+            (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+        Some((process_id, started_at))
     }
 
     fn physical_monitor_rect(monitor: Monitor) -> Result<RECT, WindowsAdapterFailure> {
@@ -1018,6 +1147,7 @@ mod tests {
         captures: Mutex<Vec<(NativeSourceId, PointerInclusion)>>,
         display_calls: AtomicUsize,
         remove_display_on_call: Mutex<Option<usize>>,
+        window_after_capture: Mutex<Option<WindowsWindow>>,
     }
 
     impl FixtureAdapter {
@@ -1077,6 +1207,7 @@ mod tests {
                 captures: Mutex::new(Vec::new()),
                 display_calls: AtomicUsize::new(0),
                 remove_display_on_call: Mutex::new(None),
+                window_after_capture: Mutex::new(None),
             }
         }
     }
@@ -1117,12 +1248,22 @@ mod tests {
                 .lock()
                 .expect("captures lock")
                 .push((source, pointer));
-            self.frames
+            let result = self
+                .frames
                 .lock()
                 .expect("frames lock")
                 .get(&source)
                 .cloned()
-                .unwrap_or(Err(WindowsAdapterFailure::Failed))
+                .unwrap_or(Err(WindowsAdapterFailure::Failed));
+            if let Some(window) = self
+                .window_after_capture
+                .lock()
+                .expect("window after capture lock")
+                .take()
+            {
+                *self.windows.lock().expect("window lock") = vec![window];
+            }
+            result
         }
     }
 
@@ -1135,6 +1276,40 @@ mod tests {
                 .cycle()
                 .take((size.width * size.height * 4) as usize)
                 .collect(),
+        }
+    }
+
+    fn available_window(
+        source: NativeSourceId,
+        display: &WindowsDisplay,
+        bounds: LogicalRect,
+    ) -> WindowsWindow {
+        WindowsWindow {
+            source,
+            stable_key: format!("private-window-{}", source.0),
+            process_id: 30,
+            process_started_at: 300,
+            display_key: display.stable_key.clone(),
+            display_source: display.source,
+            bounds,
+            state: WindowsWindowState::Available,
+            process_name: Some("safe.exe".to_owned()),
+            title: Some("Window".to_owned()),
+        }
+    }
+
+    fn window_request(
+        catalog: &super::super::CaptureSourceCatalog,
+        session_id: &str,
+    ) -> CaptureRequest {
+        CaptureRequest {
+            session_id: CaptureSessionId(session_id.to_owned()),
+            snapshot_id: catalog.snapshot.snapshot_id.clone(),
+            source: CaptureSourceSelection::Window {
+                window_id: catalog.windows[0].id.clone(),
+            },
+            pointer: PointerInclusion::Exclude,
+            output_media_type: ImageMediaType::Png,
         }
     }
 
@@ -1191,6 +1366,141 @@ mod tests {
     }
 
     #[test]
+    fn composites_spanning_window_through_each_mixed_dpi_display_region() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        {
+            let mut displays = adapter.displays.lock().expect("display lock");
+            displays[1].logical_bounds.y = 1.0;
+        }
+        let displays = adapter.displays.lock().expect("display lock").clone();
+        let window = available_window(
+            NativeSourceId(3),
+            &displays[1],
+            LogicalRect {
+                x: -1.0,
+                y: 0.0,
+                width: 2.0,
+                height: 3.0,
+            },
+        );
+        adapter.windows.lock().expect("window lock").push(window);
+        adapter.frames.lock().expect("frames lock").insert(
+            NativeSourceId(3),
+            Ok(solid_frame(
+                PhysicalSize {
+                    width: 4,
+                    height: 6,
+                },
+                [0, 255, 0, 255],
+            )),
+        );
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter)));
+        let catalog = core.source_catalog().expect("catalog");
+        let result = core
+            .begin(window_request(&catalog, "spanning-window"))
+            .expect("capture");
+        let decoded = decode_image(&result.image).expect("decode capture");
+        assert_eq!((decoded.width, decoded.height), (4, 6));
+        assert_eq!(
+            &decoded.rgba[pixel_offset(decoded.width, 0, 0).expect("top left")
+                ..pixel_offset(decoded.width, 0, 0).expect("top left") + 4],
+            &[0, 255, 0, 255]
+        );
+        assert_eq!(
+            &decoded.rgba[pixel_offset(decoded.width, 3, 0).expect("top gap")
+                ..pixel_offset(decoded.width, 3, 0).expect("top gap") + 4],
+            &[0, 0, 0, 0]
+        );
+        assert_eq!(
+            &decoded.rgba[pixel_offset(decoded.width, 0, 5).expect("bottom gap")
+                ..pixel_offset(decoded.width, 0, 5).expect("bottom gap") + 4],
+            &[0, 0, 0, 0]
+        );
+        assert_eq!(
+            &decoded.rgba[pixel_offset(decoded.width, 3, 5).expect("bottom right")
+                ..pixel_offset(decoded.width, 3, 5).expect("bottom right") + 4],
+            &[0, 255, 0, 255]
+        );
+    }
+
+    #[test]
+    fn rejects_window_geometry_changed_while_waiting_for_first_frame() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let display = adapter.displays.lock().expect("display lock")[1].clone();
+        let window = available_window(
+            NativeSourceId(3),
+            &display,
+            LogicalRect {
+                x: 0.0,
+                y: 0.0,
+                width: 2.0,
+                height: 2.0,
+            },
+        );
+        adapter
+            .windows
+            .lock()
+            .expect("window lock")
+            .push(window.clone());
+        adapter.frames.lock().expect("frames lock").insert(
+            window.source,
+            Ok(solid_frame(
+                PhysicalSize {
+                    width: 4,
+                    height: 4,
+                },
+                [0, 255, 0, 255],
+            )),
+        );
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        let mut moved = window;
+        moved.bounds.x = 1.0;
+        *adapter
+            .window_after_capture
+            .lock()
+            .expect("window after capture lock") = Some(moved);
+        assert_eq!(
+            core.begin(window_request(&catalog, "moved-during-capture")),
+            Err(CaptureFailure::DisplaySnapshotChanged)
+        );
+    }
+
+    #[test]
+    fn recycled_hwnd_with_new_process_identity_gets_a_new_window_id() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let display = adapter.displays.lock().expect("display lock")[1].clone();
+        let window = available_window(NativeSourceId(3), &display, display.logical_bounds);
+        adapter
+            .windows
+            .lock()
+            .expect("window lock")
+            .push(window.clone());
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        let mut replacement = window;
+        replacement.process_id += 1;
+        replacement.process_started_at += 1;
+        adapter.windows.lock().expect("window lock")[0] = replacement;
+        assert_eq!(
+            core.begin(window_request(&catalog, "recycled-hwnd")),
+            Err(CaptureFailure::WindowClosed)
+        );
+    }
+
+    #[test]
+    fn replacement_hmonitor_changes_the_display_snapshot_identity() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        adapter.displays.lock().expect("display lock")[0].source = NativeSourceId(99);
+        assert_eq!(
+            core.begin(multi_monitor_request(&catalog)),
+            Err(CaptureFailure::DisplaySnapshotChanged)
+        );
+    }
+
+    #[test]
     fn forwards_each_explicit_pointer_override() {
         let adapter = Arc::new(FixtureAdapter::mixed_dpi());
         let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
@@ -1242,7 +1552,10 @@ mod tests {
             .push(WindowsWindow {
                 source: NativeSourceId(3),
                 stable_key: "private-window".to_owned(),
+                process_id: 30,
+                process_started_at: 300,
                 display_key: display.stable_key.clone(),
+                display_source: display.source,
                 bounds: display.logical_bounds,
                 state: WindowsWindowState::Protected,
                 process_name: Some("safe.exe".to_owned()),
@@ -1298,7 +1611,10 @@ mod tests {
             .push(WindowsWindow {
                 source: NativeSourceId(3),
                 stable_key: "private-window-handle".to_owned(),
+                process_id: 30,
+                process_started_at: 300,
                 display_key: display.stable_key,
+                display_source: display.source,
                 bounds: display.logical_bounds,
                 state: WindowsWindowState::Available,
                 process_name: Some("safe\u{0}process.exe".to_owned()),
@@ -1432,7 +1748,10 @@ mod tests {
         let registered = WindowsWindow {
             source: NativeSourceId(3),
             stable_key: "private-window".to_owned(),
+            process_id: 30,
+            process_started_at: 300,
             display_key: "private-device-right".to_owned(),
+            display_source: NativeSourceId(2),
             bounds: LogicalRect {
                 x: 0.0,
                 y: 0.0,
