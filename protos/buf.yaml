@@ -4,6 +4,13 @@ modules:
 lint:
   use:
     - STANDARD
+  ignore_only:
+    # Component ownership uses repository paths while the wire packages follow
+    # independently versioned devhud domain namespaces. Keep every other
+    # STANDARD rule and scope these exceptions to the component roots.
+    PACKAGE_DIRECTORY_MATCH:
+      - devhud-deck/v1
+      - devhud-realqa/v1
 breaking:
   use:
     - FILE

@@ -1,0 +1,285 @@
+syntax = "proto3";
+
+package devhud.deck.v1;
+
+import "devhud-deck/v1/common.proto";
+import "devhud-deck/v1/view.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1;deckv1";
+
+service DeckDeviceService {
+  rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
+  rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
+  rpc UpdateDevice(UpdateDeviceRequest) returns (UpdateDeviceResponse);
+  rpc UnregisterDevice(UnregisterDeviceRequest) returns (UnregisterDeviceResponse);
+  rpc UpdateViewNotificationPreference(UpdateViewNotificationPreferenceRequest) returns (UpdateViewNotificationPreferenceResponse);
+  rpc ResolveNotificationEvent(ResolveNotificationEventRequest) returns (ResolveNotificationEventResponse);
+}
+
+enum DevicePlatform {
+  DEVICE_PLATFORM_UNSPECIFIED = 0;
+  DEVICE_PLATFORM_MACOS = 1;
+  DEVICE_PLATFORM_WINDOWS = 2;
+  DEVICE_PLATFORM_LINUX = 3;
+  DEVICE_PLATFORM_IOS = 4;
+  DEVICE_PLATFORM_ANDROID = 5;
+}
+
+enum PushProvider {
+  PUSH_PROVIDER_UNSPECIFIED = 0;
+  PUSH_PROVIDER_APPLE = 1;
+  PUSH_PROVIDER_FIREBASE = 2;
+}
+
+message PushRegistration {
+  PushProvider provider = 1;
+  string opaque_push_token = 2;
+}
+
+enum ShortcutState {
+  SHORTCUT_STATE_UNSPECIFIED = 0;
+  SHORTCUT_STATE_ACTIVE = 1;
+  SHORTCUT_STATE_INACTIVE = 2;
+  SHORTCUT_STATE_CONFLICTED = 3;
+}
+
+enum ShortcutModifier {
+  SHORTCUT_MODIFIER_UNSPECIFIED = 0;
+  SHORTCUT_MODIFIER_CONTROL = 1;
+  SHORTCUT_MODIFIER_ALT = 2;
+  SHORTCUT_MODIFIER_SHIFT = 3;
+  SHORTCUT_MODIFIER_META = 4;
+}
+
+enum ShortcutKey {
+  SHORTCUT_KEY_UNSPECIFIED = 0;
+  SHORTCUT_KEY_A = 1;
+  SHORTCUT_KEY_B = 2;
+  SHORTCUT_KEY_C = 3;
+  SHORTCUT_KEY_D = 4;
+  SHORTCUT_KEY_E = 5;
+  SHORTCUT_KEY_F = 6;
+  SHORTCUT_KEY_G = 7;
+  SHORTCUT_KEY_H = 8;
+  SHORTCUT_KEY_I = 9;
+  SHORTCUT_KEY_J = 10;
+  SHORTCUT_KEY_K = 11;
+  SHORTCUT_KEY_L = 12;
+  SHORTCUT_KEY_M = 13;
+  SHORTCUT_KEY_N = 14;
+  SHORTCUT_KEY_O = 15;
+  SHORTCUT_KEY_P = 16;
+  SHORTCUT_KEY_Q = 17;
+  SHORTCUT_KEY_R = 18;
+  SHORTCUT_KEY_S = 19;
+  SHORTCUT_KEY_T = 20;
+  SHORTCUT_KEY_U = 21;
+  SHORTCUT_KEY_V = 22;
+  SHORTCUT_KEY_W = 23;
+  SHORTCUT_KEY_X = 24;
+  SHORTCUT_KEY_Y = 25;
+  SHORTCUT_KEY_Z = 26;
+  SHORTCUT_KEY_DIGIT_0 = 27;
+  SHORTCUT_KEY_DIGIT_1 = 28;
+  SHORTCUT_KEY_DIGIT_2 = 29;
+  SHORTCUT_KEY_DIGIT_3 = 30;
+  SHORTCUT_KEY_DIGIT_4 = 31;
+  SHORTCUT_KEY_DIGIT_5 = 32;
+  SHORTCUT_KEY_DIGIT_6 = 33;
+  SHORTCUT_KEY_DIGIT_7 = 34;
+  SHORTCUT_KEY_DIGIT_8 = 35;
+  SHORTCUT_KEY_DIGIT_9 = 36;
+  SHORTCUT_KEY_F1 = 37;
+  SHORTCUT_KEY_F2 = 38;
+  SHORTCUT_KEY_F3 = 39;
+  SHORTCUT_KEY_F4 = 40;
+  SHORTCUT_KEY_F5 = 41;
+  SHORTCUT_KEY_F6 = 42;
+  SHORTCUT_KEY_F7 = 43;
+  SHORTCUT_KEY_F8 = 44;
+  SHORTCUT_KEY_F9 = 45;
+  SHORTCUT_KEY_F10 = 46;
+  SHORTCUT_KEY_F11 = 47;
+  SHORTCUT_KEY_F12 = 48;
+  SHORTCUT_KEY_SPACE = 49;
+  SHORTCUT_KEY_ENTER = 50;
+}
+
+message ShortcutBinding {
+  repeated ShortcutModifier modifiers = 1;
+  ShortcutKey key = 2;
+}
+
+message ViewShortcut {
+  UuidV7 shortcut_id = 1;
+  UuidV7 view_id = 2;
+  ShortcutBinding binding = 3;
+  ShortcutState state = 4;
+  Revision revision = 5;
+}
+
+enum WidgetFamily {
+  WIDGET_FAMILY_UNSPECIFIED = 0;
+  WIDGET_FAMILY_APPLE_SMALL = 1;
+  WIDGET_FAMILY_APPLE_MEDIUM = 2;
+  WIDGET_FAMILY_APPLE_LARGE = 3;
+  WIDGET_FAMILY_ANDROID_COMPACT = 4;
+  WIDGET_FAMILY_ANDROID_WIDE = 5;
+  WIDGET_FAMILY_ANDROID_LIST = 6;
+}
+
+enum WidgetPrivacy {
+  WIDGET_PRIVACY_UNSPECIFIED = 0;
+  WIDGET_PRIVACY_COUNTS_ONLY = 1;
+  WIDGET_PRIVACY_REPOSITORY_AND_TITLES = 2;
+}
+
+message WidgetPullRequestItem {
+  RepositoryReference repository = 1;
+  uint64 number = 2;
+  string title = 3;
+}
+
+message WidgetSnapshot {
+  uint32 matching_count = 1;
+  repeated WidgetPullRequestItem pull_requests = 2;
+  FreshnessState freshness = 3;
+  bool offline = 4;
+  google.protobuf.Timestamp generated_at = 5;
+}
+
+message WidgetState {
+  UuidV7 widget_id = 1;
+  UuidV7 view_id = 2;
+  WidgetFamily family = 3;
+  WidgetPrivacy privacy = 4;
+  WidgetSnapshot snapshot = 5;
+  Revision revision = 6;
+}
+
+message Device {
+  UuidV7 device_id = 1;
+  DevicePlatform platform = 2;
+  string display_name = 3;
+  bool detailed_notification_text_enabled = 4;
+  repeated ViewShortcut shortcuts = 5;
+  repeated WidgetState widgets = 6;
+  Revision revision = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message DeviceRegistration {
+  UuidV7 registration_id = 1;
+  Device device = 2;
+  google.protobuf.Timestamp lease_expires_at = 3;
+}
+
+message GetDeviceRequest {
+  UuidV7 device_id = 1;
+}
+
+message GetDeviceResponse {
+  DeviceRegistration registration = 1;
+}
+
+message RegisterDeviceRequest {
+  IdempotencyKey idempotency_key = 1;
+  UuidV7 device_id = 2;
+  DevicePlatform platform = 3;
+  string display_name = 4;
+  PushRegistration push = 5;
+  bool detailed_notification_text_enabled = 6;
+  repeated ViewShortcutConfiguration shortcuts = 7;
+  repeated WidgetConfiguration widgets = 8;
+  // Required for an existing registration lease renewal and omitted for the
+  // first registration of a device.
+  Revision expected_revision = 9;
+}
+
+message RegisterDeviceResponse {
+  // The single-registration revocation grant is returned only in the dedicated
+  // sensitive response metadata documented by AUTHENTICATION.md.
+  DeviceRegistration registration = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message UpdateDeviceRequest {
+  UuidV7 registration_id = 1;
+  Revision expected_revision = 2;
+  string display_name = 3;
+  PushRegistration push = 4;
+  bool detailed_notification_text_enabled = 5;
+  repeated ViewShortcutConfiguration shortcuts = 6;
+  repeated WidgetConfiguration widgets = 7;
+}
+
+message UpdateDeviceResponse {
+  DeviceRegistration registration = 1;
+}
+
+message UnregisterDeviceRequest {
+  UuidV7 registration_id = 1;
+}
+
+message UnregisterDeviceResponse {
+  UuidV7 registration_id = 1;
+  bool was_registered = 2;
+}
+
+message ViewNotificationState {
+  UuidV7 registration_id = 1;
+  UuidV7 view_id = 2;
+  ViewNotificationPreference preference = 3;
+  Revision revision = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message UpdateViewNotificationPreferenceRequest {
+  UuidV7 registration_id = 1;
+  UuidV7 view_id = 2;
+  Revision expected_revision = 3;
+  ViewNotificationPreference preference = 4;
+}
+
+message UpdateViewNotificationPreferenceResponse {
+  ViewNotificationState notification = 1;
+}
+
+enum NotificationResolution {
+  NOTIFICATION_RESOLUTION_UNSPECIFIED = 0;
+  NOTIFICATION_RESOLUTION_GENERIC = 1;
+  NOTIFICATION_RESOLUTION_DETAILED = 2;
+  NOTIFICATION_RESOLUTION_UNAVAILABLE = 3;
+}
+
+message ResolveNotificationEventRequest {
+  UuidV7 registration_id = 1;
+  string opaque_event_id = 2;
+}
+
+message ResolveNotificationEventResponse {
+  NotificationResolution resolution = 1;
+  string notification_text = 2;
+  UuidV7 view_id = 3;
+  PullRequestDetail pull_request = 4;
+  NotificationTransition transition = 5;
+}
+
+// ViewShortcutConfiguration is client-authored input. The effective shortcut
+// state and synchronized revision remain server-owned response state.
+message ViewShortcutConfiguration {
+  UuidV7 shortcut_id = 1;
+  UuidV7 view_id = 2;
+  ShortcutBinding binding = 3;
+}
+
+// WidgetConfiguration is client-authored input. Widget snapshots and
+// synchronized widget revisions remain server-owned response state.
+message WidgetConfiguration {
+  UuidV7 widget_id = 1;
+  UuidV7 view_id = 2;
+  WidgetFamily family = 3;
+  WidgetPrivacy privacy = 4;
+}

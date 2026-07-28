@@ -1,0 +1,17 @@
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-go
+    out: protos/devhud-realqa/gen/go
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-connect-go
+    out: protos/devhud-realqa/gen/go
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-es
+    out: protos/devhud-realqa/gen/ts
+    opt:
+      - target=ts
+      - import_extension=js
+

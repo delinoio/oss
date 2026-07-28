@@ -1,0 +1,514 @@
+syntax = "proto3";
+
+package devhud.deck.v1;
+
+import "devhud-deck/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1;deckv1";
+
+service DeckViewService {
+  rpc ListViews(ListViewsRequest) returns (ListViewsResponse);
+  rpc GetView(GetViewRequest) returns (GetViewResponse);
+  rpc CreateView(CreateViewRequest) returns (CreateViewResponse);
+  rpc UpdateView(UpdateViewRequest) returns (UpdateViewResponse);
+  rpc DeleteView(DeleteViewRequest) returns (DeleteViewResponse);
+  rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
+  rpc ListPullRequestMutationCandidates(ListPullRequestMutationCandidatesRequest) returns (ListPullRequestMutationCandidatesResponse);
+  rpc GetRefreshPreflight(GetRefreshPreflightRequest) returns (GetRefreshPreflightResponse);
+  rpc RefreshView(RefreshViewRequest) returns (RefreshViewResponse);
+  rpc MutatePullRequest(MutatePullRequestRequest) returns (MutatePullRequestResponse);
+  rpc DeleteFeatureData(DeleteFeatureDataRequest) returns (DeleteFeatureDataResponse);
+}
+
+enum QueryIdentityKind {
+  QUERY_IDENTITY_KIND_UNSPECIFIED = 0;
+  QUERY_IDENTITY_KIND_VIEWER = 1;
+  QUERY_IDENTITY_KIND_USER = 2;
+  QUERY_IDENTITY_KIND_TEAM = 3;
+}
+
+// QueryIdentity represents @me, an individual login, or an organization team.
+message QueryIdentity {
+  QueryIdentityKind kind = 1;
+  string login = 2;
+  string organization = 3;
+  string team_slug = 4;
+}
+
+message OwnerQualifier {
+  string owner = 1;
+}
+
+message RepositoryQualifier {
+  string owner = 1;
+  string repository = 2;
+}
+
+message AuthorQualifier {
+  QueryIdentity author = 1;
+}
+
+message AssigneeQualifier {
+  QueryIdentity assignee = 1;
+}
+
+message ReviewerQualifier {
+  QueryIdentity reviewer = 1;
+}
+
+message LabelQualifier {
+  string label = 1;
+}
+
+enum PullRequestState {
+  PULL_REQUEST_STATE_UNSPECIFIED = 0;
+  PULL_REQUEST_STATE_OPEN = 1;
+  PULL_REQUEST_STATE_CLOSED = 2;
+  PULL_REQUEST_STATE_DRAFT = 3;
+}
+
+message StateQualifier {
+  PullRequestState state = 1;
+}
+
+message BaseBranchQualifier {
+  string branch = 1;
+}
+
+message HeadBranchQualifier {
+  string branch = 1;
+}
+
+enum ReviewDecision {
+  REVIEW_DECISION_UNSPECIFIED = 0;
+  REVIEW_DECISION_REVIEW_REQUIRED = 1;
+  REVIEW_DECISION_CHANGES_REQUESTED = 2;
+  REVIEW_DECISION_APPROVED = 3;
+}
+
+message ReviewDecisionQualifier {
+  ReviewDecision decision = 1;
+}
+
+enum ChecksState {
+  CHECKS_STATE_UNSPECIFIED = 0;
+  CHECKS_STATE_PENDING = 1;
+  CHECKS_STATE_SUCCESS = 2;
+  CHECKS_STATE_FAILURE = 3;
+}
+
+message ChecksQualifier {
+  ChecksState state = 1;
+}
+
+message UpdatedRangeQualifier {
+  google.protobuf.Timestamp updated_after = 1;
+  google.protobuf.Timestamp updated_before = 2;
+}
+
+// QueryClause is the typed visual-builder subset of GitHub search.
+message QueryClause {
+  bool negated = 1;
+  oneof clause {
+    OwnerQualifier owner = 2;
+    RepositoryQualifier repository = 3;
+    AuthorQualifier author = 4;
+    AssigneeQualifier assignee = 5;
+    ReviewerQualifier reviewer = 6;
+    LabelQualifier label = 7;
+    StateQualifier state = 8;
+    BaseBranchQualifier base_branch = 9;
+    HeadBranchQualifier head_branch = 10;
+    ReviewDecisionQualifier review_decision = 11;
+    ChecksQualifier checks = 12;
+    UpdatedRangeQualifier updated_range = 13;
+  }
+}
+
+// QueryBuilder is derived from raw_query. Unknown clauses remain explicit so
+// recognized builder edits can rewrite only their source spans.
+message QueryBuilder {
+  repeated QueryClause clauses = 1;
+  repeated string unrecognized_raw_clauses = 2;
+}
+
+// ViewQuery keeps the canonical raw GitHub query as the source of truth.
+message ViewQuery {
+  string raw_query = 1;
+  QueryBuilder builder = 2;
+}
+
+message ViewNotificationPreference {
+  bool enabled = 1;
+  repeated NotificationTransition transitions = 2;
+}
+
+message View {
+  UuidV7 view_id = 1;
+  Owner owner = 2;
+  BillingSelection billing = 3;
+  string name = 4;
+  ViewKind kind = 5;
+  ViewQuery query = 6;
+  ViewSort sort = 7;
+  ViewGrouping grouping = 8;
+  ViewNotificationPreference notification_preference = 9;
+  ConnectionState connection_state = 10;
+  Revision revision = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message CreateViewInput {
+  Owner owner = 1;
+  BillingSelection billing = 2;
+  string name = 3;
+  ViewKind kind = 4;
+  ViewQuery query = 5;
+  ViewSort sort = 6;
+  ViewGrouping grouping = 7;
+  ViewNotificationPreference notification_preference = 8;
+}
+
+// UpdateViewInput deliberately excludes owner and kind. v1 has no transfer,
+// copy, or conversion operation between personal and organization views.
+message UpdateViewInput {
+  BillingSelection billing = 1;
+  string name = 2;
+  ViewQuery query = 3;
+  ViewSort sort = 4;
+  ViewGrouping grouping = 5;
+  ViewNotificationPreference notification_preference = 6;
+}
+
+message ListViewsRequest {
+  Owner owner = 1;
+  PageRequest page = 2;
+}
+
+message ListViewsResponse {
+  repeated View views = 1;
+  PageResponse page = 2;
+  uint32 owner_view_limit = 3;
+}
+
+message GetViewRequest {
+  UuidV7 view_id = 1;
+}
+
+message GetViewResponse {
+  View view = 1;
+}
+
+message CreateViewRequest {
+  IdempotencyKey idempotency_key = 1;
+  CreateViewInput view = 2;
+}
+
+message CreateViewResponse {
+  View view = 1;
+  IdempotencyResult idempotency = 2;
+}
+
+message UpdateViewRequest {
+  UuidV7 view_id = 1;
+  Revision expected_revision = 2;
+  UpdateViewInput view = 3;
+}
+
+message UpdateViewResponse {
+  View view = 1;
+}
+
+message DeleteViewRequest {
+  UuidV7 view_id = 1;
+  Revision expected_revision = 2;
+}
+
+message DeleteViewResponse {
+  UuidV7 view_id = 1;
+  Revision deleted_revision = 2;
+}
+
+message RepositoryReference {
+  string owner = 1;
+  string name = 2;
+}
+
+message PullRequestAuthor {
+  string login = 1;
+}
+
+message CheckSummary {
+  ChecksState state = 1;
+  uint32 pending_count = 2;
+  uint32 success_count = 3;
+  uint32 failure_count = 4;
+}
+
+enum Mergeability {
+  MERGEABILITY_UNSPECIFIED = 0;
+  MERGEABILITY_UNKNOWN = 1;
+  MERGEABILITY_MERGEABLE = 2;
+  MERGEABILITY_CONFLICTING = 3;
+  MERGEABILITY_BLOCKED = 4;
+}
+
+message PullRequestResult {
+  RepositoryReference repository = 1;
+  uint64 number = 2;
+  string title = 3;
+  PullRequestAuthor author = 4;
+  ReviewDecision review_decision = 5;
+  CheckSummary checks = 6;
+  Mergeability mergeability = 7;
+  bool is_draft = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  Revision revision = 10;
+  // reviewers is the individual/team membership used by reviewer grouping.
+  repeated PullRequestReviewer reviewers = 11;
+  PullRequestLifecycleState lifecycle_state = 12;
+  // Action metadata is evaluated for the current caller before mutation.
+  repeated PullRequestMutationKind supported_mutations = 13;
+  repeated MergeMethod available_merge_methods = 14;
+  // Current operands let clients populate removal actions without guessing.
+  repeated GitHubUser assignees = 15;
+  repeated string labels = 16;
+}
+
+enum MergeMethod {
+  MERGE_METHOD_UNSPECIFIED = 0;
+  MERGE_METHOD_MERGE = 1;
+  MERGE_METHOD_SQUASH = 2;
+  MERGE_METHOD_REBASE = 3;
+}
+
+message PullRequestDetail {
+  PullRequestResult result = 1;
+  // These values mirror the action metadata on result.
+  repeated PullRequestMutationKind supported_mutations = 2;
+  repeated MergeMethod available_merge_methods = 3;
+  Revision revision = 4;
+}
+
+message ListPullRequestsRequest {
+  UuidV7 view_id = 1;
+  PageRequest page = 2;
+}
+
+message ListPullRequestsResponse {
+  repeated PullRequestResult pull_requests = 1;
+  PageResponse page = 2;
+  bool truncated = 3;
+  uint32 result_limit = 4;
+  FreshnessState freshness = 5;
+  google.protobuf.Timestamp refreshed_at = 6;
+  Revision view_revision = 7;
+}
+
+message ListPullRequestMutationCandidatesRequest {
+  UuidV7 view_id = 1;
+  PullRequestReference pull_request = 2;
+  PullRequestMutationKind mutation_kind = 3;
+  string query = 4;
+  PageRequest page = 5;
+}
+
+message PullRequestMutationCandidate {
+  oneof candidate {
+    GitHubUser user = 1;
+    GitHubTeam team = 2;
+    string label = 3;
+  }
+}
+
+message ListPullRequestMutationCandidatesResponse {
+  repeated PullRequestMutationCandidate candidates = 1;
+  PageResponse page = 2;
+  Revision pull_request_revision = 3;
+}
+
+message GetRefreshPreflightRequest {
+  UuidV7 view_id = 1;
+  IdempotencyKey refresh_request_id = 2;
+  RefreshOrigin origin = 3;
+}
+
+message GetRefreshPreflightResponse {
+  UsdMicros provider_refresh_price = 1;
+  string preflight_token = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+enum RefreshOrigin {
+  REFRESH_ORIGIN_UNSPECIFIED = 0;
+  REFRESH_ORIGIN_AUTOMATIC = 1;
+  REFRESH_ORIGIN_WIDGET = 2;
+  REFRESH_ORIGIN_MANUAL = 3;
+  REFRESH_ORIGIN_VIEW_OPEN = 4;
+  REFRESH_ORIGIN_SHORTCUT = 5;
+}
+
+enum BillingDisposition {
+  BILLING_DISPOSITION_UNSPECIFIED = 0;
+  BILLING_DISPOSITION_FREE_CACHE_HIT = 1;
+  BILLING_DISPOSITION_FREE_COALESCED = 2;
+  BILLING_DISPOSITION_RESERVED = 3;
+  BILLING_DISPOSITION_COMMITTED = 4;
+  BILLING_DISPOSITION_RELEASED = 5;
+  BILLING_DISPOSITION_REJECTED = 6;
+}
+
+message RefreshViewRequest {
+  UuidV7 view_id = 1;
+  IdempotencyKey refresh_request_id = 2;
+  RefreshOrigin origin = 3;
+  string billing_preflight_token = 4;
+}
+
+message RefreshViewResponse {
+  UuidV7 view_id = 1;
+  RefreshOutcome outcome = 2;
+  BillingDisposition billing_disposition = 3;
+  FreshnessState freshness = 4;
+  google.protobuf.Timestamp refreshed_at = 5;
+  Revision view_revision = 6;
+  bool truncated = 7;
+  uint32 result_count = 8;
+  IdempotencyResult idempotency = 9;
+}
+
+message GitHubUser {
+  string login = 1;
+}
+
+message GitHubTeam {
+  string organization = 1;
+  string slug = 2;
+}
+
+message AssignUsersMutation {
+  repeated GitHubUser users = 1;
+}
+
+message UnassignUsersMutation {
+  repeated GitHubUser users = 1;
+}
+
+message RequestReviewersMutation {
+  repeated GitHubUser users = 1;
+  repeated GitHubTeam teams = 2;
+}
+
+message RemoveReviewersMutation {
+  repeated GitHubUser users = 1;
+  repeated GitHubTeam teams = 2;
+}
+
+message AddLabelsMutation {
+  repeated string labels = 1;
+}
+
+message RemoveLabelsMutation {
+  repeated string labels = 1;
+}
+
+message MarkDraftMutation {}
+message MarkReadyMutation {}
+message ClosePullRequestMutation {}
+message ReopenPullRequestMutation {}
+
+message MergePullRequestMutation {
+  MergeMethod method = 1;
+  bool confirmed = 2;
+}
+
+message EnableAutoMergeMutation {
+  MergeMethod method = 1;
+}
+
+message CancelAutoMergeMutation {}
+
+message PullRequestMutation {
+  oneof mutation {
+    AssignUsersMutation assign_users = 1;
+    UnassignUsersMutation unassign_users = 2;
+    RequestReviewersMutation request_reviewers = 3;
+    RemoveReviewersMutation remove_reviewers = 4;
+    AddLabelsMutation add_labels = 5;
+    RemoveLabelsMutation remove_labels = 6;
+    MarkDraftMutation mark_draft = 7;
+    MarkReadyMutation mark_ready = 8;
+    ClosePullRequestMutation close = 9;
+    ReopenPullRequestMutation reopen = 10;
+    MergePullRequestMutation merge = 11;
+    EnableAutoMergeMutation enable_auto_merge = 12;
+    CancelAutoMergeMutation cancel_auto_merge = 13;
+  }
+}
+
+message PullRequestReference {
+  RepositoryReference repository = 1;
+  uint64 number = 2;
+}
+
+message MutatePullRequestRequest {
+  UuidV7 view_id = 1;
+  PullRequestReference pull_request = 2;
+  Revision expected_revision = 3;
+  PullRequestMutation mutation = 4;
+}
+
+message MutatePullRequestResponse {
+  PullRequestDetail pull_request = 1;
+  PullRequestMutationKind mutation_kind = 2;
+}
+
+enum FeatureDeletionState {
+  FEATURE_DELETION_STATE_UNSPECIFIED = 0;
+  FEATURE_DELETION_STATE_ACCEPTED = 1;
+  FEATURE_DELETION_STATE_IN_PROGRESS = 2;
+  FEATURE_DELETION_STATE_COMPLETED = 3;
+}
+
+message OwnerFeatureDeletion {
+  Owner owner = 1;
+  IdempotencyKey idempotency_key = 2;
+}
+
+message DelibaseLifecycleDeletion {
+  oneof target {
+    UuidV7 account_id = 1;
+    UuidV7 organization_id = 2;
+  }
+  UuidV7 deletion_job_id = 3;
+}
+
+message DeleteFeatureDataRequest {
+  oneof trigger {
+    OwnerFeatureDeletion owner_request = 1;
+    DelibaseLifecycleDeletion delibase_lifecycle = 2;
+  }
+}
+
+message DeleteFeatureDataResponse {
+  UuidV7 deletion_job_id = 1;
+  FeatureDeletionState state = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  IdempotencyResult idempotency = 4;
+}
+
+enum PullRequestLifecycleState {
+  PULL_REQUEST_LIFECYCLE_STATE_UNSPECIFIED = 0;
+  PULL_REQUEST_LIFECYCLE_STATE_OPEN = 1;
+  PULL_REQUEST_LIFECYCLE_STATE_CLOSED = 2;
+  PULL_REQUEST_LIFECYCLE_STATE_MERGED = 3;
+}
+
+message PullRequestReviewer {
+  oneof reviewer {
+    GitHubUser user = 1;
+    GitHubTeam team = 2;
+  }
+}
