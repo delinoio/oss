@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { runPackageManager } from "./process.mjs";
 
@@ -118,6 +118,15 @@ function processTable() {
 
 function descendantHelpers(rootPid) {
   const table = processTable();
+  if (process.platform === "win32") {
+    const binaryName = basename(binaryPath).toLowerCase();
+    return table.filter(
+      (row) =>
+        row.pid !== rootPid &&
+        /--type=/u.test(row.command) &&
+        row.command.toLowerCase().includes(binaryName),
+    );
+  }
   const descendants = new Set([rootPid]);
   let changed = true;
   while (changed) {
