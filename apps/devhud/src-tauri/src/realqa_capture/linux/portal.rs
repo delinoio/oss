@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, VecDeque},
     fs,
     io::Read,
     sync::Mutex,
@@ -30,15 +30,22 @@ use super::{
 const PORTAL_DISPLAY_ID: &str = "portal-display-picker";
 const PORTAL_WINDOW_ID: &str = "portal-window-picker";
 const PORTAL_APPROVED_ID: &str = "portal-approved-source";
+const MAX_PENDING_CANCELLATIONS: usize = 64;
 
 pub(super) struct PortalCaptureProvider {
-    sessions: Mutex<HashMap<CaptureSessionId, bool>>,
+    sessions: Mutex<PortalCaptureSessions>,
+}
+
+#[derive(Default)]
+struct PortalCaptureSessions {
+    by_id: HashMap<CaptureSessionId, bool>,
+    pending_cancellations: VecDeque<CaptureSessionId>,
 }
 
 impl PortalCaptureProvider {
     pub(super) fn new() -> Result<Self, BackendFailure> {
         Ok(Self {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Mutex::new(PortalCaptureSessions::default()),
         })
     }
 
@@ -169,6 +176,7 @@ impl PortalCaptureProvider {
         self.sessions
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?
+            .by_id
             .get(session_id)
             .copied()
             .ok_or(BackendFailure::Cancelled)
@@ -179,16 +187,19 @@ impl PortalCaptureProvider {
             .sessions
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?;
-        match sessions.entry(session_id.clone()) {
-            Entry::Vacant(entry) => {
-                entry.insert(false);
+        match sessions.by_id.get(session_id).copied() {
+            None => {
+                sessions.by_id.insert(session_id.clone(), false);
                 Ok(())
             }
-            Entry::Occupied(entry) if *entry.get() => {
-                entry.remove();
+            Some(true) => {
+                sessions.by_id.remove(session_id);
+                sessions
+                    .pending_cancellations
+                    .retain(|pending| pending != session_id);
                 Err(BackendFailure::Cancelled)
             }
-            Entry::Occupied(_) => Err(BackendFailure::CaptureFailed),
+            Some(false) => Err(BackendFailure::CaptureFailed),
         }
     }
 }
@@ -276,6 +287,7 @@ impl LinuxCaptureProvider for PortalCaptureProvider {
         self.sessions
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?
+            .by_id
             .remove(&request.session_id);
         if cancelled {
             Err(BackendFailure::Cancelled)
@@ -285,12 +297,24 @@ impl LinuxCaptureProvider for PortalCaptureProvider {
     }
 
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
-        self.sessions
+        let mut sessions = self
+            .sessions
             .lock()
-            .map_err(|_| BackendFailure::CaptureFailed)?
-            .entry(session_id.clone())
-            .and_modify(|cancelled| *cancelled = true)
-            .or_insert(true);
+            .map_err(|_| BackendFailure::CaptureFailed)?;
+        if let Some(cancelled) = sessions.by_id.get_mut(session_id) {
+            *cancelled = true;
+            return Ok(());
+        }
+        // Cancellation can beat the blocking capture task's portal
+        // registration. Keep only the newest unknown IDs so that race cannot
+        // turn caller-controlled session IDs into unbounded process memory.
+        if sessions.pending_cancellations.len() == MAX_PENDING_CANCELLATIONS
+            && let Some(oldest) = sessions.pending_cancellations.pop_front()
+        {
+            sessions.by_id.remove(&oldest);
+        }
+        sessions.by_id.insert(session_id.clone(), true);
+        sessions.pending_cancellations.push_back(session_id.clone());
         Ok(())
     }
 }
@@ -409,5 +433,33 @@ mod tests {
             provider.session_cancelled(&early),
             Err(BackendFailure::Cancelled)
         );
+    }
+
+    #[test]
+    fn pending_application_cancellations_are_bounded() {
+        let provider = PortalCaptureProvider::new().expect("portal provider");
+        let active = CaptureSessionId("active".to_owned());
+        provider
+            .register_session(&active)
+            .expect("register active request");
+
+        for index in 0..=MAX_PENDING_CANCELLATIONS {
+            provider
+                .cancel(&CaptureSessionId(format!("pending-{index}")))
+                .expect("cancel pending request");
+        }
+
+        let sessions = provider.sessions.lock().expect("sessions lock");
+        assert_eq!(
+            sessions.pending_cancellations.len(),
+            MAX_PENDING_CANCELLATIONS
+        );
+        assert_eq!(sessions.by_id.len(), MAX_PENDING_CANCELLATIONS + 1);
+        assert!(
+            !sessions
+                .by_id
+                .contains_key(&CaptureSessionId("pending-0".to_owned()))
+        );
+        assert_eq!(sessions.by_id.get(&active), Some(&false));
     }
 }
