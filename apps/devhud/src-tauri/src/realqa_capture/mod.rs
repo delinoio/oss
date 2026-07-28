@@ -145,7 +145,9 @@ impl WindowSource {
         {
             return Err(CaptureFailure::InvalidDisplaySnapshot);
         }
-        self.bounds.checked()?;
+        if self.availability == WindowAvailability::Available {
+            self.bounds.checked()?;
+        }
         Ok(self)
     }
 }
@@ -245,6 +247,10 @@ impl CaptureCore {
     }
 
     pub(crate) fn source_catalog(&self) -> Result<CaptureSourceCatalog, CaptureFailure> {
+        let permission = self.backend.permission().map_err(CaptureFailure::from)?;
+        if permission == CapturePermission::Denied {
+            return Err(CaptureFailure::PermissionDenied);
+        }
         let snapshot = self.current_snapshot()?;
         let mut windows = self
             .backend
@@ -259,7 +265,7 @@ impl CaptureCore {
         }
         Ok(CaptureSourceCatalog {
             platform: self.backend.platform(),
-            permission: self.backend.permission().map_err(CaptureFailure::from)?,
+            permission,
             snapshot,
             windows,
         })
@@ -382,6 +388,20 @@ impl CaptureCore {
             }
         };
         let pixel_regions = match &request.source {
+            CaptureSourceSelection::Display { display_id } => {
+                let display = snapshot
+                    .display(display_id)
+                    .ok_or(CaptureFailure::DisplaySnapshotChanged)?;
+                vec![DisplayPixelRegion {
+                    display_id: display.id.clone(),
+                    pixels: geometry::PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: display.physical_size.width,
+                        height: display.physical_size.height,
+                    },
+                }]
+            }
             CaptureSourceSelection::MultiMonitor { display_ids } => {
                 let mut regions = display_ids
                     .iter()
@@ -403,9 +423,9 @@ impl CaptureCore {
                 regions.sort_by(|left, right| left.display_id.0.cmp(&right.display_id.0));
                 regions
             }
-            CaptureSourceSelection::Region { .. }
-            | CaptureSourceSelection::Window { .. }
-            | CaptureSourceSelection::Display { .. } => snapshot.pixel_regions(logical_bounds)?,
+            CaptureSourceSelection::Region { .. } | CaptureSourceSelection::Window { .. } => {
+                snapshot.pixel_regions(logical_bounds)?
+            }
         };
         let mode = request.source.mode();
         Ok(ResolvedCaptureRequest {
@@ -549,7 +569,10 @@ impl CaptureBackend for PlatformCaptureBackend {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     use geometry::{PhysicalSize, PixelRect, ScaleFactor};
 
@@ -560,6 +583,7 @@ mod tests {
         permission: Mutex<Result<CapturePermission, BackendFailure>>,
         displays: Mutex<Vec<DisplayDescriptor>>,
         windows: Mutex<Vec<WindowSource>>,
+        window_calls: AtomicUsize,
         capture_result: Mutex<Result<BackendFrame, BackendFailure>>,
         last_request: Mutex<Option<ResolvedCaptureRequest>>,
     }
@@ -598,6 +622,7 @@ mod tests {
                     },
                     availability: WindowAvailability::Available,
                 }]),
+                window_calls: AtomicUsize::new(0),
                 capture_result: Mutex::new(Ok(BackendFrame {
                     width: 1,
                     height: 1,
@@ -625,6 +650,7 @@ mod tests {
             &self,
             _snapshot: &DisplaySnapshot,
         ) -> Result<Vec<WindowSource>, BackendFailure> {
+            self.window_calls.fetch_add(1, Ordering::Relaxed);
             Ok(self.windows.lock().expect("window lock").clone())
         }
 
@@ -745,6 +771,104 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn source_catalog_accepts_minimized_windows_without_active_bounds() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let mut window = backend.windows.lock().expect("window lock");
+        window[0].availability = WindowAvailability::Minimized;
+        window[0].bounds.width = 0.0;
+        window[0].bounds.height = 0.0;
+        drop(window);
+
+        let catalog = CaptureCore::new(backend)
+            .source_catalog()
+            .expect("minimized window must not invalidate the catalog");
+        assert_eq!(catalog.windows.len(), 1);
+        assert_eq!(
+            catalog.windows[0].availability,
+            WindowAvailability::Minimized
+        );
+    }
+
+    #[test]
+    fn source_catalog_rejects_denied_permission_before_enumerating_windows() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        *backend.permission.lock().expect("permission lock") = Ok(CapturePermission::Denied);
+
+        assert_eq!(
+            CaptureCore::new(backend.clone()).source_catalog(),
+            Err(CaptureFailure::PermissionDenied)
+        );
+        assert_eq!(backend.window_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn display_capture_excludes_overlapping_unselected_displays() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let overlapping_bounds = LogicalRect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+        };
+        *backend.displays.lock().expect("display lock") = vec![
+            DisplayDescriptor {
+                id: DisplayId("mirrored-1".to_owned()),
+                logical_bounds: overlapping_bounds,
+                physical_size: PhysicalSize {
+                    width: 100,
+                    height: 100,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: true,
+            },
+            DisplayDescriptor {
+                id: DisplayId("mirrored-2".to_owned()),
+                logical_bounds: overlapping_bounds,
+                physical_size: PhysicalSize {
+                    width: 200,
+                    height: 200,
+                },
+                scale: ScaleFactor {
+                    numerator: 2,
+                    denominator: 1,
+                },
+                primary: false,
+            },
+        ];
+        backend.windows.lock().expect("window lock").clear();
+
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Display {
+            display_id: DisplayId("mirrored-2".to_owned()),
+        };
+        core.begin(capture_request).expect("capture must work");
+
+        let backend_request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .clone()
+            .expect("backend must receive request");
+        assert_eq!(
+            backend_request.pixel_regions,
+            vec![DisplayPixelRegion {
+                display_id: DisplayId("mirrored-2".to_owned()),
+                pixels: PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 200,
+                },
+            }]
+        );
     }
 
     #[test]
