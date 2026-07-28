@@ -2872,10 +2872,14 @@ fn reset_dev_hud(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn get_auth_session(
-    state: State<'_, auth_native::NativeAuthState>,
+async fn get_auth_session(
+    app: AppHandle<ActiveRuntime>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
-    state.snapshot()
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<auth_native::NativeAuthState>().snapshot()
+    })
+    .await
+    .map_err(|_| auth::AuthError::TransportUnavailable)?
 }
 
 #[cfg(all(
@@ -2883,11 +2887,15 @@ fn get_auth_session(
     any(target_os = "android", target_os = "ios")
 ))]
 #[tauri::command]
-fn get_auth_session(
+async fn get_auth_session(
     app: AppHandle<ActiveRuntime>,
-    state: State<'_, auth_native::NativeAuthState>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
-    state.poll_mobile_callback(&app)
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<auth_native::NativeAuthState>()
+            .poll_mobile_callback(&app)
+    })
+    .await
+    .map_err(|_| auth::AuthError::TransportUnavailable)?
 }
 
 #[cfg(all(

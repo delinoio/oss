@@ -113,6 +113,14 @@ fn snapshot_without_configuration(
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "ios", test))]
+fn callback_for_pending_authorization(
+    callback: Option<String>,
+    has_pending_authorization: bool,
+) -> Option<String> {
+    callback.filter(|_| has_pending_authorization)
+}
+
 struct HttpTokenTransport {
     client: Client,
     issuer: String,
@@ -601,17 +609,22 @@ impl NativeAuthState {
             .take_callback()
             .map_err(|_| AuthError::InvalidCallback)?;
 
-        {
+        let has_pending_authorization = {
             let mut guard = self
                 .manager
                 .lock()
                 .map_err(|_| AuthError::SecureVaultUnavailable)?;
             if let Some(manager) = guard.as_mut() {
                 manager.expire_pending(unix_time_now())?;
+                manager.has_pending_authorization()
+            } else {
+                false
             }
-        }
+        };
 
-        let Some(callback) = callback else {
+        let Some(callback) =
+            callback_for_pending_authorization(callback, has_pending_authorization)
+        else {
             return self.snapshot();
         };
         let callback = Url::parse(&callback).map_err(|_| AuthError::InvalidCallback)?;
@@ -817,6 +830,18 @@ mod tests {
         assert_eq!(
             snapshot_without_configuration(false),
             Ok(SessionSnapshot::SignedOut)
+        );
+    }
+
+    #[test]
+    fn stale_mobile_callback_is_ignored_without_pending_authorization() {
+        assert_eq!(
+            callback_for_pending_authorization(Some("callback".to_owned()), false),
+            None
+        );
+        assert_eq!(
+            callback_for_pending_authorization(Some("callback".to_owned()), true),
+            Some("callback".to_owned())
         );
     }
 
