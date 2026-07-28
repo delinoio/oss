@@ -41,6 +41,7 @@ auto-launch = "=0.6.0"
 dirs = "6"
 fs2 = "=0.4.3"
 global-hotkey = { version = "=0.8.0", features = ["tracing"] }
+image = { version = "0.25.8", default-features = false, features = ["png", "webp"] }
 rfd = { version = "=0.17.2", default-features = false, features = ["gtk3"], optional = true }
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["cef", "tray-icon", "image-png"], optional = true }
 tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["devtools", "sandbox"], optional = true }

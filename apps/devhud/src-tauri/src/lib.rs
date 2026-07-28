@@ -12,6 +12,8 @@ mod diagnostics;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod local_log;
 #[cfg(any(feature = "desktop-cef", test))]
+mod realqa_capture;
+#[cfg(any(feature = "desktop-cef", test))]
 mod shortcut;
 #[cfg(any(
     all(
@@ -2813,6 +2815,17 @@ fn get_auth_session(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
+fn realqa_list_capture_sources(
+    state: State<'_, realqa_capture::CaptureCore>,
+) -> Result<realqa_capture::CaptureSourceCatalog, realqa_capture::CaptureFailure> {
+    state.source_catalog()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
 async fn start_authentication(
     feature: auth::AuthFeature,
     state: State<'_, auth_native::NativeAuthState>,
@@ -2868,6 +2881,80 @@ fn logout_authentication(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+#[tauri::command]
+fn realqa_adjust_capture_selection(
+    selection: realqa_capture::SelectionGeometry,
+    adjustment: realqa_capture::SelectionAdjustment,
+    state: State<'_, realqa_capture::CaptureCore>,
+) -> Result<realqa_capture::SelectionGeometry, realqa_capture::CaptureFailure> {
+    state.adjust_selection(&selection, adjustment)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_begin_capture(
+    request: realqa_capture::CaptureRequest,
+    state: State<'_, realqa_capture::CaptureCore>,
+) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
+    state.begin(request)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_cancel_capture(
+    session_id: realqa_capture::CaptureSessionId,
+    state: State<'_, realqa_capture::CaptureCore>,
+) -> Result<(), realqa_capture::CaptureFailure> {
+    state.cancel(&session_id)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_composer_accept_image(
+    request: realqa_capture::ComposerImageRequest,
+    state: State<'_, realqa_capture::ComposerCore>,
+) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
+    state.accept_image(request)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_composer_remove_image(
+    session_id: realqa_capture::ComposerSessionId,
+    image_id: realqa_capture::ComposerImageId,
+    state: State<'_, realqa_capture::ComposerCore>,
+) -> Result<(), realqa_capture::CaptureFailure> {
+    state.remove_image(&session_id, &image_id)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_composer_reset_session(
+    session_id: realqa_capture::ComposerSessionId,
+    state: State<'_, realqa_capture::ComposerCore>,
+) -> Result<(), realqa_capture::CaptureFailure> {
+    state.reset_session(&session_id)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
     builder
         .invoke_handler(tauri::generate_handler![
@@ -2887,7 +2974,14 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             request_update_action,
             get_auth_session,
             start_authentication,
-            logout_authentication
+            logout_authentication,
+            realqa_list_capture_sources,
+            realqa_adjust_capture_selection,
+            realqa_begin_capture,
+            realqa_cancel_capture,
+            realqa_composer_accept_image,
+            realqa_composer_remove_image,
+            realqa_composer_reset_session
         ])
         .setup(|app| {
             let persistence = match app.path().app_local_data_dir() {
@@ -2916,6 +3010,10 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             app.manage(auth_native::NativeAuthState::initialize());
             app.manage(QuittingState(AtomicBool::new(false)));
             app.manage(updater::UpdateActionBoundary);
+            app.manage(realqa_capture::CaptureCore::new(std::sync::Arc::new(
+                realqa_capture::PlatformCaptureBackend::current(),
+            )));
+            app.manage(realqa_capture::ComposerCore::default());
 
             let autostart = autostart::AutostartState::initialize();
             let launch_at_login = if first_run {

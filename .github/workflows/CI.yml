@@ -248,8 +248,8 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: servers/delibase/scripts/test-image.sh
 
-  proto-delibase:
-    name: Delibase Protobuf
+  proto-contracts:
+    name: Protobuf contracts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -270,11 +270,13 @@ jobs:
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
-              - protos/buf.gen.yaml
               - protos/buf.yaml
               - protos/delibase/**
+              - protos/devhud-deck/**
+              - protos/devhud-realqa/**
+              - scripts/check-proto-component.sh
               - scripts/check-proto.sh
-              - scripts/generate-delibase-proto.sh
+              - scripts/generate-proto-component.sh
               - scripts/generate-proto.sh
               - scripts/lib/go-proto-tools.sh
 
@@ -294,12 +296,12 @@ jobs:
 
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
 
-      - name: Skip (no delibase Protobuf changes)
+      - name: Skip (no shared Protobuf changes)
         if: ${{ steps.gate.outputs.run != 'true' }}
         run: |
-          echo "Skipping delibase Protobuf checks: no relevant changes"
+          echo "Skipping shared Protobuf checks: no relevant changes"
 
-      - name: Resolve delibase Protobuf compatibility baseline
+      - name: Resolve Protobuf compatibility baselines
         if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         env:
@@ -307,19 +309,29 @@ jobs:
         run: |
           set -euo pipefail
 
-          baseline_path="protos/delibase/delibase.v1.binpb"
           if [ -z "${BASELINE_COMMIT}" ] || [[ "${BASELINE_COMMIT}" =~ ^0+$ ]]; then
-            echo "No prior event commit is available; using the checked-in initial baseline"
+            echo "No prior event commit is available; using checked-in baselines"
           elif ! git cat-file -e "${BASELINE_COMMIT}^{commit}"; then
             echo "The prior event commit is not available: ${BASELINE_COMMIT}" >&2
             exit 1
-          elif git cat-file -e "${BASELINE_COMMIT}:${baseline_path}"; then
-            immutable_baseline="${RUNNER_TEMP}/delibase.v1.binpb"
-            git show "${BASELINE_COMMIT}:${baseline_path}" > "${immutable_baseline}"
-            echo "DELIBASE_PROTO_BASELINE=${immutable_baseline}" >> "${GITHUB_ENV}"
-            echo "Using the delibase v1 baseline from ${BASELINE_COMMIT}"
           else
-            echo "The prior event commit has no delibase v1 baseline; using the checked-in initial baseline"
+            contracts=(
+              "delibase:delibase.v1.binpb:DELIBASE_PROTO_BASELINE"
+              "devhud-deck:devhud.deck.v1.binpb:DEVHUD_DECK_PROTO_BASELINE"
+              "devhud-realqa:devhud.realqa.v1.binpb:DEVHUD_REALQA_PROTO_BASELINE"
+            )
+            for contract in "${contracts[@]}"; do
+              IFS=: read -r component descriptor baseline_variable <<< "${contract}"
+              baseline_path="protos/${component}/${descriptor}"
+              if git cat-file -e "${BASELINE_COMMIT}:${baseline_path}"; then
+                immutable_baseline="${RUNNER_TEMP}/${component}.v1.binpb"
+                git show "${BASELINE_COMMIT}:${baseline_path}" > "${immutable_baseline}"
+                echo "${baseline_variable}=${immutable_baseline}" >> "${GITHUB_ENV}"
+                echo "Using the ${component} v1 baseline from ${BASELINE_COMMIT}"
+              else
+                echo "The prior event commit has no ${component} v1 baseline; using the checked-in initial baseline"
+              fi
+            done
           fi
 
       - name: Setup pnpm
@@ -351,17 +363,46 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm check:proto
 
-      - name: Run delibase Protobuf tests
+      - name: Run Protobuf contract tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: go test ./protos/delibase/...
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in delibase devhud-deck devhud-realqa; do
+            component_root="protos/${component}"
+            if [ ! -d "${component_root}" ] || \
+              [ -z "$(find "${component_root}" -type f -name '*.go' -print -quit)" ]; then
+              continue
+            fi
+            go test "./${component_root}/..."
+          done
 
-      - name: Run delibase Protobuf vet
+      - name: Run Protobuf contract vet
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: go vet ./protos/delibase/...
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in delibase devhud-deck devhud-realqa; do
+            component_root="protos/${component}"
+            if [ ! -d "${component_root}" ] || \
+              [ -z "$(find "${component_root}" -type f -name '*.go' -print -quit)" ]; then
+              continue
+            fi
+            go vet "./${component_root}/..."
+          done
 
-      - name: Typecheck delibase TypeScript artifacts
+      - name: Typecheck Protobuf TypeScript artifacts
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter @delinoio/delibase-connect typecheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in delibase devhud-deck devhud-realqa; do
+            component_root="protos/${component}"
+            if [ ! -f "${component_root}/package.json" ]; then
+              continue
+            fi
+            pnpm --dir "${component_root}" run typecheck
+          done
 
   rust-fmt:
     name: Rust fmt
@@ -1175,10 +1216,9 @@ jobs:
               - turbo.json
               - apps/AGENTS.md
               - apps/delidev-app/**
-              - protos/buf.gen.yaml
               - protos/buf.yaml
               - protos/delibase/**
-              - scripts/generate-delibase-proto.sh
+              - scripts/generate-proto-component.sh
               - scripts/lib/go-proto-tools.sh
 
       - name: Determine whether to run
@@ -1252,7 +1292,7 @@ jobs:
       - go-quality
       - go-test
       - delibase-server
-      - proto-delibase
+      - proto-contracts
       - rust-fmt
       - rust-clippy
       - rust-test

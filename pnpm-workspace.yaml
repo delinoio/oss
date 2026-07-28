@@ -1,7 +1,9 @@
 packages:
   - apps/*
   - packages/*
-  - protos/*
+  - protos/delibase
+  - protos/devhud-deck
+  - protos/devhud-realqa
   - servers/*
 
 overrides:

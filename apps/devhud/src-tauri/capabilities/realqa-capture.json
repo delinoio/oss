@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "realqa-capture",
+  "description": "Allows only the authenticated RealQA capture window to enumerate bounded sources and perform one user-initiated capture selection.",
+  "local": true,
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": ["realqa-capture"],
+  "permissions": [
+    "allow-realqa-list-capture-sources",
+    "allow-realqa-adjust-capture-selection",
+    "allow-realqa-begin-capture",
+    "allow-realqa-cancel-capture"
+  ]
+}

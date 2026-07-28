@@ -9,7 +9,13 @@
   "app": {
     "windows": [],
     "security": {
-      "capabilities": ["desktop-main", "settings", "mobile-main"],
+      "capabilities": [
+        "desktop-main",
+        "settings",
+        "mobile-main",
+        "realqa-capture",
+        "realqa-composer"
+      ],
       "csp": "default-src 'self'; base-uri 'none'; child-src 'none'; connect-src ipc: http://ipc.localhost; font-src 'none'; form-action 'none'; frame-ancestors 'none'; frame-src 'none'; img-src 'self' data:; manifest-src 'none'; media-src 'none'; object-src 'none'; script-src 'self'; style-src 'self'; worker-src 'none'",
       "freezePrototype": true
     }
