@@ -365,6 +365,7 @@ Coverage expectations:
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: builds the DevHud frontend, installs its Linux desktop prerequisites, runs `cargo clippy --workspace --all-targets --all-features --exclude devhud -- -D warnings`, then lints the mutually exclusive DevHud runtime foundation with `cargo clippy -p devhud --all-targets --features desktop-cef --locked -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
+- `devhud-realqa-macos`: runs `pnpm --filter devhud test:realqa:native` on `macos-14` to exercise the macOS capture fixtures and compile the adapter for `x86_64-apple-darwin` and `aarch64-apple-darwin`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
 - `node-devhud`: runs `pnpm install --frozen-lockfile` and DevHud `typecheck`, `lint`, unit, accessibility, build, diagnostics-contract, and portable mobile-contract commands.
