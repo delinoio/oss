@@ -6,9 +6,13 @@ use super::{CaptureFailure, DecodedImage, decoded_byte_len};
 
 const MAX_OPERATIONS: usize = 1_000;
 const MAX_FREEHAND_POINTS: usize = 20_000;
+const MAX_TOTAL_FREEHAND_POINTS: usize = 100_000;
 const MAX_TEXT_BYTES: usize = 4_096;
 const MAX_LINE_WIDTH: u32 = 128;
 const MAX_EFFECT_SIZE: u32 = 128;
+const MAX_RASTER_WORK: u64 = 100_000_000;
+const MAX_ARROW_HEAD_STAMPS: u64 = 98;
+const MAX_GLYPH_CELLS: u64 = 35;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -179,6 +183,8 @@ fn validate_operations(
     let mut active_crop = None;
     let mut source_effect_seen = false;
     let mut annotation_seen = false;
+    let mut total_freehand_points = 0_usize;
+    let mut raster_work = 0_u64;
     for operation in operations {
         match operation {
             EditorOperation::Crop { rect } => {
@@ -198,6 +204,11 @@ fn validate_operations(
                 }
                 checked_line(*line_width)?;
                 parse_color(color)?;
+                add_line_work(&mut raster_work, *start, *end, *line_width)?;
+                add_raster_work(
+                    &mut raster_work,
+                    MAX_ARROW_HEAD_STAMPS * brush_area(*line_width),
+                )?;
             }
             EditorOperation::Rectangle {
                 rect,
@@ -207,6 +218,16 @@ fn validate_operations(
                 rect.checked(width, height)?;
                 checked_line(*line_width)?;
                 parse_color(color)?;
+                let stamps = u64::from(rect.width)
+                    .checked_add(u64::from(rect.height))
+                    .and_then(|value| value.checked_mul(2))
+                    .ok_or(CaptureFailure::InvalidEditSequence)?;
+                add_raster_work(
+                    &mut raster_work,
+                    stamps
+                        .checked_mul(brush_area(*line_width))
+                        .ok_or(CaptureFailure::InvalidEditSequence)?,
+                )?;
             }
             EditorOperation::Freehand {
                 points,
@@ -216,11 +237,20 @@ fn validate_operations(
                 if points.len() < 2 || points.len() > MAX_FREEHAND_POINTS {
                     return Err(CaptureFailure::InvalidEditorOperation);
                 }
+                total_freehand_points = total_freehand_points
+                    .checked_add(points.len())
+                    .ok_or(CaptureFailure::InvalidEditSequence)?;
+                if total_freehand_points > MAX_TOTAL_FREEHAND_POINTS {
+                    return Err(CaptureFailure::InvalidEditSequence);
+                }
                 for point in points {
                     checked_point(*point, width, height)?;
                 }
                 checked_line(*line_width)?;
                 parse_color(color)?;
+                for pair in points.windows(2) {
+                    add_line_work(&mut raster_work, pair[0], pair[1], *line_width)?;
+                }
             }
             EditorOperation::Text {
                 origin,
@@ -239,6 +269,14 @@ fn validate_operations(
                     return Err(CaptureFailure::InvalidEditorOperation);
                 }
                 parse_color(color)?;
+                let scale = u64::from((font_size / 7).max(1));
+                let work = u64::try_from(text.len())
+                    .ok()
+                    .and_then(|length| length.checked_mul(MAX_GLYPH_CELLS))
+                    .and_then(|value| value.checked_mul(scale))
+                    .and_then(|value| value.checked_mul(scale))
+                    .ok_or(CaptureFailure::InvalidEditSequence)?;
+                add_raster_work(&mut raster_work, work)?;
             }
             EditorOperation::Marker {
                 center,
@@ -283,6 +321,35 @@ fn validate_operations(
         }
     }
     if crop_count > 1 {
+        return Err(CaptureFailure::InvalidEditSequence);
+    }
+    Ok(())
+}
+
+fn brush_area(line_width: u32) -> u64 {
+    u64::from(line_width) * u64::from(line_width)
+}
+
+fn add_line_work(
+    raster_work: &mut u64,
+    start: EditorPoint,
+    end: EditorPoint,
+    line_width: u32,
+) -> Result<(), CaptureFailure> {
+    let stamps = u64::from(start.x.abs_diff(end.x).max(start.y.abs_diff(end.y))) + 1;
+    add_raster_work(
+        raster_work,
+        stamps
+            .checked_mul(brush_area(line_width))
+            .ok_or(CaptureFailure::InvalidEditSequence)?,
+    )
+}
+
+fn add_raster_work(raster_work: &mut u64, work: u64) -> Result<(), CaptureFailure> {
+    *raster_work = raster_work
+        .checked_add(work)
+        .ok_or(CaptureFailure::InvalidEditSequence)?;
+    if *raster_work > MAX_RASTER_WORK {
         return Err(CaptureFailure::InvalidEditSequence);
     }
     Ok(())
@@ -893,6 +960,61 @@ mod tests {
         assert_eq!(
             flatten(fixture(), &[operation]),
             Err(CaptureFailure::InvalidEditorOperation)
+        );
+    }
+
+    #[test]
+    fn rejects_aggregate_freehand_point_limit_before_rasterizing() {
+        let points = vec![EditorPoint { x: 0, y: 0 }; MAX_TOTAL_FREEHAND_POINTS / 6 + 1];
+        let operations = (0..6)
+            .map(|_| EditorOperation::Freehand {
+                points: points.clone(),
+                color: "#ffffff".to_owned(),
+                line_width: 1,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            flatten(fixture(), &operations),
+            Err(CaptureFailure::InvalidEditSequence)
+        );
+    }
+
+    #[test]
+    fn rejects_excessive_stroke_raster_work_before_stamping() {
+        let source = DecodedImage {
+            width: 10_000,
+            height: 1,
+            rgba: vec![0; 10_000 * 4],
+        };
+        let operation = EditorOperation::Arrow {
+            start: EditorPoint { x: 0, y: 0 },
+            end: EditorPoint { x: 9_999, y: 0 },
+            color: "#ffffff".to_owned(),
+            line_width: MAX_LINE_WIDTH,
+        };
+
+        assert_eq!(
+            flatten(source, &[operation]),
+            Err(CaptureFailure::InvalidEditSequence)
+        );
+    }
+
+    #[test]
+    fn rejects_aggregate_text_raster_work_before_drawing() {
+        let operation = EditorOperation::Text {
+            origin: EditorPoint { x: 0, y: 0 },
+            text: "A".repeat(MAX_TEXT_BYTES),
+            color: "#ffffff".to_owned(),
+            font_size: MAX_EFFECT_SIZE,
+        };
+
+        assert_eq!(
+            flatten(
+                fixture(),
+                &[operation.clone(), operation.clone(), operation],
+            ),
+            Err(CaptureFailure::InvalidEditSequence)
         );
     }
 
