@@ -24,6 +24,7 @@
 ### mpapp Rules
 
 - `mpapp` must remain Expo-based unless a documented architecture decision changes it.
+- `mpapp` must keep `start` and `dev` as equivalent `expo start` entrypoints so it is included in root Turbo development.
 - Bluetooth capabilities and permissions must be explicitly documented in `docs/apps-mpapp-foundation.md`.
 
 ### DevHud Rules

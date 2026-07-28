@@ -330,6 +330,11 @@ enum RustiaComponent {
 
 ### Node Runtime Baseline
 
+### Repository Development Workflow
+
+- Root `pnpm dev` must retain proto generation, `scripts/dev.sh` argument forwarding, repository-local Derun/Go state directories, and the complete `turbo dev` graph. It must include `binpm-docs`, `delidev-app`, `devhud`, `mpapp`, `nodeup-docs`, and `public-docs`; do not replace it with an apps-only filter.
+- Run `pnpm check:dev-contract` when changing root or inspected app development scripts; it guards the workspace task invariant and the retained root protocol.
+
 - Root `.nvmrc` is the canonical Node.js runtime selector for local development workflows.
 - The current required runtime is Node.js `24` (LTS major line).
 - When bumping the runtime baseline, update `.nvmrc` and relevant CI/runtime docs in the same change set.

@@ -6,6 +6,7 @@
     "prepare": "lefthook install; ./scripts/prepare-apps.sh",
     "predev": "./scripts/generate-proto.sh",
     "dev": "./scripts/dev.sh",
+    "check:dev-contract": "node ./scripts/check-dev-contract.mjs",
     "build": "turbo build",
     "generate:proto": "./scripts/generate-proto.sh",
     "check:proto": "./scripts/check-proto.sh",

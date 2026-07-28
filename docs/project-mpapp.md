@@ -18,6 +18,7 @@ Provide an Expo React Native application for mobile workflows with stable platfo
 - Session snapshot restore must always start in `Idle` mode and must not auto-reconnect previously connected sessions.
 
 ## Change Policy
+- Preserve both direct Expo development commands (`pnpm --filter mpapp start` and `pnpm --filter mpapp dev`) and keep the app included in the root Turbo development graph.
 - Update this index and `docs/apps-mpapp-foundation.md` together whenever app capabilities, routes, or runtime assumptions change.
 - Keep `apps/AGENTS.md` and root `AGENTS.md` aligned on mobile UI and operational policies.
 

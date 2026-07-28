@@ -46,6 +46,7 @@
 - Debug logging must avoid secret/token exposure.
 
 ## Build and Test
+- Development entrypoints: `start` and `dev` both run `expo start`. The `dev` alias is required so root Turbo development includes `mpapp` alongside the other inspected app workspaces.
 - Local validation: `pnpm --filter mpapp test`
 - Lint validation: `pnpm --filter mpapp lint`
 - CI alignment: `node-mpapp-test` and `node-mpapp-lint` jobs

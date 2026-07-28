@@ -17,6 +17,10 @@ This document defines default technology choices and repository workflow default
 - Repository and domain `AGENTS.md` files must stay aligned with this document when these defaults change.
 
 ## Repository Workflow Defaults
+
+- Root `pnpm dev` runs `predev` proto generation, then `scripts/dev.sh`, which preserves repository-local Derun/Go state directories and delegates the complete Turbo development graph through `go run ./cmds/derun run -- turbo dev`. It must not be narrowed to an apps-only filter.
+- The root development graph must include a `dev` task for each inspected app workspace: `binpm-docs`, `delidev-app`, `devhud`, `mpapp`, `nodeup-docs`, and `public-docs`. New inspected app workspaces must add the expected task before root orchestration is considered complete.
+- `apps/mpapp` keeps both `start` and `dev` as `expo start` entrypoints so direct Expo development and root Turbo orchestration remain compatible.
 - Newly created pull requests must use Conventional Commit-style titles with a required scope: `<type>(<scope>): <description>`.
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
