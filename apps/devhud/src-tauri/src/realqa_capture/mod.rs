@@ -1,6 +1,7 @@
 mod composer;
 mod geometry;
 mod image_boundary;
+#[cfg(any(target_os = "windows", test))]
 mod windows;
 
 use std::sync::Arc;

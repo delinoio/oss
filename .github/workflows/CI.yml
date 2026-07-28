@@ -899,7 +899,8 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm install --frozen-lockfile
+        # The root prepare hook is POSIX-only; remove this after it supports Windows.
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Inspect capabilities and run native fixtures
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter devhud test:realqa:native
