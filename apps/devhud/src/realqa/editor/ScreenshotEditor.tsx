@@ -24,6 +24,7 @@ import {
   EditorTool,
   editorHistoryReducer,
   emptyEditorHistory,
+  normalizeEditorText,
   rectFromPoints,
   validateEditorOperation,
 } from "./model";
@@ -143,21 +144,33 @@ function operationForGesture(
   }
 }
 
-export function ScreenshotEditorProvider({
-  bridge,
-  children,
-  imageId,
-  onApprove,
-  sessionId,
-  source,
-}: {
+interface ScreenshotEditorProviderProps {
   readonly bridge: RealQaComposerBridge;
   readonly children: ReactNode;
   readonly imageId: string;
   readonly onApprove: (image: ApprovedComposerImage) => void;
   readonly sessionId: string;
   readonly source: ComposerImage;
-}) {
+}
+
+export function ScreenshotEditorProvider(props: ScreenshotEditorProviderProps) {
+  const { imageId, sessionId } = props;
+  return (
+    <ScreenshotEditorStateProvider
+      key={JSON.stringify([sessionId, imageId])}
+      {...props}
+    />
+  );
+}
+
+function ScreenshotEditorStateProvider({
+  bridge,
+  children,
+  imageId,
+  onApprove,
+  sessionId,
+  source,
+}: ScreenshotEditorProviderProps) {
   const [history, dispatch] = useReducer(
     editorHistoryReducer,
     emptyEditorHistory,
@@ -513,17 +526,22 @@ function OperationOverlay({
     case "blur":
       return (
         <g>
-          <clipPath id={`${effectPrefix}-clip-${index}`}>
-            <rect
-              height={operation.rect.height}
-              width={operation.rect.width}
-              x={operation.rect.x}
-              y={operation.rect.y}
-            />
-          </clipPath>
+          <defs>
+            <clipPath id={`${effectPrefix}-clip-${index}`}>
+              <rect
+                height={operation.rect.height}
+                width={operation.rect.width}
+                x={operation.rect.x}
+                y={operation.rect.y}
+              />
+            </clipPath>
+            <filter id={`${effectPrefix}-blur-${index}`}>
+              <feGaussianBlur stdDeviation={operation.radius} />
+            </filter>
+          </defs>
           <image
             clipPath={`url(#${effectPrefix}-clip-${index})`}
-            filter={`url(#${effectPrefix}-blur)`}
+            filter={`url(#${effectPrefix}-blur-${index})`}
             height="100%"
             href={sourceUrl}
             width="100%"
@@ -534,14 +552,53 @@ function OperationOverlay({
       );
     case "pixelate":
       return (
-        <rect
-          className="editor-pixelate"
-          fill={`url(#${effectPrefix}-pixel-pattern)`}
-          height={operation.rect.height}
-          width={operation.rect.width}
-          x={operation.rect.x}
-          y={operation.rect.y}
-        />
+        <>
+          <defs>
+            <pattern
+              height={operation.blockSize * 2}
+              id={`${effectPrefix}-pixel-pattern-${index}`}
+              patternUnits="userSpaceOnUse"
+              width={operation.blockSize * 2}
+            >
+              <rect
+                fill="#747b87"
+                height={operation.blockSize}
+                width={operation.blockSize}
+                x="0"
+                y="0"
+              />
+              <rect
+                fill="#aeb4bd"
+                height={operation.blockSize}
+                width={operation.blockSize}
+                x={operation.blockSize}
+                y="0"
+              />
+              <rect
+                fill="#aeb4bd"
+                height={operation.blockSize}
+                width={operation.blockSize}
+                x="0"
+                y={operation.blockSize}
+              />
+              <rect
+                fill="#747b87"
+                height={operation.blockSize}
+                width={operation.blockSize}
+                x={operation.blockSize}
+                y={operation.blockSize}
+              />
+            </pattern>
+          </defs>
+          <rect
+            className="editor-pixelate"
+            fill={`url(#${effectPrefix}-pixel-pattern-${index})`}
+            height={operation.rect.height}
+            width={operation.rect.width}
+            x={operation.rect.x}
+            y={operation.rect.y}
+          />
+        </>
       );
   }
 }
@@ -657,20 +714,6 @@ export function ScreenshotEditorCanvas() {
           >
             <path d="M0,0 L0,6 L7,3 z" fill="context-stroke" />
           </marker>
-          <filter id={`${effectPrefix}-blur`}>
-            <feGaussianBlur stdDeviation="6" />
-          </filter>
-          <pattern
-            height="8"
-            id={`${effectPrefix}-pixel-pattern`}
-            patternUnits="userSpaceOnUse"
-            width="8"
-          >
-            <rect fill="#747b87" height="4" width="4" x="0" y="0" />
-            <rect fill="#aeb4bd" height="4" width="4" x="4" y="0" />
-            <rect fill="#aeb4bd" height="4" width="4" x="0" y="4" />
-            <rect fill="#747b87" height="4" width="4" x="4" y="4" />
-          </pattern>
         </defs>
         <image height="100%" href={sourceUrl} width="100%" x="0" y="0" />
         {operations.map((operation, index) => (
@@ -740,7 +783,7 @@ export function ScreenshotEditorInspector() {
           Text
           <input
             maxLength={1_000}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => setText(normalizeEditorText(event.target.value))}
             type="text"
             value={text}
           />

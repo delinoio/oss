@@ -29,6 +29,14 @@ export interface EditorHistory {
   readonly future: readonly (readonly EditorOperation[])[];
 }
 
+const supportedTextCharacter = /^[A-Za-z0-9 .:!?-]$/u;
+
+export function normalizeEditorText(value: string): string {
+  return [...value]
+    .map((character) => supportedTextCharacter.test(character) ? character : "?")
+    .join("");
+}
+
 export type EditorHistoryAction =
   | { readonly type: "commit"; readonly operation: EditorOperation }
   | { readonly type: "undo" }
@@ -159,6 +167,7 @@ export function validateEditorOperation(
         pointInBounds(operation.origin, bounds) &&
         new TextEncoder().encode(operation.text).length <= 4_096 &&
         operation.text.length > 0 &&
+        normalizeEditorText(operation.text) === operation.text &&
         ![...operation.text].some((character) => {
           const codePoint = character.codePointAt(0);
           return (

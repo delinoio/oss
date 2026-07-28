@@ -39,13 +39,21 @@ function fixture() {
     resetSession: vi.fn(),
   };
   const onApprove = vi.fn();
-  const result = render(
+  const renderEditor = ({
+    sourceValue = source,
+    imageId = sourceValue.imageId,
+    sessionId = "session-1",
+  }: {
+    readonly imageId?: string;
+    readonly sessionId?: string;
+    readonly sourceValue?: ComposerImage;
+  } = {}) => (
     <ScreenshotEditor.Provider
       bridge={bridge}
-      imageId="image-1"
+      imageId={imageId}
       onApprove={onApprove}
-      sessionId="session-1"
-      source={source}
+      sessionId={sessionId}
+      source={sourceValue}
     >
       <ScreenshotEditor.Frame>
         <ScreenshotEditor.Toolbar />
@@ -53,8 +61,9 @@ function fixture() {
         <ScreenshotEditor.Inspector />
         <ScreenshotEditor.Actions />
       </ScreenshotEditor.Frame>
-    </ScreenshotEditor.Provider>,
+    </ScreenshotEditor.Provider>
   );
+  const result = render(renderEditor());
   const canvas = screen.getByRole("application", {
     name: /Screenshot editor canvas/u,
   });
@@ -69,7 +78,7 @@ function fixture() {
     height: 400,
     toJSON: () => ({}),
   });
-  return { ...result, bridge, flattened, onApprove, canvas };
+  return { ...result, bridge, flattened, onApprove, canvas, renderEditor };
 }
 
 afterEach(cleanup);
@@ -135,6 +144,85 @@ describe("ScreenshotEditor", () => {
     );
     await user.keyboard("{Escape}");
     expect(screen.getByText("Pending edit cancelled.")).toBeVisible();
+  });
+
+  it("resets image-specific state when the source identity changes", async () => {
+    const user = userEvent.setup();
+    const { bridge, canvas, renderEditor, rerender } = fixture();
+    fireEvent.pointerDown(canvas, { clientX: 50, clientY: 40, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 350, clientY: 240, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 350, clientY: 240, pointerId: 1 });
+    expect(screen.getByRole("list", { name: "Applied edits" })).toHaveTextContent(
+      "Arrow",
+    );
+
+    const nextSource = {
+      ...source,
+      imageId: "image-2",
+      width: 40,
+      height: 20,
+    };
+    rerender(
+      renderEditor({
+        imageId: "image-2",
+        sessionId: "session-2",
+        sourceValue: nextSource,
+      }),
+    );
+
+    expect(screen.getByRole("list", { name: "Applied edits" }))
+      .toBeEmptyDOMElement();
+    expect(
+      screen.getByRole("application", { name: /Cursor at 20, 10/u }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Approve 0 edits" }));
+    expect(bridge.flattenImage).toHaveBeenCalledWith({
+      sessionId: "session-2",
+      imageId: "image-2",
+      operations: [],
+      outputMediaType: ImageMediaType.Png,
+    });
+  });
+
+  it("previews blur and pixelate using each operation's strength", async () => {
+    const user = userEvent.setup();
+    const { canvas, container } = fixture();
+    const lineWidth = screen.getByRole("slider", { name: /Line width/u });
+
+    await user.click(screen.getByRole("button", { name: "Blur" }));
+    fireEvent.change(lineWidth, { target: { value: "5" } });
+    fireEvent.pointerDown(canvas, { clientX: 50, clientY: 40, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 250, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 250, clientY: 200, pointerId: 1 });
+    expect(container.querySelector("feGaussianBlur")).toHaveAttribute(
+      "stdDeviation",
+      "10",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Pixelate" }));
+    fireEvent.change(lineWidth, { target: { value: "7" } });
+    fireEvent.pointerDown(canvas, { clientX: 250, clientY: 200, pointerId: 2 });
+    fireEvent.pointerMove(canvas, { clientX: 450, clientY: 360, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 450, clientY: 360, pointerId: 2 });
+    const pattern = container.querySelector("pattern");
+    expect(pattern).toHaveAttribute("height", "28");
+    expect(pattern).toHaveAttribute("width", "28");
+    expect(pattern?.querySelector("rect")).toHaveAttribute("height", "14");
+    expect(pattern?.querySelector("rect")).toHaveAttribute("width", "14");
+  });
+
+  it("normalizes unsupported text before previewing the operation", async () => {
+    const user = userEvent.setup();
+    const { canvas } = fixture();
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    const input = screen.getByRole("textbox", { name: "Text" });
+    await user.clear(input);
+    await user.type(input, "café");
+    expect(input).toHaveValue("caf?");
+    fireEvent.pointerDown(canvas, { clientX: 50, clientY: 40, pointerId: 1 });
+    expect(screen.getByRole("list", { name: "Applied edits" })).toHaveTextContent(
+      "Text: caf?",
+    );
   });
 
   it("has no automated WCAG violations at mobile width", async () => {

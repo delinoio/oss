@@ -212,7 +212,9 @@ fn validate_operations(
                 checked_point(*origin, width, height)?;
                 if text.is_empty()
                     || text.len() > MAX_TEXT_BYTES
-                    || text.chars().any(char::is_control)
+                    || text
+                        .chars()
+                        .any(|character| !is_supported_text_character(character))
                     || !(8..=MAX_EFFECT_SIZE).contains(font_size)
                 {
                     return Err(CaptureFailure::InvalidEditorOperation);
@@ -444,8 +446,23 @@ fn draw_text(
     }
 }
 
+fn is_supported_text_character(character: char) -> bool {
+    matches!(
+        character,
+        '0'..='9'
+            | 'A'..='Z'
+            | 'a'..='z'
+            | ' '
+            | '-'
+            | '.'
+            | ':'
+            | '!'
+            | '?'
+    )
+}
+
 fn glyph(character: char) -> [u8; 7] {
-    match character.to_ascii_uppercase() {
+    match character {
         '0' => [14, 17, 19, 21, 25, 17, 14],
         '1' => [4, 12, 4, 4, 4, 4, 14],
         '2' => [14, 17, 1, 2, 4, 8, 31],
@@ -482,6 +499,32 @@ fn glyph(character: char) -> [u8; 7] {
         'X' => [17, 17, 10, 4, 10, 17, 17],
         'Y' => [17, 17, 10, 4, 4, 4, 4],
         'Z' => [31, 1, 2, 4, 8, 16, 31],
+        'a' => [0, 0, 14, 1, 15, 17, 15],
+        'b' => [16, 16, 30, 17, 17, 17, 30],
+        'c' => [0, 0, 14, 16, 16, 17, 14],
+        'd' => [1, 1, 15, 17, 17, 17, 15],
+        'e' => [0, 0, 14, 17, 31, 16, 14],
+        'f' => [6, 8, 30, 8, 8, 8, 8],
+        'g' => [0, 0, 15, 17, 15, 1, 14],
+        'h' => [16, 16, 30, 17, 17, 17, 17],
+        'i' => [4, 0, 12, 4, 4, 4, 14],
+        'j' => [2, 0, 6, 2, 2, 18, 12],
+        'k' => [16, 16, 18, 20, 24, 20, 18],
+        'l' => [12, 4, 4, 4, 4, 4, 14],
+        'm' => [0, 0, 26, 21, 21, 21, 21],
+        'n' => [0, 0, 30, 17, 17, 17, 17],
+        'o' => [0, 0, 14, 17, 17, 17, 14],
+        'p' => [0, 0, 30, 17, 30, 16, 16],
+        'q' => [0, 0, 15, 17, 15, 1, 1],
+        'r' => [0, 0, 22, 25, 16, 16, 16],
+        's' => [0, 0, 15, 16, 14, 1, 30],
+        't' => [8, 8, 30, 8, 8, 9, 6],
+        'u' => [0, 0, 17, 17, 17, 19, 13],
+        'v' => [0, 0, 17, 17, 17, 10, 4],
+        'w' => [0, 0, 17, 17, 21, 21, 10],
+        'x' => [0, 0, 17, 10, 4, 10, 17],
+        'y' => [0, 0, 17, 17, 15, 1, 14],
+        'z' => [0, 0, 31, 2, 4, 8, 31],
         ' ' => [0; 7],
         '-' => [0, 0, 0, 31, 0, 0, 0],
         '.' => [0, 0, 0, 0, 0, 12, 12],
@@ -736,6 +779,25 @@ mod tests {
                 encode_image(&second, media_type).expect("second output must encode")
             );
         }
+    }
+
+    #[test]
+    fn preserves_supported_text_case_and_rejects_unsupported_glyphs() {
+        let text_operation = |text: &str| EditorOperation::Text {
+            origin: EditorPoint { x: 0, y: 0 },
+            text: text.to_owned(),
+            color: "#ffffff".to_owned(),
+            font_size: 8,
+        };
+        let lowercase =
+            flatten(fixture(), &[text_operation("a")]).expect("lowercase text must flatten");
+        let uppercase =
+            flatten(fixture(), &[text_operation("A")]).expect("uppercase text must flatten");
+        assert_ne!(lowercase, uppercase);
+        assert_eq!(
+            flatten(fixture(), &[text_operation("é")]),
+            Err(CaptureFailure::InvalidEditorOperation)
+        );
     }
 
     #[test]

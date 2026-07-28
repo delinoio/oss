@@ -4,6 +4,7 @@ import type { EditorOperation } from "../capture";
 import {
   editorHistoryReducer,
   emptyEditorHistory,
+  normalizeEditorText,
   validateEditorOperation,
 } from "./model";
 
@@ -107,6 +108,23 @@ describe("screenshot editor model", () => {
     ];
     expect(invalid.every((operation) => !validateEditorOperation(operation, bounds)))
       .toBe(true);
+  });
+
+  it("preserves supported text casing and normalizes unsupported glyphs", () => {
+    expect(normalizeEditorText("Note 12!")).toBe("Note 12!");
+    expect(normalizeEditorText("café 🔒")).toBe("caf? ?");
+    expect(
+      validateEditorOperation(
+        {
+          kind: "text",
+          origin: { x: 1, y: 1 },
+          text: "café",
+          color: "#ff0000",
+          fontSize: 16,
+        },
+        bounds,
+      ),
+    ).toBe(false);
   });
 
   it("preserves immutable undo/redo snapshots and clears redo on a new edit", () => {
