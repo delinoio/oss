@@ -508,6 +508,58 @@ func (FeatureDeletionState) EnumDescriptor() ([]byte, []int) {
 	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{8}
 }
 
+type PullRequestLifecycleState int32
+
+const (
+	PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_UNSPECIFIED PullRequestLifecycleState = 0
+	PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_OPEN        PullRequestLifecycleState = 1
+	PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_CLOSED      PullRequestLifecycleState = 2
+	PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_MERGED      PullRequestLifecycleState = 3
+)
+
+// Enum value maps for PullRequestLifecycleState.
+var (
+	PullRequestLifecycleState_name = map[int32]string{
+		0: "PULL_REQUEST_LIFECYCLE_STATE_UNSPECIFIED",
+		1: "PULL_REQUEST_LIFECYCLE_STATE_OPEN",
+		2: "PULL_REQUEST_LIFECYCLE_STATE_CLOSED",
+		3: "PULL_REQUEST_LIFECYCLE_STATE_MERGED",
+	}
+	PullRequestLifecycleState_value = map[string]int32{
+		"PULL_REQUEST_LIFECYCLE_STATE_UNSPECIFIED": 0,
+		"PULL_REQUEST_LIFECYCLE_STATE_OPEN":        1,
+		"PULL_REQUEST_LIFECYCLE_STATE_CLOSED":      2,
+		"PULL_REQUEST_LIFECYCLE_STATE_MERGED":      3,
+	}
+)
+
+func (x PullRequestLifecycleState) Enum() *PullRequestLifecycleState {
+	p := new(PullRequestLifecycleState)
+	*p = x
+	return p
+}
+
+func (x PullRequestLifecycleState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PullRequestLifecycleState) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_deck_v1_view_proto_enumTypes[9].Descriptor()
+}
+
+func (PullRequestLifecycleState) Type() protoreflect.EnumType {
+	return &file_devhud_deck_v1_view_proto_enumTypes[9]
+}
+
+func (x PullRequestLifecycleState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PullRequestLifecycleState.Descriptor instead.
+func (PullRequestLifecycleState) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{9}
+}
+
 // QueryIdentity represents @me, an individual login, or an organization team.
 type QueryIdentity struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2545,8 +2597,14 @@ type PullRequestResult struct {
 	IsDraft        bool                   `protobuf:"varint,8,opt,name=is_draft,json=isDraft,proto3" json:"is_draft,omitempty"`
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Revision       *Revision              `protobuf:"bytes,10,opt,name=revision,proto3" json:"revision,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// reviewers is the individual/team membership used by reviewer grouping.
+	Reviewers      []*PullRequestReviewer    `protobuf:"bytes,11,rep,name=reviewers,proto3" json:"reviewers,omitempty"`
+	LifecycleState PullRequestLifecycleState `protobuf:"varint,12,opt,name=lifecycle_state,json=lifecycleState,proto3,enum=devhud.deck.v1.PullRequestLifecycleState" json:"lifecycle_state,omitempty"`
+	// Action metadata is evaluated for the current caller before mutation.
+	SupportedMutations    []PullRequestMutationKind `protobuf:"varint,13,rep,packed,name=supported_mutations,json=supportedMutations,proto3,enum=devhud.deck.v1.PullRequestMutationKind" json:"supported_mutations,omitempty"`
+	AvailableMergeMethods []MergeMethod             `protobuf:"varint,14,rep,packed,name=available_merge_methods,json=availableMergeMethods,proto3,enum=devhud.deck.v1.MergeMethod" json:"available_merge_methods,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PullRequestResult) Reset() {
@@ -2649,9 +2707,38 @@ func (x *PullRequestResult) GetRevision() *Revision {
 	return nil
 }
 
+func (x *PullRequestResult) GetReviewers() []*PullRequestReviewer {
+	if x != nil {
+		return x.Reviewers
+	}
+	return nil
+}
+
+func (x *PullRequestResult) GetLifecycleState() PullRequestLifecycleState {
+	if x != nil {
+		return x.LifecycleState
+	}
+	return PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_UNSPECIFIED
+}
+
+func (x *PullRequestResult) GetSupportedMutations() []PullRequestMutationKind {
+	if x != nil {
+		return x.SupportedMutations
+	}
+	return nil
+}
+
+func (x *PullRequestResult) GetAvailableMergeMethods() []MergeMethod {
+	if x != nil {
+		return x.AvailableMergeMethods
+	}
+	return nil
+}
+
 type PullRequestDetail struct {
-	state                 protoimpl.MessageState    `protogen:"open.v1"`
-	Result                *PullRequestResult        `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Result *PullRequestResult     `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	// These values mirror the action metadata on result.
 	SupportedMutations    []PullRequestMutationKind `protobuf:"varint,2,rep,packed,name=supported_mutations,json=supportedMutations,proto3,enum=devhud.deck.v1.PullRequestMutationKind" json:"supported_mutations,omitempty"`
 	AvailableMergeMethods []MergeMethod             `protobuf:"varint,3,rep,packed,name=available_merge_methods,json=availableMergeMethods,proto3,enum=devhud.deck.v1.MergeMethod" json:"available_merge_methods,omitempty"`
 	Revision              *Revision                 `protobuf:"bytes,4,opt,name=revision,proto3" json:"revision,omitempty"`
@@ -4523,6 +4610,88 @@ func (x *DeleteFeatureDataResponse) GetIdempotency() *IdempotencyResult {
 	return nil
 }
 
+type PullRequestReviewer struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Reviewer:
+	//
+	//	*PullRequestReviewer_User
+	//	*PullRequestReviewer_Team
+	Reviewer      isPullRequestReviewer_Reviewer `protobuf_oneof:"reviewer"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PullRequestReviewer) Reset() {
+	*x = PullRequestReviewer{}
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PullRequestReviewer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PullRequestReviewer) ProtoMessage() {}
+
+func (x *PullRequestReviewer) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PullRequestReviewer.ProtoReflect.Descriptor instead.
+func (*PullRequestReviewer) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *PullRequestReviewer) GetReviewer() isPullRequestReviewer_Reviewer {
+	if x != nil {
+		return x.Reviewer
+	}
+	return nil
+}
+
+func (x *PullRequestReviewer) GetUser() *GitHubUser {
+	if x != nil {
+		if x, ok := x.Reviewer.(*PullRequestReviewer_User); ok {
+			return x.User
+		}
+	}
+	return nil
+}
+
+func (x *PullRequestReviewer) GetTeam() *GitHubTeam {
+	if x != nil {
+		if x, ok := x.Reviewer.(*PullRequestReviewer_Team); ok {
+			return x.Team
+		}
+	}
+	return nil
+}
+
+type isPullRequestReviewer_Reviewer interface {
+	isPullRequestReviewer_Reviewer()
+}
+
+type PullRequestReviewer_User struct {
+	User *GitHubUser `protobuf:"bytes,1,opt,name=user,proto3,oneof"`
+}
+
+type PullRequestReviewer_Team struct {
+	Team *GitHubTeam `protobuf:"bytes,2,opt,name=team,proto3,oneof"`
+}
+
+func (*PullRequestReviewer_User) isPullRequestReviewer_Reviewer() {}
+
+func (*PullRequestReviewer_Team) isPullRequestReviewer_Reviewer() {}
+
 var File_devhud_deck_v1_view_proto protoreflect.FileDescriptor
 
 const file_devhud_deck_v1_view_proto_rawDesc = "" +
@@ -4661,7 +4830,7 @@ const file_devhud_deck_v1_view_proto_rawDesc = "" +
 	"\x05state\x18\x01 \x01(\x0e2\x1b.devhud.deck.v1.ChecksStateR\x05state\x12#\n" +
 	"\rpending_count\x18\x02 \x01(\rR\fpendingCount\x12#\n" +
 	"\rsuccess_count\x18\x03 \x01(\rR\fsuccessCount\x12#\n" +
-	"\rfailure_count\x18\x04 \x01(\rR\ffailureCount\"\x8e\x04\n" +
+	"\rfailure_count\x18\x04 \x01(\rR\ffailureCount\"\xd4\x06\n" +
 	"\x11PullRequestResult\x12C\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2#.devhud.deck.v1.RepositoryReferenceR\n" +
@@ -4676,7 +4845,11 @@ const file_devhud_deck_v1_view_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x124\n" +
 	"\brevision\x18\n" +
-	" \x01(\v2\x18.devhud.deck.v1.RevisionR\brevision\"\xb3\x02\n" +
+	" \x01(\v2\x18.devhud.deck.v1.RevisionR\brevision\x12A\n" +
+	"\treviewers\x18\v \x03(\v2#.devhud.deck.v1.PullRequestReviewerR\treviewers\x12R\n" +
+	"\x0flifecycle_state\x18\f \x01(\x0e2).devhud.deck.v1.PullRequestLifecycleStateR\x0elifecycleState\x12X\n" +
+	"\x13supported_mutations\x18\r \x03(\x0e2'.devhud.deck.v1.PullRequestMutationKindR\x12supportedMutations\x12S\n" +
+	"\x17available_merge_methods\x18\x0e \x03(\x0e2\x1b.devhud.deck.v1.MergeMethodR\x15availableMergeMethods\"\xb3\x02\n" +
 	"\x11PullRequestDetail\x129\n" +
 	"\x06result\x18\x01 \x01(\v2!.devhud.deck.v1.PullRequestResultR\x06result\x12X\n" +
 	"\x13supported_mutations\x18\x02 \x03(\x0e2'.devhud.deck.v1.PullRequestMutationKindR\x12supportedMutations\x12S\n" +
@@ -4798,7 +4971,12 @@ const file_devhud_deck_v1_view_proto_rawDesc = "" +
 	"\x05state\x18\x02 \x01(\x0e2$.devhud.deck.v1.FeatureDeletionStateR\x05state\x12;\n" +
 	"\vaccepted_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"acceptedAt\x12C\n" +
-	"\vidempotency\x18\x04 \x01(\v2!.devhud.deck.v1.IdempotencyResultR\vidempotency*\x94\x01\n" +
+	"\vidempotency\x18\x04 \x01(\v2!.devhud.deck.v1.IdempotencyResultR\vidempotency\"\x85\x01\n" +
+	"\x13PullRequestReviewer\x120\n" +
+	"\x04user\x18\x01 \x01(\v2\x1a.devhud.deck.v1.GitHubUserH\x00R\x04user\x120\n" +
+	"\x04team\x18\x02 \x01(\v2\x1a.devhud.deck.v1.GitHubTeamH\x00R\x04teamB\n" +
+	"\n" +
+	"\breviewer*\x94\x01\n" +
 	"\x11QueryIdentityKind\x12#\n" +
 	"\x1fQUERY_IDENTITY_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aQUERY_IDENTITY_KIND_VIEWER\x10\x01\x12\x1c\n" +
@@ -4849,7 +5027,12 @@ const file_devhud_deck_v1_view_proto_rawDesc = "" +
 	"\"FEATURE_DELETION_STATE_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fFEATURE_DELETION_STATE_ACCEPTED\x10\x01\x12&\n" +
 	"\"FEATURE_DELETION_STATE_IN_PROGRESS\x10\x02\x12$\n" +
-	" FEATURE_DELETION_STATE_COMPLETED\x10\x032\xb7\a\n" +
+	" FEATURE_DELETION_STATE_COMPLETED\x10\x03*\xc2\x01\n" +
+	"\x19PullRequestLifecycleState\x12,\n" +
+	"(PULL_REQUEST_LIFECYCLE_STATE_UNSPECIFIED\x10\x00\x12%\n" +
+	"!PULL_REQUEST_LIFECYCLE_STATE_OPEN\x10\x01\x12'\n" +
+	"#PULL_REQUEST_LIFECYCLE_STATE_CLOSED\x10\x02\x12'\n" +
+	"#PULL_REQUEST_LIFECYCLE_STATE_MERGED\x10\x032\xb7\a\n" +
 	"\x0fDeckViewService\x12P\n" +
 	"\tListViews\x12 .devhud.deck.v1.ListViewsRequest\x1a!.devhud.deck.v1.ListViewsResponse\x12J\n" +
 	"\aGetView\x12\x1e.devhud.deck.v1.GetViewRequest\x1a\x1f.devhud.deck.v1.GetViewResponse\x12S\n" +
@@ -4877,8 +5060,8 @@ func file_devhud_deck_v1_view_proto_rawDescGZIP() []byte {
 	return file_devhud_deck_v1_view_proto_rawDescData
 }
 
-var file_devhud_deck_v1_view_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_devhud_deck_v1_view_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
+var file_devhud_deck_v1_view_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
+var file_devhud_deck_v1_view_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
 var file_devhud_deck_v1_view_proto_goTypes = []any{
 	(QueryIdentityKind)(0),                // 0: devhud.deck.v1.QueryIdentityKind
 	(PullRequestState)(0),                 // 1: devhud.deck.v1.PullRequestState
@@ -4889,253 +5072,261 @@ var file_devhud_deck_v1_view_proto_goTypes = []any{
 	(RefreshOrigin)(0),                    // 6: devhud.deck.v1.RefreshOrigin
 	(BillingDisposition)(0),               // 7: devhud.deck.v1.BillingDisposition
 	(FeatureDeletionState)(0),             // 8: devhud.deck.v1.FeatureDeletionState
-	(*QueryIdentity)(nil),                 // 9: devhud.deck.v1.QueryIdentity
-	(*OwnerQualifier)(nil),                // 10: devhud.deck.v1.OwnerQualifier
-	(*RepositoryQualifier)(nil),           // 11: devhud.deck.v1.RepositoryQualifier
-	(*AuthorQualifier)(nil),               // 12: devhud.deck.v1.AuthorQualifier
-	(*AssigneeQualifier)(nil),             // 13: devhud.deck.v1.AssigneeQualifier
-	(*ReviewerQualifier)(nil),             // 14: devhud.deck.v1.ReviewerQualifier
-	(*LabelQualifier)(nil),                // 15: devhud.deck.v1.LabelQualifier
-	(*StateQualifier)(nil),                // 16: devhud.deck.v1.StateQualifier
-	(*BaseBranchQualifier)(nil),           // 17: devhud.deck.v1.BaseBranchQualifier
-	(*HeadBranchQualifier)(nil),           // 18: devhud.deck.v1.HeadBranchQualifier
-	(*ReviewDecisionQualifier)(nil),       // 19: devhud.deck.v1.ReviewDecisionQualifier
-	(*ChecksQualifier)(nil),               // 20: devhud.deck.v1.ChecksQualifier
-	(*UpdatedRangeQualifier)(nil),         // 21: devhud.deck.v1.UpdatedRangeQualifier
-	(*QueryClause)(nil),                   // 22: devhud.deck.v1.QueryClause
-	(*QueryBuilder)(nil),                  // 23: devhud.deck.v1.QueryBuilder
-	(*ViewQuery)(nil),                     // 24: devhud.deck.v1.ViewQuery
-	(*ViewNotificationPreference)(nil),    // 25: devhud.deck.v1.ViewNotificationPreference
-	(*View)(nil),                          // 26: devhud.deck.v1.View
-	(*CreateViewInput)(nil),               // 27: devhud.deck.v1.CreateViewInput
-	(*UpdateViewInput)(nil),               // 28: devhud.deck.v1.UpdateViewInput
-	(*ListViewsRequest)(nil),              // 29: devhud.deck.v1.ListViewsRequest
-	(*ListViewsResponse)(nil),             // 30: devhud.deck.v1.ListViewsResponse
-	(*GetViewRequest)(nil),                // 31: devhud.deck.v1.GetViewRequest
-	(*GetViewResponse)(nil),               // 32: devhud.deck.v1.GetViewResponse
-	(*CreateViewRequest)(nil),             // 33: devhud.deck.v1.CreateViewRequest
-	(*CreateViewResponse)(nil),            // 34: devhud.deck.v1.CreateViewResponse
-	(*UpdateViewRequest)(nil),             // 35: devhud.deck.v1.UpdateViewRequest
-	(*UpdateViewResponse)(nil),            // 36: devhud.deck.v1.UpdateViewResponse
-	(*DeleteViewRequest)(nil),             // 37: devhud.deck.v1.DeleteViewRequest
-	(*DeleteViewResponse)(nil),            // 38: devhud.deck.v1.DeleteViewResponse
-	(*RepositoryReference)(nil),           // 39: devhud.deck.v1.RepositoryReference
-	(*PullRequestAuthor)(nil),             // 40: devhud.deck.v1.PullRequestAuthor
-	(*CheckSummary)(nil),                  // 41: devhud.deck.v1.CheckSummary
-	(*PullRequestResult)(nil),             // 42: devhud.deck.v1.PullRequestResult
-	(*PullRequestDetail)(nil),             // 43: devhud.deck.v1.PullRequestDetail
-	(*ListPullRequestsRequest)(nil),       // 44: devhud.deck.v1.ListPullRequestsRequest
-	(*ListPullRequestsResponse)(nil),      // 45: devhud.deck.v1.ListPullRequestsResponse
-	(*GetManualRefreshQuoteRequest)(nil),  // 46: devhud.deck.v1.GetManualRefreshQuoteRequest
-	(*GetManualRefreshQuoteResponse)(nil), // 47: devhud.deck.v1.GetManualRefreshQuoteResponse
-	(*RefreshViewRequest)(nil),            // 48: devhud.deck.v1.RefreshViewRequest
-	(*RefreshViewResponse)(nil),           // 49: devhud.deck.v1.RefreshViewResponse
-	(*GitHubUser)(nil),                    // 50: devhud.deck.v1.GitHubUser
-	(*GitHubTeam)(nil),                    // 51: devhud.deck.v1.GitHubTeam
-	(*AssignUsersMutation)(nil),           // 52: devhud.deck.v1.AssignUsersMutation
-	(*UnassignUsersMutation)(nil),         // 53: devhud.deck.v1.UnassignUsersMutation
-	(*RequestReviewersMutation)(nil),      // 54: devhud.deck.v1.RequestReviewersMutation
-	(*RemoveReviewersMutation)(nil),       // 55: devhud.deck.v1.RemoveReviewersMutation
-	(*AddLabelsMutation)(nil),             // 56: devhud.deck.v1.AddLabelsMutation
-	(*RemoveLabelsMutation)(nil),          // 57: devhud.deck.v1.RemoveLabelsMutation
-	(*MarkDraftMutation)(nil),             // 58: devhud.deck.v1.MarkDraftMutation
-	(*MarkReadyMutation)(nil),             // 59: devhud.deck.v1.MarkReadyMutation
-	(*ClosePullRequestMutation)(nil),      // 60: devhud.deck.v1.ClosePullRequestMutation
-	(*ReopenPullRequestMutation)(nil),     // 61: devhud.deck.v1.ReopenPullRequestMutation
-	(*MergePullRequestMutation)(nil),      // 62: devhud.deck.v1.MergePullRequestMutation
-	(*EnableAutoMergeMutation)(nil),       // 63: devhud.deck.v1.EnableAutoMergeMutation
-	(*CancelAutoMergeMutation)(nil),       // 64: devhud.deck.v1.CancelAutoMergeMutation
-	(*PullRequestMutation)(nil),           // 65: devhud.deck.v1.PullRequestMutation
-	(*PullRequestReference)(nil),          // 66: devhud.deck.v1.PullRequestReference
-	(*MutatePullRequestRequest)(nil),      // 67: devhud.deck.v1.MutatePullRequestRequest
-	(*MutatePullRequestResponse)(nil),     // 68: devhud.deck.v1.MutatePullRequestResponse
-	(*OwnerFeatureDeletion)(nil),          // 69: devhud.deck.v1.OwnerFeatureDeletion
-	(*DelibaseLifecycleDeletion)(nil),     // 70: devhud.deck.v1.DelibaseLifecycleDeletion
-	(*DeleteFeatureDataRequest)(nil),      // 71: devhud.deck.v1.DeleteFeatureDataRequest
-	(*DeleteFeatureDataResponse)(nil),     // 72: devhud.deck.v1.DeleteFeatureDataResponse
-	(*timestamppb.Timestamp)(nil),         // 73: google.protobuf.Timestamp
-	(NotificationTransition)(0),           // 74: devhud.deck.v1.NotificationTransition
-	(*UuidV7)(nil),                        // 75: devhud.deck.v1.UuidV7
-	(*Owner)(nil),                         // 76: devhud.deck.v1.Owner
-	(*BillingSelection)(nil),              // 77: devhud.deck.v1.BillingSelection
-	(ViewKind)(0),                         // 78: devhud.deck.v1.ViewKind
-	(ViewSort)(0),                         // 79: devhud.deck.v1.ViewSort
-	(ViewGrouping)(0),                     // 80: devhud.deck.v1.ViewGrouping
-	(ConnectionState)(0),                  // 81: devhud.deck.v1.ConnectionState
-	(*Revision)(nil),                      // 82: devhud.deck.v1.Revision
-	(*PageRequest)(nil),                   // 83: devhud.deck.v1.PageRequest
-	(*PageResponse)(nil),                  // 84: devhud.deck.v1.PageResponse
-	(*IdempotencyKey)(nil),                // 85: devhud.deck.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),             // 86: devhud.deck.v1.IdempotencyResult
-	(PullRequestMutationKind)(0),          // 87: devhud.deck.v1.PullRequestMutationKind
-	(FreshnessState)(0),                   // 88: devhud.deck.v1.FreshnessState
-	(*UsdMicros)(nil),                     // 89: devhud.deck.v1.UsdMicros
-	(RefreshOutcome)(0),                   // 90: devhud.deck.v1.RefreshOutcome
+	(PullRequestLifecycleState)(0),        // 9: devhud.deck.v1.PullRequestLifecycleState
+	(*QueryIdentity)(nil),                 // 10: devhud.deck.v1.QueryIdentity
+	(*OwnerQualifier)(nil),                // 11: devhud.deck.v1.OwnerQualifier
+	(*RepositoryQualifier)(nil),           // 12: devhud.deck.v1.RepositoryQualifier
+	(*AuthorQualifier)(nil),               // 13: devhud.deck.v1.AuthorQualifier
+	(*AssigneeQualifier)(nil),             // 14: devhud.deck.v1.AssigneeQualifier
+	(*ReviewerQualifier)(nil),             // 15: devhud.deck.v1.ReviewerQualifier
+	(*LabelQualifier)(nil),                // 16: devhud.deck.v1.LabelQualifier
+	(*StateQualifier)(nil),                // 17: devhud.deck.v1.StateQualifier
+	(*BaseBranchQualifier)(nil),           // 18: devhud.deck.v1.BaseBranchQualifier
+	(*HeadBranchQualifier)(nil),           // 19: devhud.deck.v1.HeadBranchQualifier
+	(*ReviewDecisionQualifier)(nil),       // 20: devhud.deck.v1.ReviewDecisionQualifier
+	(*ChecksQualifier)(nil),               // 21: devhud.deck.v1.ChecksQualifier
+	(*UpdatedRangeQualifier)(nil),         // 22: devhud.deck.v1.UpdatedRangeQualifier
+	(*QueryClause)(nil),                   // 23: devhud.deck.v1.QueryClause
+	(*QueryBuilder)(nil),                  // 24: devhud.deck.v1.QueryBuilder
+	(*ViewQuery)(nil),                     // 25: devhud.deck.v1.ViewQuery
+	(*ViewNotificationPreference)(nil),    // 26: devhud.deck.v1.ViewNotificationPreference
+	(*View)(nil),                          // 27: devhud.deck.v1.View
+	(*CreateViewInput)(nil),               // 28: devhud.deck.v1.CreateViewInput
+	(*UpdateViewInput)(nil),               // 29: devhud.deck.v1.UpdateViewInput
+	(*ListViewsRequest)(nil),              // 30: devhud.deck.v1.ListViewsRequest
+	(*ListViewsResponse)(nil),             // 31: devhud.deck.v1.ListViewsResponse
+	(*GetViewRequest)(nil),                // 32: devhud.deck.v1.GetViewRequest
+	(*GetViewResponse)(nil),               // 33: devhud.deck.v1.GetViewResponse
+	(*CreateViewRequest)(nil),             // 34: devhud.deck.v1.CreateViewRequest
+	(*CreateViewResponse)(nil),            // 35: devhud.deck.v1.CreateViewResponse
+	(*UpdateViewRequest)(nil),             // 36: devhud.deck.v1.UpdateViewRequest
+	(*UpdateViewResponse)(nil),            // 37: devhud.deck.v1.UpdateViewResponse
+	(*DeleteViewRequest)(nil),             // 38: devhud.deck.v1.DeleteViewRequest
+	(*DeleteViewResponse)(nil),            // 39: devhud.deck.v1.DeleteViewResponse
+	(*RepositoryReference)(nil),           // 40: devhud.deck.v1.RepositoryReference
+	(*PullRequestAuthor)(nil),             // 41: devhud.deck.v1.PullRequestAuthor
+	(*CheckSummary)(nil),                  // 42: devhud.deck.v1.CheckSummary
+	(*PullRequestResult)(nil),             // 43: devhud.deck.v1.PullRequestResult
+	(*PullRequestDetail)(nil),             // 44: devhud.deck.v1.PullRequestDetail
+	(*ListPullRequestsRequest)(nil),       // 45: devhud.deck.v1.ListPullRequestsRequest
+	(*ListPullRequestsResponse)(nil),      // 46: devhud.deck.v1.ListPullRequestsResponse
+	(*GetManualRefreshQuoteRequest)(nil),  // 47: devhud.deck.v1.GetManualRefreshQuoteRequest
+	(*GetManualRefreshQuoteResponse)(nil), // 48: devhud.deck.v1.GetManualRefreshQuoteResponse
+	(*RefreshViewRequest)(nil),            // 49: devhud.deck.v1.RefreshViewRequest
+	(*RefreshViewResponse)(nil),           // 50: devhud.deck.v1.RefreshViewResponse
+	(*GitHubUser)(nil),                    // 51: devhud.deck.v1.GitHubUser
+	(*GitHubTeam)(nil),                    // 52: devhud.deck.v1.GitHubTeam
+	(*AssignUsersMutation)(nil),           // 53: devhud.deck.v1.AssignUsersMutation
+	(*UnassignUsersMutation)(nil),         // 54: devhud.deck.v1.UnassignUsersMutation
+	(*RequestReviewersMutation)(nil),      // 55: devhud.deck.v1.RequestReviewersMutation
+	(*RemoveReviewersMutation)(nil),       // 56: devhud.deck.v1.RemoveReviewersMutation
+	(*AddLabelsMutation)(nil),             // 57: devhud.deck.v1.AddLabelsMutation
+	(*RemoveLabelsMutation)(nil),          // 58: devhud.deck.v1.RemoveLabelsMutation
+	(*MarkDraftMutation)(nil),             // 59: devhud.deck.v1.MarkDraftMutation
+	(*MarkReadyMutation)(nil),             // 60: devhud.deck.v1.MarkReadyMutation
+	(*ClosePullRequestMutation)(nil),      // 61: devhud.deck.v1.ClosePullRequestMutation
+	(*ReopenPullRequestMutation)(nil),     // 62: devhud.deck.v1.ReopenPullRequestMutation
+	(*MergePullRequestMutation)(nil),      // 63: devhud.deck.v1.MergePullRequestMutation
+	(*EnableAutoMergeMutation)(nil),       // 64: devhud.deck.v1.EnableAutoMergeMutation
+	(*CancelAutoMergeMutation)(nil),       // 65: devhud.deck.v1.CancelAutoMergeMutation
+	(*PullRequestMutation)(nil),           // 66: devhud.deck.v1.PullRequestMutation
+	(*PullRequestReference)(nil),          // 67: devhud.deck.v1.PullRequestReference
+	(*MutatePullRequestRequest)(nil),      // 68: devhud.deck.v1.MutatePullRequestRequest
+	(*MutatePullRequestResponse)(nil),     // 69: devhud.deck.v1.MutatePullRequestResponse
+	(*OwnerFeatureDeletion)(nil),          // 70: devhud.deck.v1.OwnerFeatureDeletion
+	(*DelibaseLifecycleDeletion)(nil),     // 71: devhud.deck.v1.DelibaseLifecycleDeletion
+	(*DeleteFeatureDataRequest)(nil),      // 72: devhud.deck.v1.DeleteFeatureDataRequest
+	(*DeleteFeatureDataResponse)(nil),     // 73: devhud.deck.v1.DeleteFeatureDataResponse
+	(*PullRequestReviewer)(nil),           // 74: devhud.deck.v1.PullRequestReviewer
+	(*timestamppb.Timestamp)(nil),         // 75: google.protobuf.Timestamp
+	(NotificationTransition)(0),           // 76: devhud.deck.v1.NotificationTransition
+	(*UuidV7)(nil),                        // 77: devhud.deck.v1.UuidV7
+	(*Owner)(nil),                         // 78: devhud.deck.v1.Owner
+	(*BillingSelection)(nil),              // 79: devhud.deck.v1.BillingSelection
+	(ViewKind)(0),                         // 80: devhud.deck.v1.ViewKind
+	(ViewSort)(0),                         // 81: devhud.deck.v1.ViewSort
+	(ViewGrouping)(0),                     // 82: devhud.deck.v1.ViewGrouping
+	(ConnectionState)(0),                  // 83: devhud.deck.v1.ConnectionState
+	(*Revision)(nil),                      // 84: devhud.deck.v1.Revision
+	(*PageRequest)(nil),                   // 85: devhud.deck.v1.PageRequest
+	(*PageResponse)(nil),                  // 86: devhud.deck.v1.PageResponse
+	(*IdempotencyKey)(nil),                // 87: devhud.deck.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),             // 88: devhud.deck.v1.IdempotencyResult
+	(PullRequestMutationKind)(0),          // 89: devhud.deck.v1.PullRequestMutationKind
+	(FreshnessState)(0),                   // 90: devhud.deck.v1.FreshnessState
+	(*UsdMicros)(nil),                     // 91: devhud.deck.v1.UsdMicros
+	(RefreshOutcome)(0),                   // 92: devhud.deck.v1.RefreshOutcome
 }
 var file_devhud_deck_v1_view_proto_depIdxs = []int32{
 	0,   // 0: devhud.deck.v1.QueryIdentity.kind:type_name -> devhud.deck.v1.QueryIdentityKind
-	9,   // 1: devhud.deck.v1.AuthorQualifier.author:type_name -> devhud.deck.v1.QueryIdentity
-	9,   // 2: devhud.deck.v1.AssigneeQualifier.assignee:type_name -> devhud.deck.v1.QueryIdentity
-	9,   // 3: devhud.deck.v1.ReviewerQualifier.reviewer:type_name -> devhud.deck.v1.QueryIdentity
+	10,  // 1: devhud.deck.v1.AuthorQualifier.author:type_name -> devhud.deck.v1.QueryIdentity
+	10,  // 2: devhud.deck.v1.AssigneeQualifier.assignee:type_name -> devhud.deck.v1.QueryIdentity
+	10,  // 3: devhud.deck.v1.ReviewerQualifier.reviewer:type_name -> devhud.deck.v1.QueryIdentity
 	1,   // 4: devhud.deck.v1.StateQualifier.state:type_name -> devhud.deck.v1.PullRequestState
 	2,   // 5: devhud.deck.v1.ReviewDecisionQualifier.decision:type_name -> devhud.deck.v1.ReviewDecision
 	3,   // 6: devhud.deck.v1.ChecksQualifier.state:type_name -> devhud.deck.v1.ChecksState
-	73,  // 7: devhud.deck.v1.UpdatedRangeQualifier.updated_after:type_name -> google.protobuf.Timestamp
-	73,  // 8: devhud.deck.v1.UpdatedRangeQualifier.updated_before:type_name -> google.protobuf.Timestamp
-	10,  // 9: devhud.deck.v1.QueryClause.owner:type_name -> devhud.deck.v1.OwnerQualifier
-	11,  // 10: devhud.deck.v1.QueryClause.repository:type_name -> devhud.deck.v1.RepositoryQualifier
-	12,  // 11: devhud.deck.v1.QueryClause.author:type_name -> devhud.deck.v1.AuthorQualifier
-	13,  // 12: devhud.deck.v1.QueryClause.assignee:type_name -> devhud.deck.v1.AssigneeQualifier
-	14,  // 13: devhud.deck.v1.QueryClause.reviewer:type_name -> devhud.deck.v1.ReviewerQualifier
-	15,  // 14: devhud.deck.v1.QueryClause.label:type_name -> devhud.deck.v1.LabelQualifier
-	16,  // 15: devhud.deck.v1.QueryClause.state:type_name -> devhud.deck.v1.StateQualifier
-	17,  // 16: devhud.deck.v1.QueryClause.base_branch:type_name -> devhud.deck.v1.BaseBranchQualifier
-	18,  // 17: devhud.deck.v1.QueryClause.head_branch:type_name -> devhud.deck.v1.HeadBranchQualifier
-	19,  // 18: devhud.deck.v1.QueryClause.review_decision:type_name -> devhud.deck.v1.ReviewDecisionQualifier
-	20,  // 19: devhud.deck.v1.QueryClause.checks:type_name -> devhud.deck.v1.ChecksQualifier
-	21,  // 20: devhud.deck.v1.QueryClause.updated_range:type_name -> devhud.deck.v1.UpdatedRangeQualifier
-	22,  // 21: devhud.deck.v1.QueryBuilder.clauses:type_name -> devhud.deck.v1.QueryClause
-	23,  // 22: devhud.deck.v1.ViewQuery.builder:type_name -> devhud.deck.v1.QueryBuilder
-	74,  // 23: devhud.deck.v1.ViewNotificationPreference.transitions:type_name -> devhud.deck.v1.NotificationTransition
-	75,  // 24: devhud.deck.v1.View.view_id:type_name -> devhud.deck.v1.UuidV7
-	76,  // 25: devhud.deck.v1.View.owner:type_name -> devhud.deck.v1.Owner
-	77,  // 26: devhud.deck.v1.View.billing:type_name -> devhud.deck.v1.BillingSelection
-	78,  // 27: devhud.deck.v1.View.kind:type_name -> devhud.deck.v1.ViewKind
-	24,  // 28: devhud.deck.v1.View.query:type_name -> devhud.deck.v1.ViewQuery
-	79,  // 29: devhud.deck.v1.View.sort:type_name -> devhud.deck.v1.ViewSort
-	80,  // 30: devhud.deck.v1.View.grouping:type_name -> devhud.deck.v1.ViewGrouping
-	25,  // 31: devhud.deck.v1.View.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	81,  // 32: devhud.deck.v1.View.connection_state:type_name -> devhud.deck.v1.ConnectionState
-	82,  // 33: devhud.deck.v1.View.revision:type_name -> devhud.deck.v1.Revision
-	73,  // 34: devhud.deck.v1.View.created_at:type_name -> google.protobuf.Timestamp
-	73,  // 35: devhud.deck.v1.View.updated_at:type_name -> google.protobuf.Timestamp
-	76,  // 36: devhud.deck.v1.CreateViewInput.owner:type_name -> devhud.deck.v1.Owner
-	77,  // 37: devhud.deck.v1.CreateViewInput.billing:type_name -> devhud.deck.v1.BillingSelection
-	78,  // 38: devhud.deck.v1.CreateViewInput.kind:type_name -> devhud.deck.v1.ViewKind
-	24,  // 39: devhud.deck.v1.CreateViewInput.query:type_name -> devhud.deck.v1.ViewQuery
-	79,  // 40: devhud.deck.v1.CreateViewInput.sort:type_name -> devhud.deck.v1.ViewSort
-	80,  // 41: devhud.deck.v1.CreateViewInput.grouping:type_name -> devhud.deck.v1.ViewGrouping
-	25,  // 42: devhud.deck.v1.CreateViewInput.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	77,  // 43: devhud.deck.v1.UpdateViewInput.billing:type_name -> devhud.deck.v1.BillingSelection
-	24,  // 44: devhud.deck.v1.UpdateViewInput.query:type_name -> devhud.deck.v1.ViewQuery
-	79,  // 45: devhud.deck.v1.UpdateViewInput.sort:type_name -> devhud.deck.v1.ViewSort
-	80,  // 46: devhud.deck.v1.UpdateViewInput.grouping:type_name -> devhud.deck.v1.ViewGrouping
-	25,  // 47: devhud.deck.v1.UpdateViewInput.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	76,  // 48: devhud.deck.v1.ListViewsRequest.owner:type_name -> devhud.deck.v1.Owner
-	83,  // 49: devhud.deck.v1.ListViewsRequest.page:type_name -> devhud.deck.v1.PageRequest
-	26,  // 50: devhud.deck.v1.ListViewsResponse.views:type_name -> devhud.deck.v1.View
-	84,  // 51: devhud.deck.v1.ListViewsResponse.page:type_name -> devhud.deck.v1.PageResponse
-	75,  // 52: devhud.deck.v1.GetViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	26,  // 53: devhud.deck.v1.GetViewResponse.view:type_name -> devhud.deck.v1.View
-	85,  // 54: devhud.deck.v1.CreateViewRequest.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
-	27,  // 55: devhud.deck.v1.CreateViewRequest.view:type_name -> devhud.deck.v1.CreateViewInput
-	26,  // 56: devhud.deck.v1.CreateViewResponse.view:type_name -> devhud.deck.v1.View
-	86,  // 57: devhud.deck.v1.CreateViewResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	75,  // 58: devhud.deck.v1.UpdateViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	82,  // 59: devhud.deck.v1.UpdateViewRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	28,  // 60: devhud.deck.v1.UpdateViewRequest.view:type_name -> devhud.deck.v1.UpdateViewInput
-	26,  // 61: devhud.deck.v1.UpdateViewResponse.view:type_name -> devhud.deck.v1.View
-	75,  // 62: devhud.deck.v1.DeleteViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	82,  // 63: devhud.deck.v1.DeleteViewRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	75,  // 64: devhud.deck.v1.DeleteViewResponse.view_id:type_name -> devhud.deck.v1.UuidV7
-	82,  // 65: devhud.deck.v1.DeleteViewResponse.deleted_revision:type_name -> devhud.deck.v1.Revision
+	75,  // 7: devhud.deck.v1.UpdatedRangeQualifier.updated_after:type_name -> google.protobuf.Timestamp
+	75,  // 8: devhud.deck.v1.UpdatedRangeQualifier.updated_before:type_name -> google.protobuf.Timestamp
+	11,  // 9: devhud.deck.v1.QueryClause.owner:type_name -> devhud.deck.v1.OwnerQualifier
+	12,  // 10: devhud.deck.v1.QueryClause.repository:type_name -> devhud.deck.v1.RepositoryQualifier
+	13,  // 11: devhud.deck.v1.QueryClause.author:type_name -> devhud.deck.v1.AuthorQualifier
+	14,  // 12: devhud.deck.v1.QueryClause.assignee:type_name -> devhud.deck.v1.AssigneeQualifier
+	15,  // 13: devhud.deck.v1.QueryClause.reviewer:type_name -> devhud.deck.v1.ReviewerQualifier
+	16,  // 14: devhud.deck.v1.QueryClause.label:type_name -> devhud.deck.v1.LabelQualifier
+	17,  // 15: devhud.deck.v1.QueryClause.state:type_name -> devhud.deck.v1.StateQualifier
+	18,  // 16: devhud.deck.v1.QueryClause.base_branch:type_name -> devhud.deck.v1.BaseBranchQualifier
+	19,  // 17: devhud.deck.v1.QueryClause.head_branch:type_name -> devhud.deck.v1.HeadBranchQualifier
+	20,  // 18: devhud.deck.v1.QueryClause.review_decision:type_name -> devhud.deck.v1.ReviewDecisionQualifier
+	21,  // 19: devhud.deck.v1.QueryClause.checks:type_name -> devhud.deck.v1.ChecksQualifier
+	22,  // 20: devhud.deck.v1.QueryClause.updated_range:type_name -> devhud.deck.v1.UpdatedRangeQualifier
+	23,  // 21: devhud.deck.v1.QueryBuilder.clauses:type_name -> devhud.deck.v1.QueryClause
+	24,  // 22: devhud.deck.v1.ViewQuery.builder:type_name -> devhud.deck.v1.QueryBuilder
+	76,  // 23: devhud.deck.v1.ViewNotificationPreference.transitions:type_name -> devhud.deck.v1.NotificationTransition
+	77,  // 24: devhud.deck.v1.View.view_id:type_name -> devhud.deck.v1.UuidV7
+	78,  // 25: devhud.deck.v1.View.owner:type_name -> devhud.deck.v1.Owner
+	79,  // 26: devhud.deck.v1.View.billing:type_name -> devhud.deck.v1.BillingSelection
+	80,  // 27: devhud.deck.v1.View.kind:type_name -> devhud.deck.v1.ViewKind
+	25,  // 28: devhud.deck.v1.View.query:type_name -> devhud.deck.v1.ViewQuery
+	81,  // 29: devhud.deck.v1.View.sort:type_name -> devhud.deck.v1.ViewSort
+	82,  // 30: devhud.deck.v1.View.grouping:type_name -> devhud.deck.v1.ViewGrouping
+	26,  // 31: devhud.deck.v1.View.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	83,  // 32: devhud.deck.v1.View.connection_state:type_name -> devhud.deck.v1.ConnectionState
+	84,  // 33: devhud.deck.v1.View.revision:type_name -> devhud.deck.v1.Revision
+	75,  // 34: devhud.deck.v1.View.created_at:type_name -> google.protobuf.Timestamp
+	75,  // 35: devhud.deck.v1.View.updated_at:type_name -> google.protobuf.Timestamp
+	78,  // 36: devhud.deck.v1.CreateViewInput.owner:type_name -> devhud.deck.v1.Owner
+	79,  // 37: devhud.deck.v1.CreateViewInput.billing:type_name -> devhud.deck.v1.BillingSelection
+	80,  // 38: devhud.deck.v1.CreateViewInput.kind:type_name -> devhud.deck.v1.ViewKind
+	25,  // 39: devhud.deck.v1.CreateViewInput.query:type_name -> devhud.deck.v1.ViewQuery
+	81,  // 40: devhud.deck.v1.CreateViewInput.sort:type_name -> devhud.deck.v1.ViewSort
+	82,  // 41: devhud.deck.v1.CreateViewInput.grouping:type_name -> devhud.deck.v1.ViewGrouping
+	26,  // 42: devhud.deck.v1.CreateViewInput.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	79,  // 43: devhud.deck.v1.UpdateViewInput.billing:type_name -> devhud.deck.v1.BillingSelection
+	25,  // 44: devhud.deck.v1.UpdateViewInput.query:type_name -> devhud.deck.v1.ViewQuery
+	81,  // 45: devhud.deck.v1.UpdateViewInput.sort:type_name -> devhud.deck.v1.ViewSort
+	82,  // 46: devhud.deck.v1.UpdateViewInput.grouping:type_name -> devhud.deck.v1.ViewGrouping
+	26,  // 47: devhud.deck.v1.UpdateViewInput.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	78,  // 48: devhud.deck.v1.ListViewsRequest.owner:type_name -> devhud.deck.v1.Owner
+	85,  // 49: devhud.deck.v1.ListViewsRequest.page:type_name -> devhud.deck.v1.PageRequest
+	27,  // 50: devhud.deck.v1.ListViewsResponse.views:type_name -> devhud.deck.v1.View
+	86,  // 51: devhud.deck.v1.ListViewsResponse.page:type_name -> devhud.deck.v1.PageResponse
+	77,  // 52: devhud.deck.v1.GetViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	27,  // 53: devhud.deck.v1.GetViewResponse.view:type_name -> devhud.deck.v1.View
+	87,  // 54: devhud.deck.v1.CreateViewRequest.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
+	28,  // 55: devhud.deck.v1.CreateViewRequest.view:type_name -> devhud.deck.v1.CreateViewInput
+	27,  // 56: devhud.deck.v1.CreateViewResponse.view:type_name -> devhud.deck.v1.View
+	88,  // 57: devhud.deck.v1.CreateViewResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	77,  // 58: devhud.deck.v1.UpdateViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	84,  // 59: devhud.deck.v1.UpdateViewRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	29,  // 60: devhud.deck.v1.UpdateViewRequest.view:type_name -> devhud.deck.v1.UpdateViewInput
+	27,  // 61: devhud.deck.v1.UpdateViewResponse.view:type_name -> devhud.deck.v1.View
+	77,  // 62: devhud.deck.v1.DeleteViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	84,  // 63: devhud.deck.v1.DeleteViewRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	77,  // 64: devhud.deck.v1.DeleteViewResponse.view_id:type_name -> devhud.deck.v1.UuidV7
+	84,  // 65: devhud.deck.v1.DeleteViewResponse.deleted_revision:type_name -> devhud.deck.v1.Revision
 	3,   // 66: devhud.deck.v1.CheckSummary.state:type_name -> devhud.deck.v1.ChecksState
-	39,  // 67: devhud.deck.v1.PullRequestResult.repository:type_name -> devhud.deck.v1.RepositoryReference
-	40,  // 68: devhud.deck.v1.PullRequestResult.author:type_name -> devhud.deck.v1.PullRequestAuthor
+	40,  // 67: devhud.deck.v1.PullRequestResult.repository:type_name -> devhud.deck.v1.RepositoryReference
+	41,  // 68: devhud.deck.v1.PullRequestResult.author:type_name -> devhud.deck.v1.PullRequestAuthor
 	2,   // 69: devhud.deck.v1.PullRequestResult.review_decision:type_name -> devhud.deck.v1.ReviewDecision
-	41,  // 70: devhud.deck.v1.PullRequestResult.checks:type_name -> devhud.deck.v1.CheckSummary
+	42,  // 70: devhud.deck.v1.PullRequestResult.checks:type_name -> devhud.deck.v1.CheckSummary
 	4,   // 71: devhud.deck.v1.PullRequestResult.mergeability:type_name -> devhud.deck.v1.Mergeability
-	73,  // 72: devhud.deck.v1.PullRequestResult.updated_at:type_name -> google.protobuf.Timestamp
-	82,  // 73: devhud.deck.v1.PullRequestResult.revision:type_name -> devhud.deck.v1.Revision
-	42,  // 74: devhud.deck.v1.PullRequestDetail.result:type_name -> devhud.deck.v1.PullRequestResult
-	87,  // 75: devhud.deck.v1.PullRequestDetail.supported_mutations:type_name -> devhud.deck.v1.PullRequestMutationKind
-	5,   // 76: devhud.deck.v1.PullRequestDetail.available_merge_methods:type_name -> devhud.deck.v1.MergeMethod
-	82,  // 77: devhud.deck.v1.PullRequestDetail.revision:type_name -> devhud.deck.v1.Revision
-	75,  // 78: devhud.deck.v1.ListPullRequestsRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	83,  // 79: devhud.deck.v1.ListPullRequestsRequest.page:type_name -> devhud.deck.v1.PageRequest
-	42,  // 80: devhud.deck.v1.ListPullRequestsResponse.pull_requests:type_name -> devhud.deck.v1.PullRequestResult
-	84,  // 81: devhud.deck.v1.ListPullRequestsResponse.page:type_name -> devhud.deck.v1.PageResponse
-	88,  // 82: devhud.deck.v1.ListPullRequestsResponse.freshness:type_name -> devhud.deck.v1.FreshnessState
-	73,  // 83: devhud.deck.v1.ListPullRequestsResponse.refreshed_at:type_name -> google.protobuf.Timestamp
-	82,  // 84: devhud.deck.v1.ListPullRequestsResponse.view_revision:type_name -> devhud.deck.v1.Revision
-	75,  // 85: devhud.deck.v1.GetManualRefreshQuoteRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	85,  // 86: devhud.deck.v1.GetManualRefreshQuoteRequest.refresh_request_id:type_name -> devhud.deck.v1.IdempotencyKey
-	89,  // 87: devhud.deck.v1.GetManualRefreshQuoteResponse.provider_refresh_price:type_name -> devhud.deck.v1.UsdMicros
-	73,  // 88: devhud.deck.v1.GetManualRefreshQuoteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	75,  // 89: devhud.deck.v1.RefreshViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	85,  // 90: devhud.deck.v1.RefreshViewRequest.refresh_request_id:type_name -> devhud.deck.v1.IdempotencyKey
-	6,   // 91: devhud.deck.v1.RefreshViewRequest.origin:type_name -> devhud.deck.v1.RefreshOrigin
-	75,  // 92: devhud.deck.v1.RefreshViewResponse.view_id:type_name -> devhud.deck.v1.UuidV7
-	90,  // 93: devhud.deck.v1.RefreshViewResponse.outcome:type_name -> devhud.deck.v1.RefreshOutcome
-	7,   // 94: devhud.deck.v1.RefreshViewResponse.billing_disposition:type_name -> devhud.deck.v1.BillingDisposition
-	88,  // 95: devhud.deck.v1.RefreshViewResponse.freshness:type_name -> devhud.deck.v1.FreshnessState
-	73,  // 96: devhud.deck.v1.RefreshViewResponse.refreshed_at:type_name -> google.protobuf.Timestamp
-	82,  // 97: devhud.deck.v1.RefreshViewResponse.view_revision:type_name -> devhud.deck.v1.Revision
-	86,  // 98: devhud.deck.v1.RefreshViewResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	50,  // 99: devhud.deck.v1.AssignUsersMutation.users:type_name -> devhud.deck.v1.GitHubUser
-	50,  // 100: devhud.deck.v1.UnassignUsersMutation.users:type_name -> devhud.deck.v1.GitHubUser
-	50,  // 101: devhud.deck.v1.RequestReviewersMutation.users:type_name -> devhud.deck.v1.GitHubUser
-	51,  // 102: devhud.deck.v1.RequestReviewersMutation.teams:type_name -> devhud.deck.v1.GitHubTeam
-	50,  // 103: devhud.deck.v1.RemoveReviewersMutation.users:type_name -> devhud.deck.v1.GitHubUser
-	51,  // 104: devhud.deck.v1.RemoveReviewersMutation.teams:type_name -> devhud.deck.v1.GitHubTeam
-	5,   // 105: devhud.deck.v1.MergePullRequestMutation.method:type_name -> devhud.deck.v1.MergeMethod
-	5,   // 106: devhud.deck.v1.EnableAutoMergeMutation.method:type_name -> devhud.deck.v1.MergeMethod
-	52,  // 107: devhud.deck.v1.PullRequestMutation.assign_users:type_name -> devhud.deck.v1.AssignUsersMutation
-	53,  // 108: devhud.deck.v1.PullRequestMutation.unassign_users:type_name -> devhud.deck.v1.UnassignUsersMutation
-	54,  // 109: devhud.deck.v1.PullRequestMutation.request_reviewers:type_name -> devhud.deck.v1.RequestReviewersMutation
-	55,  // 110: devhud.deck.v1.PullRequestMutation.remove_reviewers:type_name -> devhud.deck.v1.RemoveReviewersMutation
-	56,  // 111: devhud.deck.v1.PullRequestMutation.add_labels:type_name -> devhud.deck.v1.AddLabelsMutation
-	57,  // 112: devhud.deck.v1.PullRequestMutation.remove_labels:type_name -> devhud.deck.v1.RemoveLabelsMutation
-	58,  // 113: devhud.deck.v1.PullRequestMutation.mark_draft:type_name -> devhud.deck.v1.MarkDraftMutation
-	59,  // 114: devhud.deck.v1.PullRequestMutation.mark_ready:type_name -> devhud.deck.v1.MarkReadyMutation
-	60,  // 115: devhud.deck.v1.PullRequestMutation.close:type_name -> devhud.deck.v1.ClosePullRequestMutation
-	61,  // 116: devhud.deck.v1.PullRequestMutation.reopen:type_name -> devhud.deck.v1.ReopenPullRequestMutation
-	62,  // 117: devhud.deck.v1.PullRequestMutation.merge:type_name -> devhud.deck.v1.MergePullRequestMutation
-	63,  // 118: devhud.deck.v1.PullRequestMutation.enable_auto_merge:type_name -> devhud.deck.v1.EnableAutoMergeMutation
-	64,  // 119: devhud.deck.v1.PullRequestMutation.cancel_auto_merge:type_name -> devhud.deck.v1.CancelAutoMergeMutation
-	39,  // 120: devhud.deck.v1.PullRequestReference.repository:type_name -> devhud.deck.v1.RepositoryReference
-	75,  // 121: devhud.deck.v1.MutatePullRequestRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	66,  // 122: devhud.deck.v1.MutatePullRequestRequest.pull_request:type_name -> devhud.deck.v1.PullRequestReference
-	82,  // 123: devhud.deck.v1.MutatePullRequestRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	65,  // 124: devhud.deck.v1.MutatePullRequestRequest.mutation:type_name -> devhud.deck.v1.PullRequestMutation
-	43,  // 125: devhud.deck.v1.MutatePullRequestResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
-	87,  // 126: devhud.deck.v1.MutatePullRequestResponse.mutation_kind:type_name -> devhud.deck.v1.PullRequestMutationKind
-	76,  // 127: devhud.deck.v1.OwnerFeatureDeletion.owner:type_name -> devhud.deck.v1.Owner
-	85,  // 128: devhud.deck.v1.OwnerFeatureDeletion.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
-	75,  // 129: devhud.deck.v1.DelibaseLifecycleDeletion.account_id:type_name -> devhud.deck.v1.UuidV7
-	75,  // 130: devhud.deck.v1.DelibaseLifecycleDeletion.organization_id:type_name -> devhud.deck.v1.UuidV7
-	75,  // 131: devhud.deck.v1.DelibaseLifecycleDeletion.deletion_job_id:type_name -> devhud.deck.v1.UuidV7
-	69,  // 132: devhud.deck.v1.DeleteFeatureDataRequest.owner_request:type_name -> devhud.deck.v1.OwnerFeatureDeletion
-	70,  // 133: devhud.deck.v1.DeleteFeatureDataRequest.delibase_lifecycle:type_name -> devhud.deck.v1.DelibaseLifecycleDeletion
-	75,  // 134: devhud.deck.v1.DeleteFeatureDataResponse.deletion_job_id:type_name -> devhud.deck.v1.UuidV7
-	8,   // 135: devhud.deck.v1.DeleteFeatureDataResponse.state:type_name -> devhud.deck.v1.FeatureDeletionState
-	73,  // 136: devhud.deck.v1.DeleteFeatureDataResponse.accepted_at:type_name -> google.protobuf.Timestamp
-	86,  // 137: devhud.deck.v1.DeleteFeatureDataResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	29,  // 138: devhud.deck.v1.DeckViewService.ListViews:input_type -> devhud.deck.v1.ListViewsRequest
-	31,  // 139: devhud.deck.v1.DeckViewService.GetView:input_type -> devhud.deck.v1.GetViewRequest
-	33,  // 140: devhud.deck.v1.DeckViewService.CreateView:input_type -> devhud.deck.v1.CreateViewRequest
-	35,  // 141: devhud.deck.v1.DeckViewService.UpdateView:input_type -> devhud.deck.v1.UpdateViewRequest
-	37,  // 142: devhud.deck.v1.DeckViewService.DeleteView:input_type -> devhud.deck.v1.DeleteViewRequest
-	44,  // 143: devhud.deck.v1.DeckViewService.ListPullRequests:input_type -> devhud.deck.v1.ListPullRequestsRequest
-	46,  // 144: devhud.deck.v1.DeckViewService.GetManualRefreshQuote:input_type -> devhud.deck.v1.GetManualRefreshQuoteRequest
-	48,  // 145: devhud.deck.v1.DeckViewService.RefreshView:input_type -> devhud.deck.v1.RefreshViewRequest
-	67,  // 146: devhud.deck.v1.DeckViewService.MutatePullRequest:input_type -> devhud.deck.v1.MutatePullRequestRequest
-	71,  // 147: devhud.deck.v1.DeckViewService.DeleteFeatureData:input_type -> devhud.deck.v1.DeleteFeatureDataRequest
-	30,  // 148: devhud.deck.v1.DeckViewService.ListViews:output_type -> devhud.deck.v1.ListViewsResponse
-	32,  // 149: devhud.deck.v1.DeckViewService.GetView:output_type -> devhud.deck.v1.GetViewResponse
-	34,  // 150: devhud.deck.v1.DeckViewService.CreateView:output_type -> devhud.deck.v1.CreateViewResponse
-	36,  // 151: devhud.deck.v1.DeckViewService.UpdateView:output_type -> devhud.deck.v1.UpdateViewResponse
-	38,  // 152: devhud.deck.v1.DeckViewService.DeleteView:output_type -> devhud.deck.v1.DeleteViewResponse
-	45,  // 153: devhud.deck.v1.DeckViewService.ListPullRequests:output_type -> devhud.deck.v1.ListPullRequestsResponse
-	47,  // 154: devhud.deck.v1.DeckViewService.GetManualRefreshQuote:output_type -> devhud.deck.v1.GetManualRefreshQuoteResponse
-	49,  // 155: devhud.deck.v1.DeckViewService.RefreshView:output_type -> devhud.deck.v1.RefreshViewResponse
-	68,  // 156: devhud.deck.v1.DeckViewService.MutatePullRequest:output_type -> devhud.deck.v1.MutatePullRequestResponse
-	72,  // 157: devhud.deck.v1.DeckViewService.DeleteFeatureData:output_type -> devhud.deck.v1.DeleteFeatureDataResponse
-	148, // [148:158] is the sub-list for method output_type
-	138, // [138:148] is the sub-list for method input_type
-	138, // [138:138] is the sub-list for extension type_name
-	138, // [138:138] is the sub-list for extension extendee
-	0,   // [0:138] is the sub-list for field type_name
+	75,  // 72: devhud.deck.v1.PullRequestResult.updated_at:type_name -> google.protobuf.Timestamp
+	84,  // 73: devhud.deck.v1.PullRequestResult.revision:type_name -> devhud.deck.v1.Revision
+	74,  // 74: devhud.deck.v1.PullRequestResult.reviewers:type_name -> devhud.deck.v1.PullRequestReviewer
+	9,   // 75: devhud.deck.v1.PullRequestResult.lifecycle_state:type_name -> devhud.deck.v1.PullRequestLifecycleState
+	89,  // 76: devhud.deck.v1.PullRequestResult.supported_mutations:type_name -> devhud.deck.v1.PullRequestMutationKind
+	5,   // 77: devhud.deck.v1.PullRequestResult.available_merge_methods:type_name -> devhud.deck.v1.MergeMethod
+	43,  // 78: devhud.deck.v1.PullRequestDetail.result:type_name -> devhud.deck.v1.PullRequestResult
+	89,  // 79: devhud.deck.v1.PullRequestDetail.supported_mutations:type_name -> devhud.deck.v1.PullRequestMutationKind
+	5,   // 80: devhud.deck.v1.PullRequestDetail.available_merge_methods:type_name -> devhud.deck.v1.MergeMethod
+	84,  // 81: devhud.deck.v1.PullRequestDetail.revision:type_name -> devhud.deck.v1.Revision
+	77,  // 82: devhud.deck.v1.ListPullRequestsRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	85,  // 83: devhud.deck.v1.ListPullRequestsRequest.page:type_name -> devhud.deck.v1.PageRequest
+	43,  // 84: devhud.deck.v1.ListPullRequestsResponse.pull_requests:type_name -> devhud.deck.v1.PullRequestResult
+	86,  // 85: devhud.deck.v1.ListPullRequestsResponse.page:type_name -> devhud.deck.v1.PageResponse
+	90,  // 86: devhud.deck.v1.ListPullRequestsResponse.freshness:type_name -> devhud.deck.v1.FreshnessState
+	75,  // 87: devhud.deck.v1.ListPullRequestsResponse.refreshed_at:type_name -> google.protobuf.Timestamp
+	84,  // 88: devhud.deck.v1.ListPullRequestsResponse.view_revision:type_name -> devhud.deck.v1.Revision
+	77,  // 89: devhud.deck.v1.GetManualRefreshQuoteRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	87,  // 90: devhud.deck.v1.GetManualRefreshQuoteRequest.refresh_request_id:type_name -> devhud.deck.v1.IdempotencyKey
+	91,  // 91: devhud.deck.v1.GetManualRefreshQuoteResponse.provider_refresh_price:type_name -> devhud.deck.v1.UsdMicros
+	75,  // 92: devhud.deck.v1.GetManualRefreshQuoteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	77,  // 93: devhud.deck.v1.RefreshViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	87,  // 94: devhud.deck.v1.RefreshViewRequest.refresh_request_id:type_name -> devhud.deck.v1.IdempotencyKey
+	6,   // 95: devhud.deck.v1.RefreshViewRequest.origin:type_name -> devhud.deck.v1.RefreshOrigin
+	77,  // 96: devhud.deck.v1.RefreshViewResponse.view_id:type_name -> devhud.deck.v1.UuidV7
+	92,  // 97: devhud.deck.v1.RefreshViewResponse.outcome:type_name -> devhud.deck.v1.RefreshOutcome
+	7,   // 98: devhud.deck.v1.RefreshViewResponse.billing_disposition:type_name -> devhud.deck.v1.BillingDisposition
+	90,  // 99: devhud.deck.v1.RefreshViewResponse.freshness:type_name -> devhud.deck.v1.FreshnessState
+	75,  // 100: devhud.deck.v1.RefreshViewResponse.refreshed_at:type_name -> google.protobuf.Timestamp
+	84,  // 101: devhud.deck.v1.RefreshViewResponse.view_revision:type_name -> devhud.deck.v1.Revision
+	88,  // 102: devhud.deck.v1.RefreshViewResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	51,  // 103: devhud.deck.v1.AssignUsersMutation.users:type_name -> devhud.deck.v1.GitHubUser
+	51,  // 104: devhud.deck.v1.UnassignUsersMutation.users:type_name -> devhud.deck.v1.GitHubUser
+	51,  // 105: devhud.deck.v1.RequestReviewersMutation.users:type_name -> devhud.deck.v1.GitHubUser
+	52,  // 106: devhud.deck.v1.RequestReviewersMutation.teams:type_name -> devhud.deck.v1.GitHubTeam
+	51,  // 107: devhud.deck.v1.RemoveReviewersMutation.users:type_name -> devhud.deck.v1.GitHubUser
+	52,  // 108: devhud.deck.v1.RemoveReviewersMutation.teams:type_name -> devhud.deck.v1.GitHubTeam
+	5,   // 109: devhud.deck.v1.MergePullRequestMutation.method:type_name -> devhud.deck.v1.MergeMethod
+	5,   // 110: devhud.deck.v1.EnableAutoMergeMutation.method:type_name -> devhud.deck.v1.MergeMethod
+	53,  // 111: devhud.deck.v1.PullRequestMutation.assign_users:type_name -> devhud.deck.v1.AssignUsersMutation
+	54,  // 112: devhud.deck.v1.PullRequestMutation.unassign_users:type_name -> devhud.deck.v1.UnassignUsersMutation
+	55,  // 113: devhud.deck.v1.PullRequestMutation.request_reviewers:type_name -> devhud.deck.v1.RequestReviewersMutation
+	56,  // 114: devhud.deck.v1.PullRequestMutation.remove_reviewers:type_name -> devhud.deck.v1.RemoveReviewersMutation
+	57,  // 115: devhud.deck.v1.PullRequestMutation.add_labels:type_name -> devhud.deck.v1.AddLabelsMutation
+	58,  // 116: devhud.deck.v1.PullRequestMutation.remove_labels:type_name -> devhud.deck.v1.RemoveLabelsMutation
+	59,  // 117: devhud.deck.v1.PullRequestMutation.mark_draft:type_name -> devhud.deck.v1.MarkDraftMutation
+	60,  // 118: devhud.deck.v1.PullRequestMutation.mark_ready:type_name -> devhud.deck.v1.MarkReadyMutation
+	61,  // 119: devhud.deck.v1.PullRequestMutation.close:type_name -> devhud.deck.v1.ClosePullRequestMutation
+	62,  // 120: devhud.deck.v1.PullRequestMutation.reopen:type_name -> devhud.deck.v1.ReopenPullRequestMutation
+	63,  // 121: devhud.deck.v1.PullRequestMutation.merge:type_name -> devhud.deck.v1.MergePullRequestMutation
+	64,  // 122: devhud.deck.v1.PullRequestMutation.enable_auto_merge:type_name -> devhud.deck.v1.EnableAutoMergeMutation
+	65,  // 123: devhud.deck.v1.PullRequestMutation.cancel_auto_merge:type_name -> devhud.deck.v1.CancelAutoMergeMutation
+	40,  // 124: devhud.deck.v1.PullRequestReference.repository:type_name -> devhud.deck.v1.RepositoryReference
+	77,  // 125: devhud.deck.v1.MutatePullRequestRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	67,  // 126: devhud.deck.v1.MutatePullRequestRequest.pull_request:type_name -> devhud.deck.v1.PullRequestReference
+	84,  // 127: devhud.deck.v1.MutatePullRequestRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	66,  // 128: devhud.deck.v1.MutatePullRequestRequest.mutation:type_name -> devhud.deck.v1.PullRequestMutation
+	44,  // 129: devhud.deck.v1.MutatePullRequestResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
+	89,  // 130: devhud.deck.v1.MutatePullRequestResponse.mutation_kind:type_name -> devhud.deck.v1.PullRequestMutationKind
+	78,  // 131: devhud.deck.v1.OwnerFeatureDeletion.owner:type_name -> devhud.deck.v1.Owner
+	87,  // 132: devhud.deck.v1.OwnerFeatureDeletion.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
+	77,  // 133: devhud.deck.v1.DelibaseLifecycleDeletion.account_id:type_name -> devhud.deck.v1.UuidV7
+	77,  // 134: devhud.deck.v1.DelibaseLifecycleDeletion.organization_id:type_name -> devhud.deck.v1.UuidV7
+	77,  // 135: devhud.deck.v1.DelibaseLifecycleDeletion.deletion_job_id:type_name -> devhud.deck.v1.UuidV7
+	70,  // 136: devhud.deck.v1.DeleteFeatureDataRequest.owner_request:type_name -> devhud.deck.v1.OwnerFeatureDeletion
+	71,  // 137: devhud.deck.v1.DeleteFeatureDataRequest.delibase_lifecycle:type_name -> devhud.deck.v1.DelibaseLifecycleDeletion
+	77,  // 138: devhud.deck.v1.DeleteFeatureDataResponse.deletion_job_id:type_name -> devhud.deck.v1.UuidV7
+	8,   // 139: devhud.deck.v1.DeleteFeatureDataResponse.state:type_name -> devhud.deck.v1.FeatureDeletionState
+	75,  // 140: devhud.deck.v1.DeleteFeatureDataResponse.accepted_at:type_name -> google.protobuf.Timestamp
+	88,  // 141: devhud.deck.v1.DeleteFeatureDataResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	51,  // 142: devhud.deck.v1.PullRequestReviewer.user:type_name -> devhud.deck.v1.GitHubUser
+	52,  // 143: devhud.deck.v1.PullRequestReviewer.team:type_name -> devhud.deck.v1.GitHubTeam
+	30,  // 144: devhud.deck.v1.DeckViewService.ListViews:input_type -> devhud.deck.v1.ListViewsRequest
+	32,  // 145: devhud.deck.v1.DeckViewService.GetView:input_type -> devhud.deck.v1.GetViewRequest
+	34,  // 146: devhud.deck.v1.DeckViewService.CreateView:input_type -> devhud.deck.v1.CreateViewRequest
+	36,  // 147: devhud.deck.v1.DeckViewService.UpdateView:input_type -> devhud.deck.v1.UpdateViewRequest
+	38,  // 148: devhud.deck.v1.DeckViewService.DeleteView:input_type -> devhud.deck.v1.DeleteViewRequest
+	45,  // 149: devhud.deck.v1.DeckViewService.ListPullRequests:input_type -> devhud.deck.v1.ListPullRequestsRequest
+	47,  // 150: devhud.deck.v1.DeckViewService.GetManualRefreshQuote:input_type -> devhud.deck.v1.GetManualRefreshQuoteRequest
+	49,  // 151: devhud.deck.v1.DeckViewService.RefreshView:input_type -> devhud.deck.v1.RefreshViewRequest
+	68,  // 152: devhud.deck.v1.DeckViewService.MutatePullRequest:input_type -> devhud.deck.v1.MutatePullRequestRequest
+	72,  // 153: devhud.deck.v1.DeckViewService.DeleteFeatureData:input_type -> devhud.deck.v1.DeleteFeatureDataRequest
+	31,  // 154: devhud.deck.v1.DeckViewService.ListViews:output_type -> devhud.deck.v1.ListViewsResponse
+	33,  // 155: devhud.deck.v1.DeckViewService.GetView:output_type -> devhud.deck.v1.GetViewResponse
+	35,  // 156: devhud.deck.v1.DeckViewService.CreateView:output_type -> devhud.deck.v1.CreateViewResponse
+	37,  // 157: devhud.deck.v1.DeckViewService.UpdateView:output_type -> devhud.deck.v1.UpdateViewResponse
+	39,  // 158: devhud.deck.v1.DeckViewService.DeleteView:output_type -> devhud.deck.v1.DeleteViewResponse
+	46,  // 159: devhud.deck.v1.DeckViewService.ListPullRequests:output_type -> devhud.deck.v1.ListPullRequestsResponse
+	48,  // 160: devhud.deck.v1.DeckViewService.GetManualRefreshQuote:output_type -> devhud.deck.v1.GetManualRefreshQuoteResponse
+	50,  // 161: devhud.deck.v1.DeckViewService.RefreshView:output_type -> devhud.deck.v1.RefreshViewResponse
+	69,  // 162: devhud.deck.v1.DeckViewService.MutatePullRequest:output_type -> devhud.deck.v1.MutatePullRequestResponse
+	73,  // 163: devhud.deck.v1.DeckViewService.DeleteFeatureData:output_type -> devhud.deck.v1.DeleteFeatureDataResponse
+	154, // [154:164] is the sub-list for method output_type
+	144, // [144:154] is the sub-list for method input_type
+	144, // [144:144] is the sub-list for extension type_name
+	144, // [144:144] is the sub-list for extension extendee
+	0,   // [0:144] is the sub-list for field type_name
 }
 
 func init() { file_devhud_deck_v1_view_proto_init() }
@@ -5181,13 +5372,17 @@ func file_devhud_deck_v1_view_proto_init() {
 		(*DeleteFeatureDataRequest_OwnerRequest)(nil),
 		(*DeleteFeatureDataRequest_DelibaseLifecycle)(nil),
 	}
+	file_devhud_deck_v1_view_proto_msgTypes[64].OneofWrappers = []any{
+		(*PullRequestReviewer_User)(nil),
+		(*PullRequestReviewer_Team)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_deck_v1_view_proto_rawDesc), len(file_devhud_deck_v1_view_proto_rawDesc)),
-			NumEnums:      9,
-			NumMessages:   64,
+			NumEnums:      10,
+			NumMessages:   65,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

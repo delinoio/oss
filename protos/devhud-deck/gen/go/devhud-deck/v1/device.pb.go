@@ -1169,8 +1169,11 @@ type RegisterDeviceRequest struct {
 	DetailedNotificationTextEnabled bool                         `protobuf:"varint,6,opt,name=detailed_notification_text_enabled,json=detailedNotificationTextEnabled,proto3" json:"detailed_notification_text_enabled,omitempty"`
 	Shortcuts                       []*ViewShortcutConfiguration `protobuf:"bytes,7,rep,name=shortcuts,proto3" json:"shortcuts,omitempty"`
 	Widgets                         []*WidgetConfiguration       `protobuf:"bytes,8,rep,name=widgets,proto3" json:"widgets,omitempty"`
-	unknownFields                   protoimpl.UnknownFields
-	sizeCache                       protoimpl.SizeCache
+	// Required for an existing registration lease renewal and omitted for the
+	// first registration of a device.
+	ExpectedRevision *Revision `protobuf:"bytes,9,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RegisterDeviceRequest) Reset() {
@@ -1255,6 +1258,13 @@ func (x *RegisterDeviceRequest) GetShortcuts() []*ViewShortcutConfiguration {
 func (x *RegisterDeviceRequest) GetWidgets() []*WidgetConfiguration {
 	if x != nil {
 		return x.Widgets
+	}
+	return nil
+}
+
+func (x *RegisterDeviceRequest) GetExpectedRevision() *Revision {
+	if x != nil {
+		return x.ExpectedRevision
 	}
 	return nil
 }
@@ -2045,7 +2055,7 @@ const file_devhud_deck_v1_device_proto_rawDesc = "" +
 	"\x12DeviceRegistration\x12?\n" +
 	"\x0fregistration_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x0eregistrationId\x12.\n" +
 	"\x06device\x18\x02 \x01(\v2\x16.devhud.deck.v1.DeviceR\x06device\x12D\n" +
-	"\x10lease_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xff\x03\n" +
+	"\x10lease_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xc6\x04\n" +
 	"\x15RegisterDeviceRequest\x12G\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\v2\x1e.devhud.deck.v1.IdempotencyKeyR\x0eidempotencyKey\x123\n" +
 	"\tdevice_id\x18\x02 \x01(\v2\x16.devhud.deck.v1.UuidV7R\bdeviceId\x12:\n" +
@@ -2054,7 +2064,8 @@ const file_devhud_deck_v1_device_proto_rawDesc = "" +
 	"\x04push\x18\x05 \x01(\v2 .devhud.deck.v1.PushRegistrationR\x04push\x12K\n" +
 	"\"detailed_notification_text_enabled\x18\x06 \x01(\bR\x1fdetailedNotificationTextEnabled\x12G\n" +
 	"\tshortcuts\x18\a \x03(\v2).devhud.deck.v1.ViewShortcutConfigurationR\tshortcuts\x12=\n" +
-	"\awidgets\x18\b \x03(\v2#.devhud.deck.v1.WidgetConfigurationR\awidgets\"\xa5\x01\n" +
+	"\awidgets\x18\b \x03(\v2#.devhud.deck.v1.WidgetConfigurationR\awidgets\x12E\n" +
+	"\x11expected_revision\x18\t \x01(\v2\x18.devhud.deck.v1.RevisionR\x10expectedRevision\"\xa5\x01\n" +
 	"\x16RegisterDeviceResponse\x12F\n" +
 	"\fregistration\x18\x01 \x01(\v2\".devhud.deck.v1.DeviceRegistrationR\fregistration\x12C\n" +
 	"\vidempotency\x18\x02 \x01(\v2!.devhud.deck.v1.IdempotencyResultR\vidempotency\"\xcb\x03\n" +
@@ -2303,53 +2314,54 @@ var file_devhud_deck_v1_device_proto_depIdxs = []int32{
 	8,  // 31: devhud.deck.v1.RegisterDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
 	27, // 32: devhud.deck.v1.RegisterDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
 	28, // 33: devhud.deck.v1.RegisterDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
-	15, // 34: devhud.deck.v1.RegisterDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
-	35, // 35: devhud.deck.v1.RegisterDeviceResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	29, // 36: devhud.deck.v1.UpdateDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	30, // 37: devhud.deck.v1.UpdateDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	8,  // 38: devhud.deck.v1.UpdateDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
-	27, // 39: devhud.deck.v1.UpdateDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
-	28, // 40: devhud.deck.v1.UpdateDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
-	15, // 41: devhud.deck.v1.UpdateDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
-	29, // 42: devhud.deck.v1.UnregisterDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 43: devhud.deck.v1.UnregisterDeviceResponse.registration_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 44: devhud.deck.v1.ViewNotificationState.registration_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 45: devhud.deck.v1.ViewNotificationState.view_id:type_name -> devhud.deck.v1.UuidV7
-	36, // 46: devhud.deck.v1.ViewNotificationState.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	30, // 47: devhud.deck.v1.ViewNotificationState.revision:type_name -> devhud.deck.v1.Revision
-	33, // 48: devhud.deck.v1.ViewNotificationState.updated_at:type_name -> google.protobuf.Timestamp
-	29, // 49: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 50: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	30, // 51: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	36, // 52: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	22, // 53: devhud.deck.v1.UpdateViewNotificationPreferenceResponse.notification:type_name -> devhud.deck.v1.ViewNotificationState
-	29, // 54: devhud.deck.v1.ResolveNotificationEventRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	7,  // 55: devhud.deck.v1.ResolveNotificationEventResponse.resolution:type_name -> devhud.deck.v1.NotificationResolution
-	29, // 56: devhud.deck.v1.ResolveNotificationEventResponse.view_id:type_name -> devhud.deck.v1.UuidV7
-	37, // 57: devhud.deck.v1.ResolveNotificationEventResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
-	38, // 58: devhud.deck.v1.ResolveNotificationEventResponse.transition:type_name -> devhud.deck.v1.NotificationTransition
-	29, // 59: devhud.deck.v1.ViewShortcutConfiguration.shortcut_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 60: devhud.deck.v1.ViewShortcutConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
-	9,  // 61: devhud.deck.v1.ViewShortcutConfiguration.binding:type_name -> devhud.deck.v1.ShortcutBinding
-	29, // 62: devhud.deck.v1.WidgetConfiguration.widget_id:type_name -> devhud.deck.v1.UuidV7
-	29, // 63: devhud.deck.v1.WidgetConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
-	5,  // 64: devhud.deck.v1.WidgetConfiguration.family:type_name -> devhud.deck.v1.WidgetFamily
-	6,  // 65: devhud.deck.v1.WidgetConfiguration.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
-	16, // 66: devhud.deck.v1.DeckDeviceService.RegisterDevice:input_type -> devhud.deck.v1.RegisterDeviceRequest
-	18, // 67: devhud.deck.v1.DeckDeviceService.UpdateDevice:input_type -> devhud.deck.v1.UpdateDeviceRequest
-	20, // 68: devhud.deck.v1.DeckDeviceService.UnregisterDevice:input_type -> devhud.deck.v1.UnregisterDeviceRequest
-	23, // 69: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:input_type -> devhud.deck.v1.UpdateViewNotificationPreferenceRequest
-	25, // 70: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:input_type -> devhud.deck.v1.ResolveNotificationEventRequest
-	17, // 71: devhud.deck.v1.DeckDeviceService.RegisterDevice:output_type -> devhud.deck.v1.RegisterDeviceResponse
-	19, // 72: devhud.deck.v1.DeckDeviceService.UpdateDevice:output_type -> devhud.deck.v1.UpdateDeviceResponse
-	21, // 73: devhud.deck.v1.DeckDeviceService.UnregisterDevice:output_type -> devhud.deck.v1.UnregisterDeviceResponse
-	24, // 74: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:output_type -> devhud.deck.v1.UpdateViewNotificationPreferenceResponse
-	26, // 75: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:output_type -> devhud.deck.v1.ResolveNotificationEventResponse
-	71, // [71:76] is the sub-list for method output_type
-	66, // [66:71] is the sub-list for method input_type
-	66, // [66:66] is the sub-list for extension type_name
-	66, // [66:66] is the sub-list for extension extendee
-	0,  // [0:66] is the sub-list for field type_name
+	30, // 34: devhud.deck.v1.RegisterDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	15, // 35: devhud.deck.v1.RegisterDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
+	35, // 36: devhud.deck.v1.RegisterDeviceResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	29, // 37: devhud.deck.v1.UpdateDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	30, // 38: devhud.deck.v1.UpdateDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	8,  // 39: devhud.deck.v1.UpdateDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
+	27, // 40: devhud.deck.v1.UpdateDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
+	28, // 41: devhud.deck.v1.UpdateDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
+	15, // 42: devhud.deck.v1.UpdateDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
+	29, // 43: devhud.deck.v1.UnregisterDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 44: devhud.deck.v1.UnregisterDeviceResponse.registration_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 45: devhud.deck.v1.ViewNotificationState.registration_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 46: devhud.deck.v1.ViewNotificationState.view_id:type_name -> devhud.deck.v1.UuidV7
+	36, // 47: devhud.deck.v1.ViewNotificationState.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	30, // 48: devhud.deck.v1.ViewNotificationState.revision:type_name -> devhud.deck.v1.Revision
+	33, // 49: devhud.deck.v1.ViewNotificationState.updated_at:type_name -> google.protobuf.Timestamp
+	29, // 50: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 51: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	30, // 52: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	36, // 53: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	22, // 54: devhud.deck.v1.UpdateViewNotificationPreferenceResponse.notification:type_name -> devhud.deck.v1.ViewNotificationState
+	29, // 55: devhud.deck.v1.ResolveNotificationEventRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	7,  // 56: devhud.deck.v1.ResolveNotificationEventResponse.resolution:type_name -> devhud.deck.v1.NotificationResolution
+	29, // 57: devhud.deck.v1.ResolveNotificationEventResponse.view_id:type_name -> devhud.deck.v1.UuidV7
+	37, // 58: devhud.deck.v1.ResolveNotificationEventResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
+	38, // 59: devhud.deck.v1.ResolveNotificationEventResponse.transition:type_name -> devhud.deck.v1.NotificationTransition
+	29, // 60: devhud.deck.v1.ViewShortcutConfiguration.shortcut_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 61: devhud.deck.v1.ViewShortcutConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
+	9,  // 62: devhud.deck.v1.ViewShortcutConfiguration.binding:type_name -> devhud.deck.v1.ShortcutBinding
+	29, // 63: devhud.deck.v1.WidgetConfiguration.widget_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 64: devhud.deck.v1.WidgetConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
+	5,  // 65: devhud.deck.v1.WidgetConfiguration.family:type_name -> devhud.deck.v1.WidgetFamily
+	6,  // 66: devhud.deck.v1.WidgetConfiguration.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
+	16, // 67: devhud.deck.v1.DeckDeviceService.RegisterDevice:input_type -> devhud.deck.v1.RegisterDeviceRequest
+	18, // 68: devhud.deck.v1.DeckDeviceService.UpdateDevice:input_type -> devhud.deck.v1.UpdateDeviceRequest
+	20, // 69: devhud.deck.v1.DeckDeviceService.UnregisterDevice:input_type -> devhud.deck.v1.UnregisterDeviceRequest
+	23, // 70: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:input_type -> devhud.deck.v1.UpdateViewNotificationPreferenceRequest
+	25, // 71: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:input_type -> devhud.deck.v1.ResolveNotificationEventRequest
+	17, // 72: devhud.deck.v1.DeckDeviceService.RegisterDevice:output_type -> devhud.deck.v1.RegisterDeviceResponse
+	19, // 73: devhud.deck.v1.DeckDeviceService.UpdateDevice:output_type -> devhud.deck.v1.UpdateDeviceResponse
+	21, // 74: devhud.deck.v1.DeckDeviceService.UnregisterDevice:output_type -> devhud.deck.v1.UnregisterDeviceResponse
+	24, // 75: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:output_type -> devhud.deck.v1.UpdateViewNotificationPreferenceResponse
+	26, // 76: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:output_type -> devhud.deck.v1.ResolveNotificationEventResponse
+	72, // [72:77] is the sub-list for method output_type
+	67, // [67:72] is the sub-list for method input_type
+	67, // [67:67] is the sub-list for extension type_name
+	67, // [67:67] is the sub-list for extension extendee
+	0,  // [0:67] is the sub-list for field type_name
 }
 
 func init() { file_devhud_deck_v1_device_proto_init() }

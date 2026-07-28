@@ -184,6 +184,9 @@ message RegisterDeviceRequest {
   bool detailed_notification_text_enabled = 6;
   repeated ViewShortcutConfiguration shortcuts = 7;
   repeated WidgetConfiguration widgets = 8;
+  // Required for an existing registration lease renewal and omitted for the
+  // first registration of a device.
+  Revision expected_revision = 9;
 }
 
 message RegisterDeviceResponse {

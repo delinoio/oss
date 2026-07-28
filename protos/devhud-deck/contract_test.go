@@ -177,10 +177,32 @@ func TestPullRequestResultAndMutationShape(t *testing.T) {
 		"is_draft",
 		"updated_at",
 		"revision",
+		"reviewers",
+		"lifecycle_state",
+		"supported_mutations",
+		"available_merge_methods",
 	} {
 		if result.Fields().ByName(field) == nil {
 			t.Errorf("PullRequestResult missing %s", field)
 		}
+	}
+	reviewers := result.Fields().ByName("reviewers")
+	if reviewers == nil ||
+		reviewers.Cardinality() != protoreflect.Repeated ||
+		reviewers.Message().Oneofs().Len() != 1 {
+		t.Error("PullRequestResult.reviewers does not carry repeated individual/team reviewer identities")
+	}
+	for _, field := range []protoreflect.Name{"supported_mutations", "available_merge_methods"} {
+		actionMetadata := result.Fields().ByName(field)
+		if actionMetadata == nil || actionMetadata.Cardinality() != protoreflect.Repeated {
+			t.Errorf("PullRequestResult.%s is not repeated action metadata", field)
+		}
+	}
+	if got := deckv1.PullRequestLifecycleState_name; len(got) != 4 ||
+		got[1] != "PULL_REQUEST_LIFECYCLE_STATE_OPEN" ||
+		got[2] != "PULL_REQUEST_LIFECYCLE_STATE_CLOSED" ||
+		got[3] != "PULL_REQUEST_LIFECYCLE_STATE_MERGED" {
+		t.Errorf("pull request lifecycle states = %v", got)
 	}
 
 	mutation := messages.ByName("PullRequestMutation")
@@ -298,6 +320,9 @@ func TestDeviceNotificationAndWidgetShape(t *testing.T) {
 		if widgets == nil || widgets.Message() != widgetConfiguration {
 			t.Errorf("%s.widgets does not use WidgetConfiguration", requestName)
 		}
+	}
+	if messages.ByName("RegisterDeviceRequest").Fields().ByName("expected_revision") == nil {
+		t.Error("RegisterDeviceRequest cannot protect an existing lease renewal with a revision")
 	}
 
 	registerResponse := messages.ByName("RegisterDeviceResponse")

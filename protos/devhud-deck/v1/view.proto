@@ -265,6 +265,12 @@ message PullRequestResult {
   bool is_draft = 8;
   google.protobuf.Timestamp updated_at = 9;
   Revision revision = 10;
+  // reviewers is the individual/team membership used by reviewer grouping.
+  repeated PullRequestReviewer reviewers = 11;
+  PullRequestLifecycleState lifecycle_state = 12;
+  // Action metadata is evaluated for the current caller before mutation.
+  repeated PullRequestMutationKind supported_mutations = 13;
+  repeated MergeMethod available_merge_methods = 14;
 }
 
 enum MergeMethod {
@@ -276,6 +282,7 @@ enum MergeMethod {
 
 message PullRequestDetail {
   PullRequestResult result = 1;
+  // These values mirror the action metadata on result.
   repeated PullRequestMutationKind supported_mutations = 2;
   repeated MergeMethod available_merge_methods = 3;
   Revision revision = 4;
@@ -463,4 +470,18 @@ message DeleteFeatureDataResponse {
   FeatureDeletionState state = 2;
   google.protobuf.Timestamp accepted_at = 3;
   IdempotencyResult idempotency = 4;
+}
+
+enum PullRequestLifecycleState {
+  PULL_REQUEST_LIFECYCLE_STATE_UNSPECIFIED = 0;
+  PULL_REQUEST_LIFECYCLE_STATE_OPEN = 1;
+  PULL_REQUEST_LIFECYCLE_STATE_CLOSED = 2;
+  PULL_REQUEST_LIFECYCLE_STATE_MERGED = 3;
+}
+
+message PullRequestReviewer {
+  oneof reviewer {
+    GitHubUser user = 1;
+    GitHubTeam team = 2;
+  }
 }

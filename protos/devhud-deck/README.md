@@ -35,11 +35,16 @@ and delibase's typed lifecycle delivery may consume it.
   owner or kind field, may update the view notification preference, and there
   is no transfer, copy, plugin, or remote-UI RPC.
 - Pull-request mutations are a closed typed union. Merge requires explicit
-  confirmation, and list results expose the revision required by mutations;
-  comments, approvals, and change requests are not Deck actions.
+  confirmation. List results expose individual/team reviewer identities for
+  grouping, open/closed/merged lifecycle state independently from draft state,
+  supported mutations, available merge methods, and the revision required by
+  mutations; comments, approvals, and change requests are not Deck actions.
 - Shortcut bindings use closed modifier/key enums shared with the DevHud native
   registry. Device writes carry request-only shortcut configurations; effective
   conflict state and synchronized revisions are server-authored response state.
+- Initial device registration omits `expected_revision`; lease renewal carries
+  the current device revision so a stale renewal cannot overwrite newer mutable
+  device configuration.
 - Widget actions are client behavior and cannot carry a mutation. Push payloads
   contain only opaque event identifiers. Device writes carry widget
   configuration only; widget snapshots and synchronized state are server-owned.
