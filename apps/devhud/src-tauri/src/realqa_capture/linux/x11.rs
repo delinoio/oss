@@ -442,7 +442,7 @@ impl LinuxCaptureProvider for X11CaptureProvider {
             return Err(BackendFailure::DisplayChanged);
         }
         let root = self.root(&connection)?;
-        let (drawable, drawable_bounds) = match &request.source {
+        let (drawable, drawable_bounds, desktop_bounds) = match &request.source {
             CaptureSourceSelection::Window { window_id } => {
                 let window = self
                     .window_sources
@@ -467,15 +467,20 @@ impl LinuxCaptureProvider for X11CaptureProvider {
                         width: f64::from(geometry.width),
                         height: f64::from(geometry.height),
                     },
+                    request.logical_bounds,
                 )
             }
-            _ => (root, request.logical_bounds),
+            _ => {
+                let bounds =
+                    resolved_root_bounds(request.logical_bounds, request.expected_frame_size);
+                (root, bounds, bounds)
+            }
         };
         let mut frame = self.capture_drawable(
             &connection,
             drawable,
             drawable_bounds,
-            request.logical_bounds,
+            desktop_bounds,
             request.pointer,
         )?;
         if request.mode == CaptureMode::MultiMonitor {
@@ -535,6 +540,18 @@ fn safe_identifier(name: &str, fallback: usize) -> String {
         fallback.to_string()
     } else {
         identifier
+    }
+}
+
+fn resolved_root_bounds(
+    logical_bounds: LogicalRect,
+    expected_frame_size: PhysicalSize,
+) -> LogicalRect {
+    LogicalRect {
+        x: logical_bounds.x.floor(),
+        y: logical_bounds.y.floor(),
+        width: f64::from(expected_frame_size.width),
+        height: f64::from(expected_frame_size.height),
     }
 }
 
@@ -638,8 +655,8 @@ fn blank_unselected_gaps(frame: &mut BackendFrame, request: &ResolvedCaptureRequ
     };
     for y in 0..frame.height {
         for x in 0..frame.width {
-            let desktop_x = request.logical_bounds.x + f64::from(x);
-            let desktop_y = request.logical_bounds.y + f64::from(y);
+            let desktop_x = request.logical_bounds.x.floor() + f64::from(x);
+            let desktop_y = request.logical_bounds.y.floor() + f64::from(y);
             let selected = display_ids.iter().any(|display_id| {
                 request.snapshot.display(display_id).is_some_and(|display| {
                     desktop_x >= display.logical_bounds.x
@@ -659,6 +676,30 @@ fn blank_unselected_gaps(frame: &mut BackendFrame, request: &ResolvedCaptureRequ
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolved_bounds_round_fractional_regions_to_the_pixel_canvas() {
+        assert_eq!(
+            resolved_root_bounds(
+                LogicalRect {
+                    x: -0.5,
+                    y: 1.25,
+                    width: 2.0,
+                    height: 3.5,
+                },
+                PhysicalSize {
+                    width: 3,
+                    height: 4,
+                },
+            ),
+            LogicalRect {
+                x: -1.0,
+                y: 1.0,
+                width: 3.0,
+                height: 4.0,
+            }
+        );
+    }
 
     #[test]
     fn channel_masks_expand_to_full_rgba_range() {

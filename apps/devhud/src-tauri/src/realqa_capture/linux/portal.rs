@@ -60,19 +60,12 @@ impl PortalCaptureProvider {
             ]);
         }
         let targets = proxy.available_targets().await.map_err(map_portal_error)?;
-        let mut modes = Vec::new();
-        if targets.contains(AvailableTargets::Area) {
-            modes.push(CaptureMode::Region);
-        }
-        if targets.contains(AvailableTargets::Window)
-            || targets.contains(AvailableTargets::ActiveWindow)
-        {
-            modes.push(CaptureMode::Window);
-        }
-        if targets.contains(AvailableTargets::Screen) {
-            modes.push(CaptureMode::Display);
-            modes.push(CaptureMode::MultiMonitor);
-        }
+        let modes = modes_for_targets(
+            targets.contains(AvailableTargets::Area),
+            targets.contains(AvailableTargets::Window),
+            targets.contains(AvailableTargets::ActiveWindow),
+            targets.contains(AvailableTargets::Screen),
+        );
         if modes.is_empty() {
             return Err(BackendFailure::ModeUnavailable);
         }
@@ -103,12 +96,7 @@ impl PortalCaptureProvider {
                 CaptureMode::Window if available.contains(AvailableTargets::Window) => {
                     AvailableTargets::Window
                 }
-                CaptureMode::Window if available.contains(AvailableTargets::ActiveWindow) => {
-                    AvailableTargets::ActiveWindow
-                }
-                CaptureMode::Display | CaptureMode::MultiMonitor
-                    if available.contains(AvailableTargets::Screen) =>
-                {
+                CaptureMode::MultiMonitor if available.contains(AvailableTargets::Screen) => {
                     AvailableTargets::Screen
                 }
                 _ => return Err(BackendFailure::ModeUnavailable),
@@ -303,6 +291,26 @@ impl LinuxCaptureProvider for PortalCaptureProvider {
     }
 }
 
+fn modes_for_targets(
+    area_available: bool,
+    window_picker_available: bool,
+    _active_window_available: bool,
+    whole_screen_available: bool,
+) -> Vec<CaptureMode> {
+    // Active-window capture does not transfer source choice to the user.
+    let mut modes = Vec::new();
+    if area_available {
+        modes.push(CaptureMode::Region);
+    }
+    if window_picker_available {
+        modes.push(CaptureMode::Window);
+    }
+    if whole_screen_available {
+        modes.push(CaptureMode::MultiMonitor);
+    }
+    modes
+}
+
 fn map_portal_error(error: PortalError) -> BackendFailure {
     match error {
         PortalError::Response(ResponseError::Cancelled) => BackendFailure::PortalCancelled,
@@ -319,6 +327,23 @@ fn map_portal_error(error: PortalError) -> BackendFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_modes_preserve_portal_selection_semantics() {
+        assert_eq!(
+            modes_for_targets(true, true, true, true),
+            [
+                CaptureMode::Region,
+                CaptureMode::Window,
+                CaptureMode::MultiMonitor
+            ]
+        );
+        assert_eq!(
+            modes_for_targets(false, false, false, true),
+            [CaptureMode::MultiMonitor]
+        );
+        assert!(modes_for_targets(false, false, true, false).is_empty());
+    }
 
     #[test]
     fn application_cancellation_marks_only_the_active_portal_request() {
