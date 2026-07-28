@@ -41,6 +41,20 @@ impl EditorRect {
         }
         Ok(self)
     }
+
+    fn contains_point(self, point: EditorPoint) -> bool {
+        point.x >= self.x
+            && point.y >= self.y
+            && point.x < self.x + self.width
+            && point.y < self.y + self.height
+    }
+
+    fn contains_rect(self, rect: Self) -> bool {
+        rect.x >= self.x
+            && rect.y >= self.y
+            && rect.x + rect.width <= self.x + self.width
+            && rect.y + rect.height <= self.y + self.height
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -162,6 +176,7 @@ fn validate_operations(
         return Err(CaptureFailure::InvalidEditSequence);
     }
     let mut crop_count = 0_usize;
+    let mut active_crop = None;
     let mut source_effect_seen = false;
     let mut annotation_seen = false;
     for operation in operations {
@@ -250,6 +265,12 @@ fn validate_operations(
                 }
             }
         }
+        if active_crop.is_some_and(|crop| !operation_within_crop(operation, crop)) {
+            return Err(CaptureFailure::InvalidEditSequence);
+        }
+        if let EditorOperation::Crop { rect } = operation {
+            active_crop = Some(*rect);
+        }
         match operation {
             EditorOperation::Crop { .. } => {}
             EditorOperation::Blur { .. } | EditorOperation::Pixelate { .. } => {
@@ -265,6 +286,23 @@ fn validate_operations(
         return Err(CaptureFailure::InvalidEditSequence);
     }
     Ok(())
+}
+
+fn operation_within_crop(operation: &EditorOperation, crop: EditorRect) -> bool {
+    match operation {
+        EditorOperation::Crop { rect }
+        | EditorOperation::Rectangle { rect, .. }
+        | EditorOperation::Blur { rect, .. }
+        | EditorOperation::Pixelate { rect, .. } => crop.contains_rect(*rect),
+        EditorOperation::Arrow { start, end, .. } => {
+            crop.contains_point(*start) && crop.contains_point(*end)
+        }
+        EditorOperation::Freehand { points, .. } => {
+            points.iter().all(|point| crop.contains_point(*point))
+        }
+        EditorOperation::Text { origin, .. } => crop.contains_point(*origin),
+        EditorOperation::Marker { center, .. } => crop.contains_point(*center),
+    }
 }
 
 fn checked_point(point: EditorPoint, width: u32, height: u32) -> Result<(), CaptureFailure> {
@@ -921,6 +959,27 @@ mod tests {
         ];
         assert_eq!(
             flatten(fixture(), &duplicate_crop),
+            Err(CaptureFailure::InvalidEditSequence)
+        );
+
+        let edit_outside_active_crop = vec![
+            EditorOperation::Crop {
+                rect: EditorRect {
+                    x: 0,
+                    y: 0,
+                    width: 4,
+                    height: 4,
+                },
+            },
+            EditorOperation::Arrow {
+                start: EditorPoint { x: 4, y: 4 },
+                end: EditorPoint { x: 7, y: 7 },
+                color: "#ffffff".to_owned(),
+                line_width: 1,
+            },
+        ];
+        assert_eq!(
+            flatten(fixture(), &edit_outside_active_crop),
             Err(CaptureFailure::InvalidEditSequence)
         );
 

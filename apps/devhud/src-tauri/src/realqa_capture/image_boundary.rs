@@ -196,7 +196,7 @@ pub(crate) fn sanitize_image(
     encode_image(&decode_image(encoded)?, output_media_type)
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ImageSessionBudget {
     encoded_bytes: u64,
 }

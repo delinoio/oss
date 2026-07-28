@@ -20,6 +20,7 @@ import {
 
 const source: ComposerImage = {
   imageId: "image-1",
+  sourceRevision: 1,
   contentType: "image/png",
   width: 100,
   height: 80,
@@ -278,7 +279,7 @@ describe("ScreenshotEditor", () => {
     );
   });
 
-  it("resets image-specific state when the source identity changes", async () => {
+  it("resets image-specific state when the same image receives a new source revision", async () => {
     const user = userEvent.setup();
     const { bridge, canvas, renderEditor, rerender } = fixture();
     fireEvent.pointerDown(canvas, { clientX: 50, clientY: 40, pointerId: 1 });
@@ -290,17 +291,11 @@ describe("ScreenshotEditor", () => {
 
     const nextSource = {
       ...source,
-      imageId: "image-2",
+      sourceRevision: 2,
       width: 40,
       height: 20,
     };
-    rerender(
-      renderEditor({
-        imageId: "image-2",
-        sessionId: "session-2",
-        sourceValue: nextSource,
-      }),
-    );
+    rerender(renderEditor({ sourceValue: nextSource }));
 
     expect(screen.getByRole("list", { name: "Applied edits" }))
       .toBeEmptyDOMElement();
@@ -309,8 +304,8 @@ describe("ScreenshotEditor", () => {
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Approve 0 edits" }));
     expect(bridge.flattenImage).toHaveBeenCalledWith({
-      sessionId: "session-2",
-      imageId: "image-2",
+      sessionId: "session-1",
+      imageId: "image-1",
       operations: [],
       outputMediaType: ImageMediaType.Png,
     });

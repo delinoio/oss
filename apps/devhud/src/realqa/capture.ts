@@ -182,6 +182,7 @@ export interface ComposerImageRequest {
 
 export interface ComposerImage {
   readonly imageId: string;
+  readonly sourceRevision: number;
   readonly contentType: "image/png" | "image/webp";
   readonly width: number;
   readonly height: number;

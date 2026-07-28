@@ -173,10 +173,10 @@ interface ScreenshotEditorProviderProps {
 }
 
 export function ScreenshotEditorProvider(props: ScreenshotEditorProviderProps) {
-  const { imageId, sessionId } = props;
+  const { imageId, sessionId, source } = props;
   return (
     <ScreenshotEditorStateProvider
-      key={JSON.stringify([sessionId, imageId])}
+      key={JSON.stringify([sessionId, imageId, source.sourceRevision])}
       {...props}
     />
   );
