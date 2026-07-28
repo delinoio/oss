@@ -874,6 +874,23 @@ describe("DevHud application surfaces", () => {
     expect(screen.getByText("dev.deli.devhud")).toBeVisible();
   });
 
+  it("publishes mobile settings resets for session reconciliation", async () => {
+    const publishReset = vi
+      .spyOn(themeRuntime, "publishPersistenceReset")
+      .mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    renderApp({ platform: "mobile" });
+
+    await user.click(await screen.findByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
+    await user.click(screen.getByRole("button", { name: "Confirm reset" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "DevHud local data was reset.",
+    );
+    expect(publishReset).toHaveBeenCalledWith({ status: "complete" });
+  });
+
   it("exports diagnostics only after an explicit action and reports cancellation", async () => {
     const user = userEvent.setup();
     renderApp({ platform: "mobile" });

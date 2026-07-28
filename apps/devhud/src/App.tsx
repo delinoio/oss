@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { SessionProvider } from "./auth/SessionProvider";
+import type { NativeSessionBridge } from "./auth/contracts";
 import type {
   LocalStorageAdapter,
   PersistenceResetOutcome,
@@ -539,7 +541,11 @@ function MobileWidgets() {
   );
 }
 
-function MobileSettings() {
+function MobileSettings({
+  onResetComplete,
+}: {
+  readonly onResetComplete: (outcome: PersistenceResetOutcome) => void;
+}) {
   const { persistenceIssues, persistenceReady } = useApplication();
   const settingsIssue = persistenceIssues.find(
     (issue) => issue.key === "devhud.settings.v1",
@@ -563,7 +569,7 @@ function MobileSettings() {
           Your System, Light, or Dark choice stays on this device. DevHud has no account or
           cloud sync.
         </p>
-        <ResetDevHudControl />
+        <ResetDevHudControl onResetComplete={onResetComplete} />
       </div>
     </section>
   );
@@ -689,10 +695,12 @@ function MobileDiagnostics({
 
 function MobileContent({
   diagnosticsBridge,
+  onResetComplete,
   retryRuntime,
   runtime,
 }: {
   diagnosticsBridge: RuntimeBridge;
+  onResetComplete: (outcome: PersistenceResetOutcome) => void;
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
@@ -703,7 +711,7 @@ function MobileContent({
     case MobileScreen.Widgets:
       return <MobileWidgets />;
     case MobileScreen.Settings:
-      return <MobileSettings />;
+      return <MobileSettings onResetComplete={onResetComplete} />;
     case MobileScreen.Diagnostics:
       return (
         <MobileDiagnostics
@@ -717,10 +725,12 @@ function MobileContent({
 
 function MobileShell({
   diagnosticsBridge,
+  onResetComplete,
   retryRuntime,
   runtime,
 }: {
   diagnosticsBridge: RuntimeBridge;
+  onResetComplete: (outcome: PersistenceResetOutcome) => void;
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
@@ -746,6 +756,7 @@ function MobileShell({
         <div className="mobile-content" key={mobileScreen}>
           <MobileContent
             diagnosticsBridge={diagnosticsBridge}
+            onResetComplete={onResetComplete}
             retryRuntime={retryRuntime}
             runtime={runtime}
           />
@@ -890,6 +901,7 @@ function ApplicationSurface({
         ) : (
           <MobileShell
             diagnosticsBridge={runtimeBridge}
+            onResetComplete={reconcileReset}
             retryRuntime={retryRuntime}
             runtime={runtime}
           />
@@ -913,24 +925,28 @@ export function App({
   desktopBridge,
   platform,
   runtimeBridge = tauriRuntimeBridge,
+  sessionBridge,
   storage,
 }: {
   readonly desktopBridge?: DesktopBridge | null;
   readonly platform?: ApplicationPlatform;
   readonly runtimeBridge?: RuntimeBridge;
+  readonly sessionBridge?: NativeSessionBridge;
   readonly storage?: LocalStorageAdapter;
 }) {
   const synchronizePlatform = platform === undefined;
   const initialPlatform =
     platform ?? detectApplicationPlatform(navigator.userAgent);
   return (
-    <ApplicationProvider storage={storage}>
-      <ApplicationSurface
-        desktopBridge={desktopBridge}
-        initialPlatform={initialPlatform}
-        runtimeBridge={runtimeBridge}
-        synchronizePlatform={synchronizePlatform}
-      />
-    </ApplicationProvider>
+    <SessionProvider bridge={sessionBridge}>
+      <ApplicationProvider storage={storage}>
+        <ApplicationSurface
+          desktopBridge={desktopBridge}
+          initialPlatform={initialPlatform}
+          runtimeBridge={runtimeBridge}
+          synchronizePlatform={synchronizePlatform}
+        />
+      </ApplicationProvider>
+    </SessionProvider>
   );
 }
