@@ -95,16 +95,18 @@ Each project must have one project index document and one or more domain contrac
 - `docs/servers-devhud-deck-foundation.md` (planned `servers/devhud-deck`; future `https://deck.deli.dev`)
 - `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, and non-dispatching manual-refresh quote)
 - `docs/servers-devhud-realqa-foundation.md` (planned `servers/devhud-realqa`; future `https://realqa.deli.dev` and `https://assets.realqa.deli.dev`)
-- `docs/protos-devhud-realqa-api-contract.md` (planned `protos/devhud-realqa/v1`; `devhud.realqa.v1`)
+- `docs/protos-devhud-realqa-api-contract.md` (implemented `protos/devhud-realqa/v1`; `devhud.realqa.v1`, isolated descriptor and private generated package)
 
 DevHud's implemented signed-out base shell remains bundled, usable without an
 account, and protected by the exact pinned sandboxed Tauri CEF runtime, standard
 mobile system webviews, closed internal registry, least-privilege capabilities,
 typed seven-day/20 MB local diagnostics/export, device-local reset, and backup
-exclusions. The private `devhud.deck.v1` source, isolated descriptor, generated
-Go artifacts, and `@delinoio/devhud-deck-connect` workspace export are
-implemented; the Deck server and product clients remain planned. Issues
-#755/#757 authorize two bounded authenticated exceptions: Deck on
+exclusions. The private `devhud.deck.v1` and `devhud.realqa.v1` sources, isolated
+descriptors, generated Go/TypeScript artifacts, and private
+`@delinoio/devhud-deck-connect` and `@delinoio/devhud-realqa-connect` workspace
+exports are implemented; both feature servers and product clients remain
+planned. Issues #755/#757 authorize two bounded authenticated exceptions: Deck
+on
 desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is
 limited to Logto/DeliDev; bundled webviews remain offline while exact future

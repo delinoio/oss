@@ -324,6 +324,22 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  protos/devhud-realqa:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.13.0
+        version: 2.13.0
+      '@connectrpc/connect':
+        specifier: 2.1.2
+        version: 2.1.2(@bufbuild/protobuf@2.13.0)
+    devDependencies:
+      '@bufbuild/protoc-gen-es':
+        specifier: 2.13.0
+        version: 2.13.0(@bufbuild/protobuf@2.13.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   servers/thenv: {}
 
 packages:
