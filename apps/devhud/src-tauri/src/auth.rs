@@ -463,6 +463,42 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 retained.refresh_tokens.insert(feature, rotated_refresh);
                 self.vault.replace(&retained)?;
             }
+            let refresh_token = retained
+                .refresh_tokens
+                .get(&feature)
+                .ok_or(AuthError::TokenInvalid)?;
+            let delibase_tokens = match self.transport.refresh(
+                &token_endpoint,
+                &self.configuration.client_id,
+                refresh_token,
+                DELIBASE_AUDIENCE,
+                feature.delibase_scopes(),
+            ) {
+                Ok(tokens) => tokens,
+                Err(AuthError::TransportUnavailable) => {
+                    transport_unavailable = true;
+                    continue;
+                }
+                Err(error) => {
+                    grant_error.get_or_insert(error);
+                    continue;
+                }
+            };
+            if let Err(error) = validate_bearer(
+                &delibase_tokens.claims,
+                &self.configuration,
+                &subject,
+                DELIBASE_AUDIENCE,
+                feature.delibase_scopes(),
+                now_unix_seconds,
+            ) {
+                grant_error.get_or_insert(error);
+                continue;
+            }
+            if let Some(rotated_refresh) = delibase_tokens.refresh_token {
+                retained.refresh_tokens.insert(feature, rotated_refresh);
+                self.vault.replace(&retained)?;
+            }
             self.state = SessionState::SignedIn {
                 subject,
                 access_token: tokens.access_token,
@@ -1887,6 +1923,12 @@ mod tests {
             AuthFeature::Deck.scopes(),
             Some("refresh-rotated"),
         )));
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DELIBASE_AUDIENCE,
+            AuthFeature::Deck.delibase_scopes(),
+            Some("refresh-delibase-rotated"),
+        )));
         let mut prior = manager(transport, vault);
 
         assert_eq!(
@@ -1898,7 +1940,17 @@ mod tests {
         assert!(prior.memory_tokens_present());
         assert_eq!(
             prior.transport.refresh_requests,
-            [(DECK_AUDIENCE.to_owned(), vec!["deck:access".to_owned()])]
+            [
+                (DECK_AUDIENCE.to_owned(), vec!["deck:access".to_owned()]),
+                (
+                    DELIBASE_AUDIENCE.to_owned(),
+                    vec!["delibase:deck:forward".to_owned()]
+                ),
+            ]
+        );
+        assert_eq!(
+            prior.transport.refresh_inputs,
+            ["refresh-original", "refresh-rotated"]
         );
         assert_eq!(
             prior
@@ -1907,7 +1959,7 @@ mod tests {
                 .as_ref()
                 .and_then(|retained| retained.0.get(&AuthFeature::Deck))
                 .map(String::as_str),
-            Some("refresh-rotated")
+            Some("refresh-delibase-rotated")
         );
     }
 
@@ -1936,6 +1988,12 @@ mod tests {
             AuthFeature::RealQa.scopes(),
             None,
         )));
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DELIBASE_AUDIENCE,
+            AuthFeature::RealQa.delibase_scopes(),
+            None,
+        )));
         let mut prior = manager(transport, vault);
 
         assert_eq!(
@@ -1946,7 +2004,7 @@ mod tests {
         );
         assert_eq!(
             prior.transport.refresh_inputs,
-            ["refresh-deck", "refresh-realqa"]
+            ["refresh-deck", "refresh-realqa", "refresh-realqa"]
         );
     }
 
@@ -1975,6 +2033,12 @@ mod tests {
             AuthFeature::RealQa.scopes(),
             None,
         )));
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DELIBASE_AUDIENCE,
+            AuthFeature::RealQa.delibase_scopes(),
+            None,
+        )));
         let mut prior = manager(transport, vault);
 
         assert_eq!(
@@ -1985,8 +2049,63 @@ mod tests {
         );
         assert_eq!(
             prior.transport.refresh_inputs,
-            ["refresh-deck", "refresh-realqa"]
+            ["refresh-deck", "refresh-realqa", "refresh-realqa"]
         );
+    }
+
+    #[test]
+    fn retained_session_requires_the_paired_delibase_grant() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DECK_AUDIENCE,
+            AuthFeature::Deck.scopes(),
+            None,
+        )));
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DELIBASE_AUDIENCE,
+            &["openid"],
+            None,
+        )));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW),
+            Err(AuthError::ScopeMismatch)
+        );
+        assert!(!prior.memory_tokens_present());
+    }
+
+    #[test]
+    fn retained_session_falls_back_offline_when_delibase_refresh_is_unavailable() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DECK_AUDIENCE,
+            AuthFeature::Deck.scopes(),
+            None,
+        )));
+        transport
+            .refresh
+            .push_back(Err(AuthError::TransportUnavailable));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW).unwrap(),
+            SessionSnapshot::PriorSessionOffline
+        );
+        assert!(!prior.memory_tokens_present());
     }
 
     #[test]
