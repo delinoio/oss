@@ -653,8 +653,11 @@ jobs:
           filters: |
             capture:
               - .github/workflows/CI.yml
+              - Cargo.toml
               - Cargo.lock
               - pnpm-lock.yaml
+              - rust-toolchain
+              - rust-toolchain.toml
               - apps/AGENTS.md
               - apps/devhud/package.json
               - apps/devhud/scripts/check-contracts.mjs
