@@ -666,7 +666,7 @@ impl PlatformCaptureBackend {
         {
             Self {
                 platform: CapturePlatform::Windows,
-                windows: Some(windows::WindowsCaptureBackend::system()),
+                windows: windows::WindowsCaptureBackend::system(),
             }
         }
         #[cfg(not(target_os = "windows"))]

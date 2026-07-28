@@ -16,6 +16,11 @@ use super::{
 };
 
 const MAX_INTERNAL_SOURCE_KEY_BYTES: usize = 1_024;
+const WINDOWS_11_MINIMUM_BUILD: u32 = 22_000;
+
+const fn is_supported_windows_version(major: u32, build: u32) -> bool {
+    major > 10 || (major == 10 && build >= WINDOWS_11_MINIMUM_BUILD)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct NativeSourceId(usize);
@@ -144,8 +149,8 @@ impl WindowsCaptureBackend {
     }
 
     #[cfg(target_os = "windows")]
-    pub(super) fn system() -> Self {
-        Self::new(Arc::new(system::SystemWindowsAdapter))
+    pub(super) fn system() -> Option<Self> {
+        system::is_supported().then(|| Self::new(Arc::new(system::SystemWindowsAdapter)))
     }
 
     fn checked_displays(
@@ -274,11 +279,7 @@ impl WindowsCaptureBackend {
             .into_iter()
             .find(|candidate| candidate.stable_key == registered.stable_key)
             .ok_or(BackendFailure::WindowClosed)?;
-        match window.state {
-            WindowsWindowState::Available => {}
-            WindowsWindowState::Minimized => return Err(BackendFailure::WindowMinimized),
-            WindowsWindowState::Protected => return Err(BackendFailure::ProtectedContent),
-        }
+        validate_window_state(&registered, &window)?;
         let frame = self
             .adapter
             .capture(window.source, request.pointer, cancel)
@@ -342,6 +343,24 @@ impl WindowsCaptureBackend {
         }
         Ok(output)
     }
+}
+
+fn validate_window_state(
+    registered: &WindowsWindow,
+    current: &WindowsWindow,
+) -> Result<(), BackendFailure> {
+    if current.source != registered.source {
+        return Err(BackendFailure::WindowClosed);
+    }
+    match current.state {
+        WindowsWindowState::Available => {}
+        WindowsWindowState::Minimized => return Err(BackendFailure::WindowMinimized),
+        WindowsWindowState::Protected => return Err(BackendFailure::ProtectedContent),
+    }
+    if current.display_key != registered.display_key || current.bounds != registered.bounds {
+        return Err(BackendFailure::DisplayChanged);
+    }
+    Ok(())
 }
 
 impl CaptureBackend for WindowsCaptureBackend {
@@ -644,6 +663,11 @@ mod system {
     use super::*;
 
     pub(super) struct SystemWindowsAdapter;
+
+    pub(super) fn is_supported() -> bool {
+        let version = windows_version::OsVersion::current();
+        is_supported_windows_version(version.major, version.build)
+    }
 
     impl WindowsPlatformAdapter for SystemWindowsAdapter {
         fn permission(&self) -> Result<CapturePermission, WindowsAdapterFailure> {
@@ -1401,5 +1425,51 @@ mod tests {
         ] {
             assert_eq!(BackendFailure::from(adapter), backend);
         }
+    }
+
+    #[test]
+    fn rejects_window_source_and_geometry_changes_before_capture() {
+        let registered = WindowsWindow {
+            source: NativeSourceId(3),
+            stable_key: "private-window".to_owned(),
+            display_key: "private-device-right".to_owned(),
+            bounds: LogicalRect {
+                x: 0.0,
+                y: 0.0,
+                width: 2.0,
+                height: 2.0,
+            },
+            state: WindowsWindowState::Available,
+            process_name: None,
+            title: None,
+        };
+
+        let mut current = registered.clone();
+        current.source = NativeSourceId(4);
+        assert_eq!(
+            validate_window_state(&registered, &current),
+            Err(BackendFailure::WindowClosed)
+        );
+
+        current = registered.clone();
+        current.display_key = "private-device-left".to_owned();
+        assert_eq!(
+            validate_window_state(&registered, &current),
+            Err(BackendFailure::DisplayChanged)
+        );
+
+        current = registered.clone();
+        current.bounds.x = 1.0;
+        assert_eq!(
+            validate_window_state(&registered, &current),
+            Err(BackendFailure::DisplayChanged)
+        );
+    }
+
+    #[test]
+    fn supports_windows_11_and_later_only() {
+        assert!(!is_supported_windows_version(10, 21_999));
+        assert!(is_supported_windows_version(10, 22_000));
+        assert!(is_supported_windows_version(11, 0));
     }
 }

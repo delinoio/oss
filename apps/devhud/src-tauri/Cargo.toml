@@ -49,6 +49,7 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "=0.62.2", features = ["Graphics_Capture", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
 windows-capture = "=2.0.0"
+windows-version = "=0.1.7"
 
 [features]
 default = []

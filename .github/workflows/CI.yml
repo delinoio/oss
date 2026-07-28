@@ -907,8 +907,8 @@ jobs:
       - name: Compile Windows x64 and ARM64 capture libraries
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          cargo check -p devhud --lib --target x86_64-pc-windows-msvc --locked
-          cargo check -p devhud --lib --target aarch64-pc-windows-msvc --locked
+          cargo check -p devhud --lib --target x86_64-pc-windows-msvc --features desktop-cef --locked
+          cargo check -p devhud --lib --target aarch64-pc-windows-msvc --features desktop-cef --locked
       - name: Smoke Windows CEF sandbox and tray lifecycle
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter devhud smoke:desktop
