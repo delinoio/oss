@@ -96,7 +96,10 @@ impl CaptureBackend for LinuxCaptureBackend {
     }
 }
 
-fn direct_capabilities(protocol: CaptureDisplayProtocol) -> CaptureCapabilities {
+fn direct_capabilities(
+    protocol: CaptureDisplayProtocol,
+    pointer_inclusion_available: bool,
+) -> CaptureCapabilities {
     CaptureCapabilities {
         platform: CapturePlatform::Linux,
         display_protocol: protocol,
@@ -109,7 +112,11 @@ fn direct_capabilities(protocol: CaptureDisplayProtocol) -> CaptureCapabilities 
         .into_iter()
         .map(|mode| CaptureModeCapability {
             mode,
-            pointer_options: vec![PointerInclusion::Include, PointerInclusion::Exclude],
+            pointer_options: if pointer_inclusion_available {
+                vec![PointerInclusion::Include, PointerInclusion::Exclude]
+            } else {
+                vec![PointerInclusion::Exclude]
+            },
             portal_approval_required: false,
             selection_adjustment: if mode == CaptureMode::Region {
                 SelectionAdjustmentAuthority::Application
@@ -157,13 +164,14 @@ fn detect_protocol(
             .strip_prefix("--ozone-platform=")
             .map(str::to_ascii_lowercase)
     });
+    let preferred_gdk_backend = gdk_backend
+        .split(',')
+        .map(str::trim)
+        .find(|backend| !backend.is_empty());
 
     if session_type == "wayland" || has_wayland_display {
         if has_x11_display
-            && (gdk_backend
-                .split(',')
-                .any(|backend| backend.trim() == "x11")
-                || ozone_platform.as_deref() == Some("x11"))
+            && (preferred_gdk_backend == Some("x11") || ozone_platform.as_deref() == Some("x11"))
         {
             return Some(CaptureDisplayProtocol::Xwayland);
         }
@@ -203,7 +211,7 @@ mod tests {
                     CaptureMode::MultiMonitor,
                 ])
             } else {
-                direct_capabilities(protocol)
+                direct_capabilities(protocol, true)
             };
             Self {
                 protocol,
@@ -316,6 +324,14 @@ mod tests {
             Some(CaptureDisplayProtocol::Xwayland)
         );
         assert_eq!(
+            detect_protocol(Some("wayland"), true, true, Some("wayland,x11"), Vec::new()),
+            Some(CaptureDisplayProtocol::WaylandPortal)
+        );
+        assert_eq!(
+            detect_protocol(Some("wayland"), true, true, Some("x11,wayland"), Vec::new()),
+            Some(CaptureDisplayProtocol::Xwayland)
+        );
+        assert_eq!(
             detect_protocol(
                 Some("wayland"),
                 true,
@@ -334,7 +350,7 @@ mod tests {
             CaptureDisplayProtocol::X11,
             CaptureDisplayProtocol::Xwayland,
         ] {
-            let capabilities = direct_capabilities(protocol);
+            let capabilities = direct_capabilities(protocol, true);
             assert_eq!(capabilities.modes.len(), 4);
             assert!(capabilities.modes.iter().all(|mode| {
                 mode.pointer_options == [PointerInclusion::Include, PointerInclusion::Exclude]
@@ -349,6 +365,20 @@ mod tests {
                     .selection_adjustment,
                 SelectionAdjustmentAuthority::Application
             );
+        }
+    }
+
+    #[test]
+    fn direct_protocols_hide_pointer_inclusion_when_xfixes_is_unavailable() {
+        for protocol in [
+            CaptureDisplayProtocol::X11,
+            CaptureDisplayProtocol::Xwayland,
+        ] {
+            let capabilities = direct_capabilities(protocol, false);
+            assert!(capabilities.modes.iter().all(|mode| {
+                mode.pointer_options == [PointerInclusion::Exclude]
+                    && !mode.portal_approval_required
+            }));
         }
     }
 

@@ -264,6 +264,17 @@ impl X11CaptureProvider {
         let y = checked_i16(bounds.y)?;
         let width = checked_u16(bounds.width)?;
         let height = checked_u16(bounds.height)?;
+        let cursor = if pointer == PointerInclusion::Include {
+            Some(
+                connection
+                    .xfixes_get_cursor_image()
+                    .map_err(|_| BackendFailure::ModeUnavailable)?
+                    .reply()
+                    .map_err(|_| BackendFailure::ModeUnavailable)?,
+            )
+        } else {
+            None
+        };
         let (image, visual_id) = Image::get(connection, drawable, x, y, width, height)
             .map_err(|_| BackendFailure::CaptureFailed)?;
         let visual = self
@@ -281,12 +292,7 @@ impl X11CaptureProvider {
                 ]);
             }
         }
-        if pointer == PointerInclusion::Include
-            && let Some(cursor) = connection
-                .xfixes_get_cursor_image()
-                .ok()
-                .and_then(|cookie| cookie.reply().ok())
-        {
+        if let Some(cursor) = cursor {
             composite_cursor(
                 &mut rgba,
                 u32::from(width),
@@ -316,7 +322,19 @@ impl LinuxCaptureProvider for X11CaptureProvider {
     }
 
     fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure> {
-        Ok(direct_capabilities(self.protocol))
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| BackendFailure::Unavailable)?;
+        let pointer_inclusion_available = connection
+            .xfixes_get_cursor_image()
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .is_some();
+        Ok(direct_capabilities(
+            self.protocol,
+            pointer_inclusion_available,
+        ))
     }
 
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {
