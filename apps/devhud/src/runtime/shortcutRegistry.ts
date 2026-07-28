@@ -1,6 +1,7 @@
 import {
   MAX_DECK_SHORTCUT_DEFINITIONS,
   MAX_REALQA_SHORTCUT_DEFINITIONS,
+  isStructuredShortcut,
   type ShortcutDefinition,
   type ShortcutOwner,
   type StructuredShortcut,
@@ -8,7 +9,10 @@ import {
 
 export type ShortcutDefinitionOutcome =
   | { readonly status: "active" }
-  | { readonly status: "inactive"; readonly reason: "conflict" | "unavailable" | "limit-exceeded" };
+  | {
+      readonly status: "inactive";
+      readonly reason: "conflict" | "unavailable" | "limit-exceeded" | "malformed";
+    };
 
 function bindingKey(shortcut: StructuredShortcut): string {
   return `${[...shortcut.modifiers].sort().join("+")}:${shortcut.key}`;
@@ -41,11 +45,23 @@ export function planShortcutDefinitions(
   const deckCounts = new Map<string, number>();
   let realQaCount = 0;
   const accepted: ShortcutDefinition[] = [];
+  const plannedOwners = new Set<string>();
 
   for (const definition of [...definitions].sort((left, right) => compareOwners(left.owner, right.owner))) {
     const key = ownerKey(definition.owner);
+    if (plannedOwners.has(key)) continue;
+    plannedOwners.add(key);
     if (!available && definition.owner.feature !== "devhud") {
       outcomes.set(key, { status: "inactive", reason: "unavailable" });
+      continue;
+    }
+    if (!isStructuredShortcut(definition.shortcut)) {
+      outcomes.set(key, { status: "inactive", reason: "malformed" });
+      continue;
+    }
+    const duplicate = accepted.some((entry) => bindingKey(entry.shortcut) === bindingKey(definition.shortcut));
+    if (duplicate) {
+      outcomes.set(key, { status: "inactive", reason: "conflict" });
       continue;
     }
     if (definition.owner.feature === "deck") {
@@ -62,11 +78,6 @@ export function planShortcutDefinitions(
         continue;
       }
       realQaCount += 1;
-    }
-    const duplicate = accepted.some((entry) => bindingKey(entry.shortcut) === bindingKey(definition.shortcut));
-    if (duplicate) {
-      outcomes.set(key, { status: "inactive", reason: "conflict" });
-      continue;
     }
     accepted.push(definition);
     outcomes.set(key, { status: "active" });
