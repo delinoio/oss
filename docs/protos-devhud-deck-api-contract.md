@@ -36,11 +36,13 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 - `CreateView` carries a stable client-generated UUID v7 idempotency key scoped to the authenticated subject and operation. An exact replay returns the originally created view and revision; reuse with changed creation input returns the typed idempotency-conflict reason.
 - Lists use opaque cursor pagination. Limits are 50 personal views, 250 organization views, and 500 PR results per view with explicit truncation.
 - PR result rows carry repository, number, title, author, individual/team
-  reviewer identities needed for reviewer grouping, review decision, checks,
+  reviewer identities needed for reviewer grouping, current assignees and
+  labels needed to populate removal actions, review decision, checks,
   mergeability, explicit open/closed/merged lifecycle state, independent draft
   state, updated time, and the synchronized PR revision required by
   `MutatePullRequest`. They also expose the currently supported mutations and
-  available merge methods so clients never guess or probe action availability.
+  available merge methods so clients never guess or probe action availability
+  or current removal operands.
 - Device registration/update requests carry request-only shortcut configurations using closed modifier/key enums. Effective shortcut conflict state and synchronized shortcut revisions are server-authored response state; clients cannot submit either field or unchecked binding strings.
 - Device registration/update requests carry widget identity, selected view, family, and privacy configuration only. Widget snapshots, freshness/offline state, and synchronized widget revisions are server-authored response state.
 - Mutations are a closed union for assign/unassign, reviewer request/removal, label add/remove, draft/ready, close/reopen, merge, and native auto-merge enable/cancel. Merge requests carry explicit user confirmation.

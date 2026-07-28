@@ -271,6 +271,9 @@ message PullRequestResult {
   // Action metadata is evaluated for the current caller before mutation.
   repeated PullRequestMutationKind supported_mutations = 13;
   repeated MergeMethod available_merge_methods = 14;
+  // Current operands let clients populate removal actions without guessing.
+  repeated GitHubUser assignees = 15;
+  repeated string labels = 16;
 }
 
 enum MergeMethod {

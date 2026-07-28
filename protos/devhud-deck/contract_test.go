@@ -181,6 +181,8 @@ func TestPullRequestResultAndMutationShape(t *testing.T) {
 		"lifecycle_state",
 		"supported_mutations",
 		"available_merge_methods",
+		"assignees",
+		"labels",
 	} {
 		if result.Fields().ByName(field) == nil {
 			t.Errorf("PullRequestResult missing %s", field)
@@ -197,6 +199,18 @@ func TestPullRequestResultAndMutationShape(t *testing.T) {
 		if actionMetadata == nil || actionMetadata.Cardinality() != protoreflect.Repeated {
 			t.Errorf("PullRequestResult.%s is not repeated action metadata", field)
 		}
+	}
+	assignees := result.Fields().ByName("assignees")
+	if assignees == nil ||
+		assignees.Cardinality() != protoreflect.Repeated ||
+		assignees.Message() != messages.ByName("GitHubUser") {
+		t.Error("PullRequestResult.assignees does not carry repeated current assignee identities")
+	}
+	labels := result.Fields().ByName("labels")
+	if labels == nil ||
+		labels.Cardinality() != protoreflect.Repeated ||
+		labels.Kind() != protoreflect.StringKind {
+		t.Error("PullRequestResult.labels does not carry repeated current label names")
 	}
 	if got := deckv1.PullRequestLifecycleState_name; len(got) != 4 ||
 		got[1] != "PULL_REQUEST_LIFECYCLE_STATE_OPEN" ||

@@ -36,9 +36,10 @@ and delibase's typed lifecycle delivery may consume it.
   is no transfer, copy, plugin, or remote-UI RPC.
 - Pull-request mutations are a closed typed union. Merge requires explicit
   confirmation. List results expose individual/team reviewer identities for
-  grouping, open/closed/merged lifecycle state independently from draft state,
-  supported mutations, available merge methods, and the revision required by
-  mutations; comments, approvals, and change requests are not Deck actions.
+  grouping, current assignees and labels for removal actions, open/closed/merged
+  lifecycle state independently from draft state, supported mutations,
+  available merge methods, and the revision required by mutations; comments,
+  approvals, and change requests are not Deck actions.
 - Shortcut bindings use closed modifier/key enums shared with the DevHud native
   registry. Device writes carry request-only shortcut configurations; effective
   conflict state and synchronized revisions are server-authored response state.
