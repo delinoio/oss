@@ -228,6 +228,47 @@ func TestDeviceNotificationAndWidgetShape(t *testing.T) {
 		}
 	}
 
+	shortcutBinding := messages.ByName("ShortcutBinding")
+	modifiers := shortcutBinding.Fields().ByName("modifiers")
+	if modifiers == nil ||
+		modifiers.Cardinality() != protoreflect.Repeated ||
+		modifiers.Kind() != protoreflect.EnumKind {
+		t.Error("ShortcutBinding.modifiers is not a repeated enum")
+	}
+	key := shortcutBinding.Fields().ByName("key")
+	if key == nil || key.Kind() != protoreflect.EnumKind {
+		t.Error("ShortcutBinding.key is not an enum")
+	}
+
+	viewShortcut := messages.ByName("ViewShortcut")
+	binding := viewShortcut.Fields().ByName("binding")
+	if binding == nil || binding.Message() != shortcutBinding {
+		t.Error("ViewShortcut.binding does not use ShortcutBinding")
+	}
+	if viewShortcut.Fields().ByName("key_binding") != nil {
+		t.Error("ViewShortcut permits an unchecked string key binding")
+	}
+
+	shortcutConfiguration := messages.ByName("ViewShortcutConfiguration")
+	for _, field := range []protoreflect.Name{
+		"shortcut_id",
+		"view_id",
+		"binding",
+	} {
+		if shortcutConfiguration.Fields().ByName(field) == nil {
+			t.Errorf("ViewShortcutConfiguration missing %s", field)
+		}
+	}
+	for _, field := range []protoreflect.Name{"state", "revision"} {
+		if shortcutConfiguration.Fields().ByName(field) != nil {
+			t.Errorf("ViewShortcutConfiguration permits client-authored %s", field)
+		}
+	}
+	configurationBinding := shortcutConfiguration.Fields().ByName("binding")
+	if configurationBinding == nil || configurationBinding.Message() != shortcutBinding {
+		t.Error("ViewShortcutConfiguration.binding does not use ShortcutBinding")
+	}
+
 	widgetConfiguration := messages.ByName("WidgetConfiguration")
 	for _, field := range []protoreflect.Name{
 		"widget_id",
@@ -249,6 +290,10 @@ func TestDeviceNotificationAndWidgetShape(t *testing.T) {
 		"UpdateDeviceRequest",
 	} {
 		request := messages.ByName(requestName)
+		shortcuts := request.Fields().ByName("shortcuts")
+		if shortcuts == nil || shortcuts.Message() != shortcutConfiguration {
+			t.Errorf("%s.shortcuts does not use ViewShortcutConfiguration", requestName)
+		}
 		widgets := request.Fields().ByName("widgets")
 		if widgets == nil || widgets.Message() != widgetConfiguration {
 			t.Errorf("%s.widgets does not use WidgetConfiguration", requestName)

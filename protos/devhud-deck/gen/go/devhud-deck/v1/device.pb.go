@@ -181,6 +181,254 @@ func (ShortcutState) EnumDescriptor() ([]byte, []int) {
 	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{2}
 }
 
+type ShortcutModifier int32
+
+const (
+	ShortcutModifier_SHORTCUT_MODIFIER_UNSPECIFIED ShortcutModifier = 0
+	ShortcutModifier_SHORTCUT_MODIFIER_CONTROL     ShortcutModifier = 1
+	ShortcutModifier_SHORTCUT_MODIFIER_ALT         ShortcutModifier = 2
+	ShortcutModifier_SHORTCUT_MODIFIER_SHIFT       ShortcutModifier = 3
+	ShortcutModifier_SHORTCUT_MODIFIER_META        ShortcutModifier = 4
+)
+
+// Enum value maps for ShortcutModifier.
+var (
+	ShortcutModifier_name = map[int32]string{
+		0: "SHORTCUT_MODIFIER_UNSPECIFIED",
+		1: "SHORTCUT_MODIFIER_CONTROL",
+		2: "SHORTCUT_MODIFIER_ALT",
+		3: "SHORTCUT_MODIFIER_SHIFT",
+		4: "SHORTCUT_MODIFIER_META",
+	}
+	ShortcutModifier_value = map[string]int32{
+		"SHORTCUT_MODIFIER_UNSPECIFIED": 0,
+		"SHORTCUT_MODIFIER_CONTROL":     1,
+		"SHORTCUT_MODIFIER_ALT":         2,
+		"SHORTCUT_MODIFIER_SHIFT":       3,
+		"SHORTCUT_MODIFIER_META":        4,
+	}
+)
+
+func (x ShortcutModifier) Enum() *ShortcutModifier {
+	p := new(ShortcutModifier)
+	*p = x
+	return p
+}
+
+func (x ShortcutModifier) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ShortcutModifier) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_deck_v1_device_proto_enumTypes[3].Descriptor()
+}
+
+func (ShortcutModifier) Type() protoreflect.EnumType {
+	return &file_devhud_deck_v1_device_proto_enumTypes[3]
+}
+
+func (x ShortcutModifier) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ShortcutModifier.Descriptor instead.
+func (ShortcutModifier) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{3}
+}
+
+type ShortcutKey int32
+
+const (
+	ShortcutKey_SHORTCUT_KEY_UNSPECIFIED ShortcutKey = 0
+	ShortcutKey_SHORTCUT_KEY_A           ShortcutKey = 1
+	ShortcutKey_SHORTCUT_KEY_B           ShortcutKey = 2
+	ShortcutKey_SHORTCUT_KEY_C           ShortcutKey = 3
+	ShortcutKey_SHORTCUT_KEY_D           ShortcutKey = 4
+	ShortcutKey_SHORTCUT_KEY_E           ShortcutKey = 5
+	ShortcutKey_SHORTCUT_KEY_F           ShortcutKey = 6
+	ShortcutKey_SHORTCUT_KEY_G           ShortcutKey = 7
+	ShortcutKey_SHORTCUT_KEY_H           ShortcutKey = 8
+	ShortcutKey_SHORTCUT_KEY_I           ShortcutKey = 9
+	ShortcutKey_SHORTCUT_KEY_J           ShortcutKey = 10
+	ShortcutKey_SHORTCUT_KEY_K           ShortcutKey = 11
+	ShortcutKey_SHORTCUT_KEY_L           ShortcutKey = 12
+	ShortcutKey_SHORTCUT_KEY_M           ShortcutKey = 13
+	ShortcutKey_SHORTCUT_KEY_N           ShortcutKey = 14
+	ShortcutKey_SHORTCUT_KEY_O           ShortcutKey = 15
+	ShortcutKey_SHORTCUT_KEY_P           ShortcutKey = 16
+	ShortcutKey_SHORTCUT_KEY_Q           ShortcutKey = 17
+	ShortcutKey_SHORTCUT_KEY_R           ShortcutKey = 18
+	ShortcutKey_SHORTCUT_KEY_S           ShortcutKey = 19
+	ShortcutKey_SHORTCUT_KEY_T           ShortcutKey = 20
+	ShortcutKey_SHORTCUT_KEY_U           ShortcutKey = 21
+	ShortcutKey_SHORTCUT_KEY_V           ShortcutKey = 22
+	ShortcutKey_SHORTCUT_KEY_W           ShortcutKey = 23
+	ShortcutKey_SHORTCUT_KEY_X           ShortcutKey = 24
+	ShortcutKey_SHORTCUT_KEY_Y           ShortcutKey = 25
+	ShortcutKey_SHORTCUT_KEY_Z           ShortcutKey = 26
+	ShortcutKey_SHORTCUT_KEY_DIGIT_0     ShortcutKey = 27
+	ShortcutKey_SHORTCUT_KEY_DIGIT_1     ShortcutKey = 28
+	ShortcutKey_SHORTCUT_KEY_DIGIT_2     ShortcutKey = 29
+	ShortcutKey_SHORTCUT_KEY_DIGIT_3     ShortcutKey = 30
+	ShortcutKey_SHORTCUT_KEY_DIGIT_4     ShortcutKey = 31
+	ShortcutKey_SHORTCUT_KEY_DIGIT_5     ShortcutKey = 32
+	ShortcutKey_SHORTCUT_KEY_DIGIT_6     ShortcutKey = 33
+	ShortcutKey_SHORTCUT_KEY_DIGIT_7     ShortcutKey = 34
+	ShortcutKey_SHORTCUT_KEY_DIGIT_8     ShortcutKey = 35
+	ShortcutKey_SHORTCUT_KEY_DIGIT_9     ShortcutKey = 36
+	ShortcutKey_SHORTCUT_KEY_F1          ShortcutKey = 37
+	ShortcutKey_SHORTCUT_KEY_F2          ShortcutKey = 38
+	ShortcutKey_SHORTCUT_KEY_F3          ShortcutKey = 39
+	ShortcutKey_SHORTCUT_KEY_F4          ShortcutKey = 40
+	ShortcutKey_SHORTCUT_KEY_F5          ShortcutKey = 41
+	ShortcutKey_SHORTCUT_KEY_F6          ShortcutKey = 42
+	ShortcutKey_SHORTCUT_KEY_F7          ShortcutKey = 43
+	ShortcutKey_SHORTCUT_KEY_F8          ShortcutKey = 44
+	ShortcutKey_SHORTCUT_KEY_F9          ShortcutKey = 45
+	ShortcutKey_SHORTCUT_KEY_F10         ShortcutKey = 46
+	ShortcutKey_SHORTCUT_KEY_F11         ShortcutKey = 47
+	ShortcutKey_SHORTCUT_KEY_F12         ShortcutKey = 48
+	ShortcutKey_SHORTCUT_KEY_SPACE       ShortcutKey = 49
+	ShortcutKey_SHORTCUT_KEY_ENTER       ShortcutKey = 50
+)
+
+// Enum value maps for ShortcutKey.
+var (
+	ShortcutKey_name = map[int32]string{
+		0:  "SHORTCUT_KEY_UNSPECIFIED",
+		1:  "SHORTCUT_KEY_A",
+		2:  "SHORTCUT_KEY_B",
+		3:  "SHORTCUT_KEY_C",
+		4:  "SHORTCUT_KEY_D",
+		5:  "SHORTCUT_KEY_E",
+		6:  "SHORTCUT_KEY_F",
+		7:  "SHORTCUT_KEY_G",
+		8:  "SHORTCUT_KEY_H",
+		9:  "SHORTCUT_KEY_I",
+		10: "SHORTCUT_KEY_J",
+		11: "SHORTCUT_KEY_K",
+		12: "SHORTCUT_KEY_L",
+		13: "SHORTCUT_KEY_M",
+		14: "SHORTCUT_KEY_N",
+		15: "SHORTCUT_KEY_O",
+		16: "SHORTCUT_KEY_P",
+		17: "SHORTCUT_KEY_Q",
+		18: "SHORTCUT_KEY_R",
+		19: "SHORTCUT_KEY_S",
+		20: "SHORTCUT_KEY_T",
+		21: "SHORTCUT_KEY_U",
+		22: "SHORTCUT_KEY_V",
+		23: "SHORTCUT_KEY_W",
+		24: "SHORTCUT_KEY_X",
+		25: "SHORTCUT_KEY_Y",
+		26: "SHORTCUT_KEY_Z",
+		27: "SHORTCUT_KEY_DIGIT_0",
+		28: "SHORTCUT_KEY_DIGIT_1",
+		29: "SHORTCUT_KEY_DIGIT_2",
+		30: "SHORTCUT_KEY_DIGIT_3",
+		31: "SHORTCUT_KEY_DIGIT_4",
+		32: "SHORTCUT_KEY_DIGIT_5",
+		33: "SHORTCUT_KEY_DIGIT_6",
+		34: "SHORTCUT_KEY_DIGIT_7",
+		35: "SHORTCUT_KEY_DIGIT_8",
+		36: "SHORTCUT_KEY_DIGIT_9",
+		37: "SHORTCUT_KEY_F1",
+		38: "SHORTCUT_KEY_F2",
+		39: "SHORTCUT_KEY_F3",
+		40: "SHORTCUT_KEY_F4",
+		41: "SHORTCUT_KEY_F5",
+		42: "SHORTCUT_KEY_F6",
+		43: "SHORTCUT_KEY_F7",
+		44: "SHORTCUT_KEY_F8",
+		45: "SHORTCUT_KEY_F9",
+		46: "SHORTCUT_KEY_F10",
+		47: "SHORTCUT_KEY_F11",
+		48: "SHORTCUT_KEY_F12",
+		49: "SHORTCUT_KEY_SPACE",
+		50: "SHORTCUT_KEY_ENTER",
+	}
+	ShortcutKey_value = map[string]int32{
+		"SHORTCUT_KEY_UNSPECIFIED": 0,
+		"SHORTCUT_KEY_A":           1,
+		"SHORTCUT_KEY_B":           2,
+		"SHORTCUT_KEY_C":           3,
+		"SHORTCUT_KEY_D":           4,
+		"SHORTCUT_KEY_E":           5,
+		"SHORTCUT_KEY_F":           6,
+		"SHORTCUT_KEY_G":           7,
+		"SHORTCUT_KEY_H":           8,
+		"SHORTCUT_KEY_I":           9,
+		"SHORTCUT_KEY_J":           10,
+		"SHORTCUT_KEY_K":           11,
+		"SHORTCUT_KEY_L":           12,
+		"SHORTCUT_KEY_M":           13,
+		"SHORTCUT_KEY_N":           14,
+		"SHORTCUT_KEY_O":           15,
+		"SHORTCUT_KEY_P":           16,
+		"SHORTCUT_KEY_Q":           17,
+		"SHORTCUT_KEY_R":           18,
+		"SHORTCUT_KEY_S":           19,
+		"SHORTCUT_KEY_T":           20,
+		"SHORTCUT_KEY_U":           21,
+		"SHORTCUT_KEY_V":           22,
+		"SHORTCUT_KEY_W":           23,
+		"SHORTCUT_KEY_X":           24,
+		"SHORTCUT_KEY_Y":           25,
+		"SHORTCUT_KEY_Z":           26,
+		"SHORTCUT_KEY_DIGIT_0":     27,
+		"SHORTCUT_KEY_DIGIT_1":     28,
+		"SHORTCUT_KEY_DIGIT_2":     29,
+		"SHORTCUT_KEY_DIGIT_3":     30,
+		"SHORTCUT_KEY_DIGIT_4":     31,
+		"SHORTCUT_KEY_DIGIT_5":     32,
+		"SHORTCUT_KEY_DIGIT_6":     33,
+		"SHORTCUT_KEY_DIGIT_7":     34,
+		"SHORTCUT_KEY_DIGIT_8":     35,
+		"SHORTCUT_KEY_DIGIT_9":     36,
+		"SHORTCUT_KEY_F1":          37,
+		"SHORTCUT_KEY_F2":          38,
+		"SHORTCUT_KEY_F3":          39,
+		"SHORTCUT_KEY_F4":          40,
+		"SHORTCUT_KEY_F5":          41,
+		"SHORTCUT_KEY_F6":          42,
+		"SHORTCUT_KEY_F7":          43,
+		"SHORTCUT_KEY_F8":          44,
+		"SHORTCUT_KEY_F9":          45,
+		"SHORTCUT_KEY_F10":         46,
+		"SHORTCUT_KEY_F11":         47,
+		"SHORTCUT_KEY_F12":         48,
+		"SHORTCUT_KEY_SPACE":       49,
+		"SHORTCUT_KEY_ENTER":       50,
+	}
+)
+
+func (x ShortcutKey) Enum() *ShortcutKey {
+	p := new(ShortcutKey)
+	*p = x
+	return p
+}
+
+func (x ShortcutKey) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ShortcutKey) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_deck_v1_device_proto_enumTypes[4].Descriptor()
+}
+
+func (ShortcutKey) Type() protoreflect.EnumType {
+	return &file_devhud_deck_v1_device_proto_enumTypes[4]
+}
+
+func (x ShortcutKey) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ShortcutKey.Descriptor instead.
+func (ShortcutKey) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{4}
+}
+
 type WidgetFamily int32
 
 const (
@@ -226,11 +474,11 @@ func (x WidgetFamily) String() string {
 }
 
 func (WidgetFamily) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_deck_v1_device_proto_enumTypes[3].Descriptor()
+	return file_devhud_deck_v1_device_proto_enumTypes[5].Descriptor()
 }
 
 func (WidgetFamily) Type() protoreflect.EnumType {
-	return &file_devhud_deck_v1_device_proto_enumTypes[3]
+	return &file_devhud_deck_v1_device_proto_enumTypes[5]
 }
 
 func (x WidgetFamily) Number() protoreflect.EnumNumber {
@@ -239,7 +487,7 @@ func (x WidgetFamily) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use WidgetFamily.Descriptor instead.
 func (WidgetFamily) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{3}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{5}
 }
 
 type WidgetPrivacy int32
@@ -275,11 +523,11 @@ func (x WidgetPrivacy) String() string {
 }
 
 func (WidgetPrivacy) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_deck_v1_device_proto_enumTypes[4].Descriptor()
+	return file_devhud_deck_v1_device_proto_enumTypes[6].Descriptor()
 }
 
 func (WidgetPrivacy) Type() protoreflect.EnumType {
-	return &file_devhud_deck_v1_device_proto_enumTypes[4]
+	return &file_devhud_deck_v1_device_proto_enumTypes[6]
 }
 
 func (x WidgetPrivacy) Number() protoreflect.EnumNumber {
@@ -288,7 +536,7 @@ func (x WidgetPrivacy) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use WidgetPrivacy.Descriptor instead.
 func (WidgetPrivacy) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{4}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{6}
 }
 
 type NotificationResolution int32
@@ -327,11 +575,11 @@ func (x NotificationResolution) String() string {
 }
 
 func (NotificationResolution) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_deck_v1_device_proto_enumTypes[5].Descriptor()
+	return file_devhud_deck_v1_device_proto_enumTypes[7].Descriptor()
 }
 
 func (NotificationResolution) Type() protoreflect.EnumType {
-	return &file_devhud_deck_v1_device_proto_enumTypes[5]
+	return &file_devhud_deck_v1_device_proto_enumTypes[7]
 }
 
 func (x NotificationResolution) Number() protoreflect.EnumNumber {
@@ -340,7 +588,7 @@ func (x NotificationResolution) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NotificationResolution.Descriptor instead.
 func (NotificationResolution) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{5}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{7}
 }
 
 type PushRegistration struct {
@@ -395,11 +643,63 @@ func (x *PushRegistration) GetOpaquePushToken() string {
 	return ""
 }
 
+type ShortcutBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Modifiers     []ShortcutModifier     `protobuf:"varint,1,rep,packed,name=modifiers,proto3,enum=devhud.deck.v1.ShortcutModifier" json:"modifiers,omitempty"`
+	Key           ShortcutKey            `protobuf:"varint,2,opt,name=key,proto3,enum=devhud.deck.v1.ShortcutKey" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShortcutBinding) Reset() {
+	*x = ShortcutBinding{}
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShortcutBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShortcutBinding) ProtoMessage() {}
+
+func (x *ShortcutBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShortcutBinding.ProtoReflect.Descriptor instead.
+func (*ShortcutBinding) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ShortcutBinding) GetModifiers() []ShortcutModifier {
+	if x != nil {
+		return x.Modifiers
+	}
+	return nil
+}
+
+func (x *ShortcutBinding) GetKey() ShortcutKey {
+	if x != nil {
+		return x.Key
+	}
+	return ShortcutKey_SHORTCUT_KEY_UNSPECIFIED
+}
+
 type ViewShortcut struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ShortcutId    *UuidV7                `protobuf:"bytes,1,opt,name=shortcut_id,json=shortcutId,proto3" json:"shortcut_id,omitempty"`
 	ViewId        *UuidV7                `protobuf:"bytes,2,opt,name=view_id,json=viewId,proto3" json:"view_id,omitempty"`
-	KeyBinding    string                 `protobuf:"bytes,3,opt,name=key_binding,json=keyBinding,proto3" json:"key_binding,omitempty"`
+	Binding       *ShortcutBinding       `protobuf:"bytes,3,opt,name=binding,proto3" json:"binding,omitempty"`
 	State         ShortcutState          `protobuf:"varint,4,opt,name=state,proto3,enum=devhud.deck.v1.ShortcutState" json:"state,omitempty"`
 	Revision      *Revision              `protobuf:"bytes,5,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -408,7 +708,7 @@ type ViewShortcut struct {
 
 func (x *ViewShortcut) Reset() {
 	*x = ViewShortcut{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[1]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -420,7 +720,7 @@ func (x *ViewShortcut) String() string {
 func (*ViewShortcut) ProtoMessage() {}
 
 func (x *ViewShortcut) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[1]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -433,7 +733,7 @@ func (x *ViewShortcut) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewShortcut.ProtoReflect.Descriptor instead.
 func (*ViewShortcut) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{1}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ViewShortcut) GetShortcutId() *UuidV7 {
@@ -450,11 +750,11 @@ func (x *ViewShortcut) GetViewId() *UuidV7 {
 	return nil
 }
 
-func (x *ViewShortcut) GetKeyBinding() string {
+func (x *ViewShortcut) GetBinding() *ShortcutBinding {
 	if x != nil {
-		return x.KeyBinding
+		return x.Binding
 	}
-	return ""
+	return nil
 }
 
 func (x *ViewShortcut) GetState() ShortcutState {
@@ -482,7 +782,7 @@ type WidgetPullRequestItem struct {
 
 func (x *WidgetPullRequestItem) Reset() {
 	*x = WidgetPullRequestItem{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[2]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +794,7 @@ func (x *WidgetPullRequestItem) String() string {
 func (*WidgetPullRequestItem) ProtoMessage() {}
 
 func (x *WidgetPullRequestItem) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[2]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +807,7 @@ func (x *WidgetPullRequestItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetPullRequestItem.ProtoReflect.Descriptor instead.
 func (*WidgetPullRequestItem) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{2}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *WidgetPullRequestItem) GetRepository() *RepositoryReference {
@@ -544,7 +844,7 @@ type WidgetSnapshot struct {
 
 func (x *WidgetSnapshot) Reset() {
 	*x = WidgetSnapshot{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[3]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -556,7 +856,7 @@ func (x *WidgetSnapshot) String() string {
 func (*WidgetSnapshot) ProtoMessage() {}
 
 func (x *WidgetSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[3]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -569,7 +869,7 @@ func (x *WidgetSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetSnapshot.ProtoReflect.Descriptor instead.
 func (*WidgetSnapshot) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{3}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *WidgetSnapshot) GetMatchingCount() uint32 {
@@ -621,7 +921,7 @@ type WidgetState struct {
 
 func (x *WidgetState) Reset() {
 	*x = WidgetState{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[4]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -633,7 +933,7 @@ func (x *WidgetState) String() string {
 func (*WidgetState) ProtoMessage() {}
 
 func (x *WidgetState) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[4]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -646,7 +946,7 @@ func (x *WidgetState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetState.ProtoReflect.Descriptor instead.
 func (*WidgetState) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{4}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *WidgetState) GetWidgetId() *UuidV7 {
@@ -708,7 +1008,7 @@ type Device struct {
 
 func (x *Device) Reset() {
 	*x = Device{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[5]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -720,7 +1020,7 @@ func (x *Device) String() string {
 func (*Device) ProtoMessage() {}
 
 func (x *Device) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[5]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -733,7 +1033,7 @@ func (x *Device) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Device.ProtoReflect.Descriptor instead.
 func (*Device) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{5}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Device) GetDeviceId() *UuidV7 {
@@ -810,7 +1110,7 @@ type DeviceRegistration struct {
 
 func (x *DeviceRegistration) Reset() {
 	*x = DeviceRegistration{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[6]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -822,7 +1122,7 @@ func (x *DeviceRegistration) String() string {
 func (*DeviceRegistration) ProtoMessage() {}
 
 func (x *DeviceRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[6]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -835,7 +1135,7 @@ func (x *DeviceRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceRegistration.ProtoReflect.Descriptor instead.
 func (*DeviceRegistration) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{6}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DeviceRegistration) GetRegistrationId() *UuidV7 {
@@ -860,22 +1160,22 @@ func (x *DeviceRegistration) GetLeaseExpiresAt() *timestamppb.Timestamp {
 }
 
 type RegisterDeviceRequest struct {
-	state                           protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey                  *IdempotencyKey        `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	DeviceId                        *UuidV7                `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	Platform                        DevicePlatform         `protobuf:"varint,3,opt,name=platform,proto3,enum=devhud.deck.v1.DevicePlatform" json:"platform,omitempty"`
-	DisplayName                     string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Push                            *PushRegistration      `protobuf:"bytes,5,opt,name=push,proto3" json:"push,omitempty"`
-	DetailedNotificationTextEnabled bool                   `protobuf:"varint,6,opt,name=detailed_notification_text_enabled,json=detailedNotificationTextEnabled,proto3" json:"detailed_notification_text_enabled,omitempty"`
-	Shortcuts                       []*ViewShortcut        `protobuf:"bytes,7,rep,name=shortcuts,proto3" json:"shortcuts,omitempty"`
-	Widgets                         []*WidgetConfiguration `protobuf:"bytes,8,rep,name=widgets,proto3" json:"widgets,omitempty"`
+	state                           protoimpl.MessageState       `protogen:"open.v1"`
+	IdempotencyKey                  *IdempotencyKey              `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	DeviceId                        *UuidV7                      `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	Platform                        DevicePlatform               `protobuf:"varint,3,opt,name=platform,proto3,enum=devhud.deck.v1.DevicePlatform" json:"platform,omitempty"`
+	DisplayName                     string                       `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Push                            *PushRegistration            `protobuf:"bytes,5,opt,name=push,proto3" json:"push,omitempty"`
+	DetailedNotificationTextEnabled bool                         `protobuf:"varint,6,opt,name=detailed_notification_text_enabled,json=detailedNotificationTextEnabled,proto3" json:"detailed_notification_text_enabled,omitempty"`
+	Shortcuts                       []*ViewShortcutConfiguration `protobuf:"bytes,7,rep,name=shortcuts,proto3" json:"shortcuts,omitempty"`
+	Widgets                         []*WidgetConfiguration       `protobuf:"bytes,8,rep,name=widgets,proto3" json:"widgets,omitempty"`
 	unknownFields                   protoimpl.UnknownFields
 	sizeCache                       protoimpl.SizeCache
 }
 
 func (x *RegisterDeviceRequest) Reset() {
 	*x = RegisterDeviceRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[7]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -887,7 +1187,7 @@ func (x *RegisterDeviceRequest) String() string {
 func (*RegisterDeviceRequest) ProtoMessage() {}
 
 func (x *RegisterDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[7]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -900,7 +1200,7 @@ func (x *RegisterDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterDeviceRequest.ProtoReflect.Descriptor instead.
 func (*RegisterDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{7}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RegisterDeviceRequest) GetIdempotencyKey() *IdempotencyKey {
@@ -945,7 +1245,7 @@ func (x *RegisterDeviceRequest) GetDetailedNotificationTextEnabled() bool {
 	return false
 }
 
-func (x *RegisterDeviceRequest) GetShortcuts() []*ViewShortcut {
+func (x *RegisterDeviceRequest) GetShortcuts() []*ViewShortcutConfiguration {
 	if x != nil {
 		return x.Shortcuts
 	}
@@ -971,7 +1271,7 @@ type RegisterDeviceResponse struct {
 
 func (x *RegisterDeviceResponse) Reset() {
 	*x = RegisterDeviceResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[8]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -983,7 +1283,7 @@ func (x *RegisterDeviceResponse) String() string {
 func (*RegisterDeviceResponse) ProtoMessage() {}
 
 func (x *RegisterDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[8]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -996,7 +1296,7 @@ func (x *RegisterDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterDeviceResponse.ProtoReflect.Descriptor instead.
 func (*RegisterDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{8}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RegisterDeviceResponse) GetRegistration() *DeviceRegistration {
@@ -1014,21 +1314,21 @@ func (x *RegisterDeviceResponse) GetIdempotency() *IdempotencyResult {
 }
 
 type UpdateDeviceRequest struct {
-	state                           protoimpl.MessageState `protogen:"open.v1"`
-	RegistrationId                  *UuidV7                `protobuf:"bytes,1,opt,name=registration_id,json=registrationId,proto3" json:"registration_id,omitempty"`
-	ExpectedRevision                *Revision              `protobuf:"bytes,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
-	DisplayName                     string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Push                            *PushRegistration      `protobuf:"bytes,4,opt,name=push,proto3" json:"push,omitempty"`
-	DetailedNotificationTextEnabled bool                   `protobuf:"varint,5,opt,name=detailed_notification_text_enabled,json=detailedNotificationTextEnabled,proto3" json:"detailed_notification_text_enabled,omitempty"`
-	Shortcuts                       []*ViewShortcut        `protobuf:"bytes,6,rep,name=shortcuts,proto3" json:"shortcuts,omitempty"`
-	Widgets                         []*WidgetConfiguration `protobuf:"bytes,7,rep,name=widgets,proto3" json:"widgets,omitempty"`
+	state                           protoimpl.MessageState       `protogen:"open.v1"`
+	RegistrationId                  *UuidV7                      `protobuf:"bytes,1,opt,name=registration_id,json=registrationId,proto3" json:"registration_id,omitempty"`
+	ExpectedRevision                *Revision                    `protobuf:"bytes,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	DisplayName                     string                       `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Push                            *PushRegistration            `protobuf:"bytes,4,opt,name=push,proto3" json:"push,omitempty"`
+	DetailedNotificationTextEnabled bool                         `protobuf:"varint,5,opt,name=detailed_notification_text_enabled,json=detailedNotificationTextEnabled,proto3" json:"detailed_notification_text_enabled,omitempty"`
+	Shortcuts                       []*ViewShortcutConfiguration `protobuf:"bytes,6,rep,name=shortcuts,proto3" json:"shortcuts,omitempty"`
+	Widgets                         []*WidgetConfiguration       `protobuf:"bytes,7,rep,name=widgets,proto3" json:"widgets,omitempty"`
 	unknownFields                   protoimpl.UnknownFields
 	sizeCache                       protoimpl.SizeCache
 }
 
 func (x *UpdateDeviceRequest) Reset() {
 	*x = UpdateDeviceRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[9]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1040,7 +1340,7 @@ func (x *UpdateDeviceRequest) String() string {
 func (*UpdateDeviceRequest) ProtoMessage() {}
 
 func (x *UpdateDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[9]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1053,7 +1353,7 @@ func (x *UpdateDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateDeviceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{9}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UpdateDeviceRequest) GetRegistrationId() *UuidV7 {
@@ -1091,7 +1391,7 @@ func (x *UpdateDeviceRequest) GetDetailedNotificationTextEnabled() bool {
 	return false
 }
 
-func (x *UpdateDeviceRequest) GetShortcuts() []*ViewShortcut {
+func (x *UpdateDeviceRequest) GetShortcuts() []*ViewShortcutConfiguration {
 	if x != nil {
 		return x.Shortcuts
 	}
@@ -1114,7 +1414,7 @@ type UpdateDeviceResponse struct {
 
 func (x *UpdateDeviceResponse) Reset() {
 	*x = UpdateDeviceResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[10]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1426,7 @@ func (x *UpdateDeviceResponse) String() string {
 func (*UpdateDeviceResponse) ProtoMessage() {}
 
 func (x *UpdateDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[10]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1439,7 @@ func (x *UpdateDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateDeviceResponse.ProtoReflect.Descriptor instead.
 func (*UpdateDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{10}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UpdateDeviceResponse) GetRegistration() *DeviceRegistration {
@@ -1158,7 +1458,7 @@ type UnregisterDeviceRequest struct {
 
 func (x *UnregisterDeviceRequest) Reset() {
 	*x = UnregisterDeviceRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[11]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1170,7 +1470,7 @@ func (x *UnregisterDeviceRequest) String() string {
 func (*UnregisterDeviceRequest) ProtoMessage() {}
 
 func (x *UnregisterDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[11]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1183,7 +1483,7 @@ func (x *UnregisterDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnregisterDeviceRequest.ProtoReflect.Descriptor instead.
 func (*UnregisterDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{11}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UnregisterDeviceRequest) GetRegistrationId() *UuidV7 {
@@ -1203,7 +1503,7 @@ type UnregisterDeviceResponse struct {
 
 func (x *UnregisterDeviceResponse) Reset() {
 	*x = UnregisterDeviceResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[12]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1215,7 +1515,7 @@ func (x *UnregisterDeviceResponse) String() string {
 func (*UnregisterDeviceResponse) ProtoMessage() {}
 
 func (x *UnregisterDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[12]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1228,7 +1528,7 @@ func (x *UnregisterDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnregisterDeviceResponse.ProtoReflect.Descriptor instead.
 func (*UnregisterDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{12}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UnregisterDeviceResponse) GetRegistrationId() *UuidV7 {
@@ -1258,7 +1558,7 @@ type ViewNotificationState struct {
 
 func (x *ViewNotificationState) Reset() {
 	*x = ViewNotificationState{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[13]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1270,7 +1570,7 @@ func (x *ViewNotificationState) String() string {
 func (*ViewNotificationState) ProtoMessage() {}
 
 func (x *ViewNotificationState) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[13]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1283,7 +1583,7 @@ func (x *ViewNotificationState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewNotificationState.ProtoReflect.Descriptor instead.
 func (*ViewNotificationState) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{13}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ViewNotificationState) GetRegistrationId() *UuidV7 {
@@ -1333,7 +1633,7 @@ type UpdateViewNotificationPreferenceRequest struct {
 
 func (x *UpdateViewNotificationPreferenceRequest) Reset() {
 	*x = UpdateViewNotificationPreferenceRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[14]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1345,7 +1645,7 @@ func (x *UpdateViewNotificationPreferenceRequest) String() string {
 func (*UpdateViewNotificationPreferenceRequest) ProtoMessage() {}
 
 func (x *UpdateViewNotificationPreferenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[14]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1358,7 +1658,7 @@ func (x *UpdateViewNotificationPreferenceRequest) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use UpdateViewNotificationPreferenceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateViewNotificationPreferenceRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{14}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdateViewNotificationPreferenceRequest) GetRegistrationId() *UuidV7 {
@@ -1398,7 +1698,7 @@ type UpdateViewNotificationPreferenceResponse struct {
 
 func (x *UpdateViewNotificationPreferenceResponse) Reset() {
 	*x = UpdateViewNotificationPreferenceResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[15]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1410,7 +1710,7 @@ func (x *UpdateViewNotificationPreferenceResponse) String() string {
 func (*UpdateViewNotificationPreferenceResponse) ProtoMessage() {}
 
 func (x *UpdateViewNotificationPreferenceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[15]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1423,7 +1723,7 @@ func (x *UpdateViewNotificationPreferenceResponse) ProtoReflect() protoreflect.M
 
 // Deprecated: Use UpdateViewNotificationPreferenceResponse.ProtoReflect.Descriptor instead.
 func (*UpdateViewNotificationPreferenceResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{15}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdateViewNotificationPreferenceResponse) GetNotification() *ViewNotificationState {
@@ -1443,7 +1743,7 @@ type ResolveNotificationEventRequest struct {
 
 func (x *ResolveNotificationEventRequest) Reset() {
 	*x = ResolveNotificationEventRequest{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[16]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1455,7 +1755,7 @@ func (x *ResolveNotificationEventRequest) String() string {
 func (*ResolveNotificationEventRequest) ProtoMessage() {}
 
 func (x *ResolveNotificationEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[16]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1468,7 +1768,7 @@ func (x *ResolveNotificationEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveNotificationEventRequest.ProtoReflect.Descriptor instead.
 func (*ResolveNotificationEventRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{16}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ResolveNotificationEventRequest) GetRegistrationId() *UuidV7 {
@@ -1498,7 +1798,7 @@ type ResolveNotificationEventResponse struct {
 
 func (x *ResolveNotificationEventResponse) Reset() {
 	*x = ResolveNotificationEventResponse{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[17]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1510,7 +1810,7 @@ func (x *ResolveNotificationEventResponse) String() string {
 func (*ResolveNotificationEventResponse) ProtoMessage() {}
 
 func (x *ResolveNotificationEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[17]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1523,7 +1823,7 @@ func (x *ResolveNotificationEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveNotificationEventResponse.ProtoReflect.Descriptor instead.
 func (*ResolveNotificationEventResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{17}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ResolveNotificationEventResponse) GetResolution() NotificationResolution {
@@ -1561,6 +1861,68 @@ func (x *ResolveNotificationEventResponse) GetTransition() NotificationTransitio
 	return NotificationTransition_NOTIFICATION_TRANSITION_UNSPECIFIED
 }
 
+// ViewShortcutConfiguration is client-authored input. The effective shortcut
+// state and synchronized revision remain server-owned response state.
+type ViewShortcutConfiguration struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShortcutId    *UuidV7                `protobuf:"bytes,1,opt,name=shortcut_id,json=shortcutId,proto3" json:"shortcut_id,omitempty"`
+	ViewId        *UuidV7                `protobuf:"bytes,2,opt,name=view_id,json=viewId,proto3" json:"view_id,omitempty"`
+	Binding       *ShortcutBinding       `protobuf:"bytes,3,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ViewShortcutConfiguration) Reset() {
+	*x = ViewShortcutConfiguration{}
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ViewShortcutConfiguration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ViewShortcutConfiguration) ProtoMessage() {}
+
+func (x *ViewShortcutConfiguration) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ViewShortcutConfiguration.ProtoReflect.Descriptor instead.
+func (*ViewShortcutConfiguration) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ViewShortcutConfiguration) GetShortcutId() *UuidV7 {
+	if x != nil {
+		return x.ShortcutId
+	}
+	return nil
+}
+
+func (x *ViewShortcutConfiguration) GetViewId() *UuidV7 {
+	if x != nil {
+		return x.ViewId
+	}
+	return nil
+}
+
+func (x *ViewShortcutConfiguration) GetBinding() *ShortcutBinding {
+	if x != nil {
+		return x.Binding
+	}
+	return nil
+}
+
 // WidgetConfiguration is client-authored input. Widget snapshots and
 // synchronized widget revisions remain server-owned response state.
 type WidgetConfiguration struct {
@@ -1575,7 +1937,7 @@ type WidgetConfiguration struct {
 
 func (x *WidgetConfiguration) Reset() {
 	*x = WidgetConfiguration{}
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[18]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1587,7 +1949,7 @@ func (x *WidgetConfiguration) String() string {
 func (*WidgetConfiguration) ProtoMessage() {}
 
 func (x *WidgetConfiguration) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_device_proto_msgTypes[18]
+	mi := &file_devhud_deck_v1_device_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1600,7 +1962,7 @@ func (x *WidgetConfiguration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetConfiguration.ProtoReflect.Descriptor instead.
 func (*WidgetConfiguration) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{18}
+	return file_devhud_deck_v1_device_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *WidgetConfiguration) GetWidgetId() *UuidV7 {
@@ -1638,13 +2000,15 @@ const file_devhud_deck_v1_device_proto_rawDesc = "" +
 	"\x1bdevhud-deck/v1/device.proto\x12\x0edevhud.deck.v1\x1a\x1bdevhud-deck/v1/common.proto\x1a\x19devhud-deck/v1/view.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"x\n" +
 	"\x10PushRegistration\x128\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x1c.devhud.deck.v1.PushProviderR\bprovider\x12*\n" +
-	"\x11opaque_push_token\x18\x02 \x01(\tR\x0fopaquePushToken\"\x84\x02\n" +
+	"\x11opaque_push_token\x18\x02 \x01(\tR\x0fopaquePushToken\"\x80\x01\n" +
+	"\x0fShortcutBinding\x12>\n" +
+	"\tmodifiers\x18\x01 \x03(\x0e2 .devhud.deck.v1.ShortcutModifierR\tmodifiers\x12-\n" +
+	"\x03key\x18\x02 \x01(\x0e2\x1b.devhud.deck.v1.ShortcutKeyR\x03key\"\x9e\x02\n" +
 	"\fViewShortcut\x127\n" +
 	"\vshortcut_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\n" +
 	"shortcutId\x12/\n" +
-	"\aview_id\x18\x02 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x06viewId\x12\x1f\n" +
-	"\vkey_binding\x18\x03 \x01(\tR\n" +
-	"keyBinding\x123\n" +
+	"\aview_id\x18\x02 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x06viewId\x129\n" +
+	"\abinding\x18\x03 \x01(\v2\x1f.devhud.deck.v1.ShortcutBindingR\abinding\x123\n" +
 	"\x05state\x18\x04 \x01(\x0e2\x1d.devhud.deck.v1.ShortcutStateR\x05state\x124\n" +
 	"\brevision\x18\x05 \x01(\v2\x18.devhud.deck.v1.RevisionR\brevision\"\x8a\x01\n" +
 	"\x15WidgetPullRequestItem\x12C\n" +
@@ -1681,26 +2045,26 @@ const file_devhud_deck_v1_device_proto_rawDesc = "" +
 	"\x12DeviceRegistration\x12?\n" +
 	"\x0fregistration_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x0eregistrationId\x12.\n" +
 	"\x06device\x18\x02 \x01(\v2\x16.devhud.deck.v1.DeviceR\x06device\x12D\n" +
-	"\x10lease_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xf2\x03\n" +
+	"\x10lease_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xff\x03\n" +
 	"\x15RegisterDeviceRequest\x12G\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\v2\x1e.devhud.deck.v1.IdempotencyKeyR\x0eidempotencyKey\x123\n" +
 	"\tdevice_id\x18\x02 \x01(\v2\x16.devhud.deck.v1.UuidV7R\bdeviceId\x12:\n" +
 	"\bplatform\x18\x03 \x01(\x0e2\x1e.devhud.deck.v1.DevicePlatformR\bplatform\x12!\n" +
 	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x124\n" +
 	"\x04push\x18\x05 \x01(\v2 .devhud.deck.v1.PushRegistrationR\x04push\x12K\n" +
-	"\"detailed_notification_text_enabled\x18\x06 \x01(\bR\x1fdetailedNotificationTextEnabled\x12:\n" +
-	"\tshortcuts\x18\a \x03(\v2\x1c.devhud.deck.v1.ViewShortcutR\tshortcuts\x12=\n" +
+	"\"detailed_notification_text_enabled\x18\x06 \x01(\bR\x1fdetailedNotificationTextEnabled\x12G\n" +
+	"\tshortcuts\x18\a \x03(\v2).devhud.deck.v1.ViewShortcutConfigurationR\tshortcuts\x12=\n" +
 	"\awidgets\x18\b \x03(\v2#.devhud.deck.v1.WidgetConfigurationR\awidgets\"\xa5\x01\n" +
 	"\x16RegisterDeviceResponse\x12F\n" +
 	"\fregistration\x18\x01 \x01(\v2\".devhud.deck.v1.DeviceRegistrationR\fregistration\x12C\n" +
-	"\vidempotency\x18\x02 \x01(\v2!.devhud.deck.v1.IdempotencyResultR\vidempotency\"\xbe\x03\n" +
+	"\vidempotency\x18\x02 \x01(\v2!.devhud.deck.v1.IdempotencyResultR\vidempotency\"\xcb\x03\n" +
 	"\x13UpdateDeviceRequest\x12?\n" +
 	"\x0fregistration_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x0eregistrationId\x12E\n" +
 	"\x11expected_revision\x18\x02 \x01(\v2\x18.devhud.deck.v1.RevisionR\x10expectedRevision\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x124\n" +
 	"\x04push\x18\x04 \x01(\v2 .devhud.deck.v1.PushRegistrationR\x04push\x12K\n" +
-	"\"detailed_notification_text_enabled\x18\x05 \x01(\bR\x1fdetailedNotificationTextEnabled\x12:\n" +
-	"\tshortcuts\x18\x06 \x03(\v2\x1c.devhud.deck.v1.ViewShortcutR\tshortcuts\x12=\n" +
+	"\"detailed_notification_text_enabled\x18\x05 \x01(\bR\x1fdetailedNotificationTextEnabled\x12G\n" +
+	"\tshortcuts\x18\x06 \x03(\v2).devhud.deck.v1.ViewShortcutConfigurationR\tshortcuts\x12=\n" +
 	"\awidgets\x18\a \x03(\v2#.devhud.deck.v1.WidgetConfigurationR\awidgets\"^\n" +
 	"\x14UpdateDeviceResponse\x12F\n" +
 	"\fregistration\x18\x01 \x01(\v2\".devhud.deck.v1.DeviceRegistrationR\fregistration\"Z\n" +
@@ -1739,7 +2103,12 @@ const file_devhud_deck_v1_device_proto_rawDesc = "" +
 	"\fpull_request\x18\x04 \x01(\v2!.devhud.deck.v1.PullRequestDetailR\vpullRequest\x12F\n" +
 	"\n" +
 	"transition\x18\x05 \x01(\x0e2&.devhud.deck.v1.NotificationTransitionR\n" +
-	"transition\"\xea\x01\n" +
+	"transition\"\xc0\x01\n" +
+	"\x19ViewShortcutConfiguration\x127\n" +
+	"\vshortcut_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\n" +
+	"shortcutId\x12/\n" +
+	"\aview_id\x18\x02 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x06viewId\x129\n" +
+	"\abinding\x18\x03 \x01(\v2\x1f.devhud.deck.v1.ShortcutBindingR\abinding\"\xea\x01\n" +
 	"\x13WidgetConfiguration\x123\n" +
 	"\twidget_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\bwidgetId\x12/\n" +
 	"\aview_id\x18\x02 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x06viewId\x124\n" +
@@ -1760,7 +2129,66 @@ const file_devhud_deck_v1_device_proto_rawDesc = "" +
 	"\x1aSHORTCUT_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SHORTCUT_STATE_ACTIVE\x10\x01\x12\x1b\n" +
 	"\x17SHORTCUT_STATE_INACTIVE\x10\x02\x12\x1d\n" +
-	"\x19SHORTCUT_STATE_CONFLICTED\x10\x03*\xee\x01\n" +
+	"\x19SHORTCUT_STATE_CONFLICTED\x10\x03*\xa8\x01\n" +
+	"\x10ShortcutModifier\x12!\n" +
+	"\x1dSHORTCUT_MODIFIER_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19SHORTCUT_MODIFIER_CONTROL\x10\x01\x12\x19\n" +
+	"\x15SHORTCUT_MODIFIER_ALT\x10\x02\x12\x1b\n" +
+	"\x17SHORTCUT_MODIFIER_SHIFT\x10\x03\x12\x1a\n" +
+	"\x16SHORTCUT_MODIFIER_META\x10\x04*\xe6\b\n" +
+	"\vShortcutKey\x12\x1c\n" +
+	"\x18SHORTCUT_KEY_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_A\x10\x01\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_B\x10\x02\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_C\x10\x03\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_D\x10\x04\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_E\x10\x05\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_F\x10\x06\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_G\x10\a\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_H\x10\b\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_I\x10\t\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_J\x10\n" +
+	"\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_K\x10\v\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_L\x10\f\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_M\x10\r\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_N\x10\x0e\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_O\x10\x0f\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_P\x10\x10\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_Q\x10\x11\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_R\x10\x12\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_S\x10\x13\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_T\x10\x14\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_U\x10\x15\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_V\x10\x16\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_W\x10\x17\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_X\x10\x18\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_Y\x10\x19\x12\x12\n" +
+	"\x0eSHORTCUT_KEY_Z\x10\x1a\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_0\x10\x1b\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_1\x10\x1c\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_2\x10\x1d\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_3\x10\x1e\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_4\x10\x1f\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_5\x10 \x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_6\x10!\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_7\x10\"\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_8\x10#\x12\x18\n" +
+	"\x14SHORTCUT_KEY_DIGIT_9\x10$\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F1\x10%\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F2\x10&\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F3\x10'\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F4\x10(\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F5\x10)\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F6\x10*\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F7\x10+\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F8\x10,\x12\x13\n" +
+	"\x0fSHORTCUT_KEY_F9\x10-\x12\x14\n" +
+	"\x10SHORTCUT_KEY_F10\x10.\x12\x14\n" +
+	"\x10SHORTCUT_KEY_F11\x10/\x12\x14\n" +
+	"\x10SHORTCUT_KEY_F12\x100\x12\x16\n" +
+	"\x12SHORTCUT_KEY_SPACE\x101\x12\x16\n" +
+	"\x12SHORTCUT_KEY_ENTER\x102*\xee\x01\n" +
 	"\fWidgetFamily\x12\x1d\n" +
 	"\x19WIDGET_FAMILY_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19WIDGET_FAMILY_APPLE_SMALL\x10\x01\x12\x1e\n" +
@@ -1797,121 +2225,131 @@ func file_devhud_deck_v1_device_proto_rawDescGZIP() []byte {
 	return file_devhud_deck_v1_device_proto_rawDescData
 }
 
-var file_devhud_deck_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_devhud_deck_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_devhud_deck_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
+var file_devhud_deck_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_devhud_deck_v1_device_proto_goTypes = []any{
 	(DevicePlatform)(0),                              // 0: devhud.deck.v1.DevicePlatform
 	(PushProvider)(0),                                // 1: devhud.deck.v1.PushProvider
 	(ShortcutState)(0),                               // 2: devhud.deck.v1.ShortcutState
-	(WidgetFamily)(0),                                // 3: devhud.deck.v1.WidgetFamily
-	(WidgetPrivacy)(0),                               // 4: devhud.deck.v1.WidgetPrivacy
-	(NotificationResolution)(0),                      // 5: devhud.deck.v1.NotificationResolution
-	(*PushRegistration)(nil),                         // 6: devhud.deck.v1.PushRegistration
-	(*ViewShortcut)(nil),                             // 7: devhud.deck.v1.ViewShortcut
-	(*WidgetPullRequestItem)(nil),                    // 8: devhud.deck.v1.WidgetPullRequestItem
-	(*WidgetSnapshot)(nil),                           // 9: devhud.deck.v1.WidgetSnapshot
-	(*WidgetState)(nil),                              // 10: devhud.deck.v1.WidgetState
-	(*Device)(nil),                                   // 11: devhud.deck.v1.Device
-	(*DeviceRegistration)(nil),                       // 12: devhud.deck.v1.DeviceRegistration
-	(*RegisterDeviceRequest)(nil),                    // 13: devhud.deck.v1.RegisterDeviceRequest
-	(*RegisterDeviceResponse)(nil),                   // 14: devhud.deck.v1.RegisterDeviceResponse
-	(*UpdateDeviceRequest)(nil),                      // 15: devhud.deck.v1.UpdateDeviceRequest
-	(*UpdateDeviceResponse)(nil),                     // 16: devhud.deck.v1.UpdateDeviceResponse
-	(*UnregisterDeviceRequest)(nil),                  // 17: devhud.deck.v1.UnregisterDeviceRequest
-	(*UnregisterDeviceResponse)(nil),                 // 18: devhud.deck.v1.UnregisterDeviceResponse
-	(*ViewNotificationState)(nil),                    // 19: devhud.deck.v1.ViewNotificationState
-	(*UpdateViewNotificationPreferenceRequest)(nil),  // 20: devhud.deck.v1.UpdateViewNotificationPreferenceRequest
-	(*UpdateViewNotificationPreferenceResponse)(nil), // 21: devhud.deck.v1.UpdateViewNotificationPreferenceResponse
-	(*ResolveNotificationEventRequest)(nil),          // 22: devhud.deck.v1.ResolveNotificationEventRequest
-	(*ResolveNotificationEventResponse)(nil),         // 23: devhud.deck.v1.ResolveNotificationEventResponse
-	(*WidgetConfiguration)(nil),                      // 24: devhud.deck.v1.WidgetConfiguration
-	(*UuidV7)(nil),                                   // 25: devhud.deck.v1.UuidV7
-	(*Revision)(nil),                                 // 26: devhud.deck.v1.Revision
-	(*RepositoryReference)(nil),                      // 27: devhud.deck.v1.RepositoryReference
-	(FreshnessState)(0),                              // 28: devhud.deck.v1.FreshnessState
-	(*timestamppb.Timestamp)(nil),                    // 29: google.protobuf.Timestamp
-	(*IdempotencyKey)(nil),                           // 30: devhud.deck.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),                        // 31: devhud.deck.v1.IdempotencyResult
-	(*ViewNotificationPreference)(nil),               // 32: devhud.deck.v1.ViewNotificationPreference
-	(*PullRequestDetail)(nil),                        // 33: devhud.deck.v1.PullRequestDetail
-	(NotificationTransition)(0),                      // 34: devhud.deck.v1.NotificationTransition
+	(ShortcutModifier)(0),                            // 3: devhud.deck.v1.ShortcutModifier
+	(ShortcutKey)(0),                                 // 4: devhud.deck.v1.ShortcutKey
+	(WidgetFamily)(0),                                // 5: devhud.deck.v1.WidgetFamily
+	(WidgetPrivacy)(0),                               // 6: devhud.deck.v1.WidgetPrivacy
+	(NotificationResolution)(0),                      // 7: devhud.deck.v1.NotificationResolution
+	(*PushRegistration)(nil),                         // 8: devhud.deck.v1.PushRegistration
+	(*ShortcutBinding)(nil),                          // 9: devhud.deck.v1.ShortcutBinding
+	(*ViewShortcut)(nil),                             // 10: devhud.deck.v1.ViewShortcut
+	(*WidgetPullRequestItem)(nil),                    // 11: devhud.deck.v1.WidgetPullRequestItem
+	(*WidgetSnapshot)(nil),                           // 12: devhud.deck.v1.WidgetSnapshot
+	(*WidgetState)(nil),                              // 13: devhud.deck.v1.WidgetState
+	(*Device)(nil),                                   // 14: devhud.deck.v1.Device
+	(*DeviceRegistration)(nil),                       // 15: devhud.deck.v1.DeviceRegistration
+	(*RegisterDeviceRequest)(nil),                    // 16: devhud.deck.v1.RegisterDeviceRequest
+	(*RegisterDeviceResponse)(nil),                   // 17: devhud.deck.v1.RegisterDeviceResponse
+	(*UpdateDeviceRequest)(nil),                      // 18: devhud.deck.v1.UpdateDeviceRequest
+	(*UpdateDeviceResponse)(nil),                     // 19: devhud.deck.v1.UpdateDeviceResponse
+	(*UnregisterDeviceRequest)(nil),                  // 20: devhud.deck.v1.UnregisterDeviceRequest
+	(*UnregisterDeviceResponse)(nil),                 // 21: devhud.deck.v1.UnregisterDeviceResponse
+	(*ViewNotificationState)(nil),                    // 22: devhud.deck.v1.ViewNotificationState
+	(*UpdateViewNotificationPreferenceRequest)(nil),  // 23: devhud.deck.v1.UpdateViewNotificationPreferenceRequest
+	(*UpdateViewNotificationPreferenceResponse)(nil), // 24: devhud.deck.v1.UpdateViewNotificationPreferenceResponse
+	(*ResolveNotificationEventRequest)(nil),          // 25: devhud.deck.v1.ResolveNotificationEventRequest
+	(*ResolveNotificationEventResponse)(nil),         // 26: devhud.deck.v1.ResolveNotificationEventResponse
+	(*ViewShortcutConfiguration)(nil),                // 27: devhud.deck.v1.ViewShortcutConfiguration
+	(*WidgetConfiguration)(nil),                      // 28: devhud.deck.v1.WidgetConfiguration
+	(*UuidV7)(nil),                                   // 29: devhud.deck.v1.UuidV7
+	(*Revision)(nil),                                 // 30: devhud.deck.v1.Revision
+	(*RepositoryReference)(nil),                      // 31: devhud.deck.v1.RepositoryReference
+	(FreshnessState)(0),                              // 32: devhud.deck.v1.FreshnessState
+	(*timestamppb.Timestamp)(nil),                    // 33: google.protobuf.Timestamp
+	(*IdempotencyKey)(nil),                           // 34: devhud.deck.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),                        // 35: devhud.deck.v1.IdempotencyResult
+	(*ViewNotificationPreference)(nil),               // 36: devhud.deck.v1.ViewNotificationPreference
+	(*PullRequestDetail)(nil),                        // 37: devhud.deck.v1.PullRequestDetail
+	(NotificationTransition)(0),                      // 38: devhud.deck.v1.NotificationTransition
 }
 var file_devhud_deck_v1_device_proto_depIdxs = []int32{
 	1,  // 0: devhud.deck.v1.PushRegistration.provider:type_name -> devhud.deck.v1.PushProvider
-	25, // 1: devhud.deck.v1.ViewShortcut.shortcut_id:type_name -> devhud.deck.v1.UuidV7
-	25, // 2: devhud.deck.v1.ViewShortcut.view_id:type_name -> devhud.deck.v1.UuidV7
-	2,  // 3: devhud.deck.v1.ViewShortcut.state:type_name -> devhud.deck.v1.ShortcutState
-	26, // 4: devhud.deck.v1.ViewShortcut.revision:type_name -> devhud.deck.v1.Revision
-	27, // 5: devhud.deck.v1.WidgetPullRequestItem.repository:type_name -> devhud.deck.v1.RepositoryReference
-	8,  // 6: devhud.deck.v1.WidgetSnapshot.pull_requests:type_name -> devhud.deck.v1.WidgetPullRequestItem
-	28, // 7: devhud.deck.v1.WidgetSnapshot.freshness:type_name -> devhud.deck.v1.FreshnessState
-	29, // 8: devhud.deck.v1.WidgetSnapshot.generated_at:type_name -> google.protobuf.Timestamp
-	25, // 9: devhud.deck.v1.WidgetState.widget_id:type_name -> devhud.deck.v1.UuidV7
-	25, // 10: devhud.deck.v1.WidgetState.view_id:type_name -> devhud.deck.v1.UuidV7
-	3,  // 11: devhud.deck.v1.WidgetState.family:type_name -> devhud.deck.v1.WidgetFamily
-	4,  // 12: devhud.deck.v1.WidgetState.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
-	9,  // 13: devhud.deck.v1.WidgetState.snapshot:type_name -> devhud.deck.v1.WidgetSnapshot
-	26, // 14: devhud.deck.v1.WidgetState.revision:type_name -> devhud.deck.v1.Revision
-	25, // 15: devhud.deck.v1.Device.device_id:type_name -> devhud.deck.v1.UuidV7
-	0,  // 16: devhud.deck.v1.Device.platform:type_name -> devhud.deck.v1.DevicePlatform
-	7,  // 17: devhud.deck.v1.Device.shortcuts:type_name -> devhud.deck.v1.ViewShortcut
-	10, // 18: devhud.deck.v1.Device.widgets:type_name -> devhud.deck.v1.WidgetState
-	26, // 19: devhud.deck.v1.Device.revision:type_name -> devhud.deck.v1.Revision
-	29, // 20: devhud.deck.v1.Device.created_at:type_name -> google.protobuf.Timestamp
-	29, // 21: devhud.deck.v1.Device.updated_at:type_name -> google.protobuf.Timestamp
-	25, // 22: devhud.deck.v1.DeviceRegistration.registration_id:type_name -> devhud.deck.v1.UuidV7
-	11, // 23: devhud.deck.v1.DeviceRegistration.device:type_name -> devhud.deck.v1.Device
-	29, // 24: devhud.deck.v1.DeviceRegistration.lease_expires_at:type_name -> google.protobuf.Timestamp
-	30, // 25: devhud.deck.v1.RegisterDeviceRequest.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
-	25, // 26: devhud.deck.v1.RegisterDeviceRequest.device_id:type_name -> devhud.deck.v1.UuidV7
-	0,  // 27: devhud.deck.v1.RegisterDeviceRequest.platform:type_name -> devhud.deck.v1.DevicePlatform
-	6,  // 28: devhud.deck.v1.RegisterDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
-	7,  // 29: devhud.deck.v1.RegisterDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcut
-	24, // 30: devhud.deck.v1.RegisterDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
-	12, // 31: devhud.deck.v1.RegisterDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
-	31, // 32: devhud.deck.v1.RegisterDeviceResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	25, // 33: devhud.deck.v1.UpdateDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	26, // 34: devhud.deck.v1.UpdateDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	6,  // 35: devhud.deck.v1.UpdateDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
-	7,  // 36: devhud.deck.v1.UpdateDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcut
-	24, // 37: devhud.deck.v1.UpdateDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
-	12, // 38: devhud.deck.v1.UpdateDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
-	25, // 39: devhud.deck.v1.UnregisterDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	25, // 40: devhud.deck.v1.UnregisterDeviceResponse.registration_id:type_name -> devhud.deck.v1.UuidV7
-	25, // 41: devhud.deck.v1.ViewNotificationState.registration_id:type_name -> devhud.deck.v1.UuidV7
-	25, // 42: devhud.deck.v1.ViewNotificationState.view_id:type_name -> devhud.deck.v1.UuidV7
-	32, // 43: devhud.deck.v1.ViewNotificationState.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	26, // 44: devhud.deck.v1.ViewNotificationState.revision:type_name -> devhud.deck.v1.Revision
-	29, // 45: devhud.deck.v1.ViewNotificationState.updated_at:type_name -> google.protobuf.Timestamp
-	25, // 46: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	25, // 47: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	26, // 48: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	32, // 49: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	19, // 50: devhud.deck.v1.UpdateViewNotificationPreferenceResponse.notification:type_name -> devhud.deck.v1.ViewNotificationState
-	25, // 51: devhud.deck.v1.ResolveNotificationEventRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
-	5,  // 52: devhud.deck.v1.ResolveNotificationEventResponse.resolution:type_name -> devhud.deck.v1.NotificationResolution
-	25, // 53: devhud.deck.v1.ResolveNotificationEventResponse.view_id:type_name -> devhud.deck.v1.UuidV7
-	33, // 54: devhud.deck.v1.ResolveNotificationEventResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
-	34, // 55: devhud.deck.v1.ResolveNotificationEventResponse.transition:type_name -> devhud.deck.v1.NotificationTransition
-	25, // 56: devhud.deck.v1.WidgetConfiguration.widget_id:type_name -> devhud.deck.v1.UuidV7
-	25, // 57: devhud.deck.v1.WidgetConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
-	3,  // 58: devhud.deck.v1.WidgetConfiguration.family:type_name -> devhud.deck.v1.WidgetFamily
-	4,  // 59: devhud.deck.v1.WidgetConfiguration.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
-	13, // 60: devhud.deck.v1.DeckDeviceService.RegisterDevice:input_type -> devhud.deck.v1.RegisterDeviceRequest
-	15, // 61: devhud.deck.v1.DeckDeviceService.UpdateDevice:input_type -> devhud.deck.v1.UpdateDeviceRequest
-	17, // 62: devhud.deck.v1.DeckDeviceService.UnregisterDevice:input_type -> devhud.deck.v1.UnregisterDeviceRequest
-	20, // 63: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:input_type -> devhud.deck.v1.UpdateViewNotificationPreferenceRequest
-	22, // 64: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:input_type -> devhud.deck.v1.ResolveNotificationEventRequest
-	14, // 65: devhud.deck.v1.DeckDeviceService.RegisterDevice:output_type -> devhud.deck.v1.RegisterDeviceResponse
-	16, // 66: devhud.deck.v1.DeckDeviceService.UpdateDevice:output_type -> devhud.deck.v1.UpdateDeviceResponse
-	18, // 67: devhud.deck.v1.DeckDeviceService.UnregisterDevice:output_type -> devhud.deck.v1.UnregisterDeviceResponse
-	21, // 68: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:output_type -> devhud.deck.v1.UpdateViewNotificationPreferenceResponse
-	23, // 69: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:output_type -> devhud.deck.v1.ResolveNotificationEventResponse
-	65, // [65:70] is the sub-list for method output_type
-	60, // [60:65] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	3,  // 1: devhud.deck.v1.ShortcutBinding.modifiers:type_name -> devhud.deck.v1.ShortcutModifier
+	4,  // 2: devhud.deck.v1.ShortcutBinding.key:type_name -> devhud.deck.v1.ShortcutKey
+	29, // 3: devhud.deck.v1.ViewShortcut.shortcut_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 4: devhud.deck.v1.ViewShortcut.view_id:type_name -> devhud.deck.v1.UuidV7
+	9,  // 5: devhud.deck.v1.ViewShortcut.binding:type_name -> devhud.deck.v1.ShortcutBinding
+	2,  // 6: devhud.deck.v1.ViewShortcut.state:type_name -> devhud.deck.v1.ShortcutState
+	30, // 7: devhud.deck.v1.ViewShortcut.revision:type_name -> devhud.deck.v1.Revision
+	31, // 8: devhud.deck.v1.WidgetPullRequestItem.repository:type_name -> devhud.deck.v1.RepositoryReference
+	11, // 9: devhud.deck.v1.WidgetSnapshot.pull_requests:type_name -> devhud.deck.v1.WidgetPullRequestItem
+	32, // 10: devhud.deck.v1.WidgetSnapshot.freshness:type_name -> devhud.deck.v1.FreshnessState
+	33, // 11: devhud.deck.v1.WidgetSnapshot.generated_at:type_name -> google.protobuf.Timestamp
+	29, // 12: devhud.deck.v1.WidgetState.widget_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 13: devhud.deck.v1.WidgetState.view_id:type_name -> devhud.deck.v1.UuidV7
+	5,  // 14: devhud.deck.v1.WidgetState.family:type_name -> devhud.deck.v1.WidgetFamily
+	6,  // 15: devhud.deck.v1.WidgetState.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
+	12, // 16: devhud.deck.v1.WidgetState.snapshot:type_name -> devhud.deck.v1.WidgetSnapshot
+	30, // 17: devhud.deck.v1.WidgetState.revision:type_name -> devhud.deck.v1.Revision
+	29, // 18: devhud.deck.v1.Device.device_id:type_name -> devhud.deck.v1.UuidV7
+	0,  // 19: devhud.deck.v1.Device.platform:type_name -> devhud.deck.v1.DevicePlatform
+	10, // 20: devhud.deck.v1.Device.shortcuts:type_name -> devhud.deck.v1.ViewShortcut
+	13, // 21: devhud.deck.v1.Device.widgets:type_name -> devhud.deck.v1.WidgetState
+	30, // 22: devhud.deck.v1.Device.revision:type_name -> devhud.deck.v1.Revision
+	33, // 23: devhud.deck.v1.Device.created_at:type_name -> google.protobuf.Timestamp
+	33, // 24: devhud.deck.v1.Device.updated_at:type_name -> google.protobuf.Timestamp
+	29, // 25: devhud.deck.v1.DeviceRegistration.registration_id:type_name -> devhud.deck.v1.UuidV7
+	14, // 26: devhud.deck.v1.DeviceRegistration.device:type_name -> devhud.deck.v1.Device
+	33, // 27: devhud.deck.v1.DeviceRegistration.lease_expires_at:type_name -> google.protobuf.Timestamp
+	34, // 28: devhud.deck.v1.RegisterDeviceRequest.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
+	29, // 29: devhud.deck.v1.RegisterDeviceRequest.device_id:type_name -> devhud.deck.v1.UuidV7
+	0,  // 30: devhud.deck.v1.RegisterDeviceRequest.platform:type_name -> devhud.deck.v1.DevicePlatform
+	8,  // 31: devhud.deck.v1.RegisterDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
+	27, // 32: devhud.deck.v1.RegisterDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
+	28, // 33: devhud.deck.v1.RegisterDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
+	15, // 34: devhud.deck.v1.RegisterDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
+	35, // 35: devhud.deck.v1.RegisterDeviceResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	29, // 36: devhud.deck.v1.UpdateDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	30, // 37: devhud.deck.v1.UpdateDeviceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	8,  // 38: devhud.deck.v1.UpdateDeviceRequest.push:type_name -> devhud.deck.v1.PushRegistration
+	27, // 39: devhud.deck.v1.UpdateDeviceRequest.shortcuts:type_name -> devhud.deck.v1.ViewShortcutConfiguration
+	28, // 40: devhud.deck.v1.UpdateDeviceRequest.widgets:type_name -> devhud.deck.v1.WidgetConfiguration
+	15, // 41: devhud.deck.v1.UpdateDeviceResponse.registration:type_name -> devhud.deck.v1.DeviceRegistration
+	29, // 42: devhud.deck.v1.UnregisterDeviceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 43: devhud.deck.v1.UnregisterDeviceResponse.registration_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 44: devhud.deck.v1.ViewNotificationState.registration_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 45: devhud.deck.v1.ViewNotificationState.view_id:type_name -> devhud.deck.v1.UuidV7
+	36, // 46: devhud.deck.v1.ViewNotificationState.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	30, // 47: devhud.deck.v1.ViewNotificationState.revision:type_name -> devhud.deck.v1.Revision
+	33, // 48: devhud.deck.v1.ViewNotificationState.updated_at:type_name -> google.protobuf.Timestamp
+	29, // 49: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 50: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	30, // 51: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	36, // 52: devhud.deck.v1.UpdateViewNotificationPreferenceRequest.preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	22, // 53: devhud.deck.v1.UpdateViewNotificationPreferenceResponse.notification:type_name -> devhud.deck.v1.ViewNotificationState
+	29, // 54: devhud.deck.v1.ResolveNotificationEventRequest.registration_id:type_name -> devhud.deck.v1.UuidV7
+	7,  // 55: devhud.deck.v1.ResolveNotificationEventResponse.resolution:type_name -> devhud.deck.v1.NotificationResolution
+	29, // 56: devhud.deck.v1.ResolveNotificationEventResponse.view_id:type_name -> devhud.deck.v1.UuidV7
+	37, // 57: devhud.deck.v1.ResolveNotificationEventResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
+	38, // 58: devhud.deck.v1.ResolveNotificationEventResponse.transition:type_name -> devhud.deck.v1.NotificationTransition
+	29, // 59: devhud.deck.v1.ViewShortcutConfiguration.shortcut_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 60: devhud.deck.v1.ViewShortcutConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
+	9,  // 61: devhud.deck.v1.ViewShortcutConfiguration.binding:type_name -> devhud.deck.v1.ShortcutBinding
+	29, // 62: devhud.deck.v1.WidgetConfiguration.widget_id:type_name -> devhud.deck.v1.UuidV7
+	29, // 63: devhud.deck.v1.WidgetConfiguration.view_id:type_name -> devhud.deck.v1.UuidV7
+	5,  // 64: devhud.deck.v1.WidgetConfiguration.family:type_name -> devhud.deck.v1.WidgetFamily
+	6,  // 65: devhud.deck.v1.WidgetConfiguration.privacy:type_name -> devhud.deck.v1.WidgetPrivacy
+	16, // 66: devhud.deck.v1.DeckDeviceService.RegisterDevice:input_type -> devhud.deck.v1.RegisterDeviceRequest
+	18, // 67: devhud.deck.v1.DeckDeviceService.UpdateDevice:input_type -> devhud.deck.v1.UpdateDeviceRequest
+	20, // 68: devhud.deck.v1.DeckDeviceService.UnregisterDevice:input_type -> devhud.deck.v1.UnregisterDeviceRequest
+	23, // 69: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:input_type -> devhud.deck.v1.UpdateViewNotificationPreferenceRequest
+	25, // 70: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:input_type -> devhud.deck.v1.ResolveNotificationEventRequest
+	17, // 71: devhud.deck.v1.DeckDeviceService.RegisterDevice:output_type -> devhud.deck.v1.RegisterDeviceResponse
+	19, // 72: devhud.deck.v1.DeckDeviceService.UpdateDevice:output_type -> devhud.deck.v1.UpdateDeviceResponse
+	21, // 73: devhud.deck.v1.DeckDeviceService.UnregisterDevice:output_type -> devhud.deck.v1.UnregisterDeviceResponse
+	24, // 74: devhud.deck.v1.DeckDeviceService.UpdateViewNotificationPreference:output_type -> devhud.deck.v1.UpdateViewNotificationPreferenceResponse
+	26, // 75: devhud.deck.v1.DeckDeviceService.ResolveNotificationEvent:output_type -> devhud.deck.v1.ResolveNotificationEventResponse
+	71, // [71:76] is the sub-list for method output_type
+	66, // [66:71] is the sub-list for method input_type
+	66, // [66:66] is the sub-list for extension type_name
+	66, // [66:66] is the sub-list for extension extendee
+	0,  // [0:66] is the sub-list for field type_name
 }
 
 func init() { file_devhud_deck_v1_device_proto_init() }
@@ -1926,8 +2364,8 @@ func file_devhud_deck_v1_device_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_deck_v1_device_proto_rawDesc), len(file_devhud_deck_v1_device_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   19,
+			NumEnums:      8,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

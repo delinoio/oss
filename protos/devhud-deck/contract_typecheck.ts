@@ -8,6 +8,10 @@ import {
   DeckViewService,
   OwnerScope,
   QueryBuilderSchema,
+  ShortcutBindingSchema,
+  ShortcutKey,
+  ShortcutModifier,
+  ViewShortcutConfigurationSchema,
   ViewKind,
   ViewQuerySchema,
 } from "./index.js";
@@ -33,4 +37,13 @@ export const contractLimits = {
 
 export const initialViewKind = ViewKind.GITHUB_PULL_REQUESTS;
 export const personalScope = OwnerScope.PERSONAL;
+export const shortcutConfiguration = create(
+  ViewShortcutConfigurationSchema,
+  {
+    binding: create(ShortcutBindingSchema, {
+      modifiers: [ShortcutModifier.CONTROL, ShortcutModifier.SHIFT],
+      key: ShortcutKey.K,
+    }),
+  },
+);
 export type DeckViewClient = Client<typeof DeckViewService>;

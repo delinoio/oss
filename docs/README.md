@@ -103,7 +103,9 @@ mobile system webviews, closed internal registry, least-privilege capabilities,
 typed seven-day/20 MB local diagnostics/export, device-local reset, and backup
 exclusions. The private `devhud.deck.v1` source, isolated descriptor, generated
 Go artifacts, and `@delinoio/devhud-deck-connect` workspace export are
-implemented; the Deck server and product clients remain planned. Issues
+implemented with structured request-only shortcut configurations and
+server-authored shortcut/widget state; the Deck server and product clients
+remain planned. Issues
 #755/#757 authorize two bounded authenticated exceptions: Deck on
 desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is

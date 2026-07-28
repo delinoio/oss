@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file devhud-deck/v1/device.proto.
  */
 export const file_devhud_deck_v1_device: GenFile = /*@__PURE__*/
-  fileDesc("ChtkZXZodWQtZGVjay92MS9kZXZpY2UucHJvdG8SDmRldmh1ZC5kZWNrLnYxIl0KEFB1c2hSZWdpc3RyYXRpb24SLgoIcHJvdmlkZXIYASABKA4yHC5kZXZodWQuZGVjay52MS5QdXNoUHJvdmlkZXISGQoRb3BhcXVlX3B1c2hfdG9rZW4YAiABKAki0wEKDFZpZXdTaG9ydGN1dBIrCgtzaG9ydGN1dF9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxInCgd2aWV3X2lkGAIgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EhMKC2tleV9iaW5kaW5nGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uZGV2aHVkLmRlY2sudjEuU2hvcnRjdXRTdGF0ZRIqCghyZXZpc2lvbhgFIAEoCzIYLmRldmh1ZC5kZWNrLnYxLlJldmlzaW9uIm8KFVdpZGdldFB1bGxSZXF1ZXN0SXRlbRI3CgpyZXBvc2l0b3J5GAEgASgLMiMuZGV2aHVkLmRlY2sudjEuUmVwb3NpdG9yeVJlZmVyZW5jZRIOCgZudW1iZXIYAiABKAQSDQoFdGl0bGUYAyABKAki3AEKDldpZGdldFNuYXBzaG90EhYKDm1hdGNoaW5nX2NvdW50GAEgASgNEjwKDXB1bGxfcmVxdWVzdHMYAiADKAsyJS5kZXZodWQuZGVjay52MS5XaWRnZXRQdWxsUmVxdWVzdEl0ZW0SMQoJZnJlc2huZXNzGAMgASgOMh4uZGV2aHVkLmRlY2sudjEuRnJlc2huZXNzU3RhdGUSDwoHb2ZmbGluZRgEIAEoCBIwCgxnZW5lcmF0ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIp0CCgtXaWRnZXRTdGF0ZRIpCgl3aWRnZXRfaWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSJwoHdmlld19pZBgCIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxIsCgZmYW1pbHkYAyABKA4yHC5kZXZodWQuZGVjay52MS5XaWRnZXRGYW1pbHkSLgoHcHJpdmFjeRgEIAEoDjIdLmRldmh1ZC5kZWNrLnYxLldpZGdldFByaXZhY3kSMAoIc25hcHNob3QYBSABKAsyHi5kZXZodWQuZGVjay52MS5XaWRnZXRTbmFwc2hvdBIqCghyZXZpc2lvbhgGIAEoCzIYLmRldmh1ZC5kZWNrLnYxLlJldmlzaW9uIpIDCgZEZXZpY2USKQoJZGV2aWNlX2lkGAEgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EjAKCHBsYXRmb3JtGAIgASgOMh4uZGV2aHVkLmRlY2sudjEuRGV2aWNlUGxhdGZvcm0SFAoMZGlzcGxheV9uYW1lGAMgASgJEioKImRldGFpbGVkX25vdGlmaWNhdGlvbl90ZXh0X2VuYWJsZWQYBCABKAgSLwoJc2hvcnRjdXRzGAUgAygLMhwuZGV2aHVkLmRlY2sudjEuVmlld1Nob3J0Y3V0EiwKB3dpZGdldHMYBiADKAsyGy5kZXZodWQuZGVjay52MS5XaWRnZXRTdGF0ZRIqCghyZXZpc2lvbhgHIAEoCzIYLmRldmh1ZC5kZWNrLnYxLlJldmlzaW9uEi4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIqMBChJEZXZpY2VSZWdpc3RyYXRpb24SLwoPcmVnaXN0cmF0aW9uX2lkGAEgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EiYKBmRldmljZRgCIAEoCzIWLmRldmh1ZC5kZWNrLnYxLkRldmljZRI0ChBsZWFzZV9leHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKGAwoVUmVnaXN0ZXJEZXZpY2VSZXF1ZXN0EjcKD2lkZW1wb3RlbmN5X2tleRgBIAEoCzIeLmRldmh1ZC5kZWNrLnYxLklkZW1wb3RlbmN5S2V5EikKCWRldmljZV9pZBgCIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxIwCghwbGF0Zm9ybRgDIAEoDjIeLmRldmh1ZC5kZWNrLnYxLkRldmljZVBsYXRmb3JtEhQKDGRpc3BsYXlfbmFtZRgEIAEoCRIuCgRwdXNoGAUgASgLMiAuZGV2aHVkLmRlY2sudjEuUHVzaFJlZ2lzdHJhdGlvbhIqCiJkZXRhaWxlZF9ub3RpZmljYXRpb25fdGV4dF9lbmFibGVkGAYgASgIEi8KCXNob3J0Y3V0cxgHIAMoCzIcLmRldmh1ZC5kZWNrLnYxLlZpZXdTaG9ydGN1dBI0Cgd3aWRnZXRzGAggAygLMiMuZGV2aHVkLmRlY2sudjEuV2lkZ2V0Q29uZmlndXJhdGlvbiKKAQoWUmVnaXN0ZXJEZXZpY2VSZXNwb25zZRI4CgxyZWdpc3RyYXRpb24YASABKAsyIi5kZXZodWQuZGVjay52MS5EZXZpY2VSZWdpc3RyYXRpb24SNgoLaWRlbXBvdGVuY3kYAiABKAsyIS5kZXZodWQuZGVjay52MS5JZGVtcG90ZW5jeVJlc3VsdCLUAgoTVXBkYXRlRGV2aWNlUmVxdWVzdBIvCg9yZWdpc3RyYXRpb25faWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSMwoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAsyGC5kZXZodWQuZGVjay52MS5SZXZpc2lvbhIUCgxkaXNwbGF5X25hbWUYAyABKAkSLgoEcHVzaBgEIAEoCzIgLmRldmh1ZC5kZWNrLnYxLlB1c2hSZWdpc3RyYXRpb24SKgoiZGV0YWlsZWRfbm90aWZpY2F0aW9uX3RleHRfZW5hYmxlZBgFIAEoCBIvCglzaG9ydGN1dHMYBiADKAsyHC5kZXZodWQuZGVjay52MS5WaWV3U2hvcnRjdXQSNAoHd2lkZ2V0cxgHIAMoCzIjLmRldmh1ZC5kZWNrLnYxLldpZGdldENvbmZpZ3VyYXRpb24iUAoUVXBkYXRlRGV2aWNlUmVzcG9uc2USOAoMcmVnaXN0cmF0aW9uGAEgASgLMiIuZGV2aHVkLmRlY2sudjEuRGV2aWNlUmVnaXN0cmF0aW9uIkoKF1VucmVnaXN0ZXJEZXZpY2VSZXF1ZXN0Ei8KD3JlZ2lzdHJhdGlvbl9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNyJjChhVbnJlZ2lzdGVyRGV2aWNlUmVzcG9uc2USLwoPcmVnaXN0cmF0aW9uX2lkGAEgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EhYKDndhc19yZWdpc3RlcmVkGAIgASgIIo0CChVWaWV3Tm90aWZpY2F0aW9uU3RhdGUSLwoPcmVnaXN0cmF0aW9uX2lkGAEgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EicKB3ZpZXdfaWQYAiABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSPgoKcHJlZmVyZW5jZRgDIAEoCzIqLmRldmh1ZC5kZWNrLnYxLlZpZXdOb3RpZmljYXRpb25QcmVmZXJlbmNlEioKCHJldmlzaW9uGAQgASgLMhguZGV2aHVkLmRlY2sudjEuUmV2aXNpb24SLgoKdXBkYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi+AEKJ1VwZGF0ZVZpZXdOb3RpZmljYXRpb25QcmVmZXJlbmNlUmVxdWVzdBIvCg9yZWdpc3RyYXRpb25faWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSJwoHdmlld19pZBgCIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxIzChFleHBlY3RlZF9yZXZpc2lvbhgDIAEoCzIYLmRldmh1ZC5kZWNrLnYxLlJldmlzaW9uEj4KCnByZWZlcmVuY2UYBCABKAsyKi5kZXZodWQuZGVjay52MS5WaWV3Tm90aWZpY2F0aW9uUHJlZmVyZW5jZSJnCihVcGRhdGVWaWV3Tm90aWZpY2F0aW9uUHJlZmVyZW5jZVJlc3BvbnNlEjsKDG5vdGlmaWNhdGlvbhgBIAEoCzIlLmRldmh1ZC5kZWNrLnYxLlZpZXdOb3RpZmljYXRpb25TdGF0ZSJrCh9SZXNvbHZlTm90aWZpY2F0aW9uRXZlbnRSZXF1ZXN0Ei8KD3JlZ2lzdHJhdGlvbl9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxIXCg9vcGFxdWVfZXZlbnRfaWQYAiABKAkilwIKIFJlc29sdmVOb3RpZmljYXRpb25FdmVudFJlc3BvbnNlEjoKCnJlc29sdXRpb24YASABKA4yJi5kZXZodWQuZGVjay52MS5Ob3RpZmljYXRpb25SZXNvbHV0aW9uEhkKEW5vdGlmaWNhdGlvbl90ZXh0GAIgASgJEicKB3ZpZXdfaWQYAyABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSNwoMcHVsbF9yZXF1ZXN0GAQgASgLMiEuZGV2aHVkLmRlY2sudjEuUHVsbFJlcXVlc3REZXRhaWwSOgoKdHJhbnNpdGlvbhgFIAEoDjImLmRldmh1ZC5kZWNrLnYxLk5vdGlmaWNhdGlvblRyYW5zaXRpb24ixwEKE1dpZGdldENvbmZpZ3VyYXRpb24SKQoJd2lkZ2V0X2lkGAEgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EicKB3ZpZXdfaWQYAiABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSLAoGZmFtaWx5GAMgASgOMhwuZGV2aHVkLmRlY2sudjEuV2lkZ2V0RmFtaWx5Ei4KB3ByaXZhY3kYBCABKA4yHS5kZXZodWQuZGVjay52MS5XaWRnZXRQcml2YWN5KroBCg5EZXZpY2VQbGF0Zm9ybRIfChtERVZJQ0VfUExBVEZPUk1fVU5TUEVDSUZJRUQQABIZChVERVZJQ0VfUExBVEZPUk1fTUFDT1MQARIbChdERVZJQ0VfUExBVEZPUk1fV0lORE9XUxACEhkKFURFVklDRV9QTEFURk9STV9MSU5VWBADEhcKE0RFVklDRV9QTEFURk9STV9JT1MQBBIbChdERVZJQ0VfUExBVEZPUk1fQU5EUk9JRBAFKmIKDFB1c2hQcm92aWRlchIdChlQVVNIX1BST1ZJREVSX1VOU1BFQ0lGSUVEEAASFwoTUFVTSF9QUk9WSURFUl9BUFBMRRABEhoKFlBVU0hfUFJPVklERVJfRklSRUJBU0UQAiqGAQoNU2hvcnRjdXRTdGF0ZRIeChpTSE9SVENVVF9TVEFURV9VTlNQRUNJRklFRBAAEhkKFVNIT1JUQ1VUX1NUQVRFX0FDVElWRRABEhsKF1NIT1JUQ1VUX1NUQVRFX0lOQUNUSVZFEAISHQoZU0hPUlRDVVRfU1RBVEVfQ09ORkxJQ1RFRBADKu4BCgxXaWRnZXRGYW1pbHkSHQoZV0lER0VUX0ZBTUlMWV9VTlNQRUNJRklFRBAAEh0KGVdJREdFVF9GQU1JTFlfQVBQTEVfU01BTEwQARIeChpXSURHRVRfRkFNSUxZX0FQUExFX01FRElVTRACEh0KGVdJREdFVF9GQU1JTFlfQVBQTEVfTEFSR0UQAxIhCh1XSURHRVRfRkFNSUxZX0FORFJPSURfQ09NUEFDVBAEEh4KGldJREdFVF9GQU1JTFlfQU5EUk9JRF9XSURFEAUSHgoaV0lER0VUX0ZBTUlMWV9BTkRST0lEX0xJU1QQBip5Cg1XaWRnZXRQcml2YWN5Eh4KGldJREdFVF9QUklWQUNZX1VOU1BFQ0lGSUVEEAASHgoaV0lER0VUX1BSSVZBQ1lfQ09VTlRTX09OTFkQARIoCiRXSURHRVRfUFJJVkFDWV9SRVBPU0lUT1JZX0FORF9USVRMRVMQAiq1AQoWTm90aWZpY2F0aW9uUmVzb2x1dGlvbhInCiNOT1RJRklDQVRJT05fUkVTT0xVVElPTl9VTlNQRUNJRklFRBAAEiMKH05PVElGSUNBVElPTl9SRVNPTFVUSU9OX0dFTkVSSUMQARIkCiBOT1RJRklDQVRJT05fUkVTT0xVVElPTl9ERVRBSUxFRBACEicKI05PVElGSUNBVElPTl9SRVNPTFVUSU9OX1VOQVZBSUxBQkxFEAMyzQQKEURlY2tEZXZpY2VTZXJ2aWNlEl8KDlJlZ2lzdGVyRGV2aWNlEiUuZGV2aHVkLmRlY2sudjEuUmVnaXN0ZXJEZXZpY2VSZXF1ZXN0GiYuZGV2aHVkLmRlY2sudjEuUmVnaXN0ZXJEZXZpY2VSZXNwb25zZRJZCgxVcGRhdGVEZXZpY2USIy5kZXZodWQuZGVjay52MS5VcGRhdGVEZXZpY2VSZXF1ZXN0GiQuZGV2aHVkLmRlY2sudjEuVXBkYXRlRGV2aWNlUmVzcG9uc2USZQoQVW5yZWdpc3RlckRldmljZRInLmRldmh1ZC5kZWNrLnYxLlVucmVnaXN0ZXJEZXZpY2VSZXF1ZXN0GiguZGV2aHVkLmRlY2sudjEuVW5yZWdpc3RlckRldmljZVJlc3BvbnNlEpUBCiBVcGRhdGVWaWV3Tm90aWZpY2F0aW9uUHJlZmVyZW5jZRI3LmRldmh1ZC5kZWNrLnYxLlVwZGF0ZVZpZXdOb3RpZmljYXRpb25QcmVmZXJlbmNlUmVxdWVzdBo4LmRldmh1ZC5kZWNrLnYxLlVwZGF0ZVZpZXdOb3RpZmljYXRpb25QcmVmZXJlbmNlUmVzcG9uc2USfQoYUmVzb2x2ZU5vdGlmaWNhdGlvbkV2ZW50Ei8uZGV2aHVkLmRlY2sudjEuUmVzb2x2ZU5vdGlmaWNhdGlvbkV2ZW50UmVxdWVzdBowLmRldmh1ZC5kZWNrLnYxLlJlc29sdmVOb3RpZmljYXRpb25FdmVudFJlc3BvbnNlQklaR2dpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9kZXZodWQtZGVjay9nZW4vZ28vZGV2aHVkLWRlY2svdjE7ZGVja3YxYgZwcm90bzM", [file_devhud_deck_v1_common, file_devhud_deck_v1_view, file_google_protobuf_timestamp]);
+  fileDesc("ChtkZXZodWQtZGVjay92MS9kZXZpY2UucHJvdG8SDmRldmh1ZC5kZWNrLnYxIl0KEFB1c2hSZWdpc3RyYXRpb24SLgoIcHJvdmlkZXIYASABKA4yHC5kZXZodWQuZGVjay52MS5QdXNoUHJvdmlkZXISGQoRb3BhcXVlX3B1c2hfdG9rZW4YAiABKAkicAoPU2hvcnRjdXRCaW5kaW5nEjMKCW1vZGlmaWVycxgBIAMoDjIgLmRldmh1ZC5kZWNrLnYxLlNob3J0Y3V0TW9kaWZpZXISKAoDa2V5GAIgASgOMhsuZGV2aHVkLmRlY2sudjEuU2hvcnRjdXRLZXki8AEKDFZpZXdTaG9ydGN1dBIrCgtzaG9ydGN1dF9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxInCgd2aWV3X2lkGAIgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EjAKB2JpbmRpbmcYAyABKAsyHy5kZXZodWQuZGVjay52MS5TaG9ydGN1dEJpbmRpbmcSLAoFc3RhdGUYBCABKA4yHS5kZXZodWQuZGVjay52MS5TaG9ydGN1dFN0YXRlEioKCHJldmlzaW9uGAUgASgLMhguZGV2aHVkLmRlY2sudjEuUmV2aXNpb24ibwoVV2lkZ2V0UHVsbFJlcXVlc3RJdGVtEjcKCnJlcG9zaXRvcnkYASABKAsyIy5kZXZodWQuZGVjay52MS5SZXBvc2l0b3J5UmVmZXJlbmNlEg4KBm51bWJlchgCIAEoBBINCgV0aXRsZRgDIAEoCSLcAQoOV2lkZ2V0U25hcHNob3QSFgoObWF0Y2hpbmdfY291bnQYASABKA0SPAoNcHVsbF9yZXF1ZXN0cxgCIAMoCzIlLmRldmh1ZC5kZWNrLnYxLldpZGdldFB1bGxSZXF1ZXN0SXRlbRIxCglmcmVzaG5lc3MYAyABKA4yHi5kZXZodWQuZGVjay52MS5GcmVzaG5lc3NTdGF0ZRIPCgdvZmZsaW5lGAQgASgIEjAKDGdlbmVyYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAinQIKC1dpZGdldFN0YXRlEikKCXdpZGdldF9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxInCgd2aWV3X2lkGAIgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EiwKBmZhbWlseRgDIAEoDjIcLmRldmh1ZC5kZWNrLnYxLldpZGdldEZhbWlseRIuCgdwcml2YWN5GAQgASgOMh0uZGV2aHVkLmRlY2sudjEuV2lkZ2V0UHJpdmFjeRIwCghzbmFwc2hvdBgFIAEoCzIeLmRldmh1ZC5kZWNrLnYxLldpZGdldFNuYXBzaG90EioKCHJldmlzaW9uGAYgASgLMhguZGV2aHVkLmRlY2sudjEuUmV2aXNpb24ikgMKBkRldmljZRIpCglkZXZpY2VfaWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSMAoIcGxhdGZvcm0YAiABKA4yHi5kZXZodWQuZGVjay52MS5EZXZpY2VQbGF0Zm9ybRIUCgxkaXNwbGF5X25hbWUYAyABKAkSKgoiZGV0YWlsZWRfbm90aWZpY2F0aW9uX3RleHRfZW5hYmxlZBgEIAEoCBIvCglzaG9ydGN1dHMYBSADKAsyHC5kZXZodWQuZGVjay52MS5WaWV3U2hvcnRjdXQSLAoHd2lkZ2V0cxgGIAMoCzIbLmRldmh1ZC5kZWNrLnYxLldpZGdldFN0YXRlEioKCHJldmlzaW9uGAcgASgLMhguZGV2aHVkLmRlY2sudjEuUmV2aXNpb24SLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiowEKEkRldmljZVJlZ2lzdHJhdGlvbhIvCg9yZWdpc3RyYXRpb25faWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSJgoGZGV2aWNlGAIgASgLMhYuZGV2aHVkLmRlY2sudjEuRGV2aWNlEjQKEGxlYXNlX2V4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIpMDChVSZWdpc3RlckRldmljZVJlcXVlc3QSNwoPaWRlbXBvdGVuY3lfa2V5GAEgASgLMh4uZGV2aHVkLmRlY2sudjEuSWRlbXBvdGVuY3lLZXkSKQoJZGV2aWNlX2lkGAIgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EjAKCHBsYXRmb3JtGAMgASgOMh4uZGV2aHVkLmRlY2sudjEuRGV2aWNlUGxhdGZvcm0SFAoMZGlzcGxheV9uYW1lGAQgASgJEi4KBHB1c2gYBSABKAsyIC5kZXZodWQuZGVjay52MS5QdXNoUmVnaXN0cmF0aW9uEioKImRldGFpbGVkX25vdGlmaWNhdGlvbl90ZXh0X2VuYWJsZWQYBiABKAgSPAoJc2hvcnRjdXRzGAcgAygLMikuZGV2aHVkLmRlY2sudjEuVmlld1Nob3J0Y3V0Q29uZmlndXJhdGlvbhI0Cgd3aWRnZXRzGAggAygLMiMuZGV2aHVkLmRlY2sudjEuV2lkZ2V0Q29uZmlndXJhdGlvbiKKAQoWUmVnaXN0ZXJEZXZpY2VSZXNwb25zZRI4CgxyZWdpc3RyYXRpb24YASABKAsyIi5kZXZodWQuZGVjay52MS5EZXZpY2VSZWdpc3RyYXRpb24SNgoLaWRlbXBvdGVuY3kYAiABKAsyIS5kZXZodWQuZGVjay52MS5JZGVtcG90ZW5jeVJlc3VsdCLhAgoTVXBkYXRlRGV2aWNlUmVxdWVzdBIvCg9yZWdpc3RyYXRpb25faWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSMwoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAsyGC5kZXZodWQuZGVjay52MS5SZXZpc2lvbhIUCgxkaXNwbGF5X25hbWUYAyABKAkSLgoEcHVzaBgEIAEoCzIgLmRldmh1ZC5kZWNrLnYxLlB1c2hSZWdpc3RyYXRpb24SKgoiZGV0YWlsZWRfbm90aWZpY2F0aW9uX3RleHRfZW5hYmxlZBgFIAEoCBI8CglzaG9ydGN1dHMYBiADKAsyKS5kZXZodWQuZGVjay52MS5WaWV3U2hvcnRjdXRDb25maWd1cmF0aW9uEjQKB3dpZGdldHMYByADKAsyIy5kZXZodWQuZGVjay52MS5XaWRnZXRDb25maWd1cmF0aW9uIlAKFFVwZGF0ZURldmljZVJlc3BvbnNlEjgKDHJlZ2lzdHJhdGlvbhgBIAEoCzIiLmRldmh1ZC5kZWNrLnYxLkRldmljZVJlZ2lzdHJhdGlvbiJKChdVbnJlZ2lzdGVyRGV2aWNlUmVxdWVzdBIvCg9yZWdpc3RyYXRpb25faWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjciYwoYVW5yZWdpc3RlckRldmljZVJlc3BvbnNlEi8KD3JlZ2lzdHJhdGlvbl9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxIWCg53YXNfcmVnaXN0ZXJlZBgCIAEoCCKNAgoVVmlld05vdGlmaWNhdGlvblN0YXRlEi8KD3JlZ2lzdHJhdGlvbl9pZBgBIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxInCgd2aWV3X2lkGAIgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3Ej4KCnByZWZlcmVuY2UYAyABKAsyKi5kZXZodWQuZGVjay52MS5WaWV3Tm90aWZpY2F0aW9uUHJlZmVyZW5jZRIqCghyZXZpc2lvbhgEIAEoCzIYLmRldmh1ZC5kZWNrLnYxLlJldmlzaW9uEi4KCnVwZGF0ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIvgBCidVcGRhdGVWaWV3Tm90aWZpY2F0aW9uUHJlZmVyZW5jZVJlcXVlc3QSLwoPcmVnaXN0cmF0aW9uX2lkGAEgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EicKB3ZpZXdfaWQYAiABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSMwoRZXhwZWN0ZWRfcmV2aXNpb24YAyABKAsyGC5kZXZodWQuZGVjay52MS5SZXZpc2lvbhI+CgpwcmVmZXJlbmNlGAQgASgLMiouZGV2aHVkLmRlY2sudjEuVmlld05vdGlmaWNhdGlvblByZWZlcmVuY2UiZwooVXBkYXRlVmlld05vdGlmaWNhdGlvblByZWZlcmVuY2VSZXNwb25zZRI7Cgxub3RpZmljYXRpb24YASABKAsyJS5kZXZodWQuZGVjay52MS5WaWV3Tm90aWZpY2F0aW9uU3RhdGUiawofUmVzb2x2ZU5vdGlmaWNhdGlvbkV2ZW50UmVxdWVzdBIvCg9yZWdpc3RyYXRpb25faWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSFwoPb3BhcXVlX2V2ZW50X2lkGAIgASgJIpcCCiBSZXNvbHZlTm90aWZpY2F0aW9uRXZlbnRSZXNwb25zZRI6CgpyZXNvbHV0aW9uGAEgASgOMiYuZGV2aHVkLmRlY2sudjEuTm90aWZpY2F0aW9uUmVzb2x1dGlvbhIZChFub3RpZmljYXRpb25fdGV4dBgCIAEoCRInCgd2aWV3X2lkGAMgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EjcKDHB1bGxfcmVxdWVzdBgEIAEoCzIhLmRldmh1ZC5kZWNrLnYxLlB1bGxSZXF1ZXN0RGV0YWlsEjoKCnRyYW5zaXRpb24YBSABKA4yJi5kZXZodWQuZGVjay52MS5Ob3RpZmljYXRpb25UcmFuc2l0aW9uIqMBChlWaWV3U2hvcnRjdXRDb25maWd1cmF0aW9uEisKC3Nob3J0Y3V0X2lkGAEgASgLMhYuZGV2aHVkLmRlY2sudjEuVXVpZFY3EicKB3ZpZXdfaWQYAiABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSMAoHYmluZGluZxgDIAEoCzIfLmRldmh1ZC5kZWNrLnYxLlNob3J0Y3V0QmluZGluZyLHAQoTV2lkZ2V0Q29uZmlndXJhdGlvbhIpCgl3aWRnZXRfaWQYASABKAsyFi5kZXZodWQuZGVjay52MS5VdWlkVjcSJwoHdmlld19pZBgCIAEoCzIWLmRldmh1ZC5kZWNrLnYxLlV1aWRWNxIsCgZmYW1pbHkYAyABKA4yHC5kZXZodWQuZGVjay52MS5XaWRnZXRGYW1pbHkSLgoHcHJpdmFjeRgEIAEoDjIdLmRldmh1ZC5kZWNrLnYxLldpZGdldFByaXZhY3kqugEKDkRldmljZVBsYXRmb3JtEh8KG0RFVklDRV9QTEFURk9STV9VTlNQRUNJRklFRBAAEhkKFURFVklDRV9QTEFURk9STV9NQUNPUxABEhsKF0RFVklDRV9QTEFURk9STV9XSU5ET1dTEAISGQoVREVWSUNFX1BMQVRGT1JNX0xJTlVYEAMSFwoTREVWSUNFX1BMQVRGT1JNX0lPUxAEEhsKF0RFVklDRV9QTEFURk9STV9BTkRST0lEEAUqYgoMUHVzaFByb3ZpZGVyEh0KGVBVU0hfUFJPVklERVJfVU5TUEVDSUZJRUQQABIXChNQVVNIX1BST1ZJREVSX0FQUExFEAESGgoWUFVTSF9QUk9WSURFUl9GSVJFQkFTRRACKoYBCg1TaG9ydGN1dFN0YXRlEh4KGlNIT1JUQ1VUX1NUQVRFX1VOU1BFQ0lGSUVEEAASGQoVU0hPUlRDVVRfU1RBVEVfQUNUSVZFEAESGwoXU0hPUlRDVVRfU1RBVEVfSU5BQ1RJVkUQAhIdChlTSE9SVENVVF9TVEFURV9DT05GTElDVEVEEAMqqAEKEFNob3J0Y3V0TW9kaWZpZXISIQodU0hPUlRDVVRfTU9ESUZJRVJfVU5TUEVDSUZJRUQQABIdChlTSE9SVENVVF9NT0RJRklFUl9DT05UUk9MEAESGQoVU0hPUlRDVVRfTU9ESUZJRVJfQUxUEAISGwoXU0hPUlRDVVRfTU9ESUZJRVJfU0hJRlQQAxIaChZTSE9SVENVVF9NT0RJRklFUl9NRVRBEAQq5ggKC1Nob3J0Y3V0S2V5EhwKGFNIT1JUQ1VUX0tFWV9VTlNQRUNJRklFRBAAEhIKDlNIT1JUQ1VUX0tFWV9BEAESEgoOU0hPUlRDVVRfS0VZX0IQAhISCg5TSE9SVENVVF9LRVlfQxADEhIKDlNIT1JUQ1VUX0tFWV9EEAQSEgoOU0hPUlRDVVRfS0VZX0UQBRISCg5TSE9SVENVVF9LRVlfRhAGEhIKDlNIT1JUQ1VUX0tFWV9HEAcSEgoOU0hPUlRDVVRfS0VZX0gQCBISCg5TSE9SVENVVF9LRVlfSRAJEhIKDlNIT1JUQ1VUX0tFWV9KEAoSEgoOU0hPUlRDVVRfS0VZX0sQCxISCg5TSE9SVENVVF9LRVlfTBAMEhIKDlNIT1JUQ1VUX0tFWV9NEA0SEgoOU0hPUlRDVVRfS0VZX04QDhISCg5TSE9SVENVVF9LRVlfTxAPEhIKDlNIT1JUQ1VUX0tFWV9QEBASEgoOU0hPUlRDVVRfS0VZX1EQERISCg5TSE9SVENVVF9LRVlfUhASEhIKDlNIT1JUQ1VUX0tFWV9TEBMSEgoOU0hPUlRDVVRfS0VZX1QQFBISCg5TSE9SVENVVF9LRVlfVRAVEhIKDlNIT1JUQ1VUX0tFWV9WEBYSEgoOU0hPUlRDVVRfS0VZX1cQFxISCg5TSE9SVENVVF9LRVlfWBAYEhIKDlNIT1JUQ1VUX0tFWV9ZEBkSEgoOU0hPUlRDVVRfS0VZX1oQGhIYChRTSE9SVENVVF9LRVlfRElHSVRfMBAbEhgKFFNIT1JUQ1VUX0tFWV9ESUdJVF8xEBwSGAoUU0hPUlRDVVRfS0VZX0RJR0lUXzIQHRIYChRTSE9SVENVVF9LRVlfRElHSVRfMxAeEhgKFFNIT1JUQ1VUX0tFWV9ESUdJVF80EB8SGAoUU0hPUlRDVVRfS0VZX0RJR0lUXzUQIBIYChRTSE9SVENVVF9LRVlfRElHSVRfNhAhEhgKFFNIT1JUQ1VUX0tFWV9ESUdJVF83ECISGAoUU0hPUlRDVVRfS0VZX0RJR0lUXzgQIxIYChRTSE9SVENVVF9LRVlfRElHSVRfORAkEhMKD1NIT1JUQ1VUX0tFWV9GMRAlEhMKD1NIT1JUQ1VUX0tFWV9GMhAmEhMKD1NIT1JUQ1VUX0tFWV9GMxAnEhMKD1NIT1JUQ1VUX0tFWV9GNBAoEhMKD1NIT1JUQ1VUX0tFWV9GNRApEhMKD1NIT1JUQ1VUX0tFWV9GNhAqEhMKD1NIT1JUQ1VUX0tFWV9GNxArEhMKD1NIT1JUQ1VUX0tFWV9GOBAsEhMKD1NIT1JUQ1VUX0tFWV9GORAtEhQKEFNIT1JUQ1VUX0tFWV9GMTAQLhIUChBTSE9SVENVVF9LRVlfRjExEC8SFAoQU0hPUlRDVVRfS0VZX0YxMhAwEhYKElNIT1JUQ1VUX0tFWV9TUEFDRRAxEhYKElNIT1JUQ1VUX0tFWV9FTlRFUhAyKu4BCgxXaWRnZXRGYW1pbHkSHQoZV0lER0VUX0ZBTUlMWV9VTlNQRUNJRklFRBAAEh0KGVdJREdFVF9GQU1JTFlfQVBQTEVfU01BTEwQARIeChpXSURHRVRfRkFNSUxZX0FQUExFX01FRElVTRACEh0KGVdJREdFVF9GQU1JTFlfQVBQTEVfTEFSR0UQAxIhCh1XSURHRVRfRkFNSUxZX0FORFJPSURfQ09NUEFDVBAEEh4KGldJREdFVF9GQU1JTFlfQU5EUk9JRF9XSURFEAUSHgoaV0lER0VUX0ZBTUlMWV9BTkRST0lEX0xJU1QQBip5Cg1XaWRnZXRQcml2YWN5Eh4KGldJREdFVF9QUklWQUNZX1VOU1BFQ0lGSUVEEAASHgoaV0lER0VUX1BSSVZBQ1lfQ09VTlRTX09OTFkQARIoCiRXSURHRVRfUFJJVkFDWV9SRVBPU0lUT1JZX0FORF9USVRMRVMQAiq1AQoWTm90aWZpY2F0aW9uUmVzb2x1dGlvbhInCiNOT1RJRklDQVRJT05fUkVTT0xVVElPTl9VTlNQRUNJRklFRBAAEiMKH05PVElGSUNBVElPTl9SRVNPTFVUSU9OX0dFTkVSSUMQARIkCiBOT1RJRklDQVRJT05fUkVTT0xVVElPTl9ERVRBSUxFRBACEicKI05PVElGSUNBVElPTl9SRVNPTFVUSU9OX1VOQVZBSUxBQkxFEAMyzQQKEURlY2tEZXZpY2VTZXJ2aWNlEl8KDlJlZ2lzdGVyRGV2aWNlEiUuZGV2aHVkLmRlY2sudjEuUmVnaXN0ZXJEZXZpY2VSZXF1ZXN0GiYuZGV2aHVkLmRlY2sudjEuUmVnaXN0ZXJEZXZpY2VSZXNwb25zZRJZCgxVcGRhdGVEZXZpY2USIy5kZXZodWQuZGVjay52MS5VcGRhdGVEZXZpY2VSZXF1ZXN0GiQuZGV2aHVkLmRlY2sudjEuVXBkYXRlRGV2aWNlUmVzcG9uc2USZQoQVW5yZWdpc3RlckRldmljZRInLmRldmh1ZC5kZWNrLnYxLlVucmVnaXN0ZXJEZXZpY2VSZXF1ZXN0GiguZGV2aHVkLmRlY2sudjEuVW5yZWdpc3RlckRldmljZVJlc3BvbnNlEpUBCiBVcGRhdGVWaWV3Tm90aWZpY2F0aW9uUHJlZmVyZW5jZRI3LmRldmh1ZC5kZWNrLnYxLlVwZGF0ZVZpZXdOb3RpZmljYXRpb25QcmVmZXJlbmNlUmVxdWVzdBo4LmRldmh1ZC5kZWNrLnYxLlVwZGF0ZVZpZXdOb3RpZmljYXRpb25QcmVmZXJlbmNlUmVzcG9uc2USfQoYUmVzb2x2ZU5vdGlmaWNhdGlvbkV2ZW50Ei8uZGV2aHVkLmRlY2sudjEuUmVzb2x2ZU5vdGlmaWNhdGlvbkV2ZW50UmVxdWVzdBowLmRldmh1ZC5kZWNrLnYxLlJlc29sdmVOb3RpZmljYXRpb25FdmVudFJlc3BvbnNlQklaR2dpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9kZXZodWQtZGVjay9nZW4vZ28vZGV2aHVkLWRlY2svdjE7ZGVja3YxYgZwcm90bzM", [file_devhud_deck_v1_common, file_devhud_deck_v1_view, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message devhud.deck.v1.PushRegistration
@@ -41,6 +41,28 @@ export const PushRegistrationSchema: GenMessage<PushRegistration> = /*@__PURE__*
   messageDesc(file_devhud_deck_v1_device, 0);
 
 /**
+ * @generated from message devhud.deck.v1.ShortcutBinding
+ */
+export type ShortcutBinding = Message<"devhud.deck.v1.ShortcutBinding"> & {
+  /**
+   * @generated from field: repeated devhud.deck.v1.ShortcutModifier modifiers = 1;
+   */
+  modifiers: ShortcutModifier[];
+
+  /**
+   * @generated from field: devhud.deck.v1.ShortcutKey key = 2;
+   */
+  key: ShortcutKey;
+};
+
+/**
+ * Describes the message devhud.deck.v1.ShortcutBinding.
+ * Use `create(ShortcutBindingSchema)` to create a new message.
+ */
+export const ShortcutBindingSchema: GenMessage<ShortcutBinding> = /*@__PURE__*/
+  messageDesc(file_devhud_deck_v1_device, 1);
+
+/**
  * @generated from message devhud.deck.v1.ViewShortcut
  */
 export type ViewShortcut = Message<"devhud.deck.v1.ViewShortcut"> & {
@@ -55,9 +77,9 @@ export type ViewShortcut = Message<"devhud.deck.v1.ViewShortcut"> & {
   viewId?: UuidV7 | undefined;
 
   /**
-   * @generated from field: string key_binding = 3;
+   * @generated from field: devhud.deck.v1.ShortcutBinding binding = 3;
    */
-  keyBinding: string;
+  binding?: ShortcutBinding | undefined;
 
   /**
    * @generated from field: devhud.deck.v1.ShortcutState state = 4;
@@ -75,7 +97,7 @@ export type ViewShortcut = Message<"devhud.deck.v1.ViewShortcut"> & {
  * Use `create(ViewShortcutSchema)` to create a new message.
  */
 export const ViewShortcutSchema: GenMessage<ViewShortcut> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 1);
+  messageDesc(file_devhud_deck_v1_device, 2);
 
 /**
  * @generated from message devhud.deck.v1.WidgetPullRequestItem
@@ -102,7 +124,7 @@ export type WidgetPullRequestItem = Message<"devhud.deck.v1.WidgetPullRequestIte
  * Use `create(WidgetPullRequestItemSchema)` to create a new message.
  */
 export const WidgetPullRequestItemSchema: GenMessage<WidgetPullRequestItem> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 2);
+  messageDesc(file_devhud_deck_v1_device, 3);
 
 /**
  * @generated from message devhud.deck.v1.WidgetSnapshot
@@ -139,7 +161,7 @@ export type WidgetSnapshot = Message<"devhud.deck.v1.WidgetSnapshot"> & {
  * Use `create(WidgetSnapshotSchema)` to create a new message.
  */
 export const WidgetSnapshotSchema: GenMessage<WidgetSnapshot> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 3);
+  messageDesc(file_devhud_deck_v1_device, 4);
 
 /**
  * @generated from message devhud.deck.v1.WidgetState
@@ -181,7 +203,7 @@ export type WidgetState = Message<"devhud.deck.v1.WidgetState"> & {
  * Use `create(WidgetStateSchema)` to create a new message.
  */
 export const WidgetStateSchema: GenMessage<WidgetState> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 4);
+  messageDesc(file_devhud_deck_v1_device, 5);
 
 /**
  * @generated from message devhud.deck.v1.Device
@@ -238,7 +260,7 @@ export type Device = Message<"devhud.deck.v1.Device"> & {
  * Use `create(DeviceSchema)` to create a new message.
  */
 export const DeviceSchema: GenMessage<Device> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 5);
+  messageDesc(file_devhud_deck_v1_device, 6);
 
 /**
  * @generated from message devhud.deck.v1.DeviceRegistration
@@ -265,7 +287,7 @@ export type DeviceRegistration = Message<"devhud.deck.v1.DeviceRegistration"> & 
  * Use `create(DeviceRegistrationSchema)` to create a new message.
  */
 export const DeviceRegistrationSchema: GenMessage<DeviceRegistration> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 6);
+  messageDesc(file_devhud_deck_v1_device, 7);
 
 /**
  * @generated from message devhud.deck.v1.RegisterDeviceRequest
@@ -302,9 +324,9 @@ export type RegisterDeviceRequest = Message<"devhud.deck.v1.RegisterDeviceReques
   detailedNotificationTextEnabled: boolean;
 
   /**
-   * @generated from field: repeated devhud.deck.v1.ViewShortcut shortcuts = 7;
+   * @generated from field: repeated devhud.deck.v1.ViewShortcutConfiguration shortcuts = 7;
    */
-  shortcuts: ViewShortcut[];
+  shortcuts: ViewShortcutConfiguration[];
 
   /**
    * @generated from field: repeated devhud.deck.v1.WidgetConfiguration widgets = 8;
@@ -317,7 +339,7 @@ export type RegisterDeviceRequest = Message<"devhud.deck.v1.RegisterDeviceReques
  * Use `create(RegisterDeviceRequestSchema)` to create a new message.
  */
 export const RegisterDeviceRequestSchema: GenMessage<RegisterDeviceRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 7);
+  messageDesc(file_devhud_deck_v1_device, 8);
 
 /**
  * @generated from message devhud.deck.v1.RegisterDeviceResponse
@@ -342,7 +364,7 @@ export type RegisterDeviceResponse = Message<"devhud.deck.v1.RegisterDeviceRespo
  * Use `create(RegisterDeviceResponseSchema)` to create a new message.
  */
 export const RegisterDeviceResponseSchema: GenMessage<RegisterDeviceResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 8);
+  messageDesc(file_devhud_deck_v1_device, 9);
 
 /**
  * @generated from message devhud.deck.v1.UpdateDeviceRequest
@@ -374,9 +396,9 @@ export type UpdateDeviceRequest = Message<"devhud.deck.v1.UpdateDeviceRequest"> 
   detailedNotificationTextEnabled: boolean;
 
   /**
-   * @generated from field: repeated devhud.deck.v1.ViewShortcut shortcuts = 6;
+   * @generated from field: repeated devhud.deck.v1.ViewShortcutConfiguration shortcuts = 6;
    */
-  shortcuts: ViewShortcut[];
+  shortcuts: ViewShortcutConfiguration[];
 
   /**
    * @generated from field: repeated devhud.deck.v1.WidgetConfiguration widgets = 7;
@@ -389,7 +411,7 @@ export type UpdateDeviceRequest = Message<"devhud.deck.v1.UpdateDeviceRequest"> 
  * Use `create(UpdateDeviceRequestSchema)` to create a new message.
  */
 export const UpdateDeviceRequestSchema: GenMessage<UpdateDeviceRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 9);
+  messageDesc(file_devhud_deck_v1_device, 10);
 
 /**
  * @generated from message devhud.deck.v1.UpdateDeviceResponse
@@ -406,7 +428,7 @@ export type UpdateDeviceResponse = Message<"devhud.deck.v1.UpdateDeviceResponse"
  * Use `create(UpdateDeviceResponseSchema)` to create a new message.
  */
 export const UpdateDeviceResponseSchema: GenMessage<UpdateDeviceResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 10);
+  messageDesc(file_devhud_deck_v1_device, 11);
 
 /**
  * @generated from message devhud.deck.v1.UnregisterDeviceRequest
@@ -423,7 +445,7 @@ export type UnregisterDeviceRequest = Message<"devhud.deck.v1.UnregisterDeviceRe
  * Use `create(UnregisterDeviceRequestSchema)` to create a new message.
  */
 export const UnregisterDeviceRequestSchema: GenMessage<UnregisterDeviceRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 11);
+  messageDesc(file_devhud_deck_v1_device, 12);
 
 /**
  * @generated from message devhud.deck.v1.UnregisterDeviceResponse
@@ -445,7 +467,7 @@ export type UnregisterDeviceResponse = Message<"devhud.deck.v1.UnregisterDeviceR
  * Use `create(UnregisterDeviceResponseSchema)` to create a new message.
  */
 export const UnregisterDeviceResponseSchema: GenMessage<UnregisterDeviceResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 12);
+  messageDesc(file_devhud_deck_v1_device, 13);
 
 /**
  * @generated from message devhud.deck.v1.ViewNotificationState
@@ -482,7 +504,7 @@ export type ViewNotificationState = Message<"devhud.deck.v1.ViewNotificationStat
  * Use `create(ViewNotificationStateSchema)` to create a new message.
  */
 export const ViewNotificationStateSchema: GenMessage<ViewNotificationState> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 13);
+  messageDesc(file_devhud_deck_v1_device, 14);
 
 /**
  * @generated from message devhud.deck.v1.UpdateViewNotificationPreferenceRequest
@@ -514,7 +536,7 @@ export type UpdateViewNotificationPreferenceRequest = Message<"devhud.deck.v1.Up
  * Use `create(UpdateViewNotificationPreferenceRequestSchema)` to create a new message.
  */
 export const UpdateViewNotificationPreferenceRequestSchema: GenMessage<UpdateViewNotificationPreferenceRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 14);
+  messageDesc(file_devhud_deck_v1_device, 15);
 
 /**
  * @generated from message devhud.deck.v1.UpdateViewNotificationPreferenceResponse
@@ -531,7 +553,7 @@ export type UpdateViewNotificationPreferenceResponse = Message<"devhud.deck.v1.U
  * Use `create(UpdateViewNotificationPreferenceResponseSchema)` to create a new message.
  */
 export const UpdateViewNotificationPreferenceResponseSchema: GenMessage<UpdateViewNotificationPreferenceResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 15);
+  messageDesc(file_devhud_deck_v1_device, 16);
 
 /**
  * @generated from message devhud.deck.v1.ResolveNotificationEventRequest
@@ -553,7 +575,7 @@ export type ResolveNotificationEventRequest = Message<"devhud.deck.v1.ResolveNot
  * Use `create(ResolveNotificationEventRequestSchema)` to create a new message.
  */
 export const ResolveNotificationEventRequestSchema: GenMessage<ResolveNotificationEventRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 16);
+  messageDesc(file_devhud_deck_v1_device, 17);
 
 /**
  * @generated from message devhud.deck.v1.ResolveNotificationEventResponse
@@ -590,7 +612,37 @@ export type ResolveNotificationEventResponse = Message<"devhud.deck.v1.ResolveNo
  * Use `create(ResolveNotificationEventResponseSchema)` to create a new message.
  */
 export const ResolveNotificationEventResponseSchema: GenMessage<ResolveNotificationEventResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 17);
+  messageDesc(file_devhud_deck_v1_device, 18);
+
+/**
+ * ViewShortcutConfiguration is client-authored input. The effective shortcut
+ * state and synchronized revision remain server-owned response state.
+ *
+ * @generated from message devhud.deck.v1.ViewShortcutConfiguration
+ */
+export type ViewShortcutConfiguration = Message<"devhud.deck.v1.ViewShortcutConfiguration"> & {
+  /**
+   * @generated from field: devhud.deck.v1.UuidV7 shortcut_id = 1;
+   */
+  shortcutId?: UuidV7 | undefined;
+
+  /**
+   * @generated from field: devhud.deck.v1.UuidV7 view_id = 2;
+   */
+  viewId?: UuidV7 | undefined;
+
+  /**
+   * @generated from field: devhud.deck.v1.ShortcutBinding binding = 3;
+   */
+  binding?: ShortcutBinding | undefined;
+};
+
+/**
+ * Describes the message devhud.deck.v1.ViewShortcutConfiguration.
+ * Use `create(ViewShortcutConfigurationSchema)` to create a new message.
+ */
+export const ViewShortcutConfigurationSchema: GenMessage<ViewShortcutConfiguration> = /*@__PURE__*/
+  messageDesc(file_devhud_deck_v1_device, 19);
 
 /**
  * WidgetConfiguration is client-authored input. Widget snapshots and
@@ -625,7 +677,7 @@ export type WidgetConfiguration = Message<"devhud.deck.v1.WidgetConfiguration"> 
  * Use `create(WidgetConfigurationSchema)` to create a new message.
  */
 export const WidgetConfigurationSchema: GenMessage<WidgetConfiguration> = /*@__PURE__*/
-  messageDesc(file_devhud_deck_v1_device, 18);
+  messageDesc(file_devhud_deck_v1_device, 20);
 
 /**
  * @generated from enum devhud.deck.v1.DevicePlatform
@@ -726,6 +778,308 @@ export const ShortcutStateSchema: GenEnum<ShortcutState> = /*@__PURE__*/
   enumDesc(file_devhud_deck_v1_device, 2);
 
 /**
+ * @generated from enum devhud.deck.v1.ShortcutModifier
+ */
+export enum ShortcutModifier {
+  /**
+   * @generated from enum value: SHORTCUT_MODIFIER_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SHORTCUT_MODIFIER_CONTROL = 1;
+   */
+  CONTROL = 1,
+
+  /**
+   * @generated from enum value: SHORTCUT_MODIFIER_ALT = 2;
+   */
+  ALT = 2,
+
+  /**
+   * @generated from enum value: SHORTCUT_MODIFIER_SHIFT = 3;
+   */
+  SHIFT = 3,
+
+  /**
+   * @generated from enum value: SHORTCUT_MODIFIER_META = 4;
+   */
+  META = 4,
+}
+
+/**
+ * Describes the enum devhud.deck.v1.ShortcutModifier.
+ */
+export const ShortcutModifierSchema: GenEnum<ShortcutModifier> = /*@__PURE__*/
+  enumDesc(file_devhud_deck_v1_device, 3);
+
+/**
+ * @generated from enum devhud.deck.v1.ShortcutKey
+ */
+export enum ShortcutKey {
+  /**
+   * @generated from enum value: SHORTCUT_KEY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_A = 1;
+   */
+  A = 1,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_B = 2;
+   */
+  B = 2,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_C = 3;
+   */
+  C = 3,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_D = 4;
+   */
+  D = 4,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_E = 5;
+   */
+  E = 5,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F = 6;
+   */
+  F = 6,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_G = 7;
+   */
+  G = 7,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_H = 8;
+   */
+  H = 8,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_I = 9;
+   */
+  I = 9,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_J = 10;
+   */
+  J = 10,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_K = 11;
+   */
+  K = 11,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_L = 12;
+   */
+  L = 12,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_M = 13;
+   */
+  M = 13,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_N = 14;
+   */
+  N = 14,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_O = 15;
+   */
+  O = 15,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_P = 16;
+   */
+  P = 16,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_Q = 17;
+   */
+  Q = 17,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_R = 18;
+   */
+  R = 18,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_S = 19;
+   */
+  S = 19,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_T = 20;
+   */
+  T = 20,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_U = 21;
+   */
+  U = 21,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_V = 22;
+   */
+  V = 22,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_W = 23;
+   */
+  W = 23,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_X = 24;
+   */
+  X = 24,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_Y = 25;
+   */
+  Y = 25,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_Z = 26;
+   */
+  Z = 26,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_0 = 27;
+   */
+  DIGIT_0 = 27,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_1 = 28;
+   */
+  DIGIT_1 = 28,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_2 = 29;
+   */
+  DIGIT_2 = 29,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_3 = 30;
+   */
+  DIGIT_3 = 30,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_4 = 31;
+   */
+  DIGIT_4 = 31,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_5 = 32;
+   */
+  DIGIT_5 = 32,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_6 = 33;
+   */
+  DIGIT_6 = 33,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_7 = 34;
+   */
+  DIGIT_7 = 34,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_8 = 35;
+   */
+  DIGIT_8 = 35,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_DIGIT_9 = 36;
+   */
+  DIGIT_9 = 36,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F1 = 37;
+   */
+  F1 = 37,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F2 = 38;
+   */
+  F2 = 38,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F3 = 39;
+   */
+  F3 = 39,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F4 = 40;
+   */
+  F4 = 40,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F5 = 41;
+   */
+  F5 = 41,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F6 = 42;
+   */
+  F6 = 42,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F7 = 43;
+   */
+  F7 = 43,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F8 = 44;
+   */
+  F8 = 44,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F9 = 45;
+   */
+  F9 = 45,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F10 = 46;
+   */
+  F10 = 46,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F11 = 47;
+   */
+  F11 = 47,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_F12 = 48;
+   */
+  F12 = 48,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_SPACE = 49;
+   */
+  SPACE = 49,
+
+  /**
+   * @generated from enum value: SHORTCUT_KEY_ENTER = 50;
+   */
+  ENTER = 50,
+}
+
+/**
+ * Describes the enum devhud.deck.v1.ShortcutKey.
+ */
+export const ShortcutKeySchema: GenEnum<ShortcutKey> = /*@__PURE__*/
+  enumDesc(file_devhud_deck_v1_device, 4);
+
+/**
  * @generated from enum devhud.deck.v1.WidgetFamily
  */
 export enum WidgetFamily {
@@ -769,7 +1123,7 @@ export enum WidgetFamily {
  * Describes the enum devhud.deck.v1.WidgetFamily.
  */
 export const WidgetFamilySchema: GenEnum<WidgetFamily> = /*@__PURE__*/
-  enumDesc(file_devhud_deck_v1_device, 3);
+  enumDesc(file_devhud_deck_v1_device, 5);
 
 /**
  * @generated from enum devhud.deck.v1.WidgetPrivacy
@@ -795,7 +1149,7 @@ export enum WidgetPrivacy {
  * Describes the enum devhud.deck.v1.WidgetPrivacy.
  */
 export const WidgetPrivacySchema: GenEnum<WidgetPrivacy> = /*@__PURE__*/
-  enumDesc(file_devhud_deck_v1_device, 4);
+  enumDesc(file_devhud_deck_v1_device, 6);
 
 /**
  * @generated from enum devhud.deck.v1.NotificationResolution
@@ -826,7 +1180,7 @@ export enum NotificationResolution {
  * Describes the enum devhud.deck.v1.NotificationResolution.
  */
 export const NotificationResolutionSchema: GenEnum<NotificationResolution> = /*@__PURE__*/
-  enumDesc(file_devhud_deck_v1_device, 5);
+  enumDesc(file_devhud_deck_v1_device, 7);
 
 /**
  * @generated from service devhud.deck.v1.DeckDeviceService

@@ -43,10 +43,77 @@ enum ShortcutState {
   SHORTCUT_STATE_CONFLICTED = 3;
 }
 
+enum ShortcutModifier {
+  SHORTCUT_MODIFIER_UNSPECIFIED = 0;
+  SHORTCUT_MODIFIER_CONTROL = 1;
+  SHORTCUT_MODIFIER_ALT = 2;
+  SHORTCUT_MODIFIER_SHIFT = 3;
+  SHORTCUT_MODIFIER_META = 4;
+}
+
+enum ShortcutKey {
+  SHORTCUT_KEY_UNSPECIFIED = 0;
+  SHORTCUT_KEY_A = 1;
+  SHORTCUT_KEY_B = 2;
+  SHORTCUT_KEY_C = 3;
+  SHORTCUT_KEY_D = 4;
+  SHORTCUT_KEY_E = 5;
+  SHORTCUT_KEY_F = 6;
+  SHORTCUT_KEY_G = 7;
+  SHORTCUT_KEY_H = 8;
+  SHORTCUT_KEY_I = 9;
+  SHORTCUT_KEY_J = 10;
+  SHORTCUT_KEY_K = 11;
+  SHORTCUT_KEY_L = 12;
+  SHORTCUT_KEY_M = 13;
+  SHORTCUT_KEY_N = 14;
+  SHORTCUT_KEY_O = 15;
+  SHORTCUT_KEY_P = 16;
+  SHORTCUT_KEY_Q = 17;
+  SHORTCUT_KEY_R = 18;
+  SHORTCUT_KEY_S = 19;
+  SHORTCUT_KEY_T = 20;
+  SHORTCUT_KEY_U = 21;
+  SHORTCUT_KEY_V = 22;
+  SHORTCUT_KEY_W = 23;
+  SHORTCUT_KEY_X = 24;
+  SHORTCUT_KEY_Y = 25;
+  SHORTCUT_KEY_Z = 26;
+  SHORTCUT_KEY_DIGIT_0 = 27;
+  SHORTCUT_KEY_DIGIT_1 = 28;
+  SHORTCUT_KEY_DIGIT_2 = 29;
+  SHORTCUT_KEY_DIGIT_3 = 30;
+  SHORTCUT_KEY_DIGIT_4 = 31;
+  SHORTCUT_KEY_DIGIT_5 = 32;
+  SHORTCUT_KEY_DIGIT_6 = 33;
+  SHORTCUT_KEY_DIGIT_7 = 34;
+  SHORTCUT_KEY_DIGIT_8 = 35;
+  SHORTCUT_KEY_DIGIT_9 = 36;
+  SHORTCUT_KEY_F1 = 37;
+  SHORTCUT_KEY_F2 = 38;
+  SHORTCUT_KEY_F3 = 39;
+  SHORTCUT_KEY_F4 = 40;
+  SHORTCUT_KEY_F5 = 41;
+  SHORTCUT_KEY_F6 = 42;
+  SHORTCUT_KEY_F7 = 43;
+  SHORTCUT_KEY_F8 = 44;
+  SHORTCUT_KEY_F9 = 45;
+  SHORTCUT_KEY_F10 = 46;
+  SHORTCUT_KEY_F11 = 47;
+  SHORTCUT_KEY_F12 = 48;
+  SHORTCUT_KEY_SPACE = 49;
+  SHORTCUT_KEY_ENTER = 50;
+}
+
+message ShortcutBinding {
+  repeated ShortcutModifier modifiers = 1;
+  ShortcutKey key = 2;
+}
+
 message ViewShortcut {
   UuidV7 shortcut_id = 1;
   UuidV7 view_id = 2;
-  string key_binding = 3;
+  ShortcutBinding binding = 3;
   ShortcutState state = 4;
   Revision revision = 5;
 }
@@ -115,7 +182,7 @@ message RegisterDeviceRequest {
   string display_name = 4;
   PushRegistration push = 5;
   bool detailed_notification_text_enabled = 6;
-  repeated ViewShortcut shortcuts = 7;
+  repeated ViewShortcutConfiguration shortcuts = 7;
   repeated WidgetConfiguration widgets = 8;
 }
 
@@ -132,7 +199,7 @@ message UpdateDeviceRequest {
   string display_name = 3;
   PushRegistration push = 4;
   bool detailed_notification_text_enabled = 5;
-  repeated ViewShortcut shortcuts = 6;
+  repeated ViewShortcutConfiguration shortcuts = 6;
   repeated WidgetConfiguration widgets = 7;
 }
 
@@ -186,6 +253,14 @@ message ResolveNotificationEventResponse {
   UuidV7 view_id = 3;
   PullRequestDetail pull_request = 4;
   NotificationTransition transition = 5;
+}
+
+// ViewShortcutConfiguration is client-authored input. The effective shortcut
+// state and synchronized revision remain server-owned response state.
+message ViewShortcutConfiguration {
+  UuidV7 shortcut_id = 1;
+  UuidV7 view_id = 2;
+  ShortcutBinding binding = 3;
 }
 
 // WidgetConfiguration is client-authored input. Widget snapshots and
