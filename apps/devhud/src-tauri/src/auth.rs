@@ -178,6 +178,49 @@ pub(crate) struct TokenSet {
     pub(crate) claims: TokenClaims,
 }
 
+pub(crate) struct TokenRefreshError {
+    error: AuthError,
+    rotated_refresh_token: Option<Secret>,
+}
+
+impl TokenRefreshError {
+    pub(crate) fn with_rotated_refresh_token(
+        error: AuthError,
+        rotated_refresh_token: Option<Secret>,
+    ) -> Self {
+        Self {
+            error,
+            rotated_refresh_token,
+        }
+    }
+
+    fn into_error(self) -> AuthError {
+        self.error
+    }
+}
+
+impl From<AuthError> for TokenRefreshError {
+    fn from(error: AuthError) -> Self {
+        Self {
+            error,
+            rotated_refresh_token: None,
+        }
+    }
+}
+
+impl fmt::Debug for TokenRefreshError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TokenRefreshError")
+            .field("error", &self.error)
+            .field(
+                "rotated_refresh_token",
+                &self.rotated_refresh_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
+}
+
 impl fmt::Debug for TokenSet {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -234,7 +277,7 @@ pub(crate) trait TokenTransport: Send {
         refresh_token: &Secret,
         audience: &str,
         scopes: &[&str],
-    ) -> Result<TokenSet, AuthError>;
+    ) -> Result<TokenSet, TokenRefreshError>;
 
     fn revoke(
         &mut self,
@@ -436,11 +479,12 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 feature.scopes(),
             ) {
                 Ok(tokens) => tokens,
-                Err(AuthError::TransportUnavailable) => {
-                    transport_unavailable = true;
-                    continue;
-                }
-                Err(error) => {
+                Err(failure) => {
+                    let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
+                    if error == AuthError::TransportUnavailable {
+                        transport_unavailable = true;
+                        continue;
+                    }
                     grant_error.get_or_insert(error);
                     continue;
                 }
@@ -475,11 +519,12 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 feature.delibase_scopes(),
             ) {
                 Ok(tokens) => tokens,
-                Err(AuthError::TransportUnavailable) => {
-                    transport_unavailable = true;
-                    continue;
-                }
-                Err(error) => {
+                Err(failure) => {
+                    let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
+                    if error == AuthError::TransportUnavailable {
+                        transport_unavailable = true;
+                        continue;
+                    }
                     grant_error.get_or_insert(error);
                     continue;
                 }
@@ -536,6 +581,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             return Err(AuthError::SignInAlreadyActive);
         }
         validate_redirect(platform, &redirect_uri)?;
+        self.clear_invalid_retained_session_before_sign_in()?;
         let state = random_secret(32)?;
         let verifier = random_secret(64)?;
         let nonce = random_secret(32)?;
@@ -686,13 +732,16 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 device_session_key: new_device_session_key(&subject)?,
             },
         };
-        let feature_tokens = self.transport.refresh(
-            &token_endpoint,
-            &self.configuration.client_id,
-            &refresh_token,
-            feature.audience(),
-            feature.scopes(),
-        )?;
+        let feature_tokens = self
+            .transport
+            .refresh(
+                &token_endpoint,
+                &self.configuration.client_id,
+                &refresh_token,
+                feature.audience(),
+                feature.scopes(),
+            )
+            .map_err(TokenRefreshError::into_error)?;
         validate_bearer(
             &feature_tokens.claims,
             &self.configuration,
@@ -704,13 +753,16 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         if let Some(rotated_refresh) = feature_tokens.refresh_token {
             refresh_token = rotated_refresh;
         }
-        let delibase_tokens = self.transport.refresh(
-            &token_endpoint,
-            &self.configuration.client_id,
-            &refresh_token,
-            DELIBASE_AUDIENCE,
-            feature.delibase_scopes(),
-        )?;
+        let delibase_tokens = self
+            .transport
+            .refresh(
+                &token_endpoint,
+                &self.configuration.client_id,
+                &refresh_token,
+                DELIBASE_AUDIENCE,
+                feature.delibase_scopes(),
+            )
+            .map_err(TokenRefreshError::into_error)?;
         validate_bearer(
             &delibase_tokens.claims,
             &self.configuration,
@@ -755,7 +807,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         }
         let mut retained = retained;
         let token_endpoint = self.configuration.token_endpoint.clone();
-        let feature_tokens = self.transport.refresh(
+        let feature_tokens = match self.transport.refresh(
             &token_endpoint,
             &self.configuration.client_id,
             retained
@@ -764,7 +816,13 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 .ok_or(AuthError::ReauthenticationRequired)?,
             feature.audience(),
             feature.scopes(),
-        )?;
+        ) {
+            Ok(tokens) => tokens,
+            Err(failure) => {
+                let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
+                return Err(error);
+            }
+        };
         validate_bearer(
             &feature_tokens.claims,
             &self.configuration,
@@ -777,7 +835,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             retained.refresh_tokens.insert(feature, refresh_token);
             self.vault.replace(&retained)?;
         }
-        let delibase_tokens = self.transport.refresh(
+        let delibase_tokens = match self.transport.refresh(
             &token_endpoint,
             &self.configuration.client_id,
             retained
@@ -786,7 +844,13 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 .ok_or(AuthError::ReauthenticationRequired)?,
             DELIBASE_AUDIENCE,
             feature.delibase_scopes(),
-        )?;
+        ) {
+            Ok(tokens) => tokens,
+            Err(failure) => {
+                let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
+                return Err(error);
+            }
+        };
         validate_bearer(
             &delibase_tokens.claims,
             &self.configuration,
@@ -866,6 +930,51 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             }
         }
         Ok(())
+    }
+
+    fn clear_invalid_retained_session_before_sign_in(&mut self) -> Result<(), AuthError> {
+        if !matches!(self.state, SessionState::SignedOut) {
+            return Ok(());
+        }
+        let invalid = match self.vault.load() {
+            Ok(Some(retained)) => match validate_retained_session_shape(&retained) {
+                Ok(()) => false,
+                Err(AuthError::TokenInvalid) => true,
+                Err(error) => return Err(error),
+            },
+            Ok(None) => false,
+            Err(AuthError::TokenInvalid) => true,
+            Err(error) => return Err(error),
+        };
+        if invalid {
+            if self.vault.clear().is_err() {
+                self.state = SessionState::CleanupRequired;
+                return Err(AuthError::SecureVaultDeleteFailed);
+            }
+            self.state = SessionState::SignedOut;
+        }
+        Ok(())
+    }
+
+    fn persist_retryable_rotation(
+        &mut self,
+        retained: &mut VaultSession,
+        feature: AuthFeature,
+        failure: TokenRefreshError,
+    ) -> Result<AuthError, AuthError> {
+        let TokenRefreshError {
+            error,
+            rotated_refresh_token,
+        } = failure;
+        if error == AuthError::TransportUnavailable
+            && let Some(rotated_refresh_token) = rotated_refresh_token
+        {
+            retained
+                .refresh_tokens
+                .insert(feature, rotated_refresh_token);
+            self.vault.replace(retained)?;
+        }
+        Ok(error)
     }
 
     #[cfg(test)]
@@ -1274,7 +1383,7 @@ mod tests {
     #[derive(Default)]
     struct FakeTransport {
         exchange: VecDeque<Result<TokenSet, AuthError>>,
-        refresh: VecDeque<Result<TokenSet, AuthError>>,
+        refresh: VecDeque<Result<TokenSet, TokenRefreshError>>,
         refresh_inputs: Vec<String>,
         refresh_requests: Vec<(String, Vec<String>)>,
         revoked: usize,
@@ -1302,7 +1411,7 @@ mod tests {
             refresh_token: &Secret,
             audience: &str,
             scopes: &[&str],
-        ) -> Result<TokenSet, AuthError> {
+        ) -> Result<TokenSet, TokenRefreshError> {
             assert_eq!(endpoint.as_str(), "https://tenant.logto.app/oidc/token");
             self.refresh_inputs.push(refresh_token.expose().to_owned());
             self.refresh_requests.push((
@@ -1807,6 +1916,53 @@ mod tests {
     }
 
     #[test]
+    fn sign_in_replaces_a_malformed_retained_session_before_callback() {
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "stale-refresh",
+                "future-schema",
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("new-refresh"),
+        )));
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
+        let mut manager = manager(transport, vault);
+
+        let request = manager
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
+            .unwrap();
+        assert!(manager.vault.retained.is_none());
+        assert_eq!(
+            manager
+                .complete_callback(&callback_for(&request, "code", None), NOW)
+                .unwrap(),
+            SessionSnapshot::SignedIn {
+                subject: "account-a".to_owned()
+            }
+        );
+        assert_eq!(
+            manager
+                .vault
+                .retained
+                .as_ref()
+                .and_then(|retained| retained.0.get(&AuthFeature::Deck))
+                .map(String::as_str),
+            Some("new-refresh")
+        );
+    }
+
+    #[test]
     fn bearer_pair_requires_matching_subject_audience_and_scope() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
@@ -1950,7 +2106,7 @@ mod tests {
         )));
         transport
             .refresh
-            .push_back(Err(AuthError::TokenExchangeFailed));
+            .push_back(Err(AuthError::TokenExchangeFailed.into()));
         let mut manager = manager(transport, vault);
         manager.state = SessionState::SignedIn {
             subject: "account-a".to_owned(),
@@ -1966,6 +2122,46 @@ mod tests {
             manager.transport.refresh_inputs,
             ["refresh-original", "refresh-rotated"]
         );
+        assert_eq!(
+            manager
+                .vault
+                .retained
+                .as_ref()
+                .and_then(|retained| retained.0.get(&AuthFeature::Deck))
+                .map(String::as_str),
+            Some("refresh-rotated")
+        );
+    }
+
+    #[test]
+    fn bearer_pair_vaults_rotation_from_retryable_verification_failure() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "refresh-original",
+                key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport
+            .refresh
+            .push_back(Err(TokenRefreshError::with_rotated_refresh_token(
+                AuthError::TransportUnavailable,
+                Some(Secret::new("refresh-rotated").unwrap()),
+            )));
+        let mut manager = manager(transport, vault);
+        manager.state = SessionState::SignedIn {
+            subject: "account-a".to_owned(),
+            access_token: Secret::new("memory-access-token").unwrap(),
+            id_token: Some(Secret::new("memory-id-token").unwrap()),
+        };
+
+        assert!(matches!(
+            manager.bearer_pair(AuthFeature::Deck, NOW),
+            Err(AuthError::TransportUnavailable)
+        ));
         assert_eq!(
             manager
                 .vault
@@ -2119,7 +2315,7 @@ mod tests {
         let mut transport = FakeTransport::default();
         transport
             .refresh
-            .push_back(Err(AuthError::TransportUnavailable));
+            .push_back(Err(AuthError::TransportUnavailable.into()));
         transport.refresh.push_back(Ok(tokens(
             "account-a",
             REALQA_AUDIENCE,
@@ -2236,7 +2432,7 @@ mod tests {
         )));
         transport
             .refresh
-            .push_back(Err(AuthError::TransportUnavailable));
+            .push_back(Err(AuthError::TransportUnavailable.into()));
         let mut prior = manager(transport, vault);
 
         assert_eq!(
@@ -2247,7 +2443,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_session_falls_back_offline_when_refresh_is_unavailable() {
+    fn retained_session_vaults_rotation_before_falling_back_offline() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
             retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
@@ -2256,7 +2452,10 @@ mod tests {
         let mut transport = FakeTransport::default();
         transport
             .refresh
-            .push_back(Err(AuthError::TransportUnavailable));
+            .push_back(Err(TokenRefreshError::with_rotated_refresh_token(
+                AuthError::TransportUnavailable,
+                Some(Secret::new("refresh-rotated").unwrap()),
+            )));
         let mut prior = manager(transport, vault);
 
         assert_eq!(
@@ -2264,6 +2463,15 @@ mod tests {
             SessionSnapshot::PriorSessionOffline
         );
         assert!(!prior.memory_tokens_present());
+        assert_eq!(
+            prior
+                .vault
+                .retained
+                .as_ref()
+                .and_then(|retained| retained.0.get(&AuthFeature::Deck))
+                .map(String::as_str),
+            Some("refresh-rotated")
+        );
     }
 
     #[test]
@@ -2284,10 +2492,10 @@ mod tests {
         let mut transport = FakeTransport::default();
         transport
             .refresh
-            .push_back(Err(AuthError::ReauthenticationRequired));
+            .push_back(Err(AuthError::ReauthenticationRequired.into()));
         transport
             .refresh
-            .push_back(Err(AuthError::TransportUnavailable));
+            .push_back(Err(AuthError::TransportUnavailable.into()));
         let mut prior = manager(transport, vault);
 
         assert_eq!(
@@ -2307,7 +2515,7 @@ mod tests {
         let mut transport = FakeTransport::default();
         transport
             .refresh
-            .push_back(Err(AuthError::ReauthenticationRequired));
+            .push_back(Err(AuthError::ReauthenticationRequired.into()));
         let mut prior = manager(transport, vault);
 
         assert_eq!(

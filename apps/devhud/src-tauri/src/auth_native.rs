@@ -24,8 +24,8 @@ use zeroize::Zeroizing;
 
 use crate::auth::{
     AuthConfiguration, AuthError, AuthFeature, AuthPlatform, Connectivity, LoopbackCallback,
-    Secret, SecureVault, SessionManager, SessionSnapshot, TokenClaims, TokenSet, TokenTransport,
-    VaultSession, unix_time_now,
+    Secret, SecureVault, SessionManager, SessionSnapshot, TokenClaims, TokenRefreshError, TokenSet,
+    TokenTransport, VaultSession, unix_time_now,
 };
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -251,7 +251,7 @@ impl TokenTransport for HttpTokenTransport {
         refresh_token: &Secret,
         audience: &str,
         scopes: &[&str],
-    ) -> Result<TokenSet, AuthError> {
+    ) -> Result<TokenSet, TokenRefreshError> {
         let joined_scopes = scopes.join(" ");
         let response = self.post_token(
             endpoint,
@@ -263,11 +263,22 @@ impl TokenTransport for HttpTokenTransport {
                 ("scope", &joined_scopes),
             ],
         )?;
-        let claims = self.verify(&response.access_token, audience, None)?;
+        let access_token = Secret::new(response.access_token)?;
+        let id_token = response.id_token.map(Secret::new).transpose()?;
+        let refresh_token = response.refresh_token.map(Secret::new).transpose()?;
+        let claims = match self.verify(access_token.expose(), audience, None) {
+            Ok(claims) => claims,
+            Err(error) => {
+                return Err(TokenRefreshError::with_rotated_refresh_token(
+                    error,
+                    refresh_token,
+                ));
+            }
+        };
         Ok(TokenSet {
-            access_token: Secret::new(response.access_token)?,
-            id_token: response.id_token.map(Secret::new).transpose()?,
-            refresh_token: response.refresh_token.map(Secret::new).transpose()?,
+            access_token,
+            id_token,
+            refresh_token,
             claims,
         })
     }
@@ -327,7 +338,7 @@ impl SecureVault for PlatformVault {
             Err(_) => return Err(AuthError::SecureVaultUnavailable),
         };
         let retained: RetainedVaultSession =
-            serde_json::from_str(&encoded).map_err(|_| AuthError::SecureVaultUnavailable)?;
+            serde_json::from_str(&encoded).map_err(|_| AuthError::TokenInvalid)?;
         Ok(Some(VaultSession {
             refresh_tokens: retained
                 .refresh_tokens
@@ -381,7 +392,7 @@ impl SecureVault for PlatformVault {
         };
         let encoded = Zeroizing::new(encoded);
         let retained: RetainedMobileVaultSession =
-            serde_json::from_str(&encoded).map_err(|_| AuthError::SecureVaultUnavailable)?;
+            serde_json::from_str(&encoded).map_err(|_| AuthError::TokenInvalid)?;
         Ok(Some(VaultSession {
             refresh_tokens: retained
                 .refresh_tokens
