@@ -429,25 +429,7 @@ impl CaptureCore {
                 }]
             }
             CaptureSourceSelection::MultiMonitor { display_ids } => {
-                let mut regions = display_ids
-                    .iter()
-                    .map(|display_id| {
-                        let display = snapshot
-                            .display(display_id)
-                            .ok_or(CaptureFailure::DisplaySnapshotChanged)?;
-                        Ok(DisplayPixelRegion {
-                            display_id: display.id.clone(),
-                            pixels: geometry::PixelRect {
-                                x: 0,
-                                y: 0,
-                                width: display.physical_size.width,
-                                height: display.physical_size.height,
-                            },
-                        })
-                    })
-                    .collect::<Result<Vec<_>, CaptureFailure>>()?;
-                regions.sort_by(|left, right| left.display_id.0.cmp(&right.display_id.0));
-                regions
+                snapshot.selected_pixel_regions(display_ids, logical_bounds)?
             }
             CaptureSourceSelection::Window { .. } => snapshot.non_overlapping_pixel_regions(
                 window_display_id
@@ -502,8 +484,8 @@ fn expected_frame_size(
         .ok_or(CaptureFailure::InvalidSelection)?;
 
     Ok(geometry::PhysicalSize {
-        width: scale.apply_ceil(logical_bounds.width)?,
-        height: scale.apply_ceil(logical_bounds.height)?,
+        width: scale.apply_span(logical_bounds.x, logical_bounds.right())?,
+        height: scale.apply_span(logical_bounds.y, logical_bounds.bottom())?,
     })
 }
 
@@ -1244,6 +1226,157 @@ mod tests {
             Err(CaptureFailure::InvalidDisplaySnapshot)
         );
         assert!(backend.last_request.lock().expect("request lock").is_none());
+    }
+
+    #[test]
+    fn multi_display_frame_size_uses_rounded_logical_edges() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        *backend.displays.lock().expect("display lock") = vec![
+            DisplayDescriptor {
+                id: DisplayId("left".to_owned()),
+                logical_bounds: LogicalRect {
+                    x: -100.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 200,
+                    height: 200,
+                },
+                scale: ScaleFactor {
+                    numerator: 2,
+                    denominator: 1,
+                },
+                primary: true,
+            },
+            DisplayDescriptor {
+                id: DisplayId("right".to_owned()),
+                logical_bounds: LogicalRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 200,
+                    height: 200,
+                },
+                scale: ScaleFactor {
+                    numerator: 2,
+                    denominator: 1,
+                },
+                primary: false,
+            },
+        ];
+        backend.windows.lock().expect("window lock").clear();
+
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Region {
+            selection: SelectionGeometry {
+                snapshot_id: catalog.snapshot.snapshot_id.clone(),
+                bounds: LogicalRect {
+                    x: -0.25,
+                    y: 0.25,
+                    width: 1.0,
+                    height: 1.0,
+                },
+            },
+        };
+        core.begin(capture_request).expect("capture must work");
+
+        let backend_request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .clone()
+            .expect("backend must receive request");
+        assert_eq!(
+            backend_request.expected_frame_size,
+            PhysicalSize {
+                width: 3,
+                height: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn multi_monitor_capture_deduplicates_overlapping_selected_displays() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
+        let overlapping_bounds = LogicalRect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+        };
+        *backend.displays.lock().expect("display lock") = vec![
+            DisplayDescriptor {
+                id: DisplayId("mirrored-2".to_owned()),
+                logical_bounds: overlapping_bounds,
+                physical_size: PhysicalSize {
+                    width: 200,
+                    height: 200,
+                },
+                scale: ScaleFactor {
+                    numerator: 2,
+                    denominator: 1,
+                },
+                primary: false,
+            },
+            DisplayDescriptor {
+                id: DisplayId("mirrored-1".to_owned()),
+                logical_bounds: overlapping_bounds,
+                physical_size: PhysicalSize {
+                    width: 100,
+                    height: 100,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: true,
+            },
+        ];
+        backend.windows.lock().expect("window lock").clear();
+
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::MultiMonitor {
+            display_ids: vec![
+                DisplayId("mirrored-2".to_owned()),
+                DisplayId("mirrored-1".to_owned()),
+            ],
+        };
+        core.begin(capture_request).expect("capture must work");
+
+        let backend_request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .clone()
+            .expect("backend must receive request");
+        assert_eq!(
+            backend_request.pixel_regions,
+            vec![DisplayPixelRegion {
+                display_id: DisplayId("mirrored-1".to_owned()),
+                pixels: geometry::PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                },
+            }]
+        );
+        assert_eq!(
+            backend_request.expected_frame_size,
+            PhysicalSize {
+                width: 100,
+                height: 100,
+            }
+        );
     }
 
     #[test]

@@ -106,6 +106,17 @@ impl ScaleFactor {
         let scaled = logical * f64::from(self.numerator) / f64::from(self.denominator);
         checked_pixel(scaled.ceil())
     }
+
+    pub(crate) fn apply_span(
+        self,
+        logical_start: f64,
+        logical_end: f64,
+    ) -> Result<u32, CaptureFailure> {
+        let scale = f64::from(self.numerator) / f64::from(self.denominator);
+        let scaled_start = (logical_start * scale).floor();
+        let scaled_end = (logical_end * scale).ceil();
+        checked_pixel(scaled_end - scaled_start)
+    }
 }
 
 fn checked_pixel(value: f64) -> Result<u32, CaptureFailure> {
@@ -237,17 +248,23 @@ impl DisplaySnapshot {
         &self,
         region: LogicalRect,
     ) -> Result<Vec<DisplayPixelRegion>, CaptureFailure> {
-        let region = region.checked()?;
-        let mut output = Vec::new();
-        for display in &self.displays {
-            if let Some(pixel_region) = display.pixel_region(region)? {
-                output.push(pixel_region);
-            }
-        }
-        if output.is_empty() {
-            return Err(CaptureFailure::InvalidSelection);
-        }
-        Ok(output)
+        non_overlapping_pixel_regions(self.displays.iter(), region)
+    }
+
+    pub(crate) fn selected_pixel_regions(
+        &self,
+        display_ids: &[DisplayId],
+        region: LogicalRect,
+    ) -> Result<Vec<DisplayPixelRegion>, CaptureFailure> {
+        let mut displays = display_ids
+            .iter()
+            .map(|display_id| {
+                self.display(display_id)
+                    .ok_or(CaptureFailure::DisplaySnapshotChanged)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        displays.sort_by(|left, right| left.id.0.cmp(&right.id.0));
+        non_overlapping_pixel_regions(displays.into_iter(), region)
     }
 
     pub(crate) fn non_overlapping_pixel_regions(
@@ -271,31 +288,39 @@ impl DisplaySnapshot {
                 .iter()
                 .filter(|display| display.id != *preferred_display_id),
         );
-        let mut covered = Vec::new();
-        let mut output = Vec::new();
-        for display in displays {
-            let Some(intersection) = region.intersection(display.logical_bounds) else {
-                continue;
-            };
-            let mut uncovered = vec![intersection];
-            for covered_region in &covered {
-                uncovered = uncovered
-                    .into_iter()
-                    .flat_map(|candidate| subtract_rect(candidate, *covered_region))
-                    .collect();
-            }
-            for uncovered_region in uncovered {
-                if let Some(pixel_region) = display.pixel_region(uncovered_region)? {
-                    output.push(pixel_region);
-                }
-            }
-            covered.push(intersection);
-        }
-        if output.is_empty() {
-            return Err(CaptureFailure::InvalidSelection);
-        }
-        Ok(output)
+        non_overlapping_pixel_regions(displays, region)
     }
+}
+
+fn non_overlapping_pixel_regions<'a>(
+    displays: impl Iterator<Item = &'a DisplayDescriptor>,
+    region: LogicalRect,
+) -> Result<Vec<DisplayPixelRegion>, CaptureFailure> {
+    let region = region.checked()?;
+    let mut covered = Vec::new();
+    let mut output = Vec::new();
+    for display in displays {
+        let Some(intersection) = region.intersection(display.logical_bounds) else {
+            continue;
+        };
+        let mut uncovered = vec![intersection];
+        for covered_region in &covered {
+            uncovered = uncovered
+                .into_iter()
+                .flat_map(|candidate| subtract_rect(candidate, *covered_region))
+                .collect();
+        }
+        for uncovered_region in uncovered {
+            if let Some(pixel_region) = display.pixel_region(uncovered_region)? {
+                output.push(pixel_region);
+            }
+        }
+        covered.push(intersection);
+    }
+    if output.is_empty() {
+        return Err(CaptureFailure::InvalidSelection);
+    }
+    Ok(output)
 }
 
 fn subtract_rect(region: LogicalRect, covered: LogicalRect) -> Vec<LogicalRect> {
@@ -622,6 +647,58 @@ mod tests {
                     },
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn pixel_regions_use_display_id_precedence_for_overlapping_displays() {
+        let bounds = LogicalRect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+        };
+        let snapshot = DisplaySnapshot::checked(vec![
+            display(
+                "b",
+                bounds,
+                PhysicalSize {
+                    width: 200,
+                    height: 200,
+                },
+                ScaleFactor {
+                    numerator: 2,
+                    denominator: 1,
+                },
+            ),
+            display(
+                "a",
+                bounds,
+                PhysicalSize {
+                    width: 100,
+                    height: 100,
+                },
+                ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+            ),
+        ])
+        .expect("overlapping displays must form a valid snapshot");
+
+        assert_eq!(
+            snapshot
+                .pixel_regions(bounds)
+                .expect("the region must resolve"),
+            vec![DisplayPixelRegion {
+                display_id: DisplayId("a".to_owned()),
+                pixels: PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                },
+            }]
         );
     }
 
