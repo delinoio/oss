@@ -20,10 +20,6 @@ This document defines default technology choices and repository workflow default
 - Newly created pull requests must use Conventional Commit-style titles with a required scope: `<type>(<scope>): <description>`.
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
-- Repository dependency updates are managed by the Mend-hosted Renovate GitHub App through root `renovate.json`; do not add a self-hosted Renovate workflow, token, or secret without changing this contract first.
-- Root Renovate configuration must extend the unversioned `github>delinoio/renovate-config` default preset and enable semantic commits with the `deps` scope. The shared preset owns the update schedule and timezone, seven-day minimum release age, Dependency Dashboard, peer-dependency exclusion, and automatic merge policy for minor, patch, pin, digest, lock-file maintenance, and vulnerability updates.
-- Renovate relies on the protected default branch's required `CI Result` status check before automatic merge. Keep the repository's `dependencies` and `security` labels available for normal and vulnerability update pull requests.
-- Renovate uses its built-in managers for supported package, lock, workflow, container, build, and runtime-version files. Shell snippets and documentation examples are not custom-managed unless this contract and root configuration explicitly add a bounded custom manager.
 
 ## References
 - `docs/README.md`
