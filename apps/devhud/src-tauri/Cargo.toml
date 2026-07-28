@@ -24,7 +24,7 @@ base64 = "0.22"
 getrandom = "0.3"
 hmac = "0.12"
 http = "1"
-jsonwebtoken = "9.3"
+jsonwebtoken = "10.0"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -47,7 +47,10 @@ tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba575545
 tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, features = ["devtools", "sandbox"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "=0.13.13", default-features = false, features = ["screenshot", "tokio"], optional = true }
 keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust", "vendored"] }
+tokio = { version = "1", features = ["rt", "time"], optional = true }
+x11rb = { version = "=0.13.2", features = ["image", "randr", "xfixes"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
@@ -67,5 +70,6 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 [features]
 default = []
 custom-protocol = ["tauri?/custom-protocol"]
-desktop-cef = ["dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]
+desktop-cef = ["linux-capture-backend", "dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]
+linux-capture-backend = ["dep:ashpd", "dep:tokio", "dep:x11rb"]
 mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]
