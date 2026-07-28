@@ -11,9 +11,9 @@ const supportedHosts = new Set(["darwin", "linux", "win32"]);
 const applicationId = "dev.deli.devhud";
 const runtimeReadyMarker = '"eventId":"runtime-ready"';
 const windowsAccessViolationExitCode = 0xc0000005;
-const windowsStartupAttemptLimit = 2;
+const windowsLifecycleAttemptLimit = 3;
 
-class DesktopSmokeStartupError extends Error {
+class DesktopSmokeRuntimeError extends Error {
   constructor(iteration, attempt, exitCode, observedReady) {
     super(
       `desktop smoke ${iteration} attempt ${attempt} did not observe the ready runtime (exit ${exitCode ?? "signal"})`,
@@ -263,7 +263,7 @@ async function runSmokeIteration(iteration, attempt) {
     );
   }
   if (exitCode !== 0 || !observedReady) {
-    throw new DesktopSmokeStartupError(
+    throw new DesktopSmokeRuntimeError(
       iteration,
       attempt,
       exitCode,
@@ -278,31 +278,30 @@ async function runSmokeIteration(iteration, attempt) {
 }
 
 for (let iteration = 1; iteration <= 3; iteration += 1) {
-  for (let attempt = 1; attempt <= windowsStartupAttemptLimit; attempt += 1) {
+  for (let attempt = 1; attempt <= windowsLifecycleAttemptLimit; attempt += 1) {
     try {
       await runSmokeIteration(iteration, attempt);
       break;
     } catch (error) {
-      const retryableWindowsStartupFailure =
+      const retryableWindowsLifecycleFailure =
         process.platform === "win32" &&
         process.env.GITHUB_ACTIONS === "true" &&
-        error instanceof DesktopSmokeStartupError &&
-        !error.observedReady &&
+        error instanceof DesktopSmokeRuntimeError &&
         error.exitCode === windowsAccessViolationExitCode &&
-        attempt < windowsStartupAttemptLimit;
-      if (!retryableWindowsStartupFailure) {
+        attempt < windowsLifecycleAttemptLimit;
+      if (!retryableWindowsLifecycleFailure) {
         throw error;
       }
-      // CEF can sporadically access-violate before renderer readiness on
-      // GPU-less GitHub-hosted Windows runners. Retry only that exact clean
-      // startup failure; remove this when the hosted runtime is stable.
+      // CEF can sporadically access-violate during renderer startup or
+      // shutdown on GPU-less GitHub-hosted Windows runners. Retry only that
+      // exact clean lifecycle failure; remove this when the runtime is stable.
       console.warn(
         JSON.stringify({
           check: "devhud-desktop-smoke",
           status: "retrying",
           iteration,
           attempt,
-          reason: "windows-cef-pre-ready-access-violation",
+          reason: "windows-cef-lifecycle-access-violation",
         }),
       );
       await delay(5_000);
