@@ -28,7 +28,9 @@ use crate::auth::{
     VaultSession, unix_time_now,
 };
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const ISSUER_VARIABLE: &str = "DEVHUD_LOGTO_ENDPOINT";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const CLIENT_ID_VARIABLE: &str = "DEVHUD_LOGTO_APP_ID";
 const VAULT_SERVICE: &str = "dev.deli.devhud.auth";
 const VAULT_ACCOUNT: &str = "active-session";
@@ -81,6 +83,18 @@ struct OAuthTokenResponse {
     token_type: String,
 }
 
+#[derive(Deserialize)]
+struct OAuthErrorResponse {
+    error: String,
+}
+
+fn classify_oauth_error(response: Option<&OAuthErrorResponse>) -> AuthError {
+    match response.map(|body| body.error.as_str()) {
+        Some("invalid_grant") => AuthError::ReauthenticationRequired,
+        _ => AuthError::TokenExchangeFailed,
+    }
+}
+
 struct HttpTokenTransport {
     client: Client,
     issuer: String,
@@ -121,7 +135,7 @@ impl HttpTokenTransport {
             .header("Accept", "application/json")
             .header("Cache-Control", "no-store")
             .send()
-            .map_err(|_| AuthError::TokenExchangeFailed)?;
+            .map_err(|_| AuthError::TransportUnavailable)?;
         if !response.status().is_success() {
             return Err(AuthError::TokenExchangeFailed);
         }
@@ -168,9 +182,10 @@ impl HttpTokenTransport {
             .header("Cache-Control", "no-store")
             .form(parameters)
             .send()
-            .map_err(|_| AuthError::TokenExchangeFailed)?;
+            .map_err(|_| AuthError::TransportUnavailable)?;
         if !response.status().is_success() {
-            return Err(AuthError::TokenExchangeFailed);
+            let error = response.json::<OAuthErrorResponse>().ok();
+            return Err(classify_oauth_error(error.as_ref()));
         }
         let response: OAuthTokenResponse = response.json().map_err(|_| AuthError::TokenInvalid)?;
         if response.token_type != "Bearer" {
@@ -254,7 +269,7 @@ impl TokenTransport for HttpTokenTransport {
                 ("token_type_hint", "refresh_token"),
             ])
             .send()
-            .map_err(|_| AuthError::TokenExchangeFailed)?;
+            .map_err(|_| AuthError::TransportUnavailable)?;
         if response.status().is_success() {
             Ok(())
         } else {
@@ -416,8 +431,14 @@ impl NativeAuthState {
             }
         };
         let manager = (|| {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             let issuer = std::env::var(ISSUER_VARIABLE).ok()?;
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let issuer = option_env!("DEVHUD_LOGTO_ENDPOINT")?.to_owned();
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             let client_id = std::env::var(CLIENT_ID_VARIABLE).ok()?;
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let client_id = option_env!("DEVHUD_LOGTO_APP_ID")?.to_owned();
             let configuration = AuthConfiguration::new(&issuer, &client_id).ok()?;
             let transport = HttpTokenTransport::new(&configuration).ok()?;
             Some(SessionManager::new(
@@ -711,6 +732,17 @@ pub(crate) fn feature_supported(feature: AuthFeature) -> Result<(), AuthError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_grant_requires_reauthentication() {
+        let response: OAuthErrorResponse =
+            serde_json::from_str(r#"{"error":"invalid_grant"}"#).unwrap();
+        assert_eq!(
+            classify_oauth_error(Some(&response)),
+            AuthError::ReauthenticationRequired
+        );
+        assert_eq!(classify_oauth_error(None), AuthError::TokenExchangeFailed);
+    }
 
     #[test]
     fn signing_algorithm_must_be_asymmetric_and_match_the_jwk() {

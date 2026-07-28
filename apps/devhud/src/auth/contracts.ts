@@ -20,6 +20,7 @@ export type AuthErrorCode =
   | "callback-listener-unavailable"
   | "browser-unavailable"
   | "authorization-rejected"
+  | "transport-unavailable"
   | "token-exchange-failed"
   | "token-invalid"
   | "token-expired"
@@ -65,6 +66,8 @@ const safeGuidance: Record<AuthErrorCode, string> = {
     "DevHud could not start its private sign-in callback. Try again.",
   "browser-unavailable": "DevHud could not open the system browser. Try again.",
   "authorization-rejected": "Sign-in was cancelled or rejected.",
+  "transport-unavailable":
+    "DevHud could not reach DeliDev sign-in. Check your connection and try again.",
   "token-exchange-failed": "DevHud could not finish sign-in. Try again.",
   "token-invalid": "The sign-in response could not be verified. Try again.",
   "token-expired": "The sign-in response expired. Start sign-in again.",

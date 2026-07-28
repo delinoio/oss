@@ -226,6 +226,11 @@ requireCondition(
   ),
   "mobile auth must discard a stale callback before starting a new authorization transaction",
 );
+requireCondition(
+  authNativeSource.includes('option_env!("DEVHUD_LOGTO_ENDPOINT")') &&
+    authNativeSource.includes('option_env!("DEVHUD_LOGTO_APP_ID")'),
+  "mobile auth must embed its public Logto issuer and app ID at Rust build time",
+);
 const backupDomains = [
   "root",
   "file",

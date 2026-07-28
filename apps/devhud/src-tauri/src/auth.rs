@@ -89,6 +89,7 @@ pub(crate) enum AuthError {
     CallbackListenerUnavailable,
     BrowserUnavailable,
     AuthorizationRejected,
+    TransportUnavailable,
     TokenExchangeFailed,
     TokenInvalid,
     TokenExpired,
@@ -116,6 +117,7 @@ impl fmt::Display for AuthError {
             Self::CallbackListenerUnavailable => "the callback listener is unavailable",
             Self::BrowserUnavailable => "the system browser is unavailable",
             Self::AuthorizationRejected => "authorization was rejected",
+            Self::TransportUnavailable => "the authentication service is unavailable",
             Self::TokenExchangeFailed => "the token exchange failed",
             Self::TokenInvalid => "the token response is invalid",
             Self::TokenExpired => "the token is expired",
@@ -434,7 +436,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 feature.scopes(),
             ) {
                 Ok(tokens) => tokens,
-                Err(AuthError::TokenExchangeFailed) => {
+                Err(AuthError::TransportUnavailable) => {
                     transport_unavailable = true;
                     continue;
                 }
@@ -1921,7 +1923,7 @@ mod tests {
         let mut transport = FakeTransport::default();
         transport
             .refresh
-            .push_back(Err(AuthError::TokenExchangeFailed));
+            .push_back(Err(AuthError::TransportUnavailable));
         transport.refresh.push_back(Ok(tokens(
             "account-a",
             REALQA_AUDIENCE,
@@ -1991,12 +1993,32 @@ mod tests {
         let mut transport = FakeTransport::default();
         transport
             .refresh
-            .push_back(Err(AuthError::TokenExchangeFailed));
+            .push_back(Err(AuthError::TransportUnavailable));
         let mut prior = manager(transport, vault);
 
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
             SessionSnapshot::PriorSessionOffline
+        );
+        assert!(!prior.memory_tokens_present());
+    }
+
+    #[test]
+    fn retained_session_requires_reauthentication_after_invalid_grant() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport
+            .refresh
+            .push_back(Err(AuthError::ReauthenticationRequired));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW),
+            Err(AuthError::ReauthenticationRequired)
         );
         assert!(!prior.memory_tokens_present());
     }
@@ -2196,5 +2218,7 @@ mod tests {
         assert_eq!(redacted, "https://tenant.logto.app/oidc/auth");
         assert!(!format!("{:?}", AuthError::TokenExchangeFailed).contains("secret"));
         assert!(!format!("{}", AuthError::TokenExchangeFailed).contains("secret"));
+        assert!(!format!("{:?}", AuthError::TransportUnavailable).contains("secret"));
+        assert!(!format!("{}", AuthError::TransportUnavailable).contains("secret"));
     }
 }
