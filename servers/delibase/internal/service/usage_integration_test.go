@@ -70,6 +70,9 @@ func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) 
 		go func() {
 			defer callers.Done()
 			suffix := string(rune('a' + index))
+			// UUID numeric tails can match the credential redactor's
+			// card-number pattern before the concurrency path is reached.
+			reference := "oversubscribe-" + suffix
 			response, err := fixture.usage.ReserveUsage(
 				ownerContext,
 				usageReserveRequest(
@@ -77,8 +80,8 @@ func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) 
 					fixture.generalTeamID,
 					fixture.meterID,
 					75,
-					"oversubscribe-"+suffix+"-"+fixture.organizationID.String(),
-					"oversubscribe-"+suffix+"-"+fixture.organizationID.String(),
+					reference,
+					reference,
 				),
 			)
 			results <- result{response: response, err: err}
@@ -1450,7 +1453,7 @@ func TestPostgreSQLExpirationPaginatesPastPoisonedOrganizations(t *testing.T) {
 				fixture.ownerID,
 				fixture.serviceID,
 				meter.UsdMicrosPerUnit,
-				"expiration-poison-"+reservationID.String(),
+				fmt.Sprintf("expiration-poison-%d", index),
 				expiredAt,
 				expiredAt.Add(-time.Minute),
 				string(actor),
