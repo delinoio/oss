@@ -93,6 +93,24 @@ function bytesToDataUrl(image: ComposerImage): string {
   return `data:${image.contentType};base64,${btoa(binary)}`;
 }
 
+function sourcePreviewRect(
+  rect: EditorRect,
+  source: ComposerImage,
+): EditorRect {
+  return {
+    x: rect.x * (source.previewWidth / source.width),
+    y: rect.y * (source.previewHeight / source.height),
+    width: rect.width * (source.previewWidth / source.width),
+    height: rect.height * (source.previewHeight / source.height),
+  };
+}
+
+function isSourcePreviewCapped(source: ComposerImage): boolean {
+  return (
+    source.previewWidth < source.width || source.previewHeight < source.height
+  );
+}
+
 function isSourceEffect(
   operation: EditorOperation,
 ): operation is Extract<EditorOperation, { readonly kind: "blur" | "pixelate" }> {
@@ -264,11 +282,12 @@ function ScreenshotEditorStateProvider({
       if (isSourceEffect(operation)) setTool(EditorTool.Arrow);
       if (
         operation.kind === "pixelate" &&
-        pixelatePreviewSize(
-          operation.rect.width,
-          operation.rect.height,
-          operation.blockSize,
-        ).capped
+        (isSourcePreviewCapped(source) ||
+          pixelatePreviewSize(
+            operation.rect.width,
+            operation.rect.height,
+            operation.blockSize,
+          ).capped)
       ) {
         setStatus(
           "Pixelate edit added. This preview is scaled below the native block grid; the approved image may show more detail.",
@@ -900,19 +919,21 @@ function renderPixelatedPreview(
   canvas: HTMLCanvasElement,
   operation: Extract<EditorOperation, { readonly kind: "pixelate" }>,
   previewSize: PixelatePreviewSize,
+  source: ComposerImage,
 ) {
   const context = canvas.getContext("2d");
   if (context === null) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
+  const operationPreviewRect = sourcePreviewRect(operation.rect, source);
   if (previewSize.capped) {
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
     context.drawImage(
       preview,
-      operation.rect.x,
-      operation.rect.y,
-      operation.rect.width,
-      operation.rect.height,
+      operationPreviewRect.x,
+      operationPreviewRect.y,
+      operationPreviewRect.width,
+      operationPreviewRect.height,
       0,
       0,
       previewSize.width,
@@ -932,10 +953,12 @@ function renderPixelatedPreview(
     sourceCanvas.height = tile.height;
     sourceContext.drawImage(
       preview,
-      operation.rect.x + tile.x,
-      operation.rect.y + tile.y,
-      tile.width,
-      tile.height,
+      operationPreviewRect.x +
+        tile.x * (source.previewWidth / source.width),
+      operationPreviewRect.y +
+        tile.y * (source.previewHeight / source.height),
+      tile.width * (source.previewWidth / source.width),
+      tile.height * (source.previewHeight / source.height),
       0,
       0,
       tile.width,
@@ -991,9 +1014,11 @@ function arrowPreviewWings(
 
 function BlurredOverlay({
   operation,
+  source,
   sourceUrl,
 }: {
   readonly operation: Extract<EditorOperation, { readonly kind: "blur" }>;
+  readonly source: ComposerImage;
   readonly sourceUrl: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1019,12 +1044,13 @@ function BlurredOverlay({
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.imageSmoothingEnabled = true;
       context.imageSmoothingQuality = "high";
+      const previewRect = sourcePreviewRect(operation.rect, source);
       context.drawImage(
         preview,
-        operation.rect.x,
-        operation.rect.y,
-        operation.rect.width,
-        operation.rect.height,
+        previewRect.x,
+        previewRect.y,
+        previewRect.width,
+        previewRect.height,
         0,
         0,
         tile.previewWidth,
@@ -1059,7 +1085,7 @@ function BlurredOverlay({
     return () => {
       preview.onload = null;
     };
-  }, [operation, sourceUrl, tile]);
+  }, [operation, source, sourceUrl, tile]);
 
   return (
     <foreignObject
@@ -1083,11 +1109,13 @@ function PixelatedOverlay({
   effectPrefix,
   index,
   operation,
+  source,
   sourceUrl,
 }: {
   readonly effectPrefix: string;
   readonly index: number;
   readonly operation: Extract<EditorOperation, { readonly kind: "pixelate" }>;
+  readonly source: ComposerImage;
   readonly sourceUrl: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1107,14 +1135,14 @@ function PixelatedOverlay({
     preview.onload = () => {
       const canvas = canvasRef.current;
       if (canvas !== null) {
-        renderPixelatedPreview(preview, canvas, operation, previewSize);
+        renderPixelatedPreview(preview, canvas, operation, previewSize, source);
       }
     };
     preview.src = sourceUrl;
     return () => {
       preview.onload = null;
     };
-  }, [operation, previewSize, sourceUrl]);
+  }, [operation, previewSize, source, sourceUrl]);
 
   return (
     <>
@@ -1281,7 +1309,11 @@ function OperationOverlay({
       }
     case "blur":
       return (
-        <BlurredOverlay operation={operation} sourceUrl={sourceUrl} />
+        <BlurredOverlay
+          operation={operation}
+          source={source}
+          sourceUrl={sourceUrl}
+        />
       );
     case "pixelate":
       return (
@@ -1289,6 +1321,7 @@ function OperationOverlay({
           effectPrefix={effectPrefix}
           index={index}
           operation={operation}
+          source={source}
           sourceUrl={sourceUrl}
         />
       );
@@ -1510,15 +1543,17 @@ export function ScreenshotEditorInspector() {
 }
 
 export function ScreenshotEditorActions() {
-  const { approve, approving, operations, status } = useScreenshotEditor();
+  const { approve, approving, operations, source, status } =
+    useScreenshotEditor();
   const cappedPixelatePreview = operations.some(
     (operation) =>
       operation.kind === "pixelate" &&
-      pixelatePreviewSize(
-        operation.rect.width,
-        operation.rect.height,
-        operation.blockSize,
-      ).capped,
+      (isSourcePreviewCapped(source) ||
+        pixelatePreviewSize(
+          operation.rect.width,
+          operation.rect.height,
+          operation.blockSize,
+        ).capped),
   );
   return (
     <div className="editor-actions">

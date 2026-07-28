@@ -25,6 +25,8 @@ const source: ComposerImage = {
   contentType: "image/png",
   width: 100,
   height: 80,
+  previewWidth: 100,
+  previewHeight: 80,
   encodedBytes: 8,
   sessionEncodedBytes: 8,
   image: {

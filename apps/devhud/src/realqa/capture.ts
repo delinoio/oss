@@ -186,6 +186,8 @@ export interface ComposerImage {
   readonly contentType: "image/png" | "image/webp";
   readonly width: number;
   readonly height: number;
+  readonly previewWidth: number;
+  readonly previewHeight: number;
   readonly encodedBytes: number;
   readonly sessionEncodedBytes: number;
   readonly image: EncodedImage;

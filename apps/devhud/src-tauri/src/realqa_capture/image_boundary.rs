@@ -3,13 +3,14 @@ use std::{
     io::{self, Cursor, Seek, SeekFrom, Write},
 };
 
-use image::{DynamicImage, ImageFormat, ImageReader};
+use image::{DynamicImage, ImageFormat, ImageReader, RgbaImage, imageops::FilterType};
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self, SeqAccess, Visitor},
 };
 
 pub(crate) const MAX_DECODED_PIXELS: u64 = 100_000_000;
+pub(crate) const MAX_PREVIEW_EDGE: u32 = 2_048;
 const MAX_ENCODED_IMAGE_BYTES_USIZE: usize = 25 * 1024 * 1024;
 pub(crate) const MAX_ENCODED_IMAGE_BYTES: u64 = MAX_ENCODED_IMAGE_BYTES_USIZE as u64;
 pub(crate) const MAX_ENCODED_SESSION_BYTES: u64 = 250 * 1024 * 1024;
@@ -173,6 +174,32 @@ pub(crate) fn decode_image(encoded: &EncodedImage) -> Result<DecodedImage, Image
         width: dimensions.0,
         height: dimensions.1,
         rgba,
+    })
+}
+
+pub(crate) fn bounded_preview(decoded: DecodedImage) -> Result<DecodedImage, ImageBoundaryFailure> {
+    let longest_edge = decoded.width.max(decoded.height);
+    if longest_edge <= MAX_PREVIEW_EDGE {
+        return Ok(decoded);
+    }
+    let preview_width = u64::from(decoded.width)
+        .checked_mul(u64::from(MAX_PREVIEW_EDGE))
+        .and_then(|width| u32::try_from(width / u64::from(longest_edge)).ok())
+        .unwrap_or(0)
+        .max(1);
+    let preview_height = u64::from(decoded.height)
+        .checked_mul(u64::from(MAX_PREVIEW_EDGE))
+        .and_then(|height| u32::try_from(height / u64::from(longest_edge)).ok())
+        .unwrap_or(0)
+        .max(1);
+    let source = RgbaImage::from_raw(decoded.width, decoded.height, decoded.rgba)
+        .ok_or(ImageBoundaryFailure::MalformedImage)?;
+    let preview =
+        image::imageops::resize(&source, preview_width, preview_height, FilterType::Triangle);
+    Ok(DecodedImage {
+        width: preview.width(),
+        height: preview.height(),
+        rgba: preview.into_raw(),
     })
 }
 
@@ -378,6 +405,20 @@ mod tests {
                 rgba: vec![1, 2, 3, 255],
             }
         );
+    }
+
+    #[test]
+    fn bounds_preview_rasters_without_changing_source_aspect_ratio() {
+        let preview = bounded_preview(DecodedImage {
+            width: 4_096,
+            height: 2,
+            rgba: vec![255; 4_096 * 2 * 4],
+        })
+        .expect("preview must resize");
+
+        assert_eq!(preview.width, MAX_PREVIEW_EDGE);
+        assert_eq!(preview.height, 1);
+        assert_eq!(preview.rgba.len(), 2_048 * 4);
     }
 
     #[test]

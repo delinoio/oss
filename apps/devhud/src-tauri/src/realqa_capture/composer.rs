@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use super::{
     CaptureFailure, EncodedImage, ImageMediaType, ImageSessionBudget, decode_image,
     editor::{EditorOperation, deserialize_bounded_string, deserialize_operations, flatten},
-    encode_image, sanitize_image,
+    encode_image,
+    image_boundary::bounded_preview,
+    sanitize_image,
 };
 
 const MAX_IDENTIFIER_BYTES: usize = 128;
@@ -80,6 +82,8 @@ pub(crate) struct ComposerImage {
     pub(crate) content_type: &'static str,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    pub(crate) preview_width: u32,
+    pub(crate) preview_height: u32,
     pub(crate) encoded_bytes: u64,
     pub(crate) session_encoded_bytes: u64,
     pub(crate) image: EncodedImage,
@@ -99,10 +103,18 @@ struct ComposerSource {
     revision: u64,
 }
 
+#[derive(Debug)]
+struct PendingComposerAccept {
+    session_id: ComposerSessionId,
+    image_id: ComposerImageId,
+    cancelled: bool,
+}
+
 #[derive(Debug, Default)]
 struct ComposerState {
     retained_source_budget: ImageSessionBudget,
     sessions: HashMap<ComposerSessionId, ComposerSession>,
+    pending_accept: Option<PendingComposerAccept>,
 }
 
 #[derive(Debug)]
@@ -116,6 +128,53 @@ struct ComposerImageProcessingPermit {
     in_flight: Arc<AtomicBool>,
 }
 
+#[derive(Debug)]
+struct ComposerAcceptWork {
+    state: Arc<Mutex<ComposerState>>,
+    session_id: ComposerSessionId,
+    image_id: ComposerImageId,
+    completed: bool,
+    _permit: ComposerImageProcessingPermit,
+}
+
+impl ComposerAcceptWork {
+    fn ensure_current(&self, state: &ComposerState) -> Result<(), CaptureFailure> {
+        match state.pending_accept.as_ref() {
+            Some(pending)
+                if pending.session_id == self.session_id
+                    && pending.image_id == self.image_id
+                    && !pending.cancelled =>
+            {
+                Ok(())
+            }
+            _ => Err(CaptureFailure::InvalidEditSequence),
+        }
+    }
+
+    fn complete(&mut self, state: &mut ComposerState) -> Result<(), CaptureFailure> {
+        self.ensure_current(state)?;
+        state.pending_accept = None;
+        self.completed = true;
+        Ok(())
+    }
+}
+
+impl Drop for ComposerAcceptWork {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if state.pending_accept.as_ref().is_some_and(|pending| {
+            pending.session_id == self.session_id && pending.image_id == self.image_id
+        }) {
+            state.pending_accept = None;
+        }
+    }
+}
+
 impl Drop for ComposerImageProcessingPermit {
     fn drop(&mut self) {
         self.in_flight.store(false, Ordering::Release);
@@ -126,7 +185,7 @@ impl Drop for ComposerImageProcessingPermit {
 pub(crate) struct ComposerCore {
     image_processing_in_flight: Arc<AtomicBool>,
     next_source_revision: AtomicU64,
-    state: Mutex<ComposerState>,
+    state: Arc<Mutex<ComposerState>>,
 }
 
 impl ComposerCore {
@@ -136,11 +195,21 @@ impl ComposerCore {
     ) -> Result<ComposerImage, CaptureFailure> {
         validate_identifier(&request.session_id.0)?;
         validate_identifier(&request.image_id.0)?;
-        let _permit = self.begin_image_processing("realqa_composer_accept_rejected")?;
+        let mut work = self.begin_accept(&request.session_id, &request.image_id)?;
 
         let sanitized = sanitize_image(&request.image, request.output_media_type)
             .map_err(CaptureFailure::from)?;
         let decoded = decode_image(&sanitized).map_err(CaptureFailure::from)?;
+        let width = decoded.width;
+        let height = decoded.height;
+        let preview = bounded_preview(decoded).map_err(CaptureFailure::from)?;
+        let preview_width = preview.width;
+        let preview_height = preview.height;
+        let preview = if preview_width == width && preview_height == height {
+            sanitized.clone()
+        } else {
+            encode_image(&preview, request.output_media_type).map_err(CaptureFailure::from)?
+        };
         let encoded_bytes = u64::try_from(sanitized.bytes.len())
             .map_err(|_| CaptureFailure::ImageEncodedLimitExceeded)?;
         let revision = self
@@ -155,6 +224,7 @@ impl ComposerCore {
             .state
             .lock()
             .map_err(|_| CaptureFailure::CaptureFailed)?;
+        work.ensure_current(&state)?;
         let (previous_accounted_bytes, previous_source_bytes, mut next_session_budget) = state
             .sessions
             .get(&request.session_id)
@@ -191,15 +261,60 @@ impl ComposerCore {
                 revision,
             },
         );
+        let session_encoded_bytes = session.budget.encoded_bytes();
+        work.complete(&mut state)?;
         Ok(ComposerImage {
             image_id: request.image_id,
             source_revision: revision,
             content_type: request.output_media_type.content_type(),
-            width: decoded.width,
-            height: decoded.height,
+            width,
+            height,
+            preview_width,
+            preview_height,
             encoded_bytes,
-            session_encoded_bytes: session.budget.encoded_bytes(),
-            image: sanitized,
+            session_encoded_bytes,
+            image: preview,
+        })
+    }
+
+    fn begin_accept(
+        &self,
+        session_id: &ComposerSessionId,
+        image_id: &ComposerImageId,
+    ) -> Result<ComposerAcceptWork, CaptureFailure> {
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| CaptureFailure::CaptureFailed)?;
+            if state.pending_accept.is_some() {
+                tracing::warn!(
+                    event = "realqa_composer_accept_rejected",
+                    "another composer image acceptance is already pending"
+                );
+                return Err(CaptureFailure::CaptureFailed);
+            }
+            state.pending_accept = Some(PendingComposerAccept {
+                session_id: session_id.clone(),
+                image_id: image_id.clone(),
+                cancelled: false,
+            });
+        }
+        let permit = match self.begin_image_processing("realqa_composer_accept_rejected") {
+            Ok(permit) => permit,
+            Err(error) => {
+                if let Ok(mut state) = self.state.lock() {
+                    state.pending_accept = None;
+                }
+                return Err(error);
+            }
+        };
+        Ok(ComposerAcceptWork {
+            state: Arc::clone(&self.state),
+            session_id: session_id.clone(),
+            image_id: image_id.clone(),
+            completed: false,
+            _permit: permit,
         })
     }
 
@@ -301,6 +416,8 @@ impl ComposerCore {
             content_type: request.output_media_type.content_type(),
             width: flattened.width,
             height: flattened.height,
+            preview_width: flattened.width,
+            preview_height: flattened.height,
             encoded_bytes,
             session_encoded_bytes: session.budget.encoded_bytes(),
             image: encoded,
@@ -318,6 +435,13 @@ impl ComposerCore {
             .state
             .lock()
             .map_err(|_| CaptureFailure::CaptureFailed)?;
+        if let Some(pending) = state
+            .pending_accept
+            .as_mut()
+            .filter(|pending| pending.session_id == *session_id && pending.image_id == *image_id)
+        {
+            pending.cancelled = true;
+        }
         let Some((accounted_encoded_bytes, original_encoded_bytes)) = state
             .sessions
             .get(session_id)
@@ -361,6 +485,13 @@ impl ComposerCore {
             .state
             .lock()
             .map_err(|_| CaptureFailure::CaptureFailed)?;
+        if let Some(pending) = state
+            .pending_accept
+            .as_mut()
+            .filter(|pending| pending.session_id == *session_id)
+        {
+            pending.cancelled = true;
+        }
         let Some(session) = state.sessions.get(session_id) else {
             return Ok(());
         };
@@ -423,6 +554,8 @@ mod tests {
             .expect("image must be accepted");
         assert_eq!(first.width, 2);
         assert_eq!(first.height, 1);
+        assert_eq!(first.preview_width, 2);
+        assert_eq!(first.preview_height, 1);
         assert_eq!(first.content_type, "image/webp");
         assert_eq!(first.encoded_bytes, first.session_encoded_bytes);
         assert_eq!(
@@ -479,6 +612,87 @@ mod tests {
                 .encoded_bytes(),
             0
         );
+    }
+
+    #[test]
+    fn returns_a_bounded_preview_while_retaining_full_source_dimensions() {
+        let composer = ComposerCore::default();
+        let accepted = composer
+            .accept_image(ComposerImageRequest {
+                session_id: ComposerSessionId("session-1".to_owned()),
+                image_id: ComposerImageId("image-1".to_owned()),
+                image: encode_image(
+                    &DecodedImage {
+                        width: 4_096,
+                        height: 2,
+                        rgba: vec![127; 4_096 * 2 * 4],
+                    },
+                    ImageMediaType::Png,
+                )
+                .expect("fixture must encode"),
+                output_media_type: ImageMediaType::Webp,
+            })
+            .expect("image must be accepted");
+
+        assert_eq!(accepted.width, 4_096);
+        assert_eq!(accepted.height, 2);
+        assert_eq!(accepted.preview_width, 2_048);
+        assert_eq!(accepted.preview_height, 1);
+        let preview = decode_image(&accepted.image).expect("preview must decode");
+        assert_eq!(preview.width, accepted.preview_width);
+        assert_eq!(preview.height, accepted.preview_height);
+        let retained = composer
+            .state
+            .lock()
+            .expect("composer state must be available")
+            .sessions
+            .get(&ComposerSessionId("session-1".to_owned()))
+            .and_then(|session| session.images.get(&ComposerImageId("image-1".to_owned())))
+            .map(|source| decode_image(&source.original).expect("source must decode"))
+            .expect("source must remain retained");
+        assert_eq!(retained.width, 4_096);
+        assert_eq!(retained.height, 2);
+    }
+
+    #[test]
+    fn matching_remove_and_reset_cancel_a_pending_accept() {
+        for reset in [false, true] {
+            let composer = ComposerCore::default();
+            let session_id = ComposerSessionId("session-1".to_owned());
+            let image_id = ComposerImageId("image-1".to_owned());
+            let pending = composer
+                .begin_accept(&session_id, &image_id)
+                .expect("accept must begin");
+
+            if reset {
+                composer
+                    .reset_session(&session_id)
+                    .expect("reset must remain idempotent");
+            } else {
+                composer
+                    .remove_image(&session_id, &image_id)
+                    .expect("remove must remain idempotent");
+            }
+
+            let state = composer
+                .state
+                .lock()
+                .expect("composer state must be available");
+            assert_eq!(
+                pending.ensure_current(&state),
+                Err(CaptureFailure::InvalidEditSequence)
+            );
+            drop(state);
+            drop(pending);
+            assert!(
+                composer
+                    .state
+                    .lock()
+                    .expect("composer state must be available")
+                    .pending_accept
+                    .is_none()
+            );
+        }
     }
 
     #[test]
