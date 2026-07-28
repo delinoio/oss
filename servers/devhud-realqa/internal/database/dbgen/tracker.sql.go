@@ -136,6 +136,7 @@ JOIN realqa_github_connections AS connection
 WHERE access.installation_id = $1
   AND installation.state = 'active'
   AND access.account_id = $2
+  AND access.checked_at >= statement_timestamp() - interval '5 minutes'
   AND (
       $3::text = ''
       OR access.repository_owner ILIKE '%' || $3 || '%'

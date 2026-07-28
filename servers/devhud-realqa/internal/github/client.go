@@ -22,6 +22,9 @@ const (
 	reconciliationAge   = 24 * time.Hour
 	reconcilePageSize   = 20
 	maxReconcilePages   = 1000 / reconcilePageSize
+	repositoryPageSize  = 100
+	maxRepositoryPages  = 5
+	repositoryCursorV1  = "github-v1"
 )
 
 var (
@@ -279,6 +282,95 @@ func (client *Client) ListRepositories(
 			return result, nil
 		}
 	}
+}
+
+func (client *Client) ListRepositoryPage(
+	ctx context.Context,
+	token UserToken,
+	installationID int64,
+	request RepositoryPageRequest,
+) (RepositoryPage, error) {
+	if token.value == "" || installationID <= 0 ||
+		request.PageSize <= 0 || request.PageSize > repositoryPageSize ||
+		len(request.Query) > 255 || strings.ContainsAny(request.Query, "\x00\r\n") {
+		return RepositoryPage{},
+			errors.New("realqa github: installation repository page request is invalid")
+	}
+	page, offset, err := parseRepositoryCursor(request.Cursor)
+	if err != nil {
+		return RepositoryPage{}, err
+	}
+	query := strings.ToLower(request.Query)
+	result := RepositoryPage{
+		Repositories: make([]Repository, 0, request.PageSize),
+		scanned:      make([]Repository, 0, maxRepositoryPages*repositoryPageSize),
+	}
+	for scannedPages := 0; scannedPages < maxRepositoryPages; scannedPages++ {
+		var response struct {
+			Repositories []struct {
+				ID        int64      `json:"id"`
+				NodeID    string     `json:"node_id"`
+				Name      string     `json:"name"`
+				Owner     apiAccount `json:"owner"`
+				HasIssues bool       `json:"has_issues"`
+			} `json:"repositories"`
+		}
+		endpoint := fmt.Sprintf(
+			"/user/installations/%d/repositories?per_page=%d&page=%d",
+			installationID, repositoryPageSize, page)
+		if err = client.getJSON(ctx, token, endpoint, &response); err != nil {
+			return RepositoryPage{}, err
+		}
+		for index := offset; index < len(response.Repositories); index++ {
+			item := response.Repositories[index]
+			repository := Repository{
+				ID: item.ID, NodeID: item.NodeID, Owner: item.Owner.Login, Name: item.Name,
+				IssuesEnabled: item.HasIssues, CanSubmit: item.HasIssues,
+			}
+			if err = repository.Validate(); err != nil {
+				return RepositoryPage{}, err
+			}
+			result.scanned = append(result.scanned, repository)
+			if query != "" &&
+				!strings.Contains(strings.ToLower(repository.Owner), query) &&
+				!strings.Contains(strings.ToLower(repository.Name), query) {
+				continue
+			}
+			if len(result.Repositories) == request.PageSize {
+				result.NextCursor = repositoryCursor(page, index)
+				return result, nil
+			}
+			result.Repositories = append(result.Repositories, repository)
+		}
+		if len(response.Repositories) < repositoryPageSize {
+			return result, nil
+		}
+		page++
+		offset = 0
+	}
+	result.NextCursor = repositoryCursor(page, 0)
+	return result, nil
+}
+
+func parseRepositoryCursor(value string) (int, int, error) {
+	if value == "" {
+		return 1, 0, nil
+	}
+	parts := strings.Split(value, ":")
+	if len(parts) != 3 || parts[0] != repositoryCursorV1 {
+		return 0, 0, errors.New("realqa github: repository page cursor is invalid")
+	}
+	page, pageErr := strconv.Atoi(parts[1])
+	offset, offsetErr := strconv.Atoi(parts[2])
+	if pageErr != nil || offsetErr != nil || page <= 0 || page > 1_000_000 ||
+		offset < 0 || offset >= repositoryPageSize {
+		return 0, 0, errors.New("realqa github: repository page cursor is invalid")
+	}
+	return page, offset, nil
+}
+
+func repositoryCursor(page int, offset int) string {
+	return fmt.Sprintf("%s:%d:%d", repositoryCursorV1, page, offset)
 }
 
 func (client *Client) GetRepositoryDefinitions(

@@ -3,6 +3,16 @@ INSERT INTO realqa_github_callback_states (nonce)
 VALUES (sqlc.arg(nonce))
 ON CONFLICT (nonce) DO NOTHING;
 
+-- name: AdvanceGitHubCallbackState :execrows
+UPDATE realqa_github_connections
+SET oauth_state_digest = sqlc.arg(oauth_state_digest),
+    oauth_state_expires_at = sqlc.arg(oauth_state_expires_at),
+    updated_at = transaction_timestamp()
+WHERE owner_kind = sqlc.arg(owner_kind)
+  AND owner_id = sqlc.arg(owner_id)
+  AND oauth_state_digest = sqlc.arg(previous_oauth_state_digest)
+  AND oauth_state_expires_at > transaction_timestamp();
+
 -- name: ConnectGitHubUser :execrows
 UPDATE realqa_github_connections
 SET state = 'connected',
@@ -18,7 +28,9 @@ SET state = 'connected',
     revision = revision + 1,
     updated_at = transaction_timestamp()
 WHERE owner_kind = sqlc.arg(owner_kind)
-  AND owner_id = sqlc.arg(owner_id);
+  AND owner_id = sqlc.arg(owner_id)
+  AND oauth_state_digest = sqlc.arg(oauth_state_digest)
+  AND oauth_state_expires_at > transaction_timestamp();
 
 -- name: CreatePendingGitHubInstallation :execrows
 INSERT INTO realqa_github_installations (
@@ -142,9 +154,18 @@ WHERE provider_installation_id = sqlc.arg(provider_installation_id)
 
 -- name: SetGitHubInstallationState :execrows
 UPDATE realqa_github_installations
-SET state = sqlc.arg(state),
-    revision = revision + 1,
-    updated_at = transaction_timestamp()
+SET state = CASE
+        WHEN state = 'deleted' THEN 'deleted'
+        ELSE sqlc.arg(state)
+    END,
+    revision = CASE
+        WHEN state = 'deleted' THEN revision
+        ELSE revision + 1
+    END,
+    updated_at = CASE
+        WHEN state = 'deleted' THEN updated_at
+        ELSE transaction_timestamp()
+    END
 WHERE provider_installation_id = sqlc.arg(provider_installation_id);
 
 -- name: RecordGitHubWebhookDelivery :execrows

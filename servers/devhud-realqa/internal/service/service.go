@@ -75,7 +75,8 @@ type GitHubProviderAdapter interface {
 		context.Context,
 		uuid.UUID,
 		uuid.UUID,
-	) ([]realqagithub.Repository, error)
+		realqagithub.RepositoryPageRequest,
+	) (realqagithub.RepositoryPage, error)
 	GetRepositoryDefinitions(
 		context.Context,
 		uuid.UUID,

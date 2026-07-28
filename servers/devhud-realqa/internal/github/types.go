@@ -138,6 +138,18 @@ type Repository struct {
 	CanSubmit     bool
 }
 
+type RepositoryPageRequest struct {
+	Query    string
+	Cursor   string
+	PageSize int
+}
+
+type RepositoryPage struct {
+	Repositories []Repository
+	NextCursor   string
+	scanned      []Repository
+}
+
 func (repository Repository) Validate() error {
 	if repository.ID <= 0 || !nodeIDPattern.MatchString(repository.NodeID) ||
 		!safeNamePattern.MatchString(repository.Owner) ||

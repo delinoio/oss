@@ -36,6 +36,7 @@ type fixtureCallbackStore struct {
 	deleteFailures   int
 	disconnectedUser int64
 	connectErr       error
+	callbackDigest   []byte
 }
 
 func newFixtureCallbackStore() *fixtureCallbackStore {
@@ -57,9 +58,25 @@ func (store *fixtureCallbackStore) ConsumeCallbackState(
 	return true, nil
 }
 
+func (store *fixtureCallbackStore) AdvanceCallbackState(
+	_ context.Context,
+	_ Owner,
+	previousDigest []byte,
+	digest []byte,
+	_ time.Time,
+) (bool, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if !bytes.Equal(store.callbackDigest, previousDigest) {
+		return false, nil
+	}
+	store.callbackDigest = append(store.callbackDigest[:0], digest...)
+	return true, nil
+}
+
 func (store *fixtureCallbackStore) ConnectUser(
-	_ context.Context, owner Owner, accountID uuid.UUID, user UserIdentity,
-	credential EncryptedCredential,
+	_ context.Context, owner Owner, accountID uuid.UUID, stateDigest []byte,
+	user UserIdentity, credential EncryptedCredential,
 	installationID int64,
 	installations []Installation,
 ) error {
@@ -67,6 +84,9 @@ func (store *fixtureCallbackStore) ConnectUser(
 	defer store.mu.Unlock()
 	if store.connectErr != nil {
 		return store.connectErr
+	}
+	if !bytes.Equal(store.callbackDigest, stateDigest) {
+		return ErrCallbackStateUnavailable
 	}
 	if installationID > 0 {
 		if len(installations) != 1 || installations[0].ID != installationID {
@@ -80,7 +100,14 @@ func (store *fixtureCallbackStore) ConnectUser(
 	store.connectedOwner, store.connectedUser, store.credential = owner, user, credential
 	store.connectedAccount = accountID
 	store.installations = append([]Installation(nil), installations...)
+	store.callbackDigest = nil
 	return nil
+}
+
+func (store *fixtureCallbackStore) expectCallbackState(value string) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.callbackDigest = callbackStateDigest(value)
 }
 
 func (store *fixtureCallbackStore) ProcessWebhookDelivery(
@@ -205,6 +232,7 @@ func TestSignedOAuthCallbackStoresOnlyEncryptedUserCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	store.expectCallbackState(value)
 	request := httptest.NewRequest(http.MethodGet,
 		"/github/oauth/callback?code=fixture-code-123&state="+value, nil)
 	response := httptest.NewRecorder()
@@ -253,6 +281,7 @@ func TestAppCallbackDefersInstallationBindingUntilOAuthVerification(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	store.expectCallbackState(value)
 	request := httptest.NewRequest(http.MethodGet,
 		"/github/app/callback?installation_id=991&setup_action=install&state="+value, nil)
 	response := httptest.NewRecorder()
@@ -315,6 +344,7 @@ func TestOAuthCallbackRejectsSpoofedSetupInstallation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	store.expectCallbackState(appState)
 	appResponse := httptest.NewRecorder()
 	handler.ServeHTTP(appResponse, httptest.NewRequest(http.MethodGet,
 		"/github/app/callback?installation_id=991&setup_action=install&state="+appState,

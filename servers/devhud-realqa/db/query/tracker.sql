@@ -73,6 +73,7 @@ JOIN realqa_github_connections AS connection
 WHERE access.installation_id = sqlc.arg(installation_id)
   AND installation.state = 'active'
   AND access.account_id = sqlc.arg(account_id)
+  AND access.checked_at >= statement_timestamp() - interval '5 minutes'
   AND (
       sqlc.arg(query)::text = ''
       OR access.repository_owner ILIKE '%' || sqlc.arg(query) || '%'

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -153,6 +154,123 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		connectionID, installationID, organizationConnectionID,
 		organizationInstallationID); err != nil {
 		t.Fatal(err)
+	}
+	terminalOwnerID := uuidv7.MustNew()
+	terminalConnectionID := uuidv7.MustNew()
+	terminalInstallationID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state
+		) VALUES ($1, 'organization', $2, 'disconnected');
+		INSERT INTO realqa_github_installations (
+			id, connection_id, owner_kind, owner_id,
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES (
+			$3, $1, 'organization', $2, 759, 'terminal-fixture', 759,
+			'Organization', 'active',
+			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+		)
+	`, terminalConnectionID, terminalOwnerID, terminalInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	if count, stateErr := store.Queries().SetGitHubInstallationState(
+		ctx, dbgen.SetGitHubInstallationStateParams{
+			State: "deleted", ProviderInstallationID: 759,
+		}); stateErr != nil || count != 1 {
+		t.Fatalf("installation delete transition failed: count=%d err=%v", count, stateErr)
+	}
+	var deletedRevision int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_github_installations
+		WHERE id = $1
+	`, terminalInstallationID).Scan(&deletedRevision); err != nil {
+		t.Fatal(err)
+	}
+	if count, stateErr := store.Queries().SetGitHubInstallationState(
+		ctx, dbgen.SetGitHubInstallationStateParams{
+			State: "suspended", ProviderInstallationID: 759,
+		}); stateErr != nil || count != 1 {
+		t.Fatalf("stale suspend was not acknowledged: count=%d err=%v", count, stateErr)
+	}
+	var terminalState string
+	var terminalRevision int64
+	if err = connection.QueryRow(ctx, `
+		SELECT state, revision
+		FROM realqa_github_installations
+		WHERE id = $1
+	`, terminalInstallationID).Scan(&terminalState, &terminalRevision); err != nil {
+		t.Fatal(err)
+	}
+	if terminalState != "deleted" || terminalRevision != deletedRevision {
+		t.Fatalf("stale suspend rewrote deleted installation: state=%q revision=%d",
+			terminalState, terminalRevision)
+	}
+
+	callbackOwnerID := uuidv7.MustNew()
+	callbackConnectionID := uuidv7.MustNew()
+	currentStateDigest := sha256.Sum256([]byte("current callback state"))
+	staleStateDigest := sha256.Sum256([]byte("stale callback state"))
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($1, 'organization', $2, 'admin');
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state,
+			oauth_state_digest, oauth_state_expires_at
+		) VALUES (
+			$3, 'organization', $2, 'pending',
+			$4, transaction_timestamp() + interval '10 minutes'
+		)
+	`, accountID, callbackOwnerID, callbackConnectionID,
+		currentStateDigest[:]); err != nil {
+		t.Fatal(err)
+	}
+	callbackStore, err := realqagithub.NewPostgresCallbackStore(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callbackPermissions, err := realqagithub.RequiredPermissions(
+		realqagithub.ProjectPermissionNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		staleStateDigest[:],
+		realqagithub.UserIdentity{ID: 7, Login: "fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{1}, WrappedDataKey: []byte{2}, KeyID: "fixture-key",
+		},
+		0,
+		[]realqagithub.Installation{{
+			ID: 760, AccountID: 760, AccountLogin: "callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if !errors.Is(err, realqagithub.ErrCallbackStateUnavailable) {
+		t.Fatalf("stale callback state was accepted: %v", err)
+	}
+	var callbackConnectionState string
+	var callbackCiphertext []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT state, credential_ciphertext
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, callbackConnectionID).Scan(
+		&callbackConnectionState, &callbackCiphertext,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if callbackConnectionState != "pending" || callbackCiphertext != nil {
+		t.Fatalf("stale callback mutated connection: state=%q ciphertext=%v",
+			callbackConnectionState, callbackCiphertext)
 	}
 	pseudonymizer, err := safelog.NewPseudonymizer(
 		[]byte(strings.Repeat("p", 32)))
@@ -319,6 +437,17 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		  AND repository_id = 'repo-1'
 	`, installationID, accountID); err != nil {
 		t.Fatal(err)
+	}
+	staleRepositories, err := tracker.ListRepositories(authCtx, connect.NewRequest(
+		&realqav1.ListRepositoriesRequest{
+			InstallationId: &realqav1.UuidV7{Value: installationID.String()},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(staleRepositories.Msg.Repositories) != 0 {
+		t.Fatalf("stale repository access remained visible: %#v",
+			staleRepositories.Msg.Repositories)
 	}
 	replayed, err = service.CreatePreset(authCtx, connect.NewRequest(request))
 	if err != nil {

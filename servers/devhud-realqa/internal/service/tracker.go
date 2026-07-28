@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -369,8 +368,10 @@ func (service *Tracker) ListRepositories(
 		after = string(decoded)
 	}
 	if service.dependencies.GitHubProvider != nil {
-		rows, providerErr := service.dependencies.GitHubProvider.ListRepositories(
-			ctx, actor.accountID, installation)
+		page, providerErr := service.dependencies.GitHubProvider.ListRepositories(
+			ctx, actor.accountID, installation, realqagithub.RepositoryPageRequest{
+				Query: request.Msg.Query, Cursor: after, PageSize: int(size),
+			})
 		if providerErr != nil &&
 			!errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
 			return nil, rqerr.New(connect.CodeUnavailable,
@@ -378,40 +379,12 @@ func (service *Tracker) ListRepositories(
 				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 		}
 		if providerErr == nil {
-			query := strings.ToLower(request.Msg.Query)
-			filtered := make([]realqagithub.Repository, 0, len(rows))
-			for _, row := range rows {
-				if query == "" ||
-					strings.Contains(strings.ToLower(row.Owner), query) ||
-					strings.Contains(strings.ToLower(row.Name), query) {
-					filtered = append(filtered, row)
-				}
-			}
-			sort.Slice(filtered, func(left, right int) bool {
-				return filtered[left].ID < filtered[right].ID
-			})
-			var afterID int64
-			if after != "" {
-				afterID, err = strconv.ParseInt(after, 10, 64)
-				if err != nil || afterID <= 0 {
-					return nil, invalid(
-						realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
-				}
-			}
 			response := &realqav1.ListRepositoriesResponse{
-				Repositories: []*realqav1.Repository{}, Page: &realqav1.PageResponse{},
+				Repositories: make(
+					[]*realqav1.Repository, 0, len(page.Repositories)),
+				Page: &realqav1.PageResponse{},
 			}
-			var nextID int64
-			for _, row := range filtered {
-				if row.ID <= afterID {
-					continue
-				}
-				if len(response.Repositories) == int(size) {
-					response.Page.NextCursor = base64.RawURLEncoding.EncodeToString(
-						[]byte(strconv.FormatInt(nextID, 10)))
-					break
-				}
-				nextID = row.ID
+			for _, row := range page.Repositories {
 				response.Repositories = append(response.Repositories, &realqav1.Repository{
 					Repository: &realqav1.GitHubRepositoryRef{
 						RepositoryId: strconv.FormatInt(row.ID, 10),
@@ -420,6 +393,10 @@ func (service *Tracker) ListRepositories(
 					InstallationId: &realqav1.UuidV7{Value: installation.String()},
 					IssuesEnabled:  row.IssuesEnabled, CallerCanSubmit: row.CanSubmit,
 				})
+			}
+			if page.NextCursor != "" {
+				response.Page.NextCursor = base64.RawURLEncoding.EncodeToString(
+					[]byte(page.NextCursor))
 			}
 			return connect.NewResponse(response), nil
 		}

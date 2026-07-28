@@ -33,6 +33,10 @@ var ErrCallbackOwnerAccessUnavailable = errors.New(
 	"realqa github: callback owner access is unavailable",
 )
 
+var ErrCallbackStateUnavailable = errors.New(
+	"realqa github: callback state is no longer pending",
+)
+
 var errWebhookStorage = errors.New("realqa github: webhook storage failed")
 
 type CallbackPurpose string
@@ -196,10 +200,18 @@ type DeletedIssueEvent struct {
 
 type CallbackStore interface {
 	ConsumeCallbackState(context.Context, string) (bool, error)
+	AdvanceCallbackState(
+		context.Context,
+		Owner,
+		[]byte,
+		[]byte,
+		time.Time,
+	) (bool, error)
 	ConnectUser(
 		context.Context,
 		Owner,
 		uuid.UUID,
+		[]byte,
 		UserIdentity,
 		EncryptedCredential,
 		int64,
@@ -336,11 +348,15 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 		return
 	}
 	err = handler.config.Store.ConnectUser(
-		request.Context(), owner, accountID, identity, encrypted,
+		request.Context(), owner, accountID, callbackStateDigest(stateValue),
+		identity, encrypted,
 		installationID, installations,
 	)
 	switch {
 	case errors.Is(err, ErrInstallationAlreadyBound):
+		writeCallbackError(writer, http.StatusConflict)
+		return
+	case errors.Is(err, ErrCallbackStateUnavailable):
 		writeCallbackError(writer, http.StatusConflict)
 		return
 	case errors.Is(err, ErrCallbackOwnerAccessUnavailable):
@@ -374,8 +390,9 @@ func (handler *CallbackHandler) app(writer http.ResponseWriter, request *http.Re
 	}
 	// The setup installation ID is untrusted until the OAuth user token proves
 	// that the initiating user can access the installation.
+	now := handler.config.Now().UTC()
 	oauthState, err := handler.config.State.issue(
-		owner, accountID, CallbackPurposeOAuth, handler.config.Now(), installationID)
+		owner, accountID, CallbackPurposeOAuth, now, installationID)
 	authorization, authorizationErr := NewAuthorization(handler.config.ClientID)
 	if err != nil || authorizationErr != nil {
 		writeCallbackError(writer, http.StatusInternalServerError)
@@ -384,6 +401,21 @@ func (handler *CallbackHandler) app(writer http.ResponseWriter, request *http.Re
 	target, err := authorization.Target(oauthState)
 	if err != nil {
 		writeCallbackError(writer, http.StatusInternalServerError)
+		return
+	}
+	advanced, err := handler.config.Store.AdvanceCallbackState(
+		request.Context(),
+		owner,
+		callbackStateDigest(stateValue),
+		callbackStateDigest(oauthState),
+		now.Add(callbackStateTTL),
+	)
+	if err != nil {
+		writeCallbackError(writer, http.StatusInternalServerError)
+		return
+	}
+	if !advanced {
+		writeCallbackError(writer, http.StatusConflict)
 		return
 	}
 	writer.Header().Set("Location", target)
@@ -666,6 +698,11 @@ func verifyWebhookSignature(secret []byte, value string, body []byte) bool {
 	mac := hmac.New(sha256.New, secret)
 	_, _ = mac.Write(body)
 	return hmac.Equal(provided, mac.Sum(nil))
+}
+
+func callbackStateDigest(value string) []byte {
+	digest := sha256.Sum256([]byte(value))
+	return digest[:]
 }
 
 func strictJSON(body []byte, target any) error {

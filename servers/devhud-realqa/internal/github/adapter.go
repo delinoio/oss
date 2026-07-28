@@ -61,21 +61,23 @@ func (adapter *Adapter) ListRepositories(
 	ctx context.Context,
 	accountID uuid.UUID,
 	installationID uuid.UUID,
-) ([]Repository, error) {
+	request RepositoryPageRequest,
+) (RepositoryPage, error) {
 	providerID, token, err := adapter.userToken(ctx, accountID, installationID)
 	if err != nil {
-		return nil, err
+		return RepositoryPage{}, err
 	}
-	repositories, err := adapter.client.ListRepositories(ctx, token, providerID)
+	page, err := adapter.client.ListRepositoryPage(ctx, token, providerID, request)
 	if err != nil {
-		return nil, err
+		return RepositoryPage{}, err
 	}
-	if err = adapter.persistRepositories(
-		ctx, accountID, installationID, repositories,
+	if err = adapter.persistRepositoryUpdates(
+		ctx, accountID, installationID, page.scanned,
 	); err != nil {
-		return nil, err
+		return RepositoryPage{}, err
 	}
-	return repositories, nil
+	page.scanned = nil
+	return page, nil
 }
 
 func (adapter *Adapter) GetRepositoryDefinitions(
@@ -338,20 +340,44 @@ func (adapter *Adapter) persistRepositories(
 				}); err != nil {
 				return err
 			}
-			for _, repository := range repositories {
-				if err := queries.UpsertRepositoryAccess(
-					ctx, dbgen.UpsertRepositoryAccessParams{
-						InstallationID:  providerPGUUID(installationID),
-						AccountID:       providerPGUUID(accountID),
-						RepositoryID:    strconv.FormatInt(repository.ID, 10),
-						RepositoryOwner: repository.Owner,
-						RepositoryName:  repository.Name,
-						IssuesEnabled:   repository.IssuesEnabled,
-						CanSubmit:       repository.CanSubmit,
-					}); err != nil {
-					return err
-				}
-			}
-			return nil
+			return upsertRepositoryAccess(
+				ctx, queries, accountID, installationID, repositories)
 		})
+}
+
+func (adapter *Adapter) persistRepositoryUpdates(
+	ctx context.Context,
+	accountID uuid.UUID,
+	installationID uuid.UUID,
+	repositories []Repository,
+) error {
+	return adapter.store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			return upsertRepositoryAccess(
+				ctx, queries, accountID, installationID, repositories)
+		})
+}
+
+func upsertRepositoryAccess(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	accountID uuid.UUID,
+	installationID uuid.UUID,
+	repositories []Repository,
+) error {
+	for _, repository := range repositories {
+		if err := queries.UpsertRepositoryAccess(
+			ctx, dbgen.UpsertRepositoryAccessParams{
+				InstallationID:  providerPGUUID(installationID),
+				AccountID:       providerPGUUID(accountID),
+				RepositoryID:    strconv.FormatInt(repository.ID, 10),
+				RepositoryOwner: repository.Owner,
+				RepositoryName:  repository.Name,
+				IssuesEnabled:   repository.IssuesEnabled,
+				CanSubmit:       repository.CanSubmit,
+			}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

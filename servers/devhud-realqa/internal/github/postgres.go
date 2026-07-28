@@ -2,10 +2,12 @@ package github
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
@@ -32,16 +34,42 @@ func (store *PostgresCallbackStore) ConsumeCallbackState(
 	return count == 1, err
 }
 
+func (store *PostgresCallbackStore) AdvanceCallbackState(
+	ctx context.Context,
+	owner Owner,
+	previousDigest []byte,
+	digest []byte,
+	expiresAt time.Time,
+) (bool, error) {
+	if owner.Validate() != nil || len(previousDigest) != sha256.Size ||
+		len(digest) != sha256.Size || expiresAt.IsZero() {
+		return false, errors.New("realqa github: callback state is invalid")
+	}
+	count, err := store.store.Queries().AdvanceGitHubCallbackState(
+		ctx,
+		dbgen.AdvanceGitHubCallbackStateParams{
+			OauthStateDigest:         digest,
+			OauthStateExpiresAt:      pgtype.Timestamptz{Time: expiresAt, Valid: true},
+			OwnerKind:                string(owner.Kind),
+			OwnerID:                  providerPGUUID(owner.ID),
+			PreviousOauthStateDigest: previousDigest,
+		},
+	)
+	return count == 1, err
+}
+
 func (store *PostgresCallbackStore) ConnectUser(
 	ctx context.Context,
 	owner Owner,
 	accountID uuid.UUID,
+	stateDigest []byte,
 	user UserIdentity,
 	credential EncryptedCredential,
 	installationID int64,
 	installations []Installation,
 ) error {
 	if owner.Validate() != nil || accountID == uuid.Nil || user.ID <= 0 ||
+		len(stateDigest) != sha256.Size ||
 		len(credential.Ciphertext) == 0 || len(credential.WrappedDataKey) == 0 ||
 		credential.KeyID == "" || installationID < 0 || len(installations) == 0 {
 		return errors.New("realqa github: connected credential is invalid")
@@ -95,13 +123,13 @@ func (store *PostgresCallbackStore) ConnectUser(
 					ConnectedByAccountID: providerPGUUID(accountID),
 					OwnerKind:            string(owner.Kind),
 					OwnerID:              providerPGUUID(owner.ID),
+					OauthStateDigest:     stateDigest,
 				})
 			if err != nil {
 				return err
 			}
 			if count != 1 {
-				return errors.New(
-					"realqa github: callback owner connection is unavailable")
+				return ErrCallbackStateUnavailable
 			}
 			var activated int64
 			for _, installation := range installations {

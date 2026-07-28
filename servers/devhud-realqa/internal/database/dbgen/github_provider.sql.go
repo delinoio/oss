@@ -46,6 +46,39 @@ func (q *Queries) ActivateGitHubInstallation(ctx context.Context, arg ActivateGi
 	return result.RowsAffected(), nil
 }
 
+const advanceGitHubCallbackState = `-- name: AdvanceGitHubCallbackState :execrows
+UPDATE realqa_github_connections
+SET oauth_state_digest = $1,
+    oauth_state_expires_at = $2,
+    updated_at = transaction_timestamp()
+WHERE owner_kind = $3
+  AND owner_id = $4
+  AND oauth_state_digest = $5
+  AND oauth_state_expires_at > transaction_timestamp()
+`
+
+type AdvanceGitHubCallbackStateParams struct {
+	OauthStateDigest         []byte
+	OauthStateExpiresAt      pgtype.Timestamptz
+	OwnerKind                string
+	OwnerID                  pgtype.UUID
+	PreviousOauthStateDigest []byte
+}
+
+func (q *Queries) AdvanceGitHubCallbackState(ctx context.Context, arg AdvanceGitHubCallbackStateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, advanceGitHubCallbackState,
+		arg.OauthStateDigest,
+		arg.OauthStateExpiresAt,
+		arg.OwnerKind,
+		arg.OwnerID,
+		arg.PreviousOauthStateDigest,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const connectGitHubUser = `-- name: ConnectGitHubUser :execrows
 UPDATE realqa_github_connections
 SET state = 'connected',
@@ -62,6 +95,8 @@ SET state = 'connected',
     updated_at = transaction_timestamp()
 WHERE owner_kind = $7
   AND owner_id = $8
+  AND oauth_state_digest = $9
+  AND oauth_state_expires_at > transaction_timestamp()
 `
 
 type ConnectGitHubUserParams struct {
@@ -73,6 +108,7 @@ type ConnectGitHubUserParams struct {
 	KeyID                pgtype.Text
 	OwnerKind            string
 	OwnerID              pgtype.UUID
+	OauthStateDigest     []byte
 }
 
 func (q *Queries) ConnectGitHubUser(ctx context.Context, arg ConnectGitHubUserParams) (int64, error) {
@@ -85,6 +121,7 @@ func (q *Queries) ConnectGitHubUser(ctx context.Context, arg ConnectGitHubUserPa
 		arg.KeyID,
 		arg.OwnerKind,
 		arg.OwnerID,
+		arg.OauthStateDigest,
 	)
 	if err != nil {
 		return 0, err
@@ -410,9 +447,18 @@ func (q *Queries) RemoveGitHubRepositoryDefinitions(ctx context.Context, arg Rem
 
 const setGitHubInstallationState = `-- name: SetGitHubInstallationState :execrows
 UPDATE realqa_github_installations
-SET state = $1,
-    revision = revision + 1,
-    updated_at = transaction_timestamp()
+SET state = CASE
+        WHEN state = 'deleted' THEN 'deleted'
+        ELSE $1
+    END,
+    revision = CASE
+        WHEN state = 'deleted' THEN revision
+        ELSE revision + 1
+    END,
+    updated_at = CASE
+        WHEN state = 'deleted' THEN updated_at
+        ELSE transaction_timestamp()
+    END
 WHERE provider_installation_id = $2
 `
 

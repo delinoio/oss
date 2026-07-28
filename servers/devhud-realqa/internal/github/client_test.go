@@ -208,6 +208,108 @@ func TestInstallationPermissionValidationRejectsMissingAndExcess(t *testing.T) {
 	}
 }
 
+func TestRepositoryPageStopsAfterEnoughProviderRows(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.URL.Path != "/user/installations/77/repositories" ||
+			request.URL.Query().Get("per_page") != "100" ||
+			request.URL.Query().Get("page") != "1" {
+			t.Fatalf("unexpected repository page request %s", request.URL)
+		}
+		repositories := make([]any, 0, repositoryPageSize)
+		for id := 1; id <= repositoryPageSize; id++ {
+			repositories = append(repositories, map[string]any{
+				"id": id, "node_id": "R_fixture_" + strconv.Itoa(id),
+				"name": "repo-" + strconv.Itoa(id),
+				"owner": map[string]any{
+					"id": 9, "login": "delinoio", "type": "Organization",
+				},
+				"has_issues": true,
+			})
+		}
+		return jsonResponse(request, http.StatusOK,
+			map[string]any{"repositories": repositories}), nil
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.ListRepositoryPage(
+		context.Background(), fixtureToken(t), 77,
+		RepositoryPageRequest{PageSize: 2},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || len(page.Repositories) != 2 ||
+		page.Repositories[0].ID != 1 || page.Repositories[1].ID != 2 ||
+		page.NextCursor != repositoryCursor(1, 2) {
+		t.Fatalf("unexpected first repository page: requests=%d page=%#v",
+			requests, page)
+	}
+	page, err = client.ListRepositoryPage(
+		context.Background(), fixtureToken(t), 77,
+		RepositoryPageRequest{Cursor: page.NextCursor, PageSize: 2},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || len(page.Repositories) != 2 ||
+		page.Repositories[0].ID != 3 || page.Repositories[1].ID != 4 ||
+		page.NextCursor != repositoryCursor(1, 4) {
+		t.Fatalf("unexpected second repository page: requests=%d page=%#v",
+			requests, page)
+	}
+}
+
+func TestRepositorySearchBoundsProviderPageScan(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		requests++
+		page, err := strconv.Atoi(request.URL.Query().Get("page"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		repositories := make([]any, 0, repositoryPageSize)
+		for offset := 1; offset <= repositoryPageSize; offset++ {
+			id := (page-1)*repositoryPageSize + offset
+			repositories = append(repositories, map[string]any{
+				"id": id, "node_id": "R_fixture_" + strconv.Itoa(id),
+				"name": "unmatched-" + strconv.Itoa(id),
+				"owner": map[string]any{
+					"id": 9, "login": "delinoio", "type": "Organization",
+				},
+				"has_issues": true,
+			})
+		}
+		return jsonResponse(request, http.StatusOK,
+			map[string]any{"repositories": repositories}), nil
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.ListRepositoryPage(
+		context.Background(), fixtureToken(t), 77,
+		RepositoryPageRequest{Query: "target", PageSize: 25},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != maxRepositoryPages || len(page.Repositories) != 0 ||
+		page.NextCursor != repositoryCursor(maxRepositoryPages+1, 0) {
+		t.Fatalf("repository search was not bounded: requests=%d page=%#v",
+			requests, page)
+	}
+}
+
 func TestGetInstallationValidatesOnlyTheSelectedInstallation(t *testing.T) {
 	t.Parallel()
 	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
