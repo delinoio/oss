@@ -237,7 +237,9 @@ function ScreenshotEditorStateProvider({
         markerNumber,
       );
       if (operation === null || !validateEditorOperation(operation, bounds)) {
-        setStatus("That edit is outside the image or has no drawable size.");
+        setStatus(
+          "That edit is outside the image, has no drawable size, or exceeds the processing limit.",
+        );
         return;
       }
       if (isSourceEffect(operation) && !sourceEffectAvailable) {

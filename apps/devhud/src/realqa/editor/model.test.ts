@@ -125,6 +125,50 @@ describe("screenshot editor model", () => {
       .toBe(true);
   });
 
+  it("matches the native source-effect raster-work budget", () => {
+    const largeBounds = { width: 10_000, height: 10_000 };
+    expect(
+      validateEditorOperation(
+        {
+          kind: "blur",
+          rect: { x: 0, y: 0, width: 5_000, height: 5_000 },
+          radius: 128,
+        },
+        largeBounds,
+      ),
+    ).toBe(true);
+    expect(
+      validateEditorOperation(
+        {
+          kind: "blur",
+          rect: { x: 0, y: 0, width: 5_001, height: 5_000 },
+          radius: 128,
+        },
+        largeBounds,
+      ),
+    ).toBe(false);
+    expect(
+      validateEditorOperation(
+        {
+          kind: "pixelate",
+          rect: { x: 0, y: 0, width: 10_000, height: 5_000 },
+          blockSize: 128,
+        },
+        largeBounds,
+      ),
+    ).toBe(true);
+    expect(
+      validateEditorOperation(
+        {
+          kind: "pixelate",
+          rect: { x: 0, y: 0, width: 10_000, height: 5_001 },
+          blockSize: 128,
+        },
+        largeBounds,
+      ),
+    ).toBe(false);
+  });
+
   it("preserves supported text casing and normalizes unsupported glyphs", () => {
     expect(normalizeEditorText("Note 12!")).toBe("Note 12!");
     expect(normalizeEditorText("café 🔒")).toBe("caf? ?");

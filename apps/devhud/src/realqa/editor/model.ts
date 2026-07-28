@@ -6,6 +6,9 @@ import type {
 
 export const MAX_EDITOR_OPERATIONS = 1_000;
 export const MAX_FREEHAND_POINTS = 20_000;
+const MAX_RASTER_WORK = 100_000_000;
+const BLUR_PIXEL_PASSES = 4;
+const PIXELATE_PIXEL_PASSES = 2;
 
 export enum EditorTool {
   Crop = "crop",
@@ -144,6 +147,10 @@ export function validateEditorOperation(
     rect.y + rect.height <= bounds.height;
   const validLine = (lineWidth: number) =>
     Number.isInteger(lineWidth) && lineWidth >= 1 && lineWidth <= 128;
+  const validEffectWork = (rect: EditorRect, pixelPasses: number) => {
+    const work = rect.width * rect.height * pixelPasses;
+    return Number.isSafeInteger(work) && work <= MAX_RASTER_WORK;
+  };
 
   switch (operation.kind) {
     case "crop":
@@ -205,14 +212,16 @@ export function validateEditorOperation(
         validRect(operation.rect) &&
         Number.isInteger(operation.radius) &&
         operation.radius >= 1 &&
-        operation.radius <= 128
+        operation.radius <= 128 &&
+        validEffectWork(operation.rect, BLUR_PIXEL_PASSES)
       );
     case "pixelate":
       return (
         validRect(operation.rect) &&
         Number.isInteger(operation.blockSize) &&
         operation.blockSize >= 2 &&
-        operation.blockSize <= 128
+        operation.blockSize <= 128 &&
+        validEffectWork(operation.rect, PIXELATE_PIXEL_PASSES)
       );
   }
 }

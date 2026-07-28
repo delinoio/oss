@@ -1,10 +1,17 @@
-use std::io::{self, Cursor, Seek, SeekFrom, Write};
+use std::{
+    fmt,
+    io::{self, Cursor, Seek, SeekFrom, Write},
+};
 
 use image::{DynamicImage, ImageFormat, ImageReader};
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, SeqAccess, Visitor},
+};
 
 pub(crate) const MAX_DECODED_PIXELS: u64 = 100_000_000;
-pub(crate) const MAX_ENCODED_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
+const MAX_ENCODED_IMAGE_BYTES_USIZE: usize = 25 * 1024 * 1024;
+pub(crate) const MAX_ENCODED_IMAGE_BYTES: u64 = MAX_ENCODED_IMAGE_BYTES_USIZE as u64;
 pub(crate) const MAX_ENCODED_SESSION_BYTES: u64 = 250 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -37,11 +44,74 @@ impl ImageMediaType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EncodedImage {
     pub(crate) media_type: ImageMediaType,
     pub(crate) bytes: Vec<u8>,
+}
+
+impl<'de> Deserialize<'de> for EncodedImage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct BoundedEncodedImage {
+            media_type: ImageMediaType,
+            #[serde(deserialize_with = "deserialize_bounded_image_bytes")]
+            bytes: Vec<u8>,
+        }
+
+        let image = BoundedEncodedImage::deserialize(deserializer)?;
+        Ok(Self {
+            media_type: image.media_type,
+            bytes: image.bytes,
+        })
+    }
+}
+
+fn deserialize_bounded_image_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct EncodedImageBytesVisitor;
+
+    impl<'de> Visitor<'de> for EncodedImageBytesVisitor {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("at most 26214400 encoded image bytes")
+        }
+
+        fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let size_hint = sequence.size_hint();
+            if let Some(size) = size_hint.filter(|size| *size > MAX_ENCODED_IMAGE_BYTES_USIZE) {
+                return Err(de::Error::invalid_length(size, &self));
+            }
+            let mut bytes =
+                Vec::with_capacity(size_hint.unwrap_or(0).min(MAX_ENCODED_IMAGE_BYTES_USIZE));
+            while bytes.len() < MAX_ENCODED_IMAGE_BYTES_USIZE {
+                let Some(byte) = sequence.next_element()? else {
+                    return Ok(bytes);
+                };
+                bytes.push(byte);
+            }
+            if sequence.next_element::<de::IgnoredAny>()?.is_some() {
+                return Err(de::Error::invalid_length(
+                    MAX_ENCODED_IMAGE_BYTES_USIZE + 1,
+                    &self,
+                ));
+            }
+            Ok(bytes)
+        }
+    }
+
+    deserializer.deserialize_seq(EncodedImageBytesVisitor)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,6 +436,21 @@ mod tests {
             Err(ImageBoundaryFailure::DecompressionBomb)
         );
         assert!(decoded_byte_len(10_000, 10_000).is_ok());
+    }
+
+    #[test]
+    fn encoded_image_deserialization_bounds_bytes_before_allocation() {
+        let image: EncodedImage = serde_json::from_value(serde_json::json!({
+            "mediaType": "png",
+            "bytes": [1, 2, 3]
+        }))
+        .expect("bounded image bytes must deserialize");
+        assert_eq!(image.bytes, vec![1, 2, 3]);
+
+        let oversized = serde::de::value::SeqDeserializer::<_, serde::de::value::Error>::new(
+            std::iter::repeat(0_u8).take(MAX_ENCODED_IMAGE_BYTES_USIZE + 1),
+        );
+        assert!(deserialize_bounded_image_bytes(oversized).is_err());
     }
 
     #[test]
