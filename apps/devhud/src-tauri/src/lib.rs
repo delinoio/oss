@@ -5,7 +5,7 @@ mod autostart;
 mod diagnostics;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod local_log;
-#[cfg(any(feature = "desktop-cef", test))]
+#[cfg(any(feature = "desktop-cef", feature = "realqa-macos-capture", test))]
 mod realqa_capture;
 #[cfg(any(feature = "desktop-cef", test))]
 mod shortcut;
@@ -2768,6 +2768,28 @@ fn reset_dev_hud(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
+fn realqa_capture_permission_status(
+    state: State<'_, realqa_capture::CaptureCore>,
+) -> Result<realqa_capture::CapturePermissionStatus, realqa_capture::CaptureFailure> {
+    state.permission_status()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_request_capture_permission(
+    state: State<'_, realqa_capture::CaptureCore>,
+) -> Result<realqa_capture::CapturePermissionStatus, realqa_capture::CaptureFailure> {
+    state.request_permission()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
 fn realqa_list_capture_sources(
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureSourceCatalog, realqa_capture::CaptureFailure> {
@@ -2869,6 +2891,8 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             set_launch_at_login,
             complete_first_run,
             request_update_action,
+            realqa_capture_permission_status,
+            realqa_request_capture_permission,
             realqa_list_capture_sources,
             realqa_adjust_capture_selection,
             realqa_begin_capture,

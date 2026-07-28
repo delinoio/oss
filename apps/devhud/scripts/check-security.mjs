@@ -118,6 +118,8 @@ const expectedCapabilities = {
     platforms: ["linux", "macOS", "windows"],
     windows: ["realqa-capture"],
     permissions: [
+      "allow-realqa-capture-permission-status",
+      "allow-realqa-request-capture-permission",
       "allow-realqa-list-capture-sources",
       "allow-realqa-adjust-capture-selection",
       "allow-realqa-begin-capture",
@@ -223,6 +225,8 @@ requireCondition(
     (command) =>
       command.startsWith("realqa_composer_") &&
       ![
+        "realqa_capture_permission_status",
+        "realqa_request_capture_permission",
         "realqa_list_capture_sources",
         "realqa_adjust_capture_selection",
         "realqa_begin_capture",

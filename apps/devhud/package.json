@@ -33,6 +33,7 @@
     "test:a11y": "vitest run src/App.ui.test.tsx",
     "test:build": "node scripts/check-build-reproducibility.mjs",
     "test:mobile": "pnpm run build && vitest run src/App.ui.test.tsx src/runtime/platform.test.ts && pnpm run check:mobile",
+    "test:realqa:native": "node scripts/test-realqa-native.mjs",
     "test:security": "pnpm run build && pnpm run check:security",
     "test:widget:android": "node scripts/widget-native.mjs android test",
     "test:widget:ios": "node scripts/widget-native.mjs ios test",
