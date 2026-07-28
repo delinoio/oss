@@ -303,24 +303,25 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 		writeCallbackError(writer, http.StatusBadGateway)
 		return
 	}
-	installations, err := handler.client.ListInstallations(request.Context(), token)
-	if err != nil {
-		writeCallbackError(writer, http.StatusBadGateway)
-		return
-	}
+	var installations []Installation
 	if installationID > 0 {
-		matched := make([]Installation, 0, 1)
-		for _, installation := range installations {
-			if installation.ID == installationID {
-				matched = append(matched, installation)
-				break
-			}
+		installation, found, installationErr := handler.client.getInstallation(
+			request.Context(), token, installationID)
+		if installationErr != nil {
+			writeCallbackError(writer, http.StatusBadGateway)
+			return
 		}
-		if len(matched) == 0 {
+		if !found {
 			writeCallbackError(writer, http.StatusForbidden)
 			return
 		}
-		installations = matched
+		installations = []Installation{installation}
+	} else {
+		installations, err = handler.client.ListInstallations(request.Context(), token)
+		if err != nil {
+			writeCallbackError(writer, http.StatusBadGateway)
+			return
+		}
 	}
 	plaintext, err := json.Marshal(credential)
 	if err != nil {

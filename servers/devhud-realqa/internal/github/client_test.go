@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -207,6 +208,50 @@ func TestInstallationPermissionValidationRejectsMissingAndExcess(t *testing.T) {
 	}
 }
 
+func TestGetInstallationValidatesOnlyTheSelectedInstallation(t *testing.T) {
+	t.Parallel()
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		return jsonResponse(request, http.StatusOK, map[string]any{
+			"installations": []any{
+				map[string]any{
+					"id": 76,
+					"account": map[string]any{
+						"id": 8, "login": "stale-owner", "type": "Organization",
+					},
+					"permissions": map[string]any{
+						"issues": "read", "metadata": "read", "contents": "read",
+						"actions": "read",
+					},
+				},
+				map[string]any{
+					"id": 77,
+					"account": map[string]any{
+						"id": 9, "login": "delinoio", "type": "Organization",
+					},
+					"permissions": map[string]any{
+						"issues": "write", "metadata": "read", "contents": "read",
+					},
+				},
+			},
+		}), nil
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation, found, err := client.getInstallation(
+		context.Background(), fixtureToken(t), 77)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || installation.ID != 77 || installation.AccountLogin != "delinoio" {
+		t.Fatalf("unexpected selected installation: found=%t value=%#v",
+			found, installation)
+	}
+}
+
 func TestGetRepositoryDefinitionsParsesProviderFixtures(t *testing.T) {
 	t.Parallel()
 	markdown, err := os.ReadFile("testdata/bug.md")
@@ -264,6 +309,105 @@ func TestGetRepositoryDefinitionsParsesProviderFixtures(t *testing.T) {
 		definitions.Markdown[0].Definition.ETag != "markdown-etag" ||
 		definitions.Forms[0].Definition.ETag != "form-etag" {
 		t.Fatalf("unexpected definitions: %#v", definitions)
+	}
+}
+
+func TestGetRepositoryDefinitionsUsesPublicOwnerDefaults(t *testing.T) {
+	t.Parallel()
+	markdown, err := os.ReadFile("testdata/bug.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path {
+		case "/repos/delinoio/oss/contents/.github/ISSUE_TEMPLATE":
+			return jsonResponse(request, http.StatusNotFound, map[string]any{
+				"message": "Not Found",
+			}), nil
+		case "/repos/delinoio/.github":
+			return jsonResponse(request, http.StatusOK, map[string]any{
+				"private": false,
+			}), nil
+		case "/repos/delinoio/.github/contents/.github/ISSUE_TEMPLATE":
+			return jsonResponse(request, http.StatusOK, []any{map[string]any{
+				"type": "file", "path": ".github/ISSUE_TEMPLATE/bug.md",
+				"sha": "default-markdown-etag",
+			}}), nil
+		case "/repos/delinoio/.github/contents/.github/ISSUE_TEMPLATE/bug.md":
+			return jsonResponse(request, http.StatusOK, map[string]any{
+				"type": "file", "encoding": "base64",
+				"content": base64.StdEncoding.EncodeToString(markdown),
+			}), nil
+		default:
+			t.Fatalf("unexpected default content request %s", request.URL)
+			return nil, nil
+		}
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitions, err := client.GetRepositoryDefinitions(
+		context.Background(), fixtureToken(t), fixtureRepository())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(definitions.Markdown) != 1 ||
+		definitions.Markdown[0].Definition.ETag != "default-markdown-etag" {
+		t.Fatalf("unexpected owner defaults: %#v", definitions)
+	}
+}
+
+func TestReconciliationPagesLargeIssueBodiesBelowResponseLimit(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		switch {
+		case request.URL.Path == "/repos/delinoio/oss/issues" &&
+			request.Method == http.MethodGet:
+			if request.URL.Query().Get("per_page") !=
+				strconv.Itoa(reconcilePageSize) {
+				t.Fatalf("unexpected reconciliation page size %s",
+					request.URL.Query().Get("per_page"))
+			}
+			if request.URL.Query().Get("page") == "1" {
+				candidates := make([]any, reconcilePageSize)
+				for index := range candidates {
+					candidates[index] = map[string]any{
+						"body": strings.Repeat("x", 60_000),
+					}
+				}
+				return jsonResponse(request, http.StatusOK, candidates), nil
+			}
+			return jsonResponse(request, http.StatusOK, []any{}), nil
+		case request.URL.Path == "/repos/delinoio/oss/issues" &&
+			request.Method == http.MethodPost:
+			return jsonResponse(request, http.StatusCreated, map[string]any{
+				"id": 99, "node_id": "I_fixture", "number": 758,
+				"html_url": "https://github.com/delinoio/oss/issues/758",
+				"body":     "", "created_at": now,
+			}), nil
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.String())
+			return nil, nil
+		}
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := client.CreateIssue(
+		context.Background(), fixtureToken(t), fixtureRepository(), fixtureIssueInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.Number != 758 {
+		t.Fatalf("unexpected created issue: %#v", issue)
 	}
 }
 
@@ -388,7 +532,7 @@ func TestAmbiguousCreateDoesNotRetryWhenReconciliationIsTruncated(t *testing.T) 
 			if reconcileCount == 1 {
 				return jsonResponse(request, http.StatusOK, []any{}), nil
 			}
-			candidates := make([]any, 100)
+			candidates := make([]any, reconcilePageSize)
 			for index := range candidates {
 				candidates[index] = map[string]any{
 					"id": index + 1, "node_id": "I_unrelated", "number": index + 1,

@@ -20,7 +20,8 @@ const (
 	apiVersion          = "2022-11-28"
 	maximumResponseBody = 2 * 1024 * 1024
 	reconciliationAge   = 24 * time.Hour
-	maxReconcilePages   = 10
+	reconcilePageSize   = 20
+	maxReconcilePages   = 1000 / reconcilePageSize
 )
 
 var (
@@ -183,28 +184,59 @@ func (client *Client) ListInstallations(
 	var result []Installation
 	for page := 1; ; page++ {
 		var response struct {
-			Installations []struct {
-				ID          int64          `json:"id"`
-				Account     apiAccount     `json:"account"`
-				Permissions apiPermissions `json:"permissions"`
-			} `json:"installations"`
+			Installations []apiInstallation `json:"installations"`
 		}
 		endpoint := "/user/installations?per_page=100&page=" + strconv.Itoa(page)
 		if err := client.getJSON(ctx, token, endpoint, &response); err != nil {
 			return nil, err
 		}
 		for _, item := range response.Installations {
-			installation := Installation{
-				ID: item.ID, AccountID: item.Account.ID, AccountLogin: item.Account.Login,
-				AccountKind: item.Account.Type, Permissions: item.Permissions.model(),
-			}
-			if err := installation.Validate(client.projectPermission); err != nil {
+			installation, err := item.model(client.projectPermission)
+			if err != nil {
 				return nil, err
 			}
 			result = append(result, installation)
 		}
 		if len(response.Installations) < 100 {
 			return result, nil
+		}
+	}
+}
+
+func (client *Client) getInstallation(
+	ctx context.Context,
+	token UserToken,
+	installationID int64,
+) (Installation, bool, error) {
+	if token.value == "" || installationID <= 0 {
+		return Installation{}, false,
+			errors.New("realqa github: installation request is invalid")
+	}
+	for page := 1; ; page++ {
+		var response struct {
+			Installations []json.RawMessage `json:"installations"`
+		}
+		endpoint := "/user/installations?per_page=100&page=" + strconv.Itoa(page)
+		if err := client.getJSON(ctx, token, endpoint, &response); err != nil {
+			return Installation{}, false, err
+		}
+		for _, raw := range response.Installations {
+			var identity struct {
+				ID int64 `json:"id"`
+			}
+			if json.Unmarshal(raw, &identity) != nil || identity.ID != installationID {
+				continue
+			}
+			var item apiInstallation
+			if err := json.Unmarshal(raw, &item); err != nil {
+				return Installation{}, false,
+					errors.New("realqa github: installation response is invalid")
+			}
+			installation, err := item.model(client.projectPermission)
+			return installation, err == nil, err
+		}
+		if len(response.Installations) < 100 {
+			return Installation{}, false, nil
 		}
 	}
 }
@@ -273,7 +305,42 @@ func (client *Client) GetRepositoryDefinitions(
 		return RepositoryDefinitions{}, err
 	}
 	if status == http.StatusNotFound {
-		return RepositoryDefinitions{}, nil
+		if repository.Name == ".github" {
+			return RepositoryDefinitions{}, nil
+		}
+		var defaultRepository struct {
+			Private *bool `json:"private"`
+		}
+		endpoint = fmt.Sprintf("/repos/%s/.github", repository.Owner)
+		status, err = client.requestJSON(
+			ctx, token, http.MethodGet, endpoint, nil, &defaultRepository)
+		if err != nil {
+			return RepositoryDefinitions{}, err
+		}
+		if status == http.StatusNotFound {
+			return RepositoryDefinitions{}, nil
+		}
+		if status != http.StatusOK {
+			return RepositoryDefinitions{}, ErrProviderRejected
+		}
+		if defaultRepository.Private == nil {
+			return RepositoryDefinitions{},
+				errors.New("realqa github: default repository response is invalid")
+		}
+		if *defaultRepository.Private {
+			return RepositoryDefinitions{}, nil
+		}
+		repository.Name = ".github"
+		endpoint = fmt.Sprintf("/repos/%s/.github/contents/.github/ISSUE_TEMPLATE",
+			repository.Owner)
+		status, err = client.requestJSON(
+			ctx, token, http.MethodGet, endpoint, nil, &files)
+		if err != nil {
+			return RepositoryDefinitions{}, err
+		}
+		if status == http.StatusNotFound {
+			return RepositoryDefinitions{}, nil
+		}
 	}
 	if status != http.StatusOK {
 		return RepositoryDefinitions{}, ErrProviderRejected
@@ -464,7 +531,7 @@ func (client *Client) reconcile(
 		query.Set("sort", "created")
 		query.Set("direction", "desc")
 		query.Set("since", client.now().UTC().Add(-reconciliationAge).Format(time.RFC3339))
-		query.Set("per_page", "100")
+		query.Set("per_page", strconv.Itoa(reconcilePageSize))
 		query.Set("page", strconv.Itoa(pageNumber))
 		var response []apiIssue
 		endpoint := fmt.Sprintf("/repos/%s/%s/issues?%s",
@@ -486,7 +553,7 @@ func (client *Client) reconcile(
 			}
 			found = &issue
 		}
-		if len(response) < 100 {
+		if len(response) < reconcilePageSize {
 			complete = true
 			break
 		}
@@ -612,6 +679,26 @@ type apiAccount struct {
 	ID    int64       `json:"id"`
 	Login string      `json:"login"`
 	Type  AccountKind `json:"type"`
+}
+
+type apiInstallation struct {
+	ID          int64          `json:"id"`
+	Account     apiAccount     `json:"account"`
+	Permissions apiPermissions `json:"permissions"`
+}
+
+func (installation apiInstallation) model(
+	projectPermission ProjectPermission,
+) (Installation, error) {
+	result := Installation{
+		ID: installation.ID, AccountID: installation.Account.ID,
+		AccountLogin: installation.Account.Login, AccountKind: installation.Account.Type,
+		Permissions: installation.Permissions.model(),
+	}
+	if err := result.Validate(projectPermission); err != nil {
+		return Installation{}, err
+	}
+	return result, nil
 }
 
 type apiPermissions struct {
