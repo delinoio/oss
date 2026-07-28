@@ -387,9 +387,11 @@ const frontendText = await Promise.all(
 );
 const invokedCommands = new Set(
   frontendText.flatMap((source) =>
-    [...source.matchAll(/\binvoke(?:<[^;]*?>)?\(\s*"([a-z][a-z0-9_]*)"/gu)].map(
-      (match) => match[1],
-    ),
+    [
+      ...source.matchAll(
+        /\b(?:invoke|invokeCommand)(?:<[^;]*?>)?\(\s*"([a-z][a-z0-9_]*)"/gu,
+      ),
+    ].map((match) => match[1]),
   ),
 );
 for (const command of invokedCommands) {

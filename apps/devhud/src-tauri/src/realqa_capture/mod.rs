@@ -461,10 +461,19 @@ fn expected_frame_size(
     pixel_regions: &[DisplayPixelRegion],
 ) -> Result<geometry::PhysicalSize, CaptureFailure> {
     if let [pixel_region] = pixel_regions {
-        return Ok(geometry::PhysicalSize {
-            width: pixel_region.pixels.width,
-            height: pixel_region.pixels.height,
-        });
+        let display = snapshot
+            .display(&pixel_region.display_id)
+            .ok_or(CaptureFailure::InvalidDisplaySnapshot)?;
+        if logical_bounds.x >= display.logical_bounds.x
+            && logical_bounds.y >= display.logical_bounds.y
+            && logical_bounds.right() <= display.logical_bounds.right()
+            && logical_bounds.bottom() <= display.logical_bounds.bottom()
+        {
+            return Ok(geometry::PhysicalSize {
+                width: pixel_region.pixels.width,
+                height: pixel_region.pixels.height,
+            });
+        }
     }
 
     let scale = pixel_regions
@@ -1298,6 +1307,76 @@ mod tests {
             PhysicalSize {
                 width: 3,
                 height: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn single_display_region_preserves_blank_desktop_gap_in_frame_size() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        *backend.displays.lock().expect("display lock") = ["left", "right"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, id)| DisplayDescriptor {
+                id: DisplayId(id.to_owned()),
+                logical_bounds: LogicalRect {
+                    x: index as f64 * 200.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 100,
+                    height: 100,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: index == 0,
+            })
+            .collect();
+        backend.windows.lock().expect("window lock").clear();
+
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Region {
+            selection: SelectionGeometry {
+                snapshot_id: catalog.snapshot.snapshot_id.clone(),
+                bounds: LogicalRect {
+                    x: 50.0,
+                    y: 10.0,
+                    width: 100.0,
+                    height: 40.0,
+                },
+            },
+        };
+        core.begin(capture_request).expect("capture must work");
+
+        let backend_request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .clone()
+            .expect("backend must receive request");
+        assert_eq!(
+            backend_request.pixel_regions,
+            vec![DisplayPixelRegion {
+                display_id: DisplayId("left".to_owned()),
+                pixels: PixelRect {
+                    x: 50,
+                    y: 10,
+                    width: 50,
+                    height: 40,
+                },
+            }]
+        );
+        assert_eq!(
+            backend_request.expected_frame_size,
+            PhysicalSize {
+                width: 100,
+                height: 40,
             }
         );
     }

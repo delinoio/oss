@@ -423,6 +423,13 @@ pub(crate) fn adjust_selection(
     }
     let desktop = snapshot.desktop_bounds()?;
     let current = selection.bounds.checked()?;
+    if current.x < desktop.x
+        || current.y < desktop.y
+        || current.right() > desktop.right()
+        || current.bottom() > desktop.bottom()
+    {
+        return Err(CaptureFailure::InvalidSelection);
+    }
     let adjusted = match adjustment {
         SelectionAdjustment::Move { delta_x, delta_y } => {
             if !delta_x.is_finite() || !delta_y.is_finite() {
@@ -798,6 +805,33 @@ mod tests {
                 },
             ),
             Err(CaptureFailure::DisplaySnapshotChanged)
+        );
+    }
+
+    #[test]
+    fn resize_rejects_selection_outside_desktop_bounds() {
+        let snapshot = mixed_snapshot();
+        let selection = SelectionGeometry {
+            snapshot_id: snapshot.snapshot_id.clone(),
+            bounds: LogicalRect {
+                x: snapshot.desktop_bounds().expect("desktop bounds").right() + 1.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            },
+        };
+
+        assert_eq!(
+            adjust_selection(
+                &snapshot,
+                &selection,
+                SelectionAdjustment::Resize {
+                    handle: ResizeHandle::East,
+                    delta_x: 1.0,
+                    delta_y: 0.0,
+                },
+            ),
+            Err(CaptureFailure::InvalidSelection)
         );
     }
 }
