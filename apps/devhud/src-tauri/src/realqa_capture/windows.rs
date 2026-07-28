@@ -257,7 +257,7 @@ impl WindowsCaptureBackend {
         any(target_arch = "x86_64", target_arch = "aarch64")
     ))]
     pub(super) fn system() -> Option<Self> {
-        system::is_supported().then(|| Self::new(Arc::new(system::SystemWindowsAdapter)))
+        system::is_supported().then(|| Self::new(Arc::new(system::SystemWindowsAdapter::default())))
     }
 
     #[cfg(all(
@@ -1066,7 +1066,8 @@ mod system {
     };
 
     use windows::{
-        Graphics::Capture::GraphicsCaptureSession,
+        Foundation::TypedEventHandler,
+        Graphics::Capture::{GraphicsCaptureItem, GraphicsCaptureSession},
         Win32::{
             Foundation::{FILETIME, HWND, RECT},
             Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO},
@@ -1076,7 +1077,7 @@ mod system {
                 WindowsAndMessaging::{GetWindowDisplayAffinity, IsIconic, MONITORINFOF_PRIMARY},
             },
         },
-        core::Owned,
+        core::{IInspectable, Owned},
     };
     use windows_capture::{
         capture::{Context, GraphicsCaptureApiError, GraphicsCaptureApiHandler},
@@ -1093,7 +1094,30 @@ mod system {
 
     use super::*;
 
-    pub(super) struct SystemWindowsAdapter;
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    struct SystemWindowIdentity {
+        raw_hwnd: usize,
+        process_id: u32,
+        process_started_at: u64,
+    }
+
+    struct RetainedWindowSource {
+        id: NativeSourceId,
+        item: GraphicsCaptureItem,
+        window: Window,
+        closed: Arc<AtomicBool>,
+    }
+
+    #[derive(Default)]
+    struct SystemSourceRegistry {
+        next_window_id: usize,
+        windows: HashMap<SystemWindowIdentity, RetainedWindowSource>,
+    }
+
+    #[derive(Default)]
+    pub(super) struct SystemWindowsAdapter {
+        sources: Mutex<SystemSourceRegistry>,
+    }
 
     pub(super) fn is_supported() -> bool {
         let version = windows_version::OsVersion::current();
@@ -1131,11 +1155,16 @@ mod system {
 
         fn windows(&self) -> Result<Vec<WindowsWindow>, WindowsAdapterFailure> {
             let displays = self.displays()?;
-            Window::enumerate()
+            let windows = Window::enumerate()
                 .map_err(|_| WindowsAdapterFailure::Failed)?
                 .into_iter()
-                .filter_map(|window| window_record(window, &displays).transpose())
-                .collect()
+                .filter_map(|window| {
+                    window_record(window, &displays)
+                        .transpose()
+                        .map(|result| result.map(|record| (window, record)))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            self.retain_window_sources(windows)
         }
 
         fn capture(
@@ -1144,17 +1173,120 @@ mod system {
             pointer: PointerInclusion,
             cancel: Arc<AtomicBool>,
         ) -> Result<NativeFrame, WindowsAdapterFailure> {
-            let source = SystemCaptureSource::from_token(source)?;
-            if let SystemCaptureSource::Window(window) = source {
+            let source = self.capture_source(source)?;
+            if let SystemCaptureSource::Window { window, .. } = &source {
                 if unsafe { IsIconic(HWND(window.as_raw_hwnd())).as_bool() } {
                     return Err(WindowsAdapterFailure::WindowMinimized);
                 }
-                if window_is_protected(window) {
+                if window_is_protected(*window) {
                     return Err(WindowsAdapterFailure::ProtectedContent);
                 }
             }
             capture_one(source, pointer, cancel)
         }
+    }
+
+    impl SystemWindowsAdapter {
+        fn retain_window_sources(
+            &self,
+            windows: Vec<(Window, WindowsWindow)>,
+        ) -> Result<Vec<WindowsWindow>, WindowsAdapterFailure> {
+            let mut sources = self
+                .sources
+                .lock()
+                .map_err(|_| WindowsAdapterFailure::Failed)?;
+            let mut previous = mem::take(&mut sources.windows);
+            let mut current = HashMap::with_capacity(windows.len());
+            let mut records = Vec::with_capacity(windows.len());
+
+            for (window, mut record) in windows {
+                let identity = SystemWindowIdentity {
+                    raw_hwnd: window.as_raw_hwnd() as usize,
+                    process_id: record.process_id,
+                    process_started_at: record.process_started_at,
+                };
+                let retained = match previous.remove(&identity) {
+                    Some(retained) if !retained.closed.load(Ordering::Acquire) => retained,
+                    _ => {
+                        sources.next_window_id = sources
+                            .next_window_id
+                            .checked_add(1)
+                            .ok_or(WindowsAdapterFailure::Failed)?;
+                        retained_window_source(window, NativeSourceId(sources.next_window_id))?
+                    }
+                };
+                record.source = retained.id;
+                current.insert(identity, retained);
+                records.push(record);
+            }
+
+            sources.windows = current;
+            Ok(records)
+        }
+
+        fn capture_source(
+            &self,
+            source: NativeCaptureSource,
+        ) -> Result<SystemCaptureSource, WindowsAdapterFailure> {
+            let id = source.id();
+            match source {
+                NativeCaptureSource::Window(_) => {
+                    let sources = self
+                        .sources
+                        .lock()
+                        .map_err(|_| WindowsAdapterFailure::Failed)?;
+                    let retained = sources
+                        .windows
+                        .values()
+                        .find(|retained| retained.id == id)
+                        .ok_or(WindowsAdapterFailure::WindowClosed)?;
+                    if retained.closed.load(Ordering::Acquire) {
+                        return Err(WindowsAdapterFailure::WindowClosed);
+                    }
+                    Ok(SystemCaptureSource::Window {
+                        item: retained.item.clone(),
+                        window: retained.window,
+                    })
+                }
+                NativeCaptureSource::Display(_) => {
+                    let monitor = Monitor::from_raw_hmonitor(id.0 as *mut std::ffi::c_void);
+                    Monitor::enumerate()
+                        .map_err(|_| WindowsAdapterFailure::Failed)?
+                        .contains(&monitor)
+                        .then_some(SystemCaptureSource::Monitor(monitor))
+                        .ok_or(WindowsAdapterFailure::DisplayRemoved)
+                }
+            }
+        }
+    }
+
+    fn retained_window_source(
+        window: Window,
+        id: NativeSourceId,
+    ) -> Result<RetainedWindowSource, WindowsAdapterFailure> {
+        let GraphicsCaptureItemType::Window((item, window)) = window
+            .try_into()
+            .map_err(|_| WindowsAdapterFailure::Failed)?
+        else {
+            return Err(WindowsAdapterFailure::Failed);
+        };
+        let closed = Arc::new(AtomicBool::new(false));
+        item.Closed(
+            &TypedEventHandler::<GraphicsCaptureItem, IInspectable>::new({
+                let closed = closed.clone();
+                move |_, _| {
+                    closed.store(true, Ordering::Release);
+                    Ok(())
+                }
+            }),
+        )
+        .map_err(|_| WindowsAdapterFailure::Failed)?;
+        Ok(RetainedWindowSource {
+            id,
+            item,
+            window,
+            closed,
+        })
     }
 
     fn display_record(monitor: Monitor) -> Result<WindowsDisplay, WindowsAdapterFailure> {
@@ -1307,33 +1439,13 @@ mod system {
         }
     }
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone)]
     enum SystemCaptureSource {
         Monitor(Monitor),
-        Window(Window),
-    }
-
-    impl SystemCaptureSource {
-        fn from_token(source: NativeCaptureSource) -> Result<Self, WindowsAdapterFailure> {
-            let raw = source.id().0 as *mut std::ffi::c_void;
-            match source {
-                NativeCaptureSource::Window(_) => {
-                    let window = Window::from_raw_hwnd(raw);
-                    window
-                        .is_valid()
-                        .then_some(Self::Window(window))
-                        .ok_or(WindowsAdapterFailure::WindowClosed)
-                }
-                NativeCaptureSource::Display(_) => {
-                    let monitor = Monitor::from_raw_hmonitor(raw);
-                    Monitor::enumerate()
-                        .map_err(|_| WindowsAdapterFailure::Failed)?
-                        .contains(&monitor)
-                        .then_some(Self::Monitor(monitor))
-                        .ok_or(WindowsAdapterFailure::DisplayRemoved)
-                }
-            }
-        }
+        Window {
+            item: GraphicsCaptureItem,
+            window: Window,
+        },
     }
 
     impl TryInto<GraphicsCaptureItemType> for SystemCaptureSource {
@@ -1342,7 +1454,9 @@ mod system {
         fn try_into(self) -> Result<GraphicsCaptureItemType, Self::Error> {
             match self {
                 Self::Monitor(monitor) => monitor.try_into(),
-                Self::Window(window) => window.try_into(),
+                Self::Window { item, window } => {
+                    Ok(GraphicsCaptureItemType::Window((item, window)))
+                }
             }
         }
     }
@@ -1410,9 +1524,9 @@ mod system {
         pointer: PointerInclusion,
         cancel: Arc<AtomicBool>,
     ) -> Result<NativeFrame, WindowsAdapterFailure> {
-        let source_lost = match source {
+        let source_lost = match &source {
             SystemCaptureSource::Monitor(_) => WindowsAdapterFailure::DisplayRemoved,
-            SystemCaptureSource::Window(_) => WindowsAdapterFailure::WindowClosed,
+            SystemCaptureSource::Window { .. } => WindowsAdapterFailure::WindowClosed,
         };
         let shared = Arc::new(CaptureShared {
             result: Mutex::new(None),
@@ -2182,6 +2296,30 @@ mod tests {
             core.begin(window_request(&catalog, "recycled-hwnd")),
             Err(CaptureFailure::WindowClosed)
         );
+    }
+
+    #[test]
+    fn recycled_hwnd_in_same_process_gets_a_new_window_id() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let display = adapter.displays.lock().expect("display lock")[1].clone();
+        let window = available_window(NativeSourceId(3), &display, display.logical_bounds);
+        adapter
+            .windows
+            .lock()
+            .expect("window lock")
+            .push(window.clone());
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        let stale_request = window_request(&catalog, "recycled-same-process-hwnd");
+        let stale_id = catalog.windows[0].id.clone();
+
+        let mut replacement = window;
+        replacement.source = NativeSourceId(4);
+        adapter.windows.lock().expect("window lock")[0] = replacement;
+        let replacement_catalog = core.source_catalog().expect("replacement catalog");
+
+        assert_ne!(replacement_catalog.windows[0].id, stale_id);
+        assert_eq!(core.begin(stale_request), Err(CaptureFailure::WindowClosed));
     }
 
     #[test]
