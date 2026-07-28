@@ -12,12 +12,14 @@ const [
   capabilitySource,
   cargoSource,
   captureCoreSource,
+  nativeSource,
   packageSource,
   windowsSource,
 ] = await Promise.all([
   read("src-tauri/capabilities/realqa-capture.json"),
   read("src-tauri/Cargo.toml"),
   read("src-tauri/src/realqa_capture/mod.rs"),
+  read("src-tauri/src/lib.rs"),
   read("package.json"),
   read("src-tauri/src/realqa_capture/windows.rs"),
 ]);
@@ -91,6 +93,15 @@ requireCondition(
     windowsSource.includes("sanitize_metadata") &&
     windowsSource.includes("diagnostics_never_receive_it"),
   "only bounded metadata may cross the core and capture diagnostics must remain value-free",
+);
+requireCondition(
+  nativeSource.includes("async fn realqa_begin_capture("),
+  "capture must run as an async Tauri command so cancellation stays responsive",
+);
+requireCondition(
+  windowsSource.includes("SecondaryWindowSettings::Default") &&
+    !windowsSource.includes("SecondaryWindowSettings::Exclude"),
+  "Windows 11 capture must not require the Windows 11 24H2 secondary-window API",
 );
 requireCondition(
   packageJson.scripts?.["check:realqa:windows"] ===

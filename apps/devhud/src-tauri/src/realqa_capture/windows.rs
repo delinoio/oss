@@ -22,6 +22,16 @@ const fn is_supported_windows_version(major: u32, build: u32) -> bool {
     major > 10 || (major == 10 && build >= WINDOWS_11_MINIMUM_BUILD)
 }
 
+const fn permission_from_support(
+    supported: bool,
+) -> Result<CapturePermission, WindowsAdapterFailure> {
+    if supported {
+        Ok(CapturePermission::Granted)
+    } else {
+        Err(WindowsAdapterFailure::Unavailable)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct NativeSourceId(usize);
 
@@ -382,6 +392,7 @@ impl WindowsCaptureBackend {
             )
             .map_err(BackendFailure::from)?;
         checked_native_frame(&frame)?;
+        self.revalidate_snapshot(request)?;
         let captured = self
             .current_windows()?
             .into_iter()
@@ -525,6 +536,13 @@ impl CaptureBackend for WindowsCaptureBackend {
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?;
         let display_ids = sources.display_ids.clone();
+        let current_identities = windows
+            .iter()
+            .map(WindowsWindow::identity)
+            .collect::<HashSet<_>>();
+        sources
+            .window_ids
+            .retain(|identity, _| current_identities.contains(identity));
         let mut current = HashMap::with_capacity(windows.len());
         let mut output = Vec::with_capacity(windows.len());
         for window in windows {
@@ -1023,14 +1041,8 @@ mod system {
     impl WindowsPlatformAdapter for SystemWindowsAdapter {
         fn permission(&self) -> Result<CapturePermission, WindowsAdapterFailure> {
             GraphicsCaptureSession::IsSupported()
-                .map(|supported| {
-                    if supported {
-                        CapturePermission::Granted
-                    } else {
-                        CapturePermission::Denied
-                    }
-                })
                 .map_err(|_| WindowsAdapterFailure::Unavailable)
+                .and_then(permission_from_support)
         }
 
         fn displays(&self) -> Result<Vec<WindowsDisplay>, WindowsAdapterFailure> {
@@ -1352,7 +1364,7 @@ mod system {
                 PointerInclusion::Exclude => CursorCaptureSettings::WithoutCursor,
             },
             DrawBorderSettings::WithoutBorder,
-            SecondaryWindowSettings::Exclude,
+            SecondaryWindowSettings::Default,
             MinimumUpdateIntervalSettings::Default,
             DirtyRegionSettings::Default,
             ColorFormat::Rgba8,
@@ -1900,6 +1912,60 @@ mod tests {
     }
 
     #[test]
+    fn rejects_spanned_display_replacement_while_waiting_for_window_frame() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        {
+            let mut displays = adapter.displays.lock().expect("display lock");
+            displays[1].logical_bounds.y = 1.0;
+            displays[1].native_bounds.top = 2;
+            displays[1].native_bounds.bottom = 6;
+        }
+        let displays = adapter.displays.lock().expect("display lock").clone();
+        let mut window = available_window(
+            NativeSourceId(3),
+            &displays[1],
+            LogicalRect {
+                x: -1.0,
+                y: 0.0,
+                width: 2.0,
+                height: 3.0,
+            },
+        );
+        window.native_bounds.left = -1;
+        window.bounds = logical_window_bounds(window.native_bounds, &displays)
+            .expect("logical bounds")
+            .expect("visible window");
+        adapter
+            .windows
+            .lock()
+            .expect("window lock")
+            .push(window.clone());
+        adapter.frames.lock().expect("frames lock").insert(
+            window.source,
+            Ok(solid_frame(
+                PhysicalSize {
+                    width: 3,
+                    height: 6,
+                },
+                [0, 255, 0, 255],
+            )),
+        );
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        let mut changed = displays;
+        changed[0].source = NativeSourceId(99);
+        *adapter
+            .displays_after_capture
+            .lock()
+            .expect("displays after capture lock") = Some(changed);
+
+        assert_eq!(
+            core.begin(window_request(&catalog, "spanned-display-replaced")),
+            Err(CaptureFailure::DisplayRemoved)
+        );
+    }
+
+    #[test]
     fn rejects_window_geometry_changed_while_waiting_for_first_frame() {
         let adapter = Arc::new(FixtureAdapter::mixed_dpi());
         let display = adapter.displays.lock().expect("display lock")[1].clone();
@@ -1962,6 +2028,35 @@ mod tests {
             core.begin(window_request(&catalog, "recycled-hwnd")),
             Err(CaptureFailure::WindowClosed)
         );
+    }
+
+    #[test]
+    fn retired_hwnd_identity_does_not_reuse_a_stale_window_id() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let display = adapter.displays.lock().expect("display lock")[1].clone();
+        let window = available_window(NativeSourceId(3), &display, display.logical_bounds);
+        adapter
+            .windows
+            .lock()
+            .expect("window lock")
+            .push(window.clone());
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        let stale_request = window_request(&catalog, "reused-retired-hwnd");
+        let stale_id = catalog.windows[0].id.clone();
+
+        adapter.windows.lock().expect("window lock").clear();
+        assert!(
+            core.source_catalog()
+                .expect("catalog without retired window")
+                .windows
+                .is_empty()
+        );
+        adapter.windows.lock().expect("window lock").push(window);
+        let replacement_catalog = core.source_catalog().expect("replacement catalog");
+
+        assert_ne!(replacement_catalog.windows[0].id, stale_id);
+        assert_eq!(core.begin(stale_request), Err(CaptureFailure::WindowClosed));
     }
 
     #[test]
@@ -2306,5 +2401,17 @@ mod tests {
         assert!(!is_supported_windows_version(10, 21_999));
         assert!(is_supported_windows_version(10, 22_000));
         assert!(is_supported_windows_version(11, 0));
+    }
+
+    #[test]
+    fn unsupported_graphics_capture_is_unavailable() {
+        assert_eq!(
+            permission_from_support(false),
+            Err(WindowsAdapterFailure::Unavailable)
+        );
+        assert_eq!(
+            permission_from_support(true),
+            Ok(CapturePermission::Granted)
+        );
     }
 }
