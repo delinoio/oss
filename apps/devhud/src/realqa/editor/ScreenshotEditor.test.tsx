@@ -15,6 +15,7 @@ import {
   blurPreviewTiles,
   boxBlurPreviewPixels,
   pixelatePreviewPixels,
+  pixelatePreviewSize,
   pixelatePreviewTiles,
 } from "./ScreenshotEditor";
 
@@ -430,6 +431,18 @@ describe("ScreenshotEditor", () => {
     expect(
       tiles.reduce((pixels, tile) => pixels + tile.columns * tile.rows, 0),
     ).toBe(2_500 * 2_500);
+  });
+
+  it("bounds pixelation backing canvases for extreme aspect ratios", () => {
+    const preview = pixelatePreviewSize(50_000_000, 1, 4);
+
+    expect(preview.columns).toBe(12_500_000);
+    expect(preview.rows).toBe(1);
+    expect(preview.width).toBeLessThanOrEqual(2_048);
+    expect(preview.height).toBeLessThanOrEqual(2_048);
+    expect(preview.width * preview.height).toBeLessThanOrEqual(
+      4 * 1_024 * 1_024,
+    );
   });
 
   it("keeps source-derived effects before annotations", async () => {

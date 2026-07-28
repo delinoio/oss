@@ -772,6 +772,8 @@ export function boxBlurPreviewPixels(
 }
 
 const MAX_PIXELATE_PREVIEW_TILE_EDGE = 1_024;
+const MAX_PIXELATE_PREVIEW_EDGE = 2_048;
+const MAX_PIXELATE_PREVIEW_PIXELS = 4 * 1_024 * 1_024;
 
 interface PixelatePreviewTile {
   readonly columns: number;
@@ -782,6 +784,34 @@ interface PixelatePreviewTile {
   readonly width: number;
   readonly x: number;
   readonly y: number;
+}
+
+interface PixelatePreviewSize {
+  readonly columns: number;
+  readonly height: number;
+  readonly rows: number;
+  readonly width: number;
+}
+
+export function pixelatePreviewSize(
+  width: number,
+  height: number,
+  blockSize: number,
+): PixelatePreviewSize {
+  const columns = Math.ceil(width / blockSize);
+  const rows = Math.ceil(height / blockSize);
+  const previewScale = Math.min(
+    1,
+    MAX_PIXELATE_PREVIEW_EDGE / columns,
+    MAX_PIXELATE_PREVIEW_EDGE / rows,
+    Math.sqrt(MAX_PIXELATE_PREVIEW_PIXELS / (columns * rows)),
+  );
+  return {
+    columns,
+    height: Math.max(1, Math.floor(rows * previewScale)),
+    rows,
+    width: Math.max(1, Math.floor(columns * previewScale)),
+  };
 }
 
 export function pixelatePreviewTiles(
@@ -852,13 +882,33 @@ function renderPixelatedPreview(
   preview: HTMLImageElement,
   canvas: HTMLCanvasElement,
   operation: Extract<EditorOperation, { readonly kind: "pixelate" }>,
+  previewSize: PixelatePreviewSize,
 ) {
   const context = canvas.getContext("2d");
   if (context === null) return;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  if (
+    previewSize.width < previewSize.columns ||
+    previewSize.height < previewSize.rows
+  ) {
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(
+      preview,
+      operation.rect.x,
+      operation.rect.y,
+      operation.rect.width,
+      operation.rect.height,
+      0,
+      0,
+      previewSize.width,
+      previewSize.height,
+    );
+    return;
+  }
   const sourceCanvas = document.createElement("canvas");
   const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
   if (sourceContext === null) return;
-  context.clearRect(0, 0, canvas.width, canvas.height);
   for (const tile of pixelatePreviewTiles(
     operation.rect.width,
     operation.rect.height,
@@ -1027,21 +1077,30 @@ function PixelatedOverlay({
   readonly sourceUrl: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const columns = Math.ceil(operation.rect.width / operation.blockSize);
-  const rows = Math.ceil(operation.rect.height / operation.blockSize);
+  const previewSize = useMemo(
+    () =>
+      pixelatePreviewSize(
+        operation.rect.width,
+        operation.rect.height,
+        operation.blockSize,
+      ),
+    [operation.blockSize, operation.rect.height, operation.rect.width],
+  );
   const clipId = `${effectPrefix}-pixel-clip-${index}`;
 
   useEffect(() => {
     const preview = new Image();
     preview.onload = () => {
       const canvas = canvasRef.current;
-      if (canvas !== null) renderPixelatedPreview(preview, canvas, operation);
+      if (canvas !== null) {
+        renderPixelatedPreview(preview, canvas, operation, previewSize);
+      }
     };
     preview.src = sourceUrl;
     return () => {
       preview.onload = null;
     };
-  }, [operation, sourceUrl]);
+  }, [operation, previewSize, sourceUrl]);
 
   return (
     <>
@@ -1057,17 +1116,17 @@ function PixelatedOverlay({
       </defs>
       <foreignObject
         clipPath={`url(#${clipId})`}
-        height={rows * operation.blockSize}
-        width={columns * operation.blockSize}
+        height={previewSize.rows * operation.blockSize}
+        width={previewSize.columns * operation.blockSize}
         x={operation.rect.x}
         y={operation.rect.y}
       >
         <canvas
           aria-hidden="true"
           className="editor-pixelate"
-          height={rows}
+          height={previewSize.height}
           ref={canvasRef}
-          width={columns}
+          width={previewSize.width}
         />
       </foreignObject>
     </>

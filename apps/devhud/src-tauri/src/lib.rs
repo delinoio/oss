@@ -3023,9 +3023,12 @@ async fn realqa_composer_flatten_image(
     request: realqa_capture::ComposerFlattenRequest,
     app: AppHandle<ActiveRuntime>,
 ) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
+    let work = app
+        .state::<realqa_capture::ComposerCore>()
+        .begin_flatten_image(request)?;
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<realqa_capture::ComposerCore>()
-            .flatten_image(request)
+            .flatten_image(work)
     })
     .await
     .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)?

@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     sync::{
-        Mutex,
-        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -105,8 +105,26 @@ struct ComposerState {
     sessions: HashMap<ComposerSessionId, ComposerSession>,
 }
 
+#[derive(Debug)]
+pub(crate) struct ComposerFlattenWork {
+    request: ComposerFlattenRequest,
+    permit: ComposerFlattenPermit,
+}
+
+#[derive(Debug)]
+struct ComposerFlattenPermit {
+    in_flight: Arc<AtomicBool>,
+}
+
+impl Drop for ComposerFlattenPermit {
+    fn drop(&mut self) {
+        self.in_flight.store(false, Ordering::Release);
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct ComposerCore {
+    flatten_in_flight: Arc<AtomicBool>,
     next_source_revision: AtomicU64,
     state: Mutex<ComposerState>,
 }
@@ -184,10 +202,35 @@ impl ComposerCore {
         })
     }
 
-    pub(crate) fn flatten_image(
+    pub(crate) fn begin_flatten_image(
         &self,
         request: ComposerFlattenRequest,
+    ) -> Result<ComposerFlattenWork, CaptureFailure> {
+        self.flatten_in_flight
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| {
+                tracing::warn!(
+                    event = "realqa_composer_flatten_rejected",
+                    "a composer flatten worker is already running"
+                );
+                CaptureFailure::CaptureFailed
+            })?;
+        Ok(ComposerFlattenWork {
+            request,
+            permit: ComposerFlattenPermit {
+                in_flight: Arc::clone(&self.flatten_in_flight),
+            },
+        })
+    }
+
+    pub(crate) fn flatten_image(
+        &self,
+        work: ComposerFlattenWork,
     ) -> Result<ComposerImage, CaptureFailure> {
+        let ComposerFlattenWork {
+            request,
+            permit: _permit,
+        } = work;
         validate_identifier(&request.session_id.0)?;
         validate_identifier(&request.image_id.0)?;
         let (retained_source, original_encoded_bytes, source_revision) = {
@@ -582,22 +625,24 @@ mod tests {
             },
         };
         let first = composer
-            .flatten_image(ComposerFlattenRequest {
+            .begin_flatten_image(ComposerFlattenRequest {
                 session_id: ComposerSessionId("session-1".to_owned()),
                 image_id: ComposerImageId("image-1".to_owned()),
                 source_revision: accepted.source_revision,
                 operations: vec![operation.clone()],
                 output_media_type: ImageMediaType::Png,
             })
+            .and_then(|work| composer.flatten_image(work))
             .expect("flatten must succeed");
         let second = composer
-            .flatten_image(ComposerFlattenRequest {
+            .begin_flatten_image(ComposerFlattenRequest {
                 session_id: ComposerSessionId("session-1".to_owned()),
                 image_id: ComposerImageId("image-1".to_owned()),
                 source_revision: accepted.source_revision,
                 operations: vec![operation],
                 output_media_type: ImageMediaType::Png,
             })
+            .and_then(|work| composer.flatten_image(work))
             .expect("repeat flatten must succeed");
         assert_eq!(first.image, second.image);
         assert_eq!((first.width, first.height), (1, 1));
@@ -622,14 +667,49 @@ mod tests {
             .expect("replacement must be accepted");
 
         assert_eq!(
-            composer.flatten_image(ComposerFlattenRequest {
-                session_id: ComposerSessionId("session-1".to_owned()),
-                image_id: ComposerImageId("image-1".to_owned()),
-                source_revision: first.source_revision,
-                operations: Vec::new(),
-                output_media_type: ImageMediaType::Png,
-            }),
+            composer
+                .begin_flatten_image(ComposerFlattenRequest {
+                    session_id: ComposerSessionId("session-1".to_owned()),
+                    image_id: ComposerImageId("image-1".to_owned()),
+                    source_revision: first.source_revision,
+                    operations: Vec::new(),
+                    output_media_type: ImageMediaType::Png,
+                })
+                .and_then(|work| composer.flatten_image(work)),
             Err(CaptureFailure::InvalidEditSequence)
+        );
+    }
+
+    #[test]
+    fn permits_only_one_process_wide_flatten_worker() {
+        let composer = ComposerCore::default();
+        let request = ComposerFlattenRequest {
+            session_id: ComposerSessionId("session-1".to_owned()),
+            image_id: ComposerImageId("image-1".to_owned()),
+            source_revision: 1,
+            operations: Vec::new(),
+            output_media_type: ImageMediaType::Png,
+        };
+        let first = composer
+            .begin_flatten_image(request.clone())
+            .expect("first worker must receive the permit");
+
+        assert!(matches!(
+            composer.begin_flatten_image(request),
+            Err(CaptureFailure::CaptureFailed)
+        ));
+
+        drop(first);
+        assert!(
+            composer
+                .begin_flatten_image(ComposerFlattenRequest {
+                    session_id: ComposerSessionId("session-1".to_owned()),
+                    image_id: ComposerImageId("image-1".to_owned()),
+                    source_revision: 1,
+                    operations: Vec::new(),
+                    output_media_type: ImageMediaType::Png,
+                })
+                .is_ok()
         );
     }
 }
