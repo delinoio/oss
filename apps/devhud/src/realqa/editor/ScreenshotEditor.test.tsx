@@ -501,6 +501,45 @@ describe("ScreenshotEditor", () => {
     expect(canvas.querySelector("marker")).not.toBeInTheDocument();
   });
 
+  it("previews rectangles with native inclusive endpoints", async () => {
+    const user = userEvent.setup();
+    const { canvas } = fixture();
+    await user.click(screen.getByRole("button", { name: "Rectangle" }));
+    fireEvent.pointerDown(canvas, { clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 500, clientY: 400, pointerId: 1 });
+    fireEvent.pointerDown(canvas, { clientX: 250, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 250, clientY: 200, pointerId: 2 });
+
+    const rectangles = canvas.querySelectorAll("g.editor-rectangle");
+    expect(rectangles).toHaveLength(2);
+    expect(rectangles[0]).toHaveAttribute("stroke-linecap", "round");
+    expect(rectangles[0]).toHaveAttribute("stroke-linejoin", "round");
+    expect(
+      Array.from(rectangles[0]?.querySelectorAll("line") ?? []).map((line) => [
+        line.getAttribute("x1"),
+        line.getAttribute("y1"),
+        line.getAttribute("x2"),
+        line.getAttribute("y2"),
+      ]),
+    ).toEqual([
+      ["0", "0", "99", "0"],
+      ["99", "0", "99", "79"],
+      ["99", "79", "0", "79"],
+      ["0", "79", "0", "0"],
+    ]);
+    const pointEdges = rectangles[1]?.querySelectorAll("line");
+    expect(pointEdges).toHaveLength(4);
+    expect(
+      Array.from(pointEdges ?? []).every(
+        (line) =>
+          line.getAttribute("x1") === "50" &&
+          line.getAttribute("y1") === "40" &&
+          line.getAttribute("x2") === "50" &&
+          line.getAttribute("y2") === "40",
+      ),
+    ).toBe(true);
+  });
+
   it("previews marker numbers with native bitmap metrics", async () => {
     const user = userEvent.setup();
     const { canvas } = fixture();

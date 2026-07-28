@@ -1126,18 +1126,39 @@ function OperationOverlay({
         </g>
       );
     }
-    case "rectangle":
+    case "rectangle": {
+      const right = operation.rect.x + operation.rect.width - 1;
+      const bottom = operation.rect.y + operation.rect.height - 1;
       return (
-        <rect
-          fill="none"
-          height={operation.rect.height}
+        <g
+          className="editor-rectangle"
           stroke={operation.color}
+          strokeLinecap="round"
+          strokeLinejoin="round"
           strokeWidth={operation.lineWidth}
-          width={operation.rect.width}
-          x={operation.rect.x}
-          y={operation.rect.y}
-        />
+        >
+          <line
+            x1={operation.rect.x}
+            x2={right}
+            y1={operation.rect.y}
+            y2={operation.rect.y}
+          />
+          <line x1={right} x2={right} y1={operation.rect.y} y2={bottom} />
+          <line
+            x1={right}
+            x2={operation.rect.x}
+            y1={bottom}
+            y2={bottom}
+          />
+          <line
+            x1={operation.rect.x}
+            x2={operation.rect.x}
+            y1={bottom}
+            y2={operation.rect.y}
+          />
+        </g>
       );
+    }
     case "freehand":
       return (
         <polyline
