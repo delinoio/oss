@@ -116,7 +116,7 @@ message RegisterDeviceRequest {
   PushRegistration push = 5;
   bool detailed_notification_text_enabled = 6;
   repeated ViewShortcut shortcuts = 7;
-  repeated WidgetState widgets = 8;
+  repeated WidgetConfiguration widgets = 8;
 }
 
 message RegisterDeviceResponse {
@@ -133,7 +133,7 @@ message UpdateDeviceRequest {
   PushRegistration push = 4;
   bool detailed_notification_text_enabled = 5;
   repeated ViewShortcut shortcuts = 6;
-  repeated WidgetState widgets = 7;
+  repeated WidgetConfiguration widgets = 7;
 }
 
 message UpdateDeviceResponse {
@@ -186,4 +186,13 @@ message ResolveNotificationEventResponse {
   UuidV7 view_id = 3;
   PullRequestDetail pull_request = 4;
   NotificationTransition transition = 5;
+}
+
+// WidgetConfiguration is client-authored input. Widget snapshots and
+// synchronized widget revisions remain server-owned response state.
+message WidgetConfiguration {
+  UuidV7 widget_id = 1;
+  UuidV7 view_id = 2;
+  WidgetFamily family = 3;
+  WidgetPrivacy privacy = 4;
 }

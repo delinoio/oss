@@ -178,6 +178,7 @@ message UpdateViewInput {
   ViewQuery query = 3;
   ViewSort sort = 4;
   ViewGrouping grouping = 5;
+  ViewNotificationPreference notification_preference = 6;
 }
 
 message ListViewsRequest {
@@ -263,6 +264,7 @@ message PullRequestResult {
   Mergeability mergeability = 7;
   bool is_draft = 8;
   google.protobuf.Timestamp updated_at = 9;
+  Revision revision = 10;
 }
 
 enum MergeMethod {

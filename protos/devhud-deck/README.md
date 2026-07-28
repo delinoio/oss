@@ -32,11 +32,14 @@ and delibase's typed lifecycle delivery may consume it.
   state/draft, base/head, review decision, checks, and updated ranges while
   retaining unrecognized raw clauses.
 - The view registry contains only `GITHUB_PULL_REQUESTS`. Update input has no
-  owner or kind field, and there is no transfer, copy, plugin, or remote-UI RPC.
+  owner or kind field, may update the view notification preference, and there
+  is no transfer, copy, plugin, or remote-UI RPC.
 - Pull-request mutations are a closed typed union. Merge requires explicit
-  confirmation; comments, approvals, and change requests are not Deck actions.
+  confirmation, and list results expose the revision required by mutations;
+  comments, approvals, and change requests are not Deck actions.
 - Widget actions are client behavior and cannot carry a mutation. Push payloads
-  contain only opaque event identifiers.
+  contain only opaque event identifiers. Device writes carry widget
+  configuration only; widget snapshots and synchronized state are server-owned.
 - Stable non-OK responses carry `ErrorDetail`; clients switch on `ErrorReason`,
   not the display-safe message.
 

@@ -142,6 +142,9 @@ func TestCoreRepresentationShape(t *testing.T) {
 	if update.Fields().ByName("owner") != nil || update.Fields().ByName("kind") != nil {
 		t.Error("UpdateViewInput permits a view transfer or kind conversion")
 	}
+	if update.Fields().ByName("notification_preference") == nil {
+		t.Error("UpdateViewInput cannot update view notification preferences")
+	}
 
 	listPullRequests := viewMessages.ByName("ListPullRequestsResponse")
 	for _, field := range []protoreflect.Name{
@@ -173,6 +176,7 @@ func TestPullRequestResultAndMutationShape(t *testing.T) {
 		"mergeability",
 		"is_draft",
 		"updated_at",
+		"revision",
 	} {
 		if result.Fields().ByName(field) == nil {
 			t.Errorf("PullRequestResult missing %s", field)
@@ -221,6 +225,33 @@ func TestDeviceNotificationAndWidgetShape(t *testing.T) {
 	} {
 		if widget.Fields().ByName(field) == nil {
 			t.Errorf("WidgetState missing %s", field)
+		}
+	}
+
+	widgetConfiguration := messages.ByName("WidgetConfiguration")
+	for _, field := range []protoreflect.Name{
+		"widget_id",
+		"view_id",
+		"family",
+		"privacy",
+	} {
+		if widgetConfiguration.Fields().ByName(field) == nil {
+			t.Errorf("WidgetConfiguration missing %s", field)
+		}
+	}
+	for _, field := range []protoreflect.Name{"snapshot", "revision"} {
+		if widgetConfiguration.Fields().ByName(field) != nil {
+			t.Errorf("WidgetConfiguration permits client-authored %s", field)
+		}
+	}
+	for _, requestName := range []protoreflect.Name{
+		"RegisterDeviceRequest",
+		"UpdateDeviceRequest",
+	} {
+		request := messages.ByName(requestName)
+		widgets := request.Fields().ByName("widgets")
+		if widgets == nil || widgets.Message() != widgetConfiguration {
+			t.Errorf("%s.widgets does not use WidgetConfiguration", requestName)
 		}
 	}
 
