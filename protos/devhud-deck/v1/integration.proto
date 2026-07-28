@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package devhud.deck.v1;
+
+import "devhud-deck/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1;deckv1";
+
+service DeckIntegrationService {
+  rpc GetGitHubConnection(GetGitHubConnectionRequest) returns (GetGitHubConnectionResponse);
+  rpc StartGitHubConnection(StartGitHubConnectionRequest) returns (StartGitHubConnectionResponse);
+  rpc ListGitHubInstallations(ListGitHubInstallationsRequest) returns (ListGitHubInstallationsResponse);
+  rpc DisconnectGitHubConnection(DisconnectGitHubConnectionRequest) returns (DisconnectGitHubConnectionResponse);
+}
+
+message GitHubConnection {
+  UuidV7 connection_id = 1;
+  Owner owner = 2;
+  ConnectionState state = 3;
+  uint64 github_installation_id = 4;
+  Revision revision = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+enum GitHubAccountKind {
+  GIT_HUB_ACCOUNT_KIND_UNSPECIFIED = 0;
+  GIT_HUB_ACCOUNT_KIND_USER = 1;
+  GIT_HUB_ACCOUNT_KIND_ORGANIZATION = 2;
+}
+
+message GitHubAccountIdentity {
+  uint64 github_account_id = 1;
+  string login = 2;
+  GitHubAccountKind kind = 3;
+}
+
+message GitHubInstallation {
+  uint64 github_installation_id = 1;
+  Owner owner = 2;
+  ConnectionState state = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  GitHubAccountIdentity account = 5;
+}
+
+message GetGitHubConnectionRequest {
+  Owner owner = 1;
+}
+
+message GetGitHubConnectionResponse {
+  GitHubConnection connection = 1;
+}
+
+message StartGitHubConnectionRequest {
+  Owner owner = 1;
+}
+
+message StartGitHubConnectionResponse {
+  // authorization_target is an ephemeral, validated GitHub.com App/OAuth target.
+  // It is not a general-purpose URL and must not be logged, cached, or persisted.
+  string authorization_target = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message ListGitHubInstallationsRequest {
+  Owner owner = 1;
+  PageRequest page = 2;
+}
+
+message ListGitHubInstallationsResponse {
+  repeated GitHubInstallation installations = 1;
+  PageResponse page = 2;
+}
+
+message DisconnectGitHubConnectionRequest {
+  UuidV7 connection_id = 1;
+  Revision expected_revision = 2;
+}
+
+message DisconnectGitHubConnectionResponse {
+  GitHubConnection connection = 1;
+}
