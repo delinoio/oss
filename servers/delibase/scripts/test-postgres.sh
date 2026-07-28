@@ -28,5 +28,7 @@ done
 docker exec "$container" pg_isready -U delibase -d delibase >/dev/null
 
 cd "$repo_root"
+# Integration packages share this database, and catalog tests replace global
+# catalog rows. Keep packages serial while preserving intra-package concurrency.
 DELIBASE_TEST_DATABASE_URL="postgres://delibase:delibase_test@127.0.0.1:${port}/delibase?sslmode=disable" \
-  go test ./servers/delibase/...
+  go test -p 1 ./servers/delibase/...

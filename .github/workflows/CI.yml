@@ -242,7 +242,10 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         env:
           DELIBASE_TEST_DATABASE_URL: postgres://delibase:delibase_test@127.0.0.1:5432/delibase?sslmode=disable
-        run: go test -count=1 ./servers/delibase/...
+        # Integration packages share this database, and catalog tests replace
+        # global catalog rows. Keep packages serial while preserving each
+        # package's own concurrency coverage.
+        run: go test -p 1 -count=1 ./servers/delibase/...
 
       - name: Validate delibase image
         if: ${{ steps.gate.outputs.run == 'true' }}
