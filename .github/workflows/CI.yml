@@ -633,6 +633,12 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
 
+      - name: Install AArch64 cross compiler
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-aarch64-linux-gnu
+
       - name: Run cargo test
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
