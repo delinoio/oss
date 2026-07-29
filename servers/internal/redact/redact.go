@@ -20,6 +20,8 @@ var normalizedSensitiveKeys = []string{
 	"authorization",
 	"proxyauthorization",
 	"xdelibaseforwardedusertoken",
+	"xdevhuddeckforwardeddelibasetoken",
+	"xdevhuddeckdevicerevocationgrant",
 	"token",
 	"secret",
 	"password",
@@ -35,12 +37,18 @@ var normalizedSensitiveKeys = []string{
 	"email",
 	"phone",
 	"address",
+	"repository",
+	"rawquery",
+	"query",
+	"title",
+	"login",
+	"url",
 }
 
 var (
 	authorizationPattern = regexp.MustCompile(`(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+`)
 	jwtPattern           = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b`)
-	secretPairPattern    = regexp.MustCompile(`(?i)(authorization|token|secret|password|passwd|api[-_]?key|x-delibase-forwarded-user-token)(["']?\s*[:=]\s*["']?)[^"'\s,;&]+`)
+	secretPairPattern    = regexp.MustCompile(`(?i)(authorization|token|secret|password|passwd|api[-_]?key|x-delibase-forwarded-user-token|x-devhud-deck-forwarded-delibase-token|x-devhud-deck-device-revocation-grant)(["']?\s*[:=]\s*["']?)[^"'\s,;&]+`)
 	emailPattern         = regexp.MustCompile(`\b[A-Za-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+\b`)
 	cardPattern          = regexp.MustCompile(`\b(?:\d[ -]?){12,18}\d\b`)
 )
