@@ -30,6 +30,7 @@ type Client struct {
 	http        *http.Client
 	now         func() time.Time
 	mutations   *userRateLimiter
+	mutationPRs *pullRequestLocker
 	concurrency *installationLimiter
 }
 
@@ -47,6 +48,7 @@ func NewClient(httpClient *http.Client) *Client {
 	return &Client{
 		http: &safeHTTPClient, now: func() time.Time { return time.Now().UTC() },
 		mutations:   newUserRateLimiter(30, time.Minute),
+		mutationPRs: newPullRequestLocker(),
 		concurrency: newInstallationLimiter(4),
 	}
 }
@@ -205,11 +207,12 @@ func (client *Client) ListInstallations(
 
 func parsePermissions(values map[string]string) Permissions {
 	return Permissions{
-		Metadata:     parsePermission(values["metadata"]),
-		Contents:     parsePermission(values["contents"]),
-		PullRequests: parsePermission(values["pull_requests"]),
-		Checks:       parsePermission(values["checks"]),
-		Members:      parsePermission(values["members"]),
+		Metadata:       parsePermission(values["metadata"]),
+		Administration: parsePermission(values["administration"]),
+		Contents:       parsePermission(values["contents"]),
+		PullRequests:   parsePermission(values["pull_requests"]),
+		Checks:         parsePermission(values["checks"]),
+		Members:        parsePermission(values["members"]),
 	}
 }
 
@@ -373,8 +376,8 @@ func (repository repositoryResponse) userPermissions() Permissions {
 		level = PermissionRead
 	}
 	return Permissions{
-		Metadata: level, Contents: level, PullRequests: level,
-		Checks: level, Members: level,
+		Metadata: level, Administration: level, Contents: level,
+		PullRequests: level, Checks: level, Members: level,
 	}
 }
 
@@ -708,7 +711,7 @@ func (client *Client) ListMutationCandidates(
 		candidates, err = client.reviewerCandidates(
 			ctx, credential, reference.Repository)
 		if err == nil &&
-			metadata.Permissions.Members >= PermissionRead &&
+			metadata.Permissions.Administration >= PermissionRead &&
 			metadata.RepositoryOwner == AccountKindOrganization {
 			var teams []Candidate
 			teams, err = client.teamCandidates(ctx, credential, reference.Repository)
@@ -953,6 +956,44 @@ type installationLimiter struct {
 	mu     sync.Mutex
 	limit  int
 	active map[uint64]int
+}
+
+type pullRequestLocker struct {
+	mu      sync.Mutex
+	entries map[string]*pullRequestLock
+}
+
+type pullRequestLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func newPullRequestLocker() *pullRequestLocker {
+	return &pullRequestLocker{entries: make(map[string]*pullRequestLock)}
+}
+
+func (locker *pullRequestLocker) acquire(reference PullRequestRef) func() {
+	key := fmt.Sprintf("%s#%d",
+		repositoryKey(reference.Repository), reference.Number)
+	locker.mu.Lock()
+	entry := locker.entries[key]
+	if entry == nil {
+		entry = &pullRequestLock{}
+		locker.entries[key] = entry
+	}
+	entry.refs++
+	locker.mu.Unlock()
+
+	entry.mu.Lock()
+	return func() {
+		entry.mu.Unlock()
+		locker.mu.Lock()
+		defer locker.mu.Unlock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(locker.entries, key)
+		}
+	}
 }
 
 func newInstallationLimiter(limit int) *installationLimiter {

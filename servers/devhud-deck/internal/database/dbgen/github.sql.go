@@ -216,6 +216,7 @@ SET state = $1,
     github_account_kind = NULL,
     github_account_login_ciphertext = NULL,
     github_metadata_permission = NULL,
+    github_administration_permission = NULL,
     github_contents_permission = NULL,
     github_pull_requests_permission = NULL,
     github_checks_permission = NULL,
@@ -224,7 +225,7 @@ SET state = $1,
     updated_at = $2
 WHERE connection_id = $3
   AND revision = $4
-RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 `
 
 type DisconnectGitHubConnectionParams struct {
@@ -259,6 +260,7 @@ func (q *Queries) DisconnectGitHubConnection(ctx context.Context, arg Disconnect
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }
@@ -308,7 +310,7 @@ func (q *Queries) GetGitHubCallbackStateForUpdate(ctx context.Context, stateHash
 }
 
 const getGitHubConnectionByIDForUpdate = `-- name: GetGitHubConnectionByIDForUpdate :one
-SELECT connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+SELECT connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 FROM deck_connections
 WHERE connection_id = $1
 FOR UPDATE
@@ -334,12 +336,13 @@ func (q *Queries) GetGitHubConnectionByIDForUpdate(ctx context.Context, connecti
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }
 
 const getGitHubConnectionByInstallationForUpdate = `-- name: GetGitHubConnectionByInstallationForUpdate :one
-SELECT connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+SELECT connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 FROM deck_connections
 WHERE github_installation_id = $1
 FOR UPDATE
@@ -365,12 +368,13 @@ func (q *Queries) GetGitHubConnectionByInstallationForUpdate(ctx context.Context
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }
 
 const getGitHubConnectionByOwner = `-- name: GetGitHubConnectionByOwner :one
-SELECT connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+SELECT connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 FROM deck_connections
 WHERE owner_scope = $1
   AND owner_id = $2
@@ -401,12 +405,13 @@ func (q *Queries) GetGitHubConnectionByOwner(ctx context.Context, arg GetGitHubC
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }
 
 const getGitHubConnectionByOwnerForUpdate = `-- name: GetGitHubConnectionByOwnerForUpdate :one
-SELECT connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+SELECT connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 FROM deck_connections
 WHERE owner_scope = $1
   AND owner_id = $2
@@ -438,6 +443,7 @@ func (q *Queries) GetGitHubConnectionByOwnerForUpdate(ctx context.Context, arg G
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }
@@ -545,36 +551,39 @@ INSERT INTO deck_connections (
     connection_id, owner_scope, owner_id, state,
     github_installation_id, github_account_id, github_account_kind,
     github_account_login_ciphertext, github_metadata_permission,
-    github_contents_permission,
+    github_administration_permission, github_contents_permission,
     github_pull_requests_permission, github_checks_permission,
     github_members_permission, revision, created_at, updated_at
 ) VALUES (
     $1, $2, $3, 3,
     $4, $5,
     $6, $7,
-    $8, $9,
+    $8,
+    $9,
     $10,
-    $11, $12, 1,
-    $13, $14
+    $11,
+    $12, $13, 1,
+    $14, $15
 )
-RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 `
 
 type InsertGitHubConnectionParams struct {
-	ConnectionID                 pgtype.UUID
-	OwnerScope                   int16
-	OwnerID                      pgtype.UUID
-	GithubInstallationID         pgtype.Int8
-	GithubAccountID              pgtype.Int8
-	GithubAccountKind            pgtype.Int2
-	GithubAccountLoginCiphertext []byte
-	GithubMetadataPermission     pgtype.Int2
-	GithubContentsPermission     pgtype.Int2
-	GithubPullRequestsPermission pgtype.Int2
-	GithubChecksPermission       pgtype.Int2
-	GithubMembersPermission      pgtype.Int2
-	CreatedAt                    pgtype.Timestamptz
-	UpdatedAt                    pgtype.Timestamptz
+	ConnectionID                   pgtype.UUID
+	OwnerScope                     int16
+	OwnerID                        pgtype.UUID
+	GithubInstallationID           pgtype.Int8
+	GithubAccountID                pgtype.Int8
+	GithubAccountKind              pgtype.Int2
+	GithubAccountLoginCiphertext   []byte
+	GithubMetadataPermission       pgtype.Int2
+	GithubAdministrationPermission pgtype.Int2
+	GithubContentsPermission       pgtype.Int2
+	GithubPullRequestsPermission   pgtype.Int2
+	GithubChecksPermission         pgtype.Int2
+	GithubMembersPermission        pgtype.Int2
+	CreatedAt                      pgtype.Timestamptz
+	UpdatedAt                      pgtype.Timestamptz
 }
 
 func (q *Queries) InsertGitHubConnection(ctx context.Context, arg InsertGitHubConnectionParams) (DeckConnection, error) {
@@ -587,6 +596,7 @@ func (q *Queries) InsertGitHubConnection(ctx context.Context, arg InsertGitHubCo
 		arg.GithubAccountKind,
 		arg.GithubAccountLoginCiphertext,
 		arg.GithubMetadataPermission,
+		arg.GithubAdministrationPermission,
 		arg.GithubContentsPermission,
 		arg.GithubPullRequestsPermission,
 		arg.GithubChecksPermission,
@@ -612,6 +622,7 @@ func (q *Queries) InsertGitHubConnection(ctx context.Context, arg InsertGitHubCo
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }
@@ -916,28 +927,31 @@ SET state = 3,
     github_account_kind = $3,
     github_account_login_ciphertext = $4,
     github_metadata_permission = $5,
-    github_contents_permission = $6,
-    github_pull_requests_permission = $7,
-    github_checks_permission = $8,
-    github_members_permission = $9,
+    github_administration_permission =
+        $6,
+    github_contents_permission = $7,
+    github_pull_requests_permission = $8,
+    github_checks_permission = $9,
+    github_members_permission = $10,
     revision = revision + 1,
-    updated_at = $10
-WHERE connection_id = $11
-RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+    updated_at = $11
+WHERE connection_id = $12
+RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 `
 
 type ReconnectGitHubConnectionParams struct {
-	GithubInstallationID         pgtype.Int8
-	GithubAccountID              pgtype.Int8
-	GithubAccountKind            pgtype.Int2
-	GithubAccountLoginCiphertext []byte
-	GithubMetadataPermission     pgtype.Int2
-	GithubContentsPermission     pgtype.Int2
-	GithubPullRequestsPermission pgtype.Int2
-	GithubChecksPermission       pgtype.Int2
-	GithubMembersPermission      pgtype.Int2
-	UpdatedAt                    pgtype.Timestamptz
-	ConnectionID                 pgtype.UUID
+	GithubInstallationID           pgtype.Int8
+	GithubAccountID                pgtype.Int8
+	GithubAccountKind              pgtype.Int2
+	GithubAccountLoginCiphertext   []byte
+	GithubMetadataPermission       pgtype.Int2
+	GithubAdministrationPermission pgtype.Int2
+	GithubContentsPermission       pgtype.Int2
+	GithubPullRequestsPermission   pgtype.Int2
+	GithubChecksPermission         pgtype.Int2
+	GithubMembersPermission        pgtype.Int2
+	UpdatedAt                      pgtype.Timestamptz
+	ConnectionID                   pgtype.UUID
 }
 
 func (q *Queries) ReconnectGitHubConnection(ctx context.Context, arg ReconnectGitHubConnectionParams) (DeckConnection, error) {
@@ -947,6 +961,7 @@ func (q *Queries) ReconnectGitHubConnection(ctx context.Context, arg ReconnectGi
 		arg.GithubAccountKind,
 		arg.GithubAccountLoginCiphertext,
 		arg.GithubMetadataPermission,
+		arg.GithubAdministrationPermission,
 		arg.GithubContentsPermission,
 		arg.GithubPullRequestsPermission,
 		arg.GithubChecksPermission,
@@ -972,6 +987,7 @@ func (q *Queries) ReconnectGitHubConnection(ctx context.Context, arg ReconnectGi
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }
@@ -983,7 +999,7 @@ SET state = 4,
     updated_at = $1
 WHERE connection_id = $2
   AND revision = $3
-RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 `
 
 type RequireGitHubReauthenticationParams struct {
@@ -1012,6 +1028,7 @@ func (q *Queries) RequireGitHubReauthentication(ctx context.Context, arg Require
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }
@@ -1047,31 +1064,35 @@ func (q *Queries) RewrapGitHubUserCredential(ctx context.Context, arg RewrapGitH
 const updateGitHubInstallationPermissions = `-- name: UpdateGitHubInstallationPermissions :one
 UPDATE deck_connections
 SET github_metadata_permission = $1,
-    github_contents_permission = $2,
-    github_pull_requests_permission = $3,
-    github_checks_permission = $4,
-    github_members_permission = $5,
+    github_administration_permission =
+        $2,
+    github_contents_permission = $3,
+    github_pull_requests_permission = $4,
+    github_checks_permission = $5,
+    github_members_permission = $6,
     revision = revision + 1,
-    updated_at = $6
-WHERE connection_id = $7
-  AND revision = $8
-RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+    updated_at = $7
+WHERE connection_id = $8
+  AND revision = $9
+RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
 `
 
 type UpdateGitHubInstallationPermissionsParams struct {
-	GithubMetadataPermission     pgtype.Int2
-	GithubContentsPermission     pgtype.Int2
-	GithubPullRequestsPermission pgtype.Int2
-	GithubChecksPermission       pgtype.Int2
-	GithubMembersPermission      pgtype.Int2
-	UpdatedAt                    pgtype.Timestamptz
-	ConnectionID                 pgtype.UUID
-	ExpectedRevision             int64
+	GithubMetadataPermission       pgtype.Int2
+	GithubAdministrationPermission pgtype.Int2
+	GithubContentsPermission       pgtype.Int2
+	GithubPullRequestsPermission   pgtype.Int2
+	GithubChecksPermission         pgtype.Int2
+	GithubMembersPermission        pgtype.Int2
+	UpdatedAt                      pgtype.Timestamptz
+	ConnectionID                   pgtype.UUID
+	ExpectedRevision               int64
 }
 
 func (q *Queries) UpdateGitHubInstallationPermissions(ctx context.Context, arg UpdateGitHubInstallationPermissionsParams) (DeckConnection, error) {
 	row := q.db.QueryRow(ctx, updateGitHubInstallationPermissions,
 		arg.GithubMetadataPermission,
+		arg.GithubAdministrationPermission,
 		arg.GithubContentsPermission,
 		arg.GithubPullRequestsPermission,
 		arg.GithubChecksPermission,
@@ -1098,6 +1119,7 @@ func (q *Queries) UpdateGitHubInstallationPermissions(ctx context.Context, arg U
 		&i.GithubPullRequestsPermission,
 		&i.GithubChecksPermission,
 		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
 	)
 	return i, err
 }

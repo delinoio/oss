@@ -31,6 +31,8 @@ func (client *Client) Mutate(
 	if !client.mutations.allow(actor, client.now()) {
 		return MutationResult{}, ErrMutationRateLimited
 	}
+	releaseMutation := client.mutationPRs.acquire(reference)
+	defer releaseMutation()
 	metadata, err := client.ActionMetadata(
 		ctx, installationID, credential, appPermissions, reference)
 	if err != nil {
@@ -333,7 +335,7 @@ mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){
 			}, nil, ErrStaleRevision)
 		return err
 	case MutationEnableAutoMerge:
-		return client.graphQL(ctx, credential, `
+		return client.graphQLWithExpectedHead(ctx, credential, `
 mutation($id:ID!,$method:PullRequestMergeMethod!,$head:GitObjectID!){
   enablePullRequestAutoMerge(input:{
     pullRequestId:$id,mergeMethod:$method,expectedHeadOid:$head
@@ -343,7 +345,7 @@ mutation($id:ID!,$method:PullRequestMergeMethod!,$head:GitObjectID!){
 }`, map[string]any{
 			"id": metadata.NodeID, "method": mergeMethodGraphQL(mutation.MergeMethod),
 			"head": metadata.HeadSHA,
-		})
+		}, metadata.HeadSHA)
 	case MutationCancelAutoMerge:
 		return client.graphQL(ctx, credential, `
 mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){
@@ -398,7 +400,19 @@ func (client *Client) graphQL(
 	query string,
 	variables map[string]any,
 ) error {
-	return client.graphQLData(ctx, credential, query, variables, nil)
+	return client.graphQLDataWithExpectedHead(
+		ctx, credential, query, variables, nil, "")
+}
+
+func (client *Client) graphQLWithExpectedHead(
+	ctx context.Context,
+	credential Credential,
+	query string,
+	variables map[string]any,
+	expectedHead string,
+) error {
+	return client.graphQLDataWithExpectedHead(
+		ctx, credential, query, variables, nil, expectedHead)
 }
 
 func (client *Client) graphQLData(
@@ -407,6 +421,18 @@ func (client *Client) graphQLData(
 	query string,
 	variables map[string]any,
 	output any,
+) error {
+	return client.graphQLDataWithExpectedHead(
+		ctx, credential, query, variables, output, "")
+}
+
+func (client *Client) graphQLDataWithExpectedHead(
+	ctx context.Context,
+	credential Credential,
+	query string,
+	variables map[string]any,
+	output any,
+	expectedHead string,
 ) error {
 	var response struct {
 		Data   json.RawMessage `json:"data"`
@@ -436,12 +462,41 @@ func (client *Client) graphQLData(
 				RetryAfter: retryDuration(headers, client.now()),
 			}
 		}
+		if expectedHead != "" &&
+			graphQLExpectedHeadMismatch(failure, expectedHead) {
+			return ErrStaleRevision
+		}
 		switch strings.ToUpper(failure.Type) {
 		case "FORBIDDEN", "NOT_FOUND":
 			return ErrPermissionDenied
 		}
 	}
 	return ErrProvider
+}
+
+func graphQLExpectedHeadMismatch(
+	failure graphQLError,
+	expectedHead string,
+) bool {
+	switch strings.ToUpper(failure.Type) {
+	case "CONFLICT", "UNPROCESSABLE":
+	default:
+		return false
+	}
+	message := strings.ToLower(failure.Message)
+	if !strings.Contains(message, "expected") ||
+		!strings.Contains(message, "head") ||
+		!strings.Contains(message, "oid") {
+		return false
+	}
+	return strings.Contains(message, "does not match") ||
+		strings.Contains(message, "did not match") ||
+		strings.Contains(message, "mismatch") ||
+		(strings.Contains(message, strings.ToLower(expectedHead)) &&
+			(strings.Contains(message, " but ") ||
+				strings.Contains(message, "current") ||
+				strings.Contains(message, "found") ||
+				strings.Contains(message, "got")))
 }
 
 func graphQLErrorRateLimited(failure graphQLError) bool {

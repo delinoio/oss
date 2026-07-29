@@ -56,11 +56,12 @@ const (
 )
 
 type Permissions struct {
-	Metadata     PermissionLevel
-	Contents     PermissionLevel
-	PullRequests PermissionLevel
-	Checks       PermissionLevel
-	Members      PermissionLevel
+	Metadata       PermissionLevel
+	Administration PermissionLevel
+	Contents       PermissionLevel
+	PullRequests   PermissionLevel
+	Checks         PermissionLevel
+	Members        PermissionLevel
 }
 
 // IntersectPermissions returns the effective user-to-server permission set.
@@ -68,11 +69,12 @@ type Permissions struct {
 // metadata from advertising authority held only by the app or only by a user.
 func IntersectPermissions(app, user Permissions) Permissions {
 	return Permissions{
-		Metadata:     minimum(app.Metadata, user.Metadata),
-		Contents:     minimum(app.Contents, user.Contents),
-		PullRequests: minimum(app.PullRequests, user.PullRequests),
-		Checks:       minimum(app.Checks, user.Checks),
-		Members:      minimum(app.Members, user.Members),
+		Metadata:       minimum(app.Metadata, user.Metadata),
+		Administration: minimum(app.Administration, user.Administration),
+		Contents:       minimum(app.Contents, user.Contents),
+		PullRequests:   minimum(app.PullRequests, user.PullRequests),
+		Checks:         minimum(app.Checks, user.Checks),
+		Members:        minimum(app.Members, user.Members),
 	}
 }
 

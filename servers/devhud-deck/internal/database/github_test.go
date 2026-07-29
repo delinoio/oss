@@ -20,11 +20,12 @@ func TestGitHubProviderChangedIncludesAccountLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	permissions := deckgithub.Permissions{
-		Metadata:     deckgithub.PermissionRead,
-		Contents:     deckgithub.PermissionWrite,
-		PullRequests: deckgithub.PermissionWrite,
-		Checks:       deckgithub.PermissionRead,
-		Members:      deckgithub.PermissionRead,
+		Metadata:       deckgithub.PermissionRead,
+		Administration: deckgithub.PermissionRead,
+		Contents:       deckgithub.PermissionWrite,
+		PullRequests:   deckgithub.PermissionWrite,
+		Checks:         deckgithub.PermissionRead,
+		Members:        deckgithub.PermissionRead,
 	}
 	installation := deckgithub.Installation{
 		ID: 7, AccountID: 70, AccountLogin: "octocat",
@@ -38,6 +39,8 @@ func TestGitHubProviderChangedIncludesAccountLogin(t *testing.T) {
 		GithubAccountLoginCiphertext: login,
 		GithubMetadataPermission: pgInt2(
 			int16(installation.Permissions.Metadata), true),
+		GithubAdministrationPermission: pgInt2(
+			int16(installation.Permissions.Administration), true),
 		GithubContentsPermission: pgInt2(
 			int16(installation.Permissions.Contents), true),
 		GithubPullRequestsPermission: pgInt2(

@@ -299,7 +299,8 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	}
 	permissionPayload := []byte(
 		`{"action":"new_permissions_accepted","installation":{"id":42,` +
-			`"permissions":{"metadata":"read","contents":"write",` +
+			`"permissions":{"metadata":"read","administration":"read",` +
+			`"contents":"write",` +
 			`"pull_requests":"write","checks":"read","members":"read"}}}`)
 	permissionRequest := httptest.NewRequest(
 		http.MethodPost, WebhookPath, bytes.NewReader(permissionPayload))
@@ -310,9 +311,9 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	permissionResponse := httptest.NewRecorder()
 	broker.Handler().ServeHTTP(permissionResponse, permissionRequest)
 	expectedPermissions := Permissions{
-		Metadata: PermissionRead, Contents: PermissionWrite,
-		PullRequests: PermissionWrite,
-		Checks:       PermissionRead, Members: PermissionRead,
+		Metadata: PermissionRead, Administration: PermissionRead,
+		Contents: PermissionWrite, PullRequests: PermissionWrite,
+		Checks: PermissionRead, Members: PermissionRead,
 	}
 	if permissionResponse.Code != http.StatusNoContent ||
 		len(lifecycle.permissions) != 2 ||
@@ -322,7 +323,8 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	}
 	permissionLossPayload := []byte(
 		`{"action":"new_permissions_accepted","installation":{"id":42,` +
-			`"permissions":{"metadata":"read","contents":"write",` +
+			`"permissions":{"metadata":"read","administration":"read",` +
+			`"contents":"write",` +
 			`"pull_requests":"write","checks":"none","members":"read"}}}`)
 	permissionLossRequest := httptest.NewRequest(
 		http.MethodPost, WebhookPath, bytes.NewReader(permissionLossPayload))

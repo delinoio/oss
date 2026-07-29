@@ -129,19 +129,19 @@ func TestPermissionIntersection(t *testing.T) {
 	t.Parallel()
 	effective := IntersectPermissions(
 		Permissions{
-			Metadata: PermissionRead, Contents: PermissionWrite,
-			PullRequests: PermissionWrite,
-			Checks:       PermissionRead, Members: PermissionRead,
+			Metadata: PermissionRead, Administration: PermissionRead,
+			Contents: PermissionWrite, PullRequests: PermissionWrite,
+			Checks: PermissionRead, Members: PermissionRead,
 		},
 		Permissions{
-			Metadata: PermissionAdmin, Contents: PermissionRead,
-			PullRequests: PermissionRead,
-			Checks:       PermissionNone, Members: PermissionAdmin,
+			Metadata: PermissionAdmin, Administration: PermissionAdmin,
+			Contents: PermissionRead, PullRequests: PermissionRead,
+			Checks: PermissionNone, Members: PermissionAdmin,
 		})
 	expected := Permissions{
-		Metadata: PermissionRead, Contents: PermissionRead,
-		PullRequests: PermissionRead,
-		Checks:       PermissionNone, Members: PermissionRead,
+		Metadata: PermissionRead, Administration: PermissionRead,
+		Contents: PermissionRead, PullRequests: PermissionRead,
+		Checks: PermissionNone, Members: PermissionRead,
 	}
 	if effective != expected {
 		t.Fatalf("intersection = %#v, want %#v", effective, expected)

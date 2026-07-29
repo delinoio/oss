@@ -358,17 +358,18 @@ func (store *Store) ConnectGitHub(
 			storedConnectionID = existing.ConnectionID
 			if _, err := queries.ReconnectGitHubConnection(
 				ctx, dbgen.ReconnectGitHubConnectionParams{
-					GithubInstallationID:         parameters.GithubInstallationID,
-					GithubAccountID:              parameters.GithubAccountID,
-					GithubAccountKind:            parameters.GithubAccountKind,
-					GithubAccountLoginCiphertext: parameters.GithubAccountLoginCiphertext,
-					GithubMetadataPermission:     parameters.GithubMetadataPermission,
-					GithubContentsPermission:     parameters.GithubContentsPermission,
-					GithubPullRequestsPermission: parameters.GithubPullRequestsPermission,
-					GithubChecksPermission:       parameters.GithubChecksPermission,
-					GithubMembersPermission:      parameters.GithubMembersPermission,
-					UpdatedAt:                    parameters.UpdatedAt,
-					ConnectionID:                 existing.ConnectionID,
+					GithubInstallationID:           parameters.GithubInstallationID,
+					GithubAccountID:                parameters.GithubAccountID,
+					GithubAccountKind:              parameters.GithubAccountKind,
+					GithubAccountLoginCiphertext:   parameters.GithubAccountLoginCiphertext,
+					GithubMetadataPermission:       parameters.GithubMetadataPermission,
+					GithubAdministrationPermission: parameters.GithubAdministrationPermission,
+					GithubContentsPermission:       parameters.GithubContentsPermission,
+					GithubPullRequestsPermission:   parameters.GithubPullRequestsPermission,
+					GithubChecksPermission:         parameters.GithubChecksPermission,
+					GithubMembersPermission:        parameters.GithubMembersPermission,
+					UpdatedAt:                      parameters.UpdatedAt,
+					ConnectionID:                   existing.ConnectionID,
 				}); err != nil {
 				return mapInstallationUnique(err)
 			}
@@ -429,6 +430,9 @@ func (store *Store) githubProviderChanged(
 	if githubInstallationChanged(existing, installation) ||
 		!existing.GithubMetadataPermission.Valid ||
 		existing.GithubMetadataPermission.Int16 != int16(installation.Permissions.Metadata) ||
+		!existing.GithubAdministrationPermission.Valid ||
+		existing.GithubAdministrationPermission.Int16 !=
+			int16(installation.Permissions.Administration) ||
 		!existing.GithubContentsPermission.Valid ||
 		existing.GithubContentsPermission.Int16 != int16(installation.Permissions.Contents) ||
 		!existing.GithubPullRequestsPermission.Valid ||
@@ -474,6 +478,8 @@ func githubConnectionValues(
 		GithubAccountLoginCiphertext: login,
 		GithubMetadataPermission: pgInt2(
 			int16(installation.Permissions.Metadata), true),
+		GithubAdministrationPermission: pgInt2(
+			int16(installation.Permissions.Administration), true),
 		GithubContentsPermission: pgInt2(
 			int16(installation.Permissions.Contents), true),
 		GithubPullRequestsPermission: pgInt2(
@@ -530,8 +536,12 @@ func (store *Store) decodeGitHubConnection(
 			AccountID:   uint64(row.GithubAccountID.Int64),
 			AccountKind: deckgithub.AccountKind(row.GithubAccountKind.Int16),
 			Permissions: deckgithub.Permissions{
-				Metadata: deckgithub.PermissionLevel(row.GithubMetadataPermission.Int16),
-				Contents: deckgithub.PermissionLevel(row.GithubContentsPermission.Int16),
+				Metadata: deckgithub.PermissionLevel(
+					row.GithubMetadataPermission.Int16),
+				Administration: deckgithub.PermissionLevel(
+					row.GithubAdministrationPermission.Int16),
+				Contents: deckgithub.PermissionLevel(
+					row.GithubContentsPermission.Int16),
 				PullRequests: deckgithub.PermissionLevel(
 					row.GithubPullRequestsPermission.Int16),
 				Checks:  deckgithub.PermissionLevel(row.GithubChecksPermission.Int16),
@@ -1008,6 +1018,8 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 					ctx, dbgen.UpdateGitHubInstallationPermissionsParams{
 						GithubMetadataPermission: pgInt2(
 							int16(permissions.Metadata), true),
+						GithubAdministrationPermission: pgInt2(
+							int16(permissions.Administration), true),
 						GithubContentsPermission: pgInt2(
 							int16(permissions.Contents), true),
 						GithubPullRequestsPermission: pgInt2(
@@ -1049,6 +1061,9 @@ func githubPermissionsChanged(
 ) bool {
 	return !connection.GithubMetadataPermission.Valid ||
 		connection.GithubMetadataPermission.Int16 != int16(permissions.Metadata) ||
+		!connection.GithubAdministrationPermission.Valid ||
+		connection.GithubAdministrationPermission.Int16 !=
+			int16(permissions.Administration) ||
 		!connection.GithubContentsPermission.Valid ||
 		connection.GithubContentsPermission.Int16 != int16(permissions.Contents) ||
 		!connection.GithubPullRequestsPermission.Valid ||

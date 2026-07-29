@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -385,6 +386,44 @@ func TestGraphQLValidationAndConflictErrorsRemainProviderFailures(t *testing.T) 
 	}
 }
 
+func TestAutoMergeExpectedHeadMismatchIsStale(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		message string
+		want    error
+	}{
+		{
+			name:    "head mismatch",
+			message: "Expected head oid abc, but found def",
+			want:    ErrStaleRevision,
+		},
+		{
+			name:    "unrelated validation",
+			message: "Expected type GitObjectID for variable head",
+			want:    ErrProvider,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := NewClient(&http.Client{Transport: roundTripFunc(
+				func(*http.Request) (*http.Response, error) {
+					return jsonResponse(http.StatusOK, fmt.Sprintf(
+						`{"errors":[{"type":"UNPROCESSABLE","message":%q}]}`,
+						test.message)), nil
+				})})
+			err := client.graphQLWithExpectedHead(
+				context.Background(), Credential{AccessToken: "token"},
+				"mutation { enablePullRequestAutoMerge }", nil, "abc")
+			if !errors.Is(err, test.want) {
+				t.Fatalf("expected-head error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
 func TestGraphQLHTTP403SecondaryLimitWithoutHeadersUsesProviderBackoff(
 	t *testing.T,
 ) {
@@ -460,7 +499,7 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 	page, err := client.ListMutationCandidates(context.Background(), 1,
 		Credential{AccessToken: "token"}, Permissions{
 			Metadata: PermissionRead, PullRequests: PermissionWrite,
-			Checks: PermissionRead, Members: PermissionRead,
+			Administration: PermissionRead, Checks: PermissionRead,
 		}, reference, MutationRequestReviewers, "core", Page{})
 	if err != nil {
 		t.Fatal(err)
@@ -474,14 +513,14 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 	_, err = client.ListMutationCandidates(context.Background(), 1,
 		Credential{AccessToken: "token"}, Permissions{
 			Metadata: PermissionRead, PullRequests: PermissionWrite,
-			Checks: PermissionRead,
+			Checks: PermissionRead, Members: PermissionRead,
 		}, reference, MutationRequestReviewers, "", Page{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range paths {
 		if path == "/repos/acme/widget/teams" {
-			t.Fatal("team metadata fetched without members permission")
+			t.Fatal("team metadata fetched without administration permission")
 		}
 	}
 	paths = nil
@@ -579,6 +618,7 @@ func TestCandidatePaginationAndUserOwnerTeamSkip(t *testing.T) {
 
 func TestCandidateFetchOmitsTeamsWithoutRepositoryAdministration(t *testing.T) {
 	t.Parallel()
+	teamRequests := 0
 	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		switch request.URL.Path {
 		case "/repos/acme/widget":
@@ -592,6 +632,7 @@ func TestCandidateFetchOmitsTeamsWithoutRepositoryAdministration(t *testing.T) {
 		case "/repos/acme/widget/collaborators":
 			return jsonResponse(http.StatusOK, `[{"login":"octo"}]`), nil
 		case "/repos/acme/widget/teams":
+			teamRequests++
 			return jsonResponse(http.StatusNotFound, `{"message":"not found"}`), nil
 		case "/orgs/acme/teams":
 			t.Fatal("organization-wide teams endpoint was used")
@@ -616,6 +657,21 @@ func TestCandidateFetchOmitsTeamsWithoutRepositoryAdministration(t *testing.T) {
 		page.Candidates[0].Kind != CandidateUser ||
 		page.Candidates[0].User.Login != "octo" {
 		t.Fatalf("repository-scoped candidates = %#v err=%v", page, err)
+	}
+	if teamRequests != 0 {
+		t.Fatalf("team endpoint called %d times without administration", teamRequests)
+	}
+}
+
+func TestParsePermissionsIncludesRepositoryAdministration(t *testing.T) {
+	t.Parallel()
+	permissions := parsePermissions(map[string]string{
+		"metadata": "read", "administration": "read", "members": "none",
+	})
+	if permissions.Metadata != PermissionRead ||
+		permissions.Administration != PermissionRead ||
+		permissions.Members != PermissionNone {
+		t.Fatalf("parsed permissions = %#v", permissions)
 	}
 }
 
@@ -1179,6 +1235,84 @@ func TestMutationRequiresRefreshWhenResultReloadFails(t *testing.T) {
 	if err != nil || !result.RefreshRequired ||
 		result.Kind != MutationClose || result.Revision != 0 {
 		t.Fatalf("mutation result = %#v err=%v", result, err)
+	}
+}
+
+func TestMutationRechecksRevisionAfterWaitingForPullRequestLock(t *testing.T) {
+	t.Parallel()
+	reference := PullRequestRef{
+		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+	}
+	mergeable := true
+	initial := pullResponse{
+		NodeID: "PR_1", State: "open", Mergeable: &mergeable,
+		UpdatedAt: "2026-01-01T00:00:00Z",
+	}
+	initial.Head.SHA = "abc"
+	current := initial
+	var stateMu sync.Mutex
+	mutationRequests := 0
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			switch {
+			case request.URL.Path == "/repos/acme/widget" &&
+				request.Method == http.MethodGet:
+				return jsonResponse(http.StatusOK,
+					`{"permissions":{"pull":true,"push":true}}`), nil
+			case request.URL.Path == "/repos/acme/widget/pulls/7" &&
+				request.Method == http.MethodGet:
+				stateMu.Lock()
+				payload, _ := json.Marshal(current)
+				stateMu.Unlock()
+				return jsonResponse(http.StatusOK, string(payload)), nil
+			case request.URL.Path == "/repos/acme/widget/pulls/7" &&
+				request.Method == http.MethodPatch:
+				mutationRequests++
+				return jsonResponse(http.StatusOK, `{}`), nil
+			default:
+				return jsonResponse(http.StatusNotFound, `{}`), nil
+			}
+		})})
+
+	release := client.mutationPRs.acquire(reference)
+	result := make(chan error, 1)
+	go func() {
+		_, err := client.Mutate(
+			context.Background(), "serialized-viewer", 42,
+			Credential{AccessToken: "token"},
+			Permissions{
+				Metadata: PermissionRead, PullRequests: PermissionWrite,
+			},
+			reference, pullRevision(initial), Mutation{Kind: MutationClose})
+		result <- err
+	}()
+
+	key := repositoryKey(reference.Repository) + "#7"
+	deadline := time.Now().Add(time.Second)
+	for {
+		client.mutationPRs.mu.Lock()
+		refs := client.mutationPRs.entries[key].refs
+		client.mutationPRs.mu.Unlock()
+		if refs == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			release()
+			t.Fatal("mutation did not wait for the pull-request lock")
+		}
+		runtime.Gosched()
+	}
+	stateMu.Lock()
+	current.State = "closed"
+	current.UpdatedAt = "2026-01-01T00:01:00Z"
+	stateMu.Unlock()
+	release()
+
+	if err := <-result; !errors.Is(err, ErrStaleRevision) {
+		t.Fatalf("serialized mutation error = %v", err)
+	}
+	if mutationRequests != 0 {
+		t.Fatalf("stale mutation issued %d provider writes", mutationRequests)
 	}
 }
 

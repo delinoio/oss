@@ -28,22 +28,23 @@ type DeckAuditEvent struct {
 }
 
 type DeckConnection struct {
-	ConnectionID                 pgtype.UUID
-	OwnerScope                   int16
-	OwnerID                      pgtype.UUID
-	State                        int16
-	Revision                     int64
-	CreatedAt                    pgtype.Timestamptz
-	UpdatedAt                    pgtype.Timestamptz
-	GithubInstallationID         pgtype.Int8
-	GithubAccountID              pgtype.Int8
-	GithubAccountKind            pgtype.Int2
-	GithubAccountLoginCiphertext []byte
-	GithubMetadataPermission     pgtype.Int2
-	GithubContentsPermission     pgtype.Int2
-	GithubPullRequestsPermission pgtype.Int2
-	GithubChecksPermission       pgtype.Int2
-	GithubMembersPermission      pgtype.Int2
+	ConnectionID                   pgtype.UUID
+	OwnerScope                     int16
+	OwnerID                        pgtype.UUID
+	State                          int16
+	Revision                       int64
+	CreatedAt                      pgtype.Timestamptz
+	UpdatedAt                      pgtype.Timestamptz
+	GithubInstallationID           pgtype.Int8
+	GithubAccountID                pgtype.Int8
+	GithubAccountKind              pgtype.Int2
+	GithubAccountLoginCiphertext   []byte
+	GithubMetadataPermission       pgtype.Int2
+	GithubContentsPermission       pgtype.Int2
+	GithubPullRequestsPermission   pgtype.Int2
+	GithubChecksPermission         pgtype.Int2
+	GithubMembersPermission        pgtype.Int2
+	GithubAdministrationPermission pgtype.Int2
 }
 
 type DeckDeletionJob struct {
