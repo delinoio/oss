@@ -171,7 +171,7 @@ func TestGitHubProviderMigrationRepairsLegacyConnections(t *testing.T) {
 			id, owner_kind, owner_id, state, github_login,
 			credential_ciphertext, wrapped_data_key, key_id, connected_at
 		) VALUES
-			($2, 'personal', $1, 'connected', 'personal-user',
+			($1, 'personal', $2, 'connected', 'personal-user',
 			 decode('01', 'hex'), decode('02', 'hex'), 'fixture-key',
 			 transaction_timestamp()),
 			($3, 'organization', $4, 'connected', 'organization-user',
