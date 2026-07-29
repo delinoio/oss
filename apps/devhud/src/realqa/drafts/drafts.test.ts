@@ -359,7 +359,12 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     },
   );
 
-  it.each([String.raw`(?i)^[\P{Lu}]$`, String.raw`(?i)^[\p{^Lu}]$`])(
+  it.each([
+    String.raw`(?i)^[\P{Lu}]$`,
+    String.raw`(?i)^[\p{^Lu}]$`,
+    String.raw`(?i)^[\P{Lu}0]$`,
+    String.raw`(?i)^[\p{^Lu}0]$`,
+  ])(
     "preserves synchronized case-insensitive Unicode complement inside a class %s",
     (pattern) => {
       const rules = [
@@ -383,6 +388,72 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
         ok: true,
         url: { value: "https://example.com/matched" },
       });
+    },
+  );
+
+  it.each([String.raw`(?i)^[^\P{Lu}]$`, String.raw`(?i)^[^\p{^Lu}]$`])(
+    "preserves synchronized case-insensitive doubly negated Unicode class %s",
+    (pattern) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: pattern,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      for (const title of ["A", "a"]) {
+        expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+          ok: true,
+          url: { value: "https://example.com/matched" },
+        });
+      }
+      expect(inferDesktopUrl(rules, "code", "0")).toMatchObject({
+        ok: true,
+        url: { value: "https://fallback.example/" },
+      });
+    },
+  );
+
+  it.each([
+    [String.raw`^Issue {01}$`, "Issue {01}", "Issue "],
+    [String.raw`^a{1,02}$`, "a{1,02}", "aa"],
+  ])(
+    "treats synchronized leading-zero repetition text %s as literal",
+    (pattern, matchingTitle, nonmatchingTitle) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: pattern,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      expect(inferDesktopUrl(rules, "code", matchingTitle)).toMatchObject({
+        ok: true,
+        url: { value: "https://example.com/matched" },
+      });
+      expect(inferDesktopUrl(rules, "code", nonmatchingTitle)).toMatchObject({
+        ok: true,
+        url: { value: "https://fallback.example/" },
+      });
+    },
+  );
+
+  it.each([String.raw`^[\b]$`, String.raw`^[\B]$`])(
+    "rejects synchronized word-boundary escape inside a class %s",
+    (pattern) => {
+      expect(
+        validateRealQaProcessUrlRules([
+          rule({ safeWindowTitlePattern: pattern }),
+        ]),
+      ).toBe(false);
     },
   );
 

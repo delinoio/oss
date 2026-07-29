@@ -1367,7 +1367,14 @@ pub(crate) fn validate_retained_feature_binding(
     feature: AuthFeature,
 ) -> Result<bool, AuthError> {
     validate_retained_session_shape(session)?;
-    Ok(session.refresh_tokens.contains_key(&feature))
+    if !session.refresh_tokens.contains_key(&feature) {
+        return Ok(false);
+    }
+    if feature == AuthFeature::RealQa {
+        return parse_device_session(session.device_session_key.expose())
+            .map(|(_, _, _, account_binding)| account_binding.is_some());
+    }
+    Ok(true)
 }
 
 fn device_session_matches(value: &str, subject: &str) -> Result<bool, AuthError> {
@@ -2810,6 +2817,11 @@ mod tests {
             ..FakeVault::default()
         };
         let mut offline = manager(FakeTransport::default(), offline_vault);
+        assert!(
+            !offline
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
         assert_eq!(
             offline.restore_at(Connectivity::Offline, NOW).unwrap(),
             SessionSnapshot::PriorSessionOffline
@@ -2841,6 +2853,11 @@ mod tests {
         assert_eq!(
             device_session_account_binding(migrated).unwrap(),
             realqa_draft_account_binding("account-a")
+        );
+        assert!(
+            online
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
         );
         assert!(online.realqa_draft_access().unwrap().online_reauthenticated);
     }

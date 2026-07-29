@@ -244,7 +244,11 @@ function repetitionLength(pattern: string, index: number): number {
   const token = pattern[index];
   if (token === "*" || token === "+" || token === "?") return 1;
   if (token !== "{") return 0;
-  return pattern.slice(index).match(/^\{\d+(?:,\d*)?\}/u)?.[0].length ?? 0;
+  return (
+    pattern
+      .slice(index)
+      .match(/^\{(?:0|[1-9]\d*)(?:,(?:0|[1-9]\d*)?)?\}/u)?.[0].length ?? 0
+  );
 }
 
 function translateUnicodeClassEscape(
@@ -383,7 +387,7 @@ function hasOversizedBoundedRepetition(pattern: string): boolean {
     if (inCharacterClass || token !== "{") continue;
     const repetition = pattern
       .slice(index)
-      .match(/^\{(\d+)(?:,(\d*))?\}/u);
+      .match(/^\{(0|[1-9]\d*)(?:,(0|[1-9]\d*)?)?\}/u);
     if (repetition === null) continue;
     const minimum = Number(repetition[1]);
     const maximum =
@@ -415,7 +419,9 @@ function compiledPatternInstructions(pattern: string): number | null {
   function quantify(work: PatternWork): PatternWork {
     const repetition = pattern
       .slice(index)
-      .match(/^([*+?]|\{(\d+)(?:,(\d*))?\})(\??)/u);
+      .match(
+        /^([*+?]|\{(0|[1-9]\d*)(?:,(0|[1-9]\d*)?)?\})(\??)/u,
+      );
     if (repetition === null) return work;
     index += repetition[0].length;
     const token = repetition[1] ?? "";
@@ -661,6 +667,100 @@ const defaultRegexFlags: RegexFlags = {
   U: false,
 };
 
+function translateTitleCharacterClass(
+  pattern: string,
+  start: number,
+  caseInsensitive: boolean,
+): { readonly output: string; readonly nextIndex: number } {
+  let index = start + 1;
+  const negated = pattern[index] === "^";
+  if (negated) index += 1;
+  let positiveMembers = "";
+  const complementedUnicodeMembers: string[] = [];
+  let closed = false;
+
+  while (index < pattern.length) {
+    const posixClass = translatePosixCharacterClass(
+      pattern,
+      index,
+      caseInsensitive,
+    );
+    if (posixClass !== null) {
+      positiveMembers += posixClass.output;
+      index = posixClass.nextIndex;
+    } else if (pattern[index] === "\\") {
+      const whitespaceClass = translatePerlWhitespaceClassEscape(
+        pattern,
+        index,
+        true,
+      );
+      const unicodeClass = translateUnicodeClassEscape(
+        pattern,
+        index,
+        caseInsensitive,
+        true,
+      );
+      const translatedClass =
+        whitespaceClass ??
+        unicodeClass ??
+        translateGoCharacterEscape(pattern, index);
+      if (
+        unicodeClass !== null &&
+        caseInsensitive &&
+        unicodeClass.output.startsWith(String.raw`\P{`)
+      ) {
+        complementedUnicodeMembers.push(
+          translateUnicodeClassEscape(
+            pattern,
+            index,
+            caseInsensitive,
+            false,
+          )?.output ?? "",
+        );
+        index = unicodeClass.nextIndex;
+      } else if (translatedClass !== null) {
+        positiveMembers += translatedClass.output;
+        index = translatedClass.nextIndex;
+      } else {
+        const escaped = pattern[index + 1];
+        if (escaped === "b" || escaped === "B") {
+          throw new Error("word-boundary escape inside character class");
+        }
+        positiveMembers += pattern.slice(index, index + 2);
+        index += 2;
+      }
+    } else if (pattern[index] === "]") {
+      index += 1;
+      closed = true;
+      break;
+    } else {
+      positiveMembers += pattern[index];
+      index += 1;
+    }
+  }
+
+  if (!closed) throw new Error("unclosed character class");
+  if (complementedUnicodeMembers.length === 0) {
+    return {
+      output: `[${negated ? "^" : ""}${positiveMembers}]`,
+      nextIndex: index,
+    };
+  }
+
+  if (positiveMembers.startsWith("^")) {
+    positiveMembers = `\\${positiveMembers}`;
+  }
+  const alternatives = [
+    ...(positiveMembers === "" ? [] : [`[${positiveMembers}]`]),
+    ...complementedUnicodeMembers,
+  ];
+  const members = `(?:${alternatives.join("|")})`;
+  return {
+    output: negated ? `(?!${members})[\\s\\S]` : members,
+    nextIndex: index,
+  };
+}
+
 function updateRegexFlags(
   current: RegexFlags,
   enabled: string,
@@ -732,57 +832,13 @@ function translateTitlePattern(pattern: string): string {
         return { output, nextIndex: index + 1 };
       }
       if (token === "[") {
-        const singletonUnicodeClass = translateUnicodeClassEscape(
+        const characterClass = translateTitleCharacterClass(
           pattern,
-          index + 1,
+          index,
           flags.i,
-          false,
         );
-        if (
-          singletonUnicodeClass !== null &&
-          pattern[singletonUnicodeClass.nextIndex] === "]"
-        ) {
-          output += singletonUnicodeClass.output;
-          index = singletonUnicodeClass.nextIndex + 1;
-          continue;
-        }
-        output += token;
-        index += 1;
-        while (index < pattern.length) {
-          const posixClass = translatePosixCharacterClass(
-            pattern,
-            index,
-            flags.i,
-          );
-          if (posixClass !== null) {
-            output += posixClass.output;
-            index = posixClass.nextIndex;
-          } else if (pattern[index] === "\\") {
-            const whitespaceClass = translatePerlWhitespaceClassEscape(
-              pattern,
-              index,
-              true,
-            );
-            const translatedClass =
-              whitespaceClass ??
-              translateUnicodeClassEscape(pattern, index, flags.i, true) ??
-              translateGoCharacterEscape(pattern, index);
-            if (translatedClass !== null) {
-              output += translatedClass.output;
-              index = translatedClass.nextIndex;
-            } else {
-              output += pattern.slice(index, index + 2);
-              index += 2;
-            }
-          } else if (pattern[index] === "]") {
-            output += "]";
-            index += 1;
-            break;
-          } else {
-            output += pattern[index];
-            index += 1;
-          }
-        }
+        output += characterClass.output;
+        index = characterClass.nextIndex;
         continue;
       }
       if (token === "\\") {
