@@ -2,7 +2,7 @@ import type { RestorableDraftUrl } from "./contracts";
 
 const MAX_URL_BYTES = 8_192;
 const INVALID_PERCENT_ESCAPE = /%(?![0-9a-f]{2})/iu;
-const HTTP_URL_PREFIX = /^https?:\/\//u;
+const HTTP_URL_PREFIX = /^https?:\/\//iu;
 
 export type CapturedUrlResult =
   | { readonly ok: true; readonly url: RestorableDraftUrl }

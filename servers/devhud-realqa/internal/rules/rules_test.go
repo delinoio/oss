@@ -89,6 +89,64 @@ func TestCompileRejectsCredentialURLTemplates(t *testing.T) {
 	}
 }
 
+func TestCompileRejectsBackslashURLTemplates(t *testing.T) {
+	t.Parallel()
+	for _, template := range []string{
+		`https://example.com/a\b`,
+		`https://example.com/?value=\b`,
+	} {
+		if _, err := Compile([]Rule{{
+			ExactProcessName: "app",
+			URLTemplate:      template,
+			Enabled:          true,
+		}}); err == nil {
+			t.Fatalf("Compile() accepted backslash URL template %q", template)
+		}
+	}
+}
+
+func TestCompileAcceptsCommonRegexEdgeCases(t *testing.T) {
+	t.Parallel()
+	for _, pattern := range []string{
+		`^[[:digit:]{101}]$`,
+		`^\p{^Greek}+$`,
+		`^\P{^Greek}+$`,
+	} {
+		if _, err := Compile([]Rule{{
+			ExactProcessName: "app",
+			TitlePattern:     pattern,
+			URLTemplate:      "HTTPS://example.com/",
+			Enabled:          true,
+		}}); err != nil {
+			t.Fatalf("Compile() rejected common regex pattern %q: %v", pattern, err)
+		}
+	}
+}
+
+func TestResolveSkipsBackslashExpansion(t *testing.T) {
+	t.Parallel()
+	set, err := Compile([]Rule{
+		{
+			ExactProcessName: "app",
+			TitlePattern:     `^(.+)$`,
+			URLTemplate:      "https://example.com/$1",
+			Enabled:          true,
+		},
+		{
+			ExactProcessName: "app",
+			URLTemplate:      "https://fallback.example/",
+			Enabled:          true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok := set.Resolve("app", `a\b`)
+	if !ok || value != "https://fallback.example/" {
+		t.Fatalf("Resolve() = %q, %v", value, ok)
+	}
+}
+
 func TestCompileAcceptsLiteralClassOperatorText(t *testing.T) {
 	t.Parallel()
 	for _, pattern := range []string{

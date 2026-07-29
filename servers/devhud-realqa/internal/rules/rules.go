@@ -293,7 +293,8 @@ func validateRepetitions(expression *syntax.Regexp) error {
 }
 
 func validateTemplate(template string) error {
-	if template == "" || len(template) > MaxURLTemplateBytes || !utf8.ValidString(template) {
+	if template == "" || len(template) > MaxURLTemplateBytes ||
+		!utf8.ValidString(template) || strings.Contains(template, `\`) {
 		return errors.New("invalid URL template")
 	}
 	probe := regexp.MustCompile(`\$(?:\{[0-9]+\}|[0-9]+)`).ReplaceAllString(template, "x")
@@ -333,6 +334,9 @@ func (set *Set) Resolve(processName, windowTitle string) (string, bool) {
 }
 
 func validateResolvedURL(value string) error {
+	if strings.Contains(value, `\`) {
+		return errors.New("invalid resolved URL")
+	}
 	parsed, err := url.Parse(value)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
 		parsed.Host == "" || parsed.User != nil {

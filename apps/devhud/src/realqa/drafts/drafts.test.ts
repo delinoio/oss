@@ -54,6 +54,10 @@ describe("RealQA URL capture boundary", () => {
       ok: false,
       reason: "unsupported-scheme",
     });
+    expect(sanitizeCapturedUrl("HTTPS://example.com/")).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/" },
+    });
   });
 
   it.each([
@@ -115,7 +119,6 @@ describe("RealQA URL capture boundary", () => {
     String.raw`https://example.com\repaired`,
     "https:///example.com",
     "https:example.com",
-    "HTTPS://example.com/",
   ])("rejects a Go-invalid raw URL %s", (value) => {
     expect(sanitizeCapturedUrl(value)).toEqual({
       ok: false,
@@ -306,6 +309,8 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
 
   it.each([
     [String.raw`^\p{Han}+$`, "漢字"],
+    [String.raw`^\p{^Greek}+$`, "Letters"],
+    [String.raw`^\P{^Greek}+$`, "Ω"],
     [String.raw`^\pL+$`, "Letters"],
     [String.raw`^[\p{Han}]+$`, "漢字"],
     [String.raw`^[[:alpha:]]+$`, "Letters"],
@@ -361,6 +366,14 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
         rule({ safeWindowTitlePattern: String.raw`^a{1,101}$` }),
       ]),
     ).toBe(false);
+  });
+
+  it("treats repetition text after a POSIX class as part of the outer class", () => {
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ safeWindowTitlePattern: String.raw`^[[:digit:]{101}]$` }),
+      ]),
+    ).toBe(true);
   });
 
   it("mirrors the server's compiled-regex instruction budget", () => {
@@ -434,6 +447,14 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     expect(
       validateRealQaProcessUrlRules([
         rule({ urlTemplate: "https://example.com/%2F" }),
+      ]),
+    ).toBe(true);
+  });
+
+  it("accepts a URL template with a case-insensitive HTTP(S) scheme", () => {
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ urlTemplate: "HTTPS://example.com/" }),
       ]),
     ).toBe(true);
   });

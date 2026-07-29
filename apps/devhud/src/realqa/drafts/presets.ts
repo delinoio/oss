@@ -194,16 +194,22 @@ function translateUnicodeClassEscape(
 ): { readonly output: string; readonly nextIndex: number } | null {
   const unicodeClass = pattern
     .slice(index)
-    .match(/^\\([pP])(?:\{([A-Za-z_]+)\}|([A-Za-z]))/u);
+    .match(/^\\([pP])(?:\{(\^?)([A-Za-z_]+)\}|([A-Za-z]))/u);
   if (unicodeClass === null) return null;
-  const name = unicodeClass[2] ?? unicodeClass[3] ?? "";
-  const direct = `\\${unicodeClass[1]}{${name}}`;
+  const name = unicodeClass[3] ?? unicodeClass[4] ?? "";
+  const classKind =
+    unicodeClass[2] === "^"
+      ? unicodeClass[1] === "p"
+        ? "P"
+        : "p"
+      : unicodeClass[1];
+  const direct = `\\${classKind}{${name}}`;
   try {
     new RegExp(direct, "u");
     return { output: direct, nextIndex: index + unicodeClass[0].length };
   } catch {
     return {
-      output: `\\${unicodeClass[1]}{Script=${name}}`,
+      output: `\\${classKind}{Script=${name}}`,
       nextIndex: index + unicodeClass[0].length,
     };
   }
@@ -273,6 +279,13 @@ function hasOversizedBoundedRepetition(pattern: string): boolean {
       continue;
     }
     if (token === "[") {
+      if (inCharacterClass) {
+        const posixClass = translatePosixCharacterClass(pattern, index);
+        if (posixClass !== null) {
+          index = posixClass.nextIndex - 1;
+          continue;
+        }
+      }
       inCharacterClass = true;
       continue;
     }
@@ -418,7 +431,7 @@ function compiledPatternInstructions(pattern: string): number | null {
       } else if (token === "\\") {
         const unicodeClass = pattern
           .slice(index)
-          .match(/^\\[pP](?:\{[A-Za-z_]+\}|[A-Za-z])/u);
+          .match(/^\\[pP](?:\{\^?[A-Za-z_]+\}|[A-Za-z])/u);
         index += unicodeClass?.[0].length ?? 2;
         atom = {
           instructions: 1,
