@@ -57,6 +57,7 @@ requireCondition(
   cargoSource.includes("[target.'cfg(target_os = \"windows\")'.dependencies]") &&
     cargoSource.includes('windows-capture = "=2.0.0"') &&
     cargoSource.includes('"Graphics_Capture"') &&
+    cargoSource.includes('"Win32_Graphics_Dwm"') &&
     cargoSource.includes('"Win32_UI_HiDpi"'),
   "the backend must use pinned Windows-only Graphics Capture and DPI APIs",
 );
@@ -74,6 +75,10 @@ for (const contract of [
   "CursorCaptureSettings::WithCursor",
   "CursorCaptureSettings::WithoutCursor",
   "GetDpiForMonitor",
+  "EnumDisplayDevicesW",
+  "EDD_GET_DEVICE_INTERFACE_NAME",
+  "DwmGetWindowAttribute",
+  "DWMWA_EXTENDED_FRAME_BOUNDS",
   "GetWindowDisplayAffinity",
   "WindowsPlatformAdapter",
   "MAX_DECODED_PIXELS",

@@ -90,6 +90,7 @@ impl NativeRect {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DisplayIdentity {
     stable_key: String,
+    device_interface_key: String,
     source: NativeSourceId,
 }
 
@@ -97,6 +98,7 @@ struct DisplayIdentity {
 struct WindowsDisplay {
     source: NativeSourceId,
     stable_key: String,
+    device_interface_key: String,
     native_bounds: NativeRect,
     logical_bounds: LogicalRect,
     physical_size: PhysicalSize,
@@ -126,6 +128,7 @@ struct WindowsWindow {
     process_id: u32,
     process_started_at: u64,
     display_key: String,
+    display_device_interface_key: String,
     display_source: NativeSourceId,
     native_bounds: NativeRect,
     bounds: LogicalRect,
@@ -138,6 +141,7 @@ impl WindowsDisplay {
     fn identity(&self) -> DisplayIdentity {
         DisplayIdentity {
             stable_key: self.stable_key.clone(),
+            device_interface_key: self.device_interface_key.clone(),
             source: self.source,
         }
     }
@@ -156,6 +160,7 @@ impl WindowsWindow {
     fn display_identity(&self) -> DisplayIdentity {
         DisplayIdentity {
             stable_key: self.display_key.clone(),
+            device_interface_key: self.display_device_interface_key.clone(),
             source: self.display_source,
         }
     }
@@ -283,6 +288,8 @@ impl WindowsCaptureBackend {
             || displays.iter().any(|display| {
                 display.stable_key.is_empty()
                     || display.stable_key.len() > MAX_INTERNAL_SOURCE_KEY_BYTES
+                    || display.device_interface_key.is_empty()
+                    || display.device_interface_key.len() > MAX_INTERNAL_SOURCE_KEY_BYTES
                     || !identities.insert(display.identity())
             })
         {
@@ -1104,16 +1111,22 @@ mod system {
         Graphics::Capture::{GraphicsCaptureItem, GraphicsCaptureSession},
         Win32::{
             Foundation::{FILETIME, HWND, RECT},
-            Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO},
+            Graphics::{
+                Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute},
+                Gdi::{
+                    DISPLAY_DEVICEW, EnumDisplayDevicesW, GetMonitorInfoW, HMONITOR, MONITORINFO,
+                },
+            },
             System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
             UI::{
                 HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
                 WindowsAndMessaging::{
-                    GetWindowDisplayAffinity, IsIconic, IsWindow, MONITORINFOF_PRIMARY,
+                    EDD_GET_DEVICE_INTERFACE_NAME, GetWindowDisplayAffinity, IsIconic, IsWindow,
+                    MONITORINFOF_PRIMARY,
                 },
             },
         },
-        core::{IInspectable, Owned},
+        core::{IInspectable, Owned, PCWSTR},
     };
     use windows_capture::{
         capture::{Context, GraphicsCaptureApiError, GraphicsCaptureApiHandler},
@@ -1365,11 +1378,13 @@ mod system {
             denominator: 96 / divisor,
         };
         let scale_value = f64::from(dpi_x) / 96.0;
+        let stable_key = monitor
+            .device_name()
+            .map_err(|_| WindowsAdapterFailure::Failed)?;
         Ok(WindowsDisplay {
             source: NativeSourceId(raw as usize),
-            stable_key: monitor
-                .device_name()
-                .map_err(|_| WindowsAdapterFailure::Failed)?,
+            device_interface_key: monitor_device_interface_key(&stable_key)?,
+            stable_key,
             native_bounds,
             logical_bounds: LogicalRect {
                 x: 0.0,
@@ -1381,6 +1396,38 @@ mod system {
             scale,
             primary: info.dwFlags & MONITORINFOF_PRIMARY != 0,
         })
+    }
+
+    fn monitor_device_interface_key(device_name: &str) -> Result<String, WindowsAdapterFailure> {
+        let wide_device_name = device_name
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let mut device = DISPLAY_DEVICEW {
+            cb: u32::try_from(mem::size_of::<DISPLAY_DEVICEW>())
+                .map_err(|_| WindowsAdapterFailure::Failed)?,
+            ..DISPLAY_DEVICEW::default()
+        };
+        if !unsafe {
+            EnumDisplayDevicesW(
+                PCWSTR(wide_device_name.as_ptr()),
+                0,
+                &mut device,
+                EDD_GET_DEVICE_INTERFACE_NAME,
+            )
+            .as_bool()
+        } {
+            return Err(WindowsAdapterFailure::Failed);
+        }
+        let length = device
+            .DeviceID
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(device.DeviceID.len());
+        if length == 0 {
+            return Err(WindowsAdapterFailure::Failed);
+        }
+        String::from_utf16(&device.DeviceID[..length]).map_err(|_| WindowsAdapterFailure::Failed)
     }
 
     fn greatest_common_divisor(mut left: u32, mut right: u32) -> u32 {
@@ -1402,22 +1449,29 @@ mod system {
         let monitor_key = monitor
             .device_name()
             .map_err(|_| WindowsAdapterFailure::Failed)?;
-        if !displays.iter().any(|display| {
+        let Some(display) = displays.iter().find(|display| {
             display.stable_key == monitor_key
                 && display.source == NativeSourceId(monitor.as_raw_hmonitor() as usize)
-        }) {
+        }) else {
             return Ok(None);
-        }
+        };
         let Some((process_id, process_started_at)) = window_process_identity(window) else {
             return Ok(None);
         };
-        let Ok(rect) = window.rect() else {
-            return Ok(None);
+        let minimized = unsafe { IsIconic(HWND(window.as_raw_hwnd())).as_bool() };
+        let native_bounds = if minimized {
+            let Ok(rect) = window.rect() else {
+                return Ok(None);
+            };
+            native_rect(rect)
+        } else {
+            let Ok(bounds) = visible_window_bounds(window) else {
+                return Ok(None);
+            };
+            bounds
         };
-        let native_bounds = native_rect(rect);
         let width = native_bounds.right - native_bounds.left;
         let height = native_bounds.bottom - native_bounds.top;
-        let minimized = unsafe { IsIconic(HWND(window.as_raw_hwnd())).as_bool() };
         if !minimized && (width <= 0 || height <= 0) {
             return Ok(None);
         }
@@ -1446,14 +1500,31 @@ mod system {
             stable_key: format!("hwnd:{:016x}", window.as_raw_hwnd() as usize),
             process_id,
             process_started_at,
-            display_key: monitor_key,
-            display_source: NativeSourceId(monitor.as_raw_hmonitor() as usize),
+            display_key: display.stable_key.clone(),
+            display_device_interface_key: display.device_interface_key.clone(),
+            display_source: display.source,
             native_bounds,
             bounds,
             state,
             process_name: window.process_name().ok(),
             title: window.title().ok(),
         }))
+    }
+
+    fn visible_window_bounds(window: Window) -> Result<NativeRect, WindowsAdapterFailure> {
+        let mut rect = RECT::default();
+        let size =
+            u32::try_from(mem::size_of::<RECT>()).map_err(|_| WindowsAdapterFailure::Failed)?;
+        unsafe {
+            DwmGetWindowAttribute(
+                HWND(window.as_raw_hwnd()),
+                DWMWA_EXTENDED_FRAME_BOUNDS,
+                std::ptr::addr_of_mut!(rect).cast(),
+                size,
+            )
+        }
+        .map_err(|_| WindowsAdapterFailure::Failed)?;
+        Ok(native_rect(rect))
     }
 
     fn window_process_identity(window: Window) -> Option<(u32, u64)> {
@@ -1654,6 +1725,7 @@ mod tests {
             let left = WindowsDisplay {
                 source: NativeSourceId(1),
                 stable_key: "private-device-left".to_owned(),
+                device_interface_key: "private-monitor-left".to_owned(),
                 native_bounds: NativeRect {
                     left: -2,
                     top: 0,
@@ -1679,6 +1751,7 @@ mod tests {
             let right = WindowsDisplay {
                 source: NativeSourceId(2),
                 stable_key: "private-device-right".to_owned(),
+                device_interface_key: "private-monitor-right".to_owned(),
                 native_bounds: NativeRect {
                     left: 0,
                     top: 0,
@@ -1837,6 +1910,7 @@ mod tests {
             process_id: 30,
             process_started_at: 300,
             display_key: display.stable_key.clone(),
+            display_device_interface_key: display.device_interface_key.clone(),
             display_source: display.source,
             native_bounds: NativeRect {
                 left: display.native_bounds.left
@@ -1893,6 +1967,7 @@ mod tests {
             WindowsDisplay {
                 source: NativeSourceId(1),
                 stable_key: "high-dpi-primary".to_owned(),
+                device_interface_key: "monitor-high-dpi-primary".to_owned(),
                 native_bounds: NativeRect {
                     left: 0,
                     top: 0,
@@ -1918,6 +1993,7 @@ mod tests {
             WindowsDisplay {
                 source: NativeSourceId(2),
                 stable_key: "low-dpi-right".to_owned(),
+                device_interface_key: "monitor-low-dpi-right".to_owned(),
                 native_bounds: NativeRect {
                     left: 3840,
                     top: 0,
@@ -1943,6 +2019,7 @@ mod tests {
             WindowsDisplay {
                 source: NativeSourceId(3),
                 stable_key: "low-dpi-below".to_owned(),
+                device_interface_key: "monitor-low-dpi-below".to_owned(),
                 native_bounds: NativeRect {
                     left: 0,
                     top: 2160,
@@ -2414,6 +2491,19 @@ mod tests {
     }
 
     #[test]
+    fn replacement_monitor_device_interface_changes_the_display_snapshot_identity() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        adapter.displays.lock().expect("display lock")[0].device_interface_key =
+            "replacement-monitor-left".to_owned();
+        assert_eq!(
+            core.begin(multi_monitor_request(&catalog)),
+            Err(CaptureFailure::DisplaySnapshotChanged)
+        );
+    }
+
+    #[test]
     fn retired_hmonitor_identity_does_not_reuse_a_stale_display_id() {
         let adapter = Arc::new(FixtureAdapter::mixed_dpi());
         let backend = Arc::new(WindowsCaptureBackend::new(adapter.clone()));
@@ -2527,6 +2617,7 @@ mod tests {
                 process_id: 30,
                 process_started_at: 300,
                 display_key: display.stable_key.clone(),
+                display_device_interface_key: display.device_interface_key.clone(),
                 display_source: display.source,
                 native_bounds: display.native_bounds,
                 bounds: display.logical_bounds,
@@ -2587,6 +2678,7 @@ mod tests {
                 process_id: 30,
                 process_started_at: 300,
                 display_key: display.stable_key,
+                display_device_interface_key: display.device_interface_key,
                 display_source: display.source,
                 native_bounds: display.native_bounds,
                 bounds: display.logical_bounds,
@@ -2805,6 +2897,7 @@ mod tests {
             process_id: 30,
             process_started_at: 300,
             display_key: "private-device-right".to_owned(),
+            display_device_interface_key: "private-monitor-right".to_owned(),
             display_source: NativeSourceId(2),
             native_bounds: NativeRect {
                 left: 0,
