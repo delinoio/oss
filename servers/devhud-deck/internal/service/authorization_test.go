@@ -87,6 +87,19 @@ func TestViewRepositoryPermissionFailsBeforeIdentityBearingData(t *testing.T) {
 	}
 }
 
+func TestRepositoryAuthorizationDefaultsToDeny(t *testing.T) {
+	t.Parallel()
+	dependencies := Dependencies{}.withDefaults()
+	allowed, err := dependencies.Repositories.CanReadRepository(
+		context.Background(), contracts.Viewer{}, "secret", "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed {
+		t.Fatal("missing repository authorizer failed open")
+	}
+}
+
 func TestOrganizationBillingMustMatchOwner(t *testing.T) {
 	t.Parallel()
 	ownerID := uuid.MustParse("01900000-0000-7000-8000-000000000003")

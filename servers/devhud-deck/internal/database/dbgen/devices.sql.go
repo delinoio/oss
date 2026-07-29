@@ -31,20 +31,29 @@ func (q *Queries) DeleteDeviceByRegistrationAndAccount(ctx context.Context, arg 
 }
 
 const deleteDeviceByRegistrationAndGrant = `-- name: DeleteDeviceByRegistrationAndGrant :execrows
-DELETE FROM deck_device_registrations
-WHERE registration_id = $1
-  AND grant_verifier = $2
-  AND lease_expires_at > $3
+DELETE FROM deck_device_registrations AS registration
+WHERE registration.registration_id = $1
+  AND registration.lease_expires_at > $2
+  AND (
+      registration.grant_verifier = $3
+      OR EXISTS (
+          SELECT 1
+          FROM deck_device_registration_idempotency AS replay
+          WHERE replay.registration_id = registration.registration_id
+            AND replay.grant_verifier = $3
+            AND replay.lease_expires_at > $2
+      )
+  )
 `
 
 type DeleteDeviceByRegistrationAndGrantParams struct {
 	RegistrationID pgtype.UUID
-	GrantVerifier  []byte
 	Now            pgtype.Timestamptz
+	GrantVerifier  []byte
 }
 
 func (q *Queries) DeleteDeviceByRegistrationAndGrant(ctx context.Context, arg DeleteDeviceByRegistrationAndGrantParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteDeviceByRegistrationAndGrant, arg.RegistrationID, arg.GrantVerifier, arg.Now)
+	result, err := q.db.Exec(ctx, deleteDeviceByRegistrationAndGrant, arg.RegistrationID, arg.Now, arg.GrantVerifier)
 	if err != nil {
 		return 0, err
 	}
@@ -192,7 +201,8 @@ func (q *Queries) GetDeviceByRegistration(ctx context.Context, registrationID pg
 
 const getRegisterDeviceIdempotency = `-- name: GetRegisterDeviceIdempotency :one
 SELECT account_id, idempotency_key, request_digest, registration_id,
-       grant_replay_ciphertext, lease_expires_at, created_at
+       grant_replay_ciphertext, grant_verifier, response_ciphertext,
+       lease_expires_at, created_at
 FROM deck_device_registration_idempotency
 WHERE account_id = $1
   AND idempotency_key = $2
@@ -212,6 +222,8 @@ func (q *Queries) GetRegisterDeviceIdempotency(ctx context.Context, arg GetRegis
 		&i.RequestDigest,
 		&i.RegistrationID,
 		&i.GrantReplayCiphertext,
+		&i.GrantVerifier,
+		&i.ResponseCiphertext,
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 	)
@@ -315,11 +327,13 @@ func (q *Queries) InsertDevice(ctx context.Context, arg InsertDeviceParams) (Dec
 const insertRegisterDeviceIdempotency = `-- name: InsertRegisterDeviceIdempotency :exec
 INSERT INTO deck_device_registration_idempotency (
     account_id, idempotency_key, request_digest, registration_id,
-    grant_replay_ciphertext, lease_expires_at
+    grant_replay_ciphertext, grant_verifier, response_ciphertext,
+    lease_expires_at
 ) VALUES (
     $1, $2,
     $3, $4,
-    $5, $6
+    $5, $6,
+    $7, $8
 )
 `
 
@@ -329,6 +343,8 @@ type InsertRegisterDeviceIdempotencyParams struct {
 	RequestDigest         []byte
 	RegistrationID        pgtype.UUID
 	GrantReplayCiphertext []byte
+	GrantVerifier         []byte
+	ResponseCiphertext    []byte
 	LeaseExpiresAt        pgtype.Timestamptz
 }
 
@@ -339,6 +355,8 @@ func (q *Queries) InsertRegisterDeviceIdempotency(ctx context.Context, arg Inser
 		arg.RequestDigest,
 		arg.RegistrationID,
 		arg.GrantReplayCiphertext,
+		arg.GrantVerifier,
+		arg.ResponseCiphertext,
 		arg.LeaseExpiresAt,
 	)
 	return err

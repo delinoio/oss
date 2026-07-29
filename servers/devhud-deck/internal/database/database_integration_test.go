@@ -110,11 +110,13 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 
 	now := time.Date(2026, time.July, 28, 12, 0, 0, 0, time.UTC)
 	firstViewID := mustV7(t)
-	first, replayed, err := store.CreateView(ctx, createViewParams(
-		t, hasher, accountID, firstViewID, mustV7(t), "subject-1", now, 0))
+	firstViewParams := createViewParams(
+		t, hasher, accountID, firstViewID, mustV7(t), "subject-1", now, 0)
+	first, replayed, err := store.CreateView(ctx, firstViewParams)
 	if err != nil || replayed {
 		t.Fatalf("create first view = %#v replayed=%v err=%v", first, replayed, err)
 	}
+	originalFirst := proto.Clone(first).(*deckv1.View)
 	if first.Revision.GetValue() != 1 || first.Revision.GetEtag() == "" {
 		t.Fatalf("first revision = %#v", first.Revision)
 	}
@@ -156,6 +158,11 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	updated, err := store.UpdateView(ctx, firstViewID, 1, first, now.Add(time.Hour))
 	if err != nil || updated.Revision.GetValue() != 2 {
 		t.Fatalf("update = %#v %v", updated, err)
+	}
+	replayedFirst, replayed, err := store.CreateView(ctx, firstViewParams)
+	if err != nil || !replayed || !proto.Equal(replayedFirst, originalFirst) {
+		t.Fatalf("create replay after update = %#v replayed=%v err=%v",
+			replayedFirst, replayed, err)
 	}
 
 	viewerHash := hasher.Sum("snapshot-viewer", accountID.String())
@@ -234,33 +241,79 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			Provider:        deckv1.PushProvider_PUSH_PROVIDER_APPLE,
 			OpaquePushToken: "opaque",
 		},
-		Shortcuts: []*deckv1.ViewShortcut{{
-			ShortcutId: uuidProto(mustV7(t)),
-			ViewId:     uuidProto(organizationViewID),
-			Binding: &deckv1.ShortcutBinding{
-				Modifiers: []deckv1.ShortcutModifier{
-					deckv1.ShortcutModifier_SHORTCUT_MODIFIER_META,
+		Shortcuts: []*deckv1.ViewShortcut{
+			{
+				ShortcutId: uuidProto(mustV7(t)),
+				ViewId:     uuidProto(firstViewID),
+				Binding: &deckv1.ShortcutBinding{
+					Modifiers: []deckv1.ShortcutModifier{
+						deckv1.ShortcutModifier_SHORTCUT_MODIFIER_META,
+					},
+					Key: deckv1.ShortcutKey_SHORTCUT_KEY_B,
 				},
-				Key: deckv1.ShortcutKey_SHORTCUT_KEY_A,
+				State: deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE,
 			},
-			State: deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE,
-		}},
-		Widgets: []*deckv1.WidgetState{{
-			WidgetId: uuidProto(mustV7(t)),
-			ViewId:   uuidProto(organizationViewID),
-			Family:   deckv1.WidgetFamily_WIDGET_FAMILY_APPLE_SMALL,
-			Privacy:  deckv1.WidgetPrivacy_WIDGET_PRIVACY_COUNTS_ONLY,
-		}},
+			{
+				ShortcutId: uuidProto(mustV7(t)),
+				ViewId:     uuidProto(organizationViewID),
+				Binding: &deckv1.ShortcutBinding{
+					Modifiers: []deckv1.ShortcutModifier{
+						deckv1.ShortcutModifier_SHORTCUT_MODIFIER_META,
+					},
+					Key: deckv1.ShortcutKey_SHORTCUT_KEY_A,
+				},
+				State: deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE,
+			},
+		},
+		Widgets: []*deckv1.WidgetState{
+			{
+				WidgetId: uuidProto(mustV7(t)),
+				ViewId:   uuidProto(firstViewID),
+				Family:   deckv1.WidgetFamily_WIDGET_FAMILY_APPLE_SMALL,
+				Privacy:  deckv1.WidgetPrivacy_WIDGET_PRIVACY_COUNTS_ONLY,
+			},
+			{
+				WidgetId: uuidProto(mustV7(t)),
+				ViewId:   uuidProto(organizationViewID),
+				Family:   deckv1.WidgetFamily_WIDGET_FAMILY_APPLE_SMALL,
+				Privacy:  deckv1.WidgetPrivacy_WIDGET_PRIVACY_COUNTS_ONLY,
+			},
+		},
 	}
-	_, _, _, err = store.RegisterDevice(ctx, RegisterDeviceParams{
+	registerParams := RegisterDeviceParams{
 		RegistrationID: registrationID, DeviceID: deviceID, AccountID: accountID,
 		IdempotencyKey: mustV7(t), RequestDigest: security.Digest([]byte("first")),
 		OwnerHash: hasher.Sum("owner", "OWNER_SCOPE_PERSONAL:"+accountID.String()),
 		Write:     write, Grant: grant, LeaseExpiresAt: now.Add(deviceLeaseForTest),
 		Now: now,
-	})
+	}
+	originalRegistration, returnedGrant, replayed, err := store.RegisterDevice(
+		ctx, registerParams)
+	if err != nil || replayed || returnedGrant != grant {
+		t.Fatalf("register device = %#v grant=%q replayed=%v err=%v",
+			originalRegistration, returnedGrant, replayed, err)
+	}
+	renewalGrant, err := security.NewGrant()
 	if err != nil {
 		t.Fatal(err)
+	}
+	renewalWrite := write
+	renewalWrite.DisplayName = "Renewed laptop"
+	if _, _, replayed, err := store.RegisterDevice(ctx, RegisterDeviceParams{
+		RegistrationID: mustV7(t), DeviceID: deviceID, AccountID: accountID,
+		IdempotencyKey: mustV7(t), RequestDigest: security.Digest([]byte("renewal")),
+		OwnerHash: registerParams.OwnerHash, Write: renewalWrite,
+		Expected: 1, HasExpected: true, Grant: renewalGrant,
+		LeaseExpiresAt: now.Add(deviceLeaseForTest), Now: now.Add(time.Minute),
+	}); err != nil || replayed {
+		t.Fatalf("renew device replayed=%v err=%v", replayed, err)
+	}
+	replayedRegistration, replayGrant, replayed, err := store.RegisterDevice(
+		ctx, registerParams)
+	if err != nil || !replayed || replayGrant != grant ||
+		!proto.Equal(replayedRegistration, originalRegistration) {
+		t.Fatalf("register replay after renewal = %#v grant=%q replayed=%v err=%v",
+			replayedRegistration, replayGrant, replayed, err)
 	}
 	_, _, _, err = store.RegisterDevice(ctx, RegisterDeviceParams{
 		RegistrationID: mustV7(t), DeviceID: deviceID, AccountID: secondAccountID,
@@ -272,6 +325,26 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if !errors.Is(err, ErrAccountSwitch) {
 		t.Fatalf("account switch error = %T %v", err, err)
 	}
+	if deletedRevision, err := store.DeleteView(
+		ctx, firstViewID, 2, now.Add(2*time.Minute)); err != nil ||
+		deletedRevision != 2 {
+		t.Fatalf("delete view = revision=%d err=%v", deletedRevision, err)
+	}
+	device, err := store.GetDevice(ctx, accountID, deviceID, now.Add(3*time.Minute))
+	if err != nil {
+		t.Fatalf("device after view deletion: %v", err)
+	}
+	if len(device.Device.Shortcuts) != 1 || len(device.Device.Widgets) != 1 ||
+		uuidValueFromProto(device.Device.Shortcuts[0].ViewId) != organizationViewID ||
+		uuidValueFromProto(device.Device.Widgets[0].ViewId) != organizationViewID ||
+		device.Device.Revision.Value != 3 {
+		t.Fatalf("single-view device scrub = %#v", device.Device)
+	}
+	replayedFirst, replayed, err = store.CreateView(ctx, firstViewParams)
+	if err != nil || !replayed || !proto.Equal(replayedFirst, originalFirst) {
+		t.Fatalf("create replay after deletion = %#v replayed=%v err=%v",
+			replayedFirst, replayed, err)
+	}
 	organizationTargetHash := hasher.Sum(
 		"owner", "OWNER_SCOPE_ORGANIZATION:"+organizationID.String())
 	if _, err := store.DeleteOrganizationFeatureData(ctx, DeleteFeatureDataParams{
@@ -281,7 +354,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("organization feature deletion: %v", err)
 	}
-	device, err := store.GetDevice(
+	device, err = store.GetDevice(
 		ctx, accountID, deviceID, now.Add(4*time.Minute))
 	if err != nil {
 		t.Fatalf("device after organization deletion: %v", err)
@@ -289,9 +362,14 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if len(device.Device.Shortcuts) != 0 || len(device.Device.Widgets) != 0 {
 		t.Fatalf("organization device state survived deletion: %#v", device.Device)
 	}
-	if device.Device.Revision.Value != 2 {
+	if device.Device.Revision.Value != 4 {
 		t.Fatalf("device revision after organization deletion = %#v",
 			device.Device.Revision)
+	}
+	unregistered, err := store.UnregisterDevice(
+		ctx, registrationID, uuid.Nil, grant, now.Add(5*time.Minute))
+	if err != nil || !unregistered {
+		t.Fatalf("original replay grant unregister = %v, %v", unregistered, err)
 	}
 
 	replayKey := mustV7(t)
@@ -309,6 +387,10 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	if _, err := store.ResolveViewer(ctx, "subject-1"); err != nil {
 		t.Fatalf("owner replay identity was removed: %v", err)
+	}
+	if _, _, err := store.CreateView(ctx, firstViewParams); !errors.Is(
+		err, ErrDeletionInProgress) {
+		t.Fatalf("deleted owner replay material survived: %T %v", err, err)
 	}
 	replayedDeletion, err := store.DeleteFeatureData(ctx, DeleteFeatureDataParams{
 		JobID: mustV7(t), ReplayKey: replayKey, TargetID: accountID,

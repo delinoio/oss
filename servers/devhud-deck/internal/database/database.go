@@ -303,7 +303,7 @@ func (store *Store) CreateView(
 	row.ViewID = pgUUID(params.ID)
 	row.CreatedAt = pgTime(params.Now)
 	row.UpdatedAt = pgTime(params.Now)
-	var stored dbgen.DeckView
+	var result *deckv1.View
 	replayed := false
 	err = store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
 		replay, replayErr := queries.GetCreateViewIdempotency(ctx,
@@ -315,7 +315,9 @@ func (store *Store) CreateView(
 			if !bytes.Equal(replay.RequestDigest, params.RequestDigest[:]) {
 				return ErrIdempotencyConflict
 			}
-			stored, replayErr = queries.GetView(ctx, replay.ViewID)
+			result = &deckv1.View{}
+			replayErr = store.openProto(
+				"view-create-replay", replay.ResponseCiphertext, result)
 			replayed = true
 			return replayErr
 		}
@@ -355,7 +357,7 @@ func (store *Store) CreateView(
 		default:
 			return errors.New("deck database: invalid owner")
 		}
-		stored, err = queries.InsertView(ctx, dbgen.InsertViewParams{
+		stored, err := queries.InsertView(ctx, dbgen.InsertViewParams{
 			ViewID:                 row.ViewID,
 			OwnerScope:             row.OwnerScope,
 			OwnerAccountID:         row.OwnerAccountID,
@@ -375,19 +377,28 @@ func (store *Store) CreateView(
 		if err != nil {
 			return err
 		}
+		result, err = store.decodeView(stored)
+		if err != nil {
+			return err
+		}
+		responseCiphertext, err := store.sealProto("view-create-replay", result)
+		if err != nil {
+			return err
+		}
 		return queries.InsertCreateViewIdempotency(ctx,
 			dbgen.InsertCreateViewIdempotencyParams{
-				SubjectHash:    params.SubjectHash[:],
-				IdempotencyKey: pgUUID(params.IdempotencyKey),
-				RequestDigest:  params.RequestDigest[:],
-				ViewID:         row.ViewID,
+				SubjectHash:        params.SubjectHash[:],
+				IdempotencyKey:     pgUUID(params.IdempotencyKey),
+				RequestDigest:      params.RequestDigest[:],
+				OwnerHash:          params.OwnerHash[:],
+				ViewID:             row.ViewID,
+				ResponseCiphertext: responseCiphertext,
 			})
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	view, err := store.decodeView(stored)
-	return view, replayed, err
+	return result, replayed, nil
 }
 
 func (store *Store) GetView(ctx context.Context, id uuid.UUID) (*deckv1.View, error) {
@@ -485,22 +496,32 @@ func (store *Store) DeleteView(
 	ctx context.Context,
 	id uuid.UUID,
 	expected uint64,
+	now time.Time,
 ) (uint64, error) {
-	revision, err := store.queries.DeleteView(ctx, dbgen.DeleteViewParams{
-		ViewID: pgUUID(id), ExpectedRevision: int64(expected),
+	var revision int64
+	err := store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		var err error
+		revision, err = queries.DeleteView(ctx, dbgen.DeleteViewParams{
+			ViewID: pgUUID(id), ExpectedRevision: int64(expected),
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			current, currentErr := queries.GetView(ctx, pgUUID(id))
+			if errors.Is(currentErr, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			if currentErr != nil {
+				return errors.New("deck database: stale lookup failed")
+			}
+			return &StaleError{ResourceID: id, Revision: uint64(current.Revision)}
+		}
+		if err != nil {
+			return errors.New("deck database: delete view failed")
+		}
+		return store.scrubDeviceViewState(
+			ctx, queries, []pgtype.UUID{pgUUID(id)}, now)
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		current, currentErr := store.queries.GetView(ctx, pgUUID(id))
-		if errors.Is(currentErr, pgx.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		if currentErr != nil {
-			return 0, errors.New("deck database: stale lookup failed")
-		}
-		return 0, &StaleError{ResourceID: id, Revision: uint64(current.Revision)}
-	}
 	if err != nil {
-		return 0, errors.New("deck database: delete view failed")
+		return 0, err
 	}
 	return uint64(revision), nil
 }

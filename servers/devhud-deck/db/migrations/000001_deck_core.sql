@@ -70,11 +70,15 @@ CREATE TABLE deck_view_create_idempotency (
     subject_hash bytea NOT NULL CHECK (octet_length(subject_hash) = 32),
     idempotency_key uuid NOT NULL,
     request_digest bytea NOT NULL CHECK (octet_length(request_digest) = 32),
-    view_id uuid NOT NULL REFERENCES deck_views(view_id) ON DELETE CASCADE,
+    owner_hash bytea NOT NULL CHECK (octet_length(owner_hash) = 32),
+    view_id uuid NOT NULL,
+    response_ciphertext bytea NOT NULL CHECK (octet_length(response_ciphertext) > 0),
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     PRIMARY KEY (subject_hash, idempotency_key),
     CHECK (substring(idempotency_key::text, 15, 1) = '7')
 );
+CREATE INDEX deck_view_create_idempotency_owner_idx
+    ON deck_view_create_idempotency (owner_hash);
 
 CREATE TABLE deck_pull_request_snapshots (
     view_id uuid NOT NULL REFERENCES deck_views(view_id) ON DELETE CASCADE,
@@ -123,6 +127,8 @@ CREATE TABLE deck_device_registration_idempotency (
     request_digest bytea NOT NULL CHECK (octet_length(request_digest) = 32),
     registration_id uuid NOT NULL REFERENCES deck_device_registrations(registration_id) ON DELETE CASCADE,
     grant_replay_ciphertext bytea NOT NULL CHECK (octet_length(grant_replay_ciphertext) > 0),
+    grant_verifier bytea NOT NULL CHECK (octet_length(grant_verifier) = 32),
+    response_ciphertext bytea NOT NULL CHECK (octet_length(response_ciphertext) > 0),
     lease_expires_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     PRIMARY KEY (account_id, idempotency_key),

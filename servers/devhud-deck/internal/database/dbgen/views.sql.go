@@ -98,7 +98,8 @@ func (q *Queries) EnsureOwnerLock(ctx context.Context, ownerHash []byte) error {
 }
 
 const getCreateViewIdempotency = `-- name: GetCreateViewIdempotency :one
-SELECT subject_hash, idempotency_key, request_digest, view_id, created_at
+SELECT subject_hash, idempotency_key, request_digest, owner_hash, view_id,
+       response_ciphertext, created_at
 FROM deck_view_create_idempotency
 WHERE subject_hash = $1
   AND idempotency_key = $2
@@ -116,7 +117,9 @@ func (q *Queries) GetCreateViewIdempotency(ctx context.Context, arg GetCreateVie
 		&i.SubjectHash,
 		&i.IdempotencyKey,
 		&i.RequestDigest,
+		&i.OwnerHash,
 		&i.ViewID,
+		&i.ResponseCiphertext,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -177,18 +180,22 @@ func (q *Queries) GetViewSnapshotState(ctx context.Context, arg GetViewSnapshotS
 
 const insertCreateViewIdempotency = `-- name: InsertCreateViewIdempotency :exec
 INSERT INTO deck_view_create_idempotency (
-    subject_hash, idempotency_key, request_digest, view_id
+    subject_hash, idempotency_key, request_digest, owner_hash, view_id,
+    response_ciphertext
 ) VALUES (
     $1, $2,
-    $3, $4
+    $3, $4, $5,
+    $6
 )
 `
 
 type InsertCreateViewIdempotencyParams struct {
-	SubjectHash    []byte
-	IdempotencyKey pgtype.UUID
-	RequestDigest  []byte
-	ViewID         pgtype.UUID
+	SubjectHash        []byte
+	IdempotencyKey     pgtype.UUID
+	RequestDigest      []byte
+	OwnerHash          []byte
+	ViewID             pgtype.UUID
+	ResponseCiphertext []byte
 }
 
 func (q *Queries) InsertCreateViewIdempotency(ctx context.Context, arg InsertCreateViewIdempotencyParams) error {
@@ -196,7 +203,9 @@ func (q *Queries) InsertCreateViewIdempotency(ctx context.Context, arg InsertCre
 		arg.SubjectHash,
 		arg.IdempotencyKey,
 		arg.RequestDigest,
+		arg.OwnerHash,
 		arg.ViewID,
+		arg.ResponseCiphertext,
 	)
 	return err
 }

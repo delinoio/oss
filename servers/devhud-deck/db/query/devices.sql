@@ -16,7 +16,8 @@ WHERE grant_verifier = sqlc.arg(grant_verifier);
 
 -- name: GetRegisterDeviceIdempotency :one
 SELECT account_id, idempotency_key, request_digest, registration_id,
-       grant_replay_ciphertext, lease_expires_at, created_at
+       grant_replay_ciphertext, grant_verifier, response_ciphertext,
+       lease_expires_at, created_at
 FROM deck_device_registration_idempotency
 WHERE account_id = sqlc.arg(account_id)
   AND idempotency_key = sqlc.arg(idempotency_key);
@@ -71,11 +72,13 @@ RETURNING *;
 -- name: InsertRegisterDeviceIdempotency :exec
 INSERT INTO deck_device_registration_idempotency (
     account_id, idempotency_key, request_digest, registration_id,
-    grant_replay_ciphertext, lease_expires_at
+    grant_replay_ciphertext, grant_verifier, response_ciphertext,
+    lease_expires_at
 ) VALUES (
     sqlc.arg(account_id), sqlc.arg(idempotency_key),
     sqlc.arg(request_digest), sqlc.arg(registration_id),
-    sqlc.arg(grant_replay_ciphertext), sqlc.arg(lease_expires_at)
+    sqlc.arg(grant_replay_ciphertext), sqlc.arg(grant_verifier),
+    sqlc.arg(response_ciphertext), sqlc.arg(lease_expires_at)
 );
 
 -- name: DeleteExpiredDeviceIdempotency :exec
@@ -93,10 +96,19 @@ WHERE registration_id = sqlc.arg(registration_id)
   AND account_id = sqlc.arg(account_id);
 
 -- name: DeleteDeviceByRegistrationAndGrant :execrows
-DELETE FROM deck_device_registrations
-WHERE registration_id = sqlc.arg(registration_id)
-  AND grant_verifier = sqlc.arg(grant_verifier)
-  AND lease_expires_at > sqlc.arg(now);
+DELETE FROM deck_device_registrations AS registration
+WHERE registration.registration_id = sqlc.arg(registration_id)
+  AND registration.lease_expires_at > sqlc.arg(now)
+  AND (
+      registration.grant_verifier = sqlc.arg(grant_verifier)
+      OR EXISTS (
+          SELECT 1
+          FROM deck_device_registration_idempotency AS replay
+          WHERE replay.registration_id = registration.registration_id
+            AND replay.grant_verifier = sqlc.arg(grant_verifier)
+            AND replay.lease_expires_at > sqlc.arg(now)
+      )
+  );
 
 -- name: GetViewNotificationPreference :one
 SELECT * FROM deck_view_notification_preferences

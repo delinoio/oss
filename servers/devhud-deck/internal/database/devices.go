@@ -52,6 +52,7 @@ func (store *Store) RegisterDevice(
 		return nil, "", false, err
 	}
 	var stored dbgen.DeckDeviceRegistration
+	var registration *deckv1.DeviceRegistration
 	var replayGrant string
 	replayed := false
 	err = store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
@@ -66,9 +67,13 @@ func (store *Store) RegisterDevice(
 			if !replay.LeaseExpiresAt.Valid || !replay.LeaseExpiresAt.Time.After(params.Now) {
 				return ErrNotFound
 			}
-			stored, replayErr = queries.GetDeviceByRegistration(ctx, replay.RegistrationID)
-			if replayErr != nil {
-				return replayErr
+			registration = &deckv1.DeviceRegistration{}
+			if openErr := store.openProto(
+				"device-registration-replay",
+				replay.ResponseCiphertext,
+				registration,
+			); openErr != nil {
+				return openErr
 			}
 			plaintext, openErr := store.cipher.Open("grant-replay", replay.GrantReplayCiphertext)
 			if openErr != nil {
@@ -147,6 +152,15 @@ func (store *Store) RegisterDevice(
 		if err != nil {
 			return err
 		}
+		registration, err = store.decodeDevice(stored)
+		if err != nil {
+			return err
+		}
+		responseCiphertext, err := store.sealProto(
+			"device-registration-replay", registration)
+		if err != nil {
+			return err
+		}
 		return queries.InsertRegisterDeviceIdempotency(ctx,
 			dbgen.InsertRegisterDeviceIdempotencyParams{
 				AccountID:             pgUUID(params.AccountID),
@@ -154,6 +168,8 @@ func (store *Store) RegisterDevice(
 				RequestDigest:         params.RequestDigest[:],
 				RegistrationID:        stored.RegistrationID,
 				GrantReplayCiphertext: grantReplay,
+				GrantVerifier:         grantVerifier[:],
+				ResponseCiphertext:    responseCiphertext,
 				LeaseExpiresAt:        pgTime(params.LeaseExpiresAt),
 			})
 	})
@@ -163,8 +179,7 @@ func (store *Store) RegisterDevice(
 	if replayed {
 		params.Grant = replayGrant
 	}
-	registration, err := store.decodeDevice(stored)
-	return registration, params.Grant, replayed, err
+	return registration, params.Grant, replayed, nil
 }
 
 func (store *Store) GetDevice(

@@ -26,7 +26,8 @@ FROM deck_views
 WHERE owner_scope = 2 AND owner_organization_id = sqlc.arg(owner_organization_id);
 
 -- name: GetCreateViewIdempotency :one
-SELECT subject_hash, idempotency_key, request_digest, view_id, created_at
+SELECT subject_hash, idempotency_key, request_digest, owner_hash, view_id,
+       response_ciphertext, created_at
 FROM deck_view_create_idempotency
 WHERE subject_hash = sqlc.arg(subject_hash)
   AND idempotency_key = sqlc.arg(idempotency_key);
@@ -49,10 +50,12 @@ RETURNING *;
 
 -- name: InsertCreateViewIdempotency :exec
 INSERT INTO deck_view_create_idempotency (
-    subject_hash, idempotency_key, request_digest, view_id
+    subject_hash, idempotency_key, request_digest, owner_hash, view_id,
+    response_ciphertext
 ) VALUES (
     sqlc.arg(subject_hash), sqlc.arg(idempotency_key),
-    sqlc.arg(request_digest), sqlc.arg(view_id)
+    sqlc.arg(request_digest), sqlc.arg(owner_hash), sqlc.arg(view_id),
+    sqlc.arg(response_ciphertext)
 );
 
 -- name: GetView :one

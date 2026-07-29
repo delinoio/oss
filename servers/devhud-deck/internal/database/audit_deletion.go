@@ -9,10 +9,10 @@ import (
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/audit"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database/dbgen"
+	shortcutbinding "github.com/delinoio/oss/servers/devhud-deck/internal/shortcut"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"google.golang.org/protobuf/proto"
 )
 
 func (store *Store) Record(ctx context.Context, event audit.Event) error {
@@ -91,6 +91,10 @@ func (store *Store) DeleteFeatureData(
 		if err := queries.InsertOwnerTombstone(ctx, dbgen.InsertOwnerTombstoneParams{
 			TargetHash: params.TargetHash[:], AcceptedAt: pgTime(params.AcceptedAt),
 		}); err != nil {
+			return err
+		}
+		if err := queries.DeleteViewCreateIdempotencyByOwnerHash(
+			ctx, params.TargetHash[:]); err != nil {
 			return err
 		}
 		switch params.Trigger {
@@ -175,6 +179,10 @@ func (store *Store) DeleteOrganizationFeatureData(
 		if err := queries.InsertOwnerTombstone(ctx, dbgen.InsertOwnerTombstoneParams{
 			TargetHash: params.TargetHash[:], AcceptedAt: pgTime(params.AcceptedAt),
 		}); err != nil {
+			return err
+		}
+		if err := queries.DeleteViewCreateIdempotencyByOwnerHash(
+			ctx, params.TargetHash[:]); err != nil {
 			return err
 		}
 		if params.Trigger == DeletionTriggerOwner {
@@ -271,7 +279,9 @@ func (store *Store) scrubDeviceViewState(
 		}
 		shortcuts.Shortcuts = remainingShortcuts
 		widgets.Widgets = remainingWidgets
-		recalculateShortcutStates(shortcuts.Shortcuts)
+		if err := recalculateShortcutStates(shortcuts.Shortcuts); err != nil {
+			return err
+		}
 		shortcutsCiphertext, err := store.sealProto("device-shortcuts", shortcuts)
 		if err != nil {
 			return err
@@ -322,15 +332,15 @@ func retainWidgets(
 	return remaining, len(remaining) != len(widgets)
 }
 
-func recalculateShortcutStates(shortcuts []*deckv1.ViewShortcut) {
+func recalculateShortcutStates(shortcuts []*deckv1.ViewShortcut) error {
 	counts := make(map[string]int, len(shortcuts))
 	keys := make([]string, len(shortcuts))
 	for index, shortcut := range shortcuts {
-		encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(shortcut.GetBinding())
+		key, err := shortcutbinding.CanonicalBinding(shortcut.GetBinding())
 		if err != nil {
-			continue
+			return err
 		}
-		keys[index] = string(encoded)
+		keys[index] = key
 		counts[keys[index]]++
 	}
 	for index, shortcut := range shortcuts {
@@ -339,4 +349,5 @@ func recalculateShortcutStates(shortcuts []*deckv1.ViewShortcut) {
 			shortcut.State = deckv1.ShortcutState_SHORTCUT_STATE_CONFLICTED
 		}
 	}
+	return nil
 }

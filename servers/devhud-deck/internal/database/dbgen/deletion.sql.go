@@ -90,6 +90,16 @@ func (q *Queries) DeletePersonalFeatureData(ctx context.Context, accountID pgtyp
 	return err
 }
 
+const deleteViewCreateIdempotencyByOwnerHash = `-- name: DeleteViewCreateIdempotencyByOwnerHash :exec
+DELETE FROM deck_view_create_idempotency
+WHERE owner_hash = $1
+`
+
+func (q *Queries) DeleteViewCreateIdempotencyByOwnerHash(ctx context.Context, ownerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteViewCreateIdempotencyByOwnerHash, ownerHash)
+	return err
+}
+
 const getDeletionJobByReplayKey = `-- name: GetDeletionJobByReplayKey :one
 SELECT deletion_job_id, replay_key, target_hash, trigger, state, accepted_at, completed_at FROM deck_deletion_jobs
 WHERE replay_key = $1

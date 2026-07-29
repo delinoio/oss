@@ -26,6 +26,10 @@ WHERE owner_scope = 1 AND owner_account_id = sqlc.arg(account_id);
 DELETE FROM deck_views
 WHERE owner_scope = 2 AND owner_organization_id = sqlc.arg(organization_id);
 
+-- name: DeleteViewCreateIdempotencyByOwnerHash :exec
+DELETE FROM deck_view_create_idempotency
+WHERE owner_hash = sqlc.arg(owner_hash);
+
 -- name: ListOrganizationViewIDsForUpdate :many
 SELECT view_id
 FROM deck_views

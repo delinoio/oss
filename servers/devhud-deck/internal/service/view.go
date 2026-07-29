@@ -347,7 +347,8 @@ func (service *View) DeleteView(
 	if err != nil {
 		return nil, err
 	}
-	deletedRevision, err := service.dependencies.Store.DeleteView(ctx, id, expected)
+	deletedRevision, err := service.dependencies.Store.DeleteView(
+		ctx, id, expected, service.dependencies.Clock.Now().UTC())
 	if err != nil {
 		return nil, service.mapStaleWithETag(err)
 	}

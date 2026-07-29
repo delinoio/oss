@@ -82,13 +82,13 @@ type RepositoryAuthorizer interface {
 	CanReadRepository(context.Context, Viewer, string, string) (bool, error)
 }
 
-type AllowAllRepositories struct{}
+type DenyAllRepositories struct{}
 
-func (AllowAllRepositories) CanReadRepository(
+func (DenyAllRepositories) CanReadRepository(
 	context.Context,
 	Viewer,
 	string,
 	string,
 ) (bool, error) {
-	return true, nil
+	return false, nil
 }

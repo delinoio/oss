@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/rpcerr"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/shortcut"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -331,9 +330,10 @@ func (service *Device) deviceWrite(
 		if err := service.authorizeReferencedView(ctx, viewer, viewID); err != nil {
 			return database.DeviceWrite{}, err
 		}
-		binding, err := canonicalBinding(configuration.Binding)
+		binding, err := shortcut.CanonicalBinding(configuration.Binding)
 		if err != nil {
-			return database.DeviceWrite{}, err
+			return database.DeviceWrite{}, rpcerr.New(connect.CodeInvalidArgument,
+				deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 		}
 		bindingCounts[binding]++
 		parsed = append(parsed, parsedShortcut{
@@ -420,26 +420,4 @@ func (service *Device) authorizeReferencedView(
 			deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
 	}
 	return nil
-}
-
-func canonicalBinding(binding *deckv1.ShortcutBinding) (string, error) {
-	if binding == nil || binding.Key < deckv1.ShortcutKey_SHORTCUT_KEY_A ||
-		binding.Key > deckv1.ShortcutKey_SHORTCUT_KEY_ENTER ||
-		len(binding.Modifiers) == 0 || len(binding.Modifiers) > 4 {
-		return "", rpcerr.New(connect.CodeInvalidArgument,
-			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
-	}
-	modifiers := append([]deckv1.ShortcutModifier(nil), binding.Modifiers...)
-	sort.Slice(modifiers, func(left, right int) bool {
-		return modifiers[left] < modifiers[right]
-	})
-	for index, modifier := range modifiers {
-		if modifier < deckv1.ShortcutModifier_SHORTCUT_MODIFIER_CONTROL ||
-			modifier > deckv1.ShortcutModifier_SHORTCUT_MODIFIER_META ||
-			(index > 0 && modifiers[index-1] == modifier) {
-			return "", rpcerr.New(connect.CodeInvalidArgument,
-				deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
-		}
-	}
-	return fmt.Sprintf("%v:%d", modifiers, binding.Key), nil
 }

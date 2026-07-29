@@ -70,6 +70,8 @@ type DeckDeviceRegistrationIdempotency struct {
 	RequestDigest         []byte
 	RegistrationID        pgtype.UUID
 	GrantReplayCiphertext []byte
+	GrantVerifier         []byte
+	ResponseCiphertext    []byte
 	LeaseExpiresAt        pgtype.Timestamptz
 	CreatedAt             pgtype.Timestamptz
 }
@@ -134,11 +136,13 @@ type DeckView struct {
 }
 
 type DeckViewCreateIdempotency struct {
-	SubjectHash    []byte
-	IdempotencyKey pgtype.UUID
-	RequestDigest  []byte
-	ViewID         pgtype.UUID
-	CreatedAt      pgtype.Timestamptz
+	SubjectHash        []byte
+	IdempotencyKey     pgtype.UUID
+	RequestDigest      []byte
+	OwnerHash          []byte
+	ViewID             pgtype.UUID
+	ResponseCiphertext []byte
+	CreatedAt          pgtype.Timestamptz
 }
 
 type DeckViewNotificationPreference struct {

@@ -32,17 +32,29 @@ func TestRetainDeviceStateRemovesDeletedViews(t *testing.T) {
 
 func TestRecalculateShortcutStatesAfterDeletion(t *testing.T) {
 	t.Parallel()
-	binding := &deckv1.ShortcutBinding{
+	firstBinding := &deckv1.ShortcutBinding{
 		Modifiers: []deckv1.ShortcutModifier{
+			deckv1.ShortcutModifier_SHORTCUT_MODIFIER_CONTROL,
 			deckv1.ShortcutModifier_SHORTCUT_MODIFIER_META,
 		},
 		Key: deckv1.ShortcutKey_SHORTCUT_KEY_A,
 	}
 	shortcuts := []*deckv1.ViewShortcut{
-		{Binding: binding, State: deckv1.ShortcutState_SHORTCUT_STATE_CONFLICTED},
+		{Binding: firstBinding, State: deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE},
+		{Binding: &deckv1.ShortcutBinding{
+			Modifiers: []deckv1.ShortcutModifier{
+				deckv1.ShortcutModifier_SHORTCUT_MODIFIER_META,
+				deckv1.ShortcutModifier_SHORTCUT_MODIFIER_CONTROL,
+			},
+			Key: deckv1.ShortcutKey_SHORTCUT_KEY_A,
+		}, State: deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE},
 	}
-	recalculateShortcutStates(shortcuts)
-	if shortcuts[0].State != deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE {
-		t.Fatalf("remaining shortcut state = %s", shortcuts[0].State)
+	if err := recalculateShortcutStates(shortcuts); err != nil {
+		t.Fatal(err)
+	}
+	for _, shortcut := range shortcuts {
+		if shortcut.State != deckv1.ShortcutState_SHORTCUT_STATE_CONFLICTED {
+			t.Fatalf("canonical-equivalent shortcut state = %s", shortcut.State)
+		}
 	}
 }

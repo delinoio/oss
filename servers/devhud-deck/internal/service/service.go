@@ -41,7 +41,7 @@ func (dependencies Dependencies) withDefaults() Dependencies {
 		dependencies.IDs = defaultIDGenerator{}
 	}
 	if dependencies.Repositories == nil {
-		dependencies.Repositories = contracts.AllowAllRepositories{}
+		dependencies.Repositories = contracts.DenyAllRepositories{}
 	}
 	if dependencies.Logger == nil {
 		dependencies.Logger = slog.New(slog.DiscardHandler)
