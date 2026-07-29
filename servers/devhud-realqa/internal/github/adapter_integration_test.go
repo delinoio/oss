@@ -370,8 +370,17 @@ func TestInstallationWebhooksAcknowledgeUnboundAndApplyRename(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err = webhookStore.ApplyRepositories(ctx, RepositoryEvent{
+		Action: "renamed", InstallationID: 9001,
+		Repository: Repository{
+			ID: 7003, NodeID: "R_fixture_repository",
+			Owner: "renamed-owner", Name: "renamed-repository",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	var providerAccountID int64
-	var login, kind, destinationOwner, accessOwner string
+	var login, kind, destinationOwner, destinationName, accessOwner, accessName string
 	if err = connection.QueryRow(ctx, `
 		SELECT
 			installation.provider_account_id, installation.account_login,
@@ -379,22 +388,35 @@ func TestInstallationWebhooksAcknowledgeUnboundAndApplyRename(t *testing.T) {
 			(SELECT repository_owner
 			 FROM realqa_destinations
 			 WHERE installation_id = installation.id AND repository_id = '7003'),
+			(SELECT repository_name
+			 FROM realqa_destinations
+			 WHERE installation_id = installation.id AND repository_id = '7003'),
 			(SELECT repository_owner
+			 FROM realqa_repository_access
+			 WHERE installation_id = installation.id
+			   AND account_id = $1 AND repository_id = '7003'),
+			(SELECT repository_name
 			 FROM realqa_repository_access
 			 WHERE installation_id = installation.id
 			   AND account_id = $1 AND repository_id = '7003')
 		FROM realqa_github_installations AS installation
 		WHERE installation.provider_installation_id = 9001
 	`, accountID).Scan(
-		&providerAccountID, &login, &kind, &destinationOwner, &accessOwner,
+		&providerAccountID, &login, &kind,
+		&destinationOwner, &destinationName, &accessOwner, &accessName,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if providerAccountID != 7001 || login != "renamed-owner" ||
 		kind != string(AccountKindOrganization) ||
-		destinationOwner != "renamed-owner" || accessOwner != "renamed-owner" {
-		t.Fatalf("renamed installation identity = %d %q %q destination=%q access=%q",
-			providerAccountID, login, kind, destinationOwner, accessOwner)
+		destinationOwner != "renamed-owner" ||
+		destinationName != "renamed-repository" ||
+		accessOwner != "renamed-owner" ||
+		accessName != "renamed-repository" {
+		t.Fatalf(
+			"renamed installation identity = %d %q %q destination=%q/%q access=%q/%q",
+			providerAccountID, login, kind, destinationOwner, destinationName,
+			accessOwner, accessName)
 	}
 }
 

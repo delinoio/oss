@@ -395,6 +395,33 @@ renamed_repository_access AS (
 SELECT count(*)::bigint
 FROM renamed_installation;
 
+-- name: RenameGitHubRepository :one
+WITH target_installation AS (
+    SELECT id
+    FROM realqa_github_installations
+    WHERE provider_installation_id = sqlc.arg(provider_installation_id)
+),
+renamed_destinations AS (
+    UPDATE realqa_destinations
+    SET repository_owner = sqlc.arg(repository_owner),
+        repository_name = sqlc.arg(repository_name)
+    WHERE installation_id IN (SELECT id FROM target_installation)
+      AND realqa_destinations.repository_id = sqlc.arg(repository_id)
+    RETURNING 1
+),
+renamed_repository_access AS (
+    UPDATE realqa_repository_access
+    SET repository_owner = sqlc.arg(repository_owner),
+        repository_name = sqlc.arg(repository_name)
+    WHERE installation_id IN (SELECT id FROM target_installation)
+      AND realqa_repository_access.repository_id = sqlc.arg(repository_id)
+    RETURNING 1
+)
+SELECT (
+    (SELECT count(*) FROM renamed_destinations)
+    + (SELECT count(*) FROM renamed_repository_access)
+)::bigint;
+
 -- name: SuspendUnauthorizedGitHubInstallations :execrows
 UPDATE realqa_github_installations
 SET state = 'suspended',

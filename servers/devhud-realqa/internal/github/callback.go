@@ -190,6 +190,7 @@ type RepositoryEvent struct {
 	InstallationID int64
 	Added          []Repository
 	Removed        []Repository
+	Repository     Repository
 }
 
 type DeletedIssueEvent struct {
@@ -330,7 +331,8 @@ func (handler *CallbackHandler) oauth(writer http.ResponseWriter, request *http.
 		}
 		installations = []Installation{installation}
 	} else {
-		installations, err = handler.client.ListInstallations(request.Context(), token)
+		installations, err = handler.client.listInstallationCandidates(
+			request.Context(), token)
 		if err != nil {
 			writeCallbackError(writer, http.StatusBadGateway)
 			return
@@ -439,7 +441,8 @@ func (handler *CallbackHandler) webhook(writer http.ResponseWriter, request *htt
 	event := request.Header.Get("X-GitHub-Event")
 	if event != "installation" && event != "installation_repositories" &&
 		event != "installation_target" && event != "issues" &&
-		event != "github_app_authorization" && event != "ping" {
+		event != "github_app_authorization" && event != "repository" &&
+		event != "ping" {
 		writeCallbackError(writer, http.StatusBadRequest)
 		return
 	}
@@ -455,6 +458,8 @@ func (handler *CallbackHandler) webhook(writer http.ResponseWriter, request *htt
 			case "installation_target":
 				return handler.installationTargetWebhook(
 					request.Context(), store, body)
+			case "repository":
+				return handler.repositoryWebhook(request.Context(), store, body)
 			case "issues":
 				return handler.issueWebhook(request.Context(), store, body)
 			case "ping":
@@ -570,6 +575,40 @@ func (handler *CallbackHandler) repositoriesWebhook(
 	if err := store.ApplyRepositories(ctx, RepositoryEvent{
 		Action: payload.Action, InstallationID: payload.Installation.ID,
 		Added: modelRepositories(payload.Added), Removed: modelRepositories(payload.Removed),
+	}); err != nil {
+		return fmt.Errorf("%w: %v", errWebhookStorage, err)
+	}
+	return nil
+}
+
+func (handler *CallbackHandler) repositoryWebhook(
+	ctx context.Context,
+	store WebhookStore,
+	body []byte,
+) error {
+	var payload struct {
+		Action       string `json:"action"`
+		Installation struct {
+			ID int64 `json:"id"`
+		} `json:"installation"`
+		Repository apiRepository `json:"repository"`
+	}
+	if err := strictJSON(body, &payload); err != nil {
+		return errors.New("realqa github: repository rename webhook is invalid")
+	}
+	if payload.Action != "renamed" {
+		return nil
+	}
+	if payload.Installation.ID <= 0 {
+		return errors.New("realqa github: repository rename webhook is invalid")
+	}
+	repository, err := payload.Repository.model()
+	if err != nil {
+		return errors.New("realqa github: repository rename webhook is invalid")
+	}
+	if err = store.ApplyRepositories(ctx, RepositoryEvent{
+		Action: "renamed", InstallationID: payload.Installation.ID,
+		Repository: repository,
 	}); err != nil {
 		return fmt.Errorf("%w: %v", errWebhookStorage, err)
 	}

@@ -14,7 +14,8 @@
   "setup_on_update": true,
   "default_events": [
     "issues",
-    "installation_target"
+    "installation_target",
+    "repository"
   ],
   "default_permissions": {
     "issues": "write",

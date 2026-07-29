@@ -190,7 +190,7 @@ func TestGitHubProviderMigrationRepairsLegacyConnections(t *testing.T) {
 		}
 	}
 	var personalState string
-	var personalConnector uuid.UUID
+	var personalConnector uuid.NullUUID
 	var personalCredential []byte
 	if err = connection.QueryRow(ctx, `
 		SELECT state, connected_by_account_id, credential_ciphertext
@@ -201,11 +201,11 @@ func TestGitHubProviderMigrationRepairsLegacyConnections(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if personalState != "connected" || personalConnector != personalID ||
-		personalCredential == nil {
+	if personalState != "disconnected" || personalConnector.Valid ||
+		personalCredential != nil {
 		t.Fatalf(
-			"personal connection state=%q connector=%s credential=%t",
-			personalState, personalConnector, personalCredential != nil,
+			"personal connection state=%q connector=%v credential=%t",
+			personalState, personalConnector.Valid, personalCredential != nil,
 		)
 	}
 	var organizationState string

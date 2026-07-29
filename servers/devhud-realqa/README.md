@@ -46,15 +46,16 @@ billing catalog records, or publish a tracker/plugin interface.
   RealQA's bounded image workflow.
 - `github-app-manifest.json` is the separate RealQA base manifest with Issues
   write, Metadata read, Contents read, issue lifecycle delivery, and
-  installation-target rename delivery. Typed manifest generation adds only the
-  explicitly configured repository- or organization-project permission.
+  installation-target plus repository rename delivery. Typed manifest generation
+  adds only the explicitly configured repository- or organization-project
+  permission.
 - `GET /github/oauth/callback`, `GET /github/app/callback`, and
   `POST /github/webhooks` enforce signed, replay-protected state or
-  `X-Hub-Signature-256`. Installation/repository, issue deletion, and user
-  authorization-revocation events record the delivery and apply all side
-  effects in one transaction, so they are durable and idempotent under
-  duplicate or racing deliveries. One provider installation can bind to only
-  one personal or organization owner.
+  `X-Hub-Signature-256`. Installation/repository access, repository rename,
+  issue deletion, and user authorization-revocation events record the delivery
+  and apply all side effects in one transaction, so they are durable and
+  idempotent under duplicate or racing deliveries. One provider installation
+  can bind to only one personal or organization owner.
 - The internal adapter normalizes typed labels, assignees, milestone, and
   optional project extensions; composes repository response, `RealQA capture`,
   inline images, and the hidden UUID marker; enforces 60,000 UTF-8 bytes; and

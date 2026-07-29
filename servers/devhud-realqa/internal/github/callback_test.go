@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -33,6 +34,8 @@ type fixtureCallbackStore struct {
 	installations     []Installation
 	installation      InstallationEvent
 	installationCalls int
+	repository        RepositoryEvent
+	repositoryCalls   int
 	deletedIssue      DeletedIssueEvent
 	deleteCalls       int
 	deleteFailures    int
@@ -137,9 +140,11 @@ func (store *fixtureCallbackStore) ApplyInstallation(
 	return nil
 }
 
-func (*fixtureCallbackStore) ApplyRepositories(
-	context.Context, RepositoryEvent,
+func (store *fixtureCallbackStore) ApplyRepositories(
+	_ context.Context, event RepositoryEvent,
 ) error {
+	store.repository = event
+	store.repositoryCalls++
 	return nil
 }
 
@@ -535,6 +540,50 @@ func TestSignedInstallationTargetRenameWebhook(t *testing.T) {
 		len(store.installation.Repositories) != 0 {
 		t.Fatalf("installation target rename was not applied: %#v",
 			store.installation)
+	}
+}
+
+func TestSignedRepositoryRenameWebhook(t *testing.T) {
+	t.Parallel()
+	store := newFixtureCallbackStore()
+	handler, _, _, _ := fixtureCallbackHandler(t, store,
+		fixtureHTTPClient(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("provider request not expected")
+		}))
+	body := []byte(`{
+		"action":"renamed",
+		"changes":{"repository":{"name":{"from":"former-repository"}}},
+		"installation":{"id":991},
+		"repository":{
+			"id":1001,
+			"node_id":"R_fixture_repository",
+			"name":"renamed-repository",
+			"owner":{"id":501,"login":"renamed-owner","type":"Organization"},
+			"has_issues":true
+		}
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/github/webhooks",
+		bytes.NewReader(body))
+	request.Header.Set("X-GitHub-Event", "repository")
+	request.Header.Set("X-GitHub-Delivery",
+		"018f3f5e-7b01-7a2d-8c3a-4ba8d8b51616")
+	request.Header.Set("X-Hub-Signature-256",
+		fixtureWebhookSignature([]byte(strings.Repeat("w", 32)), body))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("unexpected webhook response %d %s", response.Code, response.Body)
+	}
+	expected := RepositoryEvent{
+		Action: "renamed", InstallationID: 991,
+		Repository: Repository{
+			ID: 1001, NodeID: "R_fixture_repository",
+			Owner: "renamed-owner", Name: "renamed-repository",
+			IssuesEnabled: true, CanSubmit: true,
+		},
+	}
+	if store.repositoryCalls != 1 || !reflect.DeepEqual(store.repository, expected) {
+		t.Fatalf("repository rename was not applied: %#v", store.repository)
 	}
 }
 

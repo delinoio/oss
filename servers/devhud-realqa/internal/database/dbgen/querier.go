@@ -80,6 +80,7 @@ type Querier interface {
 	RemoveGitHubRepositoryAccess(ctx context.Context, arg RemoveGitHubRepositoryAccessParams) (int64, error)
 	RemoveGitHubRepositoryDefinitions(ctx context.Context, arg RemoveGitHubRepositoryDefinitionsParams) (int64, error)
 	RenameGitHubInstallationAccount(ctx context.Context, arg RenameGitHubInstallationAccountParams) (int64, error)
+	RenameGitHubRepository(ctx context.Context, arg RenameGitHubRepositoryParams) (int64, error)
 	ScopeIsTombstoned(ctx context.Context, arg ScopeIsTombstonedParams) (bool, error)
 	SetGitHubInstallationState(ctx context.Context, arg SetGitHubInstallationStateParams) (int64, error)
 	StartGitHubCallerAuthorization(ctx context.Context, arg StartGitHubCallerAuthorizationParams) (pgtype.UUID, error)

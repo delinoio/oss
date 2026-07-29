@@ -1002,6 +1002,53 @@ func (q *Queries) RenameGitHubInstallationAccount(ctx context.Context, arg Renam
 	return column_1, err
 }
 
+const renameGitHubRepository = `-- name: RenameGitHubRepository :one
+WITH target_installation AS (
+    SELECT id
+    FROM realqa_github_installations
+    WHERE provider_installation_id = $1
+),
+renamed_destinations AS (
+    UPDATE realqa_destinations
+    SET repository_owner = $2,
+        repository_name = $3
+    WHERE installation_id IN (SELECT id FROM target_installation)
+      AND realqa_destinations.repository_id = $4
+    RETURNING 1
+),
+renamed_repository_access AS (
+    UPDATE realqa_repository_access
+    SET repository_owner = $2,
+        repository_name = $3
+    WHERE installation_id IN (SELECT id FROM target_installation)
+      AND realqa_repository_access.repository_id = $4
+    RETURNING 1
+)
+SELECT (
+    (SELECT count(*) FROM renamed_destinations)
+    + (SELECT count(*) FROM renamed_repository_access)
+)::bigint
+`
+
+type RenameGitHubRepositoryParams struct {
+	ProviderInstallationID int64
+	RepositoryOwner        string
+	RepositoryName         string
+	RepositoryID           string
+}
+
+func (q *Queries) RenameGitHubRepository(ctx context.Context, arg RenameGitHubRepositoryParams) (int64, error) {
+	row := q.db.QueryRow(ctx, renameGitHubRepository,
+		arg.ProviderInstallationID,
+		arg.RepositoryOwner,
+		arg.RepositoryName,
+		arg.RepositoryID,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const setGitHubInstallationState = `-- name: SetGitHubInstallationState :execrows
 UPDATE realqa_github_installations
 SET state = CASE

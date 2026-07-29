@@ -234,10 +234,6 @@ func connectGitHubCallerAuthorization(
 	}
 	authorized := false
 	for _, installation := range installations {
-		project, err := projectPermissionFor(installation.Permissions)
-		if err != nil || installation.Validate(project) != nil {
-			return errors.New("realqa github: authorized installation is invalid")
-		}
 		active, err := queries.GitHubInstallationIsActiveForOwner(
 			ctx, dbgen.GitHubInstallationIsActiveForOwnerParams{
 				ProviderInstallationID: installation.ID,
@@ -247,7 +243,14 @@ func connectGitHubCallerAuthorization(
 		if err != nil {
 			return err
 		}
-		authorized = authorized || active
+		if !active {
+			continue
+		}
+		project, err := projectPermissionFor(installation.Permissions)
+		if err != nil || installation.Validate(project) != nil {
+			return errors.New("realqa github: authorized installation is invalid")
+		}
+		authorized = true
 	}
 	if !authorized {
 		return ErrCallbackOwnerAccessUnavailable
@@ -427,6 +430,20 @@ func (store *postgresWebhookStore) ApplyRepositories(
 ) error {
 	if event.InstallationID <= 0 {
 		return errors.New("realqa github: repository event installation is invalid")
+	}
+	if event.Action == "renamed" {
+		if err := event.Repository.Validate(); err != nil {
+			return errors.New("realqa github: renamed repository is invalid")
+		}
+		_, err := store.queries.RenameGitHubRepository(ctx,
+			dbgen.RenameGitHubRepositoryParams{
+				RepositoryOwner:        event.Repository.Owner,
+				RepositoryName:         event.Repository.Name,
+				ProviderInstallationID: event.InstallationID,
+				RepositoryID: strconv.FormatInt(
+					event.Repository.ID, 10),
+			})
+		return err
 	}
 	removed := event.Removed
 	if event.Action == "removed" && len(removed) == 0 {

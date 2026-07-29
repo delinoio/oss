@@ -182,22 +182,50 @@ func (client *Client) ListInstallations(
 	ctx context.Context,
 	token UserToken,
 ) ([]Installation, error) {
+	installations, err := client.listInstallationCandidates(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	for _, installation := range installations {
+		if err = installation.Validate(client.projectPermission); err != nil {
+			return nil, err
+		}
+	}
+	return installations, nil
+}
+
+func (client *Client) listInstallationCandidates(
+	ctx context.Context,
+	token UserToken,
+) ([]Installation, error) {
 	if token.value == "" {
 		return nil, errors.New("realqa github: user authorization is required")
 	}
 	var result []Installation
 	for page := 1; ; page++ {
 		var response struct {
-			Installations []apiInstallation `json:"installations"`
+			Installations []json.RawMessage `json:"installations"`
 		}
 		endpoint := "/user/installations?per_page=100&page=" + strconv.Itoa(page)
 		if err := client.getJSON(ctx, token, endpoint, &response); err != nil {
 			return nil, err
 		}
-		for _, item := range response.Installations {
+		for _, raw := range response.Installations {
+			var identity struct {
+				ID int64 `json:"id"`
+			}
+			if json.Unmarshal(raw, &identity) != nil || identity.ID <= 0 {
+				return nil, errors.New(
+					"realqa github: installation response is invalid")
+			}
+			var item apiInstallation
+			if err := json.Unmarshal(raw, &item); err != nil {
+				result = append(result, Installation{ID: identity.ID})
+				continue
+			}
 			installation, err := item.model(client.projectPermission)
 			if err != nil {
-				return nil, err
+				installation = Installation{ID: identity.ID}
 			}
 			result = append(result, installation)
 		}

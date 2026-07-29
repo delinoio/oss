@@ -209,6 +209,16 @@ func TestInstallationPermissionValidationRejectsMissingAndExcess(t *testing.T) {
 		); err == nil {
 			t.Fatalf("expected permissions %#v to fail", permissions)
 		}
+		candidates, err := client.listInstallationCandidates(
+			context.Background(), fixtureToken(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(candidates) != 1 || candidates[0].ID != 77 ||
+			candidates[0].AccountID != 0 {
+			t.Fatalf("unexpected invalid installation candidate: %#v",
+				candidates)
+		}
 	}
 }
 

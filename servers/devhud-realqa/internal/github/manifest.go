@@ -39,7 +39,7 @@ func NewManifest(project ProjectPermission) (Manifest, error) {
 		Public:                true,
 		RequestOAuthOnInstall: false,
 		SetupOnUpdate:         true,
-		DefaultEvents:         []string{"issues", "installation_target"},
+		DefaultEvents:         []string{"issues", "installation_target", "repository"},
 		DefaultPermissions:    permissions,
 	}, nil
 }
@@ -51,9 +51,10 @@ func (manifest Manifest) JSON() ([]byte, error) {
 		manifest.SetupURL != "https://realqa.deli.dev/github/app/callback" ||
 		manifest.HookAttributes.URL != "https://realqa.deli.dev/github/webhooks" ||
 		!manifest.HookAttributes.Active || manifest.RequestOAuthOnInstall ||
-		!manifest.SetupOnUpdate || len(manifest.DefaultEvents) != 2 ||
+		!manifest.SetupOnUpdate || len(manifest.DefaultEvents) != 3 ||
 		manifest.DefaultEvents[0] != "issues" ||
-		manifest.DefaultEvents[1] != "installation_target" {
+		manifest.DefaultEvents[1] != "installation_target" ||
+		manifest.DefaultEvents[2] != "repository" {
 		return nil, errors.New("realqa github: manifest boundary is invalid")
 	}
 	return json.MarshalIndent(manifest, "", "  ")

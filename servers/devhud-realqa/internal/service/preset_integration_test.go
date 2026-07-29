@@ -807,11 +807,14 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			Ciphertext: []byte{9}, WrappedDataKey: []byte{8}, KeyID: "fixture-key",
 		},
 		0,
-		[]realqagithub.Installation{{
-			ID: 758, AccountID: 758, AccountLogin: "fixture-org",
-			AccountKind: realqagithub.AccountKindOrganization,
-			Permissions: callbackPermissions,
-		}},
+		[]realqagithub.Installation{
+			{ID: 759},
+			{
+				ID: 758, AccountID: 758, AccountLogin: "fixture-org",
+				AccountKind: realqagithub.AccountKindOrganization,
+				Permissions: callbackPermissions,
+			},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
