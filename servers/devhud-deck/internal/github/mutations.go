@@ -76,8 +76,11 @@ func (client *Client) Mutate(
 			Kind: mutation.Kind, RefreshRequired: true,
 		}, nil
 	}
+	// ActionMetadata does not contain review-decision or check-summary state.
+	// Require the client to refresh rather than combine it with a stale snapshot.
 	return MutationResult{
 		Kind: mutation.Kind, Revision: current.Revision, Metadata: current,
+		RefreshRequired: true,
 	}, nil
 }
 

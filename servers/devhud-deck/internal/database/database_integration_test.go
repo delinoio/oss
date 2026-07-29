@@ -661,7 +661,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	refreshedCredential.RefreshToken = "ghr_database_refreshed"
 	refreshedCredential.ExpiresAt = now.Add(8 * time.Hour)
 	if err := store.RefreshGitHubCredential(
-		ctx, connection.ID, accountID, refreshedCredential,
+		ctx, connection.ID, connection.Revision, accountID, refreshedCredential,
 		now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("refresh GitHub credential: %v", err)
 	}
@@ -759,7 +759,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("revoked credential remained available: %v", err)
 	}
 	if err := store.RefreshGitHubCredential(
-		ctx, connection.ID, accountID, credential,
+		ctx, connection.ID, connection.Revision, accountID, credential,
 		now.Add(3*time.Minute)); !errors.Is(
 		err, deckgithub.ErrPermissionDenied) {
 		t.Fatalf("revoked credential refreshed: %T %v", err, err)
@@ -788,7 +788,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	staleRefresh.AccessToken = "ghu_pre_revocation_refresh"
 	staleRefresh.RefreshToken = "ghr_pre_revocation_refresh"
 	if err := store.RefreshGitHubCredential(
-		ctx, connection.ID, accountID, staleRefresh,
+		ctx, connection.ID, connection.Revision, accountID, staleRefresh,
 		now.Add(2*time.Minute)); !errors.Is(
 		err, deckgithub.ErrPermissionDenied) {
 		t.Fatalf("pre-revocation refresh survived reauthorization: %T %v",
@@ -804,7 +804,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	reauthorizedRefresh.AccessToken = "ghu_reauthorized_refreshed"
 	reauthorizedRefresh.RefreshToken = "ghr_reauthorized_refreshed"
 	if err := store.RefreshGitHubCredential(
-		ctx, connection.ID, accountID, reauthorizedRefresh,
+		ctx, connection.ID, connection.Revision, accountID, reauthorizedRefresh,
 		now.Add(5*time.Minute)); err != nil {
 		t.Fatalf("reauthorized credential refresh: %v", err)
 	}
@@ -906,6 +906,15 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		now.Add(4*time.Minute+30*time.Second)); err != nil {
 		t.Fatalf("owner replaced organization installation: %v", err)
 	}
+	staleMemberRefresh := memberCredential
+	staleMemberRefresh.AccessToken = "ghu_stale_member_refresh"
+	if err := store.RefreshGitHubCredential(
+		ctx, memberConnection.ID, memberConnection.Revision, secondAccountID,
+		staleMemberRefresh, now.Add(4*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("replacement installation accepted stale credential: %T %v",
+			err, err)
+	}
 	if _, err := store.GetGitHubConnection(
 		ctx, 2, organizationID, secondAccountID, true); !errors.Is(
 		err, deckgithub.ErrPermissionDenied) {
@@ -928,6 +937,31 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		personalConnection.Credential.UserID != credential.UserID {
 		t.Fatalf("unrelated personal credential = %#v err=%v",
 			personalConnection, err)
+	}
+	lostPermissions := otherInstallation.Permissions
+	lostPermissions.Checks = deckgithub.PermissionNone
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-permissions-lost", "installation",
+		"new_permissions_accepted", otherInstallation.ID, lostPermissions,
+		security.Digest([]byte("installation-permissions-lost")),
+		now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("permission-loss lifecycle: %v", err)
+	}
+	disconnectedOrganization, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, accountID, false)
+	if err != nil ||
+		disconnectedOrganization.State != int16(
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED) ||
+		disconnectedOrganization.Installation.ID != 0 {
+		t.Fatalf("permission-loss connection = %#v err=%v",
+			disconnectedOrganization, err)
+	}
+	disconnectedOrganizationView, err := store.GetView(
+		ctx, uuidValueFromProto(connectedView.ViewId))
+	if err != nil || disconnectedOrganizationView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("permission-loss view = %#v err=%v",
+			disconnectedOrganizationView, err)
 	}
 	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,
 		snapshots[:1], now.Add(2*time.Minute)); err != nil {

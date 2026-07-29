@@ -382,12 +382,6 @@ func (broker *Broker) webhook(
 		permissions := Permissions{}
 		if webhook.Action == "new_permissions_accepted" {
 			permissions = parsePermissions(webhook.Installation.Permissions)
-			if permissions.Metadata < PermissionRead ||
-				permissions.PullRequests < PermissionWrite ||
-				permissions.Checks < PermissionRead {
-				http.Error(writer, "invalid webhook", http.StatusBadRequest)
-				return
-			}
 		}
 		applyErr = broker.lifecycle.ApplyGitHubInstallationLifecycle(
 			request.Context(), delivery, event, webhook.Action,

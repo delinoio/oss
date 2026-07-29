@@ -1008,7 +1008,8 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Revision == initial.Revision || result.Metadata.IsOpen {
+	if result.Revision == initial.Revision || result.Metadata.IsOpen ||
+		!result.RefreshRequired {
 		t.Fatalf("mutation result = %#v initial=%d", result, initial.Revision)
 	}
 }

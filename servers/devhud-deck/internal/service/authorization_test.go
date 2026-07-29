@@ -177,6 +177,36 @@ func TestRepositoryAuthorizationDefaultsToDeny(t *testing.T) {
 	}
 }
 
+func TestOwnerDeletionReplayKeyScopesCallerAndOwner(t *testing.T) {
+	t.Parallel()
+	hasher, err := security.NewHasher(bytes.Repeat([]byte{1}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &View{dependencies: Dependencies{Hasher: hasher}.withDefaults()}
+	ownerID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
+	requested := uuid.MustParse("01900000-0000-7000-8000-000000000004")
+	first := service.ownerDeletionReplayKey(
+		"subject-1", deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		ownerID, requested)
+	replay := service.ownerDeletionReplayKey(
+		"subject-1", deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		ownerID, requested)
+	otherCaller := service.ownerDeletionReplayKey(
+		"subject-2", deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		ownerID, requested)
+	otherOwner := service.ownerDeletionReplayKey(
+		"subject-1", deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
+		ownerID, requested)
+	if first != replay || first == otherCaller || first == otherOwner {
+		t.Fatalf("scoped deletion keys = %s %s %s %s",
+			first, replay, otherCaller, otherOwner)
+	}
+	if first.Version() != 7 || first.Variant() != uuid.RFC4122 {
+		t.Fatalf("scoped deletion key is not UUID v7: %s", first)
+	}
+}
+
 func TestOrganizationBillingMustMatchOwner(t *testing.T) {
 	t.Parallel()
 	ownerID := uuid.MustParse("01900000-0000-7000-8000-000000000003")

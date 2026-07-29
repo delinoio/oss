@@ -44,7 +44,7 @@ func refreshGitHubConnectionCredential(
 			return deckgithub.Credential{}, err
 		}
 		if err := store.RefreshGitHubCredential(
-			ctx, current.ID, accountID, refreshed, now); err != nil {
+			ctx, current.ID, current.Revision, accountID, refreshed, now); err != nil {
 			return deckgithub.Credential{}, err
 		}
 		return refreshed, nil

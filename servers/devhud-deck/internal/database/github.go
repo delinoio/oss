@@ -562,11 +562,12 @@ func (store *Store) decodeGitHubConnection(
 func (store *Store) RefreshGitHubCredential(
 	ctx context.Context,
 	connectionID uuid.UUID,
+	expectedRevision uint64,
 	accountID uuid.UUID,
 	credential deckgithub.Credential,
 	refreshStartedAt time.Time,
 ) error {
-	if connectionID == uuid.Nil || accountID == uuid.Nil ||
+	if connectionID == uuid.Nil || expectedRevision == 0 || accountID == uuid.Nil ||
 		credential.UserID == 0 ||
 		credential.Validate(refreshStartedAt) != nil {
 		return deckgithub.ErrPermissionDenied
@@ -608,7 +609,8 @@ func (store *Store) RefreshGitHubCredential(
 			ctx, pgUUID(connectionID))
 		if errors.Is(err, pgx.ErrNoRows) ||
 			(err == nil && connection.State !=
-				int16(deckv1.ConnectionState_CONNECTION_STATE_CONNECTED)) {
+				int16(deckv1.ConnectionState_CONNECTION_STATE_CONNECTED)) ||
+			(err == nil && uint64(connection.Revision) != expectedRevision) {
 			return deckgithub.ErrPermissionDenied
 		}
 		if err != nil {
@@ -922,16 +924,14 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 			queries.GetGitHubConnectionByInstallationForUpdate(
 				ctx, pgtype.Int8{Int64: int64(installationID), Valid: true})
 		if connectionErr == nil {
-			disconnect := event == "installation" &&
-				(action == "deleted" || action == "suspend")
-			permissionsChanged := action == "new_permissions_accepted" &&
-				githubPermissionsChanged(connection, permissions)
-			if action == "new_permissions_accepted" &&
+			permissionLoss := action == "new_permissions_accepted" &&
 				(permissions.Metadata < deckgithub.PermissionRead ||
 					permissions.PullRequests < deckgithub.PermissionWrite ||
-					permissions.Checks < deckgithub.PermissionRead) {
-				return deckgithub.ErrPermissionDenied
-			}
+					permissions.Checks < deckgithub.PermissionRead)
+			disconnect := event == "installation" &&
+				(action == "deleted" || action == "suspend" || permissionLoss)
+			permissionsChanged := action == "new_permissions_accepted" &&
+				githubPermissionsChanged(connection, permissions)
 			purge := disconnect || event == "installation_repositories" ||
 				permissionsChanged
 			if disconnect {
@@ -965,7 +965,7 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 					return err
 				}
 			}
-			if permissionsChanged {
+			if permissionsChanged && !disconnect {
 				if _, err := queries.UpdateGitHubInstallationPermissions(
 					ctx, dbgen.UpdateGitHubInstallationPermissionsParams{
 						GithubMetadataPermission: pgInt2(

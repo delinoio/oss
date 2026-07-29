@@ -517,7 +517,10 @@ func (service *View) DeleteFeatureData(
 		ownerScope = ownerRequest.Owner.Scope
 		actorSubject = viewer.Subject
 		params = database.DeleteFeatureDataParams{
-			JobID: jobID, ReplayKey: replayID, TargetID: targetID,
+			JobID: jobID,
+			ReplayKey: service.ownerDeletionReplayKey(
+				viewer.Subject, ownerRequest.Owner.Scope, targetID, replayID),
+			TargetID: targetID,
 			TargetHash: service.dependencies.Hasher.Sum(
 				"owner", deletionOwnerLabel(organization)+":"+targetID.String()),
 			Trigger: database.DeletionTriggerOwner, AcceptedAt: now,
@@ -554,6 +557,26 @@ func (service *View) DeleteFeatureData(
 			Replayed:  result.Replayed,
 		},
 	}), nil
+}
+
+func (service *View) ownerDeletionReplayKey(
+	subject string,
+	scope deckv1.OwnerScope,
+	ownerID uuid.UUID,
+	requested uuid.UUID,
+) uuid.UUID {
+	actorHash := service.dependencies.Hasher.Sum(
+		"delete-feature-data-actor", subject)
+	sum := service.dependencies.Hasher.Sum(
+		"delete-feature-data-idempotency",
+		string(actorHash[:])+"\x00"+scope.String()+"\x00"+
+			ownerID.String()+"\x00"+requested.String())
+	var scoped uuid.UUID
+	copy(scoped[:6], requested[:6])
+	copy(scoped[6:], sum[:len(scoped)-6])
+	scoped[6] = scoped[6]&0x0f | 0x70
+	scoped[8] = scoped[8]&0x3f | 0x80
+	return scoped
 }
 
 func deletionOwnerLabel(organization bool) string {

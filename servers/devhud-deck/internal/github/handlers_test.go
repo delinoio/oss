@@ -320,6 +320,27 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 		t.Fatalf("permission lifecycle response = %d, permissions %#v",
 			permissionResponse.Code, lifecycle.permissions)
 	}
+	permissionLossPayload := []byte(
+		`{"action":"new_permissions_accepted","installation":{"id":42,` +
+			`"permissions":{"metadata":"read","contents":"write",` +
+			`"pull_requests":"write","checks":"none","members":"read"}}}`)
+	permissionLossRequest := httptest.NewRequest(
+		http.MethodPost, WebhookPath, bytes.NewReader(permissionLossPayload))
+	permissionLossRequest.Header.Set("X-Hub-Signature-256",
+		WebhookSignature(secret, permissionLossPayload))
+	permissionLossRequest.Header.Set("X-GitHub-Event", "installation")
+	permissionLossRequest.Header.Set(
+		"X-GitHub-Delivery", "delivery-permission-loss")
+	permissionLossResponse := httptest.NewRecorder()
+	broker.Handler().ServeHTTP(permissionLossResponse, permissionLossRequest)
+	lostPermissions := expectedPermissions
+	lostPermissions.Checks = PermissionNone
+	if permissionLossResponse.Code != http.StatusNoContent ||
+		len(lifecycle.permissions) != 3 ||
+		lifecycle.permissions[2] != lostPermissions {
+		t.Fatalf("permission-loss lifecycle response = %d, permissions %#v",
+			permissionLossResponse.Code, lifecycle.permissions)
+	}
 	prPayload := []byte(`{"action":"synchronize","installation":{"id":42}}`)
 	prRequest := httptest.NewRequest(http.MethodPost, WebhookPath,
 		bytes.NewReader(prPayload))
@@ -329,7 +350,7 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	prRequest.Header.Set("X-GitHub-Delivery", "delivery-2")
 	prResponse := httptest.NewRecorder()
 	broker.Handler().ServeHTTP(prResponse, prRequest)
-	if prResponse.Code != http.StatusAccepted || len(lifecycle.calls) != 2 {
+	if prResponse.Code != http.StatusAccepted || len(lifecycle.calls) != 3 {
 		t.Fatal("pull-request webhook reached lifecycle/refresh state")
 	}
 	revocationPayload := []byte(
@@ -376,8 +397,8 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	largeResponse := httptest.NewRecorder()
 	broker.Handler().ServeHTTP(largeResponse, largeRequest)
 	if largeResponse.Code != http.StatusNoContent ||
-		len(lifecycle.calls) != 3 ||
-		lifecycle.calls[2] !=
+		len(lifecycle.calls) != 4 ||
+		lifecycle.calls[3] !=
 			"delivery-large:installation_repositories:removed" {
 		t.Fatalf("large lifecycle response = %d, calls %#v",
 			largeResponse.Code, lifecycle.calls)
