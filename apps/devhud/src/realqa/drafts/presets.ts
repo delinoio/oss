@@ -70,6 +70,78 @@ const forbiddenPatternFragments = [
   "(?x:",
 ];
 
+interface PatternGroupState {
+  containsAlternation: boolean;
+  containsRepetition: boolean;
+}
+
+function repetitionLength(pattern: string, index: number): number {
+  const token = pattern[index];
+  if (token === "*" || token === "+" || token === "?") return 1;
+  if (token !== "{") return 0;
+  return pattern.slice(index).match(/^\{\d+(?:,\d*)?\}/u)?.[0].length ?? 0;
+}
+
+/**
+ * JavaScript RegExp uses a backtracking engine. Reject repeated groups whose
+ * contents can repeat or branch, so synchronized input cannot introduce the
+ * nested/ambiguous repetition that causes catastrophic backtracking.
+ */
+function hasUnsafeRepeatedGroup(pattern: string): boolean {
+  const groups: PatternGroupState[] = [];
+  let inCharacterClass = false;
+  for (let index = 0; index < pattern.length; index += 1) {
+    const token = pattern[index];
+    if (token === "\\") {
+      index += 1;
+      continue;
+    }
+    if (token === "[") {
+      inCharacterClass = true;
+      continue;
+    }
+    if (token === "]" && inCharacterClass) {
+      inCharacterClass = false;
+      continue;
+    }
+    if (inCharacterClass) continue;
+    if (token === "(") {
+      groups.push({ containsAlternation: false, containsRepetition: false });
+      if (pattern.startsWith("?:", index + 1)) index += 2;
+      continue;
+    }
+    if (token === "|") {
+      const current = groups.at(-1);
+      if (current !== undefined) current.containsAlternation = true;
+      continue;
+    }
+    if (token === ")") {
+      const group = groups.pop();
+      if (group === undefined) continue;
+      const repeatedBy = repetitionLength(pattern, index + 1);
+      if (
+        repeatedBy > 0 &&
+        (group.containsAlternation || group.containsRepetition)
+      ) {
+        return true;
+      }
+      const parent = groups.at(-1);
+      if (parent !== undefined) {
+        parent.containsRepetition ||= group.containsRepetition || repeatedBy > 0;
+      }
+      index += repeatedBy;
+      continue;
+    }
+    const repeatedBy = repetitionLength(pattern, index);
+    if (repeatedBy > 0) {
+      const current = groups.at(-1);
+      if (current !== undefined) current.containsRepetition = true;
+      index += repeatedBy - 1;
+    }
+  }
+  return false;
+}
+
 function validTemplate(template: string): boolean {
   if (template.length === 0 || new TextEncoder().encode(template).length > 2_048) {
     return false;
@@ -98,7 +170,8 @@ export function validateRealQaProcessUrlRules(
       new TextEncoder().encode(pattern).length > MAX_REALQA_SAFE_PATTERN_BYTES ||
       forbiddenPatternFragments.some((fragment) => pattern.includes(fragment)) ||
       /\\[0-9]/u.test(pattern) ||
-      /\{\d{3,}(?:,\d*)?\}/u.test(pattern)
+      /\{\d{3,}(?:,\d*)?\}/u.test(pattern) ||
+      hasUnsafeRepeatedGroup(pattern)
     ) {
       return false;
     }

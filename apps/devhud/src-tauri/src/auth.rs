@@ -29,6 +29,7 @@ const DESKTOP_CALLBACK_PATH: &str = "/auth/callback";
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_CALLBACK_REQUEST_LINE_BYTES: usize = 4096;
 const MAX_SUBJECT_BYTES: usize = 512;
+const LEGACY_DEVICE_SESSION_VERSION: &str = "v1";
 const DEVICE_SESSION_VERSION: &str = "v2";
 const REALQA_DRAFT_ACCOUNT_BINDING_CONTEXT: &[u8] = b"devhud-realqa-draft-account-v1\0";
 
@@ -386,7 +387,7 @@ enum SessionState {
         reauthenticated_features: BTreeSet<AuthFeature>,
     },
     PriorSessionOffline {
-        account_binding: String,
+        account_binding: Option<String>,
     },
     CleanupRequired,
 }
@@ -472,7 +473,8 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             self.state = SessionState::PriorSessionOffline {
                 account_binding: device_session_account_binding(
                     retained.device_session_key.expose(),
-                )?,
+                )
+                .ok(),
             };
             return Ok(self.snapshot());
         }
@@ -517,8 +519,12 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 grant_error.get_or_insert(AuthError::AccountSwitchRequiresLogout);
                 continue;
             }
+            let mut retained_changed = migrate_retained_device_session(&mut retained, &subject)?;
             if let Some(rotated_refresh) = tokens.refresh_token {
                 retained.refresh_tokens.insert(feature, rotated_refresh);
+                retained_changed = true;
+            }
+            if retained_changed {
                 self.vault.replace(&retained)?;
             }
             let refresh_token = retained
@@ -573,7 +579,8 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             self.state = SessionState::PriorSessionOffline {
                 account_binding: device_session_account_binding(
                     retained.device_session_key.expose(),
-                )?,
+                )
+                .ok(),
             };
             return Ok(self.snapshot());
         }
@@ -751,6 +758,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 device_session_key: new_device_session_key(&subject)?,
             },
         };
+        migrate_retained_device_session(&mut retained, &subject)?;
         let feature_tokens = self
             .transport
             .refresh(
@@ -859,8 +867,12 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             feature.scopes(),
             now_unix_seconds,
         )?;
+        let mut retained_changed = migrate_retained_device_session(&mut retained, &subject)?;
         if let Some(refresh_token) = feature_tokens.refresh_token {
             retained.refresh_tokens.insert(feature, refresh_token);
+            retained_changed = true;
+        }
+        if retained_changed {
             self.vault.replace(&retained)?;
         }
         let delibase_tokens = match self.transport.refresh(
@@ -930,9 +942,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                     online_reauthenticated: reauthenticated_features.contains(&AuthFeature::RealQa),
                 })
             }
-            SessionState::PriorSessionOffline { account_binding }
-                if constant_time_equal(account_binding.as_bytes(), retained_binding.as_bytes()) =>
-            {
+            SessionState::PriorSessionOffline {
+                account_binding: Some(account_binding),
+            } if constant_time_equal(account_binding.as_bytes(), retained_binding.as_bytes()) => {
                 Ok(RealQaDraftAccessContext {
                     account_binding: retained_binding,
                     online_reauthenticated: false,
@@ -1209,29 +1221,30 @@ fn new_device_session_key(subject: &str) -> Result<Secret, AuthError> {
 }
 
 fn validate_device_session_shape(value: &str) -> Result<(), AuthError> {
+    parse_device_session(value).map(|_| ())
+}
+
+fn parse_device_session(value: &str) -> Result<(&str, &str, &str, Option<&str>), AuthError> {
     let mut parts = value.split('.');
-    let version = parts.next();
-    let key = parts.next();
-    let tag = parts.next();
+    let version = parts.next().ok_or(AuthError::TokenInvalid)?;
+    let key = parts.next().ok_or(AuthError::TokenInvalid)?;
+    let tag = parts.next().ok_or(AuthError::TokenInvalid)?;
     let account_binding = parts.next();
-    if version != Some(DEVICE_SESSION_VERSION)
+    let valid_version_shape = match version {
+        LEGACY_DEVICE_SESSION_VERSION => account_binding.is_none(),
+        DEVICE_SESSION_VERSION => account_binding
+            .and_then(|binding| URL_SAFE_NO_PAD.decode(binding).ok())
+            .is_some_and(|binding| binding.len() == 32),
+        _ => false,
+    };
+    if !valid_version_shape
         || parts.next().is_some()
-        || key
-            .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
-            .map(|v| v.len())
-            != Some(32)
-        || tag
-            .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
-            .map(|v| v.len())
-            != Some(32)
-        || account_binding
-            .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
-            .map(|value| value.len())
-            != Some(32)
+        || URL_SAFE_NO_PAD.decode(key).map(|value| value.len()).ok() != Some(32)
+        || URL_SAFE_NO_PAD.decode(tag).map(|value| value.len()).ok() != Some(32)
     {
         return Err(AuthError::TokenInvalid);
     }
-    Ok(())
+    Ok((version, key, tag, account_binding))
 }
 
 fn validate_retained_session_shape(session: &VaultSession) -> Result<(), AuthError> {
@@ -1242,24 +1255,50 @@ fn validate_retained_session_shape(session: &VaultSession) -> Result<(), AuthErr
 }
 
 fn device_session_matches(value: &str, subject: &str) -> Result<bool, AuthError> {
-    validate_device_session_shape(value)?;
-    let mut parts = value.split('.');
-    let _ = parts.next();
+    let (_version, encoded_key, encoded_tag, account_binding) = parse_device_session(value)?;
     let key = URL_SAFE_NO_PAD
-        .decode(parts.next().ok_or(AuthError::TokenInvalid)?)
+        .decode(encoded_key)
         .map_err(|_| AuthError::TokenInvalid)?;
     let actual = URL_SAFE_NO_PAD
-        .decode(parts.next().ok_or(AuthError::TokenInvalid)?)
+        .decode(encoded_tag)
         .map_err(|_| AuthError::TokenInvalid)?;
-    let account_binding = parts.next().ok_or(AuthError::TokenInvalid)?;
     let mut mac = HmacSha256::new_from_slice(&key).map_err(|_| AuthError::TokenInvalid)?;
     mac.update(subject.as_bytes());
     let expected = mac.finalize().into_bytes();
     Ok(constant_time_equal(&actual, &expected)
-        && constant_time_equal(
-            account_binding.as_bytes(),
-            realqa_draft_account_binding(subject).as_bytes(),
-        ))
+        && account_binding.is_none_or(|binding| {
+            constant_time_equal(
+                binding.as_bytes(),
+                realqa_draft_account_binding(subject).as_bytes(),
+            )
+        }))
+}
+
+fn migrate_device_session_key(value: &str, subject: &str) -> Result<Option<Secret>, AuthError> {
+    let (version, key, tag, _account_binding) = parse_device_session(value)?;
+    if !device_session_matches(value, subject)? {
+        return Err(AuthError::AccountSwitchRequiresLogout);
+    }
+    if version == DEVICE_SESSION_VERSION {
+        return Ok(None);
+    }
+    Secret::new(format!(
+        "{DEVICE_SESSION_VERSION}.{key}.{tag}.{}",
+        realqa_draft_account_binding(subject)
+    ))
+    .map(Some)
+}
+
+fn migrate_retained_device_session(
+    retained: &mut VaultSession,
+    subject: &str,
+) -> Result<bool, AuthError> {
+    let Some(migrated) = migrate_device_session_key(retained.device_session_key.expose(), subject)?
+    else {
+        return Ok(false);
+    };
+    retained.device_session_key = migrated;
+    Ok(true)
 }
 
 fn realqa_draft_account_binding(subject: &str) -> String {
@@ -1270,12 +1309,10 @@ fn realqa_draft_account_binding(subject: &str) -> String {
 }
 
 fn device_session_account_binding(value: &str) -> Result<String, AuthError> {
-    validate_device_session_shape(value)?;
-    value
-        .split('.')
-        .nth(3)
+    parse_device_session(value)?
+        .3
         .map(ToOwned::to_owned)
-        .ok_or(AuthError::TokenInvalid)
+        .ok_or(AuthError::ReauthenticationRequired)
 }
 
 fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
@@ -1599,6 +1636,17 @@ mod tests {
         (
             [(feature, refresh_token.to_owned())].into_iter().collect(),
             device_session_key.to_owned(),
+        )
+    }
+
+    fn legacy_device_session_key(subject: &str) -> String {
+        let current = new_device_session_key(subject).unwrap();
+        let mut parts = current.expose().split('.');
+        assert_eq!(parts.next(), Some(DEVICE_SESSION_VERSION));
+        format!(
+            "{LEGACY_DEVICE_SESSION_VERSION}.{}.{}",
+            parts.next().unwrap(),
+            parts.next().unwrap()
         )
     }
 
@@ -2380,6 +2428,52 @@ mod tests {
         );
         assert!(device_session_matches(first.expose(), "account-a").unwrap());
         assert!(!device_session_matches(first.expose(), "account-b").unwrap());
+    }
+
+    #[test]
+    fn legacy_device_session_is_gated_offline_and_migrated_after_online_refresh() {
+        let legacy = legacy_device_session_key("account-a");
+        let offline_vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::RealQa,
+                "refresh-original",
+                &legacy,
+            )),
+            ..FakeVault::default()
+        };
+        let mut offline = manager(FakeTransport::default(), offline_vault);
+        assert_eq!(
+            offline.restore_at(Connectivity::Offline, NOW).unwrap(),
+            SessionSnapshot::PriorSessionOffline
+        );
+        assert_eq!(
+            offline.realqa_draft_access(),
+            Err(AuthError::ReauthenticationRequired)
+        );
+
+        let online_vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::RealQa,
+                "refresh-original",
+                &legacy,
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::RealQa, None, None);
+        let mut online = manager(transport, online_vault);
+        assert_eq!(
+            online.restore_at(Connectivity::Online, NOW).unwrap(),
+            SessionSnapshot::SignedIn {
+                subject: "account-a".to_owned()
+            }
+        );
+        let migrated = &online.vault.retained.as_ref().unwrap().1;
+        assert!(migrated.starts_with("v2."));
+        assert_eq!(
+            device_session_account_binding(migrated).unwrap(),
+            realqa_draft_account_binding("account-a")
+        );
     }
 
     #[test]

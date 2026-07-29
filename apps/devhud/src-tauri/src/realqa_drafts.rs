@@ -8,7 +8,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
@@ -35,6 +35,11 @@ const RECORD_VERSION: u8 = 1;
 const ENCRYPTION_ALGORITHM: &str = "aes-256-gcm";
 const DIRECTORY_NAME: &str = "realqa-drafts.v1";
 const DRAFT_EXTENSION: &str = "rqadraft";
+const ENVELOPE_MAGIC: &[u8; 8] = b"RQADRF01";
+const ENVELOPE_HEADER_LENGTH_BYTES: usize = size_of::<u32>();
+const MAX_ENVELOPE_HEADER_BYTES: usize = 4 * 1024;
+const MAX_SERIALIZED_RECORD_BYTES: usize = MAX_ENCODED_SESSION_BYTES as usize + 64 * 1024 * 1024;
+const MAX_ENCRYPTED_RECORD_BYTES: usize = MAX_SERIALIZED_RECORD_BYTES + 16;
 const VAULT_SERVICE: &str = "dev.deli.devhud";
 const VAULT_ACCOUNT: &str = "realqa-draft-device-keys.v1";
 const EXTENSION_PAIRING_VAULT_ACCOUNT: &str = "realqa-extension-pairing.v1";
@@ -162,8 +167,7 @@ pub(crate) struct SaveDraftRequest {
 struct StoredDraftImage {
     image_id: String,
     original: EncodedImage,
-    #[serde(deserialize_with = "deserialize_operations")]
-    operations: Vec<EditorOperation>,
+    operations_json: String,
     output_media_type: ImageMediaType,
 }
 
@@ -194,8 +198,8 @@ struct StoredDraftRecord {
     content: StoredDraftContent,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct DraftSummary {
     draft_id: String,
     revision: u64,
@@ -240,13 +244,20 @@ pub(crate) struct LoadedDraft {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EncryptedEnvelope {
+struct EncryptedEnvelopeHeader {
     version: u8,
     algorithm: String,
     account_binding: String,
     draft_id: String,
-    nonce: String,
-    ciphertext: String,
+    summary_nonce: String,
+    summary_ciphertext: String,
+    record_nonce: String,
+    record_ciphertext_bytes: u64,
+}
+
+struct EncryptedRecord {
+    header: Vec<u8>,
+    ciphertext: Zeroizing<Vec<u8>>,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -441,8 +452,7 @@ impl RealQaDraftState {
             {
                 continue;
             }
-            let record = read_record(&entry.path(), &access.account_binding, &key)?;
-            summaries.push(summary(&record));
+            summaries.push(read_summary(&entry.path(), &access.account_binding, &key)?);
         }
         summaries.sort_by_key(|summary| (summary.updated_at_unix_ms, summary.draft_id.clone()));
         summaries.reverse();
@@ -518,7 +528,7 @@ impl RealQaDraftState {
             images.push(StoredDraftImage {
                 image_id: image.image_id.clone(),
                 original,
-                operations: image.operations.clone(),
+                operations_json: encode_operations(&image.operations)?,
                 output_media_type: image.output_media_type,
             });
         }
@@ -544,9 +554,10 @@ impl RealQaDraftState {
                 images,
             },
         };
-        let envelope = encrypt_record(&record, &access.account_binding, &key)?;
+        let encrypted = encrypt_record(&record, &access.account_binding, &key)?;
         prepare_directory(directory).map_err(|_| DraftError::StorageUnavailable)?;
-        write_atomically(&path, &envelope).map_err(|_| DraftError::WriteFailed)?;
+        write_encrypted_record_atomically(&path, &encrypted)
+            .map_err(|_| DraftError::WriteFailed)?;
         Ok(summary(&record))
     }
 
@@ -557,7 +568,7 @@ impl RealQaDraftState {
         draft_id: &str,
         composer_session_id: &str,
     ) -> Result<LoadedDraft, DraftError> {
-        let _guard = self
+        let guard = self
             .write_lock
             .lock()
             .map_err(|_| DraftError::StorageUnavailable)?;
@@ -571,37 +582,60 @@ impl RealQaDraftState {
             &access.account_binding,
             &key,
         )?;
-        let mut images = Vec::with_capacity(record.content.images.len());
-        for image in &record.content.images {
+        drop(guard);
+        let StoredDraftRecord {
+            draft_id,
+            revision,
+            submission_idempotency_key,
+            created_at_unix_ms,
+            updated_at_unix_ms,
+            content,
+            ..
+        } = record;
+        let StoredDraftContent {
+            title,
+            body,
+            preset_id,
+            preset_revision,
+            destination_id,
+            repository_definition_id,
+            environment,
+            url,
+            dom,
+            images: stored_images,
+        } = content;
+        let mut images = Vec::with_capacity(stored_images.len());
+        for image in stored_images {
+            let operations = decode_operations(&image.operations_json)?;
             let restored = composer
                 .restore_original_from_draft(
                     ComposerSessionId(composer_session_id.to_owned()),
-                    ComposerImageId(image.image_id.clone()),
-                    image.original.clone(),
+                    ComposerImageId(image.image_id),
+                    image.original,
                 )
                 .map_err(|_| DraftError::InvalidRecord)?;
             images.push(LoadedDraftImage {
                 composer: restored,
-                operations: image.operations.clone(),
+                operations,
                 output_media_type: image.output_media_type,
             });
         }
         Ok(LoadedDraft {
-            draft_id: record.draft_id,
-            revision: record.revision,
-            submission_idempotency_key: record.submission_idempotency_key,
-            created_at_unix_ms: record.created_at_unix_ms,
-            updated_at_unix_ms: record.updated_at_unix_ms,
+            draft_id,
+            revision,
+            submission_idempotency_key,
+            created_at_unix_ms,
+            updated_at_unix_ms,
             content: LoadedDraftContent {
-                title: record.content.title,
-                body: record.content.body,
-                preset_id: record.content.preset_id,
-                preset_revision: record.content.preset_revision,
-                destination_id: record.content.destination_id,
-                repository_definition_id: record.content.repository_definition_id,
-                environment: record.content.environment,
-                url: record.content.url,
-                dom: record.content.dom,
+                title,
+                body,
+                preset_id,
+                preset_revision,
+                destination_id,
+                repository_definition_id,
+                environment,
+                url,
+                dom,
                 images,
             },
         })
@@ -729,6 +763,21 @@ fn summary(record: &StoredDraftRecord) -> DraftSummary {
     }
 }
 
+fn encode_operations(operations: &[EditorOperation]) -> Result<String, DraftError> {
+    serde_json::to_string(operations).map_err(|_| DraftError::InvalidRecord)
+}
+
+fn decode_operations(encoded: &str) -> Result<Vec<EditorOperation>, DraftError> {
+    #[derive(Deserialize)]
+    struct BoundedOperations(
+        #[serde(deserialize_with = "deserialize_operations")] Vec<EditorOperation>,
+    );
+
+    serde_json::from_str::<BoundedOperations>(encoded)
+        .map(|operations| operations.0)
+        .map_err(|_| DraftError::Corrupt)
+}
+
 fn validate_uuid_v7(value: &str) -> Result<(), DraftError> {
     let parsed = Uuid::parse_str(value).map_err(|_| DraftError::InvalidRecord)?;
     if parsed.get_version_num() != 7 || parsed.to_string() != value {
@@ -845,97 +894,136 @@ fn is_local_or_private_host(host: &str) -> bool {
         })
 }
 
-fn associated_data(account_binding: &str, draft_id: &str) -> Vec<u8> {
-    format!("{RECORD_FAMILY}\0{account_binding}\0{draft_id}").into_bytes()
+fn associated_data(account_binding: &str, draft_id: &str, payload_kind: &str) -> Vec<u8> {
+    format!("{RECORD_FAMILY}\0{account_binding}\0{draft_id}\0{payload_kind}").into_bytes()
 }
 
 fn encrypt_record(
     record: &StoredDraftRecord,
     account_binding: &str,
     key: &[u8],
-) -> Result<Vec<u8>, DraftError> {
-    let mut nonce_bytes = [0_u8; 12];
-    getrandom::fill(&mut nonce_bytes).map_err(|_| DraftError::StorageUnavailable)?;
-    let mut plaintext = serde_json::to_vec(record).map_err(|_| DraftError::InvalidRecord)?;
-    let key = LessSafeKey::new(
-        UnboundKey::new(&AES_256_GCM, key).map_err(|_| DraftError::StorageUnavailable)?,
-    );
-    key.seal_in_place_append_tag(
-        Nonce::assume_unique_for_key(nonce_bytes),
-        Aad::from(associated_data(account_binding, &record.draft_id)),
-        &mut plaintext,
+) -> Result<EncryptedRecord, DraftError> {
+    let summary_plaintext =
+        serde_json::to_vec(&summary(record)).map_err(|_| DraftError::InvalidRecord)?;
+    let (summary_nonce, summary_ciphertext) = encrypt_payload(
+        summary_plaintext,
+        &associated_data(account_binding, &record.draft_id, "summary"),
+        key,
+    )?;
+    let record_plaintext = bincode::serde::encode_to_vec(
+        record,
+        bincode::config::standard().with_limit::<MAX_SERIALIZED_RECORD_BYTES>(),
     )
-    .map_err(|_| DraftError::WriteFailed)?;
-    let ciphertext = URL_SAFE_NO_PAD.encode(&plaintext);
-    plaintext.zeroize();
-    serde_json::to_vec(&EncryptedEnvelope {
+    .map_err(|_| DraftError::InvalidRecord)?;
+    let (record_nonce, ciphertext) = encrypt_payload(
+        record_plaintext,
+        &associated_data(account_binding, &record.draft_id, "record"),
+        key,
+    )?;
+    let record_ciphertext_bytes = ciphertext
+        .len()
+        .try_into()
+        .map_err(|_| DraftError::InvalidRecord)?;
+    let header = serde_json::to_vec(&EncryptedEnvelopeHeader {
         version: RECORD_VERSION,
         algorithm: ENCRYPTION_ALGORITHM.to_owned(),
         account_binding: account_binding.to_owned(),
         draft_id: record.draft_id.clone(),
-        nonce: URL_SAFE_NO_PAD.encode(nonce_bytes),
-        ciphertext,
+        summary_nonce,
+        summary_ciphertext: URL_SAFE_NO_PAD.encode(summary_ciphertext),
+        record_nonce,
+        record_ciphertext_bytes,
     })
-    .map_err(|_| DraftError::WriteFailed)
+    .map_err(|_| DraftError::WriteFailed)?;
+    if header.len() > MAX_ENVELOPE_HEADER_BYTES {
+        return Err(DraftError::WriteFailed);
+    }
+    Ok(EncryptedRecord { header, ciphertext })
 }
 
-fn decrypt_record(
-    envelope: &[u8],
-    account_binding: &str,
+fn encrypt_payload(
+    plaintext: Vec<u8>,
+    associated_data: &[u8],
     key: &[u8],
-) -> Result<StoredDraftRecord, DraftError> {
-    let envelope: EncryptedEnvelope =
-        serde_json::from_slice(envelope).map_err(|_| DraftError::Corrupt)?;
-    if envelope.version > RECORD_VERSION {
+) -> Result<(String, Zeroizing<Vec<u8>>), DraftError> {
+    let mut nonce_bytes = [0_u8; 12];
+    getrandom::fill(&mut nonce_bytes).map_err(|_| DraftError::StorageUnavailable)?;
+    let mut plaintext = plaintext;
+    let key = LessSafeKey::new(
+        UnboundKey::new(&AES_256_GCM, key).map_err(|_| DraftError::StorageUnavailable)?,
+    );
+    if key
+        .seal_in_place_append_tag(
+            Nonce::assume_unique_for_key(nonce_bytes),
+            Aad::from(associated_data),
+            &mut plaintext,
+        )
+        .is_err()
+    {
+        plaintext.zeroize();
+        return Err(DraftError::WriteFailed);
+    }
+    Ok((
+        URL_SAFE_NO_PAD.encode(nonce_bytes),
+        Zeroizing::new(plaintext),
+    ))
+}
+
+fn decrypt_payload(
+    nonce: &str,
+    ciphertext: Vec<u8>,
+    associated_data: &[u8],
+    key: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, DraftError> {
+    let nonce = URL_SAFE_NO_PAD
+        .decode(nonce)
+        .map_err(|_| DraftError::Corrupt)?;
+    let nonce: [u8; 12] = nonce.try_into().map_err(|_| DraftError::Corrupt)?;
+    let mut ciphertext = Zeroizing::new(ciphertext);
+    let key = LessSafeKey::new(
+        UnboundKey::new(&AES_256_GCM, key).map_err(|_| DraftError::StorageUnavailable)?,
+    );
+    let plaintext_bytes = key
+        .open_in_place(
+            Nonce::assume_unique_for_key(nonce),
+            Aad::from(associated_data),
+            &mut ciphertext,
+        )
+        .map_err(|_| DraftError::AccountLocked)?
+        .len();
+    ciphertext.truncate(plaintext_bytes);
+    Ok(ciphertext)
+}
+
+fn validate_envelope_header(
+    header: &EncryptedEnvelopeHeader,
+    account_binding: &str,
+) -> Result<(), DraftError> {
+    if header.version > RECORD_VERSION {
         return Err(DraftError::FutureVersion);
     }
-    if envelope.version != RECORD_VERSION || envelope.algorithm != ENCRYPTION_ALGORITHM {
+    if header.version != RECORD_VERSION
+        || header.algorithm != ENCRYPTION_ALGORITHM
+        || header.record_ciphertext_bytes < 16
+        || header.record_ciphertext_bytes > MAX_ENCRYPTED_RECORD_BYTES as u64
+    {
         return Err(DraftError::Corrupt);
     }
     if !bool::from(
-        envelope
+        header
             .account_binding
             .as_bytes()
             .ct_eq(account_binding.as_bytes()),
     ) {
         return Err(DraftError::AccountLocked);
     }
-    validate_uuid_v7(&envelope.draft_id).map_err(|_| DraftError::Corrupt)?;
-    let nonce = URL_SAFE_NO_PAD
-        .decode(&envelope.nonce)
-        .map_err(|_| DraftError::Corrupt)?;
-    let nonce: [u8; 12] = nonce.try_into().map_err(|_| DraftError::Corrupt)?;
-    let mut ciphertext = Zeroizing::new(
-        URL_SAFE_NO_PAD
-            .decode(&envelope.ciphertext)
-            .map_err(|_| DraftError::Corrupt)?,
-    );
-    let key = LessSafeKey::new(
-        UnboundKey::new(&AES_256_GCM, key).map_err(|_| DraftError::StorageUnavailable)?,
-    );
-    let plaintext = key
-        .open_in_place(
-            Nonce::assume_unique_for_key(nonce),
-            Aad::from(associated_data(account_binding, &envelope.draft_id)),
-            &mut ciphertext,
-        )
-        .map_err(|_| DraftError::AccountLocked)?;
-    let record: StoredDraftRecord =
-        serde_json::from_slice(plaintext).map_err(|_| DraftError::Corrupt)?;
-    if record.version > RECORD_VERSION {
-        return Err(DraftError::FutureVersion);
-    }
-    if record.version != RECORD_VERSION || record.draft_id != envelope.draft_id {
-        return Err(DraftError::Corrupt);
-    }
-    Ok(record)
+    validate_uuid_v7(&header.draft_id).map_err(|_| DraftError::Corrupt)
 }
 
-fn read_record(
+fn open_encrypted_record(
     path: &Path,
     account_binding: &str,
-    key: &[u8],
-) -> Result<StoredDraftRecord, DraftError> {
+) -> Result<(EncryptedEnvelopeHeader, fs::File), DraftError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_file() && !metadata.file_type().is_symlink() => {}
         Ok(_) => return Err(DraftError::StorageUnavailable),
@@ -944,14 +1032,121 @@ fn read_record(
         }
         Err(_) => return Err(DraftError::StorageUnavailable),
     }
-    let bytes = fs::read(path).map_err(|error| {
+    let mut file = fs::File::open(path).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             DraftError::InvalidRecord
         } else {
             DraftError::StorageUnavailable
         }
     })?;
-    decrypt_record(&bytes, account_binding, key)
+    let mut magic = [0_u8; ENVELOPE_MAGIC.len()];
+    file.read_exact(&mut magic)
+        .map_err(|_| DraftError::Corrupt)?;
+    if &magic != ENVELOPE_MAGIC {
+        return Err(DraftError::Corrupt);
+    }
+    let mut header_length = [0_u8; ENVELOPE_HEADER_LENGTH_BYTES];
+    file.read_exact(&mut header_length)
+        .map_err(|_| DraftError::Corrupt)?;
+    let header_length = u32::from_be_bytes(header_length) as usize;
+    if header_length == 0 || header_length > MAX_ENVELOPE_HEADER_BYTES {
+        return Err(DraftError::Corrupt);
+    }
+    let mut header = vec![0_u8; header_length];
+    file.read_exact(&mut header)
+        .map_err(|_| DraftError::Corrupt)?;
+    let header: EncryptedEnvelopeHeader =
+        serde_json::from_slice(&header).map_err(|_| DraftError::Corrupt)?;
+    validate_envelope_header(&header, account_binding)?;
+    let expected_file_bytes = ENVELOPE_MAGIC
+        .len()
+        .checked_add(ENVELOPE_HEADER_LENGTH_BYTES)
+        .and_then(|bytes| bytes.checked_add(header_length))
+        .and_then(|bytes| {
+            usize::try_from(header.record_ciphertext_bytes)
+                .ok()
+                .and_then(|ciphertext_bytes| bytes.checked_add(ciphertext_bytes))
+        })
+        .ok_or(DraftError::Corrupt)?;
+    if file
+        .metadata()
+        .map_err(|_| DraftError::StorageUnavailable)?
+        .len()
+        != expected_file_bytes as u64
+    {
+        return Err(DraftError::Corrupt);
+    }
+    Ok((header, file))
+}
+
+fn decrypt_summary(
+    header: &EncryptedEnvelopeHeader,
+    account_binding: &str,
+    key: &[u8],
+) -> Result<DraftSummary, DraftError> {
+    let summary_ciphertext = URL_SAFE_NO_PAD
+        .decode(&header.summary_ciphertext)
+        .map_err(|_| DraftError::Corrupt)?;
+    let plaintext = decrypt_payload(
+        &header.summary_nonce,
+        summary_ciphertext,
+        &associated_data(account_binding, &header.draft_id, "summary"),
+        key,
+    )?;
+    let summary: DraftSummary =
+        serde_json::from_slice(&plaintext).map_err(|_| DraftError::Corrupt)?;
+    if summary.draft_id != header.draft_id
+        || summary.revision == 0
+        || summary.created_at_unix_ms > summary.updated_at_unix_ms
+    {
+        return Err(DraftError::Corrupt);
+    }
+    Ok(summary)
+}
+
+fn read_summary(
+    path: &Path,
+    account_binding: &str,
+    key: &[u8],
+) -> Result<DraftSummary, DraftError> {
+    let (header, _file) = open_encrypted_record(path, account_binding)?;
+    decrypt_summary(&header, account_binding, key)
+}
+
+fn read_record(
+    path: &Path,
+    account_binding: &str,
+    key: &[u8],
+) -> Result<StoredDraftRecord, DraftError> {
+    let (header, mut file) = open_encrypted_record(path, account_binding)?;
+    let expected_summary = decrypt_summary(&header, account_binding, key)?;
+    let ciphertext_bytes =
+        usize::try_from(header.record_ciphertext_bytes).map_err(|_| DraftError::Corrupt)?;
+    let mut ciphertext = vec![0_u8; ciphertext_bytes];
+    file.read_exact(&mut ciphertext)
+        .map_err(|_| DraftError::Corrupt)?;
+    let plaintext = decrypt_payload(
+        &header.record_nonce,
+        ciphertext,
+        &associated_data(account_binding, &header.draft_id, "record"),
+        key,
+    )?;
+    let (record, consumed): (StoredDraftRecord, usize) = bincode::serde::decode_from_slice(
+        &plaintext,
+        bincode::config::standard().with_limit::<MAX_SERIALIZED_RECORD_BYTES>(),
+    )
+    .map_err(|_| DraftError::Corrupt)?;
+    if record.version > RECORD_VERSION {
+        return Err(DraftError::FutureVersion);
+    }
+    if record.version != RECORD_VERSION
+        || record.draft_id != header.draft_id
+        || consumed != plaintext.len()
+        || summary(&record) != expected_summary
+    {
+        return Err(DraftError::Corrupt);
+    }
+    Ok(record)
 }
 
 fn validate_existing_directory(path: &Path) -> Result<(), DraftError> {
@@ -974,10 +1169,35 @@ fn prepare_directory(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn write_atomically(path: &Path, contents: &[u8]) -> io::Result<()> {
-    write_atomically_with(path, contents, replace_file)
+fn write_encrypted_record_atomically(path: &Path, encrypted: &EncryptedRecord) -> io::Result<()> {
+    let header_length = u32::try_from(encrypted.header.len())
+        .map_err(|_| io::Error::other("RealQA draft envelope header is too large"))?
+        .to_be_bytes();
+    let temporary = path.with_extension(format!("{}.{}.tmp", DRAFT_EXTENSION, Uuid::now_v7()));
+    let mut file = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)?;
+    let write_result = file
+        .write_all(ENVELOPE_MAGIC)
+        .and_then(|()| file.write_all(&header_length))
+        .and_then(|()| file.write_all(&encrypted.header))
+        .and_then(|()| file.write_all(&encrypted.ciphertext))
+        .and_then(|()| file.sync_all());
+    if let Err(error) = write_result {
+        drop(file);
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    drop(file);
+    if let Err(error) = replace_file(&temporary, path) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    Ok(())
 }
 
+#[cfg(test)]
 fn write_atomically_with(
     path: &Path,
     contents: &[u8],
@@ -1202,7 +1422,16 @@ mod tests {
         let state = state("isolation");
         let composer = ComposerCore::default();
         let draft_id = Uuid::now_v7().to_string();
-        let initial_request = request(&composer, &draft_id);
+        let mut initial_request = request(&composer, &draft_id);
+        initial_request.content.images[0].operations = serde_json::from_value(serde_json::json!([
+            {
+                "kind": "rectangle",
+                "rect": { "x": 0, "y": 0, "width": 1, "height": 1 },
+                "color": "#ffffff",
+                "lineWidth": 1
+            }
+        ]))
+        .unwrap();
         let submission_idempotency_key = initial_request.submission_idempotency_key.clone();
         let summary = state
             .save(
@@ -1215,7 +1444,7 @@ mod tests {
         let path = state
             .draft_path(&access("account-a", true).account_binding, &draft_id)
             .unwrap();
-        let ciphertext = fs::read_to_string(path).unwrap();
+        let ciphertext = fs::read(path).unwrap();
         for sensitive in [
             "private title",
             "private body",
@@ -1223,7 +1452,11 @@ mod tests {
             "token=private",
             "#private",
         ] {
-            assert!(!ciphertext.contains(sensitive));
+            assert!(
+                !ciphertext
+                    .windows(sensitive.len())
+                    .any(|window| window == sensitive.as_bytes())
+            );
         }
         let restored_composer = ComposerCore::default();
         let loaded = state
@@ -1362,20 +1595,106 @@ mod tests {
         };
         let binding = access("account-a", true).account_binding;
         let key = [7_u8; 32];
+        let directory = temporary_directory("invalid-envelopes");
+        prepare_directory(&directory).unwrap();
+        let path = directory.join(format!("{}.{}", record.draft_id, DRAFT_EXTENSION));
         let encrypted = encrypt_record(&record, &binding, &key).unwrap();
+        write_encrypted_record_atomically(&path, &encrypted).unwrap();
         assert_eq!(
-            decrypt_record(&encrypted, &binding, &[8_u8; 32]).err(),
+            read_record(&path, &binding, &[8_u8; 32]).err(),
             Some(DraftError::AccountLocked)
         );
-        let mut future: serde_json::Value = serde_json::from_slice(&encrypted).unwrap();
+        let mut future: serde_json::Value = serde_json::from_slice(&encrypted.header).unwrap();
         future["version"] = serde_json::json!(2);
+        let future = EncryptedRecord {
+            header: serde_json::to_vec(&future).unwrap(),
+            ciphertext: encrypted.ciphertext,
+        };
+        write_encrypted_record_atomically(&path, &future).unwrap();
         assert_eq!(
-            decrypt_record(&serde_json::to_vec(&future).unwrap(), &binding, &key).err(),
+            read_record(&path, &binding, &key).err(),
             Some(DraftError::FutureVersion)
         );
+        fs::write(&path, b"{broken").unwrap();
         assert_eq!(
-            decrypt_record(b"{broken", &binding, &key).err(),
+            read_record(&path, &binding, &key).err(),
             Some(DraftError::Corrupt)
+        );
+    }
+
+    #[test]
+    fn stores_large_image_bytes_compactly_in_the_encrypted_record_body() {
+        let image_bytes = 1024 * 1024;
+        let record = StoredDraftRecord {
+            version: RECORD_VERSION,
+            draft_id: Uuid::now_v7().to_string(),
+            revision: 1,
+            submission_idempotency_key: Uuid::now_v7().to_string(),
+            created_at_unix_ms: 1,
+            updated_at_unix_ms: 1,
+            content: StoredDraftContent {
+                title: String::new(),
+                body: String::new(),
+                preset_id: None,
+                preset_revision: None,
+                destination_id: None,
+                repository_definition_id: None,
+                environment: Vec::new(),
+                url: None,
+                dom: Vec::new(),
+                images: vec![StoredDraftImage {
+                    image_id: "image-1".to_owned(),
+                    original: EncodedImage {
+                        media_type: ImageMediaType::Png,
+                        bytes: vec![7_u8; image_bytes],
+                    },
+                    operations_json: "[]".to_owned(),
+                    output_media_type: ImageMediaType::Png,
+                }],
+            },
+        };
+        let encrypted = encrypt_record(
+            &record,
+            &access("account-a", true).account_binding,
+            &[7_u8; 32],
+        )
+        .unwrap();
+
+        assert!(encrypted.ciphertext.len() < image_bytes + 100_000);
+    }
+
+    #[test]
+    fn listing_decrypts_only_the_summary_header() {
+        let state = state("summary-only-list");
+        let composer = ComposerCore::default();
+        let draft_id = Uuid::now_v7().to_string();
+        let account = access("account-a", true);
+        state
+            .save(&account, &composer, request(&composer, &draft_id))
+            .unwrap();
+        let path = state
+            .draft_path(&account.account_binding, &draft_id)
+            .unwrap();
+        let (header, file) = open_encrypted_record(&path, &account.account_binding).unwrap();
+        let body_offset = ENVELOPE_MAGIC.len()
+            + ENVELOPE_HEADER_LENGTH_BYTES
+            + serde_json::to_vec(&header).unwrap().len();
+        drop(file);
+        let mut encrypted = fs::read(&path).unwrap();
+        encrypted[body_offset] ^= 0xff;
+        fs::write(&path, encrypted).unwrap();
+
+        assert_eq!(state.list(&account).unwrap().len(), 1);
+        assert_eq!(
+            state
+                .load(
+                    &account,
+                    &ComposerCore::default(),
+                    &draft_id,
+                    "load-session"
+                )
+                .err(),
+            Some(DraftError::AccountLocked)
         );
     }
 

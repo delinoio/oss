@@ -22,6 +22,7 @@ tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba
 
 [dependencies]
 base64 = "0.22"
+bincode = { version = "2", features = ["serde"] }
 getrandom = "0.3"
 hmac = "0.12"
 http = "1"

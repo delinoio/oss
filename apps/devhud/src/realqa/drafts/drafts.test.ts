@@ -145,6 +145,9 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     String.raw`\Qliteral\E`,
     "[a-z&&[^x]]",
     "a{101}",
+    "(a+)+$",
+    "(?:a|aa)+$",
+    "([a-z]*)*$",
   ])("rejects unsupported shared-regex syntax %s", (pattern) => {
     expect(
       validateRealQaProcessUrlRules([

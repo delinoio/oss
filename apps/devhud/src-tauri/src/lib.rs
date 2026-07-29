@@ -3004,19 +3004,22 @@ fn realqa_save_local_draft(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_load_local_draft(
+async fn realqa_load_local_draft(
     draft_id: String,
     composer_session_id: String,
-    auth_state: State<'_, auth_native::NativeAuthState>,
-    drafts: State<'_, realqa_drafts::RealQaDraftState>,
-    composer: State<'_, realqa_capture::ComposerCore>,
+    app: AppHandle<ActiveRuntime>,
 ) -> Result<realqa_drafts::LoadedDraft, realqa_drafts::DraftError> {
-    drafts.load(
-        &realqa_draft_access(&auth_state)?,
-        &composer,
-        &draft_id,
-        &composer_session_id,
-    )
+    let access = realqa_draft_access(&app.state::<auth_native::NativeAuthState>())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<realqa_drafts::RealQaDraftState>().load(
+            &access,
+            &app.state::<realqa_capture::ComposerCore>(),
+            &draft_id,
+            &composer_session_id,
+        )
+    })
+    .await
+    .map_err(|_| realqa_drafts::DraftError::StorageUnavailable)?
 }
 
 #[cfg(all(
