@@ -591,6 +591,37 @@ func (store *Store) UpdateView(
 	}
 	var updated dbgen.DeckView
 	err = store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		stored, storedErr := queries.GetView(ctx, pgUUID(id))
+		if errors.Is(storedErr, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if storedErr != nil {
+			return storedErr
+		}
+		ownerID := ownerIDFromViewRow(stored)
+		ownerHash := store.hasher.Sum(
+			"owner",
+			deckv1.OwnerScope(stored.OwnerScope).String()+":"+ownerID.String(),
+		)
+		if err := queries.EnsureOwnerLock(ctx, ownerHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockOwner(ctx, ownerHash[:]); err != nil {
+			return err
+		}
+		connectionState := int16(
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED)
+		connection, connectionErr :=
+			queries.GetGitHubConnectionByOwnerForUpdate(
+				ctx, dbgen.GetGitHubConnectionByOwnerForUpdateParams{
+					OwnerScope: stored.OwnerScope,
+					OwnerID:    ownerID,
+				})
+		if connectionErr == nil {
+			connectionState = connection.State
+		} else if !errors.Is(connectionErr, pgx.ErrNoRows) {
+			return connectionErr
+		}
 		updated, err = queries.UpdateView(ctx, dbgen.UpdateViewParams{
 			BillingOrganizationID:        row.BillingOrganizationID,
 			BillingTeamID:                row.BillingTeamID,
@@ -599,6 +630,7 @@ func (store *Store) UpdateView(
 			Sort:                         row.Sort,
 			Grouping:                     row.Grouping,
 			NotificationCiphertext:       row.NotificationCiphertext,
+			ConnectionState:              connectionState,
 			RepositoryAuthorizationIndex: row.RepositoryAuthorizationIndex,
 			UpdatedAt:                    pgTime(now),
 			ViewID:                       pgUUID(id),

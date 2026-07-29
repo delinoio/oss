@@ -595,12 +595,17 @@ SET billing_organization_id = $1,
     sort = $5,
     grouping = $6,
     notification_ciphertext = $7,
+    connection_state = CASE
+        WHEN repository_authorization_index IS NULL
+            THEN $8
+        ELSE connection_state
+    END,
     repository_authorization_index =
-        $8,
+        $9,
     revision = revision + 1,
-    updated_at = $9
-WHERE view_id = $10
-  AND revision = $11
+    updated_at = $10
+WHERE view_id = $11
+  AND revision = $12
 RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index
 `
 
@@ -612,6 +617,7 @@ type UpdateViewParams struct {
 	Sort                         int16
 	Grouping                     int16
 	NotificationCiphertext       []byte
+	ConnectionState              int16
 	RepositoryAuthorizationIndex []byte
 	UpdatedAt                    pgtype.Timestamptz
 	ViewID                       pgtype.UUID
@@ -627,6 +633,7 @@ func (q *Queries) UpdateView(ctx context.Context, arg UpdateViewParams) (DeckVie
 		arg.Sort,
 		arg.Grouping,
 		arg.NotificationCiphertext,
+		arg.ConnectionState,
 		arg.RepositoryAuthorizationIndex,
 		arg.UpdatedAt,
 		arg.ViewID,

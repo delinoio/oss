@@ -656,6 +656,24 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		connection.Installation.Permissions.Contents != deckgithub.PermissionWrite {
 		t.Fatalf("GitHub connection = %#v err=%v", connection, err)
 	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_views
+		SET repository_authorization_index = NULL, connection_state = 1
+		WHERE view_id = $1`,
+		pgUUID(firstViewID)); err != nil {
+		t.Fatal(err)
+	}
+	preIndexView, err := store.GetView(ctx, firstViewID)
+	if err != nil {
+		t.Fatalf("pre-index view: %v", err)
+	}
+	reindexedView, err := store.UpdateView(
+		ctx, firstViewID, 4, preIndexView, false, now.Add(95*time.Second))
+	if err != nil || reindexedView.Revision.GetValue() != 5 ||
+		reindexedView.ConnectionState !=
+			deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		t.Fatalf("reindexed view = %#v err=%v", reindexedView, err)
+	}
 	refreshedCredential := credential
 	refreshedCredential.AccessToken = "ghu_database_refreshed"
 	refreshedCredential.RefreshToken = "ghr_database_refreshed"
@@ -1170,8 +1188,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	first.Query = updatedQuery
 	updated, err = store.UpdateView(
-		ctx, firstViewID, 5, first, true, now.Add(4*time.Minute))
-	if err != nil || updated.Revision.GetValue() != 6 {
+		ctx, firstViewID, 6, first, true, now.Add(4*time.Minute))
+	if err != nil || updated.Revision.GetValue() != 7 {
 		t.Fatalf("query update with widget = %#v %v", updated, err)
 	}
 	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(5*time.Minute))
@@ -1185,8 +1203,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("widget snapshot survived query update: %#v", device.Device)
 	}
 	if deletedRevision, err := store.DeleteView(
-		ctx, firstViewID, 6, now.Add(6*time.Minute)); err != nil ||
-		deletedRevision != 6 {
+		ctx, firstViewID, 7, now.Add(6*time.Minute)); err != nil ||
+		deletedRevision != 7 {
 		t.Fatalf("delete view = revision=%d err=%v", deletedRevision, err)
 	}
 	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(7*time.Minute))

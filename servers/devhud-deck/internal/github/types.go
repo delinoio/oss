@@ -316,6 +316,9 @@ type ActionMetadata struct {
 	MergeConflicting bool
 	ReviewDecision   ReviewDecision
 	ChecksState      ChecksState
+	PendingChecks    uint32
+	SuccessfulChecks uint32
+	FailedChecks     uint32
 }
 
 type MutationResult struct {

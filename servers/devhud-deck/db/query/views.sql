@@ -88,6 +88,11 @@ SET billing_organization_id = sqlc.narg(billing_organization_id),
     sort = sqlc.arg(sort),
     grouping = sqlc.arg(grouping),
     notification_ciphertext = sqlc.arg(notification_ciphertext),
+    connection_state = CASE
+        WHEN repository_authorization_index IS NULL
+            THEN sqlc.arg(connection_state)
+        ELSE connection_state
+    END,
     repository_authorization_index =
         sqlc.arg(repository_authorization_index),
     revision = revision + 1,

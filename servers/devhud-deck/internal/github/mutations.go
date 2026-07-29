@@ -90,11 +90,20 @@ func (client *Client) completeMutationMetadata(
 	credential Credential,
 	metadata ActionMetadata,
 ) (ActionMetadata, error) {
+	type stateCount struct {
+		State string `json:"state"`
+		Count uint32 `json:"count"`
+	}
 	var data struct {
 		Node *struct {
 			ReviewDecision    string `json:"reviewDecision"`
 			StatusCheckRollup *struct {
-				State string `json:"state"`
+				State    string `json:"state"`
+				Contexts struct {
+					TotalCount                 uint32       `json:"totalCount"`
+					CheckRunCountsByState      []stateCount `json:"checkRunCountsByState"`
+					StatusContextCountsByState []stateCount `json:"statusContextCountsByState"`
+				} `json:"contexts"`
 			} `json:"statusCheckRollup"`
 		} `json:"node"`
 	}
@@ -103,7 +112,14 @@ query($id:ID!){
   node(id:$id){
     ... on PullRequest{
       reviewDecision
-      statusCheckRollup{state}
+      statusCheckRollup{
+        state
+        contexts{
+          totalCount
+          checkRunCountsByState{state count}
+          statusContextCountsByState{state count}
+        }
+      }
     }
   }
 }`, map[string]any{"id": metadata.NodeID}, &data)
@@ -126,6 +142,35 @@ query($id:ID!){
 	if rollup == nil {
 		metadata.ChecksState = ChecksStateUnknown
 		return metadata, nil
+	}
+	metadata.PendingChecks = 0
+	metadata.SuccessfulChecks = 0
+	metadata.FailedChecks = 0
+	counts := append(
+		append([]stateCount(nil), rollup.Contexts.CheckRunCountsByState...),
+		rollup.Contexts.StatusContextCountsByState...)
+	for _, count := range counts {
+		var target *uint32
+		switch strings.ToUpper(count.State) {
+		case "EXPECTED", "IN_PROGRESS", "PENDING", "QUEUED", "REQUESTED", "WAITING":
+			target = &metadata.PendingChecks
+		case "NEUTRAL", "SKIPPED", "SUCCESS":
+			target = &metadata.SuccessfulChecks
+		case "ACTION_REQUIRED", "CANCELLED", "ERROR", "FAILURE", "STALE",
+			"STARTUP_FAILURE", "TIMED_OUT":
+			target = &metadata.FailedChecks
+		default:
+			return ActionMetadata{}, ErrProvider
+		}
+		if count.Count > ^uint32(0)-*target {
+			return ActionMetadata{}, ErrProvider
+		}
+		*target += count.Count
+	}
+	counted := uint64(metadata.PendingChecks) +
+		uint64(metadata.SuccessfulChecks) + uint64(metadata.FailedChecks)
+	if counted != uint64(rollup.Contexts.TotalCount) {
+		return ActionMetadata{}, ErrProvider
 	}
 	switch strings.ToUpper(rollup.State) {
 	case "EXPECTED", "PENDING":

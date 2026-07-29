@@ -385,6 +385,9 @@ func (service *View) pullRequestDetail(
 			deckgithub.ChecksStateSuccess: deckv1.ChecksState_CHECKS_STATE_SUCCESS,
 			deckgithub.ChecksStateFailure: deckv1.ChecksState_CHECKS_STATE_FAILURE,
 		}[metadata.ChecksState],
+		PendingCount: metadata.PendingChecks,
+		SuccessCount: metadata.SuccessfulChecks,
+		FailureCount: metadata.FailedChecks,
 	}
 	result.IsDraft = metadata.IsDraft
 	result.LifecycleState = lifecycle

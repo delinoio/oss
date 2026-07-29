@@ -34,7 +34,10 @@ func TestPullRequestDetailUsesCompleteRefreshedRow(t *testing.T) {
 		Author:         &deckv1.PullRequestAuthor{Login: "stored-author"},
 		ReviewDecision: deckv1.ReviewDecision_REVIEW_DECISION_APPROVED,
 		Checks: &deckv1.CheckSummary{
-			State: deckv1.ChecksState_CHECKS_STATE_SUCCESS,
+			State:        deckv1.ChecksState_CHECKS_STATE_SUCCESS,
+			PendingCount: 7,
+			SuccessCount: 8,
+			FailureCount: 9,
 		},
 		UpdatedAt: timestamppb.New(time.Date(
 			2026, 1, 1, 0, 0, 0, 0, time.UTC)),
@@ -55,12 +58,15 @@ func TestPullRequestDetailUsesCompleteRefreshedRow(t *testing.T) {
 			ReviewerTeams: []deckgithub.Team{{
 				Organization: "acme", Slug: "core",
 			}},
-			Assignees:      []deckgithub.User{{Login: "current-assignee"}},
-			Labels:         []string{"current-label"},
-			ReviewDecision: deckgithub.ReviewDecisionChangesRequested,
-			ChecksState:    deckgithub.ChecksStateFailure,
-			IsOpen:         true,
-			Mergeable:      true,
+			Assignees:        []deckgithub.User{{Login: "current-assignee"}},
+			Labels:           []string{"current-label"},
+			ReviewDecision:   deckgithub.ReviewDecisionChangesRequested,
+			ChecksState:      deckgithub.ChecksStateFailure,
+			PendingChecks:    1,
+			SuccessfulChecks: 2,
+			FailedChecks:     3,
+			IsOpen:           true,
+			Mergeable:        true,
 			Supported: map[deckgithub.MutationKind]bool{
 				deckgithub.MutationAddLabels: true,
 			},
@@ -75,6 +81,9 @@ func TestPullRequestDetailUsesCompleteRefreshedRow(t *testing.T) {
 		result.ReviewDecision !=
 			deckv1.ReviewDecision_REVIEW_DECISION_CHANGES_REQUESTED ||
 		result.Checks.GetState() != deckv1.ChecksState_CHECKS_STATE_FAILURE ||
+		result.Checks.GetPendingCount() != 1 ||
+		result.Checks.GetSuccessCount() != 2 ||
+		result.Checks.GetFailureCount() != 3 ||
 		len(result.Reviewers) != 2 ||
 		result.Reviewers[0].GetUser().GetLogin() != "reviewer" ||
 		result.Reviewers[1].GetTeam().GetSlug() != "core" ||
