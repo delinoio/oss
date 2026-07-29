@@ -1575,7 +1575,23 @@ fn get_runtime_info(
     if std::env::var_os("DEVHUD_SMOKE").is_some_and(|value| value == "1") {
         let app = _app.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(1));
+            // CEF can still be initializing renderer frames when the frontend
+            // invokes this command on Windows. Keep the hosted-runner delay
+            // until a renderer-ready lifecycle signal is available.
+            let shutdown_delay = if cfg!(target_os = "windows") {
+                Duration::from_secs(10)
+            } else {
+                Duration::from_secs(1)
+            };
+            std::thread::sleep(shutdown_delay);
+            if cfg!(target_os = "windows")
+                && std::env::var_os("GITHUB_ACTIONS").is_some_and(|value| value == "true")
+            {
+                // GPU-less GitHub-hosted Windows runners can access-violate
+                // inside CEF after the requested shutdown. This exact marker
+                // lets the smoke distinguish that teardown from an app crash.
+                eprintln!(r#"{{"eventId":"smoke-shutdown-requested"}}"#);
+            }
             #[cfg(all(
                 feature = "desktop-cef",
                 not(any(target_os = "android", target_os = "ios"))
@@ -3047,11 +3063,16 @@ async fn realqa_begin_capture(
     request: realqa_capture::CaptureRequest,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
-    let capture_core = state.inner().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || capture_core.begin(request))
-        .await
-        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
-        .and_then(|result| result);
+    let result = match state.prepare_begin(&request) {
+        Ok(()) => {
+            let capture_core = state.inner().clone();
+            tauri::async_runtime::spawn_blocking(move || capture_core.begin_prepared(request))
+                .await
+                .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+                .and_then(|result| result)
+        }
+        Err(failure) => Err(failure),
+    };
     realqa_capture::record_outcome(&result);
     result
 }
@@ -3375,6 +3396,13 @@ fn platform_builder() -> Result<tauri::Builder<ActiveRuntime>, RuntimeInitializa
             Some("MAP * ~NOTFOUND, EXCLUDE tauri.localhost"),
         ),
     ]);
+    if cfg!(target_os = "windows")
+        && std::env::var_os("DEVHUD_SMOKE").is_some_and(|value| value == "1")
+    {
+        // GitHub-hosted Windows runners have no usable GPU; keep the smoke
+        // focused on lifecycle behavior until it runs on GPU-backed hosts.
+        arguments.push(("--disable-gpu", None));
+    }
     Ok(tauri::Builder::<ActiveRuntime>::new()
         .root_cache_path(profile)
         .command_line_args(arguments))
