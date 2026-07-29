@@ -327,7 +327,12 @@ func (store *Store) ConnectGitHub(
 					return err
 				}
 			}
-			if githubProviderChanged(existing, installation) {
+			providerChanged, err := store.githubProviderChanged(
+				existing, installation)
+			if err != nil {
+				return err
+			}
+			if providerChanged {
 				if err := store.cleanupGitHubOwner(
 					ctx, queries, existing.OwnerScope,
 					uuidValue(existing.OwnerID), now, true, false); err != nil {
@@ -402,11 +407,11 @@ func githubInstallationChanged(
 		existing.GithubAccountKind.Int16 != int16(installation.AccountKind)
 }
 
-func githubProviderChanged(
+func (store *Store) githubProviderChanged(
 	existing dbgen.DeckConnection,
 	installation deckgithub.Installation,
-) bool {
-	return githubInstallationChanged(existing, installation) ||
+) (bool, error) {
+	if githubInstallationChanged(existing, installation) ||
 		!existing.GithubMetadataPermission.Valid ||
 		existing.GithubMetadataPermission.Int16 != int16(installation.Permissions.Metadata) ||
 		!existing.GithubContentsPermission.Valid ||
@@ -417,7 +422,18 @@ func githubProviderChanged(
 		!existing.GithubChecksPermission.Valid ||
 		existing.GithubChecksPermission.Int16 != int16(installation.Permissions.Checks) ||
 		!existing.GithubMembersPermission.Valid ||
-		existing.GithubMembersPermission.Int16 != int16(installation.Permissions.Members)
+		existing.GithubMembersPermission.Int16 != int16(installation.Permissions.Members) {
+		return true, nil
+	}
+	if len(existing.GithubAccountLoginCiphertext) == 0 {
+		return true, nil
+	}
+	login, err := store.cipher.Open(
+		"github-account-login", existing.GithubAccountLoginCiphertext)
+	if err != nil {
+		return false, err
+	}
+	return !strings.EqualFold(string(login), installation.AccountLogin), nil
 }
 
 func githubConnectionValues(
