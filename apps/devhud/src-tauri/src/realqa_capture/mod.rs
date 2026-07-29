@@ -510,6 +510,50 @@ impl CaptureCore {
         })
     }
 
+    pub(crate) fn begin_browser_fallback(
+        &self,
+        session_id: CaptureSessionId,
+    ) -> Result<CaptureResult, CaptureFailure> {
+        let permission = match self.permission_status()?.permission {
+            CapturePermission::PromptRequired => self.request_permission()?.permission,
+            permission => permission,
+        };
+        match permission {
+            CapturePermission::Granted => {}
+            CapturePermission::PromptRequired => {
+                return Err(CaptureFailure::PermissionRequired);
+            }
+            CapturePermission::Denied => return Err(CaptureFailure::PermissionDenied),
+        }
+
+        let catalog = self.source_catalog()?;
+        let display_capability = catalog
+            .capabilities
+            .mode(CaptureMode::Display)
+            .ok_or(CaptureFailure::ModeUnavailable)?;
+        if !display_capability
+            .pointer_options
+            .contains(&PointerInclusion::Exclude)
+        {
+            return Err(CaptureFailure::ModeUnavailable);
+        }
+        let display_id = catalog
+            .snapshot
+            .displays
+            .iter()
+            .find(|display| display.primary)
+            .or_else(|| catalog.snapshot.displays.first())
+            .map(|display| display.id.clone())
+            .ok_or(CaptureFailure::InvalidDisplaySnapshot)?;
+        self.begin(CaptureRequest {
+            session_id,
+            snapshot_id: catalog.snapshot.snapshot_id,
+            source: CaptureSourceSelection::Display { display_id },
+            pointer: PointerInclusion::Exclude,
+            output_media_type: ImageMediaType::Png,
+        })
+    }
+
     pub(crate) fn permission_status(&self) -> Result<CapturePermissionStatus, CaptureFailure> {
         self.backend
             .permission_status()
@@ -1316,6 +1360,32 @@ mod tests {
             core.cancel(&CaptureSessionId("session-1".to_owned()))
                 .expect("fixture cancellation must work");
         }
+    }
+
+    #[test]
+    fn browser_fallback_captures_the_primary_display_without_the_pointer() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
+        let core = CaptureCore::new(backend.clone());
+
+        let result = core
+            .begin_browser_fallback(CaptureSessionId("realqa-browser-capture".to_owned()))
+            .expect("browser fallback must capture");
+
+        assert_eq!(result.mode, CaptureMode::Display);
+        assert_eq!(result.pointer, PointerInclusion::Exclude);
+        let request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .as_ref()
+            .cloned()
+            .expect("capture request must reach the backend");
+        assert_eq!(
+            request.source,
+            CaptureSourceSelection::Display {
+                display_id: DisplayId("display-1".to_owned()),
+            }
+        );
     }
 
     #[test]

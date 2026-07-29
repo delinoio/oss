@@ -24,6 +24,7 @@ const COMMANDS: &[&str] = &[
     "realqa_list_capture_sources",
     "realqa_adjust_capture_selection",
     "realqa_begin_capture",
+    "realqa_begin_browser_fallback_capture",
     "realqa_cancel_capture",
     "realqa_composer_accept_image",
     "realqa_composer_flatten_image",

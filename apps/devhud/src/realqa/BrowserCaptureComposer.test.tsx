@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { takeBrowserCapture } from "./browserCapture";
@@ -6,8 +6,10 @@ import { BrowserCaptureComposer } from "./BrowserCaptureComposer";
 import {
   ImageMediaType,
   type ApprovedComposerImage,
+  CaptureMode,
   type ComposerImage,
-  type RealQaComposerBridge,
+  PointerInclusion,
+  type RealQaBrowserComposerBridge,
 } from "./capture";
 
 vi.mock("./browserCapture", () => ({
@@ -30,7 +32,19 @@ const source: ComposerImage = {
     bytes: [137, 80, 78, 71, 13, 10, 26, 10],
   },
 };
-const composerBridge: RealQaComposerBridge = {
+const composerBridge: RealQaBrowserComposerBridge = {
+  captureBrowserFallback: vi.fn(async () => ({
+    mode: CaptureMode.Display,
+    pointer: PointerInclusion.Exclude,
+    logicalBounds: { x: 0, y: 0, width: 100, height: 80 },
+    pixelRegions: [
+      {
+        displayId: "display-1",
+        pixels: { x: 0, y: 0, width: 100, height: 80 },
+      },
+    ],
+    image: source.image,
+  })),
   acceptImage: vi.fn(async () => source),
   flattenImage: vi.fn(
     async () => source as unknown as ApprovedComposerImage,
@@ -60,6 +74,13 @@ describe("BrowserCaptureComposer", () => {
         base64: "iVBORw0KGgo=",
         encodedBytes: 8,
       },
+      selection: {
+        selector: "main > button#submit",
+        tag: "button",
+        role: "button",
+        accessibleName: "Submit report",
+        boundary: { x: 10, y: 20, width: 30, height: 40 },
+      },
     });
 
     render(<BrowserCaptureComposer composerBridge={composerBridge} />);
@@ -68,6 +89,11 @@ describe("BrowserCaptureComposer", () => {
     expect(
       screen.getByRole("application", { name: /Screenshot editor canvas/u }),
     ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Submit report" }),
+    ).toBeVisible();
+    expect(screen.getByText("main > button#submit")).toBeVisible();
+    expect(screen.getByText("30 × 40 at 10, 20")).toBeVisible();
     expect(composerBridge.acceptImage).toHaveBeenCalledWith({
       sessionId: "realqa-browser-capture",
       imageId: "019a97f3-cb9d-7c44-a7b2-2514486e42b1",
@@ -79,7 +105,7 @@ describe("BrowserCaptureComposer", () => {
     });
   });
 
-  it("drains a later capture when the native listener signals availability", async () => {
+  it("starts native capture for a restricted browser page", async () => {
     takeBrowserCaptureMock.mockResolvedValue(null);
 
     render(<BrowserCaptureComposer composerBridge={composerBridge} />);
@@ -101,10 +127,26 @@ describe("BrowserCaptureComposer", () => {
     });
 
     expect(
-      await screen.findByText(
-        "Chrome requested the native OS capture flow for this page.",
-      ),
+      await screen.findByRole("button", { name: "Capture primary display" }),
     ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Capture primary display" }),
+    );
+
+    expect(
+      await screen.findByRole("application", {
+        name: /Screenshot editor canvas/u,
+      }),
+    ).toBeVisible();
+    expect(composerBridge.captureBrowserFallback).toHaveBeenCalledWith(
+      "realqa-browser-capture",
+    );
+    expect(composerBridge.acceptImage).toHaveBeenCalledWith({
+      sessionId: "realqa-browser-capture",
+      imageId: "019a97f3-cb9d-7c44-a7b2-2514486e42b2",
+      image: source.image,
+      outputMediaType: ImageMediaType.Png,
+    });
     expect(takeBrowserCaptureMock.mock.calls.length).toBeGreaterThan(
       initialCalls,
     );

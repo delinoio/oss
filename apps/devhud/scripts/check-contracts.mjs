@@ -295,6 +295,7 @@ const expectedRealqaComposerPermissions = [
   "allow-realqa-composer-flatten-image",
   "allow-realqa-composer-remove-image",
   "allow-realqa-composer-reset-session",
+  "allow-realqa-begin-browser-fallback-capture",
   "allow-realqa-take-browser-capture",
 ];
 requireCondition(

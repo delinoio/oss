@@ -338,6 +338,10 @@ export interface RealQaComposerBridge {
   resetSession(sessionId: string): Promise<void>;
 }
 
+export interface RealQaBrowserComposerBridge extends RealQaComposerBridge {
+  captureBrowserFallback(sessionId: string): Promise<CaptureResult>;
+}
+
 export function createRealQaCaptureBridge(
   invokeCommand: InvokeCommand = invoke,
 ): RealQaCaptureBridge {
@@ -370,8 +374,12 @@ export function createRealQaCaptureBridge(
 
 export function createRealQaComposerBridge(
   invokeCommand: InvokeCommand = invoke,
-): RealQaComposerBridge {
+): RealQaBrowserComposerBridge {
   return {
+    captureBrowserFallback: (sessionId) =>
+      invokeCommand<CaptureResult>("realqa_begin_browser_fallback_capture", {
+        sessionId,
+      }),
     acceptImage: (request) =>
       invokeCommand<ComposerImage>("realqa_composer_accept_image", { request }),
     flattenImage: async (request) =>

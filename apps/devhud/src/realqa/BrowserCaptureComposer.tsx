@@ -3,13 +3,14 @@ import { useCallback, useEffect, useState } from "react";
 import {
   takeBrowserCapture,
   type BrowserCapture,
+  type BrowserDomSelection,
   type BrowserPageMetadata,
 } from "./browserCapture";
 import {
   createRealQaComposerBridge,
   ImageMediaType,
   type ComposerImage,
-  type RealQaComposerBridge,
+  type RealQaBrowserComposerBridge,
 } from "./capture";
 import { ScreenshotEditor } from "./editor/ScreenshotEditor";
 
@@ -19,12 +20,19 @@ type ComposerState =
   | { readonly status: "failed" }
   | {
       readonly status: "os-capture";
+      readonly imageId: string;
+      readonly page?: BrowserPageMetadata;
+    }
+  | {
+      readonly status: "os-capturing";
+      readonly imageId: string;
       readonly page?: BrowserPageMetadata;
     }
   | {
       readonly status: "ready";
       readonly imageId: string;
       readonly page?: BrowserPageMetadata;
+      readonly selection?: BrowserDomSelection;
       readonly source: ComposerImage;
     };
 
@@ -40,10 +48,59 @@ function decodePngCapture(capture: BrowserCapture): readonly number[] {
   );
 }
 
+function DomSelectionSummary({
+  selection,
+}: {
+  readonly selection: BrowserDomSelection;
+}) {
+  return (
+    <section
+      aria-labelledby="realqa-dom-selection-title"
+      className="browser-selection"
+    >
+      <p className="eyebrow">DOM target</p>
+      <h2 id="realqa-dom-selection-title">
+        {selection.accessibleName ?? selection.tag ?? "Selected element"}
+      </h2>
+      <dl>
+        {selection.selector === undefined ? null : (
+          <div>
+            <dt>Selector</dt>
+            <dd>
+              <code>{selection.selector}</code>
+            </dd>
+          </div>
+        )}
+        {selection.tag === undefined ? null : (
+          <div>
+            <dt>Element</dt>
+            <dd>{selection.tag}</dd>
+          </div>
+        )}
+        {selection.role === undefined ? null : (
+          <div>
+            <dt>Role</dt>
+            <dd>{selection.role}</dd>
+          </div>
+        )}
+        {selection.boundary === undefined ? null : (
+          <div>
+            <dt>Viewport boundary</dt>
+            <dd>
+              {selection.boundary.width} × {selection.boundary.height} at{" "}
+              {selection.boundary.x}, {selection.boundary.y}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </section>
+  );
+}
+
 export function BrowserCaptureComposer({
   composerBridge = defaultComposerBridge,
 }: {
-  readonly composerBridge?: RealQaComposerBridge;
+  readonly composerBridge?: RealQaBrowserComposerBridge;
 }) {
   const [state, setState] = useState<ComposerState>({ status: "loading" });
   const loadCapture = useCallback(async () => {
@@ -55,7 +112,11 @@ export function BrowserCaptureComposer({
       }
       await composerBridge.resetSession(browserSessionId);
       if (capture.image === undefined) {
-        setState({ status: "os-capture", page: capture.page });
+        setState({
+          status: "os-capture",
+          imageId: capture.requestId,
+          page: capture.page,
+        });
         return;
       }
       const source = await composerBridge.acceptImage({
@@ -71,12 +132,39 @@ export function BrowserCaptureComposer({
         status: "ready",
         imageId: capture.requestId,
         page: capture.page,
+        selection: capture.selection,
         source,
       });
     } catch {
       setState({ status: "failed" });
     }
   }, [composerBridge]);
+  const startOsCapture = useCallback(
+    async ({
+      imageId,
+      page,
+    }: {
+      readonly imageId: string;
+      readonly page?: BrowserPageMetadata;
+    }) => {
+      setState({ status: "os-capturing", imageId, page });
+      try {
+        const capture = await composerBridge.captureBrowserFallback(
+          browserSessionId,
+        );
+        const source = await composerBridge.acceptImage({
+          sessionId: browserSessionId,
+          imageId,
+          image: capture.image,
+          outputMediaType: ImageMediaType.Png,
+        });
+        setState({ status: "ready", imageId, page, source });
+      } catch {
+        setState({ status: "failed" });
+      }
+    },
+    [composerBridge],
+  );
 
   useEffect(() => {
     const handleCapture = () => void loadCapture();
@@ -128,7 +216,25 @@ export function BrowserCaptureComposer({
             {state.page?.title ?? "Native capture requested"}
           </h1>
           <p role="status">
-            Chrome requested the native OS capture flow for this page.
+            Chrome cannot capture this page directly. Continue with a native
+            capture of the primary display.
+          </p>
+          <button
+            className="primary-button"
+            onClick={() => void startOsCapture(state)}
+            type="button"
+          >
+            Capture primary display
+          </button>
+        </section>
+      ) : null}
+      {state.status === "os-capturing" ? (
+        <section aria-labelledby="realqa-capture-title" className="state-card">
+          <h1 id="realqa-capture-title">
+            {state.page?.title ?? "Native capture in progress"}
+          </h1>
+          <p role="status">
+            Complete the operating system capture prompt to continue.
           </p>
         </section>
       ) : null}
@@ -146,6 +252,9 @@ export function BrowserCaptureComposer({
               <p className="muted">{state.page.url}</p>
             )}
           </div>
+          {state.selection === undefined ? null : (
+            <DomSelectionSummary selection={state.selection} />
+          )}
           <ScreenshotEditor.Provider
             bridge={composerBridge}
             imageId={state.imageId}
