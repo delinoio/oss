@@ -485,6 +485,9 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 				ViewId:   uuidProto(organizationViewID),
 				Family:   deckv1.WidgetFamily_WIDGET_FAMILY_APPLE_SMALL,
 				Privacy:  deckv1.WidgetPrivacy_WIDGET_PRIVACY_COUNTS_ONLY,
+				Snapshot: &deckv1.WidgetSnapshot{
+					Freshness: deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED,
+				},
 			},
 		},
 	}
