@@ -1447,6 +1447,7 @@ export function ScreenshotEditorCanvas() {
         <image
           height={source.height}
           href={sourceUrl}
+          preserveAspectRatio="none"
           width={source.width}
           x="0"
           y="0"

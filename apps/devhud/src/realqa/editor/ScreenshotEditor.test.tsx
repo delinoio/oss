@@ -146,6 +146,22 @@ describe("ScreenshotEditor", () => {
     expect(approvedImagePayload(flattened).bytes).not.toEqual(source.image.bytes);
   });
 
+  it("stretches bounded source previews across native image coordinates", () => {
+    const boundedSource = {
+      ...source,
+      width: 50_000_000,
+      height: 1,
+      previewWidth: 2_048,
+      previewHeight: 1,
+    };
+    const { canvas } = fixture({ initialSource: boundedSource });
+
+    expect(canvas.querySelector("image")).toHaveAttribute(
+      "preserveAspectRatio",
+      "none",
+    );
+  });
+
   it("freezes editing while native approval is in flight", async () => {
     const user = userEvent.setup();
     const { bridge, canvas, flattened, onApprove } = fixture();
