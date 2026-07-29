@@ -143,7 +143,9 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		Services: service.Dependencies{
 			Store: store, GitHub: githubAuthorization,
 			GitHubProvider: githubProvider,
-			Pseudonymizer:  pseudonymizer, Logger: logger,
+			GitHubProjectPermission: github.ProjectPermission(
+				configuration.GitHubProjectPermission),
+			Pseudonymizer: pseudonymizer, Logger: logger,
 		},
 	})
 	if err != nil {

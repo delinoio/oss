@@ -6,6 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
+	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 )
 
 func TestProviderDefinitionUnavailableIsRetryable(t *testing.T) {
@@ -31,4 +32,31 @@ func TestProviderDefinitionUnavailableIsRetryable(t *testing.T) {
 		}
 	}
 	t.Fatal("provider definition failure did not include retryable schema detail")
+}
+
+func TestValidateProjectConfigurationRequiresConfiguredPermission(t *testing.T) {
+	t.Parallel()
+	if err := validateProjectConfiguration(
+		realqagithub.ProjectPermissionNone,
+		[]string{"PVT_fixture"},
+	); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("unconfigured project permission code = %v", connect.CodeOf(err))
+	}
+	for _, permission := range []realqagithub.ProjectPermission{
+		realqagithub.ProjectPermissionRepository,
+		realqagithub.ProjectPermissionOrganization,
+	} {
+		if err := validateProjectConfiguration(
+			permission,
+			[]string{"PVT_fixture"},
+		); err != nil {
+			t.Fatalf("configured project permission %q rejected: %v", permission, err)
+		}
+	}
+	if err := validateProjectConfiguration(
+		realqagithub.ProjectPermissionNone,
+		nil,
+	); err != nil {
+		t.Fatalf("empty project selection rejected: %v", err)
+	}
 }

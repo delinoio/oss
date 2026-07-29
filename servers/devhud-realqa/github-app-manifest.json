@@ -11,7 +11,7 @@
   },
   "public": true,
   "request_oauth_on_install": false,
-  "setup_on_update": false,
+  "setup_on_update": true,
   "default_events": [
     "issues"
   ],

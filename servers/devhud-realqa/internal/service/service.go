@@ -86,13 +86,14 @@ type GitHubProviderAdapter interface {
 }
 
 type Dependencies struct {
-	Store          *database.Store
-	IDs            IDGenerator
-	Clock          Clock
-	GitHub         GitHubAuthorization
-	GitHubProvider GitHubProviderAdapter
-	Pseudonymizer  *safelog.Pseudonymizer
-	Logger         *slog.Logger
+	Store                   *database.Store
+	IDs                     IDGenerator
+	Clock                   Clock
+	GitHub                  GitHubAuthorization
+	GitHubProvider          GitHubProviderAdapter
+	GitHubProjectPermission realqagithub.ProjectPermission
+	Pseudonymizer           *safelog.Pseudonymizer
+	Logger                  *slog.Logger
 }
 
 func (dependencies Dependencies) defaults() Dependencies {
@@ -104,6 +105,9 @@ func (dependencies Dependencies) defaults() Dependencies {
 	}
 	if dependencies.Logger == nil {
 		dependencies.Logger = slog.New(slog.DiscardHandler)
+	}
+	if dependencies.GitHubProjectPermission == "" {
+		dependencies.GitHubProjectPermission = realqagithub.ProjectPermissionNone
 	}
 	return dependencies
 }

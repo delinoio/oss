@@ -286,6 +286,12 @@ func (service *Preset) validateInput(
 		if err != nil {
 			return presetInput{}, err
 		}
+		if err = validateProjectConfiguration(
+			service.dependencies.GitHubProjectPermission,
+			input.projects,
+		); err != nil {
+			return presetInput{}, err
+		}
 	}
 	compiled := make([]rules.Rule, 0, len(input.ruleValues))
 	for _, value := range input.ruleValues {
@@ -315,6 +321,21 @@ func (service *Preset) validateInput(
 		}
 	}
 	return input, nil
+}
+
+func validateProjectConfiguration(
+	permission realqagithub.ProjectPermission,
+	projectNodeIDs []string,
+) error {
+	if len(projectNodeIDs) == 0 {
+		return nil
+	}
+	if permission != realqagithub.ProjectPermissionRepository &&
+		permission != realqagithub.ProjectPermissionOrganization {
+		return invalid(
+			realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	return nil
 }
 
 func (service *Preset) refreshProviderSelection(

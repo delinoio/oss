@@ -106,6 +106,16 @@ func (store *PostgresCallbackStore) ConnectUser(
 			if err != nil {
 				return err
 			}
+			connection, err := queries.GetGitHubConnectionForOwner(
+				ctx, dbgen.GetGitHubConnectionForOwnerParams{
+					OwnerKind: string(owner.Kind),
+					OwnerID:   providerPGUUID(owner.ID),
+				})
+			if err != nil {
+				return err
+			}
+			replaceInstallations := installationID == 0 ||
+				connection.State != "connected"
 			if installationID > 0 {
 				if err = bindInstallation(
 					ctx, queries, owner, installationID, bindingID,
@@ -184,7 +194,7 @@ func (store *PostgresCallbackStore) ConnectUser(
 				return errors.New(
 					"realqa github: no authorized installation matched the owner")
 			}
-			if installationID == 0 {
+			if replaceInstallations {
 				_, err = queries.SuspendUnauthorizedGitHubInstallations(
 					ctx, dbgen.SuspendUnauthorizedGitHubInstallationsParams{
 						OwnerKind:                 string(owner.Kind),

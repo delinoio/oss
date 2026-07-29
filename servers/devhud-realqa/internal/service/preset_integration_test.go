@@ -20,6 +20,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -371,6 +372,73 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("single-installation setup suspended an existing installation: %q",
 			callbackInstallationState)
 	}
+	reconnectStateDigest := sha256.Sum256([]byte("reconnect setup callback state"))
+	currentConnection, err := store.Queries().GetGitHubConnectionForOwner(
+		ctx, dbgen.GetGitHubConnectionForOwnerParams{
+			OwnerKind: "organization", OwnerID: toPGUUID(callbackOwnerID),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Queries().DisconnectGitHubConnection(
+		ctx, dbgen.DisconnectGitHubConnectionParams{
+			OwnerKind:        "organization",
+			OwnerID:          toPGUUID(callbackOwnerID),
+			ExpectedRevision: currentConnection.Revision,
+		}); err != nil {
+		t.Fatal(err)
+	}
+	startedConnection, err := store.Queries().StartGitHubConnection(
+		ctx, dbgen.StartGitHubConnectionParams{
+			ID:               toPGUUID(uuidv7.MustNew()),
+			OwnerKind:        "organization",
+			OwnerID:          toPGUUID(callbackOwnerID),
+			OauthStateDigest: reconnectStateDigest[:],
+			OauthStateExpiresAt: pgtype.Timestamptz{
+				Time: time.Now().UTC().Add(10 * time.Minute), Valid: true,
+			},
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if startedConnection.State != "pending" {
+		t.Fatalf("disconnected reconnect state = %q", startedConnection.State)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		reconnectStateDigest[:],
+		realqagithub.UserIdentity{ID: 7, Login: "fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{1}, WrappedDataKey: []byte{2}, KeyID: "fixture-key",
+		},
+		761,
+		[]realqagithub.Installation{{
+			ID: 761, AccountID: 761, AccountLogin: "stale-callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT state FROM realqa_github_installations WHERE id = $1),
+			(SELECT state FROM realqa_github_installations WHERE id = $2)
+	`, callbackInstallationID, staleCallbackInstallationID).Scan(
+		&callbackInstallationState, &staleCallbackInstallationState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if callbackInstallationState != "suspended" ||
+		staleCallbackInstallationState != "active" {
+		t.Fatalf("post-disconnect setup states = stale:%q authorized:%q",
+			callbackInstallationState, staleCallbackInstallationState)
+	}
 	pseudonymizer, err := safelog.NewPseudonymizer(
 		[]byte(strings.Repeat("p", 32)))
 	if err != nil {
@@ -378,6 +446,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	service := NewPreset(Dependencies{
 		Store: store, Pseudonymizer: pseudonymizer,
+		GitHubProjectPermission: realqagithub.ProjectPermissionRepository,
 	})
 	request := fixtureCreatePreset(accountID, organizationID, teamID, installationID)
 	request.Destination.Repository.Owner = "spoofed-owner"
