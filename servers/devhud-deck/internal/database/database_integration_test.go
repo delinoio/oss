@@ -498,22 +498,6 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		connection.Installation.Permissions.Contents != deckgithub.PermissionWrite {
 		t.Fatalf("GitHub connection = %#v err=%v", connection, err)
 	}
-	connectedViewParams := createViewParams(
-		t, hasher, accountID, mustV7(t), mustV7(t), "subject-1",
-		now.Add(90*time.Second), 3)
-	connectedView, replayed, err := store.CreateView(ctx, connectedViewParams)
-	if err != nil || replayed || connectedView.ConnectionState !=
-		deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
-		t.Fatalf("create connected view = %#v replayed=%v err=%v",
-			connectedView, replayed, err)
-	}
-	replayedConnectedView, replayed, err := store.CreateView(
-		ctx, connectedViewParams)
-	if err != nil || !replayed || replayedConnectedView.ConnectionState !=
-		deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
-		t.Fatalf("replay connected view = %#v replayed=%v err=%v",
-			replayedConnectedView, replayed, err)
-	}
 	refreshedCredential := credential
 	refreshedCredential.AccessToken = "ghu_database_refreshed"
 	refreshedCredential.RefreshToken = "ghr_database_refreshed"
@@ -645,6 +629,29 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		organizationConnection.Credential.UserID != organizationCredential.UserID {
 		t.Fatalf("organization GitHub connection = %#v err=%v",
 			organizationConnection, err)
+	}
+	connectedViewParams := createViewParams(
+		t, hasher, accountID, mustV7(t), mustV7(t), "subject-1",
+		now.Add(4*time.Minute), 3)
+	connectedViewParams.View.Owner = &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{OrganizationId: uuidProto(
+			organizationID)},
+	}
+	connectedViewParams.OwnerHash = hasher.Sum(
+		"owner", "OWNER_SCOPE_ORGANIZATION:"+organizationID.String())
+	connectedView, replayed, err := store.CreateView(ctx, connectedViewParams)
+	if err != nil || replayed || connectedView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		t.Fatalf("create connected view = %#v replayed=%v err=%v",
+			connectedView, replayed, err)
+	}
+	replayedConnectedView, replayed, err := store.CreateView(
+		ctx, connectedViewParams)
+	if err != nil || !replayed || replayedConnectedView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		t.Fatalf("replay connected view = %#v replayed=%v err=%v",
+			replayedConnectedView, replayed, err)
 	}
 	if err := store.SyncMemberships(ctx, secondAccountID,
 		[]contracts.Membership{{
