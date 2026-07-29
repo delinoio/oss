@@ -403,6 +403,9 @@ func (service *Submission) FinalizeImageUpload(
 	}
 	defer body.Close()
 	verified, verifyErr := imageassets.Verify(declarationFromRecord(asset), body)
+	if errors.Is(verifyErr, imageassets.ErrSourceRead) {
+		return nil, storageUnavailable()
+	}
 	if verifyErr != nil || object.ContentType != asset.MediaType ||
 		(object.Size >= 0 && object.Size != asset.DeclaredEncodedBytes) {
 		rejectErr := service.dependencies.Store.WithinTransaction(
@@ -1101,9 +1104,22 @@ func (service *Submission) PromoteSubmittedAssets(
 		if err != nil {
 			return err
 		}
-		publicID, err := imageassets.NewPublicID()
-		if err != nil {
-			return err
+		publicID := asset.PublicID.String
+		if !asset.PublicID.Valid {
+			publicID, err = imageassets.NewPublicID()
+			if err != nil {
+				return err
+			}
+			asset, err = service.dependencies.Store.Queries().
+				ReserveAssetPublicID(ctx, dbgen.ReserveAssetPublicIDParams{
+					PublicID:     pgtype.Text{String: publicID, Valid: true},
+					ID:           toPGUUID(assetID),
+					SubmissionID: toPGUUID(submissionID),
+				})
+			if err != nil {
+				return err
+			}
+			publicID = asset.PublicID.String
 		}
 		publicKey := imageassets.PublicObjectKey(publicID)
 		if err = service.dependencies.Objects.Put(
@@ -1251,6 +1267,13 @@ func (service *Submission) RunStagingCleanup(
 	cleanup := func() {
 		if _, err := service.CleanupExpiredStaging(
 			ctx, service.dependencies.Clock.Now().UTC(), 100); err != nil {
+			safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
+				safelog.EventIntegration, safelog.Fields{
+					Decision: safelog.DecisionDeny,
+					Result:   safelog.ResultFailure,
+				})
+		}
+		if _, err := service.DrainObjectDeletions(ctx, 1000); err != nil {
 			safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
 				safelog.EventIntegration, safelog.Fields{
 					Decision: safelog.DecisionDeny,
@@ -1672,7 +1695,11 @@ func (service *Submission) cleanupUnownedVerifiedObject(
 }
 
 func (service *Submission) drainObjectDeletionsBestEffort(ctx context.Context) {
-	if _, err := service.DrainObjectDeletions(ctx, 1000); err != nil {
+	// Request paths get one short opportunistic attempt. The periodic cleanup
+	// worker owns bulk retries so an R2 backlog cannot hold an RPC open.
+	boundedCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if _, err := service.DrainObjectDeletions(boundedCtx, 1); err != nil {
 		safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
 			safelog.EventIntegration, safelog.Fields{
 				Decision: safelog.DecisionDeny,

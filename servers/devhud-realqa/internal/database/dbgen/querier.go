@@ -83,6 +83,7 @@ type Querier interface {
 	Ping(ctx context.Context) (int64, error)
 	PromoteAsset(ctx context.Context, arg PromoteAssetParams) (RealqaAsset, error)
 	RefreshSubmissionAssetState(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error)
+	ReserveAssetPublicID(ctx context.Context, arg ReserveAssetPublicIDParams) (RealqaAsset, error)
 	RetryObjectDeletion(ctx context.Context, arg RetryObjectDeletionParams) error
 	ScopeIsTombstoned(ctx context.Context, arg ScopeIsTombstonedParams) (bool, error)
 	StartGitHubConnection(ctx context.Context, arg StartGitHubConnectionParams) (RealqaGithubConnection, error)

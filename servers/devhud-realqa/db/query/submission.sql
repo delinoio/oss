@@ -211,6 +211,15 @@ WHERE submission.id = sqlc.arg(submission_record_id)
   AND submission.state IN ('draft', 'uploading', 'ready')
 RETURNING *;
 
+-- name: ReserveAssetPublicID :one
+UPDATE realqa_assets
+SET public_id = COALESCE(public_id, sqlc.arg(public_id))
+WHERE id = sqlc.arg(id)
+  AND submission_id = sqlc.arg(submission_id)
+  AND upload_state = 'verified'
+  AND state = 'verified_unlinked'
+RETURNING *;
+
 -- name: PromoteAsset :one
 UPDATE realqa_assets
 SET public_id = sqlc.arg(public_id),

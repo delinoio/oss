@@ -45,6 +45,10 @@ func UploadHandler(
 			http.Error(writer, "upload unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		if err := signer.VerifyRequestShape(request); err != nil {
+			http.NotFound(writer, request)
+			return
+		}
 		digest, err := TokenDigest(request.URL.Path)
 		if err != nil {
 			http.NotFound(writer, request)

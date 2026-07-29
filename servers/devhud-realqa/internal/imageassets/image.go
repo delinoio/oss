@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"image"
 	"image/draw"
 	"image/png"
@@ -37,6 +38,7 @@ var (
 	ErrDecodedTooLarge = errors.New("realqa images: decoded image is too large")
 	ErrChecksum        = errors.New("realqa images: checksum mismatch")
 	ErrDimensions      = errors.New("realqa images: dimensions mismatch")
+	ErrSourceRead      = errors.New("realqa images: source read failed")
 )
 
 type Declaration struct {
@@ -78,7 +80,7 @@ func Verify(declaration Declaration, source io.Reader) (Verified, error) {
 
 	body, err := io.ReadAll(io.LimitReader(source, MaxImageEncodedBytes+1))
 	if err != nil {
-		return Verified{}, ErrMalformed
+		return Verified{}, fmt.Errorf("%w: %w", ErrSourceRead, err)
 	}
 	if int64(len(body)) > MaxImageEncodedBytes ||
 		int64(len(body)) != declaration.EncodedBytes {

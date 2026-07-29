@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"testing"
 
 	"github.com/HugoSmits86/nativewebp"
@@ -96,6 +97,23 @@ func TestVerifyRejectsEncodedAndSubmissionLimits(t *testing.T) {
 		MaxSubmissionEncodedBytes-1, 1); err != nil {
 		t.Fatalf("aggregate boundary error = %v", err)
 	}
+}
+
+func TestVerifyPreservesSourceReadFailures(t *testing.T) {
+	t.Parallel()
+	source := pngFixture(t)
+	declaration := declarationFor(source, MediaTypePNG, 4, 3)
+	if _, err := Verify(
+		declaration, io.MultiReader(bytes.NewReader(source[:1]), failingReader{}),
+	); !errors.Is(err, ErrSourceRead) || errors.Is(err, ErrMalformed) {
+		t.Fatalf("source read error = %v", err)
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) {
+	return 0, errors.New("fixture stream failure")
 }
 
 func pngFixture(t *testing.T) []byte {

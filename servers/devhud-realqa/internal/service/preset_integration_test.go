@@ -635,6 +635,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("transient object read code = %v", connect.CodeOf(finalizeErr))
 	}
 	objects.getErr = nil
+	objects.getReadErr = errors.New("fixture transient R2 stream failure")
+	if _, finalizeErr := submissionService.FinalizeImageUpload(
+		authCtx, connect.NewRequest(finalizeRequest),
+	); connect.CodeOf(finalizeErr) != connect.CodeUnavailable {
+		t.Fatalf("transient object stream code = %v", connect.CodeOf(finalizeErr))
+	}
+	objects.getReadErr = nil
 	objects.deleteErr = errors.New("fixture R2 deletion failed")
 	if err = store.Queries().EnqueueObjectDeletion(
 		ctx, dbgen.EnqueueObjectDeletionParams{
@@ -854,6 +861,18 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		WHERE asset_id = $1 AND object_kind = 'public'
 	`, promotionAssetID).Scan(&abandonedPublicID); err != nil {
 		t.Fatal(err)
+	}
+	var reservedPublicID string
+	if err = connection.QueryRow(ctx, `
+		SELECT public_id
+		FROM realqa_assets
+		WHERE id = $1
+	`, promotionAssetID).Scan(&reservedPublicID); err != nil {
+		t.Fatal(err)
+	}
+	if reservedPublicID != abandonedPublicID {
+		t.Fatalf("reserved public ID = %q, cleanup ID = %q",
+			reservedPublicID, abandonedPublicID)
 	}
 	if _, ok := objects.objects[imageassets.PublicObjectKey(abandonedPublicID)]; !ok {
 		t.Fatal("abandoned public copy was not retained for cleanup retry")
@@ -1566,9 +1585,10 @@ type submissionTestObject struct {
 }
 
 type submissionTestObjects struct {
-	deleteErr error
-	getErr    error
-	objects   map[string]submissionTestObject
+	deleteErr  error
+	getErr     error
+	getReadErr error
+	objects    map[string]submissionTestObject
 }
 
 func (objects *submissionTestObjects) Put(
@@ -1594,8 +1614,15 @@ func (objects *submissionTestObjects) Get(
 	if !ok {
 		return imageassets.Object{}, imageassets.ErrObjectNotFound
 	}
+	body := io.Reader(bytes.NewReader(object.body))
+	if objects.getReadErr != nil {
+		body = io.MultiReader(
+			bytes.NewReader(object.body[:1]),
+			&fixtureErrorReader{err: objects.getReadErr},
+		)
+	}
 	return imageassets.Object{
-		Body:        io.NopCloser(bytes.NewReader(object.body)),
+		Body:        io.NopCloser(body),
 		ContentType: object.contentType,
 		Size:        int64(len(object.body)),
 	}, nil
@@ -1607,6 +1634,14 @@ func (objects *submissionTestObjects) Delete(_ context.Context, key string) erro
 	}
 	delete(objects.objects, key)
 	return nil
+}
+
+type fixtureErrorReader struct {
+	err error
+}
+
+func (reader *fixtureErrorReader) Read([]byte) (int, error) {
+	return 0, reader.err
 }
 
 func fixturePNG(t *testing.T) []byte {

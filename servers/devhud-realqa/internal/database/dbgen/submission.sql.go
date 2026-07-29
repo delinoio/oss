@@ -1364,6 +1364,51 @@ func (q *Queries) RefreshSubmissionAssetState(ctx context.Context, id pgtype.UUI
 	return i, err
 }
 
+const reserveAssetPublicID = `-- name: ReserveAssetPublicID :one
+UPDATE realqa_assets
+SET public_id = COALESCE(public_id, $1)
+WHERE id = $2
+  AND submission_id = $3
+  AND upload_state = 'verified'
+  AND state = 'verified_unlinked'
+RETURNING id, submission_id, public_id, object_key_ciphertext, state, encoded_bytes, revision, created_at, removed_at, client_image_id, media_type, declared_encoded_bytes, pixel_width, pixel_height, source_sha256, sanitized_sha256, upload_state, upload_token_digest, upload_expires_at, uploaded_at, verified_at
+`
+
+type ReserveAssetPublicIDParams struct {
+	PublicID     pgtype.Text
+	ID           pgtype.UUID
+	SubmissionID pgtype.UUID
+}
+
+func (q *Queries) ReserveAssetPublicID(ctx context.Context, arg ReserveAssetPublicIDParams) (RealqaAsset, error) {
+	row := q.db.QueryRow(ctx, reserveAssetPublicID, arg.PublicID, arg.ID, arg.SubmissionID)
+	var i RealqaAsset
+	err := row.Scan(
+		&i.ID,
+		&i.SubmissionID,
+		&i.PublicID,
+		&i.ObjectKeyCiphertext,
+		&i.State,
+		&i.EncodedBytes,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.RemovedAt,
+		&i.ClientImageID,
+		&i.MediaType,
+		&i.DeclaredEncodedBytes,
+		&i.PixelWidth,
+		&i.PixelHeight,
+		&i.SourceSha256,
+		&i.SanitizedSha256,
+		&i.UploadState,
+		&i.UploadTokenDigest,
+		&i.UploadExpiresAt,
+		&i.UploadedAt,
+		&i.VerifiedAt,
+	)
+	return i, err
+}
+
 const retryObjectDeletion = `-- name: RetryObjectDeletion :exec
 UPDATE realqa_object_deletion_jobs
 SET attempt_count = attempt_count + 1,

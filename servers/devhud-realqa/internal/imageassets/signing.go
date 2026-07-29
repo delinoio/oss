@@ -219,9 +219,7 @@ func (signer *Signer) VerifyRequest(
 	grant Grant,
 	now time.Time,
 ) error {
-	if signer == nil || request == nil || request.URL == nil ||
-		request.Method != http.MethodPut ||
-		!signer.MatchesOriginHost(request) {
+	if err := signer.VerifyRequestShape(request); err != nil {
 		return ErrInvalidScope
 	}
 	if !now.Before(grant.ExpiresAt) ||
@@ -248,6 +246,49 @@ func (signer *Signer) VerifyRequest(
 	if request.Header.Get("Content-Type") != string(grant.Declaration.MediaType) ||
 		request.Header.Get(ContentSHA256Header) != grant.Declaration.SHA256 ||
 		request.ContentLength != grant.Declaration.EncodedBytes {
+		return ErrInvalidScope
+	}
+	return nil
+}
+
+// VerifyRequestShape rejects requests that cannot be a signed RealQA upload
+// without loading the upload grant from durable storage.
+func (signer *Signer) VerifyRequestShape(request *http.Request) error {
+	if signer == nil || request == nil || request.URL == nil ||
+		request.Method != http.MethodPut ||
+		!signer.MatchesOriginHost(request) {
+		return ErrInvalidScope
+	}
+	if _, err := TokenDigest(request.URL.Path); err != nil {
+		return ErrInvalidScope
+	}
+	query := request.URL.Query()
+	if len(query) != 2 ||
+		len(query["expires"]) != 1 ||
+		len(query["signature"]) != 1 {
+		return ErrInvalidScope
+	}
+	if _, err := strconv.ParseInt(query.Get("expires"), 10, 64); err != nil {
+		return ErrInvalidScope
+	}
+	signature, err := hex.DecodeString(query.Get("signature"))
+	if err != nil || len(signature) != sha256.Size {
+		return ErrInvalidScope
+	}
+	if len(request.Header.Values("Content-Type")) != 1 ||
+		len(request.Header.Values(ContentSHA256Header)) != 1 {
+		return ErrInvalidScope
+	}
+	mediaType := MediaType(request.Header.Get("Content-Type"))
+	if mediaType != MediaTypePNG && mediaType != MediaTypeWebP {
+		return ErrInvalidScope
+	}
+	if _, err = decodeChecksum(
+		request.Header.Get(ContentSHA256Header)); err != nil {
+		return ErrInvalidScope
+	}
+	if request.ContentLength <= 0 ||
+		request.ContentLength > MaxImageEncodedBytes {
 		return ErrInvalidScope
 	}
 	return nil

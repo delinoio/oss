@@ -310,9 +310,15 @@ func TestUploadLookupFailureResponses(t *testing.T) {
 				},
 				func() time.Time { return now },
 			)
+			request := httptest.NewRequest(
+				http.MethodPut, signed.URL, bytes.NewReader(body))
+			request.Header.Set("Content-Type", string(MediaTypePNG))
+			request.Header.Set(
+				ContentSHA256Header, declarationFor(
+					body, MediaTypePNG, 4, 3).SHA256)
+			request.ContentLength = int64(len(body))
 			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, httptest.NewRequest(
-				http.MethodPut, signed.URL, nil))
+			handler.ServeHTTP(response, request)
 			if response.Code != test.status {
 				t.Fatalf("upload lookup response = %d, want %d",
 					response.Code, test.status)
@@ -320,6 +326,93 @@ func TestUploadLookupFailureResponses(t *testing.T) {
 			if response.Header().Get("Cache-Control") != "no-store" {
 				t.Fatalf("upload lookup cache control = %q",
 					response.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
+func TestUploadRejectsMalformedShapeBeforeLookup(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	signer, err := NewSigner(
+		"https://assets.realqa.deli.dev", bytes.Repeat([]byte("s"), 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := pngFixture(t)
+	declaration := declarationFor(body, MediaTypePNG, 4, 3)
+	signed, err := signer.Sign(
+		now, now.Add(time.Hour), "submission", "asset", declaration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*http.Request)
+	}{
+		{
+			name: "method",
+			mutate: func(request *http.Request) {
+				request.Method = http.MethodGet
+			},
+		},
+		{
+			name: "host",
+			mutate: func(request *http.Request) {
+				request.Host = "attacker.example"
+			},
+		},
+		{
+			name: "query",
+			mutate: func(request *http.Request) {
+				request.URL.RawQuery += "&unexpected=1"
+			},
+		},
+		{
+			name: "content type",
+			mutate: func(request *http.Request) {
+				request.Header.Set("Content-Type", "text/plain")
+			},
+		},
+		{
+			name: "checksum",
+			mutate: func(request *http.Request) {
+				request.Header.Set(ContentSHA256Header, "invalid")
+			},
+		},
+		{
+			name: "content length",
+			mutate: func(request *http.Request) {
+				request.ContentLength = 0
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			lookupCalled := false
+			handler := UploadHandler(
+				signer,
+				func(context.Context, [32]byte) (Grant, error) {
+					lookupCalled = true
+					return Grant{}, errors.New("unexpected lookup")
+				},
+				func(context.Context, Grant, string, []byte) error {
+					return nil
+				},
+				func() time.Time { return now },
+			)
+			request := httptest.NewRequest(
+				http.MethodPut, signed.URL, bytes.NewReader(body))
+			request.Header.Set("Content-Type", string(MediaTypePNG))
+			request.Header.Set(ContentSHA256Header, declaration.SHA256)
+			request.ContentLength = int64(len(body))
+			test.mutate(request)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("malformed upload response = %d", response.Code)
+			}
+			if lookupCalled {
+				t.Fatal("malformed upload reached durable grant lookup")
 			}
 		})
 	}
