@@ -523,6 +523,16 @@ impl ComposerDelivery for SocketComposerDelivery {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn composer_socket_name(
+    endpoint: &ComposerEndpointRecord,
+) -> Result<interprocess::local_socket::Name<'static>, NativeHostFailure> {
+    composer_socket_file_path(endpoint)
+        .to_fs_name::<GenericFilePath>()
+        .map_err(|_| NativeHostFailure::StateUnavailable)
+}
+
+#[cfg(not(target_os = "macos"))]
 fn composer_socket_name(
     endpoint: &ComposerEndpointRecord,
 ) -> Result<interprocess::local_socket::Name<'static>, NativeHostFailure> {
