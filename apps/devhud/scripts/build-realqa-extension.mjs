@@ -1,11 +1,14 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
+import { run } from "./process.mjs";
+
 export const FIXTURE_EXTENSION_ID = "neiiglibncgobmehenjkhicabgfpggff";
 export const FIXTURE_EXTENSION_KEY =
   "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAryE0eBSTwCXYQfea466AEk8ZdgdfKi4HT/Go65Xcm5ZX1DqQc4s0Ckez6HCwQri0G9KxECP9dr1AWm+wJ1KBQn8CBzCBsQTjhmPmLSnwNNKKJFwgU7E+HR8lPGjNwB9VyLfzxciM0t34l1gH6Thq/D68Qy+c+jtqYYrwTHIpoA+HdqfjO+3eBQD5jX8dvVPJETs/CX3Lg8e0bmxrj5Wx6R67tJrFOaXxy4WHlvhYrZJ9pjRpYZ/xmgB1wWqq5kXrcNwUU4MJEaf51Jpsm9+vGBRRXFrmdGeicwkwxyu/hyDkkUf9t2/3ALEWryByxaf8N73GYeYFcsAnORg5T14wuwIDAQAB";
 
 const appRoot = resolve(import.meta.dirname, "..");
+const repositoryRoot = resolve(appRoot, "../..");
 const extensionRoot = resolve(appRoot, "realqa-extension");
 const outputRoot = resolve(appRoot, "build/realqa-extension");
 const release = process.argv.includes("--release");
@@ -58,6 +61,26 @@ const hostPath = resolveNativeHostPath(
 );
 if (release && process.platform !== "win32" && !isAbsolute(hostPath)) {
   fail("the release Native Messaging host path must be absolute");
+}
+
+if (release && checkOnly) {
+  const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
+  await run(
+    cargo,
+    [
+      "check",
+      "-p",
+      "devhud",
+      "--bin",
+      "devhud-native-host",
+      "--release",
+      "--locked",
+    ],
+    {
+      cwd: repositoryRoot,
+      env: { ...process.env, DEVHUD_CHROME_EXTENSION_ID: extensionId },
+    },
+  );
 }
 
 if (!checkOnly) {

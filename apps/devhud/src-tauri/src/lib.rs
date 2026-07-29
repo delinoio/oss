@@ -64,20 +64,28 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::borrow::Cow;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+use std::collections::VecDeque;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::sync::Mutex;
 #[cfg(feature = "desktop-cef")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+use std::sync::mpsc;
 #[cfg(all(
     any(feature = "desktop-cef", feature = "mobile-system-webview"),
     debug_assertions
 ))]
 use std::time::Duration;
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
-))]
-use std::{collections::VecDeque, sync::mpsc};
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::{
     fs, io,
@@ -226,25 +234,44 @@ struct StartupDiagnostics {
     autostart_outcome: Option<autostart::AutostartOutcome>,
 }
 
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
 ))]
 const MAX_REALQA_BROWSER_INBOX_BYTES: usize = 250 * 1024 * 1024;
 
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+const MAX_REALQA_BROWSER_INBOX_CAPTURES: usize = 32;
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
 ))]
 #[derive(Default)]
 struct RealQaBrowserInbox {
     captures: Mutex<VecDeque<realqa_native_host::NativeHostRequest>>,
 }
 
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
 ))]
+#[cfg_attr(test, allow(dead_code))]
 impl RealQaBrowserInbox {
     fn enqueue(
         &self,
@@ -254,6 +281,9 @@ impl RealQaBrowserInbox {
             .captures
             .lock()
             .map_err(|_| realqa_native_host::NativeHostFailure::StateUnavailable)?;
+        if captures.len() >= MAX_REALQA_BROWSER_INBOX_CAPTURES {
+            return Err(realqa_native_host::NativeHostFailure::MessageTooLarge);
+        }
         let total = captures
             .iter()
             .try_fold(capture.encoded_image_bytes(), |total, capture| {
@@ -3298,9 +3328,14 @@ async fn realqa_begin_capture(
 async fn realqa_begin_browser_fallback_capture(
     session_id: realqa_capture::CaptureSessionId,
     state: State<'_, realqa_capture::CaptureCore>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
     webview: Webview<ActiveRuntime>,
 ) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
-    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL
+        || !auth_state
+            .has_prior_feature_binding(auth::AuthFeature::RealQa)
+            .unwrap_or(false)
+    {
         return Err(realqa_capture::CaptureFailure::CaptureFailed);
     }
     let window = webview.window();
@@ -3314,11 +3349,16 @@ async fn realqa_begin_browser_fallback_capture(
     .await
     .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
     .and_then(|result| result);
+    let binding_active = auth_state
+        .has_prior_feature_binding(auth::AuthFeature::RealQa)
+        .unwrap_or(false);
     let restore = window.show().and_then(|()| window.set_focus());
-    let result = match (result, restore) {
-        (Err(error), _) => Err(error),
-        (Ok(_), Err(_)) => Err(realqa_capture::CaptureFailure::CaptureFailed),
-        (Ok(capture), Ok(())) => Ok(capture),
+    let result = match (result, restore, binding_active) {
+        (Err(error), _, _) => Err(error),
+        (Ok(_), Err(_), _) | (Ok(_), Ok(()), false) => {
+            Err(realqa_capture::CaptureFailure::CaptureFailed)
+        }
+        (Ok(capture), Ok(()), true) => Ok(capture),
     };
     realqa_capture::record_outcome(&result);
     result
@@ -3932,6 +3972,28 @@ mod android_entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn restricted_browser_capture() -> realqa_native_host::NativeHostRequest {
+        serde_json::from_value(serde_json::json!({
+            "kind": "submit-capture",
+            "version": 1,
+            "requestId": "019a97f3-cb9d-7c44-a7b2-2514486e42b1",
+            "captureMode": "os-capture"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn browser_inbox_caps_restricted_capture_metadata_entries() {
+        let inbox = RealQaBrowserInbox::default();
+        for _ in 0..MAX_REALQA_BROWSER_INBOX_CAPTURES {
+            inbox.enqueue(restricted_browser_capture()).unwrap();
+        }
+        assert_eq!(
+            inbox.enqueue(restricted_browser_capture()),
+            Err(realqa_native_host::NativeHostFailure::MessageTooLarge)
+        );
+    }
 
     #[test]
     fn permits_only_bundled_application_origins() {

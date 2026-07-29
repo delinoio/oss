@@ -10,6 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { takeBrowserCapture } from "./browserCapture";
 import { BrowserCaptureComposer } from "./BrowserCaptureComposer";
 import {
+  publishPersistenceReset,
+  publishSessionInvalidation,
+} from "../runtime/theme";
+import {
   ImageMediaType,
   type ApprovedComposerImage,
   CaptureMode,
@@ -23,6 +27,39 @@ vi.mock("./browserCapture", () => ({
 }));
 
 const takeBrowserCaptureMock = vi.mocked(takeBrowserCapture);
+const broadcastListeners = new Map<
+  string,
+  Set<(event: MessageEvent<unknown>) => void>
+>();
+
+class TestBroadcastChannel {
+  readonly #listeners = new Set<(event: MessageEvent<unknown>) => void>();
+
+  constructor(readonly name: string) {}
+
+  addEventListener(
+    _type: "message",
+    listener: (event: MessageEvent<unknown>) => void,
+  ) {
+    this.#listeners.add(listener);
+    const listeners = broadcastListeners.get(this.name) ?? new Set();
+    listeners.add(listener);
+    broadcastListeners.set(this.name, listeners);
+  }
+
+  postMessage(data: unknown) {
+    for (const listener of broadcastListeners.get(this.name) ?? []) {
+      listener({ data } as MessageEvent<unknown>);
+    }
+  }
+
+  close() {
+    const listeners = broadcastListeners.get(this.name);
+    if (listeners === undefined) return;
+    for (const listener of this.#listeners) listeners.delete(listener);
+  }
+}
+
 const source: ComposerImage = {
   imageId: "019a97f3-cb9d-7c44-a7b2-2514486e42b1",
   sourceRevision: 1,
@@ -59,12 +96,17 @@ const composerBridge: RealQaBrowserComposerBridge = {
   resetSession: vi.fn(async () => undefined),
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  broadcastListeners.clear();
+  vi.unstubAllGlobals();
+});
 
 describe("BrowserCaptureComposer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     takeBrowserCaptureMock.mockReset();
+    vi.stubGlobal("BroadcastChannel", TestBroadcastChannel);
   });
 
   it("drains and sanitizes the in-memory browser capture before editing", async () => {
@@ -212,6 +254,80 @@ describe("BrowserCaptureComposer", () => {
     expect(maximumActiveDrains).toBe(1);
     expect(
       screen.queryByRole("heading", { name: "Waiting for a capture" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("removes an accepted preview when Reset DevHud is published", async () => {
+    takeBrowserCaptureMock.mockResolvedValue({
+      kind: "submit-capture",
+      version: 1,
+      requestId: "019a97f3-cb9d-7c44-a7b2-2514486e42b4",
+      captureMode: "visible-viewport",
+      page: { title: "Reset-sensitive capture" },
+      image: {
+        mediaType: "png",
+        base64: "iVBORw0KGgo=",
+        encodedBytes: 8,
+      },
+    });
+
+    render(<BrowserCaptureComposer composerBridge={composerBridge} />);
+    expect(
+      await screen.findByRole("application", {
+        name: /Screenshot editor canvas/u,
+      }),
+    ).toBeVisible();
+
+    act(() => publishPersistenceReset({ status: "complete" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Capture locked" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("application", {
+        name: /Screenshot editor canvas/u,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not restore an in-flight preview after logout invalidation", async () => {
+    let resolveAcceptance: ((image: ComposerImage) => void) | undefined;
+    const pendingAcceptance = new Promise<ComposerImage>((resolve) => {
+      resolveAcceptance = resolve;
+    });
+    const pendingBridge: RealQaBrowserComposerBridge = {
+      ...composerBridge,
+      acceptImage: vi.fn(() => pendingAcceptance),
+    };
+    takeBrowserCaptureMock.mockResolvedValue({
+      kind: "submit-capture",
+      version: 1,
+      requestId: "019a97f3-cb9d-7c44-a7b2-2514486e42b5",
+      captureMode: "visible-viewport",
+      image: {
+        mediaType: "png",
+        base64: "iVBORw0KGgo=",
+        encodedBytes: 8,
+      },
+    });
+
+    render(<BrowserCaptureComposer composerBridge={pendingBridge} />);
+    await vi.waitFor(() => expect(pendingBridge.acceptImage).toHaveBeenCalled());
+
+    act(() => publishSessionInvalidation());
+    expect(
+      screen.getByRole("heading", { name: "Capture locked" }),
+    ).toBeVisible();
+
+    await act(async () => resolveAcceptance?.(source));
+
+    expect(
+      screen.getByRole("heading", { name: "Capture locked" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("application", {
+        name: /Screenshot editor canvas/u,
+      }),
     ).not.toBeInTheDocument();
   });
 });

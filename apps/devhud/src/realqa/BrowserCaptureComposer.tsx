@@ -7,6 +7,10 @@ import {
   type BrowserPageMetadata,
 } from "./browserCapture";
 import {
+  subscribeToPersistenceReset,
+  subscribeToSessionInvalidation,
+} from "../runtime/theme";
+import {
   createRealQaComposerBridge,
   ImageMediaType,
   type ComposerImage,
@@ -17,6 +21,7 @@ import { ScreenshotEditor } from "./editor/ScreenshotEditor";
 type ComposerState =
   | { readonly status: "loading" }
   | { readonly status: "empty" }
+  | { readonly status: "locked" }
   | { readonly status: "failed" }
   | {
       readonly status: "os-capture";
@@ -104,9 +109,12 @@ export function BrowserCaptureComposer({
 }) {
   const [state, setState] = useState<ComposerState>({ status: "loading" });
   const captureDrain = useRef<Promise<void>>(Promise.resolve());
+  const lifecycleRevision = useRef(0);
   const loadOneCapture = useCallback(async () => {
+    const revision = lifecycleRevision.current;
     try {
       const capture = await takeBrowserCapture();
+      if (revision !== lifecycleRevision.current) return;
       if (capture === null) {
         setState((current) =>
           current.status === "loading" ? { status: "empty" } : current,
@@ -114,6 +122,7 @@ export function BrowserCaptureComposer({
         return;
       }
       await composerBridge.resetSession(browserSessionId);
+      if (revision !== lifecycleRevision.current) return;
       if (capture.image === undefined) {
         setState({
           status: "os-capture",
@@ -131,6 +140,7 @@ export function BrowserCaptureComposer({
         },
         outputMediaType: ImageMediaType.Png,
       });
+      if (revision !== lifecycleRevision.current) return;
       setState({
         status: "ready",
         imageId: capture.requestId,
@@ -139,7 +149,9 @@ export function BrowserCaptureComposer({
         source,
       });
     } catch {
-      setState({ status: "failed" });
+      if (revision === lifecycleRevision.current) {
+        setState({ status: "failed" });
+      }
     }
   }, [composerBridge]);
   const loadCapture = useCallback(() => {
@@ -155,6 +167,7 @@ export function BrowserCaptureComposer({
       readonly imageId: string;
       readonly page?: BrowserPageMetadata;
     }) => {
+      const revision = lifecycleRevision.current;
       setState({ status: "os-capturing", imageId, page });
       try {
         const capture = await composerBridge.captureBrowserFallback(
@@ -166,9 +179,13 @@ export function BrowserCaptureComposer({
           image: capture.image,
           outputMediaType: ImageMediaType.Png,
         });
-        setState({ status: "ready", imageId, page, source });
+        if (revision === lifecycleRevision.current) {
+          setState({ status: "ready", imageId, page, source });
+        }
       } catch {
-        setState({ status: "failed" });
+        if (revision === lifecycleRevision.current) {
+          setState({ status: "failed" });
+        }
       }
     },
     [composerBridge],
@@ -190,6 +207,19 @@ export function BrowserCaptureComposer({
     };
   }, [loadCapture]);
 
+  useEffect(() => {
+    const invalidate = () => {
+      lifecycleRevision.current += 1;
+      setState({ status: "locked" });
+    };
+    const unsubscribeReset = subscribeToPersistenceReset(invalidate);
+    const unsubscribeSession = subscribeToSessionInvalidation(invalidate);
+    return () => {
+      unsubscribeReset();
+      unsubscribeSession();
+    };
+  }, []);
+
   return (
     <main className="realqa-composer-shell">
       <header className="app-header">
@@ -205,6 +235,14 @@ export function BrowserCaptureComposer({
         <section aria-labelledby="realqa-empty-title" className="state-card">
           <h1 id="realqa-empty-title">Waiting for a capture</h1>
           <p>Return to the RealQA Chrome extension and send a capture.</p>
+        </section>
+      ) : null}
+      {state.status === "locked" ? (
+        <section aria-labelledby="realqa-locked-title" className="state-card">
+          <h1 id="realqa-locked-title">Capture locked</h1>
+          <p role="alert">
+            Sign in to RealQA on this device, then send the capture again.
+          </p>
         </section>
       ) : null}
       {state.status === "failed" ? (
@@ -280,10 +318,19 @@ export function BrowserCaptureComposer({
           <button
             className="secondary-button"
             onClick={() => {
+              const revision = lifecycleRevision.current;
               void composerBridge
                 .removeImage(browserSessionId, state.imageId)
-                .then(() => setState({ status: "empty" }))
-                .catch(() => setState({ status: "failed" }));
+                .then(() => {
+                  if (revision === lifecycleRevision.current) {
+                    setState({ status: "empty" });
+                  }
+                })
+                .catch(() => {
+                  if (revision === lifecycleRevision.current) {
+                    setState({ status: "failed" });
+                  }
+                });
             }}
             type="button"
           >
