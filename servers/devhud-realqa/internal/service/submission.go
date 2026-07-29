@@ -84,6 +84,10 @@ func (service *Submission) CreateSubmission(
 	if err = validateImages(request.Msg.Images); err != nil {
 		return nil, err
 	}
+	if service.dependencies.Objects == nil ||
+		service.dependencies.UploadSigner == nil {
+		return nil, storageUnavailable()
+	}
 	presetRecord, err := service.dependencies.Store.Queries().GetPresetRecord(
 		ctx, toPGUUID(presetID))
 	if err != nil {
