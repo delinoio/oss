@@ -116,16 +116,12 @@ func (client *Client) RefreshUserCredential(
 		return OAuthCredential{}, UserToken{},
 			errors.New("realqa github: OAuth refresh input is invalid")
 	}
-	encoded, err := json.Marshal(map[string]string{
-		"client_id":     clientID,
-		"client_secret": clientSecret,
-		"grant_type":    "refresh_token",
-		"refresh_token": refreshToken,
-	})
-	if err != nil {
-		return OAuthCredential{}, UserToken{},
-			errors.New("realqa github: OAuth refresh failed")
-	}
+	encoded := []byte(url.Values{
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+	}.Encode())
 	defer clear(encoded)
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, WebOrigin+"/login/oauth/access_token", bytes.NewReader(encoded))
@@ -134,7 +130,7 @@ func (client *Client) RefreshUserCredential(
 			errors.New("realqa github: OAuth refresh failed")
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := client.httpClient.Do(request)
 	if err != nil {
 		return OAuthCredential{}, UserToken{},

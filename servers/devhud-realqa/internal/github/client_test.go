@@ -71,15 +71,19 @@ func TestRefreshUserCredentialRotatesAccessAndRefreshTokens(t *testing.T) {
 			request.URL.Path != "/login/oauth/access_token" {
 			t.Fatalf("unexpected refresh URL %s", request.URL)
 		}
-		var payload map[string]string
-		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+		if request.URL.RawQuery != "" ||
+			request.Header.Get("Content-Type") != "application/x-www-form-urlencoded" {
+			t.Fatalf("unexpected refresh request metadata: %s %q",
+				request.URL, request.Header.Get("Content-Type"))
+		}
+		if err := request.ParseForm(); err != nil {
 			t.Fatal(err)
 		}
-		if payload["client_id"] != "fixture-realqa-client" ||
-			payload["client_secret"] != "fixture-realqa-client-secret-value" ||
-			payload["grant_type"] != "refresh_token" ||
-			payload["refresh_token"] != oldRefreshToken {
-			t.Fatalf("unexpected refresh payload %#v", payload)
+		if request.Form.Get("client_id") != "fixture-realqa-client" ||
+			request.Form.Get("client_secret") != "fixture-realqa-client-secret-value" ||
+			request.Form.Get("grant_type") != "refresh_token" ||
+			request.Form.Get("refresh_token") != oldRefreshToken {
+			t.Fatalf("unexpected refresh form %#v", request.Form)
 		}
 		return jsonResponse(request, http.StatusOK, map[string]any{
 			"access_token":             "ghu_fixture_new_access_token_123456",

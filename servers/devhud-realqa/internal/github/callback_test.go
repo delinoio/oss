@@ -201,6 +201,19 @@ func TestSignedOAuthCallbackStoresOnlyEncryptedUserCredential(t *testing.T) {
 		switch {
 		case request.URL.Host == "github.com" &&
 			request.URL.Path == "/login/oauth/access_token":
+			if request.URL.RawQuery != "" ||
+				request.Header.Get("Content-Type") != "application/x-www-form-urlencoded" {
+				t.Fatalf("unexpected OAuth token request metadata: %s %q",
+					request.URL, request.Header.Get("Content-Type"))
+			}
+			if err := request.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if request.Form.Get("client_id") != "fixture-realqa-client" ||
+				request.Form.Get("client_secret") != "fixture-realqa-client-secret-value" ||
+				request.Form.Get("code") == "" {
+				t.Fatalf("unexpected OAuth token form %#v", request.Form)
+			}
 			return jsonResponse(request, http.StatusOK, map[string]any{
 				"access_token": accessToken, "refresh_token": refreshToken,
 				"expires_in": 28800, "refresh_token_expires_in": 15897600,

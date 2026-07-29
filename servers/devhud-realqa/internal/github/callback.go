@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -638,10 +639,10 @@ func (handler *CallbackHandler) exchangeCode(
 	ctx context.Context,
 	code string,
 ) (OAuthCredential, UserToken, error) {
-	payload := map[string]string{
-		"client_id":     handler.config.ClientID,
-		"client_secret": handler.config.ClientSecret,
-		"code":          code,
+	payload := url.Values{
+		"client_id":     {handler.config.ClientID},
+		"client_secret": {handler.config.ClientSecret},
+		"code":          {code},
 	}
 	var response struct {
 		AccessToken      string `json:"access_token"`
@@ -650,7 +651,7 @@ func (handler *CallbackHandler) exchangeCode(
 		RefreshExpiresIn int64  `json:"refresh_token_expires_in"`
 		Error            string `json:"error"`
 	}
-	status, err := handler.webRequestJSON(ctx, payload, &response)
+	status, err := handler.webRequestForm(ctx, payload, &response)
 	if err != nil || status != http.StatusOK || response.Error != "" {
 		return OAuthCredential{}, UserToken{}, errors.New("realqa github: OAuth exchange failed")
 	}
@@ -672,22 +673,20 @@ func (handler *CallbackHandler) exchangeCode(
 	return credential, token, nil
 }
 
-func (handler *CallbackHandler) webRequestJSON(
+func (handler *CallbackHandler) webRequestForm(
 	ctx context.Context,
-	payload any,
+	payload url.Values,
 	target any,
 ) (int, error) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return 0, err
-	}
+	encoded := []byte(payload.Encode())
+	defer clear(encoded)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		WebOrigin+"/login/oauth/access_token", bytes.NewReader(encoded))
 	if err != nil {
 		return 0, err
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := handler.client.httpClient.Do(request)
 	if err != nil {
 		return 0, errors.New("realqa github: OAuth request failed")

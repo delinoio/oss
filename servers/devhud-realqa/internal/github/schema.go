@@ -251,10 +251,18 @@ func parseFormField(raw rawFormField) (FormField, error) {
 		if len(raw.Attributes.Options) == 0 || len(raw.Attributes.Options) > 100 {
 			return FormField{}, errors.New("realqa github: Issue Form options are required")
 		}
+		seenDropdownOptions := make(map[string]struct{}, len(raw.Attributes.Options))
 		for _, option := range raw.Attributes.Options {
 			parsed, err := parseFormOption(option, field.Kind)
 			if err != nil {
 				return FormField{}, err
+			}
+			if field.Kind == FormFieldDropdown {
+				if _, exists := seenDropdownOptions[parsed.Label]; exists {
+					return FormField{}, errors.New(
+						"realqa github: Issue Form dropdown options must be unique")
+				}
+				seenDropdownOptions[parsed.Label] = struct{}{}
 			}
 			field.Options = append(field.Options, parsed)
 		}
@@ -350,7 +358,12 @@ func RenderIssueForm(form IssueForm, answers []FormAnswer) (string, error) {
 					content = strings.Join(clean, "\n")
 					if field.Render != "" {
 						fence := codeFence(content)
-						content = fence + field.Render + "\n" + content + "\n" + fence
+						closingSeparator := "\n"
+						if strings.HasSuffix(content, "\n") {
+							closingSeparator = ""
+						}
+						content = fence + field.Render + "\n" + content +
+							closingSeparator + fence
 					}
 				}
 			}
@@ -381,10 +394,14 @@ func codeFence(content string) string {
 func validateFormAnswer(field FormField, values []string) ([]string, error) {
 	clean := make([]string, 0, len(values))
 	for _, value := range values {
-		value = strings.TrimSpace(normalizeNewlines(value))
-		if value != "" {
-			clean = append(clean, value)
+		value = normalizeNewlines(value)
+		if strings.TrimSpace(value) == "" {
+			continue
 		}
+		if field.Kind != FormFieldTextarea {
+			value = strings.TrimSpace(value)
+		}
+		clean = append(clean, value)
 	}
 	if (field.Kind == FormFieldInput || field.Kind == FormFieldTextarea) && len(clean) > 1 {
 		return nil, errors.New("multiple values are not allowed")

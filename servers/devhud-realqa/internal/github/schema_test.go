@@ -199,6 +199,45 @@ body:
 	}
 }
 
+func TestIssueFormRejectsDuplicateDropdownOptions(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - High
+        - " High "
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err == nil || !strings.Contains(err.Error(), "dropdown options must be unique") {
+		t.Fatalf("expected duplicate dropdown rejection, got form=%#v err=%v", form, err)
+	}
+}
+
+func TestIssueFormPreservesTextareaAnswerWhitespace(t *testing.T) {
+	t.Parallel()
+	form := IssueForm{Fields: []FormField{{
+		ID: "logs", Kind: FormFieldTextarea, Label: "Logs", Render: "yaml",
+	}}}
+	rendered, err := RenderIssueForm(form, []FormAnswer{{
+		FieldID: "logs", Values: []string{"\r\n  nested: true\r\n"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "### Logs\n\n```yaml\n\n  nested: true\n```"
+	if rendered != expected {
+		t.Fatalf("textarea whitespace was not preserved:\n%q", rendered)
+	}
+}
+
 func TestIssueFormRenderFenceExceedsAnswerBackticks(t *testing.T) {
 	t.Parallel()
 	form := IssueForm{Fields: []FormField{{
