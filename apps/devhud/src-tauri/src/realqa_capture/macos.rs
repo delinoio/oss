@@ -1,7 +1,8 @@
 #[cfg(target_os = "macos")]
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::RandomState},
+    hash::BuildHasher,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -25,8 +26,8 @@ const DISPLAY_ID_PREFIX: &str = "macos-display-";
 const WINDOW_ID_PREFIX: &str = "macos-window-";
 #[cfg(target_os = "macos")]
 const MAX_CATALOG_BYTES: usize = 4 * 1024 * 1024;
-const MAX_PROCESS_NAME_CHARS: usize = 128;
-const MAX_WINDOW_TITLE_CHARS: usize = 256;
+const MAX_PROCESS_NAME_BYTES: usize = 128;
+const MAX_WINDOW_TITLE_BYTES: usize = 512;
 const MAX_PENDING_CANCELLATIONS: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,8 +63,14 @@ pub(crate) struct NativeCatalog {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum NativeCaptureSource {
-    Display { id: u32, source_rect: LogicalRect },
-    Window { id: u32 },
+    Display {
+        id: u32,
+        source_rect: LogicalRect,
+    },
+    Window {
+        id: u32,
+        expected_frame: LogicalRect,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -83,6 +90,7 @@ pub(crate) trait MacosNativeAdapter: Send + Sync {
 
 pub(crate) struct MacosCaptureBackend<A: MacosNativeAdapter> {
     native: A,
+    window_id_hasher: RandomState,
     catalog: Mutex<Option<CachedCatalog>>,
     active: Mutex<HashMap<CaptureSessionId, CaptureSessionState>>,
 }
@@ -91,6 +99,7 @@ pub(crate) struct MacosCaptureBackend<A: MacosNativeAdapter> {
 struct CachedCatalog {
     snapshot_id: super::DisplaySnapshotId,
     windows: Vec<WindowSource>,
+    native_window_ids: HashMap<WindowSourceId, u32>,
 }
 
 enum CaptureSessionState {
@@ -102,6 +111,7 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
     pub(crate) fn new(native: A) -> Self {
         Self {
             native,
+            window_id_hasher: RandomState::new(),
             catalog: Mutex::new(None),
             active: Mutex::new(HashMap::new()),
         }
@@ -110,7 +120,14 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
     fn translated_catalog(
         &self,
         native: NativeCatalog,
-    ) -> Result<(Vec<DisplayDescriptor>, Vec<WindowSource>), BackendFailure> {
+    ) -> Result<
+        (
+            Vec<DisplayDescriptor>,
+            Vec<WindowSource>,
+            HashMap<WindowSourceId, u32>,
+        ),
+        BackendFailure,
+    > {
         if native.displays.is_empty() {
             return Err(BackendFailure::DisplayChanged);
         }
@@ -132,12 +149,22 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
             })
             .collect::<Result<Vec<_>, BackendFailure>>()?;
         displays.sort_by(|left, right| left.id.0.cmp(&right.id.0));
-        let windows = native
-            .windows
-            .into_iter()
-            .filter_map(|window| translate_window(window, &displays))
-            .collect();
-        Ok((displays, windows))
+        let mut windows = Vec::new();
+        let mut native_window_ids = HashMap::new();
+        for window in native.windows {
+            let native_id = window.id;
+            let Some(window) = translate_window(window, &displays, &self.window_id_hasher) else {
+                continue;
+            };
+            if native_window_ids
+                .insert(window.id.clone(), native_id)
+                .is_some()
+            {
+                return Err(BackendFailure::CaptureFailed);
+            }
+            windows.push(window);
+        }
+        Ok((displays, windows, native_window_ids))
     }
 
     fn active_capture(
@@ -250,6 +277,26 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
         active.check_cancelled()?;
         result
     }
+
+    fn native_window_id(
+        &self,
+        snapshot_id: &super::DisplaySnapshotId,
+        window_id: &WindowSourceId,
+    ) -> Result<u32, BackendFailure> {
+        let catalog = self
+            .catalog
+            .lock()
+            .map_err(|_| BackendFailure::CaptureFailed)?;
+        let cached = catalog.as_ref().ok_or(BackendFailure::DisplayChanged)?;
+        if &cached.snapshot_id != snapshot_id {
+            return Err(BackendFailure::DisplayChanged);
+        }
+        cached
+            .native_window_ids
+            .get(window_id)
+            .copied()
+            .ok_or(BackendFailure::WindowLost)
+    }
 }
 
 impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
@@ -340,7 +387,8 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
     }
 
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
-        let (displays, windows) = self.translated_catalog(self.native.catalog()?)?;
+        let (displays, windows, native_window_ids) =
+            self.translated_catalog(self.native.catalog()?)?;
         let snapshot = DisplaySnapshot::checked(displays.clone())
             .map_err(|_| BackendFailure::DisplayChanged)?;
         *self
@@ -349,6 +397,7 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
             .map_err(|_| BackendFailure::CaptureFailed)? = Some(CachedCatalog {
             snapshot_id: snapshot.snapshot_id,
             windows,
+            native_window_ids,
         });
         Ok(displays)
     }
@@ -370,11 +419,13 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
         active.check_cancelled()?;
         let frame = match &request.source {
             CaptureSourceSelection::Window { window_id } => {
-                let native_id = parse_source_id(&window_id.0, WINDOW_ID_PREFIX)
-                    .ok_or(BackendFailure::WindowLost)?;
+                let native_id = self.native_window_id(&request.snapshot.snapshot_id, window_id)?;
                 let frame = self.capture_native(
                     NativeCaptureRequest {
-                        source: NativeCaptureSource::Window { id: native_id },
+                        source: NativeCaptureSource::Window {
+                            id: native_id,
+                            expected_frame: request.logical_bounds,
+                        },
                         width: request.expected_frame_size.width,
                         height: request.expected_frame_size.height,
                         pointer: request.pointer,
@@ -510,7 +561,11 @@ const fn gcd(mut left: u32, mut right: u32) -> u32 {
     left
 }
 
-fn translate_window(window: NativeWindow, displays: &[DisplayDescriptor]) -> Option<WindowSource> {
+fn translate_window(
+    window: NativeWindow,
+    displays: &[DisplayDescriptor],
+    window_id_hasher: &RandomState,
+) -> Option<WindowSource> {
     let display_id = displays
         .iter()
         .max_by(|left, right| {
@@ -527,15 +582,22 @@ fn translate_window(window: NativeWindow, displays: &[DisplayDescriptor]) -> Opt
             WindowAvailability::Minimized
         };
     Some(WindowSource {
-        id: WindowSourceId(format!("{WINDOW_ID_PREFIX}{}", window.id)),
+        id: opaque_window_id(window_id_hasher, window.id),
         display_id,
         bounds: window.frame,
         availability,
         metadata: WindowMetadata {
-            process_name: safe_metadata(window.process_name, MAX_PROCESS_NAME_CHARS, true),
-            title: safe_metadata(window.title, MAX_WINDOW_TITLE_CHARS, false),
+            process_name: safe_metadata(window.process_name, MAX_PROCESS_NAME_BYTES, true),
+            title: safe_metadata(window.title, MAX_WINDOW_TITLE_BYTES, false),
         },
     })
+}
+
+fn opaque_window_id(hasher: &RandomState, native_id: u32) -> WindowSourceId {
+    WindowSourceId(format!(
+        "{WINDOW_ID_PREFIX}{:016x}",
+        hasher.hash_one(native_id)
+    ))
 }
 
 fn intersection_area(left: LogicalRect, right: LogicalRect) -> f64 {
@@ -544,16 +606,25 @@ fn intersection_area(left: LogicalRect, right: LogicalRect) -> f64 {
         .unwrap_or(0.0)
 }
 
-fn safe_metadata(value: Option<String>, maximum: usize, process_name: bool) -> Option<String> {
+fn safe_metadata(
+    value: Option<String>,
+    maximum_bytes: usize,
+    process_name: bool,
+) -> Option<String> {
     let value = value?;
     if looks_like_path(&value) || (process_name && value.contains(['/', '\\'])) {
         return None;
     }
-    let sanitized = value
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(maximum)
-        .collect::<String>();
+    let mut sanitized = String::with_capacity(value.len().min(maximum_bytes));
+    for character in value.chars() {
+        if character.is_control() {
+            continue;
+        }
+        if sanitized.len() + character.len_utf8() > maximum_bytes {
+            break;
+        }
+        sanitized.push(character);
+    }
     let sanitized = sanitized.trim();
     (!sanitized.is_empty()).then(|| sanitized.to_owned())
 }
@@ -759,16 +830,7 @@ impl MacosNativeAdapter for SystemMacosNativeAdapter {
     fn capture(&self, request: NativeCaptureRequest) -> Result<BackendFrame, BackendFailure> {
         let (kind, id, rect) = match request.source {
             NativeCaptureSource::Display { id, source_rect } => (0, id, source_rect),
-            NativeCaptureSource::Window { id } => (
-                1,
-                id,
-                LogicalRect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 0.0,
-                    height: 0.0,
-                },
-            ),
+            NativeCaptureSource::Window { id, expected_frame } => (1, id, expected_frame),
         };
         // SAFETY: All values are bounded scalar DTO fields; ownership of any returned
         // allocation transfers to this caller and is released with the paired
@@ -1216,7 +1278,7 @@ mod tests {
         let minimized_catalog = core.source_catalog().expect("minimized catalog");
         let mut request = region_request(&minimized_catalog);
         request.source = CaptureSourceSelection::Window {
-            window_id: WindowSourceId("macos-window-42".to_owned()),
+            window_id: minimized_catalog.windows[0].id.clone(),
         };
         assert_eq!(core.begin(request), Err(CaptureFailure::WindowLost));
 
@@ -1379,6 +1441,56 @@ mod tests {
         for forbidden in ["/Applications", "/Users/alice", "private/file.txt"] {
             assert!(!serialized.contains(forbidden));
         }
+    }
+
+    #[test]
+    fn localized_metadata_is_bounded_by_shared_utf8_byte_limits() {
+        let fixture = Arc::new(FixtureNative::retina());
+        {
+            let mut catalog = fixture.catalog.lock().expect("catalog lock");
+            catalog.windows[0].process_name = Some("界".repeat(128));
+            catalog.windows[0].title = Some("🙂".repeat(256));
+        }
+        let core = CaptureCore::new(Arc::new(MacosCaptureBackend::new(fixture)));
+        let catalog = core.source_catalog().expect("catalog");
+        let metadata = &catalog.windows[0].metadata;
+        assert_eq!(metadata.process_name.as_ref().map(String::len), Some(126));
+        assert_eq!(metadata.title.as_ref().map(String::len), Some(512));
+    }
+
+    #[test]
+    fn opaque_window_ids_map_to_native_ids_and_expected_frames() {
+        let fixture = Arc::new(FixtureNative::retina());
+        let core = CaptureCore::new(Arc::new(MacosCaptureBackend::new(fixture.clone())));
+        let catalog = core.source_catalog().expect("catalog");
+        let window = &catalog.windows[0];
+        assert!(window.id.0.starts_with(WINDOW_ID_PREFIX));
+        assert_ne!(window.id.0, format!("{WINDOW_ID_PREFIX}42"));
+
+        let mut request = region_request(&catalog);
+        request.source = CaptureSourceSelection::Window {
+            window_id: window.id.clone(),
+        };
+        core.begin(request).expect("window capture");
+        assert_eq!(
+            fixture.captures.lock().expect("capture lock").as_slice(),
+            &[NativeCaptureRequest {
+                source: NativeCaptureSource::Window {
+                    id: 42,
+                    expected_frame: window.bounds,
+                },
+                width: 220,
+                height: 100,
+                pointer: PointerInclusion::Exclude,
+            }]
+        );
+
+        let mut forged = region_request(&catalog);
+        forged.source = CaptureSourceSelection::Window {
+            window_id: WindowSourceId(format!("{WINDOW_ID_PREFIX}42")),
+        };
+        assert_eq!(core.begin(forged), Err(CaptureFailure::WindowLost));
+        assert_eq!(fixture.captures.lock().expect("capture lock").len(), 1);
     }
 
     #[test]

@@ -214,6 +214,19 @@ static RealQAMacosBytes realqa_empty_result(int32_t status) {
   return result;
 }
 
+static bool realqa_frame_matches(CGRect current, double expectedX,
+                                 double expectedY, double expectedWidth,
+                                 double expectedHeight) {
+  const double epsilon = 0.001;
+  return isfinite(expectedX) && isfinite(expectedY) &&
+         isfinite(expectedWidth) && isfinite(expectedHeight) &&
+         expectedWidth > 0 && expectedHeight > 0 &&
+         fabs(current.origin.x - expectedX) <= epsilon &&
+         fabs(current.origin.y - expectedY) <= epsilon &&
+         fabs(current.size.width - expectedWidth) <= epsilon &&
+         fabs(current.size.height - expectedHeight) <= epsilon;
+}
+
 RealQAMacosBytes realqa_macos_capture(
     int32_t sourceKind, uint32_t sourceID, double sourceX, double sourceY,
     double sourceWidth, double sourceHeight, uint32_t outputWidth,
@@ -252,6 +265,10 @@ RealQAMacosBytes realqa_macos_capture(
         }
       }
       if (selected == nil) {
+        return realqa_empty_result(REALQA_SOURCE_LOST);
+      }
+      if (!realqa_frame_matches(selected.frame, sourceX, sourceY, sourceWidth,
+                                sourceHeight)) {
         return realqa_empty_result(REALQA_SOURCE_LOST);
       }
       filter =

@@ -57,6 +57,12 @@ requireCondition(
   "macOS capture must reject and release screenshot results that arrive after timeout",
 );
 requireCondition(
+  rustBackend.includes("native_window_ids: HashMap<WindowSourceId, u32>") &&
+    rustBackend.includes("expected_frame: request.logical_bounds") &&
+    nativeBackend.includes("realqa_frame_matches(selected.frame"),
+  "macOS window capture must resolve opaque IDs locally and reject stale native geometry",
+);
+requireCondition(
   /<key>NSScreenCaptureUsageDescription<\/key>\s*<string>[^<]+<\/string>/u.test(
     infoPlist,
   ),
