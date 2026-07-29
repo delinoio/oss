@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -71,17 +72,72 @@ func (client *Client) Mutate(
 	}
 	current, err := client.actionMetadata(
 		ctx, credential, appPermissions, reference)
+	if err == nil {
+		current, err = client.completeMutationMetadata(ctx, credential, current)
+	}
 	if err != nil {
 		return MutationResult{
 			Kind: mutation.Kind, RefreshRequired: true,
 		}, nil
 	}
-	// ActionMetadata does not contain review-decision or check-summary state.
-	// Require the client to refresh rather than combine it with a stale snapshot.
 	return MutationResult{
 		Kind: mutation.Kind, Revision: current.Revision, Metadata: current,
-		RefreshRequired: true,
 	}, nil
+}
+
+func (client *Client) completeMutationMetadata(
+	ctx context.Context,
+	credential Credential,
+	metadata ActionMetadata,
+) (ActionMetadata, error) {
+	var data struct {
+		Node *struct {
+			ReviewDecision    string `json:"reviewDecision"`
+			StatusCheckRollup *struct {
+				State string `json:"state"`
+			} `json:"statusCheckRollup"`
+		} `json:"node"`
+	}
+	err := client.graphQLData(ctx, credential, `
+query($id:ID!){
+  node(id:$id){
+    ... on PullRequest{
+      reviewDecision
+      statusCheckRollup{state}
+    }
+  }
+}`, map[string]any{"id": metadata.NodeID}, &data)
+	if err != nil || data.Node == nil {
+		return ActionMetadata{}, ErrProvider
+	}
+	switch strings.ToUpper(data.Node.ReviewDecision) {
+	case "":
+		metadata.ReviewDecision = ReviewDecisionUnknown
+	case "REVIEW_REQUIRED":
+		metadata.ReviewDecision = ReviewDecisionRequired
+	case "CHANGES_REQUESTED":
+		metadata.ReviewDecision = ReviewDecisionChangesRequested
+	case "APPROVED":
+		metadata.ReviewDecision = ReviewDecisionApproved
+	default:
+		return ActionMetadata{}, ErrProvider
+	}
+	rollup := data.Node.StatusCheckRollup
+	if rollup == nil {
+		metadata.ChecksState = ChecksStateUnknown
+		return metadata, nil
+	}
+	switch strings.ToUpper(rollup.State) {
+	case "EXPECTED", "PENDING":
+		metadata.ChecksState = ChecksStatePending
+	case "SUCCESS":
+		metadata.ChecksState = ChecksStateSuccess
+	case "ERROR", "FAILURE":
+		metadata.ChecksState = ChecksStateFailure
+	default:
+		return ActionMetadata{}, ErrProvider
+	}
+	return metadata, nil
 }
 
 func validateMutation(reference PullRequestRef, mutation Mutation) error {
@@ -286,16 +342,30 @@ func mergeMethodGraphQL(method MergeMethod) string {
 	return strings.ToUpper(mergeMethodREST(method))
 }
 
+type graphQLError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
 func (client *Client) graphQL(
 	ctx context.Context,
 	credential Credential,
 	query string,
 	variables map[string]any,
 ) error {
+	return client.graphQLData(ctx, credential, query, variables, nil)
+}
+
+func (client *Client) graphQLData(
+	ctx context.Context,
+	credential Credential,
+	query string,
+	variables map[string]any,
+	output any,
+) error {
 	var response struct {
-		Errors []struct {
-			Type string `json:"type"`
-		} `json:"errors"`
+		Data   json.RawMessage `json:"data"`
+		Errors []graphQLError  `json:"errors"`
 	}
 	headers, err := client.do(ctx, credential, http.MethodPost, GraphQLPath,
 		map[string]any{"query": query, "variables": variables}, &response)
@@ -303,12 +373,24 @@ func (client *Client) graphQL(
 		return err
 	}
 	if len(response.Errors) == 0 {
+		if output == nil {
+			return nil
+		}
+		if len(response.Data) == 0 || string(response.Data) == "null" ||
+			json.Unmarshal(response.Data, output) != nil {
+			return ErrProvider
+		}
 		return nil
 	}
 	if providerRateLimited(headers) {
 		return &RateLimitError{RetryAfter: retryDuration(headers, client.now())}
 	}
 	for _, failure := range response.Errors {
+		if graphQLErrorRateLimited(failure) {
+			return &RateLimitError{
+				RetryAfter: retryDuration(headers, client.now()),
+			}
+		}
 		switch strings.ToUpper(failure.Type) {
 		case "FORBIDDEN", "NOT_FOUND":
 			return ErrPermissionDenied
@@ -317,4 +399,11 @@ func (client *Client) graphQL(
 		}
 	}
 	return ErrProvider
+}
+
+func graphQLErrorRateLimited(failure graphQLError) bool {
+	if strings.EqualFold(failure.Type, "RATE_LIMITED") {
+		return true
+	}
+	return secondaryRateLimitMessage(failure.Message)
 }

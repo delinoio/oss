@@ -325,6 +325,67 @@ func TestGraphQLErrorMapsHTTP200RateLimitHeaders(t *testing.T) {
 	}
 }
 
+func TestGraphQLErrorMapsSecondaryRateLimitWithoutHeaders(t *testing.T) {
+	t.Parallel()
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, `{
+				"errors":[{
+					"type":"FORBIDDEN",
+					"message":"You have exceeded a secondary rate limit."
+				}]
+			}`), nil
+		})})
+
+	err := client.graphQL(context.Background(),
+		Credential{AccessToken: "token"}, "mutation { fixture }", nil)
+	var rateLimit *RateLimitError
+	if !errors.As(err, &rateLimit) ||
+		rateLimit.RetryAfter != time.Minute {
+		t.Fatalf("GraphQL secondary rate limit = %T %#v", err, err)
+	}
+}
+
+func TestGraphQLErrorMapsTypedRateLimitWithoutHeaders(t *testing.T) {
+	t.Parallel()
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK,
+				`{"errors":[{"type":"RATE_LIMITED"}]}`), nil
+		})})
+
+	err := client.graphQL(context.Background(),
+		Credential{AccessToken: "token"}, "mutation { fixture }", nil)
+	var rateLimit *RateLimitError
+	if !errors.As(err, &rateLimit) ||
+		rateLimit.RetryAfter != time.Minute {
+		t.Fatalf("typed GraphQL rate limit = %T %#v", err, err)
+	}
+}
+
+func TestGraphQLHTTP403SecondaryLimitWithoutHeadersUsesProviderBackoff(
+	t *testing.T,
+) {
+	t.Parallel()
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden, `{
+				"errors":[{
+					"type":"FORBIDDEN",
+					"message":"You have exceeded a secondary rate limit."
+				}]
+			}`), nil
+		})})
+
+	err := client.graphQL(context.Background(),
+		Credential{AccessToken: "token"}, "mutation { fixture }", nil)
+	var rateLimit *RateLimitError
+	if !errors.As(err, &rateLimit) ||
+		rateLimit.RetryAfter != time.Minute {
+		t.Fatalf("GraphQL HTTP 403 secondary rate limit = %T %#v", err, err)
+	}
+}
+
 func TestSecondaryRESTLimitWithoutQuotaHeadersUsesProviderBackoff(t *testing.T) {
 	t.Parallel()
 	client := NewClient(&http.Client{Transport: roundTripFunc(
@@ -982,6 +1043,14 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 			client.concurrency.limit = 0
 			client.concurrency.mu.Unlock()
 			return jsonResponse(http.StatusOK, `{}`), nil
+		case request.URL.Path == GraphQLPath &&
+			request.Method == http.MethodPost:
+			return jsonResponse(http.StatusOK, `{
+				"data":{"node":{
+					"reviewDecision":"APPROVED",
+					"statusCheckRollup":{"state":"SUCCESS"}
+				}}
+			}`), nil
 		default:
 			t.Fatalf("unexpected mutation request %s %s",
 				request.Method, request.URL.Path)
@@ -1009,7 +1078,9 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Revision == initial.Revision || result.Metadata.IsOpen ||
-		!result.RefreshRequired {
+		result.RefreshRequired ||
+		result.Metadata.ReviewDecision != ReviewDecisionApproved ||
+		result.Metadata.ChecksState != ChecksStateSuccess {
 		t.Fatalf("mutation result = %#v initial=%d", result, initial.Revision)
 	}
 }

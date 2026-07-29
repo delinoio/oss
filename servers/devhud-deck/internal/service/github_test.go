@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestPullRequestDetailPreservesAndRefreshesCompleteRow(t *testing.T) {
+func TestPullRequestDetailUsesCompleteRefreshedRow(t *testing.T) {
 	t.Parallel()
 	hasher, err := security.NewHasher(bytes.Repeat([]byte{1}, 32))
 	if err != nil {
@@ -55,10 +55,12 @@ func TestPullRequestDetailPreservesAndRefreshesCompleteRow(t *testing.T) {
 			ReviewerTeams: []deckgithub.Team{{
 				Organization: "acme", Slug: "core",
 			}},
-			Assignees: []deckgithub.User{{Login: "current-assignee"}},
-			Labels:    []string{"current-label"},
-			IsOpen:    true,
-			Mergeable: true,
+			Assignees:      []deckgithub.User{{Login: "current-assignee"}},
+			Labels:         []string{"current-label"},
+			ReviewDecision: deckgithub.ReviewDecisionChangesRequested,
+			ChecksState:    deckgithub.ChecksStateFailure,
+			IsOpen:         true,
+			Mergeable:      true,
 			Supported: map[deckgithub.MutationKind]bool{
 				deckgithub.MutationAddLabels: true,
 			},
@@ -70,8 +72,9 @@ func TestPullRequestDetailPreservesAndRefreshesCompleteRow(t *testing.T) {
 	if result.Title != "Current title" ||
 		result.Author.GetLogin() != "current-author" ||
 		!result.UpdatedAt.AsTime().Equal(currentTime) ||
-		result.ReviewDecision != deckv1.ReviewDecision_REVIEW_DECISION_APPROVED ||
-		result.Checks.GetState() != deckv1.ChecksState_CHECKS_STATE_SUCCESS ||
+		result.ReviewDecision !=
+			deckv1.ReviewDecision_REVIEW_DECISION_CHANGES_REQUESTED ||
+		result.Checks.GetState() != deckv1.ChecksState_CHECKS_STATE_FAILURE ||
 		len(result.Reviewers) != 2 ||
 		result.Reviewers[0].GetUser().GetLogin() != "reviewer" ||
 		result.Reviewers[1].GetTeam().GetSlug() != "core" ||

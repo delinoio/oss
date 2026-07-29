@@ -233,11 +233,26 @@ func mapStatus(
 }
 
 func providerSecondaryRateLimited(body []byte) bool {
-	var failure apiError
+	var failure struct {
+		Message string         `json:"message"`
+		Errors  []graphQLError `json:"errors"`
+	}
 	if json.Unmarshal(body, &failure) != nil {
 		return false
 	}
-	message := strings.ToLower(failure.Message)
+	if secondaryRateLimitMessage(failure.Message) {
+		return true
+	}
+	for _, graphQLFailure := range failure.Errors {
+		if graphQLErrorRateLimited(graphQLFailure) {
+			return true
+		}
+	}
+	return false
+}
+
+func secondaryRateLimitMessage(value string) bool {
+	message := strings.ToLower(value)
 	return strings.Contains(message, "secondary rate limit") ||
 		strings.Contains(message, "abuse detection mechanism")
 }

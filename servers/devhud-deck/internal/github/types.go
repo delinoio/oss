@@ -203,6 +203,24 @@ const (
 	MergeMethodRebase
 )
 
+type ReviewDecision uint8
+
+const (
+	ReviewDecisionUnknown ReviewDecision = iota
+	ReviewDecisionRequired
+	ReviewDecisionChangesRequested
+	ReviewDecisionApproved
+)
+
+type ChecksState uint8
+
+const (
+	ChecksStateUnknown ChecksState = iota
+	ChecksStatePending
+	ChecksStateSuccess
+	ChecksStateFailure
+)
+
 type User struct {
 	Login string
 }
@@ -296,6 +314,8 @@ type ActionMetadata struct {
 	Mergeable        bool
 	MergeBlocked     bool
 	MergeConflicting bool
+	ReviewDecision   ReviewDecision
+	ChecksState      ChecksState
 }
 
 type MutationResult struct {

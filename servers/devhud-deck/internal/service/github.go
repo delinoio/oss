@@ -372,6 +372,20 @@ func (service *View) pullRequestDetail(
 			result.Assignees, &deckv1.GitHubUser{Login: assignee.Login})
 	}
 	result.Labels = append([]string(nil), metadata.Labels...)
+	result.ReviewDecision = map[deckgithub.ReviewDecision]deckv1.ReviewDecision{
+		deckgithub.ReviewDecisionUnknown:          deckv1.ReviewDecision_REVIEW_DECISION_UNSPECIFIED,
+		deckgithub.ReviewDecisionRequired:         deckv1.ReviewDecision_REVIEW_DECISION_REVIEW_REQUIRED,
+		deckgithub.ReviewDecisionChangesRequested: deckv1.ReviewDecision_REVIEW_DECISION_CHANGES_REQUESTED,
+		deckgithub.ReviewDecisionApproved:         deckv1.ReviewDecision_REVIEW_DECISION_APPROVED,
+	}[metadata.ReviewDecision]
+	result.Checks = &deckv1.CheckSummary{
+		State: map[deckgithub.ChecksState]deckv1.ChecksState{
+			deckgithub.ChecksStateUnknown: deckv1.ChecksState_CHECKS_STATE_UNSPECIFIED,
+			deckgithub.ChecksStatePending: deckv1.ChecksState_CHECKS_STATE_PENDING,
+			deckgithub.ChecksStateSuccess: deckv1.ChecksState_CHECKS_STATE_SUCCESS,
+			deckgithub.ChecksStateFailure: deckv1.ChecksState_CHECKS_STATE_FAILURE,
+		}[metadata.ChecksState],
+	}
 	result.IsDraft = metadata.IsDraft
 	result.LifecycleState = lifecycle
 	result.Mergeability = func() deckv1.Mergeability {

@@ -51,10 +51,6 @@ func NewClient(httpClient *http.Client) *Client {
 	}
 }
 
-type apiError struct {
-	Message string `json:"message"`
-}
-
 func (client *Client) do(
 	ctx context.Context,
 	credential Credential,
