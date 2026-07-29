@@ -2869,7 +2869,9 @@ fn reset_dev_hud(
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
     browser_inbox.clear();
-    if composer_core.reset_all_with(|| auth_state.reset()).is_err() {
+    let auth_reset_failed = composer_core.reset_all_with(|| auth_state.reset()).is_err();
+    let native_host_reset_failed = native_host_state.reset().is_err();
+    if auth_reset_failed || native_host_reset_failed {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     if clear_browsing_data_for_reset(&app).is_err() {
@@ -3053,9 +3055,6 @@ fn reset_dev_hud(
     if let Ok(mut diagnostics) = startup_diagnostics.lock() {
         diagnostics.shortcut_failure = None;
         diagnostics.autostart_outcome = None;
-    }
-    if native_host_state.reset().is_err() {
-        reset_outcome = PersistenceResetOutcome::PartiallyRetained;
     }
     if reset_outcome == PersistenceResetOutcome::Complete {
         diagnostics::emit(

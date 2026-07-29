@@ -96,7 +96,13 @@ requireCondition(
 );
 requireCondition(
   JSON.stringify(extensionManifest.permissions) ===
-    JSON.stringify(["activeTab", "tabs", "scripting", "nativeMessaging"]) &&
+    JSON.stringify([
+      "activeTab",
+      "tabs",
+      "scripting",
+      "nativeMessaging",
+      "storage",
+    ]) &&
     JSON.stringify(extensionManifest.optional_host_permissions) ===
       JSON.stringify(["https://*/*", "http://*/*"]) &&
     extensionManifest.host_permissions === undefined &&
@@ -117,6 +123,7 @@ requireCondition(
     extensionServiceWorkerSource.includes("capturedTabId") &&
     extensionServiceWorkerSource.includes("capturedWindowId") &&
     extensionServiceWorkerSource.includes("tab.url !== capturedUrl") &&
+    extensionServiceWorkerSource.includes("chrome.storage.session") &&
     !extensionServiceWorkerSource.includes("captureBeyondViewport") &&
     !extensionServiceWorkerSource.includes("debugger"),
   "RealQA extension must use visible-viewport capture, immutable tab identity, temporary exact-origin permission, and restricted-page OS fallback",

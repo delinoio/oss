@@ -102,13 +102,17 @@ export function selectDomBoundary() {
     const click = (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (target === undefined) return finish(null);
-      const role = text(target.getAttribute("role"), 64);
-      const accessibleName = accessibleNameFor(target);
+      const clicked =
+        event.target instanceof Element && event.target !== overlay
+          ? event.target
+          : target;
+      if (clicked === undefined) return finish(null);
+      const role = text(clicked.getAttribute("role"), 64);
+      const accessibleName = accessibleNameFor(clicked);
       finish({
-        boundary: boundaryFor(target),
-        selector: selectorFor(target),
-        tag: target.localName.slice(0, 32),
+        boundary: boundaryFor(clicked),
+        selector: selectorFor(clicked),
+        tag: clicked.localName.slice(0, 32),
         ...(role === undefined ? {} : { role }),
         ...(accessibleName === undefined ? {} : { accessibleName }),
         viewport: {

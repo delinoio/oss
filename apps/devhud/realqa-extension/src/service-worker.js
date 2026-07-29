@@ -9,7 +9,33 @@ import {
   sanitizeSelection,
 } from "./protocol.js";
 
+const ACTIVE_DRAFT_STORAGE_KEY = "realqa.active-draft.v1";
 let activeDraft;
+let activeDraftLoaded = false;
+let draftPersistence = Promise.resolve();
+
+async function getActiveDraft() {
+  if (!activeDraftLoaded) {
+    const stored = await chrome.storage.session.get(ACTIVE_DRAFT_STORAGE_KEY);
+    if (!activeDraftLoaded) {
+      activeDraft = stored[ACTIVE_DRAFT_STORAGE_KEY];
+      activeDraftLoaded = true;
+    }
+  }
+  return activeDraft;
+}
+
+async function setActiveDraft(draft) {
+  await getActiveDraft();
+  activeDraft = draft;
+  const persist = () =>
+    draft === undefined
+      ? chrome.storage.session.remove(ACTIVE_DRAFT_STORAGE_KEY)
+      : chrome.storage.session.set({ [ACTIVE_DRAFT_STORAGE_KEY]: draft });
+  draftPersistence = draftPersistence.then(persist, persist);
+  await draftPersistence;
+  return draft;
+}
 
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -31,23 +57,22 @@ function assertCapturedTab(tab, capturedTabId, capturedWindowId, capturedUrl) {
 }
 
 async function beginCapture() {
-  activeDraft = undefined;
+  await setActiveDraft(undefined);
   const tab = await activeTab();
   if (isRestrictedPage(tab.url)) {
-    activeDraft = {
+    return setActiveDraft({
       captureId: crypto.randomUUID(),
       captureMode: "os-capture",
       title: tab.title,
       restricted: true,
-    };
-    return activeDraft;
+    });
   }
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
     format: "png",
   });
   const capturedTab = await activeTab();
   assertCapturedTab(capturedTab, tab.id, tab.windowId, tab.url);
-  activeDraft = {
+  return setActiveDraft({
     captureId: crypto.randomUUID(),
     captureMode: "visible-viewport",
     capturedTabId: capturedTab.id,
@@ -57,8 +82,7 @@ async function beginCapture() {
     title: capturedTab.title,
     image: dataUrlImage(dataUrl),
     restricted: false,
-  };
-  return activeDraft;
+  });
 }
 
 async function selectBoundary({
@@ -74,6 +98,7 @@ async function selectBoundary({
   }
   let selection;
   try {
+    await getActiveDraft();
     if (
       activeDraft?.captureId !== captureId ||
       activeDraft.capturedTabId !== capturedTabId ||
@@ -94,20 +119,21 @@ async function selectBoundary({
   } finally {
     await chrome.permissions.remove({ origins: [pattern] });
   }
+  await getActiveDraft();
   if (activeDraft?.captureId !== captureId) {
     throw new Error("capture-unavailable");
   }
   const selectedTab = await activeTab();
   assertCapturedTab(selectedTab, capturedTabId, capturedWindowId, capturedUrl);
-  if (selection === undefined) {
-    delete activeDraft.selection;
-  } else {
-    activeDraft.selection = selection;
-  }
+  const nextDraft = { ...activeDraft };
+  if (selection === undefined) delete nextDraft.selection;
+  else nextDraft.selection = selection;
+  await setActiveDraft(nextDraft);
   return selection;
 }
 
 async function sendToNative(draft) {
+  await getActiveDraft();
   if (activeDraft?.captureId !== draft?.captureId) {
     throw new Error("capture-unavailable");
   }
@@ -124,7 +150,7 @@ async function sendToNative(draft) {
     throw new Error("invalid-host-response");
   }
   if (response.status === "accepted" && activeDraft?.captureId === captureId) {
-    activeDraft = undefined;
+    await setActiveDraft(undefined);
   }
   return response;
 }
@@ -134,7 +160,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     message?.kind === "begin-capture"
       ? beginCapture()
       : message?.kind === "get-draft"
-        ? Promise.resolve(activeDraft)
+        ? getActiveDraft()
       : message?.kind === "select-boundary"
         ? selectBoundary(message.capture)
         : message?.kind === "send-to-devhud"

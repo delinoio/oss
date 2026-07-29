@@ -24,6 +24,7 @@ describe("RealQA MV3 manifest", () => {
       "tabs",
       "scripting",
       "nativeMessaging",
+      "storage",
     ]);
     expect(manifest.optional_host_permissions).toEqual([
       "https://*/*",

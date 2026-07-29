@@ -7,6 +7,10 @@ const executeScript = vi.fn();
 const captureVisibleTab = vi.fn();
 const query = vi.fn();
 const sendNativeMessage = vi.fn();
+const storageGet = vi.fn();
+const storageRemove = vi.fn();
+const storageSet = vi.fn();
+const sessionStorage = new Map();
 
 beforeAll(async () => {
   globalThis.chrome = {
@@ -21,6 +25,13 @@ beforeAll(async () => {
       sendNativeMessage,
     },
     scripting: { executeScript },
+    storage: {
+      session: {
+        get: storageGet,
+        remove: storageRemove,
+        set: storageSet,
+      },
+    },
     tabs: { captureVisibleTab, query },
   };
   await import("./service-worker.js");
@@ -28,6 +39,20 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.clear();
+  storageGet.mockImplementation(async (key) =>
+    sessionStorage.has(key)
+      ? { [key]: structuredClone(sessionStorage.get(key)) }
+      : {},
+  );
+  storageRemove.mockImplementation(async (key) => {
+    sessionStorage.delete(key);
+  });
+  storageSet.mockImplementation(async (values) => {
+    for (const [key, value] of Object.entries(values)) {
+      sessionStorage.set(key, structuredClone(value));
+    }
+  });
   query.mockResolvedValue([
     {
       id: 7,
@@ -297,6 +322,23 @@ describe("RealQA extension service worker", () => {
     await expect(dispatch({ kind: "get-draft" })).resolves.toEqual({
       ok: true,
       value: undefined,
+    });
+  });
+
+  it("restores the active draft after the service worker restarts", async () => {
+    const captured = await dispatch({ kind: "begin-capture" });
+    expect(captured.ok).toBe(true);
+
+    vi.resetModules();
+    await import("./service-worker.js");
+
+    await expect(dispatch({ kind: "get-draft" })).resolves.toMatchObject({
+      ok: true,
+      value: {
+        captureId: captured.value.captureId,
+        captureMode: "visible-viewport",
+        capturedTabId: 7,
+      },
     });
   });
 });
