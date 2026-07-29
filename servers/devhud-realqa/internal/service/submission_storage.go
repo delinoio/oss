@@ -690,8 +690,7 @@ func (service *Submission) ListSubmissions(
 	rows, err := service.dependencies.Store.Queries().ListSubmissionRecords(
 		ctx, dbgen.ListSubmissionRecordsParams{
 			OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-			AccountID: toPGUUID(actor.accountID),
-			AfterID:   pageLowerBound(after), PageLimit: size + 1,
+			AfterID: pageLowerBound(after), PageLimit: size + 1,
 		})
 	if err != nil {
 		return nil, err
