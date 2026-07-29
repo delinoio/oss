@@ -160,7 +160,7 @@ export function BrowserCaptureComposer({
     return nextDrain;
   }, [loadOneCapture]);
   const startOsCapture = useCallback(
-    async ({
+    ({
       imageId,
       page,
     }: {
@@ -169,24 +169,28 @@ export function BrowserCaptureComposer({
     }) => {
       const revision = lifecycleRevision.current;
       setState({ status: "os-capturing", imageId, page });
-      try {
-        const capture = await composerBridge.captureBrowserFallback(
-          browserSessionId,
-        );
-        const source = await composerBridge.acceptImage({
-          sessionId: browserSessionId,
-          imageId,
-          image: capture.image,
-          outputMediaType: ImageMediaType.Png,
-        });
-        if (revision === lifecycleRevision.current) {
-          setState({ status: "ready", imageId, page, source });
+      const nextDrain = captureDrain.current.then(async () => {
+        try {
+          const capture = await composerBridge.captureBrowserFallback(
+            browserSessionId,
+          );
+          const source = await composerBridge.acceptImage({
+            sessionId: browserSessionId,
+            imageId,
+            image: capture.image,
+            outputMediaType: ImageMediaType.Png,
+          });
+          if (revision === lifecycleRevision.current) {
+            setState({ status: "ready", imageId, page, source });
+          }
+        } catch {
+          if (revision === lifecycleRevision.current) {
+            setState({ status: "failed" });
+          }
         }
-      } catch {
-        if (revision === lifecycleRevision.current) {
-          setState({ status: "failed" });
-        }
-      }
+      });
+      captureDrain.current = nextDrain;
+      return nextDrain;
     },
     [composerBridge],
   );

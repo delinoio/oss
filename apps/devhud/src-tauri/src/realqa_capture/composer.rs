@@ -184,18 +184,37 @@ impl Drop for ComposerImageProcessingPermit {
 #[derive(Debug, Default)]
 pub(crate) struct ComposerCore {
     image_processing_in_flight: Arc<AtomicBool>,
+    lifecycle_gate: Mutex<()>,
     next_source_revision: AtomicU64,
     state: Arc<Mutex<ComposerState>>,
 }
 
 impl ComposerCore {
+    #[cfg(test)]
     pub(crate) fn accept_image(
         &self,
         request: ComposerImageRequest,
     ) -> Result<ComposerImage, CaptureFailure> {
+        self.accept_image_if_authorized(request, || true)
+    }
+
+    pub(crate) fn accept_image_if_authorized(
+        &self,
+        request: ComposerImageRequest,
+        is_authorized: impl FnOnce() -> bool,
+    ) -> Result<ComposerImage, CaptureFailure> {
         validate_identifier(&request.session_id.0)?;
         validate_identifier(&request.image_id.0)?;
-        let mut work = self.begin_accept(&request.session_id, &request.image_id)?;
+        let mut work = {
+            let _lifecycle = self
+                .lifecycle_gate
+                .lock()
+                .map_err(|_| CaptureFailure::CaptureFailed)?;
+            if !is_authorized() {
+                return Err(CaptureFailure::CaptureFailed);
+            }
+            self.begin_accept(&request.session_id, &request.image_id)?
+        };
 
         let sanitized = sanitize_image(&request.image, request.output_media_type)
             .map_err(CaptureFailure::from)?;
@@ -509,7 +528,21 @@ impl ComposerCore {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn reset_all(&self) {
+        self.reset_all_with(|| ());
+    }
+
+    pub(crate) fn reset_all_with<T>(&self, reset: impl FnOnce() -> T) -> T {
+        let _lifecycle = self
+            .lifecycle_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.reset_all_inner();
+        reset()
+    }
+
+    fn reset_all_inner(&self) {
         let mut state = self
             .state
             .lock()
@@ -536,6 +569,16 @@ fn validate_identifier(identifier: &str) -> Result<(), CaptureFailure> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::{
+            Arc,
+            atomic::AtomicBool,
+            mpsc::{self, RecvTimeoutError},
+        },
+        thread,
+        time::Duration,
+    };
+
     use super::*;
     use crate::realqa_capture::{
         DecodedImage, encode_image, image_boundary::MAX_ENCODED_SESSION_BYTES,
@@ -734,6 +777,66 @@ mod tests {
         assert_eq!(
             pending.ensure_current(&state),
             Err(CaptureFailure::InvalidEditSequence)
+        );
+    }
+
+    #[test]
+    fn reset_lifecycle_gate_closes_the_authorization_gap() {
+        let composer = Arc::new(ComposerCore::default());
+        let binding_active = Arc::new(AtomicBool::new(true));
+        let (reset_entered_sender, reset_entered_receiver) = mpsc::sync_channel(1);
+        let (release_reset_sender, release_reset_receiver) = mpsc::sync_channel(1);
+        let reset_composer = Arc::clone(&composer);
+        let reset_binding = Arc::clone(&binding_active);
+        let reset = thread::spawn(move || {
+            reset_composer.reset_all_with(|| {
+                reset_entered_sender
+                    .send(())
+                    .expect("reset entry must be observable");
+                release_reset_receiver
+                    .recv()
+                    .expect("reset must be released");
+                reset_binding.store(false, Ordering::Release);
+            });
+        });
+        reset_entered_receiver
+            .recv()
+            .expect("reset must hold the lifecycle gate");
+
+        let (authorization_sender, authorization_receiver) = mpsc::sync_channel(1);
+        let accept_composer = Arc::clone(&composer);
+        let accept_binding = Arc::clone(&binding_active);
+        let accept = thread::spawn(move || {
+            accept_composer.accept_image_if_authorized(request("session-1", "image-1"), || {
+                authorization_sender
+                    .send(())
+                    .expect("authorization check must be observable");
+                accept_binding.load(Ordering::Acquire)
+            })
+        });
+
+        assert_eq!(
+            authorization_receiver.recv_timeout(Duration::from_millis(50)),
+            Err(RecvTimeoutError::Timeout)
+        );
+        release_reset_sender
+            .send(())
+            .expect("reset must be released");
+        reset.join().expect("reset thread must finish");
+        authorization_receiver
+            .recv()
+            .expect("authorization must run after reset");
+        assert_eq!(
+            accept.join().expect("accept thread must finish"),
+            Err(CaptureFailure::CaptureFailed)
+        );
+        assert!(
+            composer
+                .state
+                .lock()
+                .expect("composer state must be available")
+                .sessions
+                .is_empty()
         );
     }
 

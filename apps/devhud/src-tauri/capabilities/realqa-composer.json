@@ -6,6 +6,7 @@
   "platforms": ["linux", "macOS", "windows"],
   "windows": ["realqa-composer"],
   "permissions": [
+    "allow-get-runtime-info",
     "allow-realqa-composer-accept-image",
     "allow-realqa-composer-flatten-image",
     "allow-realqa-composer-remove-image",

@@ -202,6 +202,101 @@ describe("BrowserCaptureComposer", () => {
     );
   });
 
+  it("finishes fallback capture before draining a newer browser handoff", async () => {
+    let resolveFallback:
+      | ((
+          capture: Awaited<
+            ReturnType<RealQaBrowserComposerBridge["captureBrowserFallback"]>
+          >,
+        ) => void)
+      | undefined;
+    const pendingFallback = new Promise<
+      Awaited<
+        ReturnType<RealQaBrowserComposerBridge["captureBrowserFallback"]>
+      >
+    >((resolve) => {
+      resolveFallback = resolve;
+    });
+    const queuedBridge: RealQaBrowserComposerBridge = {
+      ...composerBridge,
+      captureBrowserFallback: vi.fn(() => pendingFallback),
+      acceptImage: vi.fn(async (request) => ({
+        ...source,
+        imageId: request.imageId,
+      })),
+    };
+    takeBrowserCaptureMock
+      .mockResolvedValueOnce({
+        kind: "submit-capture",
+        version: 1,
+        requestId: "019a97f3-cb9d-7c44-a7b2-2514486e42c1",
+        captureMode: "os-capture",
+        page: { title: "Restricted capture" },
+      })
+      .mockResolvedValueOnce({
+        kind: "submit-capture",
+        version: 1,
+        requestId: "019a97f3-cb9d-7c44-a7b2-2514486e42c2",
+        captureMode: "visible-viewport",
+        page: { title: "Newer browser capture" },
+        image: {
+          mediaType: "png",
+          base64: "iVBORw0KGgo=",
+          encodedBytes: 8,
+        },
+      });
+
+    render(<BrowserCaptureComposer composerBridge={queuedBridge} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Capture primary display" }),
+    );
+    await vi.waitFor(() =>
+      expect(queuedBridge.captureBrowserFallback).toHaveBeenCalledOnce(),
+    );
+
+    await act(async () => {
+      window.dispatchEvent(
+        new Event("devhud:realqa-browser-capture-available"),
+      );
+    });
+    expect(takeBrowserCaptureMock).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      resolveFallback?.({
+        mode: CaptureMode.Display,
+        pointer: PointerInclusion.Exclude,
+        logicalBounds: { x: 0, y: 0, width: 100, height: 80 },
+        pixelRegions: [
+          {
+            displayId: "display-1",
+            pixels: { x: 0, y: 0, width: 100, height: 80 },
+          },
+        ],
+        image: source.image,
+      });
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "Newer browser capture" }),
+    ).toBeVisible();
+    expect(takeBrowserCaptureMock).toHaveBeenCalledTimes(2);
+    expect(queuedBridge.acceptImage).toHaveBeenNthCalledWith(1, {
+      sessionId: "realqa-browser-capture",
+      imageId: "019a97f3-cb9d-7c44-a7b2-2514486e42c1",
+      image: source.image,
+      outputMediaType: ImageMediaType.Png,
+    });
+    expect(queuedBridge.acceptImage).toHaveBeenNthCalledWith(2, {
+      sessionId: "realqa-browser-capture",
+      imageId: "019a97f3-cb9d-7c44-a7b2-2514486e42c2",
+      image: {
+        mediaType: ImageMediaType.Png,
+        bytes: [137, 80, 78, 71, 13, 10, 26, 10],
+      },
+      outputMediaType: ImageMediaType.Png,
+    });
+  });
+
   it("serializes browser capture drains without clearing an accepted capture", async () => {
     let resolveFirstCapture:
       | ((capture: Awaited<ReturnType<typeof takeBrowserCapture>>) => void)

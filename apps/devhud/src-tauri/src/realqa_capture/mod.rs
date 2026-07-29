@@ -548,9 +548,8 @@ impl CaptureCore {
             CapturePermission::Denied => return Err(CaptureFailure::PermissionDenied),
         }
 
-        let catalog = self.source_catalog()?;
-        let display_capability = catalog
-            .capabilities
+        let capabilities = self.inspect_capabilities()?;
+        let display_capability = capabilities
             .mode(CaptureMode::Display)
             .ok_or(CaptureFailure::ModeUnavailable)?;
         if !display_capability
@@ -559,17 +558,17 @@ impl CaptureCore {
         {
             return Err(CaptureFailure::ModeUnavailable);
         }
-        let display_id = catalog
-            .snapshot
+        let snapshot = self.current_snapshot()?;
+        let display_id = snapshot
             .displays
             .iter()
             .find(|display| display.primary)
-            .or_else(|| catalog.snapshot.displays.first())
+            .or_else(|| snapshot.displays.first())
             .map(|display| display.id.clone())
             .ok_or(CaptureFailure::InvalidDisplaySnapshot)?;
         let request = CaptureRequest {
             session_id,
-            snapshot_id: catalog.snapshot.snapshot_id,
+            snapshot_id: snapshot.snapshot_id,
             source: CaptureSourceSelection::Display { display_id },
             pointer: PointerInclusion::Exclude,
             output_media_type: ImageMediaType::Png,
@@ -1479,6 +1478,7 @@ mod tests {
 
         assert_eq!(result.mode, CaptureMode::Display);
         assert_eq!(result.pointer, PointerInclusion::Exclude);
+        assert_eq!(backend.window_calls.load(Ordering::Relaxed), 0);
         let request = backend
             .last_request
             .lock()

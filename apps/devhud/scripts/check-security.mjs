@@ -225,6 +225,7 @@ const expectedCapabilities = {
     platforms: ["linux", "macOS", "windows"],
     windows: ["realqa-composer"],
     permissions: [
+      "allow-get-runtime-info",
       "allow-realqa-composer-accept-image",
       "allow-realqa-composer-flatten-image",
       "allow-realqa-composer-remove-image",
@@ -322,6 +323,7 @@ requireCondition(
   [...composerCommands].every(
     (command) =>
       (command.startsWith("realqa_composer_") ||
+        command === "get_runtime_info" ||
         command === "realqa_begin_browser_fallback_capture" ||
         command === "realqa_take_browser_capture") &&
       ![

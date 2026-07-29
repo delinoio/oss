@@ -2187,9 +2187,9 @@ fn show_realqa_composer_internal(
         .and_then(|()| window.show())
         .and_then(|()| window.set_focus())
         .map_err(|_| realqa_native_host::NativeHostFailure::ComposerUnavailable)?;
-    let _ =
-        window.eval("window.dispatchEvent(new Event('devhud:realqa-browser-capture-available'))");
-    Ok(())
+    window
+        .eval("window.dispatchEvent(new Event('devhud:realqa-browser-capture-available'))")
+        .map_err(|_| realqa_native_host::NativeHostFailure::ComposerUnavailable)
 }
 
 #[cfg(all(
@@ -2869,8 +2869,7 @@ fn reset_dev_hud(
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
     browser_inbox.clear();
-    composer_core.reset_all();
-    if auth_state.reset().is_err() {
+    if composer_core.reset_all_with(|| auth_state.reset()).is_err() {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     if clear_browsing_data_for_reset(&app).is_err() {
@@ -3267,8 +3266,7 @@ fn logout_authentication(
     composer_core: State<'_, realqa_capture::ComposerCore>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
     browser_inbox.clear();
-    composer_core.reset_all();
-    state.logout()
+    composer_core.reset_all_with(|| state.logout())
 }
 
 #[cfg(all(
@@ -3386,19 +3384,18 @@ fn realqa_cancel_capture(
 async fn realqa_composer_accept_image(
     request: realqa_capture::ComposerImageRequest,
     app: AppHandle<ActiveRuntime>,
-    auth_state: State<'_, auth_native::NativeAuthState>,
     webview: Webview<ActiveRuntime>,
 ) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
-    if webview.label() == REALQA_COMPOSER_WINDOW_LABEL
-        && !auth_state
-            .has_prior_feature_binding(auth::AuthFeature::RealQa)
-            .unwrap_or(false)
-    {
-        return Err(realqa_capture::CaptureFailure::CaptureFailed);
-    }
+    let requires_feature_binding = webview.label() == REALQA_COMPOSER_WINDOW_LABEL;
     let result = tauri::async_runtime::spawn_blocking(move || {
         app.state::<realqa_capture::ComposerCore>()
-            .accept_image(request)
+            .accept_image_if_authorized(request, || {
+                !requires_feature_binding
+                    || app
+                        .state::<auth_native::NativeAuthState>()
+                        .has_prior_feature_binding(auth::AuthFeature::RealQa)
+                        .unwrap_or(false)
+            })
     })
     .await
     .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)

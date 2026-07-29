@@ -291,6 +291,7 @@ const expectedRealqaCapturePermissions = [
   "allow-realqa-cancel-capture",
 ];
 const expectedRealqaComposerPermissions = [
+  "allow-get-runtime-info",
   "allow-realqa-composer-accept-image",
   "allow-realqa-composer-flatten-image",
   "allow-realqa-composer-remove-image",
