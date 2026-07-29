@@ -531,12 +531,15 @@ fn composer_socket_name(
             .to_ns_name::<GenericNamespaced>()
             .map_err(|_| NativeHostFailure::StateUnavailable)
     } else {
-        let token = endpoint.token.replace('-', "");
-        std::env::temp_dir()
-            .join(format!("dhrq-{token}"))
+        composer_socket_file_path(endpoint)
             .to_fs_name::<GenericFilePath>()
             .map_err(|_| NativeHostFailure::StateUnavailable)
     }
+}
+
+fn composer_socket_file_path(endpoint: &ComposerEndpointRecord) -> PathBuf {
+    let token = endpoint.token.replace('-', "");
+    std::env::temp_dir().join(format!("dhrq-{token}"))
 }
 
 fn write_ipc_frame(
@@ -660,7 +663,12 @@ impl NativeHostState {
         };
         let name = composer_socket_name(&endpoint)?;
         let options = ListenerOptions::new().name(name);
-        #[cfg(unix)]
+        #[cfg(any(
+            target_os = "android",
+            target_os = "freebsd",
+            target_os = "linux",
+            target_os = "openbsd"
+        ))]
         let options = {
             use interprocess::os::unix::local_socket::ListenerOptionsExt as _;
             options.mode(0o600)
@@ -668,6 +676,19 @@ impl NativeHostState {
         let listener = options
             .create_sync()
             .map_err(|_| NativeHostFailure::StateUnavailable)?;
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            // interprocess 2.4 applies the requested mode with pre-bind fchmod,
+            // which macOS rejects. Restrict the bound file before publishing
+            // the endpoint; remove this fallback when the crate supports macOS.
+            fs::set_permissions(
+                composer_socket_file_path(&endpoint),
+                fs::Permissions::from_mode(0o600),
+            )
+            .map_err(|_| NativeHostFailure::StateUnavailable)?;
+        }
         let path = self.root.join(COMPOSER_ENDPOINT_FILE);
         remove_file_if_present(&path)?;
         let bytes =
