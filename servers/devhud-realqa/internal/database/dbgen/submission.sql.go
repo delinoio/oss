@@ -927,6 +927,56 @@ func (q *Queries) LockAssetRecord(ctx context.Context, arg LockAssetRecordParams
 	return i, err
 }
 
+const lockIssueSubmissionRecords = `-- name: LockIssueSubmissionRecords :many
+SELECT submission.id, submission.owner_kind, submission.owner_id, submission.created_by_account_id, submission.preset_id, submission.destination_id, submission.state, submission.provider_issue_id, submission.provider_issue_url, submission.idempotency_digest, submission.revision, submission.created_at, submission.updated_at, submission.submitted_at, submission.payer_organization_id, submission.payer_team_id, submission.preset_revision, submission.declared_encoded_bytes, submission.verified_encoded_bytes, submission.upload_deadline, submission.upload_expires_at
+FROM realqa_submissions AS submission
+WHERE submission.provider_issue_id = $1
+ORDER BY submission.id
+FOR UPDATE
+`
+
+func (q *Queries) LockIssueSubmissionRecords(ctx context.Context, providerIssueID pgtype.Text) ([]RealqaSubmission, error) {
+	rows, err := q.db.Query(ctx, lockIssueSubmissionRecords, providerIssueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RealqaSubmission{}
+	for rows.Next() {
+		var i RealqaSubmission
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerKind,
+			&i.OwnerID,
+			&i.CreatedByAccountID,
+			&i.PresetID,
+			&i.DestinationID,
+			&i.State,
+			&i.ProviderIssueID,
+			&i.ProviderIssueUrl,
+			&i.IdempotencyDigest,
+			&i.Revision,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SubmittedAt,
+			&i.PayerOrganizationID,
+			&i.PayerTeamID,
+			&i.PresetRevision,
+			&i.DeclaredEncodedBytes,
+			&i.VerifiedEncodedBytes,
+			&i.UploadDeadline,
+			&i.UploadExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockObjectDeletion = `-- name: LockObjectDeletion :one
 SELECT asset_id, object_kind, public_id, attempt_count, next_attempt_at, last_attempted_at, created_at
 FROM realqa_object_deletion_jobs

@@ -433,6 +433,10 @@ func (service *Submission) FinalizeImageUpload(
 				return enqueueAssetObjectDeletions(ctx, queries, rejected)
 			})
 		if rejectErr != nil {
+			if errors.Is(rejectErr, pgx.ErrNoRows) {
+				return nil, service.assetMutationConflict(
+					ctx, submissionID, assetID)
+			}
 			return nil, rejectErr
 		}
 		service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
@@ -565,18 +569,8 @@ func (service *Submission) FinalizeImageUpload(
 				realqav1.ErrorReason_ERROR_REASON_SESSION_TOO_LARGE)
 		}
 		if errors.Is(err, pgx.ErrNoRows) {
-			current, getErr := service.dependencies.Store.Queries().GetAssetRecord(
-				ctx, dbgen.GetAssetRecordParams{
-					ID:           toPGUUID(assetID),
-					SubmissionID: toPGUUID(submissionID),
-				})
-			if getErr == nil {
-				return nil, stale(current.Revision)
-			}
-			if errors.Is(getErr, pgx.ErrNoRows) {
-				return nil, retentionStateConflict()
-			}
-			return nil, getErr
+			return nil, service.assetMutationConflict(
+				ctx, submissionID, assetID)
 		}
 		return nil, err
 	}
@@ -584,6 +578,25 @@ func (service *Submission) FinalizeImageUpload(
 	audit(ctx, service.dependencies, actor, "image_upload_verified",
 		scope, assetID, "allow", "success")
 	return connect.NewResponse(response), nil
+}
+
+func (service *Submission) assetMutationConflict(
+	ctx context.Context,
+	submissionID uuid.UUID,
+	assetID uuid.UUID,
+) error {
+	current, err := service.dependencies.Store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID:           toPGUUID(assetID),
+			SubmissionID: toPGUUID(submissionID),
+		})
+	if err == nil {
+		return stale(current.Revision)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return retentionStateConflict()
+	}
+	return err
 }
 
 func (service *Submission) finalizeImageUploadReplay(
@@ -949,6 +962,9 @@ func (service *Submission) DeleteSubmissionAssets(
 				ctx, toPGUUID(submissionID))
 			if lockErr != nil {
 				return lockErr
+			}
+			if len(removed) == 0 {
+				return retentionStateConflict()
 			}
 			for _, asset := range removed {
 				if lockErr = enqueueAssetObjectDeletions(
@@ -1394,11 +1410,18 @@ func (service *Submission) DeleteIssueAssets(
 	var removed []dbgen.RealqaAsset
 	err := service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			rows, listErr := queries.ListIssueAssets(
-				ctx, pgtype.Text{String: providerIssueID, Valid: true})
+			issueID := pgtype.Text{String: providerIssueID, Valid: true}
+			submissions, listErr := queries.LockIssueSubmissionRecords(
+				ctx, issueID)
 			if listErr != nil {
 				return listErr
 			}
+			rows, listErr := queries.ListIssueAssets(
+				ctx, issueID)
+			if listErr != nil {
+				return listErr
+			}
+			affected := make(map[pgtype.UUID]struct{}, len(submissions))
 			for _, row := range rows {
 				value, removeErr := queries.TombstoneAsset(
 					ctx, dbgen.TombstoneAssetParams{
@@ -1413,6 +1436,19 @@ func (service *Submission) DeleteIssueAssets(
 					return removeErr
 				}
 				removed = append(removed, value)
+				affected[row.SubmissionID] = struct{}{}
+			}
+			for _, submission := range submissions {
+				if _, ok := affected[submission.ID]; !ok {
+					continue
+				}
+				if _, refreshErr := queries.TouchSubmissionAfterAssetDeletion(
+					ctx, dbgen.TouchSubmissionAfterAssetDeletionParams{
+						ID:               submission.ID,
+						ExpectedRevision: submission.Revision,
+					}); refreshErr != nil {
+					return refreshErr
+				}
 			}
 			return nil
 		})

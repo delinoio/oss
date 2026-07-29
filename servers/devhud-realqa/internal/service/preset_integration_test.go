@@ -1821,7 +1821,93 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("retained bytes before deletion = %d",
 			retainedBytesBeforeDelete)
 	}
-	_, err = submissionService.DeleteSubmissionAssets(
+	webhookSubmissionID := uuidv7.MustNew()
+	webhookAssetID := uuidv7.MustNew()
+	webhookPublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, provider_issue_id, provider_issue_url,
+			idempotency_digest, submitted_at, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, upload_deadline, upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'submitted', '757',
+		       'https://github.com/delinoio/oss/issues/757',
+		       idempotency_digest, transaction_timestamp(),
+		       payer_organization_id, payer_team_id, preset_revision,
+		       declared_encoded_bytes, verified_encoded_bytes,
+		       transaction_timestamp() + interval '23 hours',
+		       transaction_timestamp() + interval '24 hours'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $6
+	`, webhookSubmissionID, submissionID, webhookAssetID, webhookPublicID,
+		uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	var webhookRevisionBefore int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, webhookSubmissionID).Scan(&webhookRevisionBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.DeleteIssueAssets(ctx, "757"); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		webhookState         string
+		webhookRetainedBytes int64
+		webhookRevisionAfter int64
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT state, verified_encoded_bytes, revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, webhookSubmissionID).Scan(
+		&webhookState, &webhookRetainedBytes, &webhookRevisionAfter,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if webhookState != "submitted" || webhookRetainedBytes != 0 ||
+		webhookRevisionAfter != webhookRevisionBefore+1 {
+		t.Fatalf("webhook deletion state = %q / %d / %d, want submitted / 0 / %d",
+			webhookState, webhookRetainedBytes, webhookRevisionAfter,
+			webhookRevisionBefore+1)
+	}
+	if err = submissionService.DeleteIssueAssets(ctx, "757"); err != nil {
+		t.Fatal(err)
+	}
+	var webhookRevisionAfterReplay int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, webhookSubmissionID).Scan(&webhookRevisionAfterReplay); err != nil {
+		t.Fatal(err)
+	}
+	if webhookRevisionAfterReplay != webhookRevisionAfter {
+		t.Fatalf("webhook deletion replay revision = %d, want %d",
+			webhookRevisionAfterReplay, webhookRevisionAfter)
+	}
+	deletedAssets, err := submissionService.DeleteSubmissionAssets(
 		otherAuthCtx,
 		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
 			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
@@ -1833,6 +1919,31 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		}))
 	if err != nil {
 		t.Fatalf("delete after repository disconnect: %v", err)
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId:               createdSubmission.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: deletedAssets.Msg.Submission.Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	requireServiceError(t, err, connect.CodeInvalidArgument,
+		realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED)
+	var retainedRevisionAfterNoop int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&retainedRevisionAfterNoop); err != nil {
+		t.Fatal(err)
+	}
+	if retainedRevisionAfterNoop != deletedAssets.Msg.Submission.Revision.Value {
+		t.Fatalf("no-op asset deletion revision = %d, want %d",
+			retainedRevisionAfterNoop,
+			deletedAssets.Msg.Submission.Revision.Value)
 	}
 	var retainedBytesAfterDelete int64
 	if err = connection.QueryRow(ctx, `

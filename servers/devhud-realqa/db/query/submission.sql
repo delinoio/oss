@@ -400,6 +400,13 @@ WHERE submission.id = sqlc.arg(id)
   AND submission.state IN ('draft', 'uploading', 'ready')
 RETURNING *;
 
+-- name: LockIssueSubmissionRecords :many
+SELECT submission.*
+FROM realqa_submissions AS submission
+WHERE submission.provider_issue_id = sqlc.arg(provider_issue_id)
+ORDER BY submission.id
+FOR UPDATE;
+
 -- name: ListIssueAssets :many
 SELECT asset.*
 FROM realqa_assets AS asset

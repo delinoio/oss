@@ -69,6 +69,7 @@ type Querier interface {
 	ListSubmissionAssets(ctx context.Context, submissionID pgtype.UUID) ([]RealqaAsset, error)
 	ListSubmissionRecords(ctx context.Context, arg ListSubmissionRecordsParams) ([]RealqaSubmission, error)
 	LockAssetRecord(ctx context.Context, arg LockAssetRecordParams) (RealqaAsset, error)
+	LockIssueSubmissionRecords(ctx context.Context, providerIssueID pgtype.Text) ([]RealqaSubmission, error)
 	LockObjectDeletion(ctx context.Context, arg LockObjectDeletionParams) (RealqaObjectDeletionJob, error)
 	LockPreset(ctx context.Context, id pgtype.UUID) (RealqaPreset, error)
 	LockPresetOwner(ctx context.Context, arg LockPresetOwnerParams) error
