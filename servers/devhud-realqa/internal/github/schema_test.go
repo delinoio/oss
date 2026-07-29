@@ -305,6 +305,28 @@ body:
 	}
 }
 
+func TestIssueFormRejectsUnknownCheckboxOptionKeys(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Terms
+      options:
+        - label: I agree
+          id: agreement
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err == nil || !strings.Contains(err.Error(), "checkbox option is invalid") {
+		t.Fatalf("expected unknown checkbox option key rejection, got form=%#v err=%v", form, err)
+	}
+}
+
 func TestIssueFormRejectsDuplicateLabelsWithoutProviderIDs(t *testing.T) {
 	t.Parallel()
 	contents := []byte(`
@@ -491,6 +513,66 @@ body:
 			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
 		); err == nil || !strings.Contains(err.Error(), "attribute is not allowed") {
 			t.Fatalf("expected disallowed present attribute rejection, got %v", err)
+		}
+	}
+}
+
+func TestIssueFormRejectsMarkdownValidations(t *testing.T) {
+	t.Parallel()
+	for _, validation := range []string{"required: true", `accept: ""`} {
+		contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: markdown
+    attributes:
+      value: Describe the bug.
+    validations:
+      ` + validation + `
+  - type: input
+    attributes:
+      label: Summary
+`)
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "validations are not allowed") {
+			t.Fatalf("expected markdown validation %q rejection, got %v", validation, err)
+		}
+	}
+}
+
+func TestIssueFormRejectsEmptyUploadValidationOffUploads(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{
+		`type: input
+    attributes:
+      label: Summary`,
+		`type: textarea
+    attributes:
+      label: Details`,
+		`type: dropdown
+    attributes:
+      label: Severity
+      options:
+        - Low`,
+		`type: checkboxes
+    attributes:
+      label: Terms
+      options:
+        - label: I agree`,
+	} {
+		contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - ` + field + `
+    validations:
+      accept: ""
+`)
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "upload validation is not allowed") {
+			t.Fatalf("expected empty accept rejection for %q, got %v", field, err)
 		}
 	}
 }

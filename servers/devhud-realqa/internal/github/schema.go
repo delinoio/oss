@@ -377,6 +377,12 @@ func parseFormOption(node yaml.Node, kind FormFieldKind) (FormOption, error) {
 	if node.Kind != yaml.MappingNode || kind != FormFieldCheckboxes {
 		return FormOption{}, errors.New("realqa github: Issue Form option is invalid")
 	}
+	for index := 0; index < len(node.Content); index += 2 {
+		key := node.Content[index]
+		if !isStringNode(key) || (key.Value != "label" && key.Value != "required") {
+			return FormOption{}, errors.New("realqa github: Issue Form checkbox option is invalid")
+		}
+	}
 	labelNode := mappingValue(&node, "label")
 	if labelNode == nil || !isStringNode(labelNode) {
 		return FormOption{}, errors.New("realqa github: Issue Form checkbox option is invalid")
@@ -441,10 +447,21 @@ func validateIssueFormYAML(document *yaml.Node) error {
 			}
 		}
 		validations := mappingValue(item, "validations")
-		if validations != nil && validations.Kind == yaml.MappingNode {
-			if accept := mappingValue(validations, "accept"); accept != nil &&
-				!isStringNode(accept) {
-				return errors.New("realqa github: Issue Form field string value is invalid")
+		if validations != nil {
+			if fieldType == string(FormFieldMarkdown) {
+				return errors.New(
+					"realqa github: Issue Form validations are not allowed for this field")
+			}
+			if validations.Kind == yaml.MappingNode {
+				if accept := mappingValue(validations, "accept"); accept != nil {
+					if !isStringNode(accept) {
+						return errors.New("realqa github: Issue Form field string value is invalid")
+					}
+					if fieldType != "upload" {
+						return errors.New(
+							"realqa github: Issue Form upload validation is not allowed for this field")
+					}
+				}
 			}
 		}
 	}
