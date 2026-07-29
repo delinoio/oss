@@ -3459,15 +3459,15 @@ fn configure_builder(
             )));
             app.manage(realqa_capture::ComposerCore::default());
             app.manage(RealQaBrowserInbox::default());
-            if let Ok(native_host_state) = realqa_native_host::NativeHostState::platform() {
-                let composer_app = app.handle().clone();
-                if let Ok(composer_ready) =
+            let composer_app = app.handle().clone();
+            if let Ok(composer_ready) =
+                realqa_native_host::NativeHostState::platform().and_then(move |native_host_state| {
                     native_host_state.start_composer_listener(move |capture| {
                         accept_realqa_browser_capture(&composer_app, capture)
                     })
-                {
-                    app.manage(composer_ready);
-                }
+                })
+            {
+                app.manage(composer_ready);
             }
 
             let autostart = autostart::AutostartState::initialize();
