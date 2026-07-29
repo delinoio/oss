@@ -799,6 +799,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	organizationInstallation.AccountID = 80
 	organizationInstallation.AccountLogin = "acme"
 	organizationInstallation.AccountKind = deckgithub.AccountKindOrganization
+	organizationCallback.InstallationID = organizationInstallation.ID
 	organizationCredential := credential
 	organizationCredential.UserID = 701
 	organizationCredential.AccessToken = "ghu_organization_fixture"
