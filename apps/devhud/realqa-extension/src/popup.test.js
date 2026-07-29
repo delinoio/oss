@@ -176,6 +176,50 @@ describe("RealQA extension popup", () => {
     );
   });
 
+  it("clears restored DOM metadata when a new selection is cancelled", async () => {
+    sendMessage
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          captureId: "capture",
+          captureMode: "visible-viewport",
+          capturedTabId: 7,
+          capturedWindowId: 3,
+          capturedUrl: "https://example.com/private",
+          url: "https://example.com/private",
+          title: "Private title",
+          image: { mediaType: "png", base64: "iVBORw==", encodedBytes: 4 },
+          restricted: false,
+          selection: { tag: "button" },
+        },
+      })
+      .mockResolvedValueOnce({ ok: true, value: undefined })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { version: 1, requestId: "request", status: "accepted" },
+      });
+    permissionRequest.mockResolvedValueOnce(true);
+    await loadPopup();
+
+    document.querySelector("#select").click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#status").textContent).toContain(
+        "cancelled",
+      ),
+    );
+    expect(document.querySelectorAll("#fields li")).toHaveLength(0);
+
+    document.querySelector("#send").click();
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(3));
+    expect(sendMessage.mock.calls[2][0]).toMatchObject({
+      kind: "send-to-devhud",
+      draft: {
+        captureId: "capture",
+      },
+    });
+    expect(sendMessage.mock.calls[2][0].draft).not.toHaveProperty("selection");
+  });
+
   it("clears a stale draft before a failed recapture", async () => {
     sendMessage
       .mockResolvedValueOnce({

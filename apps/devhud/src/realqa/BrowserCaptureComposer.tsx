@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   takeBrowserCapture,
@@ -103,11 +103,14 @@ export function BrowserCaptureComposer({
   readonly composerBridge?: RealQaBrowserComposerBridge;
 }) {
   const [state, setState] = useState<ComposerState>({ status: "loading" });
-  const loadCapture = useCallback(async () => {
+  const captureDrain = useRef<Promise<void>>(Promise.resolve());
+  const loadOneCapture = useCallback(async () => {
     try {
       const capture = await takeBrowserCapture();
       if (capture === null) {
-        setState({ status: "empty" });
+        setState((current) =>
+          current.status === "loading" ? { status: "empty" } : current,
+        );
         return;
       }
       await composerBridge.resetSession(browserSessionId);
@@ -139,6 +142,11 @@ export function BrowserCaptureComposer({
       setState({ status: "failed" });
     }
   }, [composerBridge]);
+  const loadCapture = useCallback(() => {
+    const nextDrain = captureDrain.current.then(loadOneCapture);
+    captureDrain.current = nextDrain;
+    return nextDrain;
+  }, [loadOneCapture]);
   const startOsCapture = useCallback(
     async ({
       imageId,

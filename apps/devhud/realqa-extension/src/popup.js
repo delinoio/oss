@@ -144,6 +144,8 @@ selectButton.addEventListener("click", async () => {
       renderSelection();
       showStatus("Boundary selected. Remove any metadata you do not want to send.");
     } else {
+      delete draft.selection;
+      renderSelection();
       showStatus("DOM selection was cancelled.");
     }
   } catch (error) {

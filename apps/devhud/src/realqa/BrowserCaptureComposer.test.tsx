@@ -1,5 +1,11 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { takeBrowserCapture } from "./browserCapture";
 import { BrowserCaptureComposer } from "./BrowserCaptureComposer";
@@ -52,6 +58,8 @@ const composerBridge: RealQaBrowserComposerBridge = {
   removeImage: vi.fn(async () => undefined),
   resetSession: vi.fn(async () => undefined),
 };
+
+afterEach(cleanup);
 
 describe("BrowserCaptureComposer", () => {
   beforeEach(() => {
@@ -150,5 +158,60 @@ describe("BrowserCaptureComposer", () => {
     expect(takeBrowserCaptureMock.mock.calls.length).toBeGreaterThan(
       initialCalls,
     );
+  });
+
+  it("serializes browser capture drains without clearing an accepted capture", async () => {
+    let resolveFirstCapture:
+      | ((capture: Awaited<ReturnType<typeof takeBrowserCapture>>) => void)
+      | undefined;
+    const firstCapture = new Promise<
+      Awaited<ReturnType<typeof takeBrowserCapture>>
+    >((resolve) => {
+      resolveFirstCapture = resolve;
+    });
+    let activeDrains = 0;
+    let maximumActiveDrains = 0;
+    takeBrowserCaptureMock
+      .mockImplementationOnce(async () => {
+        activeDrains += 1;
+        maximumActiveDrains = Math.max(maximumActiveDrains, activeDrains);
+        const capture = await firstCapture;
+        activeDrains -= 1;
+        return capture;
+      })
+      .mockImplementationOnce(async () => {
+        activeDrains += 1;
+        maximumActiveDrains = Math.max(maximumActiveDrains, activeDrains);
+        activeDrains -= 1;
+        return null;
+      });
+
+    render(<BrowserCaptureComposer composerBridge={composerBridge} />);
+    await act(async () => {
+      window.dispatchEvent(
+        new Event("devhud:realqa-browser-capture-available"),
+      );
+      resolveFirstCapture?.({
+        kind: "submit-capture",
+        version: 1,
+        requestId: "019a97f3-cb9d-7c44-a7b2-2514486e42b3",
+        captureMode: "visible-viewport",
+        page: { title: "Serialized capture" },
+        image: {
+          mediaType: "png",
+          base64: "iVBORw0KGgo=",
+          encodedBytes: 8,
+        },
+      });
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "Serialized capture" }),
+    ).toBeVisible();
+    await vi.waitFor(() => expect(takeBrowserCaptureMock).toHaveBeenCalledTimes(2));
+    expect(maximumActiveDrains).toBe(1);
+    expect(
+      screen.queryByRole("heading", { name: "Waiting for a capture" }),
+    ).not.toBeInTheDocument();
   });
 });

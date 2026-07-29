@@ -3346,7 +3346,16 @@ fn realqa_cancel_capture(
 async fn realqa_composer_accept_image(
     request: realqa_capture::ComposerImageRequest,
     app: AppHandle<ActiveRuntime>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+    webview: Webview<ActiveRuntime>,
 ) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
+    if webview.label() == REALQA_COMPOSER_WINDOW_LABEL
+        && !auth_state
+            .has_prior_feature_binding(auth::AuthFeature::RealQa)
+            .unwrap_or(false)
+    {
+        return Err(realqa_capture::CaptureFailure::CaptureFailed);
+    }
     let result = tauri::async_runtime::spawn_blocking(move || {
         app.state::<realqa_capture::ComposerCore>()
             .accept_image(request)
