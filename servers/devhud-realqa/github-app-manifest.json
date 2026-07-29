@@ -13,7 +13,8 @@
   "request_oauth_on_install": false,
   "setup_on_update": true,
   "default_events": [
-    "issues"
+    "issues",
+    "installation_target"
   ],
   "default_permissions": {
     "issues": "write",

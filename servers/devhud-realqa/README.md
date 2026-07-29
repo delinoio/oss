@@ -44,9 +44,9 @@ billing catalog records, or publish a tracker/plugin interface.
   are accepted; optional provider upload controls are omitted in favor of
   RealQA's bounded image workflow.
 - `github-app-manifest.json` is the separate RealQA base manifest with Issues
-  write, Metadata read, Contents read, and issue lifecycle delivery. Typed
-  manifest generation adds only the explicitly configured repository- or
-  organization-project permission.
+  write, Metadata read, Contents read, issue lifecycle delivery, and
+  installation-target rename delivery. Typed manifest generation adds only the
+  explicitly configured repository- or organization-project permission.
 - `GET /github/oauth/callback`, `GET /github/app/callback`, and
   `POST /github/webhooks` enforce signed, replay-protected state or
   `X-Hub-Signature-256`. Installation/repository, issue deletion, and user
