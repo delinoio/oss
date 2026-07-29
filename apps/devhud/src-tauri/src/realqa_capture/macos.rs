@@ -102,6 +102,12 @@ struct CachedCatalog {
     native_window_ids: HashMap<WindowSourceId, u32>,
 }
 
+type TranslatedCatalog = (
+    Vec<DisplayDescriptor>,
+    Vec<WindowSource>,
+    HashMap<WindowSourceId, u32>,
+);
+
 enum CaptureSessionState {
     Active(Arc<AtomicBool>),
     CancelledBeforeCapture,
@@ -120,14 +126,7 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
     fn translated_catalog(
         &self,
         native: NativeCatalog,
-    ) -> Result<
-        (
-            Vec<DisplayDescriptor>,
-            Vec<WindowSource>,
-            HashMap<WindowSourceId, u32>,
-        ),
-        BackendFailure,
-    > {
+    ) -> Result<TranslatedCatalog, BackendFailure> {
         if native.displays.is_empty() {
             return Err(BackendFailure::DisplayChanged);
         }
