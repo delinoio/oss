@@ -214,21 +214,10 @@ impl WindowMetadata {
             (&self.title, Self::MAX_TITLE_BYTES),
         ] {
             if value.as_ref().is_some_and(|value| {
-                let lower = value.to_ascii_lowercase();
-                let path_like = value.starts_with('/')
-                    || value.starts_with("~/")
-                    || lower.starts_with("file:")
-                    || value.contains(['/', '\\'])
-                    || lower.contains("/users/")
-                    || lower.contains("/home/")
-                    || lower.contains("\\users\\")
-                    || value.as_bytes().windows(3).any(|window| {
-                        window[0].is_ascii_alphabetic() && window[1] == b':' && window[2] == b'\\'
-                    });
                 value.is_empty()
                     || value.len() > maximum
                     || value.chars().any(char::is_control)
-                    || path_like
+                    || metadata_value_looks_like_path(value)
             }) {
                 return Err(CaptureFailure::InvalidDisplaySnapshot);
             }
@@ -251,7 +240,7 @@ impl WindowMetadata {
 fn bounded_metadata_value(value: Option<String>, maximum: usize) -> Option<String> {
     let value = value?;
     let value = value.trim();
-    if value.is_empty() {
+    if value.is_empty() || metadata_value_looks_like_path(value) {
         return None;
     }
     let mut bounded = String::with_capacity(value.len().min(maximum));
@@ -262,6 +251,20 @@ fn bounded_metadata_value(value: Option<String>, maximum: usize) -> Option<Strin
         bounded.push(character);
     }
     (!bounded.is_empty()).then_some(bounded)
+}
+
+fn metadata_value_looks_like_path(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    value.starts_with('/')
+        || value.starts_with("~/")
+        || lower.starts_with("file:")
+        || value.contains(['/', '\\'])
+        || lower.contains("/users/")
+        || lower.contains("/home/")
+        || lower.contains("\\users\\")
+        || value.as_bytes().windows(3).any(|window| {
+            window[0].is_ascii_alphabetic() && window[1] == b':' && window[2] == b'\\'
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
