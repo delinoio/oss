@@ -396,27 +396,29 @@ func (service *View) ListPullRequests(
 		return nil, rpcerr.New(connect.CodeInternal,
 			deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
 	}
+	readableRepositories, err := service.dependencies.Repositories.
+		ListReadableRepositories(ctx, viewer, view.Owner)
+	if err != nil {
+		if errors.Is(err, deckgithub.ErrReauthenticationRequired) {
+			return nil, rpcerr.New(connect.CodeFailedPrecondition,
+				deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+		}
+		return nil, rpcerr.New(connect.CodeUnavailable,
+			deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
+	}
+	readableRepositoryHashes := make(map[[32]byte]struct{},
+		len(readableRepositories))
+	for _, repository := range readableRepositories {
+		hash := service.dependencies.Store.SnapshotRepositoryHash(
+			&deckv1.RepositoryReference{
+				Owner: repository.Owner,
+				Name:  repository.Name,
+			})
+		readableRepositoryHashes[hash] = struct{}{}
+	}
 	viewerHash := service.dependencies.Hasher.Sum("snapshot-viewer", viewer.AccountID.String())
 	snapshots, truncated, refreshedAt, err := service.dependencies.Store.ListSnapshots(
-		ctx, viewID, viewerHash, func(repository *deckv1.RepositoryReference) error {
-			allowed, authErr := service.dependencies.Repositories.CanReadRepository(
-				ctx, viewer, view.Owner,
-				repository.GetOwner(), repository.GetName())
-			if authErr != nil {
-				if errors.Is(
-					authErr, deckgithub.ErrReauthenticationRequired) {
-					return rpcerr.New(connect.CodeFailedPrecondition,
-						deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
-				}
-				return rpcerr.New(connect.CodeUnavailable,
-					deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
-			}
-			if !allowed {
-				return rpcerr.New(connect.CodePermissionDenied,
-					deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
-			}
-			return nil
-		})
+		ctx, viewID, viewerHash, readableRepositoryHashes)
 	if err != nil {
 		var connectErr *connect.Error
 		if errors.As(err, &connectErr) {

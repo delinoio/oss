@@ -6,6 +6,7 @@ import (
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/google/uuid"
 )
 
@@ -87,6 +88,11 @@ type RepositoryAuthorizer interface {
 		string,
 		string,
 	) (bool, error)
+	ListReadableRepositories(
+		context.Context,
+		Viewer,
+		*deckv1.Owner,
+	) ([]deckgithub.Repository, error)
 }
 
 type DenyAllRepositories struct{}
@@ -99,4 +105,12 @@ func (DenyAllRepositories) CanReadRepository(
 	string,
 ) (bool, error) {
 	return false, nil
+}
+
+func (DenyAllRepositories) ListReadableRepositories(
+	context.Context,
+	Viewer,
+	*deckv1.Owner,
+) ([]deckgithub.Repository, error) {
+	return nil, nil
 }

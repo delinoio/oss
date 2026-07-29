@@ -181,9 +181,11 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || !truncated {
 		t.Fatalf("replace snapshots = truncated=%v err=%v", truncated, err)
 	}
-	authorizeSnapshot := func(*deckv1.RepositoryReference) error { return nil }
+	readableSnapshots := map[[32]byte]struct{}{
+		store.SnapshotRepositoryHash(snapshots[0].Repository): {},
+	}
 	current, stateTruncated, _, err := store.ListSnapshots(
-		ctx, firstViewID, viewerHash, authorizeSnapshot)
+		ctx, firstViewID, viewerHash, readableSnapshots)
 	if err != nil || len(current) != 500 || !stateTruncated {
 		t.Fatalf("snapshots = %d truncated=%v err=%v", len(current), stateTruncated, err)
 	}
@@ -242,24 +244,22 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || indexed.GetTitle() != "authorized" {
 		t.Fatalf("indexed snapshot = %#v err=%v", indexed, err)
 	}
+	indexedList, _, _, err := store.ListSnapshots(
+		ctx, firstViewID, viewerHash, map[[32]byte]struct{}{
+			store.SnapshotRepositoryHash(indexedSnapshots[1].Repository): {},
+		})
+	if err != nil || len(indexedList) != 1 ||
+		indexedList[0].GetTitle() != "authorized" {
+		t.Fatalf("authorization-safe snapshot list = %#v err=%v",
+			indexedList, err)
+	}
 	if _, err := store.ReplaceSnapshots(
 		ctx, firstViewID, viewerHash, snapshots, now); err != nil {
 		t.Fatal(err)
 	}
-	authorizationErr := errors.New("snapshot authorization denied")
-	if _, _, _, err := store.ListSnapshots(
-		ctx, firstViewID, viewerHash,
-		func(repository *deckv1.RepositoryReference) error {
-			if repository.Owner != "secret" || repository.Name != "project" {
-				t.Fatalf("authorization repository = %#v", repository)
-			}
-			return authorizationErr
-		}); !errors.Is(err, authorizationErr) {
-		t.Fatalf("snapshot authorization error = %v", err)
-	}
 	secondViewerHash := hasher.Sum("snapshot-viewer", secondAccountID.String())
 	other, otherTruncated, _, err := store.ListSnapshots(
-		ctx, firstViewID, secondViewerHash, authorizeSnapshot)
+		ctx, firstViewID, secondViewerHash, readableSnapshots)
 	if err != nil || len(other) != 0 || otherTruncated {
 		t.Fatalf("other viewer state leaked: %d truncated=%v err=%v",
 			len(other), otherTruncated, err)
@@ -269,7 +269,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, stateTruncated, _, err = store.ListSnapshots(
-		ctx, firstViewID, viewerHash, authorizeSnapshot)
+		ctx, firstViewID, viewerHash, readableSnapshots)
 	if err != nil || len(current) != 1 || stateTruncated {
 		t.Fatalf("current-only snapshots = %d truncated=%v err=%v",
 			len(current), stateTruncated, err)
@@ -285,7 +285,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("query update = %#v %v", updated, err)
 	}
 	current, stateTruncated, refreshedAt, err := store.ListSnapshots(
-		ctx, firstViewID, viewerHash, authorizeSnapshot)
+		ctx, firstViewID, viewerHash, readableSnapshots)
 	if err != nil || len(current) != 0 || stateTruncated || !refreshedAt.IsZero() {
 		t.Fatalf("snapshots after query update = %d truncated=%v refreshed=%v err=%v",
 			len(current), stateTruncated, refreshedAt, err)
@@ -681,6 +681,16 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ctx, 1, accountID, accountID, true)
 	if err != nil {
 		t.Fatalf("reauthorized GitHub connection: %v", err)
+	}
+	staleRefresh := credential
+	staleRefresh.AccessToken = "ghu_pre_revocation_refresh"
+	staleRefresh.RefreshToken = "ghr_pre_revocation_refresh"
+	if err := store.RefreshGitHubCredential(
+		ctx, connection.ID, accountID, staleRefresh,
+		now.Add(2*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("pre-revocation refresh survived reauthorization: %T %v",
+			err, err)
 	}
 	if err := store.ConnectGitHub(
 		ctx, inFlightHash, inFlightCallback, installation, credential,

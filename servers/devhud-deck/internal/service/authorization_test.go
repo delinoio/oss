@@ -6,6 +6,7 @@ import (
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/google/uuid"
 )
 
@@ -19,6 +20,14 @@ func (deniedRepositories) CanReadRepository(
 	string,
 ) (bool, error) {
 	return false, nil
+}
+
+func (deniedRepositories) ListReadableRepositories(
+	context.Context,
+	contracts.Viewer,
+	*deckv1.Owner,
+) ([]deckgithub.Repository, error) {
+	return nil, nil
 }
 
 func TestPersonalAndOrganizationOwnership(t *testing.T) {

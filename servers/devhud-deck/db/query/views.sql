@@ -141,7 +141,8 @@ FROM deck_pull_request_snapshot_states
 WHERE view_id = sqlc.arg(view_id) AND viewer_hash = sqlc.arg(viewer_hash);
 
 -- name: ListViewSnapshots :many
-SELECT view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+SELECT view_id, viewer_hash, ordinal, repository_hash,
+       repository_ciphertext, snapshot_ciphertext
 FROM deck_pull_request_snapshots
 WHERE view_id = sqlc.arg(view_id)
   AND viewer_hash = sqlc.arg(viewer_hash)

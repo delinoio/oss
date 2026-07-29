@@ -61,7 +61,7 @@ func TestEverySupportedMutationUsesOnlyUserAttributedEndpoints(t *testing.T) {
 			"POST", "/repos/acme/widget/issues/7/labels", `"ready"`},
 		{"remove labels", Mutation{Kind: MutationRemoveLabels, Labels: []string{"ready"}},
 			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
-			"DELETE", "/repos/acme/widget/issues/7/labels/ready", ""},
+			"PUT", "/repos/acme/widget/issues/7/labels", `"labels":[]`},
 		{"draft", Mutation{Kind: MutationMarkDraft},
 			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
 			"POST", "/graphql", "convertPullRequestToDraft"},
@@ -236,6 +236,30 @@ func TestMutationRejectionsAndLimits(t *testing.T) {
 			Kind: MutationMerge, MergeMethod: MergeMethodMerge, Confirmed: true,
 		}); !errors.Is(err, ErrBranchProtected) {
 		t.Fatalf("branch protection error = %v", err)
+	}
+	conflictingClient := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path == "/repos/acme/widget" {
+				return jsonResponse(http.StatusOK,
+					`{"allow_merge_commit":true,"permissions":{"pull":true,"push":true}}`), nil
+			}
+			return jsonResponse(http.StatusOK,
+				`{"node_id":"PR_1","state":"open","draft":false,"merged":false,`+
+					`"mergeable":false,"mergeable_state":"dirty",`+
+					`"updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`), nil
+		})})
+	if _, err := conflictingClient.Mutate(
+		context.Background(), "conflicting", 1,
+		Credential{AccessToken: "token"}, permissions, reference,
+		pullRevision(pullResponse{
+			NodeID: "PR_1", State: "open", UpdatedAt: "2026-01-01T00:00:00Z",
+			Head: struct {
+				SHA string `json:"sha"`
+			}{SHA: "abc"},
+		}), Mutation{
+			Kind: MutationMerge, MergeMethod: MergeMethodMerge, Confirmed: true,
+		}); !errors.Is(err, ErrStaleRevision) {
+		t.Fatalf("merge conflict error = %v", err)
 	}
 	limiter := newUserRateLimiter(2, time.Minute)
 	now := time.Unix(1_800_000_000, 0)
@@ -560,6 +584,47 @@ func TestMutationOperandCountIsBounded(t *testing.T) {
 		Kind: MutationRemoveLabels, Labels: labels,
 	}); !errors.Is(err, ErrUnsupportedAction) {
 		t.Fatalf("oversize label mutation error = %v", err)
+	}
+}
+
+func TestMultiLabelRemovalUsesSingleReplacement(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			calls++
+			if request.Method != http.MethodPut ||
+				request.URL.Path != "/repos/acme/widget/issues/7/labels" {
+				t.Fatalf("label removal request = %s %s",
+					request.Method, request.URL.Path)
+			}
+			var input struct {
+				Labels []string `json:"labels"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Fatal(err)
+			}
+			if len(input.Labels) != 1 || input.Labels[0] != "keep" {
+				t.Fatalf("replacement labels = %#v", input.Labels)
+			}
+			return jsonResponse(http.StatusOK, `[]`), nil
+		})})
+	err := client.applyMutation(
+		context.Background(), Credential{AccessToken: "token"},
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"},
+			Number:     7,
+		},
+		ActionMetadata{Labels: []string{"remove-a", "keep", "REMOVE-B"}},
+		Mutation{
+			Kind: MutationRemoveLabels,
+			Labels: []string{
+				"remove-a",
+				"remove-b",
+			},
+		})
+	if err != nil || calls != 1 {
+		t.Fatalf("multi-label removal calls=%d err=%v", calls, err)
 	}
 }
 
@@ -922,7 +987,9 @@ func TestRepositoryAuthorizationIsBoundToSelectedInstallation(t *testing.T) {
 				{"name":"selected","owner":{"login":"acme"},
 				 "permissions":{"pull":true}},
 				{"name":"other","owner":{"login":"elsewhere"},
-				 "permissions":{"pull":true}}
+				 "permissions":{"pull":true}},
+				{"name":"hidden","owner":{"login":"acme"},
+				 "permissions":{"pull":false}}
 			]}`), nil
 		})})
 	credential := Credential{AccessToken: "ghu_viewer"}
@@ -938,6 +1005,11 @@ func TestRepositoryAuthorizationIsBoundToSelectedInstallation(t *testing.T) {
 	if err != nil || allowed {
 		t.Fatalf("other installation repository allowed=%v err=%v",
 			allowed, err)
+	}
+	readable, err := client.ListReadableRepositoriesForInstallation(
+		context.Background(), 42, credential)
+	if err != nil || len(readable) != 2 {
+		t.Fatalf("readable repositories = %#v err=%v", readable, err)
 	}
 }
 

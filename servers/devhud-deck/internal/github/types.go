@@ -286,6 +286,7 @@ type ActionMetadata struct {
 	AutoMergeEnabled bool
 	Mergeable        bool
 	MergeBlocked     bool
+	MergeConflicting bool
 }
 
 type MutationResult struct {

@@ -510,10 +510,11 @@ func (store *Store) RefreshGitHubCredential(
 	connectionID uuid.UUID,
 	accountID uuid.UUID,
 	credential deckgithub.Credential,
-	now time.Time,
+	refreshStartedAt time.Time,
 ) error {
 	if connectionID == uuid.Nil || accountID == uuid.Nil ||
-		credential.UserID == 0 || credential.Validate(now) != nil {
+		credential.UserID == 0 ||
+		credential.Validate(refreshStartedAt) != nil {
 		return deckgithub.ErrPermissionDenied
 	}
 	authorizationIdentityHash := store.hasher.Sum(
@@ -544,7 +545,9 @@ func (store *Store) RefreshGitHubCredential(
 		if authorizationState.RevokedAt.Valid &&
 			(!authorizationState.ReauthorizedAt.Valid ||
 				!authorizationState.ReauthorizedAt.Time.After(
-					authorizationState.RevokedAt.Time)) {
+					authorizationState.RevokedAt.Time) ||
+				!refreshStartedAt.After(
+					authorizationState.ReauthorizedAt.Time)) {
 			return deckgithub.ErrPermissionDenied
 		}
 		connection, err := queries.GetGitHubConnectionByIDForUpdate(
@@ -565,7 +568,7 @@ func (store *Store) RefreshGitHubCredential(
 			UserRefreshTokenCiphertext: refreshToken,
 			UserAccessTokenExpiresAt:   pgTime(credential.ExpiresAt),
 			UserRefreshTokenExpiresAt:  pgTime(credential.RefreshTokenExpiresAt),
-			UpdatedAt:                  pgTime(now),
+			UpdatedAt:                  pgTime(refreshStartedAt),
 		}
 		if err := queries.UpdateGitHubUserCredentials(
 			ctx, dbgen.UpdateGitHubUserCredentialsParams{

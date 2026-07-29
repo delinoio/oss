@@ -374,6 +374,9 @@ func (service *View) pullRequestDetail(
 	result.IsDraft = metadata.IsDraft
 	result.LifecycleState = lifecycle
 	result.Mergeability = func() deckv1.Mergeability {
+		if metadata.MergeConflicting {
+			return deckv1.Mergeability_MERGEABILITY_CONFLICTING
+		}
 		if metadata.MergeBlocked {
 			return deckv1.Mergeability_MERGEABILITY_BLOCKED
 		}

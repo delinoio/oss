@@ -438,6 +438,34 @@ func (client *Client) CanReadRepositoryForInstallation(
 	return ok && result.userPermissions().Metadata >= PermissionRead, nil
 }
 
+func (client *Client) ListReadableRepositoriesForInstallation(
+	ctx context.Context,
+	installationID uint64,
+	credential Credential,
+) ([]Repository, error) {
+	release, err := client.concurrency.acquire(installationID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	repositories, err := client.installationRepositories(
+		ctx, installationID, credential)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Repository, 0, len(repositories))
+	for _, repository := range repositories {
+		if repository.userPermissions().Metadata < PermissionRead {
+			continue
+		}
+		result = append(result, Repository{
+			Owner: repository.Owner.Login,
+			Name:  repository.Name,
+		})
+	}
+	return result, nil
+}
+
 func (client *Client) installationRepositories(
 	ctx context.Context,
 	installationID uint64,
@@ -561,9 +589,9 @@ func (client *Client) actionMetadata(
 		IsOpen: strings.EqualFold(pull.State, "open"), IsMerged: pull.Merged,
 		AutoMergeEnabled: pull.AutoMerge != nil,
 		Mergeable:        pull.Mergeable != nil && *pull.Mergeable,
-		MergeBlocked: pull.MergeableState == "blocked" ||
-			pull.MergeableState == "dirty",
-		Supported: make(map[MutationKind]bool),
+		MergeBlocked:     pull.MergeableState == "blocked",
+		MergeConflicting: pull.MergeableState == "dirty",
+		Supported:        make(map[MutationKind]bool),
 		AvailableMethods: map[MergeMethod]bool{
 			MergeMethodMerge:  repository.AllowMergeCommit,
 			MergeMethodSquash: repository.AllowSquashMerge,
@@ -605,9 +633,11 @@ func (client *Client) actionMetadata(
 		repository.AllowRebaseMerge
 	canMerge := effective.Contents >= PermissionWrite
 	metadata.Supported[MutationMerge] = metadata.IsOpen && !metadata.IsDraft &&
-		metadata.Mergeable && !metadata.MergeBlocked && hasMethod && canMerge
+		metadata.Mergeable && !metadata.MergeBlocked &&
+		!metadata.MergeConflicting && hasMethod && canMerge
 	mergeRequirementsUnmet := pull.Mergeable != nil &&
-		(!metadata.Mergeable || metadata.MergeBlocked)
+		(!metadata.Mergeable || metadata.MergeBlocked ||
+			metadata.MergeConflicting)
 	metadata.Supported[MutationEnableAutoMerge] = metadata.IsOpen &&
 		!metadata.IsDraft && !metadata.AutoMergeEnabled &&
 		repository.AllowAutoMerge && mergeRequirementsUnmet &&

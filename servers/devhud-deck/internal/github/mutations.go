@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -43,8 +42,13 @@ func (client *Client) Mutate(
 		return MutationResult{}, ErrConfirmationRequired
 	}
 	if !metadata.Supported[mutation.Kind] {
-		if mutation.Kind == MutationMerge && metadata.MergeBlocked {
-			return MutationResult{}, ErrBranchProtected
+		if mutation.Kind == MutationMerge {
+			if metadata.MergeConflicting {
+				return MutationResult{}, ErrStaleRevision
+			}
+			if metadata.MergeBlocked {
+				return MutationResult{}, ErrBranchProtected
+			}
 		}
 		return MutationResult{}, ErrPermissionDenied
 	}
@@ -180,15 +184,20 @@ func (client *Client) applyMutation(
 			map[string]any{"labels": mutation.Labels}, nil)
 		return err
 	case MutationRemoveLabels:
+		removed := make(map[string]struct{}, len(mutation.Labels))
 		for _, label := range mutation.Labels {
-			path, _ := repositoryPath(reference.Repository,
-				issueSuffix+"/labels/"+url.PathEscape(label))
-			if _, err := client.do(
-				ctx, credential, http.MethodDelete, path, nil, nil); err != nil {
-				return err
+			removed[strings.ToLower(label)] = struct{}{}
+		}
+		remaining := make([]string, 0, len(metadata.Labels))
+		for _, label := range metadata.Labels {
+			if _, remove := removed[strings.ToLower(label)]; !remove {
+				remaining = append(remaining, label)
 			}
 		}
-		return nil
+		path, _ := repositoryPath(reference.Repository, issueSuffix+"/labels")
+		_, err := client.do(ctx, credential, http.MethodPut, path,
+			map[string]any{"labels": remaining}, nil)
+		return err
 	case MutationMarkDraft:
 		return client.graphQL(ctx, credential, `
 mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){

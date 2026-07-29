@@ -730,7 +730,7 @@ func (store *Store) ReplaceSnapshots(
 				snapshot.GetNumber() > math.MaxInt64 {
 				return errors.New("deck database: snapshot repository is required")
 			}
-			repositoryHash := store.snapshotRepositoryHash(repository)
+			repositoryHash := store.SnapshotRepositoryHash(repository)
 			repositoryCiphertext, err := store.sealProto(
 				"pr-snapshot-repository", repository)
 			if err != nil {
@@ -759,18 +759,12 @@ func (store *Store) ReplaceSnapshots(
 	})
 }
 
-type SnapshotAuthorizer func(*deckv1.RepositoryReference) error
-
 func (store *Store) ListSnapshots(
 	ctx context.Context,
 	viewID uuid.UUID,
 	viewerHash [32]byte,
-	authorize SnapshotAuthorizer,
+	readableRepositories map[[32]byte]struct{},
 ) ([]*deckv1.PullRequestResult, bool, time.Time, error) {
-	if authorize == nil {
-		return nil, false, time.Time{},
-			errors.New("deck database: snapshot authorizer is required")
-	}
 	_, err := store.queries.GetView(ctx, pgUUID(viewID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, time.Time{}, ErrNotFound
@@ -794,12 +788,18 @@ func (store *Store) ListSnapshots(
 	}
 	results := make([]*deckv1.PullRequestResult, 0, len(rows))
 	for _, row := range rows {
+		if len(row.RepositoryHash) != 32 {
+			return nil, false, time.Time{},
+				errors.New("deck database: invalid snapshot repository index")
+		}
+		var repositoryHash [32]byte
+		copy(repositoryHash[:], row.RepositoryHash)
+		if _, readable := readableRepositories[repositoryHash]; !readable {
+			continue
+		}
 		repository := &deckv1.RepositoryReference{}
 		if err := store.openProto(
 			"pr-snapshot-repository", row.RepositoryCiphertext, repository); err != nil {
-			return nil, false, time.Time{}, err
-		}
-		if err := authorize(repository); err != nil {
 			return nil, false, time.Time{}, err
 		}
 		result := &deckv1.PullRequestResult{}
@@ -838,7 +838,7 @@ func (store *Store) GetSnapshot(
 		reference.Number == 0 || reference.Number > math.MaxInt64 {
 		return nil, ErrNotFound
 	}
-	repositoryHash := store.snapshotRepositoryHash(reference.Repository)
+	repositoryHash := store.SnapshotRepositoryHash(reference.Repository)
 	row, err := store.queries.GetViewSnapshotByReference(
 		ctx, dbgen.GetViewSnapshotByReferenceParams{
 			ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
@@ -871,7 +871,7 @@ func (store *Store) GetSnapshot(
 	return result, nil
 }
 
-func (store *Store) snapshotRepositoryHash(
+func (store *Store) SnapshotRepositoryHash(
 	repository *deckv1.RepositoryReference,
 ) [32]byte {
 	return store.hasher.Sum(

@@ -506,7 +506,8 @@ func (q *Queries) ListPersonalViews(ctx context.Context, arg ListPersonalViewsPa
 }
 
 const listViewSnapshots = `-- name: ListViewSnapshots :many
-SELECT view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+SELECT view_id, viewer_hash, ordinal, repository_hash,
+       repository_ciphertext, snapshot_ciphertext
 FROM deck_pull_request_snapshots
 WHERE view_id = $1
   AND viewer_hash = $2
@@ -526,6 +527,7 @@ type ListViewSnapshotsRow struct {
 	ViewID               pgtype.UUID
 	ViewerHash           []byte
 	Ordinal              int32
+	RepositoryHash       []byte
 	RepositoryCiphertext []byte
 	SnapshotCiphertext   []byte
 }
@@ -548,6 +550,7 @@ func (q *Queries) ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsPa
 			&i.ViewID,
 			&i.ViewerHash,
 			&i.Ordinal,
+			&i.RepositoryHash,
 			&i.RepositoryCiphertext,
 			&i.SnapshotCiphertext,
 		); err != nil {

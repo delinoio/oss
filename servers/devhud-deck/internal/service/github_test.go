@@ -88,6 +88,17 @@ func TestPullRequestDetailPreservesAndRefreshesCompleteRow(t *testing.T) {
 		base.Labels[0] != "stored-label" {
 		t.Fatalf("stored snapshot was mutated: %#v", base)
 	}
+	conflicting := service.pullRequestDetail(
+		uuid.MustParse("01900000-0000-7000-8000-000000000001"),
+		reference, base, deckgithub.ActionMetadata{
+			Revision:         3,
+			MergeConflicting: true,
+		})
+	if conflicting.Result.GetMergeability() !=
+		deckv1.Mergeability_MERGEABILITY_CONFLICTING {
+		t.Fatalf("conflicting mergeability = %v",
+			conflicting.Result.GetMergeability())
+	}
 }
 
 func TestMapGitHubErrorDistinguishesDeckAndProviderRateLimits(t *testing.T) {
