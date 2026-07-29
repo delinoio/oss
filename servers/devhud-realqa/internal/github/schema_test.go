@@ -221,6 +221,44 @@ body:
 	}
 }
 
+func TestIssueFormRejectsPaddedFieldIDs(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		`
+  - type: input
+    id: " summary"
+    attributes:
+      label: Summary
+`,
+		`
+  - type: input
+    id: "summary "
+    attributes:
+      label: Summary
+`,
+		`
+  - type: upload
+    id: " screenshots "
+    attributes:
+      label: Screenshots
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+`,
+	} {
+		contents := []byte(`
+name: Bug report
+description: Report a bug
+body:` + body)
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil {
+			t.Fatalf("expected padded field ID rejection, got %v", err)
+		}
+	}
+}
+
 func TestIssueFormRejectsMultilineInputAnswer(t *testing.T) {
 	t.Parallel()
 	form := IssueForm{Fields: []FormField{{
@@ -465,6 +503,40 @@ body:
 			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
 		); err == nil || !strings.Contains(err.Error(), "string value is invalid") {
 			t.Fatalf("expected non-string scalar rejection, got %v", err)
+		}
+	}
+}
+
+func TestIssueFormRejectsBlankStringAttributes(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{
+		`type: input
+    attributes:
+      label: Summary
+      description: ""`,
+		`type: input
+    attributes:
+      label: Summary
+      placeholder: " "`,
+		`type: input
+    attributes:
+      label: Summary
+      value: ""`,
+		`type: textarea
+    attributes:
+      label: Details
+      render: " "`,
+	} {
+		contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - ` + field + `
+`)
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "string value is invalid") {
+			t.Fatalf("expected blank string attribute rejection for %q, got %v", field, err)
 		}
 	}
 }

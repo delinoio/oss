@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -66,7 +67,9 @@ func renderCapture(capture CaptureMetadata) (string, error) {
 	if capture.SanitizedURL != "" {
 		parsed, err := url.Parse(capture.SanitizedURL)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
-			parsed.Host == "" || parsed.User != nil || strings.Contains(capture.SanitizedURL, "\x00") {
+			parsed.Host == "" || parsed.User != nil ||
+			strings.ContainsAny(capture.SanitizedURL, "\x00<>") ||
+			strings.IndexFunc(capture.SanitizedURL, unicode.IsSpace) >= 0 {
 			return "", errors.New("realqa github: capture URL is invalid")
 		}
 		lines = append(lines, "- **URL:** <"+capture.SanitizedURL+">")

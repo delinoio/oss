@@ -119,6 +119,22 @@ func TestComposeBodyUsesSafeDOMCodeSpans(t *testing.T) {
 	}
 }
 
+func TestComposeBodyRejectsUnsafeCaptureURLAutolinks(t *testing.T) {
+	t.Parallel()
+	for _, captureURL := range []string{
+		"https://example.com/path with space",
+		"https://example.com/?next=>outside",
+	} {
+		_, err := ComposeBody(IssueInput{
+			SubmissionID: fixtureSubmissionID,
+			Capture:      CaptureMetadata{SanitizedURL: captureURL},
+		})
+		if err == nil || !strings.Contains(err.Error(), "capture URL is invalid") {
+			t.Fatalf("expected unsafe capture URL %q to be rejected, got %v", captureURL, err)
+		}
+	}
+}
+
 func TestComposeBodyAllowsManyImagesUntilSerializedOverflow(t *testing.T) {
 	t.Parallel()
 	input := IssueInput{

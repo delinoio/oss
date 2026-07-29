@@ -172,7 +172,7 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 	}
 	reservedIDs := make(map[string]struct{}, len(raw.Body))
 	for _, item := range raw.Body {
-		if id := strings.TrimSpace(item.ID); id != "" {
+		if id := item.ID; id != "" {
 			reservedIDs[id] = struct{}{}
 		}
 	}
@@ -185,7 +185,7 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 			if err := validateSkippedUpload(item); err != nil {
 				return IssueForm{}, err
 			}
-			id := strings.TrimSpace(item.ID)
+			id := item.ID
 			providerReference := id
 			if id != "" {
 				if _, exists := seen[id]; exists {
@@ -273,7 +273,7 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 
 func parseFormField(raw rawFormField) (FormField, error) {
 	field := FormField{
-		ID: strings.TrimSpace(raw.ID), Label: strings.TrimSpace(raw.Attributes.Label),
+		ID: raw.ID, Label: strings.TrimSpace(raw.Attributes.Label),
 		Description: strings.TrimSpace(raw.Attributes.Description),
 		Placeholder: raw.Attributes.Placeholder, Required: raw.Validations.Required,
 		Multiple: raw.Attributes.Multiple, Render: strings.TrimSpace(raw.Attributes.Render),
@@ -364,7 +364,7 @@ func parseFormField(raw rawFormField) (FormField, error) {
 }
 
 func validateSkippedUpload(raw rawFormField) error {
-	id := strings.TrimSpace(raw.ID)
+	id := raw.ID
 	if (id != "" && !issueFormIDPattern.MatchString(id)) ||
 		strings.TrimSpace(raw.Attributes.Label) == "" ||
 		raw.Validations.Required ||
@@ -463,13 +463,14 @@ func validateIssueFormYAML(document *yaml.Node) error {
 				if !isStringNode(key) {
 					return errors.New("realqa github: Issue Form attribute is invalid")
 				}
-				if isIssueFormStringAttribute(key.Value) && !isStringNode(value) {
-					return errors.New("realqa github: Issue Form field string value is invalid")
-				}
 				if isSupportedIssueFormFieldType(fieldType) &&
 					!isAllowedIssueFormAttribute(fieldType, key.Value) {
 					return errors.New(
 						"realqa github: Issue Form attribute is not allowed for this field")
+				}
+				if isIssueFormStringAttribute(key.Value) &&
+					(!isStringNode(value) || strings.TrimSpace(value.Value) == "") {
+					return errors.New("realqa github: Issue Form field string value is invalid")
 				}
 			}
 		}
