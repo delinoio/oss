@@ -1212,6 +1212,7 @@ SET state = 'submitted',
     updated_at = transaction_timestamp(),
     revision = revision + 1
 WHERE id = $1
+  AND state IN ('ready', 'submitting', 'reconciling', 'submitted')
 RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
 `
 

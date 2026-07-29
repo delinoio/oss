@@ -162,7 +162,12 @@ func PublicHandler(
 		}
 		record, err := lookup(request.Context(), publicID)
 		if err != nil {
-			http.NotFound(writer, request)
+			if errors.Is(err, ErrObjectNotFound) {
+				http.NotFound(writer, request)
+			} else {
+				writer.Header().Set("Cache-Control", "no-store")
+				http.Error(writer, "image unavailable", http.StatusServiceUnavailable)
+			}
 			return
 		}
 		writer.Header().Set("X-Content-Type-Options", "nosniff")

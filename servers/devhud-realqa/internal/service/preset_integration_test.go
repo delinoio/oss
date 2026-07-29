@@ -888,6 +888,36 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
 		t.Fatalf("resumed promotion: %v", err)
 	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_submissions
+		SET state = 'assets_deleted'
+		WHERE id = $1
+	`, submissionID); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{promotionAssetID},
+	); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("promotion over assets-deleted state = %v", err)
+	}
+	var terminalSubmissionState string
+	if err = connection.QueryRow(ctx, `
+		SELECT state
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&terminalSubmissionState); err != nil {
+		t.Fatal(err)
+	}
+	if terminalSubmissionState != "assets_deleted" {
+		t.Fatalf("terminal submission state = %q", terminalSubmissionState)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_submissions
+		SET state = 'submitted'
+		WHERE id = $1
+	`, submissionID); err != nil {
+		t.Fatal(err)
+	}
 	if err = connection.QueryRow(ctx, `
 		SELECT count(*) FROM realqa_object_deletion_jobs
 		WHERE asset_id = $1 AND object_kind = 'verified'

@@ -515,7 +515,16 @@ func (service *Submission) FinalizeImageUpload(
 		if replay, ok, replayErr := service.finalizeImageUploadReplay(
 			ctx, actor, idempotencyID, requestDigest,
 			submissionID, assetID); ok {
-			return replay, replayErr
+			if replayErr != nil {
+				return replay, replayErr
+			}
+			// This replay was discovered after writing the verified object.
+			// Promotion may already have drained the first request's copy.
+			if cleanupErr := service.cleanupUnownedVerifiedObject(
+				context.WithoutCancel(ctx), submissionID, assetID); cleanupErr != nil {
+				return nil, cleanupErr
+			}
+			return replay, nil
 		}
 		if cleanupErr := service.cleanupUnownedVerifiedObject(
 			context.WithoutCancel(ctx), submissionID, assetID); cleanupErr != nil {
@@ -1128,6 +1137,9 @@ func (service *Submission) PublicAsset(
 	row, err := service.dependencies.Store.Queries().GetPublicAsset(
 		ctx, pgtype.Text{String: publicID, Valid: true})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return imageassets.PublicRecord{}, imageassets.ErrObjectNotFound
+		}
 		return imageassets.PublicRecord{}, err
 	}
 	if row.State == "removed_placeholder" {

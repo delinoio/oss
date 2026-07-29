@@ -223,6 +223,7 @@ SET state = 'submitted',
     updated_at = transaction_timestamp(),
     revision = revision + 1
 WHERE id = sqlc.arg(id)
+  AND state IN ('ready', 'submitting', 'reconciling', 'submitted')
 RETURNING *;
 
 -- name: GetPublicAsset :one

@@ -436,6 +436,54 @@ func TestPublicGETDistinguishesMissingObjectsFromOutages(t *testing.T) {
 	}
 }
 
+func TestPublicGETDistinguishesMissingLookupsFromOutages(t *testing.T) {
+	t.Parallel()
+	signer, err := NewSigner(
+		"https://assets.realqa.deli.dev", bytes.Repeat([]byte("s"), 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicID := "abcdefghijklmnopqrstuv"
+	for _, test := range []struct {
+		name         string
+		err          error
+		status       int
+		cacheControl string
+	}{
+		{
+			name: "missing", err: ErrObjectNotFound,
+			status: http.StatusNotFound,
+		},
+		{
+			name: "unavailable", err: errors.New("PostgreSQL unavailable"),
+			status: http.StatusServiceUnavailable, cacheControl: "no-store",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			handler := PublicHandler(
+				signer,
+				&memoryObjects{},
+				func(context.Context, string) (PublicRecord, error) {
+					return PublicRecord{}, test.err
+				},
+			)
+			request := httptest.NewRequest(http.MethodGet, "/i/"+publicID, nil)
+			request.Host = "assets.realqa.deli.dev"
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("public lookup response = %d, want %d",
+					response.Code, test.status)
+			}
+			if response.Header().Get("Cache-Control") != test.cacheControl {
+				t.Fatalf("public lookup cache control = %q, want %q",
+					response.Header().Get("Cache-Control"), test.cacheControl)
+			}
+		})
+	}
+}
+
 func TestPublicIDsHave128BitsAndR2HasNoListingSurface(t *testing.T) {
 	t.Parallel()
 	seen := make(map[string]struct{}, 256)
