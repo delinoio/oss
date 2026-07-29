@@ -184,7 +184,12 @@ func adapterRefreshFixture(
 		t.Fatal(err)
 	}
 	t.Cleanup(store.Close)
-	connection, err := pgx.Connect(ctx, scopedURL)
+	connectionConfig, err := pgx.ParseConfig(scopedURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectionConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	connection, err := pgx.ConnectConfig(ctx, connectionConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
