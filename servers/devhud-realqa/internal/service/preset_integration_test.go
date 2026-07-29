@@ -1451,6 +1451,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		        FROM realqa_assets
 		        WHERE id = $1
 		    ),
+		    created_at = transaction_timestamp() - interval '3 hours',
+		    upload_deadline = transaction_timestamp() - interval '2 hours',
 		    upload_expires_at = transaction_timestamp() - interval '1 hour'
 		WHERE id = $4
 	`, submittedExtraAssetID, uuidv7.MustNew(), promotionAssetID,
