@@ -759,7 +759,9 @@ jobs:
               - apps/devhud/src-tauri/Info.plist
               - apps/devhud/src-tauri/build.rs
               - apps/devhud/src-tauri/capabilities/realqa-capture.json
+              - apps/devhud/src-tauri/src/diagnostics.rs
               - apps/devhud/src-tauri/src/lib.rs
+              - apps/devhud/src-tauri/src/local_log.rs
               - apps/devhud/src-tauri/src/realqa_capture/**
 
       - name: Determine whether to run
