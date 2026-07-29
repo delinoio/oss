@@ -109,13 +109,12 @@ type DeckGithubUserCredential struct {
 }
 
 type DeckGithubWebhookDelivery struct {
-	DeliveryID     string
-	EventType      int16
-	ActionType     int16
-	InstallationID int64
-	GithubUserID   int64
-	PayloadHash    []byte
-	ProcessedAt    pgtype.Timestamptz
+	DeliveryID           string
+	EventType            int16
+	ActionType           int16
+	ProviderIdentityHash []byte
+	PayloadHash          []byte
+	ProcessedAt          pgtype.Timestamptz
 }
 
 type DeckNotificationEvent struct {

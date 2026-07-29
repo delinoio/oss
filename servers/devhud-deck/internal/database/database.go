@@ -299,6 +299,13 @@ type CreateViewParams struct {
 	Now            time.Time
 }
 
+func ownerIDFromViewRow(row dbgen.DeckView) pgtype.UUID {
+	if row.OwnerScope == int16(deckv1.OwnerScope_OWNER_SCOPE_PERSONAL) {
+		return row.OwnerAccountID
+	}
+	return row.OwnerOrganizationID
+}
+
 func (store *Store) CreateView(
 	ctx context.Context,
 	params CreateViewParams,
@@ -343,6 +350,16 @@ func (store *Store) CreateView(
 		}
 		if tombstoned {
 			return ErrDeletionInProgress
+		}
+		connection, connectionErr := queries.GetGitHubConnectionByOwnerForUpdate(
+			ctx, dbgen.GetGitHubConnectionByOwnerForUpdateParams{
+				OwnerScope: row.OwnerScope,
+				OwnerID:    ownerIDFromViewRow(row),
+			})
+		if connectionErr == nil {
+			row.ConnectionState = connection.State
+		} else if !errors.Is(connectionErr, pgx.ErrNoRows) {
+			return connectionErr
 		}
 		switch params.View.Owner.GetScope() {
 		case deckv1.OwnerScope_OWNER_SCOPE_PERSONAL:

@@ -299,10 +299,10 @@ WHERE delivery_id = sqlc.arg(delivery_id);
 
 -- name: InsertGitHubWebhookDelivery :exec
 INSERT INTO deck_github_webhook_deliveries (
-    delivery_id, event_type, action_type, installation_id, github_user_id,
-    payload_hash, processed_at
+    delivery_id, event_type, action_type, provider_identity_hash, payload_hash,
+    processed_at
 ) VALUES (
     sqlc.arg(delivery_id), sqlc.arg(event_type), sqlc.arg(action_type),
-    sqlc.arg(installation_id), sqlc.arg(github_user_id),
-    sqlc.arg(payload_hash), sqlc.arg(processed_at)
+    sqlc.arg(provider_identity_hash), sqlc.arg(payload_hash),
+    sqlc.arg(processed_at)
 );

@@ -72,15 +72,10 @@ CREATE TABLE deck_github_webhook_deliveries (
         CHECK (delivery_id <> '' AND length(delivery_id) <= 128),
     event_type smallint NOT NULL CHECK (event_type IN (1, 2, 3)),
     action_type smallint NOT NULL CHECK (action_type BETWEEN 1 AND 8),
-    installation_id bigint NOT NULL CHECK (installation_id >= 0),
-    github_user_id bigint NOT NULL CHECK (github_user_id >= 0),
+    provider_identity_hash bytea NOT NULL
+        CHECK (octet_length(provider_identity_hash) = 32),
     payload_hash bytea NOT NULL CHECK (octet_length(payload_hash) = 32),
-    processed_at timestamptz NOT NULL,
-    CHECK (
-        (event_type IN (1, 2) AND installation_id > 0 AND github_user_id = 0)
-        OR
-        (event_type = 3 AND installation_id = 0 AND github_user_id > 0)
-    )
+    processed_at timestamptz NOT NULL
 );
 
 -- Notification deliveries contain opaque identifiers only. They are included

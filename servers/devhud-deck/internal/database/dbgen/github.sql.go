@@ -464,7 +464,7 @@ func (q *Queries) GetGitHubUserCredential(ctx context.Context, arg GetGitHubUser
 }
 
 const getGitHubWebhookDelivery = `-- name: GetGitHubWebhookDelivery :one
-SELECT delivery_id, event_type, action_type, installation_id, github_user_id, payload_hash, processed_at
+SELECT delivery_id, event_type, action_type, provider_identity_hash, payload_hash, processed_at
 FROM deck_github_webhook_deliveries
 WHERE delivery_id = $1
 `
@@ -476,8 +476,7 @@ func (q *Queries) GetGitHubWebhookDelivery(ctx context.Context, deliveryID strin
 		&i.DeliveryID,
 		&i.EventType,
 		&i.ActionType,
-		&i.InstallationID,
-		&i.GithubUserID,
+		&i.ProviderIdentityHash,
 		&i.PayloadHash,
 		&i.ProcessedAt,
 	)
@@ -592,23 +591,22 @@ func (q *Queries) InsertGitHubConnection(ctx context.Context, arg InsertGitHubCo
 
 const insertGitHubWebhookDelivery = `-- name: InsertGitHubWebhookDelivery :exec
 INSERT INTO deck_github_webhook_deliveries (
-    delivery_id, event_type, action_type, installation_id, github_user_id,
-    payload_hash, processed_at
+    delivery_id, event_type, action_type, provider_identity_hash, payload_hash,
+    processed_at
 ) VALUES (
     $1, $2, $3,
     $4, $5,
-    $6, $7
+    $6
 )
 `
 
 type InsertGitHubWebhookDeliveryParams struct {
-	DeliveryID     string
-	EventType      int16
-	ActionType     int16
-	InstallationID int64
-	GithubUserID   int64
-	PayloadHash    []byte
-	ProcessedAt    pgtype.Timestamptz
+	DeliveryID           string
+	EventType            int16
+	ActionType           int16
+	ProviderIdentityHash []byte
+	PayloadHash          []byte
+	ProcessedAt          pgtype.Timestamptz
 }
 
 func (q *Queries) InsertGitHubWebhookDelivery(ctx context.Context, arg InsertGitHubWebhookDeliveryParams) error {
@@ -616,8 +614,7 @@ func (q *Queries) InsertGitHubWebhookDelivery(ctx context.Context, arg InsertGit
 		arg.DeliveryID,
 		arg.EventType,
 		arg.ActionType,
-		arg.InstallationID,
-		arg.GithubUserID,
+		arg.ProviderIdentityHash,
 		arg.PayloadHash,
 		arg.ProcessedAt,
 	)

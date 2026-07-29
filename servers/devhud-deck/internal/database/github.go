@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
@@ -769,13 +770,15 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 	if err != nil {
 		return err
 	}
+	providerIdentityHash := store.hasher.Sum(
+		"github-webhook-installation", strconv.FormatUint(installationID, 10))
 	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
 		existing, replayErr := queries.GetGitHubWebhookDelivery(ctx, delivery)
 		if replayErr == nil {
 			if existing.EventType != eventType ||
 				existing.ActionType != actionType ||
-				existing.InstallationID != int64(installationID) ||
-				existing.GithubUserID != 0 ||
+				!bytes.Equal(
+					existing.ProviderIdentityHash, providerIdentityHash[:]) ||
 				!bytes.Equal(existing.PayloadHash, payloadHash[:]) {
 				return ErrIdempotencyConflict
 			}
@@ -866,9 +869,8 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 		return queries.InsertGitHubWebhookDelivery(
 			ctx, dbgen.InsertGitHubWebhookDeliveryParams{
 				DeliveryID: delivery, EventType: eventType,
-				ActionType: actionType, InstallationID: int64(installationID),
-				GithubUserID: 0,
-				PayloadHash:  payloadHash[:], ProcessedAt: pgTime(now),
+				ActionType: actionType, ProviderIdentityHash: providerIdentityHash[:],
+				PayloadHash: payloadHash[:], ProcessedAt: pgTime(now),
 			})
 	})
 }
@@ -904,13 +906,15 @@ func (store *Store) ApplyGitHubAuthorizationRevocation(
 		authorizationEvent  = int16(3)
 		authorizationRevoke = int16(8)
 	)
+	providerIdentityHash := store.hasher.Sum(
+		"github-webhook-user", strconv.FormatUint(githubUserID, 10))
 	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
 		existing, replayErr := queries.GetGitHubWebhookDelivery(ctx, delivery)
 		if replayErr == nil {
 			if existing.EventType != authorizationEvent ||
 				existing.ActionType != authorizationRevoke ||
-				existing.InstallationID != 0 ||
-				existing.GithubUserID != int64(githubUserID) ||
+				!bytes.Equal(
+					existing.ProviderIdentityHash, providerIdentityHash[:]) ||
 				!bytes.Equal(existing.PayloadHash, payloadHash[:]) {
 				return ErrIdempotencyConflict
 			}
@@ -926,9 +930,9 @@ func (store *Store) ApplyGitHubAuthorizationRevocation(
 		return queries.InsertGitHubWebhookDelivery(
 			ctx, dbgen.InsertGitHubWebhookDeliveryParams{
 				DeliveryID: delivery, EventType: authorizationEvent,
-				ActionType: authorizationRevoke, InstallationID: 0,
-				GithubUserID: int64(githubUserID),
-				PayloadHash:  payloadHash[:], ProcessedAt: pgTime(now),
+				ActionType:           authorizationRevoke,
+				ProviderIdentityHash: providerIdentityHash[:],
+				PayloadHash:          payloadHash[:], ProcessedAt: pgTime(now),
 			})
 	})
 }

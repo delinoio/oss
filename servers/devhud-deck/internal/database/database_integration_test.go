@@ -498,6 +498,22 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		connection.Installation.Permissions.Contents != deckgithub.PermissionWrite {
 		t.Fatalf("GitHub connection = %#v err=%v", connection, err)
 	}
+	connectedViewParams := createViewParams(
+		t, hasher, accountID, mustV7(t), mustV7(t), "subject-1",
+		now.Add(90*time.Second), 3)
+	connectedView, replayed, err := store.CreateView(ctx, connectedViewParams)
+	if err != nil || replayed || connectedView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		t.Fatalf("create connected view = %#v replayed=%v err=%v",
+			connectedView, replayed, err)
+	}
+	replayedConnectedView, replayed, err := store.CreateView(
+		ctx, connectedViewParams)
+	if err != nil || !replayed || replayedConnectedView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		t.Fatalf("replay connected view = %#v replayed=%v err=%v",
+			replayedConnectedView, replayed, err)
+	}
 	refreshedCredential := credential
 	refreshedCredential.AccessToken = "ghu_database_refreshed"
 	refreshedCredential.RefreshToken = "ghr_database_refreshed"
@@ -566,6 +582,21 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ctx, "authorization-revocation-1", credential.UserID,
 		revocationHash, now.Add(3*time.Minute)); err != nil {
 		t.Fatalf("authorization revocation: %v", err)
+	}
+	var revocationIdentityHash []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT provider_identity_hash
+		FROM deck_github_webhook_deliveries
+		WHERE delivery_id = $1`,
+		"authorization-revocation-1",
+	).Scan(&revocationIdentityHash); err != nil {
+		t.Fatal(err)
+	}
+	expectedRevocationIdentityHash := hasher.Sum(
+		"github-webhook-user", fmt.Sprint(credential.UserID))
+	if !bytes.Equal(
+		revocationIdentityHash, expectedRevocationIdentityHash[:]) {
+		t.Fatal("authorization replay retained an unexpected provider identity")
 	}
 	if _, err := store.GetGitHubConnection(
 		ctx, 1, accountID, accountID, true); !errors.Is(
@@ -728,6 +759,21 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		security.Digest([]byte("installation-permissions")),
 		now.Add(6*time.Minute)); err != nil {
 		t.Fatalf("accepted GitHub permissions: %v", err)
+	}
+	var installationIdentityHash []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT provider_identity_hash
+		FROM deck_github_webhook_deliveries
+		WHERE delivery_id = $1`,
+		"installation-permissions-1",
+	).Scan(&installationIdentityHash); err != nil {
+		t.Fatal(err)
+	}
+	expectedInstallationIdentityHash := hasher.Sum(
+		"github-webhook-installation", fmt.Sprint(installation.ID))
+	if !bytes.Equal(
+		installationIdentityHash, expectedInstallationIdentityHash[:]) {
+		t.Fatal("installation replay retained an unexpected provider identity")
 	}
 	connection, err = store.GetGitHubConnection(
 		ctx, 1, accountID, accountID, true)
