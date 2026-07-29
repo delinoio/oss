@@ -86,6 +86,7 @@ func authorizeOwner(
 
 func authorizeBilling(
 	viewer contracts.Viewer,
+	owner *deckv1.Owner,
 	billing *deckv1.BillingSelection,
 ) error {
 	if billing == nil ||
@@ -96,6 +97,16 @@ func authorizeBilling(
 	organizationID, err := parseUUID(billing.GetOrganizationId())
 	if err != nil {
 		return err
+	}
+	if owner != nil && owner.Scope == deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION {
+		ownerOrganizationID, ownerErr := ownerID(owner)
+		if ownerErr != nil {
+			return ownerErr
+		}
+		if organizationID != ownerOrganizationID {
+			return rpcerr.New(connect.CodePermissionDenied,
+				deckv1.ErrorReason_ERROR_REASON_PERMISSION_DENIED)
+		}
 	}
 	var teamID uuid.UUID
 	if billing.GetTeamId().GetValue() != "" {

@@ -11,6 +11,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deactivateOrganizationMembershipsForAccount = `-- name: DeactivateOrganizationMembershipsForAccount :exec
+UPDATE deck_organization_memberships
+SET active = false
+WHERE account_id = $1 AND active
+`
+
+func (q *Queries) DeactivateOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deactivateOrganizationMembershipsForAccount, accountID)
+	return err
+}
+
+const deactivateTeamMembershipsForAccount = `-- name: DeactivateTeamMembershipsForAccount :exec
+UPDATE deck_team_memberships
+SET active = false
+WHERE account_id = $1 AND active
+`
+
+func (q *Queries) DeactivateTeamMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deactivateTeamMembershipsForAccount, accountID)
+	return err
+}
+
 const getDeckAccountBySubject = `-- name: GetDeckAccountBySubject :one
 SELECT account_id, logto_subject, github_login_ciphertext, active
 FROM deck_accounts

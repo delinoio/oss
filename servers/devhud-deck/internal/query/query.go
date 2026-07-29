@@ -78,9 +78,13 @@ func Apply(existing, input *deckv1.ViewQuery) (*deckv1.ViewQuery, error) {
 		return nil, err
 	}
 	unknown = append(unknown, parsedExisting.Builder.UnrecognizedRawClauses...)
+	ownerQualifiers, err := existingOwnerQualifiers(existing.RawQuery)
+	if err != nil {
+		return nil, err
+	}
 	rendered := make([]string, 0, len(input.Builder.Clauses)+len(unknown))
 	for _, clause := range input.Builder.Clauses {
-		token, err := renderClause(clause)
+		token, err := renderClause(clause, takeOwnerQualifier(ownerQualifiers, clause))
 		if err != nil {
 			return nil, err
 		}
@@ -267,6 +271,50 @@ func parseClause(token string) (*deckv1.QueryClause, bool) {
 	return clause, true
 }
 
+func existingOwnerQualifiers(raw string) (map[string][]string, error) {
+	tokens, err := tokenize(raw)
+	if err != nil {
+		return nil, err
+	}
+	qualifiers := make(map[string][]string)
+	for _, token := range tokens {
+		negated := strings.HasPrefix(token, "-")
+		body := strings.TrimPrefix(token, "-")
+		key, rawValue, ok := strings.Cut(body, ":")
+		if !ok {
+			continue
+		}
+		key = strings.ToLower(key)
+		if key != "org" && key != "user" {
+			continue
+		}
+		value := unquote(rawValue)
+		qualifierKey := ownerQualifierKey(negated, value)
+		qualifiers[qualifierKey] = append(qualifiers[qualifierKey], key)
+	}
+	return qualifiers, nil
+}
+
+func takeOwnerQualifier(
+	qualifiers map[string][]string,
+	clause *deckv1.QueryClause,
+) string {
+	if clause == nil || clause.GetOwner() == nil {
+		return ""
+	}
+	key := ownerQualifierKey(clause.Negated, clause.GetOwner().GetOwner())
+	existing := qualifiers[key]
+	if len(existing) == 0 {
+		return ""
+	}
+	qualifiers[key] = existing[1:]
+	return existing[0]
+}
+
+func ownerQualifierKey(negated bool, owner string) string {
+	return strconv.FormatBool(negated) + "\x00" + owner
+}
+
 func identity(value string, team bool) *deckv1.QueryIdentity {
 	if strings.EqualFold(value, "@me") && !team {
 		return &deckv1.QueryIdentity{Kind: deckv1.QueryIdentityKind_QUERY_IDENTITY_KIND_VIEWER}
@@ -318,7 +366,7 @@ func parseTime(value string) *timestamppb.Timestamp {
 	return nil
 }
 
-func renderClause(clause *deckv1.QueryClause) ([]string, error) {
+func renderClause(clause *deckv1.QueryClause, ownerQualifier string) ([]string, error) {
 	if clause == nil || clause.Clause == nil {
 		return nil, errors.New("query: empty builder clause")
 	}
@@ -329,7 +377,11 @@ func renderClause(clause *deckv1.QueryClause) ([]string, error) {
 	var key, value string
 	switch typed := clause.Clause.(type) {
 	case *deckv1.QueryClause_Owner:
-		key, value = "org", typed.Owner.GetOwner()
+		key = ownerQualifier
+		if key == "" {
+			key = "org"
+		}
+		value = typed.Owner.GetOwner()
 	case *deckv1.QueryClause_Repository:
 		key, value = "repo", typed.Repository.GetOwner()+"/"+typed.Repository.GetRepository()
 	case *deckv1.QueryClause_Author:

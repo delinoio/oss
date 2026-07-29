@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestParseAndBuilderEditPreserveUnknownClauses(t *testing.T) {
@@ -100,5 +101,27 @@ func TestRawEditRemainsAuthoritative(t *testing.T) {
 		!strings.Contains(updated.RawQuery, "is:closed") ||
 		!strings.Contains(updated.RawQuery, "unknown:kept") {
 		t.Fatalf("raw query did not remain authoritative: %q", updated.RawQuery)
+	}
+}
+
+func TestBuilderEditPreservesPersonalOwnerQualifier(t *testing.T) {
+	t.Parallel()
+	existing, err := Parse("is:pr user:octocat is:open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := proto.Clone(existing).(*deckv1.ViewQuery)
+	for _, clause := range edited.Builder.Clauses {
+		if state := clause.GetState(); state != nil {
+			state.State = deckv1.PullRequestState_PULL_REQUEST_STATE_CLOSED
+		}
+	}
+	updated, err := Apply(existing, &deckv1.ViewQuery{Builder: edited.Builder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(updated.RawQuery, "user:octocat") ||
+		strings.Contains(updated.RawQuery, "org:octocat") {
+		t.Fatalf("personal owner qualifier changed: %q", updated.RawQuery)
 	}
 }

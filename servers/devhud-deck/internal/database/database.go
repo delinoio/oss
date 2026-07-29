@@ -162,7 +162,7 @@ func (store *Store) openProto(label string, ciphertext []byte, message proto.Mes
 	return nil
 }
 
-// UpsertIdentity and membership methods are the narrow ingestion boundary for
+// UpsertIdentity and SyncMemberships are the narrow ingestion boundary for
 // current DeliDev state. They are not Connect procedures.
 func (store *Store) UpsertIdentity(
 	ctx context.Context,
@@ -180,27 +180,60 @@ func (store *Store) UpsertIdentity(
 	})
 }
 
-func (store *Store) UpsertOrganizationMembership(
+func (store *Store) SyncMemberships(
 	ctx context.Context,
-	organizationID, accountID uuid.UUID,
-	role contracts.OrganizationRole,
+	accountID uuid.UUID,
+	memberships []contracts.Membership,
+	teamMemberships []contracts.TeamMembership,
 ) error {
-	return store.queries.UpsertOrganizationMembership(ctx,
-		dbgen.UpsertOrganizationMembershipParams{
-			OrganizationID: pgUUID(organizationID),
-			AccountID:      pgUUID(accountID),
-			Role:           int16(role),
-		})
-}
-
-func (store *Store) UpsertTeamMembership(
-	ctx context.Context,
-	organizationID, teamID, accountID uuid.UUID,
-) error {
-	return store.queries.UpsertTeamMembership(ctx, dbgen.UpsertTeamMembershipParams{
-		OrganizationID: pgUUID(organizationID),
-		TeamID:         pgUUID(teamID),
-		AccountID:      pgUUID(accountID),
+	if accountID == uuid.Nil || accountID.Version() != 7 {
+		return errors.New("deck database: invalid membership account")
+	}
+	organizations := make(map[uuid.UUID]struct{}, len(memberships))
+	for _, membership := range memberships {
+		if membership.OrganizationID == uuid.Nil ||
+			membership.OrganizationID.Version() != 7 ||
+			membership.Role < contracts.OrganizationRoleMember ||
+			membership.Role > contracts.OrganizationRoleOwner {
+			return errors.New("deck database: invalid organization membership")
+		}
+		organizations[membership.OrganizationID] = struct{}{}
+	}
+	for _, membership := range teamMemberships {
+		_, organizationActive := organizations[membership.OrganizationID]
+		if !organizationActive || membership.TeamID == uuid.Nil ||
+			membership.TeamID.Version() != 7 {
+			return errors.New("deck database: invalid team membership")
+		}
+	}
+	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		account := pgUUID(accountID)
+		if err := queries.DeactivateTeamMembershipsForAccount(ctx, account); err != nil {
+			return err
+		}
+		if err := queries.DeactivateOrganizationMembershipsForAccount(ctx, account); err != nil {
+			return err
+		}
+		for _, membership := range memberships {
+			if err := queries.UpsertOrganizationMembership(ctx,
+				dbgen.UpsertOrganizationMembershipParams{
+					OrganizationID: pgUUID(membership.OrganizationID),
+					AccountID:      account,
+					Role:           int16(membership.Role),
+				}); err != nil {
+				return err
+			}
+		}
+		for _, membership := range teamMemberships {
+			if err := queries.UpsertTeamMembership(ctx, dbgen.UpsertTeamMembershipParams{
+				OrganizationID: pgUUID(membership.OrganizationID),
+				TeamID:         pgUUID(membership.TeamID),
+				AccountID:      account,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -628,13 +661,24 @@ func (store *Store) ReplaceSnapshots(
 			return err
 		}
 		for index, snapshot := range snapshots {
+			repository := snapshot.GetRepository()
+			if repository == nil || repository.GetOwner() == "" ||
+				repository.GetName() == "" {
+				return errors.New("deck database: snapshot repository is required")
+			}
+			repositoryCiphertext, err := store.sealProto(
+				"pr-snapshot-repository", repository)
+			if err != nil {
+				return err
+			}
 			ciphertext, err := store.sealProto("pr-snapshot", snapshot)
 			if err != nil {
 				return err
 			}
 			if err := queries.InsertViewSnapshot(ctx, dbgen.InsertViewSnapshotParams{
 				ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
-				Ordinal: int32(index), SnapshotCiphertext: ciphertext,
+				Ordinal: int32(index), RepositoryCiphertext: repositoryCiphertext,
+				SnapshotCiphertext: ciphertext,
 			}); err != nil {
 				return err
 			}
@@ -648,11 +692,18 @@ func (store *Store) ReplaceSnapshots(
 	})
 }
 
+type SnapshotAuthorizer func(*deckv1.RepositoryReference) error
+
 func (store *Store) ListSnapshots(
 	ctx context.Context,
 	viewID uuid.UUID,
 	viewerHash [32]byte,
+	authorize SnapshotAuthorizer,
 ) ([]*deckv1.PullRequestResult, bool, time.Time, error) {
+	if authorize == nil {
+		return nil, false, time.Time{},
+			errors.New("deck database: snapshot authorizer is required")
+	}
 	_, err := store.queries.GetView(ctx, pgUUID(viewID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, time.Time{}, ErrNotFound
@@ -676,6 +727,14 @@ func (store *Store) ListSnapshots(
 	}
 	results := make([]*deckv1.PullRequestResult, 0, len(rows))
 	for _, row := range rows {
+		repository := &deckv1.RepositoryReference{}
+		if err := store.openProto(
+			"pr-snapshot-repository", row.RepositoryCiphertext, repository); err != nil {
+			return nil, false, time.Time{}, err
+		}
+		if err := authorize(repository); err != nil {
+			return nil, false, time.Time{}, err
+		}
 		result := &deckv1.PullRequestResult{}
 		if err := store.openProto("pr-snapshot", row.SnapshotCiphertext, result); err != nil {
 			return nil, false, time.Time{}, err

@@ -91,10 +91,11 @@ type DeckOwnerTombstone struct {
 }
 
 type DeckPullRequestSnapshot struct {
-	ViewID             pgtype.UUID
-	ViewerHash         []byte
-	Ordinal            int32
-	SnapshotCiphertext []byte
+	ViewID               pgtype.UUID
+	ViewerHash           []byte
+	Ordinal              int32
+	RepositoryCiphertext []byte
+	SnapshotCiphertext   []byte
 }
 
 type DeckPullRequestSnapshotState struct {

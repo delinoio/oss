@@ -11,6 +11,7 @@ import (
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/query"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
@@ -74,6 +75,37 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	viewer, err := store.ResolveViewer(ctx, "subject-1")
 	if err != nil || viewer.AccountID != accountID || viewer.GitHubLogin != "octocat" {
 		t.Fatalf("viewer = %#v, %v", viewer, err)
+	}
+	organizationID := mustV7(t)
+	teamID := mustV7(t)
+	memberships := []contracts.Membership{{
+		OrganizationID: organizationID,
+		Role:           contracts.OrganizationRoleOwner,
+	}}
+	teamMemberships := []contracts.TeamMembership{{
+		OrganizationID: organizationID,
+		TeamID:         teamID,
+	}}
+	if err := store.SyncMemberships(
+		ctx, accountID, memberships, teamMemberships); err != nil {
+		t.Fatal(err)
+	}
+	viewer, err = store.ResolveViewer(ctx, "subject-1")
+	if err != nil || !viewer.IsOwner(organizationID) ||
+		!viewer.CanUseTeam(organizationID, teamID) {
+		t.Fatalf("synchronized viewer = %#v, %v", viewer, err)
+	}
+	if err := store.SyncMemberships(ctx, accountID, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	viewer, err = store.ResolveViewer(ctx, "subject-1")
+	if err != nil || viewer.IsMember(organizationID) ||
+		viewer.CanUseTeam(organizationID, teamID) {
+		t.Fatalf("removed membership remained active: %#v, %v", viewer, err)
+	}
+	if err := store.SyncMemberships(
+		ctx, accountID, memberships, teamMemberships); err != nil {
+		t.Fatal(err)
 	}
 
 	now := time.Date(2026, time.July, 28, 12, 0, 0, 0, time.UTC)
@@ -139,13 +171,26 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || !truncated {
 		t.Fatalf("replace snapshots = truncated=%v err=%v", truncated, err)
 	}
-	current, stateTruncated, _, err := store.ListSnapshots(ctx, firstViewID, viewerHash)
+	authorizeSnapshot := func(*deckv1.RepositoryReference) error { return nil }
+	current, stateTruncated, _, err := store.ListSnapshots(
+		ctx, firstViewID, viewerHash, authorizeSnapshot)
 	if err != nil || len(current) != 500 || !stateTruncated {
 		t.Fatalf("snapshots = %d truncated=%v err=%v", len(current), stateTruncated, err)
 	}
+	authorizationErr := errors.New("snapshot authorization denied")
+	if _, _, _, err := store.ListSnapshots(
+		ctx, firstViewID, viewerHash,
+		func(repository *deckv1.RepositoryReference) error {
+			if repository.Owner != "secret" || repository.Name != "project" {
+				t.Fatalf("authorization repository = %#v", repository)
+			}
+			return authorizationErr
+		}); !errors.Is(err, authorizationErr) {
+		t.Fatalf("snapshot authorization error = %v", err)
+	}
 	secondViewerHash := hasher.Sum("snapshot-viewer", secondAccountID.String())
 	other, otherTruncated, _, err := store.ListSnapshots(
-		ctx, firstViewID, secondViewerHash)
+		ctx, firstViewID, secondViewerHash, authorizeSnapshot)
 	if err != nil || len(other) != 0 || otherTruncated {
 		t.Fatalf("other viewer state leaked: %d truncated=%v err=%v",
 			len(other), otherTruncated, err)
@@ -154,10 +199,26 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		snapshots[:1], now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	current, stateTruncated, _, err = store.ListSnapshots(ctx, firstViewID, viewerHash)
+	current, stateTruncated, _, err = store.ListSnapshots(
+		ctx, firstViewID, viewerHash, authorizeSnapshot)
 	if err != nil || len(current) != 1 || stateTruncated {
 		t.Fatalf("current-only snapshots = %d truncated=%v err=%v",
 			len(current), stateTruncated, err)
+	}
+
+	organizationViewID := mustV7(t)
+	organizationViewParams := createViewParams(
+		t, hasher, accountID, organizationViewID, mustV7(t), "subject-1",
+		now.Add(2*time.Minute), 101)
+	organizationViewParams.View.Owner = &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{OrganizationId: uuidProto(
+			organizationID)},
+	}
+	organizationViewParams.OwnerHash = hasher.Sum(
+		"owner", "OWNER_SCOPE_ORGANIZATION:"+organizationID.String())
+	if _, _, err := store.CreateView(ctx, organizationViewParams); err != nil {
+		t.Fatalf("create organization view: %v", err)
 	}
 
 	deviceID := mustV7(t)
@@ -173,6 +234,23 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			Provider:        deckv1.PushProvider_PUSH_PROVIDER_APPLE,
 			OpaquePushToken: "opaque",
 		},
+		Shortcuts: []*deckv1.ViewShortcut{{
+			ShortcutId: uuidProto(mustV7(t)),
+			ViewId:     uuidProto(organizationViewID),
+			Binding: &deckv1.ShortcutBinding{
+				Modifiers: []deckv1.ShortcutModifier{
+					deckv1.ShortcutModifier_SHORTCUT_MODIFIER_META,
+				},
+				Key: deckv1.ShortcutKey_SHORTCUT_KEY_A,
+			},
+			State: deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE,
+		}},
+		Widgets: []*deckv1.WidgetState{{
+			WidgetId: uuidProto(mustV7(t)),
+			ViewId:   uuidProto(organizationViewID),
+			Family:   deckv1.WidgetFamily_WIDGET_FAMILY_APPLE_SMALL,
+			Privacy:  deckv1.WidgetPrivacy_WIDGET_PRIVACY_COUNTS_ONLY,
+		}},
 	}
 	_, _, _, err = store.RegisterDevice(ctx, RegisterDeviceParams{
 		RegistrationID: registrationID, DeviceID: deviceID, AccountID: accountID,
@@ -193,6 +271,27 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	})
 	if !errors.Is(err, ErrAccountSwitch) {
 		t.Fatalf("account switch error = %T %v", err, err)
+	}
+	organizationTargetHash := hasher.Sum(
+		"owner", "OWNER_SCOPE_ORGANIZATION:"+organizationID.String())
+	if _, err := store.DeleteOrganizationFeatureData(ctx, DeleteFeatureDataParams{
+		JobID: mustV7(t), ReplayKey: mustV7(t), TargetID: organizationID,
+		TargetHash: organizationTargetHash, Trigger: DeletionTriggerOwner,
+		AcceptedAt: now.Add(3 * time.Minute),
+	}); err != nil {
+		t.Fatalf("organization feature deletion: %v", err)
+	}
+	device, err := store.GetDevice(
+		ctx, accountID, deviceID, now.Add(4*time.Minute))
+	if err != nil {
+		t.Fatalf("device after organization deletion: %v", err)
+	}
+	if len(device.Device.Shortcuts) != 0 || len(device.Device.Widgets) != 0 {
+		t.Fatalf("organization device state survived deletion: %#v", device.Device)
+	}
+	if device.Device.Revision.Value != 2 {
+		t.Fatalf("device revision after organization deletion = %#v",
+			device.Device.Revision)
 	}
 
 	replayKey := mustV7(t)

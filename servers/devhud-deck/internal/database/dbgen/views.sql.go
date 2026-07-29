@@ -280,18 +280,19 @@ func (q *Queries) InsertView(ctx context.Context, arg InsertViewParams) (DeckVie
 
 const insertViewSnapshot = `-- name: InsertViewSnapshot :exec
 INSERT INTO deck_pull_request_snapshots (
-    view_id, viewer_hash, ordinal, snapshot_ciphertext
+    view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
 ) VALUES (
     $1, $2, $3,
-    $4
+    $4, $5
 )
 `
 
 type InsertViewSnapshotParams struct {
-	ViewID             pgtype.UUID
-	ViewerHash         []byte
-	Ordinal            int32
-	SnapshotCiphertext []byte
+	ViewID               pgtype.UUID
+	ViewerHash           []byte
+	Ordinal              int32
+	RepositoryCiphertext []byte
+	SnapshotCiphertext   []byte
 }
 
 func (q *Queries) InsertViewSnapshot(ctx context.Context, arg InsertViewSnapshotParams) error {
@@ -299,6 +300,7 @@ func (q *Queries) InsertViewSnapshot(ctx context.Context, arg InsertViewSnapshot
 		arg.ViewID,
 		arg.ViewerHash,
 		arg.Ordinal,
+		arg.RepositoryCiphertext,
 		arg.SnapshotCiphertext,
 	)
 	return err
@@ -427,7 +429,7 @@ func (q *Queries) ListPersonalViews(ctx context.Context, arg ListPersonalViewsPa
 }
 
 const listViewSnapshots = `-- name: ListViewSnapshots :many
-SELECT view_id, viewer_hash, ordinal, snapshot_ciphertext
+SELECT view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
 FROM deck_pull_request_snapshots
 WHERE view_id = $1
   AND viewer_hash = $2
@@ -461,6 +463,7 @@ func (q *Queries) ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsPa
 			&i.ViewID,
 			&i.ViewerHash,
 			&i.Ordinal,
+			&i.RepositoryCiphertext,
 			&i.SnapshotCiphertext,
 		); err != nil {
 			return nil, err

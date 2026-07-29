@@ -26,6 +26,28 @@ WHERE owner_scope = 1 AND owner_account_id = sqlc.arg(account_id);
 DELETE FROM deck_views
 WHERE owner_scope = 2 AND owner_organization_id = sqlc.arg(organization_id);
 
+-- name: ListOrganizationViewIDsForUpdate :many
+SELECT view_id
+FROM deck_views
+WHERE owner_scope = 2 AND owner_organization_id = sqlc.arg(organization_id)
+ORDER BY view_id
+FOR UPDATE;
+
+-- name: ListDeviceRegistrationsForUpdate :many
+SELECT *
+FROM deck_device_registrations
+ORDER BY registration_id
+FOR UPDATE;
+
+-- name: UpdateDeviceViewStateAfterDeletion :exec
+UPDATE deck_device_registrations
+SET shortcuts_ciphertext = sqlc.arg(shortcuts_ciphertext),
+    widgets_ciphertext = sqlc.arg(widgets_ciphertext),
+    revision = revision + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE registration_id = sqlc.arg(registration_id)
+  AND revision = sqlc.arg(expected_revision);
+
 -- name: DeleteAccountDevices :exec
 DELETE FROM deck_device_registrations
 WHERE account_id = sqlc.arg(account_id);
@@ -48,4 +70,3 @@ WHERE organization_id = sqlc.arg(organization_id);
 -- name: DeleteOrganizationTeamMemberships :exec
 DELETE FROM deck_team_memberships
 WHERE organization_id = sqlc.arg(organization_id);
-

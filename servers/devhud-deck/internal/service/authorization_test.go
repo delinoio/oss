@@ -86,3 +86,55 @@ func TestViewRepositoryPermissionFailsBeforeIdentityBearingData(t *testing.T) {
 		t.Fatal("unauthorized repository was allowed")
 	}
 }
+
+func TestOrganizationBillingMustMatchOwner(t *testing.T) {
+	t.Parallel()
+	ownerID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
+	otherID := uuid.MustParse("01900000-0000-7000-8000-000000000004")
+	viewer := contracts.Viewer{
+		Memberships: map[uuid.UUID]contracts.OrganizationRole{
+			ownerID: contracts.OrganizationRoleAdmin,
+			otherID: contracts.OrganizationRoleMember,
+		},
+	}
+	owner := &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{OrganizationId: &deckv1.UuidV7{
+			Value: ownerID.String(),
+		}},
+	}
+	billing := &deckv1.BillingSelection{
+		OrganizationId: &deckv1.UuidV7{Value: otherID.String()},
+	}
+	if err := authorizeBilling(viewer, owner, billing); err == nil {
+		t.Fatal("organization view accepted another organization's billing scope")
+	}
+	billing.OrganizationId.Value = ownerID.String()
+	if err := authorizeBilling(viewer, owner, billing); err != nil {
+		t.Fatalf("owning organization billing rejected: %v", err)
+	}
+}
+
+type fixedETag string
+
+func (etag fixedETag) ETag(uuid.UUID, uint64) string { return string(etag) }
+
+func TestValidateExpectedRequiresMatchingETag(t *testing.T) {
+	t.Parallel()
+	resourceID := uuid.MustParse("01900000-0000-7000-8000-000000000005")
+	if _, err := validateExpected(
+		&deckv1.Revision{Value: 1}, resourceID, fixedETag("current")); err == nil {
+		t.Fatal("revision without ETag was accepted")
+	}
+	if _, err := validateExpected(
+		&deckv1.Revision{Value: 1, Etag: "guessed"},
+		resourceID, fixedETag("current")); err == nil {
+		t.Fatal("revision with a mismatched ETag was accepted")
+	}
+	revision, err := validateExpected(
+		&deckv1.Revision{Value: 1, Etag: "current"},
+		resourceID, fixedETag("current"))
+	if err != nil || revision != 1 {
+		t.Fatalf("matching ETag rejected: revision=%d err=%v", revision, err)
+	}
+}

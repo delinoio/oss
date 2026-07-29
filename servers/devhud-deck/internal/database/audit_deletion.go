@@ -6,10 +6,13 @@ import (
 	"errors"
 	"time"
 
+	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/audit"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database/dbgen"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"google.golang.org/protobuf/proto"
 )
 
 func (store *Store) Record(ctx context.Context, event audit.Event) error {
@@ -115,7 +118,8 @@ func (store *Store) DeleteFeatureData(
 				return err
 			}
 		case DeletionTriggerOrganizationLifecycle:
-			if err := deleteOrganization(ctx, queries, params.TargetID); err != nil {
+			if err := store.deleteOrganization(
+				ctx, queries, params.TargetID, params.AcceptedAt, true); err != nil {
 				return err
 			}
 		default:
@@ -174,15 +178,13 @@ func (store *Store) DeleteOrganizationFeatureData(
 			return err
 		}
 		if params.Trigger == DeletionTriggerOwner {
-			id := pgUUID(params.TargetID)
-			if err := queries.DeleteOrganizationFeatureData(ctx, id); err != nil {
-				return err
-			}
-			if err := queries.DeleteOrganizationConnection(ctx, id); err != nil {
+			if err := store.deleteOrganization(
+				ctx, queries, params.TargetID, params.AcceptedAt, false); err != nil {
 				return err
 			}
 		} else {
-			if err := deleteOrganization(ctx, queries, params.TargetID); err != nil {
+			if err := store.deleteOrganization(
+				ctx, queries, params.TargetID, params.AcceptedAt, true); err != nil {
 				return err
 			}
 		}
@@ -203,20 +205,138 @@ func (store *Store) DeleteOrganizationFeatureData(
 	return result, err
 }
 
-func deleteOrganization(
+func (store *Store) deleteOrganization(
 	ctx context.Context,
 	queries *dbgen.Queries,
 	organizationID uuid.UUID,
+	deletedAt time.Time,
+	deleteMemberships bool,
 ) error {
 	id := pgUUID(organizationID)
+	viewIDs, err := queries.ListOrganizationViewIDsForUpdate(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := store.scrubDeviceViewState(ctx, queries, viewIDs, deletedAt); err != nil {
+		return err
+	}
 	if err := queries.DeleteOrganizationFeatureData(ctx, id); err != nil {
 		return err
 	}
 	if err := queries.DeleteOrganizationConnection(ctx, id); err != nil {
 		return err
 	}
+	if !deleteMemberships {
+		return nil
+	}
 	if err := queries.DeleteOrganizationTeamMemberships(ctx, id); err != nil {
 		return err
 	}
 	return queries.DeleteOrganizationMemberships(ctx, id)
+}
+
+func (store *Store) scrubDeviceViewState(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	viewIDs []pgtype.UUID,
+	deletedAt time.Time,
+) error {
+	if len(viewIDs) == 0 {
+		return nil
+	}
+	deleted := make(map[uuid.UUID]struct{}, len(viewIDs))
+	for _, viewID := range viewIDs {
+		deleted[uuidValue(viewID)] = struct{}{}
+	}
+	devices, err := queries.ListDeviceRegistrationsForUpdate(ctx)
+	if err != nil {
+		return err
+	}
+	for _, device := range devices {
+		shortcuts := &deckv1.Device{}
+		if err := store.openProto(
+			"device-shortcuts", device.ShortcutsCiphertext, shortcuts); err != nil {
+			return err
+		}
+		widgets := &deckv1.Device{}
+		if err := store.openProto(
+			"device-widgets", device.WidgetsCiphertext, widgets); err != nil {
+			return err
+		}
+		remainingShortcuts, shortcutsChanged := retainShortcuts(
+			shortcuts.Shortcuts, deleted)
+		remainingWidgets, widgetsChanged := retainWidgets(widgets.Widgets, deleted)
+		if !shortcutsChanged && !widgetsChanged {
+			continue
+		}
+		shortcuts.Shortcuts = remainingShortcuts
+		widgets.Widgets = remainingWidgets
+		recalculateShortcutStates(shortcuts.Shortcuts)
+		shortcutsCiphertext, err := store.sealProto("device-shortcuts", shortcuts)
+		if err != nil {
+			return err
+		}
+		widgetsCiphertext, err := store.sealProto("device-widgets", widgets)
+		if err != nil {
+			return err
+		}
+		if err := queries.UpdateDeviceViewStateAfterDeletion(ctx,
+			dbgen.UpdateDeviceViewStateAfterDeletionParams{
+				ShortcutsCiphertext: shortcutsCiphertext,
+				WidgetsCiphertext:   widgetsCiphertext,
+				UpdatedAt:           pgTime(deletedAt),
+				RegistrationID:      device.RegistrationID,
+				ExpectedRevision:    device.Revision,
+			}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func retainShortcuts(
+	shortcuts []*deckv1.ViewShortcut,
+	deleted map[uuid.UUID]struct{},
+) ([]*deckv1.ViewShortcut, bool) {
+	remaining := make([]*deckv1.ViewShortcut, 0, len(shortcuts))
+	for _, shortcut := range shortcuts {
+		if _, remove := deleted[uuidValueFromProto(shortcut.GetViewId())]; remove {
+			continue
+		}
+		remaining = append(remaining, shortcut)
+	}
+	return remaining, len(remaining) != len(shortcuts)
+}
+
+func retainWidgets(
+	widgets []*deckv1.WidgetState,
+	deleted map[uuid.UUID]struct{},
+) ([]*deckv1.WidgetState, bool) {
+	remaining := make([]*deckv1.WidgetState, 0, len(widgets))
+	for _, widget := range widgets {
+		if _, remove := deleted[uuidValueFromProto(widget.GetViewId())]; remove {
+			continue
+		}
+		remaining = append(remaining, widget)
+	}
+	return remaining, len(remaining) != len(widgets)
+}
+
+func recalculateShortcutStates(shortcuts []*deckv1.ViewShortcut) {
+	counts := make(map[string]int, len(shortcuts))
+	keys := make([]string, len(shortcuts))
+	for index, shortcut := range shortcuts {
+		encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(shortcut.GetBinding())
+		if err != nil {
+			continue
+		}
+		keys[index] = string(encoded)
+		counts[keys[index]]++
+	}
+	for index, shortcut := range shortcuts {
+		shortcut.State = deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE
+		if counts[keys[index]] > 1 {
+			shortcut.State = deckv1.ShortcutState_SHORTCUT_STATE_CONFLICTED
+		}
+	}
 }

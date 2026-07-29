@@ -36,6 +36,16 @@ INSERT INTO deck_team_memberships (
 ON CONFLICT (organization_id, team_id, account_id) DO UPDATE
 SET active = true;
 
+-- name: DeactivateOrganizationMembershipsForAccount :exec
+UPDATE deck_organization_memberships
+SET active = false
+WHERE account_id = sqlc.arg(account_id) AND active;
+
+-- name: DeactivateTeamMembershipsForAccount :exec
+UPDATE deck_team_memberships
+SET active = false
+WHERE account_id = sqlc.arg(account_id) AND active;
+
 -- name: ListOrganizationMembershipsForAccount :many
 SELECT organization_id, role
 FROM deck_organization_memberships
@@ -57,4 +67,3 @@ INSERT INTO deck_audit_events (
     sqlc.narg(owner_scope), sqlc.narg(target_hash), sqlc.arg(resource_type),
     sqlc.narg(resource_id), sqlc.arg(outcome), sqlc.arg(occurred_at)
 );
-

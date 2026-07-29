@@ -126,7 +126,8 @@ func (service *View) CreateView(
 	if err != nil {
 		return nil, err
 	}
-	if err := authorizeBilling(viewer, request.Msg.View.Billing); err != nil {
+	if err := authorizeBilling(
+		viewer, request.Msg.View.Owner, request.Msg.View.Billing); err != nil {
 		return nil, err
 	}
 	canonicalQuery, err := query.Parse(request.Msg.View.GetQuery().GetRawQuery())
@@ -267,7 +268,8 @@ func (service *View) UpdateView(
 	if err != nil {
 		return nil, err
 	}
-	if err := authorizeBilling(viewer, request.Msg.View.Billing); err != nil {
+	if err := authorizeBilling(
+		viewer, current.Owner, request.Msg.View.Billing); err != nil {
 		return nil, err
 	}
 	updatedQuery, err := query.Apply(current.Query, request.Msg.View.Query)
@@ -390,22 +392,25 @@ func (service *View) ListPullRequests(
 	}
 	viewerHash := service.dependencies.Hasher.Sum("snapshot-viewer", viewer.AccountID.String())
 	snapshots, truncated, refreshedAt, err := service.dependencies.Store.ListSnapshots(
-		ctx, viewID, viewerHash)
+		ctx, viewID, viewerHash, func(repository *deckv1.RepositoryReference) error {
+			allowed, authErr := service.dependencies.Repositories.CanReadRepository(
+				ctx, viewer, repository.GetOwner(), repository.GetName())
+			if authErr != nil {
+				return rpcerr.New(connect.CodeUnavailable,
+					deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
+			}
+			if !allowed {
+				return rpcerr.New(connect.CodePermissionDenied,
+					deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
+			}
+			return nil
+		})
 	if err != nil {
+		var connectErr *connect.Error
+		if errors.As(err, &connectErr) {
+			return nil, err
+		}
 		return nil, mapDatabaseError(err)
-	}
-	for _, snapshot := range snapshots {
-		repository := snapshot.GetRepository()
-		allowed, authErr := service.dependencies.Repositories.CanReadRepository(
-			ctx, viewer, repository.GetOwner(), repository.GetName())
-		if authErr != nil {
-			return nil, rpcerr.New(connect.CodeUnavailable,
-				deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
-		}
-		if !allowed {
-			return nil, rpcerr.New(connect.CodePermissionDenied,
-				deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
-		}
 	}
 	authorized := snapshots
 	pageLimit := pageSize(request.Msg.Page, 50, 100)

@@ -166,3 +166,102 @@ func (q *Queries) InsertOwnerTombstone(ctx context.Context, arg InsertOwnerTombs
 	_, err := q.db.Exec(ctx, insertOwnerTombstone, arg.TargetHash, arg.AcceptedAt)
 	return err
 }
+
+const listDeviceRegistrationsForUpdate = `-- name: ListDeviceRegistrationsForUpdate :many
+SELECT registration_id, device_id, account_id, platform, display_name_ciphertext, push_ciphertext, detailed_notification_text_enabled, shortcuts_ciphertext, widgets_ciphertext, grant_verifier, revision, lease_expires_at, created_at, updated_at
+FROM deck_device_registrations
+ORDER BY registration_id
+FOR UPDATE
+`
+
+func (q *Queries) ListDeviceRegistrationsForUpdate(ctx context.Context) ([]DeckDeviceRegistration, error) {
+	rows, err := q.db.Query(ctx, listDeviceRegistrationsForUpdate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeckDeviceRegistration{}
+	for rows.Next() {
+		var i DeckDeviceRegistration
+		if err := rows.Scan(
+			&i.RegistrationID,
+			&i.DeviceID,
+			&i.AccountID,
+			&i.Platform,
+			&i.DisplayNameCiphertext,
+			&i.PushCiphertext,
+			&i.DetailedNotificationTextEnabled,
+			&i.ShortcutsCiphertext,
+			&i.WidgetsCiphertext,
+			&i.GrantVerifier,
+			&i.Revision,
+			&i.LeaseExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationViewIDsForUpdate = `-- name: ListOrganizationViewIDsForUpdate :many
+SELECT view_id
+FROM deck_views
+WHERE owner_scope = 2 AND owner_organization_id = $1
+ORDER BY view_id
+FOR UPDATE
+`
+
+func (q *Queries) ListOrganizationViewIDsForUpdate(ctx context.Context, organizationID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listOrganizationViewIDsForUpdate, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var view_id pgtype.UUID
+		if err := rows.Scan(&view_id); err != nil {
+			return nil, err
+		}
+		items = append(items, view_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateDeviceViewStateAfterDeletion = `-- name: UpdateDeviceViewStateAfterDeletion :exec
+UPDATE deck_device_registrations
+SET shortcuts_ciphertext = $1,
+    widgets_ciphertext = $2,
+    revision = revision + 1,
+    updated_at = $3
+WHERE registration_id = $4
+  AND revision = $5
+`
+
+type UpdateDeviceViewStateAfterDeletionParams struct {
+	ShortcutsCiphertext []byte
+	WidgetsCiphertext   []byte
+	UpdatedAt           pgtype.Timestamptz
+	RegistrationID      pgtype.UUID
+	ExpectedRevision    int64
+}
+
+func (q *Queries) UpdateDeviceViewStateAfterDeletion(ctx context.Context, arg UpdateDeviceViewStateAfterDeletionParams) error {
+	_, err := q.db.Exec(ctx, updateDeviceViewStateAfterDeletion,
+		arg.ShortcutsCiphertext,
+		arg.WidgetsCiphertext,
+		arg.UpdatedAt,
+		arg.RegistrationID,
+		arg.ExpectedRevision,
+	)
+	return err
+}

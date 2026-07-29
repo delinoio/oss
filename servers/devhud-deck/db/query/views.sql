@@ -105,10 +105,10 @@ WHERE view_id = sqlc.arg(view_id) AND viewer_hash = sqlc.arg(viewer_hash);
 
 -- name: InsertViewSnapshot :exec
 INSERT INTO deck_pull_request_snapshots (
-    view_id, viewer_hash, ordinal, snapshot_ciphertext
+    view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
 ) VALUES (
     sqlc.arg(view_id), sqlc.arg(viewer_hash), sqlc.arg(ordinal),
-    sqlc.arg(snapshot_ciphertext)
+    sqlc.arg(repository_ciphertext), sqlc.arg(snapshot_ciphertext)
 );
 
 -- name: UpdateViewSnapshotState :exec
@@ -128,7 +128,7 @@ FROM deck_pull_request_snapshot_states
 WHERE view_id = sqlc.arg(view_id) AND viewer_hash = sqlc.arg(viewer_hash);
 
 -- name: ListViewSnapshots :many
-SELECT view_id, viewer_hash, ordinal, snapshot_ciphertext
+SELECT view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
 FROM deck_pull_request_snapshots
 WHERE view_id = sqlc.arg(view_id)
   AND viewer_hash = sqlc.arg(viewer_hash)

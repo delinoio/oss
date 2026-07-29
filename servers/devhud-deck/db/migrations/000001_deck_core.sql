@@ -80,6 +80,7 @@ CREATE TABLE deck_pull_request_snapshots (
     view_id uuid NOT NULL REFERENCES deck_views(view_id) ON DELETE CASCADE,
     viewer_hash bytea NOT NULL CHECK (octet_length(viewer_hash) = 32),
     ordinal integer NOT NULL CHECK (ordinal >= 0 AND ordinal < 500),
+    repository_ciphertext bytea NOT NULL CHECK (octet_length(repository_ciphertext) > 0),
     snapshot_ciphertext bytea NOT NULL CHECK (octet_length(snapshot_ciphertext) > 0),
     PRIMARY KEY (view_id, viewer_hash, ordinal)
 );

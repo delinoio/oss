@@ -13,6 +13,8 @@ import (
 type Querier interface {
 	CountOrganizationViews(ctx context.Context, ownerOrganizationID pgtype.UUID) (int32, error)
 	CountPersonalViews(ctx context.Context, ownerAccountID pgtype.UUID) (int32, error)
+	DeactivateOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error
+	DeactivateTeamMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteAccountDevices(ctx context.Context, accountID pgtype.UUID) error
 	DeleteDeckAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteDeviceByRegistrationAndAccount(ctx context.Context, arg DeleteDeviceByRegistrationAndAccountParams) (int64, error)
@@ -49,7 +51,9 @@ type Querier interface {
 	InsertView(ctx context.Context, arg InsertViewParams) (DeckView, error)
 	InsertViewSnapshot(ctx context.Context, arg InsertViewSnapshotParams) error
 	IsOwnerTombstoned(ctx context.Context, targetHash []byte) (bool, error)
+	ListDeviceRegistrationsForUpdate(ctx context.Context) ([]DeckDeviceRegistration, error)
 	ListOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListOrganizationMembershipsForAccountRow, error)
+	ListOrganizationViewIDsForUpdate(ctx context.Context, organizationID pgtype.UUID) ([]pgtype.UUID, error)
 	ListOrganizationViews(ctx context.Context, arg ListOrganizationViewsParams) ([]DeckView, error)
 	ListPersonalViews(ctx context.Context, arg ListPersonalViewsParams) ([]DeckView, error)
 	ListTeamMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListTeamMembershipsForAccountRow, error)
@@ -58,6 +62,7 @@ type Querier interface {
 	Ping(ctx context.Context) (int32, error)
 	RenewDevice(ctx context.Context, arg RenewDeviceParams) (DeckDeviceRegistration, error)
 	UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (DeckDeviceRegistration, error)
+	UpdateDeviceViewStateAfterDeletion(ctx context.Context, arg UpdateDeviceViewStateAfterDeletionParams) error
 	UpdateView(ctx context.Context, arg UpdateViewParams) (DeckView, error)
 	UpdateViewSnapshotState(ctx context.Context, arg UpdateViewSnapshotStateParams) error
 	UpsertDeckAccount(ctx context.Context, arg UpsertDeckAccountParams) error

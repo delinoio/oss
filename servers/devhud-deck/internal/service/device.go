@@ -257,8 +257,13 @@ func (service *Device) UpdateViewNotificationPreference(
 		return nil, rpcerr.New(connect.CodeInvalidArgument,
 			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
+	expected, err := validateExpected(
+		request.Msg.ExpectedRevision, viewID, service.dependencies.Hasher)
+	if err != nil {
+		return nil, err
+	}
 	notification, err := service.dependencies.Store.UpdateNotificationPreference(
-		ctx, registrationID, viewID, request.Msg.ExpectedRevision.Value,
+		ctx, registrationID, viewID, expected,
 		request.Msg.Preference, service.dependencies.Clock.Now().UTC())
 	if err != nil {
 		return nil, (&View{dependencies: service.dependencies}).mapStaleWithETag(err)
