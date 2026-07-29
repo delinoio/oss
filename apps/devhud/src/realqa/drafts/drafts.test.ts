@@ -250,6 +250,95 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
   });
 
   it.each([
+    ["Issue\r757", true],
+    ["Issue\u2028757", true],
+    ["Issue\n757", false],
+  ])(
+    "matches synchronized bare dots against %s with Go semantics",
+    (title, matches) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: String.raw`^Issue.([0-9]+)$`,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+        ok: true,
+        url: {
+          value: matches
+            ? "https://example.com/matched"
+            : "https://fallback.example/",
+        },
+      });
+    },
+  );
+
+  it.each([
+    [String.raw`^\a$`, "\u0007"],
+    [String.raw`^\x{41}$`, "A"],
+    [String.raw`^[\a\x{41}]$`, "A"],
+  ])("translates synchronized Go character escape %s", (pattern, title) => {
+    expect(
+      inferDesktopUrl(
+        [
+          rule({
+            safeWindowTitlePattern: pattern,
+            urlTemplate: "https://example.com/matched",
+          }),
+        ],
+        "code",
+        title,
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/matched" },
+    });
+  });
+
+  it.each([String.raw`^\u0041$`, String.raw`^\u{41}$`, String.raw`^\cA$`])(
+    "rejects JavaScript-only synchronized escape %s",
+    (pattern) => {
+      expect(
+        validateRealQaProcessUrlRules([
+          rule({ safeWindowTitlePattern: pattern }),
+        ]),
+      ).toBe(false);
+    },
+  );
+
+  it.each([String.raw`(?i)^\P{Lu}$`, String.raw`(?i)^\p{^Lu}$`])(
+    "preserves synchronized case-insensitive Unicode complement %s",
+    (pattern) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: pattern,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      for (const title of ["A", "a"]) {
+        expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+          ok: true,
+          url: { value: "https://fallback.example/" },
+        });
+      }
+      expect(inferDesktopUrl(rules, "code", "0")).toMatchObject({
+        ok: true,
+        url: { value: "https://example.com/matched" },
+      });
+    },
+  );
+
+  it.each([
     [String.raw`^Issue\s([0-9]+)$`, "Issue 757", true],
     [String.raw`^Issue\s([0-9]+)$`, "Issue\u00a0757", false],
     [String.raw`^Issue[\s]([0-9]+)$`, "Issue\t757", true],

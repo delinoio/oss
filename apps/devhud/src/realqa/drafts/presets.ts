@@ -250,6 +250,8 @@ function repetitionLength(pattern: string, index: number): number {
 function translateUnicodeClassEscape(
   pattern: string,
   index: number,
+  caseInsensitive: boolean,
+  insideCharacterClass: boolean,
 ): { readonly output: string; readonly nextIndex: number } | null {
   const unicodeClass = pattern
     .slice(index)
@@ -262,16 +264,41 @@ function translateUnicodeClassEscape(
         ? "P"
         : "p"
       : unicodeClass[1];
-  const direct = `\\${classKind}{${name}}`;
+  const positive = `\\p{${name}}`;
+  let property = name;
   try {
-    new RegExp(direct, "u");
-    return { output: direct, nextIndex: index + unicodeClass[0].length };
+    new RegExp(positive, "u");
   } catch {
+    property = `Script=${name}`;
+  }
+  const direct = `\\${classKind}{${property}}`;
+  return {
+    output:
+      classKind === "P" && caseInsensitive && !insideCharacterClass
+        ? `[^\\p{${property}}]`
+        : direct,
+    nextIndex: index + unicodeClass[0].length,
+  };
+}
+
+function translateGoCharacterEscape(
+  pattern: string,
+  index: number,
+): { readonly output: string; readonly nextIndex: number } | null {
+  if (pattern.startsWith(String.raw`\a`, index)) {
+    return { output: String.raw`\x07`, nextIndex: index + 2 };
+  }
+  const bracedHex = pattern.slice(index).match(/^\\x\{([0-9A-Fa-f]+)\}/u);
+  if (bracedHex !== null) {
     return {
-      output: `\\${classKind}{Script=${name}}`,
-      nextIndex: index + unicodeClass[0].length,
+      output: `\\u{${bracedHex[1]}}`,
+      nextIndex: index + bracedHex[0].length,
     };
   }
+  if (pattern[index + 1] === "u" || pattern[index + 1] === "c") {
+    throw new Error("JavaScript-only escape");
+  }
+  return null;
 }
 
 function translatePerlWhitespaceClassEscape(
@@ -715,7 +742,9 @@ function translateTitlePattern(pattern: string): string {
               true,
             );
             const translatedClass =
-              whitespaceClass ?? translateUnicodeClassEscape(pattern, index);
+              whitespaceClass ??
+              translateUnicodeClassEscape(pattern, index, flags.i, true) ??
+              translateGoCharacterEscape(pattern, index);
             if (translatedClass !== null) {
               output += translatedClass.output;
               index = translatedClass.nextIndex;
@@ -741,7 +770,9 @@ function translateTitlePattern(pattern: string): string {
           false,
         );
         const translatedClass =
-          whitespaceClass ?? translateUnicodeClassEscape(pattern, index);
+          whitespaceClass ??
+          translateUnicodeClassEscape(pattern, index, flags.i, false) ??
+          translateGoCharacterEscape(pattern, index);
         if (translatedClass !== null) {
           output += translatedClass.output;
           index = translatedClass.nextIndex;
@@ -796,7 +827,14 @@ function translateTitlePattern(pattern: string): string {
         index += quantifierLength + (lazy ? 1 : 0);
         continue;
       }
-      output += token === "{" || token === "}" ? `\\${token}` : token;
+      output +=
+        token === "."
+          ? flags.s
+            ? token
+            : "[^\\n]"
+          : token === "{" || token === "}"
+            ? `\\${token}`
+            : token;
       index += 1;
     }
     return { output, nextIndex: index };

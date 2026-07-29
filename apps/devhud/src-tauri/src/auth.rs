@@ -778,6 +778,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             },
         };
         migrate_retained_device_session(&mut retained, &subject)?;
+        let feature_was_retained = retained.refresh_tokens.contains_key(&feature);
         let feature_tokens = match self.transport.refresh(
             &token_endpoint,
             &self.configuration.client_id,
@@ -787,6 +788,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         ) {
             Ok(tokens) => tokens,
             Err(failure) => {
+                if !feature_was_retained {
+                    return Err(failure.error);
+                }
                 let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
                 return Err(error);
             }
@@ -811,6 +815,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         ) {
             Ok(tokens) => tokens,
             Err(failure) => {
+                if !feature_was_retained {
+                    return Err(failure.error);
+                }
                 let TokenRefreshError {
                     error,
                     rotated_refresh_token,
@@ -2429,8 +2436,10 @@ mod tests {
     }
 
     #[test]
-    fn callback_vaults_rotations_from_retryable_verification_failures() {
-        for failure_at_delibase in [false, true] {
+    fn callback_does_not_vault_first_grant_on_retryable_verification_failures() {
+        for (failure_at_delibase, existing_deck_grant) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
             let mut transport = FakeTransport::default();
             transport.exchange.push_back(Ok(tokens(
                 "account-a",
@@ -2441,8 +2450,8 @@ mod tests {
             if failure_at_delibase {
                 transport.refresh.push_back(Ok(tokens(
                     "account-a",
-                    DECK_AUDIENCE,
-                    AuthFeature::Deck.scopes(),
+                    REALQA_AUDIENCE,
+                    AuthFeature::RealQa.scopes(),
                     None,
                 )));
             }
@@ -2452,10 +2461,23 @@ mod tests {
                     AuthError::TransportUnavailable,
                     Some(Secret::new("refresh-rotated").unwrap()),
                 )));
-            let mut manager = manager(transport, FakeVault::default());
+            let key = new_device_session_key("account-a").unwrap();
+            let vault = if existing_deck_grant {
+                FakeVault {
+                    retained: Some(retained_grant(
+                        AuthFeature::Deck,
+                        "deck-refresh",
+                        key.expose(),
+                    )),
+                    ..FakeVault::default()
+                }
+            } else {
+                FakeVault::default()
+            };
+            let mut manager = manager(transport, vault);
             let request = manager
                 .begin(
-                    AuthFeature::Deck,
+                    AuthFeature::RealQa,
                     AuthPlatform::Mobile,
                     Url::parse(MOBILE_CALLBACK).unwrap(),
                 )
@@ -2465,15 +2487,24 @@ mod tests {
                 manager.complete_callback(&callback_for(&request, "code", None), NOW),
                 Err(AuthError::TransportUnavailable)
             );
-            assert_eq!(
+            assert!(
                 manager
                     .vault
                     .retained
                     .as_ref()
-                    .and_then(|retained| retained.0.get(&AuthFeature::Deck))
-                    .map(String::as_str),
-                Some("refresh-rotated")
+                    .is_none_or(|retained| !retained.0.contains_key(&AuthFeature::RealQa))
             );
+            if existing_deck_grant {
+                assert_eq!(
+                    manager
+                        .vault
+                        .retained
+                        .as_ref()
+                        .and_then(|retained| retained.0.get(&AuthFeature::Deck))
+                        .map(String::as_str),
+                    Some("deck-refresh")
+                );
+            }
             assert_eq!(manager.snapshot(), SessionSnapshot::SignedOut);
         }
     }
@@ -2496,7 +2527,16 @@ mod tests {
         transport
             .refresh
             .push_back(Err(AuthError::TransportUnavailable.into()));
-        let mut manager = manager(transport, FakeVault::default());
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "refresh-original",
+                key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut manager = manager(transport, vault);
         let request = manager
             .begin(
                 AuthFeature::Deck,
