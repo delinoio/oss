@@ -113,6 +113,7 @@ func TestCompileAcceptsCommonRegexEdgeCases(t *testing.T) {
 		`^\p{^Greek}+$`,
 		`^\P{^Greek}+$`,
 		`^\x{3000}$`,
+		`^(\x{41})+$`,
 		`^\_$`,
 		`^\!$`,
 		`^[\p{Greek}-\p{Latin}]$`,

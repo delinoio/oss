@@ -483,6 +483,34 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
   );
 
   it.each([
+    String.raw`(?i)^[^\P{Lu}0]+$`,
+    String.raw`(?i)^[^\p{^Lu}0]+$`,
+  ])(
+    "applies synchronized quantified negated Unicode class %s to every character",
+    (pattern) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: pattern,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      expect(inferDesktopUrl(rules, "code", "Aa")).toMatchObject({
+        ok: true,
+        url: { value: "https://example.com/matched" },
+      });
+      expect(inferDesktopUrl(rules, "code", "A1")).toMatchObject({
+        ok: true,
+        url: { value: "https://fallback.example/" },
+      });
+    },
+  );
+
+  it.each([
     [String.raw`^Issue {01}$`, "Issue {01}", "Issue "],
     [String.raw`^a{1,02}$`, "a{1,02}", "aa"],
   ])(
@@ -708,6 +736,10 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     "((?:a|aa))+$",
     "([a-z]*)*$",
     "^Issue (",
+    "[]",
+    "[^]",
+    "(?-)^Issue",
+    "(?i-)a",
   ])("rejects unsupported shared-regex syntax %s", (pattern) => {
     expect(
       validateRealQaProcessUrlRules([
@@ -733,6 +765,7 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     String.raw`^\x{101}$`,
     String.raw`^\x{3000}$`,
     String.raw`^\x{1F600}$`,
+    String.raw`^(\x{41})+$`,
   ])(
     "does not interpret a synchronized braced hex escape as repetition %s",
     (pattern) => {

@@ -431,6 +431,8 @@ function hasUnsupportedCharacterClassSetAlgebra(pattern: string): boolean {
       continue;
     }
     if (token === "[") {
+      const firstMember = pattern[index + 1] === "^" ? index + 2 : index + 1;
+      if (!inCharacterClass && pattern[firstMember] === "]") return true;
       if (inCharacterClass) {
         const posixClass = translatePosixCharacterClass(pattern, index);
         if (posixClass !== null) {
@@ -441,6 +443,7 @@ function hasUnsupportedCharacterClassSetAlgebra(pattern: string): boolean {
       inCharacterClass = true;
       continue;
     }
+    if (token === "]" && !inCharacterClass) return true;
     if (token === "]" && inCharacterClass) {
       inCharacterClass = false;
       continue;
@@ -579,7 +582,7 @@ function compiledPatternInstructions(pattern: string): number | null {
       if (token === "|" || (token === ")" && closesGroup)) break;
       const flagDirective = pattern
         .slice(index)
-        .match(/^\(\?[imsU]*(?:-[imsU]*)?\)/u);
+        .match(/^\(\?[imsU]*(?:-[imsU]+)?\)/u);
       if (flagDirective !== null) {
         index += flagDirective[0].length;
         continue;
@@ -589,7 +592,7 @@ function compiledPatternInstructions(pattern: string): number | null {
       if (token === "(") {
         const groupPrefix = pattern
           .slice(index)
-          .match(/^\(\?[imsU]*(?:-[imsU]*)?:/u);
+          .match(/^\(\?[imsU]*(?:-[imsU]+)?:/u);
         const capturing = groupPrefix === null;
         index += groupPrefix?.[0].length ?? 1;
         const inner = alternation(true);
@@ -682,7 +685,8 @@ function hasUnsafeRepeatedOrUnbalancedGroup(pattern: string): boolean {
   for (let index = 0; index < pattern.length; index += 1) {
     const token = pattern[index];
     if (token === "\\") {
-      index += 1;
+      const bracedHex = pattern.slice(index).match(/^\\x\{[0-9A-Fa-f]+\}/u);
+      index += (bracedHex?.[0].length ?? 2) - 1;
       continue;
     }
     if (inCharacterClass) {
@@ -704,13 +708,13 @@ function hasUnsafeRepeatedOrUnbalancedGroup(pattern: string): boolean {
     if (token === "(") {
       const flagDirective = pattern
         .slice(index)
-        .match(/^\(\?[imsU]*(?:-[imsU]*)?\)/u);
+        .match(/^\(\?[imsU]*(?:-[imsU]+)?\)/u);
       if (flagDirective !== null) {
         index += flagDirective[0].length - 1;
         continue;
       }
       groups.push({ containsAlternation: false, containsRepetition: false });
-      const groupPrefix = pattern.slice(index).match(/^\(\?[imsU]*(?:-[imsU]*)?:/u);
+      const groupPrefix = pattern.slice(index).match(/^\(\?[imsU]*(?:-[imsU]+)?:/u);
       if (groupPrefix !== null) {
         index += groupPrefix[0].length - 1;
       } else if (pattern.startsWith("?:", index + 1)) {
@@ -876,7 +880,7 @@ function translateTitleCharacterClass(
   ];
   const members = `(?:${alternatives.join("|")})`;
   return {
-    output: negated ? `(?!${members})[\\s\\S]` : members,
+    output: negated ? `(?:(?!${members})[\\s\\S])` : members,
     nextIndex: index,
   };
 }
@@ -994,7 +998,7 @@ function translateTitlePattern(pattern: string): string {
       if (token === "(") {
         const inlineFlags = pattern
           .slice(index)
-          .match(/^\(\?([imsU]*)(?:-([imsU]*))?([:)])/u);
+          .match(/^\(\?([imsU]*)(?:-([imsU]+))?([:)])/u);
         if (inlineFlags !== null) {
           const nextFlags = updateRegexFlags(
             flags,

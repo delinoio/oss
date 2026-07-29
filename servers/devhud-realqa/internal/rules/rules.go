@@ -216,6 +216,24 @@ func inlineFlagPrefixLength(pattern string, index int, terminator byte) int {
 	return cursor - index + 1
 }
 
+func bracedHexEscapeLength(pattern string, index int) int {
+	if !strings.HasPrefix(pattern[index:], `\x{`) {
+		return 0
+	}
+	cursor := index + 3
+	firstDigit := cursor
+	for cursor < len(pattern) &&
+		((pattern[cursor] >= '0' && pattern[cursor] <= '9') ||
+			(pattern[cursor] >= 'A' && pattern[cursor] <= 'F') ||
+			(pattern[cursor] >= 'a' && pattern[cursor] <= 'f')) {
+		cursor++
+	}
+	if cursor == firstDigit || cursor >= len(pattern) || pattern[cursor] != '}' {
+		return 0
+	}
+	return cursor - index + 1
+}
+
 func hasUnsafeRepeatedOrUnbalancedGroup(pattern string) bool {
 	groups := make([]patternGroupState, 0)
 	inClass := false
@@ -223,7 +241,11 @@ func hasUnsafeRepeatedOrUnbalancedGroup(pattern string) bool {
 	for index := 0; index < len(pattern); index++ {
 		token := pattern[index]
 		if token == '\\' {
-			index++
+			if escapeLength := bracedHexEscapeLength(pattern, index); escapeLength > 0 {
+				index += escapeLength - 1
+			} else {
+				index++
+			}
 			continue
 		}
 		if inClass && !inPOSIXClass && strings.HasPrefix(pattern[index:], "[:") {
