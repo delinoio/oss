@@ -1131,7 +1131,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			 WHERE account_id = $2)
 		FROM realqa_github_connections
 		WHERE id = $1
-	`, lifecycleConnectionID).Scan(
+	`, lifecycleConnectionID, lifecycleAccountID).Scan(
 		&lifecycleConnectionState, &lifecycleConnectedBy,
 		&lifecycleCiphertext, &lifecycleWrappedKey, &lifecycleKeyID,
 		&lifecycleRepositoryAccess,
