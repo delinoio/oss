@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-deck/internal/api"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/config"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/logging"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/service"
@@ -58,6 +59,29 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		return err
 	}
 	defer store.Close()
+	githubOAuth, err := deckgithub.NewOAuth(deckgithub.OAuthConfig{
+		ClientID:     configuration.GitHubClientID,
+		ClientSecret: configuration.GitHubClientSecret,
+		AppSlug:      configuration.GitHubAppSlug,
+		CallbackURL:  config.DeckAudience + deckgithub.OAuthCallbackPath,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	githubSigner, err := deckgithub.NewStateSigner(
+		configuration.GitHubCallbackSigningKey)
+	if err != nil {
+		return err
+	}
+	githubClient := deckgithub.NewClient(nil)
+	githubBroker, err := deckgithub.NewBroker(deckgithub.BrokerConfig{
+		Signer: githubSigner, OAuth: githubOAuth, Client: githubClient,
+		Callbacks: store, Lifecycle: store,
+		WebhookSecret: configuration.GitHubWebhookSecret,
+	})
+	if err != nil {
+		return err
+	}
 	keys, err := auth.NewJWKS(auth.JWKSConfig{URL: configuration.LogtoJWKSURL})
 	if err != nil {
 		return err
@@ -78,13 +102,15 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	}
 	dependencies := service.Dependencies{
 		Store: store, Hasher: hasher, Pseudonymizer: pseudonymizer,
-		Logger: logger,
+		Logger: logger, GitHubBroker: githubBroker, GitHubClient: githubClient,
+		Repositories: service.NewGitHubRepositoryAuthorizer(store, githubClient),
 	}
 	handler, err := api.New(api.Dependencies{
 		DeckAuthentication:     deckValidator,
 		DelibaseAuthentication: delibaseValidator,
 		Directory:              store, LifecycleClientID: configuration.LifecycleClientID,
 		Health: store, Services: dependencies, Logger: logger,
+		GitHubHTTP: githubBroker.Handler(),
 	})
 	if err != nil {
 		return err

@@ -18,14 +18,19 @@ const (
 type LookupEnv func(string) (string, bool)
 
 type Config struct {
-	HTTPAddress       string
-	DatabaseURL       string
-	LogtoIssuer       string
-	LogtoJWKSURL      string
-	LifecycleClientID string
-	EncryptionKey     []byte
-	HashingKey        []byte
-	PseudonymKey      []byte
+	HTTPAddress              string
+	DatabaseURL              string
+	LogtoIssuer              string
+	LogtoJWKSURL             string
+	LifecycleClientID        string
+	EncryptionKey            []byte
+	HashingKey               []byte
+	PseudonymKey             []byte
+	GitHubClientID           string
+	GitHubClientSecret       string
+	GitHubAppSlug            string
+	GitHubWebhookSecret      []byte
+	GitHubCallbackSigningKey []byte
 }
 
 func Load(lookup LookupEnv) (Config, error) {
@@ -33,11 +38,14 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, errors.New("deck config: environment lookup is required")
 	}
 	configuration := Config{
-		HTTPAddress:       valueOr(lookup, "DECK_HTTP_ADDRESS", "127.0.0.1:8080"),
-		DatabaseURL:       required(lookup, "DECK_DATABASE_URL"),
-		LogtoIssuer:       required(lookup, "DECK_LOGTO_ISSUER"),
-		LogtoJWKSURL:      required(lookup, "DECK_LOGTO_JWKS_URL"),
-		LifecycleClientID: required(lookup, "DECK_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID"),
+		HTTPAddress:        valueOr(lookup, "DECK_HTTP_ADDRESS", "127.0.0.1:8080"),
+		DatabaseURL:        required(lookup, "DECK_DATABASE_URL"),
+		LogtoIssuer:        required(lookup, "DECK_LOGTO_ISSUER"),
+		LogtoJWKSURL:       required(lookup, "DECK_LOGTO_JWKS_URL"),
+		LifecycleClientID:  required(lookup, "DECK_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID"),
+		GitHubClientID:     required(lookup, "DECK_GITHUB_APP_CLIENT_ID"),
+		GitHubClientSecret: required(lookup, "DECK_GITHUB_APP_CLIENT_SECRET"),
+		GitHubAppSlug:      required(lookup, "DECK_GITHUB_APP_SLUG"),
 	}
 	var err error
 	configuration.EncryptionKey, err = decodeKey(
@@ -55,9 +63,23 @@ func Load(lookup LookupEnv) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	configuration.GitHubWebhookSecret, err = decodeKey(
+		required(lookup, "DECK_GITHUB_WEBHOOK_SECRET"), 32)
+	if err != nil {
+		return Config{}, err
+	}
+	configuration.GitHubCallbackSigningKey, err = decodeKey(
+		required(lookup, "DECK_GITHUB_CALLBACK_SIGNING_KEY"), 32)
+	if err != nil {
+		return Config{}, err
+	}
 	if configuration.DatabaseURL == "" || configuration.LogtoIssuer == "" ||
 		configuration.LogtoJWKSURL == "" || configuration.LifecycleClientID == "" ||
-		strings.ContainsAny(configuration.LifecycleClientID, " \t\r\n") {
+		strings.ContainsAny(configuration.LifecycleClientID, " \t\r\n") ||
+		!safeGitHubIdentifier(configuration.GitHubClientID) ||
+		!safeGitHubIdentifier(configuration.GitHubAppSlug) ||
+		configuration.GitHubClientSecret == "" ||
+		strings.ContainsAny(configuration.GitHubClientSecret, "\r\n") {
 		return Config{}, errors.New("deck config: required value is missing or invalid")
 	}
 	if err := exactHTTPSResource(configuration.LogtoIssuer); err != nil {
@@ -67,6 +89,12 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, fmt.Errorf("deck config: invalid Logto JWKS URL")
 	}
 	return configuration, nil
+}
+
+func safeGitHubIdentifier(value string) bool {
+	return value != "" && len(value) <= 255 &&
+		strings.TrimSpace(value) == value &&
+		!strings.ContainsAny(value, " \t\r\n/:?#@")
 }
 
 func required(lookup LookupEnv, key string) string {

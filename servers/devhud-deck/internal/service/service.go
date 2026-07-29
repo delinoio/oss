@@ -8,6 +8,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-deck/internal/audit"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
@@ -31,6 +32,8 @@ type Dependencies struct {
 	Audits        audit.Recorder
 	Pseudonymizer *safelog.Pseudonymizer
 	Logger        *slog.Logger
+	GitHubBroker  *deckgithub.Broker
+	GitHubClient  *deckgithub.Client
 }
 
 func (dependencies Dependencies) withDefaults() Dependencies {

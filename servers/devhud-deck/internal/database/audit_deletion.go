@@ -97,6 +97,18 @@ func (store *Store) DeleteFeatureData(
 			ctx, params.TargetHash[:]); err != nil {
 			return err
 		}
+		if params.Trigger != DeletionTriggerOrganizationLifecycle {
+			if err := queries.DeleteGitHubCallbackStatesByOwner(
+				ctx, dbgen.DeleteGitHubCallbackStatesByOwnerParams{
+					OwnerScope: 1, OwnerID: pgUUID(params.TargetID),
+				}); err != nil {
+				return err
+			}
+			if err := queries.DeleteGitHubUserCredentialsByAccount(
+				ctx, pgUUID(params.TargetID)); err != nil {
+				return err
+			}
+		}
 		switch params.Trigger {
 		case DeletionTriggerOwner:
 			if err := queries.DeletePersonalFeatureData(ctx, pgUUID(params.TargetID)); err != nil {
@@ -221,6 +233,12 @@ func (store *Store) deleteOrganization(
 	deleteMemberships bool,
 ) error {
 	id := pgUUID(organizationID)
+	if err := queries.DeleteGitHubCallbackStatesByOwner(
+		ctx, dbgen.DeleteGitHubCallbackStatesByOwnerParams{
+			OwnerScope: 2, OwnerID: id,
+		}); err != nil {
+		return err
+	}
 	viewIDs, err := queries.ListOrganizationViewIDsForUpdate(ctx, id)
 	if err != nil {
 		return err

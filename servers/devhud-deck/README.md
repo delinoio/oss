@@ -3,9 +3,11 @@
 `servers/devhud-deck` is the private Go/PostgreSQL implementation of the
 `devhud.deck.v1` Connect contract. It currently implements authenticated view
 and device persistence, current viewer-scoped PR snapshots, typed audits,
-health endpoints, and owner/lifecycle deletion. Provider refresh, billing,
-GitHub connection, and mutation procedures fail closed until their separately
-documented dependencies are implemented.
+health endpoints, owner/lifecycle deletion, signed GitHub.com App/OAuth
+callbacks, installation lifecycle handling, permission-filtered provider
+search and candidate discovery, and the closed user-attributed mutation set.
+Billed provider refresh and notification delivery continue to fail closed
+until their separately documented dependencies are implemented.
 
 The process has no scheduler or provider-polling worker. Nothing in this
 directory deploys an API, configures DNS, publishes a client/SDK or image,
@@ -23,7 +25,9 @@ go vet ./servers/devhud-deck/...
 PostgreSQL integration tests use `DECK_TEST_DATABASE_URL` and are skipped when
 that variable is absent.
 
+The GitHub App manifest and signature payloads under `testdata/github-app` are
+fixtures only. They must not be used to register a production App.
+
 Logout and reset remain client operations. Both unregister the current device
 before deleting local credentials; reset does not call feature deletion and
 therefore does not delete server views or connections.
-

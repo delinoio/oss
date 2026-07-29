@@ -88,10 +88,12 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
   `docs/servers-devhud-*-foundation.md`, proto contract, and app contract before
   implementation. The private `devhud.deck.v1` and `devhud.realqa.v1`
   source/generated packages exist. Deck's bounded authentication/persistence
-  foundation exists at `servers/devhud-deck`; `servers/devhud-realqa` contains
-  the inactive preset/tracker/auth/deletion foundation. Deck's provider,
-  billing, mutation, and notification-delivery surfaces and RealQA's
-  submission, provider, image, and billing surfaces remain planned. No origin,
+  foundation plus its GitHub.com connection/callback/lifecycle and
+  permission-filtered PR-mutation adapter exist at `servers/devhud-deck`;
+  `servers/devhud-realqa` contains the inactive preset/tracker/auth/deletion
+  foundation. Deck's billed provider refresh and notification-delivery
+  surfaces and RealQA's submission, provider, image, and billing surfaces
+  remain planned. No origin,
   published image, production secret, provider registration, catalog
   activation, deployment, or operational rollout is claimed.
 - Both services use Go, PostgreSQL, migrations, sqlc, UUID v7, Connect RPC for business mutations, redacted structured operations/audit data, and narrowly scoped HTTP callbacks/webhooks. DevHud calls Connect through its private native transport, so feature services must not add `http://tauri.localhost` to CORS; Deck may allow the exact HTTPS DeliDev origin only for `DeckIntegrationService`, while RealQA has no browser client. Before reusing any `servers/internal` package, complete the compatibility review required by its contract (including feature audiences and error types); keep feature business policy in its owning service.

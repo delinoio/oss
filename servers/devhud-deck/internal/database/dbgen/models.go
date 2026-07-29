@@ -28,13 +28,21 @@ type DeckAuditEvent struct {
 }
 
 type DeckConnection struct {
-	ConnectionID pgtype.UUID
-	OwnerScope   int16
-	OwnerID      pgtype.UUID
-	State        int16
-	Revision     int64
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ConnectionID                 pgtype.UUID
+	OwnerScope                   int16
+	OwnerID                      pgtype.UUID
+	State                        int16
+	Revision                     int64
+	CreatedAt                    pgtype.Timestamptz
+	UpdatedAt                    pgtype.Timestamptz
+	GithubInstallationID         pgtype.Int8
+	GithubAccountID              pgtype.Int8
+	GithubAccountKind            pgtype.Int2
+	GithubAccountLoginCiphertext []byte
+	GithubMetadataPermission     pgtype.Int2
+	GithubPullRequestsPermission pgtype.Int2
+	GithubChecksPermission       pgtype.Int2
+	GithubMembersPermission      pgtype.Int2
 }
 
 type DeckDeletionJob struct {
@@ -74,6 +82,44 @@ type DeckDeviceRegistrationIdempotency struct {
 	ResponseCiphertext    []byte
 	LeaseExpiresAt        pgtype.Timestamptz
 	CreatedAt             pgtype.Timestamptz
+}
+
+type DeckGithubCallbackState struct {
+	StateHash       []byte
+	OwnerScope      int16
+	OwnerID         pgtype.UUID
+	AccountID       pgtype.UUID
+	StateCiphertext []byte
+	ExpiresAt       pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
+type DeckGithubUserCredential struct {
+	ConnectionID               pgtype.UUID
+	AccountID                  pgtype.UUID
+	UserAccessTokenCiphertext  []byte
+	UserRefreshTokenCiphertext []byte
+	UserAccessTokenExpiresAt   pgtype.Timestamptz
+	UserRefreshTokenExpiresAt  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+}
+
+type DeckGithubWebhookDelivery struct {
+	DeliveryID     string
+	EventType      int16
+	ActionType     int16
+	InstallationID int64
+	PayloadHash    []byte
+	ProcessedAt    pgtype.Timestamptz
+}
+
+type DeckNotificationEvent struct {
+	EventID       pgtype.UUID
+	ViewID        pgtype.UUID
+	OpaqueEventID []byte
+	Transition    int16
+	CreatedAt     pgtype.Timestamptz
+	ExpiresAt     pgtype.Timestamptz
 }
 
 type DeckOrganizationMembership struct {

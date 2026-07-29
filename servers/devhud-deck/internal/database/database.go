@@ -27,6 +27,7 @@ var (
 	ErrIdempotencyConflict = errors.New("deck database: idempotency conflict")
 	ErrDeletionInProgress  = errors.New("deck database: deletion in progress")
 	ErrAccountSwitch       = errors.New("deck database: device belongs to another account")
+	ErrInstallationOwned   = errors.New("deck database: installation already has an owner")
 )
 
 type LimitError struct {

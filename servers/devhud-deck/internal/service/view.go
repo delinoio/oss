@@ -583,14 +583,6 @@ func deletionOwnerLabel(organization bool) string {
 	return "OWNER_SCOPE_PERSONAL"
 }
 
-func (service *View) ListPullRequestMutationCandidates(
-	context.Context,
-	*connect.Request[deckv1.ListPullRequestMutationCandidatesRequest],
-) (*connect.Response[deckv1.ListPullRequestMutationCandidatesResponse], error) {
-	return nil, rpcerr.New(connect.CodeUnimplemented,
-		deckv1.ErrorReason_ERROR_REASON_UNSUPPORTED_ACTION)
-}
-
 func (service *View) GetRefreshPreflight(
 	context.Context,
 	*connect.Request[deckv1.GetRefreshPreflightRequest],
@@ -605,14 +597,6 @@ func (service *View) RefreshView(
 ) (*connect.Response[deckv1.RefreshViewResponse], error) {
 	return nil, rpcerr.New(connect.CodeUnavailable,
 		deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
-}
-
-func (service *View) MutatePullRequest(
-	context.Context,
-	*connect.Request[deckv1.MutatePullRequestRequest],
-) (*connect.Response[deckv1.MutatePullRequestResponse], error) {
-	return nil, rpcerr.New(connect.CodeUnimplemented,
-		deckv1.ErrorReason_ERROR_REASON_UNSUPPORTED_ACTION)
 }
 
 func (service *View) mapStaleWithETag(err error) error {

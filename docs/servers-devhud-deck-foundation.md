@@ -8,11 +8,16 @@
   directory implements dual-audience authentication, current DeliDev
   membership authorization, PostgreSQL migrations/sqlc persistence,
   encrypted view/device/current-snapshot storage, typed audits, health
-  endpoints, view/device CRUD, query rewriting, limits, revisions, and
-  owner/lifecycle deletion. GitHub connection/provider callbacks, provider
-  refresh and billing, PR mutations, notification delivery, packaging,
-  deployment, DNS, production secrets, registered GitHub Apps, catalog
-  activation, and production operation remain unimplemented and unclaimed.
+  endpoints, view/device CRUD, query rewriting, limits, revisions,
+  owner/lifecycle deletion, and the GitHub.com-only connection/provider slice.
+  That slice implements signed App/OAuth callbacks, signed installation
+  lifecycle webhooks, per-viewer encrypted user authorization credentials,
+  installation ownership, authorization-filtered search and candidates,
+  action metadata, and the closed PR mutation set. The search adapter remains
+  unreachable from `RefreshView` while provider refresh and billing fail
+  closed. Notification delivery, packaging, deployment, DNS, production
+  secrets, registered GitHub Apps, catalog activation, and production
+  operation remain unimplemented and unclaimed.
 - Future canonical API origin and Logto audience: `https://deck.deli.dev`; documenting it does not create or activate the origin.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrowly scoped HTTP handlers, and shared `servers/internal` infrastructure where its generic contracts apply.
 
@@ -59,9 +64,29 @@
   installation without displaying an opaque provider installation ID.
 - Connections may be managed from DevHud Deck settings and the existing DeliDev `/account` or `/o/:orgSlug/settings` sections. The DeliDev settings client may call only the four `DeckIntegrationService` RPCs and may navigate a returned authorization target only through its Deck-specific exact GitHub.com top-level browser validator; it must not consume views, pull-request data, mutations, devices, notifications, or widgets. No new top-level DeliDev route or generic navigation field is authorized.
 - HTTP is limited to GitHub OAuth/App callbacks and installation-lifecycle webhooks. Provider webhooks must not refresh pull-request status.
+- The implemented HTTP paths are exactly `/github/app/callback`,
+  `/github/oauth/callback`, and `/github/webhooks`. App and OAuth callbacks use
+  separate HMAC-signed, expiring, encrypted, one-use state records. Webhooks
+  require `X-Hub-Signature-256`, a bounded body, an explicit delivery ID, and
+  only `installation` or `installation_repositories` events. Any delivered PR,
+  check, or status event is accepted without state mutation and cannot refresh
+  a view.
+- The source-controlled test-only manifest is
+  `servers/devhud-deck/testdata/github-app/manifest.json`. It requests only
+  metadata read, pull-request write, checks read, and members read, subscribes
+  only to installation lifecycle events, is private, and is explicitly not a
+  production registration. Member/team APIs are invoked only by an explicit
+  team-reviewer candidate/action path.
 - Disconnect immediately deletes provider tokens, cached PR results, notification state, and widget snapshots while retaining view definitions as disconnected records.
 - GitHub App user authorization credentials retained for an active connection use application-level envelope encryption before PostgreSQL persistence: a fresh data-encryption key protects each credential record, only ciphertext plus wrapped key and versioned managed environment-scoped key ID are stored or backed up, and decrypt authority is limited to the provider adapter for the current authorized operation. Rotation must support decrypting old key versions and transactional rewrapping to the active key without exposing plaintext; database/storage encryption alone is insufficient. Plaintext credentials and unwrapped data keys are memory-only for the bounded provider call and never enter logs, traces, errors, audits, caches, or backups.
+- Credentials are keyed by DeliDev account and connection. An organization
+  installation never causes one member's user token to be reused for another
+  member; the provider operation loads the current viewer's authorization and
+  intersects current user authority with the installation permission set.
 - Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository.
+- The provider search adapter rechecks each result repository with the current
+  viewer's user authorization before returning any result. It returns only the
+  filtered page count and never GitHub's upstream search `total_count`.
 
 ## Data and Query Contract
 
@@ -141,10 +166,11 @@ implementation exists, canonical server checks are:
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
 
 The implemented bounded foundation currently runs the format, vet, unit,
-sqlc reproducibility, ordered-migration, redaction, and PostgreSQL integration
-checks. Provider, billing, notification-delivery, and image checks remain
-blocked with their corresponding RPCs failing closed; those bullets do not
-claim implementation.
+sqlc reproducibility, ordered-migration, redaction, PostgreSQL integration,
+signed callback/webhook, permission intersection, GitHub rate/concurrency,
+search non-disclosure, candidate, and mutation fixture checks. Billing,
+notification-delivery, and image checks remain blocked with their
+corresponding RPCs failing closed; those bullets do not claim implementation.
 
 Coverage must include unknown-clause preservation, per-viewer `@me`, repository non-disclosure, limits/pagination/truncation, deterministic reviewer grouping, current assignee/label removal operands, explicit PR lifecycle state, pre-mutation action metadata, stale revisions, multi-device coalescing and catalog-bound billing, non-dispatching manual quote success/cancel/expiry/substitution/catalog-change handling, refresh exact replay before and after quote expiry/catalog change, changed-input conflict, lost-response recovery without duplicate provider dispatch or charge, crash-after-dispatch billing recovery without a client retry or second provider request, finalization-grant reservation/service/unit/operation/expiry substitution rejection and encrypted terminal deletion, minimum Deck reservation-TTL rejection, disabled/mismatched meter rejection before warning or provider dispatch, outbound live-usage client-credentials acquisition/startup failure and service-binding rejection, provider timeout charging, reservation failure, zero refresh after all clients stop, every supported mutation and merge confirmation, widget privacy/staleness, DND-safe generic/detailed notification resolution and authorization loss, `RegisterDevice` exact replay/changed-input conflict/lost-response recovery with the identical lease/grant, stale-renewal rejection, and bounded encrypted replay-material deletion, single-purpose revocation-grant cleanup across account switches and lease expiry, shortcut conflicts, provider-credential and query/builder/snapshot envelope encryption/rotation with ciphertext-only backups, redaction, disconnect/logout/reset, exact lifecycle-client pinning and peer-M2M rejection, owner and delibase-lifecycle deletion authorization, deletion-job replay/absent data, browser-origin rejection outside exact DeliDev `DeckIntegrationService`, GitHub.com-only rejection, and a fixture GitHub App.
 
@@ -160,6 +186,12 @@ These checks validate artifacts only. They must not push GHCR images, deploy the
 - External boundaries are Logto/DeliDev authentication, delibase reservation/commit/release plus its durable account/organization-deletion lifecycle calls, PostgreSQL, the separate Deck GitHub App on GitHub.com, and opaque push delivery. The canonical API origin is future and inactive.
 - Live refresh billing has a dedicated outbound-only delibase configuration set: required non-secret `DECK_DELIBASE_API_ORIGIN`, `DECK_DELIBASE_LOGTO_AUDIENCE`, `DECK_DELIBASE_SERVICE_IDENTITY_ID`, and `DECK_DELIBASE_LOGTO_M2M_CLIENT_ID`, plus required secret `DECK_DELIBASE_LOGTO_M2M_CLIENT_SECRET`. In production, origin and audience are exactly `https://delibase.deli.dev`; the service identity is the stable UUID v7 authorization target published for the Deck meter; and the Logto client must be the delibase service identity bound to that target. Deck obtains short-lived OAuth 2 client-credentials access tokens from its validated exact Logto issuer with only the live-usage scopes and caches them in memory only until bounded expiry. Initial `ReserveUsage` combines that M2M bearer with the current request's memory-only forwarded user bearer; after reservation, `CommitUsage` or `ReleaseUsage` uses either the current forwarded bearer or the exact bounded finalization grant above with a fresh same-service M2M bearer. Once billed refresh exists, startup fails before accepting refresh requests when this set is absent, partial, malformed, targets the wrong origin/audience, names an invalid service UUID, cannot acquire the required scoped token, or delibase lacks the finalization-grant capability; delibase still rejects any token-to-service or grant-to-reservation mapping mismatch before mutation. Neither secret nor token is logged, persisted, baked into an image, or exposed to a client, and the finalization grant has only the explicitly bounded encrypted persistence exception above.
 - `DECK_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID` is a required non-secret receiver-side pin once lifecycle mode is implemented. It must exactly equal delibase's outbound `DELIBASE_DECK_LIFECYCLE_LOGTO_M2M_CLIENT_ID`; Deck stores no corresponding client secret. Startup fails before serving if the lifecycle handler exists and this value is absent or malformed, so lifecycle authorization never falls back to audience/scope alone.
+- The implemented provider startup set is
+  `DECK_GITHUB_APP_CLIENT_ID`, `DECK_GITHUB_APP_CLIENT_SECRET`,
+  `DECK_GITHUB_APP_SLUG`, base64-encoded `DECK_GITHUB_WEBHOOK_SECRET`, and
+  base64-encoded `DECK_GITHUB_CALLBACK_SIGNING_KEY`. Missing, malformed, or
+  host-substituting values fail startup. These values configure only the
+  GitHub.com adapter and do not register an App.
 
 ## Change Triggers
 

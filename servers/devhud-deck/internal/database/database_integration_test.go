@@ -12,6 +12,7 @@ import (
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/query"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
@@ -396,39 +397,149 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if !errors.Is(err, ErrAccountSwitch) {
 		t.Fatalf("account switch error = %T %v", err, err)
 	}
+	callback := deckgithub.CallbackState{
+		Purpose: deckgithub.StatePurposeOAuth, AccountID: accountID.String(),
+		Owner:          deckgithub.OwnerBinding{Scope: 1, ID: accountID.String()},
+		InstallationID: 7, Nonce: "fixture",
+		ExpiresAt: now.Add(time.Hour).Unix(),
+	}
+	installation := deckgithub.Installation{
+		ID: 7, AccountID: 70, AccountLogin: "octocat",
+		AccountKind: deckgithub.AccountKindUser,
+		Permissions: deckgithub.Permissions{
+			Metadata: deckgithub.PermissionRead, PullRequests: deckgithub.PermissionWrite,
+			Checks: deckgithub.PermissionRead, Members: deckgithub.PermissionRead,
+		},
+	}
+	credential := deckgithub.Credential{
+		AccessToken: "ghu_database_fixture", RefreshToken: "ghr_database_fixture",
+		ExpiresAt: now.Add(time.Hour), RefreshTokenExpiresAt: now.Add(24 * time.Hour),
+	}
+	if err := store.ConnectGitHub(
+		ctx, callback, installation, credential, now.Add(90*time.Second)); err != nil {
+		t.Fatalf("connect GitHub: %v", err)
+	}
+	connection, err := store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil || connection.Credential.AccessToken != credential.AccessToken {
+		t.Fatalf("GitHub connection = %#v err=%v", connection, err)
+	}
+	var accessCiphertext, refreshCiphertext []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT user_access_token_ciphertext, user_refresh_token_ciphertext
+		FROM deck_github_user_credentials
+		WHERE connection_id = $1 AND account_id = $2`,
+		pgUUID(connection.ID), pgUUID(accountID),
+	).Scan(&accessCiphertext, &refreshCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(accessCiphertext, []byte(credential.AccessToken)) ||
+		bytes.Contains(refreshCiphertext, []byte(credential.RefreshToken)) {
+		t.Fatal("GitHub user credential was persisted in plaintext")
+	}
+	organizationCallback := callback
+	organizationCallback.Owner = deckgithub.OwnerBinding{
+		Scope: 2, ID: organizationID.String(),
+	}
+	if err := store.ConnectGitHub(ctx, organizationCallback, installation,
+		credential, now.Add(2*time.Minute)); !errors.Is(err, ErrInstallationOwned) {
+		t.Fatalf("installation owner conflict = %T %v", err, err)
+	}
+	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,
+		snapshots[:1], now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateNotificationPreference(
+		ctx, registrationID, firstViewID, 0,
+		&deckv1.ViewNotificationPreference{
+			Enabled: true,
+		}, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("notification fixture: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO deck_notification_events (
+			event_id, view_id, opaque_event_id, transition, created_at, expires_at
+		) VALUES ($1, $2, $3, 1, $4, $5)`,
+		pgUUID(mustV7(t)), pgUUID(firstViewID), bytes.Repeat([]byte{9}, 32),
+		pgTime(now), pgTime(now.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	disconnected, err := store.DisconnectGitHub(
+		ctx, connection.ID, connection.Revision, now.Add(3*time.Minute))
+	if err != nil || disconnected.State != int16(
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED) {
+		t.Fatalf("disconnect GitHub = %#v err=%v", disconnected, err)
+	}
+	retainedView, err := store.GetView(ctx, firstViewID)
+	if err != nil || retainedView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("disconnected view was not retained: %#v err=%v", retainedView, err)
+	}
+	var credentialCount, snapshotCount, snapshotStateCount int
+	var notificationCount, eventCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM deck_github_user_credentials
+			 WHERE connection_id = $1)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshots
+			 WHERE view_id = $2)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshot_states
+			 WHERE view_id = $2)::integer,
+			(SELECT count(*) FROM deck_view_notification_preferences
+			 WHERE view_id = $2)::integer,
+			(SELECT count(*) FROM deck_notification_events
+			 WHERE view_id = $2)::integer`,
+		pgUUID(connection.ID), pgUUID(firstViewID),
+	).Scan(&credentialCount, &snapshotCount, &snapshotStateCount,
+		&notificationCount, &eventCount); err != nil {
+		t.Fatal(err)
+	}
+	if credentialCount != 0 || snapshotCount != 0 || snapshotStateCount != 0 ||
+		notificationCount != 0 || eventCount != 0 {
+		t.Fatalf("disconnect retained provider data: credentials=%d snapshots=%d "+
+			"states=%d notifications=%d events=%d", credentialCount,
+			snapshotCount, snapshotStateCount, notificationCount, eventCount)
+	}
+	device, err := store.GetDevice(
+		ctx, accountID, deviceID, now.Add(3*time.Minute))
+	if err != nil || device.Device.Widgets[0].Snapshot.GetMatchingCount() != 0 ||
+		device.Device.Widgets[0].Snapshot.GetFreshness() !=
+			deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED {
+		t.Fatalf("widget snapshot survived disconnect: %#v err=%v", device, err)
+	}
 	updatedQuery, err = query.Parse("repo:secret/final is:open")
 	if err != nil {
 		t.Fatal(err)
 	}
 	first.Query = updatedQuery
 	updated, err = store.UpdateView(
-		ctx, firstViewID, 3, first, true, now.Add(2*time.Minute))
-	if err != nil || updated.Revision.GetValue() != 4 {
+		ctx, firstViewID, 5, first, true, now.Add(4*time.Minute))
+	if err != nil || updated.Revision.GetValue() != 6 {
 		t.Fatalf("query update with widget = %#v %v", updated, err)
 	}
-	device, err := store.GetDevice(ctx, accountID, deviceID, now.Add(3*time.Minute))
+	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(5*time.Minute))
 	if err != nil {
 		t.Fatalf("device after query update: %v", err)
 	}
-	if device.Device.Revision.Value != 3 ||
+	if device.Device.Revision.Value != 4 ||
 		device.Device.Widgets[0].Snapshot.GetMatchingCount() != 0 ||
 		device.Device.Widgets[0].Snapshot.GetFreshness() !=
 			deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED {
 		t.Fatalf("widget snapshot survived query update: %#v", device.Device)
 	}
 	if deletedRevision, err := store.DeleteView(
-		ctx, firstViewID, 4, now.Add(4*time.Minute)); err != nil ||
-		deletedRevision != 4 {
+		ctx, firstViewID, 6, now.Add(6*time.Minute)); err != nil ||
+		deletedRevision != 6 {
 		t.Fatalf("delete view = revision=%d err=%v", deletedRevision, err)
 	}
-	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(5*time.Minute))
+	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(7*time.Minute))
 	if err != nil {
 		t.Fatalf("device after view deletion: %v", err)
 	}
 	if len(device.Device.Shortcuts) != 1 || len(device.Device.Widgets) != 1 ||
 		uuidValueFromProto(device.Device.Shortcuts[0].ViewId) != organizationViewID ||
 		uuidValueFromProto(device.Device.Widgets[0].ViewId) != organizationViewID ||
-		device.Device.Revision.Value != 4 {
+		device.Device.Revision.Value != 5 {
 		t.Fatalf("single-view device scrub = %#v", device.Device)
 	}
 	replayedFirst, replayed, err = store.CreateView(ctx, firstViewParams)
@@ -441,24 +552,24 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if _, err := store.DeleteOrganizationFeatureData(ctx, DeleteFeatureDataParams{
 		JobID: mustV7(t), ReplayKey: mustV7(t), TargetID: organizationID,
 		TargetHash: organizationTargetHash, Trigger: DeletionTriggerOwner,
-		AcceptedAt: now.Add(6 * time.Minute),
+		AcceptedAt: now.Add(8 * time.Minute),
 	}); err != nil {
 		t.Fatalf("organization feature deletion: %v", err)
 	}
 	device, err = store.GetDevice(
-		ctx, accountID, deviceID, now.Add(7*time.Minute))
+		ctx, accountID, deviceID, now.Add(9*time.Minute))
 	if err != nil {
 		t.Fatalf("device after organization deletion: %v", err)
 	}
 	if len(device.Device.Shortcuts) != 0 || len(device.Device.Widgets) != 0 {
 		t.Fatalf("organization device state survived deletion: %#v", device.Device)
 	}
-	if device.Device.Revision.Value != 5 {
+	if device.Device.Revision.Value != 6 {
 		t.Fatalf("device revision after organization deletion = %#v",
 			device.Device.Revision)
 	}
 	unregistered, err := store.UnregisterDevice(
-		ctx, registrationID, uuid.Nil, grant, now.Add(8*time.Minute))
+		ctx, registrationID, uuid.Nil, grant, now.Add(10*time.Minute))
 	if err != nil || !unregistered {
 		t.Fatalf("original replay grant unregister = %v, %v", unregistered, err)
 	}

@@ -50,6 +50,11 @@ func validLookup(overrides map[string]string) LookupEnv {
 		"DECK_ENCRYPTION_KEY":                         key,
 		"DECK_HASHING_KEY":                            key,
 		"DECK_LOG_PSEUDONYM_KEY":                      key,
+		"DECK_GITHUB_APP_CLIENT_ID":                   "fixture-client",
+		"DECK_GITHUB_APP_CLIENT_SECRET":               "fixture-client-secret",
+		"DECK_GITHUB_APP_SLUG":                        "deck-fixture",
+		"DECK_GITHUB_WEBHOOK_SECRET":                  key,
+		"DECK_GITHUB_CALLBACK_SIGNING_KEY":            key,
 	}
 	for name, value := range overrides {
 		values[name] = value

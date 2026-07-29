@@ -68,7 +68,9 @@
 - `docs/apps-nodeup-docs-foundation.md`: Nodeup Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
 - `docs/project-devhud.md`: DevHud signed-out base plus bounded Deck/RealQA ownership contract.
 - `docs/apps-devhud-foundation.md`: DevHud React/TypeScript/Rsbuild plus Tauri desktop CEF, mobile webview, Deck/RealQA client/native boundaries, security, diagnostics, CI, support, and release foundation contract.
-- `docs/servers-devhud-deck-foundation.md`: Planned client-initiated Deck Go/PostgreSQL/GitHub.com service contract.
+- `docs/servers-devhud-deck-foundation.md`: Implemented inactive Deck
+  Go/PostgreSQL foundation and GitHub.com connection/lifecycle/search/mutation
+  provider slice plus planned billed refresh/notification contract.
 - `docs/protos-devhud-deck-api-contract.md`: Planned `devhud.deck.v1` Connect contract.
 - `docs/servers-devhud-realqa-foundation.md`: Implemented inactive RealQA Go/PostgreSQL/sqlc preset/tracker/auth/deletion foundation plus planned GitHub.com/R2 submission and public-image contract.
 - `docs/protos-devhud-realqa-api-contract.md`: Implemented private `devhud.realqa.v1` source and generated Connect package contract.
