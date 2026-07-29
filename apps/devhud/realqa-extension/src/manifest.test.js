@@ -65,14 +65,18 @@ describe("RealQA MV3 manifest", () => {
     expect(await readdir(outputRoot)).not.toContain("manifest.test.js");
   });
 
-  it("requires an injected native-host path for macOS packages", () => {
-    expect(() => resolveNativeHostPath("darwin", undefined)).toThrow(
-      "macOS extension packaging requires DEVHUD_NATIVE_HOST_PATH",
+  it("uses a fixture path on macOS and requires an injected release path", () => {
+    expect(resolveNativeHostPath("darwin", undefined, false)).toBe(
+      resolve(extensionRoot, "../build/realqa-extension/devhud-native-host"),
+    );
+    expect(() => resolveNativeHostPath("darwin", undefined, true)).toThrow(
+      "macOS release extension packaging requires DEVHUD_NATIVE_HOST_PATH",
     );
     expect(
       resolveNativeHostPath(
         "darwin",
         "/Applications/DevHud.app/Contents/MacOS/devhud-native-host",
+        true,
       ),
     ).toBe("/Applications/DevHud.app/Contents/MacOS/devhud-native-host");
   });

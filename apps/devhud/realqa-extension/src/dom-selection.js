@@ -80,6 +80,8 @@ export function selectDomBoundary() {
     });
     document.documentElement.append(overlay);
     let target;
+    let finished = false;
+    let timeout;
     const move = (event) => {
       target = event.target instanceof Element ? event.target : undefined;
       if (target === undefined || target === overlay) return;
@@ -93,6 +95,9 @@ export function selectDomBoundary() {
       });
     };
     const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      if (timeout !== undefined) clearTimeout(timeout);
       document.removeEventListener("pointermove", move, true);
       document.removeEventListener("click", click, true);
       document.removeEventListener("keydown", key, true);
@@ -128,6 +133,7 @@ export function selectDomBoundary() {
         finish(null);
       }
     };
+    timeout = setTimeout(() => finish(null), 60_000);
     document.addEventListener("pointermove", move, true);
     document.addEventListener("click", click, true);
     document.addEventListener("keydown", key, true);

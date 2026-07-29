@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { selectDomBoundary } from "./dom-selection.js";
 
 afterEach(() => {
+  vi.useRealTimers();
   document.body.replaceChildren();
 });
 
@@ -35,5 +36,21 @@ describe("RealQA DOM selection", () => {
       selector: "button#capture-target",
       tag: "button",
     });
+  });
+
+  it("cancels an abandoned selection and removes its overlay", async () => {
+    vi.useFakeTimers();
+
+    const selection = selectDomBoundary();
+    expect(
+      document.documentElement.querySelector("div[aria-hidden='true']"),
+    ).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await expect(selection).resolves.toBeNull();
+    expect(
+      document.documentElement.querySelector("div[aria-hidden='true']"),
+    ).toBeNull();
   });
 });
