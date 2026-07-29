@@ -321,12 +321,27 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || indexed.GetTitle() != "authorized" {
 		t.Fatalf("indexed snapshot = %#v err=%v", indexed, err)
 	}
+	indexed.Title = "updated after mutation"
+	if err := store.UpdateSnapshot(
+		ctx, firstViewID, viewerHash, indexed); err != nil {
+		t.Fatalf("update indexed snapshot: %v", err)
+	}
+	indexed, err = store.GetSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "secret", Name: "project",
+			},
+			Number: 1,
+		})
+	if err != nil || indexed.GetTitle() != "updated after mutation" {
+		t.Fatalf("updated snapshot = %#v err=%v", indexed, err)
+	}
 	indexedList, _, _, err := store.ListSnapshots(
 		ctx, firstViewID, viewerHash, map[[32]byte]struct{}{
 			store.SnapshotRepositoryHash(indexedSnapshots[1].Repository): {},
 		})
 	if err != nil || len(indexedList) != 1 ||
-		indexedList[0].GetTitle() != "authorized" {
+		indexedList[0].GetTitle() != "updated after mutation" {
 		t.Fatalf("authorization-safe snapshot list = %#v err=%v",
 			indexedList, err)
 	}
@@ -648,6 +663,12 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err := connectGitHub(
 		callback, installation, credential, now.Add(90*time.Second)); err != nil {
 		t.Fatalf("connect GitHub: %v", err)
+	}
+	if _, err := store.ConsumeGitHubCallbackState(
+		ctx, activeHash, activeCallback.Purpose,
+		now.Add(90*time.Second)); !errors.Is(
+		err, deckgithub.ErrInvalidSignature) {
+		t.Fatalf("stale owner callback remained usable: %T %v", err, err)
 	}
 	connection, err := store.GetGitHubConnection(
 		ctx, 1, accountID, accountID, true)

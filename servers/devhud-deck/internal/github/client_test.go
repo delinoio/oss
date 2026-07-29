@@ -1138,15 +1138,16 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 						"state":"FAILURE",
 						"contexts":{
 							"totalCount":7,
-							"checkRunCountsByState":[
-								{"state":"COMPLETED","count":1},
-								{"state":"PENDING","count":1},
-								{"state":"SUCCESS","count":2}
+							"nodes":[
+								{"status":"COMPLETED","conclusion":"SUCCESS"},
+								{"status":"COMPLETED","conclusion":"NEUTRAL"},
+								{"status":"COMPLETED","conclusion":"FAILURE"},
+								{"status":"PENDING","conclusion":null},
+								{"state":"SUCCESS"},
+								{"state":"ERROR"},
+								{"state":"FAILURE"}
 							],
-							"statusContextCountsByState":[
-								{"state":"SUCCESS","count":1},
-								{"state":"ERROR","count":2}
-							]
+							"pageInfo":{"hasNextPage":false}
 						}
 					}
 				}}
@@ -1182,8 +1183,8 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 		result.Metadata.ReviewDecision != ReviewDecisionApproved ||
 		result.Metadata.ChecksState != ChecksStateFailure ||
 		result.Metadata.PendingChecks != 1 ||
-		result.Metadata.SuccessfulChecks != 4 ||
-		result.Metadata.FailedChecks != 2 {
+		result.Metadata.SuccessfulChecks != 3 ||
+		result.Metadata.FailedChecks != 3 {
 		t.Fatalf("mutation result = %#v initial=%d", result, initial.Revision)
 	}
 }

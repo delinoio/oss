@@ -139,6 +139,13 @@ func (service *View) MutatePullRequest(
 	}
 	detail := service.pullRequestDetail(
 		viewIDValue(view), request.Msg.PullRequest, snapshot, result.Metadata)
+	viewerHash := service.dependencies.Hasher.Sum(
+		"snapshot-viewer", viewer.AccountID.String())
+	if err := service.dependencies.Store.UpdateSnapshot(
+		ctx, viewIDValue(view), viewerHash, detail.Result); err != nil {
+		service.dependencies.Logger.Error(
+			"deck mutation snapshot persistence failed")
+	}
 	response.PullRequest = detail
 	return connect.NewResponse(response), nil
 }

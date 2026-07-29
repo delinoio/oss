@@ -115,6 +115,7 @@ type Querier interface {
 	UpdateGitHubInstallationPermissions(ctx context.Context, arg UpdateGitHubInstallationPermissionsParams) (DeckConnection, error)
 	UpdateGitHubUserCredentials(ctx context.Context, arg UpdateGitHubUserCredentialsParams) error
 	UpdateView(ctx context.Context, arg UpdateViewParams) (DeckView, error)
+	UpdateViewSnapshot(ctx context.Context, arg UpdateViewSnapshotParams) (int64, error)
 	UpdateViewSnapshotState(ctx context.Context, arg UpdateViewSnapshotStateParams) error
 	UpsertDeckAccount(ctx context.Context, arg UpsertDeckAccountParams) error
 	UpsertGitHubUserCredential(ctx context.Context, arg UpsertGitHubUserCredentialParams) error

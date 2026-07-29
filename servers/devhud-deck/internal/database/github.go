@@ -403,6 +403,10 @@ func (store *Store) ConnectGitHub(
 		if !canManage {
 			return nil
 		}
+		if err := queries.DeleteGitHubCallbackStatesByOwner(
+			ctx, callbackOwnerHash[:]); err != nil {
+			return err
+		}
 		return queries.MarkOwnerViewsConnected(ctx,
 			dbgen.MarkOwnerViewsConnectedParams{
 				UpdatedAt: pgTime(now), OwnerScope: int16(state.Owner.Scope),

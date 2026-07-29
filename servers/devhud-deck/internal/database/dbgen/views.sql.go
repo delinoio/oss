@@ -684,6 +684,37 @@ func (q *Queries) UpdateView(ctx context.Context, arg UpdateViewParams) (DeckVie
 	return i, err
 }
 
+const updateViewSnapshot = `-- name: UpdateViewSnapshot :execrows
+UPDATE deck_pull_request_snapshots
+SET snapshot_ciphertext = $1
+WHERE view_id = $2
+  AND viewer_hash = $3
+  AND repository_hash = $4
+  AND pull_request_number = $5
+`
+
+type UpdateViewSnapshotParams struct {
+	SnapshotCiphertext []byte
+	ViewID             pgtype.UUID
+	ViewerHash         []byte
+	RepositoryHash     []byte
+	PullRequestNumber  int64
+}
+
+func (q *Queries) UpdateViewSnapshot(ctx context.Context, arg UpdateViewSnapshotParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateViewSnapshot,
+		arg.SnapshotCiphertext,
+		arg.ViewID,
+		arg.ViewerHash,
+		arg.RepositoryHash,
+		arg.PullRequestNumber,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateViewSnapshotState = `-- name: UpdateViewSnapshotState :exec
 INSERT INTO deck_pull_request_snapshot_states (
     view_id, viewer_hash, truncated, refreshed_at

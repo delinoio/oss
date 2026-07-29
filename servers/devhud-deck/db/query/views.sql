@@ -141,6 +141,14 @@ INSERT INTO deck_pull_request_snapshots (
     sqlc.arg(repository_ciphertext), sqlc.arg(snapshot_ciphertext)
 );
 
+-- name: UpdateViewSnapshot :execrows
+UPDATE deck_pull_request_snapshots
+SET snapshot_ciphertext = sqlc.arg(snapshot_ciphertext)
+WHERE view_id = sqlc.arg(view_id)
+  AND viewer_hash = sqlc.arg(viewer_hash)
+  AND repository_hash = sqlc.arg(repository_hash)
+  AND pull_request_number = sqlc.arg(pull_request_number);
+
 -- name: UpdateViewSnapshotState :exec
 INSERT INTO deck_pull_request_snapshot_states (
     view_id, viewer_hash, truncated, refreshed_at

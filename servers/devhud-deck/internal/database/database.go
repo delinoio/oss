@@ -955,6 +955,40 @@ func (store *Store) ReplaceSnapshots(
 	})
 }
 
+func (store *Store) UpdateSnapshot(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	snapshot *deckv1.PullRequestResult,
+) error {
+	repository := snapshot.GetRepository()
+	if repository == nil || repository.GetOwner() == "" ||
+		repository.GetName() == "" || snapshot.GetNumber() == 0 ||
+		snapshot.GetNumber() > math.MaxInt64 {
+		return errors.New("deck database: snapshot repository is required")
+	}
+	repositoryHash := store.SnapshotRepositoryHash(repository)
+	ciphertext, err := store.sealProto("pr-snapshot", snapshot)
+	if err != nil {
+		return err
+	}
+	updated, err := store.queries.UpdateViewSnapshot(
+		ctx, dbgen.UpdateViewSnapshotParams{
+			SnapshotCiphertext: ciphertext,
+			ViewID:             pgUUID(viewID),
+			ViewerHash:         viewerHash[:],
+			RepositoryHash:     repositoryHash[:],
+			PullRequestNumber:  int64(snapshot.GetNumber()),
+		})
+	if err != nil {
+		return errors.New("deck database: update snapshot failed")
+	}
+	if updated != 1 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (store *Store) ListSnapshots(
 	ctx context.Context,
 	viewID uuid.UUID,
