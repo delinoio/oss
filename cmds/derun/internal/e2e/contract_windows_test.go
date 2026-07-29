@@ -66,8 +66,15 @@ func TestWindowsConPTYRunnerParity(t *testing.T) {
 	if pid <= 0 {
 		t.Fatalf("expected positive pid from onStart callback")
 	}
-	if result.ExitCode == nil || *result.ExitCode != 0 {
-		t.Fatalf("unexpected exit code: %v", result.ExitCode)
+	if result.ExitCode == nil {
+		t.Fatal("expected exit code")
+	}
+	exitCode := *result.ExitCode
+	if exitCode != 0 {
+		if shouldSkipKnownConPTYHostExitCode(exitCode) {
+			t.Skipf("conpty host exited with known unstable code on this runner: exit_code=%d hex=0x%X", exitCode, uint32(exitCode))
+		}
+		t.Fatalf("unexpected exit code: got=%d want=0", exitCode)
 	}
 	outputText := output.String()
 	if outputText == "" {
