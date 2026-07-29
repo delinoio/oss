@@ -1466,10 +1466,14 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	var submittedRetainedBytes int64
 	if err = connection.QueryRow(ctx, `
-		SELECT encoded_bytes
+		SELECT COALESCE(sum(encoded_bytes), 0)::bigint
 		FROM realqa_assets
-		WHERE id = $1
-	`, promotionAssetID).Scan(&submittedRetainedBytes); err != nil {
+		WHERE submission_id = $1
+		  AND id <> $2
+		  AND upload_state = 'verified'
+		  AND state IN ('verified_unlinked', 'public_retained')
+	`, submissionID, submittedExtraAssetID).
+		Scan(&submittedRetainedBytes); err != nil {
 		t.Fatal(err)
 	}
 	partialSubmissionID := uuidv7.MustNew()
