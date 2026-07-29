@@ -100,8 +100,11 @@ func validatePatternText(pattern string) error {
 			return errors.New("safe title pattern uses unsupported syntax")
 		}
 	}
-	if containsClassSetAlgebra(pattern) {
+	if containsUnsupportedCharacterClassSyntax(pattern) {
 		return errors.New("safe title pattern uses unsupported syntax")
+	}
+	if hasUnsafeRepeatedOrUnbalancedGroup(pattern) {
+		return errors.New("safe title pattern uses unsafe repeated group")
 	}
 	for index := 0; index+1 < len(pattern); index++ {
 		if pattern[index] == '\\' && pattern[index+1] >= '0' && pattern[index+1] <= '9' {
@@ -111,7 +114,7 @@ func validatePatternText(pattern string) error {
 	return nil
 }
 
-func containsClassSetAlgebra(pattern string) bool {
+func containsUnsupportedCharacterClassSyntax(pattern string) bool {
 	inClass := false
 	inPOSIXClass := false
 	for index := 0; index < len(pattern); index++ {
@@ -120,6 +123,9 @@ func containsClassSetAlgebra(pattern string) bool {
 			continue
 		}
 		if !inClass {
+			if pattern[index] == ']' {
+				return true
+			}
 			inClass = pattern[index] == '['
 			continue
 		}
@@ -145,6 +151,129 @@ func containsClassSetAlgebra(pattern string) bool {
 		}
 	}
 	return false
+}
+
+type patternGroupState struct {
+	containsAlternation bool
+	containsRepetition  bool
+}
+
+func repetitionLength(pattern string, index int) int {
+	if index >= len(pattern) {
+		return 0
+	}
+	if pattern[index] == '*' || pattern[index] == '+' || pattern[index] == '?' {
+		return 1
+	}
+	if pattern[index] != '{' {
+		return 0
+	}
+	cursor := index + 1
+	digitsStart := cursor
+	for cursor < len(pattern) && pattern[cursor] >= '0' && pattern[cursor] <= '9' {
+		cursor++
+	}
+	if cursor == digitsStart {
+		return 0
+	}
+	if cursor < len(pattern) && pattern[cursor] == ',' {
+		cursor++
+		for cursor < len(pattern) && pattern[cursor] >= '0' && pattern[cursor] <= '9' {
+			cursor++
+		}
+	}
+	if cursor >= len(pattern) || pattern[cursor] != '}' {
+		return 0
+	}
+	return cursor - index + 1
+}
+
+func inlineFlagPrefixLength(pattern string, index int, terminator byte) int {
+	if !strings.HasPrefix(pattern[index:], "(?") {
+		return 0
+	}
+	cursor := index + 2
+	for cursor < len(pattern) && strings.ContainsRune("imsU", rune(pattern[cursor])) {
+		cursor++
+	}
+	if cursor < len(pattern) && pattern[cursor] == '-' {
+		cursor++
+		for cursor < len(pattern) && strings.ContainsRune("imsU", rune(pattern[cursor])) {
+			cursor++
+		}
+	}
+	if cursor >= len(pattern) || pattern[cursor] != terminator {
+		return 0
+	}
+	return cursor - index + 1
+}
+
+func hasUnsafeRepeatedOrUnbalancedGroup(pattern string) bool {
+	groups := make([]patternGroupState, 0)
+	inClass := false
+	for index := 0; index < len(pattern); index++ {
+		token := pattern[index]
+		if token == '\\' {
+			index++
+			continue
+		}
+		if token == '[' {
+			inClass = true
+			continue
+		}
+		if token == ']' && inClass {
+			inClass = false
+			continue
+		}
+		if inClass {
+			continue
+		}
+		if token == '(' {
+			if prefixLength := inlineFlagPrefixLength(pattern, index, ')'); prefixLength > 0 {
+				index += prefixLength - 1
+				continue
+			}
+			groups = append(groups, patternGroupState{})
+			if prefixLength := inlineFlagPrefixLength(pattern, index, ':'); prefixLength > 0 {
+				index += prefixLength - 1
+			}
+			continue
+		}
+		if token == '|' {
+			if len(groups) > 0 {
+				groups[len(groups)-1].containsAlternation = true
+			}
+			continue
+		}
+		if token == ')' {
+			if len(groups) == 0 {
+				continue
+			}
+			group := groups[len(groups)-1]
+			groups = groups[:len(groups)-1]
+			repeatedBy := repetitionLength(pattern, index+1)
+			if repeatedBy > 0 &&
+				(group.containsAlternation || group.containsRepetition) {
+				return true
+			}
+			if len(groups) > 0 {
+				parent := &groups[len(groups)-1]
+				parent.containsAlternation = parent.containsAlternation ||
+					group.containsAlternation
+				parent.containsRepetition = parent.containsRepetition ||
+					group.containsRepetition || repeatedBy > 0
+			}
+			index += repeatedBy
+			continue
+		}
+		if repeatedBy := repetitionLength(pattern, index); repeatedBy > 0 {
+			if len(groups) > 0 {
+				groups[len(groups)-1].containsRepetition = true
+			}
+			index += repeatedBy - 1
+		}
+	}
+	return len(groups) > 0
 }
 
 func validateRepetitions(expression *syntax.Regexp) error {

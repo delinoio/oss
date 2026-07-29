@@ -1,6 +1,7 @@
 import type { RestorableDraftUrl } from "./contracts";
 
 const MAX_URL_BYTES = 8_192;
+const INVALID_PERCENT_ESCAPE = /%(?![0-9a-f]{2})/iu;
 
 export type CapturedUrlResult =
   | { readonly ok: true; readonly url: RestorableDraftUrl }
@@ -63,7 +64,18 @@ function retainBoundedUrlPart(value: string): string | null {
     : null;
 }
 
+function containsRawControl(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? -1;
+    if (codePoint <= 0x1f || codePoint === 0x7f) return true;
+  }
+  return false;
+}
+
 export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
+  if (containsRawControl(value) || INVALID_PERCENT_ESCAPE.test(value)) {
+    return { ok: false, reason: "invalid-url" };
+  }
   let parsed: URL;
   try {
     parsed = new URL(value);

@@ -122,6 +122,12 @@ const posixCharacterClassRanges = {
 
 type CharacterRange = readonly [number, number];
 
+const goPerlWhitespaceRanges: readonly CharacterRange[] = [
+  [0x09, 0x0a],
+  [0x0c, 0x0d],
+  [0x20, 0x20],
+];
+
 function complementCharacterRanges(
   ranges: readonly CharacterRange[],
 ): readonly CharacterRange[] {
@@ -200,6 +206,26 @@ function translateUnicodeClassEscape(
       nextIndex: index + unicodeClass[0].length,
     };
   }
+}
+
+function translatePerlWhitespaceClassEscape(
+  pattern: string,
+  index: number,
+  insideCharacterClass: boolean,
+): { readonly output: string; readonly nextIndex: number } | null {
+  const shorthand = pattern.slice(index, index + 2);
+  if (shorthand !== String.raw`\s` && shorthand !== String.raw`\S`) {
+    return null;
+  }
+  const ranges =
+    shorthand === String.raw`\s`
+      ? goPerlWhitespaceRanges
+      : complementCharacterRanges(goPerlWhitespaceRanges);
+  const rendered = renderCharacterRanges(ranges);
+  return {
+    output: insideCharacterClass ? rendered : `[${rendered}]`,
+    nextIndex: index + 2,
+  };
 }
 
 function hasUnsupportedCharacterClassSetAlgebra(pattern: string): boolean {
@@ -419,10 +445,16 @@ function translateTitlePattern(pattern: string): string {
             output += posixClass.output;
             index = posixClass.nextIndex;
           } else if (pattern[index] === "\\") {
-            const unicodeClass = translateUnicodeClassEscape(pattern, index);
-            if (unicodeClass !== null) {
-              output += unicodeClass.output;
-              index = unicodeClass.nextIndex;
+            const whitespaceClass = translatePerlWhitespaceClassEscape(
+              pattern,
+              index,
+              true,
+            );
+            const translatedClass =
+              whitespaceClass ?? translateUnicodeClassEscape(pattern, index);
+            if (translatedClass !== null) {
+              output += translatedClass.output;
+              index = translatedClass.nextIndex;
             } else {
               output += pattern.slice(index, index + 2);
               index += 2;
@@ -439,10 +471,16 @@ function translateTitlePattern(pattern: string): string {
         continue;
       }
       if (token === "\\") {
-        const unicodeClass = translateUnicodeClassEscape(pattern, index);
-        if (unicodeClass !== null) {
-          output += unicodeClass.output;
-          index = unicodeClass.nextIndex;
+        const whitespaceClass = translatePerlWhitespaceClassEscape(
+          pattern,
+          index,
+          false,
+        );
+        const translatedClass =
+          whitespaceClass ?? translateUnicodeClassEscape(pattern, index);
+        if (translatedClass !== null) {
+          output += translatedClass.output;
+          index = translatedClass.nextIndex;
           continue;
         }
         const escaped = pattern[index + 1];

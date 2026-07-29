@@ -104,6 +104,18 @@ describe("RealQA URL capture boundary", () => {
       reason: "invalid-url",
     });
   });
+
+  it.each([
+    "https://example.com/LINE\nTWO",
+    "https://example.com/LINE\tTWO",
+    "https://example.com/%",
+    "https://example.com/%zz",
+  ])("rejects a Go-invalid raw URL %s", (value) => {
+    expect(sanitizeCapturedUrl(value)).toEqual({
+      ok: false,
+      reason: "invalid-url",
+    });
+  });
 });
 
 describe("RealQA synchronized presets and ordered desktop rules", () => {
@@ -160,6 +172,27 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     });
   });
 
+  it.each(["LINE\nTWO", "%", "%zz"])(
+    "skips a Go-invalid captured URL value and uses an ordered fallback",
+    (title) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: String.raw`(?s)^(.+)$`,
+          urlTemplate: "https://example.com/$1",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+        ok: true,
+        url: { value: "https://fallback.example/" },
+      });
+    },
+  );
+
   it("supports synchronized scoped title flags, including ungreedy matching", () => {
     expect(
       inferDesktopUrl(
@@ -181,7 +214,7 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
         [
           rule({
             safeWindowTitlePattern: String.raw`(?s)^issue (?i:(.+))$`,
-            urlTemplate: "https://example.com/$1",
+            urlTemplate: "https://example.com/matched",
           }),
         ],
         "code",
@@ -189,7 +222,7 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
       ),
     ).toMatchObject({
       ok: true,
-      url: { value: "https://example.com/LINETWO" },
+      url: { value: "https://example.com/matched" },
     });
     expect(
       inferDesktopUrl(
@@ -206,6 +239,35 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
       url: { value: "https://github.com/delinoio/oss/issues/783" },
     });
   });
+
+  it.each([
+    [String.raw`^Issue\s([0-9]+)$`, "Issue 757", true],
+    [String.raw`^Issue\s([0-9]+)$`, "Issue\u00a0757", false],
+    [String.raw`^Issue[\s]([0-9]+)$`, "Issue\t757", true],
+    [String.raw`^Issue[\s]([0-9]+)$`, "Issue\u00a0757", false],
+    [String.raw`^Issue\S([0-9]+)$`, "Issue\u00a0757", true],
+    [String.raw`^Issue[\S]([0-9]+)$`, "Issue\u00a0757", true],
+  ])(
+    "matches synchronized Perl whitespace class %s with Go semantics",
+    (pattern, title, matches) => {
+      const rules = [
+        rule({ safeWindowTitlePattern: pattern }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+        ok: true,
+        url: {
+          value: matches
+            ? "https://github.com/delinoio/oss/issues/757"
+            : "https://fallback.example/",
+        },
+      });
+    },
+  );
 
   it("rejects malformed disabled rules to match server compilation", () => {
     const rules = [
