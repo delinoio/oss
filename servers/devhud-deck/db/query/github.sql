@@ -1,11 +1,10 @@
 -- name: InsertGitHubCallbackState :exec
 INSERT INTO deck_github_callback_states (
-    state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at,
+    state_hash, owner_hash, account_hash, state_ciphertext, expires_at,
     created_at
 ) VALUES (
-    sqlc.arg(state_hash), sqlc.arg(owner_scope), sqlc.arg(owner_id),
-    sqlc.arg(account_id), sqlc.arg(state_ciphertext), sqlc.arg(expires_at),
-    sqlc.arg(created_at)
+    sqlc.arg(state_hash), sqlc.arg(owner_hash), sqlc.arg(account_hash),
+    sqlc.arg(state_ciphertext), sqlc.arg(expires_at), sqlc.arg(created_at)
 );
 
 -- name: GetGitHubCallbackStateForUpdate :one
@@ -27,9 +26,8 @@ WHERE state_hash = sqlc.arg(state_hash);
 -- name: DeleteConsumedGitHubCallbackState :one
 DELETE FROM deck_github_callback_states
 WHERE state_hash = sqlc.arg(state_hash)
-  AND owner_scope = sqlc.arg(owner_scope)
-  AND owner_id = sqlc.arg(owner_id)
-  AND account_id = sqlc.arg(account_id)
+  AND owner_hash = sqlc.arg(owner_hash)
+  AND account_hash = sqlc.arg(account_hash)
   AND consumed_at IS NOT NULL
 RETURNING created_at;
 
@@ -39,12 +37,11 @@ WHERE expires_at <= sqlc.arg(expired_at);
 
 -- name: DeleteGitHubCallbackStatesByOwner :exec
 DELETE FROM deck_github_callback_states
-WHERE owner_scope = sqlc.arg(owner_scope)
-  AND owner_id = sqlc.arg(owner_id);
+WHERE owner_hash = sqlc.arg(owner_hash);
 
 -- name: DeleteGitHubCallbackStatesByAccount :exec
 DELETE FROM deck_github_callback_states
-WHERE account_id = sqlc.arg(account_id);
+WHERE account_hash = sqlc.arg(account_hash);
 
 -- name: GetGitHubConnectionByOwner :one
 SELECT *
@@ -64,6 +61,11 @@ SELECT *
 FROM deck_connections
 WHERE connection_id = sqlc.arg(connection_id)
 FOR UPDATE;
+
+-- name: GetGitHubConnectionOwnerByID :one
+SELECT owner_scope, owner_id
+FROM deck_connections
+WHERE connection_id = sqlc.arg(connection_id);
 
 -- name: GetGitHubConnectionByInstallationForUpdate :one
 SELECT *

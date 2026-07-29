@@ -611,6 +611,26 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ctx, activeHash, activeCallback, now); err != nil {
 		t.Fatalf("active callback fixture: %v", err)
 	}
+	var storedOwnerHash, storedAccountHash, storedStateCiphertext []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT owner_hash, account_hash, state_ciphertext
+		FROM deck_github_callback_states
+		WHERE state_hash = $1`,
+		activeHash[:],
+	).Scan(&storedOwnerHash, &storedAccountHash, &storedStateCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	expectedOwnerHash := hasher.Sum(
+		"github-callback-owner",
+		"OWNER_SCOPE_PERSONAL:"+accountID.String())
+	expectedAccountHash := hasher.Sum(
+		"github-callback-account", accountID.String())
+	if !bytes.Equal(storedOwnerHash, expectedOwnerHash[:]) ||
+		!bytes.Equal(storedAccountHash, expectedAccountHash[:]) ||
+		bytes.Contains(storedStateCiphertext, []byte(accountID.String())) ||
+		bytes.Contains(storedStateCiphertext, []byte(activeCallback.GitHubLogin)) {
+		t.Fatal("callback bindings were not retained only as keyed indexes and ciphertext")
+	}
 	var expiredCallbackCount, activeCallbackCount int
 	if err := store.pool.QueryRow(ctx, `
 		SELECT
@@ -1039,6 +1059,20 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connection after changed reconnect: %v", err)
 	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_connections
+		SET github_account_login_ciphertext = $1
+		WHERE connection_id = $2`,
+		[]byte("not-ciphertext"), pgUUID(connection.ID)); err != nil {
+		t.Fatal(err)
+	}
+	connectionOwner, err := store.GetGitHubConnectionOwnerByID(
+		ctx, connection.ID)
+	if err != nil || connectionOwner.Scope != 1 ||
+		connectionOwner.ID != accountID {
+		t.Fatalf("authorization-safe connection owner = %#v err=%v",
+			connectionOwner, err)
+	}
 	disconnected, err := store.DisconnectGitHub(
 		ctx, connection.ID, connection.Revision, now.Add(7*time.Minute))
 	if err != nil || disconnected.State != int16(
@@ -1060,6 +1094,9 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	var credentialCount, snapshotCount, snapshotStateCount int
 	var notificationCount, eventCount, callbackCount int
+	callbackOwnerHash := hasher.Sum(
+		"github-callback-owner",
+		"OWNER_SCOPE_PERSONAL:"+accountID.String())
 	if err := store.pool.QueryRow(ctx, `
 		SELECT
 			(SELECT count(*) FROM deck_github_user_credentials
@@ -1073,8 +1110,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			(SELECT count(*) FROM deck_notification_events
 			 WHERE view_id = $2)::integer,
 			(SELECT count(*) FROM deck_github_callback_states
-			 WHERE owner_scope = 1 AND owner_id = $3)::integer`,
-		pgUUID(connection.ID), pgUUID(firstViewID), pgUUID(accountID),
+			 WHERE owner_hash = $3)::integer`,
+		pgUUID(connection.ID), pgUUID(firstViewID), callbackOwnerHash[:],
 	).Scan(&credentialCount, &snapshotCount, &snapshotStateCount,
 		&notificationCount, &eventCount, &callbackCount); err != nil {
 		t.Fatal(err)
@@ -1192,11 +1229,14 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("webhook disconnect: %v", err)
 	}
 	var webhookCallbackCount int
+	webhookOwnerHash := hasher.Sum(
+		"github-callback-owner",
+		"OWNER_SCOPE_PERSONAL:"+secondAccountID.String())
 	if err := store.pool.QueryRow(ctx, `
 		SELECT count(*)::integer
 		FROM deck_github_callback_states
-		WHERE owner_scope = 1 AND owner_id = $1`,
-		pgUUID(secondAccountID),
+		WHERE owner_hash = $1`,
+		webhookOwnerHash[:],
 	).Scan(&webhookCallbackCount); err != nil {
 		t.Fatal(err)
 	}
@@ -1229,11 +1269,13 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("view survived feature deletion: %v", err)
 	}
 	var accountCallbackCount int
+	accountCallbackHash := hasher.Sum(
+		"github-callback-account", accountID.String())
 	if err := store.pool.QueryRow(ctx, `
 		SELECT count(*)::integer
 		FROM deck_github_callback_states
-		WHERE account_id = $1`,
-		pgUUID(accountID),
+		WHERE account_hash = $1`,
+		accountCallbackHash[:],
 	).Scan(&accountCallbackCount); err != nil {
 		t.Fatal(err)
 	}

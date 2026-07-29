@@ -172,12 +172,12 @@ func (service *Integration) DisconnectGitHubConnection(
 	if err != nil {
 		return nil, err
 	}
-	current, err := service.dependencies.Store.GetGitHubConnectionByID(
+	current, err := service.dependencies.Store.GetGitHubConnectionOwnerByID(
 		ctx, connectionID)
 	if err != nil {
 		return nil, mapDatabaseError(err)
 	}
-	owner := ownerMessage(current.OwnerScope, current.OwnerID)
+	owner := ownerMessage(current.Scope, current.ID)
 	ownerID, err := authorizeOwner(viewer, owner, true)
 	if err != nil {
 		return nil, err

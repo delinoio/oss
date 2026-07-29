@@ -17,7 +17,7 @@ const (
 	InstallationCallbackPath = "/github/app/callback"
 	WebhookPath              = "/github/webhooks"
 	callbackStateLifetime    = 10 * time.Minute
-	maxWebhookBody           = 1 << 20
+	maxWebhookBody           = 25 << 20
 )
 
 type CallbackStore interface {

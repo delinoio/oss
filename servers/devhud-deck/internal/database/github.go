@@ -31,6 +31,24 @@ type GitHubConnectionRecord struct {
 	UpdatedAt    time.Time
 }
 
+type GitHubConnectionOwner struct {
+	Scope int16
+	ID    uuid.UUID
+}
+
+func (store *Store) githubCallbackOwnerHash(
+	scope int16,
+	ownerID uuid.UUID,
+) [32]byte {
+	return store.hasher.Sum(
+		"github-callback-owner",
+		deckv1.OwnerScope(scope).String()+":"+ownerID.String())
+}
+
+func (store *Store) githubCallbackAccountHash(accountID uuid.UUID) [32]byte {
+	return store.hasher.Sum("github-callback-account", accountID.String())
+}
+
 func (store *Store) SaveGitHubCallbackState(
 	ctx context.Context,
 	hash [32]byte,
@@ -45,10 +63,9 @@ func (store *Store) SaveGitHubCallbackState(
 	if err != nil || (state.Owner.Scope == 1 && ownerID != accountID) {
 		return errors.New("deck database: invalid callback owner")
 	}
-	ownerHash := store.hasher.Sum(
-		"owner",
-		deckv1.OwnerScope(state.Owner.Scope).String()+":"+ownerID.String(),
-	)
+	ownerHash := store.githubCallbackOwnerHash(
+		int16(state.Owner.Scope), ownerID)
+	accountHash := store.githubCallbackAccountHash(accountID)
 	payload, err := json.Marshal(state)
 	if err != nil {
 		return errors.New("deck database: callback encode failed")
@@ -77,8 +94,8 @@ func (store *Store) SaveGitHubCallbackState(
 		}
 		return queries.InsertGitHubCallbackState(ctx,
 			dbgen.InsertGitHubCallbackStateParams{
-				StateHash: hash[:], OwnerScope: int16(state.Owner.Scope),
-				OwnerID: pgUUID(ownerID), AccountID: pgUUID(accountID),
+				StateHash: hash[:], OwnerHash: ownerHash[:],
+				AccountHash:     accountHash[:],
 				StateCiphertext: ciphertext,
 				ExpiresAt:       pgTime(time.Unix(state.ExpiresAt, 0)),
 				CreatedAt:       pgTime(now),
@@ -124,10 +141,12 @@ func (store *Store) ConsumeGitHubCallbackState(
 		}
 		ownerID, ownerErr := parseStoredUUID(actual.Owner.ID)
 		accountID, accountErr := parseStoredUUID(actual.AccountID)
+		ownerHash := store.githubCallbackOwnerHash(
+			int16(actual.Owner.Scope), ownerID)
+		accountHash := store.githubCallbackAccountHash(accountID)
 		if ownerErr != nil || accountErr != nil ||
-			int16(actual.Owner.Scope) != record.OwnerScope ||
-			ownerID != uuidValue(record.OwnerID) ||
-			accountID != uuidValue(record.AccountID) {
+			!bytes.Equal(ownerHash[:], record.OwnerHash) ||
+			!bytes.Equal(accountHash[:], record.AccountHash) {
 			return deckgithub.ErrInvalidSignature
 		}
 		if err := queries.MarkGitHubCallbackStateConsumed(
@@ -183,6 +202,7 @@ func (store *Store) ConnectGitHub(
 		"owner",
 		deckv1.OwnerScope(state.Owner.Scope).String()+":"+ownerID.String(),
 	)
+	accountHash := store.githubCallbackAccountHash(accountID)
 	installationIdentityHash := store.hasher.Sum(
 		"github-webhook-installation", strconv.FormatUint(installation.ID, 10))
 	authorizationIdentityHash := store.hasher.Sum(
@@ -215,8 +235,8 @@ func (store *Store) ConnectGitHub(
 		}
 		callbackCreatedAt, err := queries.DeleteConsumedGitHubCallbackState(
 			ctx, dbgen.DeleteConsumedGitHubCallbackStateParams{
-				StateHash: stateHash[:], OwnerScope: int16(state.Owner.Scope),
-				OwnerID: pgUUID(ownerID), AccountID: pgUUID(accountID),
+				StateHash: stateHash[:], OwnerHash: ownerHash[:],
+				AccountHash: accountHash[:],
 			})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return deckgithub.ErrInvalidSignature
@@ -701,19 +721,22 @@ func (store *Store) RewrapGitHubCredentials(ctx context.Context) error {
 	})
 }
 
-func (store *Store) GetGitHubConnectionByID(
+func (store *Store) GetGitHubConnectionOwnerByID(
 	ctx context.Context,
 	connectionID uuid.UUID,
-) (GitHubConnectionRecord, error) {
-	row, err := store.queries.GetGitHubConnectionByIDForUpdate(
+) (GitHubConnectionOwner, error) {
+	row, err := store.queries.GetGitHubConnectionOwnerByID(
 		ctx, pgUUID(connectionID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return GitHubConnectionRecord{}, ErrNotFound
+		return GitHubConnectionOwner{}, ErrNotFound
 	}
 	if err != nil {
-		return GitHubConnectionRecord{}, err
+		return GitHubConnectionOwner{}, err
 	}
-	return store.decodeGitHubConnection(ctx, row, uuid.Nil, false)
+	return GitHubConnectionOwner{
+		Scope: row.OwnerScope,
+		ID:    uuidValue(row.OwnerID),
+	}, nil
 }
 
 func (store *Store) DisconnectGitHub(
@@ -771,9 +794,7 @@ func (store *Store) DisconnectGitHub(
 			return err
 		}
 		if err := queries.DeleteGitHubCallbackStatesByOwner(
-			ctx, dbgen.DeleteGitHubCallbackStatesByOwnerParams{
-				OwnerScope: row.OwnerScope, OwnerID: row.OwnerID,
-			}); err != nil {
+			ctx, ownerHash[:]); err != nil {
 			return err
 		}
 		if err := store.cleanupGitHubOwner(
@@ -929,11 +950,10 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 					ctx, connection.ConnectionID); err != nil {
 					return err
 				}
+				ownerHash := store.githubCallbackOwnerHash(
+					connection.OwnerScope, uuidValue(connection.OwnerID))
 				if err := queries.DeleteGitHubCallbackStatesByOwner(
-					ctx, dbgen.DeleteGitHubCallbackStatesByOwnerParams{
-						OwnerScope: connection.OwnerScope,
-						OwnerID:    connection.OwnerID,
-					}); err != nil {
+					ctx, ownerHash[:]); err != nil {
 					return err
 				}
 			}

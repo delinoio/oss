@@ -68,20 +68,19 @@ CREATE TABLE deck_github_user_credentials (
 
 CREATE TABLE deck_github_callback_states (
     state_hash bytea PRIMARY KEY CHECK (octet_length(state_hash) = 32),
-    owner_scope smallint NOT NULL CHECK (owner_scope IN (1, 2)),
-    owner_id uuid NOT NULL,
-    account_id uuid NOT NULL,
+    owner_hash bytea NOT NULL CHECK (octet_length(owner_hash) = 32),
+    account_hash bytea NOT NULL CHECK (octet_length(account_hash) = 32),
     state_ciphertext bytea NOT NULL CHECK (octet_length(state_ciphertext) > 0),
     expires_at timestamptz NOT NULL,
     consumed_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    CHECK (substring(owner_id::text, 15, 1) = '7'),
-    CHECK (substring(account_id::text, 15, 1) = '7')
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp()
 );
 CREATE INDEX deck_github_callback_states_expiry_idx
     ON deck_github_callback_states (expires_at);
 CREATE INDEX deck_github_callback_states_owner_idx
-    ON deck_github_callback_states (owner_scope, owner_id);
+    ON deck_github_callback_states (owner_hash);
+CREATE INDEX deck_github_callback_states_account_idx
+    ON deck_github_callback_states (account_hash);
 
 CREATE TABLE deck_github_webhook_deliveries (
     delivery_id text PRIMARY KEY

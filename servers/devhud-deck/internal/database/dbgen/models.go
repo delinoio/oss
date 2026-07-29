@@ -93,9 +93,8 @@ type DeckGithubAuthorizationState struct {
 
 type DeckGithubCallbackState struct {
 	StateHash       []byte
-	OwnerScope      int16
-	OwnerID         pgtype.UUID
-	AccountID       pgtype.UUID
+	OwnerHash       []byte
+	AccountHash     []byte
 	StateCiphertext []byte
 	ExpiresAt       pgtype.Timestamptz
 	ConsumedAt      pgtype.Timestamptz

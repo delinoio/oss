@@ -30,8 +30,8 @@ type Querier interface {
 	DeleteExpiredGitHubCallbackStates(ctx context.Context, expiredAt pgtype.Timestamptz) error
 	DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser(ctx context.Context, arg DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUserParams) error
 	DeleteGitHubCallbackState(ctx context.Context, stateHash []byte) error
-	DeleteGitHubCallbackStatesByAccount(ctx context.Context, accountID pgtype.UUID) error
-	DeleteGitHubCallbackStatesByOwner(ctx context.Context, arg DeleteGitHubCallbackStatesByOwnerParams) error
+	DeleteGitHubCallbackStatesByAccount(ctx context.Context, accountHash []byte) error
+	DeleteGitHubCallbackStatesByOwner(ctx context.Context, ownerHash []byte) error
 	DeleteGitHubConnectionCredentials(ctx context.Context, connectionID pgtype.UUID) error
 	DeleteGitHubUserCredentialsByAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteGitHubUserCredentialsByGitHubUser(ctx context.Context, githubUserID int64) error
@@ -63,6 +63,7 @@ type Querier interface {
 	GetGitHubConnectionByInstallationForUpdate(ctx context.Context, githubInstallationID pgtype.Int8) (DeckConnection, error)
 	GetGitHubConnectionByOwner(ctx context.Context, arg GetGitHubConnectionByOwnerParams) (DeckConnection, error)
 	GetGitHubConnectionByOwnerForUpdate(ctx context.Context, arg GetGitHubConnectionByOwnerForUpdateParams) (DeckConnection, error)
+	GetGitHubConnectionOwnerByID(ctx context.Context, connectionID pgtype.UUID) (GetGitHubConnectionOwnerByIDRow, error)
 	GetGitHubUserCredential(ctx context.Context, arg GetGitHubUserCredentialParams) (DeckGithubUserCredential, error)
 	GetGitHubWebhookDelivery(ctx context.Context, deliveryID string) (DeckGithubWebhookDelivery, error)
 	GetRegisterDeviceIdempotency(ctx context.Context, arg GetRegisterDeviceIdempotencyParams) (DeckDeviceRegistrationIdempotency, error)

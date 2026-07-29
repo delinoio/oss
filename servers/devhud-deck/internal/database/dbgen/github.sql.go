@@ -59,27 +59,20 @@ func (q *Queries) CanUseOrganizationForGitHubCallback(ctx context.Context, arg C
 const deleteConsumedGitHubCallbackState = `-- name: DeleteConsumedGitHubCallbackState :one
 DELETE FROM deck_github_callback_states
 WHERE state_hash = $1
-  AND owner_scope = $2
-  AND owner_id = $3
-  AND account_id = $4
+  AND owner_hash = $2
+  AND account_hash = $3
   AND consumed_at IS NOT NULL
 RETURNING created_at
 `
 
 type DeleteConsumedGitHubCallbackStateParams struct {
-	StateHash  []byte
-	OwnerScope int16
-	OwnerID    pgtype.UUID
-	AccountID  pgtype.UUID
+	StateHash   []byte
+	OwnerHash   []byte
+	AccountHash []byte
 }
 
 func (q *Queries) DeleteConsumedGitHubCallbackState(ctx context.Context, arg DeleteConsumedGitHubCallbackStateParams) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, deleteConsumedGitHubCallbackState,
-		arg.StateHash,
-		arg.OwnerScope,
-		arg.OwnerID,
-		arg.AccountID,
-	)
+	row := q.db.QueryRow(ctx, deleteConsumedGitHubCallbackState, arg.StateHash, arg.OwnerHash, arg.AccountHash)
 	var created_at pgtype.Timestamptz
 	err := row.Scan(&created_at)
 	return created_at, err
@@ -125,27 +118,21 @@ func (q *Queries) DeleteGitHubCallbackState(ctx context.Context, stateHash []byt
 
 const deleteGitHubCallbackStatesByAccount = `-- name: DeleteGitHubCallbackStatesByAccount :exec
 DELETE FROM deck_github_callback_states
-WHERE account_id = $1
+WHERE account_hash = $1
 `
 
-func (q *Queries) DeleteGitHubCallbackStatesByAccount(ctx context.Context, accountID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteGitHubCallbackStatesByAccount, accountID)
+func (q *Queries) DeleteGitHubCallbackStatesByAccount(ctx context.Context, accountHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteGitHubCallbackStatesByAccount, accountHash)
 	return err
 }
 
 const deleteGitHubCallbackStatesByOwner = `-- name: DeleteGitHubCallbackStatesByOwner :exec
 DELETE FROM deck_github_callback_states
-WHERE owner_scope = $1
-  AND owner_id = $2
+WHERE owner_hash = $1
 `
 
-type DeleteGitHubCallbackStatesByOwnerParams struct {
-	OwnerScope int16
-	OwnerID    pgtype.UUID
-}
-
-func (q *Queries) DeleteGitHubCallbackStatesByOwner(ctx context.Context, arg DeleteGitHubCallbackStatesByOwnerParams) error {
-	_, err := q.db.Exec(ctx, deleteGitHubCallbackStatesByOwner, arg.OwnerScope, arg.OwnerID)
+func (q *Queries) DeleteGitHubCallbackStatesByOwner(ctx context.Context, ownerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteGitHubCallbackStatesByOwner, ownerHash)
 	return err
 }
 
@@ -299,7 +286,7 @@ func (q *Queries) EnsureGitHubInstallationState(ctx context.Context, providerIde
 }
 
 const getGitHubCallbackStateForUpdate = `-- name: GetGitHubCallbackStateForUpdate :one
-SELECT state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at, consumed_at, created_at
+SELECT state_hash, owner_hash, account_hash, state_ciphertext, expires_at, consumed_at, created_at
 FROM deck_github_callback_states
 WHERE state_hash = $1
 FOR UPDATE
@@ -310,9 +297,8 @@ func (q *Queries) GetGitHubCallbackStateForUpdate(ctx context.Context, stateHash
 	var i DeckGithubCallbackState
 	err := row.Scan(
 		&i.StateHash,
-		&i.OwnerScope,
-		&i.OwnerID,
-		&i.AccountID,
+		&i.OwnerHash,
+		&i.AccountHash,
 		&i.StateCiphertext,
 		&i.ExpiresAt,
 		&i.ConsumedAt,
@@ -456,6 +442,24 @@ func (q *Queries) GetGitHubConnectionByOwnerForUpdate(ctx context.Context, arg G
 	return i, err
 }
 
+const getGitHubConnectionOwnerByID = `-- name: GetGitHubConnectionOwnerByID :one
+SELECT owner_scope, owner_id
+FROM deck_connections
+WHERE connection_id = $1
+`
+
+type GetGitHubConnectionOwnerByIDRow struct {
+	OwnerScope int16
+	OwnerID    pgtype.UUID
+}
+
+func (q *Queries) GetGitHubConnectionOwnerByID(ctx context.Context, connectionID pgtype.UUID) (GetGitHubConnectionOwnerByIDRow, error) {
+	row := q.db.QueryRow(ctx, getGitHubConnectionOwnerByID, connectionID)
+	var i GetGitHubConnectionOwnerByIDRow
+	err := row.Scan(&i.OwnerScope, &i.OwnerID)
+	return i, err
+}
+
 const getGitHubUserCredential = `-- name: GetGitHubUserCredential :one
 SELECT connection_id, account_id, github_user_id, wrapping_key_id, user_access_token_ciphertext, user_refresh_token_ciphertext, user_access_token_expires_at, user_refresh_token_expires_at, updated_at
 FROM deck_github_user_credentials
@@ -507,20 +511,18 @@ func (q *Queries) GetGitHubWebhookDelivery(ctx context.Context, deliveryID strin
 
 const insertGitHubCallbackState = `-- name: InsertGitHubCallbackState :exec
 INSERT INTO deck_github_callback_states (
-    state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at,
+    state_hash, owner_hash, account_hash, state_ciphertext, expires_at,
     created_at
 ) VALUES (
     $1, $2, $3,
-    $4, $5, $6,
-    $7
+    $4, $5, $6
 )
 `
 
 type InsertGitHubCallbackStateParams struct {
 	StateHash       []byte
-	OwnerScope      int16
-	OwnerID         pgtype.UUID
-	AccountID       pgtype.UUID
+	OwnerHash       []byte
+	AccountHash     []byte
 	StateCiphertext []byte
 	ExpiresAt       pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
@@ -529,9 +531,8 @@ type InsertGitHubCallbackStateParams struct {
 func (q *Queries) InsertGitHubCallbackState(ctx context.Context, arg InsertGitHubCallbackStateParams) error {
 	_, err := q.db.Exec(ctx, insertGitHubCallbackState,
 		arg.StateHash,
-		arg.OwnerScope,
-		arg.OwnerID,
-		arg.AccountID,
+		arg.OwnerHash,
+		arg.AccountHash,
 		arg.StateCiphertext,
 		arg.ExpiresAt,
 		arg.CreatedAt,

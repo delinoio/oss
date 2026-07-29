@@ -358,4 +358,28 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	if badResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("invalid signature status = %d", badResponse.Code)
 	}
+	repositories := strings.TrimSuffix(
+		strings.Repeat(`{"id":1},`, 150_000), ",")
+	largePayload := []byte(
+		`{"action":"removed","installation":{"id":42},` +
+			`"repositories_removed":[` + repositories + `]}`)
+	if len(largePayload) <= 1<<20 {
+		t.Fatal("large webhook fixture did not exceed the former limit")
+	}
+	largeRequest := httptest.NewRequest(
+		http.MethodPost, WebhookPath, bytes.NewReader(largePayload))
+	largeRequest.Header.Set("X-Hub-Signature-256",
+		WebhookSignature(secret, largePayload))
+	largeRequest.Header.Set(
+		"X-GitHub-Event", "installation_repositories")
+	largeRequest.Header.Set("X-GitHub-Delivery", "delivery-large")
+	largeResponse := httptest.NewRecorder()
+	broker.Handler().ServeHTTP(largeResponse, largeRequest)
+	if largeResponse.Code != http.StatusNoContent ||
+		len(lifecycle.calls) != 3 ||
+		lifecycle.calls[2] !=
+			"delivery-large:installation_repositories:removed" {
+		t.Fatalf("large lifecycle response = %d, calls %#v",
+			largeResponse.Code, lifecycle.calls)
+	}
 }
