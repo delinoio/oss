@@ -1,0 +1,64 @@
+:root {
+  color-scheme: light dark;
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  width: 340px;
+}
+
+main {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+button,
+input {
+  box-sizing: border-box;
+  font: inherit;
+  min-height: 36px;
+  width: 100%;
+}
+
+.field-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+}
+
+.field-row button {
+  font-size: 12px;
+  width: auto;
+}
+
+ul {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+li {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+}
+
+li button {
+  font-size: 12px;
+  width: auto;
+}
+
+.error {
+  color: #d33;
+}

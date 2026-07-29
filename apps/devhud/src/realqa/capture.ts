@@ -37,6 +37,17 @@ export enum CapturePermission {
   Denied = "denied",
 }
 
+export enum CapturePermissionGuidance {
+  None = "none",
+  RequestSystemPrompt = "request-system-prompt",
+  OpenSystemSettings = "open-system-settings",
+}
+
+export interface CapturePermissionStatus {
+  readonly permission: CapturePermission;
+  readonly guidance: CapturePermissionGuidance;
+}
+
 export enum ImageMediaType {
   Png = "png",
   Webp = "webp",
@@ -51,7 +62,10 @@ export enum CaptureFailure {
   Cancelled = "cancelled",
   PortalCancelled = "portal-cancelled",
   ProtectedContent = "protected-content",
+  WindowMinimized = "window-minimized",
+  WindowClosed = "window-closed",
   WindowLost = "window-lost",
+  DisplayRemoved = "display-removed",
   ModeUnavailable = "mode-unavailable",
   DisplaySnapshotChanged = "display-snapshot-changed",
   InvalidDisplaySnapshot = "invalid-display-snapshot",
@@ -107,10 +121,12 @@ export interface WindowSource {
   readonly displayId: string;
   readonly bounds: LogicalRect;
   readonly availability: WindowAvailability;
-  readonly metadata: {
-    readonly processName: string | null;
-    readonly title: string | null;
-  };
+  readonly metadata: WindowMetadata;
+}
+
+export interface WindowMetadata {
+  readonly processName?: string;
+  readonly title?: string;
 }
 
 export interface CaptureModeCapability {
@@ -177,6 +193,11 @@ export interface EncodedImage {
   readonly bytes: readonly number[];
 }
 
+export interface Base64EncodedImage {
+  readonly mediaType: ImageMediaType;
+  readonly base64: string;
+}
+
 export interface CaptureRequest {
   readonly sessionId: string;
   readonly snapshotId: string;
@@ -208,7 +229,7 @@ export interface CaptureResult {
 export interface ComposerImageRequest {
   readonly sessionId: string;
   readonly imageId: string;
-  readonly image: EncodedImage;
+  readonly image: EncodedImage | Base64EncodedImage;
   readonly outputMediaType: ImageMediaType;
 }
 
@@ -307,6 +328,8 @@ export type InvokeCommand = <T>(
 ) => Promise<T>;
 
 export interface RealQaCaptureBridge {
+  permissionStatus(): Promise<CapturePermissionStatus>;
+  requestPermission(): Promise<CapturePermissionStatus>;
   inspectCapabilities(): Promise<CaptureCapabilities>;
   listSources(): Promise<CaptureSourceCatalog>;
   adjustSelection(
@@ -324,10 +347,22 @@ export interface RealQaComposerBridge {
   resetSession(sessionId: string): Promise<void>;
 }
 
+export interface RealQaBrowserComposerBridge extends RealQaComposerBridge {
+  captureBrowserFallback(sessionId: string): Promise<CaptureResult>;
+}
+
 export function createRealQaCaptureBridge(
   invokeCommand: InvokeCommand = invoke,
 ): RealQaCaptureBridge {
   return {
+    permissionStatus: () =>
+      invokeCommand<CapturePermissionStatus>(
+        "realqa_capture_permission_status",
+      ),
+    requestPermission: () =>
+      invokeCommand<CapturePermissionStatus>(
+        "realqa_request_capture_permission",
+      ),
     inspectCapabilities: () =>
       invokeCommand<CaptureCapabilities>(
         "realqa_inspect_capture_capabilities",
@@ -348,8 +383,12 @@ export function createRealQaCaptureBridge(
 
 export function createRealQaComposerBridge(
   invokeCommand: InvokeCommand = invoke,
-): RealQaComposerBridge {
+): RealQaBrowserComposerBridge {
   return {
+    captureBrowserFallback: (sessionId) =>
+      invokeCommand<CaptureResult>("realqa_begin_browser_fallback_capture", {
+        sessionId,
+      }),
     acceptImage: (request) =>
       invokeCommand<ComposerImage>("realqa_composer_accept_image", { request }),
     flattenImage: async (request) =>

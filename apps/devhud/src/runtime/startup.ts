@@ -11,7 +11,7 @@ export interface RuntimeInfo {
   operatingSystem: "android" | "ios" | "linux" | "macos" | "windows";
   runtime: "cef" | "system-webview";
   sandboxEnabled: boolean;
-  surface?: "hud" | "settings" | "mobile";
+  surface?: "hud" | "settings" | "realqa-composer" | "mobile";
   firstRun?: boolean;
   shortcutStartupFailure?: ShortcutFailure | null;
   autostartStartupOutcome?: AutostartOutcome | null;

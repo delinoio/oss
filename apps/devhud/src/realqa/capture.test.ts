@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CaptureFailure,
   CaptureMode,
   createRealQaCaptureBridge,
   createRealQaComposerBridge,
@@ -29,7 +30,40 @@ function invokeFixture(): {
 }
 
 describe("RealQA native boundaries", () => {
-  it("uses only the five closed capture commands and exact argument shapes", async () => {
+  it("keeps Windows source metadata bounded by shape and native failures typed", () => {
+    const source = {
+      id: "windows-window-0000000000000001",
+      displayId: "windows-display-0000000000000001",
+      bounds: { x: -320, y: 24, width: 640, height: 480 },
+      availability: "available",
+      metadata: {
+        processName: "fixture.exe",
+        title: "Fixture",
+      },
+    } as const;
+
+    expect(Object.keys(source.metadata).toSorted()).toEqual([
+      "processName",
+      "title",
+    ]);
+    expect([
+      CaptureFailure.PermissionDenied,
+      CaptureFailure.ProtectedContent,
+      CaptureFailure.WindowMinimized,
+      CaptureFailure.WindowClosed,
+      CaptureFailure.DisplayRemoved,
+      CaptureFailure.CaptureFailed,
+    ]).toEqual([
+      "permission-denied",
+      "protected-content",
+      "window-minimized",
+      "window-closed",
+      "display-removed",
+      "capture-failed",
+    ]);
+  });
+
+  it("uses only the closed permission and capture commands with exact argument shapes", async () => {
     const { calls, invokeCommand } = invokeFixture();
     const bridge = createRealQaCaptureBridge(invokeCommand);
     const selection = {
@@ -47,6 +81,8 @@ describe("RealQA native boundaries", () => {
       outputMediaType: ImageMediaType.Png,
     };
 
+    await bridge.permissionStatus();
+    await bridge.requestPermission();
     await bridge.inspectCapabilities();
     await bridge.listSources();
     await bridge.adjustSelection(selection, {
@@ -59,6 +95,8 @@ describe("RealQA native boundaries", () => {
     await bridge.cancelCapture("session-1");
 
     expect(calls).toEqual([
+      ["realqa_capture_permission_status", undefined],
+      ["realqa_request_capture_permission", undefined],
       ["realqa_inspect_capture_capabilities", undefined],
       ["realqa_list_capture_sources", undefined],
       [

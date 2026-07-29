@@ -34,6 +34,10 @@ const [
   cargoManifest,
   desktopCapabilitySource,
   diagnosticsSource,
+  extensionBuildSource,
+  extensionManifestSource,
+  extensionProtocolSource,
+  extensionServiceWorkerSource,
   iosEntitlements,
   iosInfo,
   iosProject,
@@ -41,6 +45,7 @@ const [
   packageSource,
   realqaCaptureCapabilitySource,
   realqaComposerCapabilitySource,
+  realqaNativeHostSource,
   rustBuildSource,
   rustSource,
   settingsCapabilitySource,
@@ -53,6 +58,10 @@ const [
   read("src-tauri/Cargo.toml"),
   read("src-tauri/capabilities/desktop-main.json"),
   read("src-tauri/src/diagnostics.rs"),
+  read("scripts/build-realqa-extension.mjs"),
+  read("realqa-extension/manifest.template.json"),
+  read("realqa-extension/src/protocol.js"),
+  read("realqa-extension/src/service-worker.js"),
   read("src-tauri/gen/apple/devhud_iOS/devhud_iOS.entitlements"),
   read("src-tauri/gen/apple/devhud_iOS/Info.plist"),
   read("src-tauri/gen/apple/project.yml"),
@@ -60,6 +69,7 @@ const [
   read("package.json"),
   read("src-tauri/capabilities/realqa-capture.json"),
   read("src-tauri/capabilities/realqa-composer.json"),
+  read("src-tauri/src/realqa_native_host.rs"),
   read("src-tauri/build.rs"),
   read("src-tauri/src/lib.rs"),
   read("src-tauri/capabilities/settings.json"),
@@ -68,6 +78,7 @@ const [
 ]);
 
 const packageJson = JSON.parse(packageSource);
+const extensionManifest = JSON.parse(extensionManifestSource);
 const tauriConfig = JSON.parse(tauriConfigSource);
 const capabilities = {
   "desktop-main": JSON.parse(desktopCapabilitySource),
@@ -76,6 +87,80 @@ const capabilities = {
   "realqa-capture": JSON.parse(realqaCaptureCapabilitySource),
   "realqa-composer": JSON.parse(realqaComposerCapabilitySource),
 };
+
+requireCondition(
+  extensionManifest.manifest_version === 3 &&
+    extensionManifest.minimum_chrome_version === "150" &&
+    extensionManifest.incognito === "not_allowed",
+  "RealQA extension must target Chrome 150 MV3 and exclude Incognito",
+);
+requireCondition(
+  JSON.stringify(extensionManifest.permissions) ===
+    JSON.stringify([
+      "activeTab",
+      "tabs",
+      "scripting",
+      "nativeMessaging",
+      "storage",
+    ]) &&
+    JSON.stringify(extensionManifest.optional_host_permissions) ===
+      JSON.stringify(["https://*/*", "http://*/*"]) &&
+    extensionManifest.host_permissions === undefined &&
+    extensionManifest.content_scripts === undefined,
+  "RealQA extension must keep exact active-tab/native permissions and optional-only DOM origins",
+);
+requireCondition(
+  !extensionManifestSource.includes("<all_urls>") &&
+    !extensionManifestSource.includes("desktopCapture") &&
+    !extensionManifestSource.includes("update_url"),
+  "RealQA extension must exclude all-URL, desktop/full-page, and store publication authority",
+);
+requireCondition(
+  extensionServiceWorkerSource.includes("chrome.tabs.captureVisibleTab") &&
+    extensionServiceWorkerSource.includes("captureMode: \"os-capture\"") &&
+    extensionServiceWorkerSource.includes("chrome.permissions.contains") &&
+    extensionServiceWorkerSource.includes("chrome.permissions.remove") &&
+    extensionServiceWorkerSource.includes("capturedTabId") &&
+    extensionServiceWorkerSource.includes("capturedWindowId") &&
+    extensionServiceWorkerSource.includes("tab.url !== capturedUrl") &&
+    extensionServiceWorkerSource.includes("chrome.storage.session") &&
+    !extensionServiceWorkerSource.includes("captureBeyondViewport") &&
+    !extensionServiceWorkerSource.includes("debugger"),
+  "RealQA extension must use visible-viewport capture, immutable tab identity, temporary exact-origin permission, and restricted-page OS fallback",
+);
+requireCondition(
+  extensionProtocolSource.includes("25 * 1024 * 1024") &&
+    extensionProtocolSource.includes("64 * 1024 * 1024") &&
+    extensionProtocolSource.includes("1024 * 1024") &&
+    extensionProtocolSource.includes("sanitizeSelection") &&
+    !extensionProtocolSource.includes("innerHTML"),
+  "RealQA extension protocol must retain size bounds and the closed sanitized metadata shape",
+);
+requireCondition(
+  realqaNativeHostSource.includes("deny_unknown_fields") &&
+    realqaNativeHostSource.includes("validate_origin") &&
+    realqaNativeHostSource.includes("SocketComposerDelivery") &&
+    realqaNativeHostSource.includes("start_composer_listener") &&
+    realqaNativeHostSource.includes('.arg("--realqa-composer")') &&
+    !realqaNativeHostSource.includes("INBOX_DIRECTORY") &&
+    rustSource.includes("has_prior_feature_binding") &&
+    rustSource.includes("RealQaBrowserInbox") &&
+    rustSource.includes('argument == "--realqa-composer"') &&
+    rustSource.includes("build_realqa_composer_window") &&
+    realqaNativeHostSource.includes("MAX_ENCODED_IMAGE_BYTES") &&
+    realqaNativeHostSource.includes("MAX_EXTENSION_MESSAGE_BYTES") &&
+    realqaNativeHostSource.includes("MAX_HOST_RESPONSE_BYTES"),
+  "RealQA native host must revalidate schema/origin, use authenticated memory-only composer IPC, and retain framing limits",
+);
+requireCondition(
+  extensionBuildSource.includes("FIXTURE_EXTENSION_ID") &&
+    extensionBuildSource.includes("DEVHUD_CHROME_EXTENSION_ID") &&
+    extensionBuildSource.includes("DEVHUD_APPROVED_CHROME_EXTENSION_IDS") &&
+    !Object.keys(packageJson.scripts).some((script) =>
+      /publish.*(?:chrome|extension)|(?:chrome|extension).*publish/iu.test(script),
+    ),
+  "RealQA packaging must use a fixture ID, require external production approval, and expose no store publication task",
+);
 const expectedCapabilities = {
   "desktop-main": {
     platforms: ["linux", "macOS", "windows"],
@@ -135,6 +220,8 @@ const expectedCapabilities = {
     platforms: ["linux", "macOS", "windows"],
     windows: ["realqa-capture"],
     permissions: [
+      "allow-realqa-capture-permission-status",
+      "allow-realqa-request-capture-permission",
       "allow-realqa-inspect-capture-capabilities",
       "allow-realqa-list-capture-sources",
       "allow-realqa-adjust-capture-selection",
@@ -146,10 +233,13 @@ const expectedCapabilities = {
     platforms: ["linux", "macOS", "windows"],
     windows: ["realqa-composer"],
     permissions: [
+      "allow-get-runtime-info",
       "allow-realqa-composer-accept-image",
       "allow-realqa-composer-flatten-image",
       "allow-realqa-composer-remove-image",
       "allow-realqa-composer-reset-session",
+      "allow-realqa-begin-browser-fallback-capture",
+      "allow-realqa-take-browser-capture",
     ],
   },
 };
@@ -240,8 +330,13 @@ requireCondition(
 requireCondition(
   [...composerCommands].every(
     (command) =>
-      command.startsWith("realqa_composer_") &&
+      (command.startsWith("realqa_composer_") ||
+        command === "get_runtime_info" ||
+        command === "realqa_begin_browser_fallback_capture" ||
+        command === "realqa_take_browser_capture") &&
       ![
+        "realqa_capture_permission_status",
+        "realqa_request_capture_permission",
         "realqa_inspect_capture_capabilities",
         "realqa_list_capture_sources",
         "realqa_adjust_capture_selection",
@@ -319,8 +414,8 @@ for (const guard of [
 ]) {
   requireCondition(
     (rustSource.match(new RegExp(guard.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "gu")) ?? [])
-      .length === 3,
-    `all three webviews must apply ${guard}`,
+      .length === 4,
+    `all four desktop and mobile webviews must apply ${guard}`,
   );
 }
 for (const denial of [
@@ -336,7 +431,7 @@ for (const denial of [
   requireCondition(rustSource.includes(denial), `desktop resource policy must contain ${denial}`);
 }
 requireCondition(
-  (rustSource.match(/\.devtools\(true\)/gu) ?? []).length === 2 &&
+  (rustSource.match(/\.devtools\(true\)/gu) ?? []).length === 3 &&
     rustSource.includes(".devtools(false)"),
   "DevTools must be limited to the guarded desktop development/preview windows",
 );

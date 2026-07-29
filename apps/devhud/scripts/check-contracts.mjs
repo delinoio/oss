@@ -170,7 +170,7 @@ requireCondition(
 );
 requireCondition(
   cargoManifest.includes(
-    'desktop-cef = ["linux-capture-backend", "dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
+    'desktop-cef = ["linux-capture-backend", "dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "realqa-macos-capture", "tauri/devtools"]',
   ) &&
     cargoManifest.includes(
       'linux-capture-backend = ["dep:ashpd", "dep:tokio", "dep:x11rb"]',
@@ -282,6 +282,8 @@ const expectedSettingsPermissions = [
   "allow-logout-authentication",
 ];
 const expectedRealqaCapturePermissions = [
+  "allow-realqa-capture-permission-status",
+  "allow-realqa-request-capture-permission",
   "allow-realqa-inspect-capture-capabilities",
   "allow-realqa-list-capture-sources",
   "allow-realqa-adjust-capture-selection",
@@ -289,10 +291,13 @@ const expectedRealqaCapturePermissions = [
   "allow-realqa-cancel-capture",
 ];
 const expectedRealqaComposerPermissions = [
+  "allow-get-runtime-info",
   "allow-realqa-composer-accept-image",
   "allow-realqa-composer-flatten-image",
   "allow-realqa-composer-remove-image",
   "allow-realqa-composer-reset-session",
+  "allow-realqa-begin-browser-fallback-capture",
+  "allow-realqa-take-browser-capture",
 ];
 requireCondition(
   JSON.stringify(mobileMainCapabilityJson.windows) === JSON.stringify(["main"]) &&
@@ -365,8 +370,8 @@ requireCondition(
   "the desktop HUD must be hidden, always-on-top, taskbar-free, and menu-bar resident",
 );
 requireCondition(
-  rustShell.match(/\.incognito\(true\)/gu)?.length === 2,
-  "both desktop CEF webviews must use off-the-record profiles",
+  rustShell.match(/\.incognito\(true\)/gu)?.length === 3,
+  "all three desktop CEF webviews must use off-the-record profiles",
 );
 for (const storageSwitch of [
   "--disable-application-cache",
@@ -390,9 +395,9 @@ requireCondition(
   "desktop CEF must use and reset only its explicit application-owned profile root",
 );
 requireCondition(
-  (rustShell.match(/\.on_download\(\|_, _\| false\)/gu)?.length ?? 0) === 3 &&
+  (rustShell.match(/\.on_download\(\|_, _\| false\)/gu)?.length ?? 0) === 4 &&
     (rustShell.match(/\.on_web_resource_request\(apply_web_resource_policy\)/gu)
-      ?.length ?? 0) === 3,
+      ?.length ?? 0) === 4,
   "every desktop and mobile webview must deny downloads and remote resources",
 );
 requireCondition(
