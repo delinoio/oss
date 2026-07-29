@@ -740,17 +740,20 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if _, ok := objects.objects[verifiedKey]; !ok {
 		t.Fatal("finalized verified object was deleted")
 	}
-	objects.deleteErr = nil
-	if _, err = connection.Exec(ctx, `
-		UPDATE realqa_object_deletion_jobs
-		SET next_attempt_at = transaction_timestamp()
-	`); err != nil {
+	var pendingStagingDeletions int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'staging'
+	`, uploadRequest.AssetId.Value).Scan(&pendingStagingDeletions); err != nil {
 		t.Fatal(err)
 	}
-	if completed, drainErr := submissionService.DrainObjectDeletions(
-		ctx, 100); drainErr != nil || completed != 1 {
-		t.Fatalf("drained finalized staging copy = %d, %v",
-			completed, drainErr)
+	if pendingStagingDeletions != 0 {
+		t.Fatalf("finalized staging deletions = %d",
+			pendingStagingDeletions)
+	}
+	if _, ok := objects.objects[imageassets.StagingObjectKey(
+		uploadRequest.AssetId.Value)]; ok {
+		t.Fatal("finalized staging object was retained")
 	}
 	finalizeReplay, err := submissionService.FinalizeImageUpload(
 		authCtx, connect.NewRequest(finalizeRequest))
