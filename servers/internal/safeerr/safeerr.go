@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
+	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/internal/auth"
 )
 
@@ -198,16 +199,35 @@ func Connect(err error) error {
 			if detailErr != nil {
 				continue
 			}
-			source, ok := value.(*delibasev1.ErrorDetail)
-			if !ok || source.Reason == delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED {
-				continue
-			}
-			if _, known := delibasev1.ErrorReason_name[int32(source.Reason)]; !known {
-				continue
-			}
-			safe, detailErr := connect.NewErrorDetail(&delibasev1.ErrorDetail{Reason: source.Reason})
-			if detailErr == nil {
-				mapped.AddDetail(safe)
+			switch source := value.(type) {
+			case *delibasev1.ErrorDetail:
+				if source.Reason == delibasev1.ErrorReason_ERROR_REASON_UNSPECIFIED {
+					continue
+				}
+				if _, known := delibasev1.ErrorReason_name[int32(source.Reason)]; !known {
+					continue
+				}
+				safe, safeErr := connect.NewErrorDetail(&delibasev1.ErrorDetail{Reason: source.Reason})
+				if safeErr == nil {
+					mapped.AddDetail(safe)
+				}
+			case *deckv1.ErrorDetail:
+				if source.Reason == deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED {
+					continue
+				}
+				if _, known := deckv1.ErrorReason_name[int32(source.Reason)]; !known {
+					continue
+				}
+				safe, safeErr := connect.NewErrorDetail(&deckv1.ErrorDetail{
+					Reason:          source.Reason,
+					ResourceId:      source.ResourceId,
+					CurrentRevision: source.CurrentRevision,
+					RetryAfter:      source.RetryAfter,
+					OccurredAt:      source.OccurredAt,
+				})
+				if safeErr == nil {
+					mapped.AddDetail(safe)
+				}
 			}
 		}
 		return mapped
