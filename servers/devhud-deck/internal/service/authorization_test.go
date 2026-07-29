@@ -182,6 +182,44 @@ func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 	}
 }
 
+func TestDisconnectedOrganizationViewDefinitionIsManagerOnly(t *testing.T) {
+	t.Parallel()
+	organizationID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
+	owner := &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{
+			OrganizationId: &deckv1.UuidV7{Value: organizationID.String()},
+		},
+	}
+	service := &View{dependencies: Dependencies{}.withDefaults()}
+	authorization := database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED,
+	}
+	member := contracts.Viewer{
+		Memberships: map[uuid.UUID]contracts.OrganizationRole{
+			organizationID: contracts.OrganizationRoleMember,
+		},
+	}
+	err := service.viewDefinitionAuthorizer(
+		context.Background(), member, false,
+	)(authorization)
+	if !errors.Is(err, database.ErrViewNotVisible) {
+		t.Fatalf("organization member authorization error = %v", err)
+	}
+	manager := contracts.Viewer{
+		Memberships: map[uuid.UUID]contracts.OrganizationRole{
+			organizationID: contracts.OrganizationRoleAdmin,
+		},
+	}
+	err = service.viewDefinitionAuthorizer(
+		context.Background(), manager, false,
+	)(authorization)
+	if err != nil {
+		t.Fatalf("organization manager authorization error = %v", err)
+	}
+}
+
 func TestConnectedViewWithoutRepositoryQualifiersRequiresProviderCredentials(
 	t *testing.T,
 ) {

@@ -745,6 +745,9 @@ func (service *View) viewDefinitionAuthorizer(
 		}
 		if authorization.ConnectionState ==
 			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+			if _, err := authorizeOwner(viewer, authorization.Owner, true); err != nil {
+				return database.ErrViewNotVisible
+			}
 			return nil
 		}
 		if !authorization.HasRepositoryIndex {
