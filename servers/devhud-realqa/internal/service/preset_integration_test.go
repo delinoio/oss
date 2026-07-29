@@ -1722,6 +1722,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if cleanupAssetState != "expired" {
 		t.Fatalf("post-finalize cleanup asset state = %q", cleanupAssetState)
 	}
+	if _, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil {
+		t.Fatal(drainErr)
+	}
 	if _, ok := objects.objects[casVerifiedKey]; ok {
 		t.Fatal("expired verified object was retained")
 	}
