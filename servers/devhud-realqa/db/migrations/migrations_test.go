@@ -212,17 +212,21 @@ func TestImageStorageMigrationNormalizesLegacyAssetsAndBackfillsTotals(
 	overflowSubmissionID := uuidv7.MustNew()
 	if _, err = pool.Exec(ctx, `
 		INSERT INTO realqa_identities (account_id, subject_digest)
-		VALUES ($1, $2);
+		VALUES ($1, $2)
+	`, accountID, bytes.Repeat([]byte{1}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `
 		INSERT INTO realqa_submissions (
 			id, owner_kind, owner_id, created_by_account_id, state,
 			idempotency_digest, submitted_at
 		) VALUES
-			($3, 'personal', $1, $1, 'submitted', $2,
+			($2, 'personal', $1, $1, 'submitted', $4,
 			 transaction_timestamp()),
-			($4, 'personal', $1, $1, 'submitted', $2,
+			($3, 'personal', $1, $1, 'submitted', $4,
 			 transaction_timestamp())
-	`, accountID, bytes.Repeat([]byte{1}, 32), submissionID,
-		overflowSubmissionID); err != nil {
+	`, accountID, submissionID, overflowSubmissionID,
+		bytes.Repeat([]byte{1}, 32)); err != nil {
 		t.Fatal(err)
 	}
 	publicID := strings.Repeat("A", 22)

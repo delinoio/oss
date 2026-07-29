@@ -86,7 +86,7 @@ WITH legacy_assets AS (
     FROM realqa_assets
 )
 UPDATE realqa_assets AS asset
-SET client_image_id = id,
+SET client_image_id = asset.id,
     media_type = 'image/png',
     declared_encoded_bytes = CASE
         WHEN legacy.valid_image_size THEN asset.encoded_bytes
