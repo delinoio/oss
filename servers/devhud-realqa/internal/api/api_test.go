@@ -181,6 +181,70 @@ func TestDualAudienceAuthRequiresMatchingSubjectsAndScopes(t *testing.T) {
 	}
 }
 
+func TestImageDeletionAuthUsesIdentityScope(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		call func(
+			context.Context,
+			realqav1connect.RealQASubmissionServiceClient,
+		) error
+	}{
+		{
+			name: "single image",
+			call: func(
+				ctx context.Context,
+				client realqav1connect.RealQASubmissionServiceClient,
+			) error {
+				request := connect.NewRequest(&realqav1.DeleteImageRequest{})
+				request.Header().Set("Authorization", "Bearer feature-secret-token")
+				request.Header().Set(
+					auth.ForwardedUserTokenHeader, "forwarded-secret-token")
+				_, err := client.DeleteImage(ctx, request)
+				return err
+			},
+		},
+		{
+			name: "submission assets",
+			call: func(
+				ctx context.Context,
+				client realqav1connect.RealQASubmissionServiceClient,
+			) error {
+				request := connect.NewRequest(
+					&realqav1.DeleteSubmissionAssetsRequest{})
+				request.Header().Set("Authorization", "Bearer feature-secret-token")
+				request.Header().Set(
+					auth.ForwardedUserTokenHeader, "forwarded-secret-token")
+				_, err := client.DeleteSubmissionAssets(ctx, request)
+				return err
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			feature := &validator{userSubject: "user-a"}
+			forwarded := &validator{userSubject: "user-a"}
+			server := httptest.NewServer(newTestHandler(t, feature, forwarded))
+			defer server.Close()
+			client := realqav1connect.NewRealQASubmissionServiceClient(
+				server.Client(), server.URL)
+			if err := test.call(context.Background(), client); err == nil {
+				t.Fatal("invalid deletion request unexpectedly succeeded")
+			}
+			if len(feature.scopes) != 1 ||
+				!slices.Equal(
+					feature.scopes[0], []string{"realqa:submissions:write"}) ||
+				len(forwarded.scopes) != 1 ||
+				!slices.Equal(
+					forwarded.scopes[0], []string{"delibase:account:read"}) {
+				t.Fatalf("validated scopes = %#v / %#v",
+					feature.scopes, forwarded.scopes)
+			}
+		})
+	}
+}
+
 func TestLifecycleAuthPinsExactClientAndRejectsForwardedBearer(t *testing.T) {
 	t.Parallel()
 	feature := &validator{m2mID: "fixture-lifecycle"}

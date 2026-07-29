@@ -405,12 +405,18 @@ WHERE submission.provider_issue_id = sqlc.arg(provider_issue_id)
   AND asset.state NOT IN ('removed_placeholder', 'deleted', 'expired')
 FOR UPDATE OF asset;
 
--- name: ListExpiredPrivateAssets :many
+-- name: ListExpiredSubmissionAssets :many
 SELECT asset.*
 FROM realqa_assets AS asset
 JOIN realqa_submissions AS submission ON submission.id = asset.submission_id
-WHERE asset.state IN ('private_staging', 'verified_unlinked')
-  AND submission.upload_expires_at <= sqlc.arg(cutoff)
+WHERE submission.upload_expires_at <= sqlc.arg(cutoff)
+  AND (
+    asset.state IN ('private_staging', 'verified_unlinked')
+    OR (
+      asset.state = 'public_retained'
+      AND submission.submitted_at IS NULL
+    )
+  )
 ORDER BY asset.created_at
 LIMIT sqlc.arg(batch_limit)
 FOR UPDATE OF asset SKIP LOCKED;

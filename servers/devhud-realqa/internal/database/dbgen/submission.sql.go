@@ -479,24 +479,30 @@ func (q *Queries) GetSubmissionRecord(ctx context.Context, id pgtype.UUID) (Real
 	return i, err
 }
 
-const listExpiredPrivateAssets = `-- name: ListExpiredPrivateAssets :many
+const listExpiredSubmissionAssets = `-- name: ListExpiredSubmissionAssets :many
 SELECT asset.id, asset.submission_id, asset.public_id, asset.object_key_ciphertext, asset.state, asset.encoded_bytes, asset.revision, asset.created_at, asset.removed_at, asset.client_image_id, asset.media_type, asset.declared_encoded_bytes, asset.pixel_width, asset.pixel_height, asset.source_sha256, asset.sanitized_sha256, asset.upload_state, asset.upload_token_digest, asset.upload_expires_at, asset.uploaded_at, asset.verified_at
 FROM realqa_assets AS asset
 JOIN realqa_submissions AS submission ON submission.id = asset.submission_id
-WHERE asset.state IN ('private_staging', 'verified_unlinked')
-  AND submission.upload_expires_at <= $1
+WHERE submission.upload_expires_at <= $1
+  AND (
+    asset.state IN ('private_staging', 'verified_unlinked')
+    OR (
+      asset.state = 'public_retained'
+      AND submission.submitted_at IS NULL
+    )
+  )
 ORDER BY asset.created_at
 LIMIT $2
 FOR UPDATE OF asset SKIP LOCKED
 `
 
-type ListExpiredPrivateAssetsParams struct {
+type ListExpiredSubmissionAssetsParams struct {
 	Cutoff     pgtype.Timestamptz
 	BatchLimit int32
 }
 
-func (q *Queries) ListExpiredPrivateAssets(ctx context.Context, arg ListExpiredPrivateAssetsParams) ([]RealqaAsset, error) {
-	rows, err := q.db.Query(ctx, listExpiredPrivateAssets, arg.Cutoff, arg.BatchLimit)
+func (q *Queries) ListExpiredSubmissionAssets(ctx context.Context, arg ListExpiredSubmissionAssetsParams) ([]RealqaAsset, error) {
+	rows, err := q.db.Query(ctx, listExpiredSubmissionAssets, arg.Cutoff, arg.BatchLimit)
 	if err != nil {
 		return nil, err
 	}

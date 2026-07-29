@@ -57,7 +57,7 @@ type Querier interface {
 	InsertDeletionJob(ctx context.Context, arg InsertDeletionJobParams) (RealqaDeletionJob, error)
 	InsertScopeTombstone(ctx context.Context, arg InsertScopeTombstoneParams) error
 	ListAccessibleRepositories(ctx context.Context, arg ListAccessibleRepositoriesParams) ([]RealqaRepositoryAccess, error)
-	ListExpiredPrivateAssets(ctx context.Context, arg ListExpiredPrivateAssetsParams) ([]RealqaAsset, error)
+	ListExpiredSubmissionAssets(ctx context.Context, arg ListExpiredSubmissionAssetsParams) ([]RealqaAsset, error)
 	ListGitHubInstallations(ctx context.Context, arg ListGitHubInstallationsParams) ([]RealqaGithubInstallation, error)
 	ListIssueAssets(ctx context.Context, providerIssueID pgtype.Text) ([]RealqaAsset, error)
 	ListPendingObjectDeletions(ctx context.Context, arg ListPendingObjectDeletionsParams) ([]RealqaObjectDeletionJob, error)

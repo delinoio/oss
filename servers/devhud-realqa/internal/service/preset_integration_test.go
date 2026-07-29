@@ -27,6 +27,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
 )
@@ -930,10 +931,43 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			completed, drainErr)
 	}
 	objects.deleteErr = errors.New("fixture R2 deletion failed")
-	if err = submissionService.PromoteSubmittedAssets(
-		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
-		t.Fatal(err)
+	objects.blockedPutPrefix = "public/"
+	objects.putStarted = make(chan struct{}, 1)
+	objects.putRelease = make(chan struct{})
+	promotionResult := make(chan error, 1)
+	go func() {
+		promotionResult <- submissionService.PromoteSubmittedAssets(
+			ctx, submissionID, []uuid.UUID{promotionAssetID})
+	}()
+	select {
+	case <-objects.putStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
 	}
+	lockProbe, probeErr := pgx.Connect(ctx, scopedURL)
+	if probeErr != nil {
+		t.Fatal(probeErr)
+	}
+	var lockedAssetID uuid.UUID
+	probeErr = lockProbe.QueryRow(ctx, `
+		SELECT id
+		FROM realqa_assets
+		WHERE id = $1
+		FOR UPDATE NOWAIT
+	`, promotionAssetID).Scan(&lockedAssetID)
+	_ = lockProbe.Close(ctx)
+	var lockFailure *pgconn.PgError
+	if !errors.As(probeErr, &lockFailure) || lockFailure.Code != "55P03" {
+		close(objects.putRelease)
+		t.Fatalf("public write asset lock error = %v", probeErr)
+	}
+	close(objects.putRelease)
+	if promotionErr := <-promotionResult; promotionErr != nil {
+		t.Fatal(promotionErr)
+	}
+	objects.blockedPutPrefix = ""
+	objects.putStarted = nil
+	objects.putRelease = nil
 	if err = submissionService.PromoteSubmittedAssets(
 		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
 		t.Fatalf("resumed promotion: %v", err)
@@ -1209,6 +1243,202 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if _, ok := objects.objects[orphanedVerifiedKey]; ok {
 		t.Fatal("orphaned verified object was retained")
+	}
+	partialSubmissionID := uuidv7.MustNew()
+	partialPublicAssetID := uuidv7.MustNew()
+	partialPrivateAssetID := uuidv7.MustNew()
+	partialPublicID := "partial-promotion-id-01"
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, idempotency_digest, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, created_at, updated_at, upload_deadline,
+			upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'ready', idempotency_digest, payer_organization_id,
+		       payer_team_id, preset_revision, declared_encoded_bytes,
+		       verified_encoded_bytes,
+		       transaction_timestamp() - interval '25 hours',
+		       transaction_timestamp() - interval '25 hours',
+		       transaction_timestamp() - interval '2 hours',
+		       transaction_timestamp() - interval '1 hour'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5, media_type,
+		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
+		       sanitized_sha256, 'verified', transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $8;
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $6, $1, 'verified_unlinked', encoded_bytes, $7, media_type,
+		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
+		       sanitized_sha256, 'verified', transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $8
+	`, partialSubmissionID, submissionID, partialPublicAssetID,
+		partialPublicID, uuidv7.MustNew(), partialPrivateAssetID,
+		uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	partialPublicKey := imageassets.PublicObjectKey(partialPublicID)
+	partialPrivateKey := imageassets.VerifiedObjectKey(partialPrivateAssetID.String())
+	if err = objects.Put(ctx, partialPublicKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	if err = objects.Put(ctx, partialPrivateKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	cleaned, err := submissionService.CleanupExpiredStaging(
+		ctx, time.Now().UTC(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleaned != 2 {
+		t.Fatalf("partial promotion cleanup count = %d, want 2", cleaned)
+	}
+	if _, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil {
+		t.Fatal(drainErr)
+	}
+	var partialPublicState, partialPrivateState string
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT state FROM realqa_assets WHERE id = $1),
+			(SELECT state FROM realqa_assets WHERE id = $2)
+	`, partialPublicAssetID, partialPrivateAssetID).
+		Scan(&partialPublicState, &partialPrivateState); err != nil {
+		t.Fatal(err)
+	}
+	if partialPublicState != "removed_placeholder" ||
+		partialPrivateState != "expired" {
+		t.Fatalf("partial promotion cleanup states = %q / %q",
+			partialPublicState, partialPrivateState)
+	}
+	publicRecord, err := submissionService.PublicAsset(ctx, partialPublicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if publicRecord.State != imageassets.PublicStateRemoved {
+		t.Fatalf("partial promotion public state = %v", publicRecord.State)
+	}
+	if _, ok := objects.objects[partialPublicKey]; ok {
+		t.Fatal("partial promotion public object was retained")
+	}
+	if _, ok := objects.objects[partialPrivateKey]; ok {
+		t.Fatal("partial promotion private object was retained")
+	}
+	casSubmissionID := uuidv7.MustNew()
+	casAssetID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, idempotency_digest, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			upload_deadline, upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'uploading', idempotency_digest,
+		       payer_organization_id, payer_team_id, preset_revision,
+		       declared_encoded_bytes,
+		       transaction_timestamp() + interval '23 hours',
+		       transaction_timestamp() + interval '24 hours'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, upload_state, uploaded_at
+		)
+		SELECT $3, $1, 'private_staging', 0, $4, media_type,
+		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
+		       'uploaded', transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $5
+	`, casSubmissionID, submissionID, casAssetID,
+		uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	casStagingKey := imageassets.StagingObjectKey(casAssetID.String())
+	casVerifiedKey := imageassets.VerifiedObjectKey(casAssetID.String())
+	if err = objects.Put(ctx, casStagingKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	objects.blockedPutPrefix = casVerifiedKey
+	objects.putStarted = make(chan struct{}, 1)
+	objects.putRelease = make(chan struct{})
+	finalizeCASResult := make(chan error, 1)
+	go func() {
+		_, finalizeErr := submissionService.FinalizeImageUpload(
+			authCtx, connect.NewRequest(&realqav1.FinalizeImageUploadRequest{
+				SubmissionId: &realqav1.UuidV7{Value: casSubmissionID.String()},
+				AssetId:      &realqav1.UuidV7{Value: casAssetID.String()},
+				ExpectedAssetRevision: &realqav1.Revision{
+					Value: 1,
+				},
+				Idempotency: &realqav1.IdempotencyKey{
+					Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+				},
+			}))
+		finalizeCASResult <- finalizeErr
+	}()
+	select {
+	case <-objects.putStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	var casRevision int64
+	if err = connection.QueryRow(ctx, `
+		UPDATE realqa_assets
+		SET revision = revision + 1
+		WHERE id = $1
+		RETURNING revision
+	`, casAssetID).Scan(&casRevision); err != nil {
+		close(objects.putRelease)
+		t.Fatal(err)
+	}
+	close(objects.putRelease)
+	casErr := <-finalizeCASResult
+	objects.blockedPutPrefix = ""
+	objects.putStarted = nil
+	objects.putRelease = nil
+	if connect.CodeOf(casErr) != connect.CodeAborted {
+		t.Fatalf("finalize CAS miss code = %v", connect.CodeOf(casErr))
+	}
+	var casFailure *connect.Error
+	if !errors.As(casErr, &casFailure) {
+		t.Fatalf("finalize CAS miss error = %v", casErr)
+	}
+	var casReportedRevision int64
+	for _, detail := range casFailure.Details() {
+		value, detailErr := detail.Value()
+		typed, ok := value.(*realqav1.ErrorDetail)
+		if detailErr == nil && ok && typed.CurrentRevision != nil {
+			casReportedRevision = typed.CurrentRevision.Value
+		}
+	}
+	if casReportedRevision != casRevision {
+		t.Fatalf("finalize CAS revision = %d, want %d",
+			casReportedRevision, casRevision)
+	}
+	if _, ok := objects.objects[casVerifiedKey]; ok {
+		t.Fatal("unowned verified object from finalize CAS miss was retained")
+	}
+	delete(objects.objects, casStagingKey)
+	if _, err = connection.Exec(ctx,
+		`DELETE FROM realqa_submissions WHERE id = $1`,
+		casSubmissionID); err != nil {
+		t.Fatal(err)
 	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_submissions
@@ -1585,18 +1815,33 @@ type submissionTestObject struct {
 }
 
 type submissionTestObjects struct {
-	deleteErr  error
-	getErr     error
-	getReadErr error
-	objects    map[string]submissionTestObject
+	deleteErr        error
+	getErr           error
+	getReadErr       error
+	blockedPutPrefix string
+	putStarted       chan struct{}
+	putRelease       chan struct{}
+	objects          map[string]submissionTestObject
 }
 
 func (objects *submissionTestObjects) Put(
-	_ context.Context,
+	ctx context.Context,
 	key string,
 	contentType string,
 	body []byte,
 ) error {
+	if objects.blockedPutPrefix != "" &&
+		strings.HasPrefix(key, objects.blockedPutPrefix) {
+		select {
+		case objects.putStarted <- struct{}{}:
+		default:
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-objects.putRelease:
+		}
+	}
 	objects.objects[key] = submissionTestObject{
 		body: append([]byte(nil), body...), contentType: contentType,
 	}

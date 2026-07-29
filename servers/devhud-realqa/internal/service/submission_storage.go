@@ -559,6 +559,20 @@ func (service *Submission) FinalizeImageUpload(
 			return nil, invalid(
 				realqav1.ErrorReason_ERROR_REASON_SESSION_TOO_LARGE)
 		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			current, getErr := service.dependencies.Store.Queries().GetAssetRecord(
+				ctx, dbgen.GetAssetRecordParams{
+					ID:           toPGUUID(assetID),
+					SubmissionID: toPGUUID(submissionID),
+				})
+			if getErr == nil {
+				return nil, stale(current.Revision)
+			}
+			if errors.Is(getErr, pgx.ErrNoRows) {
+				return nil, retentionStateConflict()
+			}
+			return nil, getErr
+		}
 		return nil, err
 	}
 	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
@@ -1121,13 +1135,38 @@ func (service *Submission) PromoteSubmittedAssets(
 			}
 			publicID = asset.PublicID.String
 		}
-		publicKey := imageassets.PublicObjectKey(publicID)
-		if err = service.dependencies.Objects.Put(
-			ctx, publicKey, asset.MediaType, body); err != nil {
-			return storageUnavailable()
-		}
+		var (
+			publicKey            = imageassets.PublicObjectKey(publicID)
+			attemptedPublicWrite bool
+			alreadyPromoted      bool
+		)
 		err = service.dependencies.Store.WithinTransaction(
 			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+				locked, lockErr := queries.LockAssetRecord(
+					ctx, dbgen.LockAssetRecordParams{
+						ID:           toPGUUID(assetID),
+						SubmissionID: toPGUUID(submissionID),
+					})
+				if lockErr = validatePromotionCandidate(locked, lockErr); lockErr != nil {
+					return lockErr
+				}
+				if locked.State == "public_retained" && locked.PublicID.Valid {
+					alreadyPromoted = true
+					return nil
+				}
+				if locked.State != "verified_unlinked" {
+					return retentionStateConflict()
+				}
+				if !locked.PublicID.Valid ||
+					locked.PublicID.String != publicID {
+					return retentionStateConflict()
+				}
+				asset = locked
+				attemptedPublicWrite = true
+				if putErr := service.dependencies.Objects.Put(
+					ctx, publicKey, asset.MediaType, body); putErr != nil {
+					return storageUnavailable()
+				}
 				if _, promoteErr := queries.PromoteAsset(
 					ctx, dbgen.PromoteAssetParams{
 						PublicID:     pgtype.Text{String: publicID, Valid: true},
@@ -1139,7 +1178,13 @@ func (service *Submission) PromoteSubmittedAssets(
 				return enqueueObjectDeletion(
 					ctx, queries, asset.ID, objectKindVerified, pgtype.Text{})
 			})
+		if err == nil && alreadyPromoted {
+			continue
+		}
 		if err != nil {
+			if !attemptedPublicWrite {
+				return err
+			}
 			cleanupCtx := context.WithoutCancel(ctx)
 			current, lookupErr := service.dependencies.Store.Queries().
 				GetAssetRecord(cleanupCtx, dbgen.GetAssetRecordParams{
@@ -1217,8 +1262,9 @@ func (service *Submission) PublicAsset(
 	}, nil
 }
 
-// CleanupExpiredStaging tombstones unlinked private data at the 24-hour
-// boundary. It never performs a billing or provider mutation.
+// CleanupExpiredStaging removes terminal private data and tombstones any
+// partially promoted public data at the 24-hour boundary. It never performs a
+// billing or provider mutation.
 func (service *Submission) CleanupExpiredStaging(
 	ctx context.Context,
 	cutoff time.Time,
@@ -1227,26 +1273,39 @@ func (service *Submission) CleanupExpiredStaging(
 	if batchSize <= 0 || batchSize > 1000 {
 		batchSize = 100
 	}
-	var expired []dbgen.RealqaAsset
+	var cleaned []dbgen.RealqaAsset
 	err := service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			rows, listErr := queries.ListExpiredPrivateAssets(
-				ctx, dbgen.ListExpiredPrivateAssetsParams{
+			rows, listErr := queries.ListExpiredSubmissionAssets(
+				ctx, dbgen.ListExpiredSubmissionAssetsParams{
 					Cutoff: pgTimestamp(cutoff), BatchLimit: batchSize,
 				})
 			if listErr != nil {
 				return listErr
 			}
 			for _, row := range rows {
-				value, expireErr := queries.ExpireAsset(ctx, row.ID)
-				if expireErr != nil {
-					return expireErr
+				var (
+					value      dbgen.RealqaAsset
+					cleanupErr error
+				)
+				if row.State == "public_retained" {
+					value, cleanupErr = queries.TombstoneAsset(
+						ctx, dbgen.TombstoneAssetParams{
+							AssetRecordID:     row.ID,
+							AssetSubmissionID: row.SubmissionID,
+							ExpectedRevision:  row.Revision,
+						})
+				} else {
+					value, cleanupErr = queries.ExpireAsset(ctx, row.ID)
 				}
-				if expireErr = enqueueAssetObjectDeletions(
-					ctx, queries, value); expireErr != nil {
-					return expireErr
+				if cleanupErr != nil {
+					return cleanupErr
 				}
-				expired = append(expired, value)
+				if cleanupErr = enqueueAssetObjectDeletions(
+					ctx, queries, value); cleanupErr != nil {
+					return cleanupErr
+				}
+				cleaned = append(cleaned, value)
 			}
 			return nil
 		})
@@ -1254,7 +1313,7 @@ func (service *Submission) CleanupExpiredStaging(
 		return 0, err
 	}
 	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
-	return len(expired), nil
+	return len(cleaned), nil
 }
 
 func (service *Submission) RunStagingCleanup(
