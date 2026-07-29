@@ -40,7 +40,14 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return err
 	}
-	cipher, err := security.NewCipher(configuration.EncryptionKey)
+	encryptionKeys := make(
+		map[string][]byte, len(configuration.PreviousEncryptionKeys)+1)
+	for keyID, key := range configuration.PreviousEncryptionKeys {
+		encryptionKeys[keyID] = key
+	}
+	encryptionKeys[configuration.EncryptionKeyID] = configuration.EncryptionKey
+	cipher, err := security.NewVersionedCipher(
+		configuration.EncryptionKeyID, encryptionKeys)
 	if err != nil {
 		return err
 	}

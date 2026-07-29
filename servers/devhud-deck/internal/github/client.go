@@ -539,7 +539,13 @@ func (client *Client) ListMutationCandidates(
 			metadata.Permissions.Members >= PermissionRead &&
 			metadata.RepositoryOwner == AccountKindOrganization {
 			var teams []Candidate
-			teams, err = client.teamCandidates(ctx, credential, reference.Repository.Owner)
+			teams, err = client.teamCandidates(ctx, credential, reference.Repository)
+			if errors.Is(err, ErrPermissionDenied) {
+				// GitHub requires repository-administration read permission to
+				// enumerate repository teams. A viewer can still request user
+				// reviewers without that optional team visibility.
+				err = nil
+			}
 			candidates = append(candidates, teams...)
 		}
 	case MutationAddLabels:
@@ -610,18 +616,18 @@ func (client *Client) userCandidates(
 func (client *Client) teamCandidates(
 	ctx context.Context,
 	credential Credential,
-	organization string,
+	repository Repository,
 ) ([]Candidate, error) {
-	if !safePathSegment(organization) {
-		return nil, ErrUnsupportedHost
-	}
 	result := make([]Candidate, 0, maxCandidateLimit)
 	for page := 1; page <= maxCandidatePages; page++ {
 		var teams []struct {
 			Slug string `json:"slug"`
 		}
-		path := fmt.Sprintf("/orgs/%s/teams?per_page=%d&page=%d",
-			url.PathEscape(organization), maxCandidateLimit, page)
+		path, err := repositoryPath(repository,
+			fmt.Sprintf("/teams?per_page=%d&page=%d", maxCandidateLimit, page))
+		if err != nil {
+			return nil, err
+		}
 		if _, err := client.do(
 			ctx, credential, http.MethodGet, path, nil, &teams); err != nil {
 			return nil, err
@@ -630,7 +636,7 @@ func (client *Client) teamCandidates(
 			if safePathSegment(team.Slug) {
 				result = append(result, Candidate{
 					Kind: CandidateTeam,
-					Team: Team{Organization: organization, Slug: team.Slug},
+					Team: Team{Organization: repository.Owner, Slug: team.Slug},
 				})
 			}
 		}

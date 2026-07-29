@@ -99,6 +99,7 @@ type DeckGithubUserCredential struct {
 	ConnectionID               pgtype.UUID
 	AccountID                  pgtype.UUID
 	GithubUserID               int64
+	WrappingKeyID              string
 	UserAccessTokenCiphertext  []byte
 	UserRefreshTokenCiphertext []byte
 	UserAccessTokenExpiresAt   pgtype.Timestamptz

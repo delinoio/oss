@@ -478,6 +478,39 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		bytes.Contains(refreshCiphertext, []byte(credential.RefreshToken)) {
 		t.Fatal("GitHub user credential was persisted in plaintext")
 	}
+	rotatedCipher, err := security.NewVersionedCipher(
+		"managed-v2", map[string][]byte{
+			"v1":         bytes.Repeat([]byte{1}, 32),
+			"managed-v2": bytes.Repeat([]byte{3}, 32),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.cipher = rotatedCipher
+	if err := store.RewrapGitHubCredentials(ctx); err != nil {
+		t.Fatalf("rewrap GitHub credential: %v", err)
+	}
+	var wrappingKeyID string
+	if err := store.pool.QueryRow(ctx, `
+		SELECT wrapping_key_id, user_access_token_ciphertext
+		FROM deck_github_user_credentials
+		WHERE connection_id = $1 AND account_id = $2`,
+		pgUUID(connection.ID), pgUUID(accountID),
+	).Scan(&wrappingKeyID, &accessCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	if wrappingKeyID != "managed-v2" {
+		t.Fatalf("rewrapped credential key ID = %q", wrappingKeyID)
+	}
+	if _, err := cipher.Open(
+		"github-user-access-token", accessCiphertext); err == nil {
+		t.Fatal("rewrapped credential remained decryptable by retired key")
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil || connection.Credential.AccessToken != credential.AccessToken {
+		t.Fatalf("rewrapped GitHub connection = %#v err=%v", connection, err)
+	}
 	revocationHash := security.Digest([]byte("authorization-revoked"))
 	if err := store.ApplyGitHubAuthorizationRevocation(
 		ctx, "authorization-revocation-1", credential.UserID,

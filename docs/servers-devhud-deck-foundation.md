@@ -206,6 +206,12 @@ These checks validate artifacts only. They must not push GHCR images, deploy the
   base64-encoded `DECK_GITHUB_CALLBACK_SIGNING_KEY`. Missing, malformed, or
   host-substituting values fail startup. These values configure only the
   GitHub.com adapter and do not register an App.
+- Envelope encryption startup additionally requires
+  `DECK_ENCRYPTION_KEY_ID` and base64-encoded `DECK_ENCRYPTION_KEY`.
+  `DECK_ENCRYPTION_PREVIOUS_KEYS` may contain a JSON object from retained
+  managed key IDs to base64-encoded 32-byte wrapping keys during rotation.
+  Startup transactionally rewraps retained GitHub credential data keys under
+  the active key ID before serving; an unavailable retained key fails startup.
 
 ## Change Triggers
 

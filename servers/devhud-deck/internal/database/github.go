@@ -244,6 +244,7 @@ func (store *Store) ConnectGitHub(
 			ctx, dbgen.UpsertGitHubUserCredentialParams{
 				ConnectionID: storedConnectionID, AccountID: pgUUID(accountID),
 				GithubUserID:               int64(credential.UserID),
+				WrappingKeyID:              store.cipher.ActiveKeyID(),
 				UserAccessTokenCiphertext:  accessToken,
 				UserRefreshTokenCiphertext: refreshToken,
 				UserAccessTokenExpiresAt:   pgTime(credential.ExpiresAt),
@@ -393,6 +394,13 @@ func (store *Store) decodeGitHubConnection(
 	if err != nil {
 		return GitHubConnectionRecord{}, err
 	}
+	if err := store.validateGitHubCredentialKeyIDs(
+		credential.WrappingKeyID,
+		credential.UserAccessTokenCiphertext,
+		credential.UserRefreshTokenCiphertext,
+	); err != nil {
+		return GitHubConnectionRecord{}, err
+	}
 	token, err := store.cipher.Open(
 		"github-user-access-token", credential.UserAccessTokenCiphertext)
 	if err != nil {
@@ -457,6 +465,7 @@ func (store *Store) RefreshGitHubCredential(
 		parameters := dbgen.UpsertGitHubUserCredentialParams{
 			ConnectionID: connection.ConnectionID, AccountID: pgUUID(accountID),
 			GithubUserID:               int64(credential.UserID),
+			WrappingKeyID:              store.cipher.ActiveKeyID(),
 			UserAccessTokenCiphertext:  accessToken,
 			UserRefreshTokenCiphertext: refreshToken,
 			UserAccessTokenExpiresAt:   pgTime(credential.ExpiresAt),
@@ -465,6 +474,7 @@ func (store *Store) RefreshGitHubCredential(
 		}
 		if err := queries.UpdateGitHubUserCredentials(
 			ctx, dbgen.UpdateGitHubUserCredentialsParams{
+				WrappingKeyID:              parameters.WrappingKeyID,
 				UserAccessTokenCiphertext:  parameters.UserAccessTokenCiphertext,
 				UserRefreshTokenCiphertext: parameters.UserRefreshTokenCiphertext,
 				UserAccessTokenExpiresAt:   parameters.UserAccessTokenExpiresAt,
@@ -476,6 +486,76 @@ func (store *Store) RefreshGitHubCredential(
 			return err
 		}
 		return queries.UpsertGitHubUserCredential(ctx, parameters)
+	})
+}
+
+func (store *Store) validateGitHubCredentialKeyIDs(
+	storedKeyID string,
+	ciphertexts ...[]byte,
+) error {
+	if storedKeyID == "" {
+		return errors.New("deck database: missing credential wrapping key")
+	}
+	for _, ciphertext := range ciphertexts {
+		if len(ciphertext) == 0 {
+			continue
+		}
+		embeddedKeyID, err := store.cipher.KeyID(ciphertext)
+		if err != nil || (embeddedKeyID != "" && embeddedKeyID != storedKeyID) {
+			return errors.New("deck database: invalid credential wrapping key")
+		}
+	}
+	return nil
+}
+
+func (store *Store) RewrapGitHubCredentials(ctx context.Context) error {
+	if store == nil || store.cipher == nil || store.cipher.ActiveKeyID() == "" {
+		return errors.New("deck database: credential cipher is unavailable")
+	}
+	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		credentials, err := queries.ListGitHubUserCredentialsForRewrap(ctx)
+		if err != nil {
+			return err
+		}
+		for _, credential := range credentials {
+			if err := store.validateGitHubCredentialKeyIDs(
+				credential.WrappingKeyID,
+				credential.UserAccessTokenCiphertext,
+				credential.UserRefreshTokenCiphertext,
+			); err != nil {
+				return err
+			}
+			accessToken, accessChanged, err := store.cipher.Rewrap(
+				"github-user-access-token",
+				credential.UserAccessTokenCiphertext)
+			if err != nil {
+				return err
+			}
+			refreshToken := credential.UserRefreshTokenCiphertext
+			refreshChanged := false
+			if len(refreshToken) > 0 {
+				refreshToken, refreshChanged, err = store.cipher.Rewrap(
+					"github-user-refresh-token", refreshToken)
+				if err != nil {
+					return err
+				}
+			}
+			if !accessChanged && !refreshChanged &&
+				credential.WrappingKeyID == store.cipher.ActiveKeyID() {
+				continue
+			}
+			if err := queries.RewrapGitHubUserCredential(
+				ctx, dbgen.RewrapGitHubUserCredentialParams{
+					WrappingKeyID:              store.cipher.ActiveKeyID(),
+					UserAccessTokenCiphertext:  accessToken,
+					UserRefreshTokenCiphertext: refreshToken,
+					ConnectionID:               credential.ConnectionID,
+					AccountID:                  credential.AccountID,
+				}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 

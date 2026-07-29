@@ -4,6 +4,7 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -23,7 +24,9 @@ type Config struct {
 	LogtoIssuer              string
 	LogtoJWKSURL             string
 	LifecycleClientID        string
+	EncryptionKeyID          string
 	EncryptionKey            []byte
+	PreviousEncryptionKeys   map[string][]byte
 	HashingKey               []byte
 	PseudonymKey             []byte
 	GitHubClientID           string
@@ -43,6 +46,7 @@ func Load(lookup LookupEnv) (Config, error) {
 		LogtoIssuer:        required(lookup, "DECK_LOGTO_ISSUER"),
 		LogtoJWKSURL:       required(lookup, "DECK_LOGTO_JWKS_URL"),
 		LifecycleClientID:  required(lookup, "DECK_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID"),
+		EncryptionKeyID:    required(lookup, "DECK_ENCRYPTION_KEY_ID"),
 		GitHubClientID:     required(lookup, "DECK_GITHUB_APP_CLIENT_ID"),
 		GitHubClientSecret: required(lookup, "DECK_GITHUB_APP_CLIENT_SECRET"),
 		GitHubAppSlug:      required(lookup, "DECK_GITHUB_APP_SLUG"),
@@ -50,6 +54,12 @@ func Load(lookup LookupEnv) (Config, error) {
 	var err error
 	configuration.EncryptionKey, err = decodeKey(
 		required(lookup, "DECK_ENCRYPTION_KEY"), 32)
+	if err != nil {
+		return Config{}, err
+	}
+	configuration.PreviousEncryptionKeys, err = decodePreviousKeys(
+		required(lookup, "DECK_ENCRYPTION_PREVIOUS_KEYS"),
+		configuration.EncryptionKeyID)
 	if err != nil {
 		return Config{}, err
 	}
@@ -75,6 +85,7 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	if configuration.DatabaseURL == "" || configuration.LogtoIssuer == "" ||
 		configuration.LogtoJWKSURL == "" || configuration.LifecycleClientID == "" ||
+		!safeKeyID(configuration.EncryptionKeyID) ||
 		strings.ContainsAny(configuration.LifecycleClientID, " \t\r\n") ||
 		!safeGitHubIdentifier(configuration.GitHubClientID) ||
 		!safeGitHubIdentifier(configuration.GitHubAppSlug) ||
@@ -89,6 +100,46 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, fmt.Errorf("deck config: invalid Logto JWKS URL")
 	}
 	return configuration, nil
+}
+
+func safeKeyID(value string) bool {
+	if len(value) == 0 || len(value) > 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') &&
+			(character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') &&
+			character != '.' && character != '_' && character != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func decodePreviousKeys(
+	value string,
+	activeKeyID string,
+) (map[string][]byte, error) {
+	if value == "" {
+		return map[string][]byte{}, nil
+	}
+	var encoded map[string]string
+	if json.Unmarshal([]byte(value), &encoded) != nil || len(encoded) == 0 {
+		return nil, errors.New("deck config: invalid previous encryption keys")
+	}
+	decoded := make(map[string][]byte, len(encoded))
+	for keyID, key := range encoded {
+		if !safeKeyID(keyID) || keyID == activeKeyID {
+			return nil, errors.New("deck config: invalid previous encryption keys")
+		}
+		value, err := base64.StdEncoding.DecodeString(key)
+		if err != nil || len(value) != 32 {
+			return nil, errors.New("deck config: invalid previous encryption keys")
+		}
+		decoded[keyID] = value
+	}
+	return decoded, nil
 }
 
 func safeGitHubIdentifier(value string) bool {

@@ -17,22 +17,72 @@ import (
 )
 
 type Cipher struct {
-	wrappingAEAD cipher.AEAD
+	activeKeyID  string
+	wrappingAEAD map[string]cipher.AEAD
+	keyOrder     []string
 }
 
 func NewCipher(key []byte) (*Cipher, error) {
-	if len(key) != 32 {
-		return nil, errors.New("security: encryption key must be 32 bytes")
+	return NewVersionedCipher("v1", map[string][]byte{"v1": key})
+}
+
+func NewVersionedCipher(
+	activeKeyID string,
+	keys map[string][]byte,
+) (*Cipher, error) {
+	if !validKeyID(activeKeyID) || len(keys) == 0 {
+		return nil, errors.New("security: invalid encryption key configuration")
 	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, errors.New("security: cipher initialization failed")
+	result := &Cipher{
+		activeKeyID:  activeKeyID,
+		wrappingAEAD: make(map[string]cipher.AEAD, len(keys)),
 	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, errors.New("security: authenticated cipher initialization failed")
+	for keyID, key := range keys {
+		if !validKeyID(keyID) || len(key) != 32 {
+			return nil, errors.New("security: invalid encryption key configuration")
+		}
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return nil, errors.New("security: cipher initialization failed")
+		}
+		aead, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, errors.New("security: authenticated cipher initialization failed")
+		}
+		result.wrappingAEAD[keyID] = aead
 	}
-	return &Cipher{wrappingAEAD: aead}, nil
+	if _, ok := result.wrappingAEAD[activeKeyID]; !ok {
+		return nil, errors.New("security: active encryption key is unavailable")
+	}
+	result.keyOrder = append(result.keyOrder, activeKeyID)
+	for keyID := range result.wrappingAEAD {
+		if keyID != activeKeyID {
+			result.keyOrder = append(result.keyOrder, keyID)
+		}
+	}
+	return result, nil
+}
+
+func validKeyID(value string) bool {
+	if len(value) == 0 || len(value) > 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') &&
+			(character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') &&
+			character != '.' && character != '_' && character != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Cipher) ActiveKeyID() string {
+	if c == nil {
+		return ""
+	}
+	return c.activeKeyID
 }
 
 func (c *Cipher) Seal(label string, plaintext []byte) ([]byte, error) {
@@ -51,60 +101,166 @@ func (c *Cipher) Seal(label string, plaintext []byte) ([]byte, error) {
 	if err != nil {
 		return nil, errors.New("security: data cipher initialization failed")
 	}
-	wrappingNonce := make([]byte, c.wrappingAEAD.NonceSize())
 	dataNonce := make([]byte, dataAEAD.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, wrappingNonce); err != nil {
-		return nil, errors.New("security: nonce generation failed")
-	}
 	if _, err := io.ReadFull(rand.Reader, dataNonce); err != nil {
 		return nil, errors.New("security: nonce generation failed")
 	}
-	wrappedKey := c.wrappingAEAD.Seal(nil, wrappingNonce, dataKey,
-		[]byte("deck-envelope:"+label))
-	output := make([]byte, 1, 1+len(wrappingNonce)+len(wrappedKey)+
-		len(dataNonce)+len(plaintext)+dataAEAD.Overhead())
-	output[0] = 1
-	output = append(output, wrappingNonce...)
-	output = append(output, wrappedKey...)
-	output = append(output, dataNonce...)
-	output = dataAEAD.Seal(output, dataNonce, plaintext, []byte(label))
-	return output, nil
+	payload := dataAEAD.Seal(nil, dataNonce, plaintext, []byte(label))
+	return c.marshalEnvelope(
+		label, c.activeKeyID, dataKey, dataNonce, payload)
 }
 
 func (c *Cipher) Open(label string, ciphertext []byte) ([]byte, error) {
-	if c == nil || c.wrappingAEAD == nil || label == "" || len(ciphertext) < 1 ||
-		ciphertext[0] != 1 {
-		return nil, errors.New("security: invalid ciphertext")
-	}
-	wrappingNonceEnd := 1 + c.wrappingAEAD.NonceSize()
-	wrappedKeyEnd := wrappingNonceEnd + 32 + c.wrappingAEAD.Overhead()
-	dataNonceEnd := wrappedKeyEnd + 12
-	if len(ciphertext) < dataNonceEnd+16 {
-		return nil, errors.New("security: invalid ciphertext")
-	}
-	dataKey, err := c.wrappingAEAD.Open(nil,
-		ciphertext[1:wrappingNonceEnd],
-		ciphertext[wrappingNonceEnd:wrappedKeyEnd],
-		[]byte("deck-envelope:"+label))
+	envelope, err := c.openEnvelope(label, ciphertext)
 	if err != nil {
-		return nil, errors.New("security: ciphertext authentication failed")
+		return nil, err
 	}
-	dataBlock, err := aes.NewCipher(dataKey)
+	dataBlock, err := aes.NewCipher(envelope.dataKey)
 	if err != nil {
 		return nil, errors.New("security: ciphertext authentication failed")
 	}
 	dataAEAD, err := cipher.NewGCM(dataBlock)
-	if err != nil || dataAEAD.NonceSize() != dataNonceEnd-wrappedKeyEnd {
+	if err != nil || len(envelope.dataNonce) != dataAEAD.NonceSize() {
 		return nil, errors.New("security: ciphertext authentication failed")
 	}
-	plaintext, err := dataAEAD.Open(nil,
-		ciphertext[wrappedKeyEnd:dataNonceEnd],
-		ciphertext[dataNonceEnd:],
-		[]byte(label))
+	plaintext, err := dataAEAD.Open(
+		nil, envelope.dataNonce, envelope.payload, []byte(label))
 	if err != nil {
 		return nil, errors.New("security: ciphertext authentication failed")
 	}
 	return plaintext, nil
+}
+
+func (c *Cipher) KeyID(ciphertext []byte) (string, error) {
+	if len(ciphertext) < 1 {
+		return "", errors.New("security: invalid ciphertext")
+	}
+	if ciphertext[0] == 1 {
+		return "", nil
+	}
+	if ciphertext[0] != 2 || len(ciphertext) < 2 {
+		return "", errors.New("security: invalid ciphertext")
+	}
+	keyIDLength := int(ciphertext[1])
+	if keyIDLength == 0 || len(ciphertext) < 2+keyIDLength {
+		return "", errors.New("security: invalid ciphertext")
+	}
+	keyID := string(ciphertext[2 : 2+keyIDLength])
+	if !validKeyID(keyID) {
+		return "", errors.New("security: invalid ciphertext")
+	}
+	return keyID, nil
+}
+
+func (c *Cipher) Rewrap(
+	label string,
+	ciphertext []byte,
+) ([]byte, bool, error) {
+	envelope, err := c.openEnvelope(label, ciphertext)
+	if err != nil {
+		return nil, false, err
+	}
+	if envelope.version == 2 && envelope.keyID == c.activeKeyID {
+		return append([]byte(nil), ciphertext...), false, nil
+	}
+	rewrapped, err := c.marshalEnvelope(
+		label, c.activeKeyID, envelope.dataKey,
+		envelope.dataNonce, envelope.payload)
+	return rewrapped, err == nil, err
+}
+
+type envelope struct {
+	version   byte
+	keyID     string
+	dataKey   []byte
+	dataNonce []byte
+	payload   []byte
+}
+
+func (c *Cipher) openEnvelope(
+	label string,
+	ciphertext []byte,
+) (envelope, error) {
+	if c == nil || c.wrappingAEAD == nil || label == "" || len(ciphertext) < 1 {
+		return envelope{}, errors.New("security: invalid ciphertext")
+	}
+	switch ciphertext[0] {
+	case 1:
+		for _, keyID := range c.keyOrder {
+			decoded, err := openEnvelopeWithAEAD(
+				label, ciphertext, 1, keyID, c.wrappingAEAD[keyID])
+			if err == nil {
+				return decoded, nil
+			}
+		}
+	case 2:
+		keyID, err := c.KeyID(ciphertext)
+		if err != nil {
+			return envelope{}, err
+		}
+		wrappingAEAD, ok := c.wrappingAEAD[keyID]
+		if !ok {
+			return envelope{}, errors.New("security: encryption key is unavailable")
+		}
+		return openEnvelopeWithAEAD(
+			label, ciphertext, 2+len(keyID), keyID, wrappingAEAD)
+	}
+	return envelope{}, errors.New("security: ciphertext authentication failed")
+}
+
+func openEnvelopeWithAEAD(
+	label string,
+	ciphertext []byte,
+	offset int,
+	keyID string,
+	wrappingAEAD cipher.AEAD,
+) (envelope, error) {
+	wrappingNonceEnd := offset + wrappingAEAD.NonceSize()
+	wrappedKeyEnd := wrappingNonceEnd + 32 + wrappingAEAD.Overhead()
+	dataNonceEnd := wrappedKeyEnd + 12
+	if len(ciphertext) < dataNonceEnd+16 {
+		return envelope{}, errors.New("security: invalid ciphertext")
+	}
+	dataKey, err := wrappingAEAD.Open(nil,
+		ciphertext[offset:wrappingNonceEnd],
+		ciphertext[wrappingNonceEnd:wrappedKeyEnd],
+		[]byte("deck-envelope:"+label))
+	if err != nil {
+		return envelope{}, errors.New("security: ciphertext authentication failed")
+	}
+	return envelope{
+		version: ciphertext[0], keyID: keyID, dataKey: dataKey,
+		dataNonce: append([]byte(nil), ciphertext[wrappedKeyEnd:dataNonceEnd]...),
+		payload:   append([]byte(nil), ciphertext[dataNonceEnd:]...),
+	}, nil
+}
+
+func (c *Cipher) marshalEnvelope(
+	label string,
+	keyID string,
+	dataKey []byte,
+	dataNonce []byte,
+	payload []byte,
+) ([]byte, error) {
+	wrappingAEAD, ok := c.wrappingAEAD[keyID]
+	if !ok || len(dataKey) != 32 || len(dataNonce) != 12 {
+		return nil, errors.New("security: cipher is unavailable")
+	}
+	wrappingNonce := make([]byte, wrappingAEAD.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, wrappingNonce); err != nil {
+		return nil, errors.New("security: nonce generation failed")
+	}
+	wrappedKey := wrappingAEAD.Seal(nil, wrappingNonce, dataKey,
+		[]byte("deck-envelope:"+label))
+	output := make([]byte, 0, 2+len(keyID)+len(wrappingNonce)+
+		len(wrappedKey)+len(dataNonce)+len(payload))
+	output = append(output, 2, byte(len(keyID)))
+	output = append(output, keyID...)
+	output = append(output, wrappingNonce...)
+	output = append(output, wrappedKey...)
+	output = append(output, dataNonce...)
+	output = append(output, payload...)
+	return output, nil
 }
 
 type Hasher struct {

@@ -77,6 +77,7 @@ type Querier interface {
 	InsertViewSnapshot(ctx context.Context, arg InsertViewSnapshotParams) error
 	IsOwnerTombstoned(ctx context.Context, targetHash []byte) (bool, error)
 	ListDeviceRegistrationsForUpdate(ctx context.Context) ([]DeckDeviceRegistration, error)
+	ListGitHubUserCredentialsForRewrap(ctx context.Context) ([]DeckGithubUserCredential, error)
 	ListOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListOrganizationMembershipsForAccountRow, error)
 	ListOrganizationViewIDsForUpdate(ctx context.Context, organizationID pgtype.UUID) ([]pgtype.UUID, error)
 	ListOrganizationViews(ctx context.Context, arg ListOrganizationViewsParams) ([]DeckView, error)
@@ -91,6 +92,7 @@ type Querier interface {
 	ReconnectGitHubConnection(ctx context.Context, arg ReconnectGitHubConnectionParams) (DeckConnection, error)
 	RenewDevice(ctx context.Context, arg RenewDeviceParams) (DeckDeviceRegistration, error)
 	RequireGitHubReauthentication(ctx context.Context, arg RequireGitHubReauthenticationParams) (DeckConnection, error)
+	RewrapGitHubUserCredential(ctx context.Context, arg RewrapGitHubUserCredentialParams) error
 	UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (DeckDeviceRegistration, error)
 	UpdateDeviceViewStateAfterDeletion(ctx context.Context, arg UpdateDeviceViewStateAfterDeletionParams) error
 	UpdateDeviceWidgetsAfterViewChange(ctx context.Context, arg UpdateDeviceWidgetsAfterViewChangeParams) error

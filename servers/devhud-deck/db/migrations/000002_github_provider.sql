@@ -38,6 +38,8 @@ CREATE TABLE deck_github_user_credentials (
     account_id uuid NOT NULL
         REFERENCES deck_accounts(account_id) ON DELETE CASCADE,
     github_user_id bigint NOT NULL CHECK (github_user_id > 0),
+    wrapping_key_id text NOT NULL
+        CHECK (wrapping_key_id ~ '^[A-Za-z0-9._-]{1,64}$'),
     user_access_token_ciphertext bytea NOT NULL
         CHECK (octet_length(user_access_token_ciphertext) > 0),
     user_refresh_token_ciphertext bytea,

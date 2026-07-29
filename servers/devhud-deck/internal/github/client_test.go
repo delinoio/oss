@@ -79,7 +79,7 @@ func TestEverySupportedMutationUsesOnlyUserAttributedEndpoints(t *testing.T) {
 			"PUT", "/repos/acme/widget/pulls/7/merge", `"squash"`},
 		{"enable auto merge", Mutation{Kind: MutationEnableAutoMerge, MergeMethod: MergeMethodRebase},
 			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
-			"POST", "/graphql", "enablePullRequestAutoMerge"},
+			"POST", "/graphql", "expectedHeadOid"},
 		{"cancel auto merge", Mutation{Kind: MutationCancelAutoMerge},
 			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"},"auto_merge":{"enabled_by":{"login":"octo"}}}`,
 			"POST", "/graphql", "disablePullRequestAutoMerge"},
@@ -133,8 +133,14 @@ func TestEverySupportedMutationUsesOnlyUserAttributedEndpoints(t *testing.T) {
 			}
 			found := false
 			for _, request := range requests {
+				bodyMatches := test.body == "" ||
+					strings.Contains(request.body, test.body)
+				if test.mutation.Kind == MutationEnableAutoMerge {
+					bodyMatches = bodyMatches &&
+						strings.Contains(request.body, `"head":"abc"`)
+				}
 				if request.method == test.method && request.path == test.path &&
-					(test.body == "" || strings.Contains(request.body, test.body)) {
+					bodyMatches {
 					found = true
 				}
 				if strings.Contains(request.body, "ghu_fixture") {
@@ -277,7 +283,7 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 		case "/repos/acme/widget/assignees":
 			return jsonResponse(http.StatusOK,
 				`[{"login":"octo"},{"login":"core-user"}]`), nil
-		case "/orgs/acme/teams":
+		case "/repos/acme/widget/teams":
 			return jsonResponse(http.StatusOK,
 				`[{"slug":"core"},{"slug":"docs"}]`), nil
 		case "/repos/acme/widget/labels":
@@ -314,7 +320,7 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range paths {
-		if path == "/orgs/acme/teams" {
+		if path == "/repos/acme/widget/teams" {
 			t.Fatal("team metadata fetched without members permission")
 		}
 	}
@@ -330,7 +336,7 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 	}
 	for _, path := range paths {
 		if path == "/repos/acme/widget/assignees" ||
-			path == "/orgs/acme/teams" {
+			path == "/repos/acme/widget/teams" {
 			t.Fatalf("unneeded identity metadata fetched for label action: %s", path)
 		}
 	}
@@ -407,6 +413,48 @@ func TestCandidatePaginationAndUserOwnerTeamSkip(t *testing.T) {
 	}
 	if teamRequests != 0 {
 		t.Fatalf("user-owned repository issued %d team requests", teamRequests)
+	}
+}
+
+func TestCandidateFetchOmitsTeamsWithoutRepositoryAdministration(t *testing.T) {
+	t.Parallel()
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path {
+		case "/repos/acme/widget":
+			return jsonResponse(http.StatusOK,
+				`{"owner":{"type":"Organization"},"permissions":{"pull":true,"push":true}}`), nil
+		case "/repos/acme/widget/pulls/7":
+			return jsonResponse(http.StatusOK,
+				`{"node_id":"PR_1","state":"open","draft":false,"merged":false,`+
+					`"mergeable":true,"mergeable_state":"clean",`+
+					`"updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`), nil
+		case "/repos/acme/widget/assignees":
+			return jsonResponse(http.StatusOK, `[{"login":"octo"}]`), nil
+		case "/repos/acme/widget/teams":
+			return jsonResponse(http.StatusNotFound, `{"message":"not found"}`), nil
+		case "/orgs/acme/teams":
+			t.Fatal("organization-wide teams endpoint was used")
+			return nil, nil
+		default:
+			return jsonResponse(http.StatusNotFound, `{}`), nil
+		}
+	})
+	client := NewClient(&http.Client{Transport: transport})
+	page, err := client.ListMutationCandidates(
+		context.Background(), 1, Credential{AccessToken: "token"},
+		Permissions{
+			Metadata: PermissionRead, PullRequests: PermissionWrite,
+			Members: PermissionRead,
+		},
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+		},
+		MutationRequestReviewers, "", Page{},
+	)
+	if err != nil || len(page.Candidates) != 1 ||
+		page.Candidates[0].Kind != CandidateUser ||
+		page.Candidates[0].User.Login != "octo" {
+		t.Fatalf("repository-scoped candidates = %#v err=%v", page, err)
 	}
 }
 

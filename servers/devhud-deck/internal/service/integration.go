@@ -107,6 +107,14 @@ func (service *Integration) ListGitHubInstallations(
 	if err != nil {
 		return nil, mapDatabaseError(err)
 	}
+	if record.State == int16(
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED) ||
+		record.Installation.ID == 0 {
+		return connect.NewResponse(&deckv1.ListGitHubInstallationsResponse{
+			Installations: []*deckv1.GitHubInstallation{},
+			Page:          &deckv1.PageResponse{},
+		}), nil
+	}
 	return connect.NewResponse(&deckv1.ListGitHubInstallationsResponse{
 		Installations: []*deckv1.GitHubInstallation{{
 			GithubInstallationId: record.Installation.ID,

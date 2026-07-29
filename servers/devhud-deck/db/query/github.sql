@@ -125,7 +125,8 @@ RETURNING *;
 
 -- name: UpdateGitHubUserCredentials :exec
 UPDATE deck_github_user_credentials
-SET user_access_token_ciphertext = sqlc.arg(user_access_token_ciphertext),
+SET wrapping_key_id = sqlc.arg(wrapping_key_id),
+    user_access_token_ciphertext = sqlc.arg(user_access_token_ciphertext),
     user_refresh_token_ciphertext = sqlc.narg(user_refresh_token_ciphertext),
     user_access_token_expires_at = sqlc.narg(user_access_token_expires_at),
     user_refresh_token_expires_at = sqlc.narg(user_refresh_token_expires_at),
@@ -135,11 +136,13 @@ WHERE account_id = sqlc.arg(account_id)
 
 -- name: UpsertGitHubUserCredential :exec
 INSERT INTO deck_github_user_credentials (
-    connection_id, account_id, github_user_id, user_access_token_ciphertext,
-    user_refresh_token_ciphertext, user_access_token_expires_at,
+    connection_id, account_id, github_user_id, wrapping_key_id,
+    user_access_token_ciphertext, user_refresh_token_ciphertext,
+    user_access_token_expires_at,
     user_refresh_token_expires_at, updated_at
 ) VALUES (
     sqlc.arg(connection_id), sqlc.arg(account_id), sqlc.arg(github_user_id),
+    sqlc.arg(wrapping_key_id),
     sqlc.arg(user_access_token_ciphertext),
     sqlc.narg(user_refresh_token_ciphertext),
     sqlc.narg(user_access_token_expires_at),
@@ -147,6 +150,7 @@ INSERT INTO deck_github_user_credentials (
 )
 ON CONFLICT (connection_id, account_id) DO UPDATE
 SET github_user_id = EXCLUDED.github_user_id,
+    wrapping_key_id = EXCLUDED.wrapping_key_id,
     user_access_token_ciphertext = EXCLUDED.user_access_token_ciphertext,
     user_refresh_token_ciphertext = EXCLUDED.user_refresh_token_ciphertext,
     user_access_token_expires_at = EXCLUDED.user_access_token_expires_at,
@@ -168,6 +172,20 @@ WHERE credential.account_id = sqlc.arg(account_id)
   AND connection.state = 3
 ORDER BY credential.updated_at DESC, credential.connection_id
 LIMIT 1;
+
+-- name: ListGitHubUserCredentialsForRewrap :many
+SELECT *
+FROM deck_github_user_credentials
+ORDER BY connection_id, account_id
+FOR UPDATE;
+
+-- name: RewrapGitHubUserCredential :exec
+UPDATE deck_github_user_credentials
+SET wrapping_key_id = sqlc.arg(wrapping_key_id),
+    user_access_token_ciphertext = sqlc.arg(user_access_token_ciphertext),
+    user_refresh_token_ciphertext = sqlc.narg(user_refresh_token_ciphertext)
+WHERE connection_id = sqlc.arg(connection_id)
+  AND account_id = sqlc.arg(account_id);
 
 -- name: DeleteGitHubConnectionCredentials :exec
 DELETE FROM deck_github_user_credentials

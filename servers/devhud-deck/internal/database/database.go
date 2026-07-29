@@ -77,9 +77,14 @@ func Open(
 		pool.Close()
 		return nil, err
 	}
-	return &Store{
+	store := &Store{
 		pool: pool, queries: dbgen.New(pool), cipher: cipher, hasher: hasher,
-	}, nil
+	}
+	if err := store.RewrapGitHubCredentials(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return store, nil
 }
 
 func (store *Store) Close() {

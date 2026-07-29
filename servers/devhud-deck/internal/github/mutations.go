@@ -216,12 +216,15 @@ mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){
 		return err
 	case MutationEnableAutoMerge:
 		return client.graphQL(ctx, credential, `
-mutation($id:ID!,$method:PullRequestMergeMethod!){
-  enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:$method}){
+mutation($id:ID!,$method:PullRequestMergeMethod!,$head:GitObjectID!){
+  enablePullRequestAutoMerge(input:{
+    pullRequestId:$id,mergeMethod:$method,expectedHeadOid:$head
+  }){
     pullRequest{id}
   }
 }`, map[string]any{
 			"id": metadata.NodeID, "method": mergeMethodGraphQL(mutation.MergeMethod),
+			"head": metadata.HeadSHA,
 		})
 	case MutationCancelAutoMerge:
 		return client.graphQL(ctx, credential, `

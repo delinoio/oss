@@ -355,7 +355,7 @@ func (q *Queries) GetGitHubConnectionByOwnerForUpdate(ctx context.Context, arg G
 }
 
 const getGitHubUserCredential = `-- name: GetGitHubUserCredential :one
-SELECT connection_id, account_id, github_user_id, user_access_token_ciphertext, user_refresh_token_ciphertext, user_access_token_expires_at, user_refresh_token_expires_at, updated_at
+SELECT connection_id, account_id, github_user_id, wrapping_key_id, user_access_token_ciphertext, user_refresh_token_ciphertext, user_access_token_expires_at, user_refresh_token_expires_at, updated_at
 FROM deck_github_user_credentials
 WHERE connection_id = $1
   AND account_id = $2
@@ -373,6 +373,7 @@ func (q *Queries) GetGitHubUserCredential(ctx context.Context, arg GetGitHubUser
 		&i.ConnectionID,
 		&i.AccountID,
 		&i.GithubUserID,
+		&i.WrappingKeyID,
 		&i.UserAccessTokenCiphertext,
 		&i.UserRefreshTokenCiphertext,
 		&i.UserAccessTokenExpiresAt,
@@ -383,7 +384,7 @@ func (q *Queries) GetGitHubUserCredential(ctx context.Context, arg GetGitHubUser
 }
 
 const getGitHubUserCredentialForAccount = `-- name: GetGitHubUserCredentialForAccount :one
-SELECT credential.connection_id, credential.account_id, credential.github_user_id, credential.user_access_token_ciphertext, credential.user_refresh_token_ciphertext, credential.user_access_token_expires_at, credential.user_refresh_token_expires_at, credential.updated_at
+SELECT credential.connection_id, credential.account_id, credential.github_user_id, credential.wrapping_key_id, credential.user_access_token_ciphertext, credential.user_refresh_token_ciphertext, credential.user_access_token_expires_at, credential.user_refresh_token_expires_at, credential.updated_at
 FROM deck_github_user_credentials credential
 JOIN deck_connections connection
   ON connection.connection_id = credential.connection_id
@@ -400,6 +401,7 @@ func (q *Queries) GetGitHubUserCredentialForAccount(ctx context.Context, account
 		&i.ConnectionID,
 		&i.AccountID,
 		&i.GithubUserID,
+		&i.WrappingKeyID,
 		&i.UserAccessTokenCiphertext,
 		&i.UserRefreshTokenCiphertext,
 		&i.UserAccessTokenExpiresAt,
@@ -568,6 +570,43 @@ func (q *Queries) InsertGitHubWebhookDelivery(ctx context.Context, arg InsertGit
 		arg.ProcessedAt,
 	)
 	return err
+}
+
+const listGitHubUserCredentialsForRewrap = `-- name: ListGitHubUserCredentialsForRewrap :many
+SELECT connection_id, account_id, github_user_id, wrapping_key_id, user_access_token_ciphertext, user_refresh_token_ciphertext, user_access_token_expires_at, user_refresh_token_expires_at, updated_at
+FROM deck_github_user_credentials
+ORDER BY connection_id, account_id
+FOR UPDATE
+`
+
+func (q *Queries) ListGitHubUserCredentialsForRewrap(ctx context.Context) ([]DeckGithubUserCredential, error) {
+	rows, err := q.db.Query(ctx, listGitHubUserCredentialsForRewrap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeckGithubUserCredential{}
+	for rows.Next() {
+		var i DeckGithubUserCredential
+		if err := rows.Scan(
+			&i.ConnectionID,
+			&i.AccountID,
+			&i.GithubUserID,
+			&i.WrappingKeyID,
+			&i.UserAccessTokenCiphertext,
+			&i.UserRefreshTokenCiphertext,
+			&i.UserAccessTokenExpiresAt,
+			&i.UserRefreshTokenExpiresAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listOwnerViewsForProviderCleanup = `-- name: ListOwnerViewsForProviderCleanup :many
@@ -758,18 +797,48 @@ func (q *Queries) RequireGitHubReauthentication(ctx context.Context, arg Require
 	return i, err
 }
 
+const rewrapGitHubUserCredential = `-- name: RewrapGitHubUserCredential :exec
+UPDATE deck_github_user_credentials
+SET wrapping_key_id = $1,
+    user_access_token_ciphertext = $2,
+    user_refresh_token_ciphertext = $3
+WHERE connection_id = $4
+  AND account_id = $5
+`
+
+type RewrapGitHubUserCredentialParams struct {
+	WrappingKeyID              string
+	UserAccessTokenCiphertext  []byte
+	UserRefreshTokenCiphertext []byte
+	ConnectionID               pgtype.UUID
+	AccountID                  pgtype.UUID
+}
+
+func (q *Queries) RewrapGitHubUserCredential(ctx context.Context, arg RewrapGitHubUserCredentialParams) error {
+	_, err := q.db.Exec(ctx, rewrapGitHubUserCredential,
+		arg.WrappingKeyID,
+		arg.UserAccessTokenCiphertext,
+		arg.UserRefreshTokenCiphertext,
+		arg.ConnectionID,
+		arg.AccountID,
+	)
+	return err
+}
+
 const updateGitHubUserCredentials = `-- name: UpdateGitHubUserCredentials :exec
 UPDATE deck_github_user_credentials
-SET user_access_token_ciphertext = $1,
-    user_refresh_token_ciphertext = $2,
-    user_access_token_expires_at = $3,
-    user_refresh_token_expires_at = $4,
-    updated_at = $5
-WHERE account_id = $6
-  AND github_user_id = $7
+SET wrapping_key_id = $1,
+    user_access_token_ciphertext = $2,
+    user_refresh_token_ciphertext = $3,
+    user_access_token_expires_at = $4,
+    user_refresh_token_expires_at = $5,
+    updated_at = $6
+WHERE account_id = $7
+  AND github_user_id = $8
 `
 
 type UpdateGitHubUserCredentialsParams struct {
+	WrappingKeyID              string
 	UserAccessTokenCiphertext  []byte
 	UserRefreshTokenCiphertext []byte
 	UserAccessTokenExpiresAt   pgtype.Timestamptz
@@ -781,6 +850,7 @@ type UpdateGitHubUserCredentialsParams struct {
 
 func (q *Queries) UpdateGitHubUserCredentials(ctx context.Context, arg UpdateGitHubUserCredentialsParams) error {
 	_, err := q.db.Exec(ctx, updateGitHubUserCredentials,
+		arg.WrappingKeyID,
 		arg.UserAccessTokenCiphertext,
 		arg.UserRefreshTokenCiphertext,
 		arg.UserAccessTokenExpiresAt,
@@ -794,18 +864,21 @@ func (q *Queries) UpdateGitHubUserCredentials(ctx context.Context, arg UpdateGit
 
 const upsertGitHubUserCredential = `-- name: UpsertGitHubUserCredential :exec
 INSERT INTO deck_github_user_credentials (
-    connection_id, account_id, github_user_id, user_access_token_ciphertext,
-    user_refresh_token_ciphertext, user_access_token_expires_at,
+    connection_id, account_id, github_user_id, wrapping_key_id,
+    user_access_token_ciphertext, user_refresh_token_ciphertext,
+    user_access_token_expires_at,
     user_refresh_token_expires_at, updated_at
 ) VALUES (
     $1, $2, $3,
     $4,
     $5,
     $6,
-    $7, $8
+    $7,
+    $8, $9
 )
 ON CONFLICT (connection_id, account_id) DO UPDATE
 SET github_user_id = EXCLUDED.github_user_id,
+    wrapping_key_id = EXCLUDED.wrapping_key_id,
     user_access_token_ciphertext = EXCLUDED.user_access_token_ciphertext,
     user_refresh_token_ciphertext = EXCLUDED.user_refresh_token_ciphertext,
     user_access_token_expires_at = EXCLUDED.user_access_token_expires_at,
@@ -817,6 +890,7 @@ type UpsertGitHubUserCredentialParams struct {
 	ConnectionID               pgtype.UUID
 	AccountID                  pgtype.UUID
 	GithubUserID               int64
+	WrappingKeyID              string
 	UserAccessTokenCiphertext  []byte
 	UserRefreshTokenCiphertext []byte
 	UserAccessTokenExpiresAt   pgtype.Timestamptz
@@ -829,6 +903,7 @@ func (q *Queries) UpsertGitHubUserCredential(ctx context.Context, arg UpsertGitH
 		arg.ConnectionID,
 		arg.AccountID,
 		arg.GithubUserID,
+		arg.WrappingKeyID,
 		arg.UserAccessTokenCiphertext,
 		arg.UserRefreshTokenCiphertext,
 		arg.UserAccessTokenExpiresAt,
