@@ -62,7 +62,7 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::borrow::Cow;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use std::sync::Mutex;
 #[cfg(feature = "desktop-cef")]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -3075,11 +3075,45 @@ fn realqa_cancel_capture(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_composer_accept_image(
+async fn realqa_composer_accept_image(
     request: realqa_capture::ComposerImageRequest,
-    state: State<'_, realqa_capture::ComposerCore>,
+    app: AppHandle<ActiveRuntime>,
 ) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
-    state.accept_image(request)
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        app.state::<realqa_capture::ComposerCore>()
+            .accept_image(request)
+    })
+    .await
+    .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+    .and_then(|result| result);
+    realqa_capture::record_outcome(&result);
+    result
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+async fn realqa_composer_flatten_image(
+    request: realqa_capture::ComposerFlattenRequest,
+    app: AppHandle<ActiveRuntime>,
+) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
+    let work = app
+        .state::<realqa_capture::ComposerCore>()
+        .begin_flatten_image(request);
+    let result = match work {
+        Ok(work) => tauri::async_runtime::spawn_blocking(move || {
+            app.state::<realqa_capture::ComposerCore>()
+                .flatten_image(work)
+        })
+        .await
+        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+        .and_then(|result| result),
+        Err(error) => Err(error),
+    };
+    realqa_capture::record_outcome(&result);
+    result
 }
 
 #[cfg(all(
@@ -3141,6 +3175,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             realqa_begin_capture,
             realqa_cancel_capture,
             realqa_composer_accept_image,
+            realqa_composer_flatten_image,
             realqa_composer_remove_image,
             realqa_composer_reset_session
         ])

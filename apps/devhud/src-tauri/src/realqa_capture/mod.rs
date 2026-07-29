@@ -1,4 +1,5 @@
 mod composer;
+mod editor;
 mod geometry;
 mod image_boundary;
 #[cfg(target_os = "linux")]
@@ -10,7 +11,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "desktop-cef")]
 pub(crate) use composer::{
-    ComposerCore, ComposerImage, ComposerImageId, ComposerImageRequest, ComposerSessionId,
+    ComposerCore, ComposerFlattenRequest, ComposerImage, ComposerImageId, ComposerImageRequest,
+    ComposerSessionId,
 };
 pub(crate) use geometry::{
     DisplayDescriptor, DisplayId, DisplayPixelRegion, DisplaySnapshot, DisplaySnapshotId,
@@ -104,6 +106,8 @@ pub(crate) enum CaptureFailure {
     DisplaySnapshotChanged,
     InvalidDisplaySnapshot,
     InvalidSelection,
+    InvalidEditorOperation,
+    InvalidEditSequence,
     MalformedImage,
     UnsupportedImage,
     DecompressionBomb,
@@ -831,9 +835,12 @@ pub(crate) fn record_outcome<T>(result: &Result<T, CaptureFailure>) {
         Err(CaptureFailure::DisplayRemoved | CaptureFailure::DisplaySnapshotChanged) => {
             Classification::RealqaCaptureDisplayChanged
         }
-        Err(CaptureFailure::InvalidDisplaySnapshot | CaptureFailure::InvalidSelection) => {
-            Classification::RealqaCaptureInvalidRequest
-        }
+        Err(
+            CaptureFailure::InvalidDisplaySnapshot
+            | CaptureFailure::InvalidSelection
+            | CaptureFailure::InvalidEditorOperation
+            | CaptureFailure::InvalidEditSequence,
+        ) => Classification::RealqaCaptureInvalidRequest,
         Err(
             CaptureFailure::MalformedImage
             | CaptureFailure::UnsupportedImage
@@ -917,7 +924,10 @@ impl CaptureDiagnostic {
                 CaptureDiagnosticClassification::DisplayChanged
             }
             CaptureFailure::ModeUnavailable => CaptureDiagnosticClassification::ModeUnavailable,
-            CaptureFailure::InvalidDisplaySnapshot | CaptureFailure::InvalidSelection => {
+            CaptureFailure::InvalidDisplaySnapshot
+            | CaptureFailure::InvalidSelection
+            | CaptureFailure::InvalidEditorOperation
+            | CaptureFailure::InvalidEditSequence => {
                 CaptureDiagnosticClassification::InvalidRequest
             }
             CaptureFailure::MalformedImage

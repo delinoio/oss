@@ -96,11 +96,25 @@ describe("RealQA native boundaries", () => {
     } as const;
 
     await bridge.acceptImage(request);
+    const flattenRequest = {
+      sessionId: "session-1",
+      imageId: "image-1",
+      sourceRevision: 1,
+      operations: [
+        {
+          kind: "crop",
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+        },
+      ],
+      outputMediaType: ImageMediaType.Png,
+    } as const;
+    await bridge.flattenImage(flattenRequest);
     await bridge.removeImage("session-1", "image-1");
     await bridge.resetSession("session-1");
 
     expect(calls).toEqual([
       ["realqa_composer_accept_image", { request }],
+      ["realqa_composer_flatten_image", { request: flattenRequest }],
       [
         "realqa_composer_remove_image",
         { sessionId: "session-1", imageId: "image-1" },

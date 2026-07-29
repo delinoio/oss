@@ -292,6 +292,7 @@ const expectedRealqaCapturePermissions = [
 ];
 const expectedRealqaComposerPermissions = [
   "allow-realqa-composer-accept-image",
+  "allow-realqa-composer-flatten-image",
   "allow-realqa-composer-remove-image",
   "allow-realqa-composer-reset-session",
 ];

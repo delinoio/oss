@@ -108,7 +108,15 @@ if (failures.length > 0) {
 
 await run(
   cargo,
-  ["test", "-p", "devhud", "--locked", "realqa_capture::macos"],
+  [
+    "test",
+    "-p",
+    "devhud",
+    "--locked",
+    "--features",
+    "linux-capture-backend",
+    "realqa_capture",
+  ],
   { cwd: repositoryRoot },
 );
 
