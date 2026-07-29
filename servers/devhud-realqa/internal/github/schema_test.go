@@ -46,6 +46,21 @@ Describe the bug.
 	}
 }
 
+func TestMarkdownTemplateRejectsProjectDefaults(t *testing.T) {
+	t.Parallel()
+	_, err := ParseMarkdownTemplate(
+		".github/ISSUE_TEMPLATE/bug.md", `"fixture-etag"`, []byte(`---
+name: Bug report
+about: Report a bug
+projects: ["octo-org/1"]
+---
+Describe the bug.
+`))
+	if err == nil || !strings.Contains(err.Error(), "front matter is invalid") {
+		t.Fatalf("expected unsupported project defaults, got %v", err)
+	}
+}
+
 func TestMarkdownTemplateRejectsHiddenShortName(t *testing.T) {
 	t.Parallel()
 	_, err := ParseMarkdownTemplate(
@@ -712,6 +727,67 @@ body:
 	}
 	if strings.Contains(rendered, "Screenshots") {
 		t.Fatalf("optional upload field was rendered: %s", rendered)
+	}
+}
+
+func TestIssueFormIncludesOptionalUploadsInIDUniqueness(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		`
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Screenshots
+  - type: input
+    id: screenshots
+    attributes:
+      label: Summary
+`,
+		`
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Screenshots
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Logs
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+`,
+	} {
+		contents := []byte(`
+name: Bug report
+description: Report a bug
+body:` + body)
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "field IDs must be unique") {
+			t.Fatalf("expected upload ID collision rejection, got %v", err)
+		}
+	}
+}
+
+func TestIssueFormIncludesOptionalUploadsInProviderReferenceUniqueness(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: upload
+    id: name
+    attributes:
+      label: Screenshots
+  - type: input
+    attributes:
+      label: Name?
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err == nil || !strings.Contains(err.Error(), "field references must be unique") {
+		t.Fatalf("expected upload provider-reference collision rejection, got %v", err)
 	}
 }
 

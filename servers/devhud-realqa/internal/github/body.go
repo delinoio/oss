@@ -87,8 +87,7 @@ func renderCapture(capture CaptureMetadata) (string, error) {
 				if strings.ContainsAny(field.Value, "\x00\r\n") {
 					return "", errors.New("realqa github: DOM metadata is invalid")
 				}
-				lines = append(lines, "- **"+field.Key+":** `"+
-					strings.ReplaceAll(field.Value, "`", "\\`")+"`")
+				lines = append(lines, "- **"+field.Key+":** "+markdownCodeSpan(field.Value))
 			}
 		}
 		if dom.ViewportWidth > 0 && dom.ViewportHeight > 0 {
@@ -101,6 +100,14 @@ func renderCapture(capture CaptureMetadata) (string, error) {
 		lines = append(lines, "_No capture metadata included._")
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func markdownCodeSpan(value string) string {
+	delimiter := codeFence(value)
+	if strings.HasPrefix(value, "`") || strings.HasSuffix(value, "`") {
+		return delimiter + " " + value + " " + delimiter
+	}
+	return delimiter + value + delimiter
 }
 
 func renderImages(images []InlineImage) (string, error) {

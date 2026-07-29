@@ -73,7 +73,6 @@ func ParseMarkdownTemplate(filePath, etag string, contents []byte) (MarkdownTemp
 		Type      string     `yaml:"type"`
 		Labels    stringList `yaml:"labels"`
 		Assignees stringList `yaml:"assignees"`
-		Projects  stringList `yaml:"projects"`
 	}
 	decoder := yaml.NewDecoder(strings.NewReader(normalized[4:end]))
 	decoder.KnownFields(true)
@@ -186,6 +185,19 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 			if err := validateSkippedUpload(item); err != nil {
 				return IssueForm{}, err
 			}
+			id := strings.TrimSpace(item.ID)
+			if id != "" {
+				if _, exists := seen[id]; exists {
+					return IssueForm{}, errors.New(
+						"realqa github: Issue Form field IDs must be unique")
+				}
+				seen[id] = struct{}{}
+				if _, exists := seenProviderReferences[id]; exists {
+					return IssueForm{}, errors.New(
+						"realqa github: Issue Form field references must be unique")
+				}
+				seenProviderReferences[id] = struct{}{}
+			}
 			continue
 		}
 		field, parseErr := parseFormField(item)
@@ -194,6 +206,13 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 		}
 		if field.Kind != FormFieldMarkdown {
 			hasSubmittedField = true
+			if field.ID != "" {
+				if _, exists := seen[field.ID]; exists {
+					return IssueForm{}, errors.New(
+						"realqa github: Issue Form field IDs must be unique")
+				}
+				seen[field.ID] = struct{}{}
+			}
 			providerReference := field.ID
 			if field.ID == "" {
 				if _, exists := seenGeneratedLabels[field.Label]; exists {
@@ -229,11 +248,12 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 			if field.ID == "" {
 				field.ID = generatedFormFieldID(index, reservedIDs)
 				reservedIDs[field.ID] = struct{}{}
+				if _, exists := seen[field.ID]; exists {
+					return IssueForm{}, errors.New(
+						"realqa github: Issue Form field IDs must be unique")
+				}
+				seen[field.ID] = struct{}{}
 			}
-			if _, exists := seen[field.ID]; exists {
-				return IssueForm{}, errors.New("realqa github: Issue Form field IDs must be unique")
-			}
-			seen[field.ID] = struct{}{}
 		}
 		result.Fields = append(result.Fields, field)
 	}

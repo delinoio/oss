@@ -100,6 +100,25 @@ func TestComposeBodyPreservesRepositoryResponseEdgeWhitespace(t *testing.T) {
 	}
 }
 
+func TestComposeBodyUsesSafeDOMCodeSpans(t *testing.T) {
+	t.Parallel()
+	body, err := ComposeBody(IssueInput{
+		SubmissionID: fixtureSubmissionID,
+		Capture: CaptureMetadata{DOM: &DOMMetadata{
+			CSSSelector:    "button[data-label=`approve``now`]",
+			AccessibleName: "`Approve`",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body,
+		"- **DOM selector:** ```button[data-label=`approve``now`]```\n") ||
+		!strings.Contains(body, "- **DOM accessible name:** ``` `Approve` ```\n") {
+		t.Fatalf("DOM metadata did not use safe code spans:\n%s", body)
+	}
+}
+
 func TestComposeBodyAllowsManyImagesUntilSerializedOverflow(t *testing.T) {
 	t.Parallel()
 	input := IssueInput{
