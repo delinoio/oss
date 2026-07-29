@@ -65,13 +65,14 @@ INSERT INTO deck_connections (
     connection_id, owner_scope, owner_id, state,
     github_installation_id, github_account_id, github_account_kind,
     github_account_login_ciphertext, github_metadata_permission,
+    github_contents_permission,
     github_pull_requests_permission, github_checks_permission,
     github_members_permission, revision, created_at, updated_at
 ) VALUES (
     sqlc.arg(connection_id), sqlc.arg(owner_scope), sqlc.arg(owner_id), 3,
     sqlc.arg(github_installation_id), sqlc.arg(github_account_id),
     sqlc.arg(github_account_kind), sqlc.arg(github_account_login_ciphertext),
-    sqlc.arg(github_metadata_permission),
+    sqlc.arg(github_metadata_permission), sqlc.arg(github_contents_permission),
     sqlc.arg(github_pull_requests_permission),
     sqlc.arg(github_checks_permission), sqlc.arg(github_members_permission), 1,
     sqlc.arg(created_at), sqlc.arg(updated_at)
@@ -86,6 +87,7 @@ SET state = 3,
     github_account_kind = sqlc.arg(github_account_kind),
     github_account_login_ciphertext = sqlc.arg(github_account_login_ciphertext),
     github_metadata_permission = sqlc.arg(github_metadata_permission),
+    github_contents_permission = sqlc.arg(github_contents_permission),
     github_pull_requests_permission = sqlc.arg(github_pull_requests_permission),
     github_checks_permission = sqlc.arg(github_checks_permission),
     github_members_permission = sqlc.arg(github_members_permission),
@@ -97,26 +99,55 @@ RETURNING *;
 -- name: DisconnectGitHubConnection :one
 UPDATE deck_connections
 SET state = sqlc.arg(connection_state),
+    github_installation_id = NULL,
+    github_account_id = NULL,
+    github_account_kind = NULL,
+    github_account_login_ciphertext = NULL,
+    github_metadata_permission = NULL,
+    github_contents_permission = NULL,
+    github_pull_requests_permission = NULL,
+    github_checks_permission = NULL,
+    github_members_permission = NULL,
     revision = revision + 1,
     updated_at = sqlc.arg(updated_at)
 WHERE connection_id = sqlc.arg(connection_id)
   AND revision = sqlc.arg(expected_revision)
 RETURNING *;
 
+-- name: RequireGitHubReauthentication :one
+UPDATE deck_connections
+SET state = 4,
+    revision = revision + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE connection_id = sqlc.arg(connection_id)
+  AND revision = sqlc.arg(expected_revision)
+RETURNING *;
+
+-- name: UpdateGitHubUserCredentials :exec
+UPDATE deck_github_user_credentials
+SET user_access_token_ciphertext = sqlc.arg(user_access_token_ciphertext),
+    user_refresh_token_ciphertext = sqlc.narg(user_refresh_token_ciphertext),
+    user_access_token_expires_at = sqlc.narg(user_access_token_expires_at),
+    user_refresh_token_expires_at = sqlc.narg(user_refresh_token_expires_at),
+    updated_at = sqlc.arg(updated_at)
+WHERE account_id = sqlc.arg(account_id)
+  AND github_user_id = sqlc.arg(github_user_id);
+
 -- name: UpsertGitHubUserCredential :exec
 INSERT INTO deck_github_user_credentials (
-    connection_id, account_id, user_access_token_ciphertext,
+    connection_id, account_id, github_user_id, user_access_token_ciphertext,
     user_refresh_token_ciphertext, user_access_token_expires_at,
     user_refresh_token_expires_at, updated_at
 ) VALUES (
-    sqlc.arg(connection_id), sqlc.arg(account_id),
+    sqlc.arg(connection_id), sqlc.arg(account_id), sqlc.arg(github_user_id),
     sqlc.arg(user_access_token_ciphertext),
     sqlc.narg(user_refresh_token_ciphertext),
     sqlc.narg(user_access_token_expires_at),
     sqlc.narg(user_refresh_token_expires_at), sqlc.arg(updated_at)
 )
 ON CONFLICT (connection_id, account_id) DO UPDATE
-SET user_access_token_ciphertext = EXCLUDED.user_access_token_ciphertext,
+SET github_user_id = EXCLUDED.github_user_id,
+    user_access_token_ciphertext = EXCLUDED.user_access_token_ciphertext,
     user_refresh_token_ciphertext = EXCLUDED.user_refresh_token_ciphertext,
     user_access_token_expires_at = EXCLUDED.user_access_token_expires_at,
     user_refresh_token_expires_at = EXCLUDED.user_refresh_token_expires_at,
@@ -145,6 +176,10 @@ WHERE connection_id = sqlc.arg(connection_id);
 -- name: DeleteGitHubUserCredentialsByAccount :exec
 DELETE FROM deck_github_user_credentials
 WHERE account_id = sqlc.arg(account_id);
+
+-- name: DeleteGitHubUserCredentialsByGitHubUser :exec
+DELETE FROM deck_github_user_credentials
+WHERE github_user_id = sqlc.arg(github_user_id);
 
 -- name: ListOwnerViewsForProviderCleanup :many
 SELECT view_id
@@ -203,9 +238,10 @@ WHERE delivery_id = sqlc.arg(delivery_id);
 
 -- name: InsertGitHubWebhookDelivery :exec
 INSERT INTO deck_github_webhook_deliveries (
-    delivery_id, event_type, action_type, installation_id,
+    delivery_id, event_type, action_type, installation_id, github_user_id,
     payload_hash, processed_at
 ) VALUES (
     sqlc.arg(delivery_id), sqlc.arg(event_type), sqlc.arg(action_type),
-    sqlc.arg(installation_id), sqlc.arg(payload_hash), sqlc.arg(processed_at)
+    sqlc.arg(installation_id), sqlc.arg(github_user_id),
+    sqlc.arg(payload_hash), sqlc.arg(processed_at)
 );

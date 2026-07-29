@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const maxMutationOperands = 100
+
 func (client *Client) Mutate(
 	ctx context.Context,
 	actor string,
@@ -83,6 +85,9 @@ func validateMutation(reference PullRequestRef, mutation Mutation) error {
 		if len(mutation.Users) == 0 && len(mutation.Teams) == 0 {
 			return ErrUnsupportedAction
 		}
+		if len(mutation.Users)+len(mutation.Teams) > maxMutationOperands {
+			return ErrUnsupportedAction
+		}
 		if len(mutation.Users) > 0 {
 			if err := validateUsers(mutation.Users); err != nil {
 				return err
@@ -95,7 +100,8 @@ func validateMutation(reference PullRequestRef, mutation Mutation) error {
 			}
 		}
 	case MutationAddLabels, MutationRemoveLabels:
-		if len(mutation.Labels) == 0 {
+		if len(mutation.Labels) == 0 ||
+			len(mutation.Labels) > maxMutationOperands {
 			return ErrUnsupportedAction
 		}
 		for _, label := range mutation.Labels {
@@ -118,7 +124,7 @@ func validateMutation(reference PullRequestRef, mutation Mutation) error {
 }
 
 func validateUsers(users []User) error {
-	if len(users) == 0 {
+	if len(users) == 0 || len(users) > maxMutationOperands {
 		return ErrUnsupportedAction
 	}
 	for _, user := range users {

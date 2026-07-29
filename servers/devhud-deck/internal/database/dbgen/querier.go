@@ -30,6 +30,7 @@ type Querier interface {
 	DeleteGitHubCallbackStatesByOwner(ctx context.Context, arg DeleteGitHubCallbackStatesByOwnerParams) error
 	DeleteGitHubConnectionCredentials(ctx context.Context, connectionID pgtype.UUID) error
 	DeleteGitHubUserCredentialsByAccount(ctx context.Context, accountID pgtype.UUID) error
+	DeleteGitHubUserCredentialsByGitHubUser(ctx context.Context, githubUserID int64) error
 	DeleteOrganizationConnection(ctx context.Context, organizationID pgtype.UUID) error
 	DeleteOrganizationFeatureData(ctx context.Context, organizationID pgtype.UUID) error
 	DeleteOrganizationMemberships(ctx context.Context, organizationID pgtype.UUID) error
@@ -89,9 +90,11 @@ type Querier interface {
 	Ping(ctx context.Context) (int32, error)
 	ReconnectGitHubConnection(ctx context.Context, arg ReconnectGitHubConnectionParams) (DeckConnection, error)
 	RenewDevice(ctx context.Context, arg RenewDeviceParams) (DeckDeviceRegistration, error)
+	RequireGitHubReauthentication(ctx context.Context, arg RequireGitHubReauthenticationParams) (DeckConnection, error)
 	UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (DeckDeviceRegistration, error)
 	UpdateDeviceViewStateAfterDeletion(ctx context.Context, arg UpdateDeviceViewStateAfterDeletionParams) error
 	UpdateDeviceWidgetsAfterViewChange(ctx context.Context, arg UpdateDeviceWidgetsAfterViewChangeParams) error
+	UpdateGitHubUserCredentials(ctx context.Context, arg UpdateGitHubUserCredentialsParams) error
 	UpdateView(ctx context.Context, arg UpdateViewParams) (DeckView, error)
 	UpdateViewSnapshotState(ctx context.Context, arg UpdateViewSnapshotStateParams) error
 	UpsertDeckAccount(ctx context.Context, arg UpsertDeckAccountParams) error

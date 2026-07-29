@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
@@ -785,6 +786,45 @@ func (store *Store) ListSnapshots(
 		refreshedAt = state.RefreshedAt.Time.UTC()
 	}
 	return results, stateErr == nil && state.Truncated, refreshedAt, nil
+}
+
+func (store *Store) HasSnapshot(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	reference *deckv1.PullRequestReference,
+) (bool, error) {
+	if reference == nil || reference.Repository == nil ||
+		reference.Number == 0 {
+		return false, nil
+	}
+	rows, err := store.queries.ListViewSnapshots(ctx, dbgen.ListViewSnapshotsParams{
+		ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
+		AfterOrdinal: 0, PageLimit: 500,
+	})
+	if err != nil {
+		return false, errors.New("deck database: list snapshots failed")
+	}
+	for _, row := range rows {
+		repository := &deckv1.RepositoryReference{}
+		if err := store.openProto(
+			"pr-snapshot-repository", row.RepositoryCiphertext, repository); err != nil {
+			return false, err
+		}
+		if !strings.EqualFold(repository.Owner, reference.Repository.Owner) ||
+			!strings.EqualFold(repository.Name, reference.Repository.Name) {
+			continue
+		}
+		result := &deckv1.PullRequestResult{}
+		if err := store.openProto(
+			"pr-snapshot", row.SnapshotCiphertext, result); err != nil {
+			return false, err
+		}
+		if result.Number == reference.Number {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (store *Store) String() string {

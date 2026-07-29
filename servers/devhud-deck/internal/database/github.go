@@ -42,6 +42,10 @@ func (store *Store) SaveGitHubCallbackState(
 	if err != nil || (state.Owner.Scope == 1 && ownerID != accountID) {
 		return errors.New("deck database: invalid callback owner")
 	}
+	ownerHash := store.hasher.Sum(
+		"owner",
+		deckv1.OwnerScope(state.Owner.Scope).String()+":"+ownerID.String(),
+	)
 	payload, err := json.Marshal(state)
 	if err != nil {
 		return errors.New("deck database: callback encode failed")
@@ -50,13 +54,28 @@ func (store *Store) SaveGitHubCallbackState(
 	if err != nil {
 		return err
 	}
-	return store.queries.InsertGitHubCallbackState(ctx,
-		dbgen.InsertGitHubCallbackStateParams{
-			StateHash: hash[:], OwnerScope: int16(state.Owner.Scope),
-			OwnerID: pgUUID(ownerID), AccountID: pgUUID(accountID),
-			StateCiphertext: ciphertext,
-			ExpiresAt:       pgTime(time.Unix(state.ExpiresAt, 0)),
-		})
+	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		if err := queries.EnsureOwnerLock(ctx, ownerHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockOwner(ctx, ownerHash[:]); err != nil {
+			return err
+		}
+		tombstoned, err := queries.IsOwnerTombstoned(ctx, ownerHash[:])
+		if err != nil {
+			return err
+		}
+		if tombstoned {
+			return ErrDeletionInProgress
+		}
+		return queries.InsertGitHubCallbackState(ctx,
+			dbgen.InsertGitHubCallbackStateParams{
+				StateHash: hash[:], OwnerScope: int16(state.Owner.Scope),
+				OwnerID: pgUUID(ownerID), AccountID: pgUUID(accountID),
+				StateCiphertext: ciphertext,
+				ExpiresAt:       pgTime(time.Unix(state.ExpiresAt, 0)),
+			})
+	})
 }
 
 func (store *Store) ConsumeGitHubCallbackState(
@@ -105,7 +124,8 @@ func (store *Store) ConnectGitHub(
 	now time.Time,
 ) error {
 	ownerID, err := parseStoredUUID(state.Owner.ID)
-	if err != nil || credential.Validate(now) != nil || installation.ID == 0 {
+	if err != nil || credential.Validate(now) != nil || credential.UserID == 0 ||
+		installation.ID == 0 {
 		return deckgithub.ErrPermissionDenied
 	}
 	accountID, err := parseStoredUUID(state.AccountID)
@@ -130,7 +150,24 @@ func (store *Store) ConnectGitHub(
 			return err
 		}
 	}
+	ownerHash := store.hasher.Sum(
+		"owner",
+		deckv1.OwnerScope(state.Owner.Scope).String()+":"+ownerID.String(),
+	)
 	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		if err := queries.EnsureOwnerLock(ctx, ownerHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockOwner(ctx, ownerHash[:]); err != nil {
+			return err
+		}
+		tombstoned, err := queries.IsOwnerTombstoned(ctx, ownerHash[:])
+		if err != nil {
+			return err
+		}
+		if tombstoned {
+			return ErrDeletionInProgress
+		}
 		if state.Owner.Scope == 1 {
 			if ownerID != accountID {
 				return deckgithub.ErrPermissionDenied
@@ -161,6 +198,13 @@ func (store *Store) ConnectGitHub(
 				OwnerScope: int16(state.Owner.Scope), OwnerID: pgUUID(ownerID),
 			})
 		if existingErr == nil {
+			if githubProviderChanged(existing, installation) {
+				if err := store.cleanupGitHubOwner(
+					ctx, queries, existing.OwnerScope,
+					uuidValue(existing.OwnerID), now, true); err != nil {
+					return err
+				}
+			}
 			parameters.ConnectionID = existing.ConnectionID
 			storedConnectionID = existing.ConnectionID
 			if _, err := queries.ReconnectGitHubConnection(
@@ -170,6 +214,7 @@ func (store *Store) ConnectGitHub(
 					GithubAccountKind:            parameters.GithubAccountKind,
 					GithubAccountLoginCiphertext: parameters.GithubAccountLoginCiphertext,
 					GithubMetadataPermission:     parameters.GithubMetadataPermission,
+					GithubContentsPermission:     parameters.GithubContentsPermission,
 					GithubPullRequestsPermission: parameters.GithubPullRequestsPermission,
 					GithubChecksPermission:       parameters.GithubChecksPermission,
 					GithubMembersPermission:      parameters.GithubMembersPermission,
@@ -198,6 +243,7 @@ func (store *Store) ConnectGitHub(
 		if err := queries.UpsertGitHubUserCredential(
 			ctx, dbgen.UpsertGitHubUserCredentialParams{
 				ConnectionID: storedConnectionID, AccountID: pgUUID(accountID),
+				GithubUserID:               int64(credential.UserID),
 				UserAccessTokenCiphertext:  accessToken,
 				UserRefreshTokenCiphertext: refreshToken,
 				UserAccessTokenExpiresAt:   pgTime(credential.ExpiresAt),
@@ -212,6 +258,29 @@ func (store *Store) ConnectGitHub(
 				OwnerID: pgUUID(ownerID),
 			})
 	})
+}
+
+func githubProviderChanged(
+	existing dbgen.DeckConnection,
+	installation deckgithub.Installation,
+) bool {
+	return !existing.GithubInstallationID.Valid ||
+		existing.GithubInstallationID.Int64 != int64(installation.ID) ||
+		!existing.GithubAccountID.Valid ||
+		existing.GithubAccountID.Int64 != int64(installation.AccountID) ||
+		!existing.GithubAccountKind.Valid ||
+		existing.GithubAccountKind.Int16 != int16(installation.AccountKind) ||
+		!existing.GithubMetadataPermission.Valid ||
+		existing.GithubMetadataPermission.Int16 != int16(installation.Permissions.Metadata) ||
+		!existing.GithubContentsPermission.Valid ||
+		existing.GithubContentsPermission.Int16 != int16(installation.Permissions.Contents) ||
+		!existing.GithubPullRequestsPermission.Valid ||
+		existing.GithubPullRequestsPermission.Int16 !=
+			int16(installation.Permissions.PullRequests) ||
+		!existing.GithubChecksPermission.Valid ||
+		existing.GithubChecksPermission.Int16 != int16(installation.Permissions.Checks) ||
+		!existing.GithubMembersPermission.Valid ||
+		existing.GithubMembersPermission.Int16 != int16(installation.Permissions.Members)
 }
 
 func githubConnectionValues(
@@ -230,6 +299,8 @@ func githubConnectionValues(
 		GithubAccountLoginCiphertext: login,
 		GithubMetadataPermission: pgInt2(
 			int16(installation.Permissions.Metadata), true),
+		GithubContentsPermission: pgInt2(
+			int16(installation.Permissions.Contents), true),
 		GithubPullRequestsPermission: pgInt2(
 			int16(installation.Permissions.PullRequests), true),
 		GithubChecksPermission: pgInt2(
@@ -285,6 +356,7 @@ func (store *Store) decodeGitHubConnection(
 			AccountKind: deckgithub.AccountKind(row.GithubAccountKind.Int16),
 			Permissions: deckgithub.Permissions{
 				Metadata: deckgithub.PermissionLevel(row.GithubMetadataPermission.Int16),
+				Contents: deckgithub.PermissionLevel(row.GithubContentsPermission.Int16),
 				PullRequests: deckgithub.PermissionLevel(
 					row.GithubPullRequestsPermission.Int16),
 				Checks:  deckgithub.PermissionLevel(row.GithubChecksPermission.Int16),
@@ -327,6 +399,7 @@ func (store *Store) decodeGitHubConnection(
 		return GitHubConnectionRecord{}, err
 	}
 	result.Credential.AccessToken = string(token)
+	result.Credential.UserID = uint64(credential.GithubUserID)
 	if len(credential.UserRefreshTokenCiphertext) > 0 {
 		refresh, err := store.cipher.Open(
 			"github-user-refresh-token", credential.UserRefreshTokenCiphertext)
@@ -344,6 +417,66 @@ func (store *Store) decodeGitHubConnection(
 			credential.UserRefreshTokenExpiresAt.Time.UTC()
 	}
 	return result, nil
+}
+
+func (store *Store) RefreshGitHubCredential(
+	ctx context.Context,
+	connectionID uuid.UUID,
+	accountID uuid.UUID,
+	credential deckgithub.Credential,
+	now time.Time,
+) error {
+	if connectionID == uuid.Nil || accountID == uuid.Nil ||
+		credential.UserID == 0 || credential.Validate(now) != nil {
+		return deckgithub.ErrPermissionDenied
+	}
+	accessToken, err := store.cipher.Seal(
+		"github-user-access-token", []byte(credential.AccessToken))
+	if err != nil {
+		return err
+	}
+	var refreshToken []byte
+	if credential.RefreshToken != "" {
+		refreshToken, err = store.cipher.Seal(
+			"github-user-refresh-token", []byte(credential.RefreshToken))
+		if err != nil {
+			return err
+		}
+	}
+	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		connection, err := queries.GetGitHubConnectionByIDForUpdate(
+			ctx, pgUUID(connectionID))
+		if errors.Is(err, pgx.ErrNoRows) ||
+			(err == nil && connection.State !=
+				int16(deckv1.ConnectionState_CONNECTION_STATE_CONNECTED)) {
+			return deckgithub.ErrPermissionDenied
+		}
+		if err != nil {
+			return err
+		}
+		parameters := dbgen.UpsertGitHubUserCredentialParams{
+			ConnectionID: connection.ConnectionID, AccountID: pgUUID(accountID),
+			GithubUserID:               int64(credential.UserID),
+			UserAccessTokenCiphertext:  accessToken,
+			UserRefreshTokenCiphertext: refreshToken,
+			UserAccessTokenExpiresAt:   pgTime(credential.ExpiresAt),
+			UserRefreshTokenExpiresAt:  pgTime(credential.RefreshTokenExpiresAt),
+			UpdatedAt:                  pgTime(now),
+		}
+		if err := queries.UpdateGitHubUserCredentials(
+			ctx, dbgen.UpdateGitHubUserCredentialsParams{
+				UserAccessTokenCiphertext:  parameters.UserAccessTokenCiphertext,
+				UserRefreshTokenCiphertext: parameters.UserRefreshTokenCiphertext,
+				UserAccessTokenExpiresAt:   parameters.UserAccessTokenExpiresAt,
+				UserRefreshTokenExpiresAt:  parameters.UserRefreshTokenExpiresAt,
+				UpdatedAt:                  parameters.UpdatedAt,
+				AccountID:                  parameters.AccountID,
+				GithubUserID:               parameters.GithubUserID,
+			}); err != nil {
+			return err
+		}
+		return queries.UpsertGitHubUserCredential(ctx, parameters)
+	})
 }
 
 func (store *Store) GetGitHubConnectionByID(
@@ -394,6 +527,12 @@ func (store *Store) DisconnectGitHub(
 		}
 		if err := queries.DeleteGitHubConnectionCredentials(
 			ctx, row.ConnectionID); err != nil {
+			return err
+		}
+		if err := queries.DeleteGitHubCallbackStatesByOwner(
+			ctx, dbgen.DeleteGitHubCallbackStatesByOwnerParams{
+				OwnerScope: row.OwnerScope, OwnerID: row.OwnerID,
+			}); err != nil {
 			return err
 		}
 		if err := store.cleanupGitHubOwner(
@@ -477,6 +616,7 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 			if existing.EventType != eventType ||
 				existing.ActionType != actionType ||
 				existing.InstallationID != int64(installationID) ||
+				existing.GithubUserID != 0 ||
 				!bytes.Equal(existing.PayloadHash, payloadHash[:]) {
 				return ErrIdempotencyConflict
 			}
@@ -493,17 +633,24 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 				(action == "deleted" || action == "suspend")
 			purge := disconnect || event == "installation_repositories"
 			if disconnect {
-				state := deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED
 				if action == "suspend" {
-					state = deckv1.ConnectionState_CONNECTION_STATE_REAUTHENTICATION_REQUIRED
-				}
-				if _, err := queries.DisconnectGitHubConnection(
-					ctx, dbgen.DisconnectGitHubConnectionParams{
-						ConnectionState: int16(state), UpdatedAt: pgTime(now),
-						ConnectionID:     connection.ConnectionID,
-						ExpectedRevision: connection.Revision,
-					}); err != nil {
-					return err
+					if _, err := queries.RequireGitHubReauthentication(
+						ctx, dbgen.RequireGitHubReauthenticationParams{
+							UpdatedAt: pgTime(now), ConnectionID: connection.ConnectionID,
+							ExpectedRevision: connection.Revision,
+						}); err != nil {
+						return err
+					}
+				} else {
+					if _, err := queries.DisconnectGitHubConnection(
+						ctx, dbgen.DisconnectGitHubConnectionParams{
+							ConnectionState: int16(
+								deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED),
+							UpdatedAt: pgTime(now), ConnectionID: connection.ConnectionID,
+							ExpectedRevision: connection.Revision,
+						}); err != nil {
+						return err
+					}
 				}
 				if err := queries.DeleteGitHubConnectionCredentials(
 					ctx, connection.ConnectionID); err != nil {
@@ -524,7 +671,51 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 			ctx, dbgen.InsertGitHubWebhookDeliveryParams{
 				DeliveryID: delivery, EventType: eventType,
 				ActionType: actionType, InstallationID: int64(installationID),
-				PayloadHash: payloadHash[:], ProcessedAt: pgTime(now),
+				GithubUserID: 0,
+				PayloadHash:  payloadHash[:], ProcessedAt: pgTime(now),
+			})
+	})
+}
+
+func (store *Store) ApplyGitHubAuthorizationRevocation(
+	ctx context.Context,
+	delivery string,
+	githubUserID uint64,
+	payloadHash [32]byte,
+	now time.Time,
+) error {
+	if githubUserID == 0 {
+		return deckgithub.ErrPermissionDenied
+	}
+	const (
+		authorizationEvent  = int16(3)
+		authorizationRevoke = int16(8)
+	)
+	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		existing, replayErr := queries.GetGitHubWebhookDelivery(ctx, delivery)
+		if replayErr == nil {
+			if existing.EventType != authorizationEvent ||
+				existing.ActionType != authorizationRevoke ||
+				existing.InstallationID != 0 ||
+				existing.GithubUserID != int64(githubUserID) ||
+				!bytes.Equal(existing.PayloadHash, payloadHash[:]) {
+				return ErrIdempotencyConflict
+			}
+			return nil
+		}
+		if !errors.Is(replayErr, pgx.ErrNoRows) {
+			return replayErr
+		}
+		if err := queries.DeleteGitHubUserCredentialsByGitHubUser(
+			ctx, int64(githubUserID)); err != nil {
+			return err
+		}
+		return queries.InsertGitHubWebhookDelivery(
+			ctx, dbgen.InsertGitHubWebhookDeliveryParams{
+				DeliveryID: delivery, EventType: authorizationEvent,
+				ActionType: authorizationRevoke, InstallationID: 0,
+				GithubUserID: int64(githubUserID),
+				PayloadHash:  payloadHash[:], ProcessedAt: pgTime(now),
 			})
 	})
 }

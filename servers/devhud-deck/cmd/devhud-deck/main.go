@@ -103,7 +103,8 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	dependencies := service.Dependencies{
 		Store: store, Hasher: hasher, Pseudonymizer: pseudonymizer,
 		Logger: logger, GitHubBroker: githubBroker, GitHubClient: githubClient,
-		Repositories: service.NewGitHubRepositoryAuthorizer(store, githubClient),
+		Repositories: service.NewGitHubRepositoryAuthorizer(
+			store, githubClient, githubBroker),
 	}
 	handler, err := api.New(api.Dependencies{
 		DeckAuthentication:     deckValidator,

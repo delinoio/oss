@@ -57,6 +57,9 @@ func (service *Integration) StartGitHubConnection(
 			Scope: uint8(request.Msg.Owner.Scope), ID: ownerID.String(),
 		})
 	if err != nil {
+		if errors.Is(err, database.ErrDeletionInProgress) {
+			return nil, mapDatabaseError(err)
+		}
 		return nil, mapGitHubError(err)
 	}
 	ownerHash := service.dependencies.Hasher.Sum(

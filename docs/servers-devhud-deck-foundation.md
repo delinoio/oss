@@ -57,7 +57,10 @@
 
 - Deck uses its own minimal-permission GitHub App, separate from RealQA, and uses GitHub App user authorization tokens so reads and mutations are attributed to the current GitHub user.
 - Only GitHub.com is accepted. GHES, GitHub Enterprise Server, custom hosts, and on-premises connectors fail closed.
-- Permissions are limited to repository metadata, pull requests, checks, labels, assignees, requested reviewers, draft state, merge state, supported mutations, and member/team read only when resolving team reviewers.
+- Permissions are limited to repository metadata, pull requests, checks, labels,
+  assignees, requested reviewers, draft state, merge state, supported
+  mutations, contents write only for merge/native auto-merge, and member/team
+  read only when resolving team reviewers.
 - One installation binds to exactly one DeliDev personal or organization owner scope.
 - Installation list rows expose the stable GitHub account ID, login, and closed
   user/organization kind so settings clients can identify each accessible
@@ -67,22 +70,30 @@
 - The implemented HTTP paths are exactly `/github/app/callback`,
   `/github/oauth/callback`, and `/github/webhooks`. App and OAuth callbacks use
   separate HMAC-signed, expiring, encrypted, one-use state records. Webhooks
-  require `X-Hub-Signature-256`, a bounded body, an explicit delivery ID, and
-  only `installation` or `installation_repositories` events. Any delivered PR,
-  check, or status event is accepted without state mutation and cannot refresh
-  a view.
+  require `X-Hub-Signature-256`, a bounded body, and an explicit delivery ID.
+  Subscribed `installation` and `installation_repositories` events update only
+  installation lifecycle state. GitHub's mandatory
+  `github_app_authorization` revocation event deletes every credential for the
+  sending GitHub user. Any delivered PR, check, or status event is accepted
+  without state mutation and cannot refresh a view.
 - The source-controlled test-only manifest is
   `servers/devhud-deck/testdata/github-app/manifest.json`. It requests only
-  metadata read, pull-request write, checks read, and members read, subscribes
-  only to installation lifecycle events, is private, and is explicitly not a
-  production registration. Member/team APIs are invoked only by an explicit
-  team-reviewer candidate/action path.
+  metadata read, contents write, pull-request write, checks read, and members
+  read. Contents write is used only for merge/native auto-merge. The manifest
+  explicitly subscribes only to installation lifecycle events; GitHub's
+  mandatory user-authorization revocation webhook remains handled. The App is
+  private and explicitly not a production registration. Member/team APIs are
+  invoked only by an explicit team-reviewer candidate/action path.
 - Disconnect immediately deletes provider tokens, cached PR results, notification state, and widget snapshots while retaining view definitions as disconnected records.
 - GitHub App user authorization credentials retained for an active connection use application-level envelope encryption before PostgreSQL persistence: a fresh data-encryption key protects each credential record, only ciphertext plus wrapped key and versioned managed environment-scoped key ID are stored or backed up, and decrypt authority is limited to the provider adapter for the current authorized operation. Rotation must support decrypting old key versions and transactional rewrapping to the active key without exposing plaintext; database/storage encryption alone is insufficient. Plaintext credentials and unwrapped data keys are memory-only for the bounded provider call and never enter logs, traces, errors, audits, caches, or backups.
 - Credentials are keyed by DeliDev account and connection. An organization
   installation never causes one member's user token to be reused for another
   member; the provider operation loads the current viewer's authorization and
   intersects current user authority with the installation permission set.
+  Expired access tokens are rotated through their still-valid refresh token
+  and the replacement access/refresh pair is envelope-encrypted and persisted
+  before the provider operation continues. Missing, expired, revoked, or
+  rejected refresh tokens require reauthorization.
 - Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository.
 - The provider search adapter rechecks each result repository with the current
   viewer's user authorization before returning any result. It returns only the
@@ -112,6 +123,9 @@
   unsupported mutation kinds fail closed, and candidate reads neither mutate
   nor refresh the PR.
 - Mutations are limited to assign/unassign users; request/remove individual or team reviewers; add/remove labels; mark draft/ready; close/reopen; merge; and enable/cancel GitHub native auto-merge. Merge requires explicit confirmation and respects current-user permission, repository rules, branch protection, and available merge methods. Commenting, approving, and requesting changes open GitHub and are not Deck mutations.
+- A single mutation accepts at most 100 combined user/team operands or 100
+  label operands, so label removal cannot fan out into unbounded provider
+  calls.
 
 ## Client-Initiated Refresh and Billing
 

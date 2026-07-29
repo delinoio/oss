@@ -40,6 +40,7 @@ type DeckConnection struct {
 	GithubAccountKind            pgtype.Int2
 	GithubAccountLoginCiphertext []byte
 	GithubMetadataPermission     pgtype.Int2
+	GithubContentsPermission     pgtype.Int2
 	GithubPullRequestsPermission pgtype.Int2
 	GithubChecksPermission       pgtype.Int2
 	GithubMembersPermission      pgtype.Int2
@@ -97,6 +98,7 @@ type DeckGithubCallbackState struct {
 type DeckGithubUserCredential struct {
 	ConnectionID               pgtype.UUID
 	AccountID                  pgtype.UUID
+	GithubUserID               int64
 	UserAccessTokenCiphertext  []byte
 	UserRefreshTokenCiphertext []byte
 	UserAccessTokenExpiresAt   pgtype.Timestamptz
@@ -109,6 +111,7 @@ type DeckGithubWebhookDelivery struct {
 	EventType      int16
 	ActionType     int16
 	InstallationID int64
+	GithubUserID   int64
 	PayloadHash    []byte
 	ProcessedAt    pgtype.Timestamptz
 }

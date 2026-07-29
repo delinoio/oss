@@ -106,7 +106,7 @@ func TestFixtureManifestHasOnlyDeckPermissionsAndLifecycleEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectedPermissions := map[string]string{
-		"metadata": "read", "pull_requests": "write",
+		"metadata": "read", "contents": "write", "pull_requests": "write",
 		"checks": "read", "members": "read",
 	}
 	expectedEvents := []string{"installation", "installation_repositories"}
@@ -121,16 +121,19 @@ func TestPermissionIntersection(t *testing.T) {
 	t.Parallel()
 	effective := IntersectPermissions(
 		Permissions{
-			Metadata: PermissionRead, PullRequests: PermissionWrite,
-			Checks: PermissionRead, Members: PermissionRead,
+			Metadata: PermissionRead, Contents: PermissionWrite,
+			PullRequests: PermissionWrite,
+			Checks:       PermissionRead, Members: PermissionRead,
 		},
 		Permissions{
-			Metadata: PermissionAdmin, PullRequests: PermissionRead,
-			Checks: PermissionNone, Members: PermissionAdmin,
+			Metadata: PermissionAdmin, Contents: PermissionRead,
+			PullRequests: PermissionRead,
+			Checks:       PermissionNone, Members: PermissionAdmin,
 		})
 	expected := Permissions{
-		Metadata: PermissionRead, PullRequests: PermissionRead,
-		Checks: PermissionNone, Members: PermissionRead,
+		Metadata: PermissionRead, Contents: PermissionRead,
+		PullRequests: PermissionRead,
+		Checks:       PermissionNone, Members: PermissionRead,
 	}
 	if effective != expected {
 		t.Fatalf("intersection = %#v, want %#v", effective, expected)

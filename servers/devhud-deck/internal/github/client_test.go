@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -123,8 +124,9 @@ func TestEverySupportedMutationUsesOnlyUserAttributedEndpoints(t *testing.T) {
 			_, err := client.Mutate(context.Background(), "actor-"+test.name,
 				42, Credential{AccessToken: "ghu_fixture"},
 				Permissions{
-					Metadata: PermissionRead, PullRequests: PermissionWrite,
-					Checks: PermissionRead, Members: PermissionRead,
+					Metadata: PermissionRead, Contents: PermissionWrite,
+					PullRequests: PermissionWrite,
+					Checks:       PermissionRead, Members: PermissionRead,
 				}, reference, pullRevision(pull), test.mutation)
 			if err != nil {
 				t.Fatal(err)
@@ -164,13 +166,24 @@ func TestMutationRejectionsAndLimits(t *testing.T) {
 	_ = json.Unmarshal([]byte(pull), &decoded)
 	revision := pullRevision(decoded)
 	permissions := Permissions{
-		Metadata: PermissionRead, PullRequests: PermissionWrite,
-		Checks: PermissionRead,
+		Metadata: PermissionRead, Contents: PermissionWrite,
+		PullRequests: PermissionWrite,
+		Checks:       PermissionRead,
 	}
 	if _, err := client.Mutate(context.Background(), "missing-confirmation", 1,
 		Credential{AccessToken: "token"}, permissions, reference, revision,
 		Mutation{Kind: MutationMerge, MergeMethod: MergeMethodMerge}); !errors.Is(err, ErrConfirmationRequired) {
 		t.Fatalf("merge confirmation error = %v", err)
+	}
+	if _, err := client.Mutate(context.Background(), "no-contents", 1,
+		Credential{AccessToken: "token"},
+		Permissions{
+			Metadata: PermissionRead, PullRequests: PermissionWrite,
+		},
+		reference, revision, Mutation{
+			Kind: MutationMerge, MergeMethod: MergeMethodMerge, Confirmed: true,
+		}); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("merge contents permission error = %v", err)
 	}
 	if _, err := client.Mutate(context.Background(), "stale", 1,
 		Credential{AccessToken: "token"}, permissions, reference, revision+1,
@@ -257,7 +270,7 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 		switch request.URL.Path {
 		case "/repos/acme/widget":
 			return jsonResponse(http.StatusOK,
-				`{"permissions":{"pull":true,"push":true}}`), nil
+				`{"owner":{"type":"Organization"},"permissions":{"pull":true,"push":true}}`), nil
 		case "/repos/acme/widget/pulls/7":
 			return jsonResponse(http.StatusOK,
 				`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`), nil
@@ -329,6 +342,74 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 	}
 }
 
+func TestCandidatePaginationAndUserOwnerTeamSkip(t *testing.T) {
+	t.Parallel()
+	teamRequests := 0
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path {
+		case "/repos/acme/widget":
+			return jsonResponse(http.StatusOK,
+				`{"owner":{"type":"Organization"},"permissions":{"pull":true,"push":true}}`), nil
+		case "/repos/octo/widget":
+			return jsonResponse(http.StatusOK,
+				`{"owner":{"type":"User"},"permissions":{"pull":true,"push":true}}`), nil
+		case "/repos/acme/widget/pulls/7", "/repos/octo/widget/pulls/7":
+			return jsonResponse(http.StatusOK,
+				`{"node_id":"PR_1","state":"open","draft":false,"merged":false,`+
+					`"mergeable":true,"mergeable_state":"clean",`+
+					`"updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`), nil
+		case "/repos/acme/widget/assignees":
+			if request.URL.Query().Get("page") == "1" {
+				users := make([]map[string]string, 100)
+				for index := range users {
+					users[index] = map[string]string{
+						"login": fmt.Sprintf("user-%03d", index),
+					}
+				}
+				body, _ := json.Marshal(users)
+				return jsonResponse(http.StatusOK, string(body)), nil
+			}
+			return jsonResponse(http.StatusOK,
+				`[{"login":"target-user"}]`), nil
+		case "/repos/octo/widget/assignees":
+			return jsonResponse(http.StatusOK, `[{"login":"octo"}]`), nil
+		case "/orgs/octo/teams":
+			teamRequests++
+			return jsonResponse(http.StatusNotFound, `{}`), nil
+		default:
+			return jsonResponse(http.StatusNotFound, `{}`), nil
+		}
+	})
+	client := NewClient(&http.Client{Transport: transport})
+	permissions := Permissions{
+		Metadata: PermissionRead, PullRequests: PermissionWrite,
+		Members: PermissionRead,
+	}
+	page, err := client.ListMutationCandidates(
+		context.Background(), 1, Credential{AccessToken: "token"}, permissions,
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+		},
+		MutationAssignUsers, "target", Page{},
+	)
+	if err != nil || len(page.Candidates) != 1 ||
+		page.Candidates[0].User.Login != "target-user" {
+		t.Fatalf("paginated candidates = %#v err=%v", page, err)
+	}
+	if _, err := client.ListMutationCandidates(
+		context.Background(), 2, Credential{AccessToken: "token"}, permissions,
+		PullRequestRef{
+			Repository: Repository{Owner: "octo", Name: "widget"}, Number: 7,
+		},
+		MutationRequestReviewers, "", Page{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if teamRequests != 0 {
+		t.Fatalf("user-owned repository issued %d team requests", teamRequests)
+	}
+}
+
 func TestGitHubHostAndTokenRedactionFailClosed(t *testing.T) {
 	t.Parallel()
 	client := NewClient(&http.Client{Transport: roundTripFunc(
@@ -362,6 +443,39 @@ func TestGitHubHostAndTokenRedactionFailClosed(t *testing.T) {
 		Repository{Owner: "acme", Name: "widget"}); !errors.Is(
 		err, ErrUnsupportedHost) {
 		t.Fatalf("redirected custom host error = %v", err)
+	}
+	redirectCalls := 0
+	refusedRedirectClient := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			redirectCalls++
+			response := jsonResponse(http.StatusFound, `{}`)
+			response.Header.Set("Location",
+				"https://api.github.com/repos/acme/renamed")
+			return response, nil
+		})})
+	if _, err := refusedRedirectClient.CanReadRepository(
+		context.Background(), Credential{AccessToken: "ghu_super_secret"},
+		Repository{Owner: "acme", Name: "widget"}); !errors.Is(
+		err, ErrProvider) {
+		t.Fatalf("redirect refusal error = %v", err)
+	}
+	if redirectCalls != 1 {
+		t.Fatalf("redirect followed with credential: calls = %d", redirectCalls)
+	}
+}
+
+func TestMutationOperandCountIsBounded(t *testing.T) {
+	t.Parallel()
+	labels := make([]string, maxMutationOperands+1)
+	for index := range labels {
+		labels[index] = fmt.Sprintf("label-%d", index)
+	}
+	if err := validateMutation(PullRequestRef{
+		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+	}, Mutation{
+		Kind: MutationRemoveLabels, Labels: labels,
+	}); !errors.Is(err, ErrUnsupportedAction) {
+		t.Fatalf("oversize label mutation error = %v", err)
 	}
 }
 

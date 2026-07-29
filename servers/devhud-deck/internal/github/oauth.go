@@ -54,8 +54,15 @@ func NewOAuth(configuration OAuthConfig, client *http.Client) (*OAuth, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
+	safeHTTPClient := *client
+	safeHTTPClient.CheckRedirect = func(
+		_ *http.Request,
+		_ []*http.Request,
+	) error {
+		return http.ErrUseLastResponse
+	}
 	return &OAuth{
-		configuration: configuration, client: client,
+		configuration: configuration, client: &safeHTTPClient,
 		now: func() time.Time { return time.Now().UTC() },
 	}, nil
 }
@@ -103,6 +110,41 @@ func (oauth *OAuth) Exchange(ctx context.Context, code string) (Credential, erro
 		"client_secret": {oauth.configuration.ClientSecret},
 		"code":          {code},
 	}
+	return oauth.exchange(ctx, form)
+}
+
+func (oauth *OAuth) Refresh(
+	ctx context.Context,
+	credential Credential,
+) (Credential, error) {
+	if oauth == nil || oauth.configuration.validate() != nil {
+		return Credential{}, ErrPermissionDenied
+	}
+	now := oauth.now()
+	if credential.RefreshToken == "" ||
+		strings.ContainsAny(credential.RefreshToken, "\r\n") ||
+		(!credential.RefreshTokenExpiresAt.IsZero() &&
+			!credential.RefreshTokenExpiresAt.After(now)) {
+		return Credential{}, ErrPermissionDenied
+	}
+	form := url.Values{
+		"client_id":     {oauth.configuration.ClientID},
+		"client_secret": {oauth.configuration.ClientSecret},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {credential.RefreshToken},
+	}
+	refreshed, err := oauth.exchange(ctx, form)
+	if err != nil {
+		return Credential{}, err
+	}
+	refreshed.UserID = credential.UserID
+	return refreshed, nil
+}
+
+func (oauth *OAuth) exchange(
+	ctx context.Context,
+	form url.Values,
+) (Credential, error) {
 	tokenURL, _ := url.Parse(WebOrigin + OAuthTokenPath)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		tokenURL.String(), strings.NewReader(form.Encode()))

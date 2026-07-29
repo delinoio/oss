@@ -5,7 +5,8 @@
 and device persistence, current viewer-scoped PR snapshots, typed audits,
 health endpoints, owner/lifecycle deletion, signed GitHub.com App/OAuth
 callbacks, installation lifecycle handling, permission-filtered provider
-search and candidate discovery, and the closed user-attributed mutation set.
+search and candidate discovery, expiring user-token rotation, authorization
+revocation handling, and the closed user-attributed mutation set.
 Billed provider refresh and notification delivery continue to fail closed
 until their separately documented dependencies are implemented.
 

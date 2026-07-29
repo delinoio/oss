@@ -4,6 +4,7 @@ ALTER TABLE deck_connections
     ADD COLUMN github_account_kind smallint,
     ADD COLUMN github_account_login_ciphertext bytea,
     ADD COLUMN github_metadata_permission smallint,
+    ADD COLUMN github_contents_permission smallint,
     ADD COLUMN github_pull_requests_permission smallint,
     ADD COLUMN github_checks_permission smallint,
     ADD COLUMN github_members_permission smallint,
@@ -15,6 +16,7 @@ ALTER TABLE deck_connections
             AND github_account_kind IS NULL
             AND github_account_login_ciphertext IS NULL
             AND github_metadata_permission IS NULL
+            AND github_contents_permission IS NULL
             AND github_pull_requests_permission IS NULL
             AND github_checks_permission IS NULL
             AND github_members_permission IS NULL)
@@ -24,6 +26,7 @@ ALTER TABLE deck_connections
             AND github_account_kind IN (1, 2)
             AND octet_length(github_account_login_ciphertext) > 0
             AND github_metadata_permission BETWEEN 0 AND 3
+            AND github_contents_permission BETWEEN 0 AND 3
             AND github_pull_requests_permission BETWEEN 0 AND 3
             AND github_checks_permission BETWEEN 0 AND 3
             AND github_members_permission BETWEEN 0 AND 3)
@@ -34,6 +37,7 @@ CREATE TABLE deck_github_user_credentials (
         REFERENCES deck_connections(connection_id) ON DELETE CASCADE,
     account_id uuid NOT NULL
         REFERENCES deck_accounts(account_id) ON DELETE CASCADE,
+    github_user_id bigint NOT NULL CHECK (github_user_id > 0),
     user_access_token_ciphertext bytea NOT NULL
         CHECK (octet_length(user_access_token_ciphertext) > 0),
     user_refresh_token_ciphertext bytea,
@@ -63,11 +67,17 @@ CREATE INDEX deck_github_callback_states_owner_idx
 CREATE TABLE deck_github_webhook_deliveries (
     delivery_id text PRIMARY KEY
         CHECK (delivery_id <> '' AND length(delivery_id) <= 128),
-    event_type smallint NOT NULL CHECK (event_type IN (1, 2)),
-    action_type smallint NOT NULL CHECK (action_type BETWEEN 1 AND 7),
-    installation_id bigint NOT NULL CHECK (installation_id > 0),
+    event_type smallint NOT NULL CHECK (event_type IN (1, 2, 3)),
+    action_type smallint NOT NULL CHECK (action_type BETWEEN 1 AND 8),
+    installation_id bigint NOT NULL CHECK (installation_id >= 0),
+    github_user_id bigint NOT NULL CHECK (github_user_id >= 0),
     payload_hash bytea NOT NULL CHECK (octet_length(payload_hash) = 32),
-    processed_at timestamptz NOT NULL
+    processed_at timestamptz NOT NULL,
+    CHECK (
+        (event_type IN (1, 2) AND installation_id > 0 AND github_user_id = 0)
+        OR
+        (event_type = 3 AND installation_id = 0 AND github_user_id > 0)
+    )
 );
 
 -- Notification deliveries contain opaque identifiers only. They are included

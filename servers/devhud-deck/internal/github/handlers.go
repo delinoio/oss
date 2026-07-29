@@ -47,6 +47,13 @@ type LifecycleStore interface {
 		[sha256.Size]byte,
 		time.Time,
 	) error
+	ApplyGitHubAuthorizationRevocation(
+		context.Context,
+		string,
+		uint64,
+		[sha256.Size]byte,
+		time.Time,
+	) error
 }
 
 type Broker struct {
@@ -99,13 +106,23 @@ func (broker *Broker) StartInstallation(
 	}
 	if err := broker.callbacks.SaveGitHubCallbackState(
 		ctx, StateHash(signed), state); err != nil {
-		return "", time.Time{}, ErrProvider
+		return "", time.Time{}, err
 	}
 	target, err := broker.oauth.InstallationTarget(signed)
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	return target, expiresAt, nil
+}
+
+func (broker *Broker) RefreshCredential(
+	ctx context.Context,
+	credential Credential,
+) (Credential, error) {
+	if broker == nil || broker.oauth == nil {
+		return Credential{}, ErrPermissionDenied
+	}
+	return broker.oauth.Refresh(ctx, credential)
 }
 
 func (broker *Broker) Handler() http.Handler {
@@ -196,6 +213,12 @@ func (broker *Broker) oauthCallback(
 		http.Error(writer, "authorization failed", http.StatusBadGateway)
 		return
 	}
+	credential.UserID, err = broker.client.AuthenticatedUserID(
+		request.Context(), credential)
+	if err != nil {
+		http.Error(writer, "authorization failed", http.StatusBadGateway)
+		return
+	}
 	selected, err := broker.findInstallation(
 		request.Context(), credential, state.InstallationID)
 	if err != nil {
@@ -254,6 +277,13 @@ type installationWebhook struct {
 	} `json:"installation"`
 }
 
+type authorizationWebhook struct {
+	Action string `json:"action"`
+	Sender struct {
+		ID uint64 `json:"id"`
+	} `json:"sender"`
+}
+
 func (broker *Broker) webhook(
 	writer http.ResponseWriter,
 	request *http.Request,
@@ -272,7 +302,8 @@ func (broker *Broker) webhook(
 		return
 	}
 	event := request.Header.Get("X-GitHub-Event")
-	if event != "installation" && event != "installation_repositories" {
+	if event != "installation" && event != "installation_repositories" &&
+		event != "github_app_authorization" {
 		// PR/check/status webhooks are deliberately ignored and can never
 		// become refresh triggers.
 		writer.WriteHeader(http.StatusAccepted)
@@ -284,17 +315,31 @@ func (broker *Broker) webhook(
 		http.Error(writer, "invalid webhook", http.StatusBadRequest)
 		return
 	}
-	var webhook installationWebhook
-	if err := json.Unmarshal(payload, &webhook); err != nil ||
-		webhook.Installation.ID == 0 ||
-		!allowedLifecycleAction(event, webhook.Action) {
-		http.Error(writer, "invalid webhook", http.StatusBadRequest)
-		return
+	payloadHash := sha256.Sum256(payload)
+	var applyErr error
+	if event == "github_app_authorization" {
+		var webhook authorizationWebhook
+		if err := json.Unmarshal(payload, &webhook); err != nil ||
+			webhook.Action != "revoked" || webhook.Sender.ID == 0 {
+			http.Error(writer, "invalid webhook", http.StatusBadRequest)
+			return
+		}
+		applyErr = broker.lifecycle.ApplyGitHubAuthorizationRevocation(
+			request.Context(), delivery, webhook.Sender.ID, payloadHash, broker.now())
+	} else {
+		var webhook installationWebhook
+		if err := json.Unmarshal(payload, &webhook); err != nil ||
+			webhook.Installation.ID == 0 ||
+			!allowedLifecycleAction(event, webhook.Action) {
+			http.Error(writer, "invalid webhook", http.StatusBadRequest)
+			return
+		}
+		applyErr = broker.lifecycle.ApplyGitHubInstallationLifecycle(
+			request.Context(), delivery, event, webhook.Action,
+			webhook.Installation.ID, payloadHash, broker.now())
 	}
-	if err := broker.lifecycle.ApplyGitHubInstallationLifecycle(
-		request.Context(), delivery, event, webhook.Action, webhook.Installation.ID,
-		sha256.Sum256(payload), broker.now()); err != nil {
-		if errors.Is(err, ErrPermissionDenied) {
+	if applyErr != nil {
+		if errors.Is(applyErr, ErrPermissionDenied) {
 			http.Error(writer, "invalid webhook", http.StatusConflict)
 			return
 		}

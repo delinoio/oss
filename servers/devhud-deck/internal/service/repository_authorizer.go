@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
@@ -13,13 +14,17 @@ import (
 type GitHubRepositoryAuthorizer struct {
 	store  *database.Store
 	client *deckgithub.Client
+	broker *deckgithub.Broker
 }
 
 func NewGitHubRepositoryAuthorizer(
 	store *database.Store,
 	client *deckgithub.Client,
+	broker *deckgithub.Broker,
 ) *GitHubRepositoryAuthorizer {
-	return &GitHubRepositoryAuthorizer{store: store, client: client}
+	return &GitHubRepositoryAuthorizer{
+		store: store, client: client, broker: broker,
+	}
 }
 
 func (authorizer *GitHubRepositoryAuthorizer) CanReadRepository(
@@ -46,6 +51,15 @@ func (authorizer *GitHubRepositoryAuthorizer) CanReadRepository(
 			ctx, candidate.scope, candidate.id, viewer.AccountID, true)
 		if errors.Is(err, database.ErrNotFound) ||
 			errors.Is(err, deckgithub.ErrPermissionDenied) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		connection, err = refreshGitHubConnectionCredential(
+			ctx, authorizer.store, authorizer.broker, viewer.AccountID,
+			connection, time.Now().UTC())
+		if errors.Is(err, deckgithub.ErrPermissionDenied) {
 			continue
 		}
 		if err != nil {

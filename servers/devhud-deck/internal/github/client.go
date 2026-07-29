@@ -22,6 +22,7 @@ const (
 	apiVersion            = "2022-11-28"
 	defaultCandidateLimit = 50
 	maxCandidateLimit     = 100
+	maxCandidatePages     = 100
 )
 
 type Client struct {
@@ -35,8 +36,15 @@ func NewClient(httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 20 * time.Second}
 	}
+	safeHTTPClient := *httpClient
+	safeHTTPClient.CheckRedirect = func(
+		_ *http.Request,
+		_ []*http.Request,
+	) error {
+		return http.ErrUseLastResponse
+	}
 	return &Client{
-		http: httpClient, now: func() time.Time { return time.Now().UTC() },
+		http: &safeHTTPClient, now: func() time.Time { return time.Now().UTC() },
 		mutations:   newUserRateLimiter(30, time.Minute),
 		concurrency: newInstallationLimiter(4),
 	}
@@ -116,6 +124,23 @@ type installationResponse struct {
 	Permissions map[string]string `json:"permissions"`
 }
 
+func (client *Client) AuthenticatedUserID(
+	ctx context.Context,
+	credential Credential,
+) (uint64, error) {
+	var response struct {
+		ID uint64 `json:"id"`
+	}
+	if _, err := client.do(
+		ctx, credential, http.MethodGet, "/user", nil, &response); err != nil {
+		return 0, err
+	}
+	if response.ID == 0 {
+		return 0, ErrProvider
+	}
+	return response.ID, nil
+}
+
 func (client *Client) ListInstallations(
 	ctx context.Context,
 	credential Credential,
@@ -162,6 +187,7 @@ func (client *Client) ListInstallations(
 func parsePermissions(values map[string]string) Permissions {
 	return Permissions{
 		Metadata:     parsePermission(values["metadata"]),
+		Contents:     parsePermission(values["contents"]),
 		PullRequests: parsePermission(values["pull_requests"]),
 		Checks:       parsePermission(values["checks"]),
 		Members:      parsePermission(values["members"]),
@@ -186,7 +212,10 @@ type repositoryResponse struct {
 	AllowMergeCommit bool   `json:"allow_merge_commit"`
 	AllowSquashMerge bool   `json:"allow_squash_merge"`
 	AllowRebaseMerge bool   `json:"allow_rebase_merge"`
-	Permissions      struct {
+	Owner            struct {
+		Type string `json:"type"`
+	} `json:"owner"`
+	Permissions struct {
 		Pull     bool `json:"pull"`
 		Triage   bool `json:"triage"`
 		Push     bool `json:"push"`
@@ -317,7 +346,19 @@ func (repository repositoryResponse) userPermissions() Permissions {
 		level = PermissionRead
 	}
 	return Permissions{
-		Metadata: level, PullRequests: level, Checks: level, Members: level,
+		Metadata: level, Contents: level, PullRequests: level,
+		Checks: level, Members: level,
+	}
+}
+
+func (repository repositoryResponse) ownerKind() AccountKind {
+	switch strings.ToLower(repository.Owner.Type) {
+	case "user":
+		return AccountKindUser
+	case "organization":
+		return AccountKindOrganization
+	default:
+		return AccountKindUnknown
 	}
 }
 
@@ -406,7 +447,8 @@ func (client *Client) ActionMetadata(
 	effective := IntersectPermissions(appPermissions, repository.userPermissions())
 	metadata := ActionMetadata{
 		Revision: pullRevision(pull), Permissions: effective,
-		NodeID: pull.NodeID, HeadSHA: pull.Head.SHA, IsDraft: pull.Draft,
+		RepositoryOwner: repository.ownerKind(),
+		NodeID:          pull.NodeID, HeadSHA: pull.Head.SHA, IsDraft: pull.Draft,
 		IsOpen: strings.EqualFold(pull.State, "open"), IsMerged: pull.Merged,
 		AutoMergeEnabled: pull.AutoMerge != nil,
 		Mergeable:        pull.Mergeable != nil && *pull.Mergeable,
@@ -434,12 +476,13 @@ func (client *Client) ActionMetadata(
 	metadata.Supported[MutationReopen] = !metadata.IsOpen
 	hasMethod := repository.AllowMergeCommit || repository.AllowSquashMerge ||
 		repository.AllowRebaseMerge
+	canMerge := effective.Contents >= PermissionWrite
 	metadata.Supported[MutationMerge] = metadata.IsOpen && !metadata.IsDraft &&
-		metadata.Mergeable && !metadata.MergeBlocked && hasMethod
+		metadata.Mergeable && !metadata.MergeBlocked && hasMethod && canMerge
 	metadata.Supported[MutationEnableAutoMerge] = metadata.IsOpen &&
-		!metadata.IsDraft && !metadata.AutoMergeEnabled && hasMethod
+		!metadata.IsDraft && !metadata.AutoMergeEnabled && hasMethod && canMerge
 	metadata.Supported[MutationCancelAutoMerge] = metadata.IsOpen &&
-		metadata.AutoMergeEnabled
+		metadata.AutoMergeEnabled && canMerge
 	return metadata, nil
 }
 
@@ -493,7 +536,8 @@ func (client *Client) ListMutationCandidates(
 	case MutationAssignUsers, MutationRequestReviewers:
 		candidates, err = client.userCandidates(ctx, credential, reference.Repository)
 		if err == nil && kind == MutationRequestReviewers &&
-			metadata.Permissions.Members >= PermissionRead {
+			metadata.Permissions.Members >= PermissionRead &&
+			metadata.RepositoryOwner == AccountKindOrganization {
 			var teams []Candidate
 			teams, err = client.teamCandidates(ctx, credential, reference.Repository.Owner)
 			candidates = append(candidates, teams...)
@@ -535,25 +579,32 @@ func (client *Client) userCandidates(
 	credential Credential,
 	repository Repository,
 ) ([]Candidate, error) {
-	path, err := repositoryPath(repository, "/assignees?per_page=100")
-	if err != nil {
-		return nil, err
-	}
-	var users []struct {
-		Login string `json:"login"`
-	}
-	if _, err := client.do(ctx, credential, http.MethodGet, path, nil, &users); err != nil {
-		return nil, err
-	}
-	result := make([]Candidate, 0, len(users))
-	for _, user := range users {
-		if safePathSegment(user.Login) {
-			result = append(result, Candidate{
-				Kind: CandidateUser, User: User{Login: user.Login},
-			})
+	result := make([]Candidate, 0, maxCandidateLimit)
+	for page := 1; page <= maxCandidatePages; page++ {
+		path, err := repositoryPath(repository,
+			fmt.Sprintf("/assignees?per_page=%d&page=%d", maxCandidateLimit, page))
+		if err != nil {
+			return nil, err
+		}
+		var users []struct {
+			Login string `json:"login"`
+		}
+		if _, err := client.do(
+			ctx, credential, http.MethodGet, path, nil, &users); err != nil {
+			return nil, err
+		}
+		for _, user := range users {
+			if safePathSegment(user.Login) {
+				result = append(result, Candidate{
+					Kind: CandidateUser, User: User{Login: user.Login},
+				})
+			}
+		}
+		if len(users) < maxCandidateLimit {
+			return result, nil
 		}
 	}
-	return result, nil
+	return nil, ErrProvider
 }
 
 func (client *Client) teamCandidates(
@@ -564,23 +615,30 @@ func (client *Client) teamCandidates(
 	if !safePathSegment(organization) {
 		return nil, ErrUnsupportedHost
 	}
-	var teams []struct {
-		Slug string `json:"slug"`
-	}
-	path := "/orgs/" + url.PathEscape(organization) + "/teams?per_page=100"
-	if _, err := client.do(ctx, credential, http.MethodGet, path, nil, &teams); err != nil {
-		return nil, err
-	}
-	result := make([]Candidate, 0, len(teams))
-	for _, team := range teams {
-		if safePathSegment(team.Slug) {
-			result = append(result, Candidate{
-				Kind: CandidateTeam,
-				Team: Team{Organization: organization, Slug: team.Slug},
-			})
+	result := make([]Candidate, 0, maxCandidateLimit)
+	for page := 1; page <= maxCandidatePages; page++ {
+		var teams []struct {
+			Slug string `json:"slug"`
+		}
+		path := fmt.Sprintf("/orgs/%s/teams?per_page=%d&page=%d",
+			url.PathEscape(organization), maxCandidateLimit, page)
+		if _, err := client.do(
+			ctx, credential, http.MethodGet, path, nil, &teams); err != nil {
+			return nil, err
+		}
+		for _, team := range teams {
+			if safePathSegment(team.Slug) {
+				result = append(result, Candidate{
+					Kind: CandidateTeam,
+					Team: Team{Organization: organization, Slug: team.Slug},
+				})
+			}
+		}
+		if len(teams) < maxCandidateLimit {
+			return result, nil
 		}
 	}
-	return result, nil
+	return nil, ErrProvider
 }
 
 func (client *Client) labelCandidates(
@@ -588,25 +646,32 @@ func (client *Client) labelCandidates(
 	credential Credential,
 	repository Repository,
 ) ([]Candidate, error) {
-	path, err := repositoryPath(repository, "/labels?per_page=100")
-	if err != nil {
-		return nil, err
-	}
-	var labels []struct {
-		Name string `json:"name"`
-	}
-	if _, err := client.do(ctx, credential, http.MethodGet, path, nil, &labels); err != nil {
-		return nil, err
-	}
-	result := make([]Candidate, 0, len(labels))
-	for _, label := range labels {
-		if validOperand(label.Name) {
-			result = append(result, Candidate{
-				Kind: CandidateLabel, Label: label.Name,
-			})
+	result := make([]Candidate, 0, maxCandidateLimit)
+	for page := 1; page <= maxCandidatePages; page++ {
+		path, err := repositoryPath(repository,
+			fmt.Sprintf("/labels?per_page=%d&page=%d", maxCandidateLimit, page))
+		if err != nil {
+			return nil, err
+		}
+		var labels []struct {
+			Name string `json:"name"`
+		}
+		if _, err := client.do(
+			ctx, credential, http.MethodGet, path, nil, &labels); err != nil {
+			return nil, err
+		}
+		for _, label := range labels {
+			if validOperand(label.Name) {
+				result = append(result, Candidate{
+					Kind: CandidateLabel, Label: label.Name,
+				})
+			}
+		}
+		if len(labels) < maxCandidateLimit {
+			return result, nil
 		}
 	}
-	return result, nil
+	return nil, ErrProvider
 }
 
 func candidateSearchText(candidate Candidate) string {

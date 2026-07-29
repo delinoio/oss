@@ -187,6 +187,26 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || len(current) != 500 || !stateTruncated {
 		t.Fatalf("snapshots = %d truncated=%v err=%v", len(current), stateTruncated, err)
 	}
+	hasSnapshot, err := store.HasSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "SECRET", Name: "Project",
+			},
+			Number: 1,
+		})
+	if err != nil || !hasSnapshot {
+		t.Fatalf("current snapshot membership = %v err=%v", hasSnapshot, err)
+	}
+	hasSnapshot, err = store.HasSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "secret", Name: "project",
+			},
+			Number: 501,
+		})
+	if err != nil || hasSnapshot {
+		t.Fatalf("truncated snapshot membership = %v err=%v", hasSnapshot, err)
+	}
 	authorizationErr := errors.New("snapshot authorization denied")
 	if _, _, _, err := store.ListSnapshots(
 		ctx, firstViewID, viewerHash,
@@ -407,11 +427,13 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ID: 7, AccountID: 70, AccountLogin: "octocat",
 		AccountKind: deckgithub.AccountKindUser,
 		Permissions: deckgithub.Permissions{
-			Metadata: deckgithub.PermissionRead, PullRequests: deckgithub.PermissionWrite,
-			Checks: deckgithub.PermissionRead, Members: deckgithub.PermissionRead,
+			Metadata: deckgithub.PermissionRead, Contents: deckgithub.PermissionWrite,
+			PullRequests: deckgithub.PermissionWrite,
+			Checks:       deckgithub.PermissionRead, Members: deckgithub.PermissionRead,
 		},
 	}
 	credential := deckgithub.Credential{
+		UserID:      700,
 		AccessToken: "ghu_database_fixture", RefreshToken: "ghr_database_fixture",
 		ExpiresAt: now.Add(time.Hour), RefreshTokenExpiresAt: now.Add(24 * time.Hour),
 	}
@@ -421,9 +443,28 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	connection, err := store.GetGitHubConnection(
 		ctx, 1, accountID, accountID, true)
-	if err != nil || connection.Credential.AccessToken != credential.AccessToken {
+	if err != nil || connection.Credential.AccessToken != credential.AccessToken ||
+		connection.Credential.UserID != credential.UserID ||
+		connection.Installation.Permissions.Contents != deckgithub.PermissionWrite {
 		t.Fatalf("GitHub connection = %#v err=%v", connection, err)
 	}
+	refreshedCredential := credential
+	refreshedCredential.AccessToken = "ghu_database_refreshed"
+	refreshedCredential.RefreshToken = "ghr_database_refreshed"
+	refreshedCredential.ExpiresAt = now.Add(8 * time.Hour)
+	if err := store.RefreshGitHubCredential(
+		ctx, connection.ID, accountID, refreshedCredential,
+		now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("refresh GitHub credential: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil ||
+		connection.Credential.AccessToken != refreshedCredential.AccessToken ||
+		connection.Credential.RefreshToken != refreshedCredential.RefreshToken {
+		t.Fatalf("refreshed GitHub connection = %#v err=%v", connection, err)
+	}
+	credential = refreshedCredential
 	var accessCiphertext, refreshCiphertext []byte
 	if err := store.pool.QueryRow(ctx, `
 		SELECT user_access_token_ciphertext, user_refresh_token_ciphertext
@@ -436,6 +477,31 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if bytes.Contains(accessCiphertext, []byte(credential.AccessToken)) ||
 		bytes.Contains(refreshCiphertext, []byte(credential.RefreshToken)) {
 		t.Fatal("GitHub user credential was persisted in plaintext")
+	}
+	revocationHash := security.Digest([]byte("authorization-revoked"))
+	if err := store.ApplyGitHubAuthorizationRevocation(
+		ctx, "authorization-revocation-1", credential.UserID,
+		revocationHash, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("authorization revocation: %v", err)
+	}
+	if _, err := store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("revoked credential remained available: %v", err)
+	}
+	if err := store.ApplyGitHubAuthorizationRevocation(
+		ctx, "authorization-revocation-1", credential.UserID,
+		revocationHash, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("authorization revocation replay: %v", err)
+	}
+	if err := store.ConnectGitHub(
+		ctx, callback, installation, credential, now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("reauthorize GitHub: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil {
+		t.Fatalf("reauthorized GitHub connection: %v", err)
 	}
 	organizationCallback := callback
 	organizationCallback.Owner = deckgithub.OwnerBinding{
@@ -464,10 +530,70 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		pgTime(now), pgTime(now.Add(time.Hour))); err != nil {
 		t.Fatal(err)
 	}
+	changedInstallation := installation
+	changedInstallation.Permissions.Members = deckgithub.PermissionNone
+	if err := store.ConnectGitHub(
+		ctx, callback, changedInstallation, credential,
+		now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("reconnect changed GitHub provider scope: %v", err)
+	}
+	var reconnectSnapshotCount, reconnectNotificationCount, reconnectEventCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM deck_pull_request_snapshots
+			 WHERE view_id = $1)::integer,
+			(SELECT count(*) FROM deck_view_notification_preferences
+			 WHERE view_id = $1)::integer,
+			(SELECT count(*) FROM deck_notification_events
+			 WHERE view_id = $1)::integer`,
+		pgUUID(firstViewID),
+	).Scan(&reconnectSnapshotCount, &reconnectNotificationCount,
+		&reconnectEventCount); err != nil {
+		t.Fatal(err)
+	}
+	if reconnectSnapshotCount != 0 || reconnectNotificationCount != 0 ||
+		reconnectEventCount != 0 {
+		t.Fatalf("reconnect retained stale provider state: snapshots=%d "+
+			"notifications=%d events=%d", reconnectSnapshotCount,
+			reconnectNotificationCount, reconnectEventCount)
+	}
+	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,
+		snapshots[:1], now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateNotificationPreference(
+		ctx, registrationID, firstViewID, 0,
+		&deckv1.ViewNotificationPreference{
+			Enabled: true,
+		}, now.Add(6*time.Minute)); err != nil {
+		t.Fatalf("notification fixture after reconnect: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO deck_notification_events (
+			event_id, view_id, opaque_event_id, transition, created_at, expires_at
+		) VALUES ($1, $2, $3, 1, $4, $5)`,
+		pgUUID(mustV7(t)), pgUUID(firstViewID), bytes.Repeat([]byte{10}, 32),
+		pgTime(now), pgTime(now.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	pendingCallback := callback
+	pendingCallback.Nonce = "disconnect-pending"
+	if err := store.SaveGitHubCallbackState(
+		ctx, security.Digest([]byte("disconnect-pending")),
+		pendingCallback); err != nil {
+		t.Fatalf("pending disconnect callback: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil {
+		t.Fatalf("connection after changed reconnect: %v", err)
+	}
 	disconnected, err := store.DisconnectGitHub(
-		ctx, connection.ID, connection.Revision, now.Add(3*time.Minute))
+		ctx, connection.ID, connection.Revision, now.Add(7*time.Minute))
 	if err != nil || disconnected.State != int16(
-		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED) {
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED) ||
+		disconnected.Installation.ID != 0 ||
+		disconnected.Installation.AccountID != 0 {
 		t.Fatalf("disconnect GitHub = %#v err=%v", disconnected, err)
 	}
 	retainedView, err := store.GetView(ctx, firstViewID)
@@ -476,7 +602,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("disconnected view was not retained: %#v err=%v", retainedView, err)
 	}
 	var credentialCount, snapshotCount, snapshotStateCount int
-	var notificationCount, eventCount int
+	var notificationCount, eventCount, callbackCount int
 	if err := store.pool.QueryRow(ctx, `
 		SELECT
 			(SELECT count(*) FROM deck_github_user_credentials
@@ -488,17 +614,20 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			(SELECT count(*) FROM deck_view_notification_preferences
 			 WHERE view_id = $2)::integer,
 			(SELECT count(*) FROM deck_notification_events
-			 WHERE view_id = $2)::integer`,
-		pgUUID(connection.ID), pgUUID(firstViewID),
+			 WHERE view_id = $2)::integer,
+			(SELECT count(*) FROM deck_github_callback_states
+			 WHERE owner_scope = 1 AND owner_id = $3)::integer`,
+		pgUUID(connection.ID), pgUUID(firstViewID), pgUUID(accountID),
 	).Scan(&credentialCount, &snapshotCount, &snapshotStateCount,
-		&notificationCount, &eventCount); err != nil {
+		&notificationCount, &eventCount, &callbackCount); err != nil {
 		t.Fatal(err)
 	}
 	if credentialCount != 0 || snapshotCount != 0 || snapshotStateCount != 0 ||
-		notificationCount != 0 || eventCount != 0 {
+		notificationCount != 0 || eventCount != 0 || callbackCount != 0 {
 		t.Fatalf("disconnect retained provider data: credentials=%d snapshots=%d "+
-			"states=%d notifications=%d events=%d", credentialCount,
-			snapshotCount, snapshotStateCount, notificationCount, eventCount)
+			"states=%d notifications=%d events=%d callbacks=%d", credentialCount,
+			snapshotCount, snapshotStateCount, notificationCount, eventCount,
+			callbackCount)
 	}
 	device, err := store.GetDevice(
 		ctx, accountID, deviceID, now.Add(3*time.Minute))
@@ -593,6 +722,13 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if _, _, err := store.CreateView(ctx, firstViewParams); !errors.Is(
 		err, ErrDeletionInProgress) {
 		t.Fatalf("deleted owner replay material survived: %T %v", err, err)
+	}
+	postDeletionCallback := callback
+	postDeletionCallback.Nonce = "post-deletion"
+	if err := store.SaveGitHubCallbackState(
+		ctx, security.Digest([]byte("post-deletion")),
+		postDeletionCallback); !errors.Is(err, ErrDeletionInProgress) {
+		t.Fatalf("tombstoned owner callback state = %T %v", err, err)
 	}
 	replayedDeletion, err := store.DeleteFeatureData(ctx, DeleteFeatureDataParams{
 		JobID: mustV7(t), ReplayKey: replayKey, TargetID: accountID,

@@ -52,6 +52,7 @@ const (
 
 type Permissions struct {
 	Metadata     PermissionLevel
+	Contents     PermissionLevel
 	PullRequests PermissionLevel
 	Checks       PermissionLevel
 	Members      PermissionLevel
@@ -63,6 +64,7 @@ type Permissions struct {
 func IntersectPermissions(app, user Permissions) Permissions {
 	return Permissions{
 		Metadata:     minimum(app.Metadata, user.Metadata),
+		Contents:     minimum(app.Contents, user.Contents),
 		PullRequests: minimum(app.PullRequests, user.PullRequests),
 		Checks:       minimum(app.Checks, user.Checks),
 		Members:      minimum(app.Members, user.Members),
@@ -101,6 +103,7 @@ type Installation struct {
 type Credential struct {
 	// AccessToken is always a GitHub App user authorization token. Deck never
 	// accepts an installation token or a personal access token here.
+	UserID                uint64
 	AccessToken           string
 	RefreshToken          string
 	ExpiresAt             time.Time
@@ -260,6 +263,7 @@ type SearchPage struct {
 type ActionMetadata struct {
 	Revision         uint64
 	Permissions      Permissions
+	RepositoryOwner  AccountKind
 	Supported        map[MutationKind]bool
 	AvailableMethods map[MergeMethod]bool
 	NodeID           string

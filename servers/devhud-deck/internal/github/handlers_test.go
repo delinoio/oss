@@ -63,7 +63,8 @@ func (store *callbackStoreFixture) ConnectGitHub(
 }
 
 type lifecycleFixture struct {
-	calls []string
+	calls       []string
+	revocations []uint64
 }
 
 func (store *lifecycleFixture) ApplyGitHubInstallationLifecycle(
@@ -74,6 +75,17 @@ func (store *lifecycleFixture) ApplyGitHubInstallationLifecycle(
 	_ time.Time,
 ) error {
 	store.calls = append(store.calls, delivery+":"+event+":"+action)
+	return nil
+}
+
+func (store *lifecycleFixture) ApplyGitHubAuthorizationRevocation(
+	_ context.Context,
+	_ string,
+	githubUserID uint64,
+	_ [sha256.Size]byte,
+	_ time.Time,
+) error {
+	store.revocations = append(store.revocations, githubUserID)
 	return nil
 }
 
@@ -89,6 +101,8 @@ func TestSignedInstallationAndOAuthCallbacksAreOneUse(t *testing.T) {
 		case "github.com/login/oauth/access_token":
 			return jsonResponse(http.StatusOK,
 				`{"access_token":"ghu_fixture","token_type":"bearer"}`), nil
+		case "api.github.com/user":
+			return jsonResponse(http.StatusOK, `{"id":123}`), nil
 		case "api.github.com/user/installations":
 			return jsonResponse(http.StatusOK,
 				`{"installations":[{"id":42,"account":{"id":99,"login":"acme","type":"Organization"},"permissions":{"metadata":"read","pull_requests":"write","checks":"read","members":"read"}}]}`), nil
@@ -205,6 +219,22 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	broker.Handler().ServeHTTP(prResponse, prRequest)
 	if prResponse.Code != http.StatusAccepted || len(lifecycle.calls) != 1 {
 		t.Fatal("pull-request webhook reached lifecycle/refresh state")
+	}
+	revocationPayload := []byte(
+		`{"action":"revoked","sender":{"id":123}}`)
+	revocationRequest := httptest.NewRequest(
+		http.MethodPost, WebhookPath, bytes.NewReader(revocationPayload))
+	revocationRequest.Header.Set("X-Hub-Signature-256",
+		WebhookSignature(secret, revocationPayload))
+	revocationRequest.Header.Set(
+		"X-GitHub-Event", "github_app_authorization")
+	revocationRequest.Header.Set("X-GitHub-Delivery", "delivery-revocation")
+	revocationResponse := httptest.NewRecorder()
+	broker.Handler().ServeHTTP(revocationResponse, revocationRequest)
+	if revocationResponse.Code != http.StatusNoContent ||
+		!reflect.DeepEqual(lifecycle.revocations, []uint64{123}) {
+		t.Fatalf("revocation response = %d, calls %#v",
+			revocationResponse.Code, lifecycle.revocations)
 	}
 	badRequest := httptest.NewRequest(
 		http.MethodPost, WebhookPath, bytes.NewReader(payload))

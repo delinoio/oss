@@ -164,6 +164,20 @@ func (service *View) authorizePullRequestAction(
 		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, err
 	}
+	viewerHash := service.dependencies.Hasher.Sum(
+		"snapshot-viewer", viewer.AccountID.String())
+	inSnapshot, err := service.dependencies.Store.HasSnapshot(
+		ctx, viewID, viewerHash, referenceMessage)
+	if err != nil {
+		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+			database.GitHubConnectionRecord{}, mapDatabaseError(err)
+	}
+	if !inSnapshot {
+		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+			database.GitHubConnectionRecord{}, rpcerr.New(
+				connect.CodePermissionDenied,
+				deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
+	}
 	allowed, err := service.dependencies.Repositories.CanReadRepository(
 		ctx, viewer, referenceMessage.Repository.Owner,
 		referenceMessage.Repository.Name)
@@ -197,6 +211,13 @@ func (service *View) authorizePullRequestAction(
 		}
 		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, mapDatabaseError(err)
+	}
+	connection, err = refreshGitHubConnectionCredential(
+		ctx, service.dependencies.Store, service.dependencies.GitHubBroker,
+		viewer.AccountID, connection, service.dependencies.Clock.Now().UTC())
+	if err != nil {
+		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+			database.GitHubConnectionRecord{}, mapGitHubError(err)
 	}
 	reference := deckgithub.PullRequestRef{
 		Repository: deckgithub.Repository{
