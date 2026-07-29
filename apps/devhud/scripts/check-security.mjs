@@ -135,6 +135,9 @@ const expectedCapabilities = {
     platforms: ["linux", "macOS", "windows"],
     windows: ["realqa-capture"],
     permissions: [
+      "allow-realqa-capture-permission-status",
+      "allow-realqa-request-capture-permission",
+      "allow-realqa-inspect-capture-capabilities",
       "allow-realqa-list-capture-sources",
       "allow-realqa-adjust-capture-selection",
       "allow-realqa-begin-capture",
@@ -146,6 +149,7 @@ const expectedCapabilities = {
     windows: ["realqa-composer"],
     permissions: [
       "allow-realqa-composer-accept-image",
+      "allow-realqa-composer-flatten-image",
       "allow-realqa-composer-remove-image",
       "allow-realqa-composer-reset-session",
     ],
@@ -240,6 +244,9 @@ requireCondition(
     (command) =>
       command.startsWith("realqa_composer_") &&
       ![
+        "realqa_capture_permission_status",
+        "realqa_request_capture_permission",
+        "realqa_inspect_capture_capabilities",
         "realqa_list_capture_sources",
         "realqa_adjust_capture_selection",
         "realqa_begin_capture",

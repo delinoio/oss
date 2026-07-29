@@ -29,7 +29,7 @@ function invokeFixture(): {
 }
 
 describe("RealQA native boundaries", () => {
-  it("uses only the four closed capture commands and exact argument shapes", async () => {
+  it("uses only the closed permission and capture commands with exact argument shapes", async () => {
     const { calls, invokeCommand } = invokeFixture();
     const bridge = createRealQaCaptureBridge(invokeCommand);
     const selection = {
@@ -47,6 +47,9 @@ describe("RealQA native boundaries", () => {
       outputMediaType: ImageMediaType.Png,
     };
 
+    await bridge.permissionStatus();
+    await bridge.requestPermission();
+    await bridge.inspectCapabilities();
     await bridge.listSources();
     await bridge.adjustSelection(selection, {
       kind: "resize",
@@ -58,6 +61,9 @@ describe("RealQA native boundaries", () => {
     await bridge.cancelCapture("session-1");
 
     expect(calls).toEqual([
+      ["realqa_capture_permission_status", undefined],
+      ["realqa_request_capture_permission", undefined],
+      ["realqa_inspect_capture_capabilities", undefined],
       ["realqa_list_capture_sources", undefined],
       [
         "realqa_adjust_capture_selection",
@@ -90,11 +96,25 @@ describe("RealQA native boundaries", () => {
     } as const;
 
     await bridge.acceptImage(request);
+    const flattenRequest = {
+      sessionId: "session-1",
+      imageId: "image-1",
+      sourceRevision: 1,
+      operations: [
+        {
+          kind: "crop",
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+        },
+      ],
+      outputMediaType: ImageMediaType.Png,
+    } as const;
+    await bridge.flattenImage(flattenRequest);
     await bridge.removeImage("session-1", "image-1");
     await bridge.resetSession("session-1");
 
     expect(calls).toEqual([
       ["realqa_composer_accept_image", { request }],
+      ["realqa_composer_flatten_image", { request: flattenRequest }],
       [
         "realqa_composer_remove_image",
         { sessionId: "session-1", imageId: "image-1" },

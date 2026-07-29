@@ -1,12 +1,18 @@
 mod composer;
+mod editor;
 mod geometry;
 mod image_boundary;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(any(all(target_os = "macos", feature = "realqa-macos-capture"), test))]
+mod macos;
 
 use std::sync::Arc;
 
 #[cfg(feature = "desktop-cef")]
 pub(crate) use composer::{
-    ComposerCore, ComposerImage, ComposerImageId, ComposerImageRequest, ComposerSessionId,
+    ComposerCore, ComposerFlattenRequest, ComposerImage, ComposerImageId, ComposerImageRequest,
+    ComposerSessionId,
 };
 pub(crate) use geometry::{
     DisplayDescriptor, DisplayId, DisplayPixelRegion, DisplaySnapshot, DisplaySnapshotId,
@@ -37,6 +43,23 @@ pub(crate) enum CaptureMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
+pub(crate) enum CaptureDisplayProtocol {
+    Native,
+    X11,
+    Xwayland,
+    WaylandPortal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum SelectionAdjustmentAuthority {
+    Application,
+    Portal,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum PointerInclusion {
     Include,
     Exclude,
@@ -48,6 +71,21 @@ pub(crate) enum CapturePermission {
     Granted,
     PromptRequired,
     Denied,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CapturePermissionGuidance {
+    None,
+    RequestSystemPrompt,
+    OpenSystemSettings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CapturePermissionStatus {
+    pub(crate) permission: CapturePermission,
+    pub(crate) guidance: CapturePermissionGuidance,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -63,9 +101,13 @@ pub(crate) enum CaptureFailure {
     PortalCancelled,
     ProtectedContent,
     WindowLost,
+    DisplayRemoved,
+    ModeUnavailable,
     DisplaySnapshotChanged,
     InvalidDisplaySnapshot,
     InvalidSelection,
+    InvalidEditorOperation,
+    InvalidEditSequence,
     MalformedImage,
     UnsupportedImage,
     DecompressionBomb,
@@ -98,6 +140,8 @@ pub(crate) enum BackendFailure {
     PortalCancelled,
     ProtectedContent,
     WindowLost,
+    DisplayRemoved,
+    ModeUnavailable,
     DisplayChanged,
     CaptureFailed,
 }
@@ -112,6 +156,8 @@ impl From<BackendFailure> for CaptureFailure {
             BackendFailure::PortalCancelled => Self::PortalCancelled,
             BackendFailure::ProtectedContent => Self::ProtectedContent,
             BackendFailure::WindowLost => Self::WindowLost,
+            BackendFailure::DisplayRemoved => Self::DisplayRemoved,
+            BackendFailure::ModeUnavailable => Self::ModeUnavailable,
             BackendFailure::DisplayChanged => Self::DisplaySnapshotChanged,
             BackendFailure::CaptureFailed => Self::CaptureFailed,
         }
@@ -129,6 +175,13 @@ pub(crate) enum WindowAvailability {
     Minimized,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct WindowMetadata {
+    pub(crate) process_name: Option<String>,
+    pub(crate) title: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WindowSource {
@@ -136,6 +189,7 @@ pub(crate) struct WindowSource {
     pub(crate) display_id: DisplayId,
     pub(crate) bounds: LogicalRect,
     pub(crate) availability: WindowAvailability,
+    pub(crate) metadata: WindowMetadata,
 }
 
 impl WindowSource {
@@ -146,10 +200,116 @@ impl WindowSource {
         {
             return Err(CaptureFailure::InvalidDisplaySnapshot);
         }
+        self.metadata.checked()?;
         if self.availability == WindowAvailability::Available {
             self.bounds.checked()?;
         }
         Ok(self)
+    }
+}
+
+impl WindowMetadata {
+    const MAX_PROCESS_NAME_BYTES: usize = 128;
+    const MAX_TITLE_BYTES: usize = 512;
+
+    fn checked(&self) -> Result<(), CaptureFailure> {
+        for (value, maximum) in [
+            (&self.process_name, Self::MAX_PROCESS_NAME_BYTES),
+            (&self.title, Self::MAX_TITLE_BYTES),
+        ] {
+            if value.as_ref().is_some_and(|value| {
+                value.is_empty()
+                    || value.len() > maximum
+                    || value.chars().any(char::is_control)
+                    || metadata_value_looks_like_path(value)
+            }) {
+                return Err(CaptureFailure::InvalidDisplaySnapshot);
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[cfg_attr(not(feature = "linux-capture-backend"), allow(dead_code))]
+    fn bounded(process_name: Option<String>, title: Option<String>) -> Self {
+        Self {
+            process_name: bounded_metadata_value(process_name, Self::MAX_PROCESS_NAME_BYTES),
+            title: bounded_metadata_value(title, Self::MAX_TITLE_BYTES),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[cfg_attr(not(feature = "linux-capture-backend"), allow(dead_code))]
+fn bounded_metadata_value(value: Option<String>, maximum: usize) -> Option<String> {
+    let value = value?;
+    let value = value.trim();
+    if value.is_empty() || metadata_value_looks_like_path(value) {
+        return None;
+    }
+    let mut bounded = String::with_capacity(value.len().min(maximum));
+    for character in value.chars() {
+        if character.is_control() || bounded.len() + character.len_utf8() > maximum {
+            break;
+        }
+        bounded.push(character);
+    }
+    (!bounded.is_empty()).then_some(bounded)
+}
+
+fn metadata_value_looks_like_path(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    value.starts_with('/')
+        || value.starts_with("~/")
+        || lower.starts_with("file:")
+        || value.contains(['/', '\\'])
+        || lower.contains("/users/")
+        || lower.contains("/home/")
+        || lower.contains("\\users\\")
+        || value.as_bytes().windows(3).any(|window| {
+            window[0].is_ascii_alphabetic() && window[1] == b':' && window[2] == b'\\'
+        })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CaptureModeCapability {
+    pub(crate) mode: CaptureMode,
+    pub(crate) pointer_options: Vec<PointerInclusion>,
+    pub(crate) portal_approval_required: bool,
+    pub(crate) selection_adjustment: SelectionAdjustmentAuthority,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CaptureCapabilities {
+    pub(crate) platform: CapturePlatform,
+    pub(crate) display_protocol: CaptureDisplayProtocol,
+    pub(crate) modes: Vec<CaptureModeCapability>,
+}
+
+impl CaptureCapabilities {
+    fn checked(mut self) -> Result<Self, CaptureFailure> {
+        self.modes.sort_by_key(|capability| capability.mode as u8);
+        if self.modes.is_empty()
+            || self
+                .modes
+                .windows(2)
+                .any(|pair| pair[0].mode == pair[1].mode)
+            || self.modes.iter().any(|capability| {
+                capability.pointer_options.is_empty()
+                    || capability.pointer_options.len() > 2
+                    || (capability.pointer_options.len() == 2
+                        && capability.pointer_options[0] == capability.pointer_options[1])
+            })
+        {
+            return Err(CaptureFailure::BackendUnavailable);
+        }
+        Ok(self)
+    }
+
+    fn mode(&self, mode: CaptureMode) -> Option<&CaptureModeCapability> {
+        self.modes.iter().find(|capability| capability.mode == mode)
     }
 }
 
@@ -158,6 +318,7 @@ impl WindowSource {
 pub(crate) struct CaptureSourceCatalog {
     pub(crate) platform: CapturePlatform,
     pub(crate) permission: CapturePermission,
+    pub(crate) capabilities: CaptureCapabilities,
     pub(crate) snapshot: DisplaySnapshot,
     pub(crate) windows: Vec<WindowSource>,
 }
@@ -213,11 +374,18 @@ pub(crate) struct ResolvedCaptureRequest {
     pub(crate) expected_frame_size: geometry::PhysicalSize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct BackendFrame {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) rgba: Vec<u8>,
+    pub(crate) approved_layout: Option<PortalApprovedLayout>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PortalApprovedLayout {
+    pub(crate) logical_bounds: LogicalRect,
+    pub(crate) pixel_regions: Vec<DisplayPixelRegion>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -232,15 +400,78 @@ pub(crate) struct CaptureResult {
 
 pub(crate) trait CaptureBackend: Send + Sync {
     fn platform(&self) -> CapturePlatform;
+    fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure>;
     fn permission(&self) -> Result<CapturePermission, BackendFailure>;
+    fn permission_status(&self) -> Result<CapturePermissionStatus, BackendFailure> {
+        let permission = self.permission()?;
+        Ok(CapturePermissionStatus {
+            permission,
+            guidance: match permission {
+                CapturePermission::Granted => CapturePermissionGuidance::None,
+                CapturePermission::PromptRequired => CapturePermissionGuidance::RequestSystemPrompt,
+                CapturePermission::Denied => CapturePermissionGuidance::OpenSystemSettings,
+            },
+        })
+    }
+    fn request_permission(&self) -> Result<CapturePermissionStatus, BackendFailure> {
+        Err(BackendFailure::Unavailable)
+    }
+    fn start_session(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        Ok(())
+    }
+    fn finish_session(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        Ok(())
+    }
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure>;
     fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure>;
     fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure>;
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure>;
 }
 
+#[derive(Clone)]
 pub(crate) struct CaptureCore {
     backend: Arc<dyn CaptureBackend>,
+}
+
+struct CaptureSession<'a> {
+    backend: &'a dyn CaptureBackend,
+    session_id: CaptureSessionId,
+    finished: bool,
+}
+
+impl<'a> CaptureSession<'a> {
+    fn start(
+        backend: &'a dyn CaptureBackend,
+        session_id: CaptureSessionId,
+    ) -> Result<Self, CaptureFailure> {
+        backend
+            .start_session(&session_id)
+            .map_err(CaptureFailure::from)?;
+        Ok(Self {
+            backend,
+            session_id,
+            finished: false,
+        })
+    }
+
+    fn finish<T>(mut self, result: Result<T, CaptureFailure>) -> Result<T, CaptureFailure> {
+        self.finished = true;
+        let completion = self.backend.finish_session(&self.session_id);
+        match (result, completion) {
+            (_, Err(BackendFailure::Cancelled)) => Err(CaptureFailure::Cancelled),
+            (Err(failure), _) => Err(failure),
+            (Ok(value), Ok(())) => Ok(value),
+            (Ok(_), Err(failure)) => Err(CaptureFailure::from(failure)),
+        }
+    }
+}
+
+impl Drop for CaptureSession<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.backend.finish_session(&self.session_id);
+        }
+    }
 }
 
 impl CaptureCore {
@@ -248,7 +479,15 @@ impl CaptureCore {
         Self { backend }
     }
 
+    pub(crate) fn inspect_capabilities(&self) -> Result<CaptureCapabilities, CaptureFailure> {
+        self.backend
+            .capabilities()
+            .map_err(CaptureFailure::from)?
+            .checked()
+    }
+
     pub(crate) fn source_catalog(&self) -> Result<CaptureSourceCatalog, CaptureFailure> {
+        let capabilities = self.inspect_capabilities()?;
         let permission = self.require_granted_permission()?;
         let snapshot = self.current_snapshot()?;
         let mut windows = self
@@ -265,9 +504,22 @@ impl CaptureCore {
         Ok(CaptureSourceCatalog {
             platform: self.backend.platform(),
             permission,
+            capabilities,
             snapshot,
             windows,
         })
+    }
+
+    pub(crate) fn permission_status(&self) -> Result<CapturePermissionStatus, CaptureFailure> {
+        self.backend
+            .permission_status()
+            .map_err(CaptureFailure::from)
+    }
+
+    pub(crate) fn request_permission(&self) -> Result<CapturePermissionStatus, CaptureFailure> {
+        self.backend
+            .request_permission()
+            .map_err(CaptureFailure::from)
     }
 
     pub(crate) fn adjust_selection(
@@ -276,6 +528,15 @@ impl CaptureCore {
         adjustment: SelectionAdjustment,
     ) -> Result<SelectionGeometry, CaptureFailure> {
         self.require_granted_permission()?;
+        let capabilities = self.inspect_capabilities()?;
+        if capabilities
+            .mode(CaptureMode::Region)
+            .is_none_or(|capability| {
+                capability.selection_adjustment != SelectionAdjustmentAuthority::Application
+            })
+        {
+            return Err(CaptureFailure::ModeUnavailable);
+        }
         let snapshot = self.current_snapshot()?;
         adjust_selection(&snapshot, selection, adjustment)
     }
@@ -284,13 +545,26 @@ impl CaptureCore {
         if request.session_id.0.is_empty() || request.session_id.0.len() > 128 {
             return Err(CaptureFailure::InvalidSelection);
         }
+        let session = CaptureSession::start(self.backend.as_ref(), request.session_id.clone())?;
+        session.finish(self.begin_started(request))
+    }
+
+    fn begin_started(&self, request: CaptureRequest) -> Result<CaptureResult, CaptureFailure> {
         self.require_granted_permission()?;
+        let capabilities = self.inspect_capabilities()?;
+        let requested_mode = request.source.mode();
+        let mode_capability = capabilities
+            .mode(requested_mode)
+            .ok_or(CaptureFailure::ModeUnavailable)?;
+        if !mode_capability.pointer_options.contains(&request.pointer) {
+            return Err(CaptureFailure::ModeUnavailable);
+        }
         let snapshot = self.current_snapshot()?;
         if snapshot.snapshot_id != request.snapshot_id {
             return Err(CaptureFailure::DisplaySnapshotChanged);
         }
         let resolved = self.resolve(request, snapshot)?;
-        let expected_len = decoded_byte_len(
+        decoded_byte_len(
             resolved.expected_frame_size.width,
             resolved.expected_frame_size.height,
         )
@@ -299,11 +573,23 @@ impl CaptureCore {
             .backend
             .capture(&resolved)
             .map_err(CaptureFailure::from)?;
-        if frame.width != resolved.expected_frame_size.width
-            || frame.height != resolved.expected_frame_size.height
-        {
-            return Err(CaptureFailure::MalformedImage);
-        }
+        let (logical_bounds, pixel_regions) = match frame.approved_layout {
+            Some(layout) if mode_capability.portal_approval_required => {
+                validate_portal_layout(&layout, frame.width, frame.height)?;
+                (layout.logical_bounds, layout.pixel_regions)
+            }
+            Some(_) => return Err(CaptureFailure::MalformedImage),
+            None => {
+                if frame.width != resolved.expected_frame_size.width
+                    || frame.height != resolved.expected_frame_size.height
+                {
+                    return Err(CaptureFailure::MalformedImage);
+                }
+                (resolved.logical_bounds, resolved.pixel_regions)
+            }
+        };
+        let expected_len =
+            decoded_byte_len(frame.width, frame.height).map_err(CaptureFailure::from)?;
         if frame.rgba.len() != expected_len {
             return Err(CaptureFailure::MalformedImage);
         }
@@ -319,8 +605,8 @@ impl CaptureCore {
         Ok(CaptureResult {
             mode: resolved.mode,
             pointer: resolved.pointer,
-            logical_bounds: resolved.logical_bounds,
-            pixel_regions: resolved.pixel_regions,
+            logical_bounds,
+            pixel_regions,
             image,
         })
     }
@@ -455,6 +741,36 @@ impl CaptureCore {
     }
 }
 
+fn validate_portal_layout(
+    layout: &PortalApprovedLayout,
+    width: u32,
+    height: u32,
+) -> Result<(), CaptureFailure> {
+    layout.logical_bounds.checked()?;
+    if layout.pixel_regions.is_empty() || layout.pixel_regions.len() > 64 {
+        return Err(CaptureFailure::InvalidDisplaySnapshot);
+    }
+    for region in &layout.pixel_regions {
+        let pixels = region.pixels;
+        if region.display_id.0.is_empty()
+            || region.display_id.0.len() > 128
+            || pixels.width == 0
+            || pixels.height == 0
+            || pixels
+                .x
+                .checked_add(pixels.width)
+                .is_none_or(|right| right > width)
+            || pixels
+                .y
+                .checked_add(pixels.height)
+                .is_none_or(|bottom| bottom > height)
+        {
+            return Err(CaptureFailure::InvalidDisplaySnapshot);
+        }
+    }
+    Ok(())
+}
+
 fn expected_frame_size(
     snapshot: &DisplaySnapshot,
     logical_bounds: LogicalRect,
@@ -498,6 +814,50 @@ fn expected_frame_size(
     })
 }
 
+#[cfg_attr(not(feature = "desktop-cef"), allow(dead_code))]
+pub(crate) fn record_outcome<T>(result: &Result<T, CaptureFailure>) {
+    use crate::diagnostics::{DiagnosticClassification as Classification, DiagnosticEventId};
+
+    let classification = match result {
+        Ok(_) => Classification::RealqaCaptureCompleted,
+        Err(CaptureFailure::UnsupportedPlatform) => {
+            Classification::RealqaCaptureUnsupportedPlatform
+        }
+        Err(CaptureFailure::BackendUnavailable) => Classification::RealqaCaptureBackendUnavailable,
+        Err(CaptureFailure::PermissionRequired) => Classification::RealqaCapturePermissionRequired,
+        Err(CaptureFailure::PermissionDenied) => Classification::RealqaCapturePermissionDenied,
+        Err(CaptureFailure::PermissionLost) => Classification::RealqaCapturePermissionLost,
+        Err(CaptureFailure::Cancelled) => Classification::RealqaCaptureCancelled,
+        Err(CaptureFailure::PortalCancelled) => Classification::RealqaCapturePortalCancelled,
+        Err(CaptureFailure::ProtectedContent) => Classification::RealqaCaptureProtectedContent,
+        Err(CaptureFailure::WindowLost) => Classification::RealqaCaptureWindowLost,
+        Err(CaptureFailure::ModeUnavailable) => Classification::RealqaCaptureModeUnavailable,
+        Err(CaptureFailure::DisplayRemoved | CaptureFailure::DisplaySnapshotChanged) => {
+            Classification::RealqaCaptureDisplayChanged
+        }
+        Err(
+            CaptureFailure::InvalidDisplaySnapshot
+            | CaptureFailure::InvalidSelection
+            | CaptureFailure::InvalidEditorOperation
+            | CaptureFailure::InvalidEditSequence,
+        ) => Classification::RealqaCaptureInvalidRequest,
+        Err(
+            CaptureFailure::MalformedImage
+            | CaptureFailure::UnsupportedImage
+            | CaptureFailure::DecompressionBomb
+            | CaptureFailure::ImageEncodedLimitExceeded
+            | CaptureFailure::SessionEncodedLimitExceeded
+            | CaptureFailure::EncodingFailed,
+        ) => Classification::RealqaCaptureImageRejected,
+        Err(CaptureFailure::CaptureFailed) => Classification::RealqaCaptureFailed,
+    };
+    if result.is_ok() {
+        crate::diagnostics::emit(DiagnosticEventId::RealqaCaptureOutcome, classification);
+    } else {
+        crate::diagnostics::emit_warning(DiagnosticEventId::RealqaCaptureOutcome, classification);
+    }
+}
+
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -519,6 +879,7 @@ pub(crate) enum CaptureDiagnosticClassification {
     PortalCancelled,
     ProtectedContent,
     WindowLost,
+    ModeUnavailable,
     DisplayChanged,
     InvalidRequest,
     ImageRejected,
@@ -559,10 +920,14 @@ impl CaptureDiagnostic {
             CaptureFailure::PortalCancelled => CaptureDiagnosticClassification::PortalCancelled,
             CaptureFailure::ProtectedContent => CaptureDiagnosticClassification::ProtectedContent,
             CaptureFailure::WindowLost => CaptureDiagnosticClassification::WindowLost,
-            CaptureFailure::DisplaySnapshotChanged => {
+            CaptureFailure::DisplayRemoved | CaptureFailure::DisplaySnapshotChanged => {
                 CaptureDiagnosticClassification::DisplayChanged
             }
-            CaptureFailure::InvalidDisplaySnapshot | CaptureFailure::InvalidSelection => {
+            CaptureFailure::ModeUnavailable => CaptureDiagnosticClassification::ModeUnavailable,
+            CaptureFailure::InvalidDisplaySnapshot
+            | CaptureFailure::InvalidSelection
+            | CaptureFailure::InvalidEditorOperation
+            | CaptureFailure::InvalidEditSequence => {
                 CaptureDiagnosticClassification::InvalidRequest
             }
             CaptureFailure::MalformedImage
@@ -580,51 +945,158 @@ impl CaptureDiagnostic {
     }
 }
 
-pub(crate) struct PlatformCaptureBackend {
-    platform: CapturePlatform,
+pub(crate) enum PlatformCaptureBackend {
+    Unavailable(CapturePlatform),
+    #[cfg(target_os = "linux")]
+    Linux(linux::LinuxCaptureBackend),
+    #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+    Macos(macos::MacosCaptureBackend<macos::SystemMacosNativeAdapter>),
 }
 
 impl PlatformCaptureBackend {
     pub(crate) const fn new(platform: CapturePlatform) -> Self {
-        Self { platform }
+        Self::Unavailable(platform)
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub(crate) const fn current() -> Self {
-        let platform = if cfg!(target_os = "macos") {
-            CapturePlatform::Macos
-        } else if cfg!(target_os = "windows") {
-            CapturePlatform::Windows
-        } else {
-            CapturePlatform::Linux
-        };
-        Self::new(platform)
+    pub(crate) fn current() -> Self {
+        #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+        {
+            return Self::Macos(macos::MacosCaptureBackend::new(
+                macos::SystemMacosNativeAdapter::new(),
+            ));
+        }
+        #[cfg(all(target_os = "macos", not(feature = "realqa-macos-capture")))]
+        {
+            Self::new(CapturePlatform::Macos)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            Self::new(CapturePlatform::Windows)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            match linux::LinuxCaptureBackend::current() {
+                Ok(backend) => Self::Linux(backend),
+                Err(_) => Self::new(CapturePlatform::Linux),
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            Self::new(CapturePlatform::Linux)
+        }
     }
 }
 
 impl CaptureBackend for PlatformCaptureBackend {
     fn platform(&self) -> CapturePlatform {
-        self.platform
+        match self {
+            Self::Unavailable(platform) => *platform,
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.platform(),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.platform(),
+        }
+    }
+
+    fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure> {
+        match self {
+            Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.capabilities(),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.capabilities(),
+        }
     }
 
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {
-        Err(BackendFailure::Unavailable)
+        match self {
+            Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.permission(),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.permission(),
+        }
+    }
+
+    fn permission_status(&self) -> Result<CapturePermissionStatus, BackendFailure> {
+        match self {
+            Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.permission_status(),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.permission_status(),
+        }
+    }
+
+    fn request_permission(&self) -> Result<CapturePermissionStatus, BackendFailure> {
+        match self {
+            Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.request_permission(),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.request_permission(),
+        }
+    }
+
+    fn start_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        match self {
+            Self::Unavailable(_) => Ok(()),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.start_session(session_id),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.start_session(session_id),
+        }
+    }
+
+    fn finish_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        match self {
+            Self::Unavailable(_) => Ok(()),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.finish_session(session_id),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.finish_session(session_id),
+        }
     }
 
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
-        Err(BackendFailure::Unavailable)
+        match self {
+            Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.displays(),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.displays(),
+        }
     }
 
-    fn windows(&self, _snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure> {
-        Err(BackendFailure::Unavailable)
+    fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure> {
+        match self {
+            Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.windows(snapshot),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.windows(snapshot),
+        }
     }
 
-    fn capture(&self, _request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
-        Err(BackendFailure::Unavailable)
+    fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
+        match self {
+            Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.capture(request),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.capture(request),
+        }
     }
 
-    fn cancel(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
-        Err(BackendFailure::Unavailable)
+    fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+        match self {
+            Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "linux")]
+            Self::Linux(backend) => backend.cancel(session_id),
+            #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
+            Self::Macos(backend) => backend.cancel(session_id),
+        }
     }
 }
 
@@ -683,6 +1155,7 @@ mod tests {
                         height: 50.0,
                     },
                     availability: WindowAvailability::Available,
+                    metadata: WindowMetadata::default(),
                 }]),
                 display_calls: AtomicUsize::new(0),
                 window_calls: AtomicUsize::new(0),
@@ -695,6 +1168,31 @@ mod tests {
     impl CaptureBackend for FixtureBackend {
         fn platform(&self) -> CapturePlatform {
             self.platform
+        }
+
+        fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure> {
+            Ok(CaptureCapabilities {
+                platform: self.platform,
+                display_protocol: CaptureDisplayProtocol::Native,
+                modes: [
+                    CaptureMode::Region,
+                    CaptureMode::Window,
+                    CaptureMode::Display,
+                    CaptureMode::MultiMonitor,
+                ]
+                .into_iter()
+                .map(|mode| CaptureModeCapability {
+                    mode,
+                    pointer_options: vec![PointerInclusion::Include, PointerInclusion::Exclude],
+                    portal_approval_required: false,
+                    selection_adjustment: if mode == CaptureMode::Region {
+                        SelectionAdjustmentAuthority::Application
+                    } else {
+                        SelectionAdjustmentAuthority::Unavailable
+                    },
+                })
+                .collect(),
+            })
         }
 
         fn permission(&self) -> Result<CapturePermission, BackendFailure> {
@@ -735,6 +1233,7 @@ mod tests {
                         width: request.expected_frame_size.width,
                         height: request.expected_frame_size.height,
                         rgba,
+                        approved_layout: None,
                     })
                 }
             }
@@ -820,6 +1319,42 @@ mod tests {
     }
 
     #[test]
+    fn begin_rejects_oversized_frames_before_backend_capture() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
+        *backend.displays.lock().expect("display lock") = vec![DisplayDescriptor {
+            id: DisplayId("oversized".to_owned()),
+            logical_bounds: LogicalRect {
+                x: 0.0,
+                y: 0.0,
+                width: 10_001.0,
+                height: 10_000.0,
+            },
+            physical_size: PhysicalSize {
+                width: 10_001,
+                height: 10_000,
+            },
+            scale: ScaleFactor {
+                numerator: 1,
+                denominator: 1,
+            },
+            primary: true,
+        }];
+        backend.windows.lock().expect("window lock").clear();
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Display {
+            display_id: DisplayId("oversized".to_owned()),
+        };
+
+        assert_eq!(
+            core.begin(capture_request),
+            Err(CaptureFailure::DecompressionBomb)
+        );
+        assert!(backend.last_request.lock().expect("request lock").is_none());
+    }
+
+    #[test]
     fn source_selection_deserializes_camel_case_variant_fields() {
         for (value, expected) in [
             (
@@ -871,6 +1406,18 @@ mod tests {
         assert_eq!(
             catalog.windows[0].availability,
             WindowAvailability::Minimized
+        );
+    }
+
+    #[test]
+    fn source_catalog_rejects_path_like_window_metadata_from_every_backend() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Macos));
+        backend.windows.lock().expect("window lock")[0]
+            .metadata
+            .title = Some("../private/capture.txt".to_owned());
+        assert_eq!(
+            CaptureCore::new(backend).source_catalog(),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
         );
     }
 
@@ -1082,6 +1629,7 @@ mod tests {
                 height: 40.0,
             },
             availability: WindowAvailability::Available,
+            metadata: WindowMetadata::default(),
         }];
 
         let core = CaptureCore::new(backend.clone());
@@ -1115,6 +1663,42 @@ mod tests {
             PhysicalSize {
                 width: 60,
                 height: 80,
+            }
+        );
+    }
+
+    #[test]
+    fn window_capture_reresolves_moved_and_resized_source_after_selection() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        let moved_bounds = LogicalRect {
+            x: -80.0,
+            y: 20.0,
+            width: 25.0,
+            height: 15.0,
+        };
+        backend.windows.lock().expect("window lock")[0].bounds = moved_bounds;
+
+        let mut capture_request = request(&catalog);
+        capture_request.source = CaptureSourceSelection::Window {
+            window_id: WindowSourceId("window-1".to_owned()),
+        };
+        let result = core.begin(capture_request).expect("capture must work");
+
+        assert_eq!(result.logical_bounds, moved_bounds);
+        let backend_request = backend
+            .last_request
+            .lock()
+            .expect("request lock")
+            .clone()
+            .expect("backend must receive request");
+        assert_eq!(backend_request.logical_bounds, moved_bounds);
+        assert_eq!(
+            backend_request.expected_frame_size,
+            PhysicalSize {
+                width: 50,
+                height: 30,
             }
         );
     }
@@ -1170,6 +1754,7 @@ mod tests {
                 height: 40.0,
             },
             availability: WindowAvailability::Available,
+            metadata: WindowMetadata::default(),
         }];
 
         let core = CaptureCore::new(backend.clone());
@@ -1558,6 +2143,7 @@ mod tests {
                 decoded_byte_len(width, height)
                     .expect("mismatched fixture dimensions must remain bounded")
             ],
+            approved_layout: None,
         }));
 
         assert_eq!(
@@ -1640,6 +2226,14 @@ mod tests {
             ),
             (BackendFailure::WindowLost, CaptureFailure::WindowLost),
             (
+                BackendFailure::DisplayRemoved,
+                CaptureFailure::DisplayRemoved,
+            ),
+            (
+                BackendFailure::ModeUnavailable,
+                CaptureFailure::ModeUnavailable,
+            ),
+            (
                 BackendFailure::DisplayChanged,
                 CaptureFailure::DisplaySnapshotChanged,
             ),
@@ -1704,6 +2298,10 @@ mod tests {
                 CaptureFailure::ProtectedContent,
             ),
             (BackendFailure::WindowLost, CaptureFailure::WindowLost),
+            (
+                BackendFailure::ModeUnavailable,
+                CaptureFailure::ModeUnavailable,
+            ),
             (
                 BackendFailure::DisplayChanged,
                 CaptureFailure::DisplaySnapshotChanged,

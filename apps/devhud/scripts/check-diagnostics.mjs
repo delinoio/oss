@@ -15,9 +15,11 @@ const [
   frontendSource,
   iosPlugin,
   localLogSource,
+  macosCaptureSource,
   mobileCapabilitySource,
   nativeSource,
   packageSource,
+  realqaCaptureSource,
   settingsCapabilitySource,
 ] = await Promise.all([
   read(
@@ -30,9 +32,11 @@ const [
     "src-tauri/diagnostics-bridge/ios/Sources/DevHudDiagnosticsPlugin/DevHudDiagnosticsPlugin.swift",
   ),
   read("src-tauri/src/local_log.rs"),
+  read("src-tauri/src/realqa_capture/macos.rs"),
   read("src-tauri/capabilities/mobile-main.json"),
   read("src-tauri/src/lib.rs"),
   read("package.json"),
+  read("src-tauri/src/realqa_capture/mod.rs"),
   read("src-tauri/capabilities/settings.json"),
 ]);
 
@@ -47,6 +51,14 @@ requireCondition(
     ) &&
     !cargoManifest.includes("tracing-subscriber"),
   "diagnostics must use the typed tracing facade and UUID v7 without a permissive subscriber",
+);
+requireCondition(
+  !/(?:tracing::|localizedDescription|NSLog)/u.test(
+    macosCaptureSource,
+  ) &&
+    macosCaptureSource.includes("safe_metadata") &&
+    macosCaptureSource.includes("looks_like_path"),
+  "macOS capture must retain value-free diagnostics and redact path-like native metadata",
 );
 requireCondition(
   diagnosticsSource.includes("#[serde(rename_all = \"camelCase\", deny_unknown_fields)]") &&
@@ -73,6 +85,19 @@ requireCondition(
   diagnosticsSource.includes("export_recursively_rejects_unknown_and_adversarial_values") &&
     diagnosticsSource.includes("fatal_initialization_is_one_safe_record_without_an_exception"),
   "Rust diagnostics tests must cover recursive adversarial redaction and fatal events",
+);
+const captureOutcome =
+  realqaCaptureSource.match(
+    /pub\(crate\) fn record_outcome[\s\S]*?\n\}\n\n#\[cfg\(test\)\]/u,
+  )?.[0] ?? "";
+requireCondition(
+  captureOutcome.includes("RealqaCaptureOutcome") &&
+    captureOutcome.includes("RealqaCapturePortalCancelled") &&
+    captureOutcome.includes("RealqaCaptureProtectedContent") &&
+    !/(process_name|session_id|title|window_id|display_id|logical_bounds|rgba|bytes)/u.test(
+      captureOutcome,
+    ),
+  "capture diagnostics must emit only closed outcome classifications without source, pixel, session, or geometry values",
 );
 requireCondition(
   (nativeSource.match(/tracing::/gu) ?? []).length === 0 &&
