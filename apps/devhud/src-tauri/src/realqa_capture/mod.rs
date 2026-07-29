@@ -935,10 +935,10 @@ impl PlatformCaptureBackend {
         }
         #[cfg(target_os = "linux")]
         {
-            return Self {
+            Self {
                 platform: CapturePlatform::Linux,
                 linux: linux::LinuxCaptureBackend::current().ok(),
-            };
+            }
         }
         #[cfg(not(any(target_os = "windows", target_os = "linux")))]
         {
