@@ -675,6 +675,30 @@ body:
 	}
 }
 
+func TestIssueFormRejectsBlankUploadAcceptValidation(t *testing.T) {
+	t.Parallel()
+	for _, accept := range []string{`""`, `"   "`} {
+		contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: upload
+    attributes:
+      label: Screenshots
+    validations:
+      accept: ` + accept + `
+  - type: input
+    attributes:
+      label: Summary
+`)
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "field string value is invalid") {
+			t.Fatalf("expected blank upload accept %s rejection, got %v", accept, err)
+		}
+	}
+}
+
 func TestIssueFormRejectsForbiddenCredentialLabels(t *testing.T) {
 	t.Parallel()
 	for _, contents := range [][]byte{

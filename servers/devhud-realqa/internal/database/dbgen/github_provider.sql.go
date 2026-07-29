@@ -79,6 +79,33 @@ func (q *Queries) AdvanceGitHubCallbackState(ctx context.Context, arg AdvanceGit
 	return result.RowsAffected(), nil
 }
 
+const beginGitHubCallerAuthorizationRefresh = `-- name: BeginGitHubCallerAuthorizationRefresh :one
+UPDATE realqa_github_user_authorizations
+SET state = 'disconnected',
+    credential_ciphertext = NULL,
+    wrapped_data_key = NULL,
+    key_id = NULL,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    updated_at = transaction_timestamp()
+WHERE connection_id = $1
+  AND account_id = $2
+  AND state = 'connected'
+RETURNING revision
+`
+
+type BeginGitHubCallerAuthorizationRefreshParams struct {
+	ConnectionID pgtype.UUID
+	AccountID    pgtype.UUID
+}
+
+func (q *Queries) BeginGitHubCallerAuthorizationRefresh(ctx context.Context, arg BeginGitHubCallerAuthorizationRefreshParams) (int64, error) {
+	row := q.db.QueryRow(ctx, beginGitHubCallerAuthorizationRefresh, arg.ConnectionID, arg.AccountID)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
+}
+
 const beginGitHubUserCredentialRefresh = `-- name: BeginGitHubUserCredentialRefresh :one
 UPDATE realqa_github_connections
 SET state = 'disconnected',
@@ -132,6 +159,54 @@ func (q *Queries) BumpRepositorySchemaRevision(ctx context.Context, arg BumpRepo
 	return revision, err
 }
 
+const completeGitHubCallerAuthorizationRefresh = `-- name: CompleteGitHubCallerAuthorizationRefresh :execrows
+UPDATE realqa_github_user_authorizations AS caller_authorization
+SET state = 'connected',
+    credential_ciphertext = $1,
+    wrapped_data_key = $2,
+    key_id = $3,
+    updated_at = transaction_timestamp()
+WHERE caller_authorization.connection_id = $4
+  AND caller_authorization.account_id = $5
+  AND caller_authorization.revision = $6
+  AND caller_authorization.state = 'disconnected'
+  AND caller_authorization.credential_ciphertext IS NULL
+  AND caller_authorization.wrapped_data_key IS NULL
+  AND caller_authorization.key_id IS NULL
+  AND caller_authorization.oauth_state_digest IS NULL
+  AND caller_authorization.oauth_state_expires_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_identities AS identity
+      WHERE identity.account_id = $5
+        AND identity.deleted_at IS NULL
+  )
+`
+
+type CompleteGitHubCallerAuthorizationRefreshParams struct {
+	CredentialCiphertext []byte
+	WrappedDataKey       []byte
+	KeyID                pgtype.Text
+	ConnectionID         pgtype.UUID
+	AccountID            pgtype.UUID
+	ExpectedRevision     int64
+}
+
+func (q *Queries) CompleteGitHubCallerAuthorizationRefresh(ctx context.Context, arg CompleteGitHubCallerAuthorizationRefreshParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeGitHubCallerAuthorizationRefresh,
+		arg.CredentialCiphertext,
+		arg.WrappedDataKey,
+		arg.KeyID,
+		arg.ConnectionID,
+		arg.AccountID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const completeGitHubUserCredentialRefresh = `-- name: CompleteGitHubUserCredentialRefresh :execrows
 UPDATE realqa_github_connections AS connection
 SET state = 'connected',
@@ -173,6 +248,59 @@ func (q *Queries) CompleteGitHubUserCredentialRefresh(ctx context.Context, arg C
 		arg.KeyID,
 		arg.ConnectionID,
 		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const connectGitHubCallerAuthorization = `-- name: ConnectGitHubCallerAuthorization :execrows
+UPDATE realqa_github_user_authorizations AS caller_authorization
+SET state = 'connected',
+    github_login = $1,
+    github_user_id = $2,
+    credential_ciphertext = $3,
+    wrapped_data_key = $4,
+    key_id = $5,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    connected_at = transaction_timestamp(),
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+FROM realqa_github_connections AS connection
+WHERE connection.id = caller_authorization.connection_id
+  AND connection.owner_kind = $6
+  AND connection.owner_id = $7
+  AND connection.state = 'connected'
+  AND caller_authorization.account_id = $8
+  AND caller_authorization.oauth_state_digest = $9
+  AND caller_authorization.oauth_state_expires_at > transaction_timestamp()
+`
+
+type ConnectGitHubCallerAuthorizationParams struct {
+	GithubLogin          string
+	GithubUserID         pgtype.Int8
+	CredentialCiphertext []byte
+	WrappedDataKey       []byte
+	KeyID                pgtype.Text
+	OwnerKind            string
+	OwnerID              pgtype.UUID
+	AccountID            pgtype.UUID
+	OauthStateDigest     []byte
+}
+
+func (q *Queries) ConnectGitHubCallerAuthorization(ctx context.Context, arg ConnectGitHubCallerAuthorizationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, connectGitHubCallerAuthorization,
+		arg.GithubLogin,
+		arg.GithubUserID,
+		arg.CredentialCiphertext,
+		arg.WrappedDataKey,
+		arg.KeyID,
+		arg.OwnerKind,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.OauthStateDigest,
 	)
 	if err != nil {
 		return 0, err
@@ -316,10 +444,9 @@ func (q *Queries) DeleteRepositoryDefinitions(ctx context.Context, arg DeleteRep
 	return result.RowsAffected(), nil
 }
 
-const disconnectGitHubUserCredentials = `-- name: DisconnectGitHubUserCredentials :execrows
-UPDATE realqa_github_connections
+const disconnectGitHubCallerAuthorizations = `-- name: DisconnectGitHubCallerAuthorizations :execrows
+UPDATE realqa_github_user_authorizations
 SET state = 'disconnected',
-    connected_by_account_id = NULL,
     credential_ciphertext = NULL,
     wrapped_data_key = NULL,
     key_id = NULL,
@@ -331,12 +458,180 @@ WHERE github_user_id = $1
   AND credential_ciphertext IS NOT NULL
 `
 
-func (q *Queries) DisconnectGitHubUserCredentials(ctx context.Context, githubUserID pgtype.Int8) (int64, error) {
-	result, err := q.db.Exec(ctx, disconnectGitHubUserCredentials, githubUserID)
+func (q *Queries) DisconnectGitHubCallerAuthorizations(ctx context.Context, githubUserID pgtype.Int8) (int64, error) {
+	result, err := q.db.Exec(ctx, disconnectGitHubCallerAuthorizations, githubUserID)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const disconnectGitHubCallerAuthorizationsForConnection = `-- name: DisconnectGitHubCallerAuthorizationsForConnection :execrows
+UPDATE realqa_github_user_authorizations
+SET state = 'disconnected',
+    credential_ciphertext = NULL,
+    wrapped_data_key = NULL,
+    key_id = NULL,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE connection_id = $1
+  AND (
+      credential_ciphertext IS NOT NULL
+      OR oauth_state_digest IS NOT NULL
+  )
+`
+
+func (q *Queries) DisconnectGitHubCallerAuthorizationsForConnection(ctx context.Context, connectionID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, disconnectGitHubCallerAuthorizationsForConnection, connectionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const disconnectGitHubUserCredentials = `-- name: DisconnectGitHubUserCredentials :one
+WITH disconnected AS (
+    UPDATE realqa_github_connections AS connection
+    SET state = 'disconnected',
+        connected_by_account_id = NULL,
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = connection.revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE connection.github_user_id = $1
+      AND connection.credential_ciphertext IS NOT NULL
+    RETURNING connection.id
+),
+cleared_authorizations AS (
+    UPDATE realqa_github_user_authorizations
+    SET state = 'disconnected',
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE connection_id IN (SELECT id FROM disconnected)
+    RETURNING 1
+)
+SELECT count(*)::bigint
+FROM disconnected
+`
+
+func (q *Queries) DisconnectGitHubUserCredentials(ctx context.Context, providerUserID pgtype.Int8) (int64, error) {
+	row := q.db.QueryRow(ctx, disconnectGitHubUserCredentials, providerUserID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const getGitHubCallerAuthorizationForInstallation = `-- name: GetGitHubCallerAuthorizationForInstallation :one
+SELECT
+    caller_authorization.connection_id,
+    installation.provider_installation_id,
+    installation.owner_kind,
+    installation.owner_id,
+    caller_authorization.credential_ciphertext,
+    caller_authorization.wrapped_data_key,
+    caller_authorization.key_id
+FROM realqa_github_user_authorizations AS caller_authorization
+JOIN realqa_github_connections AS connection
+  ON connection.id = caller_authorization.connection_id
+ AND connection.state = 'connected'
+JOIN realqa_github_installations AS installation
+  ON installation.connection_id = connection.id
+ AND installation.state = 'active'
+WHERE installation.id = $1
+  AND caller_authorization.account_id = $2
+  AND caller_authorization.state = 'connected'
+`
+
+type GetGitHubCallerAuthorizationForInstallationParams struct {
+	InstallationID pgtype.UUID
+	AccountID      pgtype.UUID
+}
+
+type GetGitHubCallerAuthorizationForInstallationRow struct {
+	ConnectionID           pgtype.UUID
+	ProviderInstallationID int64
+	OwnerKind              string
+	OwnerID                pgtype.UUID
+	CredentialCiphertext   []byte
+	WrappedDataKey         []byte
+	KeyID                  pgtype.Text
+}
+
+func (q *Queries) GetGitHubCallerAuthorizationForInstallation(ctx context.Context, arg GetGitHubCallerAuthorizationForInstallationParams) (GetGitHubCallerAuthorizationForInstallationRow, error) {
+	row := q.db.QueryRow(ctx, getGitHubCallerAuthorizationForInstallation, arg.InstallationID, arg.AccountID)
+	var i GetGitHubCallerAuthorizationForInstallationRow
+	err := row.Scan(
+		&i.ConnectionID,
+		&i.ProviderInstallationID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CredentialCiphertext,
+		&i.WrappedDataKey,
+		&i.KeyID,
+	)
+	return i, err
+}
+
+const getGitHubCallerAuthorizationForInstallationForUpdate = `-- name: GetGitHubCallerAuthorizationForInstallationForUpdate :one
+SELECT
+    caller_authorization.connection_id,
+    installation.provider_installation_id,
+    installation.owner_kind,
+    installation.owner_id,
+    caller_authorization.credential_ciphertext,
+    caller_authorization.wrapped_data_key,
+    caller_authorization.key_id
+FROM realqa_github_user_authorizations AS caller_authorization
+JOIN realqa_github_connections AS connection
+  ON connection.id = caller_authorization.connection_id
+ AND connection.state = 'connected'
+JOIN realqa_github_installations AS installation
+  ON installation.connection_id = connection.id
+ AND installation.state = 'active'
+WHERE installation.id = $1
+  AND caller_authorization.account_id = $2
+  AND caller_authorization.state = 'connected'
+FOR UPDATE OF caller_authorization
+`
+
+type GetGitHubCallerAuthorizationForInstallationForUpdateParams struct {
+	InstallationID pgtype.UUID
+	AccountID      pgtype.UUID
+}
+
+type GetGitHubCallerAuthorizationForInstallationForUpdateRow struct {
+	ConnectionID           pgtype.UUID
+	ProviderInstallationID int64
+	OwnerKind              string
+	OwnerID                pgtype.UUID
+	CredentialCiphertext   []byte
+	WrappedDataKey         []byte
+	KeyID                  pgtype.Text
+}
+
+func (q *Queries) GetGitHubCallerAuthorizationForInstallationForUpdate(ctx context.Context, arg GetGitHubCallerAuthorizationForInstallationForUpdateParams) (GetGitHubCallerAuthorizationForInstallationForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getGitHubCallerAuthorizationForInstallationForUpdate, arg.InstallationID, arg.AccountID)
+	var i GetGitHubCallerAuthorizationForInstallationForUpdateRow
+	err := row.Scan(
+		&i.ConnectionID,
+		&i.ProviderInstallationID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CredentialCiphertext,
+		&i.WrappedDataKey,
+		&i.KeyID,
+	)
+	return i, err
 }
 
 const getGitHubInstallationBinding = `-- name: GetGitHubInstallationBinding :one
@@ -471,6 +766,33 @@ func (q *Queries) GetRepositorySchemaRevision(ctx context.Context, arg GetReposi
 	var revision int64
 	err := row.Scan(&revision)
 	return revision, err
+}
+
+const gitHubInstallationIsActiveForOwner = `-- name: GitHubInstallationIsActiveForOwner :one
+SELECT EXISTS (
+    SELECT 1
+    FROM realqa_github_installations AS installation
+    JOIN realqa_github_connections AS connection
+      ON connection.id = installation.connection_id
+     AND connection.state = 'connected'
+    WHERE installation.provider_installation_id = $1
+      AND installation.owner_kind = $2
+      AND installation.owner_id = $3
+      AND installation.state = 'active'
+)
+`
+
+type GitHubInstallationIsActiveForOwnerParams struct {
+	ProviderInstallationID int64
+	OwnerKind              string
+	OwnerID                pgtype.UUID
+}
+
+func (q *Queries) GitHubInstallationIsActiveForOwner(ctx context.Context, arg GitHubInstallationIsActiveForOwnerParams) (bool, error) {
+	row := q.db.QueryRow(ctx, gitHubInstallationIsActiveForOwner, arg.ProviderInstallationID, arg.OwnerKind, arg.OwnerID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const markAssetsRemovedForDeletedGitHubIssue = `-- name: MarkAssetsRemovedForDeletedGitHubIssue :execrows
@@ -646,6 +968,39 @@ type SuspendUnauthorizedGitHubInstallationsParams struct {
 
 func (q *Queries) SuspendUnauthorizedGitHubInstallations(ctx context.Context, arg SuspendUnauthorizedGitHubInstallationsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, suspendUnauthorizedGitHubInstallations, arg.OwnerKind, arg.OwnerID, arg.AuthorizedInstallationIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateGitHubCallerAuthorization = `-- name: UpdateGitHubCallerAuthorization :execrows
+UPDATE realqa_github_user_authorizations
+SET credential_ciphertext = $1,
+    wrapped_data_key = $2,
+    key_id = $3,
+    updated_at = transaction_timestamp()
+WHERE connection_id = $4
+  AND account_id = $5
+  AND state = 'connected'
+`
+
+type UpdateGitHubCallerAuthorizationParams struct {
+	CredentialCiphertext []byte
+	WrappedDataKey       []byte
+	KeyID                pgtype.Text
+	ConnectionID         pgtype.UUID
+	AccountID            pgtype.UUID
+}
+
+func (q *Queries) UpdateGitHubCallerAuthorization(ctx context.Context, arg UpdateGitHubCallerAuthorizationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateGitHubCallerAuthorization,
+		arg.CredentialCiphertext,
+		arg.WrappedDataKey,
+		arg.KeyID,
+		arg.ConnectionID,
+		arg.AccountID,
+	)
 	if err != nil {
 		return 0, err
 	}

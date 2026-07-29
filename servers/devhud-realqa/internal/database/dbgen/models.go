@@ -96,6 +96,23 @@ type RealqaGithubInstallation struct {
 	Permissions            []byte
 }
 
+type RealqaGithubUserAuthorization struct {
+	ConnectionID         pgtype.UUID
+	AccountID            pgtype.UUID
+	State                string
+	GithubUserID         pgtype.Int8
+	GithubLogin          string
+	CredentialCiphertext []byte
+	WrappedDataKey       []byte
+	KeyID                pgtype.Text
+	OauthStateDigest     []byte
+	OauthStateExpiresAt  pgtype.Timestamptz
+	Revision             int64
+	ConnectedAt          pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
 type RealqaGithubWebhookDelivery struct {
 	DeliveryID pgtype.UUID
 	ReceivedAt pgtype.Timestamptz

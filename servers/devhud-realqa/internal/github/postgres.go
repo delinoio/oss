@@ -98,9 +98,11 @@ func (store *PostgresCallbackStore) ConnectUser(
 				OwnerKind: string(owner.Kind),
 				OwnerID:   providerPGUUID(owner.ID),
 			})
+			callerAuthorization := err == nil &&
+				owner.Kind == OwnerKindOrganization && access.Role == "member"
 			if errors.Is(err, pgx.ErrNoRows) ||
-				(err == nil && !callbackOwnerAccessAllowed(
-					owner, accountID, access.Role)) {
+				(err == nil && !callerAuthorization &&
+					!callbackOwnerAccessAllowed(owner, accountID, access.Role)) {
 				return ErrCallbackOwnerAccessUnavailable
 			}
 			if err != nil {
@@ -113,6 +115,11 @@ func (store *PostgresCallbackStore) ConnectUser(
 				})
 			if err != nil {
 				return err
+			}
+			if callerAuthorization {
+				return connectGitHubCallerAuthorization(
+					ctx, queries, owner, accountID, stateDigest, user,
+					credential, installationID, installations)
 			}
 			replaceInstallations := installationID == 0 ||
 				connection.State != "connected" ||
@@ -209,6 +216,65 @@ func (store *PostgresCallbackStore) ConnectUser(
 			}
 			return nil
 		})
+}
+
+func connectGitHubCallerAuthorization(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	owner Owner,
+	accountID uuid.UUID,
+	stateDigest []byte,
+	user UserIdentity,
+	credential EncryptedCredential,
+	installationID int64,
+	installations []Installation,
+) error {
+	if installationID != 0 {
+		return ErrCallbackOwnerAccessUnavailable
+	}
+	authorized := false
+	for _, installation := range installations {
+		project, err := projectPermissionFor(installation.Permissions)
+		if err != nil || installation.Validate(project) != nil {
+			return errors.New("realqa github: authorized installation is invalid")
+		}
+		active, err := queries.GitHubInstallationIsActiveForOwner(
+			ctx, dbgen.GitHubInstallationIsActiveForOwnerParams{
+				ProviderInstallationID: installation.ID,
+				OwnerKind:              string(owner.Kind),
+				OwnerID:                providerPGUUID(owner.ID),
+			})
+		if err != nil {
+			return err
+		}
+		authorized = authorized || active
+	}
+	if !authorized {
+		return ErrCallbackOwnerAccessUnavailable
+	}
+	count, err := queries.ConnectGitHubCallerAuthorization(
+		ctx, dbgen.ConnectGitHubCallerAuthorizationParams{
+			GithubLogin: user.Login,
+			GithubUserID: pgtype.Int8{
+				Int64: user.ID, Valid: true,
+			},
+			CredentialCiphertext: credential.Ciphertext,
+			WrappedDataKey:       credential.WrappedDataKey,
+			KeyID: pgtype.Text{
+				String: credential.KeyID, Valid: true,
+			},
+			OwnerKind:        string(owner.Kind),
+			OwnerID:          providerPGUUID(owner.ID),
+			AccountID:        providerPGUUID(accountID),
+			OauthStateDigest: stateDigest,
+		})
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return ErrCallbackStateUnavailable
+	}
+	return nil
 }
 
 func bindInstallation(
@@ -410,6 +476,10 @@ func (store *postgresWebhookStore) DisconnectGitHubUser(
 ) error {
 	if userID <= 0 {
 		return errors.New("realqa github: disconnected user is invalid")
+	}
+	if _, err := store.queries.DisconnectGitHubCallerAuthorizations(
+		ctx, pgtype.Int8{Int64: userID, Valid: true}); err != nil {
+		return err
 	}
 	_, err := store.queries.DisconnectGitHubUserCredentials(
 		ctx, pgtype.Int8{Int64: userID, Valid: true})

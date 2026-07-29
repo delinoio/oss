@@ -149,11 +149,8 @@ func (adapter *Adapter) userToken(
 	if accountID == uuid.Nil || installationID == uuid.Nil {
 		return 0, UserToken{}, errors.New("realqa github: installation is invalid")
 	}
-	record, err := adapter.store.Queries().GetGitHubUserCredentialForInstallation(
-		ctx, dbgen.GetGitHubUserCredentialForInstallationParams{
-			InstallationID: providerPGUUID(installationID),
-			AccountID:      providerPGUUID(accountID),
-		})
+	record, err := getGitHubCredentialForInstallation(
+		ctx, adapter.store.Queries(), accountID, installationID, false)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, UserToken{}, ErrCallerAuthorizationUnavailable
 	}
@@ -177,6 +174,77 @@ func (adapter *Adapter) userToken(
 	return record.ProviderInstallationID, token, nil
 }
 
+type githubCredentialRecord struct {
+	ConnectionID           pgtype.UUID
+	ProviderInstallationID int64
+	OwnerKind              string
+	OwnerID                pgtype.UUID
+	CredentialCiphertext   []byte
+	WrappedDataKey         []byte
+	KeyID                  pgtype.Text
+	CallerAuthorization    bool
+}
+
+func getGitHubCredentialForInstallation(
+	ctx context.Context,
+	queries dbgen.Querier,
+	accountID uuid.UUID,
+	installationID uuid.UUID,
+	forUpdate bool,
+) (githubCredentialRecord, error) {
+	parameters := dbgen.GetGitHubCallerAuthorizationForInstallationParams{
+		InstallationID: providerPGUUID(installationID),
+		AccountID:      providerPGUUID(accountID),
+	}
+	if forUpdate {
+		record, err := queries.GetGitHubCallerAuthorizationForInstallationForUpdate(
+			ctx, dbgen.GetGitHubCallerAuthorizationForInstallationForUpdateParams(parameters))
+		if err == nil {
+			return githubCredentialRecord{
+				ConnectionID: record.ConnectionID, ProviderInstallationID: record.ProviderInstallationID,
+				OwnerKind: record.OwnerKind, OwnerID: record.OwnerID,
+				CredentialCiphertext: record.CredentialCiphertext,
+				WrappedDataKey:       record.WrappedDataKey, KeyID: record.KeyID,
+				CallerAuthorization: true,
+			}, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return githubCredentialRecord{}, err
+		}
+		connection, connectionErr := queries.GetGitHubUserCredentialForInstallationForUpdate(
+			ctx, dbgen.GetGitHubUserCredentialForInstallationForUpdateParams(parameters))
+		return githubCredentialRecord{
+			ConnectionID:           connection.ConnectionID,
+			ProviderInstallationID: connection.ProviderInstallationID,
+			OwnerKind:              connection.OwnerKind, OwnerID: connection.OwnerID,
+			CredentialCiphertext: connection.CredentialCiphertext,
+			WrappedDataKey:       connection.WrappedDataKey, KeyID: connection.KeyID,
+		}, connectionErr
+	}
+	record, err := queries.GetGitHubCallerAuthorizationForInstallation(ctx, parameters)
+	if err == nil {
+		return githubCredentialRecord{
+			ConnectionID: record.ConnectionID, ProviderInstallationID: record.ProviderInstallationID,
+			OwnerKind: record.OwnerKind, OwnerID: record.OwnerID,
+			CredentialCiphertext: record.CredentialCiphertext,
+			WrappedDataKey:       record.WrappedDataKey, KeyID: record.KeyID,
+			CallerAuthorization: true,
+		}, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return githubCredentialRecord{}, err
+	}
+	connection, connectionErr := queries.GetGitHubUserCredentialForInstallation(
+		ctx, dbgen.GetGitHubUserCredentialForInstallationParams(parameters))
+	return githubCredentialRecord{
+		ConnectionID:           connection.ConnectionID,
+		ProviderInstallationID: connection.ProviderInstallationID,
+		OwnerKind:              connection.OwnerKind, OwnerID: connection.OwnerID,
+		CredentialCiphertext: connection.CredentialCiphertext,
+		WrappedDataKey:       connection.WrappedDataKey, KeyID: connection.KeyID,
+	}, connectionErr
+}
+
 func (adapter *Adapter) refreshUserToken(
 	ctx context.Context,
 	accountID uuid.UUID,
@@ -188,14 +256,12 @@ func (adapter *Adapter) refreshUserToken(
 	var refreshConnectionID pgtype.UUID
 	var refreshOwner Owner
 	var refreshRevision int64
+	var refreshCallerAuthorization bool
 	var reconnectRequired bool
 	err := adapter.store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
-			record, err := queries.GetGitHubUserCredentialForInstallationForUpdate(
-				ctx, dbgen.GetGitHubUserCredentialForInstallationForUpdateParams{
-					InstallationID: providerPGUUID(installationID),
-					AccountID:      providerPGUUID(accountID),
-				})
+			record, err := getGitHubCredentialForInstallation(
+				ctx, queries, accountID, installationID, true)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrCallerAuthorizationUnavailable
 			}
@@ -227,18 +293,28 @@ func (adapter *Adapter) refreshUserToken(
 					return rewrapErr
 				}
 				return adapter.updateUserCredential(
-					ctx, queries, record.ConnectionID, accountID, rewrapped)
+					ctx, queries, record.ConnectionID, accountID, rewrapped,
+					record.CallerAuthorization)
 			}
 			now := adapter.now().UTC()
-			refreshRevision, err = queries.BeginGitHubUserCredentialRefresh(
-				ctx, dbgen.BeginGitHubUserCredentialRefreshParams{
-					ConnectionID: record.ConnectionID,
-					AccountID:    providerPGUUID(accountID),
-				})
+			if record.CallerAuthorization {
+				refreshRevision, err = queries.BeginGitHubCallerAuthorizationRefresh(
+					ctx, dbgen.BeginGitHubCallerAuthorizationRefreshParams{
+						ConnectionID: record.ConnectionID,
+						AccountID:    providerPGUUID(accountID),
+					})
+			} else {
+				refreshRevision, err = queries.BeginGitHubUserCredentialRefresh(
+					ctx, dbgen.BeginGitHubUserCredentialRefreshParams{
+						ConnectionID: record.ConnectionID,
+						AccountID:    providerPGUUID(accountID),
+					})
+			}
 			if err != nil {
 				return errors.New(
 					"realqa github: connected user credential could not be prepared for refresh")
 			}
+			refreshCallerAuthorization = record.CallerAuthorization
 			if credential.RefreshToken == "" ||
 				credential.RefreshExpiresAt.IsZero() ||
 				!now.Before(credential.RefreshExpiresAt.UTC()) {
@@ -278,23 +354,48 @@ func (adapter *Adapter) refreshUserToken(
 	if err != nil {
 		return 0, UserToken{}, err
 	}
-	count, err := adapter.store.Queries().CompleteGitHubUserCredentialRefresh(
-		ctx, dbgen.CompleteGitHubUserCredentialRefreshParams{
-			AccountID:            providerPGUUID(accountID),
-			CredentialCiphertext: encrypted.Ciphertext,
-			WrappedDataKey:       encrypted.WrappedDataKey,
-			KeyID: pgtype.Text{
-				String: encrypted.KeyID, Valid: true,
-			},
-			ConnectionID:     refreshConnectionID,
-			ExpectedRevision: refreshRevision,
-		})
+	count, err := adapter.completeUserCredentialRefresh(
+		ctx, refreshConnectionID, accountID, encrypted, refreshRevision,
+		refreshCallerAuthorization)
 	if err != nil || count != 1 {
 		return 0, UserToken{}, errors.New(
 			"realqa github: refreshed credential could not be stored; reconnect is required")
 	}
-	token = refreshedToken
-	return providerID, token, nil
+	return providerID, refreshedToken, nil
+}
+
+func (adapter *Adapter) completeUserCredentialRefresh(
+	ctx context.Context,
+	connectionID pgtype.UUID,
+	accountID uuid.UUID,
+	credential EncryptedCredential,
+	expectedRevision int64,
+	callerAuthorization bool,
+) (int64, error) {
+	if callerAuthorization {
+		return adapter.store.Queries().CompleteGitHubCallerAuthorizationRefresh(
+			ctx, dbgen.CompleteGitHubCallerAuthorizationRefreshParams{
+				CredentialCiphertext: credential.Ciphertext,
+				WrappedDataKey:       credential.WrappedDataKey,
+				KeyID: pgtype.Text{
+					String: credential.KeyID, Valid: true,
+				},
+				ConnectionID:     connectionID,
+				AccountID:        providerPGUUID(accountID),
+				ExpectedRevision: expectedRevision,
+			})
+	}
+	return adapter.store.Queries().CompleteGitHubUserCredentialRefresh(
+		ctx, dbgen.CompleteGitHubUserCredentialRefreshParams{
+			AccountID:            providerPGUUID(accountID),
+			CredentialCiphertext: credential.Ciphertext,
+			WrappedDataKey:       credential.WrappedDataKey,
+			KeyID: pgtype.Text{
+				String: credential.KeyID, Valid: true,
+			},
+			ConnectionID:     connectionID,
+			ExpectedRevision: expectedRevision,
+		})
 }
 
 func (adapter *Adapter) updateUserCredential(
@@ -303,17 +404,33 @@ func (adapter *Adapter) updateUserCredential(
 	connectionID pgtype.UUID,
 	accountID uuid.UUID,
 	credential EncryptedCredential,
+	callerAuthorization bool,
 ) error {
-	count, err := queries.UpdateGitHubUserCredential(
-		ctx, dbgen.UpdateGitHubUserCredentialParams{
-			CredentialCiphertext: credential.Ciphertext,
-			WrappedDataKey:       credential.WrappedDataKey,
-			KeyID: pgtype.Text{
-				String: credential.KeyID, Valid: true,
-			},
-			ConnectionID: connectionID,
-			AccountID:    providerPGUUID(accountID),
-		})
+	var count int64
+	var err error
+	if callerAuthorization {
+		count, err = queries.UpdateGitHubCallerAuthorization(
+			ctx, dbgen.UpdateGitHubCallerAuthorizationParams{
+				CredentialCiphertext: credential.Ciphertext,
+				WrappedDataKey:       credential.WrappedDataKey,
+				KeyID: pgtype.Text{
+					String: credential.KeyID, Valid: true,
+				},
+				ConnectionID: connectionID,
+				AccountID:    providerPGUUID(accountID),
+			})
+	} else {
+		count, err = queries.UpdateGitHubUserCredential(
+			ctx, dbgen.UpdateGitHubUserCredentialParams{
+				CredentialCiphertext: credential.Ciphertext,
+				WrappedDataKey:       credential.WrappedDataKey,
+				KeyID: pgtype.Text{
+					String: credential.KeyID, Valid: true,
+				},
+				ConnectionID: connectionID,
+				AccountID:    providerPGUUID(accountID),
+			})
+	}
 	if err != nil || count != 1 {
 		return errors.New(
 			"realqa github: connected user credential could not be stored")

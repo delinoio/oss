@@ -77,15 +77,33 @@ WHERE account_id = sqlc.arg(account_id);
 DELETE FROM realqa_repository_access
 WHERE account_id = sqlc.arg(account_id);
 
--- name: DisconnectGitHubConnectionsForAccount :execrows
-UPDATE realqa_github_connections
-SET state = 'disconnected',
-    connected_by_account_id = NULL,
-    credential_ciphertext = NULL,
-    wrapped_data_key = NULL,
-    key_id = NULL,
-    oauth_state_digest = NULL,
-    oauth_state_expires_at = NULL,
-    revision = revision + 1,
-    updated_at = transaction_timestamp()
-WHERE connected_by_account_id = sqlc.arg(account_id);
+-- name: DisconnectGitHubConnectionsForAccount :one
+WITH disconnected AS (
+    UPDATE realqa_github_connections
+    SET state = 'disconnected',
+        connected_by_account_id = NULL,
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE connected_by_account_id = sqlc.arg(account_id)
+    RETURNING id
+),
+cleared_authorizations AS (
+    UPDATE realqa_github_user_authorizations
+    SET state = 'disconnected',
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE connection_id IN (SELECT id FROM disconnected)
+    RETURNING 1
+)
+SELECT count(*)::bigint
+FROM disconnected;

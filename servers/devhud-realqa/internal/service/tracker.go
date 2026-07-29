@@ -89,12 +89,30 @@ func (service *Tracker) StartGitHubConnection(
 	if err != nil {
 		return nil, err
 	}
-	if _, err = authorizeOwner(ctx, service.dependencies, actor, scope, true, false); err != nil {
+	access, err := authorizeOwner(
+		ctx, service.dependencies, actor, scope, false, false)
+	if err != nil {
 		return nil, err
+	}
+	callerAuthorization := scope.kind == "organization" && access.Role == "member"
+	if scope.kind == "organization" && !callerAuthorization &&
+		access.Role != "owner" && access.Role != "admin" {
+		return nil, permissionDenied()
 	}
 	state, stateDigest, err := newOAuthState()
 	target := ""
-	if issuer, ok := service.dependencies.GitHub.(GitHubConnectionTargetIssuer); ok {
+	if callerAuthorization {
+		issuer, ok := service.dependencies.GitHub.(GitHubOAuthStateIssuer)
+		if !ok {
+			return nil, rqerr.New(connect.CodeUnavailable,
+				realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
+				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+		}
+		state, err = issuer.OAuthState(scope.kind, scope.id, actor.accountID)
+		if err == nil {
+			target, err = service.dependencies.GitHub.Target(state)
+		}
+	} else if issuer, ok := service.dependencies.GitHub.(GitHubConnectionTargetIssuer); ok {
 		target, state, err = issuer.ConnectionTarget(scope.kind, scope.id, actor.accountID)
 	} else if issuer, ok := service.dependencies.GitHub.(GitHubOAuthStateIssuer); ok {
 		state, err = issuer.OAuthState(scope.kind, scope.id, actor.accountID)
@@ -112,30 +130,62 @@ func (service *Tracker) StartGitHubConnection(
 			realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
 			realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 	}
-	connectionID, err := newID(service.dependencies)
-	if err != nil {
-		return nil, err
-	}
 	expires := service.dependencies.Clock.Now().UTC().Add(10 * time.Minute)
-	var record dbgen.RealqaGithubConnection
+	var connectionID uuid.UUID
+	if !callerAuthorization {
+		connectionID, err = newID(service.dependencies)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var storedID uuid.UUID
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			if lockErr := lockActiveOwnerScope(ctx, queries, scope); lockErr != nil {
 				return lockErr
 			}
-			record, err = queries.StartGitHubConnection(
+			if callerAuthorization {
+				id, startErr := queries.StartGitHubCallerAuthorization(
+					ctx, dbgen.StartGitHubCallerAuthorizationParams{
+						AccountID:        toPGUUID(actor.accountID),
+						OauthStateDigest: stateDigest,
+						OauthStateExpiresAt: pgtype.Timestamptz{
+							Time: expires, Valid: true,
+						},
+						OwnerKind: scope.kind,
+						OwnerID:   toPGUUID(scope.id),
+					})
+				if startErr != nil {
+					return startErr
+				}
+				storedID, startErr = fromPGUUID(id)
+				return startErr
+			}
+			record, startErr := queries.StartGitHubConnection(
 				ctx, dbgen.StartGitHubConnectionParams{
 					ID: toPGUUID(connectionID), OwnerKind: scope.kind,
 					OwnerID: toPGUUID(scope.id), OauthStateDigest: stateDigest,
 					OauthStateExpiresAt: pgtype.Timestamptz{Time: expires, Valid: true},
 				})
-			return err
+			if startErr != nil {
+				return startErr
+			}
+			storedID, startErr = fromPGUUID(record.ID)
+			return startErr
 		})
+	if callerAuthorization && errors.Is(err, pgx.ErrNoRows) {
+		return nil, rqerr.New(connect.CodeFailedPrecondition,
+			realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
+			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+	}
 	if err != nil {
 		return nil, err
 	}
-	storedID, _ := fromPGUUID(record.ID)
-	audit(ctx, service.dependencies, actor, "github_connection_started", scope,
+	action := "github_connection_started"
+	if callerAuthorization {
+		action = "github_user_authorization_started"
+	}
+	audit(ctx, service.dependencies, actor, action, scope,
 		storedID, "allow", "success")
 	return connect.NewResponse(&realqav1.StartGitHubConnectionResponse{
 		AuthorizationTarget: target,
@@ -254,6 +304,10 @@ func (service *Tracker) DisconnectGitHubConnection(
 					ExpectedRevision: request.Msg.ExpectedRevision.Value,
 				})
 			if err != nil {
+				return err
+			}
+			if _, err = queries.DisconnectGitHubCallerAuthorizationsForConnection(
+				ctx, record.ID); err != nil {
 				return err
 			}
 			connection, connectionErr := connectionProto(record)

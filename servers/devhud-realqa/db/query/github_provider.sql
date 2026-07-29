@@ -67,6 +67,26 @@ WHERE installation.id = sqlc.arg(installation_id)
   AND connection.connected_by_account_id = sqlc.arg(account_id)
   AND installation.state = 'active';
 
+-- name: GetGitHubCallerAuthorizationForInstallation :one
+SELECT
+    caller_authorization.connection_id,
+    installation.provider_installation_id,
+    installation.owner_kind,
+    installation.owner_id,
+    caller_authorization.credential_ciphertext,
+    caller_authorization.wrapped_data_key,
+    caller_authorization.key_id
+FROM realqa_github_user_authorizations AS caller_authorization
+JOIN realqa_github_connections AS connection
+  ON connection.id = caller_authorization.connection_id
+ AND connection.state = 'connected'
+JOIN realqa_github_installations AS installation
+  ON installation.connection_id = connection.id
+ AND installation.state = 'active'
+WHERE installation.id = sqlc.arg(installation_id)
+  AND caller_authorization.account_id = sqlc.arg(account_id)
+  AND caller_authorization.state = 'connected';
+
 -- name: GetGitHubUserCredentialForInstallationForUpdate :one
 SELECT
     connection.id AS connection_id,
@@ -85,6 +105,27 @@ WHERE installation.id = sqlc.arg(installation_id)
   AND installation.state = 'active'
 FOR UPDATE OF connection;
 
+-- name: GetGitHubCallerAuthorizationForInstallationForUpdate :one
+SELECT
+    caller_authorization.connection_id,
+    installation.provider_installation_id,
+    installation.owner_kind,
+    installation.owner_id,
+    caller_authorization.credential_ciphertext,
+    caller_authorization.wrapped_data_key,
+    caller_authorization.key_id
+FROM realqa_github_user_authorizations AS caller_authorization
+JOIN realqa_github_connections AS connection
+  ON connection.id = caller_authorization.connection_id
+ AND connection.state = 'connected'
+JOIN realqa_github_installations AS installation
+  ON installation.connection_id = connection.id
+ AND installation.state = 'active'
+WHERE installation.id = sqlc.arg(installation_id)
+  AND caller_authorization.account_id = sqlc.arg(account_id)
+  AND caller_authorization.state = 'connected'
+FOR UPDATE OF caller_authorization;
+
 -- name: UpdateGitHubUserCredential :execrows
 UPDATE realqa_github_connections
 SET credential_ciphertext = sqlc.arg(credential_ciphertext),
@@ -93,6 +134,16 @@ SET credential_ciphertext = sqlc.arg(credential_ciphertext),
     updated_at = transaction_timestamp()
 WHERE id = sqlc.arg(connection_id)
   AND connected_by_account_id = sqlc.arg(account_id)
+  AND state = 'connected';
+
+-- name: UpdateGitHubCallerAuthorization :execrows
+UPDATE realqa_github_user_authorizations
+SET credential_ciphertext = sqlc.arg(credential_ciphertext),
+    wrapped_data_key = sqlc.arg(wrapped_data_key),
+    key_id = sqlc.arg(key_id),
+    updated_at = transaction_timestamp()
+WHERE connection_id = sqlc.arg(connection_id)
+  AND account_id = sqlc.arg(account_id)
   AND state = 'connected';
 
 -- name: BeginGitHubUserCredentialRefresh :one
@@ -107,6 +158,20 @@ SET state = 'disconnected',
     updated_at = transaction_timestamp()
 WHERE id = sqlc.arg(connection_id)
   AND connected_by_account_id = sqlc.arg(account_id)
+  AND state = 'connected'
+RETURNING revision;
+
+-- name: BeginGitHubCallerAuthorizationRefresh :one
+UPDATE realqa_github_user_authorizations
+SET state = 'disconnected',
+    credential_ciphertext = NULL,
+    wrapped_data_key = NULL,
+    key_id = NULL,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    updated_at = transaction_timestamp()
+WHERE connection_id = sqlc.arg(connection_id)
+  AND account_id = sqlc.arg(account_id)
   AND state = 'connected'
 RETURNING revision;
 
@@ -132,6 +197,64 @@ WHERE connection.id = sqlc.arg(connection_id)
       WHERE identity.account_id = sqlc.arg(account_id)
         AND identity.deleted_at IS NULL
   );
+
+-- name: CompleteGitHubCallerAuthorizationRefresh :execrows
+UPDATE realqa_github_user_authorizations AS caller_authorization
+SET state = 'connected',
+    credential_ciphertext = sqlc.arg(credential_ciphertext),
+    wrapped_data_key = sqlc.arg(wrapped_data_key),
+    key_id = sqlc.arg(key_id),
+    updated_at = transaction_timestamp()
+WHERE caller_authorization.connection_id = sqlc.arg(connection_id)
+  AND caller_authorization.account_id = sqlc.arg(account_id)
+  AND caller_authorization.revision = sqlc.arg(expected_revision)
+  AND caller_authorization.state = 'disconnected'
+  AND caller_authorization.credential_ciphertext IS NULL
+  AND caller_authorization.wrapped_data_key IS NULL
+  AND caller_authorization.key_id IS NULL
+  AND caller_authorization.oauth_state_digest IS NULL
+  AND caller_authorization.oauth_state_expires_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_identities AS identity
+      WHERE identity.account_id = sqlc.arg(account_id)
+        AND identity.deleted_at IS NULL
+  );
+
+-- name: ConnectGitHubCallerAuthorization :execrows
+UPDATE realqa_github_user_authorizations AS caller_authorization
+SET state = 'connected',
+    github_login = sqlc.arg(github_login),
+    github_user_id = sqlc.arg(github_user_id),
+    credential_ciphertext = sqlc.arg(credential_ciphertext),
+    wrapped_data_key = sqlc.arg(wrapped_data_key),
+    key_id = sqlc.arg(key_id),
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    connected_at = transaction_timestamp(),
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+FROM realqa_github_connections AS connection
+WHERE connection.id = caller_authorization.connection_id
+  AND connection.owner_kind = sqlc.arg(owner_kind)
+  AND connection.owner_id = sqlc.arg(owner_id)
+  AND connection.state = 'connected'
+  AND caller_authorization.account_id = sqlc.arg(account_id)
+  AND caller_authorization.oauth_state_digest = sqlc.arg(oauth_state_digest)
+  AND caller_authorization.oauth_state_expires_at > transaction_timestamp();
+
+-- name: GitHubInstallationIsActiveForOwner :one
+SELECT EXISTS (
+    SELECT 1
+    FROM realqa_github_installations AS installation
+    JOIN realqa_github_connections AS connection
+      ON connection.id = installation.connection_id
+     AND connection.state = 'connected'
+    WHERE installation.provider_installation_id = sqlc.arg(provider_installation_id)
+      AND installation.owner_kind = sqlc.arg(owner_kind)
+      AND installation.owner_id = sqlc.arg(owner_id)
+      AND installation.state = 'active'
+);
 
 -- name: DeleteRepositoryAccessForAccount :execrows
 DELETE FROM realqa_repository_access
@@ -285,10 +408,41 @@ WHERE asset.submission_id = submission.id
   AND submission.provider_issue_id = sqlc.arg(provider_issue_id)
   AND asset.state IN ('private_staging', 'verified_unlinked', 'public_retained');
 
--- name: DisconnectGitHubUserCredentials :execrows
-UPDATE realqa_github_connections
+-- name: DisconnectGitHubUserCredentials :one
+WITH disconnected AS (
+    UPDATE realqa_github_connections AS connection
+    SET state = 'disconnected',
+        connected_by_account_id = NULL,
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = connection.revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE connection.github_user_id = sqlc.arg(provider_user_id)
+      AND connection.credential_ciphertext IS NOT NULL
+    RETURNING connection.id
+),
+cleared_authorizations AS (
+    UPDATE realqa_github_user_authorizations
+    SET state = 'disconnected',
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE connection_id IN (SELECT id FROM disconnected)
+    RETURNING 1
+)
+SELECT count(*)::bigint
+FROM disconnected;
+
+-- name: DisconnectGitHubCallerAuthorizations :execrows
+UPDATE realqa_github_user_authorizations
 SET state = 'disconnected',
-    connected_by_account_id = NULL,
     credential_ciphertext = NULL,
     wrapped_data_key = NULL,
     key_id = NULL,
@@ -298,3 +452,19 @@ SET state = 'disconnected',
     updated_at = transaction_timestamp()
 WHERE github_user_id = sqlc.arg(github_user_id)
   AND credential_ciphertext IS NOT NULL;
+
+-- name: DisconnectGitHubCallerAuthorizationsForConnection :execrows
+UPDATE realqa_github_user_authorizations
+SET state = 'disconnected',
+    credential_ciphertext = NULL,
+    wrapped_data_key = NULL,
+    key_id = NULL,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE connection_id = sqlc.arg(connection_id)
+  AND (
+      credential_ciphertext IS NOT NULL
+      OR oauth_state_digest IS NOT NULL
+  );

@@ -482,12 +482,13 @@ func validateIssueFormYAML(document *yaml.Node) error {
 			}
 			if validations.Kind == yaml.MappingNode {
 				if accept := mappingValue(validations, "accept"); accept != nil {
-					if !isStringNode(accept) {
-						return errors.New("realqa github: Issue Form field string value is invalid")
-					}
 					if fieldType != "upload" {
 						return errors.New(
 							"realqa github: Issue Form upload validation is not allowed for this field")
+					}
+					if !isStringNode(accept) ||
+						strings.TrimSpace(accept.Value) == "" {
+						return errors.New("realqa github: Issue Form field string value is invalid")
 					}
 				}
 			}

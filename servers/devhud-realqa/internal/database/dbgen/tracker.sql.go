@@ -294,6 +294,51 @@ func (q *Queries) ListRepositoryDefinitions(ctx context.Context, arg ListReposit
 	return items, nil
 }
 
+const startGitHubCallerAuthorization = `-- name: StartGitHubCallerAuthorization :one
+INSERT INTO realqa_github_user_authorizations (
+    connection_id, account_id, state, oauth_state_digest, oauth_state_expires_at
+)
+SELECT
+    connection.id, $1, 'pending',
+    $2, $3
+FROM realqa_github_connections AS connection
+WHERE connection.owner_kind = $4
+  AND connection.owner_id = $5
+  AND connection.state = 'connected'
+ON CONFLICT (connection_id, account_id)
+DO UPDATE SET state = CASE
+                  WHEN realqa_github_user_authorizations.state = 'connected'
+                  THEN 'connected'
+                  ELSE 'pending'
+              END,
+              oauth_state_digest = EXCLUDED.oauth_state_digest,
+              oauth_state_expires_at = EXCLUDED.oauth_state_expires_at,
+              revision = realqa_github_user_authorizations.revision + 1,
+              updated_at = transaction_timestamp()
+RETURNING connection_id
+`
+
+type StartGitHubCallerAuthorizationParams struct {
+	AccountID           pgtype.UUID
+	OauthStateDigest    []byte
+	OauthStateExpiresAt pgtype.Timestamptz
+	OwnerKind           string
+	OwnerID             pgtype.UUID
+}
+
+func (q *Queries) StartGitHubCallerAuthorization(ctx context.Context, arg StartGitHubCallerAuthorizationParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, startGitHubCallerAuthorization,
+		arg.AccountID,
+		arg.OauthStateDigest,
+		arg.OauthStateExpiresAt,
+		arg.OwnerKind,
+		arg.OwnerID,
+	)
+	var connection_id pgtype.UUID
+	err := row.Scan(&connection_id)
+	return connection_id, err
+}
+
 const startGitHubConnection = `-- name: StartGitHubConnection :one
 INSERT INTO realqa_github_connections (
     id, owner_kind, owner_id, state, oauth_state_digest, oauth_state_expires_at

@@ -163,6 +163,80 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 	}
 }
 
+func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
+	databaseURL := os.Getenv("REALQA_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("REALQA_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	store, connection, _, connectionID, installationID, vault :=
+		adapterRefreshFixture(t, ctx, databaseURL, nil)
+	memberAccountID := uuidv7.MustNew()
+	var ownerID uuid.UUID
+	if err := connection.QueryRow(ctx, `
+		SELECT owner_id
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, connectionID).Scan(&ownerID); err != nil {
+		t.Fatal(err)
+	}
+	plaintext, err := json.Marshal(OAuthCredential{
+		AccessToken: "ghu_fixture_member_access_token_123456",
+		ExpiresAt:   time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := vault.Seal(
+		plaintext, []byte(string(OwnerKindOrganization)+":"+ownerID.String()))
+	clear(plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($1, decode(repeat('02', 32), 'hex'));
+		INSERT INTO realqa_github_user_authorizations (
+			connection_id, account_id, state, github_user_id, github_login,
+			credential_ciphertext, wrapped_data_key, key_id, connected_at
+		) VALUES ($2, $1, 'connected', 7002, 'fixture-member', $3, $4, $5,
+		          transaction_timestamp())
+	`, memberAccountID, connectionID, encrypted.Ciphertext,
+		encrypted.WrappedDataKey, encrypted.KeyID); err != nil {
+		t.Fatal(err)
+	}
+	now := func() time.Time {
+		return time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
+	}
+	client, err := NewClient(ClientConfig{
+		ProjectPermission: ProjectPermissionNone,
+		Now:               now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := NewAdapter(
+		store, vault, client, "fixture-realqa-client",
+		"fixture-realqa-client-secret-value", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerID, token, err := adapter.userToken(ctx, memberAccountID, installationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providerID != 9001 ||
+		token.value != "ghu_fixture_member_access_token_123456" {
+		t.Fatalf("caller authorization provider=%d token=%v", providerID, token)
+	}
+	if _, _, err = adapter.userToken(
+		ctx, uuidv7.MustNew(), installationID,
+	); !errors.Is(err, ErrCallerAuthorizationUnavailable) {
+		t.Fatalf("unbound member used another credential: %v", err)
+	}
+}
+
 func TestInstallationWebhooksAcknowledgeUnboundAndApplyRename(t *testing.T) {
 	databaseURL := os.Getenv("REALQA_TEST_DATABASE_URL")
 	if databaseURL == "" {

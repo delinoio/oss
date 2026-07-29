@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -765,6 +766,74 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		  AND owner_id = $2
 	`, accountID, organizationID); err != nil {
 		t.Fatal(err)
+	}
+	memberAuthorization, err := tracker.StartGitHubConnection(
+		authCtx, connect.NewRequest(&realqav1.StartGitHubConnectionRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(
+		memberAuthorization.Msg.AuthorizationTarget, "/login/oauth/authorize?",
+	) || strings.Contains(memberAuthorization.Msg.AuthorizationTarget, "/installations/new") {
+		t.Fatalf("member received installation-management target %q",
+			memberAuthorization.Msg.AuthorizationTarget)
+	}
+	var memberState string
+	var memberStateDigest []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT state, oauth_state_digest
+		FROM realqa_github_user_authorizations
+		WHERE connection_id = $1 AND account_id = $2
+	`, organizationConnectionID, accountID).Scan(
+		&memberState, &memberStateDigest,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if memberState != "pending" || len(memberStateDigest) != sha256.Size {
+		t.Fatalf("member authorization state=%q digest=%d",
+			memberState, len(memberStateDigest))
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: organizationID,
+		},
+		accountID,
+		memberStateDigest,
+		realqagithub.UserIdentity{ID: 42, Login: "fixture-member"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{9}, WrappedDataKey: []byte{8}, KeyID: "fixture-key",
+		},
+		0,
+		[]realqagithub.Installation{{
+			ID: 758, AccountID: 758, AccountLogin: "fixture-org",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var memberCiphertext, connectorCiphertext []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT credential_ciphertext
+			 FROM realqa_github_user_authorizations
+			 WHERE connection_id = $1 AND account_id = $2),
+			(SELECT credential_ciphertext
+			 FROM realqa_github_connections
+			 WHERE id = $1)
+	`, organizationConnectionID, accountID).Scan(
+		&memberCiphertext, &connectorCiphertext,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(memberCiphertext, []byte{9}) ||
+		!bytes.Equal(connectorCiphertext, []byte{3}) {
+		t.Fatalf("member credential was not isolated: member=%v connector=%v",
+			memberCiphertext, connectorCiphertext)
 	}
 	memberMutation := proto.Clone(organizationRequest).(*realqav1.CreatePresetRequest)
 	memberMutation.Name = "Member cannot manage"

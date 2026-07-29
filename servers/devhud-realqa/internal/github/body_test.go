@@ -135,6 +135,24 @@ func TestComposeBodyRejectsUnsafeCaptureURLAutolinks(t *testing.T) {
 	}
 }
 
+func TestComposeBodyRejectsUnsafeInlineImageDestinations(t *testing.T) {
+	t.Parallel()
+	for _, imageURL := range []string{
+		"https://assets.realqa.deli.dev/capture)trailing",
+		"https://assets.realqa.deli.dev/capture with-space",
+		"https://assets.realqa.deli.dev/capture\u00a0with-space",
+	} {
+		_, err := ComposeBody(IssueInput{
+			SubmissionID: fixtureSubmissionID,
+			Images:       []InlineImage{{URL: imageURL}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "inline image URL is invalid") {
+			t.Fatalf("expected unsafe inline image URL %q to be rejected, got %v",
+				imageURL, err)
+		}
+	}
+}
+
 func TestComposeBodyAllowsManyImagesUntilSerializedOverflow(t *testing.T) {
 	t.Parallel()
 	input := IssueInput{

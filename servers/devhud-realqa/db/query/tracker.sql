@@ -24,6 +24,29 @@ DO UPDATE SET state = CASE
               updated_at = transaction_timestamp()
 RETURNING *;
 
+-- name: StartGitHubCallerAuthorization :one
+INSERT INTO realqa_github_user_authorizations (
+    connection_id, account_id, state, oauth_state_digest, oauth_state_expires_at
+)
+SELECT
+    connection.id, sqlc.arg(account_id), 'pending',
+    sqlc.arg(oauth_state_digest), sqlc.arg(oauth_state_expires_at)
+FROM realqa_github_connections AS connection
+WHERE connection.owner_kind = sqlc.arg(owner_kind)
+  AND connection.owner_id = sqlc.arg(owner_id)
+  AND connection.state = 'connected'
+ON CONFLICT (connection_id, account_id)
+DO UPDATE SET state = CASE
+                  WHEN realqa_github_user_authorizations.state = 'connected'
+                  THEN 'connected'
+                  ELSE 'pending'
+              END,
+              oauth_state_digest = EXCLUDED.oauth_state_digest,
+              oauth_state_expires_at = EXCLUDED.oauth_state_expires_at,
+              revision = realqa_github_user_authorizations.revision + 1,
+              updated_at = transaction_timestamp()
+RETURNING connection_id;
+
 -- name: ListGitHubInstallations :many
 SELECT installation.*
 FROM realqa_github_installations AS installation

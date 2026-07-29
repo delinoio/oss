@@ -24,16 +24,17 @@ billing catalog records, or publish a tracker/plugin interface.
   50/250 limits, UUID-v7 creation replay, and typed stale-revision ETags.
 - Organization Owner/Admin management; Owner-only organization feature
   deletion; and live account/organization/repository access bindings.
-- Repository enumeration and issue-schema reads use the caller's bound GitHub
-  App user authorization token, or only that caller's short-lived cached access
-  when another organization member owns the connection credential, and expose
-  only repositories in the user/App intersection. The signed callback verifies
-  the setup installation through the OAuth user's live installation list,
-  rechecks the initiating account's current owner-management access inside the
-  storage transaction, and only then binds the encrypted credential. Expiring
-  credentials are refreshed only after the old credential is durably cleared;
-  the rotated credential is compare-and-swap re-sealed, while any provider or
-  persistence failure leaves the connection disconnected for a safe reconnect.
+- Repository enumeration and issue-schema reads use only the caller's bound
+  GitHub App user authorization token and expose repositories in that user/App
+  intersection. Owner/Admin setup binds installations after verifying them
+  through the OAuth user's live installation list. Organization members use the
+  same connection-start RPC for an OAuth-only flow that stores a separate
+  caller-scoped encrypted credential only after confirming that their GitHub
+  identity can access an active installation already bound to the organization.
+  Expiring credentials are refreshed only after the applicable connection or
+  caller authorization is durably cleared; the rotated credential is
+  compare-and-swap re-sealed, while any provider or persistence failure requires
+  only that caller to reconnect unless it was the owner connection credential.
   Live repository/schema results refresh the caller-scoped preset-validation cache.
   Preset creation also revalidates the selected repository and definition
   through the live adapter when the caller owns the credential. Markdown

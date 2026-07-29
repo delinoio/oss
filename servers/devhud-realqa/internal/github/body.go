@@ -120,7 +120,9 @@ func renderImages(images []InlineImage) (string, error) {
 		if err != nil || parsed.Scheme != "https" ||
 			parsed.Host != "assets.realqa.deli.dev" || parsed.User != nil ||
 			parsed.RawQuery != "" || parsed.Fragment != "" ||
-			parsed.Path == "" || parsed.Path == "/" {
+			parsed.Path == "" || parsed.Path == "/" ||
+			strings.ContainsAny(image.URL, "()<>") ||
+			strings.IndexFunc(image.URL, unicode.IsSpace) >= 0 {
 			return "", errors.New("realqa github: inline image URL is invalid")
 		}
 		alt := strings.TrimSpace(image.AltText)
