@@ -277,7 +277,12 @@ func stripCredentials(headers http.Header) {
 	headers.Del(DeviceRevocationGrantHeader)
 }
 
-func authenticationError(error) error {
+func authenticationError(err error) error {
+	var failure *auth.Error
+	if errors.As(err, &failure) && failure.Kind == auth.ErrorKeyUnavailable {
+		return rpcerr.New(connect.CodeUnavailable,
+			deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
+	}
 	return rpcerr.New(connect.CodeUnauthenticated,
 		deckv1.ErrorReason_ERROR_REASON_INVALID_CREDENTIALS)
 }

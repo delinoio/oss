@@ -16,9 +16,12 @@ type Querier interface {
 	DeactivateOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeactivateTeamMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteAccountDevices(ctx context.Context, accountID pgtype.UUID) error
+	DeleteAllViewSnapshotStates(ctx context.Context, viewID pgtype.UUID) error
+	DeleteAllViewSnapshots(ctx context.Context, viewID pgtype.UUID) error
 	DeleteDeckAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteDeviceByRegistrationAndAccount(ctx context.Context, arg DeleteDeviceByRegistrationAndAccountParams) (int64, error)
 	DeleteDeviceByRegistrationAndGrant(ctx context.Context, arg DeleteDeviceByRegistrationAndGrantParams) (int64, error)
+	DeleteExpiredDeviceByAccountAndID(ctx context.Context, arg DeleteExpiredDeviceByAccountAndIDParams) error
 	DeleteExpiredDeviceByID(ctx context.Context, arg DeleteExpiredDeviceByIDParams) error
 	DeleteExpiredDeviceIdempotency(ctx context.Context, now pgtype.Timestamptz) error
 	DeleteOrganizationConnection(ctx context.Context, organizationID pgtype.UUID) error
@@ -64,6 +67,7 @@ type Querier interface {
 	RenewDevice(ctx context.Context, arg RenewDeviceParams) (DeckDeviceRegistration, error)
 	UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (DeckDeviceRegistration, error)
 	UpdateDeviceViewStateAfterDeletion(ctx context.Context, arg UpdateDeviceViewStateAfterDeletionParams) error
+	UpdateDeviceWidgetsAfterViewChange(ctx context.Context, arg UpdateDeviceWidgetsAfterViewChangeParams) error
 	UpdateView(ctx context.Context, arg UpdateViewParams) (DeckView, error)
 	UpdateViewSnapshotState(ctx context.Context, arg UpdateViewSnapshotStateParams) error
 	UpsertDeckAccount(ctx context.Context, arg UpsertDeckAccountParams) error

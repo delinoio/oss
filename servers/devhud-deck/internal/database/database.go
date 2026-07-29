@@ -458,36 +458,53 @@ func (store *Store) UpdateView(
 	id uuid.UUID,
 	expected uint64,
 	view *deckv1.View,
+	queryChanged bool,
 	now time.Time,
 ) (*deckv1.View, error) {
 	row, err := store.encodeView(view)
 	if err != nil {
 		return nil, err
 	}
-	updated, err := store.queries.UpdateView(ctx, dbgen.UpdateViewParams{
-		BillingOrganizationID:  row.BillingOrganizationID,
-		BillingTeamID:          row.BillingTeamID,
-		NameCiphertext:         row.NameCiphertext,
-		QueryCiphertext:        row.QueryCiphertext,
-		Sort:                   row.Sort,
-		Grouping:               row.Grouping,
-		NotificationCiphertext: row.NotificationCiphertext,
-		UpdatedAt:              pgTime(now),
-		ViewID:                 pgUUID(id),
-		ExpectedRevision:       int64(expected),
+	var updated dbgen.DeckView
+	err = store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		updated, err = queries.UpdateView(ctx, dbgen.UpdateViewParams{
+			BillingOrganizationID:  row.BillingOrganizationID,
+			BillingTeamID:          row.BillingTeamID,
+			NameCiphertext:         row.NameCiphertext,
+			QueryCiphertext:        row.QueryCiphertext,
+			Sort:                   row.Sort,
+			Grouping:               row.Grouping,
+			NotificationCiphertext: row.NotificationCiphertext,
+			UpdatedAt:              pgTime(now),
+			ViewID:                 pgUUID(id),
+			ExpectedRevision:       int64(expected),
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			current, currentErr := queries.GetView(ctx, pgUUID(id))
+			if errors.Is(currentErr, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			if currentErr != nil {
+				return errors.New("deck database: stale lookup failed")
+			}
+			return &StaleError{ResourceID: id, Revision: uint64(current.Revision)}
+		}
+		if err != nil {
+			return errors.New("deck database: update view failed")
+		}
+		if !queryChanged {
+			return nil
+		}
+		if err := queries.DeleteAllViewSnapshots(ctx, pgUUID(id)); err != nil {
+			return err
+		}
+		if err := queries.DeleteAllViewSnapshotStates(ctx, pgUUID(id)); err != nil {
+			return err
+		}
+		return store.resetDeviceWidgetSnapshots(ctx, queries, id, now)
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		current, currentErr := store.queries.GetView(ctx, pgUUID(id))
-		if errors.Is(currentErr, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		if currentErr != nil {
-			return nil, errors.New("deck database: stale lookup failed")
-		}
-		return nil, &StaleError{ResourceID: id, Revision: uint64(current.Revision)}
-	}
 	if err != nil {
-		return nil, errors.New("deck database: update view failed")
+		return nil, err
 	}
 	return store.decodeView(updated)
 }

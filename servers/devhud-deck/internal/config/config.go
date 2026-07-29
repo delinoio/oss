@@ -60,7 +60,7 @@ func Load(lookup LookupEnv) (Config, error) {
 		strings.ContainsAny(configuration.LifecycleClientID, " \t\r\n") {
 		return Config{}, errors.New("deck config: required value is missing or invalid")
 	}
-	if err := exactHTTPS(configuration.LogtoIssuer); err != nil {
+	if err := exactHTTPSResource(configuration.LogtoIssuer); err != nil {
 		return Config{}, fmt.Errorf("deck config: invalid Logto issuer")
 	}
 	if err := exactHTTPSResource(configuration.LogtoJWKSURL); err != nil {
@@ -88,16 +88,6 @@ func decodeKey(value string, minimum int) ([]byte, error) {
 		return nil, errors.New("deck config: invalid encoded security key")
 	}
 	return decoded, nil
-}
-
-func exactHTTPS(value string) error {
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" ||
-		parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" ||
-		parsed.Fragment != "" {
-		return errors.New("invalid HTTPS origin")
-	}
-	return nil
 }
 
 func exactHTTPSResource(value string) error {

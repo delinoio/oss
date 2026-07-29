@@ -147,7 +147,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 
 	first.Name = "changed"
-	if _, err := store.UpdateView(ctx, firstViewID, 99, first, now.Add(time.Hour)); err == nil {
+	if _, err := store.UpdateView(
+		ctx, firstViewID, 99, first, false, now.Add(time.Hour)); err == nil {
 		t.Fatal("stale update succeeded")
 	} else {
 		var stale *StaleError
@@ -155,7 +156,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			t.Fatalf("stale error = %T %v", err, err)
 		}
 	}
-	updated, err := store.UpdateView(ctx, firstViewID, 1, first, now.Add(time.Hour))
+	updated, err := store.UpdateView(
+		ctx, firstViewID, 1, first, false, now.Add(time.Hour))
 	if err != nil || updated.Revision.GetValue() != 2 {
 		t.Fatalf("update = %#v %v", updated, err)
 	}
@@ -212,6 +214,22 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("current-only snapshots = %d truncated=%v err=%v",
 			len(current), stateTruncated, err)
 	}
+	updatedQuery, err := query.Parse("repo:secret/other is:open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Query = updatedQuery
+	updated, err = store.UpdateView(
+		ctx, firstViewID, 2, first, true, now.Add(90*time.Minute))
+	if err != nil || updated.Revision.GetValue() != 3 {
+		t.Fatalf("query update = %#v %v", updated, err)
+	}
+	current, stateTruncated, refreshedAt, err := store.ListSnapshots(
+		ctx, firstViewID, viewerHash, authorizeSnapshot)
+	if err != nil || len(current) != 0 || stateTruncated || !refreshedAt.IsZero() {
+		t.Fatalf("snapshots after query update = %d truncated=%v refreshed=%v err=%v",
+			len(current), stateTruncated, refreshedAt, err)
+	}
 
 	organizationViewID := mustV7(t)
 	organizationViewParams := createViewParams(
@@ -226,6 +244,55 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		"owner", "OWNER_SCOPE_ORGANIZATION:"+organizationID.String())
 	if _, _, err := store.CreateView(ctx, organizationViewParams); err != nil {
 		t.Fatalf("create organization view: %v", err)
+	}
+
+	expiredDeviceID := mustV7(t)
+	expiredRegistrationID := mustV7(t)
+	expiredIdempotencyID := mustV7(t)
+	expiredGrant, err := security.NewGrant()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredWrite := DeviceWrite{
+		Platform:    deckv1.DevicePlatform_DEVICE_PLATFORM_MACOS,
+		DisplayName: "Expired laptop",
+		Push: &deckv1.PushRegistration{
+			Provider:        deckv1.PushProvider_PUSH_PROVIDER_APPLE,
+			OpaquePushToken: "expired-opaque",
+		},
+	}
+	if _, _, _, err := store.RegisterDevice(ctx, RegisterDeviceParams{
+		RegistrationID: expiredRegistrationID,
+		DeviceID:       expiredDeviceID,
+		AccountID:      accountID,
+		IdempotencyKey: expiredIdempotencyID,
+		RequestDigest:  security.Digest([]byte("expired")),
+		OwnerHash:      hasher.Sum("owner", "OWNER_SCOPE_PERSONAL:"+accountID.String()),
+		Write:          expiredWrite,
+		Grant:          expiredGrant,
+		LeaseExpiresAt: now.Add(time.Minute),
+		Now:            now,
+	}); err != nil {
+		t.Fatalf("register expiring device: %v", err)
+	}
+	if _, err := store.GetDevice(
+		ctx, accountID, expiredDeviceID, now.Add(2*time.Minute)); !errors.Is(
+		err, ErrNotFound) {
+		t.Fatalf("expired device lookup = %v", err)
+	}
+	var expiredRows int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)::integer
+		FROM deck_device_registrations AS registration
+		LEFT JOIN deck_device_registration_idempotency AS replay
+		  ON replay.registration_id = registration.registration_id
+		WHERE registration.registration_id = $1 OR replay.idempotency_key = $2`,
+		pgUUID(expiredRegistrationID), pgUUID(expiredIdempotencyID),
+	).Scan(&expiredRows); err != nil {
+		t.Fatal(err)
+	}
+	if expiredRows != 0 {
+		t.Fatalf("expired registration retained %d rows", expiredRows)
 	}
 
 	deviceID := mustV7(t)
@@ -271,6 +338,10 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 				ViewId:   uuidProto(firstViewID),
 				Family:   deckv1.WidgetFamily_WIDGET_FAMILY_APPLE_SMALL,
 				Privacy:  deckv1.WidgetPrivacy_WIDGET_PRIVACY_COUNTS_ONLY,
+				Snapshot: &deckv1.WidgetSnapshot{
+					MatchingCount: 99,
+					Freshness:     deckv1.FreshnessState_FRESHNESS_STATE_FRESH,
+				},
 			},
 			{
 				WidgetId: uuidProto(mustV7(t)),
@@ -325,19 +396,39 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if !errors.Is(err, ErrAccountSwitch) {
 		t.Fatalf("account switch error = %T %v", err, err)
 	}
-	if deletedRevision, err := store.DeleteView(
-		ctx, firstViewID, 2, now.Add(2*time.Minute)); err != nil ||
-		deletedRevision != 2 {
-		t.Fatalf("delete view = revision=%d err=%v", deletedRevision, err)
+	updatedQuery, err = query.Parse("repo:secret/final is:open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Query = updatedQuery
+	updated, err = store.UpdateView(
+		ctx, firstViewID, 3, first, true, now.Add(2*time.Minute))
+	if err != nil || updated.Revision.GetValue() != 4 {
+		t.Fatalf("query update with widget = %#v %v", updated, err)
 	}
 	device, err := store.GetDevice(ctx, accountID, deviceID, now.Add(3*time.Minute))
+	if err != nil {
+		t.Fatalf("device after query update: %v", err)
+	}
+	if device.Device.Revision.Value != 3 ||
+		device.Device.Widgets[0].Snapshot.GetMatchingCount() != 0 ||
+		device.Device.Widgets[0].Snapshot.GetFreshness() !=
+			deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED {
+		t.Fatalf("widget snapshot survived query update: %#v", device.Device)
+	}
+	if deletedRevision, err := store.DeleteView(
+		ctx, firstViewID, 4, now.Add(4*time.Minute)); err != nil ||
+		deletedRevision != 4 {
+		t.Fatalf("delete view = revision=%d err=%v", deletedRevision, err)
+	}
+	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(5*time.Minute))
 	if err != nil {
 		t.Fatalf("device after view deletion: %v", err)
 	}
 	if len(device.Device.Shortcuts) != 1 || len(device.Device.Widgets) != 1 ||
 		uuidValueFromProto(device.Device.Shortcuts[0].ViewId) != organizationViewID ||
 		uuidValueFromProto(device.Device.Widgets[0].ViewId) != organizationViewID ||
-		device.Device.Revision.Value != 3 {
+		device.Device.Revision.Value != 4 {
 		t.Fatalf("single-view device scrub = %#v", device.Device)
 	}
 	replayedFirst, replayed, err = store.CreateView(ctx, firstViewParams)
@@ -350,24 +441,24 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if _, err := store.DeleteOrganizationFeatureData(ctx, DeleteFeatureDataParams{
 		JobID: mustV7(t), ReplayKey: mustV7(t), TargetID: organizationID,
 		TargetHash: organizationTargetHash, Trigger: DeletionTriggerOwner,
-		AcceptedAt: now.Add(3 * time.Minute),
+		AcceptedAt: now.Add(6 * time.Minute),
 	}); err != nil {
 		t.Fatalf("organization feature deletion: %v", err)
 	}
 	device, err = store.GetDevice(
-		ctx, accountID, deviceID, now.Add(4*time.Minute))
+		ctx, accountID, deviceID, now.Add(7*time.Minute))
 	if err != nil {
 		t.Fatalf("device after organization deletion: %v", err)
 	}
 	if len(device.Device.Shortcuts) != 0 || len(device.Device.Widgets) != 0 {
 		t.Fatalf("organization device state survived deletion: %#v", device.Device)
 	}
-	if device.Device.Revision.Value != 4 {
+	if device.Device.Revision.Value != 5 {
 		t.Fatalf("device revision after organization deletion = %#v",
 			device.Device.Revision)
 	}
 	unregistered, err := store.UnregisterDevice(
-		ctx, registrationID, uuid.Nil, grant, now.Add(5*time.Minute))
+		ctx, registrationID, uuid.Nil, grant, now.Add(8*time.Minute))
 	if err != nil || !unregistered {
 		t.Fatalf("original replay grant unregister = %v, %v", unregistered, err)
 	}

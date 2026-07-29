@@ -60,6 +60,24 @@ func (q *Queries) DeleteDeviceByRegistrationAndGrant(ctx context.Context, arg De
 	return result.RowsAffected(), nil
 }
 
+const deleteExpiredDeviceByAccountAndID = `-- name: DeleteExpiredDeviceByAccountAndID :exec
+DELETE FROM deck_device_registrations
+WHERE account_id = $1
+  AND device_id = $2
+  AND lease_expires_at <= $3
+`
+
+type DeleteExpiredDeviceByAccountAndIDParams struct {
+	AccountID pgtype.UUID
+	DeviceID  pgtype.UUID
+	Now       pgtype.Timestamptz
+}
+
+func (q *Queries) DeleteExpiredDeviceByAccountAndID(ctx context.Context, arg DeleteExpiredDeviceByAccountAndIDParams) error {
+	_, err := q.db.Exec(ctx, deleteExpiredDeviceByAccountAndID, arg.AccountID, arg.DeviceID, arg.Now)
+	return err
+}
+
 const deleteExpiredDeviceByID = `-- name: DeleteExpiredDeviceByID :exec
 DELETE FROM deck_device_registrations
 WHERE device_id = $1
@@ -484,6 +502,32 @@ func (q *Queries) UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Dec
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateDeviceWidgetsAfterViewChange = `-- name: UpdateDeviceWidgetsAfterViewChange :exec
+UPDATE deck_device_registrations
+SET widgets_ciphertext = $1,
+    revision = revision + 1,
+    updated_at = $2
+WHERE registration_id = $3
+  AND revision = $4
+`
+
+type UpdateDeviceWidgetsAfterViewChangeParams struct {
+	WidgetsCiphertext []byte
+	UpdatedAt         pgtype.Timestamptz
+	RegistrationID    pgtype.UUID
+	ExpectedRevision  int64
+}
+
+func (q *Queries) UpdateDeviceWidgetsAfterViewChange(ctx context.Context, arg UpdateDeviceWidgetsAfterViewChangeParams) error {
+	_, err := q.db.Exec(ctx, updateDeviceWidgetsAfterViewChange,
+		arg.WidgetsCiphertext,
+		arg.UpdatedAt,
+		arg.RegistrationID,
+		arg.ExpectedRevision,
+	)
+	return err
 }
 
 const upsertViewNotificationPreference = `-- name: UpsertViewNotificationPreference :one

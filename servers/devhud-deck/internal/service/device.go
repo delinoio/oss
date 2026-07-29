@@ -37,6 +37,9 @@ func (service *Device) GetDevice(
 	if err != nil {
 		return nil, mapDatabaseError(err)
 	}
+	if err := service.authorizeRegistrationViews(ctx, viewer, registration); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&deckv1.GetDeviceResponse{
 		Registration: registration,
 	}), nil
@@ -311,6 +314,18 @@ func (service *Device) deviceWrite(
 			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
 	bindingCounts := make(map[string]int)
+	seenShortcuts := make(map[uuid.UUID]struct{})
+	for _, configuration := range configurations {
+		shortcutID, err := parseUUID(configuration.GetShortcutId())
+		if err != nil {
+			return database.DeviceWrite{}, err
+		}
+		if _, duplicate := seenShortcuts[shortcutID]; duplicate {
+			return database.DeviceWrite{}, rpcerr.New(connect.CodeInvalidArgument,
+				deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
+		}
+		seenShortcuts[shortcutID] = struct{}{}
+	}
 	type parsedShortcut struct {
 		id      uuid.UUID
 		viewID  uuid.UUID
@@ -395,6 +410,41 @@ func (service *Device) deviceWrite(
 		DetailedNotificationTextEnabled: detailed,
 		Shortcuts:                       shortcuts, Widgets: widgets,
 	}, nil
+}
+
+func (service *Device) authorizeRegistrationViews(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	registration *deckv1.DeviceRegistration,
+) error {
+	if registration == nil || registration.Device == nil {
+		return rpcerr.New(connect.CodeInternal,
+			deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
+	}
+	seen := make(map[uuid.UUID]struct{},
+		len(registration.Device.Shortcuts)+len(registration.Device.Widgets))
+	authorize := func(value *deckv1.UuidV7) error {
+		viewID, err := parseUUID(value)
+		if err != nil {
+			return err
+		}
+		if _, checked := seen[viewID]; checked {
+			return nil
+		}
+		seen[viewID] = struct{}{}
+		return service.authorizeReferencedView(ctx, viewer, viewID)
+	}
+	for _, shortcut := range registration.Device.Shortcuts {
+		if err := authorize(shortcut.GetViewId()); err != nil {
+			return err
+		}
+	}
+	for _, widget := range registration.Device.Widgets {
+		if err := authorize(widget.GetViewId()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (service *Device) authorizeReferencedView(

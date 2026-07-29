@@ -69,6 +69,14 @@ WHERE registration_id = sqlc.arg(registration_id)
   AND revision = sqlc.arg(expected_revision)
 RETURNING *;
 
+-- name: UpdateDeviceWidgetsAfterViewChange :exec
+UPDATE deck_device_registrations
+SET widgets_ciphertext = sqlc.arg(widgets_ciphertext),
+    revision = revision + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE registration_id = sqlc.arg(registration_id)
+  AND revision = sqlc.arg(expected_revision);
+
 -- name: InsertRegisterDeviceIdempotency :exec
 INSERT INTO deck_device_registration_idempotency (
     account_id, idempotency_key, request_digest, registration_id,
@@ -88,6 +96,12 @@ WHERE lease_expires_at <= sqlc.arg(now);
 -- name: DeleteExpiredDeviceByID :exec
 DELETE FROM deck_device_registrations
 WHERE device_id = sqlc.arg(device_id)
+  AND lease_expires_at <= sqlc.arg(now);
+
+-- name: DeleteExpiredDeviceByAccountAndID :exec
+DELETE FROM deck_device_registrations
+WHERE account_id = sqlc.arg(account_id)
+  AND device_id = sqlc.arg(device_id)
   AND lease_expires_at <= sqlc.arg(now);
 
 -- name: DeleteDeviceByRegistrationAndAccount :execrows

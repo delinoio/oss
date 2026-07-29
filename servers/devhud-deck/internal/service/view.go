@@ -172,10 +172,12 @@ func (service *View) CreateView(
 	if err != nil {
 		return nil, mapDatabaseError(err)
 	}
-	if err := service.recordAudit(ctx, viewer.Subject, audit.EventViewCreated,
-		created.Owner.Scope, ownerHash[:], audit.ResourceView, viewID,
-		audit.OutcomeSuccess); err != nil {
-		return nil, err
+	if !replayed {
+		if err := service.recordAudit(ctx, viewer.Subject, audit.EventViewCreated,
+			created.Owner.Scope, ownerHash[:], audit.ResourceView, viewID,
+			audit.OutcomeSuccess); err != nil {
+			return nil, err
+		}
 	}
 	return connect.NewResponse(&deckv1.CreateViewResponse{
 		View: created,
@@ -307,8 +309,10 @@ func (service *View) UpdateView(
 		return nil, rpcerr.New(connect.CodePermissionDenied,
 			deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
 	}
+	queryChanged := !proto.Equal(current.Query, updated.Query)
 	updated, err = service.dependencies.Store.UpdateView(
-		ctx, id, expected, updated, service.dependencies.Clock.Now().UTC())
+		ctx, id, expected, updated, queryChanged,
+		service.dependencies.Clock.Now().UTC())
 	if err != nil {
 		return nil, service.mapStaleWithETag(err)
 	}

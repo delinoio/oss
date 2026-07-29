@@ -37,6 +37,26 @@ func (q *Queries) CountPersonalViews(ctx context.Context, ownerAccountID pgtype.
 	return column_1, err
 }
 
+const deleteAllViewSnapshotStates = `-- name: DeleteAllViewSnapshotStates :exec
+DELETE FROM deck_pull_request_snapshot_states
+WHERE view_id = $1
+`
+
+func (q *Queries) DeleteAllViewSnapshotStates(ctx context.Context, viewID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAllViewSnapshotStates, viewID)
+	return err
+}
+
+const deleteAllViewSnapshots = `-- name: DeleteAllViewSnapshots :exec
+DELETE FROM deck_pull_request_snapshots
+WHERE view_id = $1
+`
+
+func (q *Queries) DeleteAllViewSnapshots(ctx context.Context, viewID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAllViewSnapshots, viewID)
+	return err
+}
+
 const deleteView = `-- name: DeleteView :one
 DELETE FROM deck_views
 WHERE view_id = $1

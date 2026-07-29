@@ -304,6 +304,52 @@ func (store *Store) scrubDeviceViewState(
 	return nil
 }
 
+func (store *Store) resetDeviceWidgetSnapshots(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	viewID uuid.UUID,
+	updatedAt time.Time,
+) error {
+	devices, err := queries.ListDeviceRegistrationsForUpdate(ctx)
+	if err != nil {
+		return err
+	}
+	for _, device := range devices {
+		widgets := &deckv1.Device{}
+		if err := store.openProto(
+			"device-widgets", device.WidgetsCiphertext, widgets); err != nil {
+			return err
+		}
+		changed := false
+		for _, widget := range widgets.Widgets {
+			if uuidValueFromProto(widget.GetViewId()) != viewID {
+				continue
+			}
+			widget.Snapshot = &deckv1.WidgetSnapshot{
+				Freshness: deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED,
+			}
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		widgetsCiphertext, err := store.sealProto("device-widgets", widgets)
+		if err != nil {
+			return err
+		}
+		if err := queries.UpdateDeviceWidgetsAfterViewChange(ctx,
+			dbgen.UpdateDeviceWidgetsAfterViewChangeParams{
+				WidgetsCiphertext: widgetsCiphertext,
+				UpdatedAt:         pgTime(updatedAt),
+				RegistrationID:    device.RegistrationID,
+				ExpectedRevision:  device.Revision,
+			}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func retainShortcuts(
 	shortcuts []*deckv1.ViewShortcut,
 	deleted map[uuid.UUID]struct{},

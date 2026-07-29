@@ -191,12 +191,22 @@ func (store *Store) GetDevice(
 		dbgen.GetDeviceByAccountAndIDParams{
 			AccountID: pgUUID(accountID), DeviceID: pgUUID(deviceID),
 		})
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil &&
-		(!row.LeaseExpiresAt.Valid || !row.LeaseExpiresAt.Time.After(now))) {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, errors.New("deck database: device lookup failed")
+	}
+	if !row.LeaseExpiresAt.Valid || !row.LeaseExpiresAt.Time.After(now) {
+		if err := store.queries.DeleteExpiredDeviceByAccountAndID(ctx,
+			dbgen.DeleteExpiredDeviceByAccountAndIDParams{
+				AccountID: pgUUID(accountID),
+				DeviceID:  pgUUID(deviceID),
+				Now:       pgTime(now),
+			}); err != nil {
+			return nil, errors.New("deck database: expired device cleanup failed")
+		}
+		return nil, ErrNotFound
 	}
 	return store.decodeDevice(row)
 }

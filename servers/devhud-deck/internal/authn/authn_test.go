@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/google/uuid"
@@ -135,5 +136,19 @@ func TestStripCredentialsRemovesEveryDeckCredential(t *testing.T) {
 	}
 	if headers.Get("X-Request-Id") != "request-1" {
 		t.Fatal("safe request metadata was stripped")
+	}
+}
+
+func TestAuthenticationErrorPreservesKeySourceFailure(t *testing.T) {
+	t.Parallel()
+	if code := connect.CodeOf(authenticationError(&auth.Error{
+		Kind: auth.ErrorKeyUnavailable,
+	})); code != connect.CodeUnavailable {
+		t.Fatalf("key source failure code = %v", code)
+	}
+	if code := connect.CodeOf(authenticationError(&auth.Error{
+		Kind: auth.ErrorSignature,
+	})); code != connect.CodeUnauthenticated {
+		t.Fatalf("invalid signature code = %v", code)
 	}
 }
