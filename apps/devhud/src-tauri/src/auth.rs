@@ -918,6 +918,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         &mut self,
         feature: AuthFeature,
     ) -> Result<bool, AuthError> {
+        if matches!(self.state, SessionState::CleanupRequired) {
+            return Ok(false);
+        }
         let Some(retained) = self.vault.load()? else {
             return Ok(false);
         };
@@ -1597,6 +1600,35 @@ mod tests {
                 .has_retained_feature_binding(AuthFeature::Deck)
                 .unwrap()
         );
+        assert!(
+            !manager
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn retained_binding_check_fails_closed_after_cleanup_required() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::RealQa,
+                "realqa-refresh",
+                key.expose(),
+            )),
+            fail_clear: true,
+            ..FakeVault::default()
+        };
+        let mut manager = manager(FakeTransport::default(), vault);
+        manager.state = SessionState::PriorSessionOffline;
+
+        assert!(
+            manager
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
+        assert_eq!(manager.reset(), Err(AuthError::SecureVaultDeleteFailed));
+        assert_eq!(manager.snapshot(), SessionSnapshot::CleanupRequired);
         assert!(
             !manager
                 .has_retained_feature_binding(AuthFeature::RealQa)

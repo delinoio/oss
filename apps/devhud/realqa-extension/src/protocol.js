@@ -1,6 +1,7 @@
 export const NATIVE_HOST_NAME = "dev.deli.devhud.realqa";
 export const PROTOCOL_VERSION = 1;
 export const MAX_ENCODED_IMAGE_BYTES = 25 * 1024 * 1024;
+export const MAX_SESSION_IMAGE_BYTES = 7 * 1024 * 1024;
 export const MAX_EXTENSION_MESSAGE_BYTES = 64 * 1024 * 1024;
 export const MAX_HOST_RESPONSE_BYTES = 1024 * 1024;
 
@@ -126,7 +127,7 @@ export function sanitizeSelection(value) {
   return Object.keys(output).length === 0 ? undefined : output;
 }
 
-export function dataUrlImage(value) {
+export function dataUrlImage(value, maximumBytes = MAX_ENCODED_IMAGE_BYTES) {
   if (typeof value !== "string") throw new Error("capture-unavailable");
   const match = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]*={0,2})$/u.exec(value);
   if (match === null || match[1] === undefined || match[2] === undefined) {
@@ -135,7 +136,7 @@ export function dataUrlImage(value) {
   const base64 = match[2];
   const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
   const encodedBytes = Math.floor((base64.length * 3) / 4) - padding;
-  if (encodedBytes > MAX_ENCODED_IMAGE_BYTES) throw new Error("image-too-large");
+  if (encodedBytes > maximumBytes) throw new Error("image-too-large");
   return { mediaType: match[1], base64, encodedBytes };
 }
 

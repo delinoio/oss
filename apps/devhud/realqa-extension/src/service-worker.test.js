@@ -139,6 +139,24 @@ describe("RealQA extension service worker", () => {
     });
   });
 
+  it("rejects viewport images that cannot fit in extension session storage", async () => {
+    captureVisibleTab.mockResolvedValueOnce(
+      `data:image/png;base64,${"A".repeat(
+        Math.ceil(((7 * 1024 * 1024 + 1) * 4) / 3),
+      )}`,
+    );
+
+    await expect(dispatch({ kind: "begin-capture" })).resolves.toEqual({
+      ok: false,
+      error: "image-too-large",
+    });
+    expect(storageSet).not.toHaveBeenCalled();
+    await expect(dispatch({ kind: "get-draft" })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+  });
+
   it("falls back to OS capture on restricted pages and excludes Incognito", async () => {
     query.mockResolvedValueOnce([
       { id: 7, windowId: 3, url: "chrome://settings", incognito: false },

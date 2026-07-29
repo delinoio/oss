@@ -5,6 +5,7 @@ import {
   dataUrlImage,
   isRestrictedPage,
   NATIVE_HOST_NAME,
+  MAX_SESSION_IMAGE_BYTES,
   originPatternForUrl,
   sanitizeSelection,
 } from "./protocol.js";
@@ -80,7 +81,7 @@ async function beginCapture() {
     capturedUrl: capturedTab.url,
     url: capturedTab.url,
     title: capturedTab.title,
-    image: dataUrlImage(dataUrl),
+    image: dataUrlImage(dataUrl, MAX_SESSION_IMAGE_BYTES),
     restricted: false,
   });
 }
