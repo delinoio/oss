@@ -6,6 +6,8 @@ mod image_boundary;
 mod linux;
 #[cfg(any(all(target_os = "macos", feature = "realqa-macos-capture"), test))]
 mod macos;
+#[cfg(any(target_os = "windows", test))]
+mod windows;
 
 use std::sync::Arc;
 
@@ -28,6 +30,10 @@ pub(crate) use image_boundary::{
 };
 use serde::{Deserialize, Serialize};
 
+const MAX_CAPTURE_DISPLAYS: usize = 64;
+const MAX_CAPTURE_WINDOWS: usize = 512;
+const MAX_SAFE_PROCESS_NAME_BYTES: usize = 128;
+const MAX_SAFE_WINDOW_TITLE_BYTES: usize = 512;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum CapturePlatform {
@@ -104,6 +110,8 @@ pub(crate) enum CaptureFailure {
     Cancelled,
     PortalCancelled,
     ProtectedContent,
+    WindowMinimized,
+    WindowClosed,
     WindowLost,
     DisplayRemoved,
     ModeUnavailable,
@@ -143,6 +151,8 @@ pub(crate) enum BackendFailure {
     Cancelled,
     PortalCancelled,
     ProtectedContent,
+    WindowMinimized,
+    WindowClosed,
     WindowLost,
     DisplayRemoved,
     ModeUnavailable,
@@ -159,6 +169,8 @@ impl From<BackendFailure> for CaptureFailure {
             BackendFailure::Cancelled => Self::Cancelled,
             BackendFailure::PortalCancelled => Self::PortalCancelled,
             BackendFailure::ProtectedContent => Self::ProtectedContent,
+            BackendFailure::WindowMinimized => Self::WindowMinimized,
+            BackendFailure::WindowClosed => Self::WindowClosed,
             BackendFailure::WindowLost => Self::WindowLost,
             BackendFailure::DisplayRemoved => Self::DisplayRemoved,
             BackendFailure::ModeUnavailable => Self::ModeUnavailable,
@@ -182,7 +194,9 @@ pub(crate) enum WindowAvailability {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct WindowMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) process_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) title: Option<String>,
 }
 
@@ -213,8 +227,8 @@ impl WindowSource {
 }
 
 impl WindowMetadata {
-    const MAX_PROCESS_NAME_BYTES: usize = 128;
-    const MAX_TITLE_BYTES: usize = 512;
+    const MAX_PROCESS_NAME_BYTES: usize = MAX_SAFE_PROCESS_NAME_BYTES;
+    const MAX_TITLE_BYTES: usize = MAX_SAFE_WINDOW_TITLE_BYTES;
 
     fn checked(&self) -> Result<(), CaptureFailure> {
         for (value, maximum) in [
@@ -258,6 +272,8 @@ fn bounded_metadata_value(value: Option<String>, maximum: usize) -> Option<Strin
         }
         bounded.push(character);
     }
+    let trimmed_len = bounded.trim_end().len();
+    bounded.truncate(trimmed_len);
     (!bounded.is_empty()).then_some(bounded)
 }
 
@@ -366,10 +382,18 @@ pub(crate) struct CaptureRequest {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ResolvedWindowSource {
+    pub(crate) id: WindowSourceId,
+    pub(crate) display_id: DisplayId,
+    pub(crate) bounds: LogicalRect,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedCaptureRequest {
     pub(crate) session_id: CaptureSessionId,
     pub(crate) snapshot: DisplaySnapshot,
     pub(crate) source: CaptureSourceSelection,
+    pub(crate) window: Option<ResolvedWindowSource>,
     pub(crate) mode: CaptureMode,
     pub(crate) pointer: PointerInclusion,
     pub(crate) output_media_type: ImageMediaType,
@@ -444,18 +468,12 @@ struct CaptureSession<'a> {
 }
 
 impl<'a> CaptureSession<'a> {
-    fn start(
-        backend: &'a dyn CaptureBackend,
-        session_id: CaptureSessionId,
-    ) -> Result<Self, CaptureFailure> {
-        backend
-            .start_session(&session_id)
-            .map_err(CaptureFailure::from)?;
-        Ok(Self {
+    fn prepared(backend: &'a dyn CaptureBackend, session_id: CaptureSessionId) -> Self {
+        Self {
             backend,
             session_id,
             finished: false,
-        })
+        }
     }
 
     fn finish<T>(mut self, result: Result<T, CaptureFailure>) -> Result<T, CaptureFailure> {
@@ -494,6 +512,7 @@ impl CaptureCore {
         let capabilities = self.inspect_capabilities()?;
         let permission = self.require_granted_permission()?;
         let snapshot = self.current_snapshot()?;
+        let platform = self.backend.platform();
         let mut windows = self
             .backend
             .windows(&snapshot)
@@ -501,12 +520,15 @@ impl CaptureCore {
             .into_iter()
             .map(|window| window.checked(&snapshot))
             .collect::<Result<Vec<_>, _>>()?;
+        if windows.len() > MAX_CAPTURE_WINDOWS {
+            return Err(CaptureFailure::InvalidDisplaySnapshot);
+        }
         windows.sort_by(|left, right| left.id.0.cmp(&right.id.0));
         if windows.windows(2).any(|pair| pair[0].id == pair[1].id) {
             return Err(CaptureFailure::InvalidDisplaySnapshot);
         }
         Ok(CaptureSourceCatalog {
-            platform: self.backend.platform(),
+            platform,
             permission,
             capabilities,
             snapshot,
@@ -545,11 +567,27 @@ impl CaptureCore {
         adjust_selection(&snapshot, selection, adjustment)
     }
 
+    #[cfg(test)]
     pub(crate) fn begin(&self, request: CaptureRequest) -> Result<CaptureResult, CaptureFailure> {
+        self.prepare_begin(&request)?;
+        self.begin_prepared(request)
+    }
+
+    pub(crate) fn prepare_begin(&self, request: &CaptureRequest) -> Result<(), CaptureFailure> {
         if request.session_id.0.is_empty() || request.session_id.0.len() > 128 {
             return Err(CaptureFailure::InvalidSelection);
         }
-        let session = CaptureSession::start(self.backend.as_ref(), request.session_id.clone())?;
+        self.backend
+            .start_session(&request.session_id)
+            .map_err(CaptureFailure::from)
+    }
+
+    pub(crate) fn begin_prepared(
+        &self,
+        request: CaptureRequest,
+    ) -> Result<CaptureResult, CaptureFailure> {
+        let session_id = request.session_id.clone();
+        let session = CaptureSession::prepared(self.backend.as_ref(), session_id);
         session.finish(self.begin_started(request))
     }
 
@@ -625,7 +663,11 @@ impl CaptureCore {
     }
 
     fn current_snapshot(&self) -> Result<DisplaySnapshot, CaptureFailure> {
-        DisplaySnapshot::checked(self.backend.displays().map_err(CaptureFailure::from)?)
+        let displays = self.backend.displays().map_err(CaptureFailure::from)?;
+        if displays.len() > MAX_CAPTURE_DISPLAYS {
+            return Err(CaptureFailure::InvalidDisplaySnapshot);
+        }
+        DisplaySnapshot::checked(displays)
     }
 
     fn require_granted_permission(&self) -> Result<CapturePermission, CaptureFailure> {
@@ -641,7 +683,7 @@ impl CaptureCore {
         request: CaptureRequest,
         snapshot: DisplaySnapshot,
     ) -> Result<ResolvedCaptureRequest, CaptureFailure> {
-        let (logical_bounds, window_display_id) = match &request.source {
+        let (logical_bounds, window) = match &request.source {
             CaptureSourceSelection::Region { selection } => {
                 if selection.snapshot_id != snapshot.snapshot_id {
                     return Err(CaptureFailure::DisplaySnapshotChanged);
@@ -653,6 +695,9 @@ impl CaptureCore {
                     .backend
                     .windows(&snapshot)
                     .map_err(CaptureFailure::from)?;
+                if windows.len() > MAX_CAPTURE_WINDOWS {
+                    return Err(CaptureFailure::InvalidDisplaySnapshot);
+                }
                 let mut window_ids = windows.iter().map(|window| &window.id).collect::<Vec<_>>();
                 window_ids.sort_by(|left, right| left.0.cmp(&right.0));
                 if window_ids.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -661,12 +706,29 @@ impl CaptureCore {
                 let window = windows
                     .into_iter()
                     .find(|window| &window.id == window_id)
-                    .ok_or(CaptureFailure::WindowLost)?;
+                    .ok_or_else(|| match self.backend.platform() {
+                        CapturePlatform::Windows => CaptureFailure::WindowClosed,
+                        CapturePlatform::Macos | CapturePlatform::Linux => {
+                            CaptureFailure::WindowLost
+                        }
+                    })?;
                 if window.availability == WindowAvailability::Minimized {
-                    return Err(CaptureFailure::WindowLost);
+                    return Err(match self.backend.platform() {
+                        CapturePlatform::Windows => CaptureFailure::WindowMinimized,
+                        CapturePlatform::Macos | CapturePlatform::Linux => {
+                            CaptureFailure::WindowLost
+                        }
+                    });
                 }
                 let window = window.checked(&snapshot)?;
-                (window.bounds, Some(window.display_id))
+                (
+                    window.bounds,
+                    Some(ResolvedWindowSource {
+                        id: window.id,
+                        display_id: window.display_id,
+                        bounds: window.bounds,
+                    }),
+                )
             }
             CaptureSourceSelection::Display { display_id } => (
                 snapshot
@@ -722,9 +784,10 @@ impl CaptureCore {
                 snapshot.selected_pixel_regions(display_ids, logical_bounds)?
             }
             CaptureSourceSelection::Window { .. } => snapshot.non_overlapping_pixel_regions(
-                window_display_id
+                &window
                     .as_ref()
-                    .ok_or(CaptureFailure::InvalidDisplaySnapshot)?,
+                    .ok_or(CaptureFailure::InvalidDisplaySnapshot)?
+                    .display_id,
                 logical_bounds,
             )?,
             CaptureSourceSelection::Region { .. } => snapshot.pixel_regions(logical_bounds)?,
@@ -735,6 +798,7 @@ impl CaptureCore {
             session_id: request.session_id,
             snapshot,
             source: request.source,
+            window,
             mode,
             pointer: request.pointer,
             output_media_type: request.output_media_type,
@@ -834,11 +898,12 @@ pub(crate) fn record_outcome<T>(result: &Result<T, CaptureFailure>) {
         Err(CaptureFailure::Cancelled) => Classification::RealqaCaptureCancelled,
         Err(CaptureFailure::PortalCancelled) => Classification::RealqaCapturePortalCancelled,
         Err(CaptureFailure::ProtectedContent) => Classification::RealqaCaptureProtectedContent,
+        Err(CaptureFailure::WindowMinimized) => Classification::RealqaCaptureWindowMinimized,
+        Err(CaptureFailure::WindowClosed) => Classification::RealqaCaptureWindowClosed,
         Err(CaptureFailure::WindowLost) => Classification::RealqaCaptureWindowLost,
+        Err(CaptureFailure::DisplayRemoved) => Classification::RealqaCaptureDisplayRemoved,
         Err(CaptureFailure::ModeUnavailable) => Classification::RealqaCaptureModeUnavailable,
-        Err(CaptureFailure::DisplayRemoved | CaptureFailure::DisplaySnapshotChanged) => {
-            Classification::RealqaCaptureDisplayChanged
-        }
+        Err(CaptureFailure::DisplaySnapshotChanged) => Classification::RealqaCaptureDisplayChanged,
         Err(
             CaptureFailure::InvalidDisplaySnapshot
             | CaptureFailure::InvalidSelection
@@ -882,7 +947,10 @@ pub(crate) enum CaptureDiagnosticClassification {
     Cancelled,
     PortalCancelled,
     ProtectedContent,
+    WindowMinimized,
+    WindowClosed,
     WindowLost,
+    DisplayRemoved,
     ModeUnavailable,
     DisplayChanged,
     InvalidRequest,
@@ -923,11 +991,14 @@ impl CaptureDiagnostic {
             CaptureFailure::Cancelled => CaptureDiagnosticClassification::Cancelled,
             CaptureFailure::PortalCancelled => CaptureDiagnosticClassification::PortalCancelled,
             CaptureFailure::ProtectedContent => CaptureDiagnosticClassification::ProtectedContent,
+            CaptureFailure::WindowMinimized => CaptureDiagnosticClassification::WindowMinimized,
+            CaptureFailure::WindowClosed => CaptureDiagnosticClassification::WindowClosed,
             CaptureFailure::WindowLost => CaptureDiagnosticClassification::WindowLost,
-            CaptureFailure::DisplayRemoved | CaptureFailure::DisplaySnapshotChanged => {
+            CaptureFailure::DisplayRemoved => CaptureDiagnosticClassification::DisplayRemoved,
+            CaptureFailure::ModeUnavailable => CaptureDiagnosticClassification::ModeUnavailable,
+            CaptureFailure::DisplaySnapshotChanged => {
                 CaptureDiagnosticClassification::DisplayChanged
             }
-            CaptureFailure::ModeUnavailable => CaptureDiagnosticClassification::ModeUnavailable,
             CaptureFailure::InvalidDisplaySnapshot
             | CaptureFailure::InvalidSelection
             | CaptureFailure::InvalidEditorOperation
@@ -951,6 +1022,8 @@ impl CaptureDiagnostic {
 
 pub(crate) enum PlatformCaptureBackend {
     Unavailable(CapturePlatform),
+    #[cfg(target_os = "windows")]
+    Windows(windows::WindowsCaptureBackend),
     #[cfg(target_os = "linux")]
     Linux(linux::LinuxCaptureBackend),
     #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -976,7 +1049,10 @@ impl PlatformCaptureBackend {
         }
         #[cfg(target_os = "windows")]
         {
-            Self::new(CapturePlatform::Windows)
+            match windows::WindowsCaptureBackend::system() {
+                Some(backend) => Self::Windows(backend),
+                None => Self::new(CapturePlatform::Windows),
+            }
         }
         #[cfg(target_os = "linux")]
         {
@@ -996,6 +1072,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn platform(&self) -> CapturePlatform {
         match self {
             Self::Unavailable(platform) => *platform,
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.platform(),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.platform(),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1006,6 +1084,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure> {
         match self {
             Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.capabilities(),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.capabilities(),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1016,6 +1096,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn permission(&self) -> Result<CapturePermission, BackendFailure> {
         match self {
             Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.permission(),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.permission(),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1026,6 +1108,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn permission_status(&self) -> Result<CapturePermissionStatus, BackendFailure> {
         match self {
             Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.permission_status(),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.permission_status(),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1036,6 +1120,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn request_permission(&self) -> Result<CapturePermissionStatus, BackendFailure> {
         match self {
             Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.request_permission(),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.request_permission(),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1046,6 +1132,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn start_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
         match self {
             Self::Unavailable(_) => Ok(()),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.start_session(session_id),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.start_session(session_id),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1056,6 +1144,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn finish_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
         match self {
             Self::Unavailable(_) => Ok(()),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.finish_session(session_id),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.finish_session(session_id),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1066,6 +1156,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
         match self {
             Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.displays(),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.displays(),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1076,6 +1168,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure> {
         match self {
             Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.windows(snapshot),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.windows(snapshot),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1086,6 +1180,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn capture(&self, request: &ResolvedCaptureRequest) -> Result<BackendFrame, BackendFailure> {
         match self {
             Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.capture(request),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.capture(request),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1096,6 +1192,8 @@ impl CaptureBackend for PlatformCaptureBackend {
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
         match self {
             Self::Unavailable(_) => Err(BackendFailure::Unavailable),
+            #[cfg(target_os = "windows")]
+            Self::Windows(backend) => backend.cancel(session_id),
             #[cfg(target_os = "linux")]
             Self::Linux(backend) => backend.cancel(session_id),
             #[cfg(all(target_os = "macos", feature = "realqa-macos-capture"))]
@@ -1123,6 +1221,7 @@ mod tests {
         display_calls: AtomicUsize,
         window_calls: AtomicUsize,
         capture_result: Mutex<Result<Option<BackendFrame>, BackendFailure>>,
+        finish_result: Mutex<Result<(), BackendFailure>>,
         last_request: Mutex<Option<ResolvedCaptureRequest>>,
     }
 
@@ -1164,6 +1263,7 @@ mod tests {
                 display_calls: AtomicUsize::new(0),
                 window_calls: AtomicUsize::new(0),
                 capture_result: Mutex::new(Ok(None)),
+                finish_result: Mutex::new(Ok(())),
                 last_request: Mutex::new(None),
             }
         }
@@ -1241,6 +1341,10 @@ mod tests {
                     })
                 }
             }
+        }
+
+        fn finish_session(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+            *self.finish_result.lock().expect("finish lock")
         }
 
         fn cancel(&self, _session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
@@ -1444,6 +1548,102 @@ mod tests {
             assert_eq!(backend.display_calls.load(Ordering::Relaxed), 0);
             assert_eq!(backend.window_calls.load(Ordering::Relaxed), 0);
         }
+    }
+
+    #[test]
+    fn source_catalog_bounds_display_and_window_enumeration() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let core = CaptureCore::new(backend.clone());
+        *backend.displays.lock().expect("display lock") = (0..=MAX_CAPTURE_DISPLAYS)
+            .map(|index| DisplayDescriptor {
+                id: DisplayId(format!("display-{index}")),
+                logical_bounds: LogicalRect {
+                    x: f64::from(u32::try_from(index).expect("bounded index")) * 10.0,
+                    y: 0.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
+                physical_size: PhysicalSize {
+                    width: 10,
+                    height: 10,
+                },
+                scale: ScaleFactor {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                primary: index == 0,
+            })
+            .collect();
+        assert_eq!(
+            core.source_catalog(),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+
+        *backend.displays.lock().expect("display lock") =
+            FixtureBackend::new(CapturePlatform::Windows)
+                .displays
+                .into_inner()
+                .expect("fixture displays");
+        let display_id = backend.displays.lock().expect("display lock")[0].id.clone();
+        *backend.windows.lock().expect("window lock") = (0..=MAX_CAPTURE_WINDOWS)
+            .map(|index| WindowSource {
+                id: WindowSourceId(format!("window-{index}")),
+                display_id: display_id.clone(),
+                bounds: LogicalRect {
+                    x: -10.0,
+                    y: 0.0,
+                    width: 2.0,
+                    height: 2.0,
+                },
+                availability: WindowAvailability::Available,
+                metadata: WindowMetadata::default(),
+            })
+            .collect();
+        assert_eq!(
+            core.source_catalog(),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+    }
+
+    #[test]
+    fn source_catalog_rejects_path_bearing_or_control_character_metadata() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let core = CaptureCore::new(backend.clone());
+        backend.windows.lock().expect("window lock")[0].metadata = WindowMetadata {
+            process_name: Some(r"C:\private\capture.exe".to_owned()),
+            title: Some("private\nwindow".to_owned()),
+        };
+        assert_eq!(
+            core.source_catalog(),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+    }
+
+    #[test]
+    fn source_catalog_rejects_path_like_metadata_on_all_platforms() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
+        let core = CaptureCore::new(backend.clone());
+        backend.windows.lock().expect("window lock")[0].metadata = WindowMetadata {
+            process_name: Some(r"foo:bar/baz\qux".to_owned()),
+            title: Some("Linux window".to_owned()),
+        };
+
+        assert_eq!(
+            core.source_catalog(),
+            Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bounded_linux_metadata_retrims_after_truncation() {
+        let expected = "a".repeat(WindowMetadata::MAX_PROCESS_NAME_BYTES - 1);
+        let metadata = WindowMetadata::bounded(
+            Some(format!("{expected} trailing")),
+            Some("Linux window".to_owned()),
+        );
+
+        assert_eq!(metadata.process_name.as_deref(), Some(expected.as_str()));
     }
 
     #[test]
@@ -2157,6 +2357,23 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_observed_during_encoding_discards_the_capture_result() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Windows));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog must load");
+        *backend.finish_result.lock().expect("finish lock") = Err(BackendFailure::Cancelled);
+
+        assert_eq!(
+            core.begin(request(&catalog)),
+            Err(CaptureFailure::Cancelled)
+        );
+        assert!(
+            backend.last_request.lock().expect("request lock").is_some(),
+            "the backend frame must be captured before final cancellation is observed"
+        );
+    }
+
+    #[test]
     fn hot_plug_is_detected_before_backend_capture() {
         let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
         let core = CaptureCore::new(backend.clone());
@@ -2214,7 +2431,10 @@ mod tests {
             window_id: WindowSourceId("window-1".to_owned()),
         };
         backend.windows.lock().expect("window lock").clear();
-        assert_eq!(core.begin(window_request), Err(CaptureFailure::WindowLost));
+        assert_eq!(
+            core.begin(window_request),
+            Err(CaptureFailure::WindowClosed)
+        );
     }
 
     #[test]
@@ -2229,6 +2449,11 @@ mod tests {
                 CaptureFailure::PermissionLost,
             ),
             (BackendFailure::WindowLost, CaptureFailure::WindowLost),
+            (
+                BackendFailure::WindowMinimized,
+                CaptureFailure::WindowMinimized,
+            ),
+            (BackendFailure::WindowClosed, CaptureFailure::WindowClosed),
             (
                 BackendFailure::DisplayRemoved,
                 CaptureFailure::DisplayRemoved,
@@ -2302,6 +2527,15 @@ mod tests {
                 CaptureFailure::ProtectedContent,
             ),
             (BackendFailure::WindowLost, CaptureFailure::WindowLost),
+            (
+                BackendFailure::WindowMinimized,
+                CaptureFailure::WindowMinimized,
+            ),
+            (BackendFailure::WindowClosed, CaptureFailure::WindowClosed),
+            (
+                BackendFailure::DisplayRemoved,
+                CaptureFailure::DisplayRemoved,
+            ),
             (
                 BackendFailure::ModeUnavailable,
                 CaptureFailure::ModeUnavailable,

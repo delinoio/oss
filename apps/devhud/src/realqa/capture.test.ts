@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CaptureFailure,
   CaptureMode,
   createRealQaCaptureBridge,
   createRealQaComposerBridge,
@@ -29,6 +30,39 @@ function invokeFixture(): {
 }
 
 describe("RealQA native boundaries", () => {
+  it("keeps Windows source metadata bounded by shape and native failures typed", () => {
+    const source = {
+      id: "windows-window-0000000000000001",
+      displayId: "windows-display-0000000000000001",
+      bounds: { x: -320, y: 24, width: 640, height: 480 },
+      availability: "available",
+      metadata: {
+        processName: "fixture.exe",
+        title: "Fixture",
+      },
+    } as const;
+
+    expect(Object.keys(source.metadata).toSorted()).toEqual([
+      "processName",
+      "title",
+    ]);
+    expect([
+      CaptureFailure.PermissionDenied,
+      CaptureFailure.ProtectedContent,
+      CaptureFailure.WindowMinimized,
+      CaptureFailure.WindowClosed,
+      CaptureFailure.DisplayRemoved,
+      CaptureFailure.CaptureFailed,
+    ]).toEqual([
+      "permission-denied",
+      "protected-content",
+      "window-minimized",
+      "window-closed",
+      "display-removed",
+      "capture-failed",
+    ]);
+  });
+
   it("uses only the closed permission and capture commands with exact argument shapes", async () => {
     const { calls, invokeCommand } = invokeFixture();
     const bridge = createRealQaCaptureBridge(invokeCommand);
