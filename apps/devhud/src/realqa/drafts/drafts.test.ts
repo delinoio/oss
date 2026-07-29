@@ -278,6 +278,67 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     },
   );
 
+  it.each([
+    [String.raw`(?i)^\bK\b$`, "K", true],
+    [String.raw`(?i)^\bK\b$`, "k", true],
+    [String.raw`(?i)^\bK\b$`, "K", false],
+    [String.raw`(?i)^\BK\B$`, "K", true],
+  ])(
+    "matches synchronized word boundary %s against %s with Go semantics",
+    (pattern, title, matches) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: pattern,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+        ok: true,
+        url: {
+          value: matches
+            ? "https://example.com/matched"
+            : "https://fallback.example/",
+        },
+      });
+    },
+  );
+
+  it.each([
+    [String.raw`(?i)^[[:^alpha:]]$`, "K", false],
+    [String.raw`(?i)^[[:^alpha:]]$`, "ſ", false],
+    [String.raw`(?i)^[[:^alpha:]]$`, "İ", true],
+    [String.raw`(?i)^[[:^upper:]]$`, "k", false],
+    [String.raw`(?i)^[[:^upper:]]$`, "0", true],
+  ])(
+    "matches synchronized negated POSIX class %s against %s with Go semantics",
+    (pattern, title, matches) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: pattern,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+        ok: true,
+        url: {
+          value: matches
+            ? "https://example.com/matched"
+            : "https://fallback.example/",
+        },
+      });
+    },
+  );
+
   it("rejects malformed disabled rules to match server compilation", () => {
     const rules = [
       rule({

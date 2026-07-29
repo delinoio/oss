@@ -159,9 +159,61 @@ function renderCharacterRanges(ranges: readonly CharacterRange[]): string {
     .join("");
 }
 
+function characterRangesContain(
+  ranges: readonly CharacterRange[],
+  codePoint: number,
+): boolean {
+  return ranges.some(([start, end]) => codePoint >= start && codePoint <= end);
+}
+
+/**
+ * JavaScript /iu adds Unicode simple-fold equivalents to ASCII ranges. Close
+ * the excluded set before complementing it so negated POSIX classes keep Go's
+ * case-insensitive semantics when rendered as a positive JavaScript range.
+ */
+function closeAsciiRangesUnderUnicodeCaseFolding(
+  ranges: readonly CharacterRange[],
+): readonly CharacterRange[] {
+  const expanded: CharacterRange[] = [...ranges];
+  for (let upper = 0x41; upper <= 0x5a; upper += 1) {
+    const lower = upper + 0x20;
+    if (
+      characterRangesContain(ranges, upper) ||
+      characterRangesContain(ranges, lower)
+    ) {
+      expanded.push([upper, upper], [lower, lower]);
+    }
+  }
+  if (
+    characterRangesContain(ranges, 0x4b) ||
+    characterRangesContain(ranges, 0x6b)
+  ) {
+    expanded.push([0x212a, 0x212a]);
+  }
+  if (
+    characterRangesContain(ranges, 0x53) ||
+    characterRangesContain(ranges, 0x73)
+  ) {
+    expanded.push([0x017f, 0x017f]);
+  }
+  const merged: CharacterRange[] = [];
+  for (const [start, end] of expanded.toSorted(
+    ([left], [right]) => left - right,
+  )) {
+    const previous = merged.at(-1);
+    if (previous !== undefined && start <= previous[1] + 1) {
+      merged[merged.length - 1] = [previous[0], Math.max(previous[1], end)];
+    } else {
+      merged.push([start, end]);
+    }
+  }
+  return merged;
+}
+
 function translatePosixCharacterClass(
   pattern: string,
   index: number,
+  caseInsensitive = false,
 ): { readonly output: string; readonly nextIndex: number } | null {
   const posixClass = pattern
     .slice(index)
@@ -173,9 +225,16 @@ function translatePosixCharacterClass(
     posixCharacterClassRanges[
       posixClass[2] as keyof typeof posixCharacterClassRanges
     ];
+  const negated = posixClass[1] === "^";
   return {
     output: renderCharacterRanges(
-      posixClass[1] === "^" ? complementCharacterRanges(ranges) : ranges,
+      negated
+        ? complementCharacterRanges(
+            caseInsensitive
+              ? closeAsciiRangesUnderUnicodeCaseFolding(ranges)
+              : ranges,
+          )
+        : ranges,
     ),
     nextIndex: index + posixClass[0].length,
   };
@@ -600,6 +659,18 @@ function wrapRegexModifiers(
   return `(?${modifier}:${content})`;
 }
 
+function translateAsciiWordBoundary(
+  escaped: "b" | "B",
+  flags: RegexFlags,
+): string {
+  const word = `[${renderCharacterRanges(posixCharacterClassRanges.word)}]`;
+  const assertion =
+    escaped === "b"
+      ? `(?:(?<!${word})(?=${word})|(?<=${word})(?!${word}))`
+      : `(?:(?<=${word})(?=${word})|(?<!${word})(?!${word}))`;
+  return wrapRegexModifiers(flags, { ...flags, i: false }, assertion);
+}
+
 /**
  * Rust/Go inline flags can change for the rest of a group and include `U`.
  * JavaScript supports only scoped i/m/s modifier groups, so preserve those
@@ -622,7 +693,11 @@ function translateTitlePattern(pattern: string): string {
         output += token;
         index += 1;
         while (index < pattern.length) {
-          const posixClass = translatePosixCharacterClass(pattern, index);
+          const posixClass = translatePosixCharacterClass(
+            pattern,
+            index,
+            flags.i,
+          );
           if (posixClass !== null) {
             output += posixClass.output;
             index = posixClass.nextIndex;
@@ -671,6 +746,8 @@ function translateTitlePattern(pattern: string): string {
             ? "(?<![\\s\\S])"
             : escaped === "z"
               ? "(?![\\s\\S])"
+              : escaped === "b" || escaped === "B"
+                ? translateAsciiWordBoundary(escaped, flags)
               : pattern.slice(index, index + 2);
         index += 2;
         continue;

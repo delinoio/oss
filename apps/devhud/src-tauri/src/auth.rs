@@ -589,6 +589,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             return Ok(self.snapshot());
         }
         if let Some(error) = grant_error {
+            if matches!(self.state, SessionState::PriorSessionOffline { .. }) {
+                self.state = SessionState::SignedOut;
+            }
             return Err(error);
         }
         if transport_unavailable {
@@ -839,6 +842,11 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 offline_features,
                 ..
             } => (reauthenticated_features.clone(), offline_features.clone()),
+            SessionState::PriorSessionOffline { .. }
+                if retained.refresh_tokens.contains_key(&AuthFeature::RealQa) =>
+            {
+                (BTreeSet::new(), [AuthFeature::RealQa].into_iter().collect())
+            }
             _ => (BTreeSet::new(), BTreeSet::new()),
         };
         reauthenticated_features.insert(feature);
@@ -2102,6 +2110,47 @@ mod tests {
     }
 
     #[test]
+    fn deck_authorization_preserves_prior_offline_realqa_draft_access() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::RealQa,
+                "refresh-realqa",
+                key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("refresh-deck-new"),
+        )));
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
+        let mut manager = manager(transport, vault);
+        manager.restore(Connectivity::Offline).unwrap();
+
+        let request = manager
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Desktop,
+                Url::parse("http://127.0.0.1:3000/auth/callback").unwrap(),
+            )
+            .unwrap();
+        manager
+            .complete_callback(&callback_for(&request, "deck-code", None), NOW)
+            .unwrap();
+
+        let access = manager.realqa_draft_access().unwrap();
+        assert!(!access.online_reauthenticated);
+        assert_eq!(
+            access.account_binding,
+            realqa_draft_account_binding("account-a")
+        );
+    }
+
+    #[test]
     fn incremental_authorization_failure_restores_the_active_session() {
         let mut transport = FakeTransport::default();
         transport.exchange.push_back(Ok(tokens(
@@ -3103,10 +3152,10 @@ mod tests {
     }
 
     #[test]
-    fn retained_session_requires_reauthentication_after_invalid_grant() {
+    fn retained_realqa_session_locks_drafts_after_invalid_grant() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
-            retained: Some(retained_grant(AuthFeature::Deck, "refresh", key.expose())),
+            retained: Some(retained_grant(AuthFeature::RealQa, "refresh", key.expose())),
             ..FakeVault::default()
         };
         let mut transport = FakeTransport::default();
@@ -3116,7 +3165,17 @@ mod tests {
         let mut prior = manager(transport, vault);
 
         assert_eq!(
+            prior.restore_at(Connectivity::Offline, NOW).unwrap(),
+            SessionSnapshot::PriorSessionOffline
+        );
+        assert!(!prior.realqa_draft_access().unwrap().online_reauthenticated);
+        assert_eq!(
             prior.restore_at(Connectivity::Online, NOW),
+            Err(AuthError::ReauthenticationRequired)
+        );
+        assert_eq!(prior.snapshot(), SessionSnapshot::SignedOut);
+        assert_eq!(
+            prior.realqa_draft_access(),
             Err(AuthError::ReauthenticationRequired)
         );
         assert!(!prior.memory_tokens_present());
