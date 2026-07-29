@@ -142,6 +142,27 @@ func (service *Submission) CreateSubmission(
 			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
 				return lookupErr
 			}
+			lockedPreset, lockErr := queries.LockPreset(
+				ctx, toPGUUID(presetID))
+			if lockErr != nil {
+				if errors.Is(lockErr, pgx.ErrNoRows) {
+					return permissionDenied()
+				}
+				return lockErr
+			}
+			if lockedPreset.OwnerKind != scope.kind ||
+				lockedPreset.OwnerID != toPGUUID(scope.id) {
+				return permissionDenied()
+			}
+			if lockedPreset.Revision != request.Msg.PresetRevision.Value {
+				return stale(lockedPreset.Revision)
+			}
+			if lockedPreset.DestinationID != presetRecord.DestinationID ||
+				lockedPreset.PayerOrganizationID != toPGUUID(payerOrganization) ||
+				lockedPreset.PayerTeamID != toPGUUID(payerTeam) {
+				return invalid(
+					realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+			}
 			payerScope := owner{
 				kind: "organization",
 				id:   payerOrganization,
@@ -163,6 +184,18 @@ func (service *Submission) CreateSubmission(
 			}
 			if !allowed {
 				return permissionDenied()
+			}
+			if _, accessErr = queries.GetRepositorySubmitAccessForOwner(
+				ctx, dbgen.GetRepositorySubmitAccessForOwnerParams{
+					InstallationID: presetRecord.InstallationID,
+					AccountID:      toPGUUID(actor.accountID),
+					RepositoryID:   presetRecord.RepositoryID,
+					OwnerKind:      scope.kind,
+					OwnerID:        toPGUUID(scope.id),
+				}); errors.Is(accessErr, pgx.ErrNoRows) {
+				return permissionDenied()
+			} else if accessErr != nil {
+				return accessErr
 			}
 			if lockErr := queries.LockUploadSessionAccount(
 				ctx, toPGUUID(actor.accountID)); lockErr != nil {

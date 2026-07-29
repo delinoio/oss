@@ -131,7 +131,6 @@ CREATE TABLE realqa_object_deletion_jobs (
     next_attempt_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     last_attempted_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    PRIMARY KEY (asset_id, object_kind),
     CHECK (realqa_is_uuid_v7(asset_id)),
     CHECK (
         (object_kind = 'public' AND public_id IS NOT NULL)
@@ -140,6 +139,14 @@ CREATE TABLE realqa_object_deletion_jobs (
     ),
     CHECK (public_id IS NULL OR length(public_id) BETWEEN 22 AND 128)
 );
+
+CREATE UNIQUE INDEX realqa_object_deletion_jobs_private_unique
+ON realqa_object_deletion_jobs (asset_id, object_kind)
+WHERE object_kind <> 'public';
+
+CREATE UNIQUE INDEX realqa_object_deletion_jobs_public_unique
+ON realqa_object_deletion_jobs (public_id)
+WHERE object_kind = 'public';
 
 CREATE INDEX realqa_object_deletion_jobs_pending
 ON realqa_object_deletion_jobs (next_attempt_at, created_at);

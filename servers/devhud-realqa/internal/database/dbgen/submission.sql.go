@@ -71,15 +71,17 @@ const completeObjectDeletion = `-- name: CompleteObjectDeletion :exec
 DELETE FROM realqa_object_deletion_jobs
 WHERE asset_id = $1
   AND object_kind = $2
+  AND public_id IS NOT DISTINCT FROM $3
 `
 
 type CompleteObjectDeletionParams struct {
 	AssetID    pgtype.UUID
 	ObjectKind string
+	PublicID   pgtype.Text
 }
 
 func (q *Queries) CompleteObjectDeletion(ctx context.Context, arg CompleteObjectDeletionParams) error {
-	_, err := q.db.Exec(ctx, completeObjectDeletion, arg.AssetID, arg.ObjectKind)
+	_, err := q.db.Exec(ctx, completeObjectDeletion, arg.AssetID, arg.ObjectKind, arg.PublicID)
 	return err
 }
 
@@ -257,7 +259,7 @@ INSERT INTO realqa_object_deletion_jobs (
 ) VALUES (
     $1, $2, $3
 )
-ON CONFLICT (asset_id, object_kind) DO NOTHING
+ON CONFLICT DO NOTHING
 `
 
 type EnqueueObjectDeletionParams struct {
@@ -359,7 +361,7 @@ SELECT asset.id, asset.submission_id, asset.public_id, asset.object_key_cipherte
 FROM realqa_assets AS asset
 JOIN realqa_submissions AS submission ON submission.id = asset.submission_id
 WHERE asset.upload_token_digest = $1
-  AND asset.upload_state = 'put_authorized'
+  AND asset.upload_state IN ('put_authorized', 'uploaded')
 `
 
 type GetAssetUploadGrantRow struct {
@@ -1363,15 +1365,17 @@ SET attempt_count = attempt_count + 1,
     next_attempt_at = transaction_timestamp() + interval '5 minutes'
 WHERE asset_id = $1
   AND object_kind = $2
+  AND public_id IS NOT DISTINCT FROM $3
 `
 
 type RetryObjectDeletionParams struct {
 	AssetID    pgtype.UUID
 	ObjectKind string
+	PublicID   pgtype.Text
 }
 
 func (q *Queries) RetryObjectDeletion(ctx context.Context, arg RetryObjectDeletionParams) error {
-	_, err := q.db.Exec(ctx, retryObjectDeletion, arg.AssetID, arg.ObjectKind)
+	_, err := q.db.Exec(ctx, retryObjectDeletion, arg.AssetID, arg.ObjectKind, arg.PublicID)
 	return err
 }
 

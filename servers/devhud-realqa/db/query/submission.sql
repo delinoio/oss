@@ -129,7 +129,7 @@ SELECT asset.*, submission.upload_deadline
 FROM realqa_assets AS asset
 JOIN realqa_submissions AS submission ON submission.id = asset.submission_id
 WHERE asset.upload_token_digest = sqlc.arg(upload_token_digest)
-  AND asset.upload_state = 'put_authorized';
+  AND asset.upload_state IN ('put_authorized', 'uploaded');
 
 -- name: MarkAssetUploaded :one
 UPDATE realqa_assets
@@ -435,7 +435,7 @@ INSERT INTO realqa_object_deletion_jobs (
 ) VALUES (
     sqlc.arg(asset_id), sqlc.arg(object_kind), sqlc.narg(public_id)
 )
-ON CONFLICT (asset_id, object_kind) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- name: ListPendingObjectDeletions :many
 SELECT *
@@ -450,9 +450,11 @@ SET attempt_count = attempt_count + 1,
     last_attempted_at = transaction_timestamp(),
     next_attempt_at = transaction_timestamp() + interval '5 minutes'
 WHERE asset_id = sqlc.arg(asset_id)
-  AND object_kind = sqlc.arg(object_kind);
+  AND object_kind = sqlc.arg(object_kind)
+  AND public_id IS NOT DISTINCT FROM sqlc.narg(public_id);
 
 -- name: CompleteObjectDeletion :exec
 DELETE FROM realqa_object_deletion_jobs
 WHERE asset_id = sqlc.arg(asset_id)
-  AND object_kind = sqlc.arg(object_kind);
+  AND object_kind = sqlc.arg(object_kind)
+  AND public_id IS NOT DISTINCT FROM sqlc.narg(public_id);

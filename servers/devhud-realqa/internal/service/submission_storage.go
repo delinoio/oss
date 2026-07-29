@@ -294,8 +294,13 @@ func (service *Submission) StoreUploaded(
 			if lockErr != nil {
 				return lockErr
 			}
-			if asset.UploadState != "put_authorized" ||
-				!hmac.Equal(asset.UploadTokenDigest, grant.TokenDigest[:]) {
+			if !hmac.Equal(asset.UploadTokenDigest, grant.TokenDigest[:]) {
+				return imageassets.ErrInvalidScope
+			}
+			if asset.UploadState == "uploaded" {
+				return nil
+			}
+			if asset.UploadState != "put_authorized" {
 				return imageassets.ErrInvalidScope
 			}
 			if putErr := service.dependencies.Objects.Put(
@@ -459,6 +464,12 @@ func (service *Submission) FinalizeImageUpload(
 					SubmissionID: toPGUUID(submissionID),
 				})
 			if sumErr != nil {
+				return sumErr
+			}
+			if sumErr = queries.CompleteObjectDeletion(
+				ctx, dbgen.CompleteObjectDeletionParams{
+					AssetID: asset.ID, ObjectKind: string(objectKindVerified),
+				}); sumErr != nil {
 				return sumErr
 			}
 			if sumErr = enqueueObjectDeletion(
@@ -739,6 +750,19 @@ func (service *Submission) DeleteImage(
 					ExpectedRevision:  request.Msg.ExpectedAssetRevision.Value,
 				})
 			if lockErr != nil {
+				if errors.Is(lockErr, pgx.ErrNoRows) {
+					current, currentErr := queries.GetAssetRecord(
+						ctx, dbgen.GetAssetRecordParams{
+							ID:           toPGUUID(assetID),
+							SubmissionID: toPGUUID(submissionID),
+						})
+					if currentErr == nil {
+						return stale(current.Revision)
+					}
+					if !errors.Is(currentErr, pgx.ErrNoRows) {
+						return currentErr
+					}
+				}
 				return lockErr
 			}
 			if lockErr = enqueueAssetObjectDeletions(
@@ -1601,6 +1625,7 @@ func (service *Submission) DrainObjectDeletions(
 			if retryErr := service.dependencies.Store.Queries().RetryObjectDeletion(
 				ctx, dbgen.RetryObjectDeletionParams{
 					AssetID: job.AssetID, ObjectKind: job.ObjectKind,
+					PublicID: job.PublicID,
 				}); retryErr != nil {
 				return completed, retryErr
 			}
@@ -1609,6 +1634,7 @@ func (service *Submission) DrainObjectDeletions(
 		if err = service.dependencies.Store.Queries().CompleteObjectDeletion(
 			ctx, dbgen.CompleteObjectDeletionParams{
 				AssetID: job.AssetID, ObjectKind: job.ObjectKind,
+				PublicID: job.PublicID,
 			}); err != nil {
 			return completed, err
 		}

@@ -86,6 +86,30 @@ func (q *Queries) DeleteScopeDisconnectIdempotencySnapshots(ctx context.Context,
 	return result.RowsAffected(), nil
 }
 
+const deleteScopePresetIdempotencySnapshots = `-- name: DeleteScopePresetIdempotencySnapshots :execrows
+DELETE FROM realqa_idempotency_records AS idempotency
+WHERE idempotency.operation = 'create_preset'
+  AND idempotency.resource_id IN (
+    SELECT preset.id
+    FROM realqa_presets AS preset
+    WHERE preset.owner_kind = $1
+      AND preset.owner_id = $2
+)
+`
+
+type DeleteScopePresetIdempotencySnapshotsParams struct {
+	ScopeOwnerKind string
+	ScopeOwnerID   pgtype.UUID
+}
+
+func (q *Queries) DeleteScopePresetIdempotencySnapshots(ctx context.Context, arg DeleteScopePresetIdempotencySnapshotsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteScopePresetIdempotencySnapshots, arg.ScopeOwnerKind, arg.ScopeOwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteScopePresets = `-- name: DeleteScopePresets :execrows
 DELETE FROM realqa_presets
 WHERE owner_kind = $1

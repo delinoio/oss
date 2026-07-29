@@ -44,6 +44,16 @@ WHERE idempotency.operation = 'disconnect_github_connection'
       AND connection.owner_id = sqlc.arg(scope_owner_id)
 );
 
+-- name: DeleteScopePresetIdempotencySnapshots :execrows
+DELETE FROM realqa_idempotency_records AS idempotency
+WHERE idempotency.operation = 'create_preset'
+  AND idempotency.resource_id IN (
+    SELECT preset.id
+    FROM realqa_presets AS preset
+    WHERE preset.owner_kind = sqlc.arg(scope_owner_kind)
+      AND preset.owner_id = sqlc.arg(scope_owner_id)
+);
+
 -- name: DeleteScopeSubmissionIdempotencySnapshots :execrows
 DELETE FROM realqa_idempotency_records AS idempotency
 WHERE (

@@ -30,6 +30,7 @@ type Querier interface {
 	DeleteScopeConnections(ctx context.Context, arg DeleteScopeConnectionsParams) (int64, error)
 	DeleteScopeDestinations(ctx context.Context, arg DeleteScopeDestinationsParams) (int64, error)
 	DeleteScopeDisconnectIdempotencySnapshots(ctx context.Context, arg DeleteScopeDisconnectIdempotencySnapshotsParams) (int64, error)
+	DeleteScopePresetIdempotencySnapshots(ctx context.Context, arg DeleteScopePresetIdempotencySnapshotsParams) (int64, error)
 	DeleteScopePresets(ctx context.Context, arg DeleteScopePresetsParams) (int64, error)
 	DeleteScopeSubmissionIdempotencySnapshots(ctx context.Context, arg DeleteScopeSubmissionIdempotencySnapshotsParams) (int64, error)
 	DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSubmissionsParams) (int64, error)

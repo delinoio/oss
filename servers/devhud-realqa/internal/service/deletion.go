@@ -220,6 +220,14 @@ func (service *Preset) DeleteFeatureData(
 			if deleteErr != nil {
 				return deleteErr
 			}
+			count, deleteErr = queries.DeleteScopePresetIdempotencySnapshots(ctx,
+				dbgen.DeleteScopePresetIdempotencySnapshotsParams{
+					ScopeOwnerKind: scope.kind, ScopeOwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
 			count, deleteErr = queries.DeleteScopeSubmissionIdempotencySnapshots(ctx,
 				dbgen.DeleteScopeSubmissionIdempotencySnapshotsParams{
 					ScopeOwnerKind: scope.kind, ScopeOwnerID: toPGUUID(scope.id),

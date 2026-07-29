@@ -27,6 +27,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -567,6 +568,14 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		ctx, grant, "image/png", pngBody); err != nil {
 		t.Fatal(err)
 	}
+	replayGrant, err := submissionService.LookupUploadGrant(ctx, digestValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.StoreUploaded(
+		ctx, replayGrant, "image/png", pngBody); err != nil {
+		t.Fatalf("signed PUT replay: %v", err)
+	}
 	uploadedAsset, err := store.Queries().GetAssetRecord(
 		ctx, dbgen.GetAssetRecordParams{
 			ID: toPGUUID(uuid.MustParse(uploadRequest.AssetId.Value)),
@@ -595,10 +604,44 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("transient object read code = %v", connect.CodeOf(finalizeErr))
 	}
 	objects.getErr = nil
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	if err = store.Queries().EnqueueObjectDeletion(
+		ctx, dbgen.EnqueueObjectDeletionParams{
+			AssetID:    toPGUUID(uuid.MustParse(uploadRequest.AssetId.Value)),
+			ObjectKind: string(objectKindVerified),
+		}); err != nil {
+		t.Fatal(err)
+	}
 	finalized, err := submissionService.FinalizeImageUpload(
 		authCtx, connect.NewRequest(finalizeRequest))
 	if err != nil {
 		t.Fatal(err)
+	}
+	var staleVerifiedDeletions int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, uploadRequest.AssetId.Value).Scan(&staleVerifiedDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if staleVerifiedDeletions != 0 {
+		t.Fatalf("stale verified deletion jobs = %d", staleVerifiedDeletions)
+	}
+	if _, ok := objects.objects[imageassets.VerifiedObjectKey(
+		uploadRequest.AssetId.Value)]; !ok {
+		t.Fatal("finalized verified object was deleted")
+	}
+	objects.deleteErr = nil
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_object_deletion_jobs
+		SET next_attempt_at = transaction_timestamp()
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 1 {
+		t.Fatalf("drained finalized staging copy = %d, %v",
+			completed, drainErr)
 	}
 	finalizeReplay, err := submissionService.FinalizeImageUpload(
 		authCtx, connect.NewRequest(finalizeRequest))
@@ -656,13 +699,51 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objects.deleteErr = errors.New("fixture R2 deletion failed")
-	deleteRequest := &realqav1.DeleteImageRequest{
+	var currentAssetRevision int64
+	if err = connection.QueryRow(ctx, `
+		UPDATE realqa_assets
+		SET revision = revision + 1
+		WHERE id = $1
+		RETURNING revision
+	`, createdSubmission.Msg.Submission.Assets[1].AssetId.Value).
+		Scan(&currentAssetRevision); err != nil {
+		t.Fatal(err)
+	}
+	staleDeleteRequest := &realqav1.DeleteImageRequest{
 		SubmissionId:               createdSubmission.Msg.Submission.SubmissionId,
 		AssetId:                    createdSubmission.Msg.Submission.Assets[1].AssetId,
 		ExpectedSubmissionRevision: currentSubmission.Msg.Submission.Revision,
 		ExpectedAssetRevision: createdSubmission.Msg.Submission.
 			Assets[1].Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	_, err = submissionService.DeleteImage(
+		authCtx, connect.NewRequest(staleDeleteRequest))
+	var staleFailure *connect.Error
+	if !errors.As(err, &staleFailure) ||
+		connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatalf("stale asset deletion error = %v", err)
+	}
+	var reportedAssetRevision int64
+	for _, detail := range staleFailure.Details() {
+		value, detailErr := detail.Value()
+		typed, ok := value.(*realqav1.ErrorDetail)
+		if detailErr == nil && ok && typed.CurrentRevision != nil {
+			reportedAssetRevision = typed.CurrentRevision.Value
+		}
+	}
+	if reportedAssetRevision != currentAssetRevision {
+		t.Fatalf("stale asset revision = %d, want %d",
+			reportedAssetRevision, currentAssetRevision)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	deleteRequest := &realqav1.DeleteImageRequest{
+		SubmissionId:               createdSubmission.Msg.Submission.SubmissionId,
+		AssetId:                    createdSubmission.Msg.Submission.Assets[1].AssetId,
+		ExpectedSubmissionRevision: currentSubmission.Msg.Submission.Revision,
+		ExpectedAssetRevision:      &realqav1.Revision{Value: currentAssetRevision},
 		Idempotency: &realqav1.IdempotencyKey{
 			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
 		},
@@ -763,6 +844,40 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if _, ok := objects.objects[imageassets.PublicObjectKey(abandonedPublicID)]; ok {
 		t.Fatal("abandoned public copy was retained")
+	}
+	firstQueuedPublicID := "abcdefghijklmnopqrstuv"
+	secondQueuedPublicID := "zyxwvutsrqponmlkjihgfe"
+	for _, publicID := range []string{
+		firstQueuedPublicID, secondQueuedPublicID,
+	} {
+		if err = objects.Put(
+			ctx, imageassets.PublicObjectKey(publicID),
+			"image/png", pngBody); err != nil {
+			t.Fatal(err)
+		}
+		if err = store.Queries().EnqueueObjectDeletion(
+			ctx, dbgen.EnqueueObjectDeletionParams{
+				AssetID:    toPGUUID(promotionAssetID),
+				ObjectKind: string(objectKindPublic),
+				PublicID:   pgtype.Text{String: publicID, Valid: true},
+			}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'public'
+	`, promotionAssetID).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 2 {
+		t.Fatalf("queued public object versions = %d, want 2",
+			pendingObjectDeletions)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 2 {
+		t.Fatalf("drained queued public object versions = %d, %v",
+			completed, drainErr)
 	}
 	objects.deleteErr = errors.New("fixture R2 deletion failed")
 	if err = submissionService.PromoteSubmittedAssets(
@@ -1253,13 +1368,23 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("deleted preset code = %v", connect.CodeOf(err))
 	}
-	replayed, err = service.CreatePreset(authCtx, connect.NewRequest(request))
-	if err != nil {
+	_, err = service.CreatePreset(authCtx, connect.NewRequest(request))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("create replay after feature deletion code = %v",
+			connect.CodeOf(err))
+	}
+	var presetSnapshots int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*)
+		FROM realqa_idempotency_records
+		WHERE operation = 'create_preset'
+		  AND idempotency_key = $1
+	`, request.Idempotency.Value.Value).Scan(&presetSnapshots); err != nil {
 		t.Fatal(err)
 	}
-	if !replayed.Msg.Idempotency.Replayed ||
-		replayed.Msg.Preset.PresetId.Value != created.Msg.Preset.PresetId.Value {
-		t.Fatalf("create replay after feature deletion = %#v", replayed.Msg)
+	if presetSnapshots != 0 {
+		t.Fatalf("retained preset idempotency snapshots = %d",
+			presetSnapshots)
 	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_owner_bindings
