@@ -7,7 +7,7 @@ const appRoot = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(appRoot, "../..");
 const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
 const rustup = process.platform === "win32" ? "rustup.exe" : "rustup";
-const [rustBackend, nativeBackend, infoPlist, capabilitySource] =
+const [rustBackend, nativeBackend, commandSource, infoPlist, capabilitySource] =
   await Promise.all([
     readFile(
       resolve(appRoot, "src-tauri/src/realqa_capture/macos.rs"),
@@ -17,6 +17,7 @@ const [rustBackend, nativeBackend, infoPlist, capabilitySource] =
       resolve(appRoot, "src-tauri/src/realqa_capture/macos_native.m"),
       "utf8",
     ),
+    readFile(resolve(appRoot, "src-tauri/src/lib.rs"), "utf8"),
     readFile(resolve(appRoot, "src-tauri/Info.plist"), "utf8"),
     readFile(
       resolve(appRoot, "src-tauri/capabilities/realqa-capture.json"),
@@ -41,6 +42,33 @@ requireCondition(
     nativeBackend.includes("CGRequestScreenCaptureAccess") &&
     nativeBackend.includes("configuration.showsCursor = showsCursor"),
   "macOS capture must use ScreenCaptureKit with explicit permission and pointer controls",
+);
+requireCondition(
+  nativeBackend.includes("REALQA_PERMISSION_PROMPT_ATTEMPTED_KEY") &&
+    nativeBackend.includes("realqa_macos_permission_prompt_attempted") &&
+    nativeBackend.includes("NSUserDefaults.standardUserDefaults") &&
+    rustBackend.includes(
+      "unsafe { realqa_macos_permission_prompt_attempted() }",
+    ),
+  "macOS capture must preserve denied permission guidance across application launches",
+);
+for (const command of [
+  "realqa_capture_permission_status",
+  "realqa_request_capture_permission",
+  "realqa_list_capture_sources",
+  "realqa_adjust_capture_selection",
+]) {
+  requireCondition(
+    new RegExp(`async fn ${command}\\([\\s\\S]*?spawn_blocking`, "u").test(
+      commandSource,
+    ),
+    `${command} must offload native permission or catalog work from the Tauri main thread`,
+  );
+}
+requireCondition(
+  commandSource.includes("match state.prepare_begin(request)") &&
+    commandSource.includes("spawn_blocking(move || capture.run())"),
+  "capture sessions must register before blocking work so stale cancellation IDs are not retained",
 );
 requireCondition(
   nativeBackend.includes("realqa_safe_metadata(") &&

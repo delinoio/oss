@@ -433,15 +433,15 @@ pub(crate) struct CaptureCore {
     backend: Arc<dyn CaptureBackend>,
 }
 
-struct CaptureSession<'a> {
-    backend: &'a dyn CaptureBackend,
+struct CaptureSession {
+    backend: Arc<dyn CaptureBackend>,
     session_id: CaptureSessionId,
     finished: bool,
 }
 
-impl<'a> CaptureSession<'a> {
+impl CaptureSession {
     fn start(
-        backend: &'a dyn CaptureBackend,
+        backend: Arc<dyn CaptureBackend>,
         session_id: CaptureSessionId,
     ) -> Result<Self, CaptureFailure> {
         backend
@@ -466,11 +466,28 @@ impl<'a> CaptureSession<'a> {
     }
 }
 
-impl Drop for CaptureSession<'_> {
+impl Drop for CaptureSession {
     fn drop(&mut self) {
         if !self.finished {
             let _ = self.backend.finish_session(&self.session_id);
         }
+    }
+}
+
+pub(crate) struct PreparedCapture {
+    core: CaptureCore,
+    request: CaptureRequest,
+    session: CaptureSession,
+}
+
+impl PreparedCapture {
+    pub(crate) fn run(self) -> Result<CaptureResult, CaptureFailure> {
+        let Self {
+            core,
+            request,
+            session,
+        } = self;
+        session.finish(core.begin_started(request))
     }
 }
 
@@ -541,12 +558,24 @@ impl CaptureCore {
         adjust_selection(&snapshot, selection, adjustment)
     }
 
+    #[cfg(test)]
     pub(crate) fn begin(&self, request: CaptureRequest) -> Result<CaptureResult, CaptureFailure> {
+        self.prepare_begin(request)?.run()
+    }
+
+    pub(crate) fn prepare_begin(
+        &self,
+        request: CaptureRequest,
+    ) -> Result<PreparedCapture, CaptureFailure> {
         if request.session_id.0.is_empty() || request.session_id.0.len() > 128 {
             return Err(CaptureFailure::InvalidSelection);
         }
-        let session = CaptureSession::start(self.backend.as_ref(), request.session_id.clone())?;
-        session.finish(self.begin_started(request))
+        let session = CaptureSession::start(self.backend.clone(), request.session_id.clone())?;
+        Ok(PreparedCapture {
+            core: self.clone(),
+            request,
+            session,
+        })
     }
 
     fn begin_started(&self, request: CaptureRequest) -> Result<CaptureResult, CaptureFailure> {

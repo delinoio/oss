@@ -2889,10 +2889,14 @@ fn reset_dev_hud(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_capture_permission_status(
+async fn realqa_capture_permission_status(
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CapturePermissionStatus, realqa_capture::CaptureFailure> {
-    let result = state.permission_status();
+    let capture_core = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || capture_core.permission_status())
+        .await
+        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+        .and_then(|result| result);
     realqa_capture::record_outcome(&result);
     result
 }
@@ -2902,10 +2906,14 @@ fn realqa_capture_permission_status(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_request_capture_permission(
+async fn realqa_request_capture_permission(
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CapturePermissionStatus, realqa_capture::CaptureFailure> {
-    let result = state.request_permission();
+    let capture_core = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || capture_core.request_permission())
+        .await
+        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+        .and_then(|result| result);
     realqa_capture::record_outcome(&result);
     result
 }
@@ -2959,10 +2967,14 @@ async fn get_auth_session(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_list_capture_sources(
+async fn realqa_list_capture_sources(
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureSourceCatalog, realqa_capture::CaptureFailure> {
-    let result = state.source_catalog();
+    let capture_core = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || capture_core.source_catalog())
+        .await
+        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+        .and_then(|result| result);
     realqa_capture::record_outcome(&result);
     result
 }
@@ -3028,12 +3040,18 @@ fn logout_authentication(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_adjust_capture_selection(
+async fn realqa_adjust_capture_selection(
     selection: realqa_capture::SelectionGeometry,
     adjustment: realqa_capture::SelectionAdjustment,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::SelectionGeometry, realqa_capture::CaptureFailure> {
-    let result = state.adjust_selection(&selection, adjustment);
+    let capture_core = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        capture_core.adjust_selection(&selection, adjustment)
+    })
+    .await
+    .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+    .and_then(|result| result);
     realqa_capture::record_outcome(&result);
     result
 }
@@ -3047,8 +3065,17 @@ async fn realqa_begin_capture(
     request: realqa_capture::CaptureRequest,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
-    let capture_core = state.inner().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || capture_core.begin(request))
+    // Register before yielding to the blocking pool so cancellation never needs
+    // to retain arbitrary unknown or already-completed session IDs.
+    let capture = match state.prepare_begin(request) {
+        Ok(capture) => capture,
+        Err(failure) => {
+            let result = Err(failure);
+            realqa_capture::record_outcome(&result);
+            return result;
+        }
+    };
+    let result = tauri::async_runtime::spawn_blocking(move || capture.run())
         .await
         .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
         .and_then(|result| result);

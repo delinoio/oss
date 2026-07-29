@@ -23,6 +23,8 @@ static const int32_t REALQA_CAPTURE_FAILED = 5;
 static const int32_t REALQA_DISPLAY_CHANGED = 6;
 static const NSUInteger REALQA_MAX_PROCESS_NAME_UTF16_UNITS = 128;
 static const NSUInteger REALQA_MAX_WINDOW_TITLE_UTF16_UNITS = 256;
+static NSString *const REALQA_PERMISSION_PROMPT_ATTEMPTED_KEY =
+    @"dev.deli.devhud.realqa.capture-permission-prompt-attempted.v1";
 
 static bool realqa_wait(dispatch_semaphore_t semaphore) {
   return dispatch_semaphore_wait(
@@ -110,8 +112,23 @@ bool realqa_macos_preflight_permission(void) {
   return CGPreflightScreenCaptureAccess();
 }
 
+bool realqa_macos_permission_prompt_attempted(void) {
+  @autoreleasepool {
+    return [NSUserDefaults.standardUserDefaults
+        boolForKey:REALQA_PERMISSION_PROMPT_ATTEMPTED_KEY];
+  }
+}
+
 bool realqa_macos_request_permission(void) {
-  return CGRequestScreenCaptureAccess();
+  @autoreleasepool {
+    // Core Graphics exposes granted versus not granted but cannot distinguish a
+    // first prompt from a denial. Retain only this non-sensitive attempt bit so
+    // later launches can direct denied users to System Settings immediately.
+    [NSUserDefaults.standardUserDefaults
+        setBool:YES
+         forKey:REALQA_PERMISSION_PROMPT_ATTEMPTED_KEY];
+    return CGRequestScreenCaptureAccess();
+  }
 }
 
 static bool realqa_system_stopped_stream(NSError *error) {

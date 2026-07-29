@@ -28,7 +28,6 @@ const WINDOW_ID_PREFIX: &str = "macos-window-";
 const MAX_CATALOG_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PROCESS_NAME_BYTES: usize = 128;
 const MAX_WINDOW_TITLE_BYTES: usize = 512;
-const MAX_PENDING_CANCELLATIONS: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativePermission {
@@ -115,7 +114,6 @@ type TranslatedCatalog = (
 
 enum CaptureSessionState {
     Active(Arc<AtomicBool>),
-    CancelledBeforeCapture,
 }
 
 impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
@@ -185,9 +183,6 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
             .map_err(|_| BackendFailure::CaptureFailed)?;
         let cancelled = match active.get(session_id) {
             Some(CaptureSessionState::Active(cancelled)) => cancelled.clone(),
-            Some(CaptureSessionState::CancelledBeforeCapture) => {
-                return Err(BackendFailure::Cancelled);
-            }
             None => return Err(BackendFailure::CaptureFailed),
         };
         Ok(ActiveCapture { cancelled })
@@ -383,20 +378,14 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
             .active
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?;
-        match active.remove(session_id) {
-            Some(CaptureSessionState::CancelledBeforeCapture) => Err(BackendFailure::Cancelled),
-            Some(state @ CaptureSessionState::Active(_)) => {
-                active.insert(session_id.clone(), state);
-                Err(BackendFailure::CaptureFailed)
-            }
-            None => {
-                active.insert(
-                    session_id.clone(),
-                    CaptureSessionState::Active(Arc::new(AtomicBool::new(false))),
-                );
-                Ok(())
-            }
+        if active.contains_key(session_id) {
+            return Err(BackendFailure::CaptureFailed);
         }
+        active.insert(
+            session_id.clone(),
+            CaptureSessionState::Active(Arc::new(AtomicBool::new(false))),
+        );
+        Ok(())
     }
 
     fn finish_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
@@ -411,7 +400,6 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
                 Err(BackendFailure::Cancelled)
             }
             CaptureSessionState::Active(_) => Ok(()),
-            CaptureSessionState::CancelledBeforeCapture => Err(BackendFailure::Cancelled),
         }
     }
 
@@ -480,7 +468,7 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
     }
 
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
-        let mut active = self
+        let active = self
             .active
             .lock()
             .map_err(|_| BackendFailure::CaptureFailed)?;
@@ -488,23 +476,9 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
             Some(CaptureSessionState::Active(cancelled)) => {
                 cancelled.store(true, Ordering::Release);
             }
-            Some(CaptureSessionState::CancelledBeforeCapture) => {}
-            None => {
-                // The begin command performs blocking permission and catalog refreshes before
-                // backend capture starts. Retain a bounded early cancellation so the later
-                // session registration cannot lose the user's cancel command.
-                let pending = active
-                    .values()
-                    .filter(|state| matches!(state, CaptureSessionState::CancelledBeforeCapture))
-                    .count();
-                if pending >= MAX_PENDING_CANCELLATIONS {
-                    return Err(BackendFailure::CaptureFailed);
-                }
-                active.insert(
-                    session_id.clone(),
-                    CaptureSessionState::CancelledBeforeCapture,
-                );
-            }
+            // The command registers a capture before moving its blocking work
+            // to the worker pool. Unknown IDs are therefore stale or invalid.
+            None => {}
         }
         Ok(())
     }
@@ -790,6 +764,7 @@ struct NativeBytes {
 #[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn realqa_macos_preflight_permission() -> bool;
+    fn realqa_macos_permission_prompt_attempted() -> bool;
     fn realqa_macos_request_permission() -> bool;
     fn realqa_macos_copy_catalog_json() -> *mut c_char;
     fn realqa_macos_capture(
@@ -818,7 +793,11 @@ impl MacosNativeAdapter for SystemMacosNativeAdapter {
         // SAFETY: This parameter-free Core Graphics wrapper has no retained result.
         if unsafe { realqa_macos_preflight_permission() } {
             Ok(NativePermission::Granted)
-        } else if self.prompt_attempted.load(Ordering::Acquire) {
+        } else if self.prompt_attempted.load(Ordering::Acquire)
+            // SAFETY: This parameter-free wrapper reads one application-owned
+            // boolean preference and retains no result.
+            || unsafe { realqa_macos_permission_prompt_attempted() }
+        {
             Ok(NativePermission::Denied)
         } else {
             Ok(NativePermission::PromptRequired)
@@ -1357,6 +1336,42 @@ mod tests {
             assert!(backend.active.lock().expect("active lock").is_empty());
         }
         assert_eq!(fixture.active_calls.load(Ordering::Relaxed), 6);
+    }
+
+    #[test]
+    fn prepared_capture_can_be_cancelled_before_blocking_work_starts() {
+        let fixture = Arc::new(FixtureNative::retina());
+        let backend = Arc::new(MacosCaptureBackend::new(fixture.clone()));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog");
+        let capture = core
+            .prepare_begin(region_request(&catalog))
+            .expect("prepare capture");
+
+        core.cancel(&CaptureSessionId("macos-session".to_owned()))
+            .expect("cancel prepared capture");
+
+        assert_eq!(capture.run(), Err(CaptureFailure::Cancelled));
+        assert_eq!(fixture.active_calls.load(Ordering::Relaxed), 0);
+        assert!(backend.active.lock().expect("active lock").is_empty());
+    }
+
+    #[test]
+    fn stale_and_unknown_cancellations_do_not_retain_session_state() {
+        let fixture = Arc::new(FixtureNative::retina());
+        let backend = Arc::new(MacosCaptureBackend::new(fixture));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog");
+        core.begin(region_request(&catalog)).expect("capture");
+
+        core.cancel(&CaptureSessionId("macos-session".to_owned()))
+            .expect("late cancellation");
+        for index in 0..128 {
+            core.cancel(&CaptureSessionId(format!("unknown-session-{index}")))
+                .expect("unknown cancellation");
+        }
+
+        assert!(backend.active.lock().expect("active lock").is_empty());
     }
 
     #[test]
