@@ -259,6 +259,8 @@ fn bounded_metadata_value(value: Option<String>, maximum: usize) -> Option<Strin
         }
         bounded.push(character);
     }
+    let trimmed_len = bounded.trim_end().len();
+    bounded.truncate(trimmed_len);
     (!bounded.is_empty()).then_some(bounded)
 }
 
@@ -477,14 +479,26 @@ impl CaptureCore {
         adjust_selection(&snapshot, selection, adjustment)
     }
 
+    #[cfg(test)]
     pub(crate) fn begin(&self, request: CaptureRequest) -> Result<CaptureResult, CaptureFailure> {
+        self.prepare_begin(&request)?;
+        self.begin_prepared(request)
+    }
+
+    pub(crate) fn prepare_begin(&self, request: &CaptureRequest) -> Result<(), CaptureFailure> {
         if request.session_id.0.is_empty() || request.session_id.0.len() > 128 {
             return Err(CaptureFailure::InvalidSelection);
         }
-        let session_id = request.session_id.clone();
         self.backend
-            .start_capture(&session_id)
-            .map_err(CaptureFailure::from)?;
+            .start_capture(&request.session_id)
+            .map_err(CaptureFailure::from)
+    }
+
+    pub(crate) fn begin_prepared(
+        &self,
+        request: CaptureRequest,
+    ) -> Result<CaptureResult, CaptureFailure> {
+        let session_id = request.session_id.clone();
         let result = self.begin_started(request);
         let finish_result = self
             .backend
@@ -1472,6 +1486,18 @@ mod tests {
             catalog.windows[0].metadata.process_name.as_deref(),
             Some(r"foo:bar/baz\qux")
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bounded_linux_metadata_retrims_after_truncation() {
+        let expected = "a".repeat(WindowMetadata::MAX_PROCESS_NAME_BYTES - 1);
+        let metadata = WindowMetadata::bounded(
+            Some(format!("{expected} trailing")),
+            Some("Linux window".to_owned()),
+        );
+
+        assert_eq!(metadata.process_name.as_deref(), Some(expected.as_str()));
     }
 
     #[test]

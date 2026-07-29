@@ -3030,11 +3030,16 @@ async fn realqa_begin_capture(
     request: realqa_capture::CaptureRequest,
     state: State<'_, realqa_capture::CaptureCore>,
 ) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
-    let capture_core = state.inner().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || capture_core.begin(request))
-        .await
-        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
-        .and_then(|result| result);
+    let result = match state.prepare_begin(&request) {
+        Ok(()) => {
+            let capture_core = state.inner().clone();
+            tauri::async_runtime::spawn_blocking(move || capture_core.begin_prepared(request))
+                .await
+                .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+                .and_then(|result| result)
+        }
+        Err(failure) => Err(failure),
+    };
     realqa_capture::record_outcome(&result);
     result
 }

@@ -2679,6 +2679,32 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_after_preparation_prevents_worker_capture() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let backend = Arc::new(WindowsCaptureBackend::new(adapter.clone()));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog");
+        let request = multi_monitor_request(&catalog);
+
+        core.prepare_begin(&request).expect("prepare capture");
+        core.cancel(&request.session_id)
+            .expect("cancel prepared capture");
+
+        assert_eq!(core.begin_prepared(request), Err(CaptureFailure::Cancelled));
+        assert!(
+            adapter.captures.lock().expect("captures lock").is_empty(),
+            "native capture must not start after a prepared request is cancelled"
+        );
+        assert!(
+            backend
+                .active_captures
+                .lock()
+                .expect("active lock")
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn movable_resizable_region_remains_bound_to_snapshot() {
         let adapter = Arc::new(FixtureAdapter::mixed_dpi());
         let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter)));
