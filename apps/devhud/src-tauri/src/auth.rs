@@ -937,9 +937,12 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 if !device_session_matches(retained.device_session_key.expose(), subject)? {
                     return Err(AuthError::AccountSwitchRequiresLogout);
                 }
+                if !reauthenticated_features.contains(&AuthFeature::RealQa) {
+                    return Err(AuthError::ReauthenticationRequired);
+                }
                 Ok(RealQaDraftAccessContext {
                     account_binding: retained_binding,
-                    online_reauthenticated: reauthenticated_features.contains(&AuthFeature::RealQa),
+                    online_reauthenticated: true,
                 })
             }
             SessionState::PriorSessionOffline {
@@ -2474,6 +2477,7 @@ mod tests {
             device_session_account_binding(migrated).unwrap(),
             realqa_draft_account_binding("account-a")
         );
+        assert!(online.realqa_draft_access().unwrap().online_reauthenticated);
     }
 
     #[test]
@@ -2535,7 +2539,7 @@ mod tests {
     }
 
     #[test]
-    fn deck_rehydration_does_not_mark_realqa_as_online_reauthenticated() {
+    fn deck_rehydration_does_not_unlock_realqa_drafts() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
             retained: Some((
@@ -2557,7 +2561,10 @@ mod tests {
             prior.restore_at(Connectivity::Online, NOW),
             Ok(SessionSnapshot::SignedIn { .. })
         ));
-        assert!(!prior.realqa_draft_access().unwrap().online_reauthenticated);
+        assert_eq!(
+            prior.realqa_draft_access(),
+            Err(AuthError::ReauthenticationRequired)
+        );
     }
 
     #[test]
