@@ -4,6 +4,7 @@ import { sanitizeCapturedUrl, type CapturedUrlResult } from "./url";
 export const MAX_REALQA_PROCESS_URL_RULES = 64;
 export const MAX_REALQA_SAFE_PATTERN_BYTES = 512;
 export const MAX_REALQA_EXPANDED_URL_BYTES = 8_192;
+const MAX_REALQA_COMPILED_PATTERN_INSTRUCTIONS = 2_048;
 
 export interface RealQaProcessUrlRule {
   readonly ruleId: string;
@@ -297,6 +298,174 @@ function hasOversizedBoundedRepetition(pattern: string): boolean {
   return false;
 }
 
+interface PatternWork {
+  readonly instructions: number;
+  readonly nullable: boolean;
+}
+
+/**
+ * Applies Go regexp/syntax's post-Simplify instruction costs so synchronized
+ * patterns cannot exceed the server's compiled-program budget.
+ */
+function compiledPatternInstructions(pattern: string): number | null {
+  let index = 0;
+  const bounded = (value: number): number =>
+    Math.min(value, MAX_REALQA_COMPILED_PATTERN_INSTRUCTIONS + 1);
+
+  function quantify(work: PatternWork): PatternWork {
+    const repetition = pattern
+      .slice(index)
+      .match(/^([*+?]|\{(\d+)(?:,(\d*))?\})(\??)/u);
+    if (repetition === null) return work;
+    index += repetition[0].length;
+    const token = repetition[1] ?? "";
+    if (token === "?") {
+      return {
+        instructions: bounded(work.instructions + 1),
+        nullable: true,
+      };
+    }
+    if (token === "*") {
+      return {
+        instructions: bounded(work.instructions + (work.nullable ? 2 : 1)),
+        nullable: true,
+      };
+    }
+    if (token === "+") {
+      return {
+        instructions: bounded(work.instructions + 1),
+        nullable: work.nullable,
+      };
+    }
+    const minimum = Number(repetition[2]);
+    const maximum =
+      repetition[3] === undefined
+        ? minimum
+        : repetition[3] === ""
+          ? null
+          : Number(repetition[3]);
+    if (minimum === 0 && maximum === 0) {
+      return { instructions: 1, nullable: true };
+    }
+    if (maximum === null) {
+      if (minimum === 0) {
+        return {
+          instructions: bounded(work.instructions + (work.nullable ? 2 : 1)),
+          nullable: true,
+        };
+      }
+      return {
+        instructions: bounded(work.instructions * minimum + 1),
+        nullable: work.nullable,
+      };
+    }
+    return {
+      instructions: bounded(
+        work.instructions * maximum + Math.max(0, maximum - minimum),
+      ),
+      nullable: minimum === 0 || work.nullable,
+    };
+  }
+
+  function sequence(closesGroup: boolean): PatternWork | null {
+    let instructions = 0;
+    let nullable = true;
+    let hasAtom = false;
+    while (index < pattern.length) {
+      const token = pattern[index] ?? "";
+      if (token === "|" || (token === ")" && closesGroup)) break;
+      const flagDirective = pattern
+        .slice(index)
+        .match(/^\(\?[imsU]*(?:-[imsU]*)?\)/u);
+      if (flagDirective !== null) {
+        index += flagDirective[0].length;
+        continue;
+      }
+
+      let atom: PatternWork;
+      if (token === "(") {
+        const groupPrefix = pattern
+          .slice(index)
+          .match(/^\(\?[imsU]*(?:-[imsU]*)?:/u);
+        const capturing = groupPrefix === null;
+        index += groupPrefix?.[0].length ?? 1;
+        const inner = alternation(true);
+        if (inner === null || pattern[index] !== ")") return null;
+        index += 1;
+        atom = {
+          instructions: bounded(inner.instructions + (capturing ? 2 : 0)),
+          nullable: inner.nullable,
+        };
+      } else if (token === "[") {
+        index += 1;
+        let closed = false;
+        while (index < pattern.length) {
+          const posixClass = translatePosixCharacterClass(pattern, index);
+          if (posixClass !== null) {
+            index = posixClass.nextIndex;
+          } else if (pattern[index] === "\\") {
+            index += 2;
+          } else if (pattern[index] === "]") {
+            index += 1;
+            closed = true;
+            break;
+          } else {
+            index += 1;
+          }
+        }
+        if (!closed) return null;
+        atom = { instructions: 1, nullable: false };
+      } else if (token === "\\") {
+        const unicodeClass = pattern
+          .slice(index)
+          .match(/^\\[pP](?:\{[A-Za-z_]+\}|[A-Za-z])/u);
+        index += unicodeClass?.[0].length ?? 2;
+        atom = {
+          instructions: 1,
+          nullable: ["A", "z", "b", "B"].includes(pattern[index - 1] ?? ""),
+        };
+      } else if (token === ")") {
+        return null;
+      } else {
+        index += (pattern.codePointAt(index) ?? 0) > 0xffff ? 2 : 1;
+        atom = {
+          instructions: 1,
+          nullable: token === "^" || token === "$",
+        };
+      }
+
+      const quantified = quantify(atom);
+      instructions = bounded(instructions + quantified.instructions);
+      nullable &&= quantified.nullable;
+      hasAtom = true;
+    }
+    return {
+      instructions: hasAtom ? instructions : 1,
+      nullable,
+    };
+  }
+
+  function alternation(closesGroup: boolean): PatternWork | null {
+    let work = sequence(closesGroup);
+    if (work === null) return null;
+    while (pattern[index] === "|") {
+      index += 1;
+      const branch = sequence(closesGroup);
+      if (branch === null) return null;
+      work = {
+        instructions: bounded(work.instructions + branch.instructions + 1),
+        nullable: work.nullable || branch.nullable,
+      };
+    }
+    return work;
+  }
+
+  const work = alternation(false);
+  return work === null || index !== pattern.length
+    ? null
+    : bounded(work.instructions + 2);
+}
+
 /**
  * JavaScript RegExp uses a backtracking engine. Reject repeated groups whose
  * contents can repeat or branch, so synchronized input cannot introduce the
@@ -577,7 +746,9 @@ export function validateRealQaProcessUrlRules(
       hasUnsupportedCharacterClassSetAlgebra(pattern) ||
       /\\[0-9]/u.test(pattern) ||
       hasOversizedBoundedRepetition(pattern) ||
-      hasUnsafeRepeatedOrUnbalancedGroup(pattern)
+      hasUnsafeRepeatedOrUnbalancedGroup(pattern) ||
+      (compiledPatternInstructions(pattern) ?? Infinity) >
+        MAX_REALQA_COMPILED_PATTERN_INSTRUCTIONS
     ) {
       return false;
     }

@@ -110,6 +110,12 @@ describe("RealQA URL capture boundary", () => {
     "https://example.com/LINE\tTWO",
     "https://example.com/%",
     "https://example.com/%zz",
+    "https://%65xample.com/",
+    String.raw`https:\example.com`,
+    String.raw`https://example.com\repaired`,
+    "https:///example.com",
+    "https:example.com",
+    "HTTPS://example.com/",
   ])("rejects a Go-invalid raw URL %s", (value) => {
     expect(sanitizeCapturedUrl(value)).toEqual({
       ok: false,
@@ -357,6 +363,19 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     ).toBe(false);
   });
 
+  it("mirrors the server's compiled-regex instruction budget", () => {
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ safeWindowTitlePattern: `(?:${"a".repeat(20)}){100}` }),
+      ]),
+    ).toBe(true);
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ safeWindowTitlePattern: `(?:${"a".repeat(22)}){100}` }),
+      ]),
+    ).toBe(false);
+  });
+
   it.each(["^issue--draft$", "^issue&&draft$", "^issue~~draft$"])(
     "accepts safe literal class-operator text %s",
     (pattern) => {
@@ -405,7 +424,9 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     "https://example.com/%",
     "https://example.com/%2",
     "https://example.com/%zz",
-  ])("rejects Go-invalid URL template escape %s", (urlTemplate) => {
+    "https://%65xample.com/",
+    String.raw`https://example.com\repaired`,
+  ])("rejects a Go-invalid URL template %s", (urlTemplate) => {
     expect(validateRealQaProcessUrlRules([rule({ urlTemplate })])).toBe(false);
   });
 
