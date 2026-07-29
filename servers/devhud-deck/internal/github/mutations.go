@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	maxMutationOperands          = 100
-	maxGitHubAssigneesPerRequest = 10
+	maxMutationOperands = 100
+	maxGitHubAssignees  = 10
 )
 
 func (client *Client) Mutate(
@@ -81,7 +81,7 @@ func validateMutation(reference PullRequestRef, mutation Mutation) error {
 	}
 	switch mutation.Kind {
 	case MutationAssignUsers, MutationUnassignUsers:
-		return validateUsers(mutation.Users)
+		return validateUsers(mutation.Users, maxGitHubAssignees)
 	case MutationRequestReviewers, MutationRemoveReviewers:
 		if len(mutation.Users) == 0 && len(mutation.Teams) == 0 {
 			return ErrUnsupportedAction
@@ -90,7 +90,8 @@ func validateMutation(reference PullRequestRef, mutation Mutation) error {
 			return ErrUnsupportedAction
 		}
 		if len(mutation.Users) > 0 {
-			if err := validateUsers(mutation.Users); err != nil {
+			if err := validateUsers(
+				mutation.Users, maxMutationOperands); err != nil {
 				return err
 			}
 		}
@@ -124,8 +125,8 @@ func validateMutation(reference PullRequestRef, mutation Mutation) error {
 	return nil
 }
 
-func validateUsers(users []User) error {
-	if len(users) == 0 || len(users) > maxMutationOperands {
+func validateUsers(users []User, limit int) error {
+	if len(users) == 0 || len(users) > limit {
 		return ErrUnsupportedAction
 	}
 	for _, user := range users {
@@ -158,19 +159,9 @@ func (client *Client) applyMutation(
 		if mutation.Kind == MutationUnassignUsers {
 			method = http.MethodDelete
 		}
-		for start := 0; start < len(mutation.Users); start += maxGitHubAssigneesPerRequest {
-			end := start + maxGitHubAssigneesPerRequest
-			if end > len(mutation.Users) {
-				end = len(mutation.Users)
-			}
-			if _, err := client.do(ctx, credential, method, path,
-				map[string]any{
-					"assignees": userLogins(mutation.Users[start:end]),
-				}, nil); err != nil {
-				return err
-			}
-		}
-		return nil
+		_, err := client.do(ctx, credential, method, path,
+			map[string]any{"assignees": userLogins(mutation.Users)}, nil)
+		return err
 	case MutationRequestReviewers, MutationRemoveReviewers:
 		path, _ := repositoryPath(reference.Repository,
 			pullSuffix+"/requested_reviewers")
@@ -219,11 +210,12 @@ mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){
 		return err
 	case MutationMerge:
 		path, _ := repositoryPath(reference.Repository, pullSuffix+"/merge")
-		_, err := client.do(ctx, credential, http.MethodPut, path,
+		_, err := client.doWithConflictError(
+			ctx, credential, http.MethodPut, path,
 			map[string]any{
 				"sha":          metadata.HeadSHA,
 				"merge_method": mergeMethodREST(mutation.MergeMethod),
-			}, nil)
+			}, nil, ErrStaleRevision)
 		return err
 	case MutationEnableAutoMerge:
 		return client.graphQL(ctx, credential, `

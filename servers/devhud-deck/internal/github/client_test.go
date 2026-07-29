@@ -563,38 +563,98 @@ func TestMutationOperandCountIsBounded(t *testing.T) {
 	}
 }
 
-func TestAssigneeMutationsRespectGitHubRequestLimit(t *testing.T) {
+func TestMergeConflictMapsToStaleRevision(t *testing.T) {
 	t.Parallel()
-	users := make([]User, 23)
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusConflict, `{}`), nil
+		})})
+	reference := PullRequestRef{
+		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+	}
+	credential := Credential{AccessToken: "token"}
+	err := client.applyMutation(
+		context.Background(), credential, reference,
+		ActionMetadata{HeadSHA: "outdated"},
+		Mutation{
+			Kind: MutationMerge, MergeMethod: MergeMethodSquash,
+			Confirmed: true,
+		})
+	if !errors.Is(err, ErrStaleRevision) {
+		t.Fatalf("merge conflict error = %v", err)
+	}
+	err = client.applyMutation(
+		context.Background(), credential, reference, ActionMetadata{},
+		Mutation{Kind: MutationClose})
+	if !errors.Is(err, ErrBranchProtected) {
+		t.Fatalf("non-merge conflict error = %v", err)
+	}
+}
+
+func TestAssigneeMutationsRespectGitHubLimit(t *testing.T) {
+	t.Parallel()
+	users := make([]User, maxGitHubAssignees+1)
 	for index := range users {
 		users[index] = User{Login: fmt.Sprintf("user-%02d", index)}
 	}
-	var batchSizes []int
-	client := NewClient(&http.Client{Transport: roundTripFunc(
-		func(request *http.Request) (*http.Response, error) {
-			var payload struct {
-				Assignees []string `json:"assignees"`
-			}
-			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
-				t.Fatal(err)
-			}
-			batchSizes = append(batchSizes, len(payload.Assignees))
-			return jsonResponse(http.StatusCreated, `{}`), nil
-		})})
-	err := client.applyMutation(
-		context.Background(),
-		Credential{AccessToken: "token"},
+	reference := PullRequestRef{
+		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+	}
+	if err := validateMutation(
+		reference,
+		Mutation{Kind: MutationAssignUsers, Users: users},
+	); !errors.Is(err, ErrUnsupportedAction) {
+		t.Fatalf("oversize assignee mutation error = %v", err)
+	}
+	if err := validateMutation(
+		reference,
+		Mutation{
+			Kind:  MutationUnassignUsers,
+			Users: users[:maxGitHubAssignees],
+		},
+	); err != nil {
+		t.Fatalf("maximum assignee mutation error = %v", err)
+	}
+	if err := validateMutation(
 		PullRequestRef{
 			Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
 		},
-		ActionMetadata{},
-		Mutation{Kind: MutationAssignUsers, Users: users},
-	)
+		Mutation{Kind: MutationRequestReviewers, Users: users},
+	); err != nil {
+		t.Fatalf("reviewer mutation inherited assignee cap: %v", err)
+	}
+}
+
+func TestArchivedRepositoriesAdvertiseNoMutations(t *testing.T) {
+	t.Parallel()
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path == "/repos/acme/widget" {
+				return jsonResponse(http.StatusOK,
+					`{"archived":true,"allow_merge_commit":true,`+
+						`"allow_auto_merge":true,`+
+						`"permissions":{"pull":true,"push":true}}`), nil
+			}
+			return jsonResponse(http.StatusOK,
+				`{"node_id":"PR_1","state":"open","mergeable":true,`+
+					`"mergeable_state":"clean",`+
+					`"updated_at":"2026-01-01T00:00:00Z",`+
+					`"head":{"sha":"abc"}}`), nil
+		})})
+	metadata, err := client.ActionMetadata(
+		context.Background(), 1, Credential{AccessToken: "token"},
+		Permissions{
+			Metadata: PermissionRead, Contents: PermissionWrite,
+			PullRequests: PermissionWrite,
+		},
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+		})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(batchSizes) != "[10 10 3]" {
-		t.Fatalf("assignee request batches = %v", batchSizes)
+	if len(metadata.Supported) != 0 {
+		t.Fatalf("archived repository mutations = %v", metadata.Supported)
 	}
 }
 

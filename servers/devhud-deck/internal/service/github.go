@@ -124,12 +124,12 @@ func (service *View) MutatePullRequest(
 	}
 	ownerHash := service.dependencies.Hasher.Sum(
 		"owner", view.Owner.Scope.String()+":"+ownerID.String())
-	if err := service.recordAudit(
+	// The provider mutation has already completed. recordAudit reports its own
+	// persistence failure, which must not turn provider success into RPC failure.
+	_ = service.recordAudit(
 		ctx, viewer.Subject, audit.EventPullRequestMutated, view.Owner.Scope,
 		ownerHash[:], audit.ResourceView, viewIDValue(view),
-		audit.OutcomeSuccess); err != nil {
-		return nil, err
-	}
+		audit.OutcomeSuccess)
 	detail := service.pullRequestDetail(
 		viewIDValue(view), request.Msg.PullRequest, snapshot, result.Metadata)
 	return connect.NewResponse(&deckv1.MutatePullRequestResponse{

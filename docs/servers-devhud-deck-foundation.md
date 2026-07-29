@@ -137,9 +137,9 @@
   unsupported mutation kinds fail closed, and candidate reads neither mutate
   nor refresh the PR.
 - Mutations are limited to assign/unassign users; request/remove individual or team reviewers; add/remove labels; mark draft/ready; close/reopen; merge; and enable/cancel GitHub native auto-merge. Merge requires explicit confirmation and respects current-user permission, repository rules, branch protection, and available merge methods. Commenting, approving, and requesting changes open GitHub and are not Deck mutations.
-- A single mutation accepts at most 100 combined user/team operands or 100
-  label operands, so label removal cannot fan out into unbounded provider
-  calls.
+- A single mutation accepts at most 10 assignee operands, 100 combined
+  reviewer user/team operands, or 100 label operands, so provider mutations
+  cannot fan out into unbounded calls.
 
 ## Client-Initiated Refresh and Billing
 

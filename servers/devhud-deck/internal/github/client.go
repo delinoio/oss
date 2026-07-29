@@ -62,6 +62,18 @@ func (client *Client) do(
 	input any,
 	output any,
 ) (http.Header, error) {
+	return client.doWithConflictError(
+		ctx, credential, method, path, input, output, nil)
+}
+
+func (client *Client) doWithConflictError(
+	ctx context.Context,
+	credential Credential,
+	method, path string,
+	input any,
+	output any,
+	conflictError error,
+) (http.Header, error) {
 	if client == nil || client.http == nil ||
 		credential.Validate(client.now()) != nil {
 		return nil, ErrPermissionDenied
@@ -104,6 +116,9 @@ func (client *Client) do(
 		return nil, ErrProvider
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if response.StatusCode == http.StatusConflict && conflictError != nil {
+			return response.Header, conflictError
+		}
 		return response.Header, mapStatus(response.StatusCode, response.Header, client.now())
 	}
 	if output != nil && len(payload) > 0 {
@@ -211,6 +226,7 @@ func parsePermission(value string) PermissionLevel {
 type repositoryResponse struct {
 	Name             string `json:"name"`
 	NodeID           string `json:"node_id"`
+	Archived         bool   `json:"archived"`
 	AllowMergeCommit bool   `json:"allow_merge_commit"`
 	AllowSquashMerge bool   `json:"allow_squash_merge"`
 	AllowRebaseMerge bool   `json:"allow_rebase_merge"`
@@ -571,7 +587,8 @@ func (client *Client) actionMetadata(
 	for _, label := range pull.Labels {
 		metadata.Labels = append(metadata.Labels, label.Name)
 	}
-	if effective.PullRequests < PermissionWrite || pull.Merged {
+	if effective.PullRequests < PermissionWrite || pull.Merged ||
+		repository.Archived {
 		return metadata, nil
 	}
 	metadata.Supported[MutationAssignUsers] = metadata.IsOpen
