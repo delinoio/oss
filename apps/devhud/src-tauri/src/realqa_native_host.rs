@@ -1172,7 +1172,7 @@ mod tests {
             })
             .unwrap();
         let delivery = SocketComposerDelivery::new(state.root.clone());
-        assert!(delivery.is_ready());
+        delivery.wait_until_ready(COMPOSER_WAIT).unwrap();
         let capture = request(BrowserCaptureMode::VisibleViewport);
         delivery.enqueue(&capture).unwrap();
         assert_eq!(accepted.lock().unwrap().as_slice(), [capture.request_id()]);

@@ -2809,6 +2809,8 @@ fn export_diagnostics(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
+// Tauri injects each independently managed reset dependency as a command argument.
+#[allow(clippy::too_many_arguments)]
 fn reset_dev_hud(
     app: AppHandle<ActiveRuntime>,
     persistence: State<'_, PersistenceState>,
