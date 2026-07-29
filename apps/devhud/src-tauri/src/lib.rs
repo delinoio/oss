@@ -2633,14 +2633,14 @@ fn export_diagnostics(
 #[tauri::command]
 fn reset_dev_hud(
     app: AppHandle<ActiveRuntime>,
-    persistence: State<'_, PersistenceState>,
-    auth_state: State<'_, auth_native::NativeAuthState>,
-    realqa_drafts: State<'_, realqa_drafts::RealQaDraftState>,
-    realqa_composer: State<'_, realqa_capture::ComposerCore>,
-    shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
-    autostart_state: State<'_, autostart::AutostartState>,
-    startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
+    let persistence = app.state::<PersistenceState>();
+    let auth_state = app.state::<auth_native::NativeAuthState>();
+    let realqa_drafts = app.state::<realqa_drafts::RealQaDraftState>();
+    let realqa_composer = app.state::<realqa_capture::ComposerCore>();
+    let shortcut_state = app.state::<Mutex<shortcut::ShortcutState>>();
+    let autostart_state = app.state::<autostart::AutostartState>();
+    let startup_diagnostics = app.state::<Mutex<StartupDiagnostics>>();
     persistence
         .preflight_reset()
         .map_err(reset_preflight_failure)?;
