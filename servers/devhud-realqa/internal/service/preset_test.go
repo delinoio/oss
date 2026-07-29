@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -58,5 +59,40 @@ func TestValidateProjectConfigurationRequiresConfiguredPermission(t *testing.T) 
 		nil,
 	); err != nil {
 		t.Fatalf("empty project selection rejected: %v", err)
+	}
+	for _, projectNodeID := range []string{"PVT fixture", "PVT:fixture"} {
+		if err := validateProjectConfiguration(
+			realqagithub.ProjectPermissionOrganization,
+			[]string{projectNodeID},
+		); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatalf("invalid project node ID %q code = %v",
+				projectNodeID, connect.CodeOf(err))
+		}
+	}
+}
+
+func TestValidatePresetProviderMetadataUsesGitHubRules(t *testing.T) {
+	t.Parallel()
+	if err := validatePresetProviderMetadata(
+		[]string{"bug"}, []string{"octocat"},
+	); err != nil {
+		t.Fatalf("valid provider metadata rejected: %v", err)
+	}
+	for _, test := range []struct {
+		name      string
+		labels    []string
+		assignees []string
+	}{
+		{name: "label", labels: []string{strings.Repeat("界", 51)}},
+		{name: "assignee", assignees: []string{"octo..cat"}},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := validatePresetProviderMetadata(test.labels, test.assignees)
+			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Fatalf("invalid metadata code = %v", connect.CodeOf(err))
+			}
+		})
 	}
 }

@@ -349,7 +349,8 @@ func RenderIssueForm(form IssueForm, answers []FormAnswer) (string, error) {
 				if field.Kind == FormFieldTextarea {
 					content = strings.Join(clean, "\n")
 					if field.Render != "" {
-						content = "```" + field.Render + "\n" + content + "\n```"
+						fence := codeFence(content)
+						content = fence + field.Render + "\n" + content + "\n" + fence
 					}
 				}
 			}
@@ -360,6 +361,21 @@ func RenderIssueForm(form IssueForm, answers []FormAnswer) (string, error) {
 		return "", errors.New("realqa github: answer references an unknown Issue Form field")
 	}
 	return strings.Join(sections, "\n\n"), nil
+}
+
+func codeFence(content string) string {
+	longest, current := 2, 0
+	for _, character := range content {
+		if character == '`' {
+			current++
+			if current > longest {
+				longest = current
+			}
+			continue
+		}
+		current = 0
+	}
+	return strings.Repeat("`", longest+1)
 }
 
 func validateFormAnswer(field FormField, values []string) ([]string, error) {

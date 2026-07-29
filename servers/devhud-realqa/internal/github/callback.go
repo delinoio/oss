@@ -438,7 +438,7 @@ func (handler *CallbackHandler) webhook(writer http.ResponseWriter, request *htt
 	event := request.Header.Get("X-GitHub-Event")
 	if event != "installation" && event != "installation_repositories" &&
 		event != "installation_target" && event != "issues" &&
-		event != "github_app_authorization" {
+		event != "github_app_authorization" && event != "ping" {
 		writeCallbackError(writer, http.StatusBadRequest)
 		return
 	}
@@ -456,6 +456,8 @@ func (handler *CallbackHandler) webhook(writer http.ResponseWriter, request *htt
 					request.Context(), store, body)
 			case "issues":
 				return handler.issueWebhook(request.Context(), store, body)
+			case "ping":
+				return nil
 			default:
 				return handler.authorizationWebhook(request.Context(), store, body)
 			}

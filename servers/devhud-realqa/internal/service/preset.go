@@ -273,6 +273,9 @@ func (service *Preset) validateInput(
 	if err != nil {
 		return presetInput{}, err
 	}
+	if err = validatePresetProviderMetadata(input.labels, input.assignees); err != nil {
+		return presetInput{}, err
+	}
 	input.projects = []string{}
 	if extension != nil {
 		github := extension.GetGithub()
@@ -330,10 +333,32 @@ func validateProjectConfiguration(
 	if len(projectNodeIDs) == 0 {
 		return nil
 	}
+	for _, projectNodeID := range projectNodeIDs {
+		if realqagithub.ValidateProjectNodeID(projectNodeID) != nil {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+		}
+	}
 	if permission != realqagithub.ProjectPermissionRepository &&
 		permission != realqagithub.ProjectPermissionOrganization {
 		return invalid(
 			realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	return nil
+}
+
+func validatePresetProviderMetadata(labels, assignees []string) error {
+	for _, label := range labels {
+		if realqagithub.ValidateLabelName(label) != nil {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+		}
+	}
+	for _, assignee := range assignees {
+		if realqagithub.ValidateAssigneeLogin(assignee) != nil {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+		}
 	}
 	return nil
 }

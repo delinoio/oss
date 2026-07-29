@@ -146,8 +146,8 @@ func normalizeIssueInput(input IssueInput) (IssueInput, error) {
 	}
 	input.Labels = make([]Label, 0, len(labels))
 	for _, label := range labels {
-		if utf8.RuneCountInString(label) > 50 {
-			return IssueInput{}, errors.New("realqa github: label name is invalid")
+		if err = ValidateLabelName(label); err != nil {
+			return IssueInput{}, err
 		}
 		input.Labels = append(input.Labels, Label{Name: label})
 	}
@@ -161,8 +161,8 @@ func normalizeIssueInput(input IssueInput) (IssueInput, error) {
 	}
 	input.Assignees = make([]Assignee, 0, len(assignees))
 	for _, assignee := range assignees {
-		if _, err = cleanName(assignee); err != nil {
-			return IssueInput{}, errors.New("realqa github: assignee login is invalid")
+		if err = ValidateAssigneeLogin(assignee); err != nil {
+			return IssueInput{}, err
 		}
 		input.Assignees = append(input.Assignees, Assignee{Login: assignee})
 	}
@@ -173,13 +173,43 @@ func normalizeIssueInput(input IssueInput) (IssueInput, error) {
 		return IssueInput{}, errors.New("realqa github: too many projects")
 	}
 	for _, project := range input.Extension.Projects {
-		if !nodeIDPattern.MatchString(project.NodeID) ||
+		if ValidateProjectNodeID(project.NodeID) != nil ||
 			(project.Permission != ProjectPermissionRepository &&
 				project.Permission != ProjectPermissionOrganization) {
 			return IssueInput{}, errors.New("realqa github: project extension is invalid")
 		}
 	}
 	return input, nil
+}
+
+// ValidateLabelName applies the GitHub issue input boundary to one label.
+func ValidateLabelName(value string) error {
+	if strings.TrimSpace(value) != value || value == "" ||
+		len([]byte(value)) > 255 || !utf8.ValidString(value) ||
+		strings.ContainsAny(value, "\x00\r\n") ||
+		utf8.RuneCountInString(value) > 50 {
+		return errors.New("realqa github: label name is invalid")
+	}
+	return nil
+}
+
+// ValidateAssigneeLogin applies the GitHub issue input boundary to one login.
+func ValidateAssigneeLogin(value string) error {
+	if len([]byte(value)) > 255 || !utf8.ValidString(value) {
+		return errors.New("realqa github: assignee login is invalid")
+	}
+	if _, err := cleanName(value); err != nil {
+		return errors.New("realqa github: assignee login is invalid")
+	}
+	return nil
+}
+
+// ValidateProjectNodeID applies the GitHub issue input boundary to one project.
+func ValidateProjectNodeID(value string) error {
+	if !nodeIDPattern.MatchString(value) {
+		return errors.New("realqa github: project node ID is invalid")
+	}
+	return nil
 }
 
 func escapeInline(value string) string {

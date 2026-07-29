@@ -199,6 +199,23 @@ body:
 	}
 }
 
+func TestIssueFormRenderFenceExceedsAnswerBackticks(t *testing.T) {
+	t.Parallel()
+	form := IssueForm{Fields: []FormField{{
+		ID: "logs", Kind: FormFieldTextarea, Label: "Logs", Render: "text",
+	}}}
+	rendered, err := RenderIssueForm(form, []FormAnswer{{
+		FieldID: "logs", Values: []string{"before\n```\nafter\n``````"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "### Logs\n\n```````text\nbefore\n```\nafter\n``````\n```````"
+	if rendered != expected {
+		t.Fatalf("unexpected fenced response:\n%s", rendered)
+	}
+}
+
 func TestIssueFormAcceptsCurrentGitHubMetadataAndOptionalFields(t *testing.T) {
 	t.Parallel()
 	contents := []byte(`

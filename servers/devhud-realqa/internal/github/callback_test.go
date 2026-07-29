@@ -448,6 +448,41 @@ func TestSignedIssueDeletionWebhookFixture(t *testing.T) {
 	}
 }
 
+func TestSignedPingWebhookIsRecordedWithoutSideEffects(t *testing.T) {
+	t.Parallel()
+	store := newFixtureCallbackStore()
+	handler, _, _, _ := fixtureCallbackHandler(t, store,
+		fixtureHTTPClient(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("provider request not expected")
+		}))
+	body := []byte(`{"zen":"Keep it logically awesome.","hook_id":123}`)
+	deliveryID := uuid.MustParse("018f3f5e-7b01-7a2d-8c3a-4ba8d8b51615")
+	send := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/github/webhooks",
+			bytes.NewReader(body))
+		request.Header.Set("X-GitHub-Event", "ping")
+		request.Header.Set("X-GitHub-Delivery", deliveryID.String())
+		request.Header.Set("X-Hub-Signature-256",
+			fixtureWebhookSignature([]byte(strings.Repeat("w", 32)), body))
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	if response := send(); response.Code != http.StatusNoContent {
+		t.Fatalf("ping was rejected: status=%d body=%s",
+			response.Code, response.Body)
+	}
+	if response := send(); response.Code != http.StatusNoContent {
+		t.Fatalf("duplicate ping was rejected: status=%d body=%s",
+			response.Code, response.Body)
+	}
+	if !store.deliveries[deliveryID] || len(store.deliveries) != 1 ||
+		store.installationCalls != 0 || store.deleteCalls != 0 ||
+		store.disconnectedUser != 0 {
+		t.Fatalf("ping delivery caused side effects: %#v", store)
+	}
+}
+
 func TestSignedInstallationTargetRenameWebhook(t *testing.T) {
 	t.Parallel()
 	store := newFixtureCallbackStore()
