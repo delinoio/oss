@@ -158,7 +158,7 @@
   opaque-cursor user/team/label search plus the synchronized PR revision;
   unsupported mutation kinds fail closed, and candidate reads neither mutate
   nor refresh the PR.
-- Mutations are limited to assign/unassign users; request/remove individual or team reviewers; add/remove labels; mark draft/ready; close/reopen; merge; and enable/cancel GitHub native auto-merge. Merge requires explicit confirmation and respects current-user permission, repository rules, branch protection, and available merge methods. Commenting, approving, and requesting changes open GitHub and are not Deck mutations.
+- Mutations are limited to assign/unassign users; request/remove individual or team reviewers; add/remove labels; mark draft/ready; close/reopen; merge; and enable/cancel GitHub native auto-merge. Merge requires explicit confirmation and respects current-user permission, repository rules, branch protection, and available merge methods. When GitHub accepts a mutation but the immediate result reload fails, the RPC returns success with `refresh_required` and omits stale pull-request detail so clients refresh instead of retrying the provider side effect. Commenting, approving, and requesting changes open GitHub and are not Deck mutations.
 - A single mutation accepts at most 10 assignee operands, 100 combined
   reviewer user/team operands, or 100 label operands, so provider mutations
   cannot fan out into unbounded calls.

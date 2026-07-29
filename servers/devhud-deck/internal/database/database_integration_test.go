@@ -121,6 +121,14 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if first.Revision.GetValue() != 1 || first.Revision.GetEtag() == "" {
 		t.Fatalf("first revision = %#v", first.Revision)
 	}
+	secondViewID := mustV7(t)
+	second, replayed, err := store.CreateView(ctx, createViewParams(
+		t, hasher, accountID, secondViewID, mustV7(t), "subject-1",
+		now.Add(time.Second), 1))
+	if err != nil || replayed {
+		t.Fatalf("create second view = %#v replayed=%v err=%v",
+			second, replayed, err)
+	}
 	var ciphertext []byte
 	if err := store.pool.QueryRow(ctx,
 		"SELECT query_ciphertext FROM deck_views WHERE view_id = $1",
@@ -149,6 +157,20 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ctx, firstViewID, denyBeforeDecrypt); !errors.Is(err, deniedView) {
 		t.Fatalf("authorized view opened ciphertext before denial: %v", err)
 	}
+	authorizationCalls := 0
+	visible, err := store.ListViewsAuthorized(
+		ctx, deckv1.OwnerScope_OWNER_SCOPE_PERSONAL, accountID, uuid.Nil, 1,
+		func(ViewAuthorization) error {
+			authorizationCalls++
+			if authorizationCalls == 1 {
+				return ErrViewNotVisible
+			}
+			return nil
+		})
+	if err != nil || len(visible) != 1 ||
+		visible[0].GetViewId().GetValue() != secondViewID.String() {
+		t.Fatalf("visible view list = %#v, %v", visible, err)
+	}
 	if _, err := store.ListViewsAuthorized(
 		ctx, deckv1.OwnerScope_OWNER_SCOPE_PERSONAL, accountID, uuid.Nil, 2,
 		denyBeforeDecrypt); !errors.Is(err, deniedView) {
@@ -160,7 +182,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for index := 1; index < 50; index++ {
+	for index := 2; index < 50; index++ {
 		_, _, err := store.CreateView(ctx, createViewParams(
 			t, hasher, accountID, mustV7(t), mustV7(t), "subject-1",
 			now.Add(time.Duration(index)*time.Second), byte(index)))
@@ -852,6 +874,18 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		now.Add(4*time.Minute)); !errors.Is(
 		err, deckgithub.ErrPermissionDenied) {
 		t.Fatalf("member replaced organization installation: %T %v", err, err)
+	}
+	replacementCallback := organizationCallback
+	replacementCallback.InstallationID = otherInstallation.ID
+	if err := connectGitHub(
+		replacementCallback, otherInstallation, organizationCredential,
+		now.Add(4*time.Minute+30*time.Second)); err != nil {
+		t.Fatalf("owner replaced organization installation: %v", err)
+	}
+	if _, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, secondAccountID, true); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("replacement retained member credential: %T %v", err, err)
 	}
 	if err := store.ApplyGitHubAuthorizationRevocation(
 		ctx, "authorization-revocation-2", organizationCredential.UserID,

@@ -28,6 +28,7 @@
 
 ### DevHud Rules
 
+- A GitHub-accepted Deck mutation whose result reload fails returns success with `refresh_required` and no stale pull-request detail; the client refreshes and never retries that provider side effect.
 - Deck device writes carry request-only shortcut configurations with closed modifier/key enums and widget configuration only; effective shortcut conflict state/revisions plus widget snapshots/revisions are server-authored. List results expose the synchronized PR revision required by mutations, and `UpdateView` may change notification preferences while owner/kind remain immutable.
 - `apps/devhud` is DevHud's sole full feature client/native implementation path.
   The implemented private Deck and RealQA proto packages, inactive server

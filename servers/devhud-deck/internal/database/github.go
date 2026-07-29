@@ -295,6 +295,12 @@ func (store *Store) ConnectGitHub(
 			}
 		}
 		if canManage && existingErr == nil {
+			if githubInstallationChanged(existing, installation) {
+				if err := queries.DeleteGitHubConnectionCredentials(
+					ctx, existing.ConnectionID); err != nil {
+					return err
+				}
+			}
 			if githubProviderChanged(existing, installation) {
 				if err := store.cleanupGitHubOwner(
 					ctx, queries, existing.OwnerScope,
@@ -358,7 +364,7 @@ func (store *Store) ConnectGitHub(
 	})
 }
 
-func githubProviderChanged(
+func githubInstallationChanged(
 	existing dbgen.DeckConnection,
 	installation deckgithub.Installation,
 ) bool {
@@ -367,7 +373,14 @@ func githubProviderChanged(
 		!existing.GithubAccountID.Valid ||
 		existing.GithubAccountID.Int64 != int64(installation.AccountID) ||
 		!existing.GithubAccountKind.Valid ||
-		existing.GithubAccountKind.Int16 != int16(installation.AccountKind) ||
+		existing.GithubAccountKind.Int16 != int16(installation.AccountKind)
+}
+
+func githubProviderChanged(
+	existing dbgen.DeckConnection,
+	installation deckgithub.Installation,
+) bool {
+	return githubInstallationChanged(existing, installation) ||
 		!existing.GithubMetadataPermission.Valid ||
 		existing.GithubMetadataPermission.Int16 != int16(installation.Permissions.Metadata) ||
 		!existing.GithubContentsPermission.Valid ||

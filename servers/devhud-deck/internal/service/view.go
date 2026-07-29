@@ -741,8 +741,7 @@ func (service *View) viewDefinitionAuthorizer(
 		}
 		for _, hash := range authorization.RepositoryHashes {
 			if _, allowed := readable[hash]; !allowed {
-				return rpcerr.New(connect.CodePermissionDenied,
-					deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
+				return database.ErrViewNotVisible
 			}
 		}
 		return nil
@@ -750,6 +749,10 @@ func (service *View) viewDefinitionAuthorizer(
 }
 
 func mapAuthorizedViewError(err error) error {
+	if errors.Is(err, database.ErrViewNotVisible) {
+		return rpcerr.New(connect.CodePermissionDenied,
+			deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
+	}
 	var connectErr *connect.Error
 	if errors.As(err, &connectErr) {
 		return err

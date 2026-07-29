@@ -130,12 +130,17 @@ func (service *View) MutatePullRequest(
 		ctx, viewer.Subject, audit.EventPullRequestMutated, view.Owner.Scope,
 		ownerHash[:], audit.ResourceView, viewIDValue(view),
 		audit.OutcomeSuccess)
+	response := &deckv1.MutatePullRequestResponse{
+		MutationKind:    deckv1.PullRequestMutationKind(result.Kind),
+		RefreshRequired: result.RefreshRequired,
+	}
+	if result.RefreshRequired {
+		return connect.NewResponse(response), nil
+	}
 	detail := service.pullRequestDetail(
 		viewIDValue(view), request.Msg.PullRequest, snapshot, result.Metadata)
-	return connect.NewResponse(&deckv1.MutatePullRequestResponse{
-		PullRequest:  detail,
-		MutationKind: deckv1.PullRequestMutationKind(result.Kind),
-	}), nil
+	response.PullRequest = detail
+	return connect.NewResponse(response), nil
 }
 
 func (service *View) authorizePullRequestAction(

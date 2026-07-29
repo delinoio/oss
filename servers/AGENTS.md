@@ -83,6 +83,7 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 
 ### DevHud Feature Server Rules
 
+- A GitHub-accepted Deck mutation whose immediate result reload fails returns success with `refresh_required` and no stale pull-request detail; clients refresh and never retry that provider side effect.
 - Deck device writes accept request-only shortcut configurations with closed modifier/key enums and widget configuration only; the server alone authors effective shortcut conflict state/revisions plus widget snapshots/revisions. List results expose the synchronized PR revision required by mutations, and `UpdateView` may change notification preferences while owner/kind remain immutable.
 - Read `docs/project-devhud.md`, the corresponding
   `docs/servers-devhud-*-foundation.md`, proto contract, and app contract before

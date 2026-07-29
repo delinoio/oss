@@ -95,7 +95,7 @@ Each project must have one project index document and one or more domain contrac
 - `docs/servers-devhud-deck-foundation.md` (implemented inactive
   `servers/devhud-deck` foundation and GitHub.com provider slice; future
   `https://deck.deli.dev`)
-- `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, and non-dispatching all-origin refresh preflight)
+- `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, mutation follow-up-refresh state, and non-dispatching all-origin refresh preflight)
 - `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion foundation at `servers/devhud-realqa`; future submission/image/billing slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
 - `docs/protos-devhud-realqa-api-contract.md` (implemented `protos/devhud-realqa/v1`; `devhud.realqa.v1`, isolated descriptor and private generated package)
 

@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -137,8 +138,11 @@ func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 		RepositoryHashes:   [][32]byte{repositoryHash},
 		HasRepositoryIndex: true,
 	})
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
+	if !errors.Is(err, database.ErrViewNotVisible) {
 		t.Fatalf("connected view authorization error = %v", err)
+	}
+	if connect.CodeOf(mapAuthorizedViewError(err)) != connect.CodePermissionDenied {
+		t.Fatalf("mapped connected view authorization error = %v", err)
 	}
 	err = authorize(database.ViewAuthorization{
 		Owner:           owner,

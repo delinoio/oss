@@ -31,6 +31,7 @@ var (
 	ErrDeletionInProgress  = errors.New("deck database: deletion in progress")
 	ErrAccountSwitch       = errors.New("deck database: device belongs to another account")
 	ErrInstallationOwned   = errors.New("deck database: installation already has an owner")
+	ErrViewNotVisible      = errors.New("deck database: view not visible")
 )
 
 type LimitError struct {
@@ -504,24 +505,41 @@ func (store *Store) ListViewsAuthorized(
 	if authorize == nil {
 		return nil, errors.New("deck database: view authorization is required")
 	}
-	rows, err := store.listViewRows(ctx, ownerScope, ownerID, after, limit)
-	if err != nil {
-		return nil, err
+	if limit <= 0 {
+		return []*deckv1.View{}, nil
 	}
-	views := make([]*deckv1.View, 0, len(rows))
-	for _, row := range rows {
-		authorization, err := store.viewAuthorization(row)
+	views := make([]*deckv1.View, 0, limit)
+	cursor := after
+	for int32(len(views)) < limit {
+		rows, err := store.listViewRows(
+			ctx, ownerScope, ownerID, cursor, limit)
 		if err != nil {
 			return nil, err
 		}
-		if err := authorize(authorization); err != nil {
-			return nil, err
+		for _, row := range rows {
+			authorization, err := store.viewAuthorization(row)
+			if err != nil {
+				return nil, err
+			}
+			if err := authorize(authorization); err != nil {
+				if errors.Is(err, ErrViewNotVisible) {
+					continue
+				}
+				return nil, err
+			}
+			view, err := store.decodeView(row)
+			if err != nil {
+				return nil, err
+			}
+			views = append(views, view)
+			if int32(len(views)) == limit {
+				return views, nil
+			}
 		}
-		view, err := store.decodeView(row)
-		if err != nil {
-			return nil, err
+		if int32(len(rows)) < limit {
+			break
 		}
-		views = append(views, view)
+		cursor = uuidValue(rows[len(rows)-1].ViewID)
 	}
 	return views, nil
 }

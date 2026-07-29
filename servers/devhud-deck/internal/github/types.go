@@ -299,7 +299,8 @@ type ActionMetadata struct {
 }
 
 type MutationResult struct {
-	Kind     MutationKind
-	Revision uint64
-	Metadata ActionMetadata
+	Kind            MutationKind
+	Revision        uint64
+	Metadata        ActionMetadata
+	RefreshRequired bool
 }

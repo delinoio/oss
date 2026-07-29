@@ -731,6 +731,16 @@ func TestRESTValidationAndMergeProtectionMappingsAreOperationSpecific(
 	if !errors.Is(err, ErrProvider) || errors.Is(err, ErrBranchProtected) {
 		t.Fatalf("label validation error = %v", err)
 	}
+	err = validationClient.applyMutation(
+		context.Background(), credential, reference,
+		ActionMetadata{HeadSHA: "current"},
+		Mutation{
+			Kind: MutationMerge, MergeMethod: MergeMethodSquash,
+			Confirmed: true,
+		})
+	if !errors.Is(err, ErrProvider) || errors.Is(err, ErrStaleRevision) {
+		t.Fatalf("merge validation error = %v", err)
+	}
 
 	protectedClient := NewClient(&http.Client{Transport: roundTripFunc(
 		func(*http.Request) (*http.Response, error) {
@@ -1000,6 +1010,56 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 	}
 	if result.Revision == initial.Revision || result.Metadata.IsOpen {
 		t.Fatalf("mutation result = %#v initial=%d", result, initial.Revision)
+	}
+}
+
+func TestMutationRequiresRefreshWhenResultReloadFails(t *testing.T) {
+	t.Parallel()
+	mutated := false
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			switch {
+			case request.URL.Path == "/repos/acme/widget" &&
+				request.Method == http.MethodGet:
+				if mutated {
+					return jsonResponse(http.StatusServiceUnavailable, `{}`), nil
+				}
+				return jsonResponse(http.StatusOK,
+					`{"permissions":{"pull":true,"push":true}}`), nil
+			case request.URL.Path == "/repos/acme/widget/pulls/7" &&
+				request.Method == http.MethodGet:
+				return jsonResponse(http.StatusOK,
+					`{"node_id":"PR_1","state":"open","mergeable":true,`+
+						`"updated_at":"2026-01-01T00:00:00Z",`+
+						`"head":{"sha":"abc"}}`), nil
+			case request.URL.Path == "/repos/acme/widget/pulls/7" &&
+				request.Method == http.MethodPatch:
+				mutated = true
+				return jsonResponse(http.StatusOK, `{}`), nil
+			default:
+				t.Fatalf("unexpected mutation request %s %s",
+					request.Method, request.URL.Path)
+				return nil, nil
+			}
+		})})
+	credential := Credential{AccessToken: "ghu_viewer"}
+	permissions := Permissions{
+		Metadata: PermissionRead, PullRequests: PermissionWrite,
+	}
+	reference := PullRequestRef{
+		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+	}
+	initial, err := client.ActionMetadata(
+		context.Background(), 42, credential, permissions, reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Mutate(
+		context.Background(), "viewer", 42, credential, permissions,
+		reference, initial.Revision, Mutation{Kind: MutationClose})
+	if err != nil || !result.RefreshRequired ||
+		result.Kind != MutationClose || result.Revision != 0 {
+		t.Fatalf("mutation result = %#v err=%v", result, err)
 	}
 }
 

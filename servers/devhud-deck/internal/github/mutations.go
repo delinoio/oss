@@ -72,7 +72,9 @@ func (client *Client) Mutate(
 	current, err := client.actionMetadata(
 		ctx, credential, appPermissions, reference)
 	if err != nil {
-		return MutationResult{}, err
+		return MutationResult{
+			Kind: mutation.Kind, RefreshRequired: true,
+		}, nil
 	}
 	return MutationResult{
 		Kind: mutation.Kind, Revision: current.Revision, Metadata: current,

@@ -118,7 +118,7 @@ func (client *Client) doWithConflictError(
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		if conflictError != nil {
 			switch response.StatusCode {
-			case http.StatusConflict, http.StatusUnprocessableEntity:
+			case http.StatusConflict:
 				return response.Header, conflictError
 			case http.StatusMethodNotAllowed:
 				return response.Header, ErrBranchProtected
