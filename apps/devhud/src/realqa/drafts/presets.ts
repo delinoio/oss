@@ -305,6 +305,27 @@ function translateGoCharacterEscape(
   return null;
 }
 
+function translateGoIdentityEscape(
+  pattern: string,
+  index: number,
+): { readonly output: string; readonly nextIndex: number } | null {
+  const codePoint = pattern.codePointAt(index + 1);
+  if (
+    pattern[index] !== "\\" ||
+    codePoint === undefined ||
+    (codePoint < 0x80 &&
+      ((codePoint >= 0x30 && codePoint <= 0x39) ||
+        (codePoint >= 0x41 && codePoint <= 0x5a) ||
+        (codePoint >= 0x61 && codePoint <= 0x7a)))
+  ) {
+    return null;
+  }
+  return {
+    output: `\\u{${codePoint.toString(16)}}`,
+    nextIndex: index + (codePoint > 0xffff ? 3 : 2),
+  };
+}
+
 function translatePerlWhitespaceClassEscape(
   pattern: string,
   index: number,
@@ -525,7 +546,8 @@ function compiledPatternInstructions(pattern: string): number | null {
         const unicodeClass = pattern
           .slice(index)
           .match(/^\\[pP](?:\{\^?[A-Za-z_]+\}|[A-Za-z])/u);
-        index += unicodeClass?.[0].length ?? 2;
+        const bracedHex = pattern.slice(index).match(/^\\x\{[0-9A-Fa-f]+\}/u);
+        index += bracedHex?.[0].length ?? unicodeClass?.[0].length ?? 2;
         atom = {
           instructions: 1,
           nullable: ["A", "z", "b", "B"].includes(pattern[index - 1] ?? ""),
@@ -678,6 +700,7 @@ function translateTitleCharacterClass(
   let positiveMembers = "";
   const complementedUnicodeMembers: string[] = [];
   let closed = false;
+  let previousWasClassEscape = false;
 
   while (index < pattern.length) {
     const posixClass = translatePosixCharacterClass(
@@ -688,6 +711,7 @@ function translateTitleCharacterClass(
     if (posixClass !== null) {
       positiveMembers += posixClass.output;
       index = posixClass.nextIndex;
+      previousWasClassEscape = true;
     } else if (pattern[index] === "\\") {
       const whitespaceClass = translatePerlWhitespaceClassEscape(
         pattern,
@@ -703,7 +727,16 @@ function translateTitleCharacterClass(
       const translatedClass =
         whitespaceClass ??
         unicodeClass ??
-        translateGoCharacterEscape(pattern, index);
+        translateGoCharacterEscape(pattern, index) ??
+        translateGoIdentityEscape(pattern, index);
+      const escaped = pattern[index + 1];
+      const isClassEscape =
+        whitespaceClass !== null ||
+        unicodeClass !== null ||
+        escaped === "d" ||
+        escaped === "D" ||
+        escaped === "w" ||
+        escaped === "W";
       if (
         unicodeClass !== null &&
         caseInsensitive &&
@@ -722,20 +755,31 @@ function translateTitleCharacterClass(
         positiveMembers += translatedClass.output;
         index = translatedClass.nextIndex;
       } else {
-        const escaped = pattern[index + 1];
         if (escaped === "b" || escaped === "B") {
           throw new Error("word-boundary escape inside character class");
         }
         positiveMembers += pattern.slice(index, index + 2);
         index += 2;
       }
+      previousWasClassEscape = isClassEscape;
     } else if (pattern[index] === "]") {
       index += 1;
       closed = true;
       break;
     } else {
-      positiveMembers += pattern[index];
+      const nextIsClassEscape =
+        pattern[index] === "-" &&
+        (translatePosixCharacterClass(pattern, index + 1) !== null ||
+          /^\\(?:[dDsSwW]|[pP](?:\{\^?[A-Za-z_]+\}|[A-Za-z]))/u.test(
+            pattern.slice(index + 1),
+          ));
+      positiveMembers +=
+        pattern[index] === "-" &&
+        (previousWasClassEscape || nextIsClassEscape)
+          ? "\\-"
+          : pattern[index];
       index += 1;
+      previousWasClassEscape = false;
     }
   }
 
@@ -850,7 +894,8 @@ function translateTitlePattern(pattern: string): string {
         const translatedClass =
           whitespaceClass ??
           translateUnicodeClassEscape(pattern, index, flags.i, false) ??
-          translateGoCharacterEscape(pattern, index);
+          translateGoCharacterEscape(pattern, index) ??
+          translateGoIdentityEscape(pattern, index);
         if (translatedClass !== null) {
           output += translatedClass.output;
           index = translatedClass.nextIndex;

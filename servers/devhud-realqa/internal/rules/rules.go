@@ -169,17 +169,25 @@ func repetitionLength(pattern string, index int) int {
 		return 0
 	}
 	cursor := index + 1
-	digitsStart := cursor
-	for cursor < len(pattern) && pattern[cursor] >= '0' && pattern[cursor] <= '9' {
-		cursor++
-	}
-	if cursor == digitsStart {
+	if cursor >= len(pattern) || pattern[cursor] < '0' || pattern[cursor] > '9' {
 		return 0
+	}
+	if pattern[cursor] == '0' {
+		cursor++
+	} else {
+		for cursor < len(pattern) && pattern[cursor] >= '0' && pattern[cursor] <= '9' {
+			cursor++
+		}
 	}
 	if cursor < len(pattern) && pattern[cursor] == ',' {
 		cursor++
-		for cursor < len(pattern) && pattern[cursor] >= '0' && pattern[cursor] <= '9' {
+		if cursor < len(pattern) && pattern[cursor] == '0' {
 			cursor++
+		} else if cursor < len(pattern) && pattern[cursor] >= '1' && pattern[cursor] <= '9' {
+			cursor++
+			for cursor < len(pattern) && pattern[cursor] >= '0' && pattern[cursor] <= '9' {
+				cursor++
+			}
 		}
 	}
 	if cursor >= len(pattern) || pattern[cursor] != '}' {

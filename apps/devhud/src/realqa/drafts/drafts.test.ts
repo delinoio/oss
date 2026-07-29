@@ -303,6 +303,9 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     [String.raw`^\a$`, "\u0007"],
     [String.raw`^\x{41}$`, "A"],
     [String.raw`^[\a\x{41}]$`, "A"],
+    [String.raw`^\_$`, "_"],
+    [String.raw`^\!$`, "!"],
+    [String.raw`^[\!]$`, "!"],
   ])("translates synchronized Go character escape %s", (pattern, title) => {
     expect(
       inferDesktopUrl(
@@ -442,6 +445,32 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
       expect(inferDesktopUrl(rules, "code", nonmatchingTitle)).toMatchObject({
         ok: true,
         url: { value: "https://fallback.example/" },
+      });
+    },
+  );
+
+  it.each([
+    [String.raw`^[\p{Greek}-\p{Latin}]$`, "-"],
+    [String.raw`^[\p{Greek}-\p{Latin}]$`, "Ω"],
+    [String.raw`^[\d-\w]$`, "-"],
+    [String.raw`^[\d-\w]$`, "a"],
+  ])(
+    "treats hyphens adjacent to synchronized class escapes as literals in %s",
+    (pattern, title) => {
+      expect(
+        inferDesktopUrl(
+          [
+            rule({
+              safeWindowTitlePattern: pattern,
+              urlTemplate: "https://example.com/matched",
+            }),
+          ],
+          "code",
+          title,
+        ),
+      ).toMatchObject({
+        ok: true,
+        url: { value: "https://example.com/matched" },
       });
     },
   );
@@ -639,7 +668,11 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     ).toBe(false);
   });
 
-  it.each([String.raw`^\x{101}$`, String.raw`^\x{1F600}$`])(
+  it.each([
+    String.raw`^\x{101}$`,
+    String.raw`^\x{3000}$`,
+    String.raw`^\x{1F600}$`,
+  ])(
     "does not interpret a synchronized braced hex escape as repetition %s",
     (pattern) => {
       expect(

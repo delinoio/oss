@@ -112,8 +112,15 @@ func TestCompileAcceptsCommonRegexEdgeCases(t *testing.T) {
 		`^([[:digit:]{101}])+$`,
 		`^\p{^Greek}+$`,
 		`^\P{^Greek}+$`,
+		`^\x{3000}$`,
+		`^\_$`,
+		`^\!$`,
+		`^[\p{Greek}-\p{Latin}]$`,
+		`^[\d-\w]$`,
 		`^Issue {$`,
 		`^Issue }$`,
+		`^(a{01})+$`,
+		`^(a{1,02})+$`,
 	} {
 		if _, err := Compile([]Rule{{
 			ExactProcessName: "app",

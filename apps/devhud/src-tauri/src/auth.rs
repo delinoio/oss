@@ -909,17 +909,23 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             Ok(tokens) => tokens,
             Err(failure) => {
                 let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
+                if error != AuthError::TransportUnavailable {
+                    self.remove_invalid_realqa_grant(&mut retained, feature)?;
+                }
                 return Err(error);
             }
         };
-        validate_bearer(
+        if let Err(error) = validate_bearer(
             &feature_tokens.claims,
             &self.configuration,
             &subject,
             feature.audience(),
             feature.scopes(),
             now_unix_seconds,
-        )?;
+        ) {
+            self.remove_invalid_realqa_grant(&mut retained, feature)?;
+            return Err(error);
+        }
         let mut retained_changed = migrate_retained_device_session(&mut retained, &subject)?;
         if let Some(refresh_token) = feature_tokens.refresh_token {
             retained.refresh_tokens.insert(feature, refresh_token);
@@ -941,18 +947,25 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             Ok(tokens) => tokens,
             Err(failure) => {
                 let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
+                if error != AuthError::TransportUnavailable {
+                    self.remove_invalid_realqa_grant(&mut retained, feature)?;
+                }
                 return Err(error);
             }
         };
-        validate_bearer(
+        if let Err(error) = validate_bearer(
             &delibase_tokens.claims,
             &self.configuration,
             &subject,
             DELIBASE_AUDIENCE,
             feature.delibase_scopes(),
             now_unix_seconds,
-        )?;
+        ) {
+            self.remove_invalid_realqa_grant(&mut retained, feature)?;
+            return Err(error);
+        }
         if feature_tokens.claims.subject != delibase_tokens.claims.subject {
+            self.remove_invalid_realqa_grant(&mut retained, feature)?;
             return Err(AuthError::SubjectMismatch);
         }
         if let Some(rotated_refresh) = delibase_tokens.refresh_token {
@@ -2695,6 +2708,47 @@ mod tests {
                 .and_then(|retained| retained.0.get(&AuthFeature::Deck))
                 .map(String::as_str),
             Some("refresh-rotated")
+        );
+    }
+
+    #[test]
+    fn bearer_pair_removes_definitively_invalid_realqa_grant() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::RealQa,
+                "refresh-invalid",
+                key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport
+            .refresh
+            .push_back(Err(AuthError::ReauthenticationRequired.into()));
+        let mut session_manager = manager(transport, vault);
+        session_manager.state = SessionState::SignedIn {
+            subject: "account-a".to_owned(),
+            access_token: Secret::new("memory-access-token").unwrap(),
+            id_token: Some(Secret::new("memory-id-token").unwrap()),
+            reauthenticated_features: [AuthFeature::RealQa].into_iter().collect(),
+            offline_features: BTreeSet::new(),
+        };
+
+        assert!(matches!(
+            session_manager.bearer_pair(AuthFeature::RealQa, NOW),
+            Err(AuthError::ReauthenticationRequired)
+        ));
+        assert!(session_manager.vault.retained.is_none());
+        assert_eq!(
+            session_manager.realqa_draft_access(),
+            Err(AuthError::FirstTimeOffline)
+        );
+
+        let mut restarted = manager(FakeTransport::default(), session_manager.vault);
+        assert_eq!(
+            restarted.restore_at(Connectivity::Offline, NOW),
+            Err(AuthError::FirstTimeOffline)
         );
     }
 
