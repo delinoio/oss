@@ -109,6 +109,7 @@ func (oauth *OAuth) Exchange(ctx context.Context, code string) (Credential, erro
 		"client_id":     {oauth.configuration.ClientID},
 		"client_secret": {oauth.configuration.ClientSecret},
 		"code":          {code},
+		"redirect_uri":  {oauth.configuration.CallbackURL},
 	}
 	return oauth.exchange(ctx, form, nil)
 }

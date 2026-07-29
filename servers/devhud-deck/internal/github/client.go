@@ -644,8 +644,8 @@ func (client *Client) actionMetadata(
 		metadata.Mergeable && !metadata.MergeBlocked &&
 		!metadata.MergeConflicting && hasMethod && canMerge
 	mergeRequirementsUnmet := pull.Mergeable != nil &&
-		(!metadata.Mergeable || metadata.MergeBlocked ||
-			metadata.MergeConflicting)
+		!metadata.MergeConflicting &&
+		(!metadata.Mergeable || metadata.MergeBlocked)
 	metadata.Supported[MutationEnableAutoMerge] = metadata.IsOpen &&
 		!metadata.IsDraft && !metadata.AutoMergeEnabled &&
 		repository.AllowAutoMerge && mergeRequirementsUnmet &&

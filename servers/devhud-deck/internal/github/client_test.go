@@ -949,6 +949,14 @@ func TestAutoMergeRequiresRepositoryAndPullRequestEligibility(t *testing.T) {
 				`"mergeable_state":"unknown","updated_at":"2026-01-01T00:00:00Z",` +
 				`"head":{"sha":"abc"}}`,
 		},
+		{
+			name: "conflicting",
+			repository: `{"allow_merge_commit":true,"allow_auto_merge":true,` +
+				`"permissions":{"pull":true,"push":true}}`,
+			pull: `{"node_id":"PR_1","state":"open","mergeable":false,` +
+				`"mergeable_state":"dirty","updated_at":"2026-01-01T00:00:00Z",` +
+				`"head":{"sha":"abc"}}`,
+		},
 	}
 	for _, test := range tests {
 		test := test
@@ -1073,8 +1081,9 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 					"statusCheckRollup":{
 						"state":"FAILURE",
 						"contexts":{
-							"totalCount":6,
+							"totalCount":7,
 							"checkRunCountsByState":[
+								{"state":"COMPLETED","count":1},
 								{"state":"PENDING","count":1},
 								{"state":"SUCCESS","count":2}
 							],
@@ -1117,7 +1126,7 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 		result.Metadata.ReviewDecision != ReviewDecisionApproved ||
 		result.Metadata.ChecksState != ChecksStateFailure ||
 		result.Metadata.PendingChecks != 1 ||
-		result.Metadata.SuccessfulChecks != 3 ||
+		result.Metadata.SuccessfulChecks != 4 ||
 		result.Metadata.FailedChecks != 2 {
 		t.Fatalf("mutation result = %#v initial=%d", result, initial.Revision)
 	}

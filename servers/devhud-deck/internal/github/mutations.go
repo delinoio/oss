@@ -154,7 +154,7 @@ query($id:ID!){
 		switch strings.ToUpper(count.State) {
 		case "EXPECTED", "IN_PROGRESS", "PENDING", "QUEUED", "REQUESTED", "WAITING":
 			target = &metadata.PendingChecks
-		case "NEUTRAL", "SKIPPED", "SUCCESS":
+		case "COMPLETED", "NEUTRAL", "SKIPPED", "SUCCESS":
 			target = &metadata.SuccessfulChecks
 		case "ACTION_REQUIRED", "CANCELLED", "ERROR", "FAILURE", "STALE",
 			"STARTUP_FAILURE", "TIMED_OUT":

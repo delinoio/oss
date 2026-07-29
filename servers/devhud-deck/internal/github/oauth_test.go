@@ -10,6 +10,37 @@ import (
 	"time"
 )
 
+func TestExchangeBindsConfiguredCallbackURL(t *testing.T) {
+	t.Parallel()
+	const callbackURL = "https://deck.deli.dev/github/oauth/callback"
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(request.Body)
+		form, _ := url.ParseQuery(string(body))
+		if form.Get("code") != "fixture-code" ||
+			form.Get("redirect_uri") != callbackURL {
+			t.Fatalf("exchange form = %q", string(body))
+		}
+		return jsonResponse(http.StatusOK, `{
+			"access_token":"ghu_new",
+			"token_type":"bearer"
+		}`), nil
+	})
+	oauth, err := NewOAuth(OAuthConfig{
+		ClientID: "fixture-client", ClientSecret: "fixture-secret",
+		AppSlug: "deck-fixture", CallbackURL: callbackURL,
+	}, &http.Client{Transport: transport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := oauth.Exchange(context.Background(), "fixture-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.AccessToken != "ghu_new" {
+		t.Fatalf("credential = %#v", credential)
+	}
+}
+
 func TestRefreshMapsRejectedRefreshTokenToReauthentication(t *testing.T) {
 	t.Parallel()
 	transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
