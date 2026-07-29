@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
+	"golang.org/x/text/unicode/norm"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +20,9 @@ type stringList []string
 func (values *stringList) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.ScalarNode:
+		if !isStringNode(node) {
+			return errors.New("realqa github: definition string list is invalid")
+		}
 		if node.Value == "" {
 			*values = nil
 			return nil
@@ -27,7 +32,7 @@ func (values *stringList) UnmarshalYAML(node *yaml.Node) error {
 		}
 	case yaml.SequenceNode:
 		for _, item := range node.Content {
-			if item.Kind != yaml.ScalarNode {
+			if !isStringNode(item) {
 				return errors.New("realqa github: definition string list is invalid")
 			}
 			*values = append(*values, strings.TrimSpace(item.Value))
@@ -75,14 +80,15 @@ func ParseMarkdownTemplate(filePath, etag string, contents []byte) (MarkdownTemp
 	if err = decoder.Decode(&header); err != nil {
 		return MarkdownTemplate{}, errors.New("realqa github: Markdown front matter is invalid")
 	}
-	if strings.TrimSpace(header.Name) == "" || strings.TrimSpace(header.About) == "" {
+	templateName := strings.TrimSpace(header.Name)
+	if utf8.RuneCountInString(templateName) <= 3 || strings.TrimSpace(header.About) == "" {
 		return MarkdownTemplate{}, errors.New("realqa github: Markdown template name and about are required")
 	}
 	issueType, err := cleanIssueType(header.Type)
 	if err != nil {
 		return MarkdownTemplate{}, errors.New("realqa github: Markdown issue type is invalid")
 	}
-	definition.Name = strings.TrimSpace(header.Name)
+	definition.Name = templateName
 	return MarkdownTemplate{
 		Definition: definition, TitlePrefix: header.Title, IssueType: issueType,
 		DefaultLabels: []string(header.Labels), DefaultAssignees: []string(header.Assignees),
@@ -132,6 +138,13 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 	if len(contents) == 0 || len(contents) > maximumDefinitionBytes || !utf8.Valid(contents) {
 		return IssueForm{}, errors.New("realqa github: Issue Form is invalid")
 	}
+	var document yaml.Node
+	if err = yaml.Unmarshal(contents, &document); err != nil {
+		return IssueForm{}, errors.New("realqa github: Issue Form schema is invalid")
+	}
+	if err = validateIssueFormYAML(&document); err != nil {
+		return IssueForm{}, err
+	}
 	var raw rawForm
 	decoder := yaml.NewDecoder(bytes.NewReader(contents))
 	decoder.KnownFields(true)
@@ -166,6 +179,7 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 	}
 	seen := make(map[string]struct{})
 	seenGeneratedLabels := make(map[string]struct{})
+	seenProviderReferences := make(map[string]struct{})
 	hasSubmittedField := false
 	for index, item := range raw.Body {
 		if item.Type == "upload" {
@@ -180,12 +194,39 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 		}
 		if field.Kind != FormFieldMarkdown {
 			hasSubmittedField = true
+			providerReference := field.ID
 			if field.ID == "" {
 				if _, exists := seenGeneratedLabels[field.Label]; exists {
 					return IssueForm{}, errors.New(
 						"realqa github: Issue Form fields without IDs must have unique labels")
 				}
 				seenGeneratedLabels[field.Label] = struct{}{}
+				providerReference = parameterizeIssueFormLabel(field.Label)
+				if providerReference == "" {
+					return IssueForm{}, errors.New(
+						"realqa github: Issue Form field label reference is invalid")
+				}
+			}
+			if _, exists := seenProviderReferences[providerReference]; exists {
+				return IssueForm{}, errors.New(
+					"realqa github: Issue Form field references must be unique")
+			}
+			seenProviderReferences[providerReference] = struct{}{}
+			if field.Kind == FormFieldCheckboxes {
+				for _, option := range field.Options {
+					optionReference := parameterizeIssueFormLabel(option.Label)
+					if optionReference == "" {
+						return IssueForm{}, errors.New(
+							"realqa github: Issue Form checkbox option reference is invalid")
+					}
+					if _, exists := seenProviderReferences[optionReference]; exists {
+						return IssueForm{}, errors.New(
+							"realqa github: Issue Form field references must be unique")
+					}
+					seenProviderReferences[optionReference] = struct{}{}
+				}
+			}
+			if field.ID == "" {
 				field.ID = generatedFormFieldID(index, reservedIDs)
 				reservedIDs[field.ID] = struct{}{}
 			}
@@ -325,13 +366,20 @@ func generatedFormFieldID(index int, reserved map[string]struct{}) string {
 
 func parseFormOption(node yaml.Node, kind FormFieldKind) (FormOption, error) {
 	if node.Kind == yaml.ScalarNode && kind == FormFieldDropdown {
-		if strings.TrimSpace(node.Value) == "" {
-			return FormOption{}, errors.New("realqa github: Issue Form option is empty")
+		value := strings.TrimSpace(node.Value)
+		if node.Tag != "!!str" || value == "" ||
+			strings.EqualFold(value, "none") ||
+			(node.Style == 0 && isYAMLBooleanWord(value)) {
+			return FormOption{}, errors.New("realqa github: Issue Form dropdown option is invalid")
 		}
-		return FormOption{Label: strings.TrimSpace(node.Value)}, nil
+		return FormOption{Label: value}, nil
 	}
 	if node.Kind != yaml.MappingNode || kind != FormFieldCheckboxes {
 		return FormOption{}, errors.New("realqa github: Issue Form option is invalid")
+	}
+	labelNode := mappingValue(&node, "label")
+	if labelNode == nil || !isStringNode(labelNode) {
+		return FormOption{}, errors.New("realqa github: Issue Form checkbox option is invalid")
 	}
 	var raw struct {
 		Label    string `yaml:"label"`
@@ -341,6 +389,160 @@ func parseFormOption(node yaml.Node, kind FormFieldKind) (FormOption, error) {
 		return FormOption{}, errors.New("realqa github: Issue Form checkbox option is invalid")
 	}
 	return FormOption{Label: strings.TrimSpace(raw.Label), Required: raw.Required}, nil
+}
+
+func validateIssueFormYAML(document *yaml.Node) error {
+	if document.Kind != yaml.DocumentNode || len(document.Content) != 1 {
+		return errors.New("realqa github: Issue Form schema is invalid")
+	}
+	root := document.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return errors.New("realqa github: Issue Form schema is invalid")
+	}
+	for _, key := range []string{"name", "description", "title", "type"} {
+		if value := mappingValue(root, key); value != nil && !isStringNode(value) {
+			return errors.New("realqa github: Issue Form string value is invalid")
+		}
+	}
+	body := mappingValue(root, "body")
+	if body == nil || body.Kind != yaml.SequenceNode {
+		return nil
+	}
+	for _, item := range body.Content {
+		if item.Kind != yaml.MappingNode {
+			continue
+		}
+		typeNode := mappingValue(item, "type")
+		if typeNode != nil && !isStringNode(typeNode) {
+			return errors.New("realqa github: Issue Form field string value is invalid")
+		}
+		if id := mappingValue(item, "id"); id != nil && !isStringNode(id) {
+			return errors.New("realqa github: Issue Form field string value is invalid")
+		}
+		fieldType := ""
+		if typeNode != nil {
+			fieldType = typeNode.Value
+		}
+		attributes := mappingValue(item, "attributes")
+		if attributes != nil && attributes.Kind == yaml.MappingNode {
+			for index := 0; index < len(attributes.Content); index += 2 {
+				key, value := attributes.Content[index], attributes.Content[index+1]
+				if !isStringNode(key) {
+					return errors.New("realqa github: Issue Form attribute is invalid")
+				}
+				if isIssueFormStringAttribute(key.Value) && !isStringNode(value) {
+					return errors.New("realqa github: Issue Form field string value is invalid")
+				}
+				if isSupportedIssueFormFieldType(fieldType) &&
+					!isAllowedIssueFormAttribute(fieldType, key.Value) {
+					return errors.New(
+						"realqa github: Issue Form attribute is not allowed for this field")
+				}
+			}
+		}
+		validations := mappingValue(item, "validations")
+		if validations != nil && validations.Kind == yaml.MappingNode {
+			if accept := mappingValue(validations, "accept"); accept != nil &&
+				!isStringNode(accept) {
+				return errors.New("realqa github: Issue Form field string value is invalid")
+			}
+		}
+	}
+	return nil
+}
+
+func mappingValue(mapping *yaml.Node, name string) *yaml.Node {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return nil
+	}
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		if mapping.Content[index].Value == name {
+			return mapping.Content[index+1]
+		}
+	}
+	return nil
+}
+
+func isStringNode(node *yaml.Node) bool {
+	return node.Kind == yaml.ScalarNode && node.Tag == "!!str" &&
+		(node.Style != 0 || !isYAMLBooleanWord(node.Value))
+}
+
+func isIssueFormStringAttribute(name string) bool {
+	switch name {
+	case "label", "description", "placeholder", "value", "render":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedIssueFormFieldType(fieldType string) bool {
+	switch fieldType {
+	case "markdown", "input", "textarea", "dropdown", "checkboxes", "upload":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAllowedIssueFormAttribute(fieldType, attribute string) bool {
+	switch fieldType {
+	case "markdown":
+		return attribute == "value"
+	case "input":
+		return attribute == "label" || attribute == "description" ||
+			attribute == "placeholder" || attribute == "value"
+	case "textarea":
+		return attribute == "label" || attribute == "description" ||
+			attribute == "placeholder" || attribute == "value" || attribute == "render"
+	case "dropdown":
+		return attribute == "label" || attribute == "description" ||
+			attribute == "multiple" || attribute == "options" || attribute == "default"
+	case "checkboxes":
+		return attribute == "label" || attribute == "description" || attribute == "options"
+	case "upload":
+		return attribute == "label" || attribute == "description"
+	default:
+		return false
+	}
+}
+
+func isYAMLBooleanWord(value string) bool {
+	switch value {
+	case "y", "Y", "yes", "Yes", "YES",
+		"n", "N", "no", "No", "NO",
+		"true", "True", "TRUE", "false", "False", "FALSE",
+		"on", "On", "ON", "off", "Off", "OFF":
+		return true
+	default:
+		return false
+	}
+}
+
+func parameterizeIssueFormLabel(value string) string {
+	value = norm.NFKD.String(value)
+	var result strings.Builder
+	pendingSeparator := false
+	for _, character := range value {
+		if unicode.Is(unicode.Mn, character) {
+			continue
+		}
+		if character >= 'A' && character <= 'Z' {
+			character += 'a' - 'A'
+		}
+		if (character >= 'a' && character <= 'z') ||
+			(character >= '0' && character <= '9') || character == '_' {
+			if pendingSeparator && result.Len() > 0 {
+				result.WriteByte('-')
+			}
+			pendingSeparator = false
+			result.WriteRune(character)
+			continue
+		}
+		pendingSeparator = result.Len() > 0
+	}
+	return result.String()
 }
 
 func RenderIssueForm(form IssueForm, answers []FormAnswer) (string, error) {

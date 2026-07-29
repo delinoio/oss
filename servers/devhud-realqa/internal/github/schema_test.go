@@ -46,6 +46,20 @@ Describe the bug.
 	}
 }
 
+func TestMarkdownTemplateRejectsHiddenShortName(t *testing.T) {
+	t.Parallel()
+	_, err := ParseMarkdownTemplate(
+		".github/ISSUE_TEMPLATE/bug.md", `"fixture-etag"`, []byte(`---
+name: Bug
+about: Report a bug
+---
+Describe the bug.
+`))
+	if err == nil || !strings.Contains(err.Error(), "name and about") {
+		t.Fatalf("expected short template name rejection, got %v", err)
+	}
+}
+
 func TestIssueFormPreservesTypeAndTextDefaults(t *testing.T) {
 	t.Parallel()
 	form, err := ParseIssueForm(
@@ -312,6 +326,52 @@ body:
 	}
 }
 
+func TestIssueFormRejectsParameterizedReferenceCollision(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: Name?
+  - type: textarea
+    id: name
+    attributes:
+      label: Details
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err == nil || !strings.Contains(err.Error(), "field references must be unique") {
+		t.Fatalf("expected parameterized reference collision, got form=%#v err=%v", form, err)
+	}
+}
+
+func TestIssueFormRejectsCheckboxOptionFieldCollision(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: textarea
+    attributes:
+      label: Name
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Terms
+      options:
+        - label: Name
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err == nil || !strings.Contains(err.Error(), "field references must be unique") {
+		t.Fatalf("expected checkbox option collision, got form=%#v err=%v", form, err)
+	}
+}
+
 func TestIssueFormAllowsDuplicateLabelsWithProviderID(t *testing.T) {
 	t.Parallel()
 	contents := []byte(`
@@ -330,6 +390,108 @@ body:
 		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
 	); err != nil {
 		t.Fatalf("provider ID should disambiguate duplicate labels: %v", err)
+	}
+}
+
+func TestIssueFormRejectsNonStringScalarValues(t *testing.T) {
+	t.Parallel()
+	for _, contents := range [][]byte{
+		[]byte(`
+name: true
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: Summary
+`),
+		[]byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: 1.3
+`),
+	} {
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "string value is invalid") {
+			t.Fatalf("expected non-string scalar rejection, got %v", err)
+		}
+	}
+}
+
+func TestIssueFormRejectsReservedDropdownOptions(t *testing.T) {
+	t.Parallel()
+	for _, option := range []string{"None", "Yes", "true"} {
+		contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: dropdown
+    attributes:
+      label: Decision
+      options:
+        - ` + option + `
+`)
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "option") {
+			t.Fatalf("expected reserved option %q rejection, got %v", option, err)
+		}
+	}
+}
+
+func TestIssueFormAllowsQuotedBooleanLikeDropdownOption(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: dropdown
+    attributes:
+      label: Decision
+      options:
+        - "Yes"
+        - Maybe
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err != nil {
+		t.Fatalf("quoted boolean-like option should remain a string: %v", err)
+	}
+}
+
+func TestIssueFormRejectsDisallowedPresentAttributes(t *testing.T) {
+	t.Parallel()
+	for _, contents := range [][]byte{
+		[]byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: Summary
+      multiple: false
+`),
+		[]byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: dropdown
+    attributes:
+      label: Severity
+      placeholder: ""
+      options:
+        - Low
+        - High
+`),
+	} {
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "attribute is not allowed") {
+			t.Fatalf("expected disallowed present attribute rejection, got %v", err)
+		}
 	}
 }
 
