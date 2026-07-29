@@ -66,6 +66,8 @@ pub(crate) enum NativeCaptureSource {
     Display {
         id: u32,
         source_rect: LogicalRect,
+        expected_frame: LogicalRect,
+        expected_size: PhysicalSize,
     },
     Window {
         id: u32,
@@ -90,6 +92,7 @@ pub(crate) trait MacosNativeAdapter: Send + Sync {
 
 pub(crate) struct MacosCaptureBackend<A: MacosNativeAdapter> {
     native: A,
+    display_id_hasher: RandomState,
     window_id_hasher: RandomState,
     catalog: Mutex<Option<CachedCatalog>>,
     active: Mutex<HashMap<CaptureSessionId, CaptureSessionState>>,
@@ -99,12 +102,14 @@ pub(crate) struct MacosCaptureBackend<A: MacosNativeAdapter> {
 struct CachedCatalog {
     snapshot_id: super::DisplaySnapshotId,
     windows: Vec<WindowSource>,
+    native_display_ids: HashMap<DisplayId, u32>,
     native_window_ids: HashMap<WindowSourceId, u32>,
 }
 
 type TranslatedCatalog = (
     Vec<DisplayDescriptor>,
     Vec<WindowSource>,
+    HashMap<DisplayId, u32>,
     HashMap<WindowSourceId, u32>,
 );
 
@@ -117,6 +122,7 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
     pub(crate) fn new(native: A) -> Self {
         Self {
             native,
+            display_id_hasher: RandomState::new(),
             window_id_hasher: RandomState::new(),
             catalog: Mutex::new(None),
             active: Mutex::new(HashMap::new()),
@@ -130,23 +136,26 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
         if native.displays.is_empty() {
             return Err(BackendFailure::DisplayChanged);
         }
-        let mut displays = native
-            .displays
-            .into_iter()
-            .map(|display| {
-                let scale = scale_from_dimensions(&display)?;
-                Ok(DisplayDescriptor {
-                    id: display_id(display.id),
-                    logical_bounds: display.frame,
-                    physical_size: PhysicalSize {
-                        width: display.width,
-                        height: display.height,
-                    },
-                    scale,
-                    primary: display.primary,
-                })
-            })
-            .collect::<Result<Vec<_>, BackendFailure>>()?;
+        let mut displays = Vec::with_capacity(native.displays.len());
+        let mut native_display_ids = HashMap::new();
+        for display in native.displays {
+            let native_id = display.id;
+            let id = opaque_display_id(&self.display_id_hasher, native_id);
+            if native_display_ids.insert(id.clone(), native_id).is_some() {
+                return Err(BackendFailure::CaptureFailed);
+            }
+            let scale = scale_from_dimensions(&display)?;
+            displays.push(DisplayDescriptor {
+                id,
+                logical_bounds: display.frame,
+                physical_size: PhysicalSize {
+                    width: display.width,
+                    height: display.height,
+                },
+                scale,
+                primary: display.primary,
+            });
+        }
         displays.sort_by(|left, right| left.id.0.cmp(&right.id.0));
         let mut windows = Vec::new();
         let mut native_window_ids = HashMap::new();
@@ -163,7 +172,7 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
             }
             windows.push(window);
         }
-        Ok((displays, windows, native_window_ids))
+        Ok((displays, windows, native_display_ids, native_window_ids))
     }
 
     fn active_capture(
@@ -223,8 +232,7 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
                 .snapshot
                 .display(&region.display_id)
                 .ok_or(BackendFailure::DisplayChanged)?;
-            let native_id = parse_source_id(&display.id.0, DISPLAY_ID_PREFIX)
-                .ok_or(BackendFailure::DisplayChanged)?;
+            let native_id = self.native_display_id(&request.snapshot.snapshot_id, &display.id)?;
             let rounded_source_rect = pixel_rect_to_logical(region.pixels, display.scale)?;
             let rounded_global = LogicalRect {
                 x: display.logical_bounds.x + rounded_source_rect.x,
@@ -250,6 +258,8 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
                     source: NativeCaptureSource::Display {
                         id: native_id,
                         source_rect,
+                        expected_frame: display.logical_bounds,
+                        expected_size: display.physical_size,
                     },
                     width: region.pixels.width,
                     height: region.pixels.height,
@@ -295,6 +305,26 @@ impl<A: MacosNativeAdapter> MacosCaptureBackend<A> {
             .get(window_id)
             .copied()
             .ok_or(BackendFailure::WindowLost)
+    }
+
+    fn native_display_id(
+        &self,
+        snapshot_id: &super::DisplaySnapshotId,
+        display_id: &DisplayId,
+    ) -> Result<u32, BackendFailure> {
+        let catalog = self
+            .catalog
+            .lock()
+            .map_err(|_| BackendFailure::CaptureFailed)?;
+        let cached = catalog.as_ref().ok_or(BackendFailure::DisplayChanged)?;
+        if &cached.snapshot_id != snapshot_id {
+            return Err(BackendFailure::DisplayChanged);
+        }
+        cached
+            .native_display_ids
+            .get(display_id)
+            .copied()
+            .ok_or(BackendFailure::DisplayChanged)
     }
 }
 
@@ -386,7 +416,7 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
     }
 
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
-        let (displays, windows, native_window_ids) =
+        let (displays, windows, native_display_ids, native_window_ids) =
             self.translated_catalog(self.native.catalog()?)?;
         let snapshot = DisplaySnapshot::checked(displays.clone())
             .map_err(|_| BackendFailure::DisplayChanged)?;
@@ -396,6 +426,7 @@ impl<A: MacosNativeAdapter> CaptureBackend for MacosCaptureBackend<A> {
             .map_err(|_| BackendFailure::CaptureFailed)? = Some(CachedCatalog {
             snapshot_id: snapshot.snapshot_id,
             windows,
+            native_display_ids,
             native_window_ids,
         });
         Ok(displays)
@@ -509,12 +540,11 @@ fn guidance(permission: CapturePermission) -> CapturePermissionGuidance {
     }
 }
 
-fn display_id(id: u32) -> DisplayId {
-    DisplayId(format!("{DISPLAY_ID_PREFIX}{id}"))
-}
-
-fn parse_source_id(id: &str, prefix: &str) -> Option<u32> {
-    id.strip_prefix(prefix)?.parse().ok()
+fn opaque_display_id(hasher: &RandomState, native_id: u32) -> DisplayId {
+    DisplayId(format!(
+        "{DISPLAY_ID_PREFIX}{:016x}",
+        hasher.hash_one(native_id)
+    ))
 }
 
 fn scale_from_dimensions(display: &NativeDisplay) -> Result<ScaleFactor, BackendFailure> {
@@ -769,6 +799,12 @@ unsafe extern "C" {
         source_y: f64,
         source_width: f64,
         source_height: f64,
+        expected_x: f64,
+        expected_y: f64,
+        expected_width: f64,
+        expected_height: f64,
+        expected_pixel_width: u32,
+        expected_pixel_height: u32,
         output_width: u32,
         output_height: u32,
         shows_cursor: bool,
@@ -827,9 +863,23 @@ impl MacosNativeAdapter for SystemMacosNativeAdapter {
     }
 
     fn capture(&self, request: NativeCaptureRequest) -> Result<BackendFrame, BackendFailure> {
-        let (kind, id, rect) = match request.source {
-            NativeCaptureSource::Display { id, source_rect } => (0, id, source_rect),
-            NativeCaptureSource::Window { id, expected_frame } => (1, id, expected_frame),
+        let (kind, id, source_rect, expected_frame, expected_size) = match request.source {
+            NativeCaptureSource::Display {
+                id,
+                source_rect,
+                expected_frame,
+                expected_size,
+            } => (0, id, source_rect, expected_frame, expected_size),
+            NativeCaptureSource::Window { id, expected_frame } => (
+                1,
+                id,
+                expected_frame,
+                expected_frame,
+                PhysicalSize {
+                    width: 0,
+                    height: 0,
+                },
+            ),
         };
         // SAFETY: All values are bounded scalar DTO fields; ownership of any returned
         // allocation transfers to this caller and is released with the paired
@@ -838,10 +888,16 @@ impl MacosNativeAdapter for SystemMacosNativeAdapter {
             realqa_macos_capture(
                 kind,
                 id,
-                rect.x,
-                rect.y,
-                rect.width,
-                rect.height,
+                source_rect.x,
+                source_rect.y,
+                source_rect.width,
+                source_rect.height,
+                expected_frame.x,
+                expected_frame.y,
+                expected_frame.width,
+                expected_frame.height,
+                expected_size.width,
+                expected_size.height,
                 request.width,
                 request.height,
                 request.pointer == PointerInclusion::Include,
@@ -886,6 +942,7 @@ fn native_status(status: c_int, source_kind: c_int) -> BackendFailure {
         3 => BackendFailure::ProtectedContent,
         4 if source_kind == 1 => BackendFailure::WindowLost,
         4 => BackendFailure::DisplayRemoved,
+        6 => BackendFailure::DisplayChanged,
         _ => BackendFailure::CaptureFailed,
     }
 }
@@ -1458,6 +1515,61 @@ mod tests {
     }
 
     #[test]
+    fn opaque_display_ids_map_to_native_ids_and_expected_geometry() {
+        let fixture = Arc::new(FixtureNative::retina());
+        let backend = Arc::new(MacosCaptureBackend::new(fixture.clone()));
+        let core = CaptureCore::new(backend.clone());
+        let catalog = core.source_catalog().expect("catalog");
+        for display in &catalog.snapshot.displays {
+            assert!(display.id.0.starts_with(DISPLAY_ID_PREFIX));
+            assert_ne!(display.id.0, format!("{DISPLAY_ID_PREFIX}7"));
+            assert_ne!(display.id.0, format!("{DISPLAY_ID_PREFIX}9"));
+        }
+
+        core.begin(region_request(&catalog))
+            .expect("display capture");
+        let captures = fixture.captures.lock().expect("capture lock");
+        assert_eq!(captures.len(), 2);
+        for capture in captures.iter() {
+            let NativeCaptureSource::Display {
+                id,
+                expected_frame,
+                expected_size,
+                ..
+            } = capture.source
+            else {
+                panic!("region capture must use displays");
+            };
+            let native_display = fixture
+                .catalog
+                .lock()
+                .expect("catalog lock")
+                .displays
+                .iter()
+                .find(|display| display.id == id)
+                .cloned()
+                .expect("mapped native display");
+            assert_eq!(expected_frame, native_display.frame);
+            assert_eq!(
+                expected_size,
+                PhysicalSize {
+                    width: native_display.width,
+                    height: native_display.height,
+                }
+            );
+        }
+        drop(captures);
+
+        assert_eq!(
+            backend.native_display_id(
+                &catalog.snapshot.snapshot_id,
+                &DisplayId(format!("{DISPLAY_ID_PREFIX}7")),
+            ),
+            Err(BackendFailure::DisplayChanged)
+        );
+    }
+
+    #[test]
     fn opaque_window_ids_map_to_native_ids_and_expected_frames() {
         let fixture = Arc::new(FixtureNative::retina());
         let core = CaptureCore::new(Arc::new(MacosCaptureBackend::new(fixture.clone())));
@@ -1538,6 +1650,11 @@ mod tests {
                             y: 0.0,
                             width: 1.0,
                             height: 1.0,
+                        },
+                        expected_frame: display.frame,
+                        expected_size: PhysicalSize {
+                            width: display.width,
+                            height: display.height,
                         },
                     },
                     width: 1,

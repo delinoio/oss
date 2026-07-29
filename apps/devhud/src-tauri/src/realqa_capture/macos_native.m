@@ -20,6 +20,7 @@ static const int32_t REALQA_CANCELLED = 2;
 static const int32_t REALQA_PROTECTED_CONTENT = 3;
 static const int32_t REALQA_SOURCE_LOST = 4;
 static const int32_t REALQA_CAPTURE_FAILED = 5;
+static const int32_t REALQA_DISPLAY_CHANGED = 6;
 static const NSUInteger REALQA_MAX_PROCESS_NAME_UTF16_UNITS = 128;
 static const NSUInteger REALQA_MAX_WINDOW_TITLE_UTF16_UNITS = 256;
 
@@ -229,8 +230,10 @@ static bool realqa_frame_matches(CGRect current, double expectedX,
 
 RealQAMacosBytes realqa_macos_capture(
     int32_t sourceKind, uint32_t sourceID, double sourceX, double sourceY,
-    double sourceWidth, double sourceHeight, uint32_t outputWidth,
-    uint32_t outputHeight, bool showsCursor) {
+    double sourceWidth, double sourceHeight, double expectedX, double expectedY,
+    double expectedWidth, double expectedHeight, uint32_t expectedPixelWidth,
+    uint32_t expectedPixelHeight, uint32_t outputWidth, uint32_t outputHeight,
+    bool showsCursor) {
   @autoreleasepool {
     if (outputWidth == 0 || outputHeight == 0 ||
         ((uint64_t)outputWidth * (uint64_t)outputHeight) > 100000000ULL) {
@@ -254,6 +257,12 @@ RealQAMacosBytes realqa_macos_capture(
       if (selected == nil) {
         return realqa_empty_result(REALQA_SOURCE_LOST);
       }
+      if (!realqa_frame_matches(selected.frame, expectedX, expectedY,
+                                expectedWidth, expectedHeight) ||
+          CGDisplayPixelsWide(selected.displayID) != expectedPixelWidth ||
+          CGDisplayPixelsHigh(selected.displayID) != expectedPixelHeight) {
+        return realqa_empty_result(REALQA_DISPLAY_CHANGED);
+      }
       filter = [[SCContentFilter alloc] initWithDisplay:selected
                                       excludingWindows:@[]];
     } else if (sourceKind == 1) {
@@ -267,8 +276,8 @@ RealQAMacosBytes realqa_macos_capture(
       if (selected == nil) {
         return realqa_empty_result(REALQA_SOURCE_LOST);
       }
-      if (!realqa_frame_matches(selected.frame, sourceX, sourceY, sourceWidth,
-                                sourceHeight)) {
+      if (!realqa_frame_matches(selected.frame, expectedX, expectedY,
+                                expectedWidth, expectedHeight)) {
         return realqa_empty_result(REALQA_SOURCE_LOST);
       }
       filter =

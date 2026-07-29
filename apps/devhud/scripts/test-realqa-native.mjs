@@ -63,6 +63,18 @@ requireCondition(
   "macOS window capture must resolve opaque IDs locally and reject stale native geometry",
 );
 requireCondition(
+  rustBackend.includes("native_display_ids: HashMap<DisplayId, u32>") &&
+    rustBackend.includes("expected_frame: display.logical_bounds") &&
+    rustBackend.includes("expected_size: display.physical_size") &&
+    nativeBackend.includes(
+      "CGDisplayPixelsWide(selected.displayID) != expectedPixelWidth",
+    ) &&
+    nativeBackend.includes(
+      "CGDisplayPixelsHigh(selected.displayID) != expectedPixelHeight",
+    ),
+  "macOS display capture must resolve opaque IDs locally and reject stale native geometry",
+);
+requireCondition(
   /<key>NSScreenCaptureUsageDescription<\/key>\s*<string>[^<]+<\/string>/u.test(
     infoPlist,
   ),
