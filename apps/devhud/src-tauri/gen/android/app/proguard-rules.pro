@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# androidx.security's Tink dependency references these compile-time-only JSR-305
+# annotations. They are not runtime dependencies, so suppress only these exact
+# references until the pinned security-crypto dependency no longer emits them.
+-dontwarn javax.annotation.Nullable
+-dontwarn javax.annotation.concurrent.GuardedBy

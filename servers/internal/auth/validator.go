@@ -58,9 +58,8 @@ type Validator struct {
 	headerTypes map[string]struct{}
 }
 
-// NewValidator creates a fail-closed validator. The audience is configurable
-// at construction time so services can load typed configuration, but this
-// shared delibase contract rejects any value other than the canonical origin.
+// NewValidator creates the canonical delibase validator. Existing delibase
+// callers deliberately retain the exact-audience guard.
 func NewValidator(config Config) (*Validator, error) {
 	if config.Audience != Audience {
 		return nil, fmt.Errorf("auth: audience must equal %s", Audience)
@@ -68,15 +67,12 @@ func NewValidator(config Config) (*Validator, error) {
 	return newValidator(config)
 }
 
-// NewValidatorForAudience constructs the same strict Logto validator for a
-// feature API audience. The audience must be an exact HTTPS origin. Callers
-// remain responsible for pinning the expected canonical feature origin in
-// typed configuration; this constructor does not infer or rewrite audiences.
+// NewValidatorForAudience creates a validator for another repository-owned API
+// audience. The audience must be an exact HTTPS origin without credentials,
+// path, query, or fragment. Callers remain responsible for pinning it to their
+// component's canonical origin before invoking this constructor.
 func NewValidatorForAudience(config Config) (*Validator, error) {
-	parsed, err := url.Parse(config.Audience)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" ||
-		parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" ||
-		parsed.Fragment != "" {
+	if !validAudience(config.Audience) {
 		return nil, errors.New("auth: audience must be an exact HTTPS origin")
 	}
 	return newValidator(config)
@@ -123,6 +119,18 @@ func newValidator(config Config) (*Validator, error) {
 		algorithms:  append([]string(nil), config.AllowedAlgorithms...),
 		headerTypes: headerTypes,
 	}, nil
+}
+
+func validAudience(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil &&
+		parsed.Scheme == "https" &&
+		parsed.Host != "" &&
+		parsed.User == nil &&
+		parsed.Path == "" &&
+		parsed.RawPath == "" &&
+		parsed.RawQuery == "" &&
+		parsed.Fragment == ""
 }
 
 func isAsymmetricAlgorithm(algorithm string) bool {

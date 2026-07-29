@@ -208,28 +208,35 @@ func TestValidatorConfigurationFailsClosed(t *testing.T) {
 	}
 }
 
-func TestNewValidatorForAudienceRequiresExactHTTPSOrigin(t *testing.T) {
+func TestFeatureAudienceValidatorRequiresExactHTTPSOrigin(t *testing.T) {
 	t.Parallel()
-	key := mustRSAKey(t)
-	source := staticKeySource{key: &key.PublicKey}
-	if _, err := NewValidatorForAudience(Config{
-		Issuer:    "https://auth.example.com",
-		Audience:  "https://deck.deli.dev",
-		KeySource: source,
-	}); err != nil {
-		t.Fatalf("feature audience rejected: %v", err)
-	}
 	for _, audience := range []string{
 		"http://deck.deli.dev",
-		"https://deck.deli.dev/path",
 		"https://user@deck.deli.dev",
+		"https://deck.deli.dev/path",
+		"https://realqa.deli.dev?token=value",
+		"https://realqa.deli.dev#fragment",
 	} {
-		if _, err := NewValidatorForAudience(Config{
-			Issuer:    "https://auth.example.com",
+		_, err := NewValidatorForAudience(Config{
+			Issuer:    "https://tenant.logto.app/oidc",
 			Audience:  audience,
-			KeySource: source,
-		}); err == nil {
-			t.Fatalf("invalid audience %q accepted", audience)
+			KeySource: staticKeySource{},
+		})
+		if err == nil {
+			t.Fatalf("NewValidatorForAudience() accepted %q", audience)
+		}
+	}
+	for _, audience := range []string{
+		"https://deck.deli.dev",
+		"https://realqa.deli.dev",
+	} {
+		validator, err := NewValidatorForAudience(Config{
+			Issuer:    "https://tenant.logto.app/oidc",
+			Audience:  audience,
+			KeySource: staticKeySource{},
+		})
+		if err != nil || validator == nil {
+			t.Fatalf("NewValidatorForAudience(%q) error = %v", audience, err)
 		}
 	}
 }
