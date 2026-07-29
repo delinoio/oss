@@ -94,11 +94,14 @@ func validatePatternText(pattern string) error {
 	}
 	for _, forbidden := range []string{
 		"(?=", "(?!", "(?<=", "(?<!", "(?P<", "(?<", `\k`, `\g`,
-		`\C`, `\Q`, `\E`, "&&", "--", "~~", "(?x", "(?x:",
+		`\C`, `\Q`, `\E`, "(?x", "(?x:",
 	} {
 		if strings.Contains(pattern, forbidden) {
 			return errors.New("safe title pattern uses unsupported syntax")
 		}
+	}
+	if containsClassSetAlgebra(pattern) {
+		return errors.New("safe title pattern uses unsupported syntax")
 	}
 	for index := 0; index+1 < len(pattern); index++ {
 		if pattern[index] == '\\' && pattern[index+1] >= '0' && pattern[index+1] <= '9' {
@@ -106,6 +109,28 @@ func validatePatternText(pattern string) error {
 		}
 	}
 	return nil
+}
+
+func containsClassSetAlgebra(pattern string) bool {
+	inClass := false
+	for index := 0; index < len(pattern); index++ {
+		switch pattern[index] {
+		case '\\':
+			index++
+		case '[':
+			inClass = true
+		case ']':
+			inClass = false
+		default:
+			if inClass &&
+				(strings.HasPrefix(pattern[index:], "&&") ||
+					strings.HasPrefix(pattern[index:], "--") ||
+					strings.HasPrefix(pattern[index:], "~~")) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateRepetitions(expression *syntax.Regexp) error {

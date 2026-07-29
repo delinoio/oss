@@ -80,10 +80,14 @@ export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
   const strippedFragment = retainBoundedUrlPart(parsed.hash);
   parsed.search = "";
   parsed.hash = "";
+  const canonicalValue = parsed.toString();
+  if (new TextEncoder().encode(canonicalValue).byteLength > MAX_URL_BYTES) {
+    return { ok: false, reason: "invalid-url" };
+  }
   return {
     ok: true,
     url: {
-      value: parsed.toString(),
+      value: canonicalValue,
       strippedQuery,
       strippedFragment,
       warning: isLocalOrPrivateHost(parsed.hostname)
@@ -95,14 +99,9 @@ export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
 
 export function restoreCapturedUrlParts(
   url: RestorableDraftUrl,
-): RestorableDraftUrl {
+): string {
   const parsed = new URL(url.value);
   parsed.search = url.strippedQuery ?? "";
   parsed.hash = url.strippedFragment ?? "";
-  return {
-    ...url,
-    value: parsed.toString(),
-    strippedQuery: null,
-    strippedFragment: null,
-  };
+  return parsed.toString();
 }

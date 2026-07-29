@@ -43,7 +43,7 @@ describe("RealQA URL capture boundary", () => {
       },
     });
     if (!result.ok) throw new Error("fixture must be valid");
-    expect(restoreCapturedUrlParts(result.url).value).toBe(
+    expect(restoreCapturedUrlParts(result.url)).toBe(
       "https://example.com/report?token=sensitive#private",
     );
     expect(sanitizeCapturedUrl("https://user:password@example.com/")).toEqual({
@@ -95,6 +95,13 @@ describe("RealQA URL capture boundary", () => {
         strippedFragment: null,
         warning: null,
       },
+    });
+  });
+
+  it("rejects a canonical stripped URL above the native UTF-8 byte limit", () => {
+    expect(sanitizeCapturedUrl(`https://example.com/${"x".repeat(8_193)}`)).toEqual({
+      ok: false,
+      reason: "invalid-url",
     });
   });
 });
@@ -239,6 +246,63 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
         rule({ safeWindowTitlePattern: pattern }),
       ]),
     ).toBe(false);
+  });
+
+  it("accepts bounded repetitions through 100 and checks both explicit bounds", () => {
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ safeWindowTitlePattern: String.raw`^a{100}$` }),
+      ]),
+    ).toBe(true);
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ safeWindowTitlePattern: String.raw`^a{1,101}$` }),
+      ]),
+    ).toBe(false);
+  });
+
+  it.each(["^issue--draft$", "^issue&&draft$", "^issue~~draft$"])(
+    "accepts safe literal class-operator text %s",
+    (pattern) => {
+      expect(
+        validateRealQaProcessUrlRules([
+          rule({ safeWindowTitlePattern: pattern }),
+        ]),
+      ).toBe(true);
+    },
+  );
+
+  it("uses Go's longest template-name expansion", () => {
+    expect(
+      inferDesktopUrl(
+        [
+          rule({
+            safeWindowTitlePattern: String.raw`^Issue ([0-9]+)$`,
+            urlTemplate: "https://example.com/$1edit",
+          }),
+        ],
+        "code",
+        "Issue 783",
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/" },
+    });
+    expect(
+      inferDesktopUrl(
+        [
+          rule({
+            safeWindowTitlePattern: String.raw`^Issue ([0-9]+)$`,
+            urlTemplate: "https://example.com/${1}edit",
+          }),
+        ],
+        "code",
+        "Issue 783",
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/783edit" },
+    });
   });
 
   it("retains permission, registration outcomes, and pairing locally during sync", () => {

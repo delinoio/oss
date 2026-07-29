@@ -87,3 +87,17 @@ func TestCompileRejectsCredentialURLTemplates(t *testing.T) {
 		t.Fatal("Compile() accepted credential-bearing URL")
 	}
 }
+
+func TestCompileAcceptsLiteralClassOperatorText(t *testing.T) {
+	t.Parallel()
+	for _, pattern := range []string{`^issue--draft$`, `^issue&&draft$`, `^issue~~draft$`} {
+		if _, err := Compile([]Rule{{
+			ExactProcessName: "app",
+			TitlePattern:     pattern,
+			URLTemplate:      "https://example.com/",
+			Enabled:          true,
+		}}); err != nil {
+			t.Fatalf("Compile() rejected safe literal %q: %v", pattern, err)
+		}
+	}
+}

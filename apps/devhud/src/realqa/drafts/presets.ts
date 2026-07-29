@@ -64,9 +64,6 @@ const forbiddenPatternFragments = [
   String.raw`\C`,
   String.raw`\Q`,
   String.raw`\E`,
-  "&&",
-  "--",
-  "~~",
   "(?x",
   "(?x:",
 ];
@@ -81,6 +78,68 @@ function repetitionLength(pattern: string, index: number): number {
   if (token === "*" || token === "+" || token === "?") return 1;
   if (token !== "{") return 0;
   return pattern.slice(index).match(/^\{\d+(?:,\d*)?\}/u)?.[0].length ?? 0;
+}
+
+function hasUnsupportedCharacterClassSetAlgebra(pattern: string): boolean {
+  let inCharacterClass = false;
+  for (let index = 0; index < pattern.length; index += 1) {
+    const token = pattern[index];
+    if (token === "\\") {
+      index += 1;
+      continue;
+    }
+    if (token === "[") {
+      inCharacterClass = true;
+      continue;
+    }
+    if (token === "]" && inCharacterClass) {
+      inCharacterClass = false;
+      continue;
+    }
+    if (
+      inCharacterClass &&
+      ["&&", "--", "~~"].some((operator) =>
+        pattern.startsWith(operator, index),
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasOversizedBoundedRepetition(pattern: string): boolean {
+  let inCharacterClass = false;
+  for (let index = 0; index < pattern.length; index += 1) {
+    const token = pattern[index];
+    if (token === "\\") {
+      index += 1;
+      continue;
+    }
+    if (token === "[") {
+      inCharacterClass = true;
+      continue;
+    }
+    if (token === "]" && inCharacterClass) {
+      inCharacterClass = false;
+      continue;
+    }
+    if (inCharacterClass || token !== "{") continue;
+    const repetition = pattern
+      .slice(index)
+      .match(/^\{(\d+)(?:,(\d*))?\}/u);
+    if (repetition === null) continue;
+    const minimum = Number(repetition[1]);
+    const maximum =
+      repetition[2] === undefined || repetition[2] === ""
+        ? null
+        : Number(repetition[2]);
+    if (minimum > 100 || (maximum !== null && maximum > 100)) {
+      return true;
+    }
+    index += repetition[0].length - 1;
+  }
+  return false;
 }
 
 /**
@@ -330,8 +389,9 @@ export function validateRealQaProcessUrlRules(
     if (
       new TextEncoder().encode(pattern).length > MAX_REALQA_SAFE_PATTERN_BYTES ||
       forbiddenPatternFragments.some((fragment) => pattern.includes(fragment)) ||
+      hasUnsupportedCharacterClassSetAlgebra(pattern) ||
       /\\[0-9]/u.test(pattern) ||
-      /\{\d{3,}(?:,\d*)?\}/u.test(pattern) ||
+      hasOversizedBoundedRepetition(pattern) ||
       hasUnsafeRepeatedOrUnbalancedGroup(pattern)
     ) {
       return false;
@@ -341,10 +401,43 @@ export function validateRealQaProcessUrlRules(
 }
 
 function expandTemplate(template: string, match: RegExpExecArray): string {
-  return template.replace(/\$(?:\{([0-9]+)\}|([0-9]+))/gu, (_whole, braced, plain) => {
-    const index = Number(braced ?? plain);
-    return match[index] ?? "";
-  });
+  let output = "";
+  let cursor = 0;
+  while (cursor < template.length) {
+    const dollar = template.indexOf("$", cursor);
+    if (dollar < 0) {
+      output += template.slice(cursor);
+      break;
+    }
+    output += template.slice(cursor, dollar);
+    if (template[dollar + 1] === "$") {
+      output += "$";
+      cursor = dollar + 2;
+      continue;
+    }
+    const remainder = template.slice(dollar + 1);
+    const braced = remainder.startsWith("{");
+    const nameMatch = remainder
+      .slice(braced ? 1 : 0)
+      .match(/^[\p{L}\p{N}_]+/u);
+    const name = nameMatch?.[0];
+    const closingBrace = dollar + 2 + (name?.length ?? 0);
+    if (
+      name === undefined ||
+      (braced && template[closingBrace] !== "}")
+    ) {
+      output += "$";
+      cursor = dollar + 1;
+      continue;
+    }
+    const numeric =
+      /^[0-9]+$/u.test(name) &&
+      (name.length === 1 || !name.startsWith("0")) &&
+      Number(name) < 100_000_000;
+    output += numeric ? (match[Number(name)] ?? "") : "";
+    cursor = braced ? closingBrace + 1 : dollar + 1 + name.length;
+  }
+  return output;
 }
 
 /**
@@ -361,16 +454,19 @@ export function inferDesktopUrl(
   }
   for (const rule of rules) {
     if (!rule.enabled || rule.exactProcessName !== processName) continue;
-    let match: RegExpExecArray | null;
+    let match: RegExpExecArray | null = null;
+    let expanded = rule.urlTemplate;
     if (rule.safeWindowTitlePattern === "") {
-      match = [windowTitle] as unknown as RegExpExecArray;
+      // Go only expands capture references when a title expression exists.
     } else {
       const expression = compileTitlePattern(rule.safeWindowTitlePattern);
       if (expression === null) continue;
       match = expression.exec(windowTitle);
+      if (match !== null) {
+        expanded = expandTemplate(rule.urlTemplate, match);
+      }
     }
-    if (match === null) continue;
-    const expanded = expandTemplate(rule.urlTemplate, match);
+    if (rule.safeWindowTitlePattern !== "" && match === null) continue;
     if (new TextEncoder().encode(expanded).length > MAX_REALQA_EXPANDED_URL_BYTES) {
       continue;
     }
