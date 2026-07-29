@@ -56,6 +56,8 @@ export enum CaptureFailure {
   DisplaySnapshotChanged = "display-snapshot-changed",
   InvalidDisplaySnapshot = "invalid-display-snapshot",
   InvalidSelection = "invalid-selection",
+  InvalidEditorOperation = "invalid-editor-operation",
+  InvalidEditSequence = "invalid-edit-sequence",
   MalformedImage = "malformed-image",
   UnsupportedImage = "unsupported-image",
   DecompressionBomb = "decompression-bomb",
@@ -212,12 +214,91 @@ export interface ComposerImageRequest {
 
 export interface ComposerImage {
   readonly imageId: string;
+  readonly sourceRevision: number;
   readonly contentType: "image/png" | "image/webp";
   readonly width: number;
   readonly height: number;
+  readonly previewWidth: number;
+  readonly previewHeight: number;
   readonly encodedBytes: number;
   readonly sessionEncodedBytes: number;
   readonly image: EncodedImage;
+}
+
+export interface EditorPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface EditorRect extends EditorPoint {
+  readonly width: number;
+  readonly height: number;
+}
+
+interface StrokeStyle {
+  readonly color: string;
+  readonly lineWidth: number;
+}
+
+export type EditorOperation =
+  | { readonly kind: "crop"; readonly rect: EditorRect }
+  | ({
+      readonly kind: "arrow";
+      readonly start: EditorPoint;
+      readonly end: EditorPoint;
+    } & StrokeStyle)
+  | ({
+      readonly kind: "rectangle";
+      readonly rect: EditorRect;
+    } & StrokeStyle)
+  | ({
+      readonly kind: "freehand";
+      readonly points: readonly EditorPoint[];
+    } & StrokeStyle)
+  | {
+      readonly kind: "text";
+      readonly origin: EditorPoint;
+      readonly text: string;
+      readonly color: string;
+      readonly fontSize: number;
+    }
+  | {
+      readonly kind: "marker";
+      readonly center: EditorPoint;
+      readonly number: number;
+      readonly color: string;
+      readonly size: number;
+    }
+  | {
+      readonly kind: "blur";
+      readonly rect: EditorRect;
+      readonly radius: number;
+    }
+  | {
+      readonly kind: "pixelate";
+      readonly rect: EditorRect;
+      readonly blockSize: number;
+    };
+
+export interface ComposerFlattenRequest {
+  readonly sessionId: string;
+  readonly imageId: string;
+  readonly sourceRevision: number;
+  readonly operations: readonly EditorOperation[];
+  readonly outputMediaType: ImageMediaType;
+}
+
+declare const approvedImage: unique symbol;
+
+export type ApprovedComposerImage = ComposerImage & {
+  readonly [approvedImage]: true;
+};
+
+export interface ApprovedImagePayload {
+  readonly contentType: "image/png" | "image/webp";
+  readonly bytes: readonly number[];
+  readonly width: number;
+  readonly height: number;
 }
 
 export type InvokeCommand = <T>(
@@ -238,6 +319,7 @@ export interface RealQaCaptureBridge {
 
 export interface RealQaComposerBridge {
   acceptImage(request: ComposerImageRequest): Promise<ComposerImage>;
+  flattenImage(request: ComposerFlattenRequest): Promise<ApprovedComposerImage>;
   removeImage(sessionId: string, imageId: string): Promise<void>;
   resetSession(sessionId: string): Promise<void>;
 }
@@ -270,6 +352,10 @@ export function createRealQaComposerBridge(
   return {
     acceptImage: (request) =>
       invokeCommand<ComposerImage>("realqa_composer_accept_image", { request }),
+    flattenImage: async (request) =>
+      invokeCommand<ApprovedComposerImage>("realqa_composer_flatten_image", {
+        request,
+      }),
     removeImage: (sessionId, imageId) =>
       invokeCommand<void>("realqa_composer_remove_image", {
         sessionId,
@@ -277,5 +363,16 @@ export function createRealQaComposerBridge(
       }),
     resetSession: (sessionId) =>
       invokeCommand<void>("realqa_composer_reset_session", { sessionId }),
+  };
+}
+
+export function approvedImagePayload(
+  image: ApprovedComposerImage,
+): ApprovedImagePayload {
+  return {
+    contentType: image.contentType,
+    bytes: image.image.bytes,
+    width: image.width,
+    height: image.height,
   };
 }
