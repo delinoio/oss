@@ -3221,10 +3221,10 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 realqa_capture::PlatformCaptureBackend::current(),
             )));
             app.manage(realqa_capture::ComposerCore::default());
-            if let Ok(native_host_state) = realqa_native_host::NativeHostState::platform() {
-                if let Ok(composer_ready) = native_host_state.mark_composer_ready() {
-                    app.manage(composer_ready);
-                }
+            if let Ok(native_host_state) = realqa_native_host::NativeHostState::platform()
+                && let Ok(composer_ready) = native_host_state.mark_composer_ready()
+            {
+                app.manage(composer_ready);
             }
 
             let autostart = autostart::AutostartState::initialize();
