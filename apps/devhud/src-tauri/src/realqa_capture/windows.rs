@@ -34,6 +34,11 @@ const fn permission_from_support(
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
+const fn should_skip_failed_window_retention(window_exists: bool) -> bool {
+    !window_exists
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct NativeSourceId(usize);
 
@@ -1103,7 +1108,9 @@ mod system {
             System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
             UI::{
                 HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
-                WindowsAndMessaging::{GetWindowDisplayAffinity, IsIconic, MONITORINFOF_PRIMARY},
+                WindowsAndMessaging::{
+                    GetWindowDisplayAffinity, IsIconic, IsWindow, MONITORINFOF_PRIMARY,
+                },
             },
         },
         core::{IInspectable, Owned},
@@ -1241,7 +1248,21 @@ mod system {
                             .next_window_id
                             .checked_add(1)
                             .ok_or(WindowsAdapterFailure::Failed)?;
-                        retained_window_source(window, NativeSourceId(sources.next_window_id))?
+                        let raw_hwnd = window.as_raw_hwnd();
+                        match retained_window_source(window, NativeSourceId(sources.next_window_id))
+                        {
+                            Ok(retained) => retained,
+                            Err(_)
+                                if should_skip_failed_window_retention(unsafe {
+                                    IsWindow(Some(HWND(raw_hwnd))).as_bool()
+                                }) =>
+                            {
+                                // A transient window can close after metadata enumeration but
+                                // before its WGC item is retained; skip only that vanished source.
+                                continue;
+                            }
+                            Err(error) => return Err(error),
+                        }
                     }
                 };
                 record.source = retained.id;
@@ -2850,5 +2871,11 @@ mod tests {
             backend.capabilities(),
             Err(BackendFailure::Unavailable)
         ));
+    }
+
+    #[test]
+    fn skips_only_vanished_windows_after_retention_failure() {
+        assert!(should_skip_failed_window_retention(false));
+        assert!(!should_skip_failed_window_retention(true));
     }
 }
