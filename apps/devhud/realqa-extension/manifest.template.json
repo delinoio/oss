@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "DevHud RealQA Capture",
+  "description": "Send an active tab's visible viewport and removable, bounded metadata to DevHud.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "150",
+  "incognito": "not_allowed",
+  "permissions": ["activeTab", "tabs", "scripting", "nativeMessaging"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Send to DevHud",
+    "default_popup": "popup.html"
+  }
+}

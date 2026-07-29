@@ -13,6 +13,8 @@ mod diagnostics;
 mod local_log;
 #[cfg(any(feature = "desktop-cef", test))]
 mod realqa_capture;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod realqa_native_host;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod shortcut;
 #[cfg(any(
@@ -45,7 +47,7 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::borrow::Cow;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use std::sync::Mutex;
 #[cfg(feature = "desktop-cef")]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -114,8 +116,9 @@ type ActiveRuntime = tauri_runtime_cef::CefRuntime<tauri::EventLoopMessage>;
 ))]
 type ActiveRuntime = tauri_runtime_wry::Wry<tauri::EventLoopMessage>;
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const APPLICATION_ID: &str = "dev.deli.devhud";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub use realqa_native_host::run_native_host;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 const MAIN_WINDOW_LABEL: &str = "main";
 #[cfg(all(
@@ -2603,6 +2606,11 @@ fn reset_dev_hud(
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
+    let native_host_state = realqa_native_host::NativeHostState::platform()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
+    native_host_state
+        .preflight_reset()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     persistence
         .preflight_reset()
         .map_err(reset_preflight_failure)?;
@@ -2799,6 +2807,9 @@ fn reset_dev_hud(
     if let Ok(mut diagnostics) = startup_diagnostics.lock() {
         diagnostics.shortcut_failure = None;
         diagnostics.autostart_outcome = None;
+    }
+    if native_host_state.reset().is_err() {
+        reset_outcome = PersistenceResetOutcome::PartiallyRetained;
     }
     if reset_outcome == PersistenceResetOutcome::Complete {
         diagnostics::emit(
@@ -3104,6 +3115,11 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 realqa_capture::PlatformCaptureBackend::current(),
             )));
             app.manage(realqa_capture::ComposerCore::default());
+            if let Ok(native_host_state) = realqa_native_host::NativeHostState::platform() {
+                if let Ok(composer_ready) = native_host_state.mark_composer_ready() {
+                    app.manage(composer_ready);
+                }
+            }
 
             let autostart = autostart::AutostartState::initialize();
             let launch_at_login = if first_run {

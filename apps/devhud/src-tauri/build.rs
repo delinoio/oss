@@ -28,6 +28,7 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=DEVHUD_CHROME_EXTENSION_ID");
     let runtime_selected = std::env::var_os("CARGO_FEATURE_DESKTOP_CEF").is_some()
         || std::env::var_os("CARGO_FEATURE_MOBILE_SYSTEM_WEBVIEW").is_some();
     if !runtime_selected {
