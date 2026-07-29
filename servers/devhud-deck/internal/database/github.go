@@ -760,6 +760,8 @@ func (store *Store) DisconnectGitHub(
 		deckv1.OwnerScope(current.OwnerScope).String()+":"+
 			uuidValue(current.OwnerID).String(),
 	)
+	callbackOwnerHash := store.githubCallbackOwnerHash(
+		current.OwnerScope, uuidValue(current.OwnerID))
 	var result GitHubConnectionRecord
 	err = store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
 		if err := queries.EnsureOwnerLock(ctx, ownerHash[:]); err != nil {
@@ -796,7 +798,7 @@ func (store *Store) DisconnectGitHub(
 			return err
 		}
 		if err := queries.DeleteGitHubCallbackStatesByOwner(
-			ctx, ownerHash[:]); err != nil {
+			ctx, callbackOwnerHash[:]); err != nil {
 			return err
 		}
 		if err := store.cleanupGitHubOwner(
