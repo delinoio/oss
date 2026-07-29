@@ -579,6 +579,15 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             };
             return Ok(self.snapshot());
         }
+        if offline_features.contains(&AuthFeature::RealQa) {
+            self.state = SessionState::PriorSessionOffline {
+                account_binding: device_session_account_binding(
+                    retained.device_session_key.expose(),
+                )
+                .ok(),
+            };
+            return Ok(self.snapshot());
+        }
         if let Some(error) = grant_error {
             return Err(error);
         }
@@ -2926,7 +2935,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_session_does_not_mask_invalid_grant_with_transport_failure() {
+    fn invalid_deck_grant_does_not_mask_realqa_offline_draft_access() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
             retained: Some((
@@ -2947,6 +2956,43 @@ mod tests {
         transport
             .refresh
             .push_back(Err(AuthError::TransportUnavailable.into()));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW).unwrap(),
+            SessionSnapshot::PriorSessionOffline
+        );
+        let access = prior.realqa_draft_access().unwrap();
+        assert!(!access.online_reauthenticated);
+        assert_eq!(
+            access.account_binding,
+            realqa_draft_account_binding("account-a")
+        );
+        assert!(!prior.memory_tokens_present());
+    }
+
+    #[test]
+    fn deck_transport_failure_does_not_mask_invalid_realqa_grant() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some((
+                [
+                    (AuthFeature::Deck, "refresh-deck".to_owned()),
+                    (AuthFeature::RealQa, "refresh-realqa".to_owned()),
+                ]
+                .into_iter()
+                .collect(),
+                key.expose().to_owned(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport
+            .refresh
+            .push_back(Err(AuthError::TransportUnavailable.into()));
+        transport
+            .refresh
+            .push_back(Err(AuthError::ReauthenticationRequired.into()));
         let mut prior = manager(transport, vault);
 
         assert_eq!(

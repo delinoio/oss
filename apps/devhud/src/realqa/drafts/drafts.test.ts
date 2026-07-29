@@ -207,7 +207,7 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     });
   });
 
-  it("ignores malformed disabled rules and continues with enabled safe rules", () => {
+  it("rejects malformed disabled rules to match server compilation", () => {
     const rules = [
       rule({
         enabled: false,
@@ -220,11 +220,7 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
         urlTemplate: "https://fallback.example/",
       }),
     ];
-    expect(validateRealQaProcessUrlRules(rules)).toBe(true);
-    expect(inferDesktopUrl(rules, "code", "anything")).toMatchObject({
-      ok: true,
-      url: { value: "https://fallback.example/" },
-    });
+    expect(validateRealQaProcessUrlRules(rules)).toBe(false);
   });
 
   it("limits the total ordered rule slice, including disabled rules", () => {
@@ -244,7 +240,9 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     [String.raw`^\p{Han}+$`, "漢字"],
     [String.raw`^\pL+$`, "Letters"],
     [String.raw`^[\p{Han}]+$`, "漢字"],
-  ])("translates synchronized Unicode title class %s", (pattern, title) => {
+    [String.raw`^[[:alpha:]]+$`, "Letters"],
+    [String.raw`^[[:^digit:]]+$`, "Letters"],
+  ])("translates synchronized title class %s", (pattern, title) => {
     expect(
       inferDesktopUrl(
         [
@@ -269,6 +267,7 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     String.raw`\C`,
     String.raw`\Qliteral\E`,
     "[a-z&&[^x]]",
+    "[[:alpha:]&&[^x]]",
     "a{101}",
     "(a+)+$",
     "(?:a|aa)+$",
@@ -338,6 +337,22 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
       ok: true,
       url: { value: "https://example.com/783edit" },
     });
+  });
+
+  it.each([
+    "https://example.com/%",
+    "https://example.com/%2",
+    "https://example.com/%zz",
+  ])("rejects Go-invalid URL template escape %s", (urlTemplate) => {
+    expect(validateRealQaProcessUrlRules([rule({ urlTemplate })])).toBe(false);
+  });
+
+  it("accepts a valid URL template percent escape", () => {
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ urlTemplate: "https://example.com/%2F" }),
+      ]),
+    ).toBe(true);
   });
 
   it("retains permission, registration outcomes, and pairing locally during sync", () => {

@@ -73,6 +73,107 @@ interface PatternGroupState {
   containsRepetition: boolean;
 }
 
+const posixCharacterClassRanges = {
+  alnum: [
+    [0x30, 0x39],
+    [0x41, 0x5a],
+    [0x61, 0x7a],
+  ],
+  alpha: [
+    [0x41, 0x5a],
+    [0x61, 0x7a],
+  ],
+  ascii: [[0x00, 0x7f]],
+  blank: [
+    [0x09, 0x09],
+    [0x20, 0x20],
+  ],
+  cntrl: [
+    [0x00, 0x1f],
+    [0x7f, 0x7f],
+  ],
+  digit: [[0x30, 0x39]],
+  graph: [[0x21, 0x7e]],
+  lower: [[0x61, 0x7a]],
+  print: [[0x20, 0x7e]],
+  punct: [
+    [0x21, 0x2f],
+    [0x3a, 0x40],
+    [0x5b, 0x60],
+    [0x7b, 0x7e],
+  ],
+  space: [
+    [0x09, 0x0d],
+    [0x20, 0x20],
+  ],
+  upper: [[0x41, 0x5a]],
+  word: [
+    [0x30, 0x39],
+    [0x41, 0x5a],
+    [0x5f, 0x5f],
+    [0x61, 0x7a],
+  ],
+  xdigit: [
+    [0x30, 0x39],
+    [0x41, 0x46],
+    [0x61, 0x66],
+  ],
+} as const;
+
+type CharacterRange = readonly [number, number];
+
+function complementCharacterRanges(
+  ranges: readonly CharacterRange[],
+): readonly CharacterRange[] {
+  const complement: CharacterRange[] = [];
+  let start = 0;
+  for (const [rangeStart, rangeEnd] of ranges) {
+    if (start < rangeStart) complement.push([start, rangeStart - 1]);
+    start = rangeEnd + 1;
+  }
+  if (start <= 0x10ffff) complement.push([start, 0x10ffff]);
+  return complement;
+}
+
+function escapeCharacterClassCodePoint(codePoint: number): string {
+  return codePoint <= 0xff
+    ? String.raw`\x${codePoint.toString(16).padStart(2, "0")}`
+    : String.raw`\u{${codePoint.toString(16)}}`;
+}
+
+function renderCharacterRanges(ranges: readonly CharacterRange[]): string {
+  return ranges
+    .map(([start, end]) => {
+      const first = escapeCharacterClassCodePoint(start);
+      return start === end
+        ? first
+        : `${first}-${escapeCharacterClassCodePoint(end)}`;
+    })
+    .join("");
+}
+
+function translatePosixCharacterClass(
+  pattern: string,
+  index: number,
+): { readonly output: string; readonly nextIndex: number } | null {
+  const posixClass = pattern
+    .slice(index)
+    .match(
+      /^\[:(\^?)(alnum|alpha|ascii|blank|cntrl|digit|graph|lower|print|punct|space|upper|word|xdigit):\]/u,
+    );
+  if (posixClass === null) return null;
+  const ranges =
+    posixCharacterClassRanges[
+      posixClass[2] as keyof typeof posixCharacterClassRanges
+    ];
+  return {
+    output: renderCharacterRanges(
+      posixClass[1] === "^" ? complementCharacterRanges(ranges) : ranges,
+    ),
+    nextIndex: index + posixClass[0].length,
+  };
+}
+
 function repetitionLength(pattern: string, index: number): number {
   const token = pattern[index];
   if (token === "*" || token === "+" || token === "?") return 1;
@@ -110,6 +211,13 @@ function hasUnsupportedCharacterClassSetAlgebra(pattern: string): boolean {
       continue;
     }
     if (token === "[") {
+      if (inCharacterClass) {
+        const posixClass = translatePosixCharacterClass(pattern, index);
+        if (posixClass !== null) {
+          index = posixClass.nextIndex - 1;
+          continue;
+        }
+      }
       inCharacterClass = true;
       continue;
     }
@@ -306,7 +414,11 @@ function translateTitlePattern(pattern: string): string {
         output += token;
         index += 1;
         while (index < pattern.length) {
-          if (pattern[index] === "\\") {
+          const posixClass = translatePosixCharacterClass(pattern, index);
+          if (posixClass !== null) {
+            output += posixClass.output;
+            index = posixClass.nextIndex;
+          } else if (pattern[index] === "\\") {
             const unicodeClass = translateUnicodeClassEscape(pattern, index);
             if (unicodeClass !== null) {
               output += unicodeClass.output;
@@ -402,6 +514,7 @@ function validTemplate(template: string): boolean {
     return false;
   }
   const probe = template.replace(/\$(?:\{[0-9]+\}|[0-9]+)/gu, "x");
+  if (/%(?![0-9A-Fa-f]{2})/u.test(probe)) return false;
   const sanitized = sanitizeCapturedUrl(probe);
   return sanitized.ok;
 }
@@ -410,8 +523,7 @@ export function validateRealQaProcessUrlRules(
   rules: readonly RealQaProcessUrlRule[],
 ): boolean {
   if (rules.length > MAX_REALQA_PROCESS_URL_RULES) return false;
-  const enabledRules = rules.filter((rule) => rule.enabled);
-  return enabledRules.every((rule) => {
+  return rules.every((rule) => {
     if (
       rule.exactProcessName.length === 0 ||
       new TextEncoder().encode(rule.exactProcessName).length > 255 ||
