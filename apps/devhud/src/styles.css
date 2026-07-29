@@ -34,6 +34,216 @@ kbd { display:inline-block; padding:.25rem .45rem; border:1px solid #a1a1aa; bor
   :root[data-theme="system"] .settings-section { border-color:#55555c; }
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.screenshot-editor {
+  display: grid;
+  grid-template-areas:
+    "toolbar"
+    "canvas"
+    "inspector"
+    "actions";
+  gap: 1rem;
+  width: min(100%, 80rem);
+  margin: 0 auto;
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.editor-toolbar {
+  grid-area: toolbar;
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  overflow-x: auto;
+  padding: 0.25rem 0.15rem 0.5rem;
+}
+
+.editor-toolbar button,
+.editor-tool {
+  min-width: max-content;
+  min-height: 2.75rem;
+  border: 1px solid #8c96a5;
+  border-radius: 0.65rem;
+  padding: 0.6rem 0.8rem;
+  background: #fff;
+  color: #191a1d;
+  font-weight: 700;
+}
+
+.editor-toolbar button[aria-pressed="true"] {
+  border-color: #2869dc;
+  background: #2869dc;
+  color: #fff;
+}
+
+.editor-toolbar-separator {
+  align-self: stretch;
+  border-left: 1px solid #c6cbd3;
+}
+
+.editor-canvas-section {
+  grid-area: canvas;
+  min-width: 0;
+}
+
+.editor-instructions {
+  margin: 0 0 0.6rem;
+  color: #525b68;
+  line-height: 1.45;
+}
+
+.editor-canvas {
+  display: block;
+  width: 100%;
+  max-height: 70dvh;
+  border: 2px solid #6d7580;
+  border-radius: 0.75rem;
+  background:
+    linear-gradient(45deg, #d9dce1 25%, transparent 25%),
+    linear-gradient(-45deg, #d9dce1 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d9dce1 75%),
+    linear-gradient(-45deg, transparent 75%, #d9dce1 75%) #f4f5f7;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+  touch-action: none;
+  user-select: none;
+}
+
+.editor-crop {
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-dasharray: 8 5;
+  filter: drop-shadow(0 0 2px #000);
+}
+
+.editor-blur,
+.editor-pixelate {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.editor-pixelate {
+  image-rendering: pixelated;
+}
+
+.editor-keyboard-cursor {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 2px #000);
+  pointer-events: none;
+}
+
+.editor-inspector {
+  grid-area: inspector;
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid #c6cbd3;
+  border-radius: 0.85rem;
+}
+
+.editor-inspector legend {
+  padding-inline: 0.3rem;
+  font-weight: 800;
+}
+
+.editor-inspector label {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  font-weight: 700;
+}
+
+.editor-inspector input[type="color"] {
+  width: 3rem;
+  min-height: 2.75rem;
+}
+
+.editor-inspector input[type="text"],
+.editor-inspector select {
+  min-width: 0;
+}
+
+.editor-actions {
+  grid-area: actions;
+}
+
+.editor-actions p {
+  margin: 0 0 0.75rem;
+}
+
+.editor-status {
+  min-height: 1.5rem;
+  font-weight: 700;
+}
+
+.editor-preview-warning {
+  padding: 0.75rem;
+  border-left: 0.25rem solid #9a6700;
+  background: #fff4ce;
+  color: #5f4500;
+  line-height: 1.45;
+}
+
+@media (min-width: 62rem) {
+  .screenshot-editor {
+    grid-template-areas:
+      "toolbar toolbar"
+      "canvas inspector"
+      "canvas actions";
+    grid-template-columns: minmax(0, 1fr) 18rem;
+    align-items: start;
+  }
+}
+
+:root[data-theme="dark"] .editor-toolbar button:not([aria-pressed="true"]),
+:root[data-theme="dark"] .editor-inspector {
+  border-color: #69717c;
+  background: #25282d;
+  color: #f5f6f8;
+}
+
+:root[data-theme="dark"] .editor-instructions {
+  color: #c2c7ce;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .editor-toolbar button:not([aria-pressed="true"]),
+  :root[data-theme="system"] .editor-inspector {
+    border-color: #69717c;
+    background: #25282d;
+    color: #f5f6f8;
+  }
+
+  :root[data-theme="system"] .editor-instructions {
+    color: #c2c7ce;
+  }
+}
+
+@media (forced-colors: active) {
+  .editor-toolbar button[aria-pressed="true"],
+  .editor-keyboard-cursor,
+  .editor-crop {
+    outline: 2px solid CanvasText;
+  }
+}
+
 :root {
   color: #191a1d;
   background: #f4f6f9;

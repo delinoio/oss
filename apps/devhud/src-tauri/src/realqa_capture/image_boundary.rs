@@ -1,10 +1,18 @@
-use std::io::{self, Cursor, Seek, SeekFrom, Write};
+use std::{
+    fmt,
+    io::{self, Cursor, Seek, SeekFrom, Write},
+};
 
-use image::{DynamicImage, ImageFormat, ImageReader};
-use serde::{Deserialize, Serialize};
+use image::{DynamicImage, ImageFormat, ImageReader, RgbaImage, imageops::FilterType};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, SeqAccess, Visitor},
+};
 
 pub(crate) const MAX_DECODED_PIXELS: u64 = 100_000_000;
-pub(crate) const MAX_ENCODED_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
+pub(crate) const MAX_PREVIEW_EDGE: u32 = 2_048;
+const MAX_ENCODED_IMAGE_BYTES_USIZE: usize = 25 * 1024 * 1024;
+pub(crate) const MAX_ENCODED_IMAGE_BYTES: u64 = MAX_ENCODED_IMAGE_BYTES_USIZE as u64;
 pub(crate) const MAX_ENCODED_SESSION_BYTES: u64 = 250 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -37,11 +45,74 @@ impl ImageMediaType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EncodedImage {
     pub(crate) media_type: ImageMediaType,
     pub(crate) bytes: Vec<u8>,
+}
+
+impl<'de> Deserialize<'de> for EncodedImage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct BoundedEncodedImage {
+            media_type: ImageMediaType,
+            #[serde(deserialize_with = "deserialize_bounded_image_bytes")]
+            bytes: Vec<u8>,
+        }
+
+        let image = BoundedEncodedImage::deserialize(deserializer)?;
+        Ok(Self {
+            media_type: image.media_type,
+            bytes: image.bytes,
+        })
+    }
+}
+
+fn deserialize_bounded_image_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct EncodedImageBytesVisitor;
+
+    impl<'de> Visitor<'de> for EncodedImageBytesVisitor {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("at most 26214400 encoded image bytes")
+        }
+
+        fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let size_hint = sequence.size_hint();
+            if let Some(size) = size_hint.filter(|size| *size > MAX_ENCODED_IMAGE_BYTES_USIZE) {
+                return Err(de::Error::invalid_length(size, &self));
+            }
+            let mut bytes =
+                Vec::with_capacity(size_hint.unwrap_or(0).min(MAX_ENCODED_IMAGE_BYTES_USIZE));
+            while bytes.len() < MAX_ENCODED_IMAGE_BYTES_USIZE {
+                let Some(byte) = sequence.next_element()? else {
+                    return Ok(bytes);
+                };
+                bytes.push(byte);
+            }
+            if sequence.next_element::<de::IgnoredAny>()?.is_some() {
+                return Err(de::Error::invalid_length(
+                    MAX_ENCODED_IMAGE_BYTES_USIZE + 1,
+                    &self,
+                ));
+            }
+            Ok(bytes)
+        }
+    }
+
+    deserializer.deserialize_seq(EncodedImageBytesVisitor)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +174,32 @@ pub(crate) fn decode_image(encoded: &EncodedImage) -> Result<DecodedImage, Image
         width: dimensions.0,
         height: dimensions.1,
         rgba,
+    })
+}
+
+pub(crate) fn bounded_preview(decoded: DecodedImage) -> Result<DecodedImage, ImageBoundaryFailure> {
+    let longest_edge = decoded.width.max(decoded.height);
+    if longest_edge <= MAX_PREVIEW_EDGE {
+        return Ok(decoded);
+    }
+    let preview_width = u64::from(decoded.width)
+        .checked_mul(u64::from(MAX_PREVIEW_EDGE))
+        .and_then(|width| u32::try_from(width / u64::from(longest_edge)).ok())
+        .unwrap_or(0)
+        .max(1);
+    let preview_height = u64::from(decoded.height)
+        .checked_mul(u64::from(MAX_PREVIEW_EDGE))
+        .and_then(|height| u32::try_from(height / u64::from(longest_edge)).ok())
+        .unwrap_or(0)
+        .max(1);
+    let source = RgbaImage::from_raw(decoded.width, decoded.height, decoded.rgba)
+        .ok_or(ImageBoundaryFailure::MalformedImage)?;
+    let preview =
+        image::imageops::resize(&source, preview_width, preview_height, FilterType::Triangle);
+    Ok(DecodedImage {
+        width: preview.width(),
+        height: preview.height(),
+        rgba: preview.into_raw(),
     })
 }
 
@@ -196,7 +293,7 @@ pub(crate) fn sanitize_image(
     encode_image(&decode_image(encoded)?, output_media_type)
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ImageSessionBudget {
     encoded_bytes: u64,
 }
@@ -311,6 +408,42 @@ mod tests {
     }
 
     #[test]
+    fn bounds_preview_rasters_without_changing_source_aspect_ratio() {
+        let preview = bounded_preview(DecodedImage {
+            width: 4_096,
+            height: 2,
+            rgba: vec![255; 4_096 * 2 * 4],
+        })
+        .expect("preview must resize");
+
+        assert_eq!(preview.width, MAX_PREVIEW_EDGE);
+        assert_eq!(preview.height, 1);
+        assert_eq!(preview.rgba.len(), 2_048 * 4);
+    }
+
+    #[test]
+    fn sanitizing_png_removes_ancillary_metadata_chunks() {
+        let mut original = one_pixel_png();
+        let insert_at = original.bytes.len() - 12;
+        let mut metadata = Vec::new();
+        append_png_chunk(&mut metadata, b"tEXt", b"source\0raw-original");
+        original.bytes.splice(insert_at..insert_at, metadata);
+        assert!(original.bytes.windows(4).any(|window| window == b"tEXt"));
+
+        let sanitized =
+            sanitize_image(&original, ImageMediaType::Png).expect("image must sanitize");
+        assert!(!sanitized.bytes.windows(4).any(|window| window == b"tEXt"));
+        assert_eq!(
+            decode_image(&sanitized).expect("sanitized image must decode"),
+            DecodedImage {
+                width: 1,
+                height: 1,
+                rgba: vec![1, 2, 3, 255],
+            }
+        );
+    }
+
+    #[test]
     fn malformed_and_unsupported_images_fail_closed() {
         assert_eq!(
             decode_image(&EncodedImage {
@@ -344,6 +477,21 @@ mod tests {
             Err(ImageBoundaryFailure::DecompressionBomb)
         );
         assert!(decoded_byte_len(10_000, 10_000).is_ok());
+    }
+
+    #[test]
+    fn encoded_image_deserialization_bounds_bytes_before_allocation() {
+        let image: EncodedImage = serde_json::from_value(serde_json::json!({
+            "mediaType": "png",
+            "bytes": [1, 2, 3]
+        }))
+        .expect("bounded image bytes must deserialize");
+        assert_eq!(image.bytes, vec![1, 2, 3]);
+
+        let oversized = serde::de::value::SeqDeserializer::<_, serde::de::value::Error>::new(
+            std::iter::repeat_n(0_u8, MAX_ENCODED_IMAGE_BYTES_USIZE + 1),
+        );
+        assert!(deserialize_bounded_image_bytes(oversized).is_err());
     }
 
     #[test]
