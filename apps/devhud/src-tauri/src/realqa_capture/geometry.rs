@@ -154,7 +154,7 @@ impl DisplayDescriptor {
         Ok(self)
     }
 
-    fn pixel_region(
+    pub(crate) fn pixel_region(
         &self,
         region: LogicalRect,
     ) -> Result<Option<DisplayPixelRegion>, CaptureFailure> {

@@ -208,6 +208,39 @@ func TestValidatorConfigurationFailsClosed(t *testing.T) {
 	}
 }
 
+func TestFeatureAudienceValidatorRequiresExactHTTPSOrigin(t *testing.T) {
+	t.Parallel()
+	for _, audience := range []string{
+		"http://deck.deli.dev",
+		"https://user@deck.deli.dev",
+		"https://deck.deli.dev/path",
+		"https://realqa.deli.dev?token=value",
+		"https://realqa.deli.dev#fragment",
+	} {
+		_, err := NewValidatorForAudience(Config{
+			Issuer:    "https://tenant.logto.app/oidc",
+			Audience:  audience,
+			KeySource: staticKeySource{},
+		})
+		if err == nil {
+			t.Fatalf("NewValidatorForAudience() accepted %q", audience)
+		}
+	}
+	for _, audience := range []string{
+		"https://deck.deli.dev",
+		"https://realqa.deli.dev",
+	} {
+		validator, err := NewValidatorForAudience(Config{
+			Issuer:    "https://tenant.logto.app/oidc",
+			Audience:  audience,
+			KeySource: staticKeySource{},
+		})
+		if err != nil || validator == nil {
+			t.Fatalf("NewValidatorForAudience(%q) error = %v", audience, err)
+		}
+	}
+}
+
 func TestValidatorClassifiesKeySourceErrors(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.July, 23, 12, 0, 0, 0, time.UTC)

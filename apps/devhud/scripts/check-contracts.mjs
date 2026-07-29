@@ -170,8 +170,11 @@ requireCondition(
 );
 requireCondition(
   cargoManifest.includes(
-    'desktop-cef = ["dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]',
+    'desktop-cef = ["linux-capture-backend", "dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "realqa-macos-capture", "tauri/devtools"]',
   ) &&
+    cargoManifest.includes(
+      'linux-capture-backend = ["dep:ashpd", "dep:tokio", "dep:x11rb"]',
+    ) &&
     cargoManifest.includes(
       'mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]',
     ),
@@ -279,6 +282,9 @@ const expectedSettingsPermissions = [
   "allow-logout-authentication",
 ];
 const expectedRealqaCapturePermissions = [
+  "allow-realqa-capture-permission-status",
+  "allow-realqa-request-capture-permission",
+  "allow-realqa-inspect-capture-capabilities",
   "allow-realqa-list-capture-sources",
   "allow-realqa-adjust-capture-selection",
   "allow-realqa-begin-capture",
@@ -286,6 +292,7 @@ const expectedRealqaCapturePermissions = [
 ];
 const expectedRealqaComposerPermissions = [
   "allow-realqa-composer-accept-image",
+  "allow-realqa-composer-flatten-image",
   "allow-realqa-composer-remove-image",
   "allow-realqa-composer-reset-session",
 ];

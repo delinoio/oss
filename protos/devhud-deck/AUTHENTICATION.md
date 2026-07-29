@@ -13,6 +13,12 @@ as the Deck token. Both values are sensitive: native transports and servers
 must redact them from logs, traces, errors, caches, persistence, diagnostics,
 and idempotency payloads.
 
+The bounded server foundation additionally requires the forwarded user token's
+`delibase:account:read`, `delibase:organizations:read`, and
+`delibase:teams:read` scopes before resolving current account, organization,
+and billing-team membership. These authentication scopes do not replace the
+server-authoritative membership and role checks.
+
 `RegisterDevice` returns its opaque, single-registration cleanup grant only in
 this sensitive response metadata:
 

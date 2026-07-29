@@ -13,7 +13,17 @@
 - Keep UUID v7, signed-int64 money/usage, opaque cursors, Logto user/M2M access-token metadata without raw client secrets, the redacted `x-delibase-forwarded-user-token` forwarded-user context, authenticated invitation bearer-token access without pre-existing membership, caller/operation-scoped idempotency, and stable enum error details aligned with the server and app contracts.
 - Keep distinct stable idempotency operations for invitation acceptance and revocation; invitation creation does not carry idempotency fields.
 - Keep bounded background usage inside the existing `BillingService` and `UsageService`; never add a seventh service. Human create/revoke and M2M reserve/commit/release/resource-deletion notification use distinct caller-and-operation-scoped idempotency values. Authorized usage is M2M-only, must not require or store a forwarded user bearer, and binds the authenticated service identity into its replay digest; commit/release additionally bind the reservation ID, while resource deletion binds the expected revision.
-- The released live-usage RPCs still require the forwarded user bearer for reserve, commit, and release and expose no durable finalization grant. The Deck wire contract is implemented, but the Deck server and billed refresh remain unimplemented and its meter remains disabled until a synchronized additive `delibase.v1` change can return a successful-reservation grant bound to the exact reservation, service, maximum, and expiry and accept it only for same-service idempotent commit/release with a fresh M2M bearer. Do not represent this planned prerequisite in generated delibase contracts before the source, server, compatibility checks, and substitution/expiry tests are implemented together.
+- The released live-usage RPCs still require the forwarded user bearer for
+  reserve, commit, and release and expose no durable finalization grant. The
+  Deck wire contract and bounded authentication/persistence server foundation
+  are implemented, but billed refresh remains unimplemented and its meter
+  remains disabled until a synchronized additive `delibase.v1` change can
+  return a successful-reservation grant bound to the exact reservation,
+  service, maximum, and expiry and accept it only for same-service idempotent
+  commit/release with a fresh M2M bearer. Do not represent this planned
+  prerequisite in generated delibase contracts before the source, server,
+  compatibility checks, and substitution/expiry tests are implemented
+  together.
 - Keep `BackgroundUsagePurpose` closed to `REALQA_STORAGE` in v1 with no Deck value, `BackgroundUsagePeriod` closed to `UTC_DAY`, and authorization status closed to `ACTIVE`, `REVOKED`, `ACCESS_LOST`, `RESOURCE_DELETED`, and `OWNER_DELETED`. Preserve UUID v7 owner/resource/service/meter bindings, per-period limits, revisions/timestamps, opaque pagination, and stable substitution/access/status/limit/replay error reasons additively.
 - `MarkBackgroundUsageResourceDeleted` transitions an exact matching `ACTIVE` grant to `RESOURCE_DELETED` only at the current expected revision. For the exact bound service/purpose/resource, it returns an existing `REVOKED`, `ACCESS_LOST`, `RESOURCE_DELETED`, or `OWNER_DELETED` status and current revision without transition when the request revision predates closure, so feature deletion cannot be stranded; future/unknown revisions and substitutions fail closed.
 - Keep public catalog meter responses sufficient for human authorization creation by exposing stable service identity targets and safe display names, never Logto client identifiers or credentials. Reserve accepts only the current or immediately preceding canonical UTC day according to server time; commit/release use the period stored with the reservation.

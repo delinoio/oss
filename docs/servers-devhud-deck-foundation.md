@@ -4,11 +4,15 @@
 
 - Project/component: `devhud` / `deck-server`
 - Canonical implementation path: `servers/devhud-deck`
-- Status: planned server contract for issue #755. The consumed
-  `devhud.deck.v1` source and private generated Connect package exist, but no
-  service directory, deployment, DNS, production secret, registered GitHub
-  App, published image, enabled catalog record, or production operation is
-  claimed.
+- Status: bounded server foundation implemented for issue #755. The service
+  directory implements dual-audience authentication, current DeliDev
+  membership authorization, PostgreSQL migrations/sqlc persistence,
+  encrypted view/device/current-snapshot storage, typed audits, health
+  endpoints, view/device CRUD, query rewriting, limits, revisions, and
+  owner/lifecycle deletion. GitHub connection/provider callbacks, provider
+  refresh and billing, PR mutations, notification delivery, packaging,
+  deployment, DNS, production secrets, registered GitHub Apps, catalog
+  activation, and production operation remain unimplemented and unclaimed.
 - Future canonical API origin and Logto audience: `https://deck.deli.dev`; documenting it does not create or activate the origin.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrowly scoped HTTP handlers, and shared `servers/internal` infrastructure where its generic contracts apply.
 
@@ -18,8 +22,10 @@
 - Human RPCs accept a Deck-audience bearer in `authorization` and a
   memory-only delibase-audience forwarded bearer only in
   `x-devhud-deck-forwarded-delibase-token`. The service validates issuer,
-  audience, expiry, scopes, and matching subjects and strips credentials before
-  business handlers. `RegisterDevice` returns its opaque single-registration
+  audience, expiry, Deck procedure scope, forwarded
+  `delibase:account:read`/`delibase:organizations:read`/`delibase:teams:read`
+  scopes, and matching subjects and strips credentials before business
+  handlers. `RegisterDevice` returns its opaque single-registration
   revocation grant only in
   `x-devhud-deck-device-revocation-grant` response metadata;
   `UnregisterDevice` additionally accepts only that same key as alternate
@@ -133,6 +139,12 @@ implementation exists, canonical server checks are:
 - PostgreSQL integration/concurrency tests;
 - mock GitHub App callback, webhook, permission, rate-limit, and provider tests;
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
+
+The implemented bounded foundation currently runs the format, vet, unit,
+sqlc reproducibility, ordered-migration, redaction, and PostgreSQL integration
+checks. Provider, billing, notification-delivery, and image checks remain
+blocked with their corresponding RPCs failing closed; those bullets do not
+claim implementation.
 
 Coverage must include unknown-clause preservation, per-viewer `@me`, repository non-disclosure, limits/pagination/truncation, deterministic reviewer grouping, current assignee/label removal operands, explicit PR lifecycle state, pre-mutation action metadata, stale revisions, multi-device coalescing and catalog-bound billing, non-dispatching manual quote success/cancel/expiry/substitution/catalog-change handling, refresh exact replay before and after quote expiry/catalog change, changed-input conflict, lost-response recovery without duplicate provider dispatch or charge, crash-after-dispatch billing recovery without a client retry or second provider request, finalization-grant reservation/service/unit/operation/expiry substitution rejection and encrypted terminal deletion, minimum Deck reservation-TTL rejection, disabled/mismatched meter rejection before warning or provider dispatch, outbound live-usage client-credentials acquisition/startup failure and service-binding rejection, provider timeout charging, reservation failure, zero refresh after all clients stop, every supported mutation and merge confirmation, widget privacy/staleness, DND-safe generic/detailed notification resolution and authorization loss, `RegisterDevice` exact replay/changed-input conflict/lost-response recovery with the identical lease/grant, stale-renewal rejection, and bounded encrypted replay-material deletion, single-purpose revocation-grant cleanup across account switches and lease expiry, shortcut conflicts, provider-credential and query/builder/snapshot envelope encryption/rotation with ciphertext-only backups, redaction, disconnect/logout/reset, exact lifecycle-client pinning and peer-M2M rejection, owner and delibase-lifecycle deletion authorization, deletion-job replay/absent data, browser-origin rejection outside exact DeliDev `DeckIntegrationService`, GitHub.com-only rejection, and a fixture GitHub App.
 

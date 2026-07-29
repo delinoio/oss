@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	delibasev1 "github.com/delinoio/oss/protos/delibase/gen/go/delibase/v1"
+	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -35,6 +36,37 @@ func TestHTTPAndConnectNeverExposeSourceErrors(t *testing.T) {
 	if connectFailure.Code() != connect.CodePermissionDenied ||
 		strings.Contains(mapped.Error(), "super-secret-token") {
 		t.Fatalf("mapped Connect error = %v", mapped)
+	}
+}
+
+func TestConnectPreservesDeckCompareAndReapplyConflict(t *testing.T) {
+	t.Parallel()
+	source := connect.NewError(connect.CodeAborted, errors.New("unsafe stale details"))
+	detail, err := connect.NewErrorDetail(&deckv1.ErrorDetail{
+		Reason:  deckv1.ErrorReason_ERROR_REASON_STALE_REVISION,
+		Message: "query repo/title must not survive",
+		ResourceId: &deckv1.UuidV7{
+			Value: "01900000-0000-7000-8000-000000000001",
+		},
+		CurrentRevision: &deckv1.Revision{Value: 7, Etag: `"safe-etag"`},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.AddDetail(detail)
+	mapped := Connect(source)
+	var failure *connect.Error
+	if !errors.As(mapped, &failure) || len(failure.Details()) != 1 {
+		t.Fatalf("mapped error = %#v", mapped)
+	}
+	value, err := failure.Details()[0].Value()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := value.(*deckv1.ErrorDetail)
+	if !ok || got.Reason != deckv1.ErrorReason_ERROR_REASON_STALE_REVISION ||
+		got.CurrentRevision.GetValue() != 7 || got.Message != "" {
+		t.Fatalf("Deck conflict detail = %#v", value)
 	}
 }
 
