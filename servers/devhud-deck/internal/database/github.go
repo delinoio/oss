@@ -202,6 +202,8 @@ func (store *Store) ConnectGitHub(
 		"owner",
 		deckv1.OwnerScope(state.Owner.Scope).String()+":"+ownerID.String(),
 	)
+	callbackOwnerHash := store.githubCallbackOwnerHash(
+		int16(state.Owner.Scope), ownerID)
 	accountHash := store.githubCallbackAccountHash(accountID)
 	installationIdentityHash := store.hasher.Sum(
 		"github-webhook-installation", strconv.FormatUint(installation.ID, 10))
@@ -235,7 +237,7 @@ func (store *Store) ConnectGitHub(
 		}
 		callbackCreatedAt, err := queries.DeleteConsumedGitHubCallbackState(
 			ctx, dbgen.DeleteConsumedGitHubCallbackStateParams{
-				StateHash: stateHash[:], OwnerHash: ownerHash[:],
+				StateHash: stateHash[:], OwnerHash: callbackOwnerHash[:],
 				AccountHash: accountHash[:],
 			})
 		if errors.Is(err, pgx.ErrNoRows) {
