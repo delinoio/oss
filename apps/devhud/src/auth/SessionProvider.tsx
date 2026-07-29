@@ -8,7 +8,10 @@ import {
   type ReactNode,
 } from "react";
 
-import { subscribeToPersistenceReset } from "../runtime/theme";
+import {
+  publishSessionInvalidation,
+  subscribeToPersistenceReset,
+} from "../runtime/theme";
 import {
   AuthFeature,
   safeAuthFailure,
@@ -143,6 +146,7 @@ export function SessionProvider({
     // Clear the frontend view immediately. Native logout independently clears
     // all memory tokens before attempting its exact secure-vault deletion.
     setSession({ status: "signed-out" });
+    publishSessionInvalidation();
     try {
       const snapshot = await bridge.logout();
       setSession(snapshot);
@@ -154,6 +158,10 @@ export function SessionProvider({
         setSession({ status: "cleanup-required" });
       }
       return false;
+    } finally {
+      // Republish after native logout has cleared accepted sources so a
+      // cross-window render racing the first signal is invalidated again.
+      publishSessionInvalidation();
     }
   }, [bridge]);
   const clearFailure = useCallback(() => setFailure(null), []);

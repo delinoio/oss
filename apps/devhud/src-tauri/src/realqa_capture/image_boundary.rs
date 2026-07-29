@@ -3,6 +3,7 @@ use std::{
     io::{self, Cursor, Seek, SeekFrom, Write},
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use image::{DynamicImage, ImageFormat, ImageReader, RgbaImage, imageops::FilterType};
 use serde::{
     Deserialize, Deserializer, Serialize,
@@ -12,6 +13,7 @@ use serde::{
 pub(crate) const MAX_DECODED_PIXELS: u64 = 100_000_000;
 pub(crate) const MAX_PREVIEW_EDGE: u32 = 2_048;
 const MAX_ENCODED_IMAGE_BYTES_USIZE: usize = 25 * 1024 * 1024;
+const MAX_ENCODED_IMAGE_BASE64_BYTES: usize = MAX_ENCODED_IMAGE_BYTES_USIZE.div_ceil(3) * 4;
 pub(crate) const MAX_ENCODED_IMAGE_BYTES: u64 = MAX_ENCODED_IMAGE_BYTES_USIZE as u64;
 pub(crate) const MAX_ENCODED_SESSION_BYTES: u64 = 250 * 1024 * 1024;
 
@@ -59,18 +61,81 @@ impl<'de> Deserialize<'de> for EncodedImage {
     {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
-        struct BoundedEncodedImage {
+        struct BinaryEncodedImage {
             media_type: ImageMediaType,
             #[serde(deserialize_with = "deserialize_bounded_image_bytes")]
             bytes: Vec<u8>,
         }
 
+        if !deserializer.is_human_readable() {
+            let image = BinaryEncodedImage::deserialize(deserializer)?;
+            return Ok(Self {
+                media_type: image.media_type,
+                bytes: image.bytes,
+            });
+        }
+
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum BoundedEncodedImageData {
+            Bytes {
+                #[serde(deserialize_with = "deserialize_bounded_image_bytes")]
+                bytes: Vec<u8>,
+            },
+            Base64 {
+                #[serde(deserialize_with = "deserialize_bounded_image_base64")]
+                base64: Vec<u8>,
+            },
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct BoundedEncodedImage {
+            media_type: ImageMediaType,
+            #[serde(flatten)]
+            data: BoundedEncodedImageData,
+        }
+
         let image = BoundedEncodedImage::deserialize(deserializer)?;
         Ok(Self {
             media_type: image.media_type,
-            bytes: image.bytes,
+            bytes: match image.data {
+                BoundedEncodedImageData::Bytes { bytes } => bytes,
+                BoundedEncodedImageData::Base64 { base64 } => base64,
+            },
         })
     }
+}
+
+fn deserialize_bounded_image_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct EncodedImageBase64Visitor;
+
+    impl Visitor<'_> for EncodedImageBase64Visitor {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("base64 for at most 26214400 encoded image bytes")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if value.len() > MAX_ENCODED_IMAGE_BASE64_BYTES {
+                return Err(E::invalid_length(value.len(), &self));
+            }
+            let bytes = BASE64.decode(value).map_err(E::custom)?;
+            if bytes.len() > MAX_ENCODED_IMAGE_BYTES_USIZE {
+                return Err(E::invalid_length(bytes.len(), &self));
+            }
+            Ok(bytes)
+        }
+    }
+
+    deserializer.deserialize_str(EncodedImageBase64Visitor)
 }
 
 fn deserialize_bounded_image_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -492,6 +557,24 @@ mod tests {
             std::iter::repeat_n(0_u8, MAX_ENCODED_IMAGE_BYTES_USIZE + 1),
         );
         assert!(deserialize_bounded_image_bytes(oversized).is_err());
+    }
+
+    #[test]
+    fn encoded_image_deserialization_decodes_bounded_base64() {
+        let image: EncodedImage = serde_json::from_value(serde_json::json!({
+            "mediaType": "png",
+            "base64": "iVBORw0KGgo="
+        }))
+        .expect("bounded image base64 must deserialize");
+        assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\n");
+
+        assert!(
+            serde_json::from_value::<EncodedImage>(serde_json::json!({
+                "mediaType": "png",
+                "base64": "not-base64"
+            }))
+            .is_err()
+        );
     }
 
     #[test]

@@ -24,11 +24,13 @@ const COMMANDS: &[&str] = &[
     "realqa_list_capture_sources",
     "realqa_adjust_capture_selection",
     "realqa_begin_capture",
+    "realqa_begin_browser_fallback_capture",
     "realqa_cancel_capture",
     "realqa_composer_accept_image",
     "realqa_composer_flatten_image",
     "realqa_composer_remove_image",
     "realqa_composer_reset_session",
+    "realqa_take_browser_capture",
     "realqa_get_local_draft_status",
     "realqa_list_local_drafts",
     "realqa_save_local_draft",
@@ -38,6 +40,7 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=DEVHUD_CHROME_EXTENSION_ID");
     let target = std::env::var("TARGET").unwrap_or_default();
     if target.ends_with("-apple-darwin") {
         cc::Build::new()

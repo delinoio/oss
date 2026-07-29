@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Send to DevHud</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Send to DevHud</h1>
+      <p>Capture only the active tab’s visible viewport.</p>
+      <button id="capture" type="button">Capture visible viewport</button>
+      <label for="page-url">Page URL</label>
+      <div class="field-row">
+        <input id="page-url" disabled type="text" />
+        <button id="remove-url" disabled type="button">Remove URL</button>
+      </div>
+      <label for="page-title">Page title</label>
+      <div class="field-row">
+        <input id="page-title" disabled type="text" />
+        <button id="remove-title" disabled type="button">Remove title</button>
+      </div>
+      <button id="select" disabled type="button">Select DOM boundary</button>
+      <ul id="fields" aria-label="Optional metadata"></ul>
+      <button id="send" disabled type="button">Send to DevHud</button>
+      <p id="status" aria-live="polite"></p>
+    </main>
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
