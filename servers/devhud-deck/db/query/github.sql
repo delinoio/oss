@@ -40,6 +40,10 @@ DELETE FROM deck_github_callback_states
 WHERE owner_scope = sqlc.arg(owner_scope)
   AND owner_id = sqlc.arg(owner_id);
 
+-- name: DeleteGitHubCallbackStatesByAccount :exec
+DELETE FROM deck_github_callback_states
+WHERE account_id = sqlc.arg(account_id);
+
 -- name: GetGitHubConnectionByOwner :one
 SELECT *
 FROM deck_connections
@@ -221,6 +225,12 @@ WHERE connection_id = sqlc.arg(connection_id);
 -- name: DeleteGitHubUserCredentialsByAccount :exec
 DELETE FROM deck_github_user_credentials
 WHERE account_id = sqlc.arg(account_id);
+
+-- name: DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser :exec
+DELETE FROM deck_github_user_credentials
+WHERE account_id = sqlc.arg(account_id)
+  AND github_user_id = sqlc.arg(github_user_id)
+  AND user_access_token_expires_at <= sqlc.arg(expired_at);
 
 -- name: DeleteGitHubUserCredentialsByGitHubUser :exec
 DELETE FROM deck_github_user_credentials

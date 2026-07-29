@@ -88,6 +88,41 @@ func TestViewRepositoryPermissionFailsBeforeIdentityBearingData(t *testing.T) {
 	}
 }
 
+func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
+	t *testing.T,
+) {
+	t.Parallel()
+	service := &View{dependencies: Dependencies{
+		Repositories: deniedRepositories{},
+	}.withDefaults()}
+	view := &deckv1.View{
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED,
+		Query: &deckv1.ViewQuery{
+			Builder: &deckv1.QueryBuilder{Clauses: []*deckv1.QueryClause{{
+				Clause: &deckv1.QueryClause_Repository{
+					Repository: &deckv1.RepositoryQualifier{
+						Owner: "secret", Repository: "project",
+					},
+				},
+			}}},
+		},
+	}
+	allowed, err := service.canReadViewDefinition(
+		context.Background(), contracts.Viewer{}, view)
+	if err != nil || !allowed {
+		t.Fatalf("disconnected view definition = allowed:%v err:%v", allowed, err)
+	}
+	view.ConnectionState = deckv1.ConnectionState_CONNECTION_STATE_CONNECTED
+	allowed, err = service.canReadViewDefinition(
+		context.Background(), contracts.Viewer{}, view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed {
+		t.Fatal("connected view bypassed repository authorization")
+	}
+}
+
 func TestRepositoryAuthorizationDefaultsToDeny(t *testing.T) {
 	t.Parallel()
 	dependencies := Dependencies{}.withDefaults()

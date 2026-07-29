@@ -172,6 +172,12 @@ func (service *View) authorizePullRequestAction(
 		ctx, viewer, view.Owner, referenceMessage.Repository.Owner,
 		referenceMessage.Repository.Name)
 	if err != nil {
+		if errors.Is(err, deckgithub.ErrReauthenticationRequired) {
+			return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
+				database.GitHubConnectionRecord{}, rpcerr.New(
+					connect.CodeFailedPrecondition,
+					deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+		}
 		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, rpcerr.New(
 				connect.CodeUnavailable,
@@ -448,9 +454,15 @@ func mapGitHubError(err error) error {
 	case errors.Is(err, deckgithub.ErrConcurrencyLimited):
 		return rpcerr.New(connect.CodeResourceExhausted,
 			deckv1.ErrorReason_ERROR_REASON_PROVIDER_CONCURRENCY_LIMITED)
+	case errors.Is(err, deckgithub.ErrMutationRateLimited):
+		return rpcerr.New(connect.CodeResourceExhausted,
+			deckv1.ErrorReason_ERROR_REASON_RATE_LIMITED)
 	case errors.Is(err, deckgithub.ErrRateLimited):
 		return rpcerr.New(connect.CodeResourceExhausted,
 			deckv1.ErrorReason_ERROR_REASON_PROVIDER_RATE_LIMITED)
+	case errors.Is(err, deckgithub.ErrReauthenticationRequired):
+		return rpcerr.New(connect.CodeFailedPrecondition,
+			deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
 	case errors.Is(err, deckgithub.ErrPermissionDenied),
 		errors.Is(err, database.ErrInstallationOwned):
 		return rpcerr.New(connect.CodePermissionDenied,

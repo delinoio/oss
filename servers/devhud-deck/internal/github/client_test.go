@@ -244,6 +244,15 @@ func TestMutationRejectionsAndLimits(t *testing.T) {
 		!limiter.allow("actor", now.Add(time.Minute+time.Second)) {
 		t.Fatal("mutation rate limit was not deterministic")
 	}
+	client.mutations = newUserRateLimiter(0, time.Minute)
+	if _, err := client.Mutate(
+		context.Background(), "locally-limited", 1,
+		Credential{AccessToken: "token"}, permissions, reference, revision,
+		Mutation{Kind: MutationClose},
+	); !errors.Is(err, ErrMutationRateLimited) ||
+		errors.Is(err, ErrRateLimited) {
+		t.Fatalf("local mutation rate-limit error = %v", err)
+	}
 	concurrency := newInstallationLimiter(2)
 	first, _ := concurrency.acquire(1)
 	second, _ := concurrency.acquire(1)

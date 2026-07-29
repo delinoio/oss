@@ -528,6 +528,22 @@ func (store *Store) RefreshGitHubCredential(
 	})
 }
 
+func (store *Store) RequireGitHubCredentialReauthentication(
+	ctx context.Context,
+	accountID uuid.UUID,
+	githubUserID uint64,
+	now time.Time,
+) error {
+	if accountID == uuid.Nil || githubUserID == 0 {
+		return deckgithub.ErrPermissionDenied
+	}
+	return store.queries.DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser(
+		ctx, dbgen.DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUserParams{
+			AccountID: pgUUID(accountID), GithubUserID: int64(githubUserID),
+			ExpiredAt: pgTime(now),
+		})
+}
+
 func (store *Store) validateGitHubCredentialKeyIDs(
 	storedKeyID string,
 	ciphertexts ...[]byte,
@@ -806,6 +822,13 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 				}
 				if err := queries.DeleteGitHubConnectionCredentials(
 					ctx, connection.ConnectionID); err != nil {
+					return err
+				}
+				if err := queries.DeleteGitHubCallbackStatesByOwner(
+					ctx, dbgen.DeleteGitHubCallbackStatesByOwnerParams{
+						OwnerScope: connection.OwnerScope,
+						OwnerID:    connection.OwnerID,
+					}); err != nil {
 					return err
 				}
 			}

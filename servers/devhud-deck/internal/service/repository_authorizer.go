@@ -47,7 +47,7 @@ func (authorizer *GitHubRepositoryAuthorizer) CanReadRepository(
 		ctx, int16(viewOwner.Scope), ownerID, viewer.AccountID, true)
 	if errors.Is(err, database.ErrNotFound) ||
 		errors.Is(err, deckgithub.ErrPermissionDenied) {
-		return false, nil
+		return false, deckgithub.ErrReauthenticationRequired
 	}
 	if err != nil {
 		return false, err

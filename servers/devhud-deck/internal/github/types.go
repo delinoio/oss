@@ -33,6 +33,11 @@ var (
 	ErrProvider             = errors.New("deck github: provider request failed")
 )
 
+var (
+	ErrMutationRateLimited      = errors.New("deck github: mutation rate limited")
+	ErrReauthenticationRequired = errors.New("deck github: user reauthentication required")
+)
+
 type AccountKind uint8
 
 const (

@@ -95,6 +95,24 @@ func (q *Queries) DeleteExpiredGitHubCallbackStates(ctx context.Context, expired
 	return err
 }
 
+const deleteExpiredGitHubUserCredentialsByAccountAndGitHubUser = `-- name: DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser :exec
+DELETE FROM deck_github_user_credentials
+WHERE account_id = $1
+  AND github_user_id = $2
+  AND user_access_token_expires_at <= $3
+`
+
+type DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUserParams struct {
+	AccountID    pgtype.UUID
+	GithubUserID int64
+	ExpiredAt    pgtype.Timestamptz
+}
+
+func (q *Queries) DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser(ctx context.Context, arg DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUserParams) error {
+	_, err := q.db.Exec(ctx, deleteExpiredGitHubUserCredentialsByAccountAndGitHubUser, arg.AccountID, arg.GithubUserID, arg.ExpiredAt)
+	return err
+}
+
 const deleteGitHubCallbackState = `-- name: DeleteGitHubCallbackState :exec
 DELETE FROM deck_github_callback_states
 WHERE state_hash = $1
@@ -102,6 +120,16 @@ WHERE state_hash = $1
 
 func (q *Queries) DeleteGitHubCallbackState(ctx context.Context, stateHash []byte) error {
 	_, err := q.db.Exec(ctx, deleteGitHubCallbackState, stateHash)
+	return err
+}
+
+const deleteGitHubCallbackStatesByAccount = `-- name: DeleteGitHubCallbackStatesByAccount :exec
+DELETE FROM deck_github_callback_states
+WHERE account_id = $1
+`
+
+func (q *Queries) DeleteGitHubCallbackStatesByAccount(ctx context.Context, accountID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteGitHubCallbackStatesByAccount, accountID)
 	return err
 }
 

@@ -2,9 +2,11 @@ package service
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
@@ -85,5 +87,58 @@ func TestPullRequestDetailPreservesAndRefreshesCompleteRow(t *testing.T) {
 		base.Assignees[0].GetLogin() != "stored-assignee" ||
 		base.Labels[0] != "stored-label" {
 		t.Fatalf("stored snapshot was mutated: %#v", base)
+	}
+}
+
+func TestMapGitHubErrorDistinguishesDeckAndProviderRateLimits(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		err    error
+		code   connect.Code
+		reason deckv1.ErrorReason
+	}{
+		{
+			name: "deck mutation limit", err: deckgithub.ErrMutationRateLimited,
+			code:   connect.CodeResourceExhausted,
+			reason: deckv1.ErrorReason_ERROR_REASON_RATE_LIMITED,
+		},
+		{
+			name: "provider limit", err: deckgithub.ErrRateLimited,
+			code:   connect.CodeResourceExhausted,
+			reason: deckv1.ErrorReason_ERROR_REASON_PROVIDER_RATE_LIMITED,
+		},
+		{
+			name: "reauthentication", err: deckgithub.ErrReauthenticationRequired,
+			code:   connect.CodeFailedPrecondition,
+			reason: deckv1.ErrorReason_ERROR_REASON_DISCONNECTED,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			mapped := mapGitHubError(test.err)
+			if connect.CodeOf(mapped) != test.code {
+				t.Fatalf("code = %v, want %v", connect.CodeOf(mapped), test.code)
+			}
+			var connectErr *connect.Error
+			if !errors.As(mapped, &connectErr) {
+				t.Fatalf("mapped error = %T", mapped)
+			}
+			for _, detail := range connectErr.Details() {
+				value, err := detail.Value()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if typed, ok := value.(*deckv1.ErrorDetail); ok {
+					if typed.Reason != test.reason {
+						t.Fatalf("reason = %v, want %v",
+							typed.Reason, test.reason)
+					}
+					return
+				}
+			}
+			t.Fatal("mapped error has no Deck error detail")
+		})
 	}
 }

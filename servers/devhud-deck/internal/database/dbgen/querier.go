@@ -28,7 +28,9 @@ type Querier interface {
 	DeleteExpiredDeviceByID(ctx context.Context, arg DeleteExpiredDeviceByIDParams) error
 	DeleteExpiredDeviceIdempotency(ctx context.Context, now pgtype.Timestamptz) error
 	DeleteExpiredGitHubCallbackStates(ctx context.Context, expiredAt pgtype.Timestamptz) error
+	DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser(ctx context.Context, arg DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUserParams) error
 	DeleteGitHubCallbackState(ctx context.Context, stateHash []byte) error
+	DeleteGitHubCallbackStatesByAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteGitHubCallbackStatesByOwner(ctx context.Context, arg DeleteGitHubCallbackStatesByOwnerParams) error
 	DeleteGitHubConnectionCredentials(ctx context.Context, connectionID pgtype.UUID) error
 	DeleteGitHubUserCredentialsByAccount(ctx context.Context, accountID pgtype.UUID) error

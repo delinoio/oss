@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-deck/internal/authn"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/query"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/rpcerr"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
@@ -50,7 +51,7 @@ func (service *View) ListViews(
 		return nil, mapDatabaseError(err)
 	}
 	for _, view := range views {
-		allowed, authErr := service.canReadViewRepositories(ctx, viewer, view)
+		allowed, authErr := service.canReadViewDefinition(ctx, viewer, view)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -98,7 +99,7 @@ func (service *View) GetView(
 	if _, err := authorizeOwner(viewer, view.Owner, false); err != nil {
 		return nil, err
 	}
-	allowed, err := service.canReadViewRepositories(ctx, viewer, view)
+	allowed, err := service.canReadViewDefinition(ctx, viewer, view)
 	if err != nil {
 		return nil, err
 	}
@@ -402,6 +403,11 @@ func (service *View) ListPullRequests(
 				ctx, viewer, view.Owner,
 				repository.GetOwner(), repository.GetName())
 			if authErr != nil {
+				if errors.Is(
+					authErr, deckgithub.ErrReauthenticationRequired) {
+					return rpcerr.New(connect.CodeFailedPrecondition,
+						deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+				}
 				return rpcerr.New(connect.CodeUnavailable,
 					deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
 			}
@@ -680,6 +686,10 @@ func (service *View) canReadViewRepositories(
 			ctx, viewer, view.Owner,
 			repository.Owner, repository.Repository)
 		if err != nil {
+			if errors.Is(err, deckgithub.ErrReauthenticationRequired) {
+				return false, rpcerr.New(connect.CodeFailedPrecondition,
+					deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+			}
 			return false, rpcerr.New(connect.CodeUnavailable,
 				deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
 		}
@@ -688,4 +698,16 @@ func (service *View) canReadViewRepositories(
 		}
 	}
 	return true, nil
+}
+
+func (service *View) canReadViewDefinition(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	view *deckv1.View,
+) (bool, error) {
+	if view != nil && view.ConnectionState ==
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		return true, nil
+	}
+	return service.canReadViewRepositories(ctx, viewer, view)
 }

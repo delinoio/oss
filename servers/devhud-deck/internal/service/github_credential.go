@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -49,6 +50,14 @@ func refreshGitHubConnectionCredential(
 		return refreshed, nil
 	})
 	if err != nil {
+		if errors.Is(err, deckgithub.ErrPermissionDenied) {
+			if deleteErr := store.RequireGitHubCredentialReauthentication(
+				ctx, accountID, connection.Credential.UserID, now); deleteErr != nil {
+				return database.GitHubConnectionRecord{}, deleteErr
+			}
+			return database.GitHubConnectionRecord{},
+				deckgithub.ErrReauthenticationRequired
+		}
 		return database.GitHubConnectionRecord{}, err
 	}
 	// Only the user credential is shared across the singleflight call.

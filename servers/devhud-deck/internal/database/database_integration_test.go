@@ -906,6 +906,61 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("original replay grant unregister = %v, %v", unregistered, err)
 	}
 
+	webhookCallback := callback
+	webhookCallback.AccountID = secondAccountID.String()
+	webhookCallback.Owner = deckgithub.OwnerBinding{
+		Scope: 1, ID: secondAccountID.String(),
+	}
+	webhookCallback.InstallationID = 99
+	webhookInstallation := installation
+	webhookInstallation.ID = 99
+	webhookInstallation.AccountID = 990
+	webhookCredential := credential
+	webhookCredential.UserID = 799
+	if err := connectGitHub(
+		webhookCallback, webhookInstallation, webhookCredential,
+		now.Add(11*time.Minute)); err != nil {
+		t.Fatalf("webhook disconnect fixture: %v", err)
+	}
+	webhookPending := webhookCallback
+	webhookPending.Nonce = "webhook-disconnect-pending"
+	webhookPendingHash := security.Digest([]byte(webhookPending.Nonce))
+	if err := store.SaveGitHubCallbackState(
+		ctx, webhookPendingHash, webhookPending,
+		now.Add(11*time.Minute)); err != nil {
+		t.Fatalf("webhook pending callback: %v", err)
+	}
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-deleted-1", "installation", "deleted",
+		webhookInstallation.ID, webhookInstallation.Permissions,
+		security.Digest([]byte("installation-deleted")),
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("webhook disconnect: %v", err)
+	}
+	var webhookCallbackCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)::integer
+		FROM deck_github_callback_states
+		WHERE owner_scope = 1 AND owner_id = $1`,
+		pgUUID(secondAccountID),
+	).Scan(&webhookCallbackCount); err != nil {
+		t.Fatal(err)
+	}
+	if webhookCallbackCount != 0 {
+		t.Fatalf("webhook disconnect retained %d callbacks",
+			webhookCallbackCount)
+	}
+
+	memberPending := callback
+	memberPending.Owner = deckgithub.OwnerBinding{
+		Scope: 2, ID: mustV7(t).String(),
+	}
+	memberPending.Nonce = "account-deletion-org-member"
+	memberPendingHash := security.Digest([]byte(memberPending.Nonce))
+	if err := store.SaveGitHubCallbackState(
+		ctx, memberPendingHash, memberPending, now.Add(13*time.Minute)); err != nil {
+		t.Fatalf("account deletion member callback: %v", err)
+	}
 	replayKey := mustV7(t)
 	jobID := mustV7(t)
 	targetHash := hasher.Sum("owner", "OWNER_SCOPE_PERSONAL:"+accountID.String())
@@ -918,6 +973,18 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	if _, err := store.GetView(ctx, firstViewID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("view survived feature deletion: %v", err)
+	}
+	var accountCallbackCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)::integer
+		FROM deck_github_callback_states
+		WHERE account_id = $1`,
+		pgUUID(accountID),
+	).Scan(&accountCallbackCount); err != nil {
+		t.Fatal(err)
+	}
+	if accountCallbackCount != 0 {
+		t.Fatalf("account deletion retained %d callbacks", accountCallbackCount)
 	}
 	if _, err := store.ResolveViewer(ctx, "subject-1"); err != nil {
 		t.Fatalf("owner replay identity was removed: %v", err)

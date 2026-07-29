@@ -29,7 +29,7 @@ func (client *Client) Mutate(
 		return MutationResult{}, ErrUnsupportedAction
 	}
 	if !client.mutations.allow(actor, client.now()) {
-		return MutationResult{}, &RateLimitError{RetryAfter: timeUntilWindow}
+		return MutationResult{}, ErrMutationRateLimited
 	}
 	metadata, err := client.ActionMetadata(
 		ctx, installationID, credential, appPermissions, reference)
@@ -74,8 +74,6 @@ func (client *Client) Mutate(
 		Kind: mutation.Kind, Revision: current.Revision, Metadata: current,
 	}, nil
 }
-
-const timeUntilWindow = 60_000_000_000 // one minute in nanoseconds
 
 func validateMutation(reference PullRequestRef, mutation Mutation) error {
 	if err := reference.Validate(); err != nil {

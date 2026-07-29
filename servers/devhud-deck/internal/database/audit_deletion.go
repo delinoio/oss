@@ -104,6 +104,10 @@ func (store *Store) DeleteFeatureData(
 				}); err != nil {
 				return err
 			}
+			if err := queries.DeleteGitHubCallbackStatesByAccount(
+				ctx, pgUUID(params.TargetID)); err != nil {
+				return err
+			}
 			if err := queries.DeleteGitHubUserCredentialsByAccount(
 				ctx, pgUUID(params.TargetID)); err != nil {
 				return err
