@@ -733,9 +733,6 @@ func (service *View) viewDefinitionAuthorizer(
 			return rpcerr.New(connect.CodeInternal,
 				deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
 		}
-		if len(authorization.RepositoryHashes) == 0 {
-			return nil
-		}
 		if !loaded {
 			loaded = true
 			repositories, err := service.dependencies.Repositories.
