@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	maximumCallbackBody = 1024 * 1024
+	maximumCallbackBody = 25 * 1024 * 1024
 	callbackStateTTL    = 10 * time.Minute
 )
 

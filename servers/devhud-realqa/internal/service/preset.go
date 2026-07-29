@@ -361,11 +361,15 @@ func (service *Preset) refreshProviderSelection(
 		return nil, nil
 	}
 	if err != nil {
-		return nil, rqerr.New(connect.CodePermissionDenied,
-			realqav1.ErrorReason_ERROR_REASON_PROVIDER_PERMISSION_DENIED,
-			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+		return nil, providerDefinitionUnavailable()
 	}
 	return &definitions, nil
+}
+
+func providerDefinitionUnavailable() error {
+	return rqerr.New(connect.CodeUnavailable,
+		realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
+		realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 }
 
 func validateLiveDefinition(

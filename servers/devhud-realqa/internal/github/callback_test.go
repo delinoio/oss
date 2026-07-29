@@ -444,6 +444,36 @@ func TestSignedIssueDeletionWebhookFixture(t *testing.T) {
 	}
 }
 
+func TestWebhookAcceptsGitHubPayloadsAboveOneMiB(t *testing.T) {
+	t.Parallel()
+	if maximumCallbackBody != 25*1024*1024 {
+		t.Fatalf("webhook payload cap = %d", maximumCallbackBody)
+	}
+	store := newFixtureCallbackStore()
+	handler, _, _, _ := fixtureCallbackHandler(t, store,
+		fixtureHTTPClient(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("provider request not expected")
+		}))
+	body, err := os.ReadFile("testdata/issues-deleted.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = append(body, bytes.Repeat([]byte(" "), 1024*1024)...)
+	request := httptest.NewRequest(http.MethodPost, "/github/webhooks",
+		bytes.NewReader(body))
+	request.Header.Set("X-GitHub-Event", "issues")
+	request.Header.Set("X-GitHub-Delivery",
+		"018f3f5e-7b01-7a2d-8c3a-4ba8d8b51613")
+	request.Header.Set("X-Hub-Signature-256",
+		fixtureWebhookSignature([]byte(strings.Repeat("w", 32)), body))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || store.deleteCalls != 1 {
+		t.Fatalf("large webhook was rejected: status=%d calls=%d body=%s",
+			response.Code, store.deleteCalls, response.Body)
+	}
+}
+
 func TestFailedWebhookProcessingLeavesDeliveryRetryable(t *testing.T) {
 	t.Parallel()
 	store := newFixtureCallbackStore()

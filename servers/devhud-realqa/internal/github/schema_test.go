@@ -1,7 +1,6 @@
 package github
 
 import (
-	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -146,7 +145,7 @@ func TestIssueFormRejectsProviderRequiredCheckboxOmission(t *testing.T) {
 	}
 }
 
-func TestIssueFormAcceptsDropdownDefault(t *testing.T) {
+func TestIssueFormRejectsUnsupportedDropdownDefault(t *testing.T) {
 	t.Parallel()
 	contents := []byte(`
 name: Bug report
@@ -164,18 +163,8 @@ body:
 	form, err := ParseIssueForm(
 		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(form.Fields) != 1 || len(form.Fields[0].Options) != 2 {
-		t.Fatalf("unexpected form: %#v", form)
-	}
-
-	invalid := bytes.Replace(contents, []byte("default: 1"), []byte("default: 2"), 1)
-	if _, err = ParseIssueForm(
-		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, invalid,
-	); err == nil || !strings.Contains(err.Error(), "dropdown default") {
-		t.Fatalf("expected invalid dropdown default, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "dropdown default is unsupported") {
+		t.Fatalf("expected unsupported dropdown default, got form=%#v err=%v", form, err)
 	}
 }
 
