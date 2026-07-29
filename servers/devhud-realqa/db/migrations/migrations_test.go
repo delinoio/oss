@@ -162,7 +162,11 @@ func TestGitHubProviderMigrationRepairsLegacyConnections(t *testing.T) {
 	organizationConnectionID := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_identities (account_id, subject_digest)
-		VALUES ($1, decode(repeat('01', 32), 'hex'));
+		VALUES ($1, decode(repeat('01', 32), 'hex'))
+	`, personalID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_github_connections (
 			id, owner_kind, owner_id, state, github_login,
 			credential_ciphertext, wrapped_data_key, key_id, connected_at
@@ -173,7 +177,7 @@ func TestGitHubProviderMigrationRepairsLegacyConnections(t *testing.T) {
 			($3, 'organization', $4, 'connected', 'organization-user',
 			 decode('03', 'hex'), decode('04', 'hex'), 'fixture-key',
 			 transaction_timestamp());
-	`, personalID, personalConnectionID, organizationConnectionID, organizationID); err != nil {
+	`, personalConnectionID, personalID, organizationConnectionID, organizationID); err != nil {
 		t.Fatal(err)
 	}
 	results, err := connection.PgConn().Exec(ctx, ordered[3].contents).ReadAll()
