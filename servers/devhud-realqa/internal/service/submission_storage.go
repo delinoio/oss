@@ -339,6 +339,9 @@ func (service *Submission) FinalizeImageUpload(
 	object, err := service.dependencies.Objects.Get(
 		ctx, imageassets.StagingObjectKey(assetID.String()))
 	if err != nil {
+		if !errors.Is(err, imageassets.ErrObjectNotFound) {
+			return nil, storageUnavailable()
+		}
 		return nil, verificationFailed()
 	}
 	body := object.Body
@@ -469,9 +472,10 @@ func (service *Submission) FinalizeImageUpload(
 			submissionID, assetID); ok {
 			return replay, replayErr
 		}
-		// The verified key is deterministic, and a concurrent finalize may
-		// already own the successful database transition for these same bytes.
-		// Expiry/deletion cleanup removes any truly orphaned verified object.
+		if cleanupErr := service.cleanupUnownedVerifiedObject(
+			context.WithoutCancel(ctx), submissionID, assetID); cleanupErr != nil {
+			return nil, cleanupErr
+		}
 		if errors.Is(err, imageassets.ErrEncodedTooLarge) {
 			return nil, invalid(
 				realqav1.ErrorReason_ERROR_REASON_SESSION_TOO_LARGE)
@@ -1020,18 +1024,25 @@ func (service *Submission) PromoteSubmittedAssets(
 			ctx, publicKey, asset.MediaType, body); err != nil {
 			return storageUnavailable()
 		}
-		if _, err = service.dependencies.Store.Queries().PromoteAsset(
-			ctx, dbgen.PromoteAssetParams{
-				PublicID: pgtype.Text{String: publicID, Valid: true},
-				ID:       toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
-			}); err != nil {
+		err = service.dependencies.Store.WithinTransaction(
+			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+				if _, promoteErr := queries.PromoteAsset(
+					ctx, dbgen.PromoteAssetParams{
+						PublicID:     pgtype.Text{String: publicID, Valid: true},
+						ID:           toPGUUID(assetID),
+						SubmissionID: toPGUUID(submissionID),
+					}); promoteErr != nil {
+					return promoteErr
+				}
+				return enqueueObjectDeletion(
+					ctx, queries, asset.ID, objectKindVerified, pgtype.Text{})
+			})
+		if err != nil {
 			_ = service.dependencies.Objects.Delete(
 				context.WithoutCancel(ctx), publicKey)
 			return err
 		}
-		_ = service.dependencies.Objects.Delete(
-			context.WithoutCancel(ctx),
-			imageassets.VerifiedObjectKey(assetID.String()))
+		service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	}
 	_, err := service.dependencies.Store.Queries().MarkSubmissionSubmitted(
 		ctx, toPGUUID(submissionID))
@@ -1458,6 +1469,33 @@ func enqueueObjectDeletion(
 	return queries.EnqueueObjectDeletion(ctx, dbgen.EnqueueObjectDeletionParams{
 		AssetID: assetID, ObjectKind: string(kind), PublicID: publicID,
 	})
+}
+
+func (service *Submission) cleanupUnownedVerifiedObject(
+	ctx context.Context,
+	submissionID uuid.UUID,
+	assetID uuid.UUID,
+) error {
+	current, err := service.dependencies.Store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+		})
+	if err == nil && current.UploadState == "verified" &&
+		(current.State == "verified_unlinked" ||
+			current.State == "public_retained") {
+		return nil
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if err = service.dependencies.Store.Queries().EnqueueObjectDeletion(
+		ctx, dbgen.EnqueueObjectDeletionParams{
+			AssetID: toPGUUID(assetID), ObjectKind: string(objectKindVerified),
+		}); err != nil {
+		return err
+	}
+	service.drainObjectDeletionsBestEffort(ctx)
+	return nil
 }
 
 func (service *Submission) drainObjectDeletionsBestEffort(ctx context.Context) {

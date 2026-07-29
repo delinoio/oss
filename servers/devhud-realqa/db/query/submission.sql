@@ -314,6 +314,14 @@ SET verified_encoded_bytes = (
     ),
     state = CASE
         WHEN submission.state IN ('draft', 'uploading', 'ready')
+             AND NOT EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state NOT IN (
+                       'rejected', 'expired', 'deleted'
+                   )
+             ) THEN 'assets_deleted'
+        WHEN submission.state IN ('draft', 'uploading', 'ready')
              AND EXISTS (
                  SELECT 1 FROM realqa_assets
                  WHERE submission_id = submission.id
