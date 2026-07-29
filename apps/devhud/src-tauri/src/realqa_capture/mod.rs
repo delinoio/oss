@@ -187,11 +187,11 @@ pub(crate) struct WindowMetadata {
 }
 
 impl WindowMetadata {
-    fn checked(self) -> Result<Self, CaptureFailure> {
+    fn checked(self, platform: CapturePlatform) -> Result<Self, CaptureFailure> {
         if !safe_metadata_field(
             self.process_name.as_deref(),
             MAX_SAFE_PROCESS_NAME_BYTES,
-            true,
+            platform == CapturePlatform::Windows,
         ) || !safe_metadata_field(self.title.as_deref(), MAX_SAFE_WINDOW_TITLE_BYTES, false)
         {
             return Err(CaptureFailure::InvalidDisplaySnapshot);
@@ -211,7 +211,11 @@ fn safe_metadata_field(value: Option<&str>, maximum_bytes: usize, process_name: 
 }
 
 impl WindowSource {
-    fn checked(mut self, snapshot: &DisplaySnapshot) -> Result<Self, CaptureFailure> {
+    fn checked(
+        mut self,
+        snapshot: &DisplaySnapshot,
+        platform: CapturePlatform,
+    ) -> Result<Self, CaptureFailure> {
         if self.id.0.is_empty()
             || self.id.0.len() > 128
             || snapshot.display(&self.display_id).is_none()
@@ -221,7 +225,7 @@ impl WindowSource {
         if self.availability == WindowAvailability::Available {
             self.bounds.checked()?;
         }
-        self.metadata = self.metadata.checked()?;
+        self.metadata = self.metadata.checked(platform)?;
         Ok(self)
     }
 }
@@ -430,12 +434,13 @@ impl CaptureCore {
         let capabilities = self.inspect_capabilities()?;
         let permission = self.require_granted_permission()?;
         let snapshot = self.current_snapshot()?;
+        let platform = self.backend.platform();
         let mut windows = self
             .backend
             .windows(&snapshot)
             .map_err(CaptureFailure::from)?
             .into_iter()
-            .map(|window| window.checked(&snapshot))
+            .map(|window| window.checked(&snapshot, platform))
             .collect::<Result<Vec<_>, _>>()?;
         if windows.len() > MAX_CAPTURE_WINDOWS {
             return Err(CaptureFailure::InvalidDisplaySnapshot);
@@ -445,7 +450,7 @@ impl CaptureCore {
             return Err(CaptureFailure::InvalidDisplaySnapshot);
         }
         Ok(CaptureSourceCatalog {
-            platform: self.backend.platform(),
+            platform,
             permission,
             capabilities,
             snapshot,
@@ -610,7 +615,7 @@ impl CaptureCore {
                 if window.availability == WindowAvailability::Minimized {
                     return Err(CaptureFailure::WindowMinimized);
                 }
-                let window = window.checked(&snapshot)?;
+                let window = window.checked(&snapshot, self.backend.platform())?;
                 (
                     window.bounds,
                     Some(ResolvedWindowSource {
@@ -1450,6 +1455,22 @@ mod tests {
         assert_eq!(
             core.source_catalog(),
             Err(CaptureFailure::InvalidDisplaySnapshot)
+        );
+    }
+
+    #[test]
+    fn source_catalog_accepts_path_like_linux_process_names() {
+        let backend = Arc::new(FixtureBackend::new(CapturePlatform::Linux));
+        let core = CaptureCore::new(backend.clone());
+        backend.windows.lock().expect("window lock")[0].metadata = WindowMetadata {
+            process_name: Some(r"foo:bar/baz\qux".to_owned()),
+            title: Some("Linux window".to_owned()),
+        };
+
+        let catalog = core.source_catalog().expect("catalog must load");
+        assert_eq!(
+            catalog.windows[0].metadata.process_name.as_deref(),
+            Some(r"foo:bar/baz\qux")
         );
     }
 
