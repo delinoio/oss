@@ -248,16 +248,17 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 	var repositoryAccessCount int64
 	if err = connection.QueryRow(ctx, `
 		SELECT
-			authorization.state, authorization.credential_ciphertext,
+			caller_authorization.state,
+			caller_authorization.credential_ciphertext,
 			connection.state, connection.credential_ciphertext,
 			(SELECT count(*)
 			 FROM realqa_repository_access
 			 WHERE installation_id = $3 AND account_id = $1)
-		FROM realqa_github_user_authorizations AS authorization
+		FROM realqa_github_user_authorizations AS caller_authorization
 		JOIN realqa_github_connections AS connection
-		  ON connection.id = authorization.connection_id
-		WHERE authorization.connection_id = $2
-		  AND authorization.account_id = $1
+		  ON connection.id = caller_authorization.connection_id
+		WHERE caller_authorization.connection_id = $2
+		  AND caller_authorization.account_id = $1
 	`, memberAccountID, connectionID, installationID).Scan(
 		&authorizationState, &authorizationCiphertext,
 		&connectionState, &connectionCiphertext, &repositoryAccessCount,
