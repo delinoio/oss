@@ -1559,9 +1559,6 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			submittedBytesAfterCleanup, submittedExtraState,
 			submittedRetainedBytes)
 	}
-	if _, ok := objects.objects[submittedExtraKey]; ok {
-		t.Fatal("submitted unlinked object was retained")
-	}
 	if _, err = store.Queries().MarkSubmissionSubmitted(
 		ctx, toPGUUID(partialSubmissionID)); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("expired partial promotion became submitted: %v", err)
@@ -1581,6 +1578,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if _, drainErr := submissionService.DrainObjectDeletions(
 		ctx, 100); drainErr != nil {
 		t.Fatal(drainErr)
+	}
+	if _, ok := objects.objects[submittedExtraKey]; ok {
+		t.Fatal("submitted unlinked object was retained")
 	}
 	var partialPublicState, partialPrivateState string
 	if err = connection.QueryRow(ctx, `
