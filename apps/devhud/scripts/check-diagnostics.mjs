@@ -15,6 +15,7 @@ const [
   frontendSource,
   iosPlugin,
   localLogSource,
+  macosCaptureSource,
   mobileCapabilitySource,
   nativeSource,
   packageSource,
@@ -31,6 +32,7 @@ const [
     "src-tauri/diagnostics-bridge/ios/Sources/DevHudDiagnosticsPlugin/DevHudDiagnosticsPlugin.swift",
   ),
   read("src-tauri/src/local_log.rs"),
+  read("src-tauri/src/realqa_capture/macos.rs"),
   read("src-tauri/capabilities/mobile-main.json"),
   read("src-tauri/src/lib.rs"),
   read("package.json"),
@@ -49,6 +51,14 @@ requireCondition(
     ) &&
     !cargoManifest.includes("tracing-subscriber"),
   "diagnostics must use the typed tracing facade and UUID v7 without a permissive subscriber",
+);
+requireCondition(
+  !/(?:tracing::|localizedDescription|NSLog)/u.test(
+    macosCaptureSource,
+  ) &&
+    macosCaptureSource.includes("safe_metadata") &&
+    macosCaptureSource.includes("looks_like_path"),
+  "macOS capture must retain value-free diagnostics and redact path-like native metadata",
 );
 requireCondition(
   diagnosticsSource.includes("#[serde(rename_all = \"camelCase\", deny_unknown_fields)]") &&

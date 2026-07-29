@@ -842,6 +842,12 @@ mod tests {
         );
         assert_eq!(metadata.process_name, Some("process".to_owned()));
         assert_eq!(metadata.title, Some("title".to_owned()));
+        let path_metadata = WindowMetadata::bounded(
+            Some("/usr/bin/editor".to_owned()),
+            Some("docs/foo".to_owned()),
+        );
+        assert_eq!(path_metadata.process_name, None);
+        assert_eq!(path_metadata.title, None);
     }
 
     #[test]

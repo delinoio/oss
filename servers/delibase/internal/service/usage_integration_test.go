@@ -1179,11 +1179,8 @@ func TestPostgreSQLExpirationContinuesAfterOrganizationFailure(t *testing.T) {
 						MaximumCostMicros: 2,
 						HeldCreditMicros:  2,
 						HeldOverageMicros: 0,
-						ClientReference: fmt.Sprintf(
-							"poison-expiration-%03d-%s",
-							index,
-							poisonFixture.organizationID,
-						),
+						// A UUID with a numeric tail can resemble a card number.
+						ClientReference:            fmt.Sprintf("poison-expiration-%03d", index),
 						ReservationTtlSeconds:      meter.ReservationTtlSeconds,
 						UserActorReferenceSnapshot: string(actor),
 					},
@@ -2380,6 +2377,8 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 	ownerContext := usageContext(ctx, fixture.serviceClient, fixture.ownerSubject)
 	memberContext := usageContext(ctx, fixture.serviceClient, fixture.memberSubject)
 
+	// UUID numeric tails can match the credential redactor's card-number pattern
+	// before the authorization checks under test are reached.
 	_, err := fixture.usage.ReserveUsage(
 		memberContext,
 		usageReserveRequest(
@@ -2387,8 +2386,8 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 			fixture.privateTeamID,
 			fixture.meterID,
 			1,
-			"unauthorized-team-"+fixture.organizationID.String(),
-			"unauthorized-team-"+fixture.organizationID.String(),
+			"authorization-team-denied",
+			"authorization-team-denied",
 		),
 	)
 	requireConnectReason(
@@ -2404,8 +2403,8 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 			fixture.generalTeamID,
 			uuidv7.MustNew(),
 			1,
-			"unauthorized-meter-"+fixture.organizationID.String(),
-			"unauthorized-meter-"+fixture.organizationID.String(),
+			"authorization-meter-denied",
+			"authorization-meter-denied",
 		),
 	)
 	requireConnectReason(
@@ -2421,8 +2420,8 @@ func TestPostgreSQLUsageAuthorizationExpirationAndDeletion(t *testing.T) {
 			fixture.generalTeamID,
 			fixture.meterID,
 			1,
-			"unauthorized-service-"+fixture.organizationID.String(),
-			"unauthorized-service-"+fixture.organizationID.String(),
+			"authorization-service-denied",
+			"authorization-service-denied",
 		),
 	)
 	requireConnectReason(
