@@ -2641,6 +2641,9 @@ fn reset_dev_hud(
     let shortcut_state = app.state::<Mutex<shortcut::ShortcutState>>();
     let autostart_state = app.state::<autostart::AutostartState>();
     let startup_diagnostics = app.state::<Mutex<StartupDiagnostics>>();
+    let _realqa_draft_lifecycle = realqa_drafts
+        .lifecycle_guard()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     persistence
         .preflight_reset()
         .map_err(reset_preflight_failure)?;
@@ -3000,6 +3003,7 @@ fn realqa_list_local_drafts(
     auth_state: State<'_, auth_native::NativeAuthState>,
     drafts: State<'_, realqa_drafts::RealQaDraftState>,
 ) -> Result<Vec<realqa_drafts::DraftSummary>, realqa_drafts::DraftError> {
+    let _lifecycle = drafts.lifecycle_guard()?;
     drafts.list(&realqa_draft_access(&auth_state)?)
 }
 
@@ -3012,9 +3016,11 @@ async fn realqa_save_local_draft(
     request: realqa_drafts::SaveDraftRequest,
     app: AppHandle<ActiveRuntime>,
 ) -> Result<realqa_drafts::DraftSummary, realqa_drafts::DraftError> {
-    let access = realqa_draft_access(&app.state::<auth_native::NativeAuthState>())?;
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<realqa_drafts::RealQaDraftState>().save(
+        let drafts = app.state::<realqa_drafts::RealQaDraftState>();
+        let _lifecycle = drafts.lifecycle_guard()?;
+        let access = realqa_draft_access(&app.state::<auth_native::NativeAuthState>())?;
+        drafts.save(
             &access,
             &app.state::<realqa_capture::ComposerCore>(),
             request,
@@ -3034,9 +3040,11 @@ async fn realqa_load_local_draft(
     composer_session_id: String,
     app: AppHandle<ActiveRuntime>,
 ) -> Result<realqa_drafts::LoadedDraft, realqa_drafts::DraftError> {
-    let access = realqa_draft_access(&app.state::<auth_native::NativeAuthState>())?;
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<realqa_drafts::RealQaDraftState>().load(
+        let drafts = app.state::<realqa_drafts::RealQaDraftState>();
+        let _lifecycle = drafts.lifecycle_guard()?;
+        let access = realqa_draft_access(&app.state::<auth_native::NativeAuthState>())?;
+        drafts.load(
             &access,
             &app.state::<realqa_capture::ComposerCore>(),
             &draft_id,
@@ -3058,6 +3066,7 @@ fn realqa_delete_local_draft(
     auth_state: State<'_, auth_native::NativeAuthState>,
     drafts: State<'_, realqa_drafts::RealQaDraftState>,
 ) -> Result<(), realqa_drafts::DraftError> {
+    let _lifecycle = drafts.lifecycle_guard()?;
     drafts.delete(
         &realqa_draft_access(&auth_state)?,
         &draft_id,
@@ -3076,6 +3085,7 @@ fn realqa_assert_local_draft_submission_allowed(
     auth_state: State<'_, auth_native::NativeAuthState>,
     drafts: State<'_, realqa_drafts::RealQaDraftState>,
 ) -> Result<(), realqa_drafts::DraftError> {
+    let _lifecycle = drafts.lifecycle_guard()?;
     drafts.assert_submission_allowed(
         &realqa_draft_access(&auth_state)?,
         &draft_id,
@@ -3184,6 +3194,10 @@ fn logout_authentication(
     app: AppHandle<ActiveRuntime>,
     state: State<'_, auth_native::NativeAuthState>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    let drafts = app.state::<realqa_drafts::RealQaDraftState>();
+    let _lifecycle = drafts
+        .lifecycle_guard()
+        .map_err(|_| auth::AuthError::SecureVaultUnavailable)?;
     if app.state::<realqa_capture::ComposerCore>().reset().is_err() {
         diagnostics::emit_warning(
             diagnostics::DiagnosticEventId::RealqaComposerResetOutcome,

@@ -1,5 +1,7 @@
 import type { RestorableDraftUrl } from "./contracts";
 
+const MAX_URL_BYTES = 8_192;
+
 export type CapturedUrlResult =
   | { readonly ok: true; readonly url: RestorableDraftUrl }
   | {
@@ -54,6 +56,13 @@ function isLocalOrPrivateHost(hostname: string): boolean {
   );
 }
 
+function retainBoundedUrlPart(value: string): string | null {
+  return value !== "" &&
+    new TextEncoder().encode(value).byteLength <= MAX_URL_BYTES
+    ? value
+    : null;
+}
+
 export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
   let parsed: URL;
   try {
@@ -67,8 +76,8 @@ export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
   if (parsed.username !== "" || parsed.password !== "") {
     return { ok: false, reason: "credentials-forbidden" };
   }
-  const strippedQuery = parsed.search === "" ? null : parsed.search;
-  const strippedFragment = parsed.hash === "" ? null : parsed.hash;
+  const strippedQuery = retainBoundedUrlPart(parsed.search);
+  const strippedFragment = retainBoundedUrlPart(parsed.hash);
   parsed.search = "";
   parsed.hash = "";
   return {

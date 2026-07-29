@@ -81,6 +81,22 @@ describe("RealQA URL capture boundary", () => {
       url: { value: "https://example.com/a" },
     });
   });
+
+  it("drops stripped URL parts above the native UTF-8 byte limit", () => {
+    const result = sanitizeCapturedUrl(
+      `https://example.com/a?${"é".repeat(4_096)}#${"x".repeat(8_193)}`,
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      url: {
+        value: "https://example.com/a",
+        strippedQuery: null,
+        strippedFragment: null,
+        warning: null,
+      },
+    });
+  });
 });
 
 describe("RealQA synchronized presets and ordered desktop rules", () => {

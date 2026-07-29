@@ -478,6 +478,8 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         let retained_features = retained.refresh_tokens.keys().copied().collect::<Vec<_>>();
         let mut grant_error = None;
         let mut transport_unavailable = false;
+        let mut restored_session = None;
+        let mut reauthenticated_features = BTreeSet::new();
         for feature in retained_features {
             let refresh_token = retained
                 .refresh_tokens
@@ -560,11 +562,15 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 retained.refresh_tokens.insert(feature, rotated_refresh);
                 self.vault.replace(&retained)?;
             }
+            reauthenticated_features.insert(feature);
+            restored_session.get_or_insert((subject, tokens.access_token, tokens.id_token));
+        }
+        if let Some((subject, access_token, id_token)) = restored_session {
             self.state = SessionState::SignedIn {
                 subject,
-                access_token: tokens.access_token,
-                id_token: tokens.id_token,
-                reauthenticated_features: [feature].into_iter().collect(),
+                access_token,
+                id_token,
+                reauthenticated_features,
             };
             return Ok(self.snapshot());
         }
@@ -2646,7 +2652,7 @@ mod tests {
     }
 
     #[test]
-    fn deck_rehydration_does_not_unlock_realqa_drafts() {
+    fn retained_deck_and_realqa_grants_are_both_rehydrated() {
         let key = new_device_session_key("account-a").unwrap();
         let vault = FakeVault {
             retained: Some((
@@ -2662,15 +2668,28 @@ mod tests {
         };
         let mut transport = FakeTransport::default();
         queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::RealQa, None, None);
         let mut prior = manager(transport, vault);
 
         assert!(matches!(
             prior.restore_at(Connectivity::Online, NOW),
             Ok(SessionSnapshot::SignedIn { .. })
         ));
+        assert!(prior.realqa_draft_access().unwrap().online_reauthenticated);
         assert_eq!(
-            prior.realqa_draft_access(),
-            Err(AuthError::ReauthenticationRequired)
+            prior.transport.refresh_requests,
+            [
+                (DECK_AUDIENCE.to_owned(), vec!["deck:access".to_owned()]),
+                (
+                    DELIBASE_AUDIENCE.to_owned(),
+                    vec!["delibase:deck:forward".to_owned()]
+                ),
+                (REALQA_AUDIENCE.to_owned(), vec!["realqa:access".to_owned()]),
+                (
+                    DELIBASE_AUDIENCE.to_owned(),
+                    vec!["delibase:realqa:forward".to_owned()]
+                ),
+            ]
         );
     }
 

@@ -10,7 +10,7 @@ use std::{
     fs,
     io::{self, Read, Write},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -358,6 +358,7 @@ impl DraftKeyVault for PlatformDraftKeyVault {
 pub(crate) struct RealQaDraftState {
     directory: Option<PathBuf>,
     vault: Mutex<Box<dyn DraftKeyVault>>,
+    lifecycle_lock: Mutex<()>,
     write_lock: Mutex<()>,
 }
 
@@ -368,6 +369,7 @@ impl RealQaDraftState {
         Ok(Self {
             directory: Some(directory),
             vault: Mutex::new(Box::<PlatformDraftKeyVault>::default()),
+            lifecycle_lock: Mutex::new(()),
             write_lock: Mutex::new(()),
         })
     }
@@ -376,8 +378,15 @@ impl RealQaDraftState {
         Self {
             directory: None,
             vault: Mutex::new(Box::<PlatformDraftKeyVault>::default()),
+            lifecycle_lock: Mutex::new(()),
             write_lock: Mutex::new(()),
         }
+    }
+
+    pub(crate) fn lifecycle_guard(&self) -> Result<MutexGuard<'_, ()>, DraftError> {
+        self.lifecycle_lock
+            .lock()
+            .map_err(|_| DraftError::StorageUnavailable)
     }
 
     fn account_directory(&self, binding: &str) -> Result<PathBuf, DraftError> {
@@ -604,11 +613,20 @@ impl RealQaDraftState {
             dom,
             images: stored_images,
         } = content;
-        let composer_session_id = ComposerSessionId(composer_session_id.to_owned());
-        let restored_images = (|| {
-            let mut images = Vec::with_capacity(stored_images.len());
-            for image in stored_images {
+        let prepared_images = stored_images
+            .into_iter()
+            .map(|image| {
                 let operations = decode_operations(&image.operations_json)?;
+                Ok((image, operations))
+            })
+            .collect::<Result<Vec<_>, DraftError>>()?;
+        let composer_session_id = ComposerSessionId(composer_session_id.to_owned());
+        composer
+            .reset_session(&composer_session_id)
+            .map_err(|_| DraftError::StorageUnavailable)?;
+        let restored_images = (|| {
+            let mut images = Vec::with_capacity(prepared_images.len());
+            for (image, operations) in prepared_images {
                 let restored = composer
                     .restore_original_from_draft(
                         composer_session_id.clone(),
@@ -1376,6 +1394,7 @@ mod tests {
         RealQaDraftState {
             directory: Some(directory),
             vault: Mutex::new(Box::<MemoryVault>::default()),
+            lifecycle_lock: Mutex::new(()),
             write_lock: Mutex::new(()),
         }
     }
@@ -1589,6 +1608,53 @@ mod tests {
                     &ComposerSessionId("load-session".to_owned()),
                     &ComposerImageId("image-1".to_owned()),
                     1,
+                    &[],
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn successful_load_replaces_the_target_composer_session() {
+        let state = state("replace-target-session");
+        let source_composer = ComposerCore::default();
+        let draft_id = Uuid::now_v7().to_string();
+        let account = access("account-a", true);
+        state
+            .save(
+                &account,
+                &source_composer,
+                request(&source_composer, &draft_id),
+            )
+            .unwrap();
+
+        let restored_composer = ComposerCore::default();
+        let stale = restored_composer
+            .restore_original_from_draft(
+                ComposerSessionId("load-session".to_owned()),
+                ComposerImageId("stale-image".to_owned()),
+                encode_image(
+                    &DecodedImage {
+                        width: 1,
+                        height: 1,
+                        rgba: vec![9, 8, 7, 255],
+                    },
+                    ImageMediaType::Png,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        state
+            .load(&account, &restored_composer, &draft_id, "load-session")
+            .unwrap();
+
+        assert!(
+            restored_composer
+                .clone_validated_original_for_draft(
+                    &ComposerSessionId("load-session".to_owned()),
+                    &ComposerImageId("stale-image".to_owned()),
+                    stale.source_revision,
                     &[],
                 )
                 .is_err()
