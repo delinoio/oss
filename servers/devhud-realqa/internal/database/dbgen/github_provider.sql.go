@@ -592,6 +592,11 @@ FROM realqa_github_user_authorizations AS caller_authorization
 JOIN realqa_github_connections AS connection
   ON connection.id = caller_authorization.connection_id
  AND connection.state = 'connected'
+JOIN realqa_owner_bindings AS caller_access
+  ON caller_access.account_id = caller_authorization.account_id
+ AND caller_access.owner_kind = connection.owner_kind
+ AND caller_access.owner_id = connection.owner_id
+ AND caller_access.role = 'member'
 JOIN realqa_github_installations AS installation
   ON installation.connection_id = connection.id
  AND installation.state = 'active'
@@ -643,6 +648,11 @@ FROM realqa_github_user_authorizations AS caller_authorization
 JOIN realqa_github_connections AS connection
   ON connection.id = caller_authorization.connection_id
  AND connection.state = 'connected'
+JOIN realqa_owner_bindings AS caller_access
+  ON caller_access.account_id = caller_authorization.account_id
+ AND caller_access.owner_kind = connection.owner_kind
+ AND caller_access.owner_id = connection.owner_id
+ AND caller_access.role = 'member'
 JOIN realqa_github_installations AS installation
   ON installation.connection_id = connection.id
  AND installation.state = 'active'

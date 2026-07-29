@@ -3,6 +3,26 @@ ALTER TABLE realqa_github_connections
     ADD COLUMN connected_by_account_id uuid
         REFERENCES realqa_identities(account_id) ON DELETE SET NULL;
 
+UPDATE realqa_github_connections AS connection
+SET connected_by_account_id = connection.owner_id
+FROM realqa_identities AS identity
+WHERE connection.state = 'connected'
+  AND connection.owner_kind = 'personal'
+  AND identity.account_id = connection.owner_id
+  AND identity.deleted_at IS NULL;
+
+UPDATE realqa_github_connections
+SET state = 'disconnected',
+    credential_ciphertext = NULL,
+    wrapped_data_key = NULL,
+    key_id = NULL,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE state = 'connected'
+  AND connected_by_account_id IS NULL;
+
 ALTER TABLE realqa_github_connections
     ADD CONSTRAINT realqa_github_connections_user_id_valid
     CHECK (github_user_id IS NULL OR github_user_id > 0);

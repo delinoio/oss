@@ -325,6 +325,63 @@ body:
 	}
 }
 
+func TestIssueFormRejectsStringBooleans(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		field string
+	}{
+		{
+			name: "field required",
+			field: `
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: "true"
+`,
+		},
+		{
+			name: "dropdown multiple",
+			field: `
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: Browsers
+      multiple: "false"
+      options:
+        - Firefox
+`,
+		},
+		{
+			name: "checkbox option required",
+			field: `
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Terms
+      options:
+        - label: I agree
+          required: "true"
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			contents := []byte(`
+name: Bug report
+description: Report a bug
+body:` + test.field)
+			if _, err := ParseIssueForm(
+				".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+			); err == nil || !strings.Contains(err.Error(), "boolean value is invalid") {
+				t.Fatalf("expected string boolean rejection, got %v", err)
+			}
+		})
+	}
+}
+
 func TestIssueFormRejectsDuplicateDropdownOptions(t *testing.T) {
 	t.Parallel()
 	contents := []byte(`

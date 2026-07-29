@@ -197,6 +197,9 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_identities (account_id, subject_digest)
 		VALUES ($1, decode(repeat('02', 32), 'hex'));
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($1, 'organization', $6, 'member');
 		INSERT INTO realqa_github_user_authorizations (
 			connection_id, account_id, state, github_user_id, github_login,
 			credential_ciphertext, wrapped_data_key, key_id, connected_at
@@ -205,9 +208,9 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 		INSERT INTO realqa_repository_access (
 			installation_id, account_id, repository_id, repository_owner,
 			repository_name, issues_enabled, can_submit
-		) VALUES ($6, $1, '7003', 'fixture-org', 'fixture-repository', true, true)
+		) VALUES ($7, $1, '7003', 'fixture-org', 'fixture-repository', true, true)
 	`, memberAccountID, connectionID, encrypted.Ciphertext,
-		encrypted.WrappedDataKey, encrypted.KeyID, installationID); err != nil {
+		encrypted.WrappedDataKey, encrypted.KeyID, ownerID, installationID); err != nil {
 		t.Fatal(err)
 	}
 	now := func() time.Time {
@@ -238,6 +241,26 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 		ctx, uuidv7.MustNew(), installationID,
 	); !errors.Is(err, ErrCallerAuthorizationUnavailable) {
 		t.Fatalf("unbound member used another credential: %v", err)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'admin'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2;
+		UPDATE realqa_github_connections
+		SET connected_by_account_id = $1
+		WHERE id = $3
+	`, memberAccountID, ownerID, connectionID); err != nil {
+		t.Fatal(err)
+	}
+	providerID, token, err = adapter.userToken(ctx, memberAccountID, installationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providerID != 9001 ||
+		token.value != "ghu_fixture_old_access_token_123456" {
+		t.Fatalf("promoted admin credential provider=%d token=%v", providerID, token)
 	}
 	webhookStore := &postgresWebhookStore{queries: store.Queries()}
 	if err = webhookStore.DisconnectGitHubUser(ctx, 7002); err != nil {
