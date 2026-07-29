@@ -793,7 +793,11 @@ WHERE submission.owner_kind = $1
   AND submission.id > $3
   AND (
       submission.created_by_account_id = $4
-      OR EXISTS (
+      OR (
+        submission.state IN (
+            'submitted', 'storage_billing_grace', 'assets_deleted'
+        )
+        AND EXISTS (
           SELECT 1
           FROM realqa_destinations AS destination
           JOIN realqa_github_installations AS installation
@@ -814,6 +818,7 @@ WHERE submission.owner_kind = $1
           WHERE destination.id = submission.destination_id
             AND destination.owner_kind = submission.owner_kind
             AND destination.owner_id = submission.owner_id
+        )
       )
   )
 ORDER BY submission.id
@@ -1647,6 +1652,7 @@ SET verified_encoded_bytes = $1,
     revision = revision + 1,
     updated_at = transaction_timestamp()
 WHERE submission.id = $2
+  AND submission.state IN ('draft', 'uploading', 'ready')
 RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
 `
 

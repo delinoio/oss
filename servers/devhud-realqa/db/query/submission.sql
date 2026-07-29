@@ -61,7 +61,11 @@ WHERE submission.owner_kind = sqlc.arg(owner_kind)
   AND submission.id > sqlc.arg(after_id)
   AND (
       submission.created_by_account_id = sqlc.arg(account_id)
-      OR EXISTS (
+      OR (
+        submission.state IN (
+            'submitted', 'storage_billing_grace', 'assets_deleted'
+        )
+        AND EXISTS (
           SELECT 1
           FROM realqa_destinations AS destination
           JOIN realqa_github_installations AS installation
@@ -82,6 +86,7 @@ WHERE submission.owner_kind = sqlc.arg(owner_kind)
           WHERE destination.id = submission.destination_id
             AND destination.owner_kind = submission.owner_kind
             AND destination.owner_id = submission.owner_id
+        )
       )
   )
 ORDER BY submission.id
@@ -203,6 +208,7 @@ SET verified_encoded_bytes = sqlc.arg(verified_encoded_bytes),
     revision = revision + 1,
     updated_at = transaction_timestamp()
 WHERE submission.id = sqlc.arg(submission_record_id)
+  AND submission.state IN ('draft', 'uploading', 'ready')
 RETURNING *;
 
 -- name: PromoteAsset :one

@@ -513,6 +513,32 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("repository-inaccessible delete code = %v",
 			connect.CodeOf(err))
 	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id,
+			repository_owner, repository_name, issues_enabled, can_submit
+		) VALUES ($1, $2, 'repo-org', 'delinoio', 'private', true, true)
+	`, organizationInstallationID, otherAccountID); err != nil {
+		t.Fatal(err)
+	}
+	otherList, err = submissionService.ListSubmissions(
+		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList.Msg.Submissions) != 0 {
+		t.Fatalf("non-creator open submissions = %#v",
+			otherList.Msg.Submissions)
+	}
+	_, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-creator open submission code = %v", connect.CodeOf(err))
+	}
 	uploadRequest := &realqav1.CreateImageUploadRequest{
 		SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
 		AssetId:      createdSubmission.Msg.Submission.Assets[0].AssetId,
@@ -521,6 +547,11 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		Idempotency: &realqav1.IdempotencyKey{
 			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
 		},
+	}
+	_, err = submissionService.CreateImageUpload(
+		otherAuthCtx, connect.NewRequest(uploadRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-creator open upload code = %v", connect.CodeOf(err))
 	}
 	upload, err := submissionService.CreateImageUpload(
 		authCtx, connect.NewRequest(uploadRequest))
@@ -887,6 +918,74 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err = submissionService.PromoteSubmittedAssets(
 		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
 		t.Fatalf("resumed promotion: %v", err)
+	}
+	otherList, err = submissionService.ListSubmissions(
+		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList.Msg.Submissions) != 1 ||
+		otherList.Msg.Submissions[0].SubmissionId.Value != submissionID.String() {
+		t.Fatalf("non-creator retained submissions = %#v",
+			otherList.Msg.Submissions)
+	}
+	if _, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		})); err != nil {
+		t.Fatalf("non-creator retained submission: %v", err)
+	}
+	promotedAsset, err := store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID:           toPGUUID(promotionAssetID),
+			SubmissionID: toPGUUID(submissionID),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminalFinalize := proto.Clone(
+		finalizeRequest).(*realqav1.FinalizeImageUploadRequest)
+	terminalFinalize.ExpectedAssetRevision = &realqav1.Revision{
+		Value: promotedAsset.Revision,
+	}
+	terminalFinalize.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	if _, err = submissionService.FinalizeImageUpload(
+		authCtx, connect.NewRequest(terminalFinalize),
+	); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("finalize submitted session code = %v", connect.CodeOf(err))
+	}
+	terminalUpload := proto.Clone(
+		uploadRequest).(*realqav1.CreateImageUploadRequest)
+	terminalUpload.ExpectedAssetRevision = &realqav1.Revision{
+		Value: promotedAsset.Revision,
+	}
+	terminalUpload.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	if _, err = submissionService.CreateImageUpload(
+		authCtx, connect.NewRequest(terminalUpload),
+	); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("upload submitted session code = %v", connect.CodeOf(err))
+	}
+	if _, err = store.Queries().UpdateSubmissionVerifiedBytes(
+		ctx, dbgen.UpdateSubmissionVerifiedBytesParams{
+			VerifiedEncodedBytes: promotedAsset.EncodedBytes,
+			SubmissionRecordID:   toPGUUID(submissionID),
+		}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("unguarded submitted refresh = %v", err)
+	}
+	var submittedState string
+	if err = connection.QueryRow(ctx, `
+		SELECT state FROM realqa_submissions WHERE id = $1
+	`, submissionID).Scan(&submittedState); err != nil {
+		t.Fatal(err)
+	}
+	if submittedState != "submitted" {
+		t.Fatalf("finalize reopened submission as %q", submittedState)
 	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_submissions

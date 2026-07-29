@@ -57,6 +57,9 @@ func (service *Submission) CreateImageUpload(
 		ctx, actor, idempotencyID, requestDigest, submissionID, assetID); ok {
 		return replay, replayErr
 	}
+	if !isOpenSubmissionState(submission.State) {
+		return nil, retentionStateConflict()
+	}
 	now := service.dependencies.Clock.Now().UTC()
 	if !now.Before(submission.UploadDeadline.Time) {
 		return nil, rqerr.New(connect.CodeDeadlineExceeded,
@@ -100,6 +103,14 @@ func (service *Submission) CreateImageUpload(
 				return errIdempotencyReplay
 			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
 				return lookupErr
+			}
+			lockedSubmission, lockErr := queries.LockSubmissionRecord(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
+			if !isOpenSubmissionState(lockedSubmission.State) {
+				return retentionStateConflict()
 			}
 			locked, lockErr := queries.LockAssetRecord(
 				ctx, dbgen.LockAssetRecordParams{
@@ -350,6 +361,9 @@ func (service *Submission) FinalizeImageUpload(
 		ctx, actor, idempotencyID, requestDigest, submissionID, assetID); ok {
 		return replay, replayErr
 	}
+	if !isOpenSubmissionState(submission.State) {
+		return nil, retentionStateConflict()
+	}
 	if service.dependencies.Objects == nil {
 		return nil, storageUnavailable()
 	}
@@ -393,9 +407,13 @@ func (service *Submission) FinalizeImageUpload(
 		(object.Size >= 0 && object.Size != asset.DeclaredEncodedBytes) {
 		rejectErr := service.dependencies.Store.WithinTransaction(
 			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-				if _, lockErr := queries.LockSubmissionRecord(
-					ctx, toPGUUID(submissionID)); lockErr != nil {
+				locked, lockErr := queries.LockSubmissionRecord(
+					ctx, toPGUUID(submissionID))
+				if lockErr != nil {
 					return lockErr
+				}
+				if !isOpenSubmissionState(locked.State) {
+					return retentionStateConflict()
 				}
 				rejected, markErr := queries.MarkAssetRejected(
 					ctx, dbgen.MarkAssetRejectedParams{
@@ -436,9 +454,13 @@ func (service *Submission) FinalizeImageUpload(
 			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
 				return lookupErr
 			}
-			if _, lockErr := queries.LockSubmissionRecord(
-				ctx, toPGUUID(submissionID)); lockErr != nil {
+			locked, lockErr := queries.LockSubmissionRecord(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
 				return lockErr
+			}
+			if !isOpenSubmissionState(locked.State) {
+				return retentionStateConflict()
 			}
 			if _, markErr := queries.MarkAssetVerifying(
 				ctx, dbgen.MarkAssetVerifyingParams{
@@ -1060,9 +1082,8 @@ func (service *Submission) PromoteSubmittedAssets(
 			ctx, dbgen.GetAssetRecordParams{
 				ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
 			})
-		if err != nil || asset.UploadState != "verified" {
-			return invalid(
-				realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT)
+		if err = validatePromotionCandidate(asset, err); err != nil {
+			return err
 		}
 		if asset.State == "public_retained" && asset.PublicID.Valid {
 			continue
@@ -1106,6 +1127,18 @@ func (service *Submission) PromoteSubmittedAssets(
 			})
 		if err != nil {
 			cleanupCtx := context.WithoutCancel(ctx)
+			current, lookupErr := service.dependencies.Store.Queries().
+				GetAssetRecord(cleanupCtx, dbgen.GetAssetRecordParams{
+					ID:           toPGUUID(assetID),
+					SubmissionID: toPGUUID(submissionID),
+				})
+			if lookupErr == nil && assetOwnsPublicObject(current, publicID) {
+				service.drainObjectDeletionsBestEffort(cleanupCtx)
+				continue
+			}
+			if lookupErr != nil && !errors.Is(lookupErr, pgx.ErrNoRows) {
+				return storageUnavailable()
+			}
 			if cleanupErr := service.dependencies.Objects.Delete(
 				cleanupCtx, publicKey); cleanupErr != nil {
 				enqueueErr := service.dependencies.Store.Queries().
@@ -1343,6 +1376,10 @@ func (service *Submission) authorizeSubmissionRequest(
 	if creatorID == actor.accountID {
 		return actor, submissionID, submission, scope, nil
 	}
+	if !isRetainedSubmissionState(submission.State) {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
+			permissionDenied()
+	}
 	if !submission.DestinationID.Valid {
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
 			permissionDenied()
@@ -1375,6 +1412,48 @@ func (service *Submission) authorizeSubmissionRequest(
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
 	}
 	return actor, submissionID, submission, scope, nil
+}
+
+func isOpenSubmissionState(state string) bool {
+	switch state {
+	case "draft", "uploading", "ready":
+		return true
+	default:
+		return false
+	}
+}
+
+func isRetainedSubmissionState(state string) bool {
+	switch state {
+	case "submitted", "storage_billing_grace", "assets_deleted":
+		return true
+	default:
+		return false
+	}
+}
+
+func retentionStateConflict() error {
+	return invalid(realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT)
+}
+
+func assetOwnsPublicObject(asset dbgen.RealqaAsset, publicID string) bool {
+	return asset.UploadState == "verified" &&
+		asset.State == "public_retained" &&
+		asset.PublicID.Valid &&
+		asset.PublicID.String == publicID
+}
+
+func validatePromotionCandidate(asset dbgen.RealqaAsset, lookupErr error) error {
+	if errors.Is(lookupErr, pgx.ErrNoRows) {
+		return retentionStateConflict()
+	}
+	if lookupErr != nil {
+		return storageUnavailable()
+	}
+	if asset.UploadState != "verified" {
+		return retentionStateConflict()
+	}
+	return nil
 }
 
 func (service *Submission) loadSubmission(
