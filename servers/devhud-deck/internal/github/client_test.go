@@ -277,6 +277,29 @@ func TestMutationRejectionsAndLimits(t *testing.T) {
 	}
 }
 
+func TestGraphQLErrorMapsHTTP200RateLimitHeaders(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1_800_000_000, 0)
+	response := jsonResponse(http.StatusOK,
+		`{"errors":[{"type":"RATE_LIMITED"}]}`)
+	response.Header.Set("X-RateLimit-Remaining", "0")
+	response.Header.Set("X-RateLimit-Reset",
+		fmt.Sprint(now.Add(17*time.Second).Unix()))
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return response, nil
+		})})
+	client.now = func() time.Time { return now }
+
+	err := client.graphQL(context.Background(),
+		Credential{AccessToken: "token"}, "mutation { fixture }", nil)
+	var rateLimit *RateLimitError
+	if !errors.As(err, &rateLimit) ||
+		rateLimit.RetryAfter != 17*time.Second {
+		t.Fatalf("GraphQL provider rate limit = %T %#v", err, err)
+	}
+}
+
 func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 	t.Parallel()
 	var paths []string

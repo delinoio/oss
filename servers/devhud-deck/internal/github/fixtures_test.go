@@ -108,8 +108,8 @@ func TestFixtureManifestHasOnlyDeckPermissionsAndLifecycleEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectedPermissions := map[string]string{
-		"metadata": "read", "contents": "write", "pull_requests": "write",
-		"checks": "read", "members": "read",
+		"metadata": "read", "administration": "read", "contents": "write",
+		"pull_requests": "write", "checks": "read", "members": "read",
 	}
 	expectedEvents := []string{"installation", "installation_repositories"}
 	if manifest.Public ||

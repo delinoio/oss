@@ -291,12 +291,16 @@ func (client *Client) graphQL(
 			Type string `json:"type"`
 		} `json:"errors"`
 	}
-	if _, err := client.do(ctx, credential, http.MethodPost, GraphQLPath,
-		map[string]any{"query": query, "variables": variables}, &response); err != nil {
+	headers, err := client.do(ctx, credential, http.MethodPost, GraphQLPath,
+		map[string]any{"query": query, "variables": variables}, &response)
+	if err != nil {
 		return err
 	}
 	if len(response.Errors) == 0 {
 		return nil
+	}
+	if providerRateLimited(headers) {
+		return &RateLimitError{RetryAfter: retryDuration(headers, client.now())}
 	}
 	for _, failure := range response.Errors {
 		switch strings.ToUpper(failure.Type) {

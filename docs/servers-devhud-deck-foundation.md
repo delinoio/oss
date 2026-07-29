@@ -59,8 +59,9 @@
 - Only GitHub.com is accepted. GHES, GitHub Enterprise Server, custom hosts, and on-premises connectors fail closed.
 - Permissions are limited to repository metadata, pull requests, checks, labels,
   assignees, requested reviewers, draft state, merge state, supported
-  mutations, contents write only for merge/native auto-merge, and member/team
-  read only when resolving team reviewers.
+  mutations, contents write only for merge/native auto-merge, organization
+  members read for team-reviewer flows, and repository administration read
+  only to enumerate teams with access to the repository.
 - One installation binds to exactly one DeliDev personal or organization owner scope.
 - Organization Owners/Admins may install, replace, or reconfigure that
   owner-scoped installation. An ordinary organization member may start only
@@ -86,12 +87,14 @@
   state mutation and cannot refresh a view.
 - The source-controlled test-only manifest is
   `servers/devhud-deck/testdata/github-app/manifest.json`. It requests only
-  metadata read, contents write, pull-request write, checks read, and members
-  read. Contents write is used only for merge/native auto-merge. The manifest
-  explicitly subscribes only to installation lifecycle events; GitHub's
-  mandatory user-authorization revocation webhook remains handled. The App is
-  private and explicitly not a production registration. Member/team APIs are
-  invoked only by an explicit team-reviewer candidate/action path.
+  metadata read, administration read, contents write, pull-request write,
+  checks read, and members read. Administration read is used only to enumerate
+  repository teams for team-reviewer candidates; contents write is used only
+  for merge/native auto-merge. The manifest explicitly subscribes only to
+  installation lifecycle events; GitHub's mandatory user-authorization
+  revocation webhook remains handled. The App is private and explicitly not a
+  production registration. Member/team APIs are invoked only by an explicit
+  team-reviewer candidate/action path.
 - Disconnect immediately deletes provider tokens, cached PR results, notification state, and widget snapshots while retaining view definitions as disconnected records.
 - GitHub App user authorization credentials retained for an active connection use application-level envelope encryption before PostgreSQL persistence: a fresh data-encryption key protects each credential record, only ciphertext plus wrapped key and versioned managed environment-scoped key ID are stored or backed up, and decrypt authority is limited to the provider adapter for the current authorized operation. Rotation must support decrypting old key versions and transactional rewrapping to the active key without exposing plaintext; database/storage encryption alone is insufficient. Plaintext credentials and unwrapped data keys are memory-only for the bounded provider call and never enter logs, traces, errors, audits, caches, or backups.
 - Credentials are keyed by DeliDev account and connection. An organization

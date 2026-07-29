@@ -16,6 +16,7 @@
   "setup_on_update": true,
   "default_permissions": {
     "metadata": "read",
+    "administration": "read",
     "contents": "write",
     "pull_requests": "write",
     "checks": "read",

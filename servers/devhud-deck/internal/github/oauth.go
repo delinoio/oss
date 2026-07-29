@@ -214,9 +214,7 @@ func (oauth *OAuth) exchange(
 func mapStatus(status int, headers http.Header, now time.Time) error {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
-		if status == http.StatusForbidden &&
-			(headers.Get("Retry-After") != "" ||
-				headers.Get("X-RateLimit-Remaining") == "0") {
+		if status == http.StatusForbidden && providerRateLimited(headers) {
 			return &RateLimitError{RetryAfter: retryDuration(headers, now)}
 		}
 		return ErrPermissionDenied
@@ -228,6 +226,11 @@ func mapStatus(status int, headers http.Header, now time.Time) error {
 	default:
 		return ErrProvider
 	}
+}
+
+func providerRateLimited(headers http.Header) bool {
+	return headers.Get("Retry-After") != "" ||
+		headers.Get("X-RateLimit-Remaining") == "0"
 }
 
 type RateLimitError struct {
