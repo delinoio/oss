@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	"github.com/delinoio/oss/servers/internal/auth"
+	"github.com/delinoio/oss/servers/internal/redact"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
@@ -45,6 +46,17 @@ type usageFixture struct {
 	parentTeamID   uuid.UUID
 	childTeamID    uuid.UUID
 	privateTeamID  uuid.UUID
+}
+
+func newUsageFixtureOrganizationID() uuid.UUID {
+	for {
+		organizationID := uuidv7.MustNew()
+		// Test client references and idempotency keys use this UUID as their
+		// uniqueness suffix, so avoid UUIDs that resemble card numbers.
+		if value := organizationID.String(); redact.Text(value) == value {
+			return organizationID
+		}
+	}
 }
 
 func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) {
@@ -2829,7 +2841,7 @@ func newUsageFixture(
 	}
 	fixture := usageFixture{
 		store:          store,
-		organizationID: uuidv7.MustNew(),
+		organizationID: newUsageFixtureOrganizationID(),
 		ownerID:        uuidv7.MustNew(),
 		memberID:       uuidv7.MustNew(),
 		serviceID:      uuidv7.MustNew(),
