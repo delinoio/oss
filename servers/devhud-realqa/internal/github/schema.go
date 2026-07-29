@@ -329,7 +329,6 @@ func RenderIssueForm(form IssueForm, answers []FormAnswer) (string, error) {
 	var sections []string
 	for _, field := range form.Fields {
 		if field.Kind == FormFieldMarkdown {
-			sections = append(sections, strings.TrimSpace(field.Markdown))
 			continue
 		}
 		values, exists := byID[field.ID]

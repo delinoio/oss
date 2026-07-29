@@ -99,7 +99,6 @@ func TestParseAndValidateIssueFormFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := strings.Join([]string{
-		"Thanks for helping us improve.",
 		"### Summary\n\nThe window closes.",
 		"### Severity\n\nHigh",
 		"### Checklist\n\n- [x] I searched for duplicates.",
