@@ -2814,6 +2814,7 @@ fn reset_dev_hud(
     persistence: State<'_, PersistenceState>,
     auth_state: State<'_, auth_native::NativeAuthState>,
     browser_inbox: State<'_, RealQaBrowserInbox>,
+    composer_core: State<'_, realqa_capture::ComposerCore>,
     shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
@@ -2835,10 +2836,11 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
+    browser_inbox.clear();
+    composer_core.reset_all();
     if auth_state.reset().is_err() {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
-    browser_inbox.clear();
     if clear_browsing_data_for_reset(&app).is_err() {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
@@ -3230,8 +3232,10 @@ fn start_authentication(
 fn logout_authentication(
     state: State<'_, auth_native::NativeAuthState>,
     browser_inbox: State<'_, RealQaBrowserInbox>,
+    composer_core: State<'_, realqa_capture::ComposerCore>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
     browser_inbox.clear();
+    composer_core.reset_all();
     state.logout()
 }
 
@@ -3279,6 +3283,40 @@ async fn realqa_begin_capture(
                 .and_then(|result| result)
         }
         Err(failure) => Err(failure),
+    };
+    realqa_capture::record_outcome(&result);
+    result
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+async fn realqa_begin_browser_fallback_capture(
+    session_id: realqa_capture::CaptureSessionId,
+    state: State<'_, realqa_capture::CaptureCore>,
+    webview: Webview<ActiveRuntime>,
+) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+        return Err(realqa_capture::CaptureFailure::CaptureFailed);
+    }
+    let window = webview.window();
+    window
+        .hide()
+        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)?;
+    let capture_core = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        capture_core.begin_browser_fallback(session_id)
+    })
+    .await
+    .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+    .and_then(|result| result);
+    let restore = window.show().and_then(|()| window.set_focus());
+    let result = match (result, restore) {
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(_)) => Err(realqa_capture::CaptureFailure::CaptureFailed),
+        (Ok(capture), Ok(())) => Ok(capture),
     };
     realqa_capture::record_outcome(&result);
     result
@@ -3441,6 +3479,7 @@ fn configure_builder(
             realqa_list_capture_sources,
             realqa_adjust_capture_selection,
             realqa_begin_capture,
+            realqa_begin_browser_fallback_capture,
             realqa_cancel_capture,
             realqa_composer_accept_image,
             realqa_composer_flatten_image,

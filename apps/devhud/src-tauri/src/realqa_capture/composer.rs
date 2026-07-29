@@ -508,6 +508,18 @@ impl ComposerCore {
         state.retained_source_budget = next_retained_source_budget;
         Ok(())
     }
+
+    pub(crate) fn reset_all(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(pending) = state.pending_accept.as_mut() {
+            pending.cancelled = true;
+        }
+        state.sessions.clear();
+        state.retained_source_budget = ImageSessionBudget::default();
+    }
 }
 
 fn validate_identifier(identifier: &str) -> Result<(), CaptureFailure> {
@@ -693,6 +705,36 @@ mod tests {
                     .is_none()
             );
         }
+    }
+
+    #[test]
+    fn reset_all_removes_every_source_and_cancels_pending_acceptance() {
+        let composer = ComposerCore::default();
+        composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("first image must be accepted");
+        composer
+            .accept_image(request("session-2", "image-2"))
+            .expect("second image must be accepted");
+        let pending = composer
+            .begin_accept(
+                &ComposerSessionId("session-3".to_owned()),
+                &ComposerImageId("image-3".to_owned()),
+            )
+            .expect("accept must begin");
+
+        composer.reset_all();
+
+        let state = composer
+            .state
+            .lock()
+            .expect("composer state must be available");
+        assert!(state.sessions.is_empty());
+        assert_eq!(state.retained_source_budget.encoded_bytes(), 0);
+        assert_eq!(
+            pending.ensure_current(&state),
+            Err(CaptureFailure::InvalidEditSequence)
+        );
     }
 
     #[test]
