@@ -193,6 +193,12 @@ func (service *Preset) DeleteFeatureData(
 				return insertErr
 			}
 			var listErr error
+			if _, listErr = queries.LockScopeSubmissionRecords(
+				ctx, dbgen.LockScopeSubmissionRecordsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				}); listErr != nil {
+				return listErr
+			}
 			scopedAssets, listErr = queries.ListScopeObjectAssets(ctx,
 				dbgen.ListScopeObjectAssetsParams{
 					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),

@@ -757,7 +757,8 @@ func (service *Submission) DeleteImage(
 		return nil, err
 	}
 	actor, submissionID, submission, scope, err :=
-		service.authorizeSubmissionRequest(ctx, request.Msg.SubmissionId)
+		service.authorizeSubmissionDeletionRequest(
+			ctx, request.Msg.SubmissionId)
 	if err != nil {
 		return nil, err
 	}
@@ -813,6 +814,11 @@ func (service *Submission) DeleteImage(
 							SubmissionID: toPGUUID(submissionID),
 						})
 					if currentErr == nil {
+						if current.Revision ==
+							request.Msg.ExpectedAssetRevision.Value &&
+							isTerminalAssetState(current.State) {
+							return retentionStateConflict()
+						}
 						return stale(current.Revision)
 					}
 					if !errors.Is(currentErr, pgx.ErrNoRows) {
@@ -898,7 +904,8 @@ func (service *Submission) DeleteSubmissionAssets(
 		return nil, err
 	}
 	actor, submissionID, submission, scope, err :=
-		service.authorizeSubmissionRequest(ctx, request.Msg.SubmissionId)
+		service.authorizeSubmissionDeletionRequest(
+			ctx, request.Msg.SubmissionId)
 	if err != nil {
 		return nil, err
 	}
@@ -1231,6 +1238,16 @@ func (service *Submission) PromoteSubmittedAssets(
 	}
 	_, err := service.dependencies.Store.Queries().MarkSubmissionSubmitted(
 		ctx, toPGUUID(submissionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		current, lookupErr := service.dependencies.Store.Queries().
+			GetSubmissionRecord(ctx, toPGUUID(submissionID))
+		if lookupErr == nil && current.State == "submitted" {
+			return nil
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+	}
 	return err
 }
 
@@ -1447,6 +1464,23 @@ func (service *Submission) authorizeSubmissionRequest(
 	ctx context.Context,
 	message *realqav1.UuidV7,
 ) (caller, uuid.UUID, dbgen.RealqaSubmission, owner, error) {
+	return service.authorizeSubmissionRequestWithRepository(
+		ctx, message, true)
+}
+
+func (service *Submission) authorizeSubmissionDeletionRequest(
+	ctx context.Context,
+	message *realqav1.UuidV7,
+) (caller, uuid.UUID, dbgen.RealqaSubmission, owner, error) {
+	return service.authorizeSubmissionRequestWithRepository(
+		ctx, message, false)
+}
+
+func (service *Submission) authorizeSubmissionRequestWithRepository(
+	ctx context.Context,
+	message *realqav1.UuidV7,
+	requireRepositoryAccess bool,
+) (caller, uuid.UUID, dbgen.RealqaSubmission, owner, error) {
 	actor, err := resolveCaller(ctx, service.dependencies)
 	if err != nil {
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
@@ -1485,6 +1519,9 @@ func (service *Submission) authorizeSubmissionRequest(
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
 			permissionDenied()
 	}
+	if !requireRepositoryAccess {
+		return actor, submissionID, submission, scope, nil
+	}
 	if !submission.DestinationID.Valid {
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
 			permissionDenied()
@@ -1517,6 +1554,15 @@ func (service *Submission) authorizeSubmissionRequest(
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
 	}
 	return actor, submissionID, submission, scope, nil
+}
+
+func isTerminalAssetState(state string) bool {
+	switch state {
+	case "removed_placeholder", "deleted", "expired":
+		return true
+	default:
+		return false
+	}
 }
 
 func isOpenSubmissionState(state string) bool {

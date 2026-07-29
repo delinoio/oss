@@ -236,7 +236,7 @@ SET state = 'submitted',
     updated_at = transaction_timestamp(),
     revision = revision + 1
 WHERE id = sqlc.arg(id)
-  AND state IN ('ready', 'submitting', 'reconciling', 'submitted')
+  AND state IN ('ready', 'submitting', 'reconciling')
 RETURNING *;
 
 -- name: GetPublicAsset :one
@@ -257,6 +257,9 @@ WITH selected AS (
     WHERE selected_asset.id = sqlc.arg(asset_record_id)
       AND selected_asset.submission_id = sqlc.arg(asset_submission_id)
       AND selected_asset.revision = sqlc.arg(expected_revision)
+      AND selected_asset.state NOT IN (
+          'removed_placeholder', 'deleted', 'expired'
+      )
     FOR UPDATE
 ), tombstone AS (
     INSERT INTO realqa_public_asset_tombstones (public_id)
@@ -274,6 +277,7 @@ SET upload_state = 'deleted',
 WHERE asset.id = sqlc.arg(asset_record_id)
   AND asset.submission_id = sqlc.arg(asset_submission_id)
   AND asset.revision = sqlc.arg(expected_revision)
+  AND asset.state NOT IN ('removed_placeholder', 'deleted', 'expired')
 RETURNING asset.*;
 
 -- name: ListRemovableSubmissionAssets :many
@@ -311,6 +315,7 @@ RETURNING asset.*;
 -- name: MarkSubmissionAssetsDeleted :one
 UPDATE realqa_submissions
 SET state = 'assets_deleted',
+    verified_encoded_bytes = 0,
     revision = revision + 1,
     updated_at = transaction_timestamp()
 WHERE id = sqlc.arg(id)
@@ -430,6 +435,14 @@ SET upload_state = 'expired',
 WHERE id = sqlc.arg(id)
   AND state IN ('private_staging', 'verified_unlinked')
 RETURNING *;
+
+-- name: LockScopeSubmissionRecords :many
+SELECT submission.id
+FROM realqa_submissions AS submission
+WHERE submission.owner_kind = sqlc.arg(owner_kind)
+  AND submission.owner_id = sqlc.arg(owner_id)
+ORDER BY submission.id
+FOR UPDATE;
 
 -- name: ListScopeObjectAssets :many
 SELECT asset.*

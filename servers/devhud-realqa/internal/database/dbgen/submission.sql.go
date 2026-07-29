@@ -964,6 +964,40 @@ func (q *Queries) LockObjectDeletion(ctx context.Context, arg LockObjectDeletion
 	return i, err
 }
 
+const lockScopeSubmissionRecords = `-- name: LockScopeSubmissionRecords :many
+SELECT submission.id
+FROM realqa_submissions AS submission
+WHERE submission.owner_kind = $1
+  AND submission.owner_id = $2
+ORDER BY submission.id
+FOR UPDATE
+`
+
+type LockScopeSubmissionRecordsParams struct {
+	OwnerKind string
+	OwnerID   pgtype.UUID
+}
+
+func (q *Queries) LockScopeSubmissionRecords(ctx context.Context, arg LockScopeSubmissionRecordsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, lockScopeSubmissionRecords, arg.OwnerKind, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockSubmissionRecord = `-- name: LockSubmissionRecord :one
 SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
 FROM realqa_submissions
@@ -1210,6 +1244,7 @@ func (q *Queries) MarkAssetVerifying(ctx context.Context, arg MarkAssetVerifying
 const markSubmissionAssetsDeleted = `-- name: MarkSubmissionAssetsDeleted :one
 UPDATE realqa_submissions
 SET state = 'assets_deleted',
+    verified_encoded_bytes = 0,
     revision = revision + 1,
     updated_at = transaction_timestamp()
 WHERE id = $1
@@ -1258,7 +1293,7 @@ SET state = 'submitted',
     updated_at = transaction_timestamp(),
     revision = revision + 1
 WHERE id = $1
-  AND state IN ('ready', 'submitting', 'reconciling', 'submitted')
+  AND state IN ('ready', 'submitting', 'reconciling')
 RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
 `
 
@@ -1499,6 +1534,9 @@ WITH selected AS (
     WHERE selected_asset.id = $1
       AND selected_asset.submission_id = $2
       AND selected_asset.revision = $3
+      AND selected_asset.state NOT IN (
+          'removed_placeholder', 'deleted', 'expired'
+      )
     FOR UPDATE
 ), tombstone AS (
     INSERT INTO realqa_public_asset_tombstones (public_id)
@@ -1516,6 +1554,7 @@ SET upload_state = 'deleted',
 WHERE asset.id = $1
   AND asset.submission_id = $2
   AND asset.revision = $3
+  AND asset.state NOT IN ('removed_placeholder', 'deleted', 'expired')
 RETURNING asset.id, asset.submission_id, asset.public_id, asset.object_key_ciphertext, asset.state, asset.encoded_bytes, asset.revision, asset.created_at, asset.removed_at, asset.client_image_id, asset.media_type, asset.declared_encoded_bytes, asset.pixel_width, asset.pixel_height, asset.source_sha256, asset.sanitized_sha256, asset.upload_state, asset.upload_token_digest, asset.upload_expires_at, asset.uploaded_at, asset.verified_at
 `
 

@@ -1068,9 +1068,29 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	objects.blockedPutPrefix = ""
 	objects.putStarted = nil
 	objects.putRelease = nil
+	var submittedRevisionBeforeRetry int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&submittedRevisionBeforeRetry); err != nil {
+		t.Fatal(err)
+	}
 	if err = submissionService.PromoteSubmittedAssets(
 		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
 		t.Fatalf("resumed promotion: %v", err)
+	}
+	var submittedRevisionAfterRetry int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&submittedRevisionAfterRetry); err != nil {
+		t.Fatal(err)
+	}
+	if submittedRevisionAfterRetry != submittedRevisionBeforeRetry {
+		t.Fatalf("promotion retry revision = %d, want %d",
+			submittedRevisionAfterRetry, submittedRevisionBeforeRetry)
 	}
 	otherList, err = submissionService.ListSubmissions(
 		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
@@ -1304,6 +1324,39 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		realqav1.SubmissionState_SUBMISSION_STATE_ASSETS_DELETED {
 		t.Fatalf("empty submission state = %v",
 			emptyDeleted.Msg.Submission.State)
+	}
+	terminalDeleteRequest := &realqav1.DeleteImageRequest{
+		SubmissionId:               emptyDeleted.Msg.Submission.SubmissionId,
+		AssetId:                    emptyDeleted.Msg.Submission.Assets[0].AssetId,
+		ExpectedSubmissionRevision: emptyDeleted.Msg.Submission.Revision,
+		ExpectedAssetRevision: emptyDeleted.Msg.Submission.
+			Assets[0].Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	_, err = submissionService.DeleteImage(
+		authCtx, connect.NewRequest(terminalDeleteRequest))
+	requireServiceError(t, err, connect.CodeInvalidArgument,
+		realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED)
+	var terminalSubmissionRevision, terminalAssetRevision int64
+	if err = connection.QueryRow(ctx, `
+		SELECT submission.revision, asset.revision
+		FROM realqa_submissions AS submission
+		JOIN realqa_assets AS asset ON asset.submission_id = submission.id
+		WHERE submission.id = $1 AND asset.id = $2
+	`, emptyDeleted.Msg.Submission.SubmissionId.Value,
+		emptyDeleted.Msg.Submission.Assets[0].AssetId.Value).
+		Scan(&terminalSubmissionRevision, &terminalAssetRevision); err != nil {
+		t.Fatal(err)
+	}
+	if terminalSubmissionRevision !=
+		emptyDeleted.Msg.Submission.Revision.Value ||
+		terminalAssetRevision !=
+			emptyDeleted.Msg.Submission.Assets[0].Revision.Value {
+		t.Fatalf("terminal delete changed revisions = %d / %d",
+			terminalSubmissionRevision, terminalAssetRevision)
 	}
 	emptySubmissionID := uuid.MustParse(
 		emptySubmission.Msg.Submission.SubmissionId.Value)
@@ -1748,6 +1801,50 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		disconnectReplay.Msg.Connection.Revision.Value !=
 			disconnected.Msg.Connection.Revision.Value {
 		t.Fatalf("disconnect replay after role change = %#v", disconnectReplay.Msg)
+	}
+	retainedBeforeDelete, err := submissionService.GetSubmission(
+		authCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retainedBytesBeforeDelete int64
+	if err = connection.QueryRow(ctx, `
+		SELECT verified_encoded_bytes
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&retainedBytesBeforeDelete); err != nil {
+		t.Fatal(err)
+	}
+	if retainedBytesBeforeDelete <= 0 {
+		t.Fatalf("retained bytes before deletion = %d",
+			retainedBytesBeforeDelete)
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: retainedBeforeDelete.Msg.Submission.
+				Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if err != nil {
+		t.Fatalf("delete after repository disconnect: %v", err)
+	}
+	var retainedBytesAfterDelete int64
+	if err = connection.QueryRow(ctx, `
+		SELECT verified_encoded_bytes
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&retainedBytesAfterDelete); err != nil {
+		t.Fatal(err)
+	}
+	if retainedBytesAfterDelete != 0 {
+		t.Fatalf("retained bytes after deletion = %d",
+			retainedBytesAfterDelete)
 	}
 	deletedPayerOrganizationID := uuidv7.MustNew()
 	deletedPayerTeamID := uuidv7.MustNew()

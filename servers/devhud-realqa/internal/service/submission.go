@@ -335,6 +335,7 @@ func validateImages(images []*realqav1.ImageDeclaration) error {
 		return invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
 	}
 	var total int64
+	seenClientIDs := make(map[uuid.UUID]struct{}, len(images))
 	for _, image := range images {
 		if image == nil || image.EncodedBytes <= 0 ||
 			image.EncodedBytes > int64(
@@ -344,9 +345,14 @@ func validateImages(images []*realqav1.ImageDeclaration) error {
 				image.MediaType != realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_WEBP) {
 			return invalid(realqav1.ErrorReason_ERROR_REASON_IMAGE_TOO_LARGE)
 		}
-		if _, err := parseUUIDMessage(image.ClientImageId); err != nil {
+		clientID, err := parseUUIDMessage(image.ClientImageId)
+		if err != nil {
 			return invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
 		}
+		if _, duplicate := seenClientIDs[clientID]; duplicate {
+			return invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
+		}
+		seenClientIDs[clientID] = struct{}{}
 		pixels := int64(image.PixelWidth) * int64(image.PixelHeight)
 		if pixels <= 0 || pixels >
 			int64(realqav1.RealQALimit_REAL_QA_LIMIT_MAX_DECODED_IMAGE_PIXELS) {

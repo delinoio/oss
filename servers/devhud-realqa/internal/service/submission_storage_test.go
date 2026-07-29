@@ -9,12 +9,30 @@ import (
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestValidateImagesRejectsEmptyDeclarationSet(t *testing.T) {
 	requireServiceError(t, validateImages(nil), connect.CodeInvalidArgument,
+		realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED)
+}
+
+func TestValidateImagesRejectsDuplicateClientIDs(t *testing.T) {
+	clientID := &realqav1.UuidV7{Value: uuidv7.MustNew().String()}
+	image := &realqav1.ImageDeclaration{
+		ClientImageId: clientID,
+		MediaType:     realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_PNG,
+		EncodedBytes:  1,
+		PixelWidth:    1,
+		PixelHeight:   1,
+		Sha256:        strings.Repeat("0", 64),
+	}
+	requireServiceError(t, validateImages([]*realqav1.ImageDeclaration{
+		image, image,
+	}), connect.CodeInvalidArgument,
 		realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE,
 		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED)
 }

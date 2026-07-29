@@ -72,6 +72,7 @@ type Querier interface {
 	LockObjectDeletion(ctx context.Context, arg LockObjectDeletionParams) (RealqaObjectDeletionJob, error)
 	LockPreset(ctx context.Context, id pgtype.UUID) (RealqaPreset, error)
 	LockPresetOwner(ctx context.Context, arg LockPresetOwnerParams) error
+	LockScopeSubmissionRecords(ctx context.Context, arg LockScopeSubmissionRecordsParams) ([]pgtype.UUID, error)
 	LockShortcutAccount(ctx context.Context, accountID pgtype.UUID) error
 	LockSubmissionRecord(ctx context.Context, submissionRecordID pgtype.UUID) (RealqaSubmission, error)
 	LockUploadSessionAccount(ctx context.Context, accountID pgtype.UUID) error
