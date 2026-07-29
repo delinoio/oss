@@ -481,7 +481,10 @@ ON CONFLICT DO NOTHING;
 SELECT *
 FROM realqa_object_deletion_jobs
 WHERE next_attempt_at <= sqlc.arg(cutoff)
-ORDER BY next_attempt_at, created_at
+ORDER BY
+    CASE object_kind WHEN 'public' THEN 0 ELSE 1 END,
+    next_attempt_at,
+    created_at
 LIMIT sqlc.arg(batch_limit);
 
 -- name: LockObjectDeletion :one

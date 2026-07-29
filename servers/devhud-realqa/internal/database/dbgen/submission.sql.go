@@ -598,7 +598,10 @@ const listPendingObjectDeletions = `-- name: ListPendingObjectDeletions :many
 SELECT asset_id, object_kind, public_id, attempt_count, next_attempt_at, last_attempted_at, created_at
 FROM realqa_object_deletion_jobs
 WHERE next_attempt_at <= $1
-ORDER BY next_attempt_at, created_at
+ORDER BY
+    CASE object_kind WHEN 'public' THEN 0 ELSE 1 END,
+    next_attempt_at,
+    created_at
 LIMIT $2
 `
 
