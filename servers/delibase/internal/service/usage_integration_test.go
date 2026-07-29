@@ -1450,7 +1450,7 @@ func TestPostgreSQLExpirationPaginatesPastPoisonedOrganizations(t *testing.T) {
 				fixture.ownerID,
 				fixture.serviceID,
 				meter.UsdMicrosPerUnit,
-				"expiration-poison-"+reservationID.String(),
+				fmt.Sprintf("expiration-poison-%d", index),
 				expiredAt,
 				expiredAt.Add(-time.Minute),
 				string(actor),
