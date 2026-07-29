@@ -162,18 +162,35 @@ WHERE id = sqlc.arg(connection_id)
 RETURNING revision;
 
 -- name: BeginGitHubCallerAuthorizationRefresh :one
-UPDATE realqa_github_user_authorizations
-SET state = 'disconnected',
-    credential_ciphertext = NULL,
-    wrapped_data_key = NULL,
-    key_id = NULL,
-    oauth_state_digest = NULL,
-    oauth_state_expires_at = NULL,
-    updated_at = transaction_timestamp()
-WHERE connection_id = sqlc.arg(connection_id)
-  AND account_id = sqlc.arg(account_id)
-  AND state = 'connected'
-RETURNING revision;
+WITH disconnected_authorization AS (
+    UPDATE realqa_github_user_authorizations AS caller_authorization
+    SET state = 'disconnected',
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        updated_at = transaction_timestamp()
+    WHERE caller_authorization.connection_id = sqlc.arg(connection_id)
+      AND caller_authorization.account_id = sqlc.arg(account_id)
+      AND caller_authorization.state = 'connected'
+    RETURNING
+        caller_authorization.revision,
+        caller_authorization.connection_id,
+        caller_authorization.account_id
+),
+cleared_repository_access AS (
+    DELETE FROM realqa_repository_access AS access
+    USING realqa_github_installations AS installation,
+          disconnected_authorization
+    WHERE access.installation_id = installation.id
+      AND installation.connection_id =
+          disconnected_authorization.connection_id
+      AND access.account_id = disconnected_authorization.account_id
+    RETURNING 1
+)
+SELECT revision
+FROM disconnected_authorization;
 
 -- name: CompleteGitHubUserCredentialRefresh :execrows
 UPDATE realqa_github_connections AS connection
@@ -331,15 +348,32 @@ SET provider_account_id = sqlc.arg(provider_account_id),
 WHERE provider_installation_id = sqlc.arg(provider_installation_id)
   AND state <> 'deleted';
 
--- name: RenameGitHubInstallationAccount :execrows
-UPDATE realqa_github_installations
-SET provider_account_id = sqlc.arg(provider_account_id),
-    account_login = sqlc.arg(account_login),
-    account_kind = sqlc.arg(account_kind),
-    revision = revision + 1,
-    updated_at = transaction_timestamp()
-WHERE provider_installation_id = sqlc.arg(provider_installation_id)
-  AND state <> 'deleted';
+-- name: RenameGitHubInstallationAccount :one
+WITH renamed_installation AS (
+    UPDATE realqa_github_installations
+    SET provider_account_id = sqlc.arg(provider_account_id),
+        account_login = sqlc.arg(account_login),
+        account_kind = sqlc.arg(account_kind),
+        revision = revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE provider_installation_id = sqlc.arg(provider_installation_id)
+      AND state <> 'deleted'
+    RETURNING id
+),
+renamed_destinations AS (
+    UPDATE realqa_destinations
+    SET repository_owner = sqlc.arg(account_login)
+    WHERE installation_id IN (SELECT id FROM renamed_installation)
+    RETURNING 1
+),
+renamed_repository_access AS (
+    UPDATE realqa_repository_access
+    SET repository_owner = sqlc.arg(account_login)
+    WHERE installation_id IN (SELECT id FROM renamed_installation)
+    RETURNING 1
+)
+SELECT count(*)::bigint
+FROM renamed_installation;
 
 -- name: SuspendUnauthorizedGitHubInstallations :execrows
 UPDATE realqa_github_installations
@@ -436,35 +470,68 @@ cleared_authorizations AS (
         updated_at = transaction_timestamp()
     WHERE connection_id IN (SELECT id FROM disconnected)
     RETURNING 1
+),
+cleared_repository_access AS (
+    DELETE FROM realqa_repository_access AS access
+    USING realqa_github_installations AS installation
+    WHERE access.installation_id = installation.id
+      AND installation.connection_id IN (SELECT id FROM disconnected)
+    RETURNING 1
 )
 SELECT count(*)::bigint
 FROM disconnected;
 
--- name: DisconnectGitHubCallerAuthorizations :execrows
-UPDATE realqa_github_user_authorizations
-SET state = 'disconnected',
-    credential_ciphertext = NULL,
-    wrapped_data_key = NULL,
-    key_id = NULL,
-    oauth_state_digest = NULL,
-    oauth_state_expires_at = NULL,
-    revision = revision + 1,
-    updated_at = transaction_timestamp()
-WHERE github_user_id = sqlc.arg(github_user_id)
-  AND credential_ciphertext IS NOT NULL;
+-- name: DisconnectGitHubCallerAuthorizations :one
+WITH disconnected_authorizations AS (
+    UPDATE realqa_github_user_authorizations AS caller_authorization
+    SET state = 'disconnected',
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = caller_authorization.revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE caller_authorization.github_user_id = sqlc.arg(github_user_id)
+      AND caller_authorization.credential_ciphertext IS NOT NULL
+    RETURNING caller_authorization.connection_id, caller_authorization.account_id
+),
+cleared_repository_access AS (
+    DELETE FROM realqa_repository_access AS access
+    USING realqa_github_installations AS installation,
+          disconnected_authorizations AS disconnected_authorization
+    WHERE access.installation_id = installation.id
+      AND installation.connection_id = disconnected_authorization.connection_id
+      AND access.account_id = disconnected_authorization.account_id
+    RETURNING 1
+)
+SELECT count(*)::bigint
+FROM disconnected_authorizations;
 
--- name: DisconnectGitHubCallerAuthorizationsForConnection :execrows
-UPDATE realqa_github_user_authorizations
-SET state = 'disconnected',
-    credential_ciphertext = NULL,
-    wrapped_data_key = NULL,
-    key_id = NULL,
-    oauth_state_digest = NULL,
-    oauth_state_expires_at = NULL,
-    revision = revision + 1,
-    updated_at = transaction_timestamp()
-WHERE connection_id = sqlc.arg(connection_id)
-  AND (
-      credential_ciphertext IS NOT NULL
-      OR oauth_state_digest IS NOT NULL
-  );
+-- name: DisconnectGitHubCallerAuthorizationsForConnection :one
+WITH disconnected_authorizations AS (
+    UPDATE realqa_github_user_authorizations AS caller_authorization
+    SET state = 'disconnected',
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = caller_authorization.revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE caller_authorization.connection_id = sqlc.arg(target_connection_id)
+      AND (
+          caller_authorization.credential_ciphertext IS NOT NULL
+          OR caller_authorization.oauth_state_digest IS NOT NULL
+      )
+    RETURNING 1
+),
+cleared_repository_access AS (
+    DELETE FROM realqa_repository_access AS access
+    USING realqa_github_installations AS installation
+    WHERE access.installation_id = installation.id
+      AND installation.connection_id = sqlc.arg(target_connection_id)
+    RETURNING 1
+)
+SELECT count(*)::bigint
+FROM disconnected_authorizations;

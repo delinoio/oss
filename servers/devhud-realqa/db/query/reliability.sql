@@ -102,7 +102,8 @@ cleared_authorizations AS (
         oauth_state_expires_at = NULL,
         revision = revision + 1,
         updated_at = transaction_timestamp()
-    WHERE connection_id IN (SELECT id FROM disconnected)
+    WHERE account_id = sqlc.arg(account_id)
+       OR connection_id IN (SELECT id FROM disconnected)
     RETURNING 1
 )
 SELECT count(*)::bigint

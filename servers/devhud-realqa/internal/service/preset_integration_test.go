@@ -1044,7 +1044,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	var disconnectedState string
 	var credentialCiphertext []byte
-	var retainedPresets, retainedDestinations int
+	var retainedPresets, retainedDestinations, retainedRepositoryAccess int
 	if err = connection.QueryRow(ctx, `
 		SELECT state, credential_ciphertext
 		FROM realqa_github_connections
@@ -1057,15 +1057,20 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			(SELECT count(*) FROM realqa_presets
 			 WHERE owner_kind = 'organization' AND owner_id = $1),
 			(SELECT count(*) FROM realqa_destinations
-			 WHERE owner_kind = 'organization' AND owner_id = $1)
-	`, organizationID).Scan(&retainedPresets, &retainedDestinations); err != nil {
+			 WHERE owner_kind = 'organization' AND owner_id = $1),
+			(SELECT count(*) FROM realqa_repository_access
+			 WHERE installation_id = $2)
+	`, organizationID, organizationInstallationID).Scan(
+		&retainedPresets, &retainedDestinations, &retainedRepositoryAccess,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if disconnectedState != "disconnected" || credentialCiphertext != nil ||
-		retainedPresets == 0 || retainedDestinations == 0 {
-		t.Fatalf("disconnect lifecycle state=%q credential=%v presets=%d destinations=%d",
+		retainedPresets == 0 || retainedDestinations == 0 ||
+		retainedRepositoryAccess != 0 {
+		t.Fatalf("disconnect lifecycle state=%q credential=%v presets=%d destinations=%d repository_access=%d",
 			disconnectedState, credentialCiphertext != nil,
-			retainedPresets, retainedDestinations)
+			retainedPresets, retainedDestinations, retainedRepositoryAccess)
 	}
 	deletedPayerOrganizationID := uuidv7.MustNew()
 	deletedPayerTeamID := uuidv7.MustNew()
@@ -1208,10 +1213,25 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			repository_owner, repository_name, issues_enabled, can_submit
 		) VALUES (
 			$5, $1, 'lifecycle-repo', 'lifecycle-org', 'private', true, true
+		);
+		UPDATE realqa_github_connections
+		SET state = 'connected',
+		    connected_by_account_id = $6,
+		    credential_ciphertext = decode('09', 'hex'),
+		    wrapped_data_key = decode('0a', 'hex'),
+		    key_id = 'fixture-key'
+		WHERE id = $7;
+		INSERT INTO realqa_github_user_authorizations (
+			connection_id, account_id, state, github_user_id, github_login,
+			credential_ciphertext, wrapped_data_key, key_id, connected_at
+		) VALUES (
+			$7, $1, 'connected', 763, 'lifecycle-member',
+			decode('0b', 'hex'), decode('0c', 'hex'), 'fixture-key',
+			transaction_timestamp()
 		)
 	`, lifecycleAccountID, lifecycleDigest.Sum(nil),
 		lifecycleConnectionID, lifecycleOrganizationID,
-		lifecycleInstallationID); err != nil {
+		lifecycleInstallationID, secondAdminID, organizationConnectionID); err != nil {
 		t.Fatal(err)
 	}
 	_, err = service.DeleteFeatureData(lifecycleCtx, connect.NewRequest(
@@ -1236,6 +1256,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	var lifecycleCiphertext, lifecycleWrappedKey []byte
 	var lifecycleKeyID *string
 	var lifecycleRepositoryAccess int64
+	var lifecycleAuthorizationState string
+	var lifecycleAuthorizationCiphertext []byte
 	if err = connection.QueryRow(ctx, `
 		SELECT
 			state, connected_by_account_id, credential_ciphertext,
@@ -1261,6 +1283,24 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			lifecycleConnectionState, lifecycleConnectedBy.Valid,
 			lifecycleCiphertext != nil, lifecycleWrappedKey != nil,
 			lifecycleKeyID, lifecycleRepositoryAccess,
+		)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT state, credential_ciphertext
+		FROM realqa_github_user_authorizations
+		WHERE connection_id = $1
+		  AND account_id = $2
+	`, organizationConnectionID, lifecycleAccountID).Scan(
+		&lifecycleAuthorizationState, &lifecycleAuthorizationCiphertext,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycleAuthorizationState != "disconnected" ||
+		lifecycleAuthorizationCiphertext != nil {
+		t.Fatalf(
+			"account lifecycle retained caller authorization: state=%q credential=%t",
+			lifecycleAuthorizationState,
+			lifecycleAuthorizationCiphertext != nil,
 		)
 	}
 }

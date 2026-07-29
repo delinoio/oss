@@ -62,7 +62,7 @@ func renderCapture(capture CaptureMetadata) (string, error) {
 			strings.Contains(value, "\x00") {
 			return "", errors.New("realqa github: capture environment field is invalid")
 		}
-		lines = append(lines, "- **"+escapeInline(key)+":** "+escapeInline(value))
+		lines = append(lines, "- **"+escapeInline(key)+":** "+markdownCodeSpan(value))
 	}
 	if capture.SanitizedURL != "" {
 		parsed, err := url.Parse(capture.SanitizedURL)

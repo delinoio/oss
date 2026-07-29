@@ -72,7 +72,7 @@ func TestComposeBodyExactOrderAndUTF8Bytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := "## Repository response\n\n재현됨\n\n" +
-		"## RealQA capture\n- **OS:** Linux\n- **URL:** <https://example.com/path>\n\n" +
+		"## RealQA capture\n- **OS:** ```Linux```\n- **URL:** <https://example.com/path>\n\n" +
 		"![First capture](https://assets.realqa.deli.dev/abcdefghijklmnopqrstuv)\n\n" +
 		"<!-- realqa:submission:018f3f5e-7b01-7a2d-8c3a-4ba8d8b51608 -->\n"
 	if body != expected {
@@ -80,6 +80,24 @@ func TestComposeBodyExactOrderAndUTF8Bytes(t *testing.T) {
 	}
 	if len([]byte(body)) == len([]rune(body)) {
 		t.Fatal("fixture did not exercise UTF-8 byte accounting")
+	}
+}
+
+func TestComposeBodyUsesSafeEnvironmentCodeSpans(t *testing.T) {
+	t.Parallel()
+	body, err := ComposeBody(IssueInput{
+		SubmissionID: fixtureSubmissionID,
+		Capture: CaptureMetadata{Environment: []CaptureField{{
+			Key:   "Window",
+			Value: "![pixel](https://example.com/pixel) `status`",
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body,
+		"- **Window:** ``` ![pixel](https://example.com/pixel) `status` ```\n") {
+		t.Fatalf("environment metadata did not use a safe code span:\n%s", body)
 	}
 }
 

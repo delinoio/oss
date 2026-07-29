@@ -201,9 +201,13 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 			connection_id, account_id, state, github_user_id, github_login,
 			credential_ciphertext, wrapped_data_key, key_id, connected_at
 		) VALUES ($2, $1, 'connected', 7002, 'fixture-member', $3, $4, $5,
-		          transaction_timestamp())
+		          transaction_timestamp());
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id, repository_owner,
+			repository_name, issues_enabled, can_submit
+		) VALUES ($6, $1, '7003', 'fixture-org', 'fixture-repository', true, true)
 	`, memberAccountID, connectionID, encrypted.Ciphertext,
-		encrypted.WrappedDataKey, encrypted.KeyID); err != nil {
+		encrypted.WrappedDataKey, encrypted.KeyID, installationID); err != nil {
 		t.Fatal(err)
 	}
 	now := func() time.Time {
@@ -235,6 +239,40 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 	); !errors.Is(err, ErrCallerAuthorizationUnavailable) {
 		t.Fatalf("unbound member used another credential: %v", err)
 	}
+	webhookStore := &postgresWebhookStore{queries: store.Queries()}
+	if err = webhookStore.DisconnectGitHubUser(ctx, 7002); err != nil {
+		t.Fatal(err)
+	}
+	var authorizationState, connectionState string
+	var authorizationCiphertext, connectionCiphertext []byte
+	var repositoryAccessCount int64
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			authorization.state, authorization.credential_ciphertext,
+			connection.state, connection.credential_ciphertext,
+			(SELECT count(*)
+			 FROM realqa_repository_access
+			 WHERE installation_id = $3 AND account_id = $1)
+		FROM realqa_github_user_authorizations AS authorization
+		JOIN realqa_github_connections AS connection
+		  ON connection.id = authorization.connection_id
+		WHERE authorization.connection_id = $2
+		  AND authorization.account_id = $1
+	`, memberAccountID, connectionID, installationID).Scan(
+		&authorizationState, &authorizationCiphertext,
+		&connectionState, &connectionCiphertext, &repositoryAccessCount,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if authorizationState != "disconnected" || authorizationCiphertext != nil ||
+		connectionState != "connected" || connectionCiphertext == nil ||
+		repositoryAccessCount != 0 {
+		t.Fatalf(
+			"caller revocation state=%q credential=%t connection=%q owner_credential=%t repository_access=%d",
+			authorizationState, authorizationCiphertext != nil,
+			connectionState, connectionCiphertext != nil, repositoryAccessCount,
+		)
+	}
 }
 
 func TestInstallationWebhooksAcknowledgeUnboundAndApplyRename(t *testing.T) {
@@ -244,11 +282,36 @@ func TestInstallationWebhooksAcknowledgeUnboundAndApplyRename(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	store, connection, _, _, _, _ := adapterRefreshFixture(
+	store, connection, accountID, _, installationID, _ := adapterRefreshFixture(
 		t, ctx, databaseURL, nil)
 	webhookStore := &postgresWebhookStore{queries: store.Queries()}
 	permissions, err := RequiredPermissions(ProjectPermissionNone)
 	if err != nil {
+		t.Fatal(err)
+	}
+	var ownerID uuid.UUID
+	if err = connection.QueryRow(ctx, `
+		SELECT owner_id
+		FROM realqa_github_installations
+		WHERE id = $1
+	`, installationID).Scan(&ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_destinations (
+			id, owner_kind, owner_id, installation_id, repository_id,
+			repository_owner, repository_name
+		) VALUES (
+			$1, 'organization', $2, $3, '7003', 'fixture-org',
+			'fixture-repository'
+		);
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id, repository_owner,
+			repository_name, issues_enabled, can_submit
+		) VALUES (
+			$3, $4, '7003', 'fixture-org', 'fixture-repository', true, true
+		)
+	`, uuidv7.MustNew(), ownerID, installationID, accountID); err != nil {
 		t.Fatal(err)
 	}
 	if err = webhookStore.ApplyInstallation(ctx, InstallationEvent{
@@ -269,19 +332,31 @@ func TestInstallationWebhooksAcknowledgeUnboundAndApplyRename(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var accountID int64
-	var login, kind string
+	var providerAccountID int64
+	var login, kind, destinationOwner, accessOwner string
 	if err = connection.QueryRow(ctx, `
-		SELECT provider_account_id, account_login, account_kind
-		FROM realqa_github_installations
-		WHERE provider_installation_id = 9001
-	`).Scan(&accountID, &login, &kind); err != nil {
+		SELECT
+			installation.provider_account_id, installation.account_login,
+			installation.account_kind,
+			(SELECT repository_owner
+			 FROM realqa_destinations
+			 WHERE installation_id = installation.id AND repository_id = '7003'),
+			(SELECT repository_owner
+			 FROM realqa_repository_access
+			 WHERE installation_id = installation.id
+			   AND account_id = $1 AND repository_id = '7003')
+		FROM realqa_github_installations AS installation
+		WHERE installation.provider_installation_id = 9001
+	`, accountID).Scan(
+		&providerAccountID, &login, &kind, &destinationOwner, &accessOwner,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if accountID != 7001 || login != "renamed-owner" ||
-		kind != string(AccountKindOrganization) {
-		t.Fatalf("renamed installation identity = %d %q %q",
-			accountID, login, kind)
+	if providerAccountID != 7001 || login != "renamed-owner" ||
+		kind != string(AccountKindOrganization) ||
+		destinationOwner != "renamed-owner" || accessOwner != "renamed-owner" {
+		t.Fatalf("renamed installation identity = %d %q %q destination=%q access=%q",
+			providerAccountID, login, kind, destinationOwner, accessOwner)
 	}
 }
 

@@ -42,7 +42,7 @@ type Querier interface {
 	DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSubmissionsParams) (int64, error)
 	DeleteShortcut(ctx context.Context, presetID pgtype.UUID) error
 	DisconnectGitHubCallerAuthorizations(ctx context.Context, githubUserID pgtype.Int8) (int64, error)
-	DisconnectGitHubCallerAuthorizationsForConnection(ctx context.Context, connectionID pgtype.UUID) (int64, error)
+	DisconnectGitHubCallerAuthorizationsForConnection(ctx context.Context, targetConnectionID pgtype.UUID) (int64, error)
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (RealqaGithubConnection, error)
 	DisconnectGitHubConnectionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DisconnectGitHubUserCredentials(ctx context.Context, providerUserID pgtype.Int8) (int64, error)
