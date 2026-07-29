@@ -24,6 +24,7 @@ const COMMANDS: &[&str] = &[
     "realqa_begin_capture",
     "realqa_cancel_capture",
     "realqa_composer_accept_image",
+    "realqa_composer_flatten_image",
     "realqa_composer_remove_image",
     "realqa_composer_reset_session",
 ];
