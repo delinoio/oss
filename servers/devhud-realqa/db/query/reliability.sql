@@ -105,6 +105,13 @@ cleared_authorizations AS (
     WHERE account_id = sqlc.arg(account_id)
        OR connection_id IN (SELECT id FROM disconnected)
     RETURNING 1
+),
+cleared_repository_access AS (
+    DELETE FROM realqa_repository_access AS access
+    USING realqa_github_installations AS installation
+    WHERE access.installation_id = installation.id
+      AND installation.connection_id IN (SELECT id FROM disconnected)
+    RETURNING 1
 )
 SELECT count(*)::bigint
 FROM disconnected;

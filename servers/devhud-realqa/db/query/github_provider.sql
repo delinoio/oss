@@ -63,6 +63,11 @@ FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
+JOIN realqa_owner_bindings AS connector_access
+  ON connector_access.account_id = connection.connected_by_account_id
+ AND connector_access.owner_kind = connection.owner_kind
+ AND connector_access.owner_id = connection.owner_id
+ AND connector_access.role IN ('owner', 'admin')
 WHERE installation.id = sqlc.arg(installation_id)
   AND connection.connected_by_account_id = sqlc.arg(account_id)
   AND installation.state = 'active';
@@ -105,6 +110,11 @@ FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
+JOIN realqa_owner_bindings AS connector_access
+  ON connector_access.account_id = connection.connected_by_account_id
+ AND connector_access.owner_kind = connection.owner_kind
+ AND connector_access.owner_id = connection.owner_id
+ AND connector_access.role IN ('owner', 'admin')
 WHERE installation.id = sqlc.arg(installation_id)
   AND connection.connected_by_account_id = sqlc.arg(account_id)
   AND installation.state = 'active'

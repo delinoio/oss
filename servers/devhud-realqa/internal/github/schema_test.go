@@ -1,6 +1,7 @@
 package github
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -43,6 +44,40 @@ Describe the bug.
 	if template.Definition.Name != "Bug report" || template.IssueType != "bug" ||
 		template.Body != "Describe the bug.\n" {
 		t.Fatalf("unexpected template: %#v", template)
+	}
+}
+
+func TestMarkdownTemplateRejectsNonStringFrontMatter(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		template  string
+		about     string
+		title     string
+		issueType string
+	}{
+		{name: "name", template: "true", about: "Report a bug", title: `"[Bug] "`, issueType: "Bug"},
+		{name: "about", template: "Bug report", about: "123", title: `"[Bug] "`, issueType: "Bug"},
+		{name: "title", template: "Bug report", about: "Report a bug", title: "false", issueType: "Bug"},
+		{name: "type", template: "Bug report", about: "Report a bug", title: `"[Bug] "`, issueType: "123"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseMarkdownTemplate(
+				".github/ISSUE_TEMPLATE/bug.md", `"fixture-etag"`,
+				[]byte(fmt.Sprintf(`---
+name: %s
+about: %s
+title: %s
+type: %s
+---
+Describe the bug.
+`, test.template, test.about, test.title, test.issueType)),
+			)
+			if err == nil || !strings.Contains(err.Error(), "front matter is invalid") {
+				t.Fatalf("expected non-string %s rejection, got %v", test.name, err)
+			}
+		})
 	}
 }
 

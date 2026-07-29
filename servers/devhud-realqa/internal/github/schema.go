@@ -66,6 +66,11 @@ func ParseMarkdownTemplate(filePath, etag string, contents []byte) (MarkdownTemp
 		return MarkdownTemplate{}, errors.New("realqa github: Markdown front matter is unterminated")
 	}
 	end += 4
+	var document yaml.Node
+	if err = yaml.Unmarshal([]byte(normalized[4:end]), &document); err != nil ||
+		validateMarkdownFrontMatterYAML(&document) != nil {
+		return MarkdownTemplate{}, errors.New("realqa github: Markdown front matter is invalid")
+	}
 	var header struct {
 		Name      string     `yaml:"name"`
 		About     string     `yaml:"about"`
@@ -93,6 +98,22 @@ func ParseMarkdownTemplate(filePath, etag string, contents []byte) (MarkdownTemp
 		DefaultLabels: []string(header.Labels), DefaultAssignees: []string(header.Assignees),
 		Body: strings.TrimPrefix(normalized[end+5:], "\n"),
 	}, nil
+}
+
+func validateMarkdownFrontMatterYAML(document *yaml.Node) error {
+	if document.Kind != yaml.DocumentNode || len(document.Content) != 1 {
+		return errors.New("realqa github: Markdown front matter is invalid")
+	}
+	root := document.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return errors.New("realqa github: Markdown front matter is invalid")
+	}
+	for _, key := range []string{"name", "about", "title", "type"} {
+		if value := mappingValue(root, key); value != nil && !isStringNode(value) {
+			return errors.New("realqa github: Markdown front matter string value is invalid")
+		}
+	}
+	return nil
 }
 
 type rawForm struct {

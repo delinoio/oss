@@ -1192,6 +1192,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_identities (account_id, subject_digest)
 		VALUES ($1, $2);
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($6, 'organization', $4, 'member');
 		INSERT INTO realqa_github_connections (
 			id, owner_kind, owner_id, state, connected_by_account_id,
 			credential_ciphertext, wrapped_data_key, key_id
@@ -1211,8 +1214,16 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		INSERT INTO realqa_repository_access (
 			installation_id, account_id, repository_id,
 			repository_owner, repository_name, issues_enabled, can_submit
+		) VALUES
+			($5, $1, 'lifecycle-repo', 'lifecycle-org', 'private', true, true),
+			($5, $6, 'member-repo', 'lifecycle-org', 'member-private', true, true);
+		INSERT INTO realqa_github_user_authorizations (
+			connection_id, account_id, state, github_user_id, github_login,
+			credential_ciphertext, wrapped_data_key, key_id, connected_at
 		) VALUES (
-			$5, $1, 'lifecycle-repo', 'lifecycle-org', 'private', true, true
+			$3, $6, 'connected', 764, 'connector-member',
+			decode('0d', 'hex'), decode('0e', 'hex'), 'fixture-key',
+			transaction_timestamp()
 		);
 		UPDATE realqa_github_connections
 		SET state = 'connected',
@@ -1255,7 +1266,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	var lifecycleConnectedBy uuid.NullUUID
 	var lifecycleCiphertext, lifecycleWrappedKey []byte
 	var lifecycleKeyID *string
-	var lifecycleRepositoryAccess int64
+	var lifecycleRepositoryAccess, lifecycleActiveAuthorizations int64
 	var lifecycleAuthorizationState string
 	var lifecycleAuthorizationCiphertext []byte
 	if err = connection.QueryRow(ctx, `
@@ -1264,25 +1275,32 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			wrapped_data_key, key_id,
 			(SELECT count(*)
 			 FROM realqa_repository_access
-			 WHERE account_id = $2)
+			 WHERE installation_id = $2),
+			(SELECT count(*)
+			 FROM realqa_github_user_authorizations
+			 WHERE connection_id = $1
+			   AND (state <> 'disconnected'
+			        OR credential_ciphertext IS NOT NULL))
 		FROM realqa_github_connections
 		WHERE id = $1
-	`, lifecycleConnectionID, lifecycleAccountID).Scan(
+	`, lifecycleConnectionID, lifecycleInstallationID).Scan(
 		&lifecycleConnectionState, &lifecycleConnectedBy,
 		&lifecycleCiphertext, &lifecycleWrappedKey, &lifecycleKeyID,
-		&lifecycleRepositoryAccess,
+		&lifecycleRepositoryAccess, &lifecycleActiveAuthorizations,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if lifecycleConnectionState != "disconnected" ||
 		lifecycleConnectedBy.Valid ||
 		lifecycleCiphertext != nil || lifecycleWrappedKey != nil ||
-		lifecycleKeyID != nil || lifecycleRepositoryAccess != 0 {
+		lifecycleKeyID != nil || lifecycleRepositoryAccess != 0 ||
+		lifecycleActiveAuthorizations != 0 {
 		t.Fatalf(
-			"account lifecycle retained organization data: state=%q account=%v ciphertext=%t wrapped=%t key=%v repository_access=%d",
+			"account lifecycle retained organization data: state=%q account=%v ciphertext=%t wrapped=%t key=%v repository_access=%d active_authorizations=%d",
 			lifecycleConnectionState, lifecycleConnectedBy.Valid,
 			lifecycleCiphertext != nil, lifecycleWrappedKey != nil,
 			lifecycleKeyID, lifecycleRepositoryAccess,
+			lifecycleActiveAuthorizations,
 		)
 	}
 	if err = connection.QueryRow(ctx, `
