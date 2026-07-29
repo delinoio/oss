@@ -73,10 +73,29 @@ function containsRawControl(value: string): boolean {
   return false;
 }
 
-export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
+function containsInvalidPercentEscape(
+  value: string,
+  allowRawQueryPercent: boolean,
+): boolean {
+  if (!allowRawQueryPercent) return INVALID_PERCENT_ESCAPE.test(value);
+  const fragmentIndex = value.indexOf("#");
+  const queryIndex = value.indexOf("?");
+  if (queryIndex < 0 || (fragmentIndex >= 0 && fragmentIndex < queryIndex)) {
+    return INVALID_PERCENT_ESCAPE.test(value);
+  }
+  const outsideQuery =
+    value.slice(0, queryIndex) +
+    (fragmentIndex < 0 ? "" : value.slice(fragmentIndex));
+  return INVALID_PERCENT_ESCAPE.test(outsideQuery);
+}
+
+function sanitizeUrl(
+  value: string,
+  allowRawQueryPercent: boolean,
+): CapturedUrlResult {
   if (
     containsRawControl(value) ||
-    INVALID_PERCENT_ESCAPE.test(value) ||
+    containsInvalidPercentEscape(value, allowRawQueryPercent) ||
     value.includes("\\")
   ) {
     return { ok: false, reason: "invalid-url" };
@@ -122,6 +141,15 @@ export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
         : null,
     },
   };
+}
+
+export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
+  return sanitizeUrl(value, false);
+}
+
+/** Go's URL parser preserves raw percent text in queries without decoding it. */
+export function sanitizeResolvedRuleUrl(value: string): CapturedUrlResult {
+  return sanitizeUrl(value, true);
 }
 
 export function restoreCapturedUrlParts(

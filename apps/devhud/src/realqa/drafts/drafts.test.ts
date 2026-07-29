@@ -249,6 +249,29 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     });
   });
 
+  it.each([
+    String.raw`^?Issue$`,
+    String.raw`^Issue$*`,
+    String.raw`\A{0,1}Issue$`,
+    String.raw`^Issue\z+`,
+  ])("matches synchronized quantified anchor in %s", (pattern) => {
+    expect(
+      inferDesktopUrl(
+        [
+          rule({
+            safeWindowTitlePattern: pattern,
+            urlTemplate: "https://example.com/matched",
+          }),
+        ],
+        "code",
+        "Issue",
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/matched" },
+    });
+  });
+
   it.each(["Issue\r\nnext", "Issue\u2028next", "Issue\u2029next"])(
     "uses only Go newline boundaries for synchronized multiline anchors in %s",
     (title) => {
@@ -332,6 +355,44 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
           rule({ safeWindowTitlePattern: pattern }),
         ]),
       ).toBe(false);
+    },
+  );
+
+  it.each([String.raw`^\é$`, String.raw`^[\é]$`, String.raw`^\😀$`])(
+    "rejects non-ASCII synchronized identity escape %s",
+    (pattern) => {
+      expect(
+        validateRealQaProcessUrlRules([
+          rule({ safeWindowTitlePattern: pattern }),
+        ]),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    [String.raw`^\p{greek}$`, "Ω"],
+    [String.raw`^\p{lu}$`, "A"],
+    [String.raw`^\p{ANY}$`, "😀"],
+    [String.raw`^\p{ascii}$`, "A"],
+    [String.raw`^\p{uppercase_letter}$`, "A"],
+  ])(
+    "normalizes synchronized Go Unicode class alias %s",
+    (pattern, title) => {
+      expect(
+        inferDesktopUrl(
+          [
+            rule({
+              safeWindowTitlePattern: pattern,
+              urlTemplate: "https://example.com/matched",
+            }),
+          ],
+          "code",
+          title,
+        ),
+      ).toMatchObject({
+        ok: true,
+        url: { value: "https://example.com/matched" },
+      });
     },
   );
 
@@ -769,6 +830,20 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
         rule({ urlTemplate: "https://example.com/%2F" }),
       ]),
     ).toBe(true);
+  });
+
+  it("accepts raw percent text in a synchronized URL query", () => {
+    const rules = [
+      rule({ urlTemplate: "https://example.com/?q=%zz&partial=%2" }),
+    ];
+    expect(validateRealQaProcessUrlRules(rules)).toBe(true);
+    expect(inferDesktopUrl(rules, "code", "Issue 757")).toMatchObject({
+      ok: true,
+      url: {
+        value: "https://example.com/",
+        strippedQuery: "?q=%zz&partial=%2",
+      },
+    });
   });
 
   it("accepts a URL template with a case-insensitive HTTP(S) scheme", () => {

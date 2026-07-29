@@ -1,5 +1,9 @@
 import type { StructuredShortcut } from "../../persistence/contracts";
-import { sanitizeCapturedUrl, type CapturedUrlResult } from "./url";
+import {
+  sanitizeCapturedUrl,
+  sanitizeResolvedRuleUrl,
+  type CapturedUrlResult,
+} from "./url";
 
 export const MAX_REALQA_PROCESS_URL_RULES = 64;
 export const MAX_REALQA_SAFE_PATTERN_BYTES = 512;
@@ -128,6 +132,55 @@ const goPerlWhitespaceRanges: readonly CharacterRange[] = [
   [0x0c, 0x0d],
   [0x20, 0x20],
 ];
+
+const goUnicodeCategoryAliases: Readonly<Record<string, string>> = {
+  any: "Any",
+  assigned: "Assigned",
+  ascii: "ASCII",
+  casedletter: "LC",
+  closepunctuation: "Pe",
+  combiningmark: "M",
+  connectorpunctuation: "Pc",
+  control: "Cc",
+  cntrl: "Cc",
+  currencysymbol: "Sc",
+  dashpunctuation: "Pd",
+  decimalnumber: "Nd",
+  digit: "Nd",
+  enclosingmark: "Me",
+  finalpunctuation: "Pf",
+  format: "Cf",
+  initialpunctuation: "Pi",
+  lc: "LC",
+  letter: "L",
+  letternumber: "Nl",
+  lineseparator: "Zl",
+  lowercaseletter: "Ll",
+  mark: "M",
+  mathsymbol: "Sm",
+  modifierletter: "Lm",
+  modifiersymbol: "Sk",
+  nonspacingmark: "Mn",
+  number: "N",
+  openpunctuation: "Ps",
+  other: "C",
+  otherletter: "Lo",
+  othernumber: "No",
+  otherpunctuation: "Po",
+  othersymbol: "So",
+  paragraphseparator: "Zp",
+  privateuse: "Co",
+  punct: "P",
+  punctuation: "P",
+  separator: "Z",
+  spaceseparator: "Zs",
+  spacingmark: "Mc",
+  surrogate: "Cs",
+  symbol: "S",
+  titlecaseletter: "Lt",
+  unassigned: "Cn",
+  uppercaseletter: "Lu",
+} as const;
 
 function complementCharacterRanges(
   ranges: readonly CharacterRange[],
@@ -268,13 +321,36 @@ function translateUnicodeClassEscape(
         ? "P"
         : "p"
       : unicodeClass[1];
-  const positive = `\\p{${name}}`;
-  let property = name;
-  try {
-    new RegExp(positive, "u");
-  } catch {
-    property = `Script=${name}`;
+  const compactName = name.replaceAll("_", "").toLowerCase();
+  const normalizedName = name
+    .split("_")
+    .map(
+      (part) =>
+        `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`,
+    )
+    .join("_");
+  const candidates = [
+    name,
+    goUnicodeCategoryAliases[compactName],
+    normalizedName,
+  ].filter(
+    (candidate, candidateIndex, all): candidate is string =>
+      candidate !== undefined && all.indexOf(candidate) === candidateIndex,
+  );
+  let property: string | null = null;
+  for (const candidate of candidates) {
+    for (const value of [candidate, `Script=${candidate}`]) {
+      try {
+        new RegExp(`\\p{${value}}`, "u");
+        property = value;
+        break;
+      } catch {
+        // Try the next Go-compatible alias or script spelling.
+      }
+    }
+    if (property !== null) break;
   }
+  if (property === null) throw new Error("unsupported Unicode class");
   const direct = `\\${classKind}{${property}}`;
   return {
     output:
@@ -313,10 +389,10 @@ function translateGoIdentityEscape(
   if (
     pattern[index] !== "\\" ||
     codePoint === undefined ||
-    (codePoint < 0x80 &&
-      ((codePoint >= 0x30 && codePoint <= 0x39) ||
-        (codePoint >= 0x41 && codePoint <= 0x5a) ||
-        (codePoint >= 0x61 && codePoint <= 0x7a)))
+    codePoint >= 0x80 ||
+    (codePoint >= 0x30 && codePoint <= 0x39) ||
+    (codePoint >= 0x41 && codePoint <= 0x5a) ||
+    (codePoint >= 0x61 && codePoint <= 0x7a)
   ) {
     return null;
   }
@@ -858,9 +934,11 @@ function translateAsciiWordBoundary(
 function translateTitlePattern(pattern: string): string {
   const translateAnchor = (anchor: "^" | "$", multiline: boolean): string => {
     if (anchor === "^") {
-      return multiline ? "(?:(?<![\\s\\S])|(?<=\\n))" : "(?<![\\s\\S])";
+      return multiline
+        ? "(?:(?<![\\s\\S])|(?<=\\n))"
+        : "(?:(?<![\\s\\S]))";
     }
-    return multiline ? "(?:(?=\\n)|(?![\\s\\S]))" : "(?![\\s\\S])";
+    return multiline ? "(?:(?=\\n)|(?![\\s\\S]))" : "(?:(?![\\s\\S]))";
   };
 
   function translateSequence(
@@ -904,9 +982,9 @@ function translateTitlePattern(pattern: string): string {
         const escaped = pattern[index + 1];
         output +=
           escaped === "A"
-            ? "(?<![\\s\\S])"
+            ? "(?:(?<![\\s\\S]))"
             : escaped === "z"
-              ? "(?![\\s\\S])"
+              ? "(?:(?![\\s\\S]))"
               : escaped === "b" || escaped === "B"
                 ? translateAsciiWordBoundary(escaped, flags)
               : pattern.slice(index, index + 2);
@@ -981,8 +1059,7 @@ function validTemplate(template: string): boolean {
     return false;
   }
   const probe = template.replace(/\$(?:\{[0-9]+\}|[0-9]+)/gu, "x");
-  if (/%(?![0-9A-Fa-f]{2})/u.test(probe)) return false;
-  const sanitized = sanitizeCapturedUrl(probe);
+  const sanitized = sanitizeResolvedRuleUrl(probe);
   return sanitized.ok;
 }
 
@@ -1086,7 +1163,7 @@ export function inferDesktopUrl(
     if (new TextEncoder().encode(expanded).length > MAX_REALQA_EXPANDED_URL_BYTES) {
       continue;
     }
-    const result = sanitizeCapturedUrl(expanded);
+    const result = sanitizeResolvedRuleUrl(expanded);
     if (result.ok) return result;
   }
   return null;
