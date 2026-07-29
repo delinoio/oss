@@ -232,7 +232,7 @@ SET state = 'connected',
     oauth_state_digest = NULL,
     oauth_state_expires_at = NULL,
     connected_at = transaction_timestamp(),
-    revision = revision + 1,
+    revision = caller_authorization.revision + 1,
     updated_at = transaction_timestamp()
 FROM realqa_github_connections AS connection
 WHERE connection.id = caller_authorization.connection_id

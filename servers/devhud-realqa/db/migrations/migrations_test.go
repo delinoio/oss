@@ -95,6 +95,13 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		t.Fatalf("applied migration count = %d, want 6", count)
 	}
 	if _, err = pool.Exec(ctx, `
+		INSERT INTO realqa_audits (
+			id, event_type, actor_reference, decision, result
+		) VALUES ($1, 'github_user_authorization_started', 'system', 'allow', 'success')
+	`, uuidv7.MustNew()); err != nil {
+		t.Fatalf("member GitHub authorization audit event was rejected: %v", err)
+	}
+	if _, err = pool.Exec(ctx, `
 		INSERT INTO realqa_github_connections (
 			id, owner_kind, owner_id, state
 		) VALUES ($1, 'personal', $2, 'connected')

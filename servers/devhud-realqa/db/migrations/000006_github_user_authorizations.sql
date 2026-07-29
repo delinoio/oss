@@ -50,3 +50,16 @@ CREATE TABLE realqa_github_user_authorizations (
 CREATE INDEX realqa_github_user_authorizations_user_idx
     ON realqa_github_user_authorizations(github_user_id)
     WHERE github_user_id IS NOT NULL;
+
+ALTER TABLE realqa_audits
+    DROP CONSTRAINT realqa_audits_event_type_check,
+    ADD CONSTRAINT realqa_audits_event_type_check CHECK (event_type IN (
+        'preset_created',
+        'preset_updated',
+        'preset_deleted',
+        'github_connection_started',
+        'github_user_authorization_started',
+        'github_connection_disconnected',
+        'feature_deletion_accepted',
+        'repository_access_denied'
+    ));
