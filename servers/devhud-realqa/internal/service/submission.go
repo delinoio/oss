@@ -142,6 +142,28 @@ func (service *Submission) CreateSubmission(
 			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
 				return lookupErr
 			}
+			payerScope := owner{
+				kind: "organization",
+				id:   payerOrganization,
+			}
+			if payerScope != scope {
+				if lockErr := lockActiveOwnerScope(
+					ctx, queries, payerScope); lockErr != nil {
+					return lockErr
+				}
+			}
+			allowed, accessErr := queries.HasPayerTeamAccess(
+				ctx, dbgen.HasPayerTeamAccessParams{
+					AccountID:      toPGUUID(actor.accountID),
+					OrganizationID: toPGUUID(payerOrganization),
+					TeamID:         toPGUUID(payerTeam),
+				})
+			if accessErr != nil {
+				return accessErr
+			}
+			if !allowed {
+				return permissionDenied()
+			}
 			if lockErr := queries.LockUploadSessionAccount(
 				ctx, toPGUUID(actor.accountID)); lockErr != nil {
 				return lockErr

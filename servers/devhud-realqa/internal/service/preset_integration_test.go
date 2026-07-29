@@ -795,6 +795,43 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		ctx, 100); drainErr != nil || completed != 1 {
 		t.Fatalf("drained promoted private copy = %d, %v", completed, drainErr)
 	}
+	promotedVerifiedKey := imageassets.VerifiedObjectKey(
+		promotionAssetID.String())
+	if err = objects.Put(
+		ctx, promotedVerifiedKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	if err = submissionService.cleanupUnownedVerifiedObject(
+		ctx, submissionID, promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, promotionAssetID).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 1 {
+		t.Fatalf("post-promotion verified deletions = %d, want 1",
+			pendingObjectDeletions)
+	}
+	objects.deleteErr = nil
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_object_deletion_jobs
+		SET next_attempt_at = transaction_timestamp()
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 1 {
+		t.Fatalf("drained post-promotion private copy = %d, %v",
+			completed, drainErr)
+	}
+	if _, ok := objects.objects[promotedVerifiedKey]; ok {
+		t.Fatal("post-promotion verified object was retained")
+	}
 	emptyRequest := proto.Clone(
 		submissionRequest).(*realqav1.CreateSubmissionRequest)
 	emptyRequest.Idempotency = &realqav1.IdempotencyKey{
@@ -1138,6 +1175,51 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	_, err = service.CreatePreset(authCtx, connect.NewRequest(deletedPayerRequest))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("deleted payer organization code = %v", connect.CodeOf(err))
+	}
+	deletedPayerPresetID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_presets (
+			id, owner_kind, owner_id, created_by_account_id,
+			payer_organization_id, payer_team_id, destination_id,
+			name, capture_mode, include_pointer, selector_mode,
+			issue_definition_kind, issue_definition_id,
+			issue_definition_name, issue_definition_path,
+			issue_definition_etag
+		) VALUES (
+			$1, 'personal', $2, $2, $3, $4, $5,
+			'Deleted payer fixture', 'region', false, 'normal',
+			'markdown_template', 'bug', 'Bug',
+			'.github/ISSUE_TEMPLATE/bug.md', 'schema-etag'
+		)
+	`, deletedPayerPresetID, accountID, deletedPayerOrganizationID,
+		deletedPayerTeamID, personalDestinationID); err != nil {
+		t.Fatal(err)
+	}
+	deletedPayerSubmission := &realqav1.CreateSubmissionRequest{
+		Owner: personalOwnerScope(accountID),
+		Billing: &realqav1.BillingScope{
+			OrganizationId: &realqav1.UuidV7{
+				Value: deletedPayerOrganizationID.String(),
+			},
+			TeamId: &realqav1.UuidV7{Value: deletedPayerTeamID.String()},
+		},
+		PresetId:       &realqav1.UuidV7{Value: deletedPayerPresetID.String()},
+		PresetRevision: &realqav1.Revision{Value: 1},
+		Destination:    request.Destination,
+		Images: []*realqav1.ImageDeclaration{
+			proto.Clone(submissionRequest.Images[0]).(*realqav1.ImageDeclaration),
+		},
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	deletedPayerSubmission.Images[0].ClientImageId = &realqav1.UuidV7{
+		Value: uuidv7.MustNew().String(),
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(deletedPayerSubmission))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("submission with deleted payer code = %v", connect.CodeOf(err))
 	}
 	deletionRequest := &realqav1.DeleteFeatureDataRequest{
 		TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,

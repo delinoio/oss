@@ -416,7 +416,8 @@ SELECT asset.*
 FROM realqa_assets AS asset
 JOIN realqa_submissions AS submission ON submission.id = asset.submission_id
 WHERE submission.owner_kind = sqlc.arg(owner_kind)
-  AND submission.owner_id = sqlc.arg(owner_id);
+  AND submission.owner_id = sqlc.arg(owner_id)
+FOR UPDATE OF asset;
 
 -- name: TombstoneScopePublicAssets :exec
 INSERT INTO realqa_public_asset_tombstones (public_id)

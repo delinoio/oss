@@ -684,6 +684,7 @@ FROM realqa_assets AS asset
 JOIN realqa_submissions AS submission ON submission.id = asset.submission_id
 WHERE submission.owner_kind = $1
   AND submission.owner_id = $2
+FOR UPDATE OF asset
 `
 
 type ListScopeObjectAssetsParams struct {

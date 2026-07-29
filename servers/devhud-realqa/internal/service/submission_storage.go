@@ -1526,8 +1526,7 @@ func (service *Submission) cleanupUnownedVerifiedObject(
 			ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
 		})
 	if err == nil && current.UploadState == "verified" &&
-		(current.State == "verified_unlinked" ||
-			current.State == "public_retained") {
+		current.State == "verified_unlinked" {
 		return nil
 	}
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
