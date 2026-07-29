@@ -36,10 +36,11 @@ billing catalog records, or publish a tracker/plugin interface.
   Preset creation also revalidates the selected repository and definition
   through the live adapter when the caller owns the credential. Markdown
   templates and Issue Forms are fetched through GitHub Contents, normalized,
-  and provider-required fields/options/defaults are enforced. Current
-  top-level issue type metadata and ID-less inputs are accepted; optional
-  provider upload controls are omitted in favor of RealQA's bounded image
-  workflow.
+  and provider-required fields/options/defaults are enforced. Archived
+  repositories remain visible but are never submit-capable. Current
+  top-level issue type metadata, textarea render languages, and ID-less inputs
+  are accepted; optional provider upload controls are omitted in favor of
+  RealQA's bounded image workflow.
 - `github-app-manifest.json` is the separate RealQA base manifest with Issues
   write, Metadata read, Contents read, and issue lifecycle delivery. Typed
   manifest generation adds only the explicitly configured repository- or

@@ -1019,18 +1019,19 @@ func (x *IssueFormOption) GetRequired() bool {
 }
 
 type IssueFormField struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FieldId       string                 `protobuf:"bytes,1,opt,name=field_id,json=fieldId,proto3" json:"field_id,omitempty"`
-	Kind          IssueFormFieldKind     `protobuf:"varint,2,opt,name=kind,proto3,enum=devhud.realqa.v1.IssueFormFieldKind" json:"kind,omitempty"`
-	Label         string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	Placeholder   string                 `protobuf:"bytes,5,opt,name=placeholder,proto3" json:"placeholder,omitempty"`
-	Required      bool                   `protobuf:"varint,6,opt,name=required,proto3" json:"required,omitempty"`
-	Options       []*IssueFormOption     `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
-	Multiple      bool                   `protobuf:"varint,8,opt,name=multiple,proto3" json:"multiple,omitempty"`
-	DefaultValue  string                 `protobuf:"bytes,9,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	FieldId        string                 `protobuf:"bytes,1,opt,name=field_id,json=fieldId,proto3" json:"field_id,omitempty"`
+	Kind           IssueFormFieldKind     `protobuf:"varint,2,opt,name=kind,proto3,enum=devhud.realqa.v1.IssueFormFieldKind" json:"kind,omitempty"`
+	Label          string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
+	Description    string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Placeholder    string                 `protobuf:"bytes,5,opt,name=placeholder,proto3" json:"placeholder,omitempty"`
+	Required       bool                   `protobuf:"varint,6,opt,name=required,proto3" json:"required,omitempty"`
+	Options        []*IssueFormOption     `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
+	Multiple       bool                   `protobuf:"varint,8,opt,name=multiple,proto3" json:"multiple,omitempty"`
+	DefaultValue   string                 `protobuf:"bytes,9,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
+	RenderLanguage string                 `protobuf:"bytes,10,opt,name=render_language,json=renderLanguage,proto3" json:"render_language,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *IssueFormField) Reset() {
@@ -1122,6 +1123,13 @@ func (x *IssueFormField) GetMultiple() bool {
 func (x *IssueFormField) GetDefaultValue() string {
 	if x != nil {
 		return x.DefaultValue
+	}
+	return ""
+}
+
+func (x *IssueFormField) GetRenderLanguage() string {
+	if x != nil {
+		return x.RenderLanguage
 	}
 	return ""
 }
@@ -1447,7 +1455,7 @@ const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\x0fIssueFormOption\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1a\n" +
-	"\brequired\x18\x03 \x01(\bR\brequired\"\xd9\x02\n" +
+	"\brequired\x18\x03 \x01(\bR\brequired\"\x82\x03\n" +
 	"\x0eIssueFormField\x12\x19\n" +
 	"\bfield_id\x18\x01 \x01(\tR\afieldId\x128\n" +
 	"\x04kind\x18\x02 \x01(\x0e2$.devhud.realqa.v1.IssueFormFieldKindR\x04kind\x12\x14\n" +
@@ -1457,7 +1465,9 @@ const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\brequired\x18\x06 \x01(\bR\brequired\x12;\n" +
 	"\aoptions\x18\a \x03(\v2!.devhud.realqa.v1.IssueFormOptionR\aoptions\x12\x1a\n" +
 	"\bmultiple\x18\b \x01(\bR\bmultiple\x12#\n" +
-	"\rdefault_value\x18\t \x01(\tR\fdefaultValue\"\xab\x02\n" +
+	"\rdefault_value\x18\t \x01(\tR\fdefaultValue\x12'\n" +
+	"\x0frender_language\x18\n" +
+	" \x01(\tR\x0erenderLanguage\"\xab\x02\n" +
 	"\tIssueForm\x12N\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2..devhud.realqa.v1.RepositoryIssueDefinitionRefR\n" +

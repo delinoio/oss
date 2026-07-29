@@ -124,6 +124,7 @@ message IssueFormField {
   repeated IssueFormOption options = 7;
   bool multiple = 8;
   string default_value = 9;
+  string render_language = 10;
 }
 
 message IssueForm {

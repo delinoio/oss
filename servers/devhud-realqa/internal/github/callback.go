@@ -724,6 +724,7 @@ type apiRepository struct {
 	Name        string     `json:"name"`
 	Owner       apiAccount `json:"owner"`
 	HasIssues   bool       `json:"has_issues"`
+	Archived    bool       `json:"archived"`
 	Permissions struct {
 		Push bool `json:"push"`
 	} `json:"permissions"`

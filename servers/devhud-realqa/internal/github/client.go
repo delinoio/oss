@@ -261,6 +261,7 @@ func (client *Client) ListRepositories(
 				Name      string     `json:"name"`
 				Owner     apiAccount `json:"owner"`
 				HasIssues bool       `json:"has_issues"`
+				Archived  bool       `json:"archived"`
 			} `json:"repositories"`
 		}
 		endpoint := fmt.Sprintf("/user/installations/%d/repositories?per_page=100&page=%d",
@@ -271,7 +272,7 @@ func (client *Client) ListRepositories(
 		for _, item := range response.Repositories {
 			repository := Repository{
 				ID: item.ID, NodeID: item.NodeID, Owner: item.Owner.Login, Name: item.Name,
-				IssuesEnabled: item.HasIssues, CanSubmit: item.HasIssues,
+				IssuesEnabled: item.HasIssues, CanSubmit: item.HasIssues && !item.Archived,
 			}
 			if err := repository.Validate(); err != nil {
 				return nil, err
@@ -342,6 +343,7 @@ func (client *Client) ListRepositoryPage(
 				Name      string     `json:"name"`
 				Owner     apiAccount `json:"owner"`
 				HasIssues bool       `json:"has_issues"`
+				Archived  bool       `json:"archived"`
 			} `json:"repositories"`
 		}
 		endpoint := fmt.Sprintf(
@@ -354,7 +356,7 @@ func (client *Client) ListRepositoryPage(
 			item := response.Repositories[index]
 			repository := Repository{
 				ID: item.ID, NodeID: item.NodeID, Owner: item.Owner.Login, Name: item.Name,
-				IssuesEnabled: item.HasIssues, CanSubmit: item.HasIssues,
+				IssuesEnabled: item.HasIssues, CanSubmit: item.HasIssues && !item.Archived,
 			}
 			if err = repository.Validate(); err != nil {
 				return RepositoryPage{}, err
@@ -813,7 +815,8 @@ func (repository apiRepository) model() (Repository, error) {
 	result := Repository{
 		ID: repository.ID, NodeID: repository.NodeID,
 		Owner: repository.Owner.Login, Name: repository.Name,
-		IssuesEnabled: repository.HasIssues, CanSubmit: repository.HasIssues,
+		IssuesEnabled:       repository.HasIssues,
+		CanSubmit:           repository.HasIssues && !repository.Archived,
 		CanSetIssueMetadata: repository.Permissions.Push,
 	}
 	if err := result.Validate(); err != nil {

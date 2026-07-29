@@ -301,6 +301,63 @@ func TestGetRepositoryUsesTargetedEndpoint(t *testing.T) {
 	}
 }
 
+func TestArchivedRepositoriesCannotSubmit(t *testing.T) {
+	t.Parallel()
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		repository := map[string]any{
+			"id": 1, "node_id": "R_fixture", "name": "oss",
+			"owner":      map[string]any{"id": 9, "login": "delinoio", "type": "Organization"},
+			"has_issues": true, "archived": true,
+			"permissions": map[string]any{"push": true},
+		}
+		switch request.URL.Path {
+		case "/user/installations/77/repositories":
+			return jsonResponse(request, http.StatusOK,
+				map[string]any{"repositories": []any{repository}}), nil
+		case "/repos/delinoio/oss":
+			return jsonResponse(request, http.StatusOK, repository), nil
+		default:
+			t.Fatalf("unexpected repository request %s", request.URL)
+			return nil, nil
+		}
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositories, err := client.ListRepositories(
+		context.Background(), fixtureToken(t), 77,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.ListRepositoryPage(
+		context.Background(), fixtureToken(t), 77,
+		RepositoryPageRequest{PageSize: 1},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targeted, err := client.GetRepository(
+		context.Background(), fixtureToken(t), Repository{
+			ID: 1, NodeID: "R_fixture", Owner: "delinoio", Name: "oss",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repositories) != 1 || !repositories[0].IssuesEnabled ||
+		repositories[0].CanSubmit ||
+		len(page.Repositories) != 1 || !page.Repositories[0].IssuesEnabled ||
+		page.Repositories[0].CanSubmit ||
+		!targeted.IssuesEnabled || targeted.CanSubmit {
+		t.Fatalf("archived repository permits submission: list=%#v page=%#v targeted=%#v",
+			repositories, page.Repositories, targeted)
+	}
+}
+
 func TestCreateIssuePropagatesTypeAndMetadata(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)

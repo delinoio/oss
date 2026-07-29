@@ -736,7 +736,7 @@ func repositoryDefinitionsProto(
 				FieldId: field.ID, Kind: issueFormFieldKindProto(field.Kind),
 				Label: field.Label, Description: field.Description,
 				Placeholder: field.Placeholder, DefaultValue: field.DefaultValue,
-				Required: field.Required,
+				RenderLanguage: field.Render, Required: field.Required,
 				Multiple: field.Multiple, Options: []*realqav1.IssueFormOption{},
 			}
 			if field.Kind == realqagithub.FormFieldMarkdown {
