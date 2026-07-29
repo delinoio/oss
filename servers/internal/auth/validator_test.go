@@ -211,9 +211,9 @@ func TestValidatorConfigurationFailsClosed(t *testing.T) {
 func TestFeatureAudienceValidatorRequiresExactHTTPSOrigin(t *testing.T) {
 	t.Parallel()
 	for _, audience := range []string{
-		"http://realqa.deli.dev",
-		"https://user@realqa.deli.dev",
-		"https://realqa.deli.dev/path",
+		"http://deck.deli.dev",
+		"https://user@deck.deli.dev",
+		"https://deck.deli.dev/path",
 		"https://realqa.deli.dev?token=value",
 		"https://realqa.deli.dev#fragment",
 	} {
@@ -226,13 +226,18 @@ func TestFeatureAudienceValidatorRequiresExactHTTPSOrigin(t *testing.T) {
 			t.Fatalf("NewValidatorForAudience() accepted %q", audience)
 		}
 	}
-	validator, err := NewValidatorForAudience(Config{
-		Issuer:    "https://tenant.logto.app/oidc",
-		Audience:  "https://realqa.deli.dev",
-		KeySource: staticKeySource{},
-	})
-	if err != nil || validator == nil {
-		t.Fatalf("NewValidatorForAudience() error = %v", err)
+	for _, audience := range []string{
+		"https://deck.deli.dev",
+		"https://realqa.deli.dev",
+	} {
+		validator, err := NewValidatorForAudience(Config{
+			Issuer:    "https://tenant.logto.app/oidc",
+			Audience:  audience,
+			KeySource: staticKeySource{},
+		})
+		if err != nil || validator == nil {
+			t.Fatalf("NewValidatorForAudience(%q) error = %v", audience, err)
+		}
 	}
 }
 

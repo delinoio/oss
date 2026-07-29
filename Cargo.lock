@@ -1368,6 +1368,7 @@ dependencies = [
  "ashpd",
  "auto-launch",
  "base64 0.22.1",
+ "cc",
  "dirs",
  "fs2",
  "getrandom 0.3.4",

@@ -602,11 +602,11 @@ impl CaptureBackend for WindowsCaptureBackend {
         })
     }
 
-    fn start_capture(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+    fn start_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
         self.register_capture(session_id).map(|_| ())
     }
 
-    fn finish_capture(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
+    fn finish_session(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure> {
         if self.unregister_capture(session_id)? {
             return Err(BackendFailure::Cancelled);
         }
@@ -2310,7 +2310,7 @@ mod tests {
         adapter.windows.lock().expect("window lock")[0] = moved;
         core.source_catalog().expect("refreshed catalog");
         backend
-            .start_capture(&resolved.session_id)
+            .start_session(&resolved.session_id)
             .expect("start capture");
 
         assert_eq!(
@@ -2322,7 +2322,7 @@ mod tests {
             "stale resolved geometry must be rejected before native capture"
         );
         backend
-            .finish_capture(&resolved.session_id)
+            .finish_session(&resolved.session_id)
             .expect("finish capture");
     }
 

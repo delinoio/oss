@@ -1,0 +1,29 @@
+# DevHud Deck server
+
+`servers/devhud-deck` is the private Go/PostgreSQL implementation of the
+`devhud.deck.v1` Connect contract. It currently implements authenticated view
+and device persistence, current viewer-scoped PR snapshots, typed audits,
+health endpoints, and owner/lifecycle deletion. Provider refresh, billing,
+GitHub connection, and mutation procedures fail closed until their separately
+documented dependencies are implemented.
+
+The process has no scheduler or provider-polling worker. Nothing in this
+directory deploys an API, configures DNS, publishes a client/SDK or image,
+registers a GitHub App, or supplies remote UI.
+
+Generate sqlc code and run checks from the repository root:
+
+```sh
+go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+servers/devhud-deck/scripts/generate-sqlc.sh
+go test ./servers/devhud-deck/...
+go vet ./servers/devhud-deck/...
+```
+
+PostgreSQL integration tests use `DECK_TEST_DATABASE_URL` and are skipped when
+that variable is absent.
+
+Logout and reset remain client operations. Both unregister the current device
+before deleting local credentials; reset does not call feature deletion and
+therefore does not delete server views or connections.
+

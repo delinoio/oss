@@ -20,10 +20,14 @@ func TestHeadersRedactsAuthorizationAndForwardedUserToken(t *testing.T) {
 	headers := make(http.Header)
 	headers.Set("Authorization", "Bearer access-token")
 	headers.Set("X-Delibase-Forwarded-User-Token", "forwarded-token")
+	headers.Set("X-Devhud-Deck-Forwarded-Delibase-Token", "deck-forwarded-token")
+	headers.Set("X-Devhud-Deck-Device-Revocation-Grant", "cleanup-grant")
 	headers.Set("X-Request-Id", "request-1")
 	safe := Headers(headers)
 	if safe.Get("Authorization") != Replacement ||
-		safe.Get("X-Delibase-Forwarded-User-Token") != Replacement {
+		safe.Get("X-Delibase-Forwarded-User-Token") != Replacement ||
+		safe.Get("X-Devhud-Deck-Forwarded-Delibase-Token") != Replacement ||
+		safe.Get("X-Devhud-Deck-Device-Revocation-Grant") != Replacement {
 		t.Fatalf("redacted headers = %#v", safe)
 	}
 	if safe.Get("X-Request-Id") != "request-1" {
@@ -31,6 +35,18 @@ func TestHeadersRedactsAuthorizationAndForwardedUserToken(t *testing.T) {
 	}
 	if headers.Get("Authorization") != "Bearer access-token" {
 		t.Fatal("Headers mutated its input")
+	}
+}
+
+func TestDeckIdentityBearingFieldsAreAlwaysRedacted(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{
+		"repository", "raw_query", "query", "pull_request_title",
+		"github_login", "authorization_target_url",
+	} {
+		if !IsSensitiveKey(key) {
+			t.Fatalf("%q is not classified as sensitive", key)
+		}
 	}
 }
 

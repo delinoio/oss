@@ -5,9 +5,10 @@
 - Project/component: `devhud` / `deck-api`
 - Canonical source path: `protos/devhud-deck/v1`
 - Contract identity: `devhud.deck.v1`
-- Status: implemented source contract and private generated workspace package for
-  issue #755; no Deck server, deployed API, published client, or activated
-  feature is claimed.
+- Status: implemented source contract, private generated workspace package,
+  and bounded Deck server persistence/authentication foundation for issue
+  #755. No deployed API, published client, provider/billing integration, or
+  activated feature is claimed.
 
 ## Runtime and Language
 

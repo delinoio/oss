@@ -37,6 +37,17 @@ export enum CapturePermission {
   Denied = "denied",
 }
 
+export enum CapturePermissionGuidance {
+  None = "none",
+  RequestSystemPrompt = "request-system-prompt",
+  OpenSystemSettings = "open-system-settings",
+}
+
+export interface CapturePermissionStatus {
+  readonly permission: CapturePermission;
+  readonly guidance: CapturePermissionGuidance;
+}
+
 export enum ImageMediaType {
   Png = "png",
   Webp = "webp",
@@ -312,6 +323,8 @@ export type InvokeCommand = <T>(
 ) => Promise<T>;
 
 export interface RealQaCaptureBridge {
+  permissionStatus(): Promise<CapturePermissionStatus>;
+  requestPermission(): Promise<CapturePermissionStatus>;
   inspectCapabilities(): Promise<CaptureCapabilities>;
   listSources(): Promise<CaptureSourceCatalog>;
   adjustSelection(
@@ -333,6 +346,14 @@ export function createRealQaCaptureBridge(
   invokeCommand: InvokeCommand = invoke,
 ): RealQaCaptureBridge {
   return {
+    permissionStatus: () =>
+      invokeCommand<CapturePermissionStatus>(
+        "realqa_capture_permission_status",
+      ),
+    requestPermission: () =>
+      invokeCommand<CapturePermissionStatus>(
+        "realqa_request_capture_permission",
+      ),
     inspectCapabilities: () =>
       invokeCommand<CaptureCapabilities>(
         "realqa_inspect_capture_capabilities",
