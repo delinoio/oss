@@ -1085,7 +1085,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			provider_installation_id, account_login, provider_account_id,
 			account_kind, state, permissions
 		) VALUES (
-			$5, $3, 'organization', $4, 760, 'lifecycle-org', 760,
+			$5, $3, 'organization', $4, 762, 'lifecycle-org', 762,
 			'Organization', 'active',
 			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
 		);
