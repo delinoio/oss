@@ -1097,11 +1097,9 @@ func (service *Submission) PromoteSubmittedAssets(
 		if err != nil {
 			return storageUnavailable()
 		}
-		body, readErr := io.ReadAll(io.LimitReader(
-			source.Body, imageassets.MaxImageEncodedBytes+1))
-		source.Body.Close()
-		if readErr != nil || int64(len(body)) != asset.EncodedBytes {
-			return verificationFailed()
+		body, err := readPromotionBody(source.Body, asset.EncodedBytes)
+		if err != nil {
+			return err
 		}
 		publicID, err := imageassets.NewPublicID()
 		if err != nil {
@@ -1161,6 +1159,19 @@ func (service *Submission) PromoteSubmittedAssets(
 	_, err := service.dependencies.Store.Queries().MarkSubmissionSubmitted(
 		ctx, toPGUUID(submissionID))
 	return err
+}
+
+func readPromotionBody(source io.ReadCloser, expectedBytes int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(
+		source, imageassets.MaxImageEncodedBytes+1))
+	_ = source.Close()
+	if err != nil {
+		return nil, storageUnavailable()
+	}
+	if int64(len(body)) != expectedBytes {
+		return nil, verificationFailed()
+	}
+	return body, nil
 }
 
 func (service *Submission) PublicAsset(

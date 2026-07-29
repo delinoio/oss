@@ -331,6 +331,9 @@ func sameDestinationIdentity(
 }
 
 func validateImages(images []*realqav1.ImageDeclaration) error {
+	if len(images) == 0 {
+		return invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
+	}
 	var total int64
 	for _, image := range images {
 		if image == nil || image.EncodedBytes <= 0 ||
