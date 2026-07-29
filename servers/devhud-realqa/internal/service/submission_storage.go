@@ -649,7 +649,7 @@ func (service *Submission) GetSubmission(
 	if request == nil || request.Msg == nil {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
 	}
-	_, id, _, _, err := service.authorizeSubmissionRequest(
+	_, id, _, _, err := service.authorizeSubmissionOwnerRequest(
 		ctx, request.Msg.SubmissionId)
 	if err != nil {
 		return nil, err
@@ -763,7 +763,7 @@ func (service *Submission) DeleteImage(
 		return nil, err
 	}
 	actor, submissionID, submission, scope, err :=
-		service.authorizeSubmissionDeletionRequest(
+		service.authorizeSubmissionOwnerRequest(
 			ctx, request.Msg.SubmissionId)
 	if err != nil {
 		return nil, err
@@ -910,7 +910,7 @@ func (service *Submission) DeleteSubmissionAssets(
 		return nil, err
 	}
 	actor, submissionID, submission, scope, err :=
-		service.authorizeSubmissionDeletionRequest(
+		service.authorizeSubmissionOwnerRequest(
 			ctx, request.Msg.SubmissionId)
 	if err != nil {
 		return nil, err
@@ -1378,6 +1378,16 @@ func (service *Submission) CleanupExpiredStaging(
 				if cleanupErr != nil {
 					return cleanupErr
 				}
+				if submission.SubmittedAt.Valid &&
+					locked.State == "verified_unlinked" {
+					if _, cleanupErr = queries.TouchSubmissionAfterAssetDeletion(
+						ctx, dbgen.TouchSubmissionAfterAssetDeletionParams{
+							ID:               submission.ID,
+							ExpectedRevision: submission.Revision,
+						}); cleanupErr != nil {
+						return cleanupErr
+					}
+				}
 				if cleanupErr = enqueueAssetObjectDeletions(
 					ctx, queries, value); cleanupErr != nil {
 					return cleanupErr
@@ -1549,7 +1559,7 @@ func (service *Submission) authorizeSubmissionRequest(
 		ctx, message, true)
 }
 
-func (service *Submission) authorizeSubmissionDeletionRequest(
+func (service *Submission) authorizeSubmissionOwnerRequest(
 	ctx context.Context,
 	message *realqav1.UuidV7,
 ) (caller, uuid.UUID, dbgen.RealqaSubmission, owner, error) {
@@ -1596,7 +1606,8 @@ func (service *Submission) authorizeSubmissionRequestWithRepository(
 	if creatorID == actor.accountID {
 		return actor, submissionID, submission, scope, nil
 	}
-	if !isRetainedSubmissionState(submission.State) {
+	if !submission.SubmittedAt.Valid ||
+		!isRetainedSubmissionState(submission.State) {
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
 			permissionDenied()
 	}

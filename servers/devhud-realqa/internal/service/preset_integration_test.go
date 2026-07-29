@@ -1325,6 +1325,27 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("empty submission state = %v",
 			emptyDeleted.Msg.Submission.State)
 	}
+	_, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: emptyDeleted.Msg.Submission.SubmissionId,
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-creator pre-submission terminal get code = %v",
+			connect.CodeOf(err))
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId:               emptyDeleted.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: emptyDeleted.Msg.Submission.Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-creator pre-submission terminal delete code = %v",
+			connect.CodeOf(err))
+	}
 	preSubmissionTerminals, err := submissionService.ListSubmissions(
 		authCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
 			Owner: organizationOwnerScope(organizationID),
@@ -1411,6 +1432,44 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if _, ok := objects.objects[orphanedVerifiedKey]; ok {
 		t.Fatal("orphaned verified object was retained")
 	}
+	submittedExtraAssetID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $1, submission_id, 'verified_unlinked', encoded_bytes, $2,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $3;
+		UPDATE realqa_submissions
+		SET verified_encoded_bytes = verified_encoded_bytes + (
+		        SELECT encoded_bytes
+		        FROM realqa_assets
+		        WHERE id = $1
+		    ),
+		    upload_expires_at = transaction_timestamp() - interval '1 hour'
+		WHERE id = $4
+	`, submittedExtraAssetID, uuidv7.MustNew(), promotionAssetID,
+		submissionID); err != nil {
+		t.Fatal(err)
+	}
+	submittedExtraKey := imageassets.VerifiedObjectKey(
+		submittedExtraAssetID.String())
+	if err = objects.Put(ctx, submittedExtraKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	var submittedRetainedBytes int64
+	if err = connection.QueryRow(ctx, `
+		SELECT encoded_bytes
+		FROM realqa_assets
+		WHERE id = $1
+	`, promotionAssetID).Scan(&submittedRetainedBytes); err != nil {
+		t.Fatal(err)
+	}
 	partialSubmissionID := uuidv7.MustNew()
 	partialPublicAssetID := uuidv7.MustNew()
 	partialPrivateAssetID := uuidv7.MustNew()
@@ -1471,8 +1530,31 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleaned != 2 {
-		t.Fatalf("partial promotion cleanup count = %d, want 2", cleaned)
+	if cleaned != 3 {
+		t.Fatalf("expired asset cleanup count = %d, want 3", cleaned)
+	}
+	var (
+		submittedBytesAfterCleanup int64
+		submittedExtraState        string
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT submission.verified_encoded_bytes, asset.state
+		FROM realqa_submissions AS submission
+		JOIN realqa_assets AS asset ON asset.submission_id = submission.id
+		WHERE submission.id = $1 AND asset.id = $2
+	`, submissionID, submittedExtraAssetID).Scan(
+		&submittedBytesAfterCleanup, &submittedExtraState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if submittedBytesAfterCleanup != submittedRetainedBytes ||
+		submittedExtraState != "expired" {
+		t.Fatalf("submitted extra cleanup = %d / %q, want %d / expired",
+			submittedBytesAfterCleanup, submittedExtraState,
+			submittedRetainedBytes)
+	}
+	if _, ok := objects.objects[submittedExtraKey]; ok {
+		t.Fatal("submitted unlinked object was retained")
 	}
 	if _, err = store.Queries().MarkSubmissionSubmitted(
 		ctx, toPGUUID(partialSubmissionID)); !errors.Is(err, pgx.ErrNoRows) {
@@ -1852,11 +1934,11 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("disconnect replay after role change = %#v", disconnectReplay.Msg)
 	}
 	retainedBeforeDelete, err := submissionService.GetSubmission(
-		authCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
 			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
 		}))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("get retained submission after repository disconnect: %v", err)
 	}
 	var retainedBytesBeforeDelete int64
 	if err = connection.QueryRow(ctx, `
