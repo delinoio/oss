@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     CaptureFailure, EncodedImage, ImageMediaType, ImageSessionBudget, decode_image,
-    editor::{EditorOperation, deserialize_bounded_string, deserialize_operations, flatten},
+    editor::{
+        EditorOperation, deserialize_bounded_string, deserialize_operations, flatten,
+        validate_operations,
+    },
     encode_image,
     image_boundary::bounded_preview,
     sanitize_image,
@@ -98,6 +101,8 @@ struct ComposerSession {
 #[derive(Debug)]
 struct ComposerSource {
     original: EncodedImage,
+    width: u32,
+    height: u32,
     original_encoded_bytes: u64,
     accounted_encoded_bytes: u64,
     revision: u64,
@@ -189,11 +194,12 @@ pub(crate) struct ComposerCore {
 }
 
 impl ComposerCore {
-    pub(crate) fn clone_original_for_draft(
+    pub(crate) fn clone_validated_original_for_draft(
         &self,
         session_id: &ComposerSessionId,
         image_id: &ComposerImageId,
         source_revision: u64,
+        operations: &[EditorOperation],
     ) -> Result<EncodedImage, CaptureFailure> {
         validate_identifier(&session_id.0)?;
         validate_identifier(&image_id.0)?;
@@ -207,6 +213,7 @@ impl ComposerCore {
             .and_then(|session| session.images.get(image_id))
             .filter(|source| source.revision == source_revision)
             .ok_or(CaptureFailure::InvalidEditSequence)?;
+        validate_operations(source.width, source.height, operations)?;
         Ok(source.original.clone())
     }
 
@@ -292,6 +299,8 @@ impl ComposerCore {
             request.image_id.clone(),
             ComposerSource {
                 original: sanitized.clone(),
+                width,
+                height,
                 original_encoded_bytes: encoded_bytes,
                 accounted_encoded_bytes: encoded_bytes,
                 revision,

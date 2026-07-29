@@ -496,10 +496,11 @@ impl RealQaDraftState {
         let mut original_bytes = 0_u64;
         for image in &request.content.images {
             let original = composer
-                .clone_original_for_draft(
+                .clone_validated_original_for_draft(
                     &ComposerSessionId(request.composer_session_id.clone()),
                     &ComposerImageId(image.image_id.clone()),
                     image.source_revision,
+                    &image.operations,
                 )
                 .map_err(|_| DraftError::InvalidRecord)?;
             original_bytes = original_bytes
@@ -1244,10 +1245,11 @@ mod tests {
         assert_eq!(loaded.content.images[0].composer.preview_height, 1);
         assert!(!loaded.content.images[0].composer.image.bytes.is_empty());
         let restored = restored_composer
-            .clone_original_for_draft(
+            .clone_validated_original_for_draft(
                 &ComposerSessionId("load-session".to_owned()),
                 &ComposerImageId("image-1".to_owned()),
                 loaded.content.images[0].composer.source_revision,
+                &loaded.content.images[0].operations,
             )
             .unwrap();
         assert!(!restored.bytes.is_empty());
@@ -1286,6 +1288,30 @@ mod tests {
                 )
                 .err(),
             Some(DraftError::AccountLocked)
+        );
+    }
+
+    #[test]
+    fn save_rejects_editor_operations_invalid_for_the_retained_source() {
+        let state = state("invalid-editor-operation");
+        let composer = ComposerCore::default();
+        let draft_id = Uuid::now_v7().to_string();
+        let mut request = request(&composer, &draft_id);
+        request.content.images[0].operations = serde_json::from_value(serde_json::json!([
+            {
+                "kind": "rectangle",
+                "rect": { "x": 2, "y": 0, "width": 1, "height": 1 },
+                "color": "#ffffff",
+                "lineWidth": 1
+            }
+        ]))
+        .unwrap();
+
+        assert_eq!(
+            state
+                .save(&access("account-a", true), &composer, request)
+                .err(),
+            Some(DraftError::InvalidRecord)
         );
     }
 

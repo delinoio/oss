@@ -383,6 +383,7 @@ enum SessionState {
         subject: String,
         access_token: Secret,
         id_token: Option<Secret>,
+        reauthenticated_features: BTreeSet<AuthFeature>,
     },
     PriorSessionOffline {
         account_binding: String,
@@ -561,6 +562,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 subject,
                 access_token: tokens.access_token,
                 id_token: tokens.id_token,
+                reauthenticated_features: [feature].into_iter().collect(),
             };
             return Ok(self.snapshot());
         }
@@ -793,10 +795,19 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         }
         retained.refresh_tokens.insert(feature, refresh_token);
         self.vault.replace(&retained)?;
+        let mut reauthenticated_features = match &self.state {
+            SessionState::SignedIn {
+                reauthenticated_features,
+                ..
+            } => reauthenticated_features.clone(),
+            _ => BTreeSet::new(),
+        };
+        reauthenticated_features.insert(feature);
         self.state = SessionState::SignedIn {
             subject,
             access_token: tokens.access_token,
             id_token: tokens.id_token,
+            reauthenticated_features,
         };
         Ok(self.snapshot())
     }
@@ -883,6 +894,13 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             retained.refresh_tokens.insert(feature, rotated_refresh);
             self.vault.replace(&retained)?;
         }
+        if let SessionState::SignedIn {
+            reauthenticated_features,
+            ..
+        } = &mut self.state
+        {
+            reauthenticated_features.insert(feature);
+        }
         Ok(BearerPair {
             feature: feature_tokens.access_token,
             delibase: delibase_tokens.access_token,
@@ -899,13 +917,17 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         let retained_binding =
             device_session_account_binding(retained.device_session_key.expose())?;
         match &self.state {
-            SessionState::SignedIn { subject, .. } => {
+            SessionState::SignedIn {
+                subject,
+                reauthenticated_features,
+                ..
+            } => {
                 if !device_session_matches(retained.device_session_key.expose(), subject)? {
                     return Err(AuthError::AccountSwitchRequiresLogout);
                 }
                 Ok(RealQaDraftAccessContext {
                     account_binding: retained_binding,
-                    online_reauthenticated: true,
+                    online_reauthenticated: reauthenticated_features.contains(&AuthFeature::RealQa),
                 })
             }
             SessionState::PriorSessionOffline { account_binding }
@@ -2190,6 +2212,7 @@ mod tests {
             subject: "account-a".to_owned(),
             access_token: Secret::new("memory-access-token").unwrap(),
             id_token: Some(Secret::new("memory-id-token").unwrap()),
+            reauthenticated_features: BTreeSet::new(),
         };
 
         assert!(matches!(
@@ -2234,6 +2257,7 @@ mod tests {
             subject: "account-a".to_owned(),
             access_token: Secret::new("memory-access-token").unwrap(),
             id_token: Some(Secret::new("memory-id-token").unwrap()),
+            reauthenticated_features: BTreeSet::new(),
         };
 
         assert!(matches!(
@@ -2414,6 +2438,32 @@ mod tests {
                 .map(String::as_str),
             Some("refresh-delibase-rotated")
         );
+    }
+
+    #[test]
+    fn deck_rehydration_does_not_mark_realqa_as_online_reauthenticated() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some((
+                [
+                    (AuthFeature::Deck, "refresh-deck".to_owned()),
+                    (AuthFeature::RealQa, "refresh-realqa".to_owned()),
+                ]
+                .into_iter()
+                .collect(),
+                key.expose().to_owned(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        queue_valid_grant_pair(&mut transport, "account-a", AuthFeature::Deck, None, None);
+        let mut prior = manager(transport, vault);
+
+        assert!(matches!(
+            prior.restore_at(Connectivity::Online, NOW),
+            Ok(SessionSnapshot::SignedIn { .. })
+        ));
+        assert!(!prior.realqa_draft_access().unwrap().online_reauthenticated);
     }
 
     #[test]
@@ -2660,6 +2710,7 @@ mod tests {
             subject: "account-a".to_owned(),
             access_token: Secret::new("memory-access-token").unwrap(),
             id_token: Some(Secret::new("memory-id-token").unwrap()),
+            reauthenticated_features: BTreeSet::new(),
         };
 
         assert_eq!(manager.reset().unwrap(), SessionSnapshot::SignedOut);
