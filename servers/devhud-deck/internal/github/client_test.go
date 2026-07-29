@@ -640,6 +640,60 @@ func TestAutoMergeRequiresRepositoryAndPullRequestEligibility(t *testing.T) {
 	}
 }
 
+func TestActionMetadataIncludesCurrentPullRequestOperands(t *testing.T) {
+	t.Parallel()
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path == "/repos/acme/widget" {
+				return jsonResponse(http.StatusOK,
+					`{"allow_merge_commit":true,"permissions":{"pull":true,"push":true}}`), nil
+			}
+			return jsonResponse(http.StatusOK, `{
+				"node_id":"PR_1",
+				"title":"Current title",
+				"user":{"login":"author"},
+				"state":"open",
+				"draft":false,
+				"merged":false,
+				"mergeable":true,
+				"mergeable_state":"clean",
+				"updated_at":"2026-02-03T04:05:06Z",
+				"head":{"sha":"abc"},
+				"requested_reviewers":[{"login":"reviewer"}],
+				"requested_teams":[{"slug":"core"}],
+				"assignees":[{"login":"assignee"}],
+				"labels":[{"name":"ready"}]
+			}`), nil
+		})})
+	metadata, err := client.ActionMetadata(
+		context.Background(), 1, Credential{AccessToken: "token"},
+		Permissions{
+			Metadata: PermissionRead, PullRequests: PermissionWrite,
+		},
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"},
+			Number:     7,
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Title != "Current title" ||
+		metadata.Author.Login != "author" ||
+		!metadata.UpdatedAt.Equal(time.Date(
+			2026, 2, 3, 4, 5, 6, 0, time.UTC)) ||
+		len(metadata.Reviewers) != 1 ||
+		metadata.Reviewers[0].Login != "reviewer" ||
+		len(metadata.ReviewerTeams) != 1 ||
+		metadata.ReviewerTeams[0] != (Team{
+			Organization: "acme", Slug: "core",
+		}) ||
+		len(metadata.Assignees) != 1 ||
+		metadata.Assignees[0].Login != "assignee" ||
+		len(metadata.Labels) != 1 || metadata.Labels[0] != "ready" {
+		t.Fatalf("current action metadata = %#v", metadata)
+	}
+}
+
 func TestSearchFiltersBeforeReturningIdentityOrCounts(t *testing.T) {
 	t.Parallel()
 	const secretTitle = "private acquisition codename"

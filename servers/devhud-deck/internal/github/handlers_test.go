@@ -16,6 +16,7 @@ import (
 type callbackStoreFixture struct {
 	mu        sync.Mutex
 	states    map[[sha256.Size]byte]CallbackState
+	consumed  map[[sha256.Size]byte]CallbackState
 	connected []CallbackState
 }
 
@@ -46,11 +47,16 @@ func (store *callbackStoreFixture) ConsumeGitHubCallbackState(
 		return ErrInvalidSignature
 	}
 	delete(store.states, hash)
+	if store.consumed == nil {
+		store.consumed = make(map[[sha256.Size]byte]CallbackState)
+	}
+	store.consumed[hash] = state
 	return nil
 }
 
 func (store *callbackStoreFixture) ConnectGitHub(
 	_ context.Context,
+	hash [sha256.Size]byte,
 	state CallbackState,
 	_ Installation,
 	_ Credential,
@@ -58,6 +64,11 @@ func (store *callbackStoreFixture) ConnectGitHub(
 ) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	actual, ok := store.consumed[hash]
+	if !ok || !reflect.DeepEqual(actual, state) {
+		return ErrInvalidSignature
+	}
+	delete(store.consumed, hash)
 	store.connected = append(store.connected, state)
 	return nil
 }

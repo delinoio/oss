@@ -30,6 +30,7 @@ type CallbackStore interface {
 	) error
 	ConnectGitHub(
 		context.Context,
+		[sha256.Size]byte,
 		CallbackState,
 		Installation,
 		Credential,
@@ -234,7 +235,8 @@ func (broker *Broker) oauthCallback(
 		return
 	}
 	if err := broker.callbacks.ConnectGitHub(
-		request.Context(), state, selected, credential, now); err != nil {
+		request.Context(), StateHash(rawState), state,
+		selected, credential, now); err != nil {
 		http.Error(writer, "authorization failed", http.StatusConflict)
 		return
 	}

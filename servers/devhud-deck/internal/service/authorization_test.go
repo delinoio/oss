@@ -14,6 +14,7 @@ type deniedRepositories struct{}
 func (deniedRepositories) CanReadRepository(
 	context.Context,
 	contracts.Viewer,
+	*deckv1.Owner,
 	string,
 	string,
 ) (bool, error) {
@@ -91,7 +92,7 @@ func TestRepositoryAuthorizationDefaultsToDeny(t *testing.T) {
 	t.Parallel()
 	dependencies := Dependencies{}.withDefaults()
 	allowed, err := dependencies.Repositories.CanReadRepository(
-		context.Background(), contracts.Viewer{}, "secret", "project")
+		context.Background(), contracts.Viewer{}, nil, "secret", "project")
 	if err != nil {
 		t.Fatal(err)
 	}

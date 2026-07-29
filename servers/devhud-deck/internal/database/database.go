@@ -799,22 +799,35 @@ func (store *Store) HasSnapshot(
 	viewerHash [32]byte,
 	reference *deckv1.PullRequestReference,
 ) (bool, error) {
+	_, err := store.GetSnapshot(ctx, viewID, viewerHash, reference)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (store *Store) GetSnapshot(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	reference *deckv1.PullRequestReference,
+) (*deckv1.PullRequestResult, error) {
 	if reference == nil || reference.Repository == nil ||
 		reference.Number == 0 {
-		return false, nil
+		return nil, ErrNotFound
 	}
 	rows, err := store.queries.ListViewSnapshots(ctx, dbgen.ListViewSnapshotsParams{
 		ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
 		AfterOrdinal: 0, PageLimit: 500,
 	})
 	if err != nil {
-		return false, errors.New("deck database: list snapshots failed")
+		return nil, errors.New("deck database: list snapshots failed")
 	}
 	for _, row := range rows {
 		repository := &deckv1.RepositoryReference{}
 		if err := store.openProto(
 			"pr-snapshot-repository", row.RepositoryCiphertext, repository); err != nil {
-			return false, err
+			return nil, err
 		}
 		if !strings.EqualFold(repository.Owner, reference.Repository.Owner) ||
 			!strings.EqualFold(repository.Name, reference.Repository.Name) {
@@ -823,13 +836,13 @@ func (store *Store) HasSnapshot(
 		result := &deckv1.PullRequestResult{}
 		if err := store.openProto(
 			"pr-snapshot", row.SnapshotCiphertext, result); err != nil {
-			return false, err
+			return nil, err
 		}
 		if result.Number == reference.Number {
-			return true, nil
+			return result, nil
 		}
 	}
-	return false, nil
+	return nil, ErrNotFound
 }
 
 func (store *Store) String() string {

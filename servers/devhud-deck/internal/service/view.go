@@ -399,7 +399,8 @@ func (service *View) ListPullRequests(
 	snapshots, truncated, refreshedAt, err := service.dependencies.Store.ListSnapshots(
 		ctx, viewID, viewerHash, func(repository *deckv1.RepositoryReference) error {
 			allowed, authErr := service.dependencies.Repositories.CanReadRepository(
-				ctx, viewer, repository.GetOwner(), repository.GetName())
+				ctx, viewer, view.Owner,
+				repository.GetOwner(), repository.GetName())
 			if authErr != nil {
 				return rpcerr.New(connect.CodeUnavailable,
 					deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
@@ -676,7 +677,8 @@ func (service *View) canReadViewRepositories(
 			continue
 		}
 		allowed, err := service.dependencies.Repositories.CanReadRepository(
-			ctx, viewer, repository.Owner, repository.Repository)
+			ctx, viewer, view.Owner,
+			repository.Owner, repository.Repository)
 		if err != nil {
 			return false, rpcerr.New(connect.CodeUnavailable,
 				deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)

@@ -264,6 +264,13 @@ type ActionMetadata struct {
 	Revision         uint64
 	Permissions      Permissions
 	RepositoryOwner  AccountKind
+	Title            string
+	Author           User
+	UpdatedAt        time.Time
+	Reviewers        []User
+	ReviewerTeams    []Team
+	Assignees        []User
+	Labels           []string
 	Supported        map[MutationKind]bool
 	AvailableMethods map[MergeMethod]bool
 	NodeID           string

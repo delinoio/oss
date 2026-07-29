@@ -12,9 +12,24 @@ FROM deck_github_callback_states
 WHERE state_hash = sqlc.arg(state_hash)
 FOR UPDATE;
 
+-- name: MarkGitHubCallbackStateConsumed :exec
+UPDATE deck_github_callback_states
+SET consumed_at = sqlc.arg(consumed_at)
+WHERE state_hash = sqlc.arg(state_hash)
+  AND consumed_at IS NULL;
+
 -- name: DeleteGitHubCallbackState :exec
 DELETE FROM deck_github_callback_states
 WHERE state_hash = sqlc.arg(state_hash);
+
+-- name: DeleteConsumedGitHubCallbackState :one
+DELETE FROM deck_github_callback_states
+WHERE state_hash = sqlc.arg(state_hash)
+  AND owner_scope = sqlc.arg(owner_scope)
+  AND owner_id = sqlc.arg(owner_id)
+  AND account_id = sqlc.arg(account_id)
+  AND consumed_at IS NOT NULL
+RETURNING state_hash;
 
 -- name: DeleteExpiredGitHubCallbackStates :exec
 DELETE FROM deck_github_callback_states

@@ -92,6 +92,9 @@ func (store *Store) ConsumeGitHubCallbackState(
 		if err != nil {
 			return err
 		}
+		if record.ConsumedAt.Valid {
+			return deckgithub.ErrInvalidSignature
+		}
 		if !record.ExpiresAt.Time.After(now) {
 			if err := queries.DeleteGitHubCallbackState(ctx, hash[:]); err != nil {
 				return err
@@ -112,12 +115,16 @@ func (store *Store) ConsumeGitHubCallbackState(
 		if !bytes.Equal(actualPayload, expectedPayload) {
 			return deckgithub.ErrInvalidSignature
 		}
-		return queries.DeleteGitHubCallbackState(ctx, hash[:])
+		return queries.MarkGitHubCallbackStateConsumed(
+			ctx, dbgen.MarkGitHubCallbackStateConsumedParams{
+				ConsumedAt: pgTime(now), StateHash: hash[:],
+			})
 	})
 }
 
 func (store *Store) ConnectGitHub(
 	ctx context.Context,
+	stateHash [32]byte,
 	state deckgithub.CallbackState,
 	installation deckgithub.Installation,
 	credential deckgithub.Credential,
@@ -167,6 +174,15 @@ func (store *Store) ConnectGitHub(
 		}
 		if tombstoned {
 			return ErrDeletionInProgress
+		}
+		if _, err := queries.DeleteConsumedGitHubCallbackState(
+			ctx, dbgen.DeleteConsumedGitHubCallbackStateParams{
+				StateHash: stateHash[:], OwnerScope: int16(state.Owner.Scope),
+				OwnerID: pgUUID(ownerID), AccountID: pgUUID(accountID),
+			}); errors.Is(err, pgx.ErrNoRows) {
+			return deckgithub.ErrInvalidSignature
+		} else if err != nil {
+			return err
 		}
 		if state.Owner.Scope == 1 {
 			if ownerID != accountID {
@@ -580,8 +596,27 @@ func (store *Store) DisconnectGitHub(
 	expectedRevision uint64,
 	now time.Time,
 ) (GitHubConnectionRecord, error) {
+	current, err := store.queries.GetGitHubConnectionByIDForUpdate(
+		ctx, pgUUID(connectionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return GitHubConnectionRecord{}, ErrNotFound
+	}
+	if err != nil {
+		return GitHubConnectionRecord{}, err
+	}
+	ownerHash := store.hasher.Sum(
+		"owner",
+		deckv1.OwnerScope(current.OwnerScope).String()+":"+
+			uuidValue(current.OwnerID).String(),
+	)
 	var result GitHubConnectionRecord
-	err := store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+	err = store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		if err := queries.EnsureOwnerLock(ctx, ownerHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockOwner(ctx, ownerHash[:]); err != nil {
+			return err
+		}
 		current, err := queries.GetGitHubConnectionByIDForUpdate(
 			ctx, pgUUID(connectionID))
 		if errors.Is(err, pgx.ErrNoRows) {

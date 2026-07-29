@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
 	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
@@ -30,52 +31,39 @@ func NewGitHubRepositoryAuthorizer(
 func (authorizer *GitHubRepositoryAuthorizer) CanReadRepository(
 	ctx context.Context,
 	viewer contracts.Viewer,
+	viewOwner *deckv1.Owner,
 	owner, name string,
 ) (bool, error) {
 	if authorizer == nil || authorizer.store == nil ||
-		authorizer.client == nil || viewer.AccountID == uuid.Nil {
+		authorizer.client == nil || viewer.AccountID == uuid.Nil ||
+		viewOwner == nil {
 		return false, nil
 	}
-	owners := []struct {
-		scope int16
-		id    uuid.UUID
-	}{{scope: 1, id: viewer.AccountID}}
-	for organizationID := range viewer.Memberships {
-		owners = append(owners, struct {
-			scope int16
-			id    uuid.UUID
-		}{scope: 2, id: organizationID})
+	ownerID, err := authorizeOwner(viewer, viewOwner, false)
+	if err != nil {
+		return false, nil
 	}
-	for _, candidate := range owners {
-		connection, err := authorizer.store.GetGitHubConnection(
-			ctx, candidate.scope, candidate.id, viewer.AccountID, true)
-		if errors.Is(err, database.ErrNotFound) ||
-			errors.Is(err, deckgithub.ErrPermissionDenied) {
-			continue
-		}
-		if err != nil {
-			return false, err
-		}
-		connection, err = refreshGitHubConnectionCredential(
-			ctx, authorizer.store, authorizer.broker, viewer.AccountID,
-			connection, time.Now().UTC())
-		if errors.Is(err, deckgithub.ErrPermissionDenied) {
-			continue
-		}
-		if err != nil {
-			return false, err
-		}
-		allowed, err := authorizer.client.CanReadRepositoryForInstallation(
-			ctx, connection.Installation.ID, connection.Credential,
-			deckgithub.Repository{Owner: owner, Name: name})
-		if err != nil {
-			return false, err
-		}
-		if allowed {
-			return true, nil
-		}
+	connection, err := authorizer.store.GetGitHubConnection(
+		ctx, int16(viewOwner.Scope), ownerID, viewer.AccountID, true)
+	if errors.Is(err, database.ErrNotFound) ||
+		errors.Is(err, deckgithub.ErrPermissionDenied) {
+		return false, nil
 	}
-	return false, nil
+	if err != nil {
+		return false, err
+	}
+	connection, err = refreshGitHubConnectionCredential(
+		ctx, authorizer.store, authorizer.broker, viewer.AccountID,
+		connection, time.Now().UTC())
+	if errors.Is(err, deckgithub.ErrPermissionDenied) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return authorizer.client.CanReadRepositoryForInstallation(
+		ctx, connection.Installation.ID, connection.Credential,
+		deckgithub.Repository{Owner: owner, Name: name})
 }
 
 var _ contracts.RepositoryAuthorizer = (*GitHubRepositoryAuthorizer)(nil)

@@ -14,13 +14,15 @@ import (
 	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/rpcerr"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (service *View) ListPullRequestMutationCandidates(
 	ctx context.Context,
 	request *connect.Request[deckv1.ListPullRequestMutationCandidatesRequest],
 ) (*connect.Response[deckv1.ListPullRequestMutationCandidatesResponse], error) {
-	_, view, reference, connection, err := service.authorizePullRequestAction(
+	_, view, _, reference, connection, err := service.authorizePullRequestAction(
 		ctx, request.Msg.ViewId, request.Msg.PullRequest)
 	if err != nil {
 		return nil, err
@@ -92,8 +94,9 @@ func (service *View) MutatePullRequest(
 	ctx context.Context,
 	request *connect.Request[deckv1.MutatePullRequestRequest],
 ) (*connect.Response[deckv1.MutatePullRequestResponse], error) {
-	viewer, view, reference, connection, err := service.authorizePullRequestAction(
-		ctx, request.Msg.ViewId, request.Msg.PullRequest)
+	viewer, view, snapshot, reference, connection, err :=
+		service.authorizePullRequestAction(
+			ctx, request.Msg.ViewId, request.Msg.PullRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +131,7 @@ func (service *View) MutatePullRequest(
 		return nil, err
 	}
 	detail := service.pullRequestDetail(
-		viewIDValue(view), request.Msg.PullRequest, result.Metadata)
+		viewIDValue(view), request.Msg.PullRequest, snapshot, result.Metadata)
 	return connect.NewResponse(&deckv1.MutatePullRequestResponse{
 		PullRequest:  detail,
 		MutationKind: deckv1.PullRequestMutationKind(result.Kind),
@@ -139,62 +142,63 @@ func (service *View) authorizePullRequestAction(
 	ctx context.Context,
 	viewIDMessage *deckv1.UuidV7,
 	referenceMessage *deckv1.PullRequestReference,
-) (contractsViewer, *deckv1.View, deckgithub.PullRequestRef,
+) (contractsViewer, *deckv1.View, *deckv1.PullRequestResult,
+	deckgithub.PullRequestRef,
 	database.GitHubConnectionRecord, error) {
 	viewer, err := viewerFromContext(ctx)
 	if err != nil {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, err
 	}
 	viewID, err := parseUUID(viewIDMessage)
 	if err != nil || referenceMessage == nil ||
 		referenceMessage.Repository == nil || referenceMessage.Number == 0 {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, rpcerr.New(
 				connect.CodeInvalidArgument,
 				deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
 	view, err := service.dependencies.Store.GetView(ctx, viewID)
 	if err != nil {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, mapDatabaseError(err)
 	}
 	ownerID, err := authorizeOwner(viewer, view.Owner, false)
 	if err != nil {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, err
 	}
-	viewerHash := service.dependencies.Hasher.Sum(
-		"snapshot-viewer", viewer.AccountID.String())
-	inSnapshot, err := service.dependencies.Store.HasSnapshot(
-		ctx, viewID, viewerHash, referenceMessage)
-	if err != nil {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
-			database.GitHubConnectionRecord{}, mapDatabaseError(err)
-	}
-	if !inSnapshot {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
-			database.GitHubConnectionRecord{}, rpcerr.New(
-				connect.CodePermissionDenied,
-				deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
-	}
 	allowed, err := service.dependencies.Repositories.CanReadRepository(
-		ctx, viewer, referenceMessage.Repository.Owner,
+		ctx, viewer, view.Owner, referenceMessage.Repository.Owner,
 		referenceMessage.Repository.Name)
 	if err != nil {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, rpcerr.New(
 				connect.CodeUnavailable,
 				deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
 	}
 	if !allowed {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, rpcerr.New(
 				connect.CodePermissionDenied,
 				deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
 	}
+	viewerHash := service.dependencies.Hasher.Sum(
+		"snapshot-viewer", viewer.AccountID.String())
+	snapshot, err := service.dependencies.Store.GetSnapshot(
+		ctx, viewID, viewerHash, referenceMessage)
+	if errors.Is(err, database.ErrNotFound) {
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
+			database.GitHubConnectionRecord{}, rpcerr.New(
+				connect.CodePermissionDenied,
+				deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
+	}
+	if err != nil {
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
+			database.GitHubConnectionRecord{}, mapDatabaseError(err)
+	}
 	if service.dependencies.GitHubClient == nil {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, rpcerr.New(
 				connect.CodeUnavailable,
 				deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
@@ -204,19 +208,19 @@ func (service *View) authorizePullRequestAction(
 	if err != nil {
 		if errors.Is(err, deckgithub.ErrPermissionDenied) ||
 			errors.Is(err, database.ErrNotFound) {
-			return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+			return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 				database.GitHubConnectionRecord{}, rpcerr.New(
 					connect.CodeFailedPrecondition,
 					deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
 		}
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, mapDatabaseError(err)
 	}
 	connection, err = refreshGitHubConnectionCredential(
 		ctx, service.dependencies.Store, service.dependencies.GitHubBroker,
 		viewer.AccountID, connection, service.dependencies.Clock.Now().UTC())
 	if err != nil {
-		return contractsViewer{}, nil, deckgithub.PullRequestRef{},
+		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, mapGitHubError(err)
 	}
 	reference := deckgithub.PullRequestRef{
@@ -226,7 +230,7 @@ func (service *View) authorizePullRequestAction(
 		},
 		Number: referenceMessage.Number,
 	}
-	return contractsViewer(viewer), view, reference, connection, nil
+	return contractsViewer(viewer), view, snapshot, reference, connection, nil
 }
 
 // contractsViewer is an alias local to this file that keeps the multi-result
@@ -305,6 +309,7 @@ func providerTeams(values []*deckv1.GitHubTeam) []deckgithub.Team {
 func (service *View) pullRequestDetail(
 	viewID uuid.UUID,
 	reference *deckv1.PullRequestReference,
+	base *deckv1.PullRequestResult,
 	metadata deckgithub.ActionMetadata,
 ) *deckv1.PullRequestDetail {
 	supported := make([]deckv1.PullRequestMutationKind, 0,
@@ -330,22 +335,52 @@ func (service *View) pullRequestDetail(
 		Value: metadata.Revision,
 		Etag:  service.pullRequestETag(viewID, reference, metadata.Revision),
 	}
+	result := proto.Clone(base).(*deckv1.PullRequestResult)
+	result.Repository = reference.Repository
+	result.Number = reference.Number
+	result.Title = metadata.Title
+	result.Author = &deckv1.PullRequestAuthor{Login: metadata.Author.Login}
+	result.UpdatedAt = timestamppb.New(metadata.UpdatedAt)
+	result.Reviewers = make([]*deckv1.PullRequestReviewer, 0,
+		len(metadata.Reviewers)+len(metadata.ReviewerTeams))
+	for _, reviewer := range metadata.Reviewers {
+		result.Reviewers = append(result.Reviewers, &deckv1.PullRequestReviewer{
+			Reviewer: &deckv1.PullRequestReviewer_User{
+				User: &deckv1.GitHubUser{Login: reviewer.Login},
+			},
+		})
+	}
+	for _, team := range metadata.ReviewerTeams {
+		result.Reviewers = append(result.Reviewers, &deckv1.PullRequestReviewer{
+			Reviewer: &deckv1.PullRequestReviewer_Team{
+				Team: &deckv1.GitHubTeam{
+					Organization: team.Organization, Slug: team.Slug,
+				},
+			},
+		})
+	}
+	result.Assignees = make([]*deckv1.GitHubUser, 0, len(metadata.Assignees))
+	for _, assignee := range metadata.Assignees {
+		result.Assignees = append(
+			result.Assignees, &deckv1.GitHubUser{Login: assignee.Login})
+	}
+	result.Labels = append([]string(nil), metadata.Labels...)
+	result.IsDraft = metadata.IsDraft
+	result.LifecycleState = lifecycle
+	result.Mergeability = func() deckv1.Mergeability {
+		if metadata.MergeBlocked {
+			return deckv1.Mergeability_MERGEABILITY_BLOCKED
+		}
+		if metadata.Mergeable {
+			return deckv1.Mergeability_MERGEABILITY_MERGEABLE
+		}
+		return deckv1.Mergeability_MERGEABILITY_UNKNOWN
+	}()
+	result.Revision = revision
+	result.SupportedMutations = supported
+	result.AvailableMergeMethods = methods
 	return &deckv1.PullRequestDetail{
-		Result: &deckv1.PullRequestResult{
-			Repository: reference.Repository, Number: reference.Number,
-			IsDraft: metadata.IsDraft, LifecycleState: lifecycle,
-			Mergeability: func() deckv1.Mergeability {
-				if metadata.MergeBlocked {
-					return deckv1.Mergeability_MERGEABILITY_BLOCKED
-				}
-				if metadata.Mergeable {
-					return deckv1.Mergeability_MERGEABILITY_MERGEABLE
-				}
-				return deckv1.Mergeability_MERGEABILITY_UNKNOWN
-			}(),
-			Revision: revision, SupportedMutations: supported,
-			AvailableMergeMethods: methods,
-		},
+		Result:             result,
 		SupportedMutations: supported, AvailableMergeMethods: methods,
 		Revision: revision,
 	}

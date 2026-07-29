@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/google/uuid"
 )
 
@@ -79,7 +80,13 @@ type Directory interface {
 // RepositoryAuthorizer performs the final current-user GitHub permission
 // check before an identity-bearing snapshot leaves the service.
 type RepositoryAuthorizer interface {
-	CanReadRepository(context.Context, Viewer, string, string) (bool, error)
+	CanReadRepository(
+		context.Context,
+		Viewer,
+		*deckv1.Owner,
+		string,
+		string,
+	) (bool, error)
 }
 
 type DenyAllRepositories struct{}
@@ -87,6 +94,7 @@ type DenyAllRepositories struct{}
 func (DenyAllRepositories) CanReadRepository(
 	context.Context,
 	Viewer,
+	*deckv1.Owner,
 	string,
 	string,
 ) (bool, error) {

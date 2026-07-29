@@ -408,6 +408,7 @@ func (client *Client) CanReadRepositoryForInstallation(
 
 type pullResponse struct {
 	NodeID         string `json:"node_id"`
+	Title          string `json:"title"`
 	State          string `json:"state"`
 	Draft          bool   `json:"draft"`
 	Merged         bool   `json:"merged"`
@@ -417,6 +418,21 @@ type pullResponse struct {
 	Head           struct {
 		SHA string `json:"sha"`
 	} `json:"head"`
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	RequestedReviewers []struct {
+		Login string `json:"login"`
+	} `json:"requested_reviewers"`
+	RequestedTeams []struct {
+		Slug string `json:"slug"`
+	} `json:"requested_teams"`
+	Assignees []struct {
+		Login string `json:"login"`
+	} `json:"assignees"`
+	Labels []struct {
+		Name string `json:"name"`
+	} `json:"labels"`
 	AutoMerge any `json:"auto_merge"`
 }
 
@@ -445,10 +461,17 @@ func (client *Client) ActionMetadata(
 	if _, err := client.do(ctx, credential, http.MethodGet, path, nil, &pull); err != nil {
 		return ActionMetadata{}, err
 	}
+	updatedAt, err := time.Parse(time.RFC3339, pull.UpdatedAt)
+	if err != nil {
+		return ActionMetadata{}, ErrProvider
+	}
 	effective := IntersectPermissions(appPermissions, repository.userPermissions())
 	metadata := ActionMetadata{
 		Revision: pullRevision(pull), Permissions: effective,
 		RepositoryOwner: repository.ownerKind(),
+		Title:           pull.Title,
+		Author:          User{Login: pull.User.Login},
+		UpdatedAt:       updatedAt,
 		NodeID:          pull.NodeID, HeadSHA: pull.Head.SHA, IsDraft: pull.Draft,
 		IsOpen: strings.EqualFold(pull.State, "open"), IsMerged: pull.Merged,
 		AutoMergeEnabled: pull.AutoMerge != nil,
@@ -461,6 +484,23 @@ func (client *Client) ActionMetadata(
 			MergeMethodSquash: repository.AllowSquashMerge,
 			MergeMethodRebase: repository.AllowRebaseMerge,
 		},
+	}
+	for _, reviewer := range pull.RequestedReviewers {
+		metadata.Reviewers = append(
+			metadata.Reviewers, User{Login: reviewer.Login})
+	}
+	for _, team := range pull.RequestedTeams {
+		metadata.ReviewerTeams = append(metadata.ReviewerTeams, Team{
+			Organization: reference.Repository.Owner,
+			Slug:         team.Slug,
+		})
+	}
+	for _, assignee := range pull.Assignees {
+		metadata.Assignees = append(
+			metadata.Assignees, User{Login: assignee.Login})
+	}
+	for _, label := range pull.Labels {
+		metadata.Labels = append(metadata.Labels, label.Name)
 	}
 	if effective.PullRequests < PermissionWrite || pull.Merged {
 		return metadata, nil

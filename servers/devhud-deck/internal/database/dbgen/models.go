@@ -92,6 +92,7 @@ type DeckGithubCallbackState struct {
 	AccountID       pgtype.UUID
 	StateCiphertext []byte
 	ExpiresAt       pgtype.Timestamptz
+	ConsumedAt      pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 }
 

@@ -437,8 +437,28 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		AccessToken: "ghu_database_fixture", RefreshToken: "ghr_database_fixture",
 		ExpiresAt: now.Add(time.Hour), RefreshTokenExpiresAt: now.Add(24 * time.Hour),
 	}
-	if err := store.ConnectGitHub(
-		ctx, callback, installation, credential, now.Add(90*time.Second)); err != nil {
+	callbackSequence := 0
+	connectGitHub := func(
+		state deckgithub.CallbackState,
+		selected deckgithub.Installation,
+		userCredential deckgithub.Credential,
+		at time.Time,
+	) error {
+		callbackSequence++
+		hash := security.Digest([]byte(fmt.Sprintf(
+			"github-callback-%d", callbackSequence)))
+		if err := store.SaveGitHubCallbackState(ctx, hash, state); err != nil {
+			return err
+		}
+		if err := store.ConsumeGitHubCallbackState(
+			ctx, hash, state, at); err != nil {
+			return err
+		}
+		return store.ConnectGitHub(
+			ctx, hash, state, selected, userCredential, at)
+	}
+	if err := connectGitHub(
+		callback, installation, credential, now.Add(90*time.Second)); err != nil {
 		t.Fatalf("connect GitHub: %v", err)
 	}
 	connection, err := store.GetGitHubConnection(
@@ -527,8 +547,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		revocationHash, now.Add(3*time.Minute)); err != nil {
 		t.Fatalf("authorization revocation replay: %v", err)
 	}
-	if err := store.ConnectGitHub(
-		ctx, callback, installation, credential, now.Add(4*time.Minute)); err != nil {
+	if err := connectGitHub(
+		callback, installation, credential, now.Add(4*time.Minute)); err != nil {
 		t.Fatalf("reauthorize GitHub: %v", err)
 	}
 	connection, err = store.GetGitHubConnection(
@@ -540,7 +560,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	organizationCallback.Owner = deckgithub.OwnerBinding{
 		Scope: 2, ID: organizationID.String(),
 	}
-	if err := store.ConnectGitHub(ctx, organizationCallback, installation,
+	if err := connectGitHub(organizationCallback, installation,
 		credential, now.Add(2*time.Minute)); !errors.Is(err, ErrInstallationOwned) {
 		t.Fatalf("installation owner conflict = %T %v", err, err)
 	}
@@ -565,8 +585,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	changedInstallation := installation
 	changedInstallation.Permissions.Members = deckgithub.PermissionNone
-	if err := store.ConnectGitHub(
-		ctx, callback, changedInstallation, credential,
+	if err := connectGitHub(
+		callback, changedInstallation, credential,
 		now.Add(5*time.Minute)); err != nil {
 		t.Fatalf("reconnect changed GitHub provider scope: %v", err)
 	}
@@ -644,10 +664,15 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	pendingCallback := callback
 	pendingCallback.Nonce = "disconnect-pending"
+	pendingHash := security.Digest([]byte("disconnect-pending"))
 	if err := store.SaveGitHubCallbackState(
-		ctx, security.Digest([]byte("disconnect-pending")),
-		pendingCallback); err != nil {
+		ctx, pendingHash, pendingCallback); err != nil {
 		t.Fatalf("pending disconnect callback: %v", err)
+	}
+	if err := store.ConsumeGitHubCallbackState(
+		ctx, pendingHash, pendingCallback,
+		now.Add(6*time.Minute)); err != nil {
+		t.Fatalf("consume pending disconnect callback: %v", err)
 	}
 	connection, err = store.GetGitHubConnection(
 		ctx, 1, accountID, accountID, true)
@@ -661,6 +686,12 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		disconnected.Installation.ID != 0 ||
 		disconnected.Installation.AccountID != 0 {
 		t.Fatalf("disconnect GitHub = %#v err=%v", disconnected, err)
+	}
+	if err := store.ConnectGitHub(
+		ctx, pendingHash, pendingCallback, changedInstallation, credential,
+		now.Add(8*time.Minute)); !errors.Is(
+		err, deckgithub.ErrInvalidSignature) {
+		t.Fatalf("consumed callback reconnected after disconnect: %T %v", err, err)
 	}
 	retainedView, err := store.GetView(ctx, firstViewID)
 	if err != nil || retainedView.ConnectionState !=

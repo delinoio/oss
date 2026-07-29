@@ -34,6 +34,35 @@ func (q *Queries) CanManageOrganizationForGitHubCallback(ctx context.Context, ar
 	return column_1, err
 }
 
+const deleteConsumedGitHubCallbackState = `-- name: DeleteConsumedGitHubCallbackState :one
+DELETE FROM deck_github_callback_states
+WHERE state_hash = $1
+  AND owner_scope = $2
+  AND owner_id = $3
+  AND account_id = $4
+  AND consumed_at IS NOT NULL
+RETURNING state_hash
+`
+
+type DeleteConsumedGitHubCallbackStateParams struct {
+	StateHash  []byte
+	OwnerScope int16
+	OwnerID    pgtype.UUID
+	AccountID  pgtype.UUID
+}
+
+func (q *Queries) DeleteConsumedGitHubCallbackState(ctx context.Context, arg DeleteConsumedGitHubCallbackStateParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, deleteConsumedGitHubCallbackState,
+		arg.StateHash,
+		arg.OwnerScope,
+		arg.OwnerID,
+		arg.AccountID,
+	)
+	var state_hash []byte
+	err := row.Scan(&state_hash)
+	return state_hash, err
+}
+
 const deleteExpiredGitHubCallbackStates = `-- name: DeleteExpiredGitHubCallbackStates :exec
 DELETE FROM deck_github_callback_states
 WHERE expires_at <= $1
@@ -198,7 +227,7 @@ func (q *Queries) DisconnectGitHubConnection(ctx context.Context, arg Disconnect
 }
 
 const getGitHubCallbackStateForUpdate = `-- name: GetGitHubCallbackStateForUpdate :one
-SELECT state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at, created_at
+SELECT state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at, consumed_at, created_at
 FROM deck_github_callback_states
 WHERE state_hash = $1
 FOR UPDATE
@@ -214,6 +243,7 @@ func (q *Queries) GetGitHubCallbackStateForUpdate(ctx context.Context, stateHash
 		&i.AccountID,
 		&i.StateCiphertext,
 		&i.ExpiresAt,
+		&i.ConsumedAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -643,6 +673,23 @@ func (q *Queries) ListOwnerViewsForProviderCleanup(ctx context.Context, arg List
 		return nil, err
 	}
 	return items, nil
+}
+
+const markGitHubCallbackStateConsumed = `-- name: MarkGitHubCallbackStateConsumed :exec
+UPDATE deck_github_callback_states
+SET consumed_at = $1
+WHERE state_hash = $2
+  AND consumed_at IS NULL
+`
+
+type MarkGitHubCallbackStateConsumedParams struct {
+	ConsumedAt pgtype.Timestamptz
+	StateHash  []byte
+}
+
+func (q *Queries) MarkGitHubCallbackStateConsumed(ctx context.Context, arg MarkGitHubCallbackStateConsumedParams) error {
+	_, err := q.db.Exec(ctx, markGitHubCallbackStateConsumed, arg.ConsumedAt, arg.StateHash)
+	return err
 }
 
 const markOwnerViewsConnected = `-- name: MarkOwnerViewsConnected :exec

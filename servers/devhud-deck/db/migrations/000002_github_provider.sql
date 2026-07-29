@@ -57,6 +57,7 @@ CREATE TABLE deck_github_callback_states (
     account_id uuid NOT NULL,
     state_ciphertext bytea NOT NULL CHECK (octet_length(state_ciphertext) > 0),
     expires_at timestamptz NOT NULL,
+    consumed_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
     CHECK (substring(owner_id::text, 15, 1) = '7'),
     CHECK (substring(account_id::text, 15, 1) = '7')

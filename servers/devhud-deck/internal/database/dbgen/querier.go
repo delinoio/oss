@@ -19,6 +19,7 @@ type Querier interface {
 	DeleteAccountDevices(ctx context.Context, accountID pgtype.UUID) error
 	DeleteAllViewSnapshotStates(ctx context.Context, viewID pgtype.UUID) error
 	DeleteAllViewSnapshots(ctx context.Context, viewID pgtype.UUID) error
+	DeleteConsumedGitHubCallbackState(ctx context.Context, arg DeleteConsumedGitHubCallbackStateParams) ([]byte, error)
 	DeleteDeckAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteDeviceByRegistrationAndAccount(ctx context.Context, arg DeleteDeviceByRegistrationAndAccountParams) (int64, error)
 	DeleteDeviceByRegistrationAndGrant(ctx context.Context, arg DeleteDeviceByRegistrationAndGrantParams) (int64, error)
@@ -86,6 +87,7 @@ type Querier interface {
 	ListTeamMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListTeamMembershipsForAccountRow, error)
 	ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsParams) ([]DeckPullRequestSnapshot, error)
 	LockOwner(ctx context.Context, ownerHash []byte) ([]byte, error)
+	MarkGitHubCallbackStateConsumed(ctx context.Context, arg MarkGitHubCallbackStateConsumedParams) error
 	MarkOwnerViewsConnected(ctx context.Context, arg MarkOwnerViewsConnectedParams) error
 	MarkOwnerViewsDisconnected(ctx context.Context, arg MarkOwnerViewsDisconnectedParams) error
 	Ping(ctx context.Context) (int32, error)
