@@ -130,6 +130,35 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if bytes.Contains(ciphertext, []byte("repo:secret/project")) {
 		t.Fatal("raw query was persisted in plaintext")
 	}
+	deniedView := errors.New("view authorization denied")
+	denyBeforeDecrypt := func(authorization ViewAuthorization) error {
+		expectedHash := store.ViewRepositoryHash("secret", "project")
+		if !authorization.HasRepositoryIndex ||
+			len(authorization.RepositoryHashes) != 1 ||
+			authorization.RepositoryHashes[0] != expectedHash {
+			t.Fatalf("view authorization index = %#v", authorization)
+		}
+		return deniedView
+	}
+	if _, err := store.pool.Exec(ctx,
+		"UPDATE deck_views SET query_ciphertext = $1 WHERE view_id = $2",
+		[]byte{0}, pgUUID(firstViewID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetViewAuthorized(
+		ctx, firstViewID, denyBeforeDecrypt); !errors.Is(err, deniedView) {
+		t.Fatalf("authorized view opened ciphertext before denial: %v", err)
+	}
+	if _, err := store.ListViewsAuthorized(
+		ctx, deckv1.OwnerScope_OWNER_SCOPE_PERSONAL, accountID, uuid.Nil, 2,
+		denyBeforeDecrypt); !errors.Is(err, deniedView) {
+		t.Fatalf("authorized view list opened ciphertext before denial: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx,
+		"UPDATE deck_views SET query_ciphertext = $1 WHERE view_id = $2",
+		ciphertext, pgUUID(firstViewID)); err != nil {
+		t.Fatal(err)
+	}
 
 	for index := 1; index < 50; index++ {
 		_, _, err := store.CreateView(ctx, createViewParams(
@@ -208,6 +237,32 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		})
 	if err != nil || hasSnapshot {
 		t.Fatalf("truncated snapshot membership = %v err=%v", hasSnapshot, err)
+	}
+	filteredSnapshots := make([]*deckv1.PullRequestResult, 501)
+	for index := range filteredSnapshots {
+		repository := &deckv1.RepositoryReference{
+			Owner: "secret", Name: "project",
+		}
+		if index == 0 {
+			repository = &deckv1.RepositoryReference{
+				Owner: "unrelated", Name: "retained",
+			}
+		}
+		filteredSnapshots[index] = &deckv1.PullRequestResult{
+			Repository: repository,
+			Number:     uint64(index + 1),
+			Title:      fmt.Sprintf("filtered title %d", index),
+		}
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, firstViewID, viewerHash, filteredSnapshots, now); err != nil {
+		t.Fatal(err)
+	}
+	filteredList, filteredTruncated, _, err := store.ListSnapshots(
+		ctx, firstViewID, viewerHash, readableSnapshots)
+	if err != nil || len(filteredList) != 499 || filteredTruncated {
+		t.Fatalf("filtered snapshots = %d truncated=%v err=%v",
+			len(filteredList), filteredTruncated, err)
 	}
 	indexedSnapshots := []*deckv1.PullRequestResult{
 		{

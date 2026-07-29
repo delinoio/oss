@@ -37,14 +37,16 @@ INSERT INTO deck_views (
     view_id, owner_scope, owner_account_id, owner_organization_id,
     billing_organization_id, billing_team_id, name_ciphertext,
     query_ciphertext, kind, sort, grouping, notification_ciphertext,
-    connection_state, revision, created_at, updated_at
+    connection_state, repository_authorization_index, revision,
+    created_at, updated_at
 ) VALUES (
     sqlc.arg(view_id), sqlc.arg(owner_scope), sqlc.narg(owner_account_id),
     sqlc.narg(owner_organization_id), sqlc.narg(billing_organization_id),
     sqlc.narg(billing_team_id), sqlc.arg(name_ciphertext),
     sqlc.arg(query_ciphertext), sqlc.arg(kind), sqlc.arg(sort),
     sqlc.arg(grouping), sqlc.arg(notification_ciphertext),
-    sqlc.arg(connection_state), 1, sqlc.arg(created_at), sqlc.arg(updated_at)
+    sqlc.arg(connection_state), sqlc.arg(repository_authorization_index),
+    1, sqlc.arg(created_at), sqlc.arg(updated_at)
 )
 RETURNING *;
 
@@ -86,6 +88,8 @@ SET billing_organization_id = sqlc.narg(billing_organization_id),
     sort = sqlc.arg(sort),
     grouping = sqlc.arg(grouping),
     notification_ciphertext = sqlc.arg(notification_ciphertext),
+    repository_authorization_index =
+        sqlc.arg(repository_authorization_index),
     revision = revision + 1,
     updated_at = sqlc.arg(updated_at)
 WHERE view_id = sqlc.arg(view_id)

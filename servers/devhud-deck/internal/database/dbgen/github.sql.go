@@ -842,6 +842,7 @@ WHERE (
         AND owner_scope = 2 AND owner_organization_id = $3)
 )
   AND connection_state <> 3
+  AND repository_authorization_index IS NOT NULL
 `
 
 type MarkOwnerViewsConnectedParams struct {

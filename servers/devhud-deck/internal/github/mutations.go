@@ -184,20 +184,20 @@ func (client *Client) applyMutation(
 			map[string]any{"labels": mutation.Labels}, nil)
 		return err
 	case MutationRemoveLabels:
-		removed := make(map[string]struct{}, len(mutation.Labels))
+		labelIDs := make([]string, 0, len(mutation.Labels))
 		for _, label := range mutation.Labels {
-			removed[strings.ToLower(label)] = struct{}{}
-		}
-		remaining := make([]string, 0, len(metadata.Labels))
-		for _, label := range metadata.Labels {
-			if _, remove := removed[strings.ToLower(label)]; !remove {
-				remaining = append(remaining, label)
+			labelID := metadata.LabelIDs[strings.ToLower(label)]
+			if labelID == "" {
+				return ErrStaleRevision
 			}
+			labelIDs = append(labelIDs, labelID)
 		}
-		path, _ := repositoryPath(reference.Repository, issueSuffix+"/labels")
-		_, err := client.do(ctx, credential, http.MethodPut, path,
-			map[string]any{"labels": remaining}, nil)
-		return err
+		return client.graphQL(ctx, credential, `
+mutation($id:ID!,$labels:[ID!]!){
+  removeLabelsFromLabelable(input:{labelableId:$id,labelIds:$labels}){
+    labelable{... on PullRequest{id}}
+  }
+}`, map[string]any{"id": metadata.NodeID, "labels": labelIDs})
 	case MutationMarkDraft:
 		return client.graphQL(ctx, credential, `
 mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){

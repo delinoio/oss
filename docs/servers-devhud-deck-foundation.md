@@ -107,7 +107,7 @@
   rejected refresh tokens require reauthorization; GitHub's
   `bad_refresh_token` response is classified as reauthentication rather than a
   generic provider failure.
-- Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository. Exact snapshot membership reads use a keyed repository-and-PR index after repository authorization, so they do not scan or decrypt unrelated retained repository references.
+- Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository. Connected view-definition reads use a versioned keyed repository-qualifier index stored outside the encrypted query to decide current GitHub visibility before opening any view ciphertext. Exact snapshot membership reads use a keyed repository-and-PR index after repository authorization, so they do not scan or decrypt unrelated retained repository references.
 - The provider search adapter rechecks each result repository against both the
   selected owner-scoped installation and the current viewer's user
   authorization before returning any result. It returns only the filtered page

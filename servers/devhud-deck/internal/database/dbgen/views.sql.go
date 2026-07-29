@@ -146,7 +146,7 @@ func (q *Queries) GetCreateViewIdempotency(ctx context.Context, arg GetCreateVie
 }
 
 const getView = `-- name: GetView :one
-SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at FROM deck_views WHERE view_id = $1
+SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index FROM deck_views WHERE view_id = $1
 `
 
 func (q *Queries) GetView(ctx context.Context, viewID pgtype.UUID) (DeckView, error) {
@@ -171,6 +171,7 @@ func (q *Queries) GetView(ctx context.Context, viewID pgtype.UUID) (DeckView, er
 		&i.SnapshotRefreshedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepositoryAuthorizationIndex,
 	)
 	return i, err
 }
@@ -277,34 +278,37 @@ INSERT INTO deck_views (
     view_id, owner_scope, owner_account_id, owner_organization_id,
     billing_organization_id, billing_team_id, name_ciphertext,
     query_ciphertext, kind, sort, grouping, notification_ciphertext,
-    connection_state, revision, created_at, updated_at
+    connection_state, repository_authorization_index, revision,
+    created_at, updated_at
 ) VALUES (
     $1, $2, $3,
     $4, $5,
     $6, $7,
     $8, $9, $10,
     $11, $12,
-    $13, 1, $14, $15
+    $13, $14,
+    1, $15, $16
 )
-RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at
+RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index
 `
 
 type InsertViewParams struct {
-	ViewID                 pgtype.UUID
-	OwnerScope             int16
-	OwnerAccountID         pgtype.UUID
-	OwnerOrganizationID    pgtype.UUID
-	BillingOrganizationID  pgtype.UUID
-	BillingTeamID          pgtype.UUID
-	NameCiphertext         []byte
-	QueryCiphertext        []byte
-	Kind                   int16
-	Sort                   int16
-	Grouping               int16
-	NotificationCiphertext []byte
-	ConnectionState        int16
-	CreatedAt              pgtype.Timestamptz
-	UpdatedAt              pgtype.Timestamptz
+	ViewID                       pgtype.UUID
+	OwnerScope                   int16
+	OwnerAccountID               pgtype.UUID
+	OwnerOrganizationID          pgtype.UUID
+	BillingOrganizationID        pgtype.UUID
+	BillingTeamID                pgtype.UUID
+	NameCiphertext               []byte
+	QueryCiphertext              []byte
+	Kind                         int16
+	Sort                         int16
+	Grouping                     int16
+	NotificationCiphertext       []byte
+	ConnectionState              int16
+	RepositoryAuthorizationIndex []byte
+	CreatedAt                    pgtype.Timestamptz
+	UpdatedAt                    pgtype.Timestamptz
 }
 
 func (q *Queries) InsertView(ctx context.Context, arg InsertViewParams) (DeckView, error) {
@@ -322,6 +326,7 @@ func (q *Queries) InsertView(ctx context.Context, arg InsertViewParams) (DeckVie
 		arg.Grouping,
 		arg.NotificationCiphertext,
 		arg.ConnectionState,
+		arg.RepositoryAuthorizationIndex,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -345,6 +350,7 @@ func (q *Queries) InsertView(ctx context.Context, arg InsertViewParams) (DeckVie
 		&i.SnapshotRefreshedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepositoryAuthorizationIndex,
 	)
 	return i, err
 }
@@ -398,7 +404,7 @@ func (q *Queries) IsOwnerTombstoned(ctx context.Context, targetHash []byte) (boo
 }
 
 const listOrganizationViews = `-- name: ListOrganizationViews :many
-SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at FROM deck_views
+SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index FROM deck_views
 WHERE owner_scope = 2
   AND owner_organization_id = $1
   AND view_id > $2
@@ -440,6 +446,7 @@ func (q *Queries) ListOrganizationViews(ctx context.Context, arg ListOrganizatio
 			&i.SnapshotRefreshedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RepositoryAuthorizationIndex,
 		); err != nil {
 			return nil, err
 		}
@@ -452,7 +459,7 @@ func (q *Queries) ListOrganizationViews(ctx context.Context, arg ListOrganizatio
 }
 
 const listPersonalViews = `-- name: ListPersonalViews :many
-SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at FROM deck_views
+SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index FROM deck_views
 WHERE owner_scope = 1
   AND owner_account_id = $1
   AND view_id > $2
@@ -494,6 +501,7 @@ func (q *Queries) ListPersonalViews(ctx context.Context, arg ListPersonalViewsPa
 			&i.SnapshotRefreshedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RepositoryAuthorizationIndex,
 		); err != nil {
 			return nil, err
 		}
@@ -587,24 +595,27 @@ SET billing_organization_id = $1,
     sort = $5,
     grouping = $6,
     notification_ciphertext = $7,
+    repository_authorization_index =
+        $8,
     revision = revision + 1,
-    updated_at = $8
-WHERE view_id = $9
-  AND revision = $10
-RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at
+    updated_at = $9
+WHERE view_id = $10
+  AND revision = $11
+RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index
 `
 
 type UpdateViewParams struct {
-	BillingOrganizationID  pgtype.UUID
-	BillingTeamID          pgtype.UUID
-	NameCiphertext         []byte
-	QueryCiphertext        []byte
-	Sort                   int16
-	Grouping               int16
-	NotificationCiphertext []byte
-	UpdatedAt              pgtype.Timestamptz
-	ViewID                 pgtype.UUID
-	ExpectedRevision       int64
+	BillingOrganizationID        pgtype.UUID
+	BillingTeamID                pgtype.UUID
+	NameCiphertext               []byte
+	QueryCiphertext              []byte
+	Sort                         int16
+	Grouping                     int16
+	NotificationCiphertext       []byte
+	RepositoryAuthorizationIndex []byte
+	UpdatedAt                    pgtype.Timestamptz
+	ViewID                       pgtype.UUID
+	ExpectedRevision             int64
 }
 
 func (q *Queries) UpdateView(ctx context.Context, arg UpdateViewParams) (DeckView, error) {
@@ -616,6 +627,7 @@ func (q *Queries) UpdateView(ctx context.Context, arg UpdateViewParams) (DeckVie
 		arg.Sort,
 		arg.Grouping,
 		arg.NotificationCiphertext,
+		arg.RepositoryAuthorizationIndex,
 		arg.UpdatedAt,
 		arg.ViewID,
 		arg.ExpectedRevision,
@@ -640,6 +652,7 @@ func (q *Queries) UpdateView(ctx context.Context, arg UpdateViewParams) (DeckVie
 		&i.SnapshotRefreshedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepositoryAuthorizationIndex,
 	)
 	return i, err
 }

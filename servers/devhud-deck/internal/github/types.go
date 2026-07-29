@@ -276,6 +276,7 @@ type ActionMetadata struct {
 	ReviewerTeams    []Team
 	Assignees        []User
 	Labels           []string
+	LabelIDs         map[string]string
 	Supported        map[MutationKind]bool
 	AvailableMethods map[MergeMethod]bool
 	NodeID           string

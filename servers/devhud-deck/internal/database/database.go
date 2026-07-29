@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,6 +45,15 @@ type StaleError struct {
 }
 
 func (e *StaleError) Error() string { return "deck database: stale revision" }
+
+type ViewAuthorization struct {
+	Owner              *deckv1.Owner
+	ConnectionState    deckv1.ConnectionState
+	RepositoryHashes   [][32]byte
+	HasRepositoryIndex bool
+}
+
+type ViewAuthorizer func(ViewAuthorization) error
 
 type Store struct {
 	pool    *pgxpool.Pool
@@ -383,21 +393,22 @@ func (store *Store) CreateView(
 			return errors.New("deck database: invalid owner")
 		}
 		stored, err := queries.InsertView(ctx, dbgen.InsertViewParams{
-			ViewID:                 row.ViewID,
-			OwnerScope:             row.OwnerScope,
-			OwnerAccountID:         row.OwnerAccountID,
-			OwnerOrganizationID:    row.OwnerOrganizationID,
-			BillingOrganizationID:  row.BillingOrganizationID,
-			BillingTeamID:          row.BillingTeamID,
-			NameCiphertext:         row.NameCiphertext,
-			QueryCiphertext:        row.QueryCiphertext,
-			Kind:                   row.Kind,
-			Sort:                   row.Sort,
-			Grouping:               row.Grouping,
-			NotificationCiphertext: row.NotificationCiphertext,
-			ConnectionState:        row.ConnectionState,
-			CreatedAt:              row.CreatedAt,
-			UpdatedAt:              row.UpdatedAt,
+			ViewID:                       row.ViewID,
+			OwnerScope:                   row.OwnerScope,
+			OwnerAccountID:               row.OwnerAccountID,
+			OwnerOrganizationID:          row.OwnerOrganizationID,
+			BillingOrganizationID:        row.BillingOrganizationID,
+			BillingTeamID:                row.BillingTeamID,
+			NameCiphertext:               row.NameCiphertext,
+			QueryCiphertext:              row.QueryCiphertext,
+			Kind:                         row.Kind,
+			Sort:                         row.Sort,
+			Grouping:                     row.Grouping,
+			NotificationCiphertext:       row.NotificationCiphertext,
+			ConnectionState:              row.ConnectionState,
+			RepositoryAuthorizationIndex: row.RepositoryAuthorizationIndex,
+			CreatedAt:                    row.CreatedAt,
+			UpdatedAt:                    row.UpdatedAt,
 		})
 		if err != nil {
 			return err
@@ -437,12 +448,90 @@ func (store *Store) GetView(ctx context.Context, id uuid.UUID) (*deckv1.View, er
 	return store.decodeView(row)
 }
 
+func (store *Store) GetViewAuthorized(
+	ctx context.Context,
+	id uuid.UUID,
+	authorize ViewAuthorizer,
+) (*deckv1.View, error) {
+	if authorize == nil {
+		return nil, errors.New("deck database: view authorization is required")
+	}
+	row, err := store.queries.GetView(ctx, pgUUID(id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, errors.New("deck database: view lookup failed")
+	}
+	authorization, err := store.viewAuthorization(row)
+	if err != nil {
+		return nil, err
+	}
+	if err := authorize(authorization); err != nil {
+		return nil, err
+	}
+	return store.decodeView(row)
+}
+
 func (store *Store) ListViews(
 	ctx context.Context,
 	ownerScope deckv1.OwnerScope,
 	ownerID, after uuid.UUID,
 	limit int32,
 ) ([]*deckv1.View, error) {
+	rows, err := store.listViewRows(ctx, ownerScope, ownerID, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]*deckv1.View, 0, len(rows))
+	for _, row := range rows {
+		view, err := store.decodeView(row)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func (store *Store) ListViewsAuthorized(
+	ctx context.Context,
+	ownerScope deckv1.OwnerScope,
+	ownerID, after uuid.UUID,
+	limit int32,
+	authorize ViewAuthorizer,
+) ([]*deckv1.View, error) {
+	if authorize == nil {
+		return nil, errors.New("deck database: view authorization is required")
+	}
+	rows, err := store.listViewRows(ctx, ownerScope, ownerID, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]*deckv1.View, 0, len(rows))
+	for _, row := range rows {
+		authorization, err := store.viewAuthorization(row)
+		if err != nil {
+			return nil, err
+		}
+		if err := authorize(authorization); err != nil {
+			return nil, err
+		}
+		view, err := store.decodeView(row)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func (store *Store) listViewRows(
+	ctx context.Context,
+	ownerScope deckv1.OwnerScope,
+	ownerID, after uuid.UUID,
+	limit int32,
+) ([]dbgen.DeckView, error) {
 	var rows []dbgen.DeckView
 	var err error
 	switch ownerScope {
@@ -463,15 +552,7 @@ func (store *Store) ListViews(
 	if err != nil {
 		return nil, errors.New("deck database: list views failed")
 	}
-	views := make([]*deckv1.View, 0, len(rows))
-	for _, row := range rows {
-		view, err := store.decodeView(row)
-		if err != nil {
-			return nil, err
-		}
-		views = append(views, view)
-	}
-	return views, nil
+	return rows, nil
 }
 
 func pgUUIDAllowNil(id uuid.UUID) pgtype.UUID {
@@ -493,16 +574,17 @@ func (store *Store) UpdateView(
 	var updated dbgen.DeckView
 	err = store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
 		updated, err = queries.UpdateView(ctx, dbgen.UpdateViewParams{
-			BillingOrganizationID:  row.BillingOrganizationID,
-			BillingTeamID:          row.BillingTeamID,
-			NameCiphertext:         row.NameCiphertext,
-			QueryCiphertext:        row.QueryCiphertext,
-			Sort:                   row.Sort,
-			Grouping:               row.Grouping,
-			NotificationCiphertext: row.NotificationCiphertext,
-			UpdatedAt:              pgTime(now),
-			ViewID:                 pgUUID(id),
-			ExpectedRevision:       int64(expected),
+			BillingOrganizationID:        row.BillingOrganizationID,
+			BillingTeamID:                row.BillingTeamID,
+			NameCiphertext:               row.NameCiphertext,
+			QueryCiphertext:              row.QueryCiphertext,
+			Sort:                         row.Sort,
+			Grouping:                     row.Grouping,
+			NotificationCiphertext:       row.NotificationCiphertext,
+			RepositoryAuthorizationIndex: row.RepositoryAuthorizationIndex,
+			UpdatedAt:                    pgTime(now),
+			ViewID:                       pgUUID(id),
+			ExpectedRevision:             int64(expected),
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			current, currentErr := queries.GetView(ctx, pgUUID(id))
@@ -598,6 +680,11 @@ func (store *Store) encodeView(view *deckv1.View) (dbgen.DeckView, error) {
 		NotificationCiphertext: notificationCiphertext,
 		ConnectionState:        int16(view.ConnectionState),
 	}
+	row.RepositoryAuthorizationIndex, err =
+		store.encodeViewRepositoryAuthorizationIndex(view.Query)
+	if err != nil {
+		return dbgen.DeckView{}, err
+	}
 	if account := view.Owner.GetAccountId(); account != nil {
 		id, err := uuid.Parse(account.Value)
 		if err != nil {
@@ -658,19 +745,7 @@ func (store *Store) decodeView(row dbgen.DeckView) (*deckv1.View, error) {
 		CreatedAt:              timestampProto(row.CreatedAt),
 		UpdatedAt:              timestampProto(row.UpdatedAt),
 	}
-	if row.OwnerScope == int16(deckv1.OwnerScope_OWNER_SCOPE_PERSONAL) {
-		view.Owner = &deckv1.Owner{
-			Scope: deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
-			OwnerId: &deckv1.Owner_AccountId{AccountId: uuidProto(
-				uuidValue(row.OwnerAccountID))},
-		}
-	} else {
-		view.Owner = &deckv1.Owner{
-			Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
-			OwnerId: &deckv1.Owner_OrganizationId{OrganizationId: uuidProto(
-				uuidValue(row.OwnerOrganizationID))},
-		}
-	}
+	view.Owner = viewOwner(row)
 	if row.BillingOrganizationID.Valid || row.BillingTeamID.Valid {
 		view.Billing = &deckv1.BillingSelection{}
 		if row.BillingOrganizationID.Valid {
@@ -681,6 +756,77 @@ func (store *Store) decodeView(row dbgen.DeckView) (*deckv1.View, error) {
 		}
 	}
 	return view, nil
+}
+
+func viewOwner(row dbgen.DeckView) *deckv1.Owner {
+	if row.OwnerScope == int16(deckv1.OwnerScope_OWNER_SCOPE_PERSONAL) {
+		return &deckv1.Owner{
+			Scope: deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
+			OwnerId: &deckv1.Owner_AccountId{AccountId: uuidProto(
+				uuidValue(row.OwnerAccountID))},
+		}
+	}
+	return &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{OrganizationId: uuidProto(
+			uuidValue(row.OwnerOrganizationID))},
+	}
+}
+
+func (store *Store) encodeViewRepositoryAuthorizationIndex(
+	query *deckv1.ViewQuery,
+) ([]byte, error) {
+	if query == nil || query.Builder == nil {
+		return nil, errors.New("deck database: incomplete view query")
+	}
+	hashes := make(map[[32]byte]struct{})
+	for _, clause := range query.Builder.Clauses {
+		repository := clause.GetRepository()
+		if repository == nil {
+			continue
+		}
+		hashes[store.ViewRepositoryHash(
+			repository.Owner, repository.Repository)] = struct{}{}
+	}
+	ordered := make([][32]byte, 0, len(hashes))
+	for hash := range hashes {
+		ordered = append(ordered, hash)
+	}
+	sort.Slice(ordered, func(left, right int) bool {
+		return bytes.Compare(ordered[left][:], ordered[right][:]) < 0
+	})
+	index := make([]byte, 1, 1+len(ordered)*32)
+	index[0] = 1
+	for _, hash := range ordered {
+		index = append(index, hash[:]...)
+	}
+	return index, nil
+}
+
+func (store *Store) viewAuthorization(
+	row dbgen.DeckView,
+) (ViewAuthorization, error) {
+	authorization := ViewAuthorization{
+		Owner:           viewOwner(row),
+		ConnectionState: deckv1.ConnectionState(row.ConnectionState),
+	}
+	index := row.RepositoryAuthorizationIndex
+	if index == nil {
+		return authorization, nil
+	}
+	if len(index) == 0 || index[0] != 1 || (len(index)-1)%32 != 0 {
+		return ViewAuthorization{},
+			errors.New("deck database: invalid view repository index")
+	}
+	authorization.HasRepositoryIndex = true
+	authorization.RepositoryHashes = make([][32]byte, 0, (len(index)-1)/32)
+	for offset := 1; offset < len(index); offset += 32 {
+		var hash [32]byte
+		copy(hash[:], index[offset:offset+32])
+		authorization.RepositoryHashes = append(
+			authorization.RepositoryHashes, hash)
+	}
+	return authorization, nil
 }
 
 func uuidProto(id uuid.UUID) *deckv1.UuidV7 {
@@ -787,6 +933,7 @@ func (store *Store) ListSnapshots(
 		return nil, false, time.Time{}, errors.New("deck database: list snapshots failed")
 	}
 	results := make([]*deckv1.PullRequestResult, 0, len(rows))
+	filtered := false
 	for _, row := range rows {
 		if len(row.RepositoryHash) != 32 {
 			return nil, false, time.Time{},
@@ -795,6 +942,7 @@ func (store *Store) ListSnapshots(
 		var repositoryHash [32]byte
 		copy(repositoryHash[:], row.RepositoryHash)
 		if _, readable := readableRepositories[repositoryHash]; !readable {
+			filtered = true
 			continue
 		}
 		repository := &deckv1.RepositoryReference{}
@@ -812,7 +960,7 @@ func (store *Store) ListSnapshots(
 	if stateErr == nil && state.RefreshedAt.Valid {
 		refreshedAt = state.RefreshedAt.Time.UTC()
 	}
-	return results, stateErr == nil && state.Truncated, refreshedAt, nil
+	return results, stateErr == nil && state.Truncated && !filtered, refreshedAt, nil
 }
 
 func (store *Store) HasSnapshot(
@@ -878,6 +1026,13 @@ func (store *Store) SnapshotRepositoryHash(
 		"pr-snapshot-repository",
 		strings.ToLower(repository.GetOwner())+"\x00"+
 			strings.ToLower(repository.GetName()),
+	)
+}
+
+func (store *Store) ViewRepositoryHash(owner, repository string) [32]byte {
+	return store.hasher.Sum(
+		"view-repository",
+		strings.ToLower(owner)+"\x00"+strings.ToLower(repository),
 	)
 }
 

@@ -535,7 +535,8 @@ type pullResponse struct {
 		Login string `json:"login"`
 	} `json:"assignees"`
 	Labels []struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		NodeID string `json:"node_id"`
 	} `json:"labels"`
 	AutoMerge any `json:"auto_merge"`
 }
@@ -591,6 +592,7 @@ func (client *Client) actionMetadata(
 		Mergeable:        pull.Mergeable != nil && *pull.Mergeable,
 		MergeBlocked:     pull.MergeableState == "blocked",
 		MergeConflicting: pull.MergeableState == "dirty",
+		LabelIDs:         make(map[string]string, len(pull.Labels)),
 		Supported:        make(map[MutationKind]bool),
 		AvailableMethods: map[MergeMethod]bool{
 			MergeMethodMerge:  repository.AllowMergeCommit,
@@ -614,6 +616,9 @@ func (client *Client) actionMetadata(
 	}
 	for _, label := range pull.Labels {
 		metadata.Labels = append(metadata.Labels, label.Name)
+		if label.NodeID != "" {
+			metadata.LabelIDs[strings.ToLower(label.Name)] = label.NodeID
+		}
 	}
 	if effective.PullRequests < PermissionWrite || pull.Merged ||
 		repository.Archived {

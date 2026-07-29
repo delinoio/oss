@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -60,8 +61,8 @@ func TestEverySupportedMutationUsesOnlyUserAttributedEndpoints(t *testing.T) {
 			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
 			"POST", "/repos/acme/widget/issues/7/labels", `"ready"`},
 		{"remove labels", Mutation{Kind: MutationRemoveLabels, Labels: []string{"ready"}},
-			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
-			"PUT", "/repos/acme/widget/issues/7/labels", `"labels":[]`},
+			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"},"labels":[{"name":"ready","node_id":"LA_1"}]}`,
+			"POST", "/graphql", "removeLabelsFromLabelable"},
 		{"draft", Mutation{Kind: MutationMarkDraft},
 			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
 			"POST", "/graphql", "convertPullRequestToDraft"},
@@ -587,27 +588,33 @@ func TestMutationOperandCountIsBounded(t *testing.T) {
 	}
 }
 
-func TestMultiLabelRemovalUsesSingleReplacement(t *testing.T) {
+func TestMultiLabelRemovalUsesSingleGraphQLMutation(t *testing.T) {
 	t.Parallel()
 	calls := 0
 	client := NewClient(&http.Client{Transport: roundTripFunc(
 		func(request *http.Request) (*http.Response, error) {
 			calls++
-			if request.Method != http.MethodPut ||
-				request.URL.Path != "/repos/acme/widget/issues/7/labels" {
+			if request.Method != http.MethodPost ||
+				request.URL.Path != GraphQLPath {
 				t.Fatalf("label removal request = %s %s",
 					request.Method, request.URL.Path)
 			}
 			var input struct {
-				Labels []string `json:"labels"`
+				Query     string `json:"query"`
+				Variables struct {
+					ID     string   `json:"id"`
+					Labels []string `json:"labels"`
+				} `json:"variables"`
 			}
 			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
 				t.Fatal(err)
 			}
-			if len(input.Labels) != 1 || input.Labels[0] != "keep" {
-				t.Fatalf("replacement labels = %#v", input.Labels)
+			if !strings.Contains(input.Query, "removeLabelsFromLabelable") ||
+				input.Variables.ID != "PR_1" ||
+				!reflect.DeepEqual(input.Variables.Labels, []string{"LA_1", "LA_2"}) {
+				t.Fatalf("label mutation = %#v", input)
 			}
-			return jsonResponse(http.StatusOK, `[]`), nil
+			return jsonResponse(http.StatusOK, `{"data":{}}`), nil
 		})})
 	err := client.applyMutation(
 		context.Background(), Credential{AccessToken: "token"},
@@ -615,7 +622,13 @@ func TestMultiLabelRemovalUsesSingleReplacement(t *testing.T) {
 			Repository: Repository{Owner: "acme", Name: "widget"},
 			Number:     7,
 		},
-		ActionMetadata{Labels: []string{"remove-a", "keep", "REMOVE-B"}},
+		ActionMetadata{
+			NodeID: "PR_1",
+			LabelIDs: map[string]string{
+				"remove-a": "LA_1",
+				"remove-b": "LA_2",
+			},
+		},
 		Mutation{
 			Kind: MutationRemoveLabels,
 			Labels: []string{
@@ -625,6 +638,32 @@ func TestMultiLabelRemovalUsesSingleReplacement(t *testing.T) {
 		})
 	if err != nil || calls != 1 {
 		t.Fatalf("multi-label removal calls=%d err=%v", calls, err)
+	}
+}
+
+func TestLabelRemovalRejectsMissingCurrentLabelID(t *testing.T) {
+	t.Parallel()
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			t.Fatal("stale label removal dispatched")
+			return nil, nil
+		})})
+	err := client.applyMutation(
+		context.Background(), Credential{AccessToken: "token"},
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"},
+			Number:     7,
+		},
+		ActionMetadata{
+			NodeID:   "PR_1",
+			LabelIDs: map[string]string{"remove-a": "LA_1"},
+		},
+		Mutation{
+			Kind:   MutationRemoveLabels,
+			Labels: []string{"remove-a", "missing"},
+		})
+	if !errors.Is(err, ErrStaleRevision) {
+		t.Fatalf("missing label ID error = %v", err)
 	}
 }
 

@@ -321,7 +321,8 @@ WHERE (
     OR (sqlc.arg(owner_scope)::smallint = 2
         AND owner_scope = 2 AND owner_organization_id = sqlc.arg(owner_id))
 )
-  AND connection_state <> 3;
+  AND connection_state <> 3
+  AND repository_authorization_index IS NOT NULL;
 
 -- name: DeleteOwnerNotificationState :exec
 DELETE FROM deck_view_notification_preferences

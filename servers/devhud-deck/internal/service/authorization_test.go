@@ -1,12 +1,16 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
+	"connectrpc.com/connect"
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
 	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/google/uuid"
 )
 
@@ -101,34 +105,47 @@ func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 	t *testing.T,
 ) {
 	t.Parallel()
-	service := &View{dependencies: Dependencies{
-		Repositories: deniedRepositories{},
-	}.withDefaults()}
-	view := &deckv1.View{
-		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED,
-		Query: &deckv1.ViewQuery{
-			Builder: &deckv1.QueryBuilder{Clauses: []*deckv1.QueryClause{{
-				Clause: &deckv1.QueryClause_Repository{
-					Repository: &deckv1.RepositoryQualifier{
-						Owner: "secret", Repository: "project",
-					},
-				},
-			}}},
-		},
-	}
-	allowed, err := service.canReadViewDefinition(
-		context.Background(), contracts.Viewer{}, view)
-	if err != nil || !allowed {
-		t.Fatalf("disconnected view definition = allowed:%v err:%v", allowed, err)
-	}
-	view.ConnectionState = deckv1.ConnectionState_CONNECTION_STATE_CONNECTED
-	allowed, err = service.canReadViewDefinition(
-		context.Background(), contracts.Viewer{}, view)
+	hasher, err := security.NewHasher(bytes.Repeat([]byte{1}, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if allowed {
-		t.Fatal("connected view bypassed repository authorization")
+	accountID := uuid.MustParse("01900000-0000-7000-8000-000000000001")
+	owner := &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
+		OwnerId: &deckv1.Owner_AccountId{AccountId: &deckv1.UuidV7{
+			Value: accountID.String(),
+		}},
+	}
+	service := &View{dependencies: Dependencies{
+		Repositories: deniedRepositories{},
+		Hasher:       hasher,
+	}.withDefaults()}
+	authorize := service.viewDefinitionAuthorizer(
+		context.Background(), contracts.Viewer{AccountID: accountID}, false)
+	err = authorize(database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED,
+	})
+	if err != nil {
+		t.Fatalf("disconnected view definition error = %v", err)
+	}
+	repositoryHash := hasher.Sum(
+		"view-repository", "secret\x00project")
+	err = authorize(database.ViewAuthorization{
+		Owner:              owner,
+		ConnectionState:    deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+		RepositoryHashes:   [][32]byte{repositoryHash},
+		HasRepositoryIndex: true,
+	})
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("connected view authorization error = %v", err)
+	}
+	err = authorize(database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+	})
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("unindexed connected view error = %v", err)
 	}
 }
 

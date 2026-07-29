@@ -158,16 +158,12 @@ func (service *View) authorizePullRequestAction(
 				connect.CodeInvalidArgument,
 				deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
-	view, err := service.dependencies.Store.GetView(ctx, viewID)
-	if err != nil {
-		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
-			database.GitHubConnectionRecord{}, mapDatabaseError(err)
-	}
-	ownerID, err := authorizeOwner(viewer, view.Owner, false)
+	view, err := service.getAuthorizedView(ctx, viewer, viewID, false)
 	if err != nil {
 		return contractsViewer{}, nil, nil, deckgithub.PullRequestRef{},
 			database.GitHubConnectionRecord{}, err
 	}
+	authorizedOwnerID, _ := ownerID(view.Owner)
 	allowed, err := service.dependencies.Repositories.CanReadRepository(
 		ctx, viewer, view.Owner, referenceMessage.Repository.Owner,
 		referenceMessage.Repository.Name)
@@ -210,7 +206,7 @@ func (service *View) authorizePullRequestAction(
 				deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
 	}
 	connection, err := service.dependencies.Store.GetGitHubConnection(
-		ctx, int16(view.Owner.Scope), ownerID, viewer.AccountID, true)
+		ctx, int16(view.Owner.Scope), authorizedOwnerID, viewer.AccountID, true)
 	if err != nil {
 		if errors.Is(err, deckgithub.ErrPermissionDenied) ||
 			errors.Is(err, database.ErrNotFound) {

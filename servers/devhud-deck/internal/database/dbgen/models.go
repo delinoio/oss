@@ -178,24 +178,25 @@ type DeckTeamMembership struct {
 }
 
 type DeckView struct {
-	ViewID                 pgtype.UUID
-	OwnerScope             int16
-	OwnerAccountID         pgtype.UUID
-	OwnerOrganizationID    pgtype.UUID
-	BillingOrganizationID  pgtype.UUID
-	BillingTeamID          pgtype.UUID
-	NameCiphertext         []byte
-	QueryCiphertext        []byte
-	Kind                   int16
-	Sort                   int16
-	Grouping               int16
-	NotificationCiphertext []byte
-	ConnectionState        int16
-	Revision               int64
-	SnapshotTruncated      bool
-	SnapshotRefreshedAt    pgtype.Timestamptz
-	CreatedAt              pgtype.Timestamptz
-	UpdatedAt              pgtype.Timestamptz
+	ViewID                       pgtype.UUID
+	OwnerScope                   int16
+	OwnerAccountID               pgtype.UUID
+	OwnerOrganizationID          pgtype.UUID
+	BillingOrganizationID        pgtype.UUID
+	BillingTeamID                pgtype.UUID
+	NameCiphertext               []byte
+	QueryCiphertext              []byte
+	Kind                         int16
+	Sort                         int16
+	Grouping                     int16
+	NotificationCiphertext       []byte
+	ConnectionState              int16
+	Revision                     int64
+	SnapshotTruncated            bool
+	SnapshotRefreshedAt          pgtype.Timestamptz
+	CreatedAt                    pgtype.Timestamptz
+	UpdatedAt                    pgtype.Timestamptz
+	RepositoryAuthorizationIndex []byte
 }
 
 type DeckViewCreateIdempotency struct {

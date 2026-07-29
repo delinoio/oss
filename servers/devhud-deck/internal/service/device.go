@@ -248,11 +248,8 @@ func (service *Device) UpdateViewNotificationPreference(
 	if err != nil {
 		return nil, err
 	}
-	view, err := service.dependencies.Store.GetView(ctx, viewID)
-	if err != nil {
-		return nil, mapDatabaseError(err)
-	}
-	if _, err := authorizeOwner(viewer, view.Owner, false); err != nil {
+	viewService := &View{dependencies: service.dependencies}
+	if _, err := viewService.getAuthorizedView(ctx, viewer, viewID, false); err != nil {
 		return nil, err
 	}
 	if request.Msg.ExpectedRevision == nil || request.Msg.Preference == nil {
@@ -452,22 +449,7 @@ func (service *Device) authorizeReferencedView(
 	viewer contracts.Viewer,
 	viewID uuid.UUID,
 ) error {
-	view, err := service.dependencies.Store.GetView(ctx, viewID)
-	if err != nil {
-		return mapDatabaseError(err)
-	}
-	_, err = authorizeOwner(viewer, view.Owner, false)
-	if err != nil {
-		return err
-	}
-	allowed, err := (&View{dependencies: service.dependencies}).
-		canReadViewRepositories(ctx, viewer, view)
-	if err != nil {
-		return err
-	}
-	if !allowed {
-		return rpcerr.New(connect.CodePermissionDenied,
-			deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
-	}
-	return nil
+	_, err := (&View{dependencies: service.dependencies}).
+		getAuthorizedView(ctx, viewer, viewID, false)
+	return err
 }
