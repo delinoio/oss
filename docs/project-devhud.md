@@ -5,8 +5,10 @@
 Define DevHud as a developer-tool shell with a usable signed-out, bundled-asset
 base experience and two explicitly bounded future authenticated features: Deck
 and RealQA. The private `devhud.deck.v1` and `devhud.realqa.v1` source contracts
-and generated Connect packages are implemented; both feature servers and product
-integrations remain planned. This contract authorizes implementation for issues
+and generated Connect packages are implemented. Deck's bounded
+authentication/persistence foundation is implemented; its provider/billing
+integration, the RealQA server, and product integrations remain planned. This
+contract authorizes implementation for issues
 #755 and #757; it does not claim that either feature, service, origin, provider
 registration, catalog entry, extension, widget, or release artifact exists or
 is active.
@@ -20,7 +22,9 @@ The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild
 ## Domain Ownership Map
 
 - `apps/devhud` (`app`): the sole full DevHud feature client and native-integration path. It owns the signed-out base shell; shared authentication client; Deck desktop/mobile/tray/shortcut/notification/widget UI; RealQA desktop capture/editor, encrypted local drafts, Chrome extension, and native-host source.
-- `servers/devhud-deck` (`deck-server`, planned): the Go/PostgreSQL/sqlc Deck service described by [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md).
+- `servers/devhud-deck` (`deck-server`, bounded foundation implemented): the
+  Go/PostgreSQL/sqlc Deck service described by
+  [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md).
 - `protos/devhud-deck` (`deck-api`, implemented private contract): the versioned `devhud.deck.v1` source, isolated descriptor, generated Go/TypeScript Connect artifacts, and private workspace export described by [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
 - `servers/devhud-realqa` (`realqa-server`, planned): the Go/PostgreSQL/sqlc RealQA service described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
 - `protos/devhud-realqa` (`realqa-api`): the implemented versioned `devhud.realqa.v1` source, isolated descriptor, reproducible Go/TypeScript Connect artifacts, and private `@delinoio/devhud-realqa-connect` workspace package described by [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).

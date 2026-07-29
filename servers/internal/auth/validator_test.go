@@ -208,6 +208,32 @@ func TestValidatorConfigurationFailsClosed(t *testing.T) {
 	}
 }
 
+func TestNewValidatorForAudienceRequiresExactHTTPSOrigin(t *testing.T) {
+	t.Parallel()
+	key := mustRSAKey(t)
+	source := staticKeySource{key: &key.PublicKey}
+	if _, err := NewValidatorForAudience(Config{
+		Issuer:    "https://auth.example.com",
+		Audience:  "https://deck.deli.dev",
+		KeySource: source,
+	}); err != nil {
+		t.Fatalf("feature audience rejected: %v", err)
+	}
+	for _, audience := range []string{
+		"http://deck.deli.dev",
+		"https://deck.deli.dev/path",
+		"https://user@deck.deli.dev",
+	} {
+		if _, err := NewValidatorForAudience(Config{
+			Issuer:    "https://auth.example.com",
+			Audience:  audience,
+			KeySource: source,
+		}); err == nil {
+			t.Fatalf("invalid audience %q accepted", audience)
+		}
+	}
+}
+
 func TestValidatorClassifiesKeySourceErrors(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.July, 23, 12, 0, 0, 0, time.UTC)

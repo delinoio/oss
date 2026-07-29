@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -61,11 +62,29 @@ type Validator struct {
 // at construction time so services can load typed configuration, but this
 // shared delibase contract rejects any value other than the canonical origin.
 func NewValidator(config Config) (*Validator, error) {
-	if config.Issuer == "" {
-		return nil, errors.New("auth: issuer is required")
-	}
 	if config.Audience != Audience {
 		return nil, fmt.Errorf("auth: audience must equal %s", Audience)
+	}
+	return newValidator(config)
+}
+
+// NewValidatorForAudience constructs the same strict Logto validator for a
+// feature API audience. The audience must be an exact HTTPS origin. Callers
+// remain responsible for pinning the expected canonical feature origin in
+// typed configuration; this constructor does not infer or rewrite audiences.
+func NewValidatorForAudience(config Config) (*Validator, error) {
+	parsed, err := url.Parse(config.Audience)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" ||
+		parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" ||
+		parsed.Fragment != "" {
+		return nil, errors.New("auth: audience must be an exact HTTPS origin")
+	}
+	return newValidator(config)
+}
+
+func newValidator(config Config) (*Validator, error) {
+	if config.Issuer == "" {
+		return nil, errors.New("auth: issuer is required")
 	}
 	if config.KeySource == nil {
 		return nil, errors.New("auth: key source is required")
