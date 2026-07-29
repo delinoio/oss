@@ -29,6 +29,7 @@ import {
   type ToolCapability,
   ToolPlatform,
 } from "./tools/registry";
+import { BrowserCaptureComposer } from "./realqa/BrowserCaptureComposer";
 import { Dialog } from "./ui/Dialog";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import {
@@ -91,7 +92,10 @@ function SettingsDialog({
         startupShortcutFailure={runtimeInfo?.shortcutStartupFailure}
       />
       <DiagnosticsExportControl bridge={diagnosticsBridge} />
-      <ResetDevHudControl onResetComplete={onResetComplete} />
+      <ResetDevHudControl
+        onResetComplete={onResetComplete}
+        showChromePermissionGuidance={showDesktopControls}
+      />
     </Dialog>
   );
 }
@@ -127,8 +131,10 @@ type ResetStatus =
 
 function ResetDevHudControl({
   onResetComplete,
+  showChromePermissionGuidance = false,
 }: {
   readonly onResetComplete?: (outcome: PersistenceResetOutcome) => void;
+  readonly showChromePermissionGuidance?: boolean;
 }) {
   const { persistenceReady, resetDevHud } = useApplication();
   const [status, setStatus] = useState<ResetStatus>("idle");
@@ -155,6 +161,13 @@ function ResetDevHudControl({
         Clear local settings, widget state, and application browsing data from this
         device.
       </p>
+      {showChromePermissionGuidance ? (
+        <p className="muted">
+          Reset also clears DevHud extension pairing and pending host data. Chrome
+          owns site permissions; open <strong>chrome://extensions</strong> to review
+          or remove them.
+        </p>
+      ) : null}
       <button
         className="secondary-button"
         disabled={!persistenceReady || status === "resetting"}
@@ -180,6 +193,9 @@ function ResetDevHudControl({
             This cannot be undone. DevHud will clear its local settings, widget
             state, browsing data, and rotating logs. Diagnostic files you
             previously exported will not be changed.
+            {showChromePermissionGuidance
+              ? " Chrome-owned extension permissions remain; review them in chrome://extensions."
+              : ""}
           </p>
           <div className="reset-actions">
             <button
@@ -203,7 +219,12 @@ function ResetDevHudControl({
         </Dialog>
       ) : null}
       {status === "complete" ? (
-        <p role="status">DevHud local data was reset.</p>
+        <p role="status">
+          <span>DevHud local data was reset.</span>
+          {showChromePermissionGuidance
+            ? " Review Chrome-owned permissions in chrome://extensions."
+            : ""}
+        </p>
       ) : null}
       {status === "failed" ? (
         <p className="error" role="alert">
@@ -276,7 +297,10 @@ function SettingsWindow({
         startupShortcutFailure={startupShortcutFailure}
       />
       <DiagnosticsExportControl bridge={diagnosticsBridge} />
-      <ResetDevHudControl onResetComplete={onResetComplete} />
+      <ResetDevHudControl
+        onResetComplete={onResetComplete}
+        showChromePermissionGuidance
+      />
     </main>
   );
 }
@@ -886,6 +910,13 @@ function ApplicationSurface({
         startupShortcutFailure={runtime.runtimeInfo.shortcutStartupFailure}
       />
     );
+  }
+
+  if (
+    runtime.status === "ready" &&
+    runtime.runtimeInfo.surface === "realqa-composer"
+  ) {
+    return <BrowserCaptureComposer />;
   }
 
   return (

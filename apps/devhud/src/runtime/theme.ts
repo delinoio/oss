@@ -8,6 +8,11 @@ import type {
 
 const THEME_CHANNEL = "devhud.theme";
 const RESET_CHANNEL = "devhud.reset";
+const SESSION_CHANNEL = "devhud.session";
+
+enum SessionSignal {
+  Invalidated = "invalidated",
+}
 
 function isThemePreference(value: unknown): value is ThemePreference {
   return Object.values(ThemePreference).includes(value as ThemePreference);
@@ -73,6 +78,24 @@ export function subscribeToPersistenceReset(
   const channel = new BroadcastChannel(RESET_CHANNEL);
   channel.addEventListener("message", (event: MessageEvent<unknown>) => {
     if (isPersistenceResetOutcome(event.data)) listener(event.data);
+  });
+  return () => channel.close();
+}
+
+export function publishSessionInvalidation(): void {
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(SESSION_CHANNEL);
+  channel.postMessage(SessionSignal.Invalidated);
+  channel.close();
+}
+
+export function subscribeToSessionInvalidation(
+  listener: () => void,
+): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => undefined;
+  const channel = new BroadcastChannel(SESSION_CHANNEL);
+  channel.addEventListener("message", (event: MessageEvent<unknown>) => {
+    if (event.data === SessionSignal.Invalidated) listener();
   });
   return () => channel.close();
 }

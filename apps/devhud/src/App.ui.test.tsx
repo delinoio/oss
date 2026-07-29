@@ -484,6 +484,7 @@ describe("DevHud application surfaces", () => {
     expect(
       await screen.findByText("DevHud will launch at login."),
     ).toBeVisible();
+    expect(screen.getByText("chrome://extensions")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Reset DevHud" }));
     await user.click(screen.getByRole("button", { name: "Confirm reset" }));

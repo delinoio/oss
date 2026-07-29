@@ -16,6 +16,10 @@ name = "devhud"
 path = "src/main.rs"
 required-features = ["desktop-cef"]
 
+[[bin]]
+name = "devhud-native-host"
+path = "src/native_host_main.rs"
+
 [build-dependencies]
 cc = "1"
 tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", features = ["codegen"] }
@@ -25,6 +29,7 @@ base64 = "0.22"
 getrandom = "0.3"
 hmac = "0.12"
 http = "1"
+interprocess = "=2.4.2"
 jsonwebtoken = "10.0"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
