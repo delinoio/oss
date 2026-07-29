@@ -145,9 +145,14 @@ var removedPlaceholder = []byte(
 		`<text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" ` +
 		`font-family="system-ui,sans-serif" font-size="28" fill="#4b5563">Image removed</text></svg>`)
 
-func PublicHandler(objects ObjectStore, lookup PublicLookup) http.Handler {
+func PublicHandler(
+	signer *Signer,
+	objects ObjectStore,
+	lookup PublicLookup,
+) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.URL.RawQuery != "" {
+		if request.Method != http.MethodGet || request.URL.RawQuery != "" ||
+			!signer.MatchesOriginHost(request) {
 			http.NotFound(writer, request)
 			return
 		}

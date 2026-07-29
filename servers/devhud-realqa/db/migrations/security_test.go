@@ -68,10 +68,13 @@ func TestImageStoragePersistsOnlyUploadDigestAndPublicTombstone(t *testing.T) {
 	for _, required := range []string{
 		"upload_token_digest bytea",
 		"realqa_public_asset_tombstones",
+		"realqa_object_deletion_jobs",
 		"source_sha256 bytea",
 		"sanitized_sha256 bytea",
 		"'create_submission'",
 		"'create_image_upload'",
+		"'delete_image'",
+		"'delete_submission_assets'",
 		"'submission_created'",
 		"'image_upload_authorized'",
 		"'image_upload_verified'",
@@ -85,6 +88,7 @@ func TestImageStoragePersistsOnlyUploadDigestAndPublicTombstone(t *testing.T) {
 	for _, forbidden := range []string{
 		"signed_put_url", "signed_get_url", "r2_access_key",
 		"r2_secret", "upload_token text", "screenshot_body",
+		"object_key text",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("image storage schema contains %q", forbidden)

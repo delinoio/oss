@@ -5,6 +5,12 @@ WHERE created_by_account_id = sqlc.arg(account_id)
   AND state IN ('draft', 'uploading', 'ready')
   AND upload_expires_at > transaction_timestamp();
 
+-- name: CountRecentSubmissionsForAccount :one
+SELECT count(*)::bigint
+FROM realqa_submissions
+WHERE created_by_account_id = sqlc.arg(account_id)
+  AND created_at >= transaction_timestamp() - interval '1 hour';
+
 -- name: LockUploadSessionAccount :exec
 SELECT pg_advisory_xact_lock(
     hashtextextended(
@@ -144,22 +150,29 @@ WHERE id = sqlc.arg(id)
   AND upload_state = 'verifying'
 RETURNING *;
 
--- name: MarkAssetRejected :exec
+-- name: MarkAssetRejected :one
 UPDATE realqa_assets
 SET upload_state = 'rejected',
     revision = revision + 1
 WHERE id = sqlc.arg(id)
   AND submission_id = sqlc.arg(submission_id)
-  AND upload_state IN ('uploaded', 'verifying');
+  AND upload_state IN ('uploaded', 'verifying')
+RETURNING *;
 
 -- name: UpdateSubmissionVerifiedBytes :one
 UPDATE realqa_submissions AS submission
 SET verified_encoded_bytes = sqlc.arg(verified_encoded_bytes),
     state = CASE
-        WHEN NOT EXISTS (
+        WHEN EXISTS (
             SELECT 1 FROM realqa_assets
             WHERE submission_id = submission.id
-              AND upload_state <> 'verified'
+              AND upload_state = 'verified'
+        ) AND NOT EXISTS (
+            SELECT 1 FROM realqa_assets
+            WHERE submission_id = submission.id
+              AND upload_state NOT IN (
+                  'verified', 'rejected', 'expired', 'deleted'
+              )
         ) THEN 'ready'
         ELSE 'uploading'
     END,
@@ -267,11 +280,66 @@ WHERE id = sqlc.arg(id)
 RETURNING *;
 
 -- name: TouchSubmissionAfterAssetDeletion :one
-UPDATE realqa_submissions
-SET revision = revision + 1,
+UPDATE realqa_submissions AS submission
+SET verified_encoded_bytes = (
+        SELECT COALESCE(sum(encoded_bytes), 0)::bigint
+        FROM realqa_assets
+        WHERE submission_id = submission.id
+          AND upload_state = 'verified'
+          AND state IN ('verified_unlinked', 'public_retained')
+    ),
+    state = CASE
+        WHEN submission.state IN ('draft', 'uploading', 'ready')
+             AND EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state = 'verified'
+             )
+             AND NOT EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state NOT IN (
+                       'verified', 'rejected', 'expired', 'deleted'
+                   )
+             ) THEN 'ready'
+        WHEN submission.state IN ('draft', 'uploading', 'ready')
+            THEN 'uploading'
+        ELSE submission.state
+    END,
+    revision = revision + 1,
     updated_at = transaction_timestamp()
-WHERE id = sqlc.arg(id)
-  AND revision = sqlc.arg(expected_revision)
+WHERE submission.id = sqlc.arg(id)
+  AND submission.revision = sqlc.arg(expected_revision)
+RETURNING *;
+
+-- name: RefreshSubmissionAssetState :one
+UPDATE realqa_submissions AS submission
+SET verified_encoded_bytes = (
+        SELECT COALESCE(sum(encoded_bytes), 0)::bigint
+        FROM realqa_assets
+        WHERE submission_id = submission.id
+          AND upload_state = 'verified'
+          AND state IN ('verified_unlinked', 'public_retained')
+    ),
+    state = CASE
+        WHEN EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state = 'verified'
+             )
+             AND NOT EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state NOT IN (
+                       'verified', 'rejected', 'expired', 'deleted'
+                   )
+             ) THEN 'ready'
+        ELSE 'uploading'
+    END,
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE submission.id = sqlc.arg(id)
+  AND submission.state IN ('draft', 'uploading', 'ready')
 RETURNING *;
 
 -- name: ListIssueAssets :many
@@ -320,3 +388,31 @@ WHERE submission.owner_kind = sqlc.arg(owner_kind)
   AND submission.owner_id = sqlc.arg(owner_id)
   AND asset.public_id IS NOT NULL
 ON CONFLICT (public_id) DO NOTHING;
+
+-- name: EnqueueObjectDeletion :exec
+INSERT INTO realqa_object_deletion_jobs (
+    asset_id, object_kind, public_id
+) VALUES (
+    sqlc.arg(asset_id), sqlc.arg(object_kind), sqlc.narg(public_id)
+)
+ON CONFLICT (asset_id, object_kind) DO NOTHING;
+
+-- name: ListPendingObjectDeletions :many
+SELECT *
+FROM realqa_object_deletion_jobs
+WHERE next_attempt_at <= sqlc.arg(cutoff)
+ORDER BY next_attempt_at, created_at
+LIMIT sqlc.arg(batch_limit);
+
+-- name: RetryObjectDeletion :exec
+UPDATE realqa_object_deletion_jobs
+SET attempt_count = attempt_count + 1,
+    last_attempted_at = transaction_timestamp(),
+    next_attempt_at = transaction_timestamp() + interval '5 minutes'
+WHERE asset_id = sqlc.arg(asset_id)
+  AND object_kind = sqlc.arg(object_kind);
+
+-- name: CompleteObjectDeletion :exec
+DELETE FROM realqa_object_deletion_jobs
+WHERE asset_id = sqlc.arg(asset_id)
+  AND object_kind = sqlc.arg(object_kind);

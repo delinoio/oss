@@ -116,6 +116,16 @@ type RealqaIdentity struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
+type RealqaObjectDeletionJob struct {
+	AssetID         pgtype.UUID
+	ObjectKind      string
+	PublicID        pgtype.Text
+	AttemptCount    int32
+	NextAttemptAt   pgtype.Timestamptz
+	LastAttemptedAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
 type RealqaOwnerBinding struct {
 	AccountID           pgtype.UUID
 	OwnerKind           string

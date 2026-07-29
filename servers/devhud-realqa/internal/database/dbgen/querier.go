@@ -12,10 +12,12 @@ import (
 
 type Querier interface {
 	AuthorizeAssetUpload(ctx context.Context, arg AuthorizeAssetUploadParams) (RealqaAsset, error)
+	CompleteObjectDeletion(ctx context.Context, arg CompleteObjectDeletionParams) error
 	CountActiveShortcutsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	CountOpenSubmissionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	CountOtherActiveShortcutsForAccount(ctx context.Context, arg CountOtherActiveShortcutsForAccountParams) (int64, error)
 	CountPresetsForOwner(ctx context.Context, arg CountPresetsForOwnerParams) (int64, error)
+	CountRecentSubmissionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	CreateAssetRecord(ctx context.Context, arg CreateAssetRecordParams) (RealqaAsset, error)
 	CreateIdempotencyRecord(ctx context.Context, arg CreateIdempotencyRecordParams) (RealqaIdempotencyRecord, error)
 	CreatePreset(ctx context.Context, arg CreatePresetParams) (RealqaPreset, error)
@@ -32,10 +34,12 @@ type Querier interface {
 	DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSubmissionsParams) (int64, error)
 	DeleteShortcut(ctx context.Context, presetID pgtype.UUID) error
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (RealqaGithubConnection, error)
+	EnqueueObjectDeletion(ctx context.Context, arg EnqueueObjectDeletionParams) error
 	ExpireAsset(ctx context.Context, id pgtype.UUID) (RealqaAsset, error)
 	GetAssetRecord(ctx context.Context, arg GetAssetRecordParams) (RealqaAsset, error)
 	GetAssetUploadGrant(ctx context.Context, uploadTokenDigest []byte) (GetAssetUploadGrantRow, error)
 	GetDeletionJob(ctx context.Context, arg GetDeletionJobParams) (RealqaDeletionJob, error)
+	GetDestinationRecord(ctx context.Context, id pgtype.UUID) (RealqaDestination, error)
 	GetGitHubConnectionForOwner(ctx context.Context, arg GetGitHubConnectionForOwnerParams) (RealqaGithubConnection, error)
 	GetGitHubInstallation(ctx context.Context, id pgtype.UUID) (RealqaGithubInstallation, error)
 	GetIdempotencyRecord(ctx context.Context, arg GetIdempotencyRecordParams) (RealqaIdempotencyRecord, error)
@@ -54,6 +58,7 @@ type Querier interface {
 	ListExpiredPrivateAssets(ctx context.Context, arg ListExpiredPrivateAssetsParams) ([]RealqaAsset, error)
 	ListGitHubInstallations(ctx context.Context, arg ListGitHubInstallationsParams) ([]RealqaGithubInstallation, error)
 	ListIssueAssets(ctx context.Context, providerIssueID pgtype.Text) ([]RealqaAsset, error)
+	ListPendingObjectDeletions(ctx context.Context, arg ListPendingObjectDeletionsParams) ([]RealqaObjectDeletionJob, error)
 	ListPresetRecords(ctx context.Context, arg ListPresetRecordsParams) ([]ListPresetRecordsRow, error)
 	ListProcessURLRules(ctx context.Context, presetID pgtype.UUID) ([]RealqaProcessUrlRule, error)
 	ListRemovableSubmissionAssets(ctx context.Context, submissionID pgtype.UUID) ([]RealqaAsset, error)
@@ -67,7 +72,7 @@ type Querier interface {
 	LockShortcutAccount(ctx context.Context, accountID pgtype.UUID) error
 	LockSubmissionRecord(ctx context.Context, submissionRecordID pgtype.UUID) (RealqaSubmission, error)
 	LockUploadSessionAccount(ctx context.Context, accountID pgtype.UUID) error
-	MarkAssetRejected(ctx context.Context, arg MarkAssetRejectedParams) error
+	MarkAssetRejected(ctx context.Context, arg MarkAssetRejectedParams) (RealqaAsset, error)
 	MarkAssetUploaded(ctx context.Context, arg MarkAssetUploadedParams) (RealqaAsset, error)
 	MarkAssetVerified(ctx context.Context, arg MarkAssetVerifiedParams) (RealqaAsset, error)
 	MarkAssetVerifying(ctx context.Context, arg MarkAssetVerifyingParams) (RealqaAsset, error)
@@ -75,6 +80,8 @@ type Querier interface {
 	MarkSubmissionSubmitted(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error)
 	Ping(ctx context.Context) (int64, error)
 	PromoteAsset(ctx context.Context, arg PromoteAssetParams) (RealqaAsset, error)
+	RefreshSubmissionAssetState(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error)
+	RetryObjectDeletion(ctx context.Context, arg RetryObjectDeletionParams) error
 	ScopeIsTombstoned(ctx context.Context, arg ScopeIsTombstonedParams) (bool, error)
 	StartGitHubConnection(ctx context.Context, arg StartGitHubConnectionParams) (RealqaGithubConnection, error)
 	SumOtherVerifiedAssetBytes(ctx context.Context, arg SumOtherVerifiedAssetBytesParams) (int64, error)

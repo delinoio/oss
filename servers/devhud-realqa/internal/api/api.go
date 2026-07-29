@@ -77,6 +77,7 @@ func New(dependencies Dependencies) (http.Handler, error) {
 			time.Now,
 		))
 		rootMux.Handle("/i/", imageassets.PublicHandler(
+			dependencies.Services.UploadSigner,
 			dependencies.Services.Objects, submissions.PublicAsset))
 	}
 	rootMux.Handle("/", rejectBrowserOrigins(business))

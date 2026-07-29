@@ -67,6 +67,22 @@ func (q *Queries) AuthorizeAssetUpload(ctx context.Context, arg AuthorizeAssetUp
 	return i, err
 }
 
+const completeObjectDeletion = `-- name: CompleteObjectDeletion :exec
+DELETE FROM realqa_object_deletion_jobs
+WHERE asset_id = $1
+  AND object_kind = $2
+`
+
+type CompleteObjectDeletionParams struct {
+	AssetID    pgtype.UUID
+	ObjectKind string
+}
+
+func (q *Queries) CompleteObjectDeletion(ctx context.Context, arg CompleteObjectDeletionParams) error {
+	_, err := q.db.Exec(ctx, completeObjectDeletion, arg.AssetID, arg.ObjectKind)
+	return err
+}
+
 const countOpenSubmissionsForAccount = `-- name: CountOpenSubmissionsForAccount :one
 SELECT count(*)::bigint
 FROM realqa_submissions
@@ -77,6 +93,20 @@ WHERE created_by_account_id = $1
 
 func (q *Queries) CountOpenSubmissionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countOpenSubmissionsForAccount, accountID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countRecentSubmissionsForAccount = `-- name: CountRecentSubmissionsForAccount :one
+SELECT count(*)::bigint
+FROM realqa_submissions
+WHERE created_by_account_id = $1
+  AND created_at >= transaction_timestamp() - interval '1 hour'
+`
+
+func (q *Queries) CountRecentSubmissionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countRecentSubmissionsForAccount, accountID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -219,6 +249,26 @@ func (q *Queries) CreateSubmissionRecord(ctx context.Context, arg CreateSubmissi
 		&i.UploadExpiresAt,
 	)
 	return i, err
+}
+
+const enqueueObjectDeletion = `-- name: EnqueueObjectDeletion :exec
+INSERT INTO realqa_object_deletion_jobs (
+    asset_id, object_kind, public_id
+) VALUES (
+    $1, $2, $3
+)
+ON CONFLICT (asset_id, object_kind) DO NOTHING
+`
+
+type EnqueueObjectDeletionParams struct {
+	AssetID    pgtype.UUID
+	ObjectKind string
+	PublicID   pgtype.Text
+}
+
+func (q *Queries) EnqueueObjectDeletion(ctx context.Context, arg EnqueueObjectDeletionParams) error {
+	_, err := q.db.Exec(ctx, enqueueObjectDeletion, arg.AssetID, arg.ObjectKind, arg.PublicID)
+	return err
 }
 
 const expireAsset = `-- name: ExpireAsset :one
@@ -525,6 +575,47 @@ func (q *Queries) ListIssueAssets(ctx context.Context, providerIssueID pgtype.Te
 			&i.UploadExpiresAt,
 			&i.UploadedAt,
 			&i.VerifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingObjectDeletions = `-- name: ListPendingObjectDeletions :many
+SELECT asset_id, object_kind, public_id, attempt_count, next_attempt_at, last_attempted_at, created_at
+FROM realqa_object_deletion_jobs
+WHERE next_attempt_at <= $1
+ORDER BY next_attempt_at, created_at
+LIMIT $2
+`
+
+type ListPendingObjectDeletionsParams struct {
+	Cutoff     pgtype.Timestamptz
+	BatchLimit int32
+}
+
+func (q *Queries) ListPendingObjectDeletions(ctx context.Context, arg ListPendingObjectDeletionsParams) ([]RealqaObjectDeletionJob, error) {
+	rows, err := q.db.Query(ctx, listPendingObjectDeletions, arg.Cutoff, arg.BatchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RealqaObjectDeletionJob{}
+	for rows.Next() {
+		var i RealqaObjectDeletionJob
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.ObjectKind,
+			&i.PublicID,
+			&i.AttemptCount,
+			&i.NextAttemptAt,
+			&i.LastAttemptedAt,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -847,13 +938,14 @@ func (q *Queries) LockUploadSessionAccount(ctx context.Context, accountID pgtype
 	return err
 }
 
-const markAssetRejected = `-- name: MarkAssetRejected :exec
+const markAssetRejected = `-- name: MarkAssetRejected :one
 UPDATE realqa_assets
 SET upload_state = 'rejected',
     revision = revision + 1
 WHERE id = $1
   AND submission_id = $2
   AND upload_state IN ('uploaded', 'verifying')
+RETURNING id, submission_id, public_id, object_key_ciphertext, state, encoded_bytes, revision, created_at, removed_at, client_image_id, media_type, declared_encoded_bytes, pixel_width, pixel_height, source_sha256, sanitized_sha256, upload_state, upload_token_digest, upload_expires_at, uploaded_at, verified_at
 `
 
 type MarkAssetRejectedParams struct {
@@ -861,9 +953,33 @@ type MarkAssetRejectedParams struct {
 	SubmissionID pgtype.UUID
 }
 
-func (q *Queries) MarkAssetRejected(ctx context.Context, arg MarkAssetRejectedParams) error {
-	_, err := q.db.Exec(ctx, markAssetRejected, arg.ID, arg.SubmissionID)
-	return err
+func (q *Queries) MarkAssetRejected(ctx context.Context, arg MarkAssetRejectedParams) (RealqaAsset, error) {
+	row := q.db.QueryRow(ctx, markAssetRejected, arg.ID, arg.SubmissionID)
+	var i RealqaAsset
+	err := row.Scan(
+		&i.ID,
+		&i.SubmissionID,
+		&i.PublicID,
+		&i.ObjectKeyCiphertext,
+		&i.State,
+		&i.EncodedBytes,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.RemovedAt,
+		&i.ClientImageID,
+		&i.MediaType,
+		&i.DeclaredEncodedBytes,
+		&i.PixelWidth,
+		&i.PixelHeight,
+		&i.SourceSha256,
+		&i.SanitizedSha256,
+		&i.UploadState,
+		&i.UploadTokenDigest,
+		&i.UploadExpiresAt,
+		&i.UploadedAt,
+		&i.VerifiedAt,
+	)
+	return i, err
 }
 
 const markAssetUploaded = `-- name: MarkAssetUploaded :one
@@ -1146,6 +1262,85 @@ func (q *Queries) PromoteAsset(ctx context.Context, arg PromoteAssetParams) (Rea
 	return i, err
 }
 
+const refreshSubmissionAssetState = `-- name: RefreshSubmissionAssetState :one
+UPDATE realqa_submissions AS submission
+SET verified_encoded_bytes = (
+        SELECT COALESCE(sum(encoded_bytes), 0)::bigint
+        FROM realqa_assets
+        WHERE submission_id = submission.id
+          AND upload_state = 'verified'
+          AND state IN ('verified_unlinked', 'public_retained')
+    ),
+    state = CASE
+        WHEN EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state = 'verified'
+             )
+             AND NOT EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state NOT IN (
+                       'verified', 'rejected', 'expired', 'deleted'
+                   )
+             ) THEN 'ready'
+        ELSE 'uploading'
+    END,
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE submission.id = $1
+  AND submission.state IN ('draft', 'uploading', 'ready')
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+`
+
+func (q *Queries) RefreshSubmissionAssetState(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error) {
+	row := q.db.QueryRow(ctx, refreshSubmissionAssetState, id)
+	var i RealqaSubmission
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CreatedByAccountID,
+		&i.PresetID,
+		&i.DestinationID,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.IdempotencyDigest,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SubmittedAt,
+		&i.PayerOrganizationID,
+		&i.PayerTeamID,
+		&i.PresetRevision,
+		&i.DeclaredEncodedBytes,
+		&i.VerifiedEncodedBytes,
+		&i.UploadDeadline,
+		&i.UploadExpiresAt,
+	)
+	return i, err
+}
+
+const retryObjectDeletion = `-- name: RetryObjectDeletion :exec
+UPDATE realqa_object_deletion_jobs
+SET attempt_count = attempt_count + 1,
+    last_attempted_at = transaction_timestamp(),
+    next_attempt_at = transaction_timestamp() + interval '5 minutes'
+WHERE asset_id = $1
+  AND object_kind = $2
+`
+
+type RetryObjectDeletionParams struct {
+	AssetID    pgtype.UUID
+	ObjectKind string
+}
+
+func (q *Queries) RetryObjectDeletion(ctx context.Context, arg RetryObjectDeletionParams) error {
+	_, err := q.db.Exec(ctx, retryObjectDeletion, arg.AssetID, arg.ObjectKind)
+	return err
+}
+
 const sumOtherVerifiedAssetBytes = `-- name: SumOtherVerifiedAssetBytes :one
 SELECT COALESCE(sum(encoded_bytes), 0)::bigint
 FROM realqa_assets
@@ -1318,11 +1513,36 @@ func (q *Queries) TombstoneSubmissionAssets(ctx context.Context, assetSubmission
 }
 
 const touchSubmissionAfterAssetDeletion = `-- name: TouchSubmissionAfterAssetDeletion :one
-UPDATE realqa_submissions
-SET revision = revision + 1,
+UPDATE realqa_submissions AS submission
+SET verified_encoded_bytes = (
+        SELECT COALESCE(sum(encoded_bytes), 0)::bigint
+        FROM realqa_assets
+        WHERE submission_id = submission.id
+          AND upload_state = 'verified'
+          AND state IN ('verified_unlinked', 'public_retained')
+    ),
+    state = CASE
+        WHEN submission.state IN ('draft', 'uploading', 'ready')
+             AND EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state = 'verified'
+             )
+             AND NOT EXISTS (
+                 SELECT 1 FROM realqa_assets
+                 WHERE submission_id = submission.id
+                   AND upload_state NOT IN (
+                       'verified', 'rejected', 'expired', 'deleted'
+                   )
+             ) THEN 'ready'
+        WHEN submission.state IN ('draft', 'uploading', 'ready')
+            THEN 'uploading'
+        ELSE submission.state
+    END,
+    revision = revision + 1,
     updated_at = transaction_timestamp()
-WHERE id = $1
-  AND revision = $2
+WHERE submission.id = $1
+  AND submission.revision = $2
 RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
 `
 
@@ -1364,10 +1584,16 @@ const updateSubmissionVerifiedBytes = `-- name: UpdateSubmissionVerifiedBytes :o
 UPDATE realqa_submissions AS submission
 SET verified_encoded_bytes = $1,
     state = CASE
-        WHEN NOT EXISTS (
+        WHEN EXISTS (
             SELECT 1 FROM realqa_assets
             WHERE submission_id = submission.id
-              AND upload_state <> 'verified'
+              AND upload_state = 'verified'
+        ) AND NOT EXISTS (
+            SELECT 1 FROM realqa_assets
+            WHERE submission_id = submission.id
+              AND upload_state NOT IN (
+                  'verified', 'rejected', 'expired', 'deleted'
+              )
         ) THEN 'ready'
         ELSE 'uploading'
     END,

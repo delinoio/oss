@@ -11,15 +11,17 @@ import (
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	uploadAcceptWindow = 23 * time.Hour
-	stagingLifetime    = 24 * time.Hour
-	uploadSessionLimit = 3
+	uploadAcceptWindow  = 23 * time.Hour
+	stagingLifetime     = 24 * time.Hour
+	uploadSessionLimit  = 3
+	submissionHourLimit = 30
 )
 
 // CreateSubmission validates the complete declaration set before creating any
@@ -148,6 +150,16 @@ func (service *Submission) CreateSubmission(
 			if open >= uploadSessionLimit {
 				return invalid(
 					realqav1.ErrorReason_ERROR_REASON_UPLOAD_CONCURRENCY_LIMITED)
+			}
+			recent, countErr := queries.CountRecentSubmissionsForAccount(
+				ctx, toPGUUID(actor.accountID))
+			if countErr != nil {
+				return countErr
+			}
+			if recent >= submissionHourLimit {
+				return rqerr.New(connect.CodeResourceExhausted,
+					realqav1.ErrorReason_ERROR_REASON_RATE_LIMITED,
+					realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
 			}
 			var total int64
 			for _, declaration := range request.Msg.Images {

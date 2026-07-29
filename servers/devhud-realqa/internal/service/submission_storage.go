@@ -336,13 +336,30 @@ func (service *Submission) FinalizeImageUpload(
 	verified, verifyErr := imageassets.Verify(declarationFromRecord(asset), body)
 	if verifyErr != nil || object.ContentType != asset.MediaType ||
 		(object.Size >= 0 && object.Size != asset.DeclaredEncodedBytes) {
-		_ = service.dependencies.Store.Queries().MarkAssetRejected(
-			ctx, dbgen.MarkAssetRejectedParams{
-				ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+		rejectErr := service.dependencies.Store.WithinTransaction(
+			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+				if _, lockErr := queries.LockSubmissionRecord(
+					ctx, toPGUUID(submissionID)); lockErr != nil {
+					return lockErr
+				}
+				rejected, markErr := queries.MarkAssetRejected(
+					ctx, dbgen.MarkAssetRejectedParams{
+						ID:           toPGUUID(assetID),
+						SubmissionID: toPGUUID(submissionID),
+					})
+				if markErr != nil {
+					return markErr
+				}
+				if _, markErr = queries.RefreshSubmissionAssetState(
+					ctx, toPGUUID(submissionID)); markErr != nil {
+					return markErr
+				}
+				return enqueueAssetObjectDeletions(ctx, queries, rejected)
 			})
-		_ = service.dependencies.Objects.Delete(
-			context.WithoutCancel(ctx),
-			imageassets.StagingObjectKey(assetID.String()))
+		if rejectErr != nil {
+			return nil, rejectErr
+		}
+		service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 		return nil, verificationError(verifyErr)
 	}
 	if err = service.dependencies.Objects.Put(
@@ -386,6 +403,11 @@ func (service *Submission) FinalizeImageUpload(
 			if sumErr != nil {
 				return sumErr
 			}
+			if sumErr = enqueueObjectDeletion(
+				ctx, queries, asset.ID, objectKindStaging,
+				pgtype.Text{}); sumErr != nil {
+				return sumErr
+			}
 			_, sumErr = queries.UpdateSubmissionVerifiedBytes(
 				ctx, dbgen.UpdateSubmissionVerifiedBytesParams{
 					VerifiedEncodedBytes: current + verified.EncodedBytes,
@@ -403,8 +425,7 @@ func (service *Submission) FinalizeImageUpload(
 		}
 		return nil, err
 	}
-	_ = service.dependencies.Objects.Delete(
-		context.WithoutCancel(ctx), imageassets.StagingObjectKey(assetID.String()))
+	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	audit(ctx, service.dependencies, actor, "image_upload_verified",
 		scope, assetID, "allow", "success")
 	return connect.NewResponse(&realqav1.FinalizeImageUploadResponse{
@@ -527,7 +548,12 @@ func (service *Submission) DeleteImage(
 		request.Msg.ExpectedAssetRevision == nil {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_STALE_REVISION)
 	}
-	if _, err := parseIdempotency(request.Msg.Idempotency); err != nil {
+	idempotencyID, err := parseIdempotency(request.Msg.Idempotency)
+	if err != nil {
+		return nil, err
+	}
+	requestDigest, err := digestMessage(request.Msg)
+	if err != nil {
 		return nil, err
 	}
 	actor, submissionID, submission, scope, err :=
@@ -535,17 +561,36 @@ func (service *Submission) DeleteImage(
 	if err != nil {
 		return nil, err
 	}
-	if submission.Revision != request.Msg.ExpectedSubmissionRevision.Value {
-		return nil, stale(submission.Revision)
-	}
 	assetID, err := parseUUIDMessage(request.Msg.AssetId)
 	if err != nil {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
 	}
+	if replay, ok, replayErr := service.deleteImageReplay(
+		ctx, actor, idempotencyID, requestDigest, submissionID, assetID); ok {
+		return replay, replayErr
+	}
+	if submission.Revision != request.Msg.ExpectedSubmissionRevision.Value {
+		return nil, stale(submission.Revision)
+	}
+	recordID, err := newID(service.dependencies)
+	if err != nil {
+		return nil, err
+	}
 	var removed dbgen.RealqaAsset
-	var updatedRecord dbgen.RealqaSubmission
+	var response *realqav1.DeleteImageResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			if existing, lookupErr := queries.GetIdempotencyRecord(
+				ctx, idempotencyLookupFor(
+					actor, idempotencyID, "delete_image"),
+			); lookupErr == nil {
+				if !bytes.Equal(existing.RequestDigest, requestDigest) {
+					return idempotencyConflict()
+				}
+				return errIdempotencyReplay
+			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
+				return lookupErr
+			}
 			locked, lockErr := queries.LockSubmissionRecord(
 				ctx, toPGUUID(submissionID))
 			if lockErr != nil {
@@ -563,36 +608,64 @@ func (service *Submission) DeleteImage(
 			if lockErr != nil {
 				return lockErr
 			}
-			updatedRecord, lockErr = queries.TouchSubmissionAfterAssetDeletion(
+			if lockErr = enqueueAssetObjectDeletions(
+				ctx, queries, removed); lockErr != nil {
+				return lockErr
+			}
+			updatedRecord, lockErr := queries.TouchSubmissionAfterAssetDeletion(
 				ctx, dbgen.TouchSubmissionAfterAssetDeletionParams{
 					ID:               toPGUUID(submissionID),
 					ExpectedRevision: request.Msg.ExpectedSubmissionRevision.Value,
 				})
+			if lockErr != nil {
+				return lockErr
+			}
+			updated, lockErr := loadSubmissionWithRecord(ctx, queries, updatedRecord)
+			if lockErr != nil {
+				return lockErr
+			}
+			response = &realqav1.DeleteImageResponse{
+				Submission: updated,
+				Idempotency: &realqav1.IdempotencyResult{
+					Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_IMAGE,
+					OriginallyCompletedAt: timestamp(removed.RemovedAt),
+				},
+			}
+			payload, marshalErr := proto.MarshalOptions{
+				Deterministic: true,
+			}.Marshal(response)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			_, lockErr = queries.CreateIdempotencyRecord(
+				ctx, dbgen.CreateIdempotencyRecordParams{
+					ID: toPGUUID(recordID), CallerKind: "user",
+					CallerDigest: actor.digest, Operation: "delete_image",
+					IdempotencyKey: toPGUUID(idempotencyID),
+					RequestDigest:  requestDigest, ResourceID: toPGUUID(assetID),
+					ResponsePayload: payload,
+				})
 			return lockErr
 		})
+	if err != nil {
+		if replay, ok, replayErr := service.deleteImageReplay(
+			ctx, actor, idempotencyID, requestDigest,
+			submissionID, assetID); ok {
+			return replay, replayErr
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, stale(request.Msg.ExpectedAssetRevision.Value)
 	}
 	if err != nil {
 		return nil, err
 	}
-	service.deleteAssetObjects(context.WithoutCancel(ctx), removed)
+	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	service.bestEffortIssueUpdate(
 		context.WithoutCancel(ctx), submission, []dbgen.RealqaAsset{removed})
-	updated, err := loadSubmissionWithRecord(
-		ctx, service.dependencies.Store.Queries(), updatedRecord)
-	if err != nil {
-		return nil, err
-	}
 	audit(ctx, service.dependencies, actor, "image_deleted",
 		scope, assetID, "allow", "success")
-	return connect.NewResponse(&realqav1.DeleteImageResponse{
-		Submission: updated,
-		Idempotency: &realqav1.IdempotencyResult{
-			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_IMAGE,
-			OriginallyCompletedAt: timestamp(removed.RemovedAt),
-		},
-	}), nil
+	return connect.NewResponse(response), nil
 }
 
 func (service *Submission) DeleteSubmissionAssets(
@@ -603,7 +676,12 @@ func (service *Submission) DeleteSubmissionAssets(
 		request.Msg.ExpectedSubmissionRevision == nil {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_STALE_REVISION)
 	}
-	if _, err := parseIdempotency(request.Msg.Idempotency); err != nil {
+	idempotencyID, err := parseIdempotency(request.Msg.Idempotency)
+	if err != nil {
+		return nil, err
+	}
+	requestDigest, err := digestMessage(request.Msg)
+	if err != nil {
 		return nil, err
 	}
 	actor, submissionID, submission, scope, err :=
@@ -611,15 +689,34 @@ func (service *Submission) DeleteSubmissionAssets(
 	if err != nil {
 		return nil, err
 	}
+	if replay, ok, replayErr := service.deleteSubmissionAssetsReplay(
+		ctx, actor, idempotencyID, requestDigest, submissionID); ok {
+		return replay, replayErr
+	}
 	if submission.Revision != request.Msg.ExpectedSubmissionRevision.Value {
 		return nil, stale(submission.Revision)
 	}
+	recordID, err := newID(service.dependencies)
+	if err != nil {
+		return nil, err
+	}
 	var (
-		removed []dbgen.RealqaAsset
-		updated dbgen.RealqaSubmission
+		removed  []dbgen.RealqaAsset
+		response *realqav1.DeleteSubmissionAssetsResponse
 	)
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			if existing, lookupErr := queries.GetIdempotencyRecord(
+				ctx, idempotencyLookupFor(
+					actor, idempotencyID, "delete_submission_assets"),
+			); lookupErr == nil {
+				if !bytes.Equal(existing.RequestDigest, requestDigest) {
+					return idempotencyConflict()
+				}
+				return errIdempotencyReplay
+			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
+				return lookupErr
+			}
 			locked, lockErr := queries.LockSubmissionRecord(
 				ctx, toPGUUID(submissionID))
 			if lockErr != nil {
@@ -633,35 +730,144 @@ func (service *Submission) DeleteSubmissionAssets(
 			if lockErr != nil {
 				return lockErr
 			}
-			updated, lockErr = queries.MarkSubmissionAssetsDeleted(
+			for _, asset := range removed {
+				if lockErr = enqueueAssetObjectDeletions(
+					ctx, queries, asset); lockErr != nil {
+					return lockErr
+				}
+			}
+			updated, lockErr := queries.MarkSubmissionAssetsDeleted(
 				ctx, dbgen.MarkSubmissionAssetsDeletedParams{
 					ID:               toPGUUID(submissionID),
 					ExpectedRevision: request.Msg.ExpectedSubmissionRevision.Value,
 				})
+			if lockErr != nil {
+				return lockErr
+			}
+			result, lockErr := loadSubmissionWithRecord(ctx, queries, updated)
+			if lockErr != nil {
+				return lockErr
+			}
+			response = &realqav1.DeleteSubmissionAssetsResponse{
+				Submission: result,
+				Idempotency: &realqav1.IdempotencyResult{
+					Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_SUBMISSION_ASSETS,
+					OriginallyCompletedAt: result.UpdatedAt,
+				},
+			}
+			payload, marshalErr := proto.MarshalOptions{
+				Deterministic: true,
+			}.Marshal(response)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			_, lockErr = queries.CreateIdempotencyRecord(
+				ctx, dbgen.CreateIdempotencyRecordParams{
+					ID: toPGUUID(recordID), CallerKind: "user",
+					CallerDigest:    actor.digest,
+					Operation:       "delete_submission_assets",
+					IdempotencyKey:  toPGUUID(idempotencyID),
+					RequestDigest:   requestDigest,
+					ResourceID:      toPGUUID(submissionID),
+					ResponsePayload: payload,
+				})
 			return lockErr
 		})
 	if err != nil {
+		if replay, ok, replayErr := service.deleteSubmissionAssetsReplay(
+			ctx, actor, idempotencyID, requestDigest, submissionID); ok {
+			return replay, replayErr
+		}
 		return nil, err
 	}
-	for _, asset := range removed {
-		service.deleteAssetObjects(context.WithoutCancel(ctx), asset)
-	}
+	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	service.bestEffortIssueUpdate(
 		context.WithoutCancel(ctx), submission, removed)
-	result, err := loadSubmissionWithRecord(
-		ctx, service.dependencies.Store.Queries(), updated)
-	if err != nil {
-		return nil, err
-	}
 	audit(ctx, service.dependencies, actor, "submission_assets_deleted",
 		scope, submissionID, "allow", "success")
-	return connect.NewResponse(&realqav1.DeleteSubmissionAssetsResponse{
-		Submission: result,
-		Idempotency: &realqav1.IdempotencyResult{
-			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_SUBMISSION_ASSETS,
-			OriginallyCompletedAt: result.UpdatedAt,
-		},
-	}), nil
+	return connect.NewResponse(response), nil
+}
+
+func (service *Submission) deleteImageReplay(
+	ctx context.Context,
+	actor caller,
+	idempotencyID uuid.UUID,
+	digest []byte,
+	submissionID uuid.UUID,
+	assetID uuid.UUID,
+) (*connect.Response[realqav1.DeleteImageResponse], bool, error) {
+	record, err := service.dependencies.Store.Queries().GetIdempotencyRecord(
+		ctx, idempotencyLookupFor(actor, idempotencyID, "delete_image"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	if !bytes.Equal(record.RequestDigest, digest) {
+		return nil, true, idempotencyConflict()
+	}
+	resourceID, err := fromPGUUID(record.ResourceID)
+	if err != nil || resourceID != assetID {
+		return nil, true, errors.New(
+			"realqa images: invalid image deletion replay state")
+	}
+	response := new(realqav1.DeleteImageResponse)
+	if err = proto.Unmarshal(record.ResponsePayload, response); err != nil {
+		return nil, true, err
+	}
+	if response.Submission == nil || response.Submission.SubmissionId == nil ||
+		response.Submission.SubmissionId.Value != submissionID.String() {
+		return nil, true, errors.New(
+			"realqa images: invalid image deletion replay state")
+	}
+	response.Idempotency = &realqav1.IdempotencyResult{
+		Replayed:              true,
+		Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_IMAGE,
+		OriginallyCompletedAt: timestamp(record.CompletedAt),
+	}
+	return connect.NewResponse(response), true, nil
+}
+
+func (service *Submission) deleteSubmissionAssetsReplay(
+	ctx context.Context,
+	actor caller,
+	idempotencyID uuid.UUID,
+	digest []byte,
+	submissionID uuid.UUID,
+) (*connect.Response[realqav1.DeleteSubmissionAssetsResponse], bool, error) {
+	record, err := service.dependencies.Store.Queries().GetIdempotencyRecord(
+		ctx, idempotencyLookupFor(
+			actor, idempotencyID, "delete_submission_assets"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	if !bytes.Equal(record.RequestDigest, digest) {
+		return nil, true, idempotencyConflict()
+	}
+	resourceID, err := fromPGUUID(record.ResourceID)
+	if err != nil || resourceID != submissionID {
+		return nil, true, errors.New(
+			"realqa images: invalid asset deletion replay state")
+	}
+	response := new(realqav1.DeleteSubmissionAssetsResponse)
+	if err = proto.Unmarshal(record.ResponsePayload, response); err != nil {
+		return nil, true, err
+	}
+	if response.Submission == nil || response.Submission.SubmissionId == nil ||
+		response.Submission.SubmissionId.Value != submissionID.String() {
+		return nil, true, errors.New(
+			"realqa images: invalid asset deletion replay state")
+	}
+	response.Idempotency = &realqav1.IdempotencyResult{
+		Replayed:              true,
+		Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_SUBMISSION_ASSETS,
+		OriginallyCompletedAt: timestamp(record.CompletedAt),
+	}
+	return connect.NewResponse(response), true, nil
 }
 
 // PromoteSubmittedAssets copies verified private objects to opaque durable
@@ -776,6 +982,10 @@ func (service *Submission) CleanupExpiredStaging(
 				if expireErr != nil {
 					return expireErr
 				}
+				if expireErr = enqueueAssetObjectDeletions(
+					ctx, queries, value); expireErr != nil {
+					return expireErr
+				}
 				expired = append(expired, value)
 			}
 			return nil
@@ -783,9 +993,7 @@ func (service *Submission) CleanupExpiredStaging(
 	if err != nil {
 		return 0, err
 	}
-	for _, asset := range expired {
-		service.deleteAssetObjects(context.WithoutCancel(ctx), asset)
-	}
+	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	return len(expired), nil
 }
 
@@ -845,6 +1053,10 @@ func (service *Submission) DeleteIssueAssets(
 				if removeErr != nil {
 					return removeErr
 				}
+				if removeErr = enqueueAssetObjectDeletions(
+					ctx, queries, value); removeErr != nil {
+					return removeErr
+				}
 				removed = append(removed, value)
 			}
 			return nil
@@ -852,9 +1064,7 @@ func (service *Submission) DeleteIssueAssets(
 	if err != nil {
 		return err
 	}
-	for _, asset := range removed {
-		service.deleteAssetObjects(context.WithoutCancel(ctx), asset)
-	}
+	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	return nil
 }
 
@@ -875,14 +1085,21 @@ func (service *Submission) DeleteBillingExpiredAssets(
 			var removeErr error
 			removed, removeErr = queries.TombstoneSubmissionAssets(
 				ctx, toPGUUID(submissionID))
-			return removeErr
+			if removeErr != nil {
+				return removeErr
+			}
+			for _, asset := range removed {
+				if removeErr = enqueueAssetObjectDeletions(
+					ctx, queries, asset); removeErr != nil {
+					return removeErr
+				}
+			}
+			return nil
 		})
 	if err != nil {
 		return err
 	}
-	for _, asset := range removed {
-		service.deleteAssetObjects(context.WithoutCancel(ctx), asset)
-	}
+	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	service.bestEffortIssueUpdate(
 		context.WithoutCancel(ctx), submission, removed)
 	return nil
@@ -987,18 +1204,27 @@ func loadSubmissionWithRecord(
 			return nil, parseErr
 		}
 		result.PresetId = &realqav1.UuidV7{Value: presetID.String()}
-		preset, presetErr := queries.GetPresetRecord(ctx, record.PresetID)
-		if presetErr == nil {
-			result.Destination = &realqav1.TrackerDestination{
-				Tracker: realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM,
-				InstallationId: &realqav1.UuidV7{
-					Value: uuid.UUID(preset.InstallationID.Bytes).String(),
-				},
-				Repository: &realqav1.GitHubRepositoryRef{
-					RepositoryId: preset.RepositoryID,
-					Owner:        preset.RepositoryOwner, Name: preset.RepositoryName,
-				},
-			}
+	}
+	if record.DestinationID.Valid {
+		destination, destinationErr := queries.GetDestinationRecord(
+			ctx, record.DestinationID)
+		if destinationErr != nil {
+			return nil, destinationErr
+		}
+		installationID, parseErr := fromPGUUID(destination.InstallationID)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		result.Destination = &realqav1.TrackerDestination{
+			Tracker: realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM,
+			InstallationId: &realqav1.UuidV7{
+				Value: installationID.String(),
+			},
+			Repository: &realqav1.GitHubRepositoryRef{
+				RepositoryId: destination.RepositoryID,
+				Owner:        destination.RepositoryOwner,
+				Name:         destination.RepositoryName,
+			},
 		}
 	}
 	if record.ProviderIssueID.Valid && record.ProviderIssueUrl.Valid {
@@ -1053,29 +1279,117 @@ func declarationFromRecord(asset dbgen.RealqaAsset) imageassets.Declaration {
 	}
 }
 
-func (service *Submission) deleteAssetObjects(
+type objectKind string
+
+const (
+	objectKindStaging  objectKind = "staging"
+	objectKindVerified objectKind = "verified"
+	objectKindPublic   objectKind = "public"
+)
+
+func enqueueAssetObjectDeletions(
 	ctx context.Context,
+	queries *dbgen.Queries,
 	asset dbgen.RealqaAsset,
-) {
-	if service.dependencies.Objects == nil {
-		return
-	}
-	id := uuid.UUID(asset.ID.Bytes).String()
-	keys := []string{
-		imageassets.StagingObjectKey(id), imageassets.VerifiedObjectKey(id),
+) error {
+	for _, kind := range []objectKind{objectKindStaging, objectKindVerified} {
+		if err := enqueueObjectDeletion(
+			ctx, queries, asset.ID, kind, pgtype.Text{}); err != nil {
+			return err
+		}
 	}
 	if asset.PublicID.Valid {
-		keys = append(keys, imageassets.PublicObjectKey(asset.PublicID.String))
+		return enqueueObjectDeletion(
+			ctx, queries, asset.ID, objectKindPublic, asset.PublicID)
 	}
-	for _, key := range keys {
-		if err := service.dependencies.Objects.Delete(ctx, key); err != nil {
+	return nil
+}
+
+func enqueueObjectDeletion(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	assetID pgtype.UUID,
+	kind objectKind,
+	publicID pgtype.Text,
+) error {
+	return queries.EnqueueObjectDeletion(ctx, dbgen.EnqueueObjectDeletionParams{
+		AssetID: assetID, ObjectKind: string(kind), PublicID: publicID,
+	})
+}
+
+func (service *Submission) drainObjectDeletionsBestEffort(ctx context.Context) {
+	if _, err := service.DrainObjectDeletions(ctx, 1000); err != nil {
+		safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
+			safelog.EventIntegration, safelog.Fields{
+				Decision: safelog.DecisionDeny,
+				Result:   safelog.ResultFailure,
+			})
+	}
+}
+
+func (service *Submission) DrainObjectDeletions(
+	ctx context.Context,
+	batchSize int32,
+) (int, error) {
+	if service.dependencies.Objects == nil {
+		return 0, nil
+	}
+	if batchSize <= 0 || batchSize > 1000 {
+		batchSize = 100
+	}
+	jobs, err := service.dependencies.Store.Queries().ListPendingObjectDeletions(
+		ctx, dbgen.ListPendingObjectDeletionsParams{
+			Cutoff:     pgTimestamp(service.dependencies.Clock.Now().UTC()),
+			BatchLimit: batchSize,
+		})
+	if err != nil {
+		return 0, err
+	}
+	completed := 0
+	for _, job := range jobs {
+		assetID, parseErr := fromPGUUID(job.AssetID)
+		if parseErr != nil {
+			return completed, parseErr
+		}
+		var key string
+		switch objectKind(job.ObjectKind) {
+		case objectKindStaging:
+			key = imageassets.StagingObjectKey(assetID.String())
+		case objectKindVerified:
+			key = imageassets.VerifiedObjectKey(assetID.String())
+		case objectKindPublic:
+			if !job.PublicID.Valid {
+				return completed, errors.New(
+					"realqa service: invalid public object deletion")
+			}
+			key = imageassets.PublicObjectKey(job.PublicID.String)
+		default:
+			return completed, errors.New(
+				"realqa service: invalid object deletion kind")
+		}
+		if err = service.dependencies.Objects.Delete(ctx, key); err != nil {
 			safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
 				safelog.EventIntegration, safelog.Fields{
 					Decision: safelog.DecisionDeny,
 					Result:   safelog.ResultFailure,
 				})
+			if retryErr := service.dependencies.Store.Queries().RetryObjectDeletion(
+				ctx, dbgen.RetryObjectDeletionParams{
+					AssetID: job.AssetID, ObjectKind: job.ObjectKind,
+				}); retryErr != nil {
+				return completed, retryErr
+			}
+			continue
 		}
+		if err = service.dependencies.Store.Queries().CompleteObjectDeletion(
+			ctx, dbgen.CompleteObjectDeletionParams{
+				AssetID: job.AssetID, ObjectKind: job.ObjectKind,
+			}); err != nil {
+			return completed, err
+		}
+		completed++
 	}
+	return completed, nil
 }
 
 func (service *Submission) bestEffortIssueUpdate(

@@ -268,15 +268,20 @@ func TestUploadStateFailurePreservesSharedStagingObject(t *testing.T) {
 func TestPublicGETBecomesPlaceholderAtSameURL(t *testing.T) {
 	t.Parallel()
 	objects := &memoryObjects{}
+	signer, err := NewSigner(
+		"https://assets.realqa.deli.dev", bytes.Repeat([]byte("s"), 32))
+	if err != nil {
+		t.Fatal(err)
+	}
 	publicID := "abcdefghijklmnopqrstuv"
 	body := pngFixture(t)
-	if err := objects.Put(
+	if err = objects.Put(
 		context.Background(), PublicObjectKey(publicID),
 		string(MediaTypePNG), body); err != nil {
 		t.Fatal(err)
 	}
 	state := PublicStateRetained
-	handler := PublicHandler(objects, func(
+	handler := PublicHandler(signer, objects, func(
 		_ context.Context,
 		value string,
 	) (PublicRecord, error) {
@@ -290,7 +295,9 @@ func TestPublicGETBecomesPlaceholderAtSameURL(t *testing.T) {
 	})
 	path := "/i/" + publicID
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Host = "assets.realqa.deli.dev"
+	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK ||
 		response.Header().Get("Content-Type") != string(MediaTypePNG) ||
 		!bytes.Equal(response.Body.Bytes(), body) {
@@ -298,12 +305,21 @@ func TestPublicGETBecomesPlaceholderAtSameURL(t *testing.T) {
 	}
 	state = PublicStateRemoved
 	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	request = httptest.NewRequest(http.MethodGet, path, nil)
+	request.Host = "assets.realqa.deli.dev"
+	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK ||
 		response.Header().Get("Content-Type") != "image/svg+xml" ||
 		!strings.Contains(response.Body.String(), "Image removed") ||
 		strings.Contains(response.Body.String(), publicID) {
 		t.Fatalf("placeholder response = %d %q", response.Code, response.Body)
+	}
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, path, nil)
+	request.Host = "realqa.deli.dev"
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("API-origin public image response = %d", response.Code)
 	}
 }
 

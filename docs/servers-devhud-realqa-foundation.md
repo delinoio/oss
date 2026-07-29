@@ -89,8 +89,10 @@
   feature/account/organization deletion. Explicit single-image and all-assets
   deletion, authenticated GitHub issue-deletion webhook handling,
   account/organization feature deletion, and storage-billing expiry use the
-  same tombstone-first object-removal path. The periodic private-staging worker
-  expires unlinked data at the persisted 24-hour boundary.
+  same tombstone-first object-removal path. Each database transition durably
+  queues the affected asset/object kinds before reporting success, and the
+  periodic worker retries failed R2 deletes without retaining raw object keys.
+  The same worker expires unlinked data at the persisted 24-hour boundary.
 
 ## Submission Consistency and Billing
 

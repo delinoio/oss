@@ -68,6 +68,11 @@ func NewSigner(origin string, key []byte) (*Signer, error) {
 	}, nil
 }
 
+func (signer *Signer) MatchesOriginHost(request *http.Request) bool {
+	return signer != nil && signer.origin != nil && request != nil &&
+		request.Host == signer.origin.Host
+}
+
 func (signer *Signer) Sign(
 	now time.Time,
 	deadline time.Time,
@@ -216,7 +221,7 @@ func (signer *Signer) VerifyRequest(
 ) error {
 	if signer == nil || request == nil || request.URL == nil ||
 		request.Method != http.MethodPut ||
-		request.Host != signer.origin.Host {
+		!signer.MatchesOriginHost(request) {
 		return ErrInvalidScope
 	}
 	if !now.Before(grant.ExpiresAt) ||

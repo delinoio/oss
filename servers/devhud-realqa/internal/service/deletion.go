@@ -200,6 +200,12 @@ func (service *Preset) DeleteFeatureData(
 			if listErr != nil {
 				return listErr
 			}
+			for _, asset := range scopedAssets {
+				if listErr = enqueueAssetObjectDeletions(
+					ctx, queries, asset); listErr != nil {
+					return listErr
+				}
+			}
 			if listErr = queries.TombstoneScopePublicAssets(ctx,
 				dbgen.TombstoneScopePublicAssetsParams{
 					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
@@ -289,9 +295,7 @@ func (service *Preset) DeleteFeatureData(
 		return nil, err
 	}
 	imageService := NewSubmission(service.dependencies)
-	for _, asset := range scopedAssets {
-		imageService.deleteAssetObjects(context.WithoutCancel(ctx), asset)
-	}
+	imageService.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	audit(ctx, service.dependencies, actor, "feature_deletion_accepted",
 		scope, jobID, "allow", "success")
 	return connect.NewResponse(&realqav1.DeleteFeatureDataResponse{

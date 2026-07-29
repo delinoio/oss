@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -382,9 +383,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	objects := &submissionTestObjects{}
 	submissionService := NewSubmission(Dependencies{
 		Store: store, Pseudonymizer: pseudonymizer,
-		Objects: submissionTestObjects{}, UploadSigner: uploadSigner,
+		Objects: objects, UploadSigner: uploadSigner,
 	})
 	submissionRequest := &realqav1.CreateSubmissionRequest{
 		Owner:          organizationOwnerScope(organizationID),
@@ -399,6 +401,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			PixelWidth:    1,
 			PixelHeight:   1,
 			Sha256:        strings.Repeat("0", 64),
+		}, {
+			ClientImageId: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			MediaType:     realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_PNG,
+			EncodedBytes:  1,
+			PixelWidth:    1,
+			PixelHeight:   1,
+			Sha256:        strings.Repeat("1", 64),
 		}},
 		Idempotency: &realqav1.IdempotencyKey{
 			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
@@ -423,7 +432,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(createdSubmission.Msg.Submission.Assets) != 1 {
+	if len(createdSubmission.Msg.Submission.Assets) != 2 {
 		t.Fatalf("created submission = %#v", createdSubmission.Msg.Submission)
 	}
 	uploadRequest := &realqav1.CreateImageUploadRequest{
@@ -463,6 +472,126 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if persistedSignedURL {
 		t.Fatal("signed upload URL was persisted in idempotency state")
 	}
+	var originalDestinationID uuid.UUID
+	if err = connection.QueryRow(ctx, `
+		SELECT destination_id
+		FROM realqa_submissions
+		WHERE id = $1
+	`, createdSubmission.Msg.Submission.SubmissionId.Value).
+		Scan(&originalDestinationID); err != nil {
+		t.Fatal(err)
+	}
+	replacementDestinationID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_destinations (
+			id, owner_kind, owner_id, installation_id,
+			repository_id, repository_owner, repository_name
+		) VALUES ($1, 'organization', $2, $3, 'replacement',
+		          'replacement-owner', 'replacement-repository');
+		UPDATE realqa_presets SET destination_id = $1 WHERE id = $4
+	`, replacementDestinationID, organizationID, organizationInstallationID,
+		organizationPreset.Msg.Preset.PresetId.Value); err != nil {
+		t.Fatal(err)
+	}
+	loadedSubmission, err := submissionService.GetSubmission(
+		authCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadedSubmission.Msg.Submission.Destination == nil ||
+		loadedSubmission.Msg.Submission.Destination.Repository.RepositoryId !=
+			organizationRequest.Destination.Repository.RepositoryId {
+		t.Fatalf("submission destination followed mutable preset = %#v",
+			loadedSubmission.Msg.Submission.Destination)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_presets SET destination_id = $1 WHERE id = $2
+	`, originalDestinationID,
+		organizationPreset.Msg.Preset.PresetId.Value); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_assets
+		SET upload_state = 'verified',
+		    state = 'verified_unlinked',
+		    encoded_bytes = declared_encoded_bytes,
+		    sanitized_sha256 = source_sha256,
+		    verified_at = transaction_timestamp(),
+		    upload_token_digest = NULL,
+		    upload_expires_at = NULL
+		WHERE id = $1
+	`, createdSubmission.Msg.Submission.Assets[0].AssetId.Value); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Queries().UpdateSubmissionVerifiedBytes(
+		ctx, dbgen.UpdateSubmissionVerifiedBytesParams{
+			VerifiedEncodedBytes: 1,
+			SubmissionRecordID: toPGUUID(
+				uuid.MustParse(createdSubmission.Msg.Submission.SubmissionId.Value)),
+		}); err != nil {
+		t.Fatal(err)
+	}
+	currentSubmission, err := submissionService.GetSubmission(
+		authCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	deleteRequest := &realqav1.DeleteImageRequest{
+		SubmissionId:               createdSubmission.Msg.Submission.SubmissionId,
+		AssetId:                    createdSubmission.Msg.Submission.Assets[1].AssetId,
+		ExpectedSubmissionRevision: currentSubmission.Msg.Submission.Revision,
+		ExpectedAssetRevision: createdSubmission.Msg.Submission.
+			Assets[1].Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	deletedImage, err := submissionService.DeleteImage(
+		authCtx, connect.NewRequest(deleteRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deletedImage.Msg.Submission.State !=
+		realqav1.SubmissionState_SUBMISSION_STATE_READY {
+		t.Fatalf("submission with only terminal/verified assets = %v",
+			deletedImage.Msg.Submission.State)
+	}
+	deletedImageReplay, err := submissionService.DeleteImage(
+		authCtx, connect.NewRequest(deleteRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deletedImageReplay.Msg.Idempotency.Replayed ||
+		!proto.Equal(deletedImageReplay.Msg.Submission,
+			deletedImage.Msg.Submission) {
+		t.Fatalf("delete image replay = %#v", deletedImageReplay.Msg)
+	}
+	var pendingObjectDeletions int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+	`).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 2 {
+		t.Fatalf("pending object deletions = %d, want 2",
+			pendingObjectDeletions)
+	}
+	objects.deleteErr = nil
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_object_deletion_jobs
+		SET next_attempt_at = transaction_timestamp()
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 2 {
+		t.Fatalf("drained object deletions = %d, %v", completed, drainErr)
+	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_submissions
 		SET created_at = transaction_timestamp() - interval '25 hours',
@@ -479,6 +608,39 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if openSubmissions != 0 {
 		t.Fatalf("expired open submission count = %d", openSubmissions)
+	}
+	for range submissionHourLimit {
+		if _, err = connection.Exec(ctx, `
+			INSERT INTO realqa_submissions (
+				id, owner_kind, owner_id, created_by_account_id,
+				preset_id, destination_id, state, idempotency_digest,
+				preset_revision, upload_deadline, upload_expires_at
+			)
+			SELECT $1, owner_kind, owner_id, created_by_account_id,
+			       preset_id, destination_id, 'submitted', idempotency_digest,
+			       preset_revision, transaction_timestamp() + interval '23 hours',
+			       transaction_timestamp() + interval '24 hours'
+			FROM realqa_submissions
+			WHERE id = $2
+		`, uuidv7.MustNew(),
+			createdSubmission.Msg.Submission.SubmissionId.Value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rateLimitedRequest := proto.Clone(
+		submissionRequest).(*realqav1.CreateSubmissionRequest)
+	rateLimitedRequest.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	for _, image := range rateLimitedRequest.Images {
+		image.ClientImageId = &realqav1.UuidV7{
+			Value: uuidv7.MustNew().String(),
+		}
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(rateLimitedRequest))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("hourly submission limit code = %v", connect.CodeOf(err))
 	}
 	var personalDestinationID uuid.UUID
 	if err = connection.QueryRow(ctx, `
@@ -701,9 +863,11 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 }
 
-type submissionTestObjects struct{}
+type submissionTestObjects struct {
+	deleteErr error
+}
 
-func (submissionTestObjects) Put(
+func (*submissionTestObjects) Put(
 	context.Context,
 	string,
 	string,
@@ -712,15 +876,15 @@ func (submissionTestObjects) Put(
 	return nil
 }
 
-func (submissionTestObjects) Get(
+func (*submissionTestObjects) Get(
 	context.Context,
 	string,
 ) (imageassets.Object, error) {
 	return imageassets.Object{}, imageassets.ErrObjectNotFound
 }
 
-func (submissionTestObjects) Delete(context.Context, string) error {
-	return nil
+func (objects *submissionTestObjects) Delete(context.Context, string) error {
+	return objects.deleteErr
 }
 
 func TestFirstPageUsesNonNullUUIDLowerBound(t *testing.T) {

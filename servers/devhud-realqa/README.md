@@ -42,7 +42,8 @@ tracker/plugin interface.
 - A background cleanup pass expires unlinked private objects at 24 hours.
   Explicit image/all-assets, signed GitHub issue-deletion webhook,
   account/organization/feature, and billing-expiry paths share tombstone-first
-  deletion. Same-issue body cleanup is best effort and cannot gate deletion.
+  deletion with durable, retryable R2 cleanup work. Same-issue body cleanup is
+  best effort and cannot gate deletion.
 - `artifacts/cloudflare-public-images.fixture.json` is a non-deploying WAF and
   300 GETs/minute/IP fixture scoped only to `/i/`.
 - Application-envelope columns store GitHub credentials only as ciphertext,

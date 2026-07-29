@@ -31,6 +31,8 @@ ALTER TABLE realqa_idempotency_records
             'create_preset',
             'create_submission',
             'create_image_upload',
+            'delete_image',
+            'delete_submission_assets',
             'delete_feature_data',
             'disconnect_github_connection'
         ));
@@ -117,6 +119,29 @@ WHERE upload_token_digest IS NOT NULL;
 CREATE INDEX realqa_assets_cleanup
 ON realqa_assets (upload_expires_at, created_at)
 WHERE state IN ('private_staging', 'verified_unlinked');
+
+CREATE TABLE realqa_object_deletion_jobs (
+    asset_id uuid NOT NULL,
+    object_kind text NOT NULL CHECK (object_kind IN (
+        'staging', 'verified', 'public'
+    )),
+    public_id text,
+    attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    next_attempt_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    last_attempted_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    PRIMARY KEY (asset_id, object_kind),
+    CHECK (realqa_is_uuid_v7(asset_id)),
+    CHECK (
+        (object_kind = 'public' AND public_id IS NOT NULL)
+        OR
+        (object_kind <> 'public' AND public_id IS NULL)
+    ),
+    CHECK (public_id IS NULL OR length(public_id) BETWEEN 22 AND 128)
+);
+
+CREATE INDEX realqa_object_deletion_jobs_pending
+ON realqa_object_deletion_jobs (next_attempt_at, created_at);
 
 CREATE TABLE realqa_public_asset_tombstones (
     public_id text PRIMARY KEY CHECK (length(public_id) BETWEEN 22 AND 128),
