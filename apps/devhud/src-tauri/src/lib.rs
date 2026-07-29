@@ -10,6 +10,7 @@ mod autostart;
     feature = "desktop-cef",
     feature = "linux-capture-backend",
     feature = "mobile-system-webview",
+    feature = "realqa-macos-capture",
     test
 ))]
 #[cfg_attr(test, allow(dead_code))]
@@ -18,6 +19,7 @@ mod diagnostics;
     feature = "desktop-cef",
     feature = "linux-capture-backend",
     feature = "mobile-system-webview",
+    feature = "realqa-macos-capture",
     test
 ))]
 mod local_log;

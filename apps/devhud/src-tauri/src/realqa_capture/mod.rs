@@ -941,7 +941,6 @@ pub(crate) enum PlatformCaptureBackend {
 }
 
 impl PlatformCaptureBackend {
-    #[cfg(test)]
     pub(crate) const fn new(platform: CapturePlatform) -> Self {
         Self::Unavailable(platform)
     }
