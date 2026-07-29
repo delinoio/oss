@@ -463,6 +463,17 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if len(createdSubmission.Msg.Submission.Assets) != 2 {
 		t.Fatalf("created submission = %#v", createdSubmission.Msg.Submission)
 	}
+	creatorList, err := submissionService.ListSubmissions(
+		authCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(creatorList.Msg.Submissions) != 0 {
+		t.Fatalf("creator open submissions = %#v",
+			creatorList.Msg.Submissions)
+	}
 	otherSubject := "fixture-other-user"
 	otherAccountID := uuidv7.MustNew()
 	otherDigest := hmac.New(sha256.New, identityKey)
@@ -643,7 +654,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("transient object stream code = %v", connect.CodeOf(finalizeErr))
 	}
 	objects.getReadErr = nil
-	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	verifiedKey := imageassets.VerifiedObjectKey(uploadRequest.AssetId.Value)
 	if err = store.Queries().EnqueueObjectDeletion(
 		ctx, dbgen.EnqueueObjectDeletionParams{
 			AssetID:    toPGUUID(uuid.MustParse(uploadRequest.AssetId.Value)),
@@ -651,11 +662,71 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		}); err != nil {
 		t.Fatal(err)
 	}
-	finalized, err := submissionService.FinalizeImageUpload(
-		authCtx, connect.NewRequest(finalizeRequest))
-	if err != nil {
-		t.Fatal(err)
+	objects.blockedDeletePrefix = verifiedKey
+	objects.deleteStarted = make(chan struct{}, 1)
+	objects.deleteRelease = make(chan struct{})
+	type deletionResult struct {
+		completed int
+		err       error
 	}
+	drainResult := make(chan deletionResult, 1)
+	go func() {
+		completed, drainErr := submissionService.DrainObjectDeletions(ctx, 100)
+		drainResult <- deletionResult{completed: completed, err: drainErr}
+	}()
+	select {
+	case <-objects.deleteStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	type finalizeResult struct {
+		response *connect.Response[realqav1.FinalizeImageUploadResponse]
+		err      error
+	}
+	finalizedResult := make(chan finalizeResult, 1)
+	go func() {
+		response, finalizeErr := submissionService.FinalizeImageUpload(
+			authCtx, connect.NewRequest(finalizeRequest))
+		finalizedResult <- finalizeResult{response: response, err: finalizeErr}
+	}()
+	for {
+		var waiting bool
+		if err = connection.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM pg_stat_activity
+				WHERE datname = current_database()
+				  AND wait_event_type = 'Lock'
+				  AND query LIKE '%DELETE FROM realqa_object_deletion_jobs%'
+			)
+		`).Scan(&waiting); err != nil {
+			close(objects.deleteRelease)
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			close(objects.deleteRelease)
+			t.Fatal(ctx.Err())
+		}
+	}
+	close(objects.deleteRelease)
+	drained := <-drainResult
+	if drained.err != nil || drained.completed != 1 {
+		t.Fatalf("drained stale verified copy = %d, %v",
+			drained.completed, drained.err)
+	}
+	finalizedCall := <-finalizedResult
+	if finalizedCall.err != nil {
+		t.Fatal(finalizedCall.err)
+	}
+	finalized := finalizedCall.response
+	objects.blockedDeletePrefix = ""
+	objects.deleteStarted = nil
+	objects.deleteRelease = nil
 	var staleVerifiedDeletions int
 	if err = connection.QueryRow(ctx, `
 		SELECT count(*) FROM realqa_object_deletion_jobs
@@ -666,8 +737,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if staleVerifiedDeletions != 0 {
 		t.Fatalf("stale verified deletion jobs = %d", staleVerifiedDeletions)
 	}
-	if _, ok := objects.objects[imageassets.VerifiedObjectKey(
-		uploadRequest.AssetId.Value)]; !ok {
+	if _, ok := objects.objects[verifiedKey]; !ok {
 		t.Fatal("finalized verified object was deleted")
 	}
 	objects.deleteErr = nil
@@ -832,6 +902,27 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		createdSubmission.Msg.Submission.Assets[0].AssetId.Value)
 	submissionID := uuid.MustParse(
 		createdSubmission.Msg.Submission.SubmissionId.Value)
+	retryPromotionAssetID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $1, submission_id, 'verified_unlinked', encoded_bytes, $2,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $3
+	`, retryPromotionAssetID, uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if err = objects.Put(
+		ctx, imageassets.VerifiedObjectKey(retryPromotionAssetID.String()),
+		"image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = connection.Exec(ctx, `
 		CREATE FUNCTION fixture_reject_public_promotion()
 		RETURNS trigger
@@ -852,7 +943,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	objects.deleteErr = errors.New("fixture R2 deletion failed")
 	if err = submissionService.PromoteSubmittedAssets(
-		ctx, submissionID, []uuid.UUID{promotionAssetID}); err == nil {
+		ctx, submissionID, []uuid.UUID{retryPromotionAssetID}); err == nil {
 		t.Fatal("promotion failure was not propagated")
 	}
 	var abandonedPublicID string
@@ -860,7 +951,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		SELECT public_id
 		FROM realqa_object_deletion_jobs
 		WHERE asset_id = $1 AND object_kind = 'public'
-	`, promotionAssetID).Scan(&abandonedPublicID); err != nil {
+	`, retryPromotionAssetID).Scan(&abandonedPublicID); err != nil {
 		t.Fatal(err)
 	}
 	var reservedPublicID string
@@ -868,7 +959,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		SELECT public_id
 		FROM realqa_assets
 		WHERE id = $1
-	`, promotionAssetID).Scan(&reservedPublicID); err != nil {
+	`, retryPromotionAssetID).Scan(&reservedPublicID); err != nil {
 		t.Fatal(err)
 	}
 	if reservedPublicID != abandonedPublicID {
@@ -880,21 +971,27 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if _, err = connection.Exec(ctx, `
 		DROP TRIGGER fixture_reject_public_promotion ON realqa_assets;
-		DROP FUNCTION fixture_reject_public_promotion();
-		UPDATE realqa_object_deletion_jobs
-		SET next_attempt_at = transaction_timestamp()
-		WHERE asset_id = $1 AND object_kind = 'public'
-	`, promotionAssetID); err != nil {
+		DROP FUNCTION fixture_reject_public_promotion()
+	`); err != nil {
 		t.Fatal(err)
 	}
 	objects.deleteErr = nil
-	if completed, drainErr := submissionService.DrainObjectDeletions(
-		ctx, 100); drainErr != nil || completed != 1 {
-		t.Fatalf("drained abandoned public copy = %d, %v",
-			completed, drainErr)
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{retryPromotionAssetID}); err != nil {
+		t.Fatalf("retried promotion: %v", err)
 	}
-	if _, ok := objects.objects[imageassets.PublicObjectKey(abandonedPublicID)]; ok {
-		t.Fatal("abandoned public copy was retained")
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'public'
+	`, retryPromotionAssetID).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 0 {
+		t.Fatalf("retried promotion public deletions = %d",
+			pendingObjectDeletions)
+	}
+	if _, ok := objects.objects[imageassets.PublicObjectKey(abandonedPublicID)]; !ok {
+		t.Fatal("retried public copy was deleted")
 	}
 	firstQueuedPublicID := "abcdefghijklmnopqrstuv"
 	secondQueuedPublicID := "zyxwvutsrqponmlkjihgfe"
@@ -1815,13 +1912,16 @@ type submissionTestObject struct {
 }
 
 type submissionTestObjects struct {
-	deleteErr        error
-	getErr           error
-	getReadErr       error
-	blockedPutPrefix string
-	putStarted       chan struct{}
-	putRelease       chan struct{}
-	objects          map[string]submissionTestObject
+	deleteErr           error
+	getErr              error
+	getReadErr          error
+	blockedPutPrefix    string
+	putStarted          chan struct{}
+	putRelease          chan struct{}
+	blockedDeletePrefix string
+	deleteStarted       chan struct{}
+	deleteRelease       chan struct{}
+	objects             map[string]submissionTestObject
 }
 
 func (objects *submissionTestObjects) Put(
@@ -1873,7 +1973,19 @@ func (objects *submissionTestObjects) Get(
 	}, nil
 }
 
-func (objects *submissionTestObjects) Delete(_ context.Context, key string) error {
+func (objects *submissionTestObjects) Delete(ctx context.Context, key string) error {
+	if objects.blockedDeletePrefix != "" &&
+		strings.HasPrefix(key, objects.blockedDeletePrefix) {
+		select {
+		case objects.deleteStarted <- struct{}{}:
+		default:
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-objects.deleteRelease:
+		}
+	}
 	if objects.deleteErr != nil {
 		return objects.deleteErr
 	}

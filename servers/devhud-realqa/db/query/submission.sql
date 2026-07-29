@@ -59,13 +59,12 @@ FROM realqa_submissions AS submission
 WHERE submission.owner_kind = sqlc.arg(owner_kind)
   AND submission.owner_id = sqlc.arg(owner_id)
   AND submission.id > sqlc.arg(after_id)
+  AND submission.state IN (
+      'submitted', 'storage_billing_grace', 'assets_deleted'
+  )
   AND (
       submission.created_by_account_id = sqlc.arg(account_id)
-      OR (
-        submission.state IN (
-            'submitted', 'storage_billing_grace', 'assets_deleted'
-        )
-        AND EXISTS (
+      OR EXISTS (
           SELECT 1
           FROM realqa_destinations AS destination
           JOIN realqa_github_installations AS installation
@@ -86,7 +85,6 @@ WHERE submission.owner_kind = sqlc.arg(owner_kind)
           WHERE destination.id = submission.destination_id
             AND destination.owner_kind = submission.owner_kind
             AND destination.owner_id = submission.owner_id
-        )
       )
   )
 ORDER BY submission.id
@@ -465,6 +463,15 @@ FROM realqa_object_deletion_jobs
 WHERE next_attempt_at <= sqlc.arg(cutoff)
 ORDER BY next_attempt_at, created_at
 LIMIT sqlc.arg(batch_limit);
+
+-- name: LockObjectDeletion :one
+SELECT *
+FROM realqa_object_deletion_jobs
+WHERE asset_id = sqlc.arg(asset_id)
+  AND object_kind = sqlc.arg(object_kind)
+  AND public_id IS NOT DISTINCT FROM sqlc.narg(public_id)
+  AND next_attempt_at <= sqlc.arg(cutoff)
+FOR UPDATE;
 
 -- name: RetryObjectDeletion :exec
 UPDATE realqa_object_deletion_jobs

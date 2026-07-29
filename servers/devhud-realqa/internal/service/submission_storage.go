@@ -438,12 +438,8 @@ func (service *Submission) FinalizeImageUpload(
 		service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 		return nil, verificationError(verifyErr)
 	}
-	if err = service.dependencies.Objects.Put(
-		ctx, imageassets.VerifiedObjectKey(assetID.String()),
-		string(verified.MediaType), verified.Body); err != nil {
-		return nil, storageUnavailable()
-	}
 	var response *realqav1.FinalizeImageUploadResponse
+	attemptedVerifiedWrite := false
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			if existing, lookupErr := queries.GetIdempotencyRecord(
@@ -464,6 +460,18 @@ func (service *Submission) FinalizeImageUpload(
 			}
 			if !isOpenSubmissionState(locked.State) {
 				return retentionStateConflict()
+			}
+			if lockErr = queries.CompleteObjectDeletion(
+				ctx, dbgen.CompleteObjectDeletionParams{
+					AssetID: asset.ID, ObjectKind: string(objectKindVerified),
+				}); lockErr != nil {
+				return lockErr
+			}
+			attemptedVerifiedWrite = true
+			if putErr := service.dependencies.Objects.Put(
+				ctx, imageassets.VerifiedObjectKey(assetID.String()),
+				string(verified.MediaType), verified.Body); putErr != nil {
+				return storageUnavailable()
 			}
 			if _, markErr := queries.MarkAssetVerifying(
 				ctx, dbgen.MarkAssetVerifyingParams{
@@ -492,12 +500,6 @@ func (service *Submission) FinalizeImageUpload(
 					SubmissionID: toPGUUID(submissionID),
 				})
 			if sumErr != nil {
-				return sumErr
-			}
-			if sumErr = queries.CompleteObjectDeletion(
-				ctx, dbgen.CompleteObjectDeletionParams{
-					AssetID: asset.ID, ObjectKind: string(objectKindVerified),
-				}); sumErr != nil {
 				return sumErr
 			}
 			if sumErr = enqueueObjectDeletion(
@@ -543,17 +545,20 @@ func (service *Submission) FinalizeImageUpload(
 			if replayErr != nil {
 				return replay, replayErr
 			}
-			// This replay was discovered after writing the verified object.
-			// Promotion may already have drained the first request's copy.
+			if attemptedVerifiedWrite {
+				// A commit result may be ambiguous after the object write.
+				if cleanupErr := service.cleanupUnownedVerifiedObject(
+					context.WithoutCancel(ctx), submissionID, assetID); cleanupErr != nil {
+					return nil, cleanupErr
+				}
+			}
+			return replay, nil
+		}
+		if attemptedVerifiedWrite {
 			if cleanupErr := service.cleanupUnownedVerifiedObject(
 				context.WithoutCancel(ctx), submissionID, assetID); cleanupErr != nil {
 				return nil, cleanupErr
 			}
-			return replay, nil
-		}
-		if cleanupErr := service.cleanupUnownedVerifiedObject(
-			context.WithoutCancel(ctx), submissionID, assetID); cleanupErr != nil {
-			return nil, cleanupErr
 		}
 		if errors.Is(err, imageassets.ErrEncodedTooLarge) {
 			return nil, invalid(
@@ -1162,6 +1167,13 @@ func (service *Submission) PromoteSubmittedAssets(
 					return retentionStateConflict()
 				}
 				asset = locked
+				if lockErr = queries.CompleteObjectDeletion(
+					ctx, dbgen.CompleteObjectDeletionParams{
+						AssetID: asset.ID, ObjectKind: string(objectKindPublic),
+						PublicID: asset.PublicID,
+					}); lockErr != nil {
+					return lockErr
+				}
 				attemptedPublicWrite = true
 				if putErr := service.dependencies.Objects.Put(
 					ctx, publicKey, asset.MediaType, body); putErr != nil {
@@ -1777,59 +1789,79 @@ func (service *Submission) DrainObjectDeletions(
 	if batchSize <= 0 || batchSize > 1000 {
 		batchSize = 100
 	}
+	cutoff := pgTimestamp(service.dependencies.Clock.Now().UTC())
 	jobs, err := service.dependencies.Store.Queries().ListPendingObjectDeletions(
 		ctx, dbgen.ListPendingObjectDeletionsParams{
-			Cutoff:     pgTimestamp(service.dependencies.Clock.Now().UTC()),
-			BatchLimit: batchSize,
+			Cutoff: cutoff, BatchLimit: batchSize,
 		})
 	if err != nil {
 		return 0, err
 	}
 	completed := 0
-	for _, job := range jobs {
-		assetID, parseErr := fromPGUUID(job.AssetID)
-		if parseErr != nil {
-			return completed, parseErr
-		}
-		var key string
-		switch objectKind(job.ObjectKind) {
-		case objectKindStaging:
-			key = imageassets.StagingObjectKey(assetID.String())
-		case objectKindVerified:
-			key = imageassets.VerifiedObjectKey(assetID.String())
-		case objectKindPublic:
-			if !job.PublicID.Valid {
-				return completed, errors.New(
-					"realqa service: invalid public object deletion")
-			}
-			key = imageassets.PublicObjectKey(job.PublicID.String)
-		default:
-			return completed, errors.New(
-				"realqa service: invalid object deletion kind")
-		}
-		if err = service.dependencies.Objects.Delete(ctx, key); err != nil {
-			safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
-				safelog.EventIntegration, safelog.Fields{
-					Decision: safelog.DecisionDeny,
-					Result:   safelog.ResultFailure,
-				})
-			if retryErr := service.dependencies.Store.Queries().RetryObjectDeletion(
-				ctx, dbgen.RetryObjectDeletionParams{
-					AssetID: job.AssetID, ObjectKind: job.ObjectKind,
-					PublicID: job.PublicID,
-				}); retryErr != nil {
-				return completed, retryErr
-			}
-			continue
-		}
-		if err = service.dependencies.Store.Queries().CompleteObjectDeletion(
-			ctx, dbgen.CompleteObjectDeletionParams{
-				AssetID: job.AssetID, ObjectKind: job.ObjectKind,
-				PublicID: job.PublicID,
-			}); err != nil {
+	for _, candidate := range jobs {
+		deleted := false
+		err = service.dependencies.Store.WithinTransaction(
+			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+				job, lockErr := queries.LockObjectDeletion(
+					ctx, dbgen.LockObjectDeletionParams{
+						AssetID: candidate.AssetID, ObjectKind: candidate.ObjectKind,
+						PublicID: candidate.PublicID, Cutoff: cutoff,
+					})
+				if errors.Is(lockErr, pgx.ErrNoRows) {
+					return nil
+				}
+				if lockErr != nil {
+					return lockErr
+				}
+				assetID, parseErr := fromPGUUID(job.AssetID)
+				if parseErr != nil {
+					return parseErr
+				}
+				var key string
+				switch objectKind(job.ObjectKind) {
+				case objectKindStaging:
+					key = imageassets.StagingObjectKey(assetID.String())
+				case objectKindVerified:
+					key = imageassets.VerifiedObjectKey(assetID.String())
+				case objectKindPublic:
+					if !job.PublicID.Valid {
+						return errors.New(
+							"realqa service: invalid public object deletion")
+					}
+					key = imageassets.PublicObjectKey(job.PublicID.String)
+				default:
+					return errors.New(
+						"realqa service: invalid object deletion kind")
+				}
+				if deleteErr := service.dependencies.Objects.Delete(
+					ctx, key); deleteErr != nil {
+					safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
+						safelog.EventIntegration, safelog.Fields{
+							Decision: safelog.DecisionDeny,
+							Result:   safelog.ResultFailure,
+						})
+					return queries.RetryObjectDeletion(
+						ctx, dbgen.RetryObjectDeletionParams{
+							AssetID: job.AssetID, ObjectKind: job.ObjectKind,
+							PublicID: job.PublicID,
+						})
+				}
+				if lockErr = queries.CompleteObjectDeletion(
+					ctx, dbgen.CompleteObjectDeletionParams{
+						AssetID: job.AssetID, ObjectKind: job.ObjectKind,
+						PublicID: job.PublicID,
+					}); lockErr != nil {
+					return lockErr
+				}
+				deleted = true
+				return nil
+			})
+		if err != nil {
 			return completed, err
 		}
-		completed++
+		if deleted {
+			completed++
+		}
 	}
 	return completed, nil
 }

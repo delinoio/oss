@@ -797,13 +797,12 @@ FROM realqa_submissions AS submission
 WHERE submission.owner_kind = $1
   AND submission.owner_id = $2
   AND submission.id > $3
+  AND submission.state IN (
+      'submitted', 'storage_billing_grace', 'assets_deleted'
+  )
   AND (
       submission.created_by_account_id = $4
-      OR (
-        submission.state IN (
-            'submitted', 'storage_billing_grace', 'assets_deleted'
-        )
-        AND EXISTS (
+      OR EXISTS (
           SELECT 1
           FROM realqa_destinations AS destination
           JOIN realqa_github_installations AS installation
@@ -824,7 +823,6 @@ WHERE submission.owner_kind = $1
           WHERE destination.id = submission.destination_id
             AND destination.owner_kind = submission.owner_kind
             AND destination.owner_id = submission.owner_id
-        )
       )
   )
 ORDER BY submission.id
@@ -925,6 +923,43 @@ func (q *Queries) LockAssetRecord(ctx context.Context, arg LockAssetRecordParams
 		&i.UploadExpiresAt,
 		&i.UploadedAt,
 		&i.VerifiedAt,
+	)
+	return i, err
+}
+
+const lockObjectDeletion = `-- name: LockObjectDeletion :one
+SELECT asset_id, object_kind, public_id, attempt_count, next_attempt_at, last_attempted_at, created_at
+FROM realqa_object_deletion_jobs
+WHERE asset_id = $1
+  AND object_kind = $2
+  AND public_id IS NOT DISTINCT FROM $3
+  AND next_attempt_at <= $4
+FOR UPDATE
+`
+
+type LockObjectDeletionParams struct {
+	AssetID    pgtype.UUID
+	ObjectKind string
+	PublicID   pgtype.Text
+	Cutoff     pgtype.Timestamptz
+}
+
+func (q *Queries) LockObjectDeletion(ctx context.Context, arg LockObjectDeletionParams) (RealqaObjectDeletionJob, error) {
+	row := q.db.QueryRow(ctx, lockObjectDeletion,
+		arg.AssetID,
+		arg.ObjectKind,
+		arg.PublicID,
+		arg.Cutoff,
+	)
+	var i RealqaObjectDeletionJob
+	err := row.Scan(
+		&i.AssetID,
+		&i.ObjectKind,
+		&i.PublicID,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastAttemptedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
