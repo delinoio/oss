@@ -389,60 +389,8 @@ func (service *Submission) FinalizeImageUpload(
 	if err != nil {
 		return nil, err
 	}
-	object, err := service.dependencies.Objects.Get(
-		ctx, imageassets.StagingObjectKey(assetID.String()))
-	if err != nil {
-		if !errors.Is(err, imageassets.ErrObjectNotFound) {
-			return nil, storageUnavailable()
-		}
-		return nil, verificationFailed()
-	}
-	body := object.Body
-	if body == nil {
-		return nil, verificationFailed()
-	}
-	defer body.Close()
-	verified, verifyErr := imageassets.Verify(declarationFromRecord(asset), body)
-	if errors.Is(verifyErr, imageassets.ErrSourceRead) {
-		return nil, storageUnavailable()
-	}
-	if verifyErr != nil || object.ContentType != asset.MediaType ||
-		(object.Size >= 0 && object.Size != asset.DeclaredEncodedBytes) {
-		rejectErr := service.dependencies.Store.WithinTransaction(
-			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
-				locked, lockErr := queries.LockSubmissionRecord(
-					ctx, toPGUUID(submissionID))
-				if lockErr != nil {
-					return lockErr
-				}
-				if !isOpenSubmissionState(locked.State) {
-					return retentionStateConflict()
-				}
-				rejected, markErr := queries.MarkAssetRejected(
-					ctx, dbgen.MarkAssetRejectedParams{
-						ID:           toPGUUID(assetID),
-						SubmissionID: toPGUUID(submissionID),
-					})
-				if markErr != nil {
-					return markErr
-				}
-				if _, markErr = queries.RefreshSubmissionAssetState(
-					ctx, toPGUUID(submissionID)); markErr != nil {
-					return markErr
-				}
-				return enqueueAssetObjectDeletions(ctx, queries, rejected)
-			})
-		if rejectErr != nil {
-			if errors.Is(rejectErr, pgx.ErrNoRows) {
-				return nil, service.assetMutationConflict(
-					ctx, submissionID, assetID)
-			}
-			return nil, rejectErr
-		}
-		service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
-		return nil, verificationError(verifyErr)
-	}
 	var response *realqav1.FinalizeImageUploadResponse
+	var rejectedVerification error
 	attemptedVerifiedWrite := false
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
@@ -465,6 +413,54 @@ func (service *Submission) FinalizeImageUpload(
 			if !isOpenSubmissionState(locked.State) {
 				return retentionStateConflict()
 			}
+			asset, markErr := queries.MarkAssetVerifying(
+				ctx, dbgen.MarkAssetVerifyingParams{
+					ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+					ExpectedRevision: request.Msg.ExpectedAssetRevision.Value,
+				})
+			if markErr != nil {
+				return markErr
+			}
+			object, getErr := service.dependencies.Objects.Get(
+				ctx, imageassets.StagingObjectKey(assetID.String()))
+			if getErr != nil {
+				if errors.Is(getErr, imageassets.ErrObjectNotFound) {
+					return verificationFailed()
+				}
+				return storageUnavailable()
+			}
+			body := object.Body
+			if body == nil {
+				return verificationFailed()
+			}
+			verified, verifyErr := imageassets.Verify(
+				declarationFromRecord(asset), body)
+			_ = body.Close()
+			if errors.Is(verifyErr, imageassets.ErrSourceRead) {
+				return storageUnavailable()
+			}
+			if verifyErr != nil || object.ContentType != asset.MediaType ||
+				(object.Size >= 0 &&
+					object.Size != asset.DeclaredEncodedBytes) {
+				rejected, rejectErr := queries.MarkAssetRejected(
+					ctx, dbgen.MarkAssetRejectedParams{
+						ID:           toPGUUID(assetID),
+						SubmissionID: toPGUUID(submissionID),
+					})
+				if rejectErr != nil {
+					return rejectErr
+				}
+				if _, rejectErr = queries.RefreshSubmissionAssetState(
+					ctx, toPGUUID(submissionID)); rejectErr != nil {
+					return rejectErr
+				}
+				if rejectErr = enqueueAssetObjectDeletions(
+					ctx, queries, rejected); rejectErr != nil {
+					return rejectErr
+				}
+				rejectedVerification = verificationError(verifyErr)
+				return nil
+			}
 			if lockErr = queries.CompleteObjectDeletion(
 				ctx, dbgen.CompleteObjectDeletionParams{
 					AssetID: asset.ID, ObjectKind: string(objectKindVerified),
@@ -476,13 +472,6 @@ func (service *Submission) FinalizeImageUpload(
 				ctx, imageassets.VerifiedObjectKey(assetID.String()),
 				string(verified.MediaType), verified.Body); putErr != nil {
 				return storageUnavailable()
-			}
-			if _, markErr := queries.MarkAssetVerifying(
-				ctx, dbgen.MarkAssetVerifyingParams{
-					ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
-					ExpectedRevision: request.Msg.ExpectedAssetRevision.Value,
-				}); markErr != nil {
-				return markErr
 			}
 			current, sumErr := queries.SumOtherVerifiedAssetBytes(
 				ctx, dbgen.SumOtherVerifiedAssetBytesParams{
@@ -542,6 +531,10 @@ func (service *Submission) FinalizeImageUpload(
 				})
 			return sumErr
 		})
+	if err == nil && rejectedVerification != nil {
+		service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
+		return nil, rejectedVerification
+	}
 	if err != nil {
 		if replay, ok, replayErr := service.finalizeImageUploadReplay(
 			ctx, actor, idempotencyID, requestDigest,
@@ -1170,6 +1163,14 @@ func (service *Submission) PromoteSubmittedAssets(
 		)
 		err = service.dependencies.Store.WithinTransaction(
 			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+				submission, lockErr := queries.LockSubmissionRecord(
+					ctx, toPGUUID(submissionID))
+				if lockErr != nil {
+					return lockErr
+				}
+				if !isPromotionSubmissionState(submission.State) {
+					return retentionStateConflict()
+				}
 				locked, lockErr := queries.LockAssetRecord(
 					ctx, dbgen.LockAssetRecordParams{
 						ID:           toPGUUID(assetID),
@@ -1329,19 +1330,50 @@ func (service *Submission) CleanupExpiredStaging(
 				return listErr
 			}
 			for _, row := range rows {
+				submission, lockErr := queries.LockExpiredSubmissionRecord(
+					ctx, dbgen.LockExpiredSubmissionRecordParams{
+						ID: row.SubmissionID, Cutoff: pgTimestamp(cutoff),
+					})
+				if errors.Is(lockErr, pgx.ErrNoRows) {
+					continue
+				}
+				if lockErr != nil {
+					return lockErr
+				}
+				if !submission.SubmittedAt.Valid &&
+					isCleanupTerminalizableSubmissionState(submission.State) {
+					submission, lockErr = queries.MarkSubmissionAssetsDeleted(
+						ctx, dbgen.MarkSubmissionAssetsDeletedParams{
+							ID: submission.ID, ExpectedRevision: submission.Revision,
+						})
+					if lockErr != nil {
+						return lockErr
+					}
+				}
+				locked, lockErr := queries.LockExpiredSubmissionAsset(
+					ctx, dbgen.LockExpiredSubmissionAssetParams{
+						ID: row.ID, SubmissionID: row.SubmissionID,
+						Cutoff: pgTimestamp(cutoff),
+					})
+				if errors.Is(lockErr, pgx.ErrNoRows) {
+					continue
+				}
+				if lockErr != nil {
+					return lockErr
+				}
 				var (
 					value      dbgen.RealqaAsset
 					cleanupErr error
 				)
-				if row.State == "public_retained" {
+				if locked.State == "public_retained" {
 					value, cleanupErr = queries.TombstoneAsset(
 						ctx, dbgen.TombstoneAssetParams{
-							AssetRecordID:     row.ID,
-							AssetSubmissionID: row.SubmissionID,
-							ExpectedRevision:  row.Revision,
+							AssetRecordID:     locked.ID,
+							AssetSubmissionID: locked.SubmissionID,
+							ExpectedRevision:  locked.Revision,
 						})
 				} else {
-					value, cleanupErr = queries.ExpireAsset(ctx, row.ID)
+					value, cleanupErr = queries.ExpireAsset(ctx, locked.ID)
 				}
 				if cleanupErr != nil {
 					return cleanupErr
@@ -1617,6 +1649,24 @@ func isTerminalAssetState(state string) bool {
 func isOpenSubmissionState(state string) bool {
 	switch state {
 	case "draft", "uploading", "ready":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPromotionSubmissionState(state string) bool {
+	switch state {
+	case "ready", "submitting", "reconciling", "submitted":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCleanupTerminalizableSubmissionState(state string) bool {
+	switch state {
+	case "draft", "uploading", "ready", "submitting", "reconciling", "failed":
 		return true
 	default:
 		return false

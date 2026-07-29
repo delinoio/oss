@@ -493,7 +493,6 @@ WHERE submission.upload_expires_at <= $1
   )
 ORDER BY asset.created_at
 LIMIT $2
-FOR UPDATE OF asset SKIP LOCKED
 `
 
 type ListExpiredSubmissionAssetsParams struct {
@@ -800,6 +799,7 @@ FROM realqa_submissions AS submission
 WHERE submission.owner_kind = $1
   AND submission.owner_id = $2
   AND submission.id > $3
+  AND submission.submitted_at IS NOT NULL
   AND submission.state IN (
       'submitted', 'storage_billing_grace', 'assets_deleted'
   )
@@ -926,6 +926,100 @@ func (q *Queries) LockAssetRecord(ctx context.Context, arg LockAssetRecordParams
 		&i.UploadExpiresAt,
 		&i.UploadedAt,
 		&i.VerifiedAt,
+	)
+	return i, err
+}
+
+const lockExpiredSubmissionAsset = `-- name: LockExpiredSubmissionAsset :one
+SELECT asset.id, asset.submission_id, asset.public_id, asset.object_key_ciphertext, asset.state, asset.encoded_bytes, asset.revision, asset.created_at, asset.removed_at, asset.client_image_id, asset.media_type, asset.declared_encoded_bytes, asset.pixel_width, asset.pixel_height, asset.source_sha256, asset.sanitized_sha256, asset.upload_state, asset.upload_token_digest, asset.upload_expires_at, asset.uploaded_at, asset.verified_at
+FROM realqa_assets AS asset
+JOIN realqa_submissions AS submission ON submission.id = asset.submission_id
+WHERE asset.id = $1
+  AND asset.submission_id = $2
+  AND submission.upload_expires_at <= $3
+  AND (
+    asset.state IN ('private_staging', 'verified_unlinked')
+    OR (
+      asset.state = 'public_retained'
+      AND submission.submitted_at IS NULL
+    )
+  )
+FOR UPDATE OF asset
+`
+
+type LockExpiredSubmissionAssetParams struct {
+	ID           pgtype.UUID
+	SubmissionID pgtype.UUID
+	Cutoff       pgtype.Timestamptz
+}
+
+func (q *Queries) LockExpiredSubmissionAsset(ctx context.Context, arg LockExpiredSubmissionAssetParams) (RealqaAsset, error) {
+	row := q.db.QueryRow(ctx, lockExpiredSubmissionAsset, arg.ID, arg.SubmissionID, arg.Cutoff)
+	var i RealqaAsset
+	err := row.Scan(
+		&i.ID,
+		&i.SubmissionID,
+		&i.PublicID,
+		&i.ObjectKeyCiphertext,
+		&i.State,
+		&i.EncodedBytes,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.RemovedAt,
+		&i.ClientImageID,
+		&i.MediaType,
+		&i.DeclaredEncodedBytes,
+		&i.PixelWidth,
+		&i.PixelHeight,
+		&i.SourceSha256,
+		&i.SanitizedSha256,
+		&i.UploadState,
+		&i.UploadTokenDigest,
+		&i.UploadExpiresAt,
+		&i.UploadedAt,
+		&i.VerifiedAt,
+	)
+	return i, err
+}
+
+const lockExpiredSubmissionRecord = `-- name: LockExpiredSubmissionRecord :one
+SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+FROM realqa_submissions
+WHERE id = $1
+  AND upload_expires_at <= $2
+FOR UPDATE
+`
+
+type LockExpiredSubmissionRecordParams struct {
+	ID     pgtype.UUID
+	Cutoff pgtype.Timestamptz
+}
+
+func (q *Queries) LockExpiredSubmissionRecord(ctx context.Context, arg LockExpiredSubmissionRecordParams) (RealqaSubmission, error) {
+	row := q.db.QueryRow(ctx, lockExpiredSubmissionRecord, arg.ID, arg.Cutoff)
+	var i RealqaSubmission
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CreatedByAccountID,
+		&i.PresetID,
+		&i.DestinationID,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.IdempotencyDigest,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SubmittedAt,
+		&i.PayerOrganizationID,
+		&i.PayerTeamID,
+		&i.PresetRevision,
+		&i.DeclaredEncodedBytes,
+		&i.VerifiedEncodedBytes,
+		&i.UploadDeadline,
+		&i.UploadExpiresAt,
 	)
 	return i, err
 }

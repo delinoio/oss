@@ -1325,6 +1325,20 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("empty submission state = %v",
 			emptyDeleted.Msg.Submission.State)
 	}
+	preSubmissionTerminals, err := submissionService.ListSubmissions(
+		authCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, listed := range preSubmissionTerminals.Msg.Submissions {
+		if listed.SubmissionId.Value == rejectedSubmissionID.String() ||
+			listed.SubmissionId.Value == emptySubmission.Msg.Submission.
+				SubmissionId.Value {
+			t.Fatalf("pre-submission terminal was retained: %#v", listed)
+		}
+	}
 	terminalDeleteRequest := &realqav1.DeleteImageRequest{
 		SubmissionId:               emptyDeleted.Msg.Submission.SubmissionId,
 		AssetId:                    emptyDeleted.Msg.Submission.Assets[0].AssetId,
@@ -1460,6 +1474,22 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if cleaned != 2 {
 		t.Fatalf("partial promotion cleanup count = %d, want 2", cleaned)
 	}
+	if _, err = store.Queries().MarkSubmissionSubmitted(
+		ctx, toPGUUID(partialSubmissionID)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expired partial promotion became submitted: %v", err)
+	}
+	var partialSubmissionState string
+	if err = connection.QueryRow(ctx, `
+		SELECT state
+		FROM realqa_submissions
+		WHERE id = $1
+	`, partialSubmissionID).Scan(&partialSubmissionState); err != nil {
+		t.Fatal(err)
+	}
+	if partialSubmissionState != "assets_deleted" {
+		t.Fatalf("partial promotion submission state = %q",
+			partialSubmissionState)
+	}
 	if _, drainErr := submissionService.DrainObjectDeletions(
 		ctx, 100); drainErr != nil {
 		t.Fatal(drainErr)
@@ -1550,44 +1580,63 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	var casRevision int64
-	if err = connection.QueryRow(ctx, `
-		UPDATE realqa_assets
-		SET revision = revision + 1
-		WHERE id = $1
-		RETURNING revision
-	`, casAssetID).Scan(&casRevision); err != nil {
-		close(objects.putRelease)
-		t.Fatal(err)
+	cleanupResult := make(chan deletionResult, 1)
+	go func() {
+		cleaned, cleanupErr := submissionService.CleanupExpiredStaging(
+			ctx, time.Now().UTC().Add(25*time.Hour), 100)
+		cleanupResult <- deletionResult{completed: cleaned, err: cleanupErr}
+	}()
+	for {
+		var waiting bool
+		if err = connection.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM pg_stat_activity
+				WHERE datname = current_database()
+				  AND wait_event_type = 'Lock'
+				  AND query LIKE '%LockExpiredSubmissionRecord%'
+			)
+		`).Scan(&waiting); err != nil {
+			close(objects.putRelease)
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			close(objects.putRelease)
+			t.Fatal(ctx.Err())
+		}
 	}
 	close(objects.putRelease)
 	casErr := <-finalizeCASResult
+	cleanup := <-cleanupResult
 	objects.blockedPutPrefix = ""
 	objects.putStarted = nil
 	objects.putRelease = nil
-	if connect.CodeOf(casErr) != connect.CodeAborted {
-		t.Fatalf("finalize CAS miss code = %v", connect.CodeOf(casErr))
+	if casErr != nil {
+		t.Fatalf("finalize lost expiry race: %v", casErr)
 	}
-	var casFailure *connect.Error
-	if !errors.As(casErr, &casFailure) {
-		t.Fatalf("finalize CAS miss error = %v", casErr)
+	if cleanup.err != nil || cleanup.completed != 1 {
+		t.Fatalf("post-finalize cleanup = %d, %v",
+			cleanup.completed, cleanup.err)
 	}
-	var casReportedRevision int64
-	for _, detail := range casFailure.Details() {
-		value, detailErr := detail.Value()
-		typed, ok := value.(*realqav1.ErrorDetail)
-		if detailErr == nil && ok && typed.CurrentRevision != nil {
-			casReportedRevision = typed.CurrentRevision.Value
-		}
+	var cleanupAssetState string
+	if err = connection.QueryRow(ctx, `
+		SELECT state
+		FROM realqa_assets
+		WHERE id = $1
+	`, casAssetID).Scan(&cleanupAssetState); err != nil {
+		t.Fatal(err)
 	}
-	if casReportedRevision != casRevision {
-		t.Fatalf("finalize CAS revision = %d, want %d",
-			casReportedRevision, casRevision)
+	if cleanupAssetState != "expired" {
+		t.Fatalf("post-finalize cleanup asset state = %q", cleanupAssetState)
 	}
 	if _, ok := objects.objects[casVerifiedKey]; ok {
-		t.Fatal("unowned verified object from finalize CAS miss was retained")
+		t.Fatal("expired verified object was retained")
 	}
-	delete(objects.objects, casStagingKey)
 	if _, err = connection.Exec(ctx,
 		`DELETE FROM realqa_submissions WHERE id = $1`,
 		casSubmissionID); err != nil {

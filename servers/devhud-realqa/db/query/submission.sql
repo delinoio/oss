@@ -59,6 +59,7 @@ FROM realqa_submissions AS submission
 WHERE submission.owner_kind = sqlc.arg(owner_kind)
   AND submission.owner_id = sqlc.arg(owner_id)
   AND submission.id > sqlc.arg(after_id)
+  AND submission.submitted_at IS NOT NULL
   AND submission.state IN (
       'submitted', 'storage_billing_grace', 'assets_deleted'
   )
@@ -428,8 +429,30 @@ WHERE submission.upload_expires_at <= sqlc.arg(cutoff)
     )
   )
 ORDER BY asset.created_at
-LIMIT sqlc.arg(batch_limit)
-FOR UPDATE OF asset SKIP LOCKED;
+LIMIT sqlc.arg(batch_limit);
+
+-- name: LockExpiredSubmissionRecord :one
+SELECT *
+FROM realqa_submissions
+WHERE id = sqlc.arg(id)
+  AND upload_expires_at <= sqlc.arg(cutoff)
+FOR UPDATE;
+
+-- name: LockExpiredSubmissionAsset :one
+SELECT asset.*
+FROM realqa_assets AS asset
+JOIN realqa_submissions AS submission ON submission.id = asset.submission_id
+WHERE asset.id = sqlc.arg(id)
+  AND asset.submission_id = sqlc.arg(submission_id)
+  AND submission.upload_expires_at <= sqlc.arg(cutoff)
+  AND (
+    asset.state IN ('private_staging', 'verified_unlinked')
+    OR (
+      asset.state = 'public_retained'
+      AND submission.submitted_at IS NULL
+    )
+  )
+FOR UPDATE OF asset;
 
 -- name: ExpireAsset :one
 UPDATE realqa_assets
