@@ -604,22 +604,39 @@ impl RealQaDraftState {
             dom,
             images: stored_images,
         } = content;
-        let mut images = Vec::with_capacity(stored_images.len());
-        for image in stored_images {
-            let operations = decode_operations(&image.operations_json)?;
-            let restored = composer
-                .restore_original_from_draft(
-                    ComposerSessionId(composer_session_id.to_owned()),
-                    ComposerImageId(image.image_id),
-                    image.original,
-                )
-                .map_err(|_| DraftError::InvalidRecord)?;
-            images.push(LoadedDraftImage {
-                composer: restored,
-                operations,
-                output_media_type: image.output_media_type,
-            });
-        }
+        let composer_session_id = ComposerSessionId(composer_session_id.to_owned());
+        let restored_images = (|| {
+            let mut images = Vec::with_capacity(stored_images.len());
+            for image in stored_images {
+                let operations = decode_operations(&image.operations_json)?;
+                let restored = composer
+                    .restore_original_from_draft(
+                        composer_session_id.clone(),
+                        ComposerImageId(image.image_id),
+                        image.original,
+                    )
+                    .map_err(|_| DraftError::InvalidRecord)?;
+                images.push(LoadedDraftImage {
+                    composer: restored,
+                    operations,
+                    output_media_type: image.output_media_type,
+                });
+            }
+            Ok(images)
+        })();
+        let images = match restored_images {
+            Ok(images) => images,
+            Err(error) => {
+                if let Err(rollback_error) = composer.reset_session(&composer_session_id) {
+                    tracing::warn!(
+                        event = "realqa_draft_load_rollback_failed",
+                        ?rollback_error,
+                        "failed to clear a composer session after draft restoration failed"
+                    );
+                }
+                return Err(error);
+            }
+        };
         Ok(LoadedDraft {
             draft_id,
             revision,
@@ -1530,6 +1547,51 @@ mod tests {
                 )
                 .err(),
             Some(DraftError::AccountLocked)
+        );
+    }
+
+    #[test]
+    fn failed_multi_image_load_clears_already_restored_sources() {
+        let state = state("failed-multi-image-load");
+        let source_composer = ComposerCore::default();
+        let draft_id = Uuid::now_v7().to_string();
+        let account = access("account-a", true);
+        state
+            .save(
+                &account,
+                &source_composer,
+                request(&source_composer, &draft_id),
+            )
+            .unwrap();
+
+        let key = state.key(&account.account_binding, false).unwrap().unwrap();
+        let path = state
+            .draft_path(&account.account_binding, &draft_id)
+            .unwrap();
+        let mut record = read_record(&path, &account.account_binding, &key).unwrap();
+        let mut invalid_image = record.content.images[0].clone();
+        invalid_image.image_id = "image-2".to_owned();
+        invalid_image.original.bytes = vec![0_u8];
+        record.content.images.push(invalid_image);
+        let encrypted = encrypt_record(&record, &account.account_binding, &key).unwrap();
+        write_encrypted_record_atomically(&path, &encrypted).unwrap();
+
+        let restored_composer = ComposerCore::default();
+        assert_eq!(
+            state
+                .load(&account, &restored_composer, &draft_id, "load-session")
+                .err(),
+            Some(DraftError::InvalidRecord)
+        );
+        assert!(
+            restored_composer
+                .clone_validated_original_for_draft(
+                    &ComposerSessionId("load-session".to_owned()),
+                    &ComposerImageId("image-1".to_owned()),
+                    1,
+                    &[],
+                )
+                .is_err()
         );
     }
 

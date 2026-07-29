@@ -3175,7 +3175,29 @@ fn start_authentication(
     Ok(auth::SessionSnapshot::Authenticating)
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn logout_authentication(
+    app: AppHandle<ActiveRuntime>,
+    state: State<'_, auth_native::NativeAuthState>,
+) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    if let Err(error) = app.state::<realqa_capture::ComposerCore>().reset() {
+        tracing::warn!(
+            event = "realqa_composer_logout_reset_failed",
+            ?error,
+            "failed to clear RealQA composer sessions during logout"
+        );
+    }
+    state.logout()
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
 #[tauri::command]
 fn logout_authentication(
     state: State<'_, auth_native::NativeAuthState>,
