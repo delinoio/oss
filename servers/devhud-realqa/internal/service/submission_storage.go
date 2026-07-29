@@ -679,10 +679,13 @@ func (service *Submission) ListSubmissions(
 	if err != nil {
 		return nil, err
 	}
-	if _, err = authorizeOwner(
-		ctx, service.dependencies, actor, scope, false, false); err != nil {
+	access, err := authorizeOwner(
+		ctx, service.dependencies, actor, scope, false, false)
+	if err != nil {
 		return nil, err
 	}
+	canManage := scope.kind == "organization" &&
+		(access.Role == "owner" || access.Role == "admin")
 	size, after, err := page(request.Msg.Page)
 	if err != nil {
 		return nil, err
@@ -690,7 +693,8 @@ func (service *Submission) ListSubmissions(
 	rows, err := service.dependencies.Store.Queries().ListSubmissionRecords(
 		ctx, dbgen.ListSubmissionRecordsParams{
 			OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-			AfterID: pageLowerBound(after), PageLimit: size + 1,
+			AfterID: pageLowerBound(after), AccountID: toPGUUID(actor.accountID),
+			CanManage: canManage, PageLimit: size + 1,
 		})
 	if err != nil {
 		return nil, err
@@ -1594,8 +1598,9 @@ func (service *Submission) authorizeSubmissionRequestWithRepository(
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
 	}
 	scope := owner{kind: submission.OwnerKind, id: scopeID}
-	if _, err = authorizeOwner(
-		ctx, service.dependencies, actor, scope, false, false); err != nil {
+	access, err := authorizeOwner(
+		ctx, service.dependencies, actor, scope, false, false)
+	if err != nil {
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
 	}
 	creatorID, err := fromPGUUID(submission.CreatedByAccountID)
@@ -1610,7 +1615,8 @@ func (service *Submission) authorizeSubmissionRequestWithRepository(
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
 			permissionDenied()
 	}
-	if !requireRepositoryAccess {
+	if !requireRepositoryAccess && scope.kind == "organization" &&
+		(access.Role == "owner" || access.Role == "admin") {
 		return actor, submissionID, submission, scope, nil
 	}
 	if !submission.DestinationID.Valid {

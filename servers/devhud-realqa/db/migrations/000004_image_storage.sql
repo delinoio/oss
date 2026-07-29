@@ -70,21 +70,65 @@ ALTER TABLE realqa_assets
     ADD COLUMN uploaded_at timestamptz,
     ADD COLUMN verified_at timestamptz;
 
-UPDATE realqa_assets
+-- Migration 000003 allowed zero-length and arbitrarily large legacy assets.
+-- Keep only the bounded retained prefix billable and terminalize rows that the
+-- image-storage contract could never have accepted.
+WITH legacy_assets AS (
+    SELECT id,
+           encoded_bytes BETWEEN 1 AND 26214400 AS valid_image_size,
+           sum(encoded_bytes) FILTER (
+               WHERE encoded_bytes BETWEEN 1 AND 26214400
+                 AND state IN ('verified_unlinked', 'public_retained')
+           ) OVER (
+               PARTITION BY submission_id
+               ORDER BY id
+           ) AS retained_encoded_bytes
+    FROM realqa_assets
+)
+UPDATE realqa_assets AS asset
 SET client_image_id = id,
     media_type = 'image/png',
-    declared_encoded_bytes = encoded_bytes,
+    declared_encoded_bytes = CASE
+        WHEN legacy.valid_image_size THEN asset.encoded_bytes
+        ELSE 1
+    END,
     pixel_width = 1,
     pixel_height = 1,
     source_sha256 = decode(repeat('00', 32), 'hex'),
     upload_state = CASE
-        WHEN state = 'private_staging' THEN 'declared'
-        WHEN state = 'verified_unlinked' THEN 'verified'
-        WHEN state = 'public_retained' THEN 'verified'
-        WHEN state = 'removed_placeholder' THEN 'deleted'
-        WHEN state = 'expired' THEN 'expired'
+        WHEN NOT legacy.valid_image_size
+          OR (
+              asset.state IN ('verified_unlinked', 'public_retained')
+              AND legacy.retained_encoded_bytes > 262144000
+          ) THEN 'deleted'
+        WHEN asset.state = 'private_staging' THEN 'declared'
+        WHEN asset.state = 'verified_unlinked' THEN 'verified'
+        WHEN asset.state = 'public_retained' THEN 'verified'
+        WHEN asset.state = 'removed_placeholder' THEN 'deleted'
+        WHEN asset.state = 'expired' THEN 'expired'
         ELSE 'deleted'
-    END;
+    END,
+    state = CASE
+        WHEN NOT legacy.valid_image_size
+          OR (
+              asset.state IN ('verified_unlinked', 'public_retained')
+              AND legacy.retained_encoded_bytes > 262144000
+          ) THEN CASE
+              WHEN asset.public_id IS NULL THEN 'deleted'
+              ELSE 'removed_placeholder'
+          END
+        ELSE asset.state
+    END,
+    removed_at = CASE
+        WHEN NOT legacy.valid_image_size
+          OR (
+              asset.state IN ('verified_unlinked', 'public_retained')
+              AND legacy.retained_encoded_bytes > 262144000
+          ) THEN COALESCE(asset.removed_at, transaction_timestamp())
+        ELSE asset.removed_at
+    END
+FROM legacy_assets AS legacy
+WHERE legacy.id = asset.id;
 
 ALTER TABLE realqa_assets
     ALTER COLUMN client_image_id SET NOT NULL,
@@ -112,6 +156,23 @@ ALTER TABLE realqa_assets
         (upload_token_digest IS NOT NULL AND upload_expires_at IS NOT NULL)
     ),
     ADD UNIQUE (submission_id, client_image_id);
+
+WITH totals AS (
+    SELECT submission_id,
+           COALESCE(sum(declared_encoded_bytes), 0)::bigint
+               AS declared_encoded_bytes,
+           COALESCE(sum(encoded_bytes), 0)::bigint
+               AS verified_encoded_bytes
+    FROM realqa_assets
+    WHERE upload_state = 'verified'
+      AND state IN ('verified_unlinked', 'public_retained')
+    GROUP BY submission_id
+)
+UPDATE realqa_submissions AS submission
+SET declared_encoded_bytes = totals.declared_encoded_bytes,
+    verified_encoded_bytes = totals.verified_encoded_bytes
+FROM totals
+WHERE totals.submission_id = submission.id;
 
 CREATE UNIQUE INDEX realqa_assets_upload_token_digest_unique
 ON realqa_assets (upload_token_digest)
@@ -174,3 +235,24 @@ $$;
 CREATE TRIGGER realqa_public_asset_tombstones_preserve
 BEFORE UPDATE OR DELETE ON realqa_public_asset_tombstones
 FOR EACH ROW EXECUTE FUNCTION realqa_preserve_public_asset_tombstone();
+
+INSERT INTO realqa_public_asset_tombstones (public_id, removed_at)
+SELECT public_id, COALESCE(removed_at, transaction_timestamp())
+FROM realqa_assets
+WHERE upload_state = 'deleted'
+  AND public_id IS NOT NULL
+ON CONFLICT (public_id) DO NOTHING;
+
+INSERT INTO realqa_object_deletion_jobs (asset_id, object_kind)
+SELECT id, object_kind
+FROM realqa_assets
+CROSS JOIN (VALUES ('staging'), ('verified')) AS kinds(object_kind)
+WHERE upload_state = 'deleted'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO realqa_object_deletion_jobs (asset_id, object_kind, public_id)
+SELECT id, 'public', public_id
+FROM realqa_assets
+WHERE upload_state = 'deleted'
+  AND public_id IS NOT NULL
+ON CONFLICT DO NOTHING;

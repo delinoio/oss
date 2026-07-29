@@ -63,6 +63,29 @@ WHERE submission.owner_kind = sqlc.arg(owner_kind)
   AND submission.state IN (
       'submitted', 'storage_billing_grace', 'assets_deleted'
   )
+  AND (
+      submission.created_by_account_id = sqlc.arg(account_id)
+      OR sqlc.arg(can_manage)::boolean
+      OR EXISTS (
+          SELECT 1
+          FROM realqa_destinations AS destination
+          JOIN realqa_github_installations AS installation
+            ON installation.id = destination.installation_id
+           AND installation.owner_kind = submission.owner_kind
+           AND installation.owner_id = submission.owner_id
+          JOIN realqa_github_connections AS connection
+            ON connection.id = installation.connection_id
+           AND connection.state = 'connected'
+          JOIN realqa_repository_access AS access
+            ON access.installation_id = installation.id
+           AND access.account_id = sqlc.arg(account_id)
+           AND access.repository_id = destination.repository_id
+           AND access.issues_enabled
+           AND access.can_submit
+           AND access.checked_at >= statement_timestamp() - interval '5 minutes'
+          WHERE destination.id = submission.destination_id
+      )
+  )
 ORDER BY submission.id
 LIMIT sqlc.arg(page_limit);
 

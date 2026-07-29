@@ -803,14 +803,39 @@ WHERE submission.owner_kind = $1
   AND submission.state IN (
       'submitted', 'storage_billing_grace', 'assets_deleted'
   )
+  AND (
+      submission.created_by_account_id = $4
+      OR $5::boolean
+      OR EXISTS (
+          SELECT 1
+          FROM realqa_destinations AS destination
+          JOIN realqa_github_installations AS installation
+            ON installation.id = destination.installation_id
+           AND installation.owner_kind = submission.owner_kind
+           AND installation.owner_id = submission.owner_id
+          JOIN realqa_github_connections AS connection
+            ON connection.id = installation.connection_id
+           AND connection.state = 'connected'
+          JOIN realqa_repository_access AS access
+            ON access.installation_id = installation.id
+           AND access.account_id = $4
+           AND access.repository_id = destination.repository_id
+           AND access.issues_enabled
+           AND access.can_submit
+           AND access.checked_at >= statement_timestamp() - interval '5 minutes'
+          WHERE destination.id = submission.destination_id
+      )
+  )
 ORDER BY submission.id
-LIMIT $4
+LIMIT $6
 `
 
 type ListSubmissionRecordsParams struct {
 	OwnerKind string
 	OwnerID   pgtype.UUID
 	AfterID   pgtype.UUID
+	AccountID pgtype.UUID
+	CanManage bool
 	PageLimit int32
 }
 
@@ -819,6 +844,8 @@ func (q *Queries) ListSubmissionRecords(ctx context.Context, arg ListSubmissionR
 		arg.OwnerKind,
 		arg.OwnerID,
 		arg.AfterID,
+		arg.AccountID,
+		arg.CanManage,
 		arg.PageLimit,
 	)
 	if err != nil {

@@ -1119,20 +1119,83 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("non-creator retained submissions = %#v",
 			otherList.Msg.Submissions)
 	}
-	if _, err = submissionService.GetSubmission(
+	managerSubmission, err := submissionService.GetSubmission(
 		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
 			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
-		})); err != nil {
+		}))
+	if err != nil {
 		t.Fatalf("non-creator retained submission: %v", err)
 	}
 	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'member'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, otherAccountID, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	otherList, err = submissionService.ListSubmissions(
+		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList.Msg.Submissions) != 0 {
+		t.Fatalf("disconnected member retained submissions = %#v",
+			otherList.Msg.Submissions)
+	}
+	if _, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("disconnected member retained get code = %v",
+			connect.CodeOf(err))
+	}
+	_, err = submissionService.DeleteImage(
+		otherAuthCtx, connect.NewRequest(&realqav1.DeleteImageRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+			AssetId:      managerSubmission.Msg.Submission.Assets[0].AssetId,
+			ExpectedSubmissionRevision: managerSubmission.Msg.Submission.
+				Revision,
+			ExpectedAssetRevision: managerSubmission.Msg.Submission.
+				Assets[0].Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("disconnected member retained image delete code = %v",
+			connect.CodeOf(err))
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: managerSubmission.Msg.Submission.
+				Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("disconnected member retained asset delete code = %v",
+			connect.CodeOf(err))
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'admin'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2;
 		UPDATE realqa_github_connections
 		SET state = 'connected',
 		    credential_ciphertext = decode('03', 'hex'),
 		    wrapped_data_key = decode('04', 'hex'),
 		    key_id = 'fixture-key'
-		WHERE id = $1
-	`, organizationConnectionID); err != nil {
+		WHERE id = $3
+	`, otherAccountID, organizationID, organizationConnectionID); err != nil {
 		t.Fatal(err)
 	}
 	promotedAsset, err := store.Queries().GetAssetRecord(
