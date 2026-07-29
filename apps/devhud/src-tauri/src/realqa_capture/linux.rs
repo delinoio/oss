@@ -22,7 +22,7 @@ trait LinuxCaptureProvider: Send + Sync {
     fn cancel(&self, session_id: &CaptureSessionId) -> Result<(), BackendFailure>;
 }
 
-pub(super) struct LinuxCaptureBackend {
+pub(crate) struct LinuxCaptureBackend {
     provider: Arc<dyn LinuxCaptureProvider>,
 }
 

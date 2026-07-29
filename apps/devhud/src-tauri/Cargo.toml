@@ -17,6 +17,7 @@ path = "src/main.rs"
 required-features = ["desktop-cef"]
 
 [build-dependencies]
+cc = "1"
 tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", features = ["codegen"] }
 
 [dependencies]
@@ -70,6 +71,7 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 [features]
 default = []
 custom-protocol = ["tauri?/custom-protocol"]
-desktop-cef = ["linux-capture-backend", "dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "tauri/devtools"]
+desktop-cef = ["linux-capture-backend", "dep:rfd", "dep:tauri", "dep:tauri-runtime-cef", "realqa-macos-capture", "tauri/devtools"]
 linux-capture-backend = ["dep:ashpd", "dep:tokio", "dep:x11rb"]
 mobile-system-webview = ["dep:tauri", "dep:tauri-runtime-wry"]
+realqa-macos-capture = []
