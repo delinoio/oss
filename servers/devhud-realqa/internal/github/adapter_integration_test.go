@@ -34,25 +34,36 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 		t.Skip("REALQA_TEST_DATABASE_URL is not set")
 	}
 	for _, test := range []struct {
-		name       string
-		failSeal   bool
-		wantState  string
-		wantStored bool
+		name        string
+		failSeal    bool
+		expireGrant bool
+		wantState   string
+		wantStored  bool
+		wantCalls   int
 	}{
 		{
 			name:      "rotated credential is persisted",
-			wantState: "connected", wantStored: true,
+			wantState: "connected", wantStored: true, wantCalls: 1,
 		},
 		{
 			name:     "seal failure requires reconnect",
-			failSeal: true, wantState: "disconnected", wantStored: false,
+			failSeal: true, wantState: "disconnected", wantStored: false, wantCalls: 1,
+		},
+		{
+			name:        "expired refresh grant requires reconnect",
+			expireGrant: true, wantState: "disconnected", wantStored: false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			store, connection, accountID, connectionID, installationID,
-				vault := adapterRefreshFixture(t, ctx, databaseURL)
+				vault := adapterRefreshFixture(
+				t, ctx, databaseURL, func(credential *OAuthCredential) {
+					if test.expireGrant {
+						credential.RefreshToken = ""
+					}
+				})
 
 			now := time.Date(2026, 7, 29, 4, 0, 0, 0, time.UTC)
 			refreshCalls := 0
@@ -93,6 +104,10 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 				if refreshErr == nil {
 					t.Fatal("refresh unexpectedly succeeded")
 				}
+			} else if test.expireGrant {
+				if !errors.Is(refreshErr, ErrCallerAuthorizationUnavailable) {
+					t.Fatalf("expired refresh grant error = %v", refreshErr)
+				}
 			} else {
 				if refreshErr != nil {
 					t.Fatal(refreshErr)
@@ -103,7 +118,7 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 						providerID, token)
 				}
 			}
-			if refreshCalls != 1 {
+			if refreshCalls != test.wantCalls {
 				t.Fatalf("refresh calls = %d", refreshCalls)
 			}
 
@@ -146,7 +161,7 @@ func TestInstallationWebhooksAcknowledgeUnboundAndApplyRename(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	store, connection, _, _, _, _ := adapterRefreshFixture(
-		t, ctx, databaseURL)
+		t, ctx, databaseURL, nil)
 	webhookStore := &postgresWebhookStore{queries: store.Queries()}
 	permissions, err := RequiredPermissions(ProjectPermissionNone)
 	if err != nil {
@@ -190,6 +205,7 @@ func adapterRefreshFixture(
 	t *testing.T,
 	ctx context.Context,
 	databaseURL string,
+	mutateCredential func(*OAuthCredential),
 ) (
 	*database.Store,
 	*pgx.Conn,
@@ -257,6 +273,9 @@ func adapterRefreshFixture(
 		RefreshToken:     "ghr_fixture_old_refresh_token_123456",
 		ExpiresAt:        time.Date(2026, 7, 29, 4, 0, 30, 0, time.UTC),
 		RefreshExpiresAt: time.Date(2026, 8, 29, 4, 0, 0, 0, time.UTC),
+	}
+	if mutateCredential != nil {
+		mutateCredential(&credential)
 	}
 	plaintext, err := json.Marshal(credential)
 	if err != nil {

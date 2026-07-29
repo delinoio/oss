@@ -195,10 +195,9 @@ func ValidateLabelName(value string) error {
 
 // ValidateAssigneeLogin applies the GitHub issue input boundary to one login.
 func ValidateAssigneeLogin(value string) error {
-	if len([]byte(value)) > 255 || !utf8.ValidString(value) {
-		return errors.New("realqa github: assignee login is invalid")
-	}
-	if _, err := cleanName(value); err != nil {
+	if len(value) > 39 || !githubLoginPattern.MatchString(value) ||
+		strings.HasPrefix(value, "-") || strings.HasSuffix(value, "-") ||
+		strings.Contains(value, "--") {
 		return errors.New("realqa github: assignee login is invalid")
 	}
 	return nil

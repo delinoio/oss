@@ -145,6 +145,54 @@ func TestIssueFormRejectsProviderRequiredCheckboxOmission(t *testing.T) {
 	}
 }
 
+func TestIssueFormRejectsHiddenShortName(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug
+description: Report a bug
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err == nil || !strings.Contains(err.Error(), "name, description, and body") {
+		t.Fatalf("expected short name rejection, got %v", err)
+	}
+}
+
+func TestIssueFormRejectsInvalidFieldIDCharacters(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    id: repro.steps
+    attributes:
+      label: Reproduction steps
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err == nil || !strings.Contains(err.Error(), "field ID or label is invalid") {
+		t.Fatalf("expected invalid field ID rejection, got %v", err)
+	}
+}
+
+func TestIssueFormRejectsMultilineInputAnswer(t *testing.T) {
+	t.Parallel()
+	form := IssueForm{Fields: []FormField{{
+		ID: "summary", Kind: FormFieldInput, Label: "Summary",
+	}}}
+	if _, err := RenderIssueForm(form, []FormAnswer{{
+		FieldID: "summary", Values: []string{"first line\r\nsecond line"},
+	}}); err == nil || !strings.Contains(err.Error(), "single-line") {
+		t.Fatalf("expected multiline input rejection, got %v", err)
+	}
+}
+
 func TestIssueFormRejectsUnsupportedDropdownDefault(t *testing.T) {
 	t.Parallel()
 	contents := []byte(`

@@ -18,8 +18,10 @@ const (
 )
 
 var (
-	safeNamePattern = regexp.MustCompile(`\A[A-Za-z0-9_.-]+\z`)
-	nodeIDPattern   = regexp.MustCompile(`\A[A-Za-z0-9_=-]{1,255}\z`)
+	safeNamePattern    = regexp.MustCompile(`\A[A-Za-z0-9_.-]+\z`)
+	githubLoginPattern = regexp.MustCompile(`\A[A-Za-z0-9-]+\z`)
+	issueFormIDPattern = regexp.MustCompile(`\A[A-Za-z0-9_-]+\z`)
+	nodeIDPattern      = regexp.MustCompile(`\A[A-Za-z0-9_=-]{1,255}\z`)
 )
 
 type AccountKind string

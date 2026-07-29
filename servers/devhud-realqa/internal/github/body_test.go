@@ -129,3 +129,28 @@ func TestGHESAndCustomHostsAreRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateAssigneeLoginUsesGitHubUsernameRules(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{
+		"octocat",
+		"mona-lisa",
+		strings.Repeat("a", 39),
+	} {
+		if err := ValidateAssigneeLogin(value); err != nil {
+			t.Fatalf("valid login %q was rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{
+		"mona.lisa",
+		"mona_lisa",
+		"-octocat",
+		"octocat-",
+		"mona--lisa",
+		strings.Repeat("a", 40),
+	} {
+		if err := ValidateAssigneeLogin(value); err == nil {
+			t.Fatalf("invalid login %q was accepted", value)
+		}
+	}
+}

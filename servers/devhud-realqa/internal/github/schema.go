@@ -138,7 +138,9 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 	if err = decoder.Decode(&raw); err != nil {
 		return IssueForm{}, errors.New("realqa github: Issue Form schema is invalid")
 	}
-	if strings.TrimSpace(raw.Name) == "" || strings.TrimSpace(raw.Description) == "" ||
+	formName := strings.TrimSpace(raw.Name)
+	if utf8.RuneCountInString(formName) <= 3 ||
+		strings.TrimSpace(raw.Description) == "" ||
 		len(raw.Body) == 0 || len(raw.Body) > 100 {
 		return IssueForm{}, errors.New("realqa github: Issue Form name, description, and body are required")
 	}
@@ -150,7 +152,7 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 	if err != nil {
 		return IssueForm{}, errors.New("realqa github: Issue Form issue type is invalid")
 	}
-	definition.Name = strings.TrimSpace(raw.Name)
+	definition.Name = formName
 	result := IssueForm{
 		Definition: definition, TitlePrefix: raw.Title, IssueType: issueType,
 		DefaultLabels: []string(raw.Labels), DefaultAssignees: []string(raw.Assignees),
@@ -214,7 +216,7 @@ func parseFormField(raw rawFormField) (FormField, error) {
 	default:
 		return FormField{}, errors.New("realqa github: Issue Form field type is unsupported")
 	}
-	if (field.ID != "" && !safeNamePattern.MatchString(field.ID)) || field.Label == "" {
+	if (field.ID != "" && !issueFormIDPattern.MatchString(field.ID)) || field.Label == "" {
 		return FormField{}, errors.New("realqa github: Issue Form field ID or label is invalid")
 	}
 	if raw.Validations.Accept != "" {
@@ -276,7 +278,7 @@ func parseFormField(raw rawFormField) (FormField, error) {
 
 func validateSkippedUpload(raw rawFormField) error {
 	id := strings.TrimSpace(raw.ID)
-	if (id != "" && !safeNamePattern.MatchString(id)) ||
+	if (id != "" && !issueFormIDPattern.MatchString(id)) ||
 		strings.TrimSpace(raw.Attributes.Label) == "" ||
 		raw.Validations.Required ||
 		raw.Attributes.Placeholder != "" ||
@@ -400,6 +402,9 @@ func validateFormAnswer(field FormField, values []string) ([]string, error) {
 		}
 		if field.Kind != FormFieldTextarea {
 			value = strings.TrimSpace(value)
+		}
+		if field.Kind == FormFieldInput && strings.Contains(value, "\n") {
+			return nil, errors.New("input responses must be single-line")
 		}
 		clean = append(clean, value)
 	}
