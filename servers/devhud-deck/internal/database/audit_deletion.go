@@ -343,6 +343,14 @@ func (store *Store) resetDeviceWidgetSnapshots(
 			if uuidValueFromProto(widget.GetViewId()) != viewID {
 				continue
 			}
+			snapshot := widget.GetSnapshot()
+			if snapshot != nil && snapshot.GetMatchingCount() == 0 &&
+				len(snapshot.GetPullRequests()) == 0 &&
+				snapshot.GetFreshness() ==
+					deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED &&
+				!snapshot.GetOffline() && snapshot.GetGeneratedAt() == nil {
+				continue
+			}
 			widget.Snapshot = &deckv1.WidgetSnapshot{
 				Freshness: deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED,
 			}

@@ -683,7 +683,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device after query update: %v", err)
 	}
-	if device.Device.Revision.Value != 4 ||
+	if device.Device.Revision.Value != 3 ||
 		device.Device.Widgets[0].Snapshot.GetMatchingCount() != 0 ||
 		device.Device.Widgets[0].Snapshot.GetFreshness() !=
 			deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED {
@@ -701,7 +701,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if len(device.Device.Shortcuts) != 1 || len(device.Device.Widgets) != 1 ||
 		uuidValueFromProto(device.Device.Shortcuts[0].ViewId) != organizationViewID ||
 		uuidValueFromProto(device.Device.Widgets[0].ViewId) != organizationViewID ||
-		device.Device.Revision.Value != 5 {
+		device.Device.Revision.Value != 4 {
 		t.Fatalf("single-view device scrub = %#v", device.Device)
 	}
 	replayedFirst, replayed, err = store.CreateView(ctx, firstViewParams)
