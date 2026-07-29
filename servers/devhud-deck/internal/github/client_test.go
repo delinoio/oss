@@ -363,6 +363,28 @@ func TestGraphQLErrorMapsTypedRateLimitWithoutHeaders(t *testing.T) {
 	}
 }
 
+func TestGraphQLValidationAndConflictErrorsRemainProviderFailures(t *testing.T) {
+	t.Parallel()
+	for _, failureType := range []string{"UNPROCESSABLE", "CONFLICT"} {
+		failureType := failureType
+		t.Run(failureType, func(t *testing.T) {
+			t.Parallel()
+			client := NewClient(&http.Client{Transport: roundTripFunc(
+				func(*http.Request) (*http.Response, error) {
+					return jsonResponse(http.StatusOK, fmt.Sprintf(
+						`{"errors":[{"type":%q}]}`, failureType)), nil
+				})})
+
+			err := client.graphQL(context.Background(),
+				Credential{AccessToken: "token"}, "mutation { fixture }", nil)
+			if !errors.Is(err, ErrProvider) ||
+				errors.Is(err, ErrBranchProtected) {
+				t.Fatalf("GraphQL %s error = %v", failureType, err)
+			}
+		})
+	}
+}
+
 func TestGraphQLHTTP403SecondaryLimitWithoutHeadersUsesProviderBackoff(
 	t *testing.T,
 ) {

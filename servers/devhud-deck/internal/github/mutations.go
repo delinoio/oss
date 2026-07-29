@@ -394,8 +394,6 @@ func (client *Client) graphQLData(
 		switch strings.ToUpper(failure.Type) {
 		case "FORBIDDEN", "NOT_FOUND":
 			return ErrPermissionDenied
-		case "UNPROCESSABLE", "CONFLICT":
-			return ErrBranchProtected
 		}
 	}
 	return ErrProvider
