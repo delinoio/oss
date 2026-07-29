@@ -186,18 +186,25 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 				return IssueForm{}, err
 			}
 			id := strings.TrimSpace(item.ID)
+			providerReference := id
 			if id != "" {
 				if _, exists := seen[id]; exists {
 					return IssueForm{}, errors.New(
 						"realqa github: Issue Form field IDs must be unique")
 				}
 				seen[id] = struct{}{}
-				if _, exists := seenProviderReferences[id]; exists {
+			} else {
+				providerReference = parameterizeIssueFormLabel(item.Attributes.Label)
+				if providerReference == "" {
 					return IssueForm{}, errors.New(
-						"realqa github: Issue Form field references must be unique")
+						"realqa github: Issue Form field label reference is invalid")
 				}
-				seenProviderReferences[id] = struct{}{}
 			}
+			if _, exists := seenProviderReferences[providerReference]; exists {
+				return IssueForm{}, errors.New(
+					"realqa github: Issue Form field references must be unique")
+			}
+			seenProviderReferences[providerReference] = struct{}{}
 			continue
 		}
 		field, parseErr := parseFormField(item)

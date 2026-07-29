@@ -791,6 +791,26 @@ body:
 	}
 }
 
+func TestIssueFormIncludesIDLessOptionalUploadsInProviderReferenceUniqueness(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: upload
+    attributes:
+      label: Name
+  - type: input
+    attributes:
+      label: Name
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err == nil || !strings.Contains(err.Error(), "field references must be unique") {
+		t.Fatalf("expected ID-less upload provider-reference collision rejection, got %v", err)
+	}
+}
+
 func TestIssueFormRejectsProjectDefaults(t *testing.T) {
 	t.Parallel()
 	contents := []byte(`
