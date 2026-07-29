@@ -235,6 +235,9 @@ func (service *Submission) LookupUploadGrant(
 	}
 	row, err := service.dependencies.Store.Queries().GetAssetUploadGrant(
 		ctx, digest[:])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return imageassets.Grant{}, imageassets.ErrUploadGrantNotFound
+	}
 	if err != nil {
 		return imageassets.Grant{}, err
 	}

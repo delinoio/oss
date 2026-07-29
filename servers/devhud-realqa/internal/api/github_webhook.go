@@ -46,12 +46,16 @@ func issueDeletionWebhook(
 		decoder := json.NewDecoder(strings.NewReader(string(body)))
 		decoder.UseNumber()
 		if err = decoder.Decode(&payload); err != nil ||
-			payload.Action != "deleted" || payload.Issue.ID == "" {
+			payload.Action == "" || payload.Issue.ID == "" {
 			http.Error(writer, "webhook rejected", http.StatusBadRequest)
 			return
 		}
 		if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 			http.Error(writer, "webhook rejected", http.StatusBadRequest)
+			return
+		}
+		if payload.Action != "deleted" {
+			writer.WriteHeader(http.StatusNoContent)
 			return
 		}
 		issueID := payload.Issue.ID.String()

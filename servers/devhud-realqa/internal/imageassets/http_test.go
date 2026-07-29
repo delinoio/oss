@@ -19,6 +19,7 @@ import (
 type memoryObjects struct {
 	mu      sync.Mutex
 	objects map[string]memoryObject
+	getErr  error
 }
 
 type memoryObject struct {
@@ -49,6 +50,9 @@ func (store *memoryObjects) Get(
 ) (Object, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	if store.getErr != nil {
+		return Object{}, store.getErr
+	}
 	value, ok := store.objects[key]
 	if !ok {
 		return Object{}, ErrObjectNotFound
@@ -270,6 +274,57 @@ func TestUploadClaimFailureDoesNotWriteStagingObject(t *testing.T) {
 	}
 }
 
+func TestUploadLookupFailureResponses(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	signer, err := NewSigner(
+		"https://assets.realqa.deli.dev", bytes.Repeat([]byte("s"), 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := pngFixture(t)
+	signed, err := signer.Sign(
+		now, now.Add(time.Hour), "submission", "asset",
+		declarationFor(body, MediaTypePNG, 4, 3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "missing", err: ErrUploadGrantNotFound, status: http.StatusNotFound},
+		{name: "unavailable", err: errors.New("database unavailable"),
+			status: http.StatusServiceUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			handler := UploadHandler(
+				signer,
+				func(context.Context, [32]byte) (Grant, error) {
+					return Grant{}, test.err
+				},
+				func(context.Context, Grant, string, []byte) error {
+					return nil
+				},
+				func() time.Time { return now },
+			)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(
+				http.MethodPut, signed.URL, nil))
+			if response.Code != test.status {
+				t.Fatalf("upload lookup response = %d, want %d",
+					response.Code, test.status)
+			}
+			if response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("upload lookup cache control = %q",
+					response.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
 func TestPublicGETBecomesPlaceholderAtSameURL(t *testing.T) {
 	t.Parallel()
 	objects := &memoryObjects{}
@@ -325,6 +380,59 @@ func TestPublicGETBecomesPlaceholderAtSameURL(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("API-origin public image response = %d", response.Code)
+	}
+}
+
+func TestPublicGETDistinguishesMissingObjectsFromOutages(t *testing.T) {
+	t.Parallel()
+	signer, err := NewSigner(
+		"https://assets.realqa.deli.dev", bytes.Repeat([]byte("s"), 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicID := "abcdefghijklmnopqrstuv"
+	for _, test := range []struct {
+		name         string
+		err          error
+		status       int
+		cacheControl string
+	}{
+		{
+			name: "missing", err: ErrObjectNotFound,
+			status:       http.StatusNotFound,
+			cacheControl: "public, max-age=60, must-revalidate",
+		},
+		{
+			name: "unavailable", err: errors.New("R2 unavailable"),
+			status: http.StatusServiceUnavailable, cacheControl: "no-store",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			handler := PublicHandler(
+				signer,
+				&memoryObjects{getErr: test.err},
+				func(context.Context, string) (PublicRecord, error) {
+					return PublicRecord{
+						State:       PublicStateRetained,
+						ObjectKey:   PublicObjectKey(publicID),
+						ContentType: string(MediaTypePNG),
+					}, nil
+				},
+			)
+			request := httptest.NewRequest(http.MethodGet, "/i/"+publicID, nil)
+			request.Host = "assets.realqa.deli.dev"
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("public object response = %d, want %d",
+					response.Code, test.status)
+			}
+			if response.Header().Get("Cache-Control") != test.cacheControl {
+				t.Fatalf("public object cache control = %q, want %q",
+					response.Header().Get("Cache-Control"), test.cacheControl)
+			}
+		})
 	}
 }
 

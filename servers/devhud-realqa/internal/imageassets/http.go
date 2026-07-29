@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-var ErrObjectNotFound = errors.New("realqa images: object not found")
+var (
+	ErrObjectNotFound      = errors.New("realqa images: object not found")
+	ErrUploadGrantNotFound = errors.New("realqa images: upload grant not found")
+)
 
 type Object struct {
 	Body        io.ReadCloser
@@ -49,7 +52,11 @@ func UploadHandler(
 		}
 		grant, err := lookup(request.Context(), digest)
 		if err != nil {
-			http.NotFound(writer, request)
+			if errors.Is(err, ErrUploadGrantNotFound) {
+				http.NotFound(writer, request)
+			} else {
+				http.Error(writer, "upload unavailable", http.StatusServiceUnavailable)
+			}
 			return
 		}
 		current := time.Now()
@@ -175,7 +182,12 @@ func PublicHandler(
 		}
 		object, err := objects.Get(request.Context(), record.ObjectKey)
 		if err != nil {
-			http.NotFound(writer, request)
+			if errors.Is(err, ErrObjectNotFound) {
+				http.NotFound(writer, request)
+			} else {
+				writer.Header().Set("Cache-Control", "no-store")
+				http.Error(writer, "image unavailable", http.StatusServiceUnavailable)
+			}
 			return
 		}
 		defer object.Body.Close()

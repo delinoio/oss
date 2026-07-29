@@ -107,7 +107,22 @@ func TestIssueDeletionWebhookRequiresExactEventAndSignature(t *testing.T) {
 		t.Fatalf("invalid signature response = %d", response.Code)
 	}
 
+	payload = []byte(`{"action":"opened","issue":{"id":757}}`)
 	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write(payload)
+	request = httptest.NewRequest(
+		http.MethodPost, "/webhooks/github/issues", strings.NewReader(string(payload)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Event", "issues")
+	request.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("irrelevant action response = %d", response.Code)
+	}
+
+	payload = []byte(`{"action":"deleted","issue":{"id":757}}`)
+	mac = hmac.New(sha256.New, secret)
 	_, _ = mac.Write(payload)
 	request = httptest.NewRequest(
 		http.MethodPost, "/webhooks/github/issues", strings.NewReader(string(payload)))
