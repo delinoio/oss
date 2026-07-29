@@ -13,7 +13,9 @@ import (
 type Querier interface {
 	ActivateGitHubInstallation(ctx context.Context, arg ActivateGitHubInstallationParams) (int64, error)
 	AdvanceGitHubCallbackState(ctx context.Context, arg AdvanceGitHubCallbackStateParams) (int64, error)
+	BeginGitHubUserCredentialRefresh(ctx context.Context, arg BeginGitHubUserCredentialRefreshParams) (int64, error)
 	BumpRepositorySchemaRevision(ctx context.Context, arg BumpRepositorySchemaRevisionParams) (int64, error)
+	CompleteGitHubUserCredentialRefresh(ctx context.Context, arg CompleteGitHubUserCredentialRefreshParams) (int64, error)
 	ConnectGitHubUser(ctx context.Context, arg ConnectGitHubUserParams) (int64, error)
 	ConsumeGitHubCallbackState(ctx context.Context, nonce string) (int64, error)
 	CountActiveShortcutsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error)

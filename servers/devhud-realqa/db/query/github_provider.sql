@@ -95,6 +95,44 @@ WHERE id = sqlc.arg(connection_id)
   AND connected_by_account_id = sqlc.arg(account_id)
   AND state = 'connected';
 
+-- name: BeginGitHubUserCredentialRefresh :one
+UPDATE realqa_github_connections
+SET state = 'disconnected',
+    connected_by_account_id = NULL,
+    credential_ciphertext = NULL,
+    wrapped_data_key = NULL,
+    key_id = NULL,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    updated_at = transaction_timestamp()
+WHERE id = sqlc.arg(connection_id)
+  AND connected_by_account_id = sqlc.arg(account_id)
+  AND state = 'connected'
+RETURNING revision;
+
+-- name: CompleteGitHubUserCredentialRefresh :execrows
+UPDATE realqa_github_connections AS connection
+SET state = 'connected',
+    connected_by_account_id = sqlc.arg(account_id),
+    credential_ciphertext = sqlc.arg(credential_ciphertext),
+    wrapped_data_key = sqlc.arg(wrapped_data_key),
+    key_id = sqlc.arg(key_id),
+    updated_at = transaction_timestamp()
+WHERE connection.id = sqlc.arg(connection_id)
+  AND connection.revision = sqlc.arg(expected_revision)
+  AND connection.state = 'disconnected'
+  AND connection.credential_ciphertext IS NULL
+  AND connection.wrapped_data_key IS NULL
+  AND connection.key_id IS NULL
+  AND connection.oauth_state_digest IS NULL
+  AND connection.oauth_state_expires_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_identities AS identity
+      WHERE identity.account_id = sqlc.arg(account_id)
+        AND identity.deleted_at IS NULL
+  );
+
 -- name: DeleteRepositoryAccessForAccount :execrows
 DELETE FROM realqa_repository_access
 WHERE installation_id = sqlc.arg(installation_id)

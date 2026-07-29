@@ -1014,6 +1014,56 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("create replay after feature deletion = %#v", replayed.Msg)
 	}
 
+	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{
+		M2M: &auth.M2MClaims{},
+	})
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET state = 'connected',
+		    connected_by_account_id = $2,
+		    credential_ciphertext = decode('07', 'hex'),
+		    wrapped_data_key = decode('08', 'hex'),
+		    key_id = 'fixture-key'
+		WHERE id = $1
+	`, organizationConnectionID, accountID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.DeleteFeatureData(lifecycleCtx, connect.NewRequest(
+		&realqav1.DeleteFeatureDataRequest{
+			TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_DELIBASE_ACCOUNT_LIFECYCLE,
+			Trigger: &realqav1.DeleteFeatureDataRequest_DelibaseAccountLifecycle{
+				DelibaseAccountLifecycle: &realqav1.DelibaseAccountLifecycleDeletion{
+					AccountId: &realqav1.UuidV7{Value: accountID.String()},
+					DeletionJobId: &realqav1.UuidV7{
+						Value: uuidv7.MustNew().String(),
+					},
+				},
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replayConnectionState string
+	var replayConnectedBy uuid.NullUUID
+	var replayCiphertext []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT state, connected_by_account_id, credential_ciphertext
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, organizationConnectionID).Scan(
+		&replayConnectionState, &replayConnectedBy, &replayCiphertext,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if replayConnectionState != "disconnected" || replayConnectedBy.Valid ||
+		replayCiphertext != nil {
+		t.Fatalf(
+			"account lifecycle replay retained organization credential: state=%q account=%v ciphertext=%t",
+			replayConnectionState, replayConnectedBy.Valid,
+			replayCiphertext != nil,
+		)
+	}
+
 	lifecycleAccountID := uuidv7.MustNew()
 	lifecycleOrganizationID := uuidv7.MustNew()
 	lifecycleConnectionID := uuidv7.MustNew()
@@ -1033,9 +1083,6 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		lifecycleConnectionID, lifecycleOrganizationID); err != nil {
 		t.Fatal(err)
 	}
-	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{
-		M2M: &auth.M2MClaims{},
-	})
 	_, err = service.DeleteFeatureData(lifecycleCtx, connect.NewRequest(
 		&realqav1.DeleteFeatureDataRequest{
 			TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_DELIBASE_ACCOUNT_LIFECYCLE,

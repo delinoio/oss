@@ -79,6 +79,34 @@ func (q *Queries) AdvanceGitHubCallbackState(ctx context.Context, arg AdvanceGit
 	return result.RowsAffected(), nil
 }
 
+const beginGitHubUserCredentialRefresh = `-- name: BeginGitHubUserCredentialRefresh :one
+UPDATE realqa_github_connections
+SET state = 'disconnected',
+    connected_by_account_id = NULL,
+    credential_ciphertext = NULL,
+    wrapped_data_key = NULL,
+    key_id = NULL,
+    oauth_state_digest = NULL,
+    oauth_state_expires_at = NULL,
+    updated_at = transaction_timestamp()
+WHERE id = $1
+  AND connected_by_account_id = $2
+  AND state = 'connected'
+RETURNING revision
+`
+
+type BeginGitHubUserCredentialRefreshParams struct {
+	ConnectionID pgtype.UUID
+	AccountID    pgtype.UUID
+}
+
+func (q *Queries) BeginGitHubUserCredentialRefresh(ctx context.Context, arg BeginGitHubUserCredentialRefreshParams) (int64, error) {
+	row := q.db.QueryRow(ctx, beginGitHubUserCredentialRefresh, arg.ConnectionID, arg.AccountID)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
+}
+
 const bumpRepositorySchemaRevision = `-- name: BumpRepositorySchemaRevision :one
 INSERT INTO realqa_repository_schema_revisions (
     installation_id, repository_id, revision
@@ -102,6 +130,54 @@ func (q *Queries) BumpRepositorySchemaRevision(ctx context.Context, arg BumpRepo
 	var revision int64
 	err := row.Scan(&revision)
 	return revision, err
+}
+
+const completeGitHubUserCredentialRefresh = `-- name: CompleteGitHubUserCredentialRefresh :execrows
+UPDATE realqa_github_connections AS connection
+SET state = 'connected',
+    connected_by_account_id = $1,
+    credential_ciphertext = $2,
+    wrapped_data_key = $3,
+    key_id = $4,
+    updated_at = transaction_timestamp()
+WHERE connection.id = $5
+  AND connection.revision = $6
+  AND connection.state = 'disconnected'
+  AND connection.credential_ciphertext IS NULL
+  AND connection.wrapped_data_key IS NULL
+  AND connection.key_id IS NULL
+  AND connection.oauth_state_digest IS NULL
+  AND connection.oauth_state_expires_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_identities AS identity
+      WHERE identity.account_id = $1
+        AND identity.deleted_at IS NULL
+  )
+`
+
+type CompleteGitHubUserCredentialRefreshParams struct {
+	AccountID            pgtype.UUID
+	CredentialCiphertext []byte
+	WrappedDataKey       []byte
+	KeyID                pgtype.Text
+	ConnectionID         pgtype.UUID
+	ExpectedRevision     int64
+}
+
+func (q *Queries) CompleteGitHubUserCredentialRefresh(ctx context.Context, arg CompleteGitHubUserCredentialRefreshParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeGitHubUserCredentialRefresh,
+		arg.AccountID,
+		arg.CredentialCiphertext,
+		arg.WrappedDataKey,
+		arg.KeyID,
+		arg.ConnectionID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const connectGitHubUser = `-- name: ConnectGitHubUser :execrows

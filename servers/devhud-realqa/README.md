@@ -31,8 +31,10 @@ billing catalog records, or publish a tracker/plugin interface.
   the setup installation through the OAuth user's live installation list,
   rechecks the initiating account's current owner-management access inside the
   storage transaction, and only then binds the encrypted credential. Expiring
-  credentials are refreshed and transactionally re-sealed on demand, and live
-  repository/schema results refresh the caller-scoped preset-validation cache.
+  credentials are refreshed only after the old credential is durably cleared;
+  the rotated credential is compare-and-swap re-sealed, while any provider or
+  persistence failure leaves the connection disconnected for a safe reconnect.
+  Live repository/schema results refresh the caller-scoped preset-validation cache.
   Preset creation also revalidates the selected repository and definition
   through the live adapter when the caller owns the credential. Markdown
   templates and Issue Forms are fetched through GitHub Contents, normalized,
@@ -72,6 +74,8 @@ billing catalog records, or publish a tracker/plugin interface.
 - Owner/account/organization feature deletion tombstones access first and
   removes scoped presets, submissions/assets, destinations, installation
   bindings, connection state, encrypted credentials, and callback state.
+  Account-lifecycle replays also clear credentials that the deleted account
+  connected for an organization even when its personal scope is already absent.
 
 OS capture permission, Chrome optional-host permission, shortcut registration
 results, and extension pairing are device state. There are deliberately no

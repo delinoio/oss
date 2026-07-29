@@ -184,6 +184,10 @@ func (adapter *Adapter) refreshUserToken(
 ) (int64, UserToken, error) {
 	var providerID int64
 	var token UserToken
+	var refreshCredential OAuthCredential
+	var refreshConnectionID pgtype.UUID
+	var refreshOwner Owner
+	var refreshRevision int64
 	err := adapter.store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			record, err := queries.GetGitHubUserCredentialForInstallationForUpdate(
@@ -231,37 +235,61 @@ func (adapter *Adapter) refreshUserToken(
 				return errors.New(
 					"realqa github: user authorization expired; reconnect is required")
 			}
-			refreshed, refreshedToken, err := adapter.client.RefreshUserCredential(
-				ctx, adapter.clientID, adapter.clientSecret, credential.RefreshToken)
+			refreshOwner, err = providerOwner(record.OwnerKind, record.OwnerID)
 			if err != nil {
-				return err
-			}
-			plaintext, err := json.Marshal(refreshed)
-			if err != nil {
-				return errors.New("realqa github: refreshed credential is invalid")
-			}
-			owner, err := providerOwner(record.OwnerKind, record.OwnerID)
-			if err != nil {
-				clear(plaintext)
 				return errors.New("realqa github: connected user credential is invalid")
 			}
-			encrypted, err := adapter.vault.Seal(
-				plaintext, []byte(string(owner.Kind)+":"+owner.ID.String()))
-			clear(plaintext)
+			refreshRevision, err = queries.BeginGitHubUserCredentialRefresh(
+				ctx, dbgen.BeginGitHubUserCredentialRefreshParams{
+					ConnectionID: record.ConnectionID,
+					AccountID:    providerPGUUID(accountID),
+				})
 			if err != nil {
-				return err
+				return errors.New(
+					"realqa github: connected user credential could not be prepared for refresh")
 			}
-			if err = adapter.updateUserCredential(
-				ctx, queries, record.ConnectionID, accountID, encrypted,
-			); err != nil {
-				return err
-			}
-			token = refreshedToken
+			refreshCredential = credential
+			refreshConnectionID = record.ConnectionID
 			return nil
 		})
 	if err != nil {
 		return 0, UserToken{}, err
 	}
+	if refreshConnectionID == (pgtype.UUID{}) {
+		return providerID, token, nil
+	}
+	refreshed, refreshedToken, err := adapter.client.RefreshUserCredential(
+		ctx, adapter.clientID, adapter.clientSecret, refreshCredential.RefreshToken)
+	if err != nil {
+		return 0, UserToken{}, err
+	}
+	plaintext, err := json.Marshal(refreshed)
+	if err != nil {
+		return 0, UserToken{},
+			errors.New("realqa github: refreshed credential is invalid")
+	}
+	encrypted, err := adapter.vault.Seal(
+		plaintext, []byte(string(refreshOwner.Kind)+":"+refreshOwner.ID.String()))
+	clear(plaintext)
+	if err != nil {
+		return 0, UserToken{}, err
+	}
+	count, err := adapter.store.Queries().CompleteGitHubUserCredentialRefresh(
+		ctx, dbgen.CompleteGitHubUserCredentialRefreshParams{
+			AccountID:            providerPGUUID(accountID),
+			CredentialCiphertext: encrypted.Ciphertext,
+			WrappedDataKey:       encrypted.WrappedDataKey,
+			KeyID: pgtype.Text{
+				String: encrypted.KeyID, Valid: true,
+			},
+			ConnectionID:     refreshConnectionID,
+			ExpectedRevision: refreshRevision,
+		})
+	if err != nil || count != 1 {
+		return 0, UserToken{}, errors.New(
+			"realqa github: refreshed credential could not be stored; reconnect is required")
+	}
+	token = refreshedToken
 	return providerID, token, nil
 }
 
