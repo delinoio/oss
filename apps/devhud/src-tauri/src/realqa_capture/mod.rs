@@ -567,13 +567,15 @@ impl CaptureCore {
             .or_else(|| catalog.snapshot.displays.first())
             .map(|display| display.id.clone())
             .ok_or(CaptureFailure::InvalidDisplaySnapshot)?;
-        self.begin(CaptureRequest {
+        let request = CaptureRequest {
             session_id,
             snapshot_id: catalog.snapshot.snapshot_id,
             source: CaptureSourceSelection::Display { display_id },
             pointer: PointerInclusion::Exclude,
             output_media_type: ImageMediaType::Png,
-        })
+        };
+        self.prepare_begin(&request)?;
+        self.begin_prepared(request)
     }
 
     pub(crate) fn permission_status(&self) -> Result<CapturePermissionStatus, CaptureFailure> {
