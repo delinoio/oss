@@ -112,6 +112,16 @@ func (store *Store) DeleteFeatureData(
 				ctx, pgUUID(params.TargetID)); err != nil {
 				return err
 			}
+			viewerHash := store.hasher.Sum(
+				"snapshot-viewer", params.TargetID.String())
+			if err := queries.DeleteViewSnapshotsByViewer(
+				ctx, viewerHash[:]); err != nil {
+				return err
+			}
+			if err := queries.DeleteViewSnapshotStatesByViewer(
+				ctx, viewerHash[:]); err != nil {
+				return err
+			}
 		}
 		switch params.Trigger {
 		case DeletionTriggerOwner:

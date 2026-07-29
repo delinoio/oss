@@ -171,6 +171,12 @@ func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 		RepositoryHashes:   [][32]byte{repositoryHash},
 		HasRepositoryIndex: true,
 	})
+	if !errors.Is(err, database.ErrViewNotVisible) {
+		t.Fatalf("view manager bypassed repository authorization: %v", err)
+	}
+	err = viewRepairAuthorizer(
+		contracts.Viewer{AccountID: accountID},
+	)(database.ViewAuthorization{Owner: owner})
 	if err != nil {
 		t.Fatalf("view manager could not repair inaccessible definition: %v", err)
 	}
@@ -207,6 +213,29 @@ func TestConnectedViewWithoutRepositoryQualifiersRequiresProviderCredentials(
 	})
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("connected zero-repository view authorization error = %v", err)
+	}
+	manage := service.viewDefinitionAuthorizer(
+		context.Background(),
+		contracts.Viewer{
+			AccountID: accountID,
+			Memberships: map[uuid.UUID]contracts.OrganizationRole{
+				organizationID: contracts.OrganizationRoleOwner,
+			},
+		},
+		true,
+	)
+	err = manage(database.ViewAuthorization{
+		Owner: &deckv1.Owner{
+			Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+			OwnerId: &deckv1.Owner_OrganizationId{
+				OrganizationId: &deckv1.UuidV7{Value: organizationID.String()},
+			},
+		},
+		ConnectionState:    deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+		HasRepositoryIndex: true,
+	})
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("view manager without credentials authorization error = %v", err)
 	}
 }
 

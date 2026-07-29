@@ -46,7 +46,9 @@ type Querier interface {
 	DeleteView(ctx context.Context, arg DeleteViewParams) (int64, error)
 	DeleteViewCreateIdempotencyByOwnerHash(ctx context.Context, ownerHash []byte) error
 	DeleteViewSnapshotState(ctx context.Context, arg DeleteViewSnapshotStateParams) error
+	DeleteViewSnapshotStatesByViewer(ctx context.Context, viewerHash []byte) error
 	DeleteViewSnapshots(ctx context.Context, arg DeleteViewSnapshotsParams) error
+	DeleteViewSnapshotsByViewer(ctx context.Context, viewerHash []byte) error
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (DeckConnection, error)
 	EnsureGitHubAuthorizationState(ctx context.Context, providerIdentityHash []byte) error
 	EnsureGitHubInstallationState(ctx context.Context, providerIdentityHash []byte) error
@@ -82,6 +84,7 @@ type Querier interface {
 	InsertRegisterDeviceIdempotency(ctx context.Context, arg InsertRegisterDeviceIdempotencyParams) error
 	InsertView(ctx context.Context, arg InsertViewParams) (DeckView, error)
 	InsertViewSnapshot(ctx context.Context, arg InsertViewSnapshotParams) error
+	InvalidateOwnerViewsForProviderRename(ctx context.Context, arg InvalidateOwnerViewsForProviderRenameParams) error
 	IsOwnerTombstoned(ctx context.Context, targetHash []byte) (bool, error)
 	ListDeviceRegistrationsForUpdate(ctx context.Context) ([]DeckDeviceRegistration, error)
 	ListGitHubUserCredentialsForRewrap(ctx context.Context) ([]DeckGithubUserCredential, error)

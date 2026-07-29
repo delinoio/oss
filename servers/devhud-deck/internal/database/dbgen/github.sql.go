@@ -648,6 +648,32 @@ func (q *Queries) InsertGitHubWebhookDelivery(ctx context.Context, arg InsertGit
 	return err
 }
 
+const invalidateOwnerViewsForProviderRename = `-- name: InvalidateOwnerViewsForProviderRename :exec
+UPDATE deck_views
+SET connection_state = 1,
+    repository_authorization_index = NULL,
+    revision = revision + 1,
+    updated_at = $1
+WHERE (
+    ($2::smallint = 1
+        AND owner_scope = 1 AND owner_account_id = $3)
+    OR ($2::smallint = 2
+        AND owner_scope = 2 AND owner_organization_id = $3)
+)
+  AND (connection_state <> 1 OR repository_authorization_index IS NOT NULL)
+`
+
+type InvalidateOwnerViewsForProviderRenameParams struct {
+	UpdatedAt  pgtype.Timestamptz
+	OwnerScope int16
+	OwnerID    pgtype.UUID
+}
+
+func (q *Queries) InvalidateOwnerViewsForProviderRename(ctx context.Context, arg InvalidateOwnerViewsForProviderRenameParams) error {
+	_, err := q.db.Exec(ctx, invalidateOwnerViewsForProviderRename, arg.UpdatedAt, arg.OwnerScope, arg.OwnerID)
+	return err
+}
+
 const listGitHubUserCredentialsForRewrap = `-- name: ListGitHubUserCredentialsForRewrap :many
 SELECT connection_id, account_id, github_user_id, wrapping_key_id, user_access_token_ciphertext, user_refresh_token_ciphertext, user_access_token_expires_at, user_refresh_token_expires_at, updated_at
 FROM deck_github_user_credentials

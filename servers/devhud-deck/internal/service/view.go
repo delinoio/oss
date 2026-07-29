@@ -243,7 +243,7 @@ func (service *View) UpdateView(
 	if err != nil {
 		return nil, err
 	}
-	current, err := service.getAuthorizedView(ctx, viewer, id, true)
+	current, err := service.getAuthorizedViewForMutation(ctx, viewer, id)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func (service *View) DeleteView(
 	if err != nil {
 		return nil, err
 	}
-	current, err := service.getAuthorizedView(ctx, viewer, id, true)
+	current, err := service.getAuthorizedViewForMutation(ctx, viewer, id)
 	if err != nil {
 		return nil, err
 	}
@@ -710,6 +710,27 @@ func (service *View) getAuthorizedView(
 	return view, nil
 }
 
+func (service *View) getAuthorizedViewForMutation(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	id uuid.UUID,
+) (*deckv1.View, error) {
+	view, err := service.dependencies.Store.GetViewAuthorized(
+		ctx, id, service.viewDefinitionAuthorizer(ctx, viewer, true))
+	if err == nil {
+		return view, nil
+	}
+	if !errors.Is(err, database.ErrViewNotVisible) {
+		return nil, mapAuthorizedViewError(err)
+	}
+	view, err = service.dependencies.Store.GetViewAuthorized(
+		ctx, id, viewRepairAuthorizer(viewer))
+	if err != nil {
+		return nil, mapAuthorizedViewError(err)
+	}
+	return view, nil
+}
+
 func (service *View) viewDefinitionAuthorizer(
 	ctx context.Context,
 	viewer contracts.Viewer,
@@ -721,9 +742,6 @@ func (service *View) viewDefinitionAuthorizer(
 	return func(authorization database.ViewAuthorization) error {
 		if _, err := authorizeOwner(viewer, authorization.Owner, manage); err != nil {
 			return err
-		}
-		if manage {
-			return nil
 		}
 		if authorization.ConnectionState ==
 			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
@@ -765,6 +783,13 @@ func (service *View) viewDefinitionAuthorizer(
 			}
 		}
 		return nil
+	}
+}
+
+func viewRepairAuthorizer(viewer contracts.Viewer) database.ViewAuthorizer {
+	return func(authorization database.ViewAuthorization) error {
+		_, err := authorizeOwner(viewer, authorization.Owner, true)
+		return err
 	}
 }
 

@@ -338,6 +338,21 @@ func (store *Store) ConnectGitHub(
 					uuidValue(existing.OwnerID), now, true, false); err != nil {
 					return err
 				}
+				loginChanged, err := store.githubAccountLoginChanged(
+					existing, installation)
+				if err != nil {
+					return err
+				}
+				if loginChanged {
+					if err := queries.InvalidateOwnerViewsForProviderRename(
+						ctx, dbgen.InvalidateOwnerViewsForProviderRenameParams{
+							UpdatedAt:  pgTime(now),
+							OwnerScope: existing.OwnerScope,
+							OwnerID:    existing.OwnerID,
+						}); err != nil {
+						return err
+					}
+				}
 			}
 			parameters.ConnectionID = existing.ConnectionID
 			storedConnectionID = existing.ConnectionID
@@ -425,6 +440,13 @@ func (store *Store) githubProviderChanged(
 		existing.GithubMembersPermission.Int16 != int16(installation.Permissions.Members) {
 		return true, nil
 	}
+	return store.githubAccountLoginChanged(existing, installation)
+}
+
+func (store *Store) githubAccountLoginChanged(
+	existing dbgen.DeckConnection,
+	installation deckgithub.Installation,
+) (bool, error) {
 	if len(existing.GithubAccountLoginCiphertext) == 0 {
 		return true, nil
 	}

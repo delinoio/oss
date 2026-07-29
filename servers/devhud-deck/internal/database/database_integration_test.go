@@ -1027,6 +1027,44 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			"notifications=%d events=%d", reconnectSnapshotCount,
 			reconnectNotificationCount, reconnectEventCount)
 	}
+	renamedInstallation := changedInstallation
+	renamedInstallation.AccountLogin = "renamed-octocat"
+	if err := connectGitHub(
+		callback, renamedInstallation, credential,
+		now.Add(5*time.Minute+30*time.Second)); err != nil {
+		t.Fatalf("reconnect renamed GitHub account: %v", err)
+	}
+	renamedView, err := store.GetView(ctx, firstViewID)
+	if err != nil ||
+		renamedView.ConnectionState !=
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("renamed account view was not disconnected: %#v err=%v",
+			renamedView, err)
+	}
+	var renamedRepositoryIndex []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT repository_authorization_index
+		FROM deck_views
+		WHERE view_id = $1`,
+		pgUUID(firstViewID),
+	).Scan(&renamedRepositoryIndex); err != nil {
+		t.Fatal(err)
+	}
+	if renamedRepositoryIndex != nil {
+		t.Fatal("renamed account view retained its repository authorization index")
+	}
+	if err := connectGitHub(
+		callback, renamedInstallation, credential,
+		now.Add(5*time.Minute+45*time.Second)); err != nil {
+		t.Fatalf("repeat renamed GitHub reconnect: %v", err)
+	}
+	renamedView, err = store.GetView(ctx, firstViewID)
+	if err != nil ||
+		renamedView.ConnectionState !=
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("repeat reconnect restored invalid view index: %#v err=%v",
+			renamedView, err)
+	}
 	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,
 		snapshots[:1], now.Add(6*time.Minute)); err != nil {
 		t.Fatal(err)
@@ -1297,6 +1335,31 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			webhookCallbackCount)
 	}
 
+	retainedOrganizationID := mustV7(t)
+	retainedViewID := mustV7(t)
+	retainedViewParams := createViewParams(
+		t, hasher, accountID, retainedViewID, mustV7(t), "subject-1",
+		now.Add(12*time.Minute), 121)
+	retainedViewParams.View.Owner = &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{OrganizationId: uuidProto(
+			retainedOrganizationID)},
+	}
+	retainedViewParams.OwnerHash = hasher.Sum(
+		"owner", "OWNER_SCOPE_ORGANIZATION:"+retainedOrganizationID.String())
+	if _, _, err := store.CreateView(ctx, retainedViewParams); err != nil {
+		t.Fatalf("create retained organization view: %v", err)
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, retainedViewID, viewerHash, snapshots[:1],
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create deleted viewer snapshot: %v", err)
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, retainedViewID, secondViewerHash, snapshots[:1],
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create retained viewer snapshot: %v", err)
+	}
 	memberPending := callback
 	memberPending.Owner = deckgithub.OwnerBinding{
 		Scope: 2, ID: mustV7(t).String(),
@@ -1333,6 +1396,36 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	if accountCallbackCount != 0 {
 		t.Fatalf("account deletion retained %d callbacks", accountCallbackCount)
+	}
+	var deletedViewerSnapshotCount, deletedViewerStateCount int
+	var retainedViewerSnapshotCount, retainedViewerStateCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM deck_pull_request_snapshots
+			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshot_states
+			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshots
+			 WHERE view_id = $1 AND viewer_hash = $3)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshot_states
+			 WHERE view_id = $1 AND viewer_hash = $3)::integer`,
+		pgUUID(retainedViewID), viewerHash[:], secondViewerHash[:],
+	).Scan(
+		&deletedViewerSnapshotCount, &deletedViewerStateCount,
+		&retainedViewerSnapshotCount, &retainedViewerStateCount,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if deletedViewerSnapshotCount != 0 || deletedViewerStateCount != 0 {
+		t.Fatalf("account deletion retained viewer cache: snapshots=%d state=%d",
+			deletedViewerSnapshotCount, deletedViewerStateCount)
+	}
+	if retainedViewerSnapshotCount != 1 || retainedViewerStateCount != 1 {
+		t.Fatalf("account deletion removed another viewer cache: snapshots=%d state=%d",
+			retainedViewerSnapshotCount, retainedViewerStateCount)
+	}
+	if _, err := store.GetView(ctx, retainedViewID); err != nil {
+		t.Fatalf("account deletion removed organization view: %v", err)
 	}
 	if _, err := store.ResolveViewer(ctx, "subject-1"); err != nil {
 		t.Fatalf("owner replay identity was removed: %v", err)

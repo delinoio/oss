@@ -91,6 +91,16 @@ func (q *Queries) DeleteViewSnapshotState(ctx context.Context, arg DeleteViewSna
 	return err
 }
 
+const deleteViewSnapshotStatesByViewer = `-- name: DeleteViewSnapshotStatesByViewer :exec
+DELETE FROM deck_pull_request_snapshot_states
+WHERE viewer_hash = $1
+`
+
+func (q *Queries) DeleteViewSnapshotStatesByViewer(ctx context.Context, viewerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteViewSnapshotStatesByViewer, viewerHash)
+	return err
+}
+
 const deleteViewSnapshots = `-- name: DeleteViewSnapshots :exec
 DELETE FROM deck_pull_request_snapshots
 WHERE view_id = $1 AND viewer_hash = $2
@@ -103,6 +113,16 @@ type DeleteViewSnapshotsParams struct {
 
 func (q *Queries) DeleteViewSnapshots(ctx context.Context, arg DeleteViewSnapshotsParams) error {
 	_, err := q.db.Exec(ctx, deleteViewSnapshots, arg.ViewID, arg.ViewerHash)
+	return err
+}
+
+const deleteViewSnapshotsByViewer = `-- name: DeleteViewSnapshotsByViewer :exec
+DELETE FROM deck_pull_request_snapshots
+WHERE viewer_hash = $1
+`
+
+func (q *Queries) DeleteViewSnapshotsByViewer(ctx context.Context, viewerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteViewSnapshotsByViewer, viewerHash)
 	return err
 }
 
