@@ -128,6 +128,9 @@ func (service *Preset) DeleteFeatureData(
 		}
 		actor = caller{actor: ""}
 	}
+	if service.dependencies.Store == nil {
+		return nil, errors.New("realqa service: store unavailable")
+	}
 
 	if existing, getErr := service.dependencies.Store.Queries().GetDeletionJob(
 		ctx, dbgen.GetDeletionJobParams{
