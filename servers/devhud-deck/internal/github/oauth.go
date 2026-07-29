@@ -183,7 +183,8 @@ func (oauth *OAuth) exchange(
 			oauthRejection != nil {
 			return Credential{}, oauthRejection
 		}
-		return Credential{}, mapStatus(response.StatusCode, response.Header, oauth.now())
+		return Credential{}, mapStatus(
+			response.StatusCode, response.Header, body, oauth.now())
 	}
 	if decodeErr != nil {
 		return Credential{}, ErrProvider
@@ -211,21 +212,34 @@ func (oauth *OAuth) exchange(
 	return credential, nil
 }
 
-func mapStatus(status int, headers http.Header, now time.Time) error {
+func mapStatus(
+	status int,
+	headers http.Header,
+	body []byte,
+	now time.Time,
+) error {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
-		if status == http.StatusForbidden && providerRateLimited(headers) {
+		if status == http.StatusForbidden &&
+			(providerRateLimited(headers) || providerSecondaryRateLimited(body)) {
 			return &RateLimitError{RetryAfter: retryDuration(headers, now)}
 		}
 		return ErrPermissionDenied
 	case http.StatusTooManyRequests:
 		return &RateLimitError{RetryAfter: retryDuration(headers, now)}
-	case http.StatusConflict, http.StatusUnprocessableEntity,
-		http.StatusMethodNotAllowed:
-		return ErrBranchProtected
 	default:
 		return ErrProvider
 	}
+}
+
+func providerSecondaryRateLimited(body []byte) bool {
+	var failure apiError
+	if json.Unmarshal(body, &failure) != nil {
+		return false
+	}
+	message := strings.ToLower(failure.Message)
+	return strings.Contains(message, "secondary rate limit") ||
+		strings.Contains(message, "abuse detection mechanism")
 }
 
 func providerRateLimited(headers http.Header) bool {

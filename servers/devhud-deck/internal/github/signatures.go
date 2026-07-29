@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"strconv"
@@ -14,7 +13,7 @@ import (
 	"time"
 )
 
-const callbackStateVersion = "v1"
+const callbackStateVersion = "v2"
 
 type StatePurpose uint8
 
@@ -27,6 +26,7 @@ const (
 type CallbackState struct {
 	Purpose        StatePurpose `json:"purpose"`
 	AccountID      string       `json:"account_id"`
+	GitHubLogin    string       `json:"github_login"`
 	Owner          OwnerBinding `json:"owner"`
 	InstallationID uint64       `json:"installation_id,omitempty"`
 	Nonce          string       `json:"nonce"`
@@ -48,35 +48,32 @@ func NewStateSigner(key []byte) (*StateSigner, error) {
 func (signer *StateSigner) Sign(
 	purpose StatePurpose,
 	accountID string,
+	githubLogin string,
 	owner OwnerBinding,
 	expiresAt time.Time,
 ) (string, CallbackState, error) {
 	if signer == nil || len(signer.key) < 32 ||
 		(purpose != StatePurposeOAuth && purpose != StatePurposeInstallation) ||
-		accountID == "" || owner.Validate() != nil || expiresAt.IsZero() {
+		accountID == "" || !safePathSegment(githubLogin) ||
+		owner.Validate() != nil || expiresAt.IsZero() {
 		return "", CallbackState{}, ErrInvalidConfiguration
 	}
-	nonce := make([]byte, 24)
+	nonce := make([]byte, 32)
 	if _, err := io.ReadFull(signer.random, nonce); err != nil {
 		return "", CallbackState{}, errors.New("deck github: state generation failed")
 	}
 	state := CallbackState{
-		Purpose: purpose, AccountID: accountID, Owner: owner,
+		Purpose: purpose, AccountID: accountID,
+		GitHubLogin: githubLogin, Owner: owner,
 		Nonce:     base64.RawURLEncoding.EncodeToString(nonce),
 		ExpiresAt: expiresAt.UTC().Unix(),
 	}
-	payload, err := json.Marshal(state)
-	if err != nil {
-		return "", CallbackState{}, ErrInvalidConfiguration
-	}
-	encoded := base64.RawURLEncoding.EncodeToString(payload)
-	signature := signer.mac(callbackStateVersion + "." + encoded)
-	return callbackStateVersion + "." + encoded + "." +
-		base64.RawURLEncoding.EncodeToString(signature), state, nil
+	return signer.signState(state)
 }
 
 func (signer *StateSigner) SignOAuthForInstallation(
 	accountID string,
+	githubLogin string,
 	owner OwnerBinding,
 	installationID uint64,
 	expiresAt time.Time,
@@ -85,7 +82,7 @@ func (signer *StateSigner) SignOAuthForInstallation(
 		return "", CallbackState{}, ErrInvalidConfiguration
 	}
 	_, state, err := signer.Sign(
-		StatePurposeOAuth, accountID, owner, expiresAt)
+		StatePurposeOAuth, accountID, githubLogin, owner, expiresAt)
 	if err != nil {
 		return "", CallbackState{}, err
 	}
@@ -96,46 +93,46 @@ func (signer *StateSigner) SignOAuthForInstallation(
 func (signer *StateSigner) signState(
 	state CallbackState,
 ) (string, CallbackState, error) {
-	payload, err := json.Marshal(state)
-	if err != nil {
+	if state.Purpose != StatePurposeOAuth &&
+		state.Purpose != StatePurposeInstallation {
 		return "", CallbackState{}, ErrInvalidConfiguration
 	}
-	encoded := base64.RawURLEncoding.EncodeToString(payload)
-	signature := signer.mac(callbackStateVersion + "." + encoded)
-	return callbackStateVersion + "." + encoded + "." +
+	nonce, err := base64.RawURLEncoding.DecodeString(state.Nonce)
+	if err != nil || len(nonce) != 32 {
+		return "", CallbackState{}, ErrInvalidConfiguration
+	}
+	handle := callbackStateVersion + "." + state.Nonce
+	signature := signer.mac(
+		strconv.Itoa(int(state.Purpose)) + "." + handle)
+	return handle + "." +
 		base64.RawURLEncoding.EncodeToString(signature), state, nil
 }
 
 func (signer *StateSigner) Verify(
 	value string,
 	purpose StatePurpose,
-	now time.Time,
-) (CallbackState, error) {
+) error {
 	if signer == nil || len(signer.key) < 32 {
-		return CallbackState{}, ErrInvalidSignature
+		return ErrInvalidSignature
+	}
+	if purpose != StatePurposeOAuth && purpose != StatePurposeInstallation {
+		return ErrInvalidSignature
 	}
 	parts := strings.Split(value, ".")
 	if len(parts) != 3 || parts[0] != callbackStateVersion {
-		return CallbackState{}, ErrInvalidSignature
+		return ErrInvalidSignature
+	}
+	nonce, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || len(nonce) != 32 {
+		return ErrInvalidSignature
 	}
 	actual, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil || !hmac.Equal(actual, signer.mac(parts[0]+"."+parts[1])) {
-		return CallbackState{}, ErrInvalidSignature
+	expected := signer.mac(
+		strconv.Itoa(int(purpose)) + "." + parts[0] + "." + parts[1])
+	if err != nil || !hmac.Equal(actual, expected) {
+		return ErrInvalidSignature
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return CallbackState{}, ErrInvalidSignature
-	}
-	var state CallbackState
-	if err := json.Unmarshal(payload, &state); err != nil ||
-		state.Purpose != purpose || state.AccountID == "" ||
-		state.Owner.Validate() != nil || len(state.Nonce) < 32 {
-		return CallbackState{}, ErrInvalidSignature
-	}
-	if state.ExpiresAt <= now.UTC().Unix() {
-		return CallbackState{}, ErrExpiredState
-	}
-	return state, nil
+	return nil
 }
 
 func (signer *StateSigner) mac(value string) []byte {
@@ -173,22 +170,13 @@ func VerifyWebhookSignature(secret, payload []byte, signature string) error {
 func signedFixtureState(
 	signer *StateSigner,
 	purpose StatePurpose,
-	accountID string,
-	owner OwnerBinding,
 	nonce string,
-	expiresAt int64,
 ) (string, error) {
-	state := CallbackState{
-		Purpose: purpose, AccountID: accountID, Owner: owner, Nonce: nonce,
-		ExpiresAt: expiresAt,
-	}
-	payload, err := json.Marshal(state)
-	if err != nil {
-		return "", err
-	}
-	encoded := base64.RawURLEncoding.EncodeToString(payload)
-	body := callbackStateVersion + "." + encoded
-	return body + "." + base64.RawURLEncoding.EncodeToString(signer.mac(body)), nil
+	signed, _, err := signer.signState(CallbackState{
+		Purpose: purpose,
+		Nonce:   nonce,
+	})
+	return signed, err
 }
 
 func parseRetryAfter(value string, now time.Time) time.Duration {

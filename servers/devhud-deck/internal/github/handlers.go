@@ -30,9 +30,9 @@ type CallbackStore interface {
 	ConsumeGitHubCallbackState(
 		context.Context,
 		[sha256.Size]byte,
-		CallbackState,
+		StatePurpose,
 		time.Time,
-	) error
+	) (CallbackState, error)
 	ConnectGitHub(
 		context.Context,
 		[sha256.Size]byte,
@@ -100,6 +100,7 @@ func NewBroker(configuration BrokerConfig) (*Broker, error) {
 func (broker *Broker) StartInstallation(
 	ctx context.Context,
 	accountID string,
+	githubLogin string,
 	owner OwnerBinding,
 ) (string, time.Time, error) {
 	if broker == nil {
@@ -108,7 +109,7 @@ func (broker *Broker) StartInstallation(
 	now := broker.now()
 	expiresAt := now.Add(callbackStateLifetime)
 	signed, state, err := broker.signer.Sign(
-		StatePurposeInstallation, accountID, owner, expiresAt)
+		StatePurposeInstallation, accountID, githubLogin, owner, expiresAt)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -126,6 +127,7 @@ func (broker *Broker) StartInstallation(
 func (broker *Broker) StartAuthorization(
 	ctx context.Context,
 	accountID string,
+	githubLogin string,
 	owner OwnerBinding,
 	installationID uint64,
 ) (string, time.Time, error) {
@@ -135,7 +137,7 @@ func (broker *Broker) StartAuthorization(
 	now := broker.now()
 	expiresAt := now.Add(callbackStateLifetime)
 	signed, state, err := broker.signer.SignOAuthForInstallation(
-		accountID, owner, installationID, expiresAt)
+		accountID, githubLogin, owner, installationID, expiresAt)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -183,9 +185,8 @@ func (broker *Broker) installationCallback(
 	callbackHeaders(writer)
 	now := broker.now()
 	rawState := request.URL.Query().Get("state")
-	state, err := broker.signer.Verify(
-		rawState, StatePurposeInstallation, now)
-	if err != nil {
+	if err := broker.signer.Verify(
+		rawState, StatePurposeInstallation); err != nil {
 		http.Error(writer, "invalid callback", http.StatusBadRequest)
 		return
 	}
@@ -200,14 +201,15 @@ func (broker *Broker) installationCallback(
 		http.Error(writer, "invalid callback", http.StatusBadRequest)
 		return
 	}
-	if err := broker.callbacks.ConsumeGitHubCallbackState(
-		request.Context(), StateHash(rawState), state, now); err != nil {
+	state, err := broker.callbacks.ConsumeGitHubCallbackState(
+		request.Context(), StateHash(rawState), StatePurposeInstallation, now)
+	if err != nil {
 		http.Error(writer, "invalid callback", http.StatusBadRequest)
 		return
 	}
 	expiresAt := now.Add(callbackStateLifetime)
 	oauthState, pending, err := broker.signer.SignOAuthForInstallation(
-		state.AccountID, state.Owner, installationID, expiresAt)
+		state.AccountID, state.GitHubLogin, state.Owner, installationID, expiresAt)
 	if err != nil {
 		http.Error(writer, "callback failed", http.StatusBadGateway)
 		return
@@ -232,13 +234,13 @@ func (broker *Broker) oauthCallback(
 	callbackHeaders(writer)
 	now := broker.now()
 	rawState := request.URL.Query().Get("state")
-	state, err := broker.signer.Verify(rawState, StatePurposeOAuth, now)
-	if err != nil || state.InstallationID == 0 {
+	if err := broker.signer.Verify(rawState, StatePurposeOAuth); err != nil {
 		http.Error(writer, "invalid callback", http.StatusBadRequest)
 		return
 	}
-	if err := broker.callbacks.ConsumeGitHubCallbackState(
-		request.Context(), StateHash(rawState), state, now); err != nil {
+	state, err := broker.callbacks.ConsumeGitHubCallbackState(
+		request.Context(), StateHash(rawState), StatePurposeOAuth, now)
+	if err != nil || state.InstallationID == 0 {
 		http.Error(writer, "invalid callback", http.StatusBadRequest)
 		return
 	}
@@ -248,12 +250,18 @@ func (broker *Broker) oauthCallback(
 		http.Error(writer, "authorization failed", http.StatusBadGateway)
 		return
 	}
-	credential.UserID, err = broker.client.AuthenticatedUserID(
+	user, err := broker.client.AuthenticatedUser(
 		request.Context(), credential)
 	if err != nil {
 		http.Error(writer, "authorization failed", http.StatusBadGateway)
 		return
 	}
+	if !strings.EqualFold(state.GitHubLogin, user.Login) {
+		http.Error(writer, "authorization failed", http.StatusForbidden)
+		return
+	}
+	credential.UserID = user.ID
+	credential.Login = user.Login
 	selected, err := broker.findInstallation(
 		request.Context(), credential, state.InstallationID)
 	if err != nil {

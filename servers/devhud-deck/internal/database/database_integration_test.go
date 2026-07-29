@@ -513,6 +513,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	callback := deckgithub.CallbackState{
 		Purpose: deckgithub.StatePurposeOAuth, AccountID: accountID.String(),
+		GitHubLogin:    "octocat",
 		Owner:          deckgithub.OwnerBinding{Scope: 1, ID: accountID.String()},
 		InstallationID: 7, Nonce: "fixture",
 		ExpiresAt: now.Add(time.Hour).Unix(),
@@ -527,7 +528,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		},
 	}
 	credential := deckgithub.Credential{
-		UserID:      700,
+		UserID: 700, Login: "octocat",
 		AccessToken: "ghu_database_fixture", RefreshToken: "ghr_database_fixture",
 		ExpiresAt: now.Add(time.Hour), RefreshTokenExpiresAt: now.Add(24 * time.Hour),
 	}
@@ -545,12 +546,13 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			ctx, hash, state, at); err != nil {
 			return err
 		}
-		if err := store.ConsumeGitHubCallbackState(
-			ctx, hash, state, at); err != nil {
+		consumed, err := store.ConsumeGitHubCallbackState(
+			ctx, hash, state.Purpose, at)
+		if err != nil {
 			return err
 		}
 		return store.ConnectGitHub(
-			ctx, hash, state, selected, userCredential, at)
+			ctx, hash, consumed, selected, userCredential, at)
 	}
 	deletedBeforeConnect := installation
 	deletedBeforeConnect.ID = 6
@@ -680,8 +682,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("in-flight authorization callback: %v", err)
 	}
-	if err := store.ConsumeGitHubCallbackState(
-		ctx, inFlightHash, inFlightCallback,
+	if _, err := store.ConsumeGitHubCallbackState(
+		ctx, inFlightHash, inFlightCallback.Purpose,
 		now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("consume in-flight authorization callback: %v", err)
 	}
@@ -989,8 +991,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ctx, pendingHash, pendingCallback, now.Add(6*time.Minute)); err != nil {
 		t.Fatalf("pending disconnect callback: %v", err)
 	}
-	if err := store.ConsumeGitHubCallbackState(
-		ctx, pendingHash, pendingCallback,
+	if _, err := store.ConsumeGitHubCallbackState(
+		ctx, pendingHash, pendingCallback.Purpose,
 		now.Add(6*time.Minute)); err != nil {
 		t.Fatalf("consume pending disconnect callback: %v", err)
 	}

@@ -49,7 +49,14 @@
   retry can return the same grant, and must delete it on unregister or lease
   expiry. The client retains the grant only in the OS secure vault as described
   below.
-- One DeliDev account is active per OS user/device. Personal views are managed by their owner. Organization Owners/Admins create, edit, and delete organization views; members may use them only when DeliDev membership and that member's own GitHub authorization both permit every underlying repository.
+- One DeliDev account is active per OS user/device. Personal views are managed
+  by their owner. Organization Owners/Admins create, edit, and delete
+  organization views; those management-only update/delete paths may open a
+  retained definition after repository access is removed so a manager can
+  repair or delete it, while every updated repository qualifier is
+  reauthorized before persistence. Members may use views only when DeliDev
+  membership and that member's own GitHub authorization both permit every
+  underlying repository.
 - Personal resources may select an accessible organization/team for billing. Organization resources bill their owning organization/team.
 - Every synchronized mutation uses a revision/ETag. Stale writes fail with a typed conflict suitable for reload, compare, and reapply.
 
@@ -74,8 +81,12 @@
 - HTTP is limited to GitHub OAuth/App callbacks and installation-lifecycle webhooks. Provider webhooks must not refresh pull-request status.
 - The implemented HTTP paths are exactly `/github/app/callback`,
   `/github/oauth/callback`, and `/github/webhooks`. App and OAuth callbacks use
-  separate HMAC-signed, expiring, encrypted, one-use state records. Webhooks
-  require `X-Hub-Signature-256`, a bounded body, and an explicit delivery ID.
+  separate HMAC-authenticated opaque random handles whose expiring one-use
+  account, owner, and current DeliDev GitHub-login bindings exist only in the
+  encrypted server-side state record. The OAuth callback rejects a GitHub user
+  whose current login does not match that initiating DeliDev identity.
+  Webhooks require `X-Hub-Signature-256`, a bounded body, and an explicit
+  delivery ID.
   Subscribed `installation` and `installation_repositories` events update only
   installation lifecycle state. GitHub's mandatory
   `github_app_authorization` revocation event deletes every credential for the
@@ -107,7 +118,18 @@
   rejected refresh tokens require reauthorization; GitHub's
   `bad_refresh_token` response is classified as reauthentication rather than a
   generic provider failure.
-- Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository. Connected view-definition reads use a versioned keyed repository-qualifier index stored outside the encrypted query to decide current GitHub visibility before opening any view ciphertext. Exact snapshot membership reads use a keyed repository-and-PR index after repository authorization, so they do not scan or decrypt unrelated retained repository references.
+- Authorization filtering occurs before identity-bearing results. Repository
+  names, PR titles, counts, and query results must not be revealed to a
+  DeliDev member whose GitHub identity cannot access the repository. Connected
+  view-definition reads use a versioned keyed repository-qualifier index
+  stored outside the encrypted query to decide current GitHub visibility
+  before opening any view ciphertext. The sole exception is an authorized
+  personal owner or organization Owner/Admin opening the definition through
+  `UpdateView` or `DeleteView` to repair repository-removal fallout; an update
+  still reauthorizes every repository in the resulting definition before it
+  is persisted. Exact snapshot membership reads use a keyed
+  repository-and-PR index after repository authorization, so they do not scan
+  or decrypt unrelated retained repository references.
 - The provider search adapter rechecks each result repository against both the
   selected owner-scoped installation and the current viewer's user
   authorization before returning any result. It returns only the filtered page

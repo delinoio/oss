@@ -3,9 +3,11 @@ package rpcerr
 
 import (
 	"errors"
+	"time"
 
 	"connectrpc.com/connect"
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 func New(code connect.Code, reason deckv1.ErrorReason) error {
@@ -13,6 +15,23 @@ func New(code connect.Code, reason deckv1.ErrorReason) error {
 	detail, err := connect.NewErrorDetail(&deckv1.ErrorDetail{Reason: reason})
 	if err == nil {
 		failure.AddDetail(detail)
+	}
+	return failure
+}
+
+func RetryAfter(reason deckv1.ErrorReason, retryAfter time.Duration) error {
+	failure := connect.NewError(
+		connect.CodeResourceExhausted, errors.New(message(connect.CodeResourceExhausted)))
+	detail := &deckv1.ErrorDetail{Reason: reason}
+	if retryAfter > 0 {
+		duration := durationpb.New(retryAfter)
+		if duration.CheckValid() == nil {
+			detail.RetryAfter = duration
+		}
+	}
+	typed, err := connect.NewErrorDetail(detail)
+	if err == nil {
+		failure.AddDetail(typed)
 	}
 	return failure
 }

@@ -108,6 +108,7 @@ func TestMapGitHubErrorDistinguishesDeckAndProviderRateLimits(t *testing.T) {
 		err    error
 		code   connect.Code
 		reason deckv1.ErrorReason
+		retry  time.Duration
 	}{
 		{
 			name: "deck mutation limit", err: deckgithub.ErrMutationRateLimited,
@@ -115,9 +116,11 @@ func TestMapGitHubErrorDistinguishesDeckAndProviderRateLimits(t *testing.T) {
 			reason: deckv1.ErrorReason_ERROR_REASON_RATE_LIMITED,
 		},
 		{
-			name: "provider limit", err: deckgithub.ErrRateLimited,
+			name:   "provider limit",
+			err:    &deckgithub.RateLimitError{RetryAfter: 17 * time.Second},
 			code:   connect.CodeResourceExhausted,
 			reason: deckv1.ErrorReason_ERROR_REASON_PROVIDER_RATE_LIMITED,
+			retry:  17 * time.Second,
 		},
 		{
 			name: "reauthentication", err: deckgithub.ErrReauthenticationRequired,
@@ -145,6 +148,14 @@ func TestMapGitHubErrorDistinguishesDeckAndProviderRateLimits(t *testing.T) {
 					if typed.Reason != test.reason {
 						t.Fatalf("reason = %v, want %v",
 							typed.Reason, test.reason)
+					}
+					actualRetry := time.Duration(0)
+					if typed.RetryAfter != nil {
+						actualRetry = typed.RetryAfter.AsDuration()
+					}
+					if actualRetry != test.retry {
+						t.Fatalf("retry after = %v, want %v",
+							actualRetry, test.retry)
 					}
 					return
 				}

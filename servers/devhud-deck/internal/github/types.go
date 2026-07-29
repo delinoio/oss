@@ -108,7 +108,10 @@ type Installation struct {
 type Credential struct {
 	// AccessToken is always a GitHub App user authorization token. Deck never
 	// accepts an installation token or a personal access token here.
-	UserID                uint64
+	UserID uint64
+	// Login is populated only while binding an OAuth callback to the DeliDev
+	// identity that started it. It is not retained with the credential.
+	Login                 string
 	AccessToken           string
 	RefreshToken          string
 	ExpiresAt             time.Time
@@ -201,6 +204,11 @@ const (
 )
 
 type User struct {
+	Login string
+}
+
+type AuthenticatedUser struct {
+	ID    uint64
 	Login string
 }
 

@@ -325,6 +325,23 @@ func TestGraphQLErrorMapsHTTP200RateLimitHeaders(t *testing.T) {
 	}
 }
 
+func TestSecondaryRESTLimitWithoutQuotaHeadersUsesProviderBackoff(t *testing.T) {
+	t.Parallel()
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden,
+				`{"message":"You have exceeded a secondary rate limit."}`), nil
+		})})
+	_, err := client.CanReadRepository(context.Background(),
+		Credential{AccessToken: "token"},
+		Repository{Owner: "acme", Name: "widget"})
+	var rateLimit *RateLimitError
+	if !errors.As(err, &rateLimit) ||
+		rateLimit.RetryAfter != time.Minute {
+		t.Fatalf("secondary provider rate limit = %T %#v", err, err)
+	}
+}
+
 func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 	t.Parallel()
 	var paths []string
@@ -690,8 +707,44 @@ func TestMergeConflictMapsToStaleRevision(t *testing.T) {
 	err = client.applyMutation(
 		context.Background(), credential, reference, ActionMetadata{},
 		Mutation{Kind: MutationClose})
-	if !errors.Is(err, ErrBranchProtected) {
+	if !errors.Is(err, ErrProvider) || errors.Is(err, ErrBranchProtected) {
 		t.Fatalf("non-merge conflict error = %v", err)
+	}
+}
+
+func TestRESTValidationAndMergeProtectionMappingsAreOperationSpecific(
+	t *testing.T,
+) {
+	t.Parallel()
+	reference := PullRequestRef{
+		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+	}
+	credential := Credential{AccessToken: "token"}
+	validationClient := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusUnprocessableEntity,
+				`{"message":"Validation Failed"}`), nil
+		})})
+	err := validationClient.applyMutation(
+		context.Background(), credential, reference, ActionMetadata{},
+		Mutation{Kind: MutationAddLabels, Labels: []string{"stale"}})
+	if !errors.Is(err, ErrProvider) || errors.Is(err, ErrBranchProtected) {
+		t.Fatalf("label validation error = %v", err)
+	}
+
+	protectedClient := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusMethodNotAllowed, `{}`), nil
+		})})
+	err = protectedClient.applyMutation(
+		context.Background(), credential, reference,
+		ActionMetadata{HeadSHA: "current"},
+		Mutation{
+			Kind: MutationMerge, MergeMethod: MergeMethodSquash,
+			Confirmed: true,
+		})
+	if !errors.Is(err, ErrBranchProtected) {
+		t.Fatalf("merge protection error = %v", err)
 	}
 }
 

@@ -116,10 +116,16 @@ func (client *Client) doWithConflictError(
 		return nil, ErrProvider
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		if response.StatusCode == http.StatusConflict && conflictError != nil {
-			return response.Header, conflictError
+		if conflictError != nil {
+			switch response.StatusCode {
+			case http.StatusConflict, http.StatusUnprocessableEntity:
+				return response.Header, conflictError
+			case http.StatusMethodNotAllowed:
+				return response.Header, ErrBranchProtected
+			}
 		}
-		return response.Header, mapStatus(response.StatusCode, response.Header, client.now())
+		return response.Header, mapStatus(
+			response.StatusCode, response.Header, payload, client.now())
 	}
 	if output != nil && len(payload) > 0 {
 		if err := json.Unmarshal(payload, output); err != nil {
@@ -140,21 +146,22 @@ type installationResponse struct {
 	Permissions map[string]string `json:"permissions"`
 }
 
-func (client *Client) AuthenticatedUserID(
+func (client *Client) AuthenticatedUser(
 	ctx context.Context,
 	credential Credential,
-) (uint64, error) {
+) (AuthenticatedUser, error) {
 	var response struct {
-		ID uint64 `json:"id"`
+		ID    uint64 `json:"id"`
+		Login string `json:"login"`
 	}
 	if _, err := client.do(
 		ctx, credential, http.MethodGet, "/user", nil, &response); err != nil {
-		return 0, err
+		return AuthenticatedUser{}, err
 	}
-	if response.ID == 0 {
-		return 0, ErrProvider
+	if response.ID == 0 || !safePathSegment(response.Login) {
+		return AuthenticatedUser{}, ErrProvider
 	}
-	return response.ID, nil
+	return AuthenticatedUser{ID: response.ID, Login: response.Login}, nil
 }
 
 func (client *Client) ListInstallations(

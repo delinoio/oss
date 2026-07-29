@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
-	"time"
 )
 
 type signatureFixtures struct {
@@ -17,13 +17,14 @@ type signatureFixtures struct {
 		Signature string `json:"signature"`
 	} `json:"webhook"`
 	Callback struct {
-		KeyBase64  string `json:"key_base64"`
-		Purpose    uint8  `json:"purpose"`
-		AccountID  string `json:"account_id"`
-		OwnerScope uint8  `json:"owner_scope"`
-		OwnerID    string `json:"owner_id"`
-		Nonce      string `json:"nonce"`
-		ExpiresAt  int64  `json:"expires_at"`
+		KeyBase64   string `json:"key_base64"`
+		Purpose     uint8  `json:"purpose"`
+		AccountID   string `json:"account_id"`
+		GitHubLogin string `json:"github_login"`
+		OwnerScope  uint8  `json:"owner_scope"`
+		OwnerID     string `json:"owner_id"`
+		Nonce       string `json:"nonce"`
+		ExpiresAt   int64  `json:"expires_at"`
 	} `json:"callback"`
 }
 
@@ -56,36 +57,37 @@ func TestDeterministicSignatureFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := CallbackState{
-		Purpose:   StatePurpose(fixture.Callback.Purpose),
-		AccountID: fixture.Callback.AccountID,
+		Purpose:     StatePurpose(fixture.Callback.Purpose),
+		AccountID:   fixture.Callback.AccountID,
+		GitHubLogin: fixture.Callback.GitHubLogin,
 		Owner: OwnerBinding{
 			Scope: fixture.Callback.OwnerScope, ID: fixture.Callback.OwnerID,
 		},
 		Nonce: fixture.Callback.Nonce, ExpiresAt: fixture.Callback.ExpiresAt,
 	}
 	signed, err := signedFixtureState(
-		signer, expected.Purpose, expected.AccountID, expected.Owner,
-		expected.Nonce, expected.ExpiresAt)
+		signer, expected.Purpose, expected.Nonce)
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual, err := signer.Verify(
-		signed, expected.Purpose, time.Unix(expected.ExpiresAt-1, 0))
-	if err != nil {
+	if err := signer.Verify(signed, expected.Purpose); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(actual, expected) {
-		t.Fatalf("state = %#v, want %#v", actual, expected)
+	encodedAccount := base64.RawURLEncoding.EncodeToString(
+		[]byte(expected.AccountID))
+	encodedOwner := base64.RawURLEncoding.EncodeToString(
+		[]byte(expected.Owner.ID))
+	if strings.Contains(signed, expected.AccountID) ||
+		strings.Contains(signed, expected.Owner.ID) ||
+		strings.Contains(signed, encodedAccount) ||
+		strings.Contains(signed, encodedOwner) {
+		t.Fatalf("callback handle exposes account or owner identity: %q", signed)
 	}
-	if _, err := signer.Verify(
-		signed+"x", expected.Purpose,
-		time.Unix(expected.ExpiresAt-1, 0)); err == nil {
+	if err := signer.Verify(signed+"x", expected.Purpose); err == nil {
 		t.Fatal("tampered callback state was accepted")
 	}
-	if _, err := signer.Verify(
-		signed, expected.Purpose,
-		time.Unix(expected.ExpiresAt, 0)); err != ErrExpiredState {
-		t.Fatalf("expired state error = %v", err)
+	if err := signer.Verify(signed, StatePurposeInstallation); err == nil {
+		t.Fatal("callback handle was accepted for another purpose")
 	}
 }
 

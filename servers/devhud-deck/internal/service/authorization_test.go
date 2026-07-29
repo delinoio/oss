@@ -147,6 +147,17 @@ func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 	if connect.CodeOf(err) != connect.CodeInternal {
 		t.Fatalf("unindexed connected view error = %v", err)
 	}
+	manage := service.viewDefinitionAuthorizer(
+		context.Background(), contracts.Viewer{AccountID: accountID}, true)
+	err = manage(database.ViewAuthorization{
+		Owner:              owner,
+		ConnectionState:    deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+		RepositoryHashes:   [][32]byte{repositoryHash},
+		HasRepositoryIndex: true,
+	})
+	if err != nil {
+		t.Fatalf("view manager could not repair inaccessible definition: %v", err)
+	}
 }
 
 func TestRepositoryAuthorizationDefaultsToDeny(t *testing.T) {

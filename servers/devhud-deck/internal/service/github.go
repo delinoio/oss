@@ -437,6 +437,7 @@ func (service *View) encodeProviderCursor(viewID, cursor string) string {
 }
 
 func mapGitHubError(err error) error {
+	var providerLimit *deckgithub.RateLimitError
 	switch {
 	case errors.Is(err, deckgithub.ErrUnsupportedHost):
 		return rpcerr.New(connect.CodeInvalidArgument,
@@ -456,6 +457,10 @@ func mapGitHubError(err error) error {
 	case errors.Is(err, deckgithub.ErrMutationRateLimited):
 		return rpcerr.New(connect.CodeResourceExhausted,
 			deckv1.ErrorReason_ERROR_REASON_RATE_LIMITED)
+	case errors.As(err, &providerLimit):
+		return rpcerr.RetryAfter(
+			deckv1.ErrorReason_ERROR_REASON_PROVIDER_RATE_LIMITED,
+			providerLimit.RetryAfter)
 	case errors.Is(err, deckgithub.ErrRateLimited):
 		return rpcerr.New(connect.CodeResourceExhausted,
 			deckv1.ErrorReason_ERROR_REASON_PROVIDER_RATE_LIMITED)

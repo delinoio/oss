@@ -699,6 +699,9 @@ func (service *View) viewDefinitionAuthorizer(
 		if _, err := authorizeOwner(viewer, authorization.Owner, manage); err != nil {
 			return err
 		}
+		if manage {
+			return nil
+		}
 		if authorization.ConnectionState ==
 			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
 			return nil

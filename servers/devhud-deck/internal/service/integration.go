@@ -77,12 +77,12 @@ func (service *Integration) StartGitHubConnection(
 		}
 		target, expiresAt, err =
 			service.dependencies.GitHubBroker.StartAuthorization(
-				ctx, viewer.AccountID.String(), owner,
+				ctx, viewer.AccountID.String(), viewer.GitHubLogin, owner,
 				connection.Installation.ID)
 	} else {
 		target, expiresAt, err =
 			service.dependencies.GitHubBroker.StartInstallation(
-				ctx, viewer.AccountID.String(), owner)
+				ctx, viewer.AccountID.String(), viewer.GitHubLogin, owner)
 	}
 	if err != nil {
 		if errors.Is(err, database.ErrDeletionInProgress) {

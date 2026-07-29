@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
@@ -88,10 +89,11 @@ func (store *Store) SaveGitHubCallbackState(
 func (store *Store) ConsumeGitHubCallbackState(
 	ctx context.Context,
 	hash [32]byte,
-	expected deckgithub.CallbackState,
+	purpose deckgithub.StatePurpose,
 	now time.Time,
-) error {
-	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+) (deckgithub.CallbackState, error) {
+	var consumed deckgithub.CallbackState
+	err := store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
 		record, err := queries.GetGitHubCallbackStateForUpdate(ctx, hash[:])
 		if errors.Is(err, pgx.ErrNoRows) {
 			return deckgithub.ErrInvalidSignature
@@ -114,19 +116,30 @@ func (store *Store) ConsumeGitHubCallbackState(
 			return err
 		}
 		var actual deckgithub.CallbackState
-		expectedPayload, encodeErr := json.Marshal(expected)
-		if json.Unmarshal(payload, &actual) != nil || encodeErr != nil {
+		if json.Unmarshal(payload, &actual) != nil ||
+			actual.Purpose != purpose || actual.AccountID == "" ||
+			actual.GitHubLogin == "" || actual.Owner.Validate() != nil ||
+			actual.Nonce == "" || actual.ExpiresAt != record.ExpiresAt.Time.Unix() {
 			return deckgithub.ErrInvalidSignature
 		}
-		actualPayload, _ := json.Marshal(actual)
-		if !bytes.Equal(actualPayload, expectedPayload) {
+		ownerID, ownerErr := parseStoredUUID(actual.Owner.ID)
+		accountID, accountErr := parseStoredUUID(actual.AccountID)
+		if ownerErr != nil || accountErr != nil ||
+			int16(actual.Owner.Scope) != record.OwnerScope ||
+			ownerID != uuidValue(record.OwnerID) ||
+			accountID != uuidValue(record.AccountID) {
 			return deckgithub.ErrInvalidSignature
 		}
-		return queries.MarkGitHubCallbackStateConsumed(
+		if err := queries.MarkGitHubCallbackStateConsumed(
 			ctx, dbgen.MarkGitHubCallbackStateConsumedParams{
 				ConsumedAt: pgTime(now), StateHash: hash[:],
-			})
+			}); err != nil {
+			return err
+		}
+		consumed = actual
+		return nil
 	})
+	return consumed, err
 }
 
 func (store *Store) ConnectGitHub(
@@ -139,7 +152,9 @@ func (store *Store) ConnectGitHub(
 ) error {
 	ownerID, err := parseStoredUUID(state.Owner.ID)
 	if err != nil || credential.Validate(now) != nil || credential.UserID == 0 ||
-		installation.ID == 0 {
+		installation.ID == 0 || state.Purpose != deckgithub.StatePurposeOAuth ||
+		state.InstallationID != installation.ID ||
+		!strings.EqualFold(state.GitHubLogin, credential.Login) {
 		return deckgithub.ErrPermissionDenied
 	}
 	accountID, err := parseStoredUUID(state.AccountID)

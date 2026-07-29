@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,21 +39,21 @@ func (store *callbackStoreFixture) SaveGitHubCallbackState(
 func (store *callbackStoreFixture) ConsumeGitHubCallbackState(
 	_ context.Context,
 	hash [sha256.Size]byte,
-	state CallbackState,
+	purpose StatePurpose,
 	_ time.Time,
-) error {
+) (CallbackState, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	actual, ok := store.states[hash]
-	if !ok || !reflect.DeepEqual(actual, state) {
-		return ErrInvalidSignature
+	state, ok := store.states[hash]
+	if !ok || state.Purpose != purpose {
+		return CallbackState{}, ErrInvalidSignature
 	}
 	delete(store.states, hash)
 	if store.consumed == nil {
 		store.consumed = make(map[[sha256.Size]byte]CallbackState)
 	}
 	store.consumed[hash] = state
-	return nil
+	return state, nil
 }
 
 func (store *callbackStoreFixture) ConnectGitHub(
@@ -60,13 +61,14 @@ func (store *callbackStoreFixture) ConnectGitHub(
 	hash [sha256.Size]byte,
 	state CallbackState,
 	_ Installation,
-	_ Credential,
+	credential Credential,
 	_ time.Time,
 ) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	actual, ok := store.consumed[hash]
-	if !ok || !reflect.DeepEqual(actual, state) {
+	if !ok || !reflect.DeepEqual(actual, state) ||
+		!strings.EqualFold(state.GitHubLogin, credential.Login) {
 		return ErrInvalidSignature
 	}
 	delete(store.consumed, hash)
@@ -111,13 +113,15 @@ func TestSignedInstallationAndOAuthCallbacksAreOneUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	authenticatedLogin := "octocat"
 	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		switch request.URL.Host + request.URL.Path {
 		case "github.com/login/oauth/access_token":
 			return jsonResponse(http.StatusOK,
 				`{"access_token":"ghu_fixture","token_type":"bearer"}`), nil
 		case "api.github.com/user":
-			return jsonResponse(http.StatusOK, `{"id":123}`), nil
+			return jsonResponse(http.StatusOK,
+				`{"id":123,"login":"`+authenticatedLogin+`"}`), nil
 		case "api.github.com/user/installations":
 			return jsonResponse(http.StatusOK,
 				`{"installations":[{"id":42,"account":{"id":99,"login":"acme","type":"Organization"},"permissions":{"metadata":"read","pull_requests":"write","checks":"read","members":"read"}}]}`), nil
@@ -150,7 +154,7 @@ func TestSignedInstallationAndOAuthCallbacksAreOneUse(t *testing.T) {
 		Scope: 1, ID: "01900000-0000-7000-8000-000000000001",
 	}
 	target, _, err := broker.StartInstallation(
-		context.Background(), owner.ID, owner)
+		context.Background(), owner.ID, "octocat", owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +192,24 @@ func TestSignedInstallationAndOAuthCallbacksAreOneUse(t *testing.T) {
 		len(callbacks.connected) != 1 {
 		t.Fatal("OAuth callback replay was accepted")
 	}
+
+	authenticatedLogin = "monalisa"
+	mismatchTarget, _, err := broker.StartAuthorization(
+		context.Background(), owner.ID, "octocat", owner, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsedMismatch, _ := url.Parse(mismatchTarget)
+	mismatchRequest := httptest.NewRequest(http.MethodGet,
+		OAuthCallbackPath+"?code=fixture-code&state="+
+			url.QueryEscape(parsedMismatch.Query().Get("state")), nil)
+	mismatchResponse := httptest.NewRecorder()
+	broker.Handler().ServeHTTP(mismatchResponse, mismatchRequest)
+	if mismatchResponse.Code != http.StatusForbidden ||
+		len(callbacks.connected) != 1 {
+		t.Fatalf("mismatched OAuth identity = status %d, connections %d",
+			mismatchResponse.Code, len(callbacks.connected))
+	}
 }
 
 func TestStartAuthorizationBindsExistingInstallation(t *testing.T) {
@@ -221,7 +243,7 @@ func TestStartAuthorizationBindsExistingInstallation(t *testing.T) {
 	}
 	target, expiresAt, err := broker.StartAuthorization(
 		context.Background(),
-		"01900000-0000-7000-8000-000000000001", owner, 42)
+		"01900000-0000-7000-8000-000000000001", "octocat", owner, 42)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,10 +253,12 @@ func TestStartAuthorizationBindsExistingInstallation(t *testing.T) {
 		t.Fatalf("authorization target = %q expires=%v err=%v",
 			target, expiresAt, err)
 	}
-	state, err := signer.Verify(
-		parsed.Query().Get("state"), StatePurposeOAuth, now)
+	rawState := parsed.Query().Get("state")
+	err = signer.Verify(rawState, StatePurposeOAuth)
+	state := callbacks.states[StateHash(rawState)]
 	if err != nil || state.InstallationID != 42 ||
-		state.Owner != owner || len(callbacks.states) != 1 {
+		state.GitHubLogin != "octocat" || state.Owner != owner ||
+		len(callbacks.states) != 1 {
 		t.Fatalf("authorization state = %#v stored=%d err=%v",
 			state, len(callbacks.states), err)
 	}
