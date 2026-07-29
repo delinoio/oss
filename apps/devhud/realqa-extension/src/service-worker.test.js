@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 let listener;
 const contains = vi.fn();
+const remove = vi.fn();
 const executeScript = vi.fn();
 const captureVisibleTab = vi.fn();
 const query = vi.fn();
@@ -10,7 +11,7 @@ const sendNativeMessage = vi.fn();
 beforeAll(async () => {
   globalThis.chrome = {
     extension: { inIncognitoContext: false },
-    permissions: { contains },
+    permissions: { contains, remove },
     runtime: {
       onMessage: {
         addListener(candidate) {
@@ -38,6 +39,7 @@ beforeEach(() => {
   ]);
   captureVisibleTab.mockResolvedValue("data:image/png;base64,iVBORw==");
   contains.mockResolvedValue(true);
+  remove.mockResolvedValue(true);
   sendNativeMessage.mockImplementation((_host, request) =>
     Promise.resolve({
       version: 1,
@@ -79,6 +81,37 @@ describe("RealQA extension service worker", () => {
       lastFocusedWindow: true,
     });
     expect(captureVisibleTab).toHaveBeenCalledWith(3, { format: "png" });
+  });
+
+  it("rejects a capture when the active tab changes while Chrome captures", async () => {
+    query
+      .mockResolvedValueOnce([
+        {
+          id: 7,
+          windowId: 3,
+          url: "https://example.com/private?token=value",
+          title: "Example",
+          incognito: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 8,
+          windowId: 3,
+          url: "https://other.example/",
+          title: "Other",
+          incognito: false,
+        },
+      ]);
+
+    await expect(dispatch({ kind: "begin-capture" })).resolves.toEqual({
+      ok: false,
+      error: "captured-tab-changed",
+    });
+    await expect(dispatch({ kind: "get-draft" })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
   });
 
   it("falls back to OS capture on restricted pages and excludes Incognito", async () => {
@@ -128,6 +161,9 @@ describe("RealQA extension service worker", () => {
       },
     });
     expect(executeScript).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledWith({
+      origins: ["https://example.com/*"],
+    });
 
     contains.mockResolvedValueOnce(false);
     await expect(
@@ -143,6 +179,7 @@ describe("RealQA extension service worker", () => {
       }),
     ).resolves.toEqual({ ok: false, error: "permission-denied" });
     expect(executeScript).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledTimes(2);
   });
 
   it("rejects an origin switch before injection", async () => {
@@ -196,6 +233,46 @@ describe("RealQA extension service worker", () => {
     ).resolves.toEqual({ ok: false, error: "captured-tab-changed" });
     expect(contains).not.toHaveBeenCalled();
     expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("rejects DOM metadata when the captured page changes during selection", async () => {
+    const captured = await dispatch({ kind: "begin-capture" });
+    query
+      .mockResolvedValueOnce([
+        {
+          id: 7,
+          windowId: 3,
+          url: "https://example.com/private?token=value",
+          incognito: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 7,
+          windowId: 3,
+          url: "https://example.com/after-selection",
+          incognito: false,
+        },
+      ]);
+
+    await expect(
+      dispatch({
+        kind: "select-boundary",
+        capture: {
+          captureId: captured.value.captureId,
+          capturedTabId: 7,
+          capturedWindowId: 3,
+          capturedUrl: "https://example.com/private?token=value",
+          origin: "https://example.com/*",
+        },
+      }),
+    ).resolves.toEqual({ ok: false, error: "captured-tab-changed" });
+    expect(remove).toHaveBeenCalledWith({
+      origins: ["https://example.com/*"],
+    });
+    const restored = await dispatch({ kind: "get-draft" });
+    expect(restored.ok).toBe(true);
+    expect(restored.value).not.toHaveProperty("selection");
   });
 
   it("submits only the active draft and clears it after acceptance", async () => {

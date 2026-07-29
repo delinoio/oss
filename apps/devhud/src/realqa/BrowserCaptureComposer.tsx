@@ -13,6 +13,7 @@ import {
 import {
   createRealQaComposerBridge,
   ImageMediaType,
+  type Base64EncodedImage,
   type ComposerImage,
   type RealQaBrowserComposerBridge,
 } from "./capture";
@@ -44,13 +45,14 @@ type ComposerState =
 const browserSessionId = "realqa-browser-capture";
 const defaultComposerBridge = createRealQaComposerBridge();
 
-function decodePngCapture(capture: BrowserCapture): readonly number[] {
+function encodedPngCapture(capture: BrowserCapture): Base64EncodedImage {
   if (capture.image?.mediaType !== "png") {
     throw new Error("The browser composer accepts PNG viewport captures only.");
   }
-  return Array.from(atob(capture.image.base64), (character) =>
-    character.charCodeAt(0),
-  );
+  return {
+    mediaType: ImageMediaType.Png,
+    base64: capture.image.base64,
+  };
 }
 
 function DomSelectionSummary({
@@ -134,10 +136,7 @@ export function BrowserCaptureComposer({
       const source = await composerBridge.acceptImage({
         sessionId: browserSessionId,
         imageId: capture.requestId,
-        image: {
-          mediaType: ImageMediaType.Png,
-          bytes: decodePngCapture(capture),
-        },
+        image: encodedPngCapture(capture),
         outputMediaType: ImageMediaType.Png,
       });
       if (revision !== lifecycleRevision.current) return;

@@ -20,6 +20,16 @@ async function activeTab() {
   return tab;
 }
 
+function assertCapturedTab(tab, capturedTabId, capturedWindowId, capturedUrl) {
+  if (
+    tab.id !== capturedTabId ||
+    tab.windowId !== capturedWindowId ||
+    tab.url !== capturedUrl
+  ) {
+    throw new Error("captured-tab-changed");
+  }
+}
+
 async function beginCapture() {
   activeDraft = undefined;
   const tab = await activeTab();
@@ -35,14 +45,16 @@ async function beginCapture() {
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
     format: "png",
   });
+  const capturedTab = await activeTab();
+  assertCapturedTab(capturedTab, tab.id, tab.windowId, tab.url);
   activeDraft = {
     captureId: crypto.randomUUID(),
     captureMode: "visible-viewport",
-    capturedTabId: tab.id,
-    capturedWindowId: tab.windowId,
-    capturedUrl: tab.url,
-    url: tab.url,
-    title: tab.title,
+    capturedTabId: capturedTab.id,
+    capturedWindowId: capturedTab.windowId,
+    capturedUrl: capturedTab.url,
+    url: capturedTab.url,
+    title: capturedTab.title,
     image: dataUrlImage(dataUrl),
     restricted: false,
   };
@@ -56,36 +68,37 @@ async function selectBoundary({
   capturedUrl,
   origin,
 }) {
-  if (
-    activeDraft?.captureId !== captureId ||
-    activeDraft.capturedTabId !== capturedTabId ||
-    activeDraft.capturedWindowId !== capturedWindowId ||
-    activeDraft.capturedUrl !== capturedUrl
-  ) {
-    throw new Error("capture-unavailable");
-  }
-  const tab = await activeTab();
-  const pattern = originPatternForUrl(tab.url);
-  if (
-    tab.id !== capturedTabId ||
-    tab.windowId !== capturedWindowId ||
-    tab.url !== capturedUrl
-  ) {
-    throw new Error("captured-tab-changed");
-  }
+  const pattern = originPatternForUrl(capturedUrl);
   if (pattern === null || pattern !== origin) {
     throw new Error("origin-changed");
   }
-  const granted = await chrome.permissions.contains({ origins: [pattern] });
-  if (!granted) throw new Error("permission-denied");
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: tab.id, frameIds: [0] },
-    func: selectDomBoundary,
-  });
-  const selection = sanitizeSelection(results[0]?.result);
+  let selection;
+  try {
+    if (
+      activeDraft?.captureId !== captureId ||
+      activeDraft.capturedTabId !== capturedTabId ||
+      activeDraft.capturedWindowId !== capturedWindowId ||
+      activeDraft.capturedUrl !== capturedUrl
+    ) {
+      throw new Error("capture-unavailable");
+    }
+    const tab = await activeTab();
+    assertCapturedTab(tab, capturedTabId, capturedWindowId, capturedUrl);
+    const granted = await chrome.permissions.contains({ origins: [pattern] });
+    if (!granted) throw new Error("permission-denied");
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, frameIds: [0] },
+      func: selectDomBoundary,
+    });
+    selection = sanitizeSelection(results[0]?.result);
+  } finally {
+    await chrome.permissions.remove({ origins: [pattern] });
+  }
   if (activeDraft?.captureId !== captureId) {
     throw new Error("capture-unavailable");
   }
+  const selectedTab = await activeTab();
+  assertCapturedTab(selectedTab, capturedTabId, capturedWindowId, capturedUrl);
   if (selection === undefined) {
     delete activeDraft.selection;
   } else {

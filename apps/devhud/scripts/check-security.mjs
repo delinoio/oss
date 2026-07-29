@@ -113,12 +113,13 @@ requireCondition(
   extensionServiceWorkerSource.includes("chrome.tabs.captureVisibleTab") &&
     extensionServiceWorkerSource.includes("captureMode: \"os-capture\"") &&
     extensionServiceWorkerSource.includes("chrome.permissions.contains") &&
+    extensionServiceWorkerSource.includes("chrome.permissions.remove") &&
     extensionServiceWorkerSource.includes("capturedTabId") &&
     extensionServiceWorkerSource.includes("capturedWindowId") &&
     extensionServiceWorkerSource.includes("tab.url !== capturedUrl") &&
     !extensionServiceWorkerSource.includes("captureBeyondViewport") &&
     !extensionServiceWorkerSource.includes("debugger"),
-  "RealQA extension must use visible-viewport capture, immutable tab identity, exact optional permission verification, and restricted-page OS fallback",
+  "RealQA extension must use visible-viewport capture, immutable tab identity, temporary exact-origin permission, and restricted-page OS fallback",
 );
 requireCondition(
   extensionProtocolSource.includes("25 * 1024 * 1024") &&

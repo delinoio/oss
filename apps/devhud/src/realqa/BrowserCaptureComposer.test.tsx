@@ -149,7 +149,7 @@ describe("BrowserCaptureComposer", () => {
       imageId: "019a97f3-cb9d-7c44-a7b2-2514486e42b1",
       image: {
         mediaType: ImageMediaType.Png,
-        bytes: [137, 80, 78, 71, 13, 10, 26, 10],
+        base64: "iVBORw0KGgo=",
       },
       outputMediaType: ImageMediaType.Png,
     });
@@ -291,7 +291,7 @@ describe("BrowserCaptureComposer", () => {
       imageId: "019a97f3-cb9d-7c44-a7b2-2514486e42c2",
       image: {
         mediaType: ImageMediaType.Png,
-        bytes: [137, 80, 78, 71, 13, 10, 26, 10],
+        base64: "iVBORw0KGgo=",
       },
       outputMediaType: ImageMediaType.Png,
     });

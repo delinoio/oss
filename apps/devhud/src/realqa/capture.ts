@@ -193,6 +193,11 @@ export interface EncodedImage {
   readonly bytes: readonly number[];
 }
 
+export interface Base64EncodedImage {
+  readonly mediaType: ImageMediaType;
+  readonly base64: string;
+}
+
 export interface CaptureRequest {
   readonly sessionId: string;
   readonly snapshotId: string;
@@ -224,7 +229,7 @@ export interface CaptureResult {
 export interface ComposerImageRequest {
   readonly sessionId: string;
   readonly imageId: string;
-  readonly image: EncodedImage;
+  readonly image: EncodedImage | Base64EncodedImage;
   readonly outputMediaType: ImageMediaType;
 }
 
