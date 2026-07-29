@@ -352,6 +352,70 @@ describe("BrowserCaptureComposer", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("does not hide a newer capture when an earlier removal finishes", async () => {
+    let resolveRemoval: (() => void) | undefined;
+    const pendingRemoval = new Promise<void>((resolve) => {
+      resolveRemoval = resolve;
+    });
+    const queuedBridge: RealQaBrowserComposerBridge = {
+      ...composerBridge,
+      acceptImage: vi.fn(async (request) => ({
+        ...source,
+        imageId: request.imageId,
+      })),
+      removeImage: vi.fn(() => pendingRemoval),
+    };
+    takeBrowserCaptureMock
+      .mockResolvedValueOnce({
+        kind: "submit-capture",
+        version: 1,
+        requestId: "019a97f3-cb9d-7c44-a7b2-2514486e42d1",
+        captureMode: "visible-viewport",
+        page: { title: "Earlier capture" },
+        image: {
+          mediaType: "png",
+          base64: "iVBORw0KGgo=",
+          encodedBytes: 8,
+        },
+      })
+      .mockResolvedValueOnce({
+        kind: "submit-capture",
+        version: 1,
+        requestId: "019a97f3-cb9d-7c44-a7b2-2514486e42d2",
+        captureMode: "visible-viewport",
+        page: { title: "Newer capture" },
+        image: {
+          mediaType: "png",
+          base64: "iVBORw0KGgo=",
+          encodedBytes: 8,
+        },
+      });
+
+    render(<BrowserCaptureComposer composerBridge={queuedBridge} />);
+    expect(
+      await screen.findByRole("heading", { name: "Earlier capture" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Remove capture" }));
+
+    await act(async () => {
+      window.dispatchEvent(
+        new Event("devhud:realqa-browser-capture-available"),
+      );
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Newer capture" }),
+    ).toBeVisible();
+
+    await act(async () => resolveRemoval?.());
+
+    expect(
+      screen.getByRole("heading", { name: "Newer capture" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Waiting for a capture" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("removes an accepted preview when Reset DevHud is published", async () => {
     takeBrowserCaptureMock.mockResolvedValue({
       kind: "submit-capture",

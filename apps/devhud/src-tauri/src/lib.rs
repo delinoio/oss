@@ -2200,38 +2200,41 @@ fn accept_realqa_browser_capture(
     app: &AppHandle<ActiveRuntime>,
     capture: realqa_native_host::NativeHostRequest,
 ) -> Result<(), realqa_native_host::NativeHostFailure> {
-    if !app
-        .state::<auth_native::NativeAuthState>()
-        .has_prior_feature_binding(auth::AuthFeature::RealQa)
-        .unwrap_or(false)
-    {
-        return Err(realqa_native_host::NativeHostFailure::PairingRejected);
-    }
-    let request_id = capture.request_id().to_owned();
-    let inbox = app.state::<RealQaBrowserInbox>();
-    inbox.enqueue(capture)?;
-    let dispatch = app.clone();
-    let (sender, receiver) = mpsc::sync_channel(1);
-    if app
-        .run_on_main_thread(move || {
-            let _ = sender.send(show_realqa_composer_internal(&dispatch));
+    app.state::<realqa_capture::ComposerCore>()
+        .with_lifecycle_gate(|| {
+            if !app
+                .state::<auth_native::NativeAuthState>()
+                .has_prior_feature_binding(auth::AuthFeature::RealQa)
+                .unwrap_or(false)
+            {
+                return Err(realqa_native_host::NativeHostFailure::PairingRejected);
+            }
+            let request_id = capture.request_id().to_owned();
+            let inbox = app.state::<RealQaBrowserInbox>();
+            inbox.enqueue(capture)?;
+            let dispatch = app.clone();
+            let (sender, receiver) = mpsc::sync_channel(1);
+            if app
+                .run_on_main_thread(move || {
+                    let _ = sender.send(show_realqa_composer_internal(&dispatch));
+                })
+                .is_err()
+            {
+                inbox.remove(&request_id);
+                return Err(realqa_native_host::NativeHostFailure::ComposerUnavailable);
+            }
+            match receiver.recv_timeout(std::time::Duration::from_secs(8)) {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(failure)) => {
+                    inbox.remove(&request_id);
+                    Err(failure)
+                }
+                Err(_) => {
+                    inbox.remove(&request_id);
+                    Err(realqa_native_host::NativeHostFailure::ComposerUnavailable)
+                }
+            }
         })
-        .is_err()
-    {
-        inbox.remove(&request_id);
-        return Err(realqa_native_host::NativeHostFailure::ComposerUnavailable);
-    }
-    match receiver.recv_timeout(std::time::Duration::from_secs(8)) {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(failure)) => {
-            inbox.remove(&request_id);
-            Err(failure)
-        }
-        Err(_) => {
-            inbox.remove(&request_id);
-            Err(realqa_native_host::NativeHostFailure::ComposerUnavailable)
-        }
-    }
 }
 
 #[cfg(all(
@@ -2868,8 +2871,12 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
-    browser_inbox.clear();
-    let auth_reset_failed = composer_core.reset_all_with(|| auth_state.reset()).is_err();
+    let auth_reset_failed = composer_core
+        .reset_all_with(|| {
+            browser_inbox.clear();
+            auth_state.reset()
+        })
+        .is_err();
     let native_host_reset_failed = native_host_state.reset().is_err();
     if auth_reset_failed || native_host_reset_failed {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
@@ -3264,8 +3271,10 @@ fn logout_authentication(
     browser_inbox: State<'_, RealQaBrowserInbox>,
     composer_core: State<'_, realqa_capture::ComposerCore>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
-    browser_inbox.clear();
-    composer_core.reset_all_with(|| state.logout())
+    composer_core.reset_all_with(|| {
+        browser_inbox.clear();
+        state.logout()
+    })
 }
 
 #[cfg(all(

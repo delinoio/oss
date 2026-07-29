@@ -1350,6 +1350,7 @@ mod tests {
     #[derive(Default)]
     struct FakeVault {
         retained: Option<FakeRetainedSession>,
+        cleanup_required: bool,
         fail_load: bool,
         fail_write: bool,
         fail_clear: bool,
@@ -1360,6 +1361,9 @@ mod tests {
         fn load(&mut self) -> Result<Option<VaultSession>, AuthError> {
             if self.fail_load {
                 return Err(AuthError::SecureVaultUnavailable);
+            }
+            if self.cleanup_required {
+                return Err(AuthError::SecureVaultDeleteFailed);
             }
             self.retained
                 .as_ref()
@@ -1389,14 +1393,17 @@ mod tests {
             );
             self.writes.lock().unwrap().push(next.clone());
             self.retained = Some(next);
+            self.cleanup_required = false;
             Ok(())
         }
 
         fn clear(&mut self) -> Result<(), AuthError> {
+            self.retained = None;
+            self.cleanup_required = true;
             if self.fail_clear {
                 return Err(AuthError::SecureVaultDeleteFailed);
             }
-            self.retained = None;
+            self.cleanup_required = false;
             Ok(())
         }
     }
@@ -1619,18 +1626,34 @@ mod tests {
             fail_clear: true,
             ..FakeVault::default()
         };
-        let mut manager = manager(FakeTransport::default(), vault);
-        manager.state = SessionState::PriorSessionOffline;
+        let mut session_manager = manager(FakeTransport::default(), vault);
+        session_manager.state = SessionState::PriorSessionOffline;
 
         assert!(
-            manager
+            session_manager
                 .has_retained_feature_binding(AuthFeature::RealQa)
                 .unwrap()
         );
-        assert_eq!(manager.reset(), Err(AuthError::SecureVaultDeleteFailed));
-        assert_eq!(manager.snapshot(), SessionSnapshot::CleanupRequired);
+        assert_eq!(
+            session_manager.reset(),
+            Err(AuthError::SecureVaultDeleteFailed)
+        );
+        assert_eq!(session_manager.snapshot(), SessionSnapshot::CleanupRequired);
         assert!(
-            !manager
+            !session_manager
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
+
+        session_manager.vault.fail_clear = false;
+        let mut restarted = manager(FakeTransport::default(), session_manager.vault);
+        assert_eq!(
+            restarted.has_retained_feature_binding(AuthFeature::RealQa),
+            Err(AuthError::SecureVaultDeleteFailed)
+        );
+        assert_eq!(restarted.reset().unwrap(), SessionSnapshot::SignedOut);
+        assert!(
+            !restarted
                 .has_retained_feature_binding(AuthFeature::RealQa)
                 .unwrap()
         );

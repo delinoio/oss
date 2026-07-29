@@ -534,12 +534,18 @@ impl ComposerCore {
     }
 
     pub(crate) fn reset_all_with<T>(&self, reset: impl FnOnce() -> T) -> T {
+        self.with_lifecycle_gate(|| {
+            self.reset_all_inner();
+            reset()
+        })
+    }
+
+    pub(crate) fn with_lifecycle_gate<T>(&self, operation: impl FnOnce() -> T) -> T {
         let _lifecycle = self
             .lifecycle_gate
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.reset_all_inner();
-        reset()
+        operation()
     }
 
     fn reset_all_inner(&self) {

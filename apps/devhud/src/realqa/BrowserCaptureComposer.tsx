@@ -322,16 +322,27 @@ export function BrowserCaptureComposer({
             className="secondary-button"
             onClick={() => {
               const revision = lifecycleRevision.current;
+              const imageId = state.imageId;
               void composerBridge
-                .removeImage(browserSessionId, state.imageId)
+                .removeImage(browserSessionId, imageId)
                 .then(() => {
                   if (revision === lifecycleRevision.current) {
-                    setState({ status: "empty" });
+                    setState((current) =>
+                      current.status === "ready" &&
+                      current.imageId === imageId
+                        ? { status: "empty" }
+                        : current,
+                    );
                   }
                 })
                 .catch(() => {
                   if (revision === lifecycleRevision.current) {
-                    setState({ status: "failed" });
+                    setState((current) =>
+                      current.status === "ready" &&
+                      current.imageId === imageId
+                        ? { status: "failed" }
+                        : current,
+                    );
                   }
                 });
             }}

@@ -320,12 +320,50 @@ impl TokenTransport for HttpTokenTransport {
 #[derive(Default)]
 struct PlatformVault;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RetainedVaultSession {
     refresh_tokens: BTreeMap<AuthFeature, String>,
     device_session_key: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RetainedVaultCleanup {
+    cleanup_required: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RetainedVaultRecord {
+    Session(RetainedVaultSession),
+    Cleanup(RetainedVaultCleanup),
+}
+
+fn decode_retained_vault_session(encoded: &str) -> Result<VaultSession, AuthError> {
+    let retained = match serde_json::from_str(encoded).map_err(|_| AuthError::TokenInvalid)? {
+        RetainedVaultRecord::Session(retained) => retained,
+        RetainedVaultRecord::Cleanup(retained) if retained.cleanup_required => {
+            return Err(AuthError::SecureVaultDeleteFailed);
+        }
+        RetainedVaultRecord::Cleanup(_) => return Err(AuthError::TokenInvalid),
+    };
+    Ok(VaultSession {
+        refresh_tokens: retained
+            .refresh_tokens
+            .into_iter()
+            .map(|(feature, token)| Ok((feature, Secret::new(token)?)))
+            .collect::<Result<_, AuthError>>()?,
+        device_session_key: Secret::new(retained.device_session_key)?,
+    })
+}
+
+fn encoded_cleanup_tombstone() -> Result<Zeroizing<String>, AuthError> {
+    serde_json::to_string(&RetainedVaultCleanup {
+        cleanup_required: true,
+    })
+    .map(Zeroizing::new)
+    .map_err(|_| AuthError::SecureVaultWriteFailed)
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -345,16 +383,7 @@ impl SecureVault for PlatformVault {
             Err(keyring::Error::NoEntry) => return Ok(None),
             Err(_) => return Err(AuthError::SecureVaultUnavailable),
         };
-        let retained: RetainedVaultSession =
-            serde_json::from_str(&encoded).map_err(|_| AuthError::TokenInvalid)?;
-        Ok(Some(VaultSession {
-            refresh_tokens: retained
-                .refresh_tokens
-                .into_iter()
-                .map(|(feature, token)| Ok((feature, Secret::new(token)?)))
-                .collect::<Result<_, AuthError>>()?,
-            device_session_key: Secret::new(retained.device_session_key)?,
-        }))
+        decode_retained_vault_session(&encoded).map(Some)
     }
 
     fn replace(&mut self, session: &VaultSession) -> Result<(), AuthError> {
@@ -375,7 +404,11 @@ impl SecureVault for PlatformVault {
     }
 
     fn clear(&mut self) -> Result<(), AuthError> {
-        match Self::entry()?.delete_credential() {
+        let entry = Self::entry()?;
+        entry
+            .set_password(&encoded_cleanup_tombstone()?)
+            .map_err(|_| AuthError::SecureVaultWriteFailed)?;
+        match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(_) => Err(AuthError::SecureVaultDeleteFailed),
         }
@@ -399,21 +432,12 @@ impl SecureVault for PlatformVault {
             return Ok(None);
         };
         let encoded = Zeroizing::new(encoded);
-        let retained: RetainedMobileVaultSession =
-            serde_json::from_str(&encoded).map_err(|_| AuthError::TokenInvalid)?;
-        Ok(Some(VaultSession {
-            refresh_tokens: retained
-                .refresh_tokens
-                .into_iter()
-                .map(|(feature, token)| Ok((feature, Secret::new(token)?)))
-                .collect::<Result<_, AuthError>>()?,
-            device_session_key: Secret::new(retained.device_session_key)?,
-        }))
+        decode_retained_vault_session(&encoded).map(Some)
     }
 
     fn replace(&mut self, session: &VaultSession) -> Result<(), AuthError> {
         let encoded = Zeroizing::new(
-            serde_json::to_string(&RetainedMobileVaultSession {
+            serde_json::to_string(&RetainedVaultSession {
                 refresh_tokens: session
                     .refresh_tokens
                     .iter()
@@ -432,17 +456,13 @@ impl SecureVault for PlatformVault {
     fn clear(&mut self) -> Result<(), AuthError> {
         self.app
             .devhud_auth_bridge()
+            .write_session(encoded_cleanup_tombstone()?.to_string())
+            .map_err(|_| AuthError::SecureVaultWriteFailed)?;
+        self.app
+            .devhud_auth_bridge()
             .clear_session()
             .map_err(|_| AuthError::SecureVaultDeleteFailed)
     }
-}
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RetainedMobileVaultSession {
-    refresh_tokens: BTreeMap<AuthFeature, String>,
-    device_session_key: String,
 }
 
 type NativeManager = SessionManager<HttpTokenTransport, PlatformVault>;
@@ -724,16 +744,7 @@ impl NativeAuthState {
             .map_err(|_| AuthError::SecureVaultUnavailable)?;
         match guard.as_mut() {
             Some(manager) => manager.has_retained_feature_binding(feature),
-            None => {
-                let mut vault = self
-                    .fallback_vault
-                    .lock()
-                    .map_err(|_| AuthError::SecureVaultUnavailable)?;
-                let Some(retained) = vault.load()? else {
-                    return Ok(false);
-                };
-                crate::auth::validate_retained_feature_binding(&retained, feature)
-            }
+            None => Ok(false),
         }
     }
 }
@@ -854,6 +865,32 @@ mod tests {
             snapshot_without_configuration(false),
             Ok(SessionSnapshot::SignedOut)
         );
+    }
+
+    #[test]
+    fn cleanup_tombstone_blocks_retained_session_loading() {
+        let tombstone = encoded_cleanup_tombstone().unwrap();
+        assert!(matches!(
+            decode_retained_vault_session(&tombstone),
+            Err(AuthError::SecureVaultDeleteFailed)
+        ));
+
+        let active = serde_json::to_string(&RetainedVaultSession {
+            refresh_tokens: [(AuthFeature::RealQa, "refresh".to_owned())]
+                .into_iter()
+                .collect(),
+            device_session_key: "device-session".to_owned(),
+        })
+        .unwrap();
+        let decoded = decode_retained_vault_session(&active).unwrap();
+        assert_eq!(
+            decoded
+                .refresh_tokens
+                .get(&AuthFeature::RealQa)
+                .map(Secret::expose),
+            Some("refresh")
+        );
+        assert_eq!(decoded.device_session_key.expose(), "device-session");
     }
 
     #[test]
