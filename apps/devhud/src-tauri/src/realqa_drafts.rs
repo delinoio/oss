@@ -568,7 +568,7 @@ impl RealQaDraftState {
         draft_id: &str,
         composer_session_id: &str,
     ) -> Result<LoadedDraft, DraftError> {
-        let guard = self
+        let _guard = self
             .write_lock
             .lock()
             .map_err(|_| DraftError::StorageUnavailable)?;
@@ -582,7 +582,6 @@ impl RealQaDraftState {
             &access.account_binding,
             &key,
         )?;
-        drop(guard);
         let StoredDraftRecord {
             draft_id,
             revision,

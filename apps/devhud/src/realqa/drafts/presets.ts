@@ -127,6 +127,7 @@ function hasUnsafeRepeatedGroup(pattern: string): boolean {
       }
       const parent = groups.at(-1);
       if (parent !== undefined) {
+        parent.containsAlternation ||= group.containsAlternation;
         parent.containsRepetition ||= group.containsRepetition || repeatedBy > 0;
       }
       index += repeatedBy;

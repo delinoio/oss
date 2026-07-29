@@ -147,6 +147,7 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     "a{101}",
     "(a+)+$",
     "(?:a|aa)+$",
+    "((?:a|aa))+$",
     "([a-z]*)*$",
   ])("rejects unsupported shared-regex syntax %s", (pattern) => {
     expect(
