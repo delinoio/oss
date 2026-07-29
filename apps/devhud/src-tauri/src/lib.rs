@@ -3184,11 +3184,10 @@ fn logout_authentication(
     app: AppHandle<ActiveRuntime>,
     state: State<'_, auth_native::NativeAuthState>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
-    if let Err(error) = app.state::<realqa_capture::ComposerCore>().reset() {
-        tracing::warn!(
-            event = "realqa_composer_logout_reset_failed",
-            ?error,
-            "failed to clear RealQA composer sessions during logout"
+    if app.state::<realqa_capture::ComposerCore>().reset().is_err() {
+        diagnostics::emit_warning(
+            diagnostics::DiagnosticEventId::RealqaComposerResetOutcome,
+            diagnostics::DiagnosticClassification::RealqaComposerResetFailed,
         );
     }
     state.logout()
