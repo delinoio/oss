@@ -61,6 +61,9 @@ describe("RealQA extension service worker", () => {
       ok: true,
       value: {
         captureMode: "visible-viewport",
+        capturedTabId: 7,
+        capturedWindowId: 3,
+        capturedUrl: "https://example.com/private?token=value",
         title: "Example",
       },
     });
@@ -94,7 +97,12 @@ describe("RealQA extension service worker", () => {
     await expect(
       dispatch({
         kind: "select-boundary",
-        origin: "https://example.com/*",
+        capture: {
+          capturedTabId: 7,
+          capturedWindowId: 3,
+          capturedUrl: "https://example.com/private?token=value",
+          origin: "https://example.com/*",
+        },
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -106,7 +114,12 @@ describe("RealQA extension service worker", () => {
     await expect(
       dispatch({
         kind: "select-boundary",
-        origin: "https://example.com/*",
+        capture: {
+          capturedTabId: 7,
+          capturedWindowId: 3,
+          capturedUrl: "https://example.com/private?token=value",
+          origin: "https://example.com/*",
+        },
       }),
     ).resolves.toEqual({ ok: false, error: "permission-denied" });
     expect(executeScript).toHaveBeenCalledOnce();
@@ -116,9 +129,48 @@ describe("RealQA extension service worker", () => {
     await expect(
       dispatch({
         kind: "select-boundary",
-        origin: "https://attacker.example/*",
+        capture: {
+          capturedTabId: 7,
+          capturedWindowId: 3,
+          capturedUrl: "https://example.com/private?token=value",
+          origin: "https://attacker.example/*",
+        },
       }),
     ).resolves.toEqual({ ok: false, error: "origin-changed" });
     expect(contains).not.toHaveBeenCalled();
+  });
+
+  it("rejects a same-origin tab or navigation change before injection", async () => {
+    query.mockResolvedValueOnce([
+      {
+        id: 8,
+        windowId: 3,
+        url: "https://example.com/private?token=value",
+        incognito: false,
+      },
+    ]);
+    const capture = {
+      capturedTabId: 7,
+      capturedWindowId: 3,
+      capturedUrl: "https://example.com/private?token=value",
+      origin: "https://example.com/*",
+    };
+    await expect(
+      dispatch({ kind: "select-boundary", capture }),
+    ).resolves.toEqual({ ok: false, error: "captured-tab-changed" });
+
+    query.mockResolvedValueOnce([
+      {
+        id: 7,
+        windowId: 3,
+        url: "https://example.com/other",
+        incognito: false,
+      },
+    ]);
+    await expect(
+      dispatch({ kind: "select-boundary", capture }),
+    ).resolves.toEqual({ ok: false, error: "captured-tab-changed" });
+    expect(contains).not.toHaveBeenCalled();
+    expect(executeScript).not.toHaveBeenCalled();
   });
 });

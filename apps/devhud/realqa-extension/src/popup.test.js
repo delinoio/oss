@@ -42,6 +42,9 @@ describe("RealQA extension popup", () => {
       ok: true,
       value: {
         captureMode: "visible-viewport",
+        capturedTabId: 7,
+        capturedWindowId: 3,
+        capturedUrl: "https://example.com/private",
         url: "https://example.com/private",
         title: "Private title",
         image: { mediaType: "png", base64: "iVBORw==", encodedBytes: 4 },
@@ -68,6 +71,9 @@ describe("RealQA extension popup", () => {
         ok: true,
         value: {
           captureMode: "visible-viewport",
+          capturedTabId: 7,
+          capturedWindowId: 3,
+          capturedUrl: "https://example.com/private",
           url: "https://example.com/private",
           title: "Private title",
           image: { mediaType: "png", base64: "iVBORw==", encodedBytes: 4 },
@@ -96,6 +102,15 @@ describe("RealQA extension popup", () => {
     await vi.waitFor(() =>
       expect(document.querySelectorAll("#fields li")).toHaveLength(6),
     );
+    expect(sendMessage.mock.calls[1][0]).toEqual({
+      kind: "select-boundary",
+      capture: {
+        capturedTabId: 7,
+        capturedWindowId: 3,
+        capturedUrl: "https://example.com/private",
+        origin: "https://example.com/*",
+      },
+    });
 
     document.querySelector("#remove-url").click();
     document.querySelector("#remove-title").click();

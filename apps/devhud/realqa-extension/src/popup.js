@@ -98,7 +98,15 @@ selectButton.addEventListener("click", async () => {
       return;
     }
     showStatus("Select an element on the page, or press Escape.");
-    const selection = await sendMessage({ kind: "select-boundary", origin });
+    const selection = await sendMessage({
+      kind: "select-boundary",
+      capture: {
+        capturedTabId: draft.capturedTabId,
+        capturedWindowId: draft.capturedWindowId,
+        capturedUrl: draft.capturedUrl,
+        origin,
+      },
+    });
     if (selection !== undefined) {
       draft.selection = selection;
       renderSelection();

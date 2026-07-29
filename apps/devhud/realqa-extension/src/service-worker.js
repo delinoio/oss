@@ -33,6 +33,9 @@ async function beginCapture() {
   });
   return {
     captureMode: "visible-viewport",
+    capturedTabId: tab.id,
+    capturedWindowId: tab.windowId,
+    capturedUrl: tab.url,
     url: tab.url,
     title: tab.title,
     image: dataUrlImage(dataUrl),
@@ -40,10 +43,17 @@ async function beginCapture() {
   };
 }
 
-async function selectBoundary(expectedOrigin) {
+async function selectBoundary({ capturedTabId, capturedWindowId, capturedUrl, origin }) {
   const tab = await activeTab();
   const pattern = originPatternForUrl(tab.url);
-  if (pattern === null || pattern !== expectedOrigin) {
+  if (
+    tab.id !== capturedTabId ||
+    tab.windowId !== capturedWindowId ||
+    tab.url !== capturedUrl
+  ) {
+    throw new Error("captured-tab-changed");
+  }
+  if (pattern === null || pattern !== origin) {
     throw new Error("origin-changed");
   }
   const granted = await chrome.permissions.contains({ origins: [pattern] });
@@ -70,7 +80,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     message?.kind === "begin-capture"
       ? beginCapture()
       : message?.kind === "select-boundary"
-        ? selectBoundary(message.origin)
+        ? selectBoundary(message.capture)
         : message?.kind === "send-to-devhud"
           ? sendToNative(message.draft)
           : Promise.reject(new Error("unsupported-message"));
