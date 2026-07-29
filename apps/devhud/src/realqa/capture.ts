@@ -193,6 +193,11 @@ export interface EncodedImage {
   readonly bytes: readonly number[];
 }
 
+export interface Base64EncodedImage {
+  readonly mediaType: ImageMediaType;
+  readonly base64: string;
+}
+
 export interface CaptureRequest {
   readonly sessionId: string;
   readonly snapshotId: string;
@@ -224,7 +229,7 @@ export interface CaptureResult {
 export interface ComposerImageRequest {
   readonly sessionId: string;
   readonly imageId: string;
-  readonly image: EncodedImage;
+  readonly image: EncodedImage | Base64EncodedImage;
   readonly outputMediaType: ImageMediaType;
 }
 
@@ -342,6 +347,10 @@ export interface RealQaComposerBridge {
   resetSession(sessionId: string): Promise<void>;
 }
 
+export interface RealQaBrowserComposerBridge extends RealQaComposerBridge {
+  captureBrowserFallback(sessionId: string): Promise<CaptureResult>;
+}
+
 export function createRealQaCaptureBridge(
   invokeCommand: InvokeCommand = invoke,
 ): RealQaCaptureBridge {
@@ -374,8 +383,12 @@ export function createRealQaCaptureBridge(
 
 export function createRealQaComposerBridge(
   invokeCommand: InvokeCommand = invoke,
-): RealQaComposerBridge {
+): RealQaBrowserComposerBridge {
   return {
+    captureBrowserFallback: (sessionId) =>
+      invokeCommand<CaptureResult>("realqa_begin_browser_fallback_capture", {
+        sessionId,
+      }),
     acceptImage: (request) =>
       invokeCommand<ComposerImage>("realqa_composer_accept_image", { request }),
     flattenImage: async (request) =>

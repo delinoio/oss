@@ -914,6 +914,19 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         }
     }
 
+    pub(crate) fn has_retained_feature_binding(
+        &mut self,
+        feature: AuthFeature,
+    ) -> Result<bool, AuthError> {
+        if matches!(self.state, SessionState::CleanupRequired) {
+            return Ok(false);
+        }
+        let Some(retained) = self.vault.load()? else {
+            return Ok(false);
+        };
+        validate_retained_feature_binding(&retained, feature)
+    }
+
     fn reject_account_switch(&mut self, subject: &str) -> Result<(), AuthError> {
         if let SessionState::SignedIn {
             subject: active_subject,
@@ -1162,6 +1175,14 @@ fn validate_retained_session_shape(session: &VaultSession) -> Result<(), AuthErr
     validate_device_session_shape(session.device_session_key.expose())
 }
 
+pub(crate) fn validate_retained_feature_binding(
+    session: &VaultSession,
+    feature: AuthFeature,
+) -> Result<bool, AuthError> {
+    validate_retained_session_shape(session)?;
+    Ok(session.refresh_tokens.contains_key(&feature))
+}
+
 fn device_session_matches(value: &str, subject: &str) -> Result<bool, AuthError> {
     validate_device_session_shape(value)?;
     let mut parts = value.split('.');
@@ -1329,6 +1350,7 @@ mod tests {
     #[derive(Default)]
     struct FakeVault {
         retained: Option<FakeRetainedSession>,
+        cleanup_required: bool,
         fail_load: bool,
         fail_write: bool,
         fail_clear: bool,
@@ -1339,6 +1361,9 @@ mod tests {
         fn load(&mut self) -> Result<Option<VaultSession>, AuthError> {
             if self.fail_load {
                 return Err(AuthError::SecureVaultUnavailable);
+            }
+            if self.cleanup_required {
+                return Err(AuthError::SecureVaultDeleteFailed);
             }
             self.retained
                 .as_ref()
@@ -1368,14 +1393,17 @@ mod tests {
             );
             self.writes.lock().unwrap().push(next.clone());
             self.retained = Some(next);
+            self.cleanup_required = false;
             Ok(())
         }
 
         fn clear(&mut self) -> Result<(), AuthError> {
+            self.retained = None;
+            self.cleanup_required = true;
             if self.fail_clear {
                 return Err(AuthError::SecureVaultDeleteFailed);
             }
-            self.retained = None;
+            self.cleanup_required = false;
             Ok(())
         }
     }
@@ -1559,6 +1587,76 @@ mod tests {
         ] {
             assert!(!is_mobile_callback_boundary(&Url::parse(callback).unwrap()));
         }
+    }
+
+    #[test]
+    fn retained_binding_check_requires_the_exact_feature_grant() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "deck-refresh",
+                key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut manager = manager(FakeTransport::default(), vault);
+
+        assert!(
+            manager
+                .has_retained_feature_binding(AuthFeature::Deck)
+                .unwrap()
+        );
+        assert!(
+            !manager
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn retained_binding_check_fails_closed_after_cleanup_required() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::RealQa,
+                "realqa-refresh",
+                key.expose(),
+            )),
+            fail_clear: true,
+            ..FakeVault::default()
+        };
+        let mut session_manager = manager(FakeTransport::default(), vault);
+        session_manager.state = SessionState::PriorSessionOffline;
+
+        assert!(
+            session_manager
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
+        assert_eq!(
+            session_manager.reset(),
+            Err(AuthError::SecureVaultDeleteFailed)
+        );
+        assert_eq!(session_manager.snapshot(), SessionSnapshot::CleanupRequired);
+        assert!(
+            !session_manager
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
+
+        session_manager.vault.fail_clear = false;
+        let mut restarted = manager(FakeTransport::default(), session_manager.vault);
+        assert_eq!(
+            restarted.has_retained_feature_binding(AuthFeature::RealQa),
+            Err(AuthError::SecureVaultDeleteFailed)
+        );
+        assert_eq!(restarted.reset().unwrap(), SessionSnapshot::SignedOut);
+        assert!(
+            !restarted
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
     }
 
     #[test]

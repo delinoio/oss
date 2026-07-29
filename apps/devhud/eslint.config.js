@@ -9,6 +9,7 @@ export default [
   {
     ignores: [
       "dist/**",
+      "build/**",
       "native-widgets/**/.gradle/**",
       "native-widgets/**/build/**",
       "native-widgets/ios/DevHudWidgetBuildOnly.xcodeproj/**",
@@ -24,6 +25,24 @@ export default [
     files: ["scripts/**/*.mjs"],
     languageOptions: {
       globals: globals.node,
+    },
+  },
+  {
+    files: ["realqa-extension/src/**/*.js"],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        chrome: "readonly",
+      },
+    },
+  },
+  {
+    files: ["realqa-extension/src/**/*.test.js"],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
     },
   },
   {

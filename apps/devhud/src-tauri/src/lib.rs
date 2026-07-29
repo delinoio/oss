@@ -30,6 +30,8 @@ mod local_log;
     test
 ))]
 mod realqa_capture;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod realqa_native_host;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod shortcut;
 #[cfg(any(
@@ -62,10 +64,23 @@ compile_error!("mobile-system-webview is reserved for iOS and Android targets");
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::borrow::Cow;
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+use std::collections::VecDeque;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::sync::Mutex;
 #[cfg(feature = "desktop-cef")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+use std::sync::mpsc;
 #[cfg(all(
     any(feature = "desktop-cef", feature = "mobile-system-webview"),
     debug_assertions
@@ -131,8 +146,9 @@ type ActiveRuntime = tauri_runtime_cef::CefRuntime<tauri::EventLoopMessage>;
 ))]
 type ActiveRuntime = tauri_runtime_wry::Wry<tauri::EventLoopMessage>;
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const APPLICATION_ID: &str = "dev.deli.devhud";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub use realqa_native_host::run_native_host;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 const MAIN_WINDOW_LABEL: &str = "main";
 #[cfg(all(
@@ -140,6 +156,11 @@ const MAIN_WINDOW_LABEL: &str = "main";
     not(any(target_os = "android", target_os = "ios"))
 ))]
 const SETTINGS_WINDOW_LABEL: &str = "settings";
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+const REALQA_COMPOSER_WINDOW_LABEL: &str = "realqa-composer";
 #[cfg(any(
     all(
         feature = "desktop-cef",
@@ -213,6 +234,92 @@ struct StartupDiagnostics {
     autostart_outcome: Option<autostart::AutostartOutcome>,
 }
 
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+const MAX_REALQA_BROWSER_INBOX_BYTES: usize = 250 * 1024 * 1024;
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+const MAX_REALQA_BROWSER_INBOX_CAPTURES: usize = 32;
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+#[derive(Default)]
+struct RealQaBrowserInbox {
+    captures: Mutex<VecDeque<realqa_native_host::NativeHostRequest>>,
+}
+
+#[cfg(any(
+    all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ),
+    test
+))]
+#[cfg_attr(test, allow(dead_code))]
+impl RealQaBrowserInbox {
+    fn enqueue(
+        &self,
+        capture: realqa_native_host::NativeHostRequest,
+    ) -> Result<(), realqa_native_host::NativeHostFailure> {
+        let mut captures = self
+            .captures
+            .lock()
+            .map_err(|_| realqa_native_host::NativeHostFailure::StateUnavailable)?;
+        if captures.len() >= MAX_REALQA_BROWSER_INBOX_CAPTURES {
+            return Err(realqa_native_host::NativeHostFailure::MessageTooLarge);
+        }
+        let total = captures
+            .iter()
+            .try_fold(capture.encoded_image_bytes(), |total, capture| {
+                total.checked_add(capture.encoded_image_bytes())
+            })
+            .ok_or(realqa_native_host::NativeHostFailure::MessageTooLarge)?;
+        if total > MAX_REALQA_BROWSER_INBOX_BYTES {
+            return Err(realqa_native_host::NativeHostFailure::MessageTooLarge);
+        }
+        captures.push_back(capture);
+        Ok(())
+    }
+
+    fn take(
+        &self,
+    ) -> Result<Option<realqa_native_host::NativeHostRequest>, realqa_native_host::NativeHostFailure>
+    {
+        self.captures
+            .lock()
+            .map_err(|_| realqa_native_host::NativeHostFailure::StateUnavailable)
+            .map(|mut captures| captures.pop_front())
+    }
+
+    fn remove(&self, request_id: &str) {
+        if let Ok(mut captures) = self.captures.lock() {
+            captures.retain(|capture| capture.request_id() != request_id);
+        }
+    }
+
+    fn clear(&self) {
+        if let Ok(mut captures) = self.captures.lock() {
+            captures.clear();
+        }
+    }
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -233,6 +340,15 @@ enum RuntimeSurface {
         test
     ))]
     Settings,
+    #[cfg(any(
+        all(
+            feature = "desktop-cef",
+            not(any(target_os = "android", target_os = "ios"))
+        ),
+        test
+    ))]
+    #[cfg_attr(test, allow(dead_code))]
+    RealQaComposer,
     #[cfg(any(
         all(
             feature = "mobile-system-webview",
@@ -1609,10 +1725,10 @@ fn get_runtime_info(
         feature = "desktop-cef",
         not(any(target_os = "android", target_os = "ios"))
     ))]
-    let surface = if webview.label() == SETTINGS_WINDOW_LABEL {
-        RuntimeSurface::Settings
-    } else {
-        RuntimeSurface::Hud
+    let surface = match webview.label() {
+        SETTINGS_WINDOW_LABEL => RuntimeSurface::Settings,
+        REALQA_COMPOSER_WINDOW_LABEL => RuntimeSurface::RealQaComposer,
+        _ => RuntimeSurface::Hud,
     };
     #[cfg(all(
         feature = "mobile-system-webview",
@@ -2025,6 +2141,100 @@ fn hide_settings_internal(app: &AppHandle<ActiveRuntime>) -> Result<(), HudActio
         .ok_or(HudActionFailure::WindowUnavailable)?
         .hide()
         .map_err(|_| HudActionFailure::WindowUnavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn build_realqa_composer_window(
+    app: &AppHandle<ActiveRuntime>,
+) -> tauri::Result<tauri::WebviewWindow<ActiveRuntime>> {
+    WebviewWindowBuilder::new(
+        app,
+        REALQA_COMPOSER_WINDOW_LABEL,
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("RealQA capture")
+    .inner_size(900.0, 720.0)
+    .min_inner_size(640.0, 520.0)
+    .center()
+    .visible(false)
+    .devtools(true)
+    .incognito(true)
+    .disable_drag_drop_handler()
+    .on_navigation(is_bundled_url)
+    .on_new_window(|_, _| NewWindowResponse::Deny)
+    .on_download(|_, _| false)
+    .on_web_resource_request(apply_web_resource_policy)
+    .build()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn show_realqa_composer_internal(
+    app: &AppHandle<ActiveRuntime>,
+) -> Result<(), realqa_native_host::NativeHostFailure> {
+    let window = match app.get_webview_window(REALQA_COMPOSER_WINDOW_LABEL) {
+        Some(window) => window,
+        None => build_realqa_composer_window(app)
+            .map_err(|_| realqa_native_host::NativeHostFailure::ComposerUnavailable)?,
+    };
+    window
+        .unminimize()
+        .and_then(|()| window.show())
+        .and_then(|()| window.set_focus())
+        .map_err(|_| realqa_native_host::NativeHostFailure::ComposerUnavailable)?;
+    window
+        .eval("window.dispatchEvent(new Event('devhud:realqa-browser-capture-available'))")
+        .map_err(|_| realqa_native_host::NativeHostFailure::ComposerUnavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn accept_realqa_browser_capture(
+    app: &AppHandle<ActiveRuntime>,
+    capture: realqa_native_host::NativeHostRequest,
+) -> Result<(), realqa_native_host::NativeHostFailure> {
+    app.state::<realqa_capture::ComposerCore>()
+        .with_lifecycle_gate(|| {
+            if !app
+                .state::<auth_native::NativeAuthState>()
+                .has_prior_feature_binding(auth::AuthFeature::RealQa)
+                .unwrap_or(false)
+            {
+                return Err(realqa_native_host::NativeHostFailure::PairingRejected);
+            }
+            let request_id = capture.request_id().to_owned();
+            let inbox = app.state::<RealQaBrowserInbox>();
+            inbox.enqueue(capture)?;
+            let dispatch = app.clone();
+            let (sender, receiver) = mpsc::sync_channel(1);
+            if app
+                .run_on_main_thread(move || {
+                    let _ = sender.send(show_realqa_composer_internal(&dispatch));
+                })
+                .is_err()
+            {
+                inbox.remove(&request_id);
+                return Err(realqa_native_host::NativeHostFailure::ComposerUnavailable);
+            }
+            match receiver.recv_timeout(std::time::Duration::from_secs(8)) {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(failure)) => {
+                    inbox.remove(&request_id);
+                    Err(failure)
+                }
+                Err(_) => {
+                    inbox.remove(&request_id);
+                    Err(realqa_native_host::NativeHostFailure::ComposerUnavailable)
+                }
+            }
+        })
 }
 
 #[cfg(all(
@@ -2449,7 +2659,11 @@ fn browsing_data_reset_failure() -> PersistenceCommandError {
 fn clear_browsing_data_for_reset(
     app: &AppHandle<ActiveRuntime>,
 ) -> Result<(), PersistenceCommandError> {
-    for label in [MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL] {
+    for label in [
+        MAIN_WINDOW_LABEL,
+        SETTINGS_WINDOW_LABEL,
+        REALQA_COMPOSER_WINDOW_LABEL,
+    ] {
         if let Some(window) = app.get_webview_window(label) {
             window
                 .clear_all_browsing_data()
@@ -2628,14 +2842,23 @@ fn export_diagnostics(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
+// Tauri injects each independently managed reset dependency as a command argument.
+#[allow(clippy::too_many_arguments)]
 fn reset_dev_hud(
     app: AppHandle<ActiveRuntime>,
     persistence: State<'_, PersistenceState>,
     auth_state: State<'_, auth_native::NativeAuthState>,
+    browser_inbox: State<'_, RealQaBrowserInbox>,
+    composer_core: State<'_, realqa_capture::ComposerCore>,
     shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
 ) -> Result<PersistenceResetOutcome, PersistenceCommandError> {
+    let native_host_state = realqa_native_host::NativeHostState::platform()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
+    native_host_state
+        .preflight_reset()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     persistence
         .preflight_reset()
         .map_err(reset_preflight_failure)?;
@@ -2648,7 +2871,14 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
-    if auth_state.reset().is_err() {
+    let auth_reset_failed = composer_core
+        .reset_all_with(|| {
+            browser_inbox.clear();
+            auth_state.reset()
+        })
+        .is_err();
+    let native_host_reset_failed = native_host_state.reset().is_err();
+    if auth_reset_failed || native_host_reset_failed {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     if clear_browsing_data_for_reset(&app).is_err() {
@@ -3031,7 +3261,26 @@ fn start_authentication(
     Ok(auth::SessionSnapshot::Authenticating)
 }
 
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn logout_authentication(
+    state: State<'_, auth_native::NativeAuthState>,
+    browser_inbox: State<'_, RealQaBrowserInbox>,
+    composer_core: State<'_, realqa_capture::ComposerCore>,
+) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    composer_core.reset_all_with(|| {
+        browser_inbox.clear();
+        state.logout()
+    })
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
 #[tauri::command]
 fn logout_authentication(
     state: State<'_, auth_native::NativeAuthState>,
@@ -3082,6 +3331,50 @@ async fn realqa_begin_capture(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
+async fn realqa_begin_browser_fallback_capture(
+    session_id: realqa_capture::CaptureSessionId,
+    state: State<'_, realqa_capture::CaptureCore>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+    webview: Webview<ActiveRuntime>,
+) -> Result<realqa_capture::CaptureResult, realqa_capture::CaptureFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL
+        || !auth_state
+            .has_prior_feature_binding(auth::AuthFeature::RealQa)
+            .unwrap_or(false)
+    {
+        return Err(realqa_capture::CaptureFailure::CaptureFailed);
+    }
+    let window = webview.window();
+    window
+        .hide()
+        .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)?;
+    let capture_core = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        capture_core.begin_browser_fallback(session_id)
+    })
+    .await
+    .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
+    .and_then(|result| result);
+    let binding_active = auth_state
+        .has_prior_feature_binding(auth::AuthFeature::RealQa)
+        .unwrap_or(false);
+    let restore = window.show().and_then(|()| window.set_focus());
+    let result = match (result, restore, binding_active) {
+        (Err(error), _, _) => Err(error),
+        (Ok(_), Err(_), _) | (Ok(_), Ok(()), false) => {
+            Err(realqa_capture::CaptureFailure::CaptureFailed)
+        }
+        (Ok(capture), Ok(()), true) => Ok(capture),
+    };
+    realqa_capture::record_outcome(&result);
+    result
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
 fn realqa_cancel_capture(
     session_id: realqa_capture::CaptureSessionId,
     state: State<'_, realqa_capture::CaptureCore>,
@@ -3099,10 +3392,18 @@ fn realqa_cancel_capture(
 async fn realqa_composer_accept_image(
     request: realqa_capture::ComposerImageRequest,
     app: AppHandle<ActiveRuntime>,
+    webview: Webview<ActiveRuntime>,
 ) -> Result<realqa_capture::ComposerImage, realqa_capture::CaptureFailure> {
+    let requires_feature_binding = webview.label() == REALQA_COMPOSER_WINDOW_LABEL;
     let result = tauri::async_runtime::spawn_blocking(move || {
         app.state::<realqa_capture::ComposerCore>()
-            .accept_image(request)
+            .accept_image_if_authorized(request, || {
+                !requires_feature_binding
+                    || app
+                        .state::<auth_native::NativeAuthState>()
+                        .has_prior_feature_binding(auth::AuthFeature::RealQa)
+                        .unwrap_or(false)
+            })
     })
     .await
     .map_err(|_| realqa_capture::CaptureFailure::CaptureFailed)
@@ -3166,7 +3467,47 @@ fn realqa_composer_reset_session(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
-fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<ActiveRuntime> {
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum RealQaBrowserCaptureCommandFailure {
+    UnauthorizedWindow,
+    AuthenticationRequired,
+    Unavailable,
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_take_browser_capture(
+    webview: Webview<ActiveRuntime>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+    inbox: State<'_, RealQaBrowserInbox>,
+) -> Result<Option<realqa_native_host::NativeHostRequest>, RealQaBrowserCaptureCommandFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+        return Err(RealQaBrowserCaptureCommandFailure::UnauthorizedWindow);
+    }
+    if !auth_state
+        .has_prior_feature_binding(auth::AuthFeature::RealQa)
+        .unwrap_or(false)
+    {
+        inbox.clear();
+        return Err(RealQaBrowserCaptureCommandFailure::AuthenticationRequired);
+    }
+    inbox
+        .take()
+        .map_err(|_| RealQaBrowserCaptureCommandFailure::Unavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn configure_builder(
+    builder: tauri::Builder<ActiveRuntime>,
+    composer_launch_requested: bool,
+) -> tauri::Builder<ActiveRuntime> {
     builder
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
@@ -3194,13 +3535,15 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             realqa_list_capture_sources,
             realqa_adjust_capture_selection,
             realqa_begin_capture,
+            realqa_begin_browser_fallback_capture,
             realqa_cancel_capture,
             realqa_composer_accept_image,
             realqa_composer_flatten_image,
             realqa_composer_remove_image,
-            realqa_composer_reset_session
+            realqa_composer_reset_session,
+            realqa_take_browser_capture
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let persistence = match app.path().app_local_data_dir() {
                 Ok(directory) => match PersistenceState::new(directory) {
                     Ok(state) => state,
@@ -3231,6 +3574,17 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 realqa_capture::PlatformCaptureBackend::current(),
             )));
             app.manage(realqa_capture::ComposerCore::default());
+            app.manage(RealQaBrowserInbox::default());
+            let composer_app = app.handle().clone();
+            if let Ok(composer_ready) =
+                realqa_native_host::NativeHostState::platform().and_then(move |native_host_state| {
+                    native_host_state.start_composer_listener(move |capture| {
+                        accept_realqa_browser_capture(&composer_app, capture)
+                    })
+                })
+            {
+                app.manage(composer_ready);
+            }
 
             let autostart = autostart::AutostartState::initialize();
             let launch_at_login = if first_run {
@@ -3296,9 +3650,15 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 .on_download(|_, _| false)
                 .on_web_resource_request(apply_web_resource_policy)
                 .build()?;
+            if composer_launch_requested {
+                build_realqa_composer_window(app.handle())?;
+            }
             create_tray(app.handle())?;
             install_shortcut_handler(app.handle());
-            if first_run && build_settings_window(app.handle()).is_err() {
+            if first_run
+                && !composer_launch_requested
+                && build_settings_window(app.handle()).is_err()
+            {
                 diagnostics::emit_warning(
                     diagnostics::DiagnosticEventId::DisplayOutcome,
                     diagnostics::DiagnosticClassification::DisplayWindowUnavailable,
@@ -3456,7 +3816,9 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
             return Err(RuntimeInitializationFailure::InstanceGuardUnavailable);
         }
     };
-    let app = configure_builder(platform_builder()?)
+    let composer_launch_requested =
+        std::env::args().any(|argument| argument == "--realqa-composer");
+    let app = configure_builder(platform_builder()?, composer_launch_requested)
         .build(tauri::generate_context!())
         .map_err(|_| RuntimeInitializationFailure::CefInitialization)?;
     app.run(|app, event| match event {
@@ -3615,6 +3977,28 @@ mod android_entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn restricted_browser_capture() -> realqa_native_host::NativeHostRequest {
+        serde_json::from_value(serde_json::json!({
+            "kind": "submit-capture",
+            "version": 1,
+            "requestId": "019a97f3-cb9d-7c44-a7b2-2514486e42b1",
+            "captureMode": "os-capture"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn browser_inbox_caps_restricted_capture_metadata_entries() {
+        let inbox = RealQaBrowserInbox::default();
+        for _ in 0..MAX_REALQA_BROWSER_INBOX_CAPTURES {
+            inbox.enqueue(restricted_browser_capture()).unwrap();
+        }
+        assert_eq!(
+            inbox.enqueue(restricted_browser_capture()),
+            Err(realqa_native_host::NativeHostFailure::MessageTooLarge)
+        );
+    }
 
     #[test]
     fn permits_only_bundled_application_origins() {
