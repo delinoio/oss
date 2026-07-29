@@ -10,6 +10,7 @@ const removeTitleButton = document.querySelector("#remove-title");
 const status = document.querySelector("#status");
 const fields = document.querySelector("#fields");
 let draft;
+let sending = false;
 
 function showStatus(message, error = false) {
   status.textContent = message;
@@ -53,19 +54,47 @@ function renderSelection() {
   }
 }
 
+function displayDraft(nextDraft) {
+  draft = nextDraft;
+  const available = draft !== undefined;
+  urlInput.value = draft?.url ?? "";
+  titleInput.value = draft?.title ?? "";
+  urlInput.disabled = !available;
+  titleInput.disabled = !available;
+  removeUrlButton.disabled = !available;
+  removeTitleButton.disabled = !available;
+  selectButton.disabled = !available || draft.restricted;
+  sendButton.disabled = !available || sending;
+  renderSelection();
+}
+
+async function restoreDraft() {
+  captureButton.disabled = true;
+  try {
+    const restoredDraft = await sendMessage({ kind: "get-draft" });
+    if (restoredDraft !== undefined) {
+      displayDraft(restoredDraft);
+      showStatus(
+        restoredDraft.selection === undefined
+          ? "Capture restored. You can optionally select a DOM boundary."
+          : "Boundary selected. Remove any metadata you do not want to send.",
+      );
+    }
+  } catch (error) {
+    showStatus(error instanceof Error ? error.message : "Capture unavailable.", true);
+  } finally {
+    captureButton.disabled = false;
+  }
+}
+
 captureButton.addEventListener("click", async () => {
+  if (captureButton.disabled) return;
+  captureButton.disabled = true;
+  sending = false;
+  displayDraft(undefined);
   showStatus("Capturing the visible viewport…");
   try {
-    draft = await sendMessage({ kind: "begin-capture" });
-    urlInput.value = draft.url ?? "";
-    titleInput.value = draft.title ?? "";
-    urlInput.disabled = false;
-    titleInput.disabled = false;
-    removeUrlButton.disabled = false;
-    removeTitleButton.disabled = false;
-    sendButton.disabled = false;
-    selectButton.disabled = draft.restricted;
-    renderSelection();
+    displayDraft(await sendMessage({ kind: "begin-capture" }));
     showStatus(
       draft.restricted
         ? "Chrome restricts this page. DevHud will use OS capture; you can edit the URL."
@@ -73,6 +102,8 @@ captureButton.addEventListener("click", async () => {
     );
   } catch (error) {
     showStatus(error instanceof Error ? error.message : "Capture failed.", true);
+  } finally {
+    captureButton.disabled = false;
   }
 });
 
@@ -101,6 +132,7 @@ selectButton.addEventListener("click", async () => {
     const selection = await sendMessage({
       kind: "select-boundary",
       capture: {
+        captureId: draft.captureId,
         capturedTabId: draft.capturedTabId,
         capturedWindowId: draft.capturedWindowId,
         capturedUrl: draft.capturedUrl,
@@ -120,19 +152,36 @@ selectButton.addEventListener("click", async () => {
 });
 
 sendButton.addEventListener("click", async () => {
-  if (draft === undefined) return;
-  draft.url = urlInput.value;
-  draft.title = titleInput.value;
+  if (draft === undefined || sending) return;
+  sending = true;
+  sendButton.disabled = true;
+  const submission = {
+    ...draft,
+    url: urlInput.value,
+    title: titleInput.value,
+  };
   showStatus("Opening DevHud…");
   try {
-    const response = await sendMessage({ kind: "send-to-devhud", draft });
+    const response = await sendMessage({
+      kind: "send-to-devhud",
+      draft: submission,
+    });
+    const accepted = response.status === "accepted";
+    if (accepted) {
+      displayDraft(undefined);
+    } else {
+      sending = false;
+      sendButton.disabled = false;
+    }
     showStatus(
-      response.status === "accepted"
-        ? "Capture sent to DevHud."
-        : "DevHud could not accept the capture.",
-      response.status !== "accepted",
+      accepted ? "Capture sent to DevHud." : "DevHud could not accept the capture.",
+      !accepted,
     );
   } catch (error) {
+    sending = false;
+    sendButton.disabled = false;
     showStatus(error instanceof Error ? error.message : "DevHud is unavailable.", true);
   }
 });
+
+void restoreDraft();

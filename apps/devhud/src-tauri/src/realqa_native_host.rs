@@ -404,7 +404,7 @@ enum ComposerIpcRequest {
     },
     SubmitCapture {
         version: u8,
-        capture: NativeHostRequest,
+        capture: Box<NativeHostRequest>,
     },
 }
 
@@ -465,7 +465,7 @@ impl SocketComposerDelivery {
         request: &ComposerIpcRequest,
     ) -> Result<ComposerIpcResponse, NativeHostFailure> {
         let endpoint = self.endpoint()?;
-        let name = composer_socket_name(&self.root, &endpoint)?;
+        let name = composer_socket_name(&endpoint)?;
         let mut stream = interprocess::local_socket::ConnectOptions::new()
             .name(name)
             .wait_mode(ConnectWaitMode::Timeout(COMPOSER_CONNECT_WAIT))
@@ -515,7 +515,7 @@ impl ComposerDelivery for SocketComposerDelivery {
     fn enqueue(&self, request: &NativeHostRequest) -> Result<(), NativeHostFailure> {
         let response = self.exchange(&ComposerIpcRequest::SubmitCapture {
             version: 1,
-            capture: request.clone(),
+            capture: Box::new(request.clone()),
         })?;
         (response == ComposerIpcResponse::Accepted)
             .then_some(())
@@ -524,7 +524,6 @@ impl ComposerDelivery for SocketComposerDelivery {
 }
 
 fn composer_socket_name(
-    root: &Path,
     endpoint: &ComposerEndpointRecord,
 ) -> Result<interprocess::local_socket::Name<'static>, NativeHostFailure> {
     if GenericNamespaced::is_supported() {
@@ -532,7 +531,9 @@ fn composer_socket_name(
             .to_ns_name::<GenericNamespaced>()
             .map_err(|_| NativeHostFailure::StateUnavailable)
     } else {
-        root.join(format!("composer-{}.sock", endpoint.token))
+        let token = endpoint.token.replace('-', "");
+        std::env::temp_dir()
+            .join(format!("dhrq-{token}"))
             .to_fs_name::<GenericFilePath>()
             .map_err(|_| NativeHostFailure::StateUnavailable)
     }
@@ -657,7 +658,7 @@ impl NativeHostState {
             version: 1,
             token: Uuid::now_v7().to_string(),
         };
-        let name = composer_socket_name(&self.root, &endpoint)?;
+        let name = composer_socket_name(&endpoint)?;
         let options = ListenerOptions::new().name(name);
         #[cfg(unix)]
         let options = {
@@ -740,7 +741,7 @@ fn handle_composer_connection(
         ComposerIpcRequest::SubmitCapture {
             version: 1,
             mut capture,
-        } => match capture.validate().and_then(|()| handler(capture)) {
+        } => match capture.validate().and_then(|()| handler(*capture)) {
             Ok(()) => ComposerIpcResponse::Accepted,
             Err(_) => ComposerIpcResponse::Rejected,
         },

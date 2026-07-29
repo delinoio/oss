@@ -4,9 +4,12 @@ import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const extensionRoot = resolve(import.meta.dirname, "..");
+let resolveNativeHostPath;
 
 beforeAll(async () => {
-  await import("../../scripts/build-realqa-extension.mjs");
+  ({ resolveNativeHostPath } = await import(
+    "../../scripts/build-realqa-extension.mjs"
+  ));
 });
 
 describe("RealQA MV3 manifest", () => {
@@ -59,5 +62,17 @@ describe("RealQA MV3 manifest", () => {
     ]);
     expect(host.allowed_origins).toHaveLength(1);
     expect(await readdir(outputRoot)).not.toContain("manifest.test.js");
+  });
+
+  it("requires an injected native-host path for macOS packages", () => {
+    expect(() => resolveNativeHostPath("darwin", undefined)).toThrow(
+      "macOS extension packaging requires DEVHUD_NATIVE_HOST_PATH",
+    );
+    expect(
+      resolveNativeHostPath(
+        "darwin",
+        "/Applications/DevHud.app/Contents/MacOS/devhud-native-host",
+      ),
+    ).toBe("/Applications/DevHud.app/Contents/MacOS/devhud-native-host");
   });
 });

@@ -38,6 +38,13 @@ beforeEach(() => {
   ]);
   captureVisibleTab.mockResolvedValue("data:image/png;base64,iVBORw==");
   contains.mockResolvedValue(true);
+  sendNativeMessage.mockImplementation((_host, request) =>
+    Promise.resolve({
+      version: 1,
+      requestId: request.requestId,
+      status: "accepted",
+    }),
+  );
   executeScript.mockResolvedValue([
     {
       result: {
@@ -78,10 +85,12 @@ describe("RealQA extension service worker", () => {
     query.mockResolvedValueOnce([
       { id: 7, windowId: 3, url: "chrome://settings", incognito: false },
     ]);
-    await expect(dispatch({ kind: "begin-capture" })).resolves.toMatchObject({
+    const restricted = await dispatch({ kind: "begin-capture" });
+    expect(restricted).toMatchObject({
       ok: true,
       value: { captureMode: "os-capture", restricted: true },
     });
+    expect(restricted.value).not.toHaveProperty("url");
     expect(captureVisibleTab).not.toHaveBeenCalled();
 
     query.mockResolvedValueOnce([
@@ -94,10 +103,13 @@ describe("RealQA extension service worker", () => {
   });
 
   it("honors optional permission grant and denial before DOM selection", async () => {
+    const captured = await dispatch({ kind: "begin-capture" });
+    const captureId = captured.value.captureId;
     await expect(
       dispatch({
         kind: "select-boundary",
         capture: {
+          captureId,
           capturedTabId: 7,
           capturedWindowId: 3,
           capturedUrl: "https://example.com/private?token=value",
@@ -108,6 +120,13 @@ describe("RealQA extension service worker", () => {
       ok: true,
       value: { selector: "body > button.primary", tag: "button" },
     });
+    await expect(dispatch({ kind: "get-draft" })).resolves.toMatchObject({
+      ok: true,
+      value: {
+        captureId,
+        selection: { selector: "body > button.primary", tag: "button" },
+      },
+    });
     expect(executeScript).toHaveBeenCalledOnce();
 
     contains.mockResolvedValueOnce(false);
@@ -115,6 +134,7 @@ describe("RealQA extension service worker", () => {
       dispatch({
         kind: "select-boundary",
         capture: {
+          captureId,
           capturedTabId: 7,
           capturedWindowId: 3,
           capturedUrl: "https://example.com/private?token=value",
@@ -126,10 +146,12 @@ describe("RealQA extension service worker", () => {
   });
 
   it("rejects an origin switch before injection", async () => {
+    const captured = await dispatch({ kind: "begin-capture" });
     await expect(
       dispatch({
         kind: "select-boundary",
         capture: {
+          captureId: captured.value.captureId,
           capturedTabId: 7,
           capturedWindowId: 3,
           capturedUrl: "https://example.com/private?token=value",
@@ -141,6 +163,7 @@ describe("RealQA extension service worker", () => {
   });
 
   it("rejects a same-origin tab or navigation change before injection", async () => {
+    const captured = await dispatch({ kind: "begin-capture" });
     query.mockResolvedValueOnce([
       {
         id: 8,
@@ -150,6 +173,7 @@ describe("RealQA extension service worker", () => {
       },
     ]);
     const capture = {
+      captureId: captured.value.captureId,
       capturedTabId: 7,
       capturedWindowId: 3,
       capturedUrl: "https://example.com/private?token=value",
@@ -172,5 +196,30 @@ describe("RealQA extension service worker", () => {
     ).resolves.toEqual({ ok: false, error: "captured-tab-changed" });
     expect(contains).not.toHaveBeenCalled();
     expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("submits only the active draft and clears it after acceptance", async () => {
+    const captured = await dispatch({ kind: "begin-capture" });
+    await expect(
+      dispatch({
+        kind: "send-to-devhud",
+        draft: {
+          ...captured.value,
+          url: "https://example.com/edited?private=yes",
+          title: "Edited title",
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: { status: "accepted" },
+    });
+    expect(sendNativeMessage).toHaveBeenCalledOnce();
+    expect(sendNativeMessage.mock.calls[0][1]).toMatchObject({
+      page: { url: "https://example.com/edited", title: "Edited title" },
+    });
+    await expect(dispatch({ kind: "get-draft" })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
   });
 });

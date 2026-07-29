@@ -9,6 +9,8 @@ import {
   sanitizeSelection,
 } from "./protocol.js";
 
+let activeDraft;
+
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (tab === undefined || tab.id === undefined) throw new Error("active-tab-unavailable");
@@ -19,19 +21,22 @@ async function activeTab() {
 }
 
 async function beginCapture() {
+  activeDraft = undefined;
   const tab = await activeTab();
   if (isRestrictedPage(tab.url)) {
-    return {
+    activeDraft = {
+      captureId: crypto.randomUUID(),
       captureMode: "os-capture",
-      url: tab.url,
       title: tab.title,
       restricted: true,
     };
+    return activeDraft;
   }
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
     format: "png",
   });
-  return {
+  activeDraft = {
+    captureId: crypto.randomUUID(),
     captureMode: "visible-viewport",
     capturedTabId: tab.id,
     capturedWindowId: tab.windowId,
@@ -41,9 +46,24 @@ async function beginCapture() {
     image: dataUrlImage(dataUrl),
     restricted: false,
   };
+  return activeDraft;
 }
 
-async function selectBoundary({ capturedTabId, capturedWindowId, capturedUrl, origin }) {
+async function selectBoundary({
+  captureId,
+  capturedTabId,
+  capturedWindowId,
+  capturedUrl,
+  origin,
+}) {
+  if (
+    activeDraft?.captureId !== captureId ||
+    activeDraft.capturedTabId !== capturedTabId ||
+    activeDraft.capturedWindowId !== capturedWindowId ||
+    activeDraft.capturedUrl !== capturedUrl
+  ) {
+    throw new Error("capture-unavailable");
+  }
   const tab = await activeTab();
   const pattern = originPatternForUrl(tab.url);
   if (
@@ -62,15 +82,36 @@ async function selectBoundary({ capturedTabId, capturedWindowId, capturedUrl, or
     target: { tabId: tab.id, frameIds: [0] },
     func: selectDomBoundary,
   });
-  return sanitizeSelection(results[0]?.result);
+  const selection = sanitizeSelection(results[0]?.result);
+  if (activeDraft?.captureId !== captureId) {
+    throw new Error("capture-unavailable");
+  }
+  if (selection === undefined) {
+    delete activeDraft.selection;
+  } else {
+    activeDraft.selection = selection;
+  }
+  return selection;
 }
 
 async function sendToNative(draft) {
-  const request = captureRequest(draft);
+  if (activeDraft?.captureId !== draft?.captureId) {
+    throw new Error("capture-unavailable");
+  }
+  const captureId = activeDraft.captureId;
+  const request = captureRequest({
+    ...activeDraft,
+    url: draft.url,
+    title: draft.title,
+    selection: draft.selection,
+  });
   const response = await chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, request);
   assertHostResponseSize(response);
   if (response?.version !== 1 || response?.requestId !== request.requestId) {
     throw new Error("invalid-host-response");
+  }
+  if (response.status === "accepted" && activeDraft?.captureId === captureId) {
+    activeDraft = undefined;
   }
   return response;
 }
@@ -79,6 +120,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const operation =
     message?.kind === "begin-capture"
       ? beginCapture()
+      : message?.kind === "get-draft"
+        ? Promise.resolve(activeDraft)
       : message?.kind === "select-boundary"
         ? selectBoundary(message.capture)
         : message?.kind === "send-to-devhud"

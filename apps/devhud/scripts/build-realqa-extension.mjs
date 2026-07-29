@@ -24,6 +24,20 @@ function fail(message) {
   throw new Error(message);
 }
 
+export function resolveNativeHostPath(platform, configuredPath) {
+  if (configuredPath !== undefined) return configuredPath;
+  if (platform === "win32") {
+    return "C:\\Program Files\\DevHud\\devhud-native-host.exe";
+  }
+  if (platform === "linux") {
+    return "/opt/devhud/bin/devhud-native-host";
+  }
+  if (platform === "darwin") {
+    fail("macOS extension packaging requires DEVHUD_NATIVE_HOST_PATH");
+  }
+  fail(`extension packaging is unsupported on ${platform}`);
+}
+
 if (extensionId === undefined || !/^[a-p]{32}$/u.test(extensionId)) {
   fail(
     "release packaging requires DEVHUD_CHROME_EXTENSION_ID as an exact 32-character Chrome extension ID",
@@ -38,11 +52,10 @@ if (
   );
 }
 
-const hostPath =
-  process.env.DEVHUD_NATIVE_HOST_PATH ??
-  (process.platform === "win32"
-    ? "C:\\Program Files\\DevHud\\devhud-native-host.exe"
-    : "/opt/devhud/bin/devhud-native-host");
+const hostPath = resolveNativeHostPath(
+  process.platform,
+  process.env.DEVHUD_NATIVE_HOST_PATH,
+);
 if (release && process.platform !== "win32" && !isAbsolute(hostPath)) {
   fail("the release Native Messaging host path must be absolute");
 }
