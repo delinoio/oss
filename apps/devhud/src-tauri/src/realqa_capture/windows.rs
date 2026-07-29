@@ -15,6 +15,7 @@ use super::{
     WindowMetadata, WindowSource, WindowSourceId,
     geometry::{PhysicalSize, PixelRect, ScaleFactor},
     image_boundary::{MAX_DECODED_PIXELS, decoded_byte_len},
+    metadata_value_looks_like_path,
 };
 
 const MAX_INTERNAL_SOURCE_KEY_BYTES: usize = 1_024;
@@ -705,7 +706,7 @@ fn sanitize_metadata(value: Option<&str>, maximum_bytes: usize) -> Option<String
         .filter(|character| !character.is_control())
         .collect::<String>();
     let trimmed = normalized.trim();
-    if trimmed.is_empty() {
+    if trimmed.is_empty() || metadata_value_looks_like_path(trimmed) {
         return None;
     }
     let mut end = trimmed.len().min(maximum_bytes);
@@ -2713,6 +2714,20 @@ mod tests {
             sanitize_metadata(Some("abcd ef"), 5).as_deref(),
             Some("abcd")
         );
+    }
+
+    #[test]
+    fn path_like_metadata_is_omitted_without_invalidating_the_catalog() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let display = adapter.displays.lock().expect("display lock")[1].clone();
+        let mut window = available_window(NativeSourceId(3), &display, display.logical_bounds);
+        window.process_name = Some(r"C:\private\capture.exe".to_owned());
+        window.title = Some("browser/tab".to_owned());
+        adapter.windows.lock().expect("windows lock").push(window);
+
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter)));
+        let catalog = core.source_catalog().expect("catalog");
+        assert_eq!(catalog.windows[0].metadata, WindowMetadata::default());
     }
 
     #[test]
