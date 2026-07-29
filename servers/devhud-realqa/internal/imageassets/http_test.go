@@ -101,14 +101,18 @@ func TestSignedPUTIsScopedShortLivedAndStoresPrivately(t *testing.T) {
 	objects := &memoryObjects{}
 	uploaded := false
 	handler := UploadHandler(
-		signer, objects,
+		signer,
 		func(_ context.Context, digest [32]byte) (Grant, error) {
 			if digest != signed.TokenDigest {
 				return Grant{}, errors.New("not found")
 			}
 			return grant, nil
 		},
-		func(_ context.Context, value Grant) error {
+		func(ctx context.Context, value Grant, contentType string, body []byte) error {
+			if err := objects.Put(
+				ctx, StagingObjectKey(value.AssetID), contentType, body); err != nil {
+				return err
+			}
 			uploaded = value.AssetID == "asset"
 			return nil
 		},
@@ -219,7 +223,7 @@ func TestIdempotentSignedPUTReplaysWithoutPersistingBearer(t *testing.T) {
 	}
 }
 
-func TestUploadStateFailurePreservesSharedStagingObject(t *testing.T) {
+func TestUploadClaimFailureDoesNotWriteStagingObject(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	signer, err := NewSigner(
@@ -241,12 +245,12 @@ func TestUploadStateFailurePreservesSharedStagingObject(t *testing.T) {
 	}
 	objects := &memoryObjects{}
 	handler := UploadHandler(
-		signer, objects,
+		signer,
 		func(_ context.Context, _ [32]byte) (Grant, error) {
 			return grant, nil
 		},
-		func(_ context.Context, _ Grant) error {
-			return errors.New("concurrent completion")
+		func(_ context.Context, _ Grant, _ string, _ []byte) error {
+			return errors.New("upload claim rejected")
 		},
 		func() time.Time { return now.Add(time.Minute) },
 	)
@@ -260,8 +264,9 @@ func TestUploadStateFailurePreservesSharedStagingObject(t *testing.T) {
 		t.Fatalf("upload response = %d", response.Code)
 	}
 	if _, err = objects.Get(
-		context.Background(), StagingObjectKey("asset")); err != nil {
-		t.Fatalf("shared staging object was removed: %v", err)
+		context.Background(), StagingObjectKey("asset")); !errors.Is(
+		err, ErrObjectNotFound) {
+		t.Fatalf("staging object was written before claim: %v", err)
 	}
 }
 

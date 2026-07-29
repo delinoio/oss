@@ -71,9 +71,8 @@ func New(dependencies Dependencies) (http.Handler, error) {
 		dependencies.Services.UploadSigner != nil {
 		rootMux.Handle("/uploads/", imageassets.UploadHandler(
 			dependencies.Services.UploadSigner,
-			dependencies.Services.Objects,
 			submissions.LookupUploadGrant,
-			submissions.MarkUploaded,
+			submissions.StoreUploaded,
 			time.Now,
 		))
 		rootMux.Handle("/i/", imageassets.PublicHandler(

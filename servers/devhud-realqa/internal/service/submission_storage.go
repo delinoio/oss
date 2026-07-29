@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -264,10 +265,18 @@ func (service *Submission) LookupUploadGrant(
 	}, nil
 }
 
-func (service *Submission) MarkUploaded(
+// StoreUploaded holds the asset row lock while writing its deterministic
+// staging object and accepting the upload. Deletion therefore cannot commit
+// and drain its staging deletion job between authorization and the object PUT.
+func (service *Submission) StoreUploaded(
 	ctx context.Context,
 	grant imageassets.Grant,
+	contentType string,
+	body []byte,
 ) error {
+	if service.dependencies.Store == nil || service.dependencies.Objects == nil {
+		return errors.New("realqa images: upload storage unavailable")
+	}
 	assetID, err := parseUUIDv7(grant.AssetID)
 	if err != nil {
 		return imageassets.ErrInvalidScope
@@ -276,12 +285,31 @@ func (service *Submission) MarkUploaded(
 	if err != nil {
 		return imageassets.ErrInvalidScope
 	}
-	_, err = service.dependencies.Store.Queries().MarkAssetUploaded(
-		ctx, dbgen.MarkAssetUploadedParams{
-			ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
-			UploadTokenDigest: grant.TokenDigest[:],
+	return service.dependencies.Store.WithinTransaction(
+		ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+			asset, lockErr := queries.LockAssetRecord(
+				ctx, dbgen.LockAssetRecordParams{
+					ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+				})
+			if lockErr != nil {
+				return lockErr
+			}
+			if asset.UploadState != "put_authorized" ||
+				!hmac.Equal(asset.UploadTokenDigest, grant.TokenDigest[:]) {
+				return imageassets.ErrInvalidScope
+			}
+			if putErr := service.dependencies.Objects.Put(
+				ctx, imageassets.StagingObjectKey(assetID.String()),
+				contentType, body); putErr != nil {
+				return putErr
+			}
+			_, markErr := queries.MarkAssetUploaded(
+				ctx, dbgen.MarkAssetUploadedParams{
+					ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+					UploadTokenDigest: grant.TokenDigest[:],
+				})
+			return markErr
 		})
-	return err
 }
 
 func (service *Submission) FinalizeImageUpload(
@@ -326,8 +354,11 @@ func (service *Submission) FinalizeImageUpload(
 		ctx, dbgen.GetAssetRecordParams{
 			ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
 		})
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, permissionDenied()
+	}
+	if err != nil {
+		return nil, err
 	}
 	if asset.Revision != request.Msg.ExpectedAssetRevision.Value {
 		return nil, stale(asset.Revision)
@@ -1038,8 +1069,22 @@ func (service *Submission) PromoteSubmittedAssets(
 					ctx, queries, asset.ID, objectKindVerified, pgtype.Text{})
 			})
 		if err != nil {
-			_ = service.dependencies.Objects.Delete(
-				context.WithoutCancel(ctx), publicKey)
+			cleanupCtx := context.WithoutCancel(ctx)
+			if cleanupErr := service.dependencies.Objects.Delete(
+				cleanupCtx, publicKey); cleanupErr != nil {
+				enqueueErr := service.dependencies.Store.Queries().
+					EnqueueObjectDeletion(
+						cleanupCtx, dbgen.EnqueueObjectDeletionParams{
+							AssetID: asset.ID, ObjectKind: string(objectKindPublic),
+							PublicID: pgtype.Text{
+								String: publicID, Valid: true,
+							},
+						})
+				if enqueueErr != nil {
+					return errors.Join(err, enqueueErr)
+				}
+				service.drainObjectDeletionsBestEffort(cleanupCtx)
+			}
 			return err
 		}
 		service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))

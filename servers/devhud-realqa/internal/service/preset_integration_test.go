@@ -84,6 +84,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	accountID := uuidv7.MustNew()
 	organizationID := uuidv7.MustNew()
 	teamID := uuidv7.MustNew()
+	otherTeamID := uuidv7.MustNew()
 	connectionID := uuidv7.MustNew()
 	installationID := uuidv7.MustNew()
 	organizationConnectionID := uuidv7.MustNew()
@@ -99,7 +100,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			($1, 'organization', $3, 'admin');
 		INSERT INTO realqa_payer_team_bindings (
 			account_id, organization_id, team_id
-		) VALUES ($1, $3, $4);
+		) VALUES
+			($1, $3, $4),
+			($1, $3, $9);
 		INSERT INTO realqa_github_connections (
 			id, owner_kind, owner_id, state,
 			credential_ciphertext, wrapped_data_key, key_id
@@ -149,7 +152,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		)
 	`, accountID, digest.Sum(nil), organizationID, teamID,
 		connectionID, installationID, organizationConnectionID,
-		organizationInstallationID); err != nil {
+		organizationInstallationID, otherTeamID); err != nil {
 		t.Fatal(err)
 	}
 	pseudonymizer, err := safelog.NewPseudonymizer(
@@ -437,6 +440,19 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, organizationInstallationID, accountID); err != nil {
 		t.Fatal(err)
 	}
+	mismatchedPayer := proto.Clone(
+		submissionRequest).(*realqav1.CreateSubmissionRequest)
+	mismatchedPayer.Billing.TeamId = &realqav1.UuidV7{
+		Value: otherTeamID.String(),
+	}
+	mismatchedPayer.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(mismatchedPayer))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("mismatched preset payer code = %v", connect.CodeOf(err))
+	}
 	createdSubmission, err := submissionService.CreateSubmission(
 		authCtx, connect.NewRequest(submissionRequest))
 	if err != nil {
@@ -547,12 +563,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = objects.Put(ctx,
-		imageassets.StagingObjectKey(uploadRequest.AssetId.Value),
-		"image/png", pngBody); err != nil {
-		t.Fatal(err)
-	}
-	if err = submissionService.MarkUploaded(ctx, grant); err != nil {
+	if err = submissionService.StoreUploaded(
+		ctx, grant, "image/png", pngBody); err != nil {
 		t.Fatal(err)
 	}
 	uploadedAsset, err := store.Queries().GetAssetRecord(
@@ -700,6 +712,58 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		createdSubmission.Msg.Submission.Assets[0].AssetId.Value)
 	submissionID := uuid.MustParse(
 		createdSubmission.Msg.Submission.SubmissionId.Value)
+	if _, err = connection.Exec(ctx, `
+		CREATE FUNCTION fixture_reject_public_promotion()
+		RETURNS trigger
+		LANGUAGE plpgsql
+		AS $$
+		BEGIN
+			IF NEW.state = 'public_retained' THEN
+				RAISE EXCEPTION 'fixture promotion failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$;
+		CREATE TRIGGER fixture_reject_public_promotion
+		BEFORE UPDATE ON realqa_assets
+		FOR EACH ROW EXECUTE FUNCTION fixture_reject_public_promotion()
+	`); err != nil {
+		t.Fatal(err)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{promotionAssetID}); err == nil {
+		t.Fatal("promotion failure was not propagated")
+	}
+	var abandonedPublicID string
+	if err = connection.QueryRow(ctx, `
+		SELECT public_id
+		FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'public'
+	`, promotionAssetID).Scan(&abandonedPublicID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := objects.objects[imageassets.PublicObjectKey(abandonedPublicID)]; !ok {
+		t.Fatal("abandoned public copy was not retained for cleanup retry")
+	}
+	if _, err = connection.Exec(ctx, `
+		DROP TRIGGER fixture_reject_public_promotion ON realqa_assets;
+		DROP FUNCTION fixture_reject_public_promotion();
+		UPDATE realqa_object_deletion_jobs
+		SET next_attempt_at = transaction_timestamp()
+		WHERE asset_id = $1 AND object_kind = 'public'
+	`, promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	objects.deleteErr = nil
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 1 {
+		t.Fatalf("drained abandoned public copy = %d, %v",
+			completed, drainErr)
+	}
+	if _, ok := objects.objects[imageassets.PublicObjectKey(abandonedPublicID)]; ok {
+		t.Fatal("abandoned public copy was retained")
+	}
 	objects.deleteErr = errors.New("fixture R2 deletion failed")
 	if err = submissionService.PromoteSubmittedAssets(
 		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
@@ -746,6 +810,47 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		authCtx, connect.NewRequest(emptyRequest))
 	if err != nil {
 		t.Fatal(err)
+	}
+	rejectedRequest := proto.Clone(
+		emptyRequest).(*realqav1.CreateSubmissionRequest)
+	rejectedRequest.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	rejectedRequest.Images[0].ClientImageId = &realqav1.UuidV7{
+		Value: uuidv7.MustNew().String(),
+	}
+	rejectedSubmission, err := submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(rejectedRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedSubmissionID := uuid.MustParse(
+		rejectedSubmission.Msg.Submission.SubmissionId.Value)
+	rejectedAssetID := uuid.MustParse(
+		rejectedSubmission.Msg.Submission.Assets[0].AssetId.Value)
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_assets
+		SET upload_state = 'rejected'
+		WHERE id = $1
+	`, rejectedAssetID); err != nil {
+		t.Fatal(err)
+	}
+	rejectedState, err := store.Queries().RefreshSubmissionAssetState(
+		ctx, toPGUUID(rejectedSubmissionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejectedState.State != "assets_deleted" {
+		t.Fatalf("terminal-only submission state = %q", rejectedState.State)
+	}
+	openAfterRejection, err := store.Queries().CountOpenSubmissionsForAccount(
+		ctx, toPGUUID(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if openAfterRejection != 1 {
+		t.Fatalf("open submissions after rejection = %d, want 1",
+			openAfterRejection)
 	}
 	emptyDeleted, err := submissionService.DeleteImage(
 		authCtx, connect.NewRequest(&realqav1.DeleteImageRequest{

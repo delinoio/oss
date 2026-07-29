@@ -59,11 +59,6 @@ func (service *Submission) CreateSubmission(
 		ctx, actor, idempotencyID, requestDigest); ok {
 		return replay, replayErr
 	}
-	payerOrganization, payerTeam, err := authorizeBilling(
-		ctx, service.dependencies, actor, scope, request.Msg.Billing)
-	if err != nil {
-		return nil, err
-	}
 	presetID, err := parseUUIDMessage(request.Msg.PresetId)
 	if err != nil {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
@@ -78,6 +73,15 @@ func (service *Submission) CreateSubmission(
 	}
 	if preset.Revision.Value != request.Msg.PresetRevision.Value {
 		return nil, stale(preset.Revision.Value)
+	}
+	if !proto.Equal(request.Msg.Billing, preset.Billing) {
+		return nil, invalid(
+			realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	payerOrganization, payerTeam, err := authorizeBilling(
+		ctx, service.dependencies, actor, scope, preset.Billing)
+	if err != nil {
+		return nil, err
 	}
 	if err = validateImages(request.Msg.Images); err != nil {
 		return nil, err

@@ -28,18 +28,17 @@ type ObjectStore interface {
 }
 
 type UploadLookup func(context.Context, [32]byte) (Grant, error)
-type Uploaded func(context.Context, Grant) error
+type UploadStore func(context.Context, Grant, string, []byte) error
 
 func UploadHandler(
 	signer *Signer,
-	objects ObjectStore,
 	lookup UploadLookup,
-	uploaded Uploaded,
+	store UploadStore,
 	now func() time.Time,
 ) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Cache-Control", "no-store")
-		if signer == nil || objects == nil || lookup == nil || uploaded == nil {
+		if signer == nil || lookup == nil || store == nil {
 			http.Error(writer, "upload unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -73,16 +72,8 @@ func UploadHandler(
 			http.Error(writer, "upload rejected", http.StatusBadRequest)
 			return
 		}
-		key := StagingObjectKey(grant.AssetID)
-		if err = objects.Put(request.Context(), key,
+		if err = store(request.Context(), grant,
 			string(grant.Declaration.MediaType), body); err != nil {
-			http.Error(writer, "upload unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		if err = uploaded(request.Context(), grant); err != nil {
-			// The key is deterministic and the signed grant binds identical
-			// bytes. A concurrent retry may already have accepted this object,
-			// so failure to record this attempt must not remove shared staging.
 			http.Error(writer, "upload unavailable", http.StatusServiceUnavailable)
 			return
 		}
