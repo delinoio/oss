@@ -73,6 +73,10 @@ UPDATE realqa_identities
 SET deleted_at = COALESCE(deleted_at, transaction_timestamp())
 WHERE account_id = sqlc.arg(account_id);
 
+-- name: DeleteLifecycleAccountRepositoryAccess :execrows
+DELETE FROM realqa_repository_access
+WHERE account_id = sqlc.arg(account_id);
+
 -- name: DisconnectGitHubConnectionsForAccount :execrows
 UPDATE realqa_github_connections
 SET state = 'disconnected',

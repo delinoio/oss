@@ -1067,6 +1067,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	lifecycleAccountID := uuidv7.MustNew()
 	lifecycleOrganizationID := uuidv7.MustNew()
 	lifecycleConnectionID := uuidv7.MustNew()
+	lifecycleInstallationID := uuidv7.MustNew()
 	lifecycleDigest := hmac.New(sha256.New, identityKey)
 	_, _ = lifecycleDigest.Write([]byte("fixture-lifecycle-user"))
 	if _, err = connection.Exec(ctx, `
@@ -1078,9 +1079,25 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		) VALUES (
 			$3, 'organization', $4, 'connected', $1,
 			decode('05', 'hex'), decode('06', 'hex'), 'fixture-key'
+		);
+		INSERT INTO realqa_github_installations (
+			id, connection_id, owner_kind, owner_id,
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES (
+			$5, $3, 'organization', $4, 760, 'lifecycle-org', 760,
+			'Organization', 'active',
+			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+		);
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id,
+			repository_owner, repository_name, issues_enabled, can_submit
+		) VALUES (
+			$5, $1, 'lifecycle-repo', 'lifecycle-org', 'private', true, true
 		)
 	`, lifecycleAccountID, lifecycleDigest.Sum(nil),
-		lifecycleConnectionID, lifecycleOrganizationID); err != nil {
+		lifecycleConnectionID, lifecycleOrganizationID,
+		lifecycleInstallationID); err != nil {
 		t.Fatal(err)
 	}
 	_, err = service.DeleteFeatureData(lifecycleCtx, connect.NewRequest(
@@ -1104,27 +1121,32 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	var lifecycleConnectedBy uuid.NullUUID
 	var lifecycleCiphertext, lifecycleWrappedKey []byte
 	var lifecycleKeyID *string
+	var lifecycleRepositoryAccess int64
 	if err = connection.QueryRow(ctx, `
 		SELECT
 			state, connected_by_account_id, credential_ciphertext,
-			wrapped_data_key, key_id
+			wrapped_data_key, key_id,
+			(SELECT count(*)
+			 FROM realqa_repository_access
+			 WHERE account_id = $2)
 		FROM realqa_github_connections
 		WHERE id = $1
 	`, lifecycleConnectionID).Scan(
 		&lifecycleConnectionState, &lifecycleConnectedBy,
 		&lifecycleCiphertext, &lifecycleWrappedKey, &lifecycleKeyID,
+		&lifecycleRepositoryAccess,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if lifecycleConnectionState != "disconnected" ||
 		lifecycleConnectedBy.Valid ||
 		lifecycleCiphertext != nil || lifecycleWrappedKey != nil ||
-		lifecycleKeyID != nil {
+		lifecycleKeyID != nil || lifecycleRepositoryAccess != 0 {
 		t.Fatalf(
-			"account lifecycle retained organization credential: state=%q account=%v ciphertext=%t wrapped=%t key=%v",
+			"account lifecycle retained organization data: state=%q account=%v ciphertext=%t wrapped=%t key=%v repository_access=%d",
 			lifecycleConnectionState, lifecycleConnectedBy.Valid,
 			lifecycleCiphertext != nil, lifecycleWrappedKey != nil,
-			lifecycleKeyID,
+			lifecycleKeyID, lifecycleRepositoryAccess,
 		)
 	}
 }

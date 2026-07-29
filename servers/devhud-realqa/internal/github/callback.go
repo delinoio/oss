@@ -437,7 +437,8 @@ func (handler *CallbackHandler) webhook(writer http.ResponseWriter, request *htt
 	}
 	event := request.Header.Get("X-GitHub-Event")
 	if event != "installation" && event != "installation_repositories" &&
-		event != "issues" && event != "github_app_authorization" {
+		event != "installation_target" && event != "issues" &&
+		event != "github_app_authorization" {
 		writeCallbackError(writer, http.StatusBadRequest)
 		return
 	}
@@ -450,6 +451,9 @@ func (handler *CallbackHandler) webhook(writer http.ResponseWriter, request *htt
 				return handler.installationWebhook(request.Context(), store, body)
 			case "installation_repositories":
 				return handler.repositoriesWebhook(request.Context(), store, body)
+			case "installation_target":
+				return handler.installationTargetWebhook(
+					request.Context(), store, body)
 			case "issues":
 				return handler.issueWebhook(request.Context(), store, body)
 			default:
@@ -506,6 +510,36 @@ func (handler *CallbackHandler) installationWebhook(
 	if err := store.ApplyInstallation(ctx, InstallationEvent{
 		Action: payload.Action, Installation: installation,
 		Repositories: modelRepositories(payload.Repositories),
+	}); err != nil {
+		return fmt.Errorf("%w: %v", errWebhookStorage, err)
+	}
+	return nil
+}
+
+func (handler *CallbackHandler) installationTargetWebhook(
+	ctx context.Context,
+	store WebhookStore,
+	body []byte,
+) error {
+	var payload struct {
+		Action       string     `json:"action"`
+		Account      apiAccount `json:"account"`
+		Installation struct {
+			ID int64 `json:"id"`
+		} `json:"installation"`
+	}
+	if err := strictJSON(body, &payload); err != nil {
+		return err
+	}
+	installation := Installation{
+		ID: payload.Installation.ID, AccountID: payload.Account.ID,
+		AccountLogin: payload.Account.Login, AccountKind: payload.Account.Type,
+	}
+	if payload.Action != "renamed" || installation.validateIdentity() != nil {
+		return errors.New("realqa github: installation target webhook is invalid")
+	}
+	if err := store.ApplyInstallation(ctx, InstallationEvent{
+		Action: payload.Action, Installation: installation,
 	}); err != nil {
 		return fmt.Errorf("%w: %v", errWebhookStorage, err)
 	}

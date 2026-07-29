@@ -565,6 +565,37 @@ func (q *Queries) RemoveGitHubRepositoryDefinitions(ctx context.Context, arg Rem
 	return result.RowsAffected(), nil
 }
 
+const renameGitHubInstallationAccount = `-- name: RenameGitHubInstallationAccount :execrows
+UPDATE realqa_github_installations
+SET provider_account_id = $1,
+    account_login = $2,
+    account_kind = $3,
+    revision = revision + 1,
+    updated_at = transaction_timestamp()
+WHERE provider_installation_id = $4
+  AND state <> 'deleted'
+`
+
+type RenameGitHubInstallationAccountParams struct {
+	ProviderAccountID      pgtype.Int8
+	AccountLogin           string
+	AccountKind            pgtype.Text
+	ProviderInstallationID int64
+}
+
+func (q *Queries) RenameGitHubInstallationAccount(ctx context.Context, arg RenameGitHubInstallationAccountParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameGitHubInstallationAccount,
+		arg.ProviderAccountID,
+		arg.AccountLogin,
+		arg.AccountKind,
+		arg.ProviderInstallationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setGitHubInstallationState = `-- name: SetGitHubInstallationState :execrows
 UPDATE realqa_github_installations
 SET state = CASE

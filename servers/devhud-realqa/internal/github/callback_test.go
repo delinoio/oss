@@ -21,22 +21,24 @@ import (
 )
 
 type fixtureCallbackStore struct {
-	mu               sync.Mutex
-	deliveryMu       sync.Mutex
-	nonces           map[string]bool
-	bindings         map[int64]Owner
-	deliveries       map[uuid.UUID]bool
-	connectedOwner   Owner
-	connectedAccount uuid.UUID
-	connectedUser    UserIdentity
-	credential       EncryptedCredential
-	installations    []Installation
-	deletedIssue     DeletedIssueEvent
-	deleteCalls      int
-	deleteFailures   int
-	disconnectedUser int64
-	connectErr       error
-	callbackDigest   []byte
+	mu                sync.Mutex
+	deliveryMu        sync.Mutex
+	nonces            map[string]bool
+	bindings          map[int64]Owner
+	deliveries        map[uuid.UUID]bool
+	connectedOwner    Owner
+	connectedAccount  uuid.UUID
+	connectedUser     UserIdentity
+	credential        EncryptedCredential
+	installations     []Installation
+	installation      InstallationEvent
+	installationCalls int
+	deletedIssue      DeletedIssueEvent
+	deleteCalls       int
+	deleteFailures    int
+	disconnectedUser  int64
+	connectErr        error
+	callbackDigest    []byte
 }
 
 func newFixtureCallbackStore() *fixtureCallbackStore {
@@ -127,9 +129,11 @@ func (store *fixtureCallbackStore) ProcessWebhookDelivery(
 	return true, nil
 }
 
-func (*fixtureCallbackStore) ApplyInstallation(
-	context.Context, InstallationEvent,
+func (store *fixtureCallbackStore) ApplyInstallation(
+	_ context.Context, event InstallationEvent,
 ) error {
+	store.installation = event
+	store.installationCalls++
 	return nil
 }
 
@@ -441,6 +445,48 @@ func TestSignedIssueDeletionWebhookFixture(t *testing.T) {
 		strings.Contains(invalidResponse.Body.String(), "fixture-user") {
 		t.Fatalf("invalid signature was not safely rejected: %d %s",
 			invalidResponse.Code, invalidResponse.Body)
+	}
+}
+
+func TestSignedInstallationTargetRenameWebhook(t *testing.T) {
+	t.Parallel()
+	store := newFixtureCallbackStore()
+	handler, _, _, _ := fixtureCallbackHandler(t, store,
+		fixtureHTTPClient(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("provider request not expected")
+		}))
+	body := []byte(`{
+		"action":"renamed",
+		"account":{"id":501,"login":"renamed-owner","type":"Organization"},
+		"changes":{"login":{"from":"former-owner"}},
+		"installation":{"id":991},
+		"target_type":"Organization"
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/github/webhooks",
+		bytes.NewReader(body))
+	request.Header.Set("X-GitHub-Event", "installation_target")
+	request.Header.Set("X-GitHub-Delivery",
+		"018f3f5e-7b01-7a2d-8c3a-4ba8d8b51614")
+	request.Header.Set("X-Hub-Signature-256",
+		fixtureWebhookSignature([]byte(strings.Repeat("w", 32)), body))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("unexpected webhook response %d %s", response.Code, response.Body)
+	}
+	expected := InstallationEvent{
+		Action: "renamed",
+		Installation: Installation{
+			ID: 991, AccountID: 501, AccountLogin: "renamed-owner",
+			AccountKind: AccountKindOrganization,
+		},
+	}
+	if store.installationCalls != 1 ||
+		store.installation.Action != expected.Action ||
+		store.installation.Installation != expected.Installation ||
+		len(store.installation.Repositories) != 0 {
+		t.Fatalf("installation target rename was not applied: %#v",
+			store.installation)
 	}
 }
 

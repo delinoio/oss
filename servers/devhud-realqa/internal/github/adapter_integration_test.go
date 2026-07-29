@@ -138,6 +138,54 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 	}
 }
 
+func TestInstallationWebhooksAcknowledgeUnboundAndApplyRename(t *testing.T) {
+	databaseURL := os.Getenv("REALQA_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("REALQA_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	store, connection, _, _, _, _ := adapterRefreshFixture(
+		t, ctx, databaseURL)
+	webhookStore := &postgresWebhookStore{queries: store.Queries()}
+	permissions, err := RequiredPermissions(ProjectPermissionNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = webhookStore.ApplyInstallation(ctx, InstallationEvent{
+		Action: "created",
+		Installation: Installation{
+			ID: 9002, AccountID: 7002, AccountLogin: "unbound-owner",
+			AccountKind: AccountKindOrganization, Permissions: permissions,
+		},
+	}); err != nil {
+		t.Fatalf("unbound installation was not acknowledged: %v", err)
+	}
+	if err = webhookStore.ApplyInstallation(ctx, InstallationEvent{
+		Action: "renamed",
+		Installation: Installation{
+			ID: 9001, AccountID: 7001, AccountLogin: "renamed-owner",
+			AccountKind: AccountKindOrganization,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var accountID int64
+	var login, kind string
+	if err = connection.QueryRow(ctx, `
+		SELECT provider_account_id, account_login, account_kind
+		FROM realqa_github_installations
+		WHERE provider_installation_id = 9001
+	`).Scan(&accountID, &login, &kind); err != nil {
+		t.Fatal(err)
+	}
+	if accountID != 7001 || login != "renamed-owner" ||
+		kind != string(AccountKindOrganization) {
+		t.Fatalf("renamed installation identity = %d %q %q",
+			accountID, login, kind)
+	}
+}
+
 func adapterRefreshFixture(
 	t *testing.T,
 	ctx context.Context,

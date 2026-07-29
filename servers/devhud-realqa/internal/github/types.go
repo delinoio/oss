@@ -116,7 +116,7 @@ type Installation struct {
 	Permissions  Permissions
 }
 
-func (installation Installation) Validate(project ProjectPermission) error {
+func (installation Installation) validateIdentity() error {
 	if installation.ID <= 0 || installation.AccountID <= 0 ||
 		!safeNamePattern.MatchString(installation.AccountLogin) {
 		return errors.New("realqa github: installation identity is invalid")
@@ -125,6 +125,13 @@ func (installation Installation) Validate(project ProjectPermission) error {
 	case AccountKindUser, AccountKindOrganization:
 	default:
 		return errors.New("realqa github: installation account kind is invalid")
+	}
+	return nil
+}
+
+func (installation Installation) Validate(project ProjectPermission) error {
+	if err := installation.validateIdentity(); err != nil {
+		return err
 	}
 	return installation.Permissions.Validate(project)
 }

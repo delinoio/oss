@@ -27,6 +27,7 @@ type Querier interface {
 	CreateProcessURLRule(ctx context.Context, arg CreateProcessURLRuleParams) error
 	CreateShortcut(ctx context.Context, arg CreateShortcutParams) error
 	DeleteLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)
+	DeleteLifecycleAccountRepositoryAccess(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DeletePresetAtRevision(ctx context.Context, arg DeletePresetAtRevisionParams) (int64, error)
 	DeleteProcessURLRules(ctx context.Context, presetID pgtype.UUID) error
 	DeleteRepositoryAccessForAccount(ctx context.Context, arg DeleteRepositoryAccessForAccountParams) (int64, error)
@@ -70,6 +71,7 @@ type Querier interface {
 	RecordGitHubWebhookDelivery(ctx context.Context, deliveryID pgtype.UUID) (int64, error)
 	RemoveGitHubRepositoryAccess(ctx context.Context, arg RemoveGitHubRepositoryAccessParams) (int64, error)
 	RemoveGitHubRepositoryDefinitions(ctx context.Context, arg RemoveGitHubRepositoryDefinitionsParams) (int64, error)
+	RenameGitHubInstallationAccount(ctx context.Context, arg RenameGitHubInstallationAccountParams) (int64, error)
 	ScopeIsTombstoned(ctx context.Context, arg ScopeIsTombstonedParams) (bool, error)
 	SetGitHubInstallationState(ctx context.Context, arg SetGitHubInstallationStateParams) (int64, error)
 	StartGitHubConnection(ctx context.Context, arg StartGitHubConnectionParams) (RealqaGithubConnection, error)

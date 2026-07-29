@@ -239,6 +239,12 @@ func (service *Preset) DeleteFeatureData(
 				return deleteErr
 			}
 			if accountLifecycle {
+				count, deleteErr = queries.DeleteLifecycleAccountRepositoryAccess(
+					ctx, toPGUUID(scope.id))
+				removed += count
+				if deleteErr != nil {
+					return deleteErr
+				}
 				count, deleteErr = queries.DisconnectGitHubConnectionsForAccount(
 					ctx, toPGUUID(scope.id))
 				removed += count
@@ -311,6 +317,11 @@ func (service *Preset) disconnectLifecycleAccount(
 ) error {
 	return service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			if _, err := queries.DeleteLifecycleAccountRepositoryAccess(
+				ctx, toPGUUID(accountID),
+			); err != nil {
+				return err
+			}
 			if _, err := queries.DisconnectGitHubConnectionsForAccount(
 				ctx, toPGUUID(accountID),
 			); err != nil {

@@ -309,7 +309,26 @@ func (store *postgresWebhookStore) ApplyInstallation(
 		if err != nil {
 			return err
 		}
-		if count != 1 {
+		if count > 1 {
+			return errors.New("realqa github: installation owner binding is unavailable")
+		}
+		return nil
+	case "renamed":
+		count, err := store.queries.RenameGitHubInstallationAccount(ctx,
+			dbgen.RenameGitHubInstallationAccountParams{
+				ProviderAccountID: pgtype.Int8{
+					Int64: event.Installation.AccountID, Valid: true,
+				},
+				AccountLogin: event.Installation.AccountLogin,
+				AccountKind: pgtype.Text{
+					String: string(event.Installation.AccountKind), Valid: true,
+				},
+				ProviderInstallationID: event.Installation.ID,
+			})
+		if err != nil {
+			return err
+		}
+		if count > 1 {
 			return errors.New("realqa github: installation owner binding is unavailable")
 		}
 		return nil
@@ -325,7 +344,7 @@ func (store *postgresWebhookStore) ApplyInstallation(
 		if err != nil {
 			return err
 		}
-		if count != 1 {
+		if count > 1 {
 			return errors.New("realqa github: installation owner binding is unavailable")
 		}
 		return nil

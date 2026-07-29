@@ -24,6 +24,19 @@ func (q *Queries) DeleteLifecycleAccountIdentity(ctx context.Context, accountID 
 	return result.RowsAffected(), nil
 }
 
+const deleteLifecycleAccountRepositoryAccess = `-- name: DeleteLifecycleAccountRepositoryAccess :execrows
+DELETE FROM realqa_repository_access
+WHERE account_id = $1
+`
+
+func (q *Queries) DeleteLifecycleAccountRepositoryAccess(ctx context.Context, accountID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteLifecycleAccountRepositoryAccess, accountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteScopeConnections = `-- name: DeleteScopeConnections :execrows
 DELETE FROM realqa_github_connections
 WHERE owner_kind = $1
