@@ -97,10 +97,12 @@ func TestFixtureManifestHasOnlyDeckPermissionsAndLifecycleEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	var manifest struct {
-		Name               string            `json:"name"`
-		DefaultPermissions map[string]string `json:"default_permissions"`
-		DefaultEvents      []string          `json:"default_events"`
-		Public             bool              `json:"public"`
+		Name                  string            `json:"name"`
+		SetupURL              string            `json:"setup_url"`
+		RequestOAuthOnInstall *bool             `json:"request_oauth_on_install"`
+		DefaultPermissions    map[string]string `json:"default_permissions"`
+		DefaultEvents         []string          `json:"default_events"`
+		Public                bool              `json:"public"`
 	}
 	if err := json.Unmarshal(payload, &manifest); err != nil {
 		t.Fatal(err)
@@ -110,8 +112,12 @@ func TestFixtureManifestHasOnlyDeckPermissionsAndLifecycleEvents(t *testing.T) {
 		"checks": "read", "members": "read",
 	}
 	expectedEvents := []string{"installation", "installation_repositories"}
-	if manifest.Public || !reflect.DeepEqual(
-		manifest.DefaultPermissions, expectedPermissions) ||
+	if manifest.Public ||
+		manifest.SetupURL != "https://deck.deli.dev/github/app/callback" ||
+		manifest.RequestOAuthOnInstall == nil ||
+		*manifest.RequestOAuthOnInstall ||
+		!reflect.DeepEqual(
+			manifest.DefaultPermissions, expectedPermissions) ||
 		!reflect.DeepEqual(manifest.DefaultEvents, expectedEvents) {
 		t.Fatalf("overbroad manifest: %#v", manifest)
 	}

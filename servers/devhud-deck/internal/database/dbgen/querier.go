@@ -59,7 +59,6 @@ type Querier interface {
 	GetGitHubConnectionByOwner(ctx context.Context, arg GetGitHubConnectionByOwnerParams) (DeckConnection, error)
 	GetGitHubConnectionByOwnerForUpdate(ctx context.Context, arg GetGitHubConnectionByOwnerForUpdateParams) (DeckConnection, error)
 	GetGitHubUserCredential(ctx context.Context, arg GetGitHubUserCredentialParams) (DeckGithubUserCredential, error)
-	GetGitHubUserCredentialForAccount(ctx context.Context, accountID pgtype.UUID) (DeckGithubUserCredential, error)
 	GetGitHubWebhookDelivery(ctx context.Context, deliveryID string) (DeckGithubWebhookDelivery, error)
 	GetRegisterDeviceIdempotency(ctx context.Context, arg GetRegisterDeviceIdempotencyParams) (DeckDeviceRegistrationIdempotency, error)
 	GetView(ctx context.Context, viewID pgtype.UUID) (DeckView, error)

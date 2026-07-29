@@ -413,34 +413,6 @@ func (q *Queries) GetGitHubUserCredential(ctx context.Context, arg GetGitHubUser
 	return i, err
 }
 
-const getGitHubUserCredentialForAccount = `-- name: GetGitHubUserCredentialForAccount :one
-SELECT credential.connection_id, credential.account_id, credential.github_user_id, credential.wrapping_key_id, credential.user_access_token_ciphertext, credential.user_refresh_token_ciphertext, credential.user_access_token_expires_at, credential.user_refresh_token_expires_at, credential.updated_at
-FROM deck_github_user_credentials credential
-JOIN deck_connections connection
-  ON connection.connection_id = credential.connection_id
-WHERE credential.account_id = $1
-  AND connection.state = 3
-ORDER BY credential.updated_at DESC, credential.connection_id
-LIMIT 1
-`
-
-func (q *Queries) GetGitHubUserCredentialForAccount(ctx context.Context, accountID pgtype.UUID) (DeckGithubUserCredential, error) {
-	row := q.db.QueryRow(ctx, getGitHubUserCredentialForAccount, accountID)
-	var i DeckGithubUserCredential
-	err := row.Scan(
-		&i.ConnectionID,
-		&i.AccountID,
-		&i.GithubUserID,
-		&i.WrappingKeyID,
-		&i.UserAccessTokenCiphertext,
-		&i.UserRefreshTokenCiphertext,
-		&i.UserAccessTokenExpiresAt,
-		&i.UserRefreshTokenExpiresAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getGitHubWebhookDelivery = `-- name: GetGitHubWebhookDelivery :one
 SELECT delivery_id, event_type, action_type, installation_id, github_user_id, payload_hash, processed_at
 FROM deck_github_webhook_deliveries

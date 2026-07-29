@@ -12,7 +12,7 @@
   ],
   "setup_url": "https://deck.deli.dev/github/app/callback",
   "public": false,
-  "request_oauth_on_install": true,
+  "request_oauth_on_install": false,
   "setup_on_update": true,
   "default_permissions": {
     "metadata": "read",

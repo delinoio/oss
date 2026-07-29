@@ -24,6 +24,7 @@ func (store *callbackStoreFixture) SaveGitHubCallbackState(
 	_ context.Context,
 	hash [sha256.Size]byte,
 	state CallbackState,
+	_ time.Time,
 ) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()

@@ -21,7 +21,12 @@ const (
 )
 
 type CallbackStore interface {
-	SaveGitHubCallbackState(context.Context, [sha256.Size]byte, CallbackState) error
+	SaveGitHubCallbackState(
+		context.Context,
+		[sha256.Size]byte,
+		CallbackState,
+		time.Time,
+	) error
 	ConsumeGitHubCallbackState(
 		context.Context,
 		[sha256.Size]byte,
@@ -100,14 +105,15 @@ func (broker *Broker) StartInstallation(
 	if broker == nil {
 		return "", time.Time{}, ErrInvalidConfiguration
 	}
-	expiresAt := broker.now().Add(callbackStateLifetime)
+	now := broker.now()
+	expiresAt := now.Add(callbackStateLifetime)
 	signed, state, err := broker.signer.Sign(
 		StatePurposeInstallation, accountID, owner, expiresAt)
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	if err := broker.callbacks.SaveGitHubCallbackState(
-		ctx, StateHash(signed), state); err != nil {
+		ctx, StateHash(signed), state, now); err != nil {
 		return "", time.Time{}, err
 	}
 	target, err := broker.oauth.InstallationTarget(signed)
@@ -180,7 +186,7 @@ func (broker *Broker) installationCallback(
 		return
 	}
 	if err := broker.callbacks.SaveGitHubCallbackState(
-		request.Context(), StateHash(oauthState), pending); err != nil {
+		request.Context(), StateHash(oauthState), pending, now); err != nil {
 		http.Error(writer, "callback failed", http.StatusBadGateway)
 		return
 	}

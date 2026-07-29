@@ -191,16 +191,6 @@ FROM deck_github_user_credentials
 WHERE connection_id = sqlc.arg(connection_id)
   AND account_id = sqlc.arg(account_id);
 
--- name: GetGitHubUserCredentialForAccount :one
-SELECT credential.*
-FROM deck_github_user_credentials credential
-JOIN deck_connections connection
-  ON connection.connection_id = credential.connection_id
-WHERE credential.account_id = sqlc.arg(account_id)
-  AND connection.state = 3
-ORDER BY credential.updated_at DESC, credential.connection_id
-LIMIT 1;
-
 -- name: ListGitHubUserCredentialsForRewrap :many
 SELECT *
 FROM deck_github_user_credentials

@@ -33,6 +33,7 @@ func (store *Store) SaveGitHubCallbackState(
 	ctx context.Context,
 	hash [32]byte,
 	state deckgithub.CallbackState,
+	now time.Time,
 ) error {
 	ownerID, err := parseStoredUUID(state.Owner.ID)
 	if err != nil {
@@ -67,6 +68,10 @@ func (store *Store) SaveGitHubCallbackState(
 		}
 		if tombstoned {
 			return ErrDeletionInProgress
+		}
+		if err := queries.DeleteExpiredGitHubCallbackStates(
+			ctx, pgTime(now)); err != nil {
+			return err
 		}
 		return queries.InsertGitHubCallbackState(ctx,
 			dbgen.InsertGitHubCallbackStateParams{
@@ -400,10 +405,6 @@ func (store *Store) decodeGitHubConnection(
 		ctx, dbgen.GetGitHubUserCredentialParams{
 			ConnectionID: row.ConnectionID, AccountID: pgUUID(accountID),
 		})
-	if errors.Is(err, pgx.ErrNoRows) {
-		credential, err = store.queries.GetGitHubUserCredentialForAccount(
-			ctx, pgUUID(accountID))
-	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return GitHubConnectionRecord{}, deckgithub.ErrPermissionDenied
 	}
