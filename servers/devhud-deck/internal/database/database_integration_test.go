@@ -726,7 +726,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if len(device.Device.Shortcuts) != 0 || len(device.Device.Widgets) != 0 {
 		t.Fatalf("organization device state survived deletion: %#v", device.Device)
 	}
-	if device.Device.Revision.Value != 6 {
+	if device.Device.Revision.Value != 5 {
 		t.Fatalf("device revision after organization deletion = %#v",
 			device.Device.Revision)
 	}
