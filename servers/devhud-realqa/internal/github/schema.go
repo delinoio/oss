@@ -463,6 +463,12 @@ func validateIssueFormYAML(document *yaml.Node) error {
 			return errors.New("realqa github: Issue Form string value is invalid")
 		}
 	}
+	for _, key := range []string{"labels", "assignees", "projects"} {
+		if value := mappingValue(root, key); value != nil &&
+			value.Kind == yaml.ScalarNode && strings.TrimSpace(value.Value) == "" {
+			return errors.New("realqa github: Issue Form string list value is invalid")
+		}
+	}
 	body := mappingValue(root, "body")
 	if body == nil || body.Kind != yaml.SequenceNode {
 		return nil

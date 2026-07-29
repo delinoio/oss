@@ -179,6 +179,7 @@ type githubCredentialRecord struct {
 	ProviderInstallationID int64
 	OwnerKind              string
 	OwnerID                pgtype.UUID
+	CredentialAccountID    pgtype.UUID
 	CredentialCiphertext   []byte
 	WrappedDataKey         []byte
 	KeyID                  pgtype.Text
@@ -212,13 +213,18 @@ func getGitHubCredentialForInstallation(
 			return githubCredentialRecord{}, err
 		}
 		connection, connectionErr := queries.GetGitHubUserCredentialForInstallationForUpdate(
-			ctx, dbgen.GetGitHubUserCredentialForInstallationForUpdateParams(parameters))
+			ctx, dbgen.GetGitHubUserCredentialForInstallationForUpdateParams{
+				AccountID:      parameters.AccountID,
+				InstallationID: parameters.InstallationID,
+			})
 		return githubCredentialRecord{
 			ConnectionID:           connection.ConnectionID,
 			ProviderInstallationID: connection.ProviderInstallationID,
-			OwnerKind:              connection.OwnerKind, OwnerID: connection.OwnerID,
-			CredentialCiphertext: connection.CredentialCiphertext,
-			WrappedDataKey:       connection.WrappedDataKey, KeyID: connection.KeyID,
+			OwnerKind:              connection.OwnerKind,
+			OwnerID:                connection.OwnerID,
+			CredentialAccountID:    connection.CredentialAccountID,
+			CredentialCiphertext:   connection.CredentialCiphertext,
+			WrappedDataKey:         connection.WrappedDataKey, KeyID: connection.KeyID,
 		}, connectionErr
 	}
 	record, err := queries.GetGitHubCallerAuthorizationForInstallation(ctx, parameters)
@@ -235,13 +241,18 @@ func getGitHubCredentialForInstallation(
 		return githubCredentialRecord{}, err
 	}
 	connection, connectionErr := queries.GetGitHubUserCredentialForInstallation(
-		ctx, dbgen.GetGitHubUserCredentialForInstallationParams(parameters))
+		ctx, dbgen.GetGitHubUserCredentialForInstallationParams{
+			AccountID:      parameters.AccountID,
+			InstallationID: parameters.InstallationID,
+		})
 	return githubCredentialRecord{
 		ConnectionID:           connection.ConnectionID,
 		ProviderInstallationID: connection.ProviderInstallationID,
-		OwnerKind:              connection.OwnerKind, OwnerID: connection.OwnerID,
-		CredentialCiphertext: connection.CredentialCiphertext,
-		WrappedDataKey:       connection.WrappedDataKey, KeyID: connection.KeyID,
+		OwnerKind:              connection.OwnerKind,
+		OwnerID:                connection.OwnerID,
+		CredentialAccountID:    connection.CredentialAccountID,
+		CredentialCiphertext:   connection.CredentialCiphertext,
+		WrappedDataKey:         connection.WrappedDataKey, KeyID: connection.KeyID,
 	}, connectionErr
 }
 
@@ -254,6 +265,7 @@ func (adapter *Adapter) refreshUserToken(
 	var token UserToken
 	var refreshCredential OAuthCredential
 	var refreshConnectionID pgtype.UUID
+	var refreshAccountID uuid.UUID
 	var refreshOwner Owner
 	var refreshRevision int64
 	var refreshCallerAuthorization bool
@@ -284,6 +296,10 @@ func (adapter *Adapter) refreshUserToken(
 				if record.KeyID.String == adapter.vault.ActiveKeyID() {
 					return nil
 				}
+				credentialAccountID, accountErr := record.credentialAccountID(accountID)
+				if accountErr != nil {
+					return accountErr
+				}
 				rewrapped, rewrapErr := adapter.vault.Rewrap(EncryptedCredential{
 					Ciphertext:     record.CredentialCiphertext,
 					WrappedDataKey: record.WrappedDataKey,
@@ -293,21 +309,25 @@ func (adapter *Adapter) refreshUserToken(
 					return rewrapErr
 				}
 				return adapter.updateUserCredential(
-					ctx, queries, record.ConnectionID, accountID, rewrapped,
+					ctx, queries, record.ConnectionID, credentialAccountID, rewrapped,
 					record.CallerAuthorization)
 			}
 			now := adapter.now().UTC()
+			credentialAccountID, accountErr := record.credentialAccountID(accountID)
+			if accountErr != nil {
+				return accountErr
+			}
 			if record.CallerAuthorization {
 				refreshRevision, err = queries.BeginGitHubCallerAuthorizationRefresh(
 					ctx, dbgen.BeginGitHubCallerAuthorizationRefreshParams{
 						ConnectionID: record.ConnectionID,
-						AccountID:    providerPGUUID(accountID),
+						AccountID:    providerPGUUID(credentialAccountID),
 					})
 			} else {
 				refreshRevision, err = queries.BeginGitHubUserCredentialRefresh(
 					ctx, dbgen.BeginGitHubUserCredentialRefreshParams{
 						ConnectionID: record.ConnectionID,
-						AccountID:    providerPGUUID(accountID),
+						AccountID:    providerPGUUID(credentialAccountID),
 					})
 			}
 			if err != nil {
@@ -327,6 +347,7 @@ func (adapter *Adapter) refreshUserToken(
 			}
 			refreshCredential = credential
 			refreshConnectionID = record.ConnectionID
+			refreshAccountID = credentialAccountID
 			return nil
 		})
 	if err != nil {
@@ -355,13 +376,27 @@ func (adapter *Adapter) refreshUserToken(
 		return 0, UserToken{}, err
 	}
 	count, err := adapter.completeUserCredentialRefresh(
-		ctx, refreshConnectionID, accountID, encrypted, refreshRevision,
+		ctx, refreshConnectionID, refreshAccountID, encrypted, refreshRevision,
 		refreshCallerAuthorization)
 	if err != nil || count != 1 {
 		return 0, UserToken{}, errors.New(
 			"realqa github: refreshed credential could not be stored; reconnect is required")
 	}
 	return providerID, refreshedToken, nil
+}
+
+func (record githubCredentialRecord) credentialAccountID(
+	callerAccountID uuid.UUID,
+) (uuid.UUID, error) {
+	if record.CallerAuthorization {
+		return callerAccountID, nil
+	}
+	accountID := uuid.UUID(record.CredentialAccountID.Bytes)
+	if !record.CredentialAccountID.Valid || accountID == uuid.Nil {
+		return uuid.Nil, errors.New(
+			"realqa github: connected user credential is invalid")
+	}
+	return accountID, nil
 }
 
 func (adapter *Adapter) completeUserCredentialRefresh(

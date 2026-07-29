@@ -152,6 +152,30 @@ body:
 	}
 }
 
+func TestIssueFormRejectsEmptyScalarStringLists(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"labels", "assignees", "projects"} {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseIssueForm(
+				".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`,
+				[]byte(fmt.Sprintf(`
+name: Bug report
+description: Report a bug
+%s: ""
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+`, key)))
+			if err == nil || !strings.Contains(err.Error(), "string list value is invalid") {
+				t.Fatalf("expected empty %s rejection, got %v", key, err)
+			}
+		})
+	}
+}
+
 func TestParseAndValidateIssueFormFixture(t *testing.T) {
 	t.Parallel()
 	contents, err := os.ReadFile("testdata/bug.yml")

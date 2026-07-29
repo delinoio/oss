@@ -716,6 +716,7 @@ SELECT
     installation.provider_installation_id,
     installation.owner_kind,
     installation.owner_id,
+    connection.connected_by_account_id AS credential_account_id,
     connection.credential_ciphertext,
     connection.wrapped_data_key,
     connection.key_id
@@ -723,19 +724,19 @@ FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
-JOIN realqa_owner_bindings AS connector_access
-  ON connector_access.account_id = connection.connected_by_account_id
- AND connector_access.owner_kind = connection.owner_kind
- AND connector_access.owner_id = connection.owner_id
- AND connector_access.role IN ('owner', 'admin')
-WHERE installation.id = $1
-  AND connection.connected_by_account_id = $2
+JOIN realqa_owner_bindings AS caller_access
+  ON caller_access.account_id = $1
+ AND caller_access.owner_kind = connection.owner_kind
+ AND caller_access.owner_id = connection.owner_id
+ AND caller_access.role IN ('owner', 'admin')
+WHERE installation.id = $2
+  AND connection.connected_by_account_id IS NOT NULL
   AND installation.state = 'active'
 `
 
 type GetGitHubUserCredentialForInstallationParams struct {
-	InstallationID pgtype.UUID
 	AccountID      pgtype.UUID
+	InstallationID pgtype.UUID
 }
 
 type GetGitHubUserCredentialForInstallationRow struct {
@@ -743,19 +744,21 @@ type GetGitHubUserCredentialForInstallationRow struct {
 	ProviderInstallationID int64
 	OwnerKind              string
 	OwnerID                pgtype.UUID
+	CredentialAccountID    pgtype.UUID
 	CredentialCiphertext   []byte
 	WrappedDataKey         []byte
 	KeyID                  pgtype.Text
 }
 
 func (q *Queries) GetGitHubUserCredentialForInstallation(ctx context.Context, arg GetGitHubUserCredentialForInstallationParams) (GetGitHubUserCredentialForInstallationRow, error) {
-	row := q.db.QueryRow(ctx, getGitHubUserCredentialForInstallation, arg.InstallationID, arg.AccountID)
+	row := q.db.QueryRow(ctx, getGitHubUserCredentialForInstallation, arg.AccountID, arg.InstallationID)
 	var i GetGitHubUserCredentialForInstallationRow
 	err := row.Scan(
 		&i.ConnectionID,
 		&i.ProviderInstallationID,
 		&i.OwnerKind,
 		&i.OwnerID,
+		&i.CredentialAccountID,
 		&i.CredentialCiphertext,
 		&i.WrappedDataKey,
 		&i.KeyID,
@@ -769,6 +772,7 @@ SELECT
     installation.provider_installation_id,
     installation.owner_kind,
     installation.owner_id,
+    connection.connected_by_account_id AS credential_account_id,
     connection.credential_ciphertext,
     connection.wrapped_data_key,
     connection.key_id
@@ -776,20 +780,20 @@ FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
-JOIN realqa_owner_bindings AS connector_access
-  ON connector_access.account_id = connection.connected_by_account_id
- AND connector_access.owner_kind = connection.owner_kind
- AND connector_access.owner_id = connection.owner_id
- AND connector_access.role IN ('owner', 'admin')
-WHERE installation.id = $1
-  AND connection.connected_by_account_id = $2
+JOIN realqa_owner_bindings AS caller_access
+  ON caller_access.account_id = $1
+ AND caller_access.owner_kind = connection.owner_kind
+ AND caller_access.owner_id = connection.owner_id
+ AND caller_access.role IN ('owner', 'admin')
+WHERE installation.id = $2
+  AND connection.connected_by_account_id IS NOT NULL
   AND installation.state = 'active'
 FOR UPDATE OF connection
 `
 
 type GetGitHubUserCredentialForInstallationForUpdateParams struct {
-	InstallationID pgtype.UUID
 	AccountID      pgtype.UUID
+	InstallationID pgtype.UUID
 }
 
 type GetGitHubUserCredentialForInstallationForUpdateRow struct {
@@ -797,19 +801,21 @@ type GetGitHubUserCredentialForInstallationForUpdateRow struct {
 	ProviderInstallationID int64
 	OwnerKind              string
 	OwnerID                pgtype.UUID
+	CredentialAccountID    pgtype.UUID
 	CredentialCiphertext   []byte
 	WrappedDataKey         []byte
 	KeyID                  pgtype.Text
 }
 
 func (q *Queries) GetGitHubUserCredentialForInstallationForUpdate(ctx context.Context, arg GetGitHubUserCredentialForInstallationForUpdateParams) (GetGitHubUserCredentialForInstallationForUpdateRow, error) {
-	row := q.db.QueryRow(ctx, getGitHubUserCredentialForInstallationForUpdate, arg.InstallationID, arg.AccountID)
+	row := q.db.QueryRow(ctx, getGitHubUserCredentialForInstallationForUpdate, arg.AccountID, arg.InstallationID)
 	var i GetGitHubUserCredentialForInstallationForUpdateRow
 	err := row.Scan(
 		&i.ConnectionID,
 		&i.ProviderInstallationID,
 		&i.OwnerKind,
 		&i.OwnerID,
+		&i.CredentialAccountID,
 		&i.CredentialCiphertext,
 		&i.WrappedDataKey,
 		&i.KeyID,

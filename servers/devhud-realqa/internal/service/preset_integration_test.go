@@ -767,6 +767,27 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, accountID, organizationID); err != nil {
 		t.Fatal(err)
 	}
+	demotedRepositories, err := tracker.ListRepositories(
+		authCtx, connect.NewRequest(&realqav1.ListRepositoriesRequest{
+			InstallationId: &realqav1.UuidV7{Value: organizationInstallationID.String()},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(demotedRepositories.Msg.Repositories) != 0 {
+		t.Fatalf("demoted member reused connector repository cache: %#v",
+			demotedRepositories.Msg.Repositories)
+	}
+	_, err = tracker.GetRepositoryIssueSchema(
+		authCtx, connect.NewRequest(&realqav1.GetRepositoryIssueSchemaRequest{
+			InstallationId: &realqav1.UuidV7{Value: organizationInstallationID.String()},
+			Repository: &realqav1.GitHubRepositoryRef{
+				RepositoryId: "repo-org", Owner: "delinoio", Name: "private",
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("demoted member repository schema code = %v", connect.CodeOf(err))
+	}
 	memberAuthorization, err := tracker.StartGitHubConnection(
 		authCtx, connect.NewRequest(&realqav1.StartGitHubConnectionRequest{
 			Owner: organizationOwnerScope(organizationID),

@@ -173,6 +173,7 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 	store, connection, _, connectionID, installationID, vault :=
 		adapterRefreshFixture(t, ctx, databaseURL, nil)
 	memberAccountID := uuidv7.MustNew()
+	otherAdminAccountID := uuidv7.MustNew()
 	var ownerID uuid.UUID
 	if err := connection.QueryRow(ctx, `
 		SELECT owner_id
@@ -197,9 +198,14 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_identities (account_id, subject_digest)
 		VALUES ($1, decode(repeat('02', 32), 'hex'));
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($8, decode(repeat('03', 32), 'hex'));
 		INSERT INTO realqa_owner_bindings (
 			account_id, owner_kind, owner_id, role
 		) VALUES ($1, 'organization', $6, 'member');
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($8, 'organization', $6, 'admin');
 		INSERT INTO realqa_github_user_authorizations (
 			connection_id, account_id, state, github_user_id, github_login,
 			credential_ciphertext, wrapped_data_key, key_id, connected_at
@@ -209,8 +215,9 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 			installation_id, account_id, repository_id, repository_owner,
 			repository_name, issues_enabled, can_submit
 		) VALUES ($7, $1, '7003', 'fixture-org', 'fixture-repository', true, true)
-	`, memberAccountID, connectionID, encrypted.Ciphertext,
-		encrypted.WrappedDataKey, encrypted.KeyID, ownerID, installationID); err != nil {
+		`, memberAccountID, connectionID, encrypted.Ciphertext,
+		encrypted.WrappedDataKey, encrypted.KeyID, ownerID, installationID,
+		otherAdminAccountID); err != nil {
 		t.Fatal(err)
 	}
 	now := func() time.Time {
@@ -236,6 +243,14 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 	if providerID != 9001 ||
 		token.value != "ghu_fixture_member_access_token_123456" {
 		t.Fatalf("caller authorization provider=%d token=%v", providerID, token)
+	}
+	providerID, token, err = adapter.userToken(ctx, otherAdminAccountID, installationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providerID != 9001 ||
+		token.value != "ghu_fixture_old_access_token_123456" {
+		t.Fatalf("shared admin credential provider=%d token=%v", providerID, token)
 	}
 	if _, _, err = adapter.userToken(
 		ctx, uuidv7.MustNew(), installationID,
@@ -310,6 +325,54 @@ func TestAdapterUsesCallerScopedOrganizationAuthorization(t *testing.T) {
 		ctx, memberAccountID, installationID,
 	); !errors.Is(err, ErrCallerAuthorizationUnavailable) {
 		t.Fatalf("demoted connector used owner credential: %v", err)
+	}
+	refreshNow := time.Date(2026, 7, 29, 4, 0, 0, 0, time.UTC)
+	refreshCalls := 0
+	refreshClient, err := NewClient(ClientConfig{
+		HTTPClient: fixtureHTTPClient(func(
+			request *http.Request,
+		) (*http.Response, error) {
+			refreshCalls++
+			return jsonResponse(request, http.StatusOK, map[string]any{
+				"access_token":             "ghu_fixture_admin_refreshed_access_token_123456",
+				"refresh_token":            "ghr_fixture_admin_refreshed_refresh_token_123456",
+				"expires_in":               28800,
+				"refresh_token_expires_in": 15897600,
+			}), nil
+		}),
+		ProjectPermission: ProjectPermissionNone,
+		Now:               func() time.Time { return refreshNow },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshAdapter, err := NewAdapter(
+		store, vault, refreshClient, "fixture-realqa-client",
+		"fixture-realqa-client-secret-value", func() time.Time { return refreshNow })
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerID, token, err = refreshAdapter.userToken(
+		ctx, otherAdminAccountID, installationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providerID != 9001 ||
+		token.value != "ghu_fixture_admin_refreshed_access_token_123456" ||
+		refreshCalls != 1 {
+		t.Fatalf("shared admin refresh provider=%d token=%v calls=%d",
+			providerID, token, refreshCalls)
+	}
+	var connectedBy uuid.UUID
+	if err = connection.QueryRow(ctx, `
+		SELECT connected_by_account_id
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, connectionID).Scan(&connectedBy); err != nil {
+		t.Fatal(err)
+	}
+	if connectedBy != memberAccountID {
+		t.Fatalf("shared credential connector changed to %s", connectedBy)
 	}
 }
 

@@ -56,6 +56,7 @@ SELECT
     installation.provider_installation_id,
     installation.owner_kind,
     installation.owner_id,
+    connection.connected_by_account_id AS credential_account_id,
     connection.credential_ciphertext,
     connection.wrapped_data_key,
     connection.key_id
@@ -63,13 +64,13 @@ FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
-JOIN realqa_owner_bindings AS connector_access
-  ON connector_access.account_id = connection.connected_by_account_id
- AND connector_access.owner_kind = connection.owner_kind
- AND connector_access.owner_id = connection.owner_id
- AND connector_access.role IN ('owner', 'admin')
+JOIN realqa_owner_bindings AS caller_access
+  ON caller_access.account_id = sqlc.arg(account_id)
+ AND caller_access.owner_kind = connection.owner_kind
+ AND caller_access.owner_id = connection.owner_id
+ AND caller_access.role IN ('owner', 'admin')
 WHERE installation.id = sqlc.arg(installation_id)
-  AND connection.connected_by_account_id = sqlc.arg(account_id)
+  AND connection.connected_by_account_id IS NOT NULL
   AND installation.state = 'active';
 
 -- name: GetGitHubCallerAuthorizationForInstallation :one
@@ -103,6 +104,7 @@ SELECT
     installation.provider_installation_id,
     installation.owner_kind,
     installation.owner_id,
+    connection.connected_by_account_id AS credential_account_id,
     connection.credential_ciphertext,
     connection.wrapped_data_key,
     connection.key_id
@@ -110,13 +112,13 @@ FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
-JOIN realqa_owner_bindings AS connector_access
-  ON connector_access.account_id = connection.connected_by_account_id
- AND connector_access.owner_kind = connection.owner_kind
- AND connector_access.owner_id = connection.owner_id
- AND connector_access.role IN ('owner', 'admin')
+JOIN realqa_owner_bindings AS caller_access
+  ON caller_access.account_id = sqlc.arg(account_id)
+ AND caller_access.owner_kind = connection.owner_kind
+ AND caller_access.owner_id = connection.owner_id
+ AND caller_access.role IN ('owner', 'admin')
 WHERE installation.id = sqlc.arg(installation_id)
-  AND connection.connected_by_account_id = sqlc.arg(account_id)
+  AND connection.connected_by_account_id IS NOT NULL
   AND installation.state = 'active'
 FOR UPDATE OF connection;
 
