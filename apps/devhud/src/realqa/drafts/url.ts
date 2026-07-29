@@ -2,6 +2,7 @@ import type { RestorableDraftUrl } from "./contracts";
 
 const MAX_URL_BYTES = 8_192;
 const INVALID_PERCENT_ESCAPE = /%(?![0-9a-f]{2})/iu;
+const HTTP_URL_PREFIX = /^https?:\/\//u;
 
 export type CapturedUrlResult =
   | { readonly ok: true; readonly url: RestorableDraftUrl }
@@ -73,7 +74,11 @@ function containsRawControl(value: string): boolean {
 }
 
 export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
-  if (containsRawControl(value) || INVALID_PERCENT_ESCAPE.test(value)) {
+  if (
+    containsRawControl(value) ||
+    INVALID_PERCENT_ESCAPE.test(value) ||
+    value.includes("\\")
+  ) {
     return { ok: false, reason: "invalid-url" };
   }
   let parsed: URL;
@@ -84,6 +89,16 @@ export function sanitizeCapturedUrl(value: string): CapturedUrlResult {
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return { ok: false, reason: "unsupported-scheme" };
+  }
+  const prefix = value.match(HTTP_URL_PREFIX)?.[0];
+  if (prefix === undefined) {
+    return { ok: false, reason: "invalid-url" };
+  }
+  const authority = value
+    .slice(prefix.length)
+    .split(/[/?#]/u, 1)[0] ?? "";
+  if (authority === "" || authority.includes("%")) {
+    return { ok: false, reason: "invalid-url" };
   }
   if (parsed.username !== "" || parsed.password !== "") {
     return { ok: false, reason: "credentials-forbidden" };
