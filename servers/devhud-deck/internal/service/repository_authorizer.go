@@ -93,7 +93,7 @@ func (authorizer *GitHubRepositoryAuthorizer) ListReadableRepositories(
 		ctx, authorizer.store, authorizer.broker, viewer.AccountID,
 		connection, time.Now().UTC())
 	if errors.Is(err, deckgithub.ErrPermissionDenied) {
-		return nil, nil
+		return nil, deckgithub.ErrReauthenticationRequired
 	}
 	if err != nil {
 		return nil, err
