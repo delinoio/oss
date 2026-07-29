@@ -715,12 +715,12 @@ impl RealQaDraftState {
             .key(&access.account_binding, false)?
             .ok_or(DraftError::AccountLocked)?;
         validate_existing_directory(&self.account_directory(&access.account_binding)?)?;
-        let record = read_record(
+        let summary = read_summary(
             &self.draft_path(&access.account_binding, draft_id)?,
             &access.account_binding,
             &key,
         )?;
-        if record.revision != expected_revision {
+        if summary.revision != expected_revision {
             return Err(DraftError::Conflict);
         }
         Ok(())
@@ -1900,7 +1900,7 @@ mod tests {
     }
 
     #[test]
-    fn listing_decrypts_only_the_summary_header() {
+    fn listing_and_submission_preflight_decrypt_only_the_summary_header() {
         let state = state("summary-only-list");
         let composer = ComposerCore::default();
         let draft_id = Uuid::now_v7().to_string();
@@ -1921,6 +1921,9 @@ mod tests {
         fs::write(&path, encrypted).unwrap();
 
         assert_eq!(state.list(&account).unwrap().len(), 1);
+        state
+            .assert_submission_allowed(&account, &draft_id, 1)
+            .unwrap();
         assert_eq!(
             state
                 .load(

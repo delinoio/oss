@@ -227,6 +227,41 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     });
   });
 
+  it("limits the total ordered rule slice, including disabled rules", () => {
+    const disabledRules = Array.from({ length: 64 }, (_, index) =>
+      rule({ ruleId: `disabled-${index}`, enabled: false }),
+    );
+    expect(validateRealQaProcessUrlRules(disabledRules)).toBe(true);
+    expect(
+      validateRealQaProcessUrlRules([
+        ...disabledRules,
+        rule({ ruleId: "enabled-rule" }),
+      ]),
+    ).toBe(false);
+  });
+
+  it.each([
+    [String.raw`^\p{Han}+$`, "漢字"],
+    [String.raw`^\pL+$`, "Letters"],
+    [String.raw`^[\p{Han}]+$`, "漢字"],
+  ])("translates synchronized Unicode title class %s", (pattern, title) => {
+    expect(
+      inferDesktopUrl(
+        [
+          rule({
+            safeWindowTitlePattern: pattern,
+            urlTemplate: "https://example.com/matched",
+          }),
+        ],
+        "code",
+        title,
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/matched" },
+    });
+  });
+
   it.each([
     "(?=secret)",
     String.raw`(a)\1`,

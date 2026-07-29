@@ -60,7 +60,7 @@ func TestCompileRejectsUnsafeOrDivergentRegexFeatures(t *testing.T) {
 	t.Parallel()
 	patterns := []string{
 		`(?=secret)`, `(a)\1`, `(?P<name>a)`, `\C`, `\Qliteral\E`,
-		`[a-z&&[^x]]`, `[a-z--[aeiou]]`, `a{101}`,
+		`[a-z&&[^x]]`, `[a-z--[aeiou]]`, `[[:alpha:]&&[^x]]`, `a{101}`,
 		strings.Repeat("a", MaxPatternBytes+1),
 	}
 	for _, pattern := range patterns {
@@ -90,7 +90,10 @@ func TestCompileRejectsCredentialURLTemplates(t *testing.T) {
 
 func TestCompileAcceptsLiteralClassOperatorText(t *testing.T) {
 	t.Parallel()
-	for _, pattern := range []string{`^issue--draft$`, `^issue&&draft$`, `^issue~~draft$`} {
+	for _, pattern := range []string{
+		`^issue--draft$`, `^issue&&draft$`, `^issue~~draft$`,
+		`^[[]--$`, `^[[]&&$`, `^[[]~~$`,
+	} {
 		if _, err := Compile([]Rule{{
 			ExactProcessName: "app",
 			TitlePattern:     pattern,

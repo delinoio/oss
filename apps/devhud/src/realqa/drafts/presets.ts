@@ -80,6 +80,27 @@ function repetitionLength(pattern: string, index: number): number {
   return pattern.slice(index).match(/^\{\d+(?:,\d*)?\}/u)?.[0].length ?? 0;
 }
 
+function translateUnicodeClassEscape(
+  pattern: string,
+  index: number,
+): { readonly output: string; readonly nextIndex: number } | null {
+  const unicodeClass = pattern
+    .slice(index)
+    .match(/^\\([pP])(?:\{([A-Za-z_]+)\}|([A-Za-z]))/u);
+  if (unicodeClass === null) return null;
+  const name = unicodeClass[2] ?? unicodeClass[3] ?? "";
+  const direct = `\\${unicodeClass[1]}{${name}}`;
+  try {
+    new RegExp(direct, "u");
+    return { output: direct, nextIndex: index + unicodeClass[0].length };
+  } catch {
+    return {
+      output: `\\${unicodeClass[1]}{Script=${name}}`,
+      nextIndex: index + unicodeClass[0].length,
+    };
+  }
+}
+
 function hasUnsupportedCharacterClassSetAlgebra(pattern: string): boolean {
   let inCharacterClass = false;
   for (let index = 0; index < pattern.length; index += 1) {
@@ -282,22 +303,36 @@ function translateTitlePattern(pattern: string): string {
         return { output, nextIndex: index + 1 };
       }
       if (token === "[") {
-        const classStart = index;
+        output += token;
         index += 1;
         while (index < pattern.length) {
           if (pattern[index] === "\\") {
-            index += 2;
+            const unicodeClass = translateUnicodeClassEscape(pattern, index);
+            if (unicodeClass !== null) {
+              output += unicodeClass.output;
+              index = unicodeClass.nextIndex;
+            } else {
+              output += pattern.slice(index, index + 2);
+              index += 2;
+            }
           } else if (pattern[index] === "]") {
+            output += "]";
             index += 1;
             break;
           } else {
+            output += pattern[index];
             index += 1;
           }
         }
-        output += pattern.slice(classStart, index);
         continue;
       }
       if (token === "\\") {
+        const unicodeClass = translateUnicodeClassEscape(pattern, index);
+        if (unicodeClass !== null) {
+          output += unicodeClass.output;
+          index = unicodeClass.nextIndex;
+          continue;
+        }
         const escaped = pattern[index + 1];
         output +=
           escaped === "A"
@@ -374,8 +409,8 @@ function validTemplate(template: string): boolean {
 export function validateRealQaProcessUrlRules(
   rules: readonly RealQaProcessUrlRule[],
 ): boolean {
+  if (rules.length > MAX_REALQA_PROCESS_URL_RULES) return false;
   const enabledRules = rules.filter((rule) => rule.enabled);
-  if (enabledRules.length > MAX_REALQA_PROCESS_URL_RULES) return false;
   return enabledRules.every((rule) => {
     if (
       rule.exactProcessName.length === 0 ||

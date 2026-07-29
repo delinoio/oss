@@ -113,21 +113,35 @@ func validatePatternText(pattern string) error {
 
 func containsClassSetAlgebra(pattern string) bool {
 	inClass := false
+	inPOSIXClass := false
 	for index := 0; index < len(pattern); index++ {
-		switch pattern[index] {
-		case '\\':
+		if pattern[index] == '\\' {
 			index++
-		case '[':
-			inClass = true
-		case ']':
+			continue
+		}
+		if !inClass {
+			inClass = pattern[index] == '['
+			continue
+		}
+		if !inPOSIXClass && strings.HasPrefix(pattern[index:], "[:") {
+			inPOSIXClass = true
+			index++
+			continue
+		}
+		if inPOSIXClass && strings.HasPrefix(pattern[index:], ":]") {
+			inPOSIXClass = false
+			index++
+			continue
+		}
+		if !inPOSIXClass && pattern[index] == ']' {
 			inClass = false
-		default:
-			if inClass &&
-				(strings.HasPrefix(pattern[index:], "&&") ||
-					strings.HasPrefix(pattern[index:], "--") ||
-					strings.HasPrefix(pattern[index:], "~~")) {
-				return true
-			}
+			continue
+		}
+		if !inPOSIXClass &&
+			(strings.HasPrefix(pattern[index:], "&&") ||
+				strings.HasPrefix(pattern[index:], "--") ||
+				strings.HasPrefix(pattern[index:], "~~")) {
+			return true
 		}
 	}
 	return false
