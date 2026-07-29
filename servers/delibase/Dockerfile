@@ -12,6 +12,7 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 COPY protos/delibase/gen/go ./protos/delibase/gen/go
+COPY protos/devhud-deck/gen/go ./protos/devhud-deck/gen/go
 COPY servers/internal ./servers/internal
 COPY servers/delibase ./servers/delibase
 ARG TARGETOS

@@ -248,6 +248,92 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: servers/delibase/scripts/test-image.sh
 
+  devhud-deck-server:
+    name: DevHud Deck Server
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: deck
+          POSTGRES_PASSWORD: deck_test
+          POSTGRES_DB: deck
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U deck -d deck"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            deck:
+              - .github/workflows/CI.yml
+              - go.mod
+              - go.sum
+              - protos/devhud-deck/gen/go/**
+              - servers/devhud-deck/**
+              - servers/internal/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DECK_CHANGED: ${{ steps.filter.outputs.deck }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DECK_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (no Deck server changes)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: echo "Skipping Deck server checks"
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install sqlc
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+
+      - name: Check Deck sqlc generated output
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          set -euo pipefail
+
+          servers/devhud-deck/scripts/generate-sqlc.sh
+          git diff --exit-code -- servers/devhud-deck/internal/database/dbgen
+
+      - name: Run Deck PostgreSQL tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DECK_TEST_DATABASE_URL: postgres://deck:deck_test@127.0.0.1:5432/deck?sslmode=disable
+        run: go test -count=1 ./servers/devhud-deck/...
+
+      - name: Vet Deck
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: go vet ./servers/devhud-deck/...
+
   devhud-realqa-server:
     name: DevHud RealQA Server
     runs-on: ubuntu-latest
@@ -721,6 +807,99 @@ jobs:
           cargo test --workspace --all-targets
           cargo test -p devhud --lib --features linux-capture-backend realqa_capture
           cargo check -p devhud --lib --features linux-capture-backend --target aarch64-unknown-linux-gnu
+
+  devhud-realqa-macos:
+    name: DevHud RealQA macOS capture
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            capture:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - Cargo.toml
+              - Cargo.lock
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+              - rust-toolchain.toml
+              - apps/AGENTS.md
+              - apps/devhud/package.json
+              - apps/devhud/scripts/check-contracts.mjs
+              - apps/devhud/scripts/check-diagnostics.mjs
+              - apps/devhud/scripts/check-security.mjs
+              - apps/devhud/scripts/process.mjs
+              - apps/devhud/scripts/test-realqa-native.mjs
+              - apps/devhud/src/realqa/**
+              - apps/devhud/src-tauri/Cargo.toml
+              - apps/devhud/src-tauri/Info.plist
+              - apps/devhud/src-tauri/build.rs
+              - apps/devhud/src-tauri/capabilities/realqa-capture.json
+              - apps/devhud/src-tauri/src/diagnostics.rs
+              - apps/devhud/src-tauri/src/lib.rs
+              - apps/devhud/src-tauri/src/local_log.rs
+              - apps/devhud/src-tauri/src/realqa_capture/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          CAPTURE_CHANGED: ${{ steps.filter.outputs.capture }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CAPTURE_CHANGED}" = "true" ]; then
+            run=true
+          fi
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (RealQA macOS capture unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: echo "Skipping RealQA macOS capture checks"
+
+      - name: Install Rust toolchain
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Test macOS fixtures and both architectures
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter devhud test:realqa:native
 
   node-mpapp-test:
     name: Node mpapp test
@@ -1383,6 +1562,7 @@ jobs:
       - rust-fmt
       - rust-clippy
       - rust-test
+      - devhud-realqa-macos
       - node-mpapp-test
       - node-mpapp-lint
       - node-devhud

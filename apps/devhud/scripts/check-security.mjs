@@ -135,6 +135,8 @@ const expectedCapabilities = {
     platforms: ["linux", "macOS", "windows"],
     windows: ["realqa-capture"],
     permissions: [
+      "allow-realqa-capture-permission-status",
+      "allow-realqa-request-capture-permission",
       "allow-realqa-inspect-capture-capabilities",
       "allow-realqa-list-capture-sources",
       "allow-realqa-adjust-capture-selection",
@@ -254,6 +256,8 @@ requireCondition(
         command.startsWith("realqa_delete_local_draft") ||
         command.startsWith("realqa_assert_local_draft_")) &&
       ![
+        "realqa_capture_permission_status",
+        "realqa_request_capture_permission",
         "realqa_inspect_capture_capabilities",
         "realqa_list_capture_sources",
         "realqa_adjust_capture_selection",
