@@ -621,6 +621,62 @@ func TestGetRepositoryDefinitionsParsesProviderFixtures(t *testing.T) {
 	}
 }
 
+func TestGetRepositoryDefinitionsRejectsDuplicateTemplateNames(t *testing.T) {
+	t.Parallel()
+	contents := map[string][]byte{
+		".github/ISSUE_TEMPLATE/bug.md": []byte(`---
+name: Bug report
+about: Report a bug
+---
+Describe the bug.
+`),
+		".github/ISSUE_TEMPLATE/bug.yml": []byte(`
+name: " bug REPORT "
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: Summary
+`),
+	}
+	httpClient := fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/repos/delinoio/oss/contents/.github/ISSUE_TEMPLATE" {
+			return jsonResponse(request, http.StatusOK, []any{
+				map[string]any{
+					"type": "file", "path": ".github/ISSUE_TEMPLATE/bug.md",
+					"sha": "markdown-etag",
+				},
+				map[string]any{
+					"type": "file", "path": ".github/ISSUE_TEMPLATE/bug.yml",
+					"sha": "form-etag",
+				},
+			}), nil
+		}
+		filePath := strings.TrimPrefix(
+			request.URL.Path, "/repos/delinoio/oss/contents/")
+		content, exists := contents[filePath]
+		if !exists {
+			t.Fatalf("unexpected content request %s", request.URL)
+		}
+		return jsonResponse(request, http.StatusOK, map[string]any{
+			"type": "file", "encoding": "base64",
+			"content": base64.StdEncoding.EncodeToString(content),
+		}), nil
+	})
+	client, err := NewClient(ClientConfig{
+		HTTPClient: httpClient, ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitions, err := client.GetRepositoryDefinitions(
+		context.Background(), fixtureToken(t), fixtureRepository())
+	if err == nil || !strings.Contains(err.Error(), "definition names must be unique") {
+		t.Fatalf("expected duplicate name rejection, got definitions=%#v err=%v",
+			definitions, err)
+	}
+}
+
 func TestGetRepositoryDefinitionsUsesPublicOwnerDefaults(t *testing.T) {
 	t.Parallel()
 	markdown, err := os.ReadFile("testdata/bug.md")

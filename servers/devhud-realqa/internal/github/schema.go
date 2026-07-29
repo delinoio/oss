@@ -165,6 +165,8 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 		}
 	}
 	seen := make(map[string]struct{})
+	seenGeneratedLabels := make(map[string]struct{})
+	hasSubmittedField := false
 	for index, item := range raw.Body {
 		if item.Type == "upload" {
 			if err := validateSkippedUpload(item); err != nil {
@@ -177,7 +179,13 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 			return IssueForm{}, parseErr
 		}
 		if field.Kind != FormFieldMarkdown {
+			hasSubmittedField = true
 			if field.ID == "" {
+				if _, exists := seenGeneratedLabels[field.Label]; exists {
+					return IssueForm{}, errors.New(
+						"realqa github: Issue Form fields without IDs must have unique labels")
+				}
+				seenGeneratedLabels[field.Label] = struct{}{}
 				field.ID = generatedFormFieldID(index, reservedIDs)
 				reservedIDs[field.ID] = struct{}{}
 			}
@@ -187,6 +195,10 @@ func ParseIssueForm(filePath, etag string, contents []byte) (IssueForm, error) {
 			seen[field.ID] = struct{}{}
 		}
 		result.Fields = append(result.Fields, field)
+	}
+	if !hasSubmittedField {
+		return IssueForm{}, errors.New(
+			"realqa github: Issue Form must contain a supported submitted field")
 	}
 	return result, nil
 }
@@ -218,6 +230,11 @@ func parseFormField(raw rawFormField) (FormField, error) {
 	}
 	if (field.ID != "" && !issueFormIDPattern.MatchString(field.ID)) || field.Label == "" {
 		return FormField{}, errors.New("realqa github: Issue Form field ID or label is invalid")
+	}
+	if (field.Kind == FormFieldInput || field.Kind == FormFieldTextarea) &&
+		strings.Contains(strings.ToLower(field.Label), "password") {
+		return FormField{}, errors.New(
+			"realqa github: Issue Form field label contains a forbidden term")
 	}
 	if raw.Validations.Accept != "" {
 		return FormField{}, errors.New(
@@ -253,19 +270,21 @@ func parseFormField(raw rawFormField) (FormField, error) {
 		if len(raw.Attributes.Options) == 0 || len(raw.Attributes.Options) > 100 {
 			return FormField{}, errors.New("realqa github: Issue Form options are required")
 		}
-		seenDropdownOptions := make(map[string]struct{}, len(raw.Attributes.Options))
+		seenOptions := make(map[string]struct{}, len(raw.Attributes.Options))
 		for _, option := range raw.Attributes.Options {
 			parsed, err := parseFormOption(option, field.Kind)
 			if err != nil {
 				return FormField{}, err
 			}
-			if field.Kind == FormFieldDropdown {
-				if _, exists := seenDropdownOptions[parsed.Label]; exists {
+			if _, exists := seenOptions[parsed.Label]; exists {
+				if field.Kind == FormFieldDropdown {
 					return FormField{}, errors.New(
 						"realqa github: Issue Form dropdown options must be unique")
 				}
-				seenDropdownOptions[parsed.Label] = struct{}{}
+				return FormField{}, errors.New(
+					"realqa github: Issue Form checkbox options must be unique")
 			}
+			seenOptions[parsed.Label] = struct{}{}
 			field.Options = append(field.Options, parsed)
 		}
 	}

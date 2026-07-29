@@ -83,6 +83,23 @@ func TestComposeBodyExactOrderAndUTF8Bytes(t *testing.T) {
 	}
 }
 
+func TestComposeBodyPreservesRepositoryResponseEdgeWhitespace(t *testing.T) {
+	t.Parallel()
+	body, err := ComposeBody(IssueInput{
+		SubmissionID:       fixtureSubmissionID,
+		RepositoryResponse: "    command\r\nanswer  \r\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "    command\nanswer  \n\n\n" +
+		"## RealQA capture\n_No capture metadata included._\n\n" +
+		"<!-- realqa:submission:018f3f5e-7b01-7a2d-8c3a-4ba8d8b51608 -->\n"
+	if body != expected {
+		t.Fatalf("repository response whitespace changed:\n%q", body)
+	}
+}
+
 func TestComposeBodyAllowsManyImagesUntilSerializedOverflow(t *testing.T) {
 	t.Parallel()
 	input := IssueInput{

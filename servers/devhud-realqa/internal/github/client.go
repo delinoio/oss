@@ -475,6 +475,7 @@ func (client *Client) GetRepositoryDefinitions(
 	result := RepositoryDefinitions{
 		Markdown: []MarkdownTemplate{}, Forms: []IssueForm{},
 	}
+	definitionNames := make(map[string]struct{}, len(files))
 	for _, file := range files {
 		if file.Type != "file" || path.Clean(file.Path) != file.Path ||
 			!strings.HasPrefix(file.Path, ".github/ISSUE_TEMPLATE/") {
@@ -499,12 +500,24 @@ func (client *Client) GetRepositoryDefinitions(
 			if parseErr != nil {
 				return RepositoryDefinitions{}, parseErr
 			}
+			name := strings.ToLower(template.Definition.Name)
+			if _, exists := definitionNames[name]; exists {
+				return RepositoryDefinitions{}, errors.New(
+					"realqa github: repository definition names must be unique")
+			}
+			definitionNames[name] = struct{}{}
 			result.Markdown = append(result.Markdown, template)
 		default:
 			form, parseErr := ParseIssueForm(file.Path, file.SHA, contents)
 			if parseErr != nil {
 				return RepositoryDefinitions{}, parseErr
 			}
+			name := strings.ToLower(form.Definition.Name)
+			if _, exists := definitionNames[name]; exists {
+				return RepositoryDefinitions{}, errors.New(
+					"realqa github: repository definition names must be unique")
+			}
+			definitionNames[name] = struct{}{}
 			result.Forms = append(result.Forms, form)
 		}
 	}

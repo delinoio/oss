@@ -269,6 +269,128 @@ body:
 	}
 }
 
+func TestIssueFormRejectsDuplicateCheckboxOptions(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Terms
+      options:
+        - label: I agree
+        - label: " I agree "
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err == nil || !strings.Contains(err.Error(), "checkbox options must be unique") {
+		t.Fatalf("expected duplicate checkbox rejection, got form=%#v err=%v", form, err)
+	}
+}
+
+func TestIssueFormRejectsDuplicateLabelsWithoutProviderIDs(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: Summary
+  - type: textarea
+    attributes:
+      label: " Summary "
+`)
+	form, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	)
+	if err == nil || !strings.Contains(err.Error(), "without IDs must have unique labels") {
+		t.Fatalf("expected duplicate generated-label rejection, got form=%#v err=%v", form, err)
+	}
+}
+
+func TestIssueFormAllowsDuplicateLabelsWithProviderID(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: Summary
+  - type: textarea
+    id: details
+    attributes:
+      label: Summary
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err != nil {
+		t.Fatalf("provider ID should disambiguate duplicate labels: %v", err)
+	}
+}
+
+func TestIssueFormRejectsForbiddenCredentialLabels(t *testing.T) {
+	t.Parallel()
+	for _, contents := range [][]byte{
+		[]byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: Password
+`),
+		[]byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: textarea
+    attributes:
+      label: Enter your PASSWORD here
+`),
+	} {
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "forbidden term") {
+			t.Fatalf("expected forbidden label rejection, got %v", err)
+		}
+	}
+}
+
+func TestIssueFormRequiresSupportedSubmittedField(t *testing.T) {
+	t.Parallel()
+	for _, contents := range [][]byte{
+		[]byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: markdown
+    attributes:
+      value: Describe the bug.
+`),
+		[]byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: upload
+    attributes:
+      label: Screenshots
+    validations:
+      required: false
+`),
+	} {
+		if _, err := ParseIssueForm(
+			".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+		); err == nil || !strings.Contains(err.Error(), "supported submitted field") {
+			t.Fatalf("expected submitted-field rejection, got %v", err)
+		}
+	}
+}
+
 func TestIssueFormPreservesTextareaAnswerWhitespace(t *testing.T) {
 	t.Parallel()
 	form := IssueForm{Fields: []FormField{{

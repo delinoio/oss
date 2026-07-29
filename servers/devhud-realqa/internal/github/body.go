@@ -28,7 +28,8 @@ func ComposeBody(input IssueInput) (string, error) {
 		return "", errors.New("realqa github: repository response is invalid")
 	}
 	sections := make([]string, 0, 4)
-	if response := strings.TrimSpace(normalizeNewlines(input.RepositoryResponse)); response != "" {
+	response := normalizeNewlines(input.RepositoryResponse)
+	if strings.TrimSpace(response) != "" {
 		sections = append(sections, response)
 	}
 	capture, err := renderCapture(input.Capture)
