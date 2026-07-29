@@ -201,7 +201,7 @@ func (store *Store) ConnectGitHub(
 			if githubProviderChanged(existing, installation) {
 				if err := store.cleanupGitHubOwner(
 					ctx, queries, existing.OwnerScope,
-					uuidValue(existing.OwnerID), now, true); err != nil {
+					uuidValue(existing.OwnerID), now, true, false); err != nil {
 					return err
 				}
 			}
@@ -616,7 +616,8 @@ func (store *Store) DisconnectGitHub(
 			return err
 		}
 		if err := store.cleanupGitHubOwner(
-			ctx, queries, row.OwnerScope, uuidValue(row.OwnerID), now, true); err != nil {
+			ctx, queries, row.OwnerScope, uuidValue(row.OwnerID), now,
+			true, true); err != nil {
 			return err
 		}
 		result, err = store.decodeGitHubConnection(
@@ -632,7 +633,8 @@ func (store *Store) cleanupGitHubOwner(
 	scope int16,
 	ownerID uuid.UUID,
 	now time.Time,
-	disconnected bool,
+	clearNotificationState bool,
+	disconnectViews bool,
 ) error {
 	views, err := queries.ListOwnerViewsForProviderCleanup(
 		ctx, dbgen.ListOwnerViewsForProviderCleanupParams{
@@ -660,13 +662,15 @@ func (store *Store) cleanupGitHubOwner(
 		}); err != nil {
 		return err
 	}
-	if disconnected {
+	if clearNotificationState {
 		if err := queries.DeleteOwnerNotificationState(
 			ctx, dbgen.DeleteOwnerNotificationStateParams{
 				OwnerScope: scope, OwnerID: pgUUID(ownerID),
 			}); err != nil {
 			return err
 		}
+	}
+	if disconnectViews {
 		return queries.MarkOwnerViewsDisconnected(
 			ctx, dbgen.MarkOwnerViewsDisconnectedParams{
 				UpdatedAt: pgTime(now), OwnerScope: scope, OwnerID: pgUUID(ownerID),
@@ -740,7 +744,8 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 			if purge {
 				if err := store.cleanupGitHubOwner(
 					ctx, queries, connection.OwnerScope,
-					uuidValue(connection.OwnerID), now, disconnect); err != nil {
+					uuidValue(connection.OwnerID), now,
+					disconnect, disconnect); err != nil {
 					return err
 				}
 			}

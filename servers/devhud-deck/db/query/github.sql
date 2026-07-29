@@ -214,20 +214,26 @@ UPDATE deck_views
 SET connection_state = 1,
     revision = revision + 1,
     updated_at = sqlc.arg(updated_at)
-WHERE (sqlc.arg(owner_scope)::smallint = 1
+WHERE (
+    (sqlc.arg(owner_scope)::smallint = 1
         AND owner_scope = 1 AND owner_account_id = sqlc.arg(owner_id))
-   OR (sqlc.arg(owner_scope)::smallint = 2
-        AND owner_scope = 2 AND owner_organization_id = sqlc.arg(owner_id));
+    OR (sqlc.arg(owner_scope)::smallint = 2
+        AND owner_scope = 2 AND owner_organization_id = sqlc.arg(owner_id))
+)
+  AND connection_state <> 1;
 
 -- name: MarkOwnerViewsConnected :exec
 UPDATE deck_views
 SET connection_state = 3,
     revision = revision + 1,
     updated_at = sqlc.arg(updated_at)
-WHERE (sqlc.arg(owner_scope)::smallint = 1
+WHERE (
+    (sqlc.arg(owner_scope)::smallint = 1
         AND owner_scope = 1 AND owner_account_id = sqlc.arg(owner_id))
-   OR (sqlc.arg(owner_scope)::smallint = 2
-        AND owner_scope = 2 AND owner_organization_id = sqlc.arg(owner_id));
+    OR (sqlc.arg(owner_scope)::smallint = 2
+        AND owner_scope = 2 AND owner_organization_id = sqlc.arg(owner_id))
+)
+  AND connection_state <> 3;
 
 -- name: DeleteOwnerNotificationState :exec
 DELETE FROM deck_view_notification_preferences

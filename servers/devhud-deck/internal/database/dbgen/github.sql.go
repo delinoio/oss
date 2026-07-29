@@ -650,10 +650,13 @@ UPDATE deck_views
 SET connection_state = 3,
     revision = revision + 1,
     updated_at = $1
-WHERE ($2::smallint = 1
+WHERE (
+    ($2::smallint = 1
         AND owner_scope = 1 AND owner_account_id = $3)
-   OR ($2::smallint = 2
+    OR ($2::smallint = 2
         AND owner_scope = 2 AND owner_organization_id = $3)
+)
+  AND connection_state <> 3
 `
 
 type MarkOwnerViewsConnectedParams struct {
@@ -672,10 +675,13 @@ UPDATE deck_views
 SET connection_state = 1,
     revision = revision + 1,
     updated_at = $1
-WHERE ($2::smallint = 1
+WHERE (
+    ($2::smallint = 1
         AND owner_scope = 1 AND owner_account_id = $3)
-   OR ($2::smallint = 2
+    OR ($2::smallint = 2
         AND owner_scope = 2 AND owner_organization_id = $3)
+)
+  AND connection_state <> 1
 `
 
 type MarkOwnerViewsDisconnectedParams struct {
