@@ -117,6 +117,26 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     expect(inferDesktopUrl(rules, "terminal", "Issue 757")).toBeNull();
   });
 
+  it("ignores malformed disabled rules and continues with enabled safe rules", () => {
+    const rules = [
+      rule({
+        enabled: false,
+        safeWindowTitlePattern: "(?=unsupported)",
+        urlTemplate: "not a URL",
+      }),
+      rule({
+        ruleId: "01900000-0000-7000-8000-000000000002",
+        safeWindowTitlePattern: "",
+        urlTemplate: "https://fallback.example/",
+      }),
+    ];
+    expect(validateRealQaProcessUrlRules(rules)).toBe(true);
+    expect(inferDesktopUrl(rules, "code", "anything")).toMatchObject({
+      ok: true,
+      url: { value: "https://fallback.example/" },
+    });
+  });
+
   it.each([
     "(?=secret)",
     String.raw`(a)\1`,

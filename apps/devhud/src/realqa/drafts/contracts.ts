@@ -1,4 +1,8 @@
-import type { EditorOperation, ImageMediaType } from "../capture";
+import type {
+  ComposerImage,
+  EditorOperation,
+  ImageMediaType,
+} from "../capture";
 
 export const REALQA_DRAFT_RECORD_FAMILY = "devhud.realqa-draft.v1" as const;
 export const REALQA_DRAFT_SCHEMA_VERSION = 1 as const;
@@ -64,6 +68,7 @@ export interface RealQaDraftContent {
 
 export interface SaveRealQaDraftRequest {
   readonly draftId: string;
+  readonly composerSessionId: string;
   readonly expectedRevision: number | null;
   readonly submissionIdempotencyKey: string;
   readonly content: RealQaDraftContent;
@@ -76,9 +81,17 @@ export interface RealQaDraftSummary {
   readonly updatedAtUnixMs: number;
 }
 
+export interface LoadedDraftEditorImage
+  extends ComposerImage, DraftEditorImageReference {}
+
+export interface LoadedRealQaDraftContent
+  extends Omit<RealQaDraftContent, "images"> {
+  readonly images: readonly LoadedDraftEditorImage[];
+}
+
 export interface LoadedRealQaDraft extends RealQaDraftSummary {
   readonly submissionIdempotencyKey: string;
-  readonly content: RealQaDraftContent;
+  readonly content: LoadedRealQaDraftContent;
 }
 
 export interface RealQaDraftStatus {

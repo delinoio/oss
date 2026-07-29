@@ -25,8 +25,8 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{
     auth::RealQaDraftAccessContext,
     realqa_capture::{
-        ComposerCore, ComposerImageId, ComposerSessionId, EditorOperation, EncodedImage,
-        ImageMediaType, MAX_ENCODED_SESSION_BYTES, deserialize_operations,
+        ComposerCore, ComposerImage, ComposerImageId, ComposerSessionId, EditorOperation,
+        EncodedImage, ImageMediaType, MAX_ENCODED_SESSION_BYTES, deserialize_operations,
     },
 };
 
@@ -132,7 +132,7 @@ struct DraftImageReference {
     output_media_type: ImageMediaType,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DraftContentInput {
     title: String,
@@ -147,10 +147,11 @@ struct DraftContentInput {
     images: Vec<DraftImageReference>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct SaveDraftRequest {
     draft_id: String,
+    composer_session_id: String,
     expected_revision: Option<u64>,
     submission_idempotency_key: String,
     content: DraftContentInput,
@@ -214,7 +215,16 @@ struct LoadedDraftContent {
     environment: Vec<RemovableField>,
     url: Option<RestorableUrl>,
     dom: Vec<RemovableField>,
-    images: Vec<DraftImageReference>,
+    images: Vec<LoadedDraftImage>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadedDraftImage {
+    #[serde(flatten)]
+    composer: ComposerImage,
+    operations: Vec<EditorOperation>,
+    output_media_type: ImageMediaType,
 }
 
 #[derive(Serialize)]
@@ -450,6 +460,7 @@ impl RealQaDraftState {
             .lock()
             .map_err(|_| DraftError::StorageUnavailable)?;
         validate_uuid_v7(&request.draft_id)?;
+        validate_identifier(&request.composer_session_id)?;
         validate_uuid_v7(&request.submission_idempotency_key)?;
         validate_content(&request.content)?;
         let path = self.draft_path(&access.account_binding, &request.draft_id)?;
@@ -472,6 +483,11 @@ impl RealQaDraftState {
             (Some(current), Some(expected)) if current.revision == expected => {}
             _ => return Err(DraftError::Conflict),
         }
+        if current.as_ref().is_some_and(|record| {
+            record.submission_idempotency_key != request.submission_idempotency_key
+        }) {
+            return Err(DraftError::Conflict);
+        }
         let revision = current.as_ref().map_or(Ok(1), |record| {
             record.revision.checked_add(1).ok_or(DraftError::Conflict)
         })?;
@@ -481,7 +497,7 @@ impl RealQaDraftState {
         for image in &request.content.images {
             let original = composer
                 .clone_original_for_draft(
-                    &ComposerSessionId(request.draft_id.clone()),
+                    &ComposerSessionId(request.composer_session_id.clone()),
                     &ComposerImageId(image.image_id.clone()),
                     image.source_revision,
                 )
@@ -563,9 +579,8 @@ impl RealQaDraftState {
                     image.original.clone(),
                 )
                 .map_err(|_| DraftError::InvalidRecord)?;
-            images.push(DraftImageReference {
-                image_id: image.image_id.clone(),
-                source_revision: restored.source_revision,
+            images.push(LoadedDraftImage {
+                composer: restored,
                 operations: image.operations.clone(),
                 output_media_type: image.output_media_type,
             });
@@ -674,15 +689,10 @@ impl RealQaDraftState {
             Err(error) if error.kind() == io::ErrorKind::NotFound => false,
             Err(_) => return Err(DraftError::WriteFailed),
         };
-        if let Err(_error) = prepare_directory(directory) {
-            if staged_current {
-                let _ = fs::rename(&staged, directory);
-            }
-            return Err(DraftError::WriteFailed);
+        if staged_current {
+            remove_staged_with_rollback(directory, &staged, |path| fs::remove_dir_all(path))?;
         }
-        if staged_current && fs::remove_dir_all(&staged).is_err() {
-            return Err(DraftError::WriteFailed);
-        }
+        prepare_directory(directory).map_err(|_| DraftError::WriteFailed)?;
         let mut vault = self
             .vault
             .lock()
@@ -695,6 +705,18 @@ impl RealQaDraftState {
             Ok(())
         }
     }
+}
+
+fn remove_staged_with_rollback(
+    directory: &Path,
+    staged: &Path,
+    remove: impl FnOnce(&Path) -> io::Result<()>,
+) -> Result<(), DraftError> {
+    if remove(staged).is_err() {
+        fs::rename(staged, directory).map_err(|_| DraftError::WriteFailed)?;
+        return Err(DraftError::WriteFailed);
+    }
+    Ok(())
 }
 
 fn summary(record: &StoredDraftRecord) -> DraftSummary {
@@ -782,8 +804,8 @@ fn normalize_url(mut value: RestorableUrl) -> Result<RestorableUrl, DraftError> 
     {
         return Err(DraftError::InvalidRecord);
     }
-    if (value.stripped_query.is_some() && parsed.query().is_some())
-        || (value.stripped_fragment.is_some() && parsed.fragment().is_some())
+    if parsed.query().is_some()
+        || parsed.fragment().is_some()
         || value
             .stripped_query
             .as_ref()
@@ -1138,6 +1160,7 @@ mod tests {
             .unwrap();
         SaveDraftRequest {
             draft_id: draft_id.to_owned(),
+            composer_session_id: draft_id.to_owned(),
             expected_revision: None,
             submission_idempotency_key: Uuid::now_v7().to_string(),
             content: DraftContentInput {
@@ -1178,11 +1201,13 @@ mod tests {
         let state = state("isolation");
         let composer = ComposerCore::default();
         let draft_id = Uuid::now_v7().to_string();
+        let initial_request = request(&composer, &draft_id);
+        let submission_idempotency_key = initial_request.submission_idempotency_key.clone();
         let summary = state
             .save(
                 &access("account-a", true),
                 &composer,
-                request(&composer, &draft_id),
+                initial_request.clone(),
             )
             .unwrap();
         assert_eq!(summary.revision, 1);
@@ -1209,14 +1234,47 @@ mod tests {
             )
             .unwrap();
         assert_eq!(loaded.content.images.len(), 1);
+        assert_eq!(
+            loaded.submission_idempotency_key,
+            submission_idempotency_key
+        );
+        assert_eq!(loaded.content.images[0].composer.width, 2);
+        assert_eq!(loaded.content.images[0].composer.height, 1);
+        assert_eq!(loaded.content.images[0].composer.preview_width, 2);
+        assert_eq!(loaded.content.images[0].composer.preview_height, 1);
+        assert!(!loaded.content.images[0].composer.image.bytes.is_empty());
         let restored = restored_composer
             .clone_original_for_draft(
                 &ComposerSessionId("load-session".to_owned()),
                 &ComposerImageId("image-1".to_owned()),
-                loaded.content.images[0].source_revision,
+                loaded.content.images[0].composer.source_revision,
             )
             .unwrap();
         assert!(!restored.bytes.is_empty());
+        let mut update = initial_request;
+        update.composer_session_id = "load-session".to_owned();
+        update.expected_revision = Some(loaded.revision);
+        update.content.images[0].source_revision =
+            loaded.content.images[0].composer.source_revision;
+        update.submission_idempotency_key = Uuid::now_v7().to_string();
+        assert_eq!(
+            state
+                .save(
+                    &access("account-a", true),
+                    &restored_composer,
+                    update.clone()
+                )
+                .err(),
+            Some(DraftError::Conflict)
+        );
+        update.submission_idempotency_key = submission_idempotency_key;
+        assert_eq!(
+            state
+                .save(&access("account-a", true), &restored_composer, update)
+                .unwrap()
+                .revision,
+            2
+        );
         assert!(state.list(&access("account-b", true)).unwrap().is_empty());
         assert_eq!(
             state
@@ -1300,21 +1358,21 @@ mod tests {
         let state = std::sync::Arc::new(state("concurrent"));
         let composer = ComposerCore::default();
         let draft_id = Uuid::now_v7().to_string();
+        let initial_request = request(&composer, &draft_id);
+        let submission_idempotency_key = initial_request.submission_idempotency_key.clone();
         state
-            .save(
-                &access("account-a", true),
-                &composer,
-                request(&composer, &draft_id),
-            )
+            .save(&access("account-a", true), &composer, initial_request)
             .unwrap();
         let updates = (0..2)
             .map(|_| {
                 let state = std::sync::Arc::clone(&state);
                 let draft_id = draft_id.clone();
+                let submission_idempotency_key = submission_idempotency_key.clone();
                 std::thread::spawn(move || {
                     let composer = ComposerCore::default();
                     let mut request = request(&composer, &draft_id);
                     request.expected_revision = Some(1);
+                    request.submission_idempotency_key = submission_idempotency_key;
                     state.save(&access("account-a", true), &composer, request)
                 })
             })
@@ -1355,6 +1413,47 @@ mod tests {
         let mut vault = state.vault.lock().unwrap();
         assert!(vault.load().unwrap().keys.is_empty());
         assert!(!vault.extension_pairing_present());
+    }
+
+    #[test]
+    fn failed_staged_reset_cleanup_restores_the_managed_directory() {
+        let directory = temporary_directory("reset-rollback");
+        prepare_directory(&directory).unwrap();
+        fs::write(directory.join("retained.rqadraft"), b"ciphertext").unwrap();
+        let staged = directory.with_extension("reset-fixture");
+        fs::rename(&directory, &staged).unwrap();
+
+        assert_eq!(
+            remove_staged_with_rollback(&directory, &staged, |_path| {
+                Err(io::Error::other("fixture staged cleanup failure"))
+            }),
+            Err(DraftError::WriteFailed)
+        );
+
+        assert_eq!(
+            fs::read(directory.join("retained.rqadraft")).unwrap(),
+            b"ciphertext"
+        );
+        assert!(!staged.exists());
+    }
+
+    #[test]
+    fn rejects_unstripped_url_query_and_fragment_at_the_native_boundary() {
+        for value in [
+            "https://example.com/report?token=private",
+            "https://example.com/report#private",
+        ] {
+            assert_eq!(
+                normalize_url(RestorableUrl {
+                    value: value.to_owned(),
+                    stripped_query: None,
+                    stripped_fragment: None,
+                    warning: None,
+                })
+                .err(),
+                Some(DraftError::InvalidRecord)
+            );
+        }
     }
 
     #[test]

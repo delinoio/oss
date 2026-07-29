@@ -82,8 +82,9 @@ function validTemplate(template: string): boolean {
 export function validateRealQaProcessUrlRules(
   rules: readonly RealQaProcessUrlRule[],
 ): boolean {
-  if (rules.length > MAX_REALQA_PROCESS_URL_RULES) return false;
-  return rules.every((rule) => {
+  const enabledRules = rules.filter((rule) => rule.enabled);
+  if (enabledRules.length > MAX_REALQA_PROCESS_URL_RULES) return false;
+  return enabledRules.every((rule) => {
     if (
       rule.exactProcessName.length === 0 ||
       new TextEncoder().encode(rule.exactProcessName).length > 255 ||

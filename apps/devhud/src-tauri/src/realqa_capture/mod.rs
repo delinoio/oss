@@ -15,7 +15,7 @@ pub(crate) use composer::{
     ComposerSessionId,
 };
 #[cfg(all(test, not(feature = "desktop-cef")))]
-pub(crate) use composer::{ComposerCore, ComposerImageId, ComposerSessionId};
+pub(crate) use composer::{ComposerCore, ComposerImage, ComposerImageId, ComposerSessionId};
 #[cfg(any(feature = "desktop-cef", test))]
 pub(crate) use editor::{EditorOperation, deserialize_operations};
 pub(crate) use geometry::{
