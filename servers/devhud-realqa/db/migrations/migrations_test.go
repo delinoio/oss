@@ -98,6 +98,7 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 	for _, operation := range []string{
 		"create_submission",
 		"create_image_upload",
+		"finalize_image_upload",
 		"delete_image",
 		"delete_submission_assets",
 	} {

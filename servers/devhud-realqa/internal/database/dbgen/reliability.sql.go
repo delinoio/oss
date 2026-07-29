@@ -105,6 +105,46 @@ func (q *Queries) DeleteScopePresets(ctx context.Context, arg DeleteScopePresets
 	return result.RowsAffected(), nil
 }
 
+const deleteScopeSubmissionIdempotencySnapshots = `-- name: DeleteScopeSubmissionIdempotencySnapshots :execrows
+DELETE FROM realqa_idempotency_records AS idempotency
+WHERE (
+    idempotency.operation IN (
+        'create_submission', 'delete_submission_assets'
+    )
+    AND idempotency.resource_id IN (
+        SELECT submission.id
+        FROM realqa_submissions AS submission
+        WHERE submission.owner_kind = $1
+          AND submission.owner_id = $2
+    )
+) OR (
+    idempotency.operation IN (
+        'create_image_upload', 'finalize_image_upload', 'delete_image'
+    )
+    AND idempotency.resource_id IN (
+        SELECT asset.id
+        FROM realqa_assets AS asset
+        JOIN realqa_submissions AS submission
+          ON submission.id = asset.submission_id
+        WHERE submission.owner_kind = $1
+          AND submission.owner_id = $2
+    )
+)
+`
+
+type DeleteScopeSubmissionIdempotencySnapshotsParams struct {
+	ScopeOwnerKind string
+	ScopeOwnerID   pgtype.UUID
+}
+
+func (q *Queries) DeleteScopeSubmissionIdempotencySnapshots(ctx context.Context, arg DeleteScopeSubmissionIdempotencySnapshotsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteScopeSubmissionIdempotencySnapshots, arg.ScopeOwnerKind, arg.ScopeOwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteScopeSubmissions = `-- name: DeleteScopeSubmissions :execrows
 DELETE FROM realqa_submissions
 WHERE owner_kind = $1

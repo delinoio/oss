@@ -293,13 +293,26 @@ func (service *Submission) FinalizeImageUpload(
 		request.Msg.ExpectedAssetRevision.Value <= 0 {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_STALE_REVISION)
 	}
-	if _, err := parseIdempotency(request.Msg.Idempotency); err != nil {
+	idempotencyID, err := parseIdempotency(request.Msg.Idempotency)
+	if err != nil {
+		return nil, err
+	}
+	requestDigest, err := digestMessage(request.Msg)
+	if err != nil {
 		return nil, err
 	}
 	actor, submissionID, submission, scope, err :=
 		service.authorizeSubmissionRequest(ctx, request.Msg.SubmissionId)
 	if err != nil {
 		return nil, err
+	}
+	assetID, err := parseUUIDMessage(request.Msg.AssetId)
+	if err != nil {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
+	}
+	if replay, ok, replayErr := service.finalizeImageUploadReplay(
+		ctx, actor, idempotencyID, requestDigest, submissionID, assetID); ok {
+		return replay, replayErr
 	}
 	if service.dependencies.Objects == nil {
 		return nil, storageUnavailable()
@@ -308,10 +321,6 @@ func (service *Submission) FinalizeImageUpload(
 		return nil, rqerr.New(connect.CodeDeadlineExceeded,
 			realqav1.ErrorReason_ERROR_REASON_UPLOAD_EXPIRED,
 			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
-	}
-	assetID, err := parseUUIDMessage(request.Msg.AssetId)
-	if err != nil {
-		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
 	}
 	asset, err := service.dependencies.Store.Queries().GetAssetRecord(
 		ctx, dbgen.GetAssetRecordParams{
@@ -322,6 +331,10 @@ func (service *Submission) FinalizeImageUpload(
 	}
 	if asset.Revision != request.Msg.ExpectedAssetRevision.Value {
 		return nil, stale(asset.Revision)
+	}
+	recordID, err := newID(service.dependencies)
+	if err != nil {
+		return nil, err
 	}
 	object, err := service.dependencies.Objects.Get(
 		ctx, imageassets.StagingObjectKey(assetID.String()))
@@ -367,9 +380,20 @@ func (service *Submission) FinalizeImageUpload(
 		string(verified.MediaType), verified.Body); err != nil {
 		return nil, storageUnavailable()
 	}
-	var finalized dbgen.RealqaAsset
+	var response *realqav1.FinalizeImageUploadResponse
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			if existing, lookupErr := queries.GetIdempotencyRecord(
+				ctx, idempotencyLookupFor(
+					actor, idempotencyID, "finalize_image_upload"),
+			); lookupErr == nil {
+				if !bytes.Equal(existing.RequestDigest, requestDigest) {
+					return idempotencyConflict()
+				}
+				return errIdempotencyReplay
+			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
+				return lookupErr
+			}
 			if _, lockErr := queries.LockSubmissionRecord(
 				ctx, toPGUUID(submissionID)); lockErr != nil {
 				return lockErr
@@ -394,7 +418,7 @@ func (service *Submission) FinalizeImageUpload(
 				return sumErr
 			}
 			checksum, _ := hex.DecodeString(verified.SHA256)
-			finalized, sumErr = queries.MarkAssetVerified(
+			finalized, sumErr := queries.MarkAssetVerified(
 				ctx, dbgen.MarkAssetVerifiedParams{
 					EncodedBytes:    verified.EncodedBytes,
 					SanitizedSha256: checksum, ID: toPGUUID(assetID),
@@ -413,9 +437,38 @@ func (service *Submission) FinalizeImageUpload(
 					VerifiedEncodedBytes: current + verified.EncodedBytes,
 					SubmissionRecordID:   toPGUUID(submissionID),
 				})
+			if sumErr != nil {
+				return sumErr
+			}
+			response = &realqav1.FinalizeImageUploadResponse{
+				Asset: updatedAssetProto(finalized),
+				Idempotency: &realqav1.IdempotencyResult{
+					Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_FINALIZE_IMAGE_UPLOAD,
+					OriginallyCompletedAt: timestamp(finalized.VerifiedAt),
+				},
+			}
+			payload, marshalErr := proto.MarshalOptions{
+				Deterministic: true,
+			}.Marshal(response)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			_, sumErr = queries.CreateIdempotencyRecord(
+				ctx, dbgen.CreateIdempotencyRecordParams{
+					ID: toPGUUID(recordID), CallerKind: "user",
+					CallerDigest: actor.digest, Operation: "finalize_image_upload",
+					IdempotencyKey: toPGUUID(idempotencyID),
+					RequestDigest:  requestDigest, ResourceID: toPGUUID(assetID),
+					ResponsePayload: payload,
+				})
 			return sumErr
 		})
 	if err != nil {
+		if replay, ok, replayErr := service.finalizeImageUploadReplay(
+			ctx, actor, idempotencyID, requestDigest,
+			submissionID, assetID); ok {
+			return replay, replayErr
+		}
 		// The verified key is deterministic, and a concurrent finalize may
 		// already own the successful database transition for these same bytes.
 		// Expiry/deletion cleanup removes any truly orphaned verified object.
@@ -428,13 +481,57 @@ func (service *Submission) FinalizeImageUpload(
 	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	audit(ctx, service.dependencies, actor, "image_upload_verified",
 		scope, assetID, "allow", "success")
-	return connect.NewResponse(&realqav1.FinalizeImageUploadResponse{
-		Asset: updatedAssetProto(finalized),
-		Idempotency: &realqav1.IdempotencyResult{
-			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_FINALIZE_IMAGE_UPLOAD,
-			OriginallyCompletedAt: timestamp(finalized.VerifiedAt),
-		},
-	}), nil
+	return connect.NewResponse(response), nil
+}
+
+func (service *Submission) finalizeImageUploadReplay(
+	ctx context.Context,
+	actor caller,
+	idempotencyID uuid.UUID,
+	digest []byte,
+	submissionID uuid.UUID,
+	assetID uuid.UUID,
+) (*connect.Response[realqav1.FinalizeImageUploadResponse], bool, error) {
+	record, err := service.dependencies.Store.Queries().GetIdempotencyRecord(
+		ctx, idempotencyLookupFor(
+			actor, idempotencyID, "finalize_image_upload"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	if !bytes.Equal(record.RequestDigest, digest) {
+		return nil, true, idempotencyConflict()
+	}
+	resourceID, err := fromPGUUID(record.ResourceID)
+	if err != nil || resourceID != assetID {
+		return nil, true, errors.New(
+			"realqa images: invalid finalize replay state")
+	}
+	response := new(realqav1.FinalizeImageUploadResponse)
+	if err = proto.Unmarshal(record.ResponsePayload, response); err != nil {
+		return nil, true, err
+	}
+	if response.Asset == nil || response.Asset.AssetId == nil ||
+		response.Asset.AssetId.Value != assetID.String() {
+		return nil, true, errors.New(
+			"realqa images: invalid finalize replay state")
+	}
+	asset, err := service.dependencies.Store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+		})
+	if err != nil || asset.SubmissionID != toPGUUID(submissionID) {
+		return nil, true, errors.New(
+			"realqa images: invalid finalize replay scope")
+	}
+	response.Idempotency = &realqav1.IdempotencyResult{
+		Replayed:              true,
+		Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_FINALIZE_IMAGE_UPLOAD,
+		OriginallyCompletedAt: timestamp(record.CompletedAt),
+	}
+	return connect.NewResponse(response), true, nil
 }
 
 func (service *Submission) GetSubmission(
@@ -485,7 +582,8 @@ func (service *Submission) ListSubmissions(
 	rows, err := service.dependencies.Store.Queries().ListSubmissionRecords(
 		ctx, dbgen.ListSubmissionRecordsParams{
 			OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-			AfterID: pageLowerBound(after), PageLimit: size + 1,
+			AccountID: toPGUUID(actor.accountID),
+			AfterID:   pageLowerBound(after), PageLimit: size + 1,
 		})
 	if err != nil {
 		return nil, err
@@ -891,7 +989,14 @@ func (service *Submission) PromoteSubmittedAssets(
 			ctx, dbgen.GetAssetRecordParams{
 				ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
 			})
-		if err != nil || asset.State != "verified_unlinked" {
+		if err != nil || asset.UploadState != "verified" {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT)
+		}
+		if asset.State == "public_retained" && asset.PublicID.Valid {
+			continue
+		}
+		if asset.State != "verified_unlinked" {
 			return invalid(
 				realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT)
 		}
@@ -1134,6 +1239,44 @@ func (service *Submission) authorizeSubmissionRequest(
 	scope := owner{kind: submission.OwnerKind, id: scopeID}
 	if _, err = authorizeOwner(
 		ctx, service.dependencies, actor, scope, false, false); err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
+	}
+	creatorID, err := fromPGUUID(submission.CreatedByAccountID)
+	if err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
+	}
+	if creatorID == actor.accountID {
+		return actor, submissionID, submission, scope, nil
+	}
+	if !submission.DestinationID.Valid {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
+			permissionDenied()
+	}
+	destination, err := service.dependencies.Store.Queries().GetDestinationRecord(
+		ctx, submission.DestinationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
+			permissionDenied()
+	}
+	if err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
+	}
+	installationID, err := fromPGUUID(destination.InstallationID)
+	if err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
+	}
+	if _, _, err = authorizeRepository(ctx, service.dependencies, actor, scope,
+		&realqav1.TrackerDestination{
+			Tracker: realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM,
+			InstallationId: &realqav1.UuidV7{
+				Value: installationID.String(),
+			},
+			Repository: &realqav1.GitHubRepositoryRef{
+				RepositoryId: destination.RepositoryID,
+				Owner:        destination.RepositoryOwner,
+				Name:         destination.RepositoryName,
+			},
+		}); err != nil {
 		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
 	}
 	return actor, submissionID, submission, scope, nil

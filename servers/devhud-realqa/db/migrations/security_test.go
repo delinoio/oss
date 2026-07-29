@@ -73,6 +73,7 @@ func TestImageStoragePersistsOnlyUploadDigestAndPublicTombstone(t *testing.T) {
 		"sanitized_sha256 bytea",
 		"'create_submission'",
 		"'create_image_upload'",
+		"'finalize_image_upload'",
 		"'delete_image'",
 		"'delete_submission_assets'",
 		"'submission_created'",

@@ -1,10 +1,16 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -383,11 +389,15 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objects := &submissionTestObjects{}
+	objects := &submissionTestObjects{
+		objects: make(map[string]submissionTestObject),
+	}
 	submissionService := NewSubmission(Dependencies{
 		Store: store, Pseudonymizer: pseudonymizer,
 		Objects: objects, UploadSigner: uploadSigner,
 	})
+	pngBody := fixturePNG(t)
+	pngChecksum := sha256.Sum256(pngBody)
 	submissionRequest := &realqav1.CreateSubmissionRequest{
 		Owner:          organizationOwnerScope(organizationID),
 		Billing:        organizationRequest.Billing,
@@ -397,10 +407,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		Images: []*realqav1.ImageDeclaration{{
 			ClientImageId: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
 			MediaType:     realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_PNG,
-			EncodedBytes:  1,
+			EncodedBytes:  int64(len(pngBody)),
 			PixelWidth:    1,
 			PixelHeight:   1,
-			Sha256:        strings.Repeat("0", 64),
+			Sha256:        hex.EncodeToString(pngChecksum[:]),
 		}, {
 			ClientImageId: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
 			MediaType:     realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_PNG,
@@ -434,6 +444,57 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if len(createdSubmission.Msg.Submission.Assets) != 2 {
 		t.Fatalf("created submission = %#v", createdSubmission.Msg.Submission)
+	}
+	otherSubject := "fixture-other-user"
+	otherAccountID := uuidv7.MustNew()
+	otherDigest := hmac.New(sha256.New, identityKey)
+	_, _ = otherDigest.Write([]byte(otherSubject))
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($1, $2);
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($1, 'organization', $3, 'member')
+	`, otherAccountID, otherDigest.Sum(nil), organizationID); err != nil {
+		t.Fatal(err)
+	}
+	otherAuthCtx := auth.WithPrincipal(ctx, auth.Principal{
+		User: &auth.UserClaims{
+			TokenClaims: auth.TokenClaims{Subject: otherSubject},
+			UserID:      otherSubject,
+		},
+	})
+	otherList, err := submissionService.ListSubmissions(
+		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList.Msg.Submissions) != 0 {
+		t.Fatalf("repository-inaccessible submissions = %#v",
+			otherList.Msg.Submissions)
+	}
+	_, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("repository-inaccessible get code = %v", connect.CodeOf(err))
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: createdSubmission.Msg.Submission.
+				Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("repository-inaccessible delete code = %v",
+			connect.CodeOf(err))
 	}
 	uploadRequest := &realqav1.CreateImageUploadRequest{
 		SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
@@ -471,6 +532,63 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if persistedSignedURL {
 		t.Fatal("signed upload URL was persisted in idempotency state")
+	}
+	var tokenDigest []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT upload_token_digest
+		FROM realqa_assets
+		WHERE id = $1
+	`, uploadRequest.AssetId.Value).Scan(&tokenDigest); err != nil {
+		t.Fatal(err)
+	}
+	var digestValue [sha256.Size]byte
+	copy(digestValue[:], tokenDigest)
+	grant, err := submissionService.LookupUploadGrant(ctx, digestValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = objects.Put(ctx,
+		imageassets.StagingObjectKey(uploadRequest.AssetId.Value),
+		"image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.MarkUploaded(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	uploadedAsset, err := store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID: toPGUUID(uuid.MustParse(uploadRequest.AssetId.Value)),
+			SubmissionID: toPGUUID(uuid.MustParse(
+				uploadRequest.SubmissionId.Value)),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploadedAsset.Revision != upload.Msg.Asset.Revision.Value {
+		t.Fatalf("HTTP upload revision = %d, want %d",
+			uploadedAsset.Revision, upload.Msg.Asset.Revision.Value)
+	}
+	finalizeRequest := &realqav1.FinalizeImageUploadRequest{
+		SubmissionId:          uploadRequest.SubmissionId,
+		AssetId:               uploadRequest.AssetId,
+		ExpectedAssetRevision: upload.Msg.Asset.Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	finalized, err := submissionService.FinalizeImageUpload(
+		authCtx, connect.NewRequest(finalizeRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalizeReplay, err := submissionService.FinalizeImageUpload(
+		authCtx, connect.NewRequest(finalizeRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !finalizeReplay.Msg.Idempotency.Replayed ||
+		!proto.Equal(finalizeReplay.Msg.Asset, finalized.Msg.Asset) {
+		t.Fatalf("finalize replay = %#v", finalizeReplay.Msg)
 	}
 	var originalDestinationID uuid.UUID
 	if err = connection.QueryRow(ctx, `
@@ -510,27 +628,6 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		UPDATE realqa_presets SET destination_id = $1 WHERE id = $2
 	`, originalDestinationID,
 		organizationPreset.Msg.Preset.PresetId.Value); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = connection.Exec(ctx, `
-		UPDATE realqa_assets
-		SET upload_state = 'verified',
-		    state = 'verified_unlinked',
-		    encoded_bytes = declared_encoded_bytes,
-		    sanitized_sha256 = source_sha256,
-		    verified_at = transaction_timestamp(),
-		    upload_token_digest = NULL,
-		    upload_expires_at = NULL
-		WHERE id = $1
-	`, createdSubmission.Msg.Submission.Assets[0].AssetId.Value); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = store.Queries().UpdateSubmissionVerifiedBytes(
-		ctx, dbgen.UpdateSubmissionVerifiedBytesParams{
-			VerifiedEncodedBytes: 1,
-			SubmissionRecordID: toPGUUID(
-				uuid.MustParse(createdSubmission.Msg.Submission.SubmissionId.Value)),
-		}); err != nil {
 		t.Fatal(err)
 	}
 	currentSubmission, err := submissionService.GetSubmission(
@@ -591,6 +688,18 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if completed, drainErr := submissionService.DrainObjectDeletions(
 		ctx, 100); drainErr != nil || completed != 2 {
 		t.Fatalf("drained object deletions = %d, %v", completed, drainErr)
+	}
+	promotionAssetID := uuid.MustParse(
+		createdSubmission.Msg.Submission.Assets[0].AssetId.Value)
+	submissionID := uuid.MustParse(
+		createdSubmission.Msg.Submission.SubmissionId.Value)
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
+		t.Fatalf("resumed promotion: %v", err)
 	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_submissions
@@ -861,30 +970,105 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		replayed.Msg.Preset.PresetId.Value != created.Msg.Preset.PresetId.Value {
 		t.Fatalf("create replay after feature deletion = %#v", replayed.Msg)
 	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'owner'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, accountID, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	organizationDeletionRequest := &realqav1.DeleteFeatureDataRequest{
+		TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,
+		Trigger: &realqav1.DeleteFeatureDataRequest_OwnerRequest{
+			OwnerRequest: &realqav1.OwnerFeatureDeletion{
+				Owner: organizationOwnerScope(organizationID),
+				Idempotency: &realqav1.IdempotencyKey{
+					Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+				},
+			},
+		},
+	}
+	if _, err = service.DeleteFeatureData(
+		authCtx, connect.NewRequest(organizationDeletionRequest)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(submissionRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("submission replay after feature deletion code = %v",
+			connect.CodeOf(err))
+	}
+	var submissionSnapshots int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*)
+		FROM realqa_idempotency_records
+		WHERE operation = 'create_submission'
+		  AND idempotency_key = $1
+	`, submissionRequest.Idempotency.Value.Value).Scan(&submissionSnapshots); err != nil {
+		t.Fatal(err)
+	}
+	if submissionSnapshots != 0 {
+		t.Fatalf("retained submission idempotency snapshots = %d",
+			submissionSnapshots)
+	}
+}
+
+type submissionTestObject struct {
+	body        []byte
+	contentType string
 }
 
 type submissionTestObjects struct {
 	deleteErr error
+	objects   map[string]submissionTestObject
 }
 
-func (*submissionTestObjects) Put(
-	context.Context,
-	string,
-	string,
-	[]byte,
+func (objects *submissionTestObjects) Put(
+	_ context.Context,
+	key string,
+	contentType string,
+	body []byte,
 ) error {
+	objects.objects[key] = submissionTestObject{
+		body: append([]byte(nil), body...), contentType: contentType,
+	}
 	return nil
 }
 
-func (*submissionTestObjects) Get(
-	context.Context,
-	string,
+func (objects *submissionTestObjects) Get(
+	_ context.Context,
+	key string,
 ) (imageassets.Object, error) {
-	return imageassets.Object{}, imageassets.ErrObjectNotFound
+	object, ok := objects.objects[key]
+	if !ok {
+		return imageassets.Object{}, imageassets.ErrObjectNotFound
+	}
+	return imageassets.Object{
+		Body:        io.NopCloser(bytes.NewReader(object.body)),
+		ContentType: object.contentType,
+		Size:        int64(len(object.body)),
+	}, nil
 }
 
-func (objects *submissionTestObjects) Delete(context.Context, string) error {
-	return objects.deleteErr
+func (objects *submissionTestObjects) Delete(_ context.Context, key string) error {
+	if objects.deleteErr != nil {
+		return objects.deleteErr
+	}
+	delete(objects.objects, key)
+	return nil
+}
+
+func fixturePNG(t *testing.T) []byte {
+	t.Helper()
+	value := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	value.SetNRGBA(0, 0, color.NRGBA{R: 42, G: 84, B: 126, A: 255})
+	var output bytes.Buffer
+	if err := png.Encode(&output, value); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
 }
 
 func TestFirstPageUsesNonNullUUIDLowerBound(t *testing.T) {

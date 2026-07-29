@@ -31,6 +31,7 @@ type Querier interface {
 	DeleteScopeDestinations(ctx context.Context, arg DeleteScopeDestinationsParams) (int64, error)
 	DeleteScopeDisconnectIdempotencySnapshots(ctx context.Context, arg DeleteScopeDisconnectIdempotencySnapshotsParams) (int64, error)
 	DeleteScopePresets(ctx context.Context, arg DeleteScopePresetsParams) (int64, error)
+	DeleteScopeSubmissionIdempotencySnapshots(ctx context.Context, arg DeleteScopeSubmissionIdempotencySnapshotsParams) (int64, error)
 	DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSubmissionsParams) (int64, error)
 	DeleteShortcut(ctx context.Context, presetID pgtype.UUID) error
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (RealqaGithubConnection, error)

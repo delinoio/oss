@@ -47,10 +47,6 @@ func (service *Submission) CreateSubmission(
 	if err != nil {
 		return nil, err
 	}
-	if replay, ok, replayErr := service.submissionReplay(
-		ctx, actor, idempotencyID, requestDigest); ok {
-		return replay, replayErr
-	}
 	scope, err := parseOwner(request.Msg.Owner)
 	if err != nil {
 		return nil, err
@@ -58,6 +54,10 @@ func (service *Submission) CreateSubmission(
 	if _, err = authorizeOwner(
 		ctx, service.dependencies, actor, scope, false, false); err != nil {
 		return nil, err
+	}
+	if replay, ok, replayErr := service.submissionReplay(
+		ctx, actor, idempotencyID, requestDigest); ok {
+		return replay, replayErr
 	}
 	payerOrganization, payerTeam, err := authorizeBilling(
 		ctx, service.dependencies, actor, scope, request.Msg.Billing)

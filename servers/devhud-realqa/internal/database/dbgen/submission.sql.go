@@ -783,19 +783,45 @@ func (q *Queries) ListSubmissionAssets(ctx context.Context, submissionID pgtype.
 }
 
 const listSubmissionRecords = `-- name: ListSubmissionRecords :many
-SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
-FROM realqa_submissions
-WHERE owner_kind = $1
-  AND owner_id = $2
-  AND id > $3
-ORDER BY id
-LIMIT $4
+SELECT submission.id, submission.owner_kind, submission.owner_id, submission.created_by_account_id, submission.preset_id, submission.destination_id, submission.state, submission.provider_issue_id, submission.provider_issue_url, submission.idempotency_digest, submission.revision, submission.created_at, submission.updated_at, submission.submitted_at, submission.payer_organization_id, submission.payer_team_id, submission.preset_revision, submission.declared_encoded_bytes, submission.verified_encoded_bytes, submission.upload_deadline, submission.upload_expires_at
+FROM realqa_submissions AS submission
+WHERE submission.owner_kind = $1
+  AND submission.owner_id = $2
+  AND submission.id > $3
+  AND (
+      submission.created_by_account_id = $4
+      OR EXISTS (
+          SELECT 1
+          FROM realqa_destinations AS destination
+          JOIN realqa_github_installations AS installation
+            ON installation.id = destination.installation_id
+           AND installation.owner_kind = submission.owner_kind
+           AND installation.owner_id = submission.owner_id
+          JOIN realqa_github_connections AS connection
+            ON connection.id = installation.connection_id
+           AND connection.state = 'connected'
+          JOIN realqa_repository_access AS access
+            ON access.installation_id = destination.installation_id
+           AND access.account_id = $4
+           AND access.repository_id = destination.repository_id
+           AND access.issues_enabled
+           AND access.can_submit
+           AND access.checked_at >=
+               statement_timestamp() - interval '5 minutes'
+          WHERE destination.id = submission.destination_id
+            AND destination.owner_kind = submission.owner_kind
+            AND destination.owner_id = submission.owner_id
+      )
+  )
+ORDER BY submission.id
+LIMIT $5
 `
 
 type ListSubmissionRecordsParams struct {
 	OwnerKind string
 	OwnerID   pgtype.UUID
 	AfterID   pgtype.UUID
+	AccountID pgtype.UUID
 	PageLimit int32
 }
 
@@ -804,6 +830,7 @@ func (q *Queries) ListSubmissionRecords(ctx context.Context, arg ListSubmissionR
 		arg.OwnerKind,
 		arg.OwnerID,
 		arg.AfterID,
+		arg.AccountID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -985,8 +1012,7 @@ func (q *Queries) MarkAssetRejected(ctx context.Context, arg MarkAssetRejectedPa
 const markAssetUploaded = `-- name: MarkAssetUploaded :one
 UPDATE realqa_assets
 SET upload_state = 'uploaded',
-    uploaded_at = transaction_timestamp(),
-    revision = revision + 1
+    uploaded_at = transaction_timestamp()
 WHERE id = $1
   AND submission_id = $2
   AND upload_token_digest = $3

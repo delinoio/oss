@@ -31,6 +31,7 @@ ALTER TABLE realqa_idempotency_records
             'create_preset',
             'create_submission',
             'create_image_upload',
+            'finalize_image_upload',
             'delete_image',
             'delete_submission_assets',
             'delete_feature_data',
