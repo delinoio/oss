@@ -283,7 +283,7 @@ impl WindowsCaptureBackend {
     fn checked_displays(
         &self,
         displays: Vec<WindowsDisplay>,
-    ) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
+    ) -> Result<(Vec<DisplayDescriptor>, HashMap<DisplayId, WindowsDisplay>), BackendFailure> {
         let mut identities = HashSet::with_capacity(displays.len());
         if displays.is_empty()
             || displays.iter().any(|display| {
@@ -320,8 +320,8 @@ impl WindowsCaptureBackend {
                 descriptor
             })
             .collect();
-        sources.displays = current;
-        Ok(descriptors)
+        sources.displays = current.clone();
+        Ok((descriptors, current))
     }
 
     fn current_windows(&self) -> Result<Vec<WindowsWindow>, BackendFailure> {
@@ -375,9 +375,14 @@ impl WindowsCaptureBackend {
         Ok(cancelled)
     }
 
-    fn revalidate_snapshot(&self, request: &ResolvedCaptureRequest) -> Result<(), BackendFailure> {
-        let current = DisplaySnapshot::checked(self.displays()?)
-            .map_err(|_| BackendFailure::DisplayChanged)?;
+    fn revalidate_snapshot(
+        &self,
+        request: &ResolvedCaptureRequest,
+    ) -> Result<HashMap<DisplayId, WindowsDisplay>, BackendFailure> {
+        let displays = self.adapter.displays().map_err(BackendFailure::from)?;
+        let (descriptors, displays) = self.checked_displays(displays)?;
+        let current =
+            DisplaySnapshot::checked(descriptors).map_err(|_| BackendFailure::DisplayChanged)?;
         let selected_ids = request
             .pixel_regions
             .iter()
@@ -389,7 +394,7 @@ impl WindowsCaptureBackend {
         if current.snapshot_id != request.snapshot.snapshot_id {
             return Err(BackendFailure::DisplayChanged);
         }
-        Ok(())
+        Ok(displays)
     }
 
     fn capture_inner(
@@ -454,14 +459,23 @@ impl WindowsCaptureBackend {
             )
             .map_err(BackendFailure::from)?;
         checked_native_frame(&frame)?;
-        self.revalidate_snapshot(request)?;
+        if frame.width != window.native_bounds.width().map_err(BackendFailure::from)?
+            || frame.height
+                != window
+                    .native_bounds
+                    .height()
+                    .map_err(BackendFailure::from)?
+        {
+            return Err(BackendFailure::DisplayChanged);
+        }
+        let displays = self.revalidate_snapshot(request)?;
         let captured = self
             .current_windows()?
             .into_iter()
             .find(|candidate| candidate.identity() == window.identity())
             .ok_or(BackendFailure::WindowClosed)?;
         validate_window_state(&window, &captured)?;
-        self.compose_window_frame(request, &captured, &frame)
+        self.compose_window_frame(request, &captured, &frame, &displays)
     }
 
     fn compose_window_frame(
@@ -469,6 +483,7 @@ impl WindowsCaptureBackend {
         request: &ResolvedCaptureRequest,
         window: &WindowsWindow,
         frame: &NativeFrame,
+        displays: &HashMap<DisplayId, WindowsDisplay>,
     ) -> Result<BackendFrame, BackendFailure> {
         let output_len = decoded_byte_len(
             request.expected_frame_size.width,
@@ -481,12 +496,6 @@ impl WindowsCaptureBackend {
             rgba: vec![0; output_len],
             approved_layout: None,
         };
-        let displays = self
-            .sources
-            .lock()
-            .map_err(|_| BackendFailure::CaptureFailed)?
-            .displays
-            .clone();
         let canvas_scale = highest_scale(&request.snapshot, &request.pixel_regions)?;
         for region in &request.pixel_regions {
             let display = displays
@@ -628,6 +637,7 @@ impl CaptureBackend for WindowsCaptureBackend {
     fn displays(&self) -> Result<Vec<DisplayDescriptor>, BackendFailure> {
         let displays = self.adapter.displays().map_err(BackendFailure::from)?;
         self.checked_displays(displays)
+            .map(|(descriptors, _)| descriptors)
     }
 
     fn windows(&self, snapshot: &DisplaySnapshot) -> Result<Vec<WindowSource>, BackendFailure> {
@@ -1613,14 +1623,18 @@ mod system {
             } else {
                 let width = frame.width();
                 let height = frame.height();
-                let buffer = frame.buffer().map_err(|_| WindowsAdapterFailure::Failed)?;
-                let mut contiguous = Vec::new();
-                let rgba = buffer.as_nopadding_buffer(&mut contiguous).to_vec();
-                Ok(NativeFrame {
-                    width,
-                    height,
-                    rgba,
-                })
+                if decoded_byte_len(width, height).is_err() {
+                    Err(WindowsAdapterFailure::Failed)
+                } else {
+                    let buffer = frame.buffer().map_err(|_| WindowsAdapterFailure::Failed)?;
+                    let mut contiguous = Vec::new();
+                    let rgba = buffer.as_nopadding_buffer(&mut contiguous).to_vec();
+                    Ok(NativeFrame {
+                        width,
+                        height,
+                        rgba,
+                    })
+                }
             };
             *self
                 .shared
@@ -2338,6 +2352,44 @@ mod tests {
             .expect("window after capture lock") = Some(moved);
         assert_eq!(
             core.begin(window_request(&catalog, "moved-during-capture")),
+            Err(CaptureFailure::DisplaySnapshotChanged)
+        );
+    }
+
+    #[test]
+    fn rejects_transiently_resized_window_frame() {
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        let display = adapter.displays.lock().expect("display lock")[1].clone();
+        let window = available_window(
+            NativeSourceId(3),
+            &display,
+            LogicalRect {
+                x: 0.0,
+                y: 0.0,
+                width: 2.0,
+                height: 2.0,
+            },
+        );
+        adapter
+            .windows
+            .lock()
+            .expect("window lock")
+            .push(window.clone());
+        adapter.frames.lock().expect("frames lock").insert(
+            window.source,
+            Ok(solid_frame(
+                PhysicalSize {
+                    width: 2,
+                    height: 4,
+                },
+                [0, 255, 0, 255],
+            )),
+        );
+        let core = CaptureCore::new(Arc::new(WindowsCaptureBackend::new(adapter)));
+        let catalog = core.source_catalog().expect("catalog");
+
+        assert_eq!(
+            core.begin(window_request(&catalog, "transient-window-resize")),
             Err(CaptureFailure::DisplaySnapshotChanged)
         );
     }
