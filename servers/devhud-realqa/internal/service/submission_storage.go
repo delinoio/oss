@@ -1473,6 +1473,11 @@ func (service *Submission) DeleteBillingExpiredAssets(
 	var removed []dbgen.RealqaAsset
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			locked, lockErr := queries.LockSubmissionRecord(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
 			var removeErr error
 			removed, removeErr = queries.TombstoneSubmissionAssets(
 				ctx, toPGUUID(submissionID))
@@ -1485,7 +1490,15 @@ func (service *Submission) DeleteBillingExpiredAssets(
 					return removeErr
 				}
 			}
-			return nil
+			if len(removed) == 0 {
+				return nil
+			}
+			_, lockErr = queries.MarkSubmissionAssetsDeleted(
+				ctx, dbgen.MarkSubmissionAssetsDeletedParams{
+					ID:               toPGUUID(submissionID),
+					ExpectedRevision: locked.Revision,
+				})
+			return lockErr
 		})
 	if err != nil {
 		return err

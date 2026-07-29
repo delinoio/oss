@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/service"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
+	"google.golang.org/protobuf/proto"
 )
 
 type validator struct {
@@ -87,6 +88,35 @@ func TestHealthAndBrowserOriginBoundary(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("origin response = %d", response.Code)
+	}
+}
+
+func TestSubmissionRequestBodyBoundary(t *testing.T) {
+	t.Parallel()
+	feature := &validator{userSubject: "user-a"}
+	forwarded := &validator{userSubject: "user-a"}
+	server := httptest.NewServer(newTestHandler(t, feature, forwarded))
+	defer server.Close()
+	client := realqav1connect.NewRealQASubmissionServiceClient(
+		server.Client(), server.URL)
+	message := &realqav1.CreateSubmissionRequest{
+		Images: make([]*realqav1.ImageDeclaration, 40_000),
+	}
+	for index := range message.Images {
+		message.Images[index] = &realqav1.ImageDeclaration{}
+	}
+	if size := proto.Size(message); size <= submissionReadMaxBytes {
+		t.Fatalf("fixture size = %d, want greater than %d",
+			size, submissionReadMaxBytes)
+	}
+	_, err := client.CreateSubmission(
+		context.Background(), connect.NewRequest(message))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("oversized submission code = %v, want resource exhausted",
+			connect.CodeOf(err))
+	}
+	if len(feature.tokens) != 0 || len(forwarded.tokens) != 0 {
+		t.Fatal("oversized submission reached authentication")
 	}
 }
 

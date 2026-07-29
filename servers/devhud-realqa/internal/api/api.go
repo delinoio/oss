@@ -19,7 +19,10 @@ import (
 	"github.com/delinoio/oss/servers/internal/safelog"
 )
 
-const readinessTimeout = 2 * time.Second
+const (
+	readinessTimeout       = 2 * time.Second
+	submissionReadMaxBytes = 60_000
+)
 
 type HealthChecker interface {
 	Ping(context.Context) error
@@ -57,7 +60,8 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	business.Handle(path, handler)
 	submissions := service.NewSubmission(dependencies.Services)
 	path, handler = realqav1connect.NewRealQASubmissionServiceHandler(
-		submissions, options...)
+		submissions,
+		append(options, connect.WithReadMaxBytes(submissionReadMaxBytes))...)
 	business.Handle(path, handler)
 	if len(dependencies.Services.WebhookSecret) >= 32 {
 		business.Handle("POST /webhooks/github/issues",

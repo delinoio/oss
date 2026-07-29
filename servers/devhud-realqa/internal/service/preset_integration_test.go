@@ -1907,6 +1907,101 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("webhook deletion replay revision = %d, want %d",
 			webhookRevisionAfterReplay, webhookRevisionAfter)
 	}
+	billingSubmissionID := uuidv7.MustNew()
+	billingAssetID := uuidv7.MustNew()
+	billingPublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, provider_issue_id, provider_issue_url,
+			idempotency_digest, submitted_at, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, upload_deadline, upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'storage_billing_grace', '758',
+		       'https://github.com/delinoio/oss/issues/758',
+		       idempotency_digest, transaction_timestamp(),
+		       payer_organization_id, payer_team_id, preset_revision,
+		       declared_encoded_bytes, verified_encoded_bytes,
+		       transaction_timestamp() + interval '23 hours',
+		       transaction_timestamp() + interval '24 hours'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $6
+	`, billingSubmissionID, submissionID, billingAssetID, billingPublicID,
+		uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	billingPublicKey := imageassets.PublicObjectKey(billingPublicID)
+	if err = objects.Put(ctx, billingPublicKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	var billingRevisionBefore int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, billingSubmissionID).Scan(&billingRevisionBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.DeleteBillingExpiredAssets(
+		ctx, billingSubmissionID); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		billingState         string
+		billingRetainedBytes int64
+		billingRevisionAfter int64
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT state, verified_encoded_bytes, revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, billingSubmissionID).Scan(
+		&billingState, &billingRetainedBytes, &billingRevisionAfter,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if billingState != "assets_deleted" || billingRetainedBytes != 0 ||
+		billingRevisionAfter != billingRevisionBefore+1 {
+		t.Fatalf("billing deletion state = %q / %d / %d, want assets_deleted / 0 / %d",
+			billingState, billingRetainedBytes, billingRevisionAfter,
+			billingRevisionBefore+1)
+	}
+	if _, ok := objects.objects[billingPublicKey]; ok {
+		t.Fatal("billing-expired public object was retained")
+	}
+	if err = submissionService.DeleteBillingExpiredAssets(
+		ctx, billingSubmissionID); err != nil {
+		t.Fatal(err)
+	}
+	var billingRevisionAfterReplay int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, billingSubmissionID).Scan(&billingRevisionAfterReplay); err != nil {
+		t.Fatal(err)
+	}
+	if billingRevisionAfterReplay != billingRevisionAfter {
+		t.Fatalf("billing deletion replay revision = %d, want %d",
+			billingRevisionAfterReplay, billingRevisionAfter)
+	}
 	deletedAssets, err := submissionService.DeleteSubmissionAssets(
 		otherAuthCtx,
 		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
