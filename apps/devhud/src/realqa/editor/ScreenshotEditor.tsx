@@ -292,6 +292,17 @@ function ScreenshotEditorStateProvider({
         setStatus(
           "Pixelate edit added. This preview is scaled below the native block grid; the approved image may show more detail.",
         );
+      } else if (
+        operation.kind === "blur" &&
+        blurPreviewTiles(
+          operation.rect.width,
+          operation.rect.height,
+          operation.radius,
+        )[0].previewRadius === 0
+      ) {
+        setStatus(
+          "Blur edit added. This preview cannot represent the native blur radius; the approved image may show more detail.",
+        );
       } else {
         setStatus(`${tool} edit added.`);
       }
@@ -925,7 +936,7 @@ function renderPixelatedPreview(
   if (context === null) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
   const operationPreviewRect = sourcePreviewRect(operation.rect, source);
-  if (previewSize.capped) {
+  if (previewSize.capped || isSourcePreviewCapped(source)) {
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
     context.drawImage(
@@ -1546,6 +1557,15 @@ export function ScreenshotEditorInspector() {
 export function ScreenshotEditorActions() {
   const { approve, approving, operations, source, status } =
     useScreenshotEditor();
+  const unrepresentedBlurRadius = operations.some(
+    (operation) =>
+      operation.kind === "blur" &&
+      blurPreviewTiles(
+        operation.rect.width,
+        operation.rect.height,
+        operation.radius,
+      )[0].previewRadius === 0,
+  );
   const cappedPixelatePreview = operations.some(
     (operation) =>
       operation.kind === "pixelate" &&
@@ -1565,6 +1585,12 @@ export function ScreenshotEditorActions() {
         <p className="editor-preview-warning" role="note">
           This pixelate preview is scaled below the native block grid. The
           approved image may show more detail.
+        </p>
+      ) : null}
+      {unrepresentedBlurRadius ? (
+        <p className="editor-preview-warning" role="note">
+          This preview cannot represent the native blur radius. The approved
+          image may show more detail.
         </p>
       ) : null}
       <p className="muted">

@@ -413,6 +413,34 @@ describe("ScreenshotEditor", () => {
         ),
       ).toBe(true);
     }
+    expect(blurPreviewTiles(25_000_000, 1, 2)[0].previewRadius).toBe(0);
+  });
+
+  it("warns when a capped blur preview loses the native radius", async () => {
+    const user = userEvent.setup();
+    const hugeSource = {
+      ...source,
+      width: 25_000_000,
+      height: 1,
+      previewWidth: 2_048,
+      previewHeight: 1,
+    };
+    const { canvas } = fixture({ initialSource: hugeSource });
+
+    await user.click(screen.getByRole("button", { name: "Blur" }));
+    await user.click(screen.getByLabelText("Line width"));
+    fireEvent.change(screen.getByLabelText("Line width"), {
+      target: { value: "1" },
+    });
+    fireEvent.pointerDown(canvas, { clientX: 0, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 500, clientY: 200, pointerId: 1 });
+
+    expect(screen.getByText(/^Blur edit added\./u)).toHaveTextContent(
+      "cannot represent the native blur radius",
+    );
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "approved image may show more detail",
+    );
   });
 
   it("averages partial pixelation edge blocks independently", () => {
@@ -466,7 +494,13 @@ describe("ScreenshotEditor", () => {
 
   it("warns when a pixelation preview cannot represent the native block grid", async () => {
     const user = userEvent.setup();
-    const hugeSource = { ...source, width: 50_000_000, height: 1 };
+    const hugeSource = {
+      ...source,
+      width: 8_000,
+      height: 6_250,
+      previewWidth: 2_048,
+      previewHeight: 1_600,
+    };
     const { canvas } = fixture({ initialSource: hugeSource });
 
     await user.click(screen.getByRole("button", { name: "Pixelate" }));
