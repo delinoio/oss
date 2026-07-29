@@ -1,0 +1,1074 @@
+package service
+
+import (
+	"context"
+	"encoding/hex"
+	"errors"
+	"io"
+	"log/slog"
+	"strconv"
+	"time"
+
+	"connectrpc.com/connect"
+	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
+	"github.com/delinoio/oss/servers/internal/safelog"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+func (service *Submission) CreateImageUpload(
+	ctx context.Context,
+	request *connect.Request[realqav1.CreateImageUploadRequest],
+) (*connect.Response[realqav1.CreateImageUploadResponse], error) {
+	if request == nil || request.Msg == nil ||
+		request.Msg.ExpectedAssetRevision == nil ||
+		request.Msg.ExpectedAssetRevision.Value <= 0 {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_STALE_REVISION)
+	}
+	if _, err := parseIdempotency(request.Msg.Idempotency); err != nil {
+		return nil, err
+	}
+	actor, submissionID, submission, scope, err :=
+		service.authorizeSubmissionRequest(ctx, request.Msg.SubmissionId)
+	if err != nil {
+		return nil, err
+	}
+	if service.dependencies.UploadSigner == nil {
+		return nil, storageUnavailable()
+	}
+	now := service.dependencies.Clock.Now().UTC()
+	if !now.Before(submission.UploadDeadline.Time) {
+		return nil, rqerr.New(connect.CodeDeadlineExceeded,
+			realqav1.ErrorReason_ERROR_REASON_UPLOAD_DEADLINE_EXCEEDED,
+			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+	}
+	assetID, err := parseUUIDMessage(request.Msg.AssetId)
+	if err != nil {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
+	}
+	asset, err := service.dependencies.Store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+		})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, permissionDenied()
+	}
+	if err != nil {
+		return nil, err
+	}
+	if asset.Revision != request.Msg.ExpectedAssetRevision.Value {
+		return nil, stale(asset.Revision)
+	}
+	declaration := declarationFromRecord(asset)
+	signed, err := service.dependencies.UploadSigner.Sign(
+		now, submission.UploadDeadline.Time, submissionID.String(),
+		assetID.String(), declaration)
+	if err != nil {
+		return nil, storageUnavailable()
+	}
+	updated, err := service.dependencies.Store.Queries().AuthorizeAssetUpload(
+		ctx, dbgen.AuthorizeAssetUploadParams{
+			UploadTokenDigest: signed.TokenDigest[:],
+			UploadExpiresAt:   pgTimestamp(signed.ExpiresAt),
+			ID:                toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+			ExpectedRevision: request.Msg.ExpectedAssetRevision.Value,
+		})
+	if errors.Is(err, pgx.ErrNoRows) {
+		current, getErr := service.dependencies.Store.Queries().GetAssetRecord(
+			ctx, dbgen.GetAssetRecordParams{
+				ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+			})
+		if getErr == nil {
+			return nil, stale(current.Revision)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	audit(ctx, service.dependencies, actor, "image_upload_authorized",
+		scope, assetID, "allow", "success")
+	return connect.NewResponse(&realqav1.CreateImageUploadResponse{
+		Asset: updatedAssetProto(updated), SignedPutUrl: signed.URL,
+		RequiredContentType: string(declaration.MediaType),
+		RequiredSha256:      declaration.SHA256,
+		ExpiresAt:           timestamppb.New(signed.ExpiresAt),
+		UploadDeadline:      timestamp(submission.UploadDeadline),
+		Idempotency: &realqav1.IdempotencyResult{
+			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_IMAGE_UPLOAD,
+			OriginallyCompletedAt: timestamppb.New(now),
+		},
+	}), nil
+}
+
+func (service *Submission) LookupUploadGrant(
+	ctx context.Context,
+	digest [32]byte,
+) (imageassets.Grant, error) {
+	if service.dependencies.Store == nil {
+		return imageassets.Grant{}, errors.New("realqa images: store unavailable")
+	}
+	row, err := service.dependencies.Store.Queries().GetAssetUploadGrant(
+		ctx, digest[:])
+	if err != nil {
+		return imageassets.Grant{}, err
+	}
+	assetID, err := fromPGUUID(row.ID)
+	if err != nil {
+		return imageassets.Grant{}, err
+	}
+	submissionID, err := fromPGUUID(row.SubmissionID)
+	if err != nil {
+		return imageassets.Grant{}, err
+	}
+	var tokenDigest [32]byte
+	if len(row.UploadTokenDigest) != len(tokenDigest) {
+		return imageassets.Grant{}, imageassets.ErrInvalidScope
+	}
+	copy(tokenDigest[:], row.UploadTokenDigest)
+	return imageassets.Grant{
+		TokenDigest: tokenDigest, SubmissionID: submissionID.String(),
+		AssetID: assetID.String(),
+		Declaration: imageassets.Declaration{
+			MediaType:    imageassets.MediaType(row.MediaType),
+			EncodedBytes: row.DeclaredEncodedBytes,
+			Width:        int(row.PixelWidth), Height: int(row.PixelHeight),
+			SHA256: hex.EncodeToString(row.SourceSha256),
+		},
+		ExpiresAt: row.UploadExpiresAt.Time,
+		Deadline:  row.UploadDeadline.Time,
+	}, nil
+}
+
+func (service *Submission) MarkUploaded(
+	ctx context.Context,
+	grant imageassets.Grant,
+) error {
+	assetID, err := parseUUIDv7(grant.AssetID)
+	if err != nil {
+		return imageassets.ErrInvalidScope
+	}
+	submissionID, err := parseUUIDv7(grant.SubmissionID)
+	if err != nil {
+		return imageassets.ErrInvalidScope
+	}
+	_, err = service.dependencies.Store.Queries().MarkAssetUploaded(
+		ctx, dbgen.MarkAssetUploadedParams{
+			ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+			UploadTokenDigest: grant.TokenDigest[:],
+		})
+	return err
+}
+
+func (service *Submission) FinalizeImageUpload(
+	ctx context.Context,
+	request *connect.Request[realqav1.FinalizeImageUploadRequest],
+) (*connect.Response[realqav1.FinalizeImageUploadResponse], error) {
+	if request == nil || request.Msg == nil ||
+		request.Msg.ExpectedAssetRevision == nil ||
+		request.Msg.ExpectedAssetRevision.Value <= 0 {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_STALE_REVISION)
+	}
+	if _, err := parseIdempotency(request.Msg.Idempotency); err != nil {
+		return nil, err
+	}
+	actor, submissionID, submission, scope, err :=
+		service.authorizeSubmissionRequest(ctx, request.Msg.SubmissionId)
+	if err != nil {
+		return nil, err
+	}
+	if service.dependencies.Objects == nil {
+		return nil, storageUnavailable()
+	}
+	if service.dependencies.Clock.Now().After(submission.UploadExpiresAt.Time) {
+		return nil, rqerr.New(connect.CodeDeadlineExceeded,
+			realqav1.ErrorReason_ERROR_REASON_UPLOAD_EXPIRED,
+			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+	}
+	assetID, err := parseUUIDMessage(request.Msg.AssetId)
+	if err != nil {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
+	}
+	asset, err := service.dependencies.Store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+		})
+	if err != nil {
+		return nil, permissionDenied()
+	}
+	if asset.Revision != request.Msg.ExpectedAssetRevision.Value {
+		return nil, stale(asset.Revision)
+	}
+	object, err := service.dependencies.Objects.Get(
+		ctx, imageassets.StagingObjectKey(assetID.String()))
+	if err != nil {
+		return nil, verificationFailed()
+	}
+	body := object.Body
+	if body == nil {
+		return nil, verificationFailed()
+	}
+	defer body.Close()
+	verified, verifyErr := imageassets.Verify(declarationFromRecord(asset), body)
+	if verifyErr != nil || object.ContentType != asset.MediaType ||
+		(object.Size >= 0 && object.Size != asset.DeclaredEncodedBytes) {
+		_ = service.dependencies.Store.Queries().MarkAssetRejected(
+			ctx, dbgen.MarkAssetRejectedParams{
+				ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+			})
+		_ = service.dependencies.Objects.Delete(
+			context.WithoutCancel(ctx),
+			imageassets.StagingObjectKey(assetID.String()))
+		return nil, verificationError(verifyErr)
+	}
+	if err = service.dependencies.Objects.Put(
+		ctx, imageassets.VerifiedObjectKey(assetID.String()),
+		string(verified.MediaType), verified.Body); err != nil {
+		return nil, storageUnavailable()
+	}
+	var finalized dbgen.RealqaAsset
+	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if _, markErr := queries.MarkAssetVerifying(
+				ctx, dbgen.MarkAssetVerifyingParams{
+					ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+					ExpectedRevision: request.Msg.ExpectedAssetRevision.Value,
+				}); markErr != nil {
+				return markErr
+			}
+			current, sumErr := queries.SumOtherVerifiedAssetBytes(
+				ctx, dbgen.SumOtherVerifiedAssetBytesParams{
+					SubmissionID: toPGUUID(submissionID),
+					AssetID:      toPGUUID(assetID),
+				})
+			if sumErr != nil {
+				return sumErr
+			}
+			if sumErr = imageassets.ValidateSubmissionTotal(
+				current, verified.EncodedBytes); sumErr != nil {
+				return sumErr
+			}
+			checksum, _ := hex.DecodeString(verified.SHA256)
+			finalized, sumErr = queries.MarkAssetVerified(
+				ctx, dbgen.MarkAssetVerifiedParams{
+					EncodedBytes:    verified.EncodedBytes,
+					SanitizedSha256: checksum, ID: toPGUUID(assetID),
+					SubmissionID: toPGUUID(submissionID),
+				})
+			if sumErr != nil {
+				return sumErr
+			}
+			_, sumErr = queries.UpdateSubmissionVerifiedBytes(
+				ctx, dbgen.UpdateSubmissionVerifiedBytesParams{
+					VerifiedEncodedBytes: current + verified.EncodedBytes,
+					SubmissionRecordID:   toPGUUID(submissionID),
+				})
+			return sumErr
+		})
+	if err != nil {
+		_ = service.dependencies.Objects.Delete(
+			context.WithoutCancel(ctx),
+			imageassets.VerifiedObjectKey(assetID.String()))
+		if errors.Is(err, imageassets.ErrEncodedTooLarge) {
+			return nil, invalid(
+				realqav1.ErrorReason_ERROR_REASON_SESSION_TOO_LARGE)
+		}
+		return nil, err
+	}
+	_ = service.dependencies.Objects.Delete(
+		context.WithoutCancel(ctx), imageassets.StagingObjectKey(assetID.String()))
+	audit(ctx, service.dependencies, actor, "image_upload_verified",
+		scope, assetID, "allow", "success")
+	return connect.NewResponse(&realqav1.FinalizeImageUploadResponse{
+		Asset: updatedAssetProto(finalized),
+		Idempotency: &realqav1.IdempotencyResult{
+			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_FINALIZE_IMAGE_UPLOAD,
+			OriginallyCompletedAt: timestamp(finalized.VerifiedAt),
+		},
+	}), nil
+}
+
+func (service *Submission) GetSubmission(
+	ctx context.Context,
+	request *connect.Request[realqav1.GetSubmissionRequest],
+) (*connect.Response[realqav1.GetSubmissionResponse], error) {
+	if request == nil || request.Msg == nil {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	_, id, _, _, err := service.authorizeSubmissionRequest(
+		ctx, request.Msg.SubmissionId)
+	if err != nil {
+		return nil, err
+	}
+	submission, err := service.loadSubmission(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&realqav1.GetSubmissionResponse{
+		Submission: submission,
+	}), nil
+}
+
+func (service *Submission) ListSubmissions(
+	ctx context.Context,
+	request *connect.Request[realqav1.ListSubmissionsRequest],
+) (*connect.Response[realqav1.ListSubmissionsResponse], error) {
+	if request == nil || request.Msg == nil {
+		return nil, invalid(
+			realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	actor, err := resolveCaller(ctx, service.dependencies)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := parseOwner(request.Msg.Owner)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = authorizeOwner(
+		ctx, service.dependencies, actor, scope, false, false); err != nil {
+		return nil, err
+	}
+	size, after, err := page(request.Msg.Page)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := service.dependencies.Store.Queries().ListSubmissionRecords(
+		ctx, dbgen.ListSubmissionRecordsParams{
+			OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+			AfterID: pageLowerBound(after), PageLimit: size + 1,
+		})
+	if err != nil {
+		return nil, err
+	}
+	hasMore := len(rows) > int(size)
+	if hasMore {
+		rows = rows[:size]
+	}
+	response := &realqav1.ListSubmissionsResponse{
+		Submissions: make([]*realqav1.SubmissionSummary, 0, len(rows)),
+		Page:        &realqav1.PageResponse{},
+	}
+	var last uuid.UUID
+	for _, row := range rows {
+		last, err = fromPGUUID(row.ID)
+		if err != nil {
+			return nil, err
+		}
+		assets, listErr := service.dependencies.Store.Queries().
+			ListSubmissionAssets(ctx, row.ID)
+		if listErr != nil {
+			return nil, listErr
+		}
+		summary := &realqav1.SubmissionSummary{
+			SubmissionId: &realqav1.UuidV7{Value: last.String()},
+			State:        submissionState(row.State),
+			Assets:       make([]*realqav1.AssetSummary, 0, len(assets)),
+			CreatedAt:    timestamp(row.CreatedAt), UpdatedAt: timestamp(row.UpdatedAt),
+			SubmittedAt: timestamp(row.SubmittedAt),
+		}
+		if row.ProviderIssueID.Valid && row.ProviderIssueUrl.Valid {
+			summary.ProviderIssue = &realqav1.ProviderIssueReference{
+				Tracker:  realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM,
+				IssueId:  row.ProviderIssueID.String,
+				IssueUrl: row.ProviderIssueUrl.String,
+			}
+		}
+		for _, asset := range assets {
+			id := uuid.UUID(asset.ID.Bytes)
+			summary.Assets = append(summary.Assets, &realqav1.AssetSummary{
+				AssetId:     &realqav1.UuidV7{Value: id.String()},
+				UploadState: uploadState(asset.UploadState),
+				AssetState:  assetState(asset.State),
+				CreatedAt:   timestamp(asset.CreatedAt),
+				RemovedAt:   timestamp(asset.RemovedAt),
+			})
+		}
+		response.Submissions = append(response.Submissions, summary)
+	}
+	response.Page.NextCursor = cursor(last, hasMore)
+	return connect.NewResponse(response), nil
+}
+
+func (service *Submission) DeleteImage(
+	ctx context.Context,
+	request *connect.Request[realqav1.DeleteImageRequest],
+) (*connect.Response[realqav1.DeleteImageResponse], error) {
+	if request == nil || request.Msg == nil ||
+		request.Msg.ExpectedSubmissionRevision == nil ||
+		request.Msg.ExpectedAssetRevision == nil {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_STALE_REVISION)
+	}
+	if _, err := parseIdempotency(request.Msg.Idempotency); err != nil {
+		return nil, err
+	}
+	actor, submissionID, submission, scope, err :=
+		service.authorizeSubmissionRequest(ctx, request.Msg.SubmissionId)
+	if err != nil {
+		return nil, err
+	}
+	if submission.Revision != request.Msg.ExpectedSubmissionRevision.Value {
+		return nil, stale(submission.Revision)
+	}
+	assetID, err := parseUUIDMessage(request.Msg.AssetId)
+	if err != nil {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
+	}
+	var removed dbgen.RealqaAsset
+	var updatedRecord dbgen.RealqaSubmission
+	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			locked, lockErr := queries.LockSubmissionRecord(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
+			if locked.Revision != request.Msg.ExpectedSubmissionRevision.Value {
+				return stale(locked.Revision)
+			}
+			removed, lockErr = queries.TombstoneAsset(
+				ctx, dbgen.TombstoneAssetParams{
+					AssetRecordID:     toPGUUID(assetID),
+					AssetSubmissionID: toPGUUID(submissionID),
+					ExpectedRevision:  request.Msg.ExpectedAssetRevision.Value,
+				})
+			if lockErr != nil {
+				return lockErr
+			}
+			updatedRecord, lockErr = queries.TouchSubmissionAfterAssetDeletion(
+				ctx, dbgen.TouchSubmissionAfterAssetDeletionParams{
+					ID:               toPGUUID(submissionID),
+					ExpectedRevision: request.Msg.ExpectedSubmissionRevision.Value,
+				})
+			return lockErr
+		})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, stale(request.Msg.ExpectedAssetRevision.Value)
+	}
+	if err != nil {
+		return nil, err
+	}
+	service.deleteAssetObjects(context.WithoutCancel(ctx), removed)
+	service.bestEffortIssueUpdate(
+		context.WithoutCancel(ctx), submission, []dbgen.RealqaAsset{removed})
+	updated, err := loadSubmissionWithRecord(
+		ctx, service.dependencies.Store.Queries(), updatedRecord)
+	if err != nil {
+		return nil, err
+	}
+	audit(ctx, service.dependencies, actor, "image_deleted",
+		scope, assetID, "allow", "success")
+	return connect.NewResponse(&realqav1.DeleteImageResponse{
+		Submission: updated,
+		Idempotency: &realqav1.IdempotencyResult{
+			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_IMAGE,
+			OriginallyCompletedAt: timestamp(removed.RemovedAt),
+		},
+	}), nil
+}
+
+func (service *Submission) DeleteSubmissionAssets(
+	ctx context.Context,
+	request *connect.Request[realqav1.DeleteSubmissionAssetsRequest],
+) (*connect.Response[realqav1.DeleteSubmissionAssetsResponse], error) {
+	if request == nil || request.Msg == nil ||
+		request.Msg.ExpectedSubmissionRevision == nil {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_STALE_REVISION)
+	}
+	if _, err := parseIdempotency(request.Msg.Idempotency); err != nil {
+		return nil, err
+	}
+	actor, submissionID, submission, scope, err :=
+		service.authorizeSubmissionRequest(ctx, request.Msg.SubmissionId)
+	if err != nil {
+		return nil, err
+	}
+	if submission.Revision != request.Msg.ExpectedSubmissionRevision.Value {
+		return nil, stale(submission.Revision)
+	}
+	var (
+		removed []dbgen.RealqaAsset
+		updated dbgen.RealqaSubmission
+	)
+	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			locked, lockErr := queries.LockSubmissionRecord(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
+			if locked.Revision != request.Msg.ExpectedSubmissionRevision.Value {
+				return stale(locked.Revision)
+			}
+			removed, lockErr = queries.TombstoneSubmissionAssets(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
+			updated, lockErr = queries.MarkSubmissionAssetsDeleted(
+				ctx, dbgen.MarkSubmissionAssetsDeletedParams{
+					ID:               toPGUUID(submissionID),
+					ExpectedRevision: request.Msg.ExpectedSubmissionRevision.Value,
+				})
+			return lockErr
+		})
+	if err != nil {
+		return nil, err
+	}
+	for _, asset := range removed {
+		service.deleteAssetObjects(context.WithoutCancel(ctx), asset)
+	}
+	service.bestEffortIssueUpdate(
+		context.WithoutCancel(ctx), submission, removed)
+	result, err := loadSubmissionWithRecord(
+		ctx, service.dependencies.Store.Queries(), updated)
+	if err != nil {
+		return nil, err
+	}
+	audit(ctx, service.dependencies, actor, "submission_assets_deleted",
+		scope, submissionID, "allow", "success")
+	return connect.NewResponse(&realqav1.DeleteSubmissionAssetsResponse{
+		Submission: result,
+		Idempotency: &realqav1.IdempotencyResult{
+			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_DELETE_SUBMISSION_ASSETS,
+			OriginallyCompletedAt: result.UpdatedAt,
+		},
+	}), nil
+}
+
+// PromoteSubmittedAssets copies verified private objects to opaque durable
+// keys, then atomically makes each identifier discoverable by public GET.
+func (service *Submission) PromoteSubmittedAssets(
+	ctx context.Context,
+	submissionID uuid.UUID,
+	orderedAssetIDs []uuid.UUID,
+) error {
+	if service.dependencies.Objects == nil {
+		return storageUnavailable()
+	}
+	seen := make(map[uuid.UUID]struct{}, len(orderedAssetIDs))
+	for _, assetID := range orderedAssetIDs {
+		if _, duplicate := seen[assetID]; duplicate {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT)
+		}
+		seen[assetID] = struct{}{}
+		asset, err := service.dependencies.Store.Queries().GetAssetRecord(
+			ctx, dbgen.GetAssetRecordParams{
+				ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+			})
+		if err != nil || asset.State != "verified_unlinked" {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT)
+		}
+		source, err := service.dependencies.Objects.Get(
+			ctx, imageassets.VerifiedObjectKey(assetID.String()))
+		if err != nil {
+			return storageUnavailable()
+		}
+		body, readErr := io.ReadAll(io.LimitReader(
+			source.Body, imageassets.MaxImageEncodedBytes+1))
+		source.Body.Close()
+		if readErr != nil || int64(len(body)) != asset.EncodedBytes {
+			return verificationFailed()
+		}
+		publicID, err := imageassets.NewPublicID()
+		if err != nil {
+			return err
+		}
+		publicKey := imageassets.PublicObjectKey(publicID)
+		if err = service.dependencies.Objects.Put(
+			ctx, publicKey, asset.MediaType, body); err != nil {
+			return storageUnavailable()
+		}
+		if _, err = service.dependencies.Store.Queries().PromoteAsset(
+			ctx, dbgen.PromoteAssetParams{
+				PublicID: pgtype.Text{String: publicID, Valid: true},
+				ID:       toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+			}); err != nil {
+			_ = service.dependencies.Objects.Delete(
+				context.WithoutCancel(ctx), publicKey)
+			return err
+		}
+		_ = service.dependencies.Objects.Delete(
+			context.WithoutCancel(ctx),
+			imageassets.VerifiedObjectKey(assetID.String()))
+	}
+	_, err := service.dependencies.Store.Queries().MarkSubmissionSubmitted(
+		ctx, toPGUUID(submissionID))
+	return err
+}
+
+func (service *Submission) PublicAsset(
+	ctx context.Context,
+	publicID string,
+) (imageassets.PublicRecord, error) {
+	row, err := service.dependencies.Store.Queries().GetPublicAsset(
+		ctx, pgtype.Text{String: publicID, Valid: true})
+	if err != nil {
+		return imageassets.PublicRecord{}, err
+	}
+	if row.State == "removed_placeholder" {
+		return imageassets.PublicRecord{
+			State: imageassets.PublicStateRemoved,
+		}, nil
+	}
+	if row.State != "public_retained" || !row.PublicID.Valid {
+		return imageassets.PublicRecord{}, imageassets.ErrObjectNotFound
+	}
+	return imageassets.PublicRecord{
+		State:       imageassets.PublicStateRetained,
+		ObjectKey:   imageassets.PublicObjectKey(row.PublicID.String),
+		ContentType: row.MediaType,
+	}, nil
+}
+
+// CleanupExpiredStaging tombstones unlinked private data at the 24-hour
+// boundary. It never performs a billing or provider mutation.
+func (service *Submission) CleanupExpiredStaging(
+	ctx context.Context,
+	cutoff time.Time,
+	batchSize int32,
+) (int, error) {
+	if batchSize <= 0 || batchSize > 1000 {
+		batchSize = 100
+	}
+	var expired []dbgen.RealqaAsset
+	err := service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			rows, listErr := queries.ListExpiredPrivateAssets(
+				ctx, dbgen.ListExpiredPrivateAssetsParams{
+					Cutoff: pgTimestamp(cutoff), BatchLimit: batchSize,
+				})
+			if listErr != nil {
+				return listErr
+			}
+			for _, row := range rows {
+				value, expireErr := queries.ExpireAsset(ctx, row.ID)
+				if expireErr != nil {
+					return expireErr
+				}
+				expired = append(expired, value)
+			}
+			return nil
+		})
+	if err != nil {
+		return 0, err
+	}
+	for _, asset := range expired {
+		service.deleteAssetObjects(context.WithoutCancel(ctx), asset)
+	}
+	return len(expired), nil
+}
+
+func (service *Submission) RunStagingCleanup(
+	ctx context.Context,
+	interval time.Duration,
+) {
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	cleanup := func() {
+		if _, err := service.CleanupExpiredStaging(
+			ctx, service.dependencies.Clock.Now().UTC(), 100); err != nil {
+			safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
+				safelog.EventIntegration, safelog.Fields{
+					Decision: safelog.DecisionDeny,
+					Result:   safelog.ResultFailure,
+				})
+		}
+	}
+	cleanup()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
+}
+
+// DeleteIssueAssets is the issue-deletion webhook path. The caller is expected
+// to authenticate the webhook before invoking it.
+func (service *Submission) DeleteIssueAssets(
+	ctx context.Context,
+	providerIssueID string,
+) error {
+	if providerIssueID == "" {
+		return errors.New("realqa images: issue reference is required")
+	}
+	var removed []dbgen.RealqaAsset
+	err := service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			rows, listErr := queries.ListIssueAssets(
+				ctx, pgtype.Text{String: providerIssueID, Valid: true})
+			if listErr != nil {
+				return listErr
+			}
+			for _, row := range rows {
+				value, removeErr := queries.TombstoneAsset(
+					ctx, dbgen.TombstoneAssetParams{
+						AssetRecordID: row.ID, AssetSubmissionID: row.SubmissionID,
+						ExpectedRevision: row.Revision,
+					})
+				if removeErr != nil {
+					return removeErr
+				}
+				removed = append(removed, value)
+			}
+			return nil
+		})
+	if err != nil {
+		return err
+	}
+	for _, asset := range removed {
+		service.deleteAssetObjects(context.WithoutCancel(ctx), asset)
+	}
+	return nil
+}
+
+// DeleteBillingExpiredAssets uses the same tombstone-first path as an explicit
+// range deletion, so a delibase outage cannot extend public readability.
+func (service *Submission) DeleteBillingExpiredAssets(
+	ctx context.Context,
+	submissionID uuid.UUID,
+) error {
+	submission, err := service.dependencies.Store.Queries().GetSubmissionRecord(
+		ctx, toPGUUID(submissionID))
+	if err != nil {
+		return err
+	}
+	var removed []dbgen.RealqaAsset
+	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			var removeErr error
+			removed, removeErr = queries.TombstoneSubmissionAssets(
+				ctx, toPGUUID(submissionID))
+			return removeErr
+		})
+	if err != nil {
+		return err
+	}
+	for _, asset := range removed {
+		service.deleteAssetObjects(context.WithoutCancel(ctx), asset)
+	}
+	service.bestEffortIssueUpdate(
+		context.WithoutCancel(ctx), submission, removed)
+	return nil
+}
+
+func (service *Submission) authorizeSubmissionRequest(
+	ctx context.Context,
+	message *realqav1.UuidV7,
+) (caller, uuid.UUID, dbgen.RealqaSubmission, owner, error) {
+	actor, err := resolveCaller(ctx, service.dependencies)
+	if err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
+	}
+	submissionID, err := parseUUIDMessage(message)
+	if err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
+			invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	submission, err := service.dependencies.Store.Queries().GetSubmissionRecord(
+		ctx, toPGUUID(submissionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{},
+			permissionDenied()
+	}
+	if err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
+	}
+	scopeID, err := fromPGUUID(submission.OwnerID)
+	if err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
+	}
+	scope := owner{kind: submission.OwnerKind, id: scopeID}
+	if _, err = authorizeOwner(
+		ctx, service.dependencies, actor, scope, false, false); err != nil {
+		return caller{}, uuid.Nil, dbgen.RealqaSubmission{}, owner{}, err
+	}
+	return actor, submissionID, submission, scope, nil
+}
+
+func (service *Submission) loadSubmission(
+	ctx context.Context,
+	id uuid.UUID,
+) (*realqav1.Submission, error) {
+	record, err := service.dependencies.Store.Queries().GetSubmissionRecord(
+		ctx, toPGUUID(id))
+	if err != nil {
+		return nil, err
+	}
+	return loadSubmissionWithRecord(
+		ctx, service.dependencies.Store.Queries(), record)
+}
+
+func loadSubmissionWithQueries(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	id uuid.UUID,
+) (*realqav1.Submission, error) {
+	record, err := queries.GetSubmissionRecord(ctx, toPGUUID(id))
+	if err != nil {
+		return nil, err
+	}
+	return loadSubmissionWithRecord(ctx, queries, record)
+}
+
+func loadSubmissionWithRecord(
+	ctx context.Context,
+	queries dbgen.Querier,
+	record dbgen.RealqaSubmission,
+) (*realqav1.Submission, error) {
+	id, err := fromPGUUID(record.ID)
+	if err != nil {
+		return nil, err
+	}
+	ownerID, err := fromPGUUID(record.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	result := &realqav1.Submission{
+		SubmissionId:   &realqav1.UuidV7{Value: id.String()},
+		Owner:          ownerProto(owner{kind: record.OwnerKind, id: ownerID}),
+		PresetRevision: revision(record.PresetRevision),
+		State:          submissionState(record.State), Revision: revision(record.Revision),
+		UploadDeadline:               timestamp(record.UploadDeadline),
+		TransferReservationExpiresAt: timestamp(record.UploadExpiresAt),
+		CreatedAt:                    timestamp(record.CreatedAt), UpdatedAt: timestamp(record.UpdatedAt),
+		SubmittedAt: timestamp(record.SubmittedAt),
+	}
+	if record.PayerOrganizationID.Valid && record.PayerTeamID.Valid {
+		organizationID, orgErr := fromPGUUID(record.PayerOrganizationID)
+		teamID, teamErr := fromPGUUID(record.PayerTeamID)
+		if orgErr != nil || teamErr != nil {
+			return nil, errors.New("realqa service: invalid stored payer")
+		}
+		result.Billing = &realqav1.BillingScope{
+			OrganizationId: &realqav1.UuidV7{Value: organizationID.String()},
+			TeamId:         &realqav1.UuidV7{Value: teamID.String()},
+		}
+	}
+	if record.PresetID.Valid {
+		presetID, parseErr := fromPGUUID(record.PresetID)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		result.PresetId = &realqav1.UuidV7{Value: presetID.String()}
+		preset, presetErr := queries.GetPresetRecord(ctx, record.PresetID)
+		if presetErr == nil {
+			result.Destination = &realqav1.TrackerDestination{
+				Tracker: realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM,
+				InstallationId: &realqav1.UuidV7{
+					Value: uuid.UUID(preset.InstallationID.Bytes).String(),
+				},
+				Repository: &realqav1.GitHubRepositoryRef{
+					RepositoryId: preset.RepositoryID,
+					Owner:        preset.RepositoryOwner, Name: preset.RepositoryName,
+				},
+			}
+		}
+	}
+	if record.ProviderIssueID.Valid && record.ProviderIssueUrl.Valid {
+		result.ProviderIssue = &realqav1.ProviderIssueReference{
+			Tracker:  realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM,
+			IssueId:  record.ProviderIssueID.String,
+			IssueUrl: record.ProviderIssueUrl.String,
+		}
+	}
+	assets, err := queries.ListSubmissionAssets(ctx, record.ID)
+	if err != nil {
+		return nil, err
+	}
+	result.Assets = make([]*realqav1.ImageAsset, 0, len(assets))
+	for _, asset := range assets {
+		result.Assets = append(result.Assets, updatedAssetProto(asset))
+	}
+	return result, nil
+}
+
+func updatedAssetProto(asset dbgen.RealqaAsset) *realqav1.ImageAsset {
+	id := uuid.UUID(asset.ID.Bytes)
+	clientID := uuid.UUID(asset.ClientImageID.Bytes)
+	checksum := asset.SourceSha256
+	if len(asset.SanitizedSha256) == 32 &&
+		asset.UploadState == "verified" {
+		checksum = asset.SanitizedSha256
+	}
+	encodedBytes := asset.DeclaredEncodedBytes
+	if asset.UploadState == "verified" {
+		encodedBytes = asset.EncodedBytes
+	}
+	return &realqav1.ImageAsset{
+		AssetId:       &realqav1.UuidV7{Value: id.String()},
+		ClientImageId: &realqav1.UuidV7{Value: clientID.String()},
+		MediaType:     mediaTypeProto(asset.MediaType), EncodedBytes: encodedBytes,
+		PixelWidth: asset.PixelWidth, PixelHeight: asset.PixelHeight,
+		Sha256:      hex.EncodeToString(checksum),
+		UploadState: uploadState(asset.UploadState),
+		AssetState:  assetState(asset.State), Revision: revision(asset.Revision),
+		CreatedAt: timestamp(asset.CreatedAt), VerifiedAt: timestamp(asset.VerifiedAt),
+		RemovedAt: timestamp(asset.RemovedAt),
+	}
+}
+
+func declarationFromRecord(asset dbgen.RealqaAsset) imageassets.Declaration {
+	return imageassets.Declaration{
+		MediaType:    imageassets.MediaType(asset.MediaType),
+		EncodedBytes: asset.DeclaredEncodedBytes,
+		Width:        int(asset.PixelWidth), Height: int(asset.PixelHeight),
+		SHA256: hex.EncodeToString(asset.SourceSha256),
+	}
+}
+
+func (service *Submission) deleteAssetObjects(
+	ctx context.Context,
+	asset dbgen.RealqaAsset,
+) {
+	if service.dependencies.Objects == nil {
+		return
+	}
+	id := uuid.UUID(asset.ID.Bytes).String()
+	keys := []string{
+		imageassets.StagingObjectKey(id), imageassets.VerifiedObjectKey(id),
+	}
+	if asset.PublicID.Valid {
+		keys = append(keys, imageassets.PublicObjectKey(asset.PublicID.String))
+	}
+	for _, key := range keys {
+		if err := service.dependencies.Objects.Delete(ctx, key); err != nil {
+			safelog.Record(ctx, service.dependencies.Logger, slog.LevelError,
+				safelog.EventIntegration, safelog.Fields{
+					Decision: safelog.DecisionDeny,
+					Result:   safelog.ResultFailure,
+				})
+		}
+	}
+}
+
+func (service *Submission) bestEffortIssueUpdate(
+	ctx context.Context,
+	submission dbgen.RealqaSubmission,
+	assets []dbgen.RealqaAsset,
+) {
+	if service.dependencies.IssueUpdater == nil ||
+		!submission.ProviderIssueID.Valid {
+		return
+	}
+	publicIDs := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		if asset.PublicID.Valid {
+			publicIDs = append(publicIDs, asset.PublicID.String)
+		}
+	}
+	if len(publicIDs) == 0 {
+		return
+	}
+	if err := service.dependencies.IssueUpdater.RemoveImageReferences(
+		ctx, submission.ProviderIssueID.String, publicIDs); err != nil {
+		safelog.Record(ctx, service.dependencies.Logger, slog.LevelWarn,
+			safelog.EventIntegration, safelog.Fields{
+				Decision: safelog.DecisionDeny, Result: safelog.ResultFailure,
+			})
+	}
+}
+
+func mediaTypeName(value realqav1.ImageMediaType) string {
+	if value == realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_WEBP {
+		return string(imageassets.MediaTypeWebP)
+	}
+	return string(imageassets.MediaTypePNG)
+}
+
+func mediaTypeProto(value string) realqav1.ImageMediaType {
+	if value == string(imageassets.MediaTypeWebP) {
+		return realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_WEBP
+	}
+	return realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_PNG
+}
+
+func revision(value int64) *realqav1.Revision {
+	return &realqav1.Revision{
+		Value: value, Etag: `"realqa-r` + strconv.FormatInt(value, 10) + `"`,
+	}
+}
+
+func pgTimestamp(value time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: value, Valid: !value.IsZero()}
+}
+
+func submissionState(value string) realqav1.SubmissionState {
+	return map[string]realqav1.SubmissionState{
+		"draft":                 realqav1.SubmissionState_SUBMISSION_STATE_DRAFT,
+		"uploading":             realqav1.SubmissionState_SUBMISSION_STATE_UPLOADING,
+		"ready":                 realqav1.SubmissionState_SUBMISSION_STATE_READY,
+		"submitting":            realqav1.SubmissionState_SUBMISSION_STATE_SUBMITTING,
+		"reconciling":           realqav1.SubmissionState_SUBMISSION_STATE_RECONCILING,
+		"submitted":             realqav1.SubmissionState_SUBMISSION_STATE_SUBMITTED,
+		"failed":                realqav1.SubmissionState_SUBMISSION_STATE_FAILED,
+		"storage_billing_grace": realqav1.SubmissionState_SUBMISSION_STATE_STORAGE_BILLING_GRACE,
+		"assets_deleted":        realqav1.SubmissionState_SUBMISSION_STATE_ASSETS_DELETED,
+		"deleted":               realqav1.SubmissionState_SUBMISSION_STATE_DELETED,
+	}[value]
+}
+
+func uploadState(value string) realqav1.UploadState {
+	return map[string]realqav1.UploadState{
+		"declared":       realqav1.UploadState_UPLOAD_STATE_DECLARED,
+		"put_authorized": realqav1.UploadState_UPLOAD_STATE_PUT_AUTHORIZED,
+		"uploaded":       realqav1.UploadState_UPLOAD_STATE_UPLOADED,
+		"verifying":      realqav1.UploadState_UPLOAD_STATE_VERIFYING,
+		"verified":       realqav1.UploadState_UPLOAD_STATE_VERIFIED,
+		"rejected":       realqav1.UploadState_UPLOAD_STATE_REJECTED,
+		"expired":        realqav1.UploadState_UPLOAD_STATE_EXPIRED,
+		"deleted":        realqav1.UploadState_UPLOAD_STATE_DELETED,
+	}[value]
+}
+
+func assetState(value string) realqav1.AssetState {
+	return map[string]realqav1.AssetState{
+		"private_staging":     realqav1.AssetState_ASSET_STATE_PRIVATE_STAGING,
+		"verified_unlinked":   realqav1.AssetState_ASSET_STATE_VERIFIED_UNLINKED,
+		"public_retained":     realqav1.AssetState_ASSET_STATE_PUBLIC_RETAINED,
+		"removed_placeholder": realqav1.AssetState_ASSET_STATE_REMOVED_PLACEHOLDER,
+		"expired":             realqav1.AssetState_ASSET_STATE_EXPIRED,
+		"deleted":             realqav1.AssetState_ASSET_STATE_DELETED,
+	}[value]
+}
+
+func storageUnavailable() error {
+	return rqerr.New(connect.CodeUnavailable,
+		realqav1.ErrorReason_ERROR_REASON_TRANSFER_RESERVATION_FAILED,
+		realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+}
+
+func verificationFailed() error {
+	return rqerr.New(connect.CodeInvalidArgument,
+		realqav1.ErrorReason_ERROR_REASON_UPLOAD_VERIFICATION_FAILED,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+}
+
+func verificationError(err error) error {
+	switch {
+	case errors.Is(err, imageassets.ErrMediaType):
+		return invalid(
+			realqav1.ErrorReason_ERROR_REASON_UNSUPPORTED_IMAGE_MEDIA_TYPE)
+	case errors.Is(err, imageassets.ErrDecodedTooLarge):
+		return invalid(
+			realqav1.ErrorReason_ERROR_REASON_DECOMPRESSION_BOMB)
+	case errors.Is(err, imageassets.ErrEncodedTooLarge):
+		return invalid(realqav1.ErrorReason_ERROR_REASON_IMAGE_TOO_LARGE)
+	case errors.Is(err, imageassets.ErrMalformed):
+		return invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
+	default:
+		return verificationFailed()
+	}
+}

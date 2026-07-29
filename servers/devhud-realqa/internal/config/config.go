@@ -13,6 +13,7 @@ import (
 
 const (
 	CanonicalAPIOrigin      = "https://realqa.deli.dev"
+	CanonicalAssetOrigin    = "https://assets.realqa.deli.dev"
 	CanonicalDelibaseOrigin = "https://delibase.deli.dev"
 	defaultHTTPAddress      = ":8080"
 )
@@ -33,6 +34,13 @@ type Config struct {
 	IdentityHashKey        []byte
 	LogPseudonymKey        []byte
 	GitHubOAuthClientID    string
+	AssetOrigin            string
+	UploadSigningKey       []byte
+	R2Endpoint             string
+	R2Bucket               string
+	R2AccessKeyID          string
+	R2SecretAccessKey      string
+	GitHubWebhookSecret    []byte
 }
 
 func Load(lookup LookupEnv) (Config, error) {
@@ -118,6 +126,59 @@ func Load(lookup LookupEnv) (Config, error) {
 	if !validIdentifier(result.GitHubOAuthClientID) {
 		return Config{}, errors.New("realqa config: REALQA_GITHUB_OAUTH_CLIENT_ID is invalid")
 	}
+	if result.AssetOrigin, err = required("REALQA_ASSET_ORIGIN"); err != nil {
+		return Config{}, err
+	}
+	if result.AssetOrigin != CanonicalAssetOrigin {
+		return Config{}, errors.New(
+			"realqa config: REALQA_ASSET_ORIGIN must use the canonical origin")
+	}
+	uploadKey, err := required("REALQA_UPLOAD_SIGNING_KEY")
+	if err != nil {
+		return Config{}, err
+	}
+	if len([]byte(uploadKey)) < 32 {
+		return Config{}, errors.New(
+			"realqa config: REALQA_UPLOAD_SIGNING_KEY must contain at least 32 bytes")
+	}
+	result.UploadSigningKey = []byte(uploadKey)
+	if result.R2Endpoint, err = required("REALQA_R2_ENDPOINT"); err != nil {
+		return Config{}, err
+	}
+	if !validR2Endpoint(result.R2Endpoint) {
+		return Config{}, errors.New("realqa config: REALQA_R2_ENDPOINT is invalid")
+	}
+	if result.R2Bucket, err = required("REALQA_R2_BUCKET"); err != nil {
+		return Config{}, err
+	}
+	if !validIdentifier(result.R2Bucket) {
+		return Config{}, errors.New("realqa config: REALQA_R2_BUCKET is invalid")
+	}
+	if result.R2AccessKeyID, err = required("REALQA_R2_ACCESS_KEY_ID"); err != nil {
+		return Config{}, err
+	}
+	if !validIdentifier(result.R2AccessKeyID) {
+		return Config{}, errors.New(
+			"realqa config: REALQA_R2_ACCESS_KEY_ID is invalid")
+	}
+	if result.R2SecretAccessKey, err = required(
+		"REALQA_R2_SECRET_ACCESS_KEY"); err != nil {
+		return Config{}, err
+	}
+	if len(result.R2SecretAccessKey) < 16 ||
+		strings.ContainsAny(result.R2SecretAccessKey, "\r\n") {
+		return Config{}, errors.New(
+			"realqa config: REALQA_R2_SECRET_ACCESS_KEY is invalid")
+	}
+	webhookSecret, err := required("REALQA_GITHUB_WEBHOOK_SECRET")
+	if err != nil {
+		return Config{}, err
+	}
+	if len([]byte(webhookSecret)) < 32 {
+		return Config{}, errors.New(
+			"realqa config: REALQA_GITHUB_WEBHOOK_SECRET must contain at least 32 bytes")
+	}
+	result.GitHubWebhookSecret = []byte(webhookSecret)
 	result.HTTPAddress = defaultHTTPAddress
 	if value, ok := lookup("REALQA_HTTP_ADDRESS"); ok && value != "" {
 		result.HTTPAddress = value
@@ -134,6 +195,15 @@ func Load(lookup LookupEnv) (Config, error) {
 		}
 	}
 	return result, nil
+}
+
+func validR2Endpoint(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != "" &&
+		parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == "" &&
+		(parsed.Path == "" || parsed.Path == "/") &&
+		strings.HasSuffix(strings.ToLower(parsed.Hostname()),
+			".r2.cloudflarestorage.com")
 }
 
 func validDatabaseURL(value string) bool {

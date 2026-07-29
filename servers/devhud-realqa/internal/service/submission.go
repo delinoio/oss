@@ -1,19 +1,30 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"math"
+	"time"
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
-	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/proto"
 )
 
-// CreateSubmission validates the owner, payer, preset revision, image bounds,
-// and the current caller's GitHub repository access. Billing catalog records
-// intentionally remain inactive, so this foundation fails unavailable before
-// creating durable upload state or performing a provider/billing mutation.
+const (
+	uploadAcceptWindow = 23 * time.Hour
+	stagingLifetime    = 24 * time.Hour
+	uploadSessionLimit = 3
+)
+
+// CreateSubmission validates the complete declaration set before creating any
+// private upload state. Transfer/storage billing activation remains a separate
+// integration; this method performs no provider or catalog mutation.
 func (service *Submission) CreateSubmission(
 	ctx context.Context,
 	request *connect.Request[realqav1.CreateSubmissionRequest],
@@ -26,19 +37,33 @@ func (service *Submission) CreateSubmission(
 	if err != nil {
 		return nil, err
 	}
+	idempotencyID, err := parseIdempotency(request.Msg.Idempotency)
+	if err != nil {
+		return nil, err
+	}
+	requestDigest, err := digestMessage(request.Msg)
+	if err != nil {
+		return nil, err
+	}
+	if replay, ok, replayErr := service.submissionReplay(
+		ctx, actor, idempotencyID, requestDigest); ok {
+		return replay, replayErr
+	}
 	scope, err := parseOwner(request.Msg.Owner)
 	if err != nil {
 		return nil, err
 	}
-	if _, err = authorizeOwner(ctx, service.dependencies, actor, scope, false, false); err != nil {
+	if _, err = authorizeOwner(
+		ctx, service.dependencies, actor, scope, false, false); err != nil {
 		return nil, err
 	}
-	if _, _, err = authorizeBilling(ctx, service.dependencies, actor, scope,
-		request.Msg.Billing); err != nil {
+	payerOrganization, payerTeam, err := authorizeBilling(
+		ctx, service.dependencies, actor, scope, request.Msg.Billing)
+	if err != nil {
 		return nil, err
 	}
-	if _, _, err = authorizeRepository(ctx, service.dependencies, actor, scope,
-		request.Msg.Destination); err != nil {
+	if _, _, err = authorizeRepository(
+		ctx, service.dependencies, actor, scope, request.Msg.Destination); err != nil {
 		return nil, err
 	}
 	presetID, err := parseUUIDMessage(request.Msg.PresetId)
@@ -56,15 +81,136 @@ func (service *Submission) CreateSubmission(
 	if preset.Revision.Value != request.Msg.PresetRevision.Value {
 		return nil, stale(preset.Revision.Value)
 	}
-	if _, err = parseIdempotency(request.Msg.Idempotency); err != nil {
-		return nil, err
-	}
 	if err = validateImages(request.Msg.Images); err != nil {
 		return nil, err
 	}
-	return nil, rqerr.New(connect.CodeUnavailable,
-		realqav1.ErrorReason_ERROR_REASON_TRANSFER_RESERVATION_FAILED,
-		realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+	presetRecord, err := service.dependencies.Store.Queries().GetPresetRecord(
+		ctx, toPGUUID(presetID))
+	if err != nil {
+		return nil, err
+	}
+	submissionID, err := newID(service.dependencies)
+	if err != nil {
+		return nil, err
+	}
+	recordID, err := newID(service.dependencies)
+	if err != nil {
+		return nil, err
+	}
+	assetIDs := make([]uuid.UUID, len(request.Msg.Images))
+	for index := range assetIDs {
+		assetIDs[index], err = newID(service.dependencies)
+		if err != nil {
+			return nil, err
+		}
+	}
+	now := service.dependencies.Clock.Now().UTC()
+	deadline := now.Add(uploadAcceptWindow)
+	expires := now.Add(stagingLifetime)
+	var created *realqav1.Submission
+	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if lockErr := lockActiveOwnerScope(ctx, queries, scope); lockErr != nil {
+				return lockErr
+			}
+			if existing, lookupErr := queries.GetIdempotencyRecord(
+				ctx, idempotencyLookupFor(
+					actor, idempotencyID, "create_submission"),
+			); lookupErr == nil {
+				if !bytes.Equal(existing.RequestDigest, requestDigest) {
+					return idempotencyConflict()
+				}
+				return errIdempotencyReplay
+			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
+				return lookupErr
+			}
+			open, countErr := queries.CountOpenSubmissionsForAccount(
+				ctx, toPGUUID(actor.accountID))
+			if countErr != nil {
+				return countErr
+			}
+			if open >= uploadSessionLimit {
+				return invalid(
+					realqav1.ErrorReason_ERROR_REASON_UPLOAD_CONCURRENCY_LIMITED)
+			}
+			var total int64
+			for _, declaration := range request.Msg.Images {
+				total += declaration.EncodedBytes
+			}
+			_, createErr := queries.CreateSubmissionRecord(
+				ctx, dbgen.CreateSubmissionRecordParams{
+					ID: toPGUUID(submissionID), OwnerKind: scope.kind,
+					OwnerID:              toPGUUID(scope.id),
+					CreatedByAccountID:   toPGUUID(actor.accountID),
+					PresetID:             toPGUUID(presetID),
+					DestinationID:        presetRecord.DestinationID,
+					IdempotencyDigest:    requestDigest,
+					PayerOrganizationID:  toPGUUID(payerOrganization),
+					PayerTeamID:          toPGUUID(payerTeam),
+					PresetRevision:       request.Msg.PresetRevision.Value,
+					DeclaredEncodedBytes: total,
+					UploadDeadline:       pgTimestamp(deadline),
+					UploadExpiresAt:      pgTimestamp(expires),
+				})
+			if createErr != nil {
+				return createErr
+			}
+			for index, declaration := range request.Msg.Images {
+				clientID, _ := parseUUIDMessage(declaration.ClientImageId)
+				checksum, _ := hex.DecodeString(declaration.Sha256)
+				if _, createErr = queries.CreateAssetRecord(
+					ctx, dbgen.CreateAssetRecordParams{
+						ID:                   toPGUUID(assetIDs[index]),
+						SubmissionID:         toPGUUID(submissionID),
+						ClientImageID:        toPGUUID(clientID),
+						MediaType:            mediaTypeName(declaration.MediaType),
+						DeclaredEncodedBytes: declaration.EncodedBytes,
+						PixelWidth:           declaration.PixelWidth,
+						PixelHeight:          declaration.PixelHeight,
+						SourceSha256:         checksum,
+					}); createErr != nil {
+					return createErr
+				}
+			}
+			created, createErr = loadSubmissionWithQueries(
+				ctx, queries, submissionID)
+			if createErr != nil {
+				return createErr
+			}
+			payload, marshalErr := proto.MarshalOptions{
+				Deterministic: true,
+			}.Marshal(created)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			_, createErr = queries.CreateIdempotencyRecord(
+				ctx, dbgen.CreateIdempotencyRecordParams{
+					ID: toPGUUID(recordID), CallerKind: "user",
+					CallerDigest: actor.digest, Operation: "create_submission",
+					IdempotencyKey: toPGUUID(idempotencyID),
+					RequestDigest:  requestDigest, ResourceID: toPGUUID(submissionID),
+					ResponsePayload: payload,
+				})
+			return createErr
+		})
+	if err != nil {
+		if replay, ok, replayErr := service.submissionReplay(
+			ctx, actor, idempotencyID, requestDigest); ok {
+			return replay, replayErr
+		}
+		return nil, err
+	}
+	audit(ctx, service.dependencies, actor, "submission_created",
+		scope, submissionID, "allow", "success")
+	return connect.NewResponse(&realqav1.CreateSubmissionResponse{
+		Submission:                   created,
+		TransferReservationExpiresAt: created.TransferReservationExpiresAt,
+		UploadDeadline:               created.UploadDeadline,
+		Idempotency: &realqav1.IdempotencyResult{
+			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBMISSION,
+			OriginallyCompletedAt: created.CreatedAt,
+		},
+	}), nil
 }
 
 func validateImages(images []*realqav1.ImageDeclaration) error {
@@ -87,7 +233,8 @@ func validateImages(images []*realqav1.ImageDeclaration) error {
 			return invalid(realqav1.ErrorReason_ERROR_REASON_DECODED_IMAGE_TOO_LARGE)
 		}
 		checksum, err := hex.DecodeString(image.Sha256)
-		if err != nil || len(checksum) != 32 {
+		if err != nil || len(checksum) != 32 ||
+			hex.EncodeToString(checksum) != image.Sha256 {
 			return invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
 		}
 		if total > math.MaxInt64-image.EncodedBytes {
@@ -100,4 +247,48 @@ func validateImages(images []*realqav1.ImageDeclaration) error {
 		}
 	}
 	return nil
+}
+
+func (service *Submission) submissionReplay(
+	ctx context.Context,
+	actor caller,
+	idempotencyID uuid.UUID,
+	digest []byte,
+) (*connect.Response[realqav1.CreateSubmissionResponse], bool, error) {
+	record, err := service.dependencies.Store.Queries().GetIdempotencyRecord(
+		ctx, idempotencyLookupFor(actor, idempotencyID, "create_submission"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	if !bytes.Equal(record.RequestDigest, digest) {
+		return nil, true, idempotencyConflict()
+	}
+	submission := new(realqav1.Submission)
+	if len(record.ResponsePayload) > 0 {
+		if err = proto.Unmarshal(record.ResponsePayload, submission); err != nil {
+			return nil, true, err
+		}
+	} else {
+		id, parseErr := fromPGUUID(record.ResourceID)
+		if parseErr != nil {
+			return nil, true, parseErr
+		}
+		submission, err = service.loadSubmission(ctx, id)
+		if err != nil {
+			return nil, true, err
+		}
+	}
+	return connect.NewResponse(&realqav1.CreateSubmissionResponse{
+		Submission:                   submission,
+		TransferReservationExpiresAt: submission.TransferReservationExpiresAt,
+		UploadDeadline:               submission.UploadDeadline,
+		Idempotency: &realqav1.IdempotencyResult{
+			Replayed:              true,
+			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_SUBMISSION,
+			OriginallyCompletedAt: timestamp(record.CompletedAt),
+		},
+	}), true, nil
 }

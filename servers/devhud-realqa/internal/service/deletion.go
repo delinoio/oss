@@ -154,6 +154,7 @@ func (service *Preset) DeleteFeatureData(
 
 	var removed int64
 	var deletionJob dbgen.RealqaDeletionJob
+	var scopedAssets []dbgen.RealqaAsset
 	idempotencyRecordID, err := newID(service.dependencies)
 	if err != nil {
 		return nil, err
@@ -190,6 +191,20 @@ func (service *Preset) DeleteFeatureData(
 					DeletionJobID: toPGUUID(jobID), TriggerKind: trigger,
 				}); insertErr != nil {
 				return insertErr
+			}
+			var listErr error
+			scopedAssets, listErr = queries.ListScopeObjectAssets(ctx,
+				dbgen.ListScopeObjectAssetsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			if listErr != nil {
+				return listErr
+			}
+			if listErr = queries.TombstoneScopePublicAssets(ctx,
+				dbgen.TombstoneScopePublicAssetsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				}); listErr != nil {
+				return listErr
 			}
 			count, deleteErr := queries.DeleteScopeDisconnectIdempotencySnapshots(ctx,
 				dbgen.DeleteScopeDisconnectIdempotencySnapshotsParams{
@@ -272,6 +287,10 @@ func (service *Preset) DeleteFeatureData(
 			), nil
 		}
 		return nil, err
+	}
+	imageService := NewSubmission(service.dependencies)
+	for _, asset := range scopedAssets {
+		imageService.deleteAssetObjects(context.WithoutCancel(ctx), asset)
 	}
 	audit(ctx, service.dependencies, actor, "feature_deletion_accepted",
 		scope, jobID, "allow", "success")

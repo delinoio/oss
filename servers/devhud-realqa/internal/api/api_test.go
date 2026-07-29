@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -84,6 +87,37 @@ func TestHealthAndBrowserOriginBoundary(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("origin response = %d", response.Code)
+	}
+}
+
+func TestIssueDeletionWebhookRequiresExactEventAndSignature(t *testing.T) {
+	t.Parallel()
+	secret := []byte(strings.Repeat("w", 32))
+	payload := []byte(`{"action":"deleted","issue":{"id":757}}`)
+	handler := issueDeletionWebhook(service.NewSubmission(
+		service.Dependencies{}), secret)
+	request := httptest.NewRequest(
+		http.MethodPost, "/webhooks/github/issues", strings.NewReader(string(payload)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Event", "issues")
+	request.Header.Set("X-Hub-Signature-256", "sha256="+strings.Repeat("0", 64))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("invalid signature response = %d", response.Code)
+	}
+
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write(payload)
+	request = httptest.NewRequest(
+		http.MethodPost, "/webhooks/github/issues", strings.NewReader(string(payload)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Event", "issues")
+	request.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("authenticated fixture response = %d", response.Code)
 	}
 }
 
