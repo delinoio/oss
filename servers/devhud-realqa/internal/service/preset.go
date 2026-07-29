@@ -406,6 +406,9 @@ func (service *Preset) refreshProviderSelection(
 	if errors.Is(err, realqagithub.ErrCallerAuthorizationUnavailable) {
 		return nil, nil
 	}
+	if errors.Is(err, realqagithub.ErrRepositorySubmissionUnavailable) {
+		return nil, providerPermissionDenied()
+	}
 	if err != nil {
 		return nil, providerDefinitionUnavailable()
 	}

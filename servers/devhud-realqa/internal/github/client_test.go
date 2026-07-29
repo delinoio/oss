@@ -665,6 +665,31 @@ func TestGetRepositoryDefinitionsUsesPublicOwnerDefaults(t *testing.T) {
 	}
 }
 
+func TestGetRepositoryDefinitionsRejectsNonSubmittableRepository(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	client, err := NewClient(ClientConfig{
+		HTTPClient: fixtureHTTPClient(func(request *http.Request) (*http.Response, error) {
+			requests++
+			return nil, errors.New("unexpected provider request")
+		}),
+		ProjectPermission: ProjectPermissionNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := fixtureRepository()
+	repository.CanSubmit = false
+	_, err = client.GetRepositoryDefinitions(
+		context.Background(), fixtureToken(t), repository)
+	if !errors.Is(err, ErrRepositorySubmissionUnavailable) {
+		t.Fatalf("expected repository submission failure, got %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("definition fetch dispatched %d provider requests", requests)
+	}
+}
+
 func TestReconciliationPagesLargeIssueBodiesBelowResponseLimit(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)

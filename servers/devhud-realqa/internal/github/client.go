@@ -28,8 +28,13 @@ const (
 )
 
 var (
-	ErrAmbiguousCreate  = errors.New("realqa github: issue create result remains ambiguous")
-	ErrProviderRejected = errors.New("realqa github: provider rejected the request")
+	ErrAmbiguousCreate = errors.New(
+		"realqa github: issue create result remains ambiguous",
+	)
+	ErrProviderRejected                = errors.New("realqa github: provider rejected the request")
+	ErrRepositorySubmissionUnavailable = errors.New(
+		"realqa github: repository does not permit issue creation",
+	)
 )
 
 type UserToken struct{ value string }
@@ -416,6 +421,9 @@ func (client *Client) GetRepositoryDefinitions(
 	if err := repository.Validate(); err != nil {
 		return RepositoryDefinitions{}, err
 	}
+	if !repository.CanSubmit {
+		return RepositoryDefinitions{}, ErrRepositorySubmissionUnavailable
+	}
 	var files []struct {
 		Type string `json:"type"`
 		Path string `json:"path"`
@@ -552,7 +560,7 @@ func (client *Client) CreateIssue(
 	}
 	if err := repository.Validate(); err != nil || !repository.IssuesEnabled ||
 		!repository.CanSubmit {
-		return Issue{}, errors.New("realqa github: repository does not permit issue creation")
+		return Issue{}, ErrRepositorySubmissionUnavailable
 	}
 	normalized, err := normalizeIssueInput(input)
 	if err != nil {

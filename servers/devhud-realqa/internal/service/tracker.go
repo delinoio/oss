@@ -23,6 +23,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type repositoryPageSource string
+
+const (
+	repositoryPageSourceLive  repositoryPageSource = "github-live-v1"
+	repositoryPageSourceCache repositoryPageSource = "github-cache-v1"
+)
+
 func (service *Tracker) GetGitHubConnection(
 	ctx context.Context,
 	request *connect.Request[realqav1.GetGitHubConnectionRequest],
@@ -359,15 +366,17 @@ func (service *Tracker) ListRepositories(
 			size = request.Msg.Page.PageSize
 		}
 	}
+	source := repositoryPageSource("")
 	after := ""
 	if request.Msg.Page != nil && request.Msg.Page.Cursor != "" {
-		decoded, decodeErr := base64.RawURLEncoding.DecodeString(request.Msg.Page.Cursor)
-		if decodeErr != nil || len(decoded) == 0 || len(decoded) > 255 {
+		var decodeErr error
+		source, after, decodeErr = decodeRepositoryPageCursor(request.Msg.Page.Cursor)
+		if decodeErr != nil {
 			return nil, invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
 		}
-		after = string(decoded)
 	}
-	if service.dependencies.GitHubProvider != nil {
+	if service.dependencies.GitHubProvider != nil &&
+		source != repositoryPageSourceCache {
 		page, providerErr := service.dependencies.GitHubProvider.ListRepositories(
 			ctx, actor.accountID, installation, realqagithub.RepositoryPageRequest{
 				Query: request.Msg.Query, Cursor: after, PageSize: int(size),
@@ -395,11 +404,16 @@ func (service *Tracker) ListRepositories(
 				})
 			}
 			if page.NextCursor != "" {
-				response.Page.NextCursor = base64.RawURLEncoding.EncodeToString(
-					[]byte(page.NextCursor))
+				response.Page.NextCursor = encodeRepositoryPageCursor(
+					repositoryPageSourceLive, page.NextCursor)
 			}
 			return connect.NewResponse(response), nil
 		}
+	}
+	if source == repositoryPageSourceLive {
+		return nil, rqerr.New(connect.CodeUnavailable,
+			realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
+			realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 	}
 	rows, err := service.dependencies.Store.Queries().ListAccessibleRepositories(
 		ctx, dbgen.ListAccessibleRepositoriesParams{
@@ -430,9 +444,29 @@ func (service *Tracker) ListRepositories(
 		})
 	}
 	if hasMore {
-		response.Page.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(last))
+		response.Page.NextCursor = encodeRepositoryPageCursor(
+			repositoryPageSourceCache, last)
 	}
 	return connect.NewResponse(response), nil
+}
+
+func encodeRepositoryPageCursor(source repositoryPageSource, cursor string) string {
+	value := string(source) + ":" + cursor
+	return base64.RawURLEncoding.EncodeToString([]byte(value))
+}
+
+func decodeRepositoryPageCursor(value string) (repositoryPageSource, string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil || len(decoded) == 0 || len(decoded) > 255 {
+		return "", "", errors.New("realqa service: repository page cursor is invalid")
+	}
+	sourceValue, cursor, found := strings.Cut(string(decoded), ":")
+	source := repositoryPageSource(sourceValue)
+	if !found || cursor == "" ||
+		(source != repositoryPageSourceLive && source != repositoryPageSourceCache) {
+		return "", "", errors.New("realqa service: repository page cursor is invalid")
+	}
+	return source, cursor, nil
 }
 
 func (service *Tracker) GetRepositoryIssueSchema(
@@ -461,6 +495,11 @@ func (service *Tracker) GetRepositoryIssueSchema(
 		definitions, providerErr :=
 			service.dependencies.GitHubProvider.GetRepositoryDefinitions(
 				ctx, actor.accountID, installation, repository)
+		if errors.Is(
+			providerErr, realqagithub.ErrRepositorySubmissionUnavailable,
+		) {
+			return nil, providerPermissionDenied()
+		}
 		if providerErr != nil &&
 			!errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
 			return nil, rqerr.New(connect.CodeUnavailable,

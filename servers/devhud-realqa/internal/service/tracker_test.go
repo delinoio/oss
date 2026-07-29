@@ -1,10 +1,45 @@
 package service
 
 import (
+	"encoding/base64"
 	"testing"
 
 	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 )
+
+func TestRepositoryPageCursorPreservesSource(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		source repositoryPageSource
+		cursor string
+	}{
+		{
+			name:   "live provider",
+			source: repositoryPageSourceLive, cursor: "github-v1:2:10",
+		},
+		{
+			name:   "cached repositories",
+			source: repositoryPageSourceCache, cursor: "123456",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			encoded := encodeRepositoryPageCursor(test.source, test.cursor)
+			source, cursor, err := decodeRepositoryPageCursor(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if source != test.source || cursor != test.cursor {
+				t.Fatalf("decoded cursor = %q %q", source, cursor)
+			}
+		})
+	}
+
+	unnamespaced := base64.RawURLEncoding.EncodeToString([]byte("github-v1:2:10"))
+	if _, _, err := decodeRepositoryPageCursor(unnamespaced); err == nil {
+		t.Fatal("unnamespaced provider cursor was accepted")
+	}
+}
 
 func TestRepositoryDefinitionsProtoPreservesProviderMetadata(t *testing.T) {
 	t.Parallel()

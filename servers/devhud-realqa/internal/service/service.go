@@ -429,6 +429,12 @@ func permissionDenied() error {
 		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
 }
 
+func providerPermissionDenied() error {
+	return rqerr.New(connect.CodePermissionDenied,
+		realqav1.ErrorReason_ERROR_REASON_PROVIDER_PERMISSION_DENIED,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+}
+
 func stale(revision int64) error {
 	return rqerr.New(connect.CodeAborted,
 		realqav1.ErrorReason_ERROR_REASON_STALE_REVISION,
