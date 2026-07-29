@@ -63,7 +63,11 @@ func (store *Store) SaveGitHubCallbackState(
 	if err != nil || (state.Owner.Scope == 1 && ownerID != accountID) {
 		return errors.New("deck database: invalid callback owner")
 	}
-	ownerHash := store.githubCallbackOwnerHash(
+	ownerHash := store.hasher.Sum(
+		"owner",
+		deckv1.OwnerScope(state.Owner.Scope).String()+":"+ownerID.String(),
+	)
+	callbackOwnerHash := store.githubCallbackOwnerHash(
 		int16(state.Owner.Scope), ownerID)
 	accountHash := store.githubCallbackAccountHash(accountID)
 	payload, err := json.Marshal(state)
@@ -94,7 +98,7 @@ func (store *Store) SaveGitHubCallbackState(
 		}
 		return queries.InsertGitHubCallbackState(ctx,
 			dbgen.InsertGitHubCallbackStateParams{
-				StateHash: hash[:], OwnerHash: ownerHash[:],
+				StateHash: hash[:], OwnerHash: callbackOwnerHash[:],
 				AccountHash:     accountHash[:],
 				StateCiphertext: ciphertext,
 				ExpiresAt:       pgTime(time.Unix(state.ExpiresAt, 0)),
