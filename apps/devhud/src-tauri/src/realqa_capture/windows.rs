@@ -572,6 +572,7 @@ impl CaptureBackend for WindowsCaptureBackend {
     }
 
     fn capabilities(&self) -> Result<CaptureCapabilities, BackendFailure> {
+        self.adapter.permission().map_err(BackendFailure::from)?;
         Ok(CaptureCapabilities {
             platform: CapturePlatform::Windows,
             display_protocol: CaptureDisplayProtocol::Native,
@@ -2652,6 +2653,11 @@ mod tests {
         let capture_core = core.clone();
         let capture = thread::spawn(move || capture_core.begin(request));
         permission_barrier.wait();
+        adapter
+            .permission_barrier
+            .lock()
+            .expect("permission barrier lock")
+            .take();
         core.cancel(&session_id).expect("cancel during permission");
         permission_barrier.wait();
 
@@ -2809,5 +2815,14 @@ mod tests {
             permission_from_support(true),
             Ok(CapturePermission::Granted)
         );
+
+        let adapter = Arc::new(FixtureAdapter::mixed_dpi());
+        *adapter.permission.lock().expect("permission lock") =
+            Err(WindowsAdapterFailure::Unavailable);
+        let backend = WindowsCaptureBackend::new(adapter);
+        assert!(matches!(
+            backend.capabilities(),
+            Err(BackendFailure::Unavailable)
+        ));
     }
 }
