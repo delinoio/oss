@@ -594,6 +594,39 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		snapshots[:1], now.Add(6*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
+	acceptedPermissions := changedInstallation.Permissions
+	acceptedPermissions.Members = deckgithub.PermissionRead
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-permissions-1", "installation",
+		"new_permissions_accepted", installation.ID, acceptedPermissions,
+		security.Digest([]byte("installation-permissions")),
+		now.Add(6*time.Minute)); err != nil {
+		t.Fatalf("accepted GitHub permissions: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil ||
+		connection.Installation.Permissions != acceptedPermissions {
+		t.Fatalf("accepted GitHub permissions connection = %#v err=%v",
+			connection, err)
+	}
+	var acceptedPermissionSnapshotCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)::integer
+		FROM deck_pull_request_snapshots
+		WHERE view_id = $1`,
+		pgUUID(firstViewID),
+	).Scan(&acceptedPermissionSnapshotCount); err != nil {
+		t.Fatal(err)
+	}
+	if acceptedPermissionSnapshotCount != 0 {
+		t.Fatalf("accepted permissions retained %d stale snapshots",
+			acceptedPermissionSnapshotCount)
+	}
+	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,
+		snapshots[:1], now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.UpdateNotificationPreference(
 		ctx, registrationID, firstViewID, 0,
 		&deckv1.ViewNotificationPreference{

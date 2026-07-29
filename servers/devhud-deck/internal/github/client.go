@@ -212,6 +212,7 @@ type repositoryResponse struct {
 	AllowMergeCommit bool   `json:"allow_merge_commit"`
 	AllowSquashMerge bool   `json:"allow_squash_merge"`
 	AllowRebaseMerge bool   `json:"allow_rebase_merge"`
+	AllowAutoMerge   bool   `json:"allow_auto_merge"`
 	Owner            struct {
 		Type string `json:"type"`
 	} `json:"owner"`
@@ -479,8 +480,12 @@ func (client *Client) ActionMetadata(
 	canMerge := effective.Contents >= PermissionWrite
 	metadata.Supported[MutationMerge] = metadata.IsOpen && !metadata.IsDraft &&
 		metadata.Mergeable && !metadata.MergeBlocked && hasMethod && canMerge
+	mergeRequirementsUnmet := pull.Mergeable != nil &&
+		(!metadata.Mergeable || metadata.MergeBlocked)
 	metadata.Supported[MutationEnableAutoMerge] = metadata.IsOpen &&
-		!metadata.IsDraft && !metadata.AutoMergeEnabled && hasMethod && canMerge
+		!metadata.IsDraft && !metadata.AutoMergeEnabled &&
+		repository.AllowAutoMerge && mergeRequirementsUnmet &&
+		hasMethod && canMerge
 	metadata.Supported[MutationCancelAutoMerge] = metadata.IsOpen &&
 		metadata.AutoMergeEnabled && canMerge
 	return metadata, nil
@@ -533,9 +538,12 @@ func (client *Client) ListMutationCandidates(
 	needle := strings.ToLower(strings.TrimSpace(query))
 	var candidates []Candidate
 	switch kind {
-	case MutationAssignUsers, MutationRequestReviewers:
+	case MutationAssignUsers:
 		candidates, err = client.userCandidates(ctx, credential, reference.Repository)
-		if err == nil && kind == MutationRequestReviewers &&
+	case MutationRequestReviewers:
+		candidates, err = client.reviewerCandidates(
+			ctx, credential, reference.Repository)
+		if err == nil &&
 			metadata.Permissions.Members >= PermissionRead &&
 			metadata.RepositoryOwner == AccountKindOrganization {
 			var teams []Candidate
@@ -585,10 +593,34 @@ func (client *Client) userCandidates(
 	credential Credential,
 	repository Repository,
 ) ([]Candidate, error) {
+	return client.userCandidatesAtPath(
+		ctx, credential, repository, "/assignees")
+}
+
+func (client *Client) reviewerCandidates(
+	ctx context.Context,
+	credential Credential,
+	repository Repository,
+) ([]Candidate, error) {
+	return client.userCandidatesAtPath(
+		ctx, credential, repository, "/collaborators?affiliation=all")
+}
+
+func (client *Client) userCandidatesAtPath(
+	ctx context.Context,
+	credential Credential,
+	repository Repository,
+	suffix string,
+) ([]Candidate, error) {
 	result := make([]Candidate, 0, maxCandidateLimit)
 	for page := 1; page <= maxCandidatePages; page++ {
+		separator := "?"
+		if strings.Contains(suffix, "?") {
+			separator = "&"
+		}
 		path, err := repositoryPath(repository,
-			fmt.Sprintf("/assignees?per_page=%d&page=%d", maxCandidateLimit, page))
+			fmt.Sprintf("%s%sper_page=%d&page=%d",
+				suffix, separator, maxCandidateLimit, page))
 		if err != nil {
 			return nil, err
 		}

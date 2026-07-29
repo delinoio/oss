@@ -683,6 +683,7 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 	ctx context.Context,
 	delivery, event, action string,
 	installationID uint64,
+	permissions deckgithub.Permissions,
 	payloadHash [32]byte,
 	now time.Time,
 ) error {
@@ -715,7 +716,16 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 		if connectionErr == nil {
 			disconnect := event == "installation" &&
 				(action == "deleted" || action == "suspend")
-			purge := disconnect || event == "installation_repositories"
+			permissionsChanged := action == "new_permissions_accepted" &&
+				githubPermissionsChanged(connection, permissions)
+			if action == "new_permissions_accepted" &&
+				(permissions.Metadata < deckgithub.PermissionRead ||
+					permissions.PullRequests < deckgithub.PermissionWrite ||
+					permissions.Checks < deckgithub.PermissionRead) {
+				return deckgithub.ErrPermissionDenied
+			}
+			purge := disconnect || event == "installation_repositories" ||
+				permissionsChanged
 			if disconnect {
 				if action == "suspend" {
 					if _, err := queries.RequireGitHubReauthentication(
@@ -741,11 +751,31 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 					return err
 				}
 			}
+			if permissionsChanged {
+				if _, err := queries.UpdateGitHubInstallationPermissions(
+					ctx, dbgen.UpdateGitHubInstallationPermissionsParams{
+						GithubMetadataPermission: pgInt2(
+							int16(permissions.Metadata), true),
+						GithubContentsPermission: pgInt2(
+							int16(permissions.Contents), true),
+						GithubPullRequestsPermission: pgInt2(
+							int16(permissions.PullRequests), true),
+						GithubChecksPermission: pgInt2(
+							int16(permissions.Checks), true),
+						GithubMembersPermission: pgInt2(
+							int16(permissions.Members), true),
+						UpdatedAt:        pgTime(now),
+						ConnectionID:     connection.ConnectionID,
+						ExpectedRevision: connection.Revision,
+					}); err != nil {
+					return err
+				}
+			}
 			if purge {
 				if err := store.cleanupGitHubOwner(
 					ctx, queries, connection.OwnerScope,
 					uuidValue(connection.OwnerID), now,
-					disconnect, disconnect); err != nil {
+					disconnect || permissionsChanged, disconnect); err != nil {
 					return err
 				}
 			}
@@ -760,6 +790,23 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 				PayloadHash:  payloadHash[:], ProcessedAt: pgTime(now),
 			})
 	})
+}
+
+func githubPermissionsChanged(
+	connection dbgen.DeckConnection,
+	permissions deckgithub.Permissions,
+) bool {
+	return !connection.GithubMetadataPermission.Valid ||
+		connection.GithubMetadataPermission.Int16 != int16(permissions.Metadata) ||
+		!connection.GithubContentsPermission.Valid ||
+		connection.GithubContentsPermission.Int16 != int16(permissions.Contents) ||
+		!connection.GithubPullRequestsPermission.Valid ||
+		connection.GithubPullRequestsPermission.Int16 !=
+			int16(permissions.PullRequests) ||
+		!connection.GithubChecksPermission.Valid ||
+		connection.GithubChecksPermission.Int16 != int16(permissions.Checks) ||
+		!connection.GithubMembersPermission.Valid ||
+		connection.GithubMembersPermission.Int16 != int16(permissions.Members)
 }
 
 func (store *Store) ApplyGitHubAuthorizationRevocation(

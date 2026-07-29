@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const maxMutationOperands = 100
+const (
+	maxMutationOperands          = 100
+	maxGitHubAssigneesPerRequest = 10
+)
 
 func (client *Client) Mutate(
 	ctx context.Context,
@@ -157,9 +160,19 @@ func (client *Client) applyMutation(
 		if mutation.Kind == MutationUnassignUsers {
 			method = http.MethodDelete
 		}
-		_, err := client.do(ctx, credential, method, path,
-			map[string]any{"assignees": userLogins(mutation.Users)}, nil)
-		return err
+		for start := 0; start < len(mutation.Users); start += maxGitHubAssigneesPerRequest {
+			end := start + maxGitHubAssigneesPerRequest
+			if end > len(mutation.Users) {
+				end = len(mutation.Users)
+			}
+			if _, err := client.do(ctx, credential, method, path,
+				map[string]any{
+					"assignees": userLogins(mutation.Users[start:end]),
+				}, nil); err != nil {
+				return err
+			}
+		}
+		return nil
 	case MutationRequestReviewers, MutationRemoveReviewers:
 		path, _ := repositoryPath(reference.Repository,
 			pullSuffix+"/requested_reviewers")

@@ -96,6 +96,7 @@ type Querier interface {
 	UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (DeckDeviceRegistration, error)
 	UpdateDeviceViewStateAfterDeletion(ctx context.Context, arg UpdateDeviceViewStateAfterDeletionParams) error
 	UpdateDeviceWidgetsAfterViewChange(ctx context.Context, arg UpdateDeviceWidgetsAfterViewChangeParams) error
+	UpdateGitHubInstallationPermissions(ctx context.Context, arg UpdateGitHubInstallationPermissionsParams) (DeckConnection, error)
 	UpdateGitHubUserCredentials(ctx context.Context, arg UpdateGitHubUserCredentialsParams) error
 	UpdateView(ctx context.Context, arg UpdateViewParams) (DeckView, error)
 	UpdateViewSnapshotState(ctx context.Context, arg UpdateViewSnapshotStateParams) error

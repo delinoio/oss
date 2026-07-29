@@ -29,28 +29,34 @@ func refreshGitHubConnectionCredential(
 	}
 	key := accountID.String() + ":" +
 		strconv.FormatUint(connection.Credential.UserID, 10)
-	value, err, _ := githubCredentialRefreshes.Do(key, func() (any, error) {
+	_, err, _ := githubCredentialRefreshes.Do(key, func() (any, error) {
 		current, err := store.GetGitHubConnection(
 			ctx, connection.OwnerScope, connection.OwnerID, accountID, true)
 		if err != nil {
-			return database.GitHubConnectionRecord{}, err
+			return deckgithub.Credential{}, err
 		}
 		if current.Credential.Validate(now) == nil {
-			return current, nil
+			return current.Credential, nil
 		}
 		refreshed, err := broker.RefreshCredential(ctx, current.Credential)
 		if err != nil {
-			return database.GitHubConnectionRecord{}, err
+			return deckgithub.Credential{}, err
 		}
 		if err := store.RefreshGitHubCredential(
 			ctx, current.ID, accountID, refreshed, now); err != nil {
-			return database.GitHubConnectionRecord{}, err
+			return deckgithub.Credential{}, err
 		}
-		current.Credential = refreshed
-		return current, nil
+		return refreshed, nil
 	})
 	if err != nil {
 		return database.GitHubConnectionRecord{}, err
 	}
-	return value.(database.GitHubConnectionRecord), nil
+	// Only the user credential is shared across the singleflight call.
+	// Installation and App-permission state remain scoped to this connection.
+	current, err := store.GetGitHubConnection(
+		ctx, connection.OwnerScope, connection.OwnerID, accountID, true)
+	if err != nil {
+		return database.GitHubConnectionRecord{}, err
+	}
+	return current, nil
 }

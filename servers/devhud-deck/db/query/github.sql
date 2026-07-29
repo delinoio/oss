@@ -123,6 +123,19 @@ WHERE connection_id = sqlc.arg(connection_id)
   AND revision = sqlc.arg(expected_revision)
 RETURNING *;
 
+-- name: UpdateGitHubInstallationPermissions :one
+UPDATE deck_connections
+SET github_metadata_permission = sqlc.arg(github_metadata_permission),
+    github_contents_permission = sqlc.arg(github_contents_permission),
+    github_pull_requests_permission = sqlc.arg(github_pull_requests_permission),
+    github_checks_permission = sqlc.arg(github_checks_permission),
+    github_members_permission = sqlc.arg(github_members_permission),
+    revision = revision + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE connection_id = sqlc.arg(connection_id)
+  AND revision = sqlc.arg(expected_revision)
+RETURNING *;
+
 -- name: UpdateGitHubUserCredentials :exec
 UPDATE deck_github_user_credentials
 SET wrapping_key_id = sqlc.arg(wrapping_key_id),

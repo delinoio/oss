@@ -44,6 +44,7 @@ type LifecycleStore interface {
 		string,
 		string,
 		uint64,
+		Permissions,
 		[sha256.Size]byte,
 		time.Time,
 	) error
@@ -273,7 +274,8 @@ func (broker *Broker) findInstallation(
 type installationWebhook struct {
 	Action       string `json:"action"`
 	Installation struct {
-		ID uint64 `json:"id"`
+		ID          uint64            `json:"id"`
+		Permissions map[string]string `json:"permissions"`
 	} `json:"installation"`
 }
 
@@ -334,9 +336,19 @@ func (broker *Broker) webhook(
 			http.Error(writer, "invalid webhook", http.StatusBadRequest)
 			return
 		}
+		permissions := Permissions{}
+		if webhook.Action == "new_permissions_accepted" {
+			permissions = parsePermissions(webhook.Installation.Permissions)
+			if permissions.Metadata < PermissionRead ||
+				permissions.PullRequests < PermissionWrite ||
+				permissions.Checks < PermissionRead {
+				http.Error(writer, "invalid webhook", http.StatusBadRequest)
+				return
+			}
+		}
 		applyErr = broker.lifecycle.ApplyGitHubInstallationLifecycle(
 			request.Context(), delivery, event, webhook.Action,
-			webhook.Installation.ID, payloadHash, broker.now())
+			webhook.Installation.ID, permissions, payloadHash, broker.now())
 	}
 	if applyErr != nil {
 		if errors.Is(applyErr, ErrPermissionDenied) {

@@ -831,6 +831,64 @@ func (q *Queries) RewrapGitHubUserCredential(ctx context.Context, arg RewrapGitH
 	return err
 }
 
+const updateGitHubInstallationPermissions = `-- name: UpdateGitHubInstallationPermissions :one
+UPDATE deck_connections
+SET github_metadata_permission = $1,
+    github_contents_permission = $2,
+    github_pull_requests_permission = $3,
+    github_checks_permission = $4,
+    github_members_permission = $5,
+    revision = revision + 1,
+    updated_at = $6
+WHERE connection_id = $7
+  AND revision = $8
+RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission
+`
+
+type UpdateGitHubInstallationPermissionsParams struct {
+	GithubMetadataPermission     pgtype.Int2
+	GithubContentsPermission     pgtype.Int2
+	GithubPullRequestsPermission pgtype.Int2
+	GithubChecksPermission       pgtype.Int2
+	GithubMembersPermission      pgtype.Int2
+	UpdatedAt                    pgtype.Timestamptz
+	ConnectionID                 pgtype.UUID
+	ExpectedRevision             int64
+}
+
+func (q *Queries) UpdateGitHubInstallationPermissions(ctx context.Context, arg UpdateGitHubInstallationPermissionsParams) (DeckConnection, error) {
+	row := q.db.QueryRow(ctx, updateGitHubInstallationPermissions,
+		arg.GithubMetadataPermission,
+		arg.GithubContentsPermission,
+		arg.GithubPullRequestsPermission,
+		arg.GithubChecksPermission,
+		arg.GithubMembersPermission,
+		arg.UpdatedAt,
+		arg.ConnectionID,
+		arg.ExpectedRevision,
+	)
+	var i DeckConnection
+	err := row.Scan(
+		&i.ConnectionID,
+		&i.OwnerScope,
+		&i.OwnerID,
+		&i.State,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.GithubInstallationID,
+		&i.GithubAccountID,
+		&i.GithubAccountKind,
+		&i.GithubAccountLoginCiphertext,
+		&i.GithubMetadataPermission,
+		&i.GithubContentsPermission,
+		&i.GithubPullRequestsPermission,
+		&i.GithubChecksPermission,
+		&i.GithubMembersPermission,
+	)
+	return i, err
+}
+
 const updateGitHubUserCredentials = `-- name: UpdateGitHubUserCredentials :exec
 UPDATE deck_github_user_credentials
 SET wrapping_key_id = $1,

@@ -78,7 +78,7 @@ func TestEverySupportedMutationUsesOnlyUserAttributedEndpoints(t *testing.T) {
 			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
 			"PUT", "/repos/acme/widget/pulls/7/merge", `"squash"`},
 		{"enable auto merge", Mutation{Kind: MutationEnableAutoMerge, MergeMethod: MergeMethodRebase},
-			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
+			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"blocked","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`,
 			"POST", "/graphql", "expectedHeadOid"},
 		{"cancel auto merge", Mutation{Kind: MutationCancelAutoMerge},
 			`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"},"auto_merge":{"enabled_by":{"login":"octo"}}}`,
@@ -105,7 +105,7 @@ func TestEverySupportedMutationUsesOnlyUserAttributedEndpoints(t *testing.T) {
 				case request.Method == http.MethodGet &&
 					request.URL.Path == "/repos/acme/widget":
 					return jsonResponse(http.StatusOK,
-						`{"allow_merge_commit":true,"allow_squash_merge":true,"allow_rebase_merge":true,"permissions":{"pull":true,"push":true}}`), nil
+						`{"allow_merge_commit":true,"allow_squash_merge":true,"allow_rebase_merge":true,"allow_auto_merge":true,"permissions":{"pull":true,"push":true}}`), nil
 				case request.Method == http.MethodGet &&
 					request.URL.Path == "/repos/acme/widget/pulls/7":
 					return jsonResponse(http.StatusOK, test.pull), nil
@@ -280,7 +280,10 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 		case "/repos/acme/widget/pulls/7":
 			return jsonResponse(http.StatusOK,
 				`{"node_id":"PR_1","state":"open","draft":false,"merged":false,"mergeable":true,"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`), nil
-		case "/repos/acme/widget/assignees":
+		case "/repos/acme/widget/collaborators":
+			if request.URL.Query().Get("affiliation") != "all" {
+				t.Fatal("reviewer candidates omitted visible collaborators")
+			}
 			return jsonResponse(http.StatusOK,
 				`[{"login":"octo"},{"login":"core-user"}]`), nil
 		case "/repos/acme/widget/teams":
@@ -336,6 +339,7 @@ func TestCandidateFetchIsActionSpecificAndPermissionFiltered(t *testing.T) {
 	}
 	for _, path := range paths {
 		if path == "/repos/acme/widget/assignees" ||
+			path == "/repos/acme/widget/collaborators" ||
 			path == "/repos/acme/widget/teams" {
 			t.Fatalf("unneeded identity metadata fetched for label action: %s", path)
 		}
@@ -377,7 +381,7 @@ func TestCandidatePaginationAndUserOwnerTeamSkip(t *testing.T) {
 			}
 			return jsonResponse(http.StatusOK,
 				`[{"login":"target-user"}]`), nil
-		case "/repos/octo/widget/assignees":
+		case "/repos/octo/widget/collaborators":
 			return jsonResponse(http.StatusOK, `[{"login":"octo"}]`), nil
 		case "/orgs/octo/teams":
 			teamRequests++
@@ -428,7 +432,7 @@ func TestCandidateFetchOmitsTeamsWithoutRepositoryAdministration(t *testing.T) {
 				`{"node_id":"PR_1","state":"open","draft":false,"merged":false,`+
 					`"mergeable":true,"mergeable_state":"clean",`+
 					`"updated_at":"2026-01-01T00:00:00Z","head":{"sha":"abc"}}`), nil
-		case "/repos/acme/widget/assignees":
+		case "/repos/acme/widget/collaborators":
 			return jsonResponse(http.StatusOK, `[{"login":"octo"}]`), nil
 		case "/repos/acme/widget/teams":
 			return jsonResponse(http.StatusNotFound, `{"message":"not found"}`), nil
@@ -524,6 +528,115 @@ func TestMutationOperandCountIsBounded(t *testing.T) {
 		Kind: MutationRemoveLabels, Labels: labels,
 	}); !errors.Is(err, ErrUnsupportedAction) {
 		t.Fatalf("oversize label mutation error = %v", err)
+	}
+}
+
+func TestAssigneeMutationsRespectGitHubRequestLimit(t *testing.T) {
+	t.Parallel()
+	users := make([]User, 23)
+	for index := range users {
+		users[index] = User{Login: fmt.Sprintf("user-%02d", index)}
+	}
+	var batchSizes []int
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			var payload struct {
+				Assignees []string `json:"assignees"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			batchSizes = append(batchSizes, len(payload.Assignees))
+			return jsonResponse(http.StatusCreated, `{}`), nil
+		})})
+	err := client.applyMutation(
+		context.Background(),
+		Credential{AccessToken: "token"},
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+		},
+		ActionMetadata{},
+		Mutation{Kind: MutationAssignUsers, Users: users},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(batchSizes) != "[10 10 3]" {
+		t.Fatalf("assignee request batches = %v", batchSizes)
+	}
+}
+
+func TestAutoMergeRequiresRepositoryAndPullRequestEligibility(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		repository string
+		pull       string
+		supported  bool
+	}{
+		{
+			name: "eligible",
+			repository: `{"allow_merge_commit":true,"allow_auto_merge":true,` +
+				`"permissions":{"pull":true,"push":true}}`,
+			pull: `{"node_id":"PR_1","state":"open","mergeable":true,` +
+				`"mergeable_state":"blocked","updated_at":"2026-01-01T00:00:00Z",` +
+				`"head":{"sha":"abc"}}`,
+			supported: true,
+		},
+		{
+			name: "repository disabled",
+			repository: `{"allow_merge_commit":true,"allow_auto_merge":false,` +
+				`"permissions":{"pull":true,"push":true}}`,
+			pull: `{"node_id":"PR_1","state":"open","mergeable":true,` +
+				`"mergeable_state":"blocked","updated_at":"2026-01-01T00:00:00Z",` +
+				`"head":{"sha":"abc"}}`,
+		},
+		{
+			name: "immediately mergeable",
+			repository: `{"allow_merge_commit":true,"allow_auto_merge":true,` +
+				`"permissions":{"pull":true,"push":true}}`,
+			pull: `{"node_id":"PR_1","state":"open","mergeable":true,` +
+				`"mergeable_state":"clean","updated_at":"2026-01-01T00:00:00Z",` +
+				`"head":{"sha":"abc"}}`,
+		},
+		{
+			name: "mergeability pending",
+			repository: `{"allow_merge_commit":true,"allow_auto_merge":true,` +
+				`"permissions":{"pull":true,"push":true}}`,
+			pull: `{"node_id":"PR_1","state":"open","mergeable":null,` +
+				`"mergeable_state":"unknown","updated_at":"2026-01-01T00:00:00Z",` +
+				`"head":{"sha":"abc"}}`,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := NewClient(&http.Client{Transport: roundTripFunc(
+				func(request *http.Request) (*http.Response, error) {
+					if request.URL.Path == "/repos/acme/widget" {
+						return jsonResponse(http.StatusOK, test.repository), nil
+					}
+					return jsonResponse(http.StatusOK, test.pull), nil
+				})})
+			metadata, err := client.ActionMetadata(
+				context.Background(), 1, Credential{AccessToken: "token"},
+				Permissions{
+					Metadata: PermissionRead, Contents: PermissionWrite,
+					PullRequests: PermissionWrite,
+				},
+				PullRequestRef{
+					Repository: Repository{Owner: "acme", Name: "widget"},
+					Number:     7,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if metadata.Supported[MutationEnableAutoMerge] != test.supported {
+				t.Fatalf("auto-merge supported = %v", metadata.Supported)
+			}
+		})
 	}
 }
 

@@ -64,6 +64,7 @@ func (store *callbackStoreFixture) ConnectGitHub(
 
 type lifecycleFixture struct {
 	calls       []string
+	permissions []Permissions
 	revocations []uint64
 }
 
@@ -71,10 +72,12 @@ func (store *lifecycleFixture) ApplyGitHubInstallationLifecycle(
 	_ context.Context,
 	delivery, event, action string,
 	_ uint64,
+	permissions Permissions,
 	_ [sha256.Size]byte,
 	_ time.Time,
 ) error {
 	store.calls = append(store.calls, delivery+":"+event+":"+action)
+	store.permissions = append(store.permissions, permissions)
 	return nil
 }
 
@@ -208,6 +211,29 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 		t.Fatalf("lifecycle response = %d, calls %#v",
 			response.Code, lifecycle.calls)
 	}
+	permissionPayload := []byte(
+		`{"action":"new_permissions_accepted","installation":{"id":42,` +
+			`"permissions":{"metadata":"read","contents":"write",` +
+			`"pull_requests":"write","checks":"read","members":"read"}}}`)
+	permissionRequest := httptest.NewRequest(
+		http.MethodPost, WebhookPath, bytes.NewReader(permissionPayload))
+	permissionRequest.Header.Set("X-Hub-Signature-256",
+		WebhookSignature(secret, permissionPayload))
+	permissionRequest.Header.Set("X-GitHub-Event", "installation")
+	permissionRequest.Header.Set("X-GitHub-Delivery", "delivery-permissions")
+	permissionResponse := httptest.NewRecorder()
+	broker.Handler().ServeHTTP(permissionResponse, permissionRequest)
+	expectedPermissions := Permissions{
+		Metadata: PermissionRead, Contents: PermissionWrite,
+		PullRequests: PermissionWrite,
+		Checks:       PermissionRead, Members: PermissionRead,
+	}
+	if permissionResponse.Code != http.StatusNoContent ||
+		len(lifecycle.permissions) != 2 ||
+		lifecycle.permissions[1] != expectedPermissions {
+		t.Fatalf("permission lifecycle response = %d, permissions %#v",
+			permissionResponse.Code, lifecycle.permissions)
+	}
 	prPayload := []byte(`{"action":"synchronize","installation":{"id":42}}`)
 	prRequest := httptest.NewRequest(http.MethodPost, WebhookPath,
 		bytes.NewReader(prPayload))
@@ -217,7 +243,7 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	prRequest.Header.Set("X-GitHub-Delivery", "delivery-2")
 	prResponse := httptest.NewRecorder()
 	broker.Handler().ServeHTTP(prResponse, prRequest)
-	if prResponse.Code != http.StatusAccepted || len(lifecycle.calls) != 1 {
+	if prResponse.Code != http.StatusAccepted || len(lifecycle.calls) != 2 {
 		t.Fatal("pull-request webhook reached lifecycle/refresh state")
 	}
 	revocationPayload := []byte(
