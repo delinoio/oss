@@ -60,13 +60,13 @@ func (client *Client) Mutate(
 	if err != nil {
 		return MutationResult{}, err
 	}
+	defer release()
 	err = client.applyMutation(ctx, credential, reference, metadata, mutation)
-	release()
 	if err != nil {
 		return MutationResult{}, err
 	}
-	current, err := client.ActionMetadata(
-		ctx, installationID, credential, appPermissions, reference)
+	current, err := client.actionMetadata(
+		ctx, credential, appPermissions, reference)
 	if err != nil {
 		return MutationResult{}, err
 	}

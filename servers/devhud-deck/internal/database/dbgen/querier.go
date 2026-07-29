@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	CanManageOrganizationForGitHubCallback(ctx context.Context, arg CanManageOrganizationForGitHubCallbackParams) (bool, error)
+	CanUseOrganizationForGitHubCallback(ctx context.Context, arg CanUseOrganizationForGitHubCallbackParams) (bool, error)
 	CountOrganizationViews(ctx context.Context, ownerOrganizationID pgtype.UUID) (int32, error)
 	CountPersonalViews(ctx context.Context, ownerAccountID pgtype.UUID) (int32, error)
 	DeactivateOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error

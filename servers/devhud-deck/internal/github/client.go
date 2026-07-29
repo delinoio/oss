@@ -23,6 +23,7 @@ const (
 	defaultCandidateLimit = 50
 	maxCandidateLimit     = 100
 	maxCandidatePages     = 100
+	maxInstallationPages  = 100
 )
 
 type Client struct {
@@ -208,13 +209,15 @@ func parsePermission(value string) PermissionLevel {
 }
 
 type repositoryResponse struct {
+	Name             string `json:"name"`
 	NodeID           string `json:"node_id"`
 	AllowMergeCommit bool   `json:"allow_merge_commit"`
 	AllowSquashMerge bool   `json:"allow_squash_merge"`
 	AllowRebaseMerge bool   `json:"allow_rebase_merge"`
 	AllowAutoMerge   bool   `json:"allow_auto_merge"`
 	Owner            struct {
-		Type string `json:"type"`
+		Login string `json:"login"`
+		Type  string `json:"type"`
 	} `json:"owner"`
 	Permissions struct {
 		Pull     bool `json:"pull"`
@@ -241,9 +244,10 @@ type searchResponse struct {
 }
 
 // SearchPullRequests executes a GitHub.com search using the current viewer's
-// user authorization token, then rechecks repository access before returning
-// any identity-bearing field. GitHub's upstream total_count is deliberately
-// decoded but never copied into the result.
+// user authorization token, then rechecks repository access within the
+// selected installation before returning any identity-bearing field. GitHub's
+// upstream total_count is deliberately decoded but never copied into the
+// result.
 func (client *Client) SearchPullRequests(
 	ctx context.Context,
 	installationID uint64,
@@ -275,6 +279,11 @@ func (client *Client) SearchPullRequests(
 		"/search/issues?"+values.Encode(), nil, &response); err != nil {
 		return SearchPage{}, err
 	}
+	installed, err := client.installationRepositories(
+		ctx, installationID, credential)
+	if err != nil {
+		return SearchPage{}, err
+	}
 
 	result := SearchPage{
 		PullRequests: make([]SearchPullRequest, 0, len(response.Items)),
@@ -290,11 +299,9 @@ func (client *Client) SearchPullRequests(
 		if err != nil || item.Number == 0 {
 			return SearchPage{}, ErrProvider
 		}
-		allowed, err := client.CanReadRepository(ctx, credential, repository)
-		if err != nil {
-			return SearchPage{}, err
-		}
-		if !allowed {
+		installedRepository, allowed := installed[repositoryKey(repository)]
+		if !allowed ||
+			installedRepository.userPermissions().Metadata < PermissionRead {
 			continue
 		}
 		updatedAt, err := time.Parse(time.RFC3339, item.UpdatedAt)
@@ -403,7 +410,60 @@ func (client *Client) CanReadRepositoryForInstallation(
 		return false, err
 	}
 	defer release()
-	return client.CanReadRepository(ctx, credential, repository)
+	repositories, err := client.installationRepositories(
+		ctx, installationID, credential)
+	if errors.Is(err, ErrPermissionDenied) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	result, ok := repositories[repositoryKey(repository)]
+	return ok && result.userPermissions().Metadata >= PermissionRead, nil
+}
+
+func (client *Client) installationRepositories(
+	ctx context.Context,
+	installationID uint64,
+	credential Credential,
+) (map[string]repositoryResponse, error) {
+	if installationID == 0 {
+		return nil, ErrPermissionDenied
+	}
+	result := make(map[string]repositoryResponse)
+	for page := 1; page <= maxInstallationPages; page++ {
+		path := fmt.Sprintf(
+			"/user/installations/%d/repositories?per_page=100&page=%d",
+			installationID, page)
+		var response struct {
+			TotalCount   int                  `json:"total_count"`
+			Repositories []repositoryResponse `json:"repositories"`
+		}
+		if _, err := client.do(
+			ctx, credential, http.MethodGet, path, nil, &response); err != nil {
+			return nil, err
+		}
+		for _, repository := range response.Repositories {
+			reference := Repository{
+				Owner: repository.Owner.Login,
+				Name:  repository.Name,
+			}
+			if reference.Validate() != nil {
+				return nil, ErrProvider
+			}
+			result[repositoryKey(reference)] = repository
+		}
+		if len(response.Repositories) < maxCandidateLimit ||
+			(response.TotalCount > 0 && len(result) >= response.TotalCount) {
+			return result, nil
+		}
+	}
+	return nil, ErrProvider
+}
+
+func repositoryKey(repository Repository) string {
+	return strings.ToLower(repository.Owner) + "/" +
+		strings.ToLower(repository.Name)
 }
 
 type pullResponse struct {
@@ -451,6 +511,15 @@ func (client *Client) ActionMetadata(
 		return ActionMetadata{}, err
 	}
 	defer release()
+	return client.actionMetadata(ctx, credential, appPermissions, reference)
+}
+
+func (client *Client) actionMetadata(
+	ctx context.Context,
+	credential Credential,
+	appPermissions Permissions,
+	reference PullRequestRef,
+) (ActionMetadata, error) {
 	repository, err := client.repository(ctx, credential, reference.Repository)
 	if err != nil {
 		return ActionMetadata{}, err

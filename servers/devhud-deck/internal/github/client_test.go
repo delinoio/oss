@@ -694,6 +694,66 @@ func TestActionMetadataIncludesCurrentPullRequestOperands(t *testing.T) {
 	}
 }
 
+func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
+	t.Parallel()
+	var client *Client
+	mutated := false
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch {
+		case request.URL.Path == "/repos/acme/widget" &&
+			request.Method == http.MethodGet:
+			return jsonResponse(http.StatusOK,
+				`{"permissions":{"pull":true,"push":true}}`), nil
+		case request.URL.Path == "/repos/acme/widget/pulls/7" &&
+			request.Method == http.MethodGet:
+			updatedAt := "2026-01-01T00:00:00Z"
+			state := "open"
+			if mutated {
+				updatedAt = "2026-01-01T00:01:00Z"
+				state = "closed"
+			}
+			return jsonResponse(http.StatusOK, fmt.Sprintf(
+				`{"node_id":"PR_1","state":%q,"mergeable":true,`+
+					`"updated_at":%q,"head":{"sha":"abc"}}`,
+				state, updatedAt)), nil
+		case request.URL.Path == "/repos/acme/widget/pulls/7" &&
+			request.Method == http.MethodPatch:
+			mutated = true
+			client.concurrency.mu.Lock()
+			client.concurrency.limit = 0
+			client.concurrency.mu.Unlock()
+			return jsonResponse(http.StatusOK, `{}`), nil
+		default:
+			t.Fatalf("unexpected mutation request %s %s",
+				request.Method, request.URL.Path)
+			return nil, nil
+		}
+	})
+	client = NewClient(&http.Client{Transport: transport})
+	client.concurrency.limit = 1
+	credential := Credential{AccessToken: "ghu_viewer"}
+	permissions := Permissions{
+		Metadata: PermissionRead, PullRequests: PermissionWrite,
+	}
+	reference := PullRequestRef{
+		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
+	}
+	initial, err := client.ActionMetadata(
+		context.Background(), 42, credential, permissions, reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Mutate(
+		context.Background(), "viewer", 42, credential, permissions,
+		reference, initial.Revision, Mutation{Kind: MutationClose})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Revision == initial.Revision || result.Metadata.IsOpen {
+		t.Fatalf("mutation result = %#v initial=%d", result, initial.Revision)
+	}
+}
+
 func TestSearchFiltersBeforeReturningIdentityOrCounts(t *testing.T) {
 	t.Parallel()
 	const secretTitle = "private acquisition codename"
@@ -725,11 +785,10 @@ func TestSearchFiltersBeforeReturningIdentityOrCounts(t *testing.T) {
 					}
 				]
 			}`), nil
-		case "/repos/acme/visible":
+		case "/user/installations/42/repositories":
 			return jsonResponse(http.StatusOK,
-				`{"permissions":{"pull":true}}`), nil
-		case "/repos/secret/hidden":
-			return jsonResponse(http.StatusForbidden, `{"message":"forbidden"}`), nil
+				`{"repositories":[{"name":"visible","owner":{"login":"acme"},`+
+					`"permissions":{"pull":true}}]}`), nil
 		default:
 			return jsonResponse(http.StatusNotFound, `{}`), nil
 		}
@@ -756,6 +815,37 @@ func TestSearchFiltersBeforeReturningIdentityOrCounts(t *testing.T) {
 		if strings.Contains(output, leaked) {
 			t.Fatalf("unauthorized search data leaked: %q in %s", leaked, output)
 		}
+	}
+}
+
+func TestRepositoryAuthorizationIsBoundToSelectedInstallation(t *testing.T) {
+	t.Parallel()
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path != "/user/installations/42/repositories" {
+				t.Fatalf("unexpected repository authorization path %q",
+					request.URL.Path)
+			}
+			return jsonResponse(http.StatusOK, `{"repositories":[
+				{"name":"selected","owner":{"login":"acme"},
+				 "permissions":{"pull":true}},
+				{"name":"other","owner":{"login":"elsewhere"},
+				 "permissions":{"pull":true}}
+			]}`), nil
+		})})
+	credential := Credential{AccessToken: "ghu_viewer"}
+	allowed, err := client.CanReadRepositoryForInstallation(
+		context.Background(), 42, credential,
+		Repository{Owner: "acme", Name: "selected"})
+	if err != nil || !allowed {
+		t.Fatalf("selected repository allowed=%v err=%v", allowed, err)
+	}
+	allowed, err = client.CanReadRepositoryForInstallation(
+		context.Background(), 42, credential,
+		Repository{Owner: "acme", Name: "installed-elsewhere"})
+	if err != nil || allowed {
+		t.Fatalf("other installation repository allowed=%v err=%v",
+			allowed, err)
 	}
 }
 

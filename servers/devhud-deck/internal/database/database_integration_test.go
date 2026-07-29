@@ -615,6 +615,43 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("organization GitHub connection = %#v err=%v",
 			organizationConnection, err)
 	}
+	if err := store.SyncMemberships(ctx, secondAccountID,
+		[]contracts.Membership{{
+			OrganizationID: organizationID,
+			Role:           contracts.OrganizationRoleMember,
+		}}, nil); err != nil {
+		t.Fatalf("sync organization member: %v", err)
+	}
+	memberCallback := organizationCallback
+	memberCallback.AccountID = secondAccountID.String()
+	memberCredential := credential
+	memberCredential.UserID = 702
+	memberCredential.AccessToken = "ghu_organization_member_fixture"
+	memberCredential.RefreshToken = "ghr_organization_member_fixture"
+	if err := connectGitHub(
+		memberCallback, organizationInstallation, memberCredential,
+		now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("authorize organization member GitHub: %v", err)
+	}
+	memberConnection, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, secondAccountID, true)
+	if err != nil ||
+		memberConnection.Credential.UserID != memberCredential.UserID ||
+		memberConnection.ID != organizationConnection.ID ||
+		memberConnection.Revision != organizationConnection.Revision {
+		t.Fatalf("organization member GitHub connection = %#v err=%v",
+			memberConnection, err)
+	}
+	otherInstallation := organizationInstallation
+	otherInstallation.ID++
+	memberOtherCallback := memberCallback
+	memberOtherCallback.InstallationID = otherInstallation.ID
+	if err := connectGitHub(
+		memberOtherCallback, otherInstallation, memberCredential,
+		now.Add(4*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("member replaced organization installation: %T %v", err, err)
+	}
 	if err := store.ApplyGitHubAuthorizationRevocation(
 		ctx, "authorization-revocation-2", organizationCredential.UserID,
 		security.Digest([]byte("organization-authorization-revoked")),

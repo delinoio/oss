@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"connectrpc.com/connect"
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
@@ -44,7 +45,7 @@ func (service *Integration) StartGitHubConnection(
 	if err != nil {
 		return nil, err
 	}
-	ownerID, err := authorizeOwner(viewer, request.Msg.Owner, true)
+	ownerID, err := authorizeOwner(viewer, request.Msg.Owner, false)
 	if err != nil {
 		return nil, err
 	}
@@ -52,10 +53,37 @@ func (service *Integration) StartGitHubConnection(
 		return nil, rpcerr.New(connect.CodeUnavailable,
 			deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
 	}
-	target, expiresAt, err := service.dependencies.GitHubBroker.StartInstallation(
-		ctx, viewer.AccountID.String(), deckgithub.OwnerBinding{
-			Scope: uint8(request.Msg.Owner.Scope), ID: ownerID.String(),
-		})
+	owner := deckgithub.OwnerBinding{
+		Scope: uint8(request.Msg.Owner.Scope), ID: ownerID.String(),
+	}
+	var target string
+	var expiresAt time.Time
+	if request.Msg.Owner.Scope ==
+		deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION &&
+		!viewer.CanManage(ownerID) {
+		connection, connectionErr :=
+			service.dependencies.Store.GetGitHubConnection(
+				ctx, int16(request.Msg.Owner.Scope), ownerID, uuid.Nil, false)
+		if connectionErr != nil ||
+			connection.State != int16(
+				deckv1.ConnectionState_CONNECTION_STATE_CONNECTED) ||
+			connection.Installation.ID == 0 {
+			if connectionErr != nil &&
+				!errors.Is(connectionErr, database.ErrNotFound) {
+				return nil, mapDatabaseError(connectionErr)
+			}
+			return nil, rpcerr.New(connect.CodeFailedPrecondition,
+				deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+		}
+		target, expiresAt, err =
+			service.dependencies.GitHubBroker.StartAuthorization(
+				ctx, viewer.AccountID.String(), owner,
+				connection.Installation.ID)
+	} else {
+		target, expiresAt, err =
+			service.dependencies.GitHubBroker.StartInstallation(
+				ctx, viewer.AccountID.String(), owner)
+	}
 	if err != nil {
 		if errors.Is(err, database.ErrDeletionInProgress) {
 			return nil, mapDatabaseError(err)

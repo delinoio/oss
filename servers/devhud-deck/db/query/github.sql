@@ -75,6 +75,15 @@ SELECT EXISTS (
       AND role >= 2
 )::boolean;
 
+-- name: CanUseOrganizationForGitHubCallback :one
+SELECT EXISTS (
+    SELECT 1
+    FROM deck_organization_memberships
+    WHERE organization_id = sqlc.arg(organization_id)
+      AND account_id = sqlc.arg(account_id)
+      AND active
+)::boolean;
+
 -- name: InsertGitHubConnection :one
 INSERT INTO deck_connections (
     connection_id, owner_scope, owner_id, state,

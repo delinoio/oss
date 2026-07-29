@@ -123,6 +123,33 @@ func (broker *Broker) StartInstallation(
 	return target, expiresAt, nil
 }
 
+func (broker *Broker) StartAuthorization(
+	ctx context.Context,
+	accountID string,
+	owner OwnerBinding,
+	installationID uint64,
+) (string, time.Time, error) {
+	if broker == nil || installationID == 0 {
+		return "", time.Time{}, ErrInvalidConfiguration
+	}
+	now := broker.now()
+	expiresAt := now.Add(callbackStateLifetime)
+	signed, state, err := broker.signer.SignOAuthForInstallation(
+		accountID, owner, installationID, expiresAt)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if err := broker.callbacks.SaveGitHubCallbackState(
+		ctx, StateHash(signed), state, now); err != nil {
+		return "", time.Time{}, err
+	}
+	target, err := broker.oauth.AuthorizationTarget(signed)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return target, expiresAt, nil
+}
+
 func (broker *Broker) RefreshCredential(
 	ctx context.Context,
 	credential Credential,

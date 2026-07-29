@@ -189,36 +189,58 @@ func (store *Store) ConnectGitHub(
 		} else if err != nil {
 			return err
 		}
+		existing, existingErr := queries.GetGitHubConnectionByOwnerForUpdate(
+			ctx, dbgen.GetGitHubConnectionByOwnerForUpdateParams{
+				OwnerScope: int16(state.Owner.Scope), OwnerID: pgUUID(ownerID),
+			})
+		if existingErr != nil && !errors.Is(existingErr, pgx.ErrNoRows) {
+			return existingErr
+		}
+		canManage := true
 		if state.Owner.Scope == 1 {
 			if ownerID != accountID {
 				return deckgithub.ErrPermissionDenied
 			}
 		} else {
-			allowed, err := queries.CanManageOrganizationForGitHubCallback(
-				ctx, dbgen.CanManageOrganizationForGitHubCallbackParams{
+			allowed, err := queries.CanUseOrganizationForGitHubCallback(
+				ctx, dbgen.CanUseOrganizationForGitHubCallbackParams{
 					OrganizationID: pgUUID(ownerID), AccountID: pgUUID(accountID),
 				})
 			if err != nil || !allowed {
 				return deckgithub.ErrPermissionDenied
 			}
-		}
-		owned, ownedErr := queries.GetGitHubConnectionByInstallationForUpdate(
-			ctx, pgtype.Int8{Int64: int64(installation.ID), Valid: true})
-		if ownedErr == nil &&
-			(owned.OwnerScope != int16(state.Owner.Scope) ||
-				uuidValue(owned.OwnerID) != ownerID) {
-			return ErrInstallationOwned
-		}
-		if ownedErr != nil && !errors.Is(ownedErr, pgx.ErrNoRows) {
-			return ownedErr
+			canManage, err = queries.CanManageOrganizationForGitHubCallback(
+				ctx, dbgen.CanManageOrganizationForGitHubCallbackParams{
+					OrganizationID: pgUUID(ownerID), AccountID: pgUUID(accountID),
+				})
+			if err != nil {
+				return err
+			}
+			if !canManage &&
+				(errors.Is(existingErr, pgx.ErrNoRows) ||
+					existing.State != int16(
+						deckv1.ConnectionState_CONNECTION_STATE_CONNECTED) ||
+					!existing.GithubInstallationID.Valid ||
+					existing.GithubInstallationID.Int64 !=
+						int64(installation.ID)) {
+				return deckgithub.ErrPermissionDenied
+			}
 		}
 		parameters := githubConnectionValues(installation, login, now)
-		var storedConnectionID pgtype.UUID
-		existing, existingErr := queries.GetGitHubConnectionByOwnerForUpdate(
-			ctx, dbgen.GetGitHubConnectionByOwnerForUpdateParams{
-				OwnerScope: int16(state.Owner.Scope), OwnerID: pgUUID(ownerID),
-			})
-		if existingErr == nil {
+		storedConnectionID := existing.ConnectionID
+		if canManage {
+			owned, ownedErr := queries.GetGitHubConnectionByInstallationForUpdate(
+				ctx, pgtype.Int8{Int64: int64(installation.ID), Valid: true})
+			if ownedErr == nil &&
+				(owned.OwnerScope != int16(state.Owner.Scope) ||
+					uuidValue(owned.OwnerID) != ownerID) {
+				return ErrInstallationOwned
+			}
+			if ownedErr != nil && !errors.Is(ownedErr, pgx.ErrNoRows) {
+				return ownedErr
+			}
+		}
+		if canManage && existingErr == nil {
 			if githubProviderChanged(existing, installation) {
 				if err := store.cleanupGitHubOwner(
 					ctx, queries, existing.OwnerScope,
@@ -244,10 +266,7 @@ func (store *Store) ConnectGitHub(
 				}); err != nil {
 				return mapInstallationUnique(err)
 			}
-		} else {
-			if !errors.Is(existingErr, pgx.ErrNoRows) {
-				return existingErr
-			}
+		} else if canManage {
 			connectionID, err := uuidv7.New()
 			if err != nil {
 				return err
@@ -273,6 +292,9 @@ func (store *Store) ConnectGitHub(
 				UpdatedAt:                  pgTime(now),
 			}); err != nil {
 			return err
+		}
+		if !canManage {
+			return nil
 		}
 		return queries.MarkOwnerViewsConnected(ctx,
 			dbgen.MarkOwnerViewsConnectedParams{

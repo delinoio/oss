@@ -62,6 +62,10 @@
   mutations, contents write only for merge/native auto-merge, and member/team
   read only when resolving team reviewers.
 - One installation binds to exactly one DeliDev personal or organization owner scope.
+- Organization Owners/Admins may install, replace, or reconfigure that
+  owner-scoped installation. An ordinary organization member may start only
+  the user OAuth leg for the already-connected installation, which attaches
+  that member's credential without changing connection metadata or state.
 - Installation list rows expose the stable GitHub account ID, login, and closed
   user/organization kind so settings clients can identify each accessible
   installation without displaying an opaque provider installation ID.
@@ -95,9 +99,10 @@
   before the provider operation continues. Missing, expired, revoked, or
   rejected refresh tokens require reauthorization.
 - Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository.
-- The provider search adapter rechecks each result repository with the current
-  viewer's user authorization before returning any result. It returns only the
-  filtered page count and never GitHub's upstream search `total_count`.
+- The provider search adapter rechecks each result repository against both the
+  selected owner-scoped installation and the current viewer's user
+  authorization before returning any result. It returns only the filtered page
+  count and never GitHub's upstream search `total_count`.
 
 ## Data and Query Contract
 

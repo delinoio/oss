@@ -190,6 +190,56 @@ func TestSignedInstallationAndOAuthCallbacksAreOneUse(t *testing.T) {
 	}
 }
 
+func TestStartAuthorizationBindsExistingInstallation(t *testing.T) {
+	t.Parallel()
+	signer, err := NewStateSigner(
+		[]byte("fixture-callback-key-with-32-bytes!!"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oauth, err := NewOAuth(OAuthConfig{
+		ClientID: "fixture-client", ClientSecret: "fixture-secret",
+		AppSlug:     "deck-fixture",
+		CallbackURL: "https://deck.deli.dev/github/oauth/callback",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callbacks := &callbackStoreFixture{}
+	broker, err := NewBroker(BrokerConfig{
+		Signer: signer, OAuth: oauth, Client: NewClient(nil),
+		Callbacks: callbacks, Lifecycle: &lifecycleFixture{},
+		WebhookSecret: []byte("fixture-webhook-key-with-32-bytes!!"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_800_000_000, 0).UTC()
+	broker.now = func() time.Time { return now }
+	owner := OwnerBinding{
+		Scope: 2, ID: "01900000-0000-7000-8000-000000000002",
+	}
+	target, expiresAt, err := broker.StartAuthorization(
+		context.Background(),
+		"01900000-0000-7000-8000-000000000001", owner, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.Path != OAuthAuthorizePath ||
+		!expiresAt.Equal(now.Add(callbackStateLifetime)) {
+		t.Fatalf("authorization target = %q expires=%v err=%v",
+			target, expiresAt, err)
+	}
+	state, err := signer.Verify(
+		parsed.Query().Get("state"), StatePurposeOAuth, now)
+	if err != nil || state.InstallationID != 42 ||
+		state.Owner != owner || len(callbacks.states) != 1 {
+		t.Fatalf("authorization state = %#v stored=%d err=%v",
+			state, len(callbacks.states), err)
+	}
+}
+
 func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testing.T) {
 	t.Parallel()
 	secret := []byte("fixture-webhook-key-with-32-bytes!!")

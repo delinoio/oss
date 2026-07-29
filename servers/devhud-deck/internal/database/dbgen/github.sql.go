@@ -34,6 +34,28 @@ func (q *Queries) CanManageOrganizationForGitHubCallback(ctx context.Context, ar
 	return column_1, err
 }
 
+const canUseOrganizationForGitHubCallback = `-- name: CanUseOrganizationForGitHubCallback :one
+SELECT EXISTS (
+    SELECT 1
+    FROM deck_organization_memberships
+    WHERE organization_id = $1
+      AND account_id = $2
+      AND active
+)::boolean
+`
+
+type CanUseOrganizationForGitHubCallbackParams struct {
+	OrganizationID pgtype.UUID
+	AccountID      pgtype.UUID
+}
+
+func (q *Queries) CanUseOrganizationForGitHubCallback(ctx context.Context, arg CanUseOrganizationForGitHubCallbackParams) (bool, error) {
+	row := q.db.QueryRow(ctx, canUseOrganizationForGitHubCallback, arg.OrganizationID, arg.AccountID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteConsumedGitHubCallbackState = `-- name: DeleteConsumedGitHubCallbackState :one
 DELETE FROM deck_github_callback_states
 WHERE state_hash = $1
