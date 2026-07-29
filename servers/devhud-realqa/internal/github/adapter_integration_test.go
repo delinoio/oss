@@ -34,12 +34,13 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 		t.Skip("REALQA_TEST_DATABASE_URL is not set")
 	}
 	for _, test := range []struct {
-		name        string
-		failSeal    bool
-		expireGrant bool
-		wantState   string
-		wantStored  bool
-		wantCalls   int
+		name          string
+		failSeal      bool
+		expireGrant   bool
+		rejectRefresh bool
+		wantState     string
+		wantStored    bool
+		wantCalls     int
 	}{
 		{
 			name:      "rotated credential is persisted",
@@ -52,6 +53,11 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 		{
 			name:        "expired refresh grant requires reconnect",
 			expireGrant: true, wantState: "disconnected", wantStored: false,
+		},
+		{
+			name:          "rejected refresh grant requires reconnect",
+			rejectRefresh: true, wantState: "disconnected",
+			wantStored: false, wantCalls: 1,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -72,6 +78,10 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 					request *http.Request,
 				) (*http.Response, error) {
 					refreshCalls++
+					if test.rejectRefresh {
+						return jsonResponse(request, http.StatusBadRequest,
+							map[string]any{"error": "invalid_grant"}), nil
+					}
 					return jsonResponse(request, http.StatusOK, map[string]any{
 						"access_token":             "ghu_fixture_new_access_token_123456",
 						"refresh_token":            "ghr_fixture_new_refresh_token_123456",
@@ -104,9 +114,9 @@ func TestAdapterRefreshFailsClosedBeforeRotatingCredential(t *testing.T) {
 				if refreshErr == nil {
 					t.Fatal("refresh unexpectedly succeeded")
 				}
-			} else if test.expireGrant {
+			} else if test.expireGrant || test.rejectRefresh {
 				if !errors.Is(refreshErr, ErrCallerAuthorizationUnavailable) {
-					t.Fatalf("expired refresh grant error = %v", refreshErr)
+					t.Fatalf("refresh grant error = %v", refreshErr)
 				}
 			} else {
 				if refreshErr != nil {

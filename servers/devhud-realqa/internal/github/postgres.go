@@ -115,7 +115,9 @@ func (store *PostgresCallbackStore) ConnectUser(
 				return err
 			}
 			replaceInstallations := installationID == 0 ||
-				connection.State != "connected"
+				connection.State != "connected" ||
+				!connection.GithubUserID.Valid ||
+				connection.GithubUserID.Int64 != user.ID
 			if installationID > 0 {
 				if err = bindInstallation(
 					ctx, queries, owner, installationID, bindingID,

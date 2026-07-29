@@ -372,6 +372,51 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("single-installation setup suspended an existing installation: %q",
 			callbackInstallationState)
 	}
+	changedUserStateDigest := sha256.Sum256(
+		[]byte("changed GitHub user setup callback state"))
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET oauth_state_digest = $2,
+		    oauth_state_expires_at = transaction_timestamp() + interval '10 minutes'
+		WHERE id = $1
+	`, callbackConnectionID, changedUserStateDigest[:]); err != nil {
+		t.Fatal(err)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		changedUserStateDigest[:],
+		realqagithub.UserIdentity{ID: 8, Login: "replacement-fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{3}, WrappedDataKey: []byte{4}, KeyID: "fixture-key",
+		},
+		761,
+		[]realqagithub.Installation{{
+			ID: 761, AccountID: 761, AccountLogin: "stale-callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT state FROM realqa_github_installations WHERE id = $1),
+			(SELECT state FROM realqa_github_installations WHERE id = $2)
+	`, callbackInstallationID, staleCallbackInstallationID).Scan(
+		&callbackInstallationState, &staleCallbackInstallationState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if callbackInstallationState != "suspended" ||
+		staleCallbackInstallationState != "active" {
+		t.Fatalf("changed-user setup states = stale:%q authorized:%q",
+			callbackInstallationState, staleCallbackInstallationState)
+	}
 	reconnectStateDigest := sha256.Sum256([]byte("reconnect setup callback state"))
 	currentConnection, err := store.Queries().GetGitHubConnectionForOwner(
 		ctx, dbgen.GetGitHubConnectionForOwnerParams{

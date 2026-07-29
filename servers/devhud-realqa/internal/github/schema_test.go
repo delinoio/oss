@@ -61,6 +61,17 @@ Describe the bug.
 	}
 }
 
+func TestMarkdownTemplateRejectsMissingFrontMatter(t *testing.T) {
+	t.Parallel()
+	_, err := ParseMarkdownTemplate(
+		".github/ISSUE_TEMPLATE/bug.md", `"fixture-etag"`,
+		[]byte("Describe the bug.\n"),
+	)
+	if err == nil || !strings.Contains(err.Error(), "front matter is required") {
+		t.Fatalf("expected missing front matter rejection, got %v", err)
+	}
+}
+
 func TestMarkdownTemplateRejectsHiddenShortName(t *testing.T) {
 	t.Parallel()
 	_, err := ParseMarkdownTemplate(

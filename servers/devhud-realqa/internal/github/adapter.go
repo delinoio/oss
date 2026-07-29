@@ -265,7 +265,7 @@ func (adapter *Adapter) refreshUserToken(
 	refreshed, refreshedToken, err := adapter.client.RefreshUserCredential(
 		ctx, adapter.clientID, adapter.clientSecret, refreshCredential.RefreshToken)
 	if err != nil {
-		return 0, UserToken{}, err
+		return 0, UserToken{}, ErrCallerAuthorizationUnavailable
 	}
 	plaintext, err := json.Marshal(refreshed)
 	if err != nil {

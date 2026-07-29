@@ -58,8 +58,8 @@ func ParseMarkdownTemplate(filePath, etag string, contents []byte) (MarkdownTemp
 	}
 	normalized := normalizeNewlines(string(contents))
 	if !strings.HasPrefix(normalized, "---\n") {
-		definition.Name = path.Base(filePath)
-		return MarkdownTemplate{Definition: definition, Body: normalized}, nil
+		return MarkdownTemplate{},
+			errors.New("realqa github: Markdown front matter is required")
 	}
 	end := strings.Index(normalized[4:], "\n---\n")
 	if end < 0 {
