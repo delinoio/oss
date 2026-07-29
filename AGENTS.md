@@ -376,7 +376,7 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
-- `delibase-server`: runs sqlc reproducibility checks, the delibase Go test suite against PostgreSQL 17, and the non-root Docker image health/readiness validation on delibase server, generated Go API, or shared server infrastructure changes.
+- `delibase-server`: runs sqlc reproducibility checks, the delibase Go test suite serially by package against one shared PostgreSQL 17 database while preserving intra-package concurrency coverage, and the non-root Docker image health/readiness validation on delibase server, generated Go API, or shared server infrastructure changes.
 - `node-delidev-app`: runs `pnpm --filter @delinoio/delibase-connect build`, the DeliDev `typecheck`, `lint`, `test`, `build`, `test:pwa`, and `test:browser` scripts, rejects deterministic rebuild changes to the checked-in `dist` artifact, and installs the required Playwright browser engines before browser smoke tests.
 - `proto-contracts`: runs `pnpm check:proto`, then Go test/vet and TypeScript typechecks for every implemented delibase, Deck, or RealQA proto package. It runs on shared workflow/tooling changes or changes below any of the three proto roots and resolves each compatibility baseline from that contract's own descriptor at the immutable event base.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
