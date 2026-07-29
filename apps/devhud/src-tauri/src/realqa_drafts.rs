@@ -502,6 +502,9 @@ impl RealQaDraftState {
             record.revision.checked_add(1).ok_or(DraftError::Conflict)
         })?;
         let now = unix_milliseconds()?;
+        let created_at_unix_ms = current
+            .as_ref()
+            .map_or(now, |record| record.created_at_unix_ms);
         let mut images = Vec::with_capacity(request.content.images.len());
         let mut original_bytes = 0_u64;
         for image in &request.content.images {
@@ -537,10 +540,8 @@ impl RealQaDraftState {
             draft_id: request.draft_id,
             revision,
             submission_idempotency_key: request.submission_idempotency_key,
-            created_at_unix_ms: current
-                .as_ref()
-                .map_or(now, |record| record.created_at_unix_ms),
-            updated_at_unix_ms: now,
+            created_at_unix_ms,
+            updated_at_unix_ms: now.max(created_at_unix_ms),
             content: StoredDraftContent {
                 title: request.content.title,
                 body: request.content.body,
@@ -1530,6 +1531,37 @@ mod tests {
                 .err(),
             Some(DraftError::AccountLocked)
         );
+    }
+
+    #[test]
+    fn update_clamps_timestamps_when_the_clock_moves_backward() {
+        let state = state("backward-clock");
+        let composer = ComposerCore::default();
+        let draft_id = Uuid::now_v7().to_string();
+        let account = access("account-a", true);
+        let mut initial_request = request(&composer, &draft_id);
+        initial_request.content.images.clear();
+        state
+            .save(&account, &composer, initial_request.clone())
+            .unwrap();
+
+        let key = state.key(&account.account_binding, false).unwrap().unwrap();
+        let path = state
+            .draft_path(&account.account_binding, &draft_id)
+            .unwrap();
+        let mut record = read_record(&path, &account.account_binding, &key).unwrap();
+        let future = unix_milliseconds().unwrap().saturating_add(86_400_000);
+        record.created_at_unix_ms = future;
+        record.updated_at_unix_ms = future;
+        let encrypted = encrypt_record(&record, &account.account_binding, &key).unwrap();
+        write_encrypted_record_atomically(&path, &encrypted).unwrap();
+
+        let mut update = initial_request;
+        update.expected_revision = Some(1);
+        let summary = state.save(&account, &composer, update).unwrap();
+        assert_eq!(summary.created_at_unix_ms, future);
+        assert_eq!(summary.updated_at_unix_ms, future);
+        assert_eq!(state.list(&account).unwrap(), [summary]);
     }
 
     #[test]

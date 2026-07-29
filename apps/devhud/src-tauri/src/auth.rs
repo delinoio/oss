@@ -788,6 +788,14 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         ) {
             Ok(tokens) => tokens,
             Err(failure) => {
+                let TokenRefreshError {
+                    error,
+                    rotated_refresh_token,
+                } = failure;
+                let failure = TokenRefreshError::with_rotated_refresh_token(
+                    error,
+                    rotated_refresh_token.or(Some(refresh_token)),
+                );
                 let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
                 return Err(error);
             }
@@ -2287,6 +2295,53 @@ mod tests {
             );
             assert_eq!(manager.snapshot(), SessionSnapshot::SignedOut);
         }
+    }
+
+    #[test]
+    fn callback_vaults_feature_rotation_before_retryable_delibase_failure() {
+        let mut transport = FakeTransport::default();
+        transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("refresh-original"),
+        )));
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DECK_AUDIENCE,
+            AuthFeature::Deck.scopes(),
+            Some("refresh-rotated"),
+        )));
+        transport
+            .refresh
+            .push_back(Err(AuthError::TransportUnavailable.into()));
+        let mut manager = manager(transport, FakeVault::default());
+        let request = manager
+            .begin(
+                AuthFeature::Deck,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            manager.complete_callback(&callback_for(&request, "code", None), NOW),
+            Err(AuthError::TransportUnavailable)
+        );
+        assert_eq!(
+            manager.transport.refresh_inputs,
+            ["refresh-original", "refresh-rotated"]
+        );
+        assert_eq!(
+            manager
+                .vault
+                .retained
+                .as_ref()
+                .and_then(|retained| retained.0.get(&AuthFeature::Deck))
+                .map(String::as_str),
+            Some("refresh-rotated")
+        );
+        assert_eq!(manager.snapshot(), SessionSnapshot::SignedOut);
     }
 
     #[test]

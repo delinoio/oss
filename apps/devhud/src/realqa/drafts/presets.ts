@@ -86,9 +86,10 @@ function repetitionLength(pattern: string, index: number): number {
 /**
  * JavaScript RegExp uses a backtracking engine. Reject repeated groups whose
  * contents can repeat or branch, so synchronized input cannot introduce the
- * nested/ambiguous repetition that causes catastrophic backtracking.
+ * nested/ambiguous repetition that causes catastrophic backtracking. Reject
+ * unclosed groups here before translation can accidentally close them.
  */
-function hasUnsafeRepeatedGroup(pattern: string): boolean {
+function hasUnsafeRepeatedOrUnbalancedGroup(pattern: string): boolean {
   const groups: PatternGroupState[] = [];
   let inCharacterClass = false;
   for (let index = 0; index < pattern.length; index += 1) {
@@ -153,7 +154,7 @@ function hasUnsafeRepeatedGroup(pattern: string): boolean {
       index += repeatedBy - 1;
     }
   }
-  return false;
+  return groups.length > 0;
 }
 
 interface RegexFlags {
@@ -331,7 +332,7 @@ export function validateRealQaProcessUrlRules(
       forbiddenPatternFragments.some((fragment) => pattern.includes(fragment)) ||
       /\\[0-9]/u.test(pattern) ||
       /\{\d{3,}(?:,\d*)?\}/u.test(pattern) ||
-      hasUnsafeRepeatedGroup(pattern)
+      hasUnsafeRepeatedOrUnbalancedGroup(pattern)
     ) {
       return false;
     }
