@@ -58,12 +58,14 @@ describe("RealQA URL capture boundary", () => {
 
   it.each([
     "http://localhost:3000/path",
+    "http://localhost./path",
     "https://api.localhost/path",
     "http://127.0.0.1/path",
     "https://10.0.0.5/path",
     "https://172.16.1.2/path",
     "https://192.168.1.2/path",
     "http://[::1]/path",
+    "http://[::ffff:127.0.0.1]/path",
     "http://[fd00::1]/path",
   ])("warns without rejecting local/private destination %s", (value) => {
     const result = sanitizeCapturedUrl(value);
@@ -115,6 +117,71 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
       url: { value: "https://fallback.example/" },
     });
     expect(inferDesktopUrl(rules, "terminal", "Issue 757")).toBeNull();
+  });
+
+  it("skips an expanded URL above the native limit and uses an ordered fallback", () => {
+    const rules = [
+      rule({
+        safeWindowTitlePattern: String.raw`^(.+)$`,
+        urlTemplate: "https://example.com/$1$1",
+      }),
+      rule({
+        ruleId: "01900000-0000-7000-8000-000000000002",
+        safeWindowTitlePattern: "",
+        urlTemplate: "https://fallback.example/",
+      }),
+    ];
+    expect(inferDesktopUrl(rules, "code", "a".repeat(4_100))).toMatchObject({
+      ok: true,
+      url: { value: "https://fallback.example/" },
+    });
+  });
+
+  it("supports synchronized scoped title flags, including ungreedy matching", () => {
+    expect(
+      inferDesktopUrl(
+        [
+          rule({
+            safeWindowTitlePattern: String.raw`(?i)^issue (?U:(.+)) END`,
+            urlTemplate: "https://example.com/$1",
+          }),
+        ],
+        "code",
+        "ISSUE first END second END",
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/first" },
+    });
+    expect(
+      inferDesktopUrl(
+        [
+          rule({
+            safeWindowTitlePattern: String.raw`(?s)^issue (?i:(.+))$`,
+            urlTemplate: "https://example.com/$1",
+          }),
+        ],
+        "code",
+        "issue LINE\nTWO",
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/LINETWO" },
+    });
+    expect(
+      inferDesktopUrl(
+        [
+          rule({
+            safeWindowTitlePattern: String.raw`(?m)^Issue ([0-9]+)$`,
+          }),
+        ],
+        "code",
+        "ignored\nIssue 783\nignored",
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: "https://github.com/delinoio/oss/issues/783" },
+    });
   });
 
   it("ignores malformed disabled rules and continues with enabled safe rules", () => {

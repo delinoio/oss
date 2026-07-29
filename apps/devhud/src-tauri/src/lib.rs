@@ -2636,6 +2636,7 @@ fn reset_dev_hud(
     persistence: State<'_, PersistenceState>,
     auth_state: State<'_, auth_native::NativeAuthState>,
     realqa_drafts: State<'_, realqa_drafts::RealQaDraftState>,
+    realqa_composer: State<'_, realqa_capture::ComposerCore>,
     shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
@@ -2657,7 +2658,8 @@ fn reset_dev_hud(
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
     let auth_reset_failed = auth_state.reset().is_err();
     let realqa_draft_reset_failed = realqa_drafts.reset().is_err();
-    if auth_reset_failed || realqa_draft_reset_failed {
+    let realqa_composer_reset_failed = realqa_composer.reset().is_err();
+    if auth_reset_failed || realqa_draft_reset_failed || realqa_composer_reset_failed {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     if clear_browsing_data_for_reset(&app).is_err() {
@@ -3006,13 +3008,20 @@ fn realqa_list_local_drafts(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
-fn realqa_save_local_draft(
+async fn realqa_save_local_draft(
     request: realqa_drafts::SaveDraftRequest,
-    auth_state: State<'_, auth_native::NativeAuthState>,
-    drafts: State<'_, realqa_drafts::RealQaDraftState>,
-    composer: State<'_, realqa_capture::ComposerCore>,
+    app: AppHandle<ActiveRuntime>,
 ) -> Result<realqa_drafts::DraftSummary, realqa_drafts::DraftError> {
-    drafts.save(&realqa_draft_access(&auth_state)?, &composer, request)
+    let access = realqa_draft_access(&app.state::<auth_native::NativeAuthState>())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<realqa_drafts::RealQaDraftState>().save(
+            &access,
+            &app.state::<realqa_capture::ComposerCore>(),
+            request,
+        )
+    })
+    .await
+    .map_err(|_| realqa_drafts::DraftError::StorageUnavailable)?
 }
 
 #[cfg(all(

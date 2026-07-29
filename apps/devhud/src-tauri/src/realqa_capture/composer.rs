@@ -553,6 +553,15 @@ impl ComposerCore {
         state.retained_source_budget = next_retained_source_budget;
         Ok(())
     }
+
+    pub(crate) fn reset(&self) -> Result<(), CaptureFailure> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| CaptureFailure::CaptureFailed)?;
+        *state = ComposerState::default();
+        Ok(())
+    }
 }
 
 fn validate_identifier(identifier: &str) -> Result<(), CaptureFailure> {
@@ -656,6 +665,36 @@ mod tests {
                 .retained_source_budget
                 .encoded_bytes(),
             0
+        );
+    }
+
+    #[test]
+    fn reset_clears_every_session_and_invalidates_pending_accepts() {
+        let composer = ComposerCore::default();
+        composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("first image must be accepted");
+        composer
+            .accept_image(request("session-2", "image-1"))
+            .expect("second image must be accepted");
+        let pending = composer
+            .begin_accept(
+                &ComposerSessionId("session-3".to_owned()),
+                &ComposerImageId("image-1".to_owned()),
+            )
+            .expect("accept must begin");
+
+        composer.reset().expect("composer must reset");
+
+        let state = composer
+            .state
+            .lock()
+            .expect("composer state must be available");
+        assert!(state.sessions.is_empty());
+        assert_eq!(state.retained_source_budget.encoded_bytes(), 0);
+        assert_eq!(
+            pending.ensure_current(&state),
+            Err(CaptureFailure::InvalidEditSequence)
         );
     }
 

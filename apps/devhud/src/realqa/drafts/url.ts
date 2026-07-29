@@ -30,11 +30,23 @@ function isPrivateIpv4(hostname: string): boolean {
 }
 
 function isLocalOrPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, "");
+  const host = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/gu, "")
+    .replace(/\.$/u, "");
+  const mappedIpv4 = host.match(
+    /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/u,
+  );
+  const high = Number.parseInt(mappedIpv4?.[1] ?? "", 16);
+  const low = Number.parseInt(mappedIpv4?.[2] ?? "", 16);
+  const mappedAddress = mappedIpv4
+    ? `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`
+    : null;
   return (
     host === "localhost" ||
     host.endsWith(".localhost") ||
     isPrivateIpv4(host) ||
+    (mappedAddress !== null && isPrivateIpv4(mappedAddress)) ||
     host === "::1" ||
     host.startsWith("fc") ||
     host.startsWith("fd") ||

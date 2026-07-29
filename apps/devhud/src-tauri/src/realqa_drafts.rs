@@ -655,8 +655,8 @@ impl RealQaDraftState {
             .ok_or(DraftError::AccountLocked)?;
         validate_existing_directory(&self.account_directory(&access.account_binding)?)?;
         let path = self.draft_path(&access.account_binding, draft_id)?;
-        let record = read_record(&path, &access.account_binding, &key)?;
-        if record.revision != expected_revision {
+        let summary = read_summary(&path, &access.account_binding, &key)?;
+        if summary.revision != expected_revision {
             return Err(DraftError::Conflict);
         }
         fs::remove_file(path).map_err(|_| DraftError::WriteFailed)
@@ -873,24 +873,33 @@ fn normalize_url(mut value: RestorableUrl) -> Result<RestorableUrl, DraftError> 
 
 fn is_local_or_private_host(host: &str) -> bool {
     let host = host.to_ascii_lowercase();
+    let host = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim_end_matches('.');
     if host == "localhost" || host.ends_with(".localhost") {
         return true;
     }
     host.parse::<std::net::IpAddr>()
         .is_ok_and(|address| match address {
-            std::net::IpAddr::V4(address) => {
-                address.is_private()
-                    || address.is_loopback()
-                    || address.is_link_local()
-                    || address.is_unspecified()
-            }
+            std::net::IpAddr::V4(address) => is_local_or_private_ipv4(address),
             std::net::IpAddr::V6(address) => {
-                address.is_loopback()
+                address
+                    .to_ipv4_mapped()
+                    .is_some_and(is_local_or_private_ipv4)
+                    || address.is_loopback()
                     || address.is_unspecified()
                     || (address.segments()[0] & 0xfe00) == 0xfc00
                     || (address.segments()[0] & 0xffc0) == 0xfe80
             }
         })
+}
+
+fn is_local_or_private_ipv4(address: std::net::Ipv4Addr) -> bool {
+    address.is_private()
+        || address.is_loopback()
+        || address.is_link_local()
+        || address.is_unspecified()
 }
 
 fn associated_data(account_binding: &str, draft_id: &str, payload_kind: &str) -> Vec<u8> {
@@ -1619,6 +1628,74 @@ mod tests {
             read_record(&path, &binding, &key).err(),
             Some(DraftError::Corrupt)
         );
+    }
+
+    #[test]
+    fn deletes_a_listed_draft_when_only_its_encrypted_body_is_corrupt() {
+        let state = state("delete-corrupt-body");
+        let composer = ComposerCore::default();
+        let draft_id = Uuid::now_v7().to_string();
+        state
+            .save(
+                &access("account-a", true),
+                &composer,
+                request(&composer, &draft_id),
+            )
+            .unwrap();
+        let draft_path = state
+            .draft_path(&access("account-a", true).account_binding, &draft_id)
+            .unwrap();
+        let mut encrypted = fs::read(&draft_path).unwrap();
+        let final_byte = encrypted.last_mut().expect("draft body must not be empty");
+        *final_byte ^= 1;
+        fs::write(&draft_path, encrypted).unwrap();
+
+        assert_eq!(
+            state.list(&access("account-a", true)).unwrap()[0].draft_id,
+            draft_id
+        );
+        assert_eq!(
+            state
+                .load(
+                    &access("account-a", true),
+                    &ComposerCore::default(),
+                    &draft_id,
+                    "restored-session",
+                )
+                .err(),
+            Some(DraftError::AccountLocked)
+        );
+        state
+            .delete(&access("account-a", true), &draft_id, 1)
+            .unwrap();
+        assert!(state.list(&access("account-a", true)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn private_host_detection_normalizes_fqdns_and_mapped_ipv4() {
+        for host in [
+            "localhost.",
+            "api.localhost.",
+            "::ffff:127.0.0.1",
+            "::ffff:7f00:1",
+            "[::ffff:7f00:1]",
+        ] {
+            assert!(is_local_or_private_host(host), "{host} must be private");
+        }
+        assert!(!is_local_or_private_host("example.com."));
+        for value in ["http://localhost./path", "http://[::ffff:127.0.0.1]/path"] {
+            assert!(matches!(
+                normalize_url(RestorableUrl {
+                    value: value.to_owned(),
+                    stripped_query: None,
+                    stripped_fragment: None,
+                    warning: None,
+                })
+                .unwrap()
+                .warning,
+                Some(PrivateHostWarning::LocalhostOrPrivateHost)
+            ));
+        }
     }
 
     #[test]

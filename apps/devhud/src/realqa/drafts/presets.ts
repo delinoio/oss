@@ -3,6 +3,7 @@ import { sanitizeCapturedUrl, type CapturedUrlResult } from "./url";
 
 export const MAX_REALQA_PROCESS_URL_RULES = 64;
 export const MAX_REALQA_SAFE_PATTERN_BYTES = 512;
+export const MAX_REALQA_EXPANDED_URL_BYTES = 8_192;
 
 export interface RealQaProcessUrlRule {
   readonly ruleId: string;
@@ -106,8 +107,20 @@ function hasUnsafeRepeatedGroup(pattern: string): boolean {
     }
     if (inCharacterClass) continue;
     if (token === "(") {
+      const flagDirective = pattern
+        .slice(index)
+        .match(/^\(\?[imsU]*(?:-[imsU]*)?\)/u);
+      if (flagDirective !== null) {
+        index += flagDirective[0].length - 1;
+        continue;
+      }
       groups.push({ containsAlternation: false, containsRepetition: false });
-      if (pattern.startsWith("?:", index + 1)) index += 2;
+      const groupPrefix = pattern.slice(index).match(/^\(\?[imsU]*(?:-[imsU]*)?:/u);
+      if (groupPrefix !== null) {
+        index += groupPrefix[0].length - 1;
+      } else if (pattern.startsWith("?:", index + 1)) {
+        index += 2;
+      }
       continue;
     }
     if (token === "|") {
@@ -143,6 +156,152 @@ function hasUnsafeRepeatedGroup(pattern: string): boolean {
   return false;
 }
 
+interface RegexFlags {
+  readonly i: boolean;
+  readonly m: boolean;
+  readonly s: boolean;
+  readonly U: boolean;
+}
+
+const defaultRegexFlags: RegexFlags = {
+  i: false,
+  m: false,
+  s: false,
+  U: false,
+};
+
+function updateRegexFlags(
+  current: RegexFlags,
+  enabled: string,
+  disabled: string,
+): RegexFlags {
+  const next: Record<keyof RegexFlags, boolean> = { ...current };
+  for (const flag of enabled) next[flag as keyof RegexFlags] = true;
+  for (const flag of disabled) next[flag as keyof RegexFlags] = false;
+  return next;
+}
+
+function wrapRegexModifiers(
+  current: RegexFlags,
+  next: RegexFlags,
+  content: string,
+): string {
+  const enabled = ["i", "m", "s"].filter(
+    (flag) =>
+      !current[flag as keyof RegexFlags] &&
+      next[flag as keyof RegexFlags],
+  );
+  const disabled = ["i", "m", "s"].filter(
+    (flag) =>
+      current[flag as keyof RegexFlags] &&
+      !next[flag as keyof RegexFlags],
+  );
+  if (enabled.length === 0 && disabled.length === 0) return `(?:${content})`;
+  const modifier = `${enabled.join("")}${
+    disabled.length === 0 ? "" : `-${disabled.join("")}`
+  }`;
+  return `(?${modifier}:${content})`;
+}
+
+/**
+ * Rust/Go inline flags can change for the rest of a group and include `U`.
+ * JavaScript supports only scoped i/m/s modifier groups, so preserve those
+ * scopes explicitly and implement ungreedy mode by reversing quantifier greed.
+ */
+function translateTitlePattern(pattern: string): string {
+  function translateSequence(
+    start: number,
+    flags: RegexFlags,
+    closesGroup: boolean,
+  ): { readonly output: string; readonly nextIndex: number } {
+    let output = "";
+    let index = start;
+    while (index < pattern.length) {
+      const token = pattern[index] ?? "";
+      if (token === ")" && closesGroup) {
+        return { output, nextIndex: index + 1 };
+      }
+      if (token === "[") {
+        const classStart = index;
+        index += 1;
+        while (index < pattern.length) {
+          if (pattern[index] === "\\") {
+            index += 2;
+          } else if (pattern[index] === "]") {
+            index += 1;
+            break;
+          } else {
+            index += 1;
+          }
+        }
+        output += pattern.slice(classStart, index);
+        continue;
+      }
+      if (token === "\\") {
+        const escaped = pattern[index + 1];
+        output +=
+          escaped === "A"
+            ? "(?<![\\s\\S])"
+            : escaped === "z"
+              ? "(?![\\s\\S])"
+              : pattern.slice(index, index + 2);
+        index += 2;
+        continue;
+      }
+      if (token === "(") {
+        const inlineFlags = pattern
+          .slice(index)
+          .match(/^\(\?([imsU]*)(?:-([imsU]*))?([:)])/u);
+        if (inlineFlags !== null) {
+          const nextFlags = updateRegexFlags(
+            flags,
+            inlineFlags[1] ?? "",
+            inlineFlags[2] ?? "",
+          );
+          index += inlineFlags[0].length;
+          if (inlineFlags[3] === ":") {
+            const inner = translateSequence(index, nextFlags, true);
+            output += wrapRegexModifiers(flags, nextFlags, inner.output);
+            index = inner.nextIndex;
+            continue;
+          }
+          const remainder = translateSequence(index, nextFlags, closesGroup);
+          output += wrapRegexModifiers(flags, nextFlags, remainder.output);
+          return { output, nextIndex: remainder.nextIndex };
+        }
+        const nonCapturing = pattern.startsWith("(?:", index);
+        index += nonCapturing ? 3 : 1;
+        const inner = translateSequence(index, flags, true);
+        output += `${nonCapturing ? "(?:" : "("}${inner.output})`;
+        index = inner.nextIndex;
+        continue;
+      }
+      const quantifierLength = repetitionLength(pattern, index);
+      if (quantifierLength > 0) {
+        const quantifier = pattern.slice(index, index + quantifierLength);
+        const lazy = pattern[index + quantifierLength] === "?";
+        output += flags.U ? `${quantifier}${lazy ? "" : "?"}` : quantifier;
+        if (!flags.U && lazy) output += "?";
+        index += quantifierLength + (lazy ? 1 : 0);
+        continue;
+      }
+      output += token;
+      index += 1;
+    }
+    return { output, nextIndex: index };
+  }
+
+  return translateSequence(0, defaultRegexFlags, false).output;
+}
+
+function compileTitlePattern(pattern: string): RegExp | null {
+  try {
+    return new RegExp(translateTitlePattern(pattern), "u");
+  } catch {
+    return null;
+  }
+}
+
 function validTemplate(template: string): boolean {
   if (template.length === 0 || new TextEncoder().encode(template).length > 2_048) {
     return false;
@@ -176,12 +335,7 @@ export function validateRealQaProcessUrlRules(
     ) {
       return false;
     }
-    try {
-      void new RegExp(pattern, "u");
-      return true;
-    } catch {
-      return false;
-    }
+    return compileTitlePattern(pattern) !== null;
   });
 }
 
@@ -206,12 +360,20 @@ export function inferDesktopUrl(
   }
   for (const rule of rules) {
     if (!rule.enabled || rule.exactProcessName !== processName) continue;
-    const match =
-      rule.safeWindowTitlePattern === ""
-        ? ([windowTitle] as unknown as RegExpExecArray)
-        : new RegExp(rule.safeWindowTitlePattern, "u").exec(windowTitle);
+    let match: RegExpExecArray | null;
+    if (rule.safeWindowTitlePattern === "") {
+      match = [windowTitle] as unknown as RegExpExecArray;
+    } else {
+      const expression = compileTitlePattern(rule.safeWindowTitlePattern);
+      if (expression === null) continue;
+      match = expression.exec(windowTitle);
+    }
     if (match === null) continue;
-    const result = sanitizeCapturedUrl(expandTemplate(rule.urlTemplate, match));
+    const expanded = expandTemplate(rule.urlTemplate, match);
+    if (new TextEncoder().encode(expanded).length > MAX_REALQA_EXPANDED_URL_BYTES) {
+      continue;
+    }
+    const result = sanitizeCapturedUrl(expanded);
     if (result.ok) return result;
   }
   return null;

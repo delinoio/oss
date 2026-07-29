@@ -195,10 +195,6 @@ impl TokenRefreshError {
             rotated_refresh_token,
         }
     }
-
-    fn into_error(self) -> AuthError {
-        self.error
-    }
 }
 
 impl From<AuthError> for TokenRefreshError {
@@ -759,16 +755,19 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             },
         };
         migrate_retained_device_session(&mut retained, &subject)?;
-        let feature_tokens = self
-            .transport
-            .refresh(
-                &token_endpoint,
-                &self.configuration.client_id,
-                &refresh_token,
-                feature.audience(),
-                feature.scopes(),
-            )
-            .map_err(TokenRefreshError::into_error)?;
+        let feature_tokens = match self.transport.refresh(
+            &token_endpoint,
+            &self.configuration.client_id,
+            &refresh_token,
+            feature.audience(),
+            feature.scopes(),
+        ) {
+            Ok(tokens) => tokens,
+            Err(failure) => {
+                let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
+                return Err(error);
+            }
+        };
         validate_bearer(
             &feature_tokens.claims,
             &self.configuration,
@@ -780,16 +779,19 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         if let Some(rotated_refresh) = feature_tokens.refresh_token {
             refresh_token = rotated_refresh;
         }
-        let delibase_tokens = self
-            .transport
-            .refresh(
-                &token_endpoint,
-                &self.configuration.client_id,
-                &refresh_token,
-                DELIBASE_AUDIENCE,
-                feature.delibase_scopes(),
-            )
-            .map_err(TokenRefreshError::into_error)?;
+        let delibase_tokens = match self.transport.refresh(
+            &token_endpoint,
+            &self.configuration.client_id,
+            &refresh_token,
+            DELIBASE_AUDIENCE,
+            feature.delibase_scopes(),
+        ) {
+            Ok(tokens) => tokens,
+            Err(failure) => {
+                let error = self.persist_retryable_rotation(&mut retained, feature, failure)?;
+                return Err(error);
+            }
+        };
         validate_bearer(
             &delibase_tokens.claims,
             &self.configuration,
@@ -2235,6 +2237,56 @@ mod tests {
         );
         assert!(invalid_delibase.vault.retained.is_none());
         assert_eq!(invalid_delibase.snapshot(), SessionSnapshot::SignedOut);
+    }
+
+    #[test]
+    fn callback_vaults_rotations_from_retryable_verification_failures() {
+        for failure_at_delibase in [false, true] {
+            let mut transport = FakeTransport::default();
+            transport.exchange.push_back(Ok(tokens(
+                "account-a",
+                "devhud-client",
+                &["openid"],
+                Some("refresh"),
+            )));
+            if failure_at_delibase {
+                transport.refresh.push_back(Ok(tokens(
+                    "account-a",
+                    DECK_AUDIENCE,
+                    AuthFeature::Deck.scopes(),
+                    None,
+                )));
+            }
+            transport
+                .refresh
+                .push_back(Err(TokenRefreshError::with_rotated_refresh_token(
+                    AuthError::TransportUnavailable,
+                    Some(Secret::new("refresh-rotated").unwrap()),
+                )));
+            let mut manager = manager(transport, FakeVault::default());
+            let request = manager
+                .begin(
+                    AuthFeature::Deck,
+                    AuthPlatform::Mobile,
+                    Url::parse(MOBILE_CALLBACK).unwrap(),
+                )
+                .unwrap();
+
+            assert_eq!(
+                manager.complete_callback(&callback_for(&request, "code", None), NOW),
+                Err(AuthError::TransportUnavailable)
+            );
+            assert_eq!(
+                manager
+                    .vault
+                    .retained
+                    .as_ref()
+                    .and_then(|retained| retained.0.get(&AuthFeature::Deck))
+                    .map(String::as_str),
+                Some("refresh-rotated")
+            );
+            assert_eq!(manager.snapshot(), SessionSnapshot::SignedOut);
+        }
     }
 
     #[test]
