@@ -91,6 +91,19 @@ func TestAssetOwnsPublicObject(t *testing.T) {
 	}
 }
 
+func TestTerminalAssetStates(t *testing.T) {
+	for _, state := range []string{
+		"removed_placeholder", "deleted", "expired",
+	} {
+		if !isTerminalAssetState(state) {
+			t.Errorf("state %q was not terminal", state)
+		}
+	}
+	if isTerminalAssetState("public_retained") {
+		t.Fatal("retained asset was terminal")
+	}
+}
+
 type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) {
