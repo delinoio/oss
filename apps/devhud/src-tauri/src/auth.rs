@@ -502,6 +502,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                         offline_features.insert(feature);
                         continue;
                     }
+                    self.remove_invalid_realqa_grant(&mut retained, feature)?;
                     grant_error.get_or_insert(error);
                     continue;
                 }
@@ -512,11 +513,13 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 feature,
                 now_unix_seconds,
             ) {
+                self.remove_invalid_realqa_grant(&mut retained, feature)?;
                 grant_error.get_or_insert(error);
                 continue;
             }
             let subject = tokens.claims.subject.clone();
             if !device_session_matches(retained.device_session_key.expose(), &subject)? {
+                self.remove_invalid_realqa_grant(&mut retained, feature)?;
                 grant_error.get_or_insert(AuthError::AccountSwitchRequiresLogout);
                 continue;
             }
@@ -547,6 +550,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                         offline_features.insert(feature);
                         continue;
                     }
+                    self.remove_invalid_realqa_grant(&mut retained, feature)?;
                     grant_error.get_or_insert(error);
                     continue;
                 }
@@ -559,6 +563,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 feature.delibase_scopes(),
                 now_unix_seconds,
             ) {
+                self.remove_invalid_realqa_grant(&mut retained, feature)?;
                 grant_error.get_or_insert(error);
                 continue;
             }
@@ -1132,6 +1137,36 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             self.vault.replace(retained)?;
         }
         Ok(error)
+    }
+
+    fn remove_invalid_realqa_grant(
+        &mut self,
+        retained: &mut VaultSession,
+        feature: AuthFeature,
+    ) -> Result<(), AuthError> {
+        if feature != AuthFeature::RealQa {
+            return Ok(());
+        }
+        retained.refresh_tokens.remove(&feature);
+        if retained.refresh_tokens.is_empty() {
+            if self.vault.clear().is_err() {
+                self.state = SessionState::CleanupRequired;
+                return Err(AuthError::SecureVaultDeleteFailed);
+            }
+            return Ok(());
+        }
+        if let Err(error) = self.vault.replace(retained) {
+            // A failed replacement may have retained the invalid grant. Fall
+            // back to the vault's tombstone-backed deletion so restart cannot
+            // reopen RealQA drafts from stale credentials.
+            if self.vault.clear().is_err() {
+                self.state = SessionState::CleanupRequired;
+                return Err(AuthError::SecureVaultDeleteFailed);
+            }
+            self.state = SessionState::SignedOut;
+            return Err(error);
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -3189,6 +3224,18 @@ mod tests {
             Err(AuthError::ReauthenticationRequired)
         );
         assert!(!prior.memory_tokens_present());
+        let retained = prior.vault.retained.as_ref().unwrap();
+        assert!(retained.0.contains_key(&AuthFeature::Deck));
+        assert!(!retained.0.contains_key(&AuthFeature::RealQa));
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Offline, NOW).unwrap(),
+            SessionSnapshot::PriorSessionOffline
+        );
+        assert_eq!(
+            prior.realqa_draft_access(),
+            Err(AuthError::ReauthenticationRequired)
+        );
     }
 
     #[test]
@@ -3216,9 +3263,51 @@ mod tests {
         assert_eq!(prior.snapshot(), SessionSnapshot::SignedOut);
         assert_eq!(
             prior.realqa_draft_access(),
-            Err(AuthError::ReauthenticationRequired)
+            Err(AuthError::FirstTimeOffline)
         );
         assert!(!prior.memory_tokens_present());
+        assert!(prior.vault.retained.is_none());
+
+        let mut restarted = manager(FakeTransport::default(), prior.vault);
+        assert_eq!(
+            restarted.restore_at(Connectivity::Offline, NOW),
+            Err(AuthError::FirstTimeOffline)
+        );
+    }
+
+    #[test]
+    fn invalid_paired_realqa_grant_is_removed_before_offline_restart() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(AuthFeature::RealQa, "refresh", key.expose())),
+            ..FakeVault::default()
+        };
+        let mut transport = FakeTransport::default();
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            REALQA_AUDIENCE,
+            AuthFeature::RealQa.scopes(),
+            None,
+        )));
+        transport.refresh.push_back(Ok(tokens(
+            "account-a",
+            DELIBASE_AUDIENCE,
+            &["openid"],
+            None,
+        )));
+        let mut prior = manager(transport, vault);
+
+        assert_eq!(
+            prior.restore_at(Connectivity::Online, NOW),
+            Err(AuthError::ScopeMismatch)
+        );
+        assert!(prior.vault.retained.is_none());
+
+        let mut restarted = manager(FakeTransport::default(), prior.vault);
+        assert_eq!(
+            restarted.restore_at(Connectivity::Offline, NOW),
+            Err(AuthError::FirstTimeOffline)
+        );
     }
 
     #[test]

@@ -249,6 +249,27 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     });
   });
 
+  it.each(["Issue\r\nnext", "Issue\u2028next", "Issue\u2029next"])(
+    "uses only Go newline boundaries for synchronized multiline anchors in %s",
+    (title) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: String.raw`(?m)^Issue$`,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+        ok: true,
+        url: { value: "https://fallback.example/" },
+      });
+    },
+  );
+
   it.each([
     ["Issue\r757", true],
     ["Issue\u2028757", true],
@@ -313,6 +334,33 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
 
   it.each([String.raw`(?i)^\P{Lu}$`, String.raw`(?i)^\p{^Lu}$`])(
     "preserves synchronized case-insensitive Unicode complement %s",
+    (pattern) => {
+      const rules = [
+        rule({
+          safeWindowTitlePattern: pattern,
+          urlTemplate: "https://example.com/matched",
+        }),
+        rule({
+          ruleId: "01900000-0000-7000-8000-000000000002",
+          safeWindowTitlePattern: "",
+          urlTemplate: "https://fallback.example/",
+        }),
+      ];
+      for (const title of ["A", "a"]) {
+        expect(inferDesktopUrl(rules, "code", title)).toMatchObject({
+          ok: true,
+          url: { value: "https://fallback.example/" },
+        });
+      }
+      expect(inferDesktopUrl(rules, "code", "0")).toMatchObject({
+        ok: true,
+        url: { value: "https://example.com/matched" },
+      });
+    },
+  );
+
+  it.each([String.raw`(?i)^[\P{Lu}]$`, String.raw`(?i)^[\p{^Lu}]$`])(
+    "preserves synchronized case-insensitive Unicode complement inside a class %s",
     (pattern) => {
       const rules = [
         rule({
@@ -519,6 +567,17 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
       ]),
     ).toBe(false);
   });
+
+  it.each([String.raw`^\x{101}$`, String.raw`^\x{1F600}$`])(
+    "does not interpret a synchronized braced hex escape as repetition %s",
+    (pattern) => {
+      expect(
+        validateRealQaProcessUrlRules([
+          rule({ safeWindowTitlePattern: pattern }),
+        ]),
+      ).toBe(true);
+    },
+  );
 
   it("treats repetition text after a POSIX class as part of the outer class", () => {
     expect(

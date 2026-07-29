@@ -361,7 +361,8 @@ function hasOversizedBoundedRepetition(pattern: string): boolean {
   for (let index = 0; index < pattern.length; index += 1) {
     const token = pattern[index];
     if (token === "\\") {
-      index += 1;
+      const bracedHex = pattern.slice(index).match(/^\\x\{[0-9A-Fa-f]+\}/u);
+      index += (bracedHex?.[0].length ?? 2) - 1;
       continue;
     }
     if (token === "[") {
@@ -711,6 +712,13 @@ function translateAsciiWordBoundary(
  * scopes explicitly and implement ungreedy mode by reversing quantifier greed.
  */
 function translateTitlePattern(pattern: string): string {
+  const translateAnchor = (anchor: "^" | "$", multiline: boolean): string => {
+    if (anchor === "^") {
+      return multiline ? "(?:(?<![\\s\\S])|(?<=\\n))" : "(?<![\\s\\S])";
+    }
+    return multiline ? "(?:(?=\\n)|(?![\\s\\S]))" : "(?![\\s\\S])";
+  };
+
   function translateSequence(
     start: number,
     flags: RegexFlags,
@@ -724,6 +732,20 @@ function translateTitlePattern(pattern: string): string {
         return { output, nextIndex: index + 1 };
       }
       if (token === "[") {
+        const singletonUnicodeClass = translateUnicodeClassEscape(
+          pattern,
+          index + 1,
+          flags.i,
+          false,
+        );
+        if (
+          singletonUnicodeClass !== null &&
+          pattern[singletonUnicodeClass.nextIndex] === "]"
+        ) {
+          output += singletonUnicodeClass.output;
+          index = singletonUnicodeClass.nextIndex + 1;
+          continue;
+        }
         output += token;
         index += 1;
         while (index < pattern.length) {
@@ -832,6 +854,8 @@ function translateTitlePattern(pattern: string): string {
           ? flags.s
             ? token
             : "[^\\n]"
+          : token === "^" || token === "$"
+            ? translateAnchor(token, flags.m)
           : token === "{" || token === "}"
             ? `\\${token}`
             : token;
