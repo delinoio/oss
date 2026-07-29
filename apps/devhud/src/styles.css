@@ -323,16 +323,6 @@ select:focus-visible,
   gap: 1.25rem;
 }
 
-.realqa-capture-preview {
-  display: block;
-  max-width: 100%;
-  max-height: 30rem;
-  border: 1px solid #d5d9e0;
-  border-radius: 0.75rem;
-  background: #eceff3;
-  object-fit: contain;
-}
-
 .app-header {
   display: flex;
   align-items: center;

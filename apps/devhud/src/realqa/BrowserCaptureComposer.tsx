@@ -3,28 +3,80 @@ import { useCallback, useEffect, useState } from "react";
 import {
   takeBrowserCapture,
   type BrowserCapture,
+  type BrowserPageMetadata,
 } from "./browserCapture";
+import {
+  createRealQaComposerBridge,
+  ImageMediaType,
+  type ComposerImage,
+  type RealQaComposerBridge,
+} from "./capture";
+import { ScreenshotEditor } from "./editor/ScreenshotEditor";
 
 type ComposerState =
   | { readonly status: "loading" }
   | { readonly status: "empty" }
   | { readonly status: "failed" }
-  | { readonly status: "ready"; readonly capture: BrowserCapture };
+  | {
+      readonly status: "os-capture";
+      readonly page?: BrowserPageMetadata;
+    }
+  | {
+      readonly status: "ready";
+      readonly imageId: string;
+      readonly page?: BrowserPageMetadata;
+      readonly source: ComposerImage;
+    };
 
-export function BrowserCaptureComposer() {
+const browserSessionId = "realqa-browser-capture";
+const defaultComposerBridge = createRealQaComposerBridge();
+
+function decodePngCapture(capture: BrowserCapture): readonly number[] {
+  if (capture.image?.mediaType !== "png") {
+    throw new Error("The browser composer accepts PNG viewport captures only.");
+  }
+  return Array.from(atob(capture.image.base64), (character) =>
+    character.charCodeAt(0),
+  );
+}
+
+export function BrowserCaptureComposer({
+  composerBridge = defaultComposerBridge,
+}: {
+  readonly composerBridge?: RealQaComposerBridge;
+}) {
   const [state, setState] = useState<ComposerState>({ status: "loading" });
   const loadCapture = useCallback(async () => {
     try {
       const capture = await takeBrowserCapture();
-      setState(
-        capture === null
-          ? { status: "empty" }
-          : { status: "ready", capture },
-      );
+      if (capture === null) {
+        setState({ status: "empty" });
+        return;
+      }
+      await composerBridge.resetSession(browserSessionId);
+      if (capture.image === undefined) {
+        setState({ status: "os-capture", page: capture.page });
+        return;
+      }
+      const source = await composerBridge.acceptImage({
+        sessionId: browserSessionId,
+        imageId: capture.requestId,
+        image: {
+          mediaType: ImageMediaType.Png,
+          bytes: decodePngCapture(capture),
+        },
+        outputMediaType: ImageMediaType.Png,
+      });
+      setState({
+        status: "ready",
+        imageId: capture.requestId,
+        page: capture.page,
+        source,
+      });
     } catch {
       setState({ status: "failed" });
     }
-  }, []);
+  }, [composerBridge]);
 
   useEffect(() => {
     const handleCapture = () => void loadCapture();
@@ -70,31 +122,52 @@ export function BrowserCaptureComposer() {
           </p>
         </section>
       ) : null}
+      {state.status === "os-capture" ? (
+        <section aria-labelledby="realqa-capture-title" className="state-card">
+          <h1 id="realqa-capture-title">
+            {state.page?.title ?? "Native capture requested"}
+          </h1>
+          <p role="status">
+            Chrome requested the native OS capture flow for this page.
+          </p>
+        </section>
+      ) : null}
       {state.status === "ready" ? (
-        <section aria-labelledby="realqa-capture-title" className="realqa-capture-card">
+        <section
+          aria-labelledby="realqa-capture-title"
+          className="realqa-capture-card"
+        >
           <div>
             <p className="eyebrow">Browser handoff</p>
             <h1 id="realqa-capture-title">
-              {state.capture.page?.title ?? "Untitled capture"}
+              {state.page?.title ?? "Untitled capture"}
             </h1>
-            {state.capture.page?.url === undefined ? null : (
-              <p className="muted">{state.capture.page.url}</p>
+            {state.page?.url === undefined ? null : (
+              <p className="muted">{state.page.url}</p>
             )}
           </div>
-          {state.capture.image === undefined ? (
-            <p role="status">
-              Chrome requested the native OS capture flow for this page.
-            </p>
-          ) : (
-            <img
-              alt="Captured browser viewport"
-              className="realqa-capture-preview"
-              src={`data:image/${state.capture.image.mediaType};base64,${state.capture.image.base64}`}
-            />
-          )}
+          <ScreenshotEditor.Provider
+            bridge={composerBridge}
+            imageId={state.imageId}
+            onApprove={() => undefined}
+            sessionId={browserSessionId}
+            source={state.source}
+          >
+            <ScreenshotEditor.Frame>
+              <ScreenshotEditor.Toolbar />
+              <ScreenshotEditor.Canvas />
+              <ScreenshotEditor.Inspector />
+              <ScreenshotEditor.Actions />
+            </ScreenshotEditor.Frame>
+          </ScreenshotEditor.Provider>
           <button
             className="secondary-button"
-            onClick={() => setState({ status: "empty" })}
+            onClick={() => {
+              void composerBridge
+                .removeImage(browserSessionId, state.imageId)
+                .then(() => setState({ status: "empty" }))
+                .catch(() => setState({ status: "failed" }));
+            }}
             type="button"
           >
             Remove capture
