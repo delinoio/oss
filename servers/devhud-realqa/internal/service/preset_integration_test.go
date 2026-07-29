@@ -1616,8 +1616,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		       destination_id, 'uploading', idempotency_digest,
 		       payer_organization_id, payer_team_id, preset_revision,
 		       declared_encoded_bytes,
-		       transaction_timestamp() + interval '23 hours',
-		       transaction_timestamp() + interval '24 hours'
+		       transaction_timestamp() + interval '1 hour',
+		       transaction_timestamp() + interval '2 hours'
 		FROM realqa_submissions
 		WHERE id = $2;
 		INSERT INTO realqa_assets (
@@ -1665,7 +1665,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	cleanupResult := make(chan deletionResult, 1)
 	go func() {
 		cleaned, cleanupErr := submissionService.CleanupExpiredStaging(
-			ctx, time.Now().UTC().Add(25*time.Hour), 100)
+			ctx, time.Now().UTC().Add(3*time.Hour), 100)
 		cleanupResult <- deletionResult{completed: cleaned, err: cleanupErr}
 	}()
 	for {
