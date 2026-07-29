@@ -12,13 +12,17 @@ pub(crate) use composer::{
     ComposerCore, ComposerFlattenRequest, ComposerImage, ComposerImageId, ComposerImageRequest,
     ComposerSessionId,
 };
+#[cfg(all(test, not(feature = "desktop-cef")))]
+pub(crate) use composer::{ComposerCore, ComposerImageId, ComposerSessionId};
+#[cfg(any(feature = "desktop-cef", test))]
+pub(crate) use editor::{EditorOperation, deserialize_operations};
 pub(crate) use geometry::{
     DisplayDescriptor, DisplayId, DisplayPixelRegion, DisplaySnapshot, DisplaySnapshotId,
     LogicalRect, SelectionAdjustment, SelectionGeometry, adjust_selection,
 };
 pub(crate) use image_boundary::{
     DecodedImage, EncodedImage, ImageBoundaryFailure, ImageMediaType, ImageSessionBudget,
-    decode_image, decoded_byte_len, encode_image, sanitize_image,
+    MAX_ENCODED_SESSION_BYTES, decode_image, decoded_byte_len, encode_image, sanitize_image,
 };
 use serde::{Deserialize, Serialize};
 

@@ -122,7 +122,7 @@ pub(crate) enum EditorOperation {
     },
 }
 
-pub(super) fn deserialize_operations<'de, D>(
+pub(crate) fn deserialize_operations<'de, D>(
     deserializer: D,
 ) -> Result<Vec<EditorOperation>, D::Error>
 where

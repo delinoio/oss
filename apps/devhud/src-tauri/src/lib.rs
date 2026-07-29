@@ -23,6 +23,9 @@ mod diagnostics;
 mod local_log;
 #[cfg(any(feature = "desktop-cef", feature = "linux-capture-backend", test))]
 mod realqa_capture;
+#[cfg(any(feature = "desktop-cef", test))]
+#[cfg_attr(test, allow(dead_code))]
+mod realqa_drafts;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod shortcut;
 #[cfg(any(
@@ -2609,6 +2612,7 @@ fn reset_dev_hud(
     app: AppHandle<ActiveRuntime>,
     persistence: State<'_, PersistenceState>,
     auth_state: State<'_, auth_native::NativeAuthState>,
+    realqa_drafts: State<'_, realqa_drafts::RealQaDraftState>,
     shortcut_state: State<'_, Mutex<shortcut::ShortcutState>>,
     autostart_state: State<'_, autostart::AutostartState>,
     startup_diagnostics: State<'_, Mutex<StartupDiagnostics>>,
@@ -2616,6 +2620,9 @@ fn reset_dev_hud(
     persistence
         .preflight_reset()
         .map_err(reset_preflight_failure)?;
+    realqa_drafts
+        .preflight_reset()
+        .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     let cache_base = dirs::cache_dir()
         .ok_or_else(|| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     let cef_profile = cef_profile_directory()
@@ -2625,7 +2632,9 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
-    if auth_state.reset().is_err() {
+    let auth_reset_failed = auth_state.reset().is_err();
+    let realqa_draft_reset_failed = realqa_drafts.reset().is_err();
+    if auth_reset_failed || realqa_draft_reset_failed {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
     }
     if clear_browsing_data_for_reset(&app).is_err() {
@@ -2894,6 +2903,129 @@ fn realqa_inspect_capture_capabilities(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+fn realqa_draft_access(
+    auth_state: &auth_native::NativeAuthState,
+) -> Result<auth::RealQaDraftAccessContext, realqa_drafts::DraftError> {
+    auth_state
+        .realqa_draft_access()
+        .map_err(|error| match error {
+            auth::AuthError::FirstTimeOffline => realqa_drafts::DraftError::FirstTimeOffline,
+            auth::AuthError::ReauthenticationRequired => {
+                realqa_drafts::DraftError::ReauthenticationRequired
+            }
+            auth::AuthError::AccountSwitchRequiresLogout | auth::AuthError::SubjectMismatch => {
+                realqa_drafts::DraftError::AccountLocked
+            }
+            auth::AuthError::SecureVaultUnavailable
+            | auth::AuthError::SecureVaultWriteFailed
+            | auth::AuthError::SecureVaultDeleteFailed => {
+                realqa_drafts::DraftError::StorageUnavailable
+            }
+            _ => realqa_drafts::DraftError::AuthenticationRequired,
+        })
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_get_local_draft_status(
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> realqa_drafts::DraftStatus {
+    auth_state
+        .realqa_draft_access()
+        .as_ref()
+        .map(realqa_drafts::DraftStatus::from_access)
+        .unwrap_or_else(|_| realqa_drafts::DraftStatus::locked())
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_list_local_drafts(
+    auth_state: State<'_, auth_native::NativeAuthState>,
+    drafts: State<'_, realqa_drafts::RealQaDraftState>,
+) -> Result<Vec<realqa_drafts::DraftSummary>, realqa_drafts::DraftError> {
+    drafts.list(&realqa_draft_access(&auth_state)?)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_save_local_draft(
+    request: realqa_drafts::SaveDraftRequest,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+    drafts: State<'_, realqa_drafts::RealQaDraftState>,
+    composer: State<'_, realqa_capture::ComposerCore>,
+) -> Result<realqa_drafts::DraftSummary, realqa_drafts::DraftError> {
+    drafts.save(&realqa_draft_access(&auth_state)?, &composer, request)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_load_local_draft(
+    draft_id: String,
+    composer_session_id: String,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+    drafts: State<'_, realqa_drafts::RealQaDraftState>,
+    composer: State<'_, realqa_capture::ComposerCore>,
+) -> Result<realqa_drafts::LoadedDraft, realqa_drafts::DraftError> {
+    drafts.load(
+        &realqa_draft_access(&auth_state)?,
+        &composer,
+        &draft_id,
+        &composer_session_id,
+    )
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_delete_local_draft(
+    draft_id: String,
+    expected_revision: u64,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+    drafts: State<'_, realqa_drafts::RealQaDraftState>,
+) -> Result<(), realqa_drafts::DraftError> {
+    drafts.delete(
+        &realqa_draft_access(&auth_state)?,
+        &draft_id,
+        expected_revision,
+    )
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_assert_local_draft_submission_allowed(
+    draft_id: String,
+    expected_revision: u64,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+    drafts: State<'_, realqa_drafts::RealQaDraftState>,
+) -> Result<(), realqa_drafts::DraftError> {
+    drafts.assert_submission_allowed(
+        &realqa_draft_access(&auth_state)?,
+        &draft_id,
+        expected_revision,
+    )
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 #[tauri::command]
 async fn get_auth_session(
     app: AppHandle<ActiveRuntime>,
@@ -3142,24 +3274,38 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             realqa_composer_accept_image,
             realqa_composer_flatten_image,
             realqa_composer_remove_image,
-            realqa_composer_reset_session
+            realqa_composer_reset_session,
+            realqa_get_local_draft_status,
+            realqa_list_local_drafts,
+            realqa_save_local_draft,
+            realqa_load_local_draft,
+            realqa_delete_local_draft,
+            realqa_assert_local_draft_submission_allowed
         ])
         .setup(|app| {
-            let persistence = match app.path().app_local_data_dir() {
-                Ok(directory) => match PersistenceState::new(directory) {
+            let app_local_data = app.path().app_local_data_dir().ok();
+            let persistence = match app_local_data.clone() {
+                Some(directory) => match PersistenceState::new(directory) {
                     Ok(state) => state,
                     Err(error) => {
                         log_persistence_io_failure("initialize", "persistence", &error);
                         PersistenceState::unavailable()
                     }
                 },
-                Err(_) => {
+                None => {
                     diagnostics::emit_warning(
                         diagnostics::DiagnosticEventId::PersistenceUnavailable,
                         diagnostics::DiagnosticClassification::PersistenceStorageUnavailable,
                     );
                     PersistenceState::unavailable()
                 }
+            };
+            let realqa_drafts = match app_local_data {
+                Some(directory) => match realqa_drafts::RealQaDraftState::new(directory) {
+                    Ok(state) => state,
+                    Err(_) => realqa_drafts::RealQaDraftState::unavailable(),
+                },
+                None => realqa_drafts::RealQaDraftState::unavailable(),
             };
             let persisted_record = persistence.read(SETTINGS_STORAGE_KEY);
             let first_run = matches!(&persisted_record, Ok(None));
@@ -3168,6 +3314,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
                 .ok()
                 .and_then(|record| native_settings(record.as_deref()));
             app.manage(persistence);
+            app.manage(realqa_drafts);
             app.manage(auth_native::NativeAuthState::initialize());
             app.manage(QuittingState(AtomicBool::new(false)));
             app.manage(updater::UpdateActionBoundary);

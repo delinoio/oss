@@ -16,3 +16,16 @@ await run(
   ],
   { cwd: repositoryRoot },
 );
+
+await run(
+  "cargo",
+  [
+    "test",
+    "-p",
+    "devhud",
+    "--features",
+    "linux-capture-backend",
+    "realqa_drafts",
+  ],
+  { cwd: repositoryRoot },
+);

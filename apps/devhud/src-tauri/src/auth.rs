@@ -29,7 +29,8 @@ const DESKTOP_CALLBACK_PATH: &str = "/auth/callback";
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_CALLBACK_REQUEST_LINE_BYTES: usize = 4096;
 const MAX_SUBJECT_BYTES: usize = 512;
-const DEVICE_SESSION_VERSION: &str = "v1";
+const DEVICE_SESSION_VERSION: &str = "v2";
+const REALQA_DRAFT_ACCOUNT_BINDING_CONTEXT: &[u8] = b"devhud-realqa-draft-account-v1\0";
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -292,6 +293,12 @@ pub(crate) struct VaultSession {
     pub(crate) device_session_key: Secret,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RealQaDraftAccessContext {
+    pub(crate) account_binding: String,
+    pub(crate) online_reauthenticated: bool,
+}
+
 pub(crate) trait SecureVault: Send {
     fn load(&mut self) -> Result<Option<VaultSession>, AuthError>;
     fn replace(&mut self, session: &VaultSession) -> Result<(), AuthError>;
@@ -377,7 +384,9 @@ enum SessionState {
         access_token: Secret,
         id_token: Option<Secret>,
     },
-    PriorSessionOffline,
+    PriorSessionOffline {
+        account_binding: String,
+    },
     CleanupRequired,
 }
 
@@ -432,7 +441,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             SessionState::SignedIn { subject, .. } => SessionSnapshot::SignedIn {
                 subject: subject.clone(),
             },
-            SessionState::PriorSessionOffline => SessionSnapshot::PriorSessionOffline,
+            SessionState::PriorSessionOffline { .. } => SessionSnapshot::PriorSessionOffline,
             SessionState::CleanupRequired => SessionSnapshot::CleanupRequired,
         }
     }
@@ -459,7 +468,11 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         };
         validate_retained_session_shape(&retained)?;
         if connectivity == Connectivity::Offline {
-            self.state = SessionState::PriorSessionOffline;
+            self.state = SessionState::PriorSessionOffline {
+                account_binding: device_session_account_binding(
+                    retained.device_session_key.expose(),
+                )?,
+            };
             return Ok(self.snapshot());
         }
         let token_endpoint = self.configuration.token_endpoint.clone();
@@ -555,7 +568,11 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             return Err(error);
         }
         if transport_unavailable {
-            self.state = SessionState::PriorSessionOffline;
+            self.state = SessionState::PriorSessionOffline {
+                account_binding: device_session_account_binding(
+                    retained.device_session_key.expose(),
+                )?,
+            };
             return Ok(self.snapshot());
         }
         Err(AuthError::TokenInvalid)
@@ -791,7 +808,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
     ) -> Result<BearerPair, AuthError> {
         let subject = match &self.state {
             SessionState::SignedIn { subject, .. } => subject.clone(),
-            SessionState::PriorSessionOffline | SessionState::SignedOut => {
+            SessionState::PriorSessionOffline { .. } | SessionState::SignedOut => {
                 return Err(AuthError::ReauthenticationRequired);
             }
             SessionState::Authenticating => return Err(AuthError::SignInAlreadyActive),
@@ -871,6 +888,39 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             delibase: delibase_tokens.access_token,
             subject,
         })
+    }
+
+    pub(crate) fn realqa_draft_access(&mut self) -> Result<RealQaDraftAccessContext, AuthError> {
+        let retained = self.vault.load()?.ok_or(AuthError::FirstTimeOffline)?;
+        validate_retained_session_shape(&retained)?;
+        if !retained.refresh_tokens.contains_key(&AuthFeature::RealQa) {
+            return Err(AuthError::ReauthenticationRequired);
+        }
+        let retained_binding =
+            device_session_account_binding(retained.device_session_key.expose())?;
+        match &self.state {
+            SessionState::SignedIn { subject, .. } => {
+                if !device_session_matches(retained.device_session_key.expose(), subject)? {
+                    return Err(AuthError::AccountSwitchRequiresLogout);
+                }
+                Ok(RealQaDraftAccessContext {
+                    account_binding: retained_binding,
+                    online_reauthenticated: true,
+                })
+            }
+            SessionState::PriorSessionOffline { account_binding }
+                if constant_time_equal(account_binding.as_bytes(), retained_binding.as_bytes()) =>
+            {
+                Ok(RealQaDraftAccessContext {
+                    account_binding: retained_binding,
+                    online_reauthenticated: false,
+                })
+            }
+            SessionState::PriorSessionOffline { .. } => Err(AuthError::SubjectMismatch),
+            SessionState::SignedOut => Err(AuthError::ReauthenticationRequired),
+            SessionState::Authenticating => Err(AuthError::SignInAlreadyActive),
+            SessionState::CleanupRequired => Err(AuthError::SecureVaultDeleteFailed),
+        }
     }
 
     pub(crate) fn logout(&mut self) -> Result<SessionSnapshot, AuthError> {
@@ -1125,10 +1175,12 @@ fn new_device_session_key(subject: &str) -> Result<Secret, AuthError> {
         HmacSha256::new_from_slice(&key).map_err(|_| AuthError::SecureVaultUnavailable)?;
     mac.update(subject.as_bytes());
     let tag = mac.finalize().into_bytes();
+    let account_binding = realqa_draft_account_binding(subject);
     let encoded = format!(
-        "{DEVICE_SESSION_VERSION}.{}.{}",
+        "{DEVICE_SESSION_VERSION}.{}.{}.{}",
         URL_SAFE_NO_PAD.encode(key),
-        URL_SAFE_NO_PAD.encode(tag)
+        URL_SAFE_NO_PAD.encode(tag),
+        account_binding,
     );
     key.zeroize();
     Secret::new(encoded)
@@ -1139,6 +1191,7 @@ fn validate_device_session_shape(value: &str) -> Result<(), AuthError> {
     let version = parts.next();
     let key = parts.next();
     let tag = parts.next();
+    let account_binding = parts.next();
     if version != Some(DEVICE_SESSION_VERSION)
         || parts.next().is_some()
         || key
@@ -1148,6 +1201,10 @@ fn validate_device_session_shape(value: &str) -> Result<(), AuthError> {
         || tag
             .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
             .map(|v| v.len())
+            != Some(32)
+        || account_binding
+            .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
+            .map(|value| value.len())
             != Some(32)
     {
         return Err(AuthError::TokenInvalid);
@@ -1172,10 +1229,31 @@ fn device_session_matches(value: &str, subject: &str) -> Result<bool, AuthError>
     let actual = URL_SAFE_NO_PAD
         .decode(parts.next().ok_or(AuthError::TokenInvalid)?)
         .map_err(|_| AuthError::TokenInvalid)?;
+    let account_binding = parts.next().ok_or(AuthError::TokenInvalid)?;
     let mut mac = HmacSha256::new_from_slice(&key).map_err(|_| AuthError::TokenInvalid)?;
     mac.update(subject.as_bytes());
     let expected = mac.finalize().into_bytes();
-    Ok(constant_time_equal(&actual, &expected))
+    Ok(constant_time_equal(&actual, &expected)
+        && constant_time_equal(
+            account_binding.as_bytes(),
+            realqa_draft_account_binding(subject).as_bytes(),
+        ))
+}
+
+fn realqa_draft_account_binding(subject: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(REALQA_DRAFT_ACCOUNT_BINDING_CONTEXT);
+    digest.update(subject.as_bytes());
+    URL_SAFE_NO_PAD.encode(digest.finalize())
+}
+
+fn device_session_account_binding(value: &str) -> Result<String, AuthError> {
+    validate_device_session_shape(value)?;
+    value
+        .split('.')
+        .nth(3)
+        .map(ToOwned::to_owned)
+        .ok_or(AuthError::TokenInvalid)
 }
 
 fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
@@ -1736,7 +1814,7 @@ mod tests {
             writes[0].0.get(&AuthFeature::Deck).map(String::as_str),
             Some("refresh-delibase-rotated")
         );
-        assert!(writes[0].1.starts_with("v1."));
+        assert!(writes[0].1.starts_with("v2."));
         assert!(!writes[0].1.contains("account-a"));
         assert!(!format!("{manager:?}").contains("memory-access-token"));
     }
@@ -2237,6 +2315,47 @@ mod tests {
             prior.bearer_pair(AuthFeature::RealQa, NOW),
             Err(AuthError::ReauthenticationRequired)
         ));
+        assert_eq!(
+            prior.realqa_draft_access(),
+            Err(AuthError::ReauthenticationRequired)
+        );
+
+        let realqa_key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::RealQa,
+                "refresh",
+                realqa_key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut realqa_prior = manager(FakeTransport::default(), vault);
+        realqa_prior.restore(Connectivity::Offline).unwrap();
+        let access = realqa_prior.realqa_draft_access().unwrap();
+        assert!(!access.online_reauthenticated);
+        assert_eq!(
+            access.account_binding,
+            realqa_draft_account_binding("account-a")
+        );
+    }
+
+    #[test]
+    fn draft_binding_survives_same_account_relogin_and_separates_accounts() {
+        let first = new_device_session_key("account-a").unwrap();
+        let relogin = new_device_session_key("account-a").unwrap();
+        let other = new_device_session_key("account-b").unwrap();
+
+        assert_ne!(first.expose(), relogin.expose());
+        assert_eq!(
+            device_session_account_binding(first.expose()).unwrap(),
+            device_session_account_binding(relogin.expose()).unwrap()
+        );
+        assert_ne!(
+            device_session_account_binding(first.expose()).unwrap(),
+            device_session_account_binding(other.expose()).unwrap()
+        );
+        assert!(device_session_matches(first.expose(), "account-a").unwrap());
+        assert!(!device_session_matches(first.expose(), "account-b").unwrap());
     }
 
     #[test]

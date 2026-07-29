@@ -91,7 +91,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### devhud
 - `docs/project-devhud.md`
-- `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell and all Deck/RealQA client/native/Chrome surfaces)
+- `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell, RealQA encrypted local-draft/capture foundations, and all Deck/RealQA client/native/Chrome surfaces)
 - `docs/servers-devhud-deck-foundation.md` (planned `servers/devhud-deck`; future `https://deck.deli.dev`)
 - `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, and non-dispatching all-origin refresh preflight)
 - `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion foundation at `servers/devhud-realqa`; future submission/image/billing slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)

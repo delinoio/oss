@@ -1,6 +1,6 @@
 # DevHud
 
-DevHud is a bundled-shell Tauri application with one shared English React frontend. Its signed-out shell and diagnostics remain local; the only implemented remote boundary is native Logto authentication. Desktop builds retain the exact pinned upstream CEF runtime and sandbox. Mobile builds use only Tauri's standard WKWebView host on iOS and System WebView host on Android; CEF is not a mobile dependency or feature.
+DevHud is a bundled-shell Tauri application with one shared English React frontend. Its signed-out shell and diagnostics remain local; the only implemented remote boundary is native Logto authentication. The inactive desktop RealQA foundation includes typed capture/editor procedures and a separate account-bound encrypted local-draft adapter; no RealQA tool, networking, submission flow, or Chrome artifact is activated. Desktop builds retain the exact pinned upstream CEF runtime and sandbox. Mobile builds use only Tauri's standard WKWebView host on iOS and System WebView host on Android; CEF is not a mobile dependency or feature.
 
 ## Mobile target contract
 

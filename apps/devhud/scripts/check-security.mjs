@@ -150,6 +150,12 @@ const expectedCapabilities = {
       "allow-realqa-composer-flatten-image",
       "allow-realqa-composer-remove-image",
       "allow-realqa-composer-reset-session",
+      "allow-realqa-get-local-draft-status",
+      "allow-realqa-list-local-drafts",
+      "allow-realqa-save-local-draft",
+      "allow-realqa-load-local-draft",
+      "allow-realqa-delete-local-draft",
+      "allow-realqa-assert-local-draft-submission-allowed",
     ],
   },
 };
@@ -240,7 +246,13 @@ requireCondition(
 requireCondition(
   [...composerCommands].every(
     (command) =>
-      command.startsWith("realqa_composer_") &&
+      (command.startsWith("realqa_composer_") ||
+        command.startsWith("realqa_get_local_draft_") ||
+        command.startsWith("realqa_list_local_drafts") ||
+        command.startsWith("realqa_save_local_draft") ||
+        command.startsWith("realqa_load_local_draft") ||
+        command.startsWith("realqa_delete_local_draft") ||
+        command.startsWith("realqa_assert_local_draft_")) &&
       ![
         "realqa_inspect_capture_capabilities",
         "realqa_list_capture_sources",

@@ -691,6 +691,17 @@ impl NativeAuthState {
         }
     }
 
+    pub(crate) fn realqa_draft_access(
+        &self,
+    ) -> Result<crate::auth::RealQaDraftAccessContext, AuthError> {
+        self.manager
+            .lock()
+            .map_err(|_| AuthError::SecureVaultUnavailable)?
+            .as_mut()
+            .ok_or(AuthError::ConfigurationUnavailable)?
+            .realqa_draft_access()
+    }
+
     pub(crate) fn cancel_pending(&self) {
         if let Ok(mut guard) = self.manager.lock()
             && let Some(manager) = guard.as_mut()

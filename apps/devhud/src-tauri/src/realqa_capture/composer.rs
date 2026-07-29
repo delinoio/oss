@@ -189,6 +189,42 @@ pub(crate) struct ComposerCore {
 }
 
 impl ComposerCore {
+    pub(crate) fn clone_original_for_draft(
+        &self,
+        session_id: &ComposerSessionId,
+        image_id: &ComposerImageId,
+        source_revision: u64,
+    ) -> Result<EncodedImage, CaptureFailure> {
+        validate_identifier(&session_id.0)?;
+        validate_identifier(&image_id.0)?;
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| CaptureFailure::CaptureFailed)?;
+        let source = state
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.images.get(image_id))
+            .filter(|source| source.revision == source_revision)
+            .ok_or(CaptureFailure::InvalidEditSequence)?;
+        Ok(source.original.clone())
+    }
+
+    pub(crate) fn restore_original_from_draft(
+        &self,
+        session_id: ComposerSessionId,
+        image_id: ComposerImageId,
+        original: EncodedImage,
+    ) -> Result<ComposerImage, CaptureFailure> {
+        let output_media_type = original.media_type;
+        self.accept_image(ComposerImageRequest {
+            session_id,
+            image_id,
+            image: original,
+            output_media_type,
+        })
+    }
+
     pub(crate) fn accept_image(
         &self,
         request: ComposerImageRequest,

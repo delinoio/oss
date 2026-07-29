@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "realqa-composer",
-  "description": "Allows only the authenticated RealQA composer window to sanitize images and maintain its bounded in-memory encoded-image session.",
+  "description": "Allows only the authenticated RealQA composer window to sanitize images and access its account-bound encrypted local draft family.",
   "local": true,
   "platforms": ["linux", "macOS", "windows"],
   "windows": ["realqa-composer"],
@@ -9,6 +9,12 @@
     "allow-realqa-composer-accept-image",
     "allow-realqa-composer-flatten-image",
     "allow-realqa-composer-remove-image",
-    "allow-realqa-composer-reset-session"
+    "allow-realqa-composer-reset-session",
+    "allow-realqa-get-local-draft-status",
+    "allow-realqa-list-local-drafts",
+    "allow-realqa-save-local-draft",
+    "allow-realqa-load-local-draft",
+    "allow-realqa-delete-local-draft",
+    "allow-realqa-assert-local-draft-submission-allowed"
   ]
 }
