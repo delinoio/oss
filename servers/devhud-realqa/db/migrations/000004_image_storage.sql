@@ -24,6 +24,35 @@ ALTER TABLE realqa_submissions
         (payer_organization_id IS NOT NULL AND payer_team_id IS NOT NULL)
     );
 
+ALTER TABLE realqa_idempotency_records
+    DROP CONSTRAINT realqa_idempotency_records_operation_check,
+    ADD CONSTRAINT realqa_idempotency_records_operation_check
+        CHECK (operation IN (
+            'create_preset',
+            'create_submission',
+            'create_image_upload',
+            'delete_feature_data',
+            'disconnect_github_connection'
+        ));
+
+ALTER TABLE realqa_audits
+    DROP CONSTRAINT realqa_audits_event_type_check,
+    ADD CONSTRAINT realqa_audits_event_type_check
+        CHECK (event_type IN (
+            'preset_created',
+            'preset_updated',
+            'preset_deleted',
+            'github_connection_started',
+            'github_connection_disconnected',
+            'feature_deletion_accepted',
+            'repository_access_denied',
+            'submission_created',
+            'image_upload_authorized',
+            'image_upload_verified',
+            'image_deleted',
+            'submission_assets_deleted'
+        ));
+
 ALTER TABLE realqa_assets
     ADD COLUMN client_image_id uuid,
     ADD COLUMN media_type text,

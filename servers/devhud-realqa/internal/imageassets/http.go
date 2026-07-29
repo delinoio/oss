@@ -80,7 +80,9 @@ func UploadHandler(
 			return
 		}
 		if err = uploaded(request.Context(), grant); err != nil {
-			_ = objects.Delete(context.WithoutCancel(request.Context()), key)
+			// The key is deterministic and the signed grant binds identical
+			// bytes. A concurrent retry may already have accepted this object,
+			// so failure to record this attempt must not remove shared staging.
 			http.Error(writer, "upload unavailable", http.StatusServiceUnavailable)
 			return
 		}

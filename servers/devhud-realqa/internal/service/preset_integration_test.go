@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
 	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
@@ -376,8 +377,14 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, organizationInstallationID, accountID); err != nil {
 		t.Fatal(err)
 	}
+	uploadSigner, err := imageassets.NewSigner(
+		"https://assets.realqa.deli.dev", []byte(strings.Repeat("u", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	submissionService := NewSubmission(Dependencies{
 		Store: store, Pseudonymizer: pseudonymizer,
+		Objects: submissionTestObjects{}, UploadSigner: uploadSigner,
 	})
 	submissionRequest := &realqav1.CreateSubmissionRequest{
 		Owner:          organizationOwnerScope(organizationID),
@@ -385,6 +392,14 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		PresetId:       organizationPreset.Msg.Preset.PresetId,
 		PresetRevision: organizationPreset.Msg.Preset.Revision,
 		Destination:    organizationRequest.Destination,
+		Images: []*realqav1.ImageDeclaration{{
+			ClientImageId: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			MediaType:     realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_PNG,
+			EncodedBytes:  1,
+			PixelWidth:    1,
+			PixelHeight:   1,
+			Sha256:        strings.Repeat("0", 64),
+		}},
 		Idempotency: &realqav1.IdempotencyKey{
 			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
 		},
@@ -403,10 +418,67 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, organizationInstallationID, accountID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = submissionService.CreateSubmission(
+	createdSubmission, err := submissionService.CreateSubmission(
 		authCtx, connect.NewRequest(submissionRequest))
-	if connect.CodeOf(err) != connect.CodeUnavailable {
-		t.Fatalf("member accessible repository code = %v", connect.CodeOf(err))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(createdSubmission.Msg.Submission.Assets) != 1 {
+		t.Fatalf("created submission = %#v", createdSubmission.Msg.Submission)
+	}
+	uploadRequest := &realqav1.CreateImageUploadRequest{
+		SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		AssetId:      createdSubmission.Msg.Submission.Assets[0].AssetId,
+		ExpectedAssetRevision: createdSubmission.Msg.Submission.
+			Assets[0].Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	upload, err := submissionService.CreateImageUpload(
+		authCtx, connect.NewRequest(uploadRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadReplay, err := submissionService.CreateImageUpload(
+		authCtx, connect.NewRequest(uploadRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !uploadReplay.Msg.Idempotency.Replayed ||
+		uploadReplay.Msg.SignedPutUrl != upload.Msg.SignedPutUrl {
+		t.Fatalf("image upload replay = %#v", uploadReplay.Msg)
+	}
+	var persistedSignedURL bool
+	if err = connection.QueryRow(ctx, `
+		SELECT position(
+			convert_to('/uploads/', 'UTF8') IN response_payload
+		) > 0
+		FROM realqa_idempotency_records
+		WHERE operation = 'create_image_upload'
+		  AND idempotency_key = $1
+	`, uploadRequest.Idempotency.Value.Value).Scan(&persistedSignedURL); err != nil {
+		t.Fatal(err)
+	}
+	if persistedSignedURL {
+		t.Fatal("signed upload URL was persisted in idempotency state")
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_submissions
+		SET created_at = transaction_timestamp() - interval '25 hours',
+		    upload_deadline = transaction_timestamp() - interval '2 hours',
+		    upload_expires_at = transaction_timestamp() - interval '1 hour'
+		WHERE id = $1
+	`, createdSubmission.Msg.Submission.SubmissionId.Value); err != nil {
+		t.Fatal(err)
+	}
+	openSubmissions, err := store.Queries().CountOpenSubmissionsForAccount(
+		ctx, toPGUUID(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if openSubmissions != 0 {
+		t.Fatalf("expired open submission count = %d", openSubmissions)
 	}
 	var personalDestinationID uuid.UUID
 	if err = connection.QueryRow(ctx, `
@@ -627,6 +699,28 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		replayed.Msg.Preset.PresetId.Value != created.Msg.Preset.PresetId.Value {
 		t.Fatalf("create replay after feature deletion = %#v", replayed.Msg)
 	}
+}
+
+type submissionTestObjects struct{}
+
+func (submissionTestObjects) Put(
+	context.Context,
+	string,
+	string,
+	[]byte,
+) error {
+	return nil
+}
+
+func (submissionTestObjects) Get(
+	context.Context,
+	string,
+) (imageassets.Object, error) {
+	return imageassets.Object{}, imageassets.ErrObjectNotFound
+}
+
+func (submissionTestObjects) Delete(context.Context, string) error {
+	return nil
 }
 
 func TestFirstPageUsesNonNullUUIDLowerBound(t *testing.T) {

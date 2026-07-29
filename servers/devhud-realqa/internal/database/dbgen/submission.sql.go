@@ -72,6 +72,7 @@ SELECT count(*)::bigint
 FROM realqa_submissions
 WHERE created_by_account_id = $1
   AND state IN ('draft', 'uploading', 'ready')
+  AND upload_expires_at > transaction_timestamp()
 `
 
 func (q *Queries) CountOpenSubmissionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error) {
@@ -830,6 +831,20 @@ func (q *Queries) LockSubmissionRecord(ctx context.Context, submissionRecordID p
 		&i.UploadExpiresAt,
 	)
 	return i, err
+}
+
+const lockUploadSessionAccount = `-- name: LockUploadSessionAccount :exec
+SELECT pg_advisory_xact_lock(
+    hashtextextended(
+        'upload-session:' || $1::uuid::text,
+        757
+    )
+)
+`
+
+func (q *Queries) LockUploadSessionAccount(ctx context.Context, accountID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockUploadSessionAccount, accountID)
+	return err
 }
 
 const markAssetRejected = `-- name: MarkAssetRejected :exec

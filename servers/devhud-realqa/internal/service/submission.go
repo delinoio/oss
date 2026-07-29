@@ -62,10 +62,6 @@ func (service *Submission) CreateSubmission(
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err = authorizeRepository(
-		ctx, service.dependencies, actor, scope, request.Msg.Destination); err != nil {
-		return nil, err
-	}
 	presetID, err := parseUUIDMessage(request.Msg.PresetId)
 	if err != nil {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
@@ -91,6 +87,18 @@ func (service *Submission) CreateSubmission(
 	presetRecord, err := service.dependencies.Store.Queries().GetPresetRecord(
 		ctx, toPGUUID(presetID))
 	if err != nil {
+		return nil, err
+	}
+	persistedDestination, err := destinationFromPresetRecord(presetRecord)
+	if err != nil {
+		return nil, err
+	}
+	if !sameDestinationIdentity(request.Msg.Destination, persistedDestination) {
+		return nil, invalid(
+			realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	if _, _, err = authorizeRepository(
+		ctx, service.dependencies, actor, scope, persistedDestination); err != nil {
 		return nil, err
 	}
 	submissionID, err := newID(service.dependencies)
@@ -127,6 +135,10 @@ func (service *Submission) CreateSubmission(
 				return errIdempotencyReplay
 			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
 				return lookupErr
+			}
+			if lockErr := queries.LockUploadSessionAccount(
+				ctx, toPGUUID(actor.accountID)); lockErr != nil {
+				return lockErr
 			}
 			open, countErr := queries.CountOpenSubmissionsForAccount(
 				ctx, toPGUUID(actor.accountID))
@@ -215,6 +227,36 @@ func (service *Submission) CreateSubmission(
 			OriginallyCompletedAt: created.CreatedAt,
 		},
 	}), nil
+}
+
+func destinationFromPresetRecord(
+	record dbgen.GetPresetRecordRow,
+) (*realqav1.TrackerDestination, error) {
+	installationID, err := fromPGUUID(record.InstallationID)
+	if err != nil {
+		return nil, err
+	}
+	return &realqav1.TrackerDestination{
+		Tracker:        realqav1.TrackerKind_TRACKER_KIND_GITHUB_COM,
+		InstallationId: &realqav1.UuidV7{Value: installationID.String()},
+		Repository: &realqav1.GitHubRepositoryRef{
+			RepositoryId: record.RepositoryID,
+			Owner:        record.RepositoryOwner,
+			Name:         record.RepositoryName,
+		},
+	}, nil
+}
+
+func sameDestinationIdentity(
+	requested *realqav1.TrackerDestination,
+	persisted *realqav1.TrackerDestination,
+) bool {
+	return requested != nil && persisted != nil &&
+		requested.Tracker == persisted.Tracker &&
+		requested.InstallationId != nil && persisted.InstallationId != nil &&
+		requested.InstallationId.Value == persisted.InstallationId.Value &&
+		requested.Repository != nil && persisted.Repository != nil &&
+		requested.Repository.RepositoryId == persisted.Repository.RepositoryId
 }
 
 func validateImages(images []*realqav1.ImageDeclaration) error {

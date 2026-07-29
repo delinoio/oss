@@ -2,7 +2,16 @@
 SELECT count(*)::bigint
 FROM realqa_submissions
 WHERE created_by_account_id = sqlc.arg(account_id)
-  AND state IN ('draft', 'uploading', 'ready');
+  AND state IN ('draft', 'uploading', 'ready')
+  AND upload_expires_at > transaction_timestamp();
+
+-- name: LockUploadSessionAccount :exec
+SELECT pg_advisory_xact_lock(
+    hashtextextended(
+        'upload-session:' || sqlc.arg(account_id)::uuid::text,
+        757
+    )
+);
 
 -- name: CreateSubmissionRecord :one
 INSERT INTO realqa_submissions (

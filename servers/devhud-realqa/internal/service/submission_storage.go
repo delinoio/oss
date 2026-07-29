@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -30,7 +32,12 @@ func (service *Submission) CreateImageUpload(
 		request.Msg.ExpectedAssetRevision.Value <= 0 {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_STALE_REVISION)
 	}
-	if _, err := parseIdempotency(request.Msg.Idempotency); err != nil {
+	idempotencyID, err := parseIdempotency(request.Msg.Idempotency)
+	if err != nil {
+		return nil, err
+	}
+	requestDigest, err := digestMessage(request.Msg)
+	if err != nil {
 		return nil, err
 	}
 	actor, submissionID, submission, scope, err :=
@@ -41,15 +48,19 @@ func (service *Submission) CreateImageUpload(
 	if service.dependencies.UploadSigner == nil {
 		return nil, storageUnavailable()
 	}
+	assetID, err := parseUUIDMessage(request.Msg.AssetId)
+	if err != nil {
+		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
+	}
+	if replay, ok, replayErr := service.imageUploadReplay(
+		ctx, actor, idempotencyID, requestDigest, submissionID, assetID); ok {
+		return replay, replayErr
+	}
 	now := service.dependencies.Clock.Now().UTC()
 	if !now.Before(submission.UploadDeadline.Time) {
 		return nil, rqerr.New(connect.CodeDeadlineExceeded,
 			realqav1.ErrorReason_ERROR_REASON_UPLOAD_DEADLINE_EXCEEDED,
 			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
-	}
-	assetID, err := parseUUIDMessage(request.Msg.AssetId)
-	if err != nil {
-		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_MALFORMED_IMAGE)
 	}
 	asset, err := service.dependencies.Store.Queries().GetAssetRecord(
 		ctx, dbgen.GetAssetRecordParams{
@@ -65,19 +76,86 @@ func (service *Submission) CreateImageUpload(
 		return nil, stale(asset.Revision)
 	}
 	declaration := declarationFromRecord(asset)
-	signed, err := service.dependencies.UploadSigner.Sign(
+	signed, err := service.dependencies.UploadSigner.SignIdempotent(
 		now, submission.UploadDeadline.Time, submissionID.String(),
-		assetID.String(), declaration)
+		assetID.String(), declaration, idempotencyID.String())
 	if err != nil {
 		return nil, storageUnavailable()
 	}
-	updated, err := service.dependencies.Store.Queries().AuthorizeAssetUpload(
-		ctx, dbgen.AuthorizeAssetUploadParams{
-			UploadTokenDigest: signed.TokenDigest[:],
-			UploadExpiresAt:   pgTimestamp(signed.ExpiresAt),
-			ID:                toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
-			ExpectedRevision: request.Msg.ExpectedAssetRevision.Value,
+	recordID, err := newID(service.dependencies)
+	if err != nil {
+		return nil, err
+	}
+	var response *realqav1.CreateImageUploadResponse
+	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if existing, lookupErr := queries.GetIdempotencyRecord(
+				ctx, idempotencyLookupFor(
+					actor, idempotencyID, "create_image_upload"),
+			); lookupErr == nil {
+				if !bytes.Equal(existing.RequestDigest, requestDigest) {
+					return idempotencyConflict()
+				}
+				return errIdempotencyReplay
+			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
+				return lookupErr
+			}
+			locked, lockErr := queries.LockAssetRecord(
+				ctx, dbgen.LockAssetRecordParams{
+					ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
+				})
+			if lockErr != nil {
+				return lockErr
+			}
+			if locked.Revision != request.Msg.ExpectedAssetRevision.Value {
+				return stale(locked.Revision)
+			}
+			updated, updateErr := queries.AuthorizeAssetUpload(
+				ctx, dbgen.AuthorizeAssetUploadParams{
+					UploadTokenDigest: signed.TokenDigest[:],
+					UploadExpiresAt:   pgTimestamp(signed.ExpiresAt),
+					ID:                toPGUUID(assetID),
+					SubmissionID:      toPGUUID(submissionID),
+					ExpectedRevision:  request.Msg.ExpectedAssetRevision.Value,
+				})
+			if updateErr != nil {
+				return updateErr
+			}
+			response = &realqav1.CreateImageUploadResponse{
+				Asset: updatedAssetProto(updated), SignedPutUrl: signed.URL,
+				RequiredContentType: string(declaration.MediaType),
+				RequiredSha256:      declaration.SHA256,
+				ExpiresAt:           timestamppb.New(signed.ExpiresAt),
+				UploadDeadline:      timestamp(submission.UploadDeadline),
+				Idempotency: &realqav1.IdempotencyResult{
+					Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_IMAGE_UPLOAD,
+					OriginallyCompletedAt: timestamppb.New(now),
+				},
+			}
+			stored := proto.Clone(response).(*realqav1.CreateImageUploadResponse)
+			stored.SignedPutUrl = ""
+			payload, marshalErr := proto.MarshalOptions{
+				Deterministic: true,
+			}.Marshal(stored)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			_, createErr := queries.CreateIdempotencyRecord(
+				ctx, dbgen.CreateIdempotencyRecordParams{
+					ID: toPGUUID(recordID), CallerKind: "user",
+					CallerDigest: actor.digest, Operation: "create_image_upload",
+					IdempotencyKey: toPGUUID(idempotencyID),
+					RequestDigest:  requestDigest, ResourceID: toPGUUID(assetID),
+					ResponsePayload: payload,
+				})
+			return createErr
 		})
+	if err != nil {
+		if replay, ok, replayErr := service.imageUploadReplay(
+			ctx, actor, idempotencyID, requestDigest, submissionID, assetID); ok {
+			return replay, replayErr
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		current, getErr := service.dependencies.Store.Queries().GetAssetRecord(
 			ctx, dbgen.GetAssetRecordParams{
@@ -92,17 +170,59 @@ func (service *Submission) CreateImageUpload(
 	}
 	audit(ctx, service.dependencies, actor, "image_upload_authorized",
 		scope, assetID, "allow", "success")
-	return connect.NewResponse(&realqav1.CreateImageUploadResponse{
-		Asset: updatedAssetProto(updated), SignedPutUrl: signed.URL,
-		RequiredContentType: string(declaration.MediaType),
-		RequiredSha256:      declaration.SHA256,
-		ExpiresAt:           timestamppb.New(signed.ExpiresAt),
-		UploadDeadline:      timestamp(submission.UploadDeadline),
-		Idempotency: &realqav1.IdempotencyResult{
-			Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_IMAGE_UPLOAD,
-			OriginallyCompletedAt: timestamppb.New(now),
-		},
-	}), nil
+	return connect.NewResponse(response), nil
+}
+
+func (service *Submission) imageUploadReplay(
+	ctx context.Context,
+	actor caller,
+	idempotencyID uuid.UUID,
+	digest []byte,
+	submissionID uuid.UUID,
+	assetID uuid.UUID,
+) (*connect.Response[realqav1.CreateImageUploadResponse], bool, error) {
+	record, err := service.dependencies.Store.Queries().GetIdempotencyRecord(
+		ctx, idempotencyLookupFor(
+			actor, idempotencyID, "create_image_upload"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	if !bytes.Equal(record.RequestDigest, digest) {
+		return nil, true, idempotencyConflict()
+	}
+	response := new(realqav1.CreateImageUploadResponse)
+	if err = proto.Unmarshal(record.ResponsePayload, response); err != nil {
+		return nil, true, err
+	}
+	if response.Asset == nil || response.Asset.AssetId == nil ||
+		response.Asset.AssetId.Value != assetID.String() ||
+		response.ExpiresAt == nil || response.UploadDeadline == nil {
+		return nil, true, errors.New("realqa images: invalid upload replay state")
+	}
+	declaration := imageassets.Declaration{
+		MediaType:    imageassets.MediaType(response.RequiredContentType),
+		EncodedBytes: response.Asset.EncodedBytes,
+		Width:        int(response.Asset.PixelWidth),
+		Height:       int(response.Asset.PixelHeight),
+		SHA256:       response.RequiredSha256,
+	}
+	signed, err := service.dependencies.UploadSigner.ReplayIdempotent(
+		response.ExpiresAt.AsTime(), response.UploadDeadline.AsTime(),
+		submissionID.String(), assetID.String(), declaration,
+		idempotencyID.String())
+	if err != nil {
+		return nil, true, err
+	}
+	response.SignedPutUrl = signed.URL
+	response.Idempotency = &realqav1.IdempotencyResult{
+		Replayed:              true,
+		Operation:             realqav1.IdempotentOperation_IDEMPOTENT_OPERATION_CREATE_IMAGE_UPLOAD,
+		OriginallyCompletedAt: timestamp(record.CompletedAt),
+	}
+	return connect.NewResponse(response), true, nil
 }
 
 func (service *Submission) LookupUploadGrant(
@@ -233,6 +353,10 @@ func (service *Submission) FinalizeImageUpload(
 	var finalized dbgen.RealqaAsset
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
+			if _, lockErr := queries.LockSubmissionRecord(
+				ctx, toPGUUID(submissionID)); lockErr != nil {
+				return lockErr
+			}
 			if _, markErr := queries.MarkAssetVerifying(
 				ctx, dbgen.MarkAssetVerifyingParams{
 					ID: toPGUUID(assetID), SubmissionID: toPGUUID(submissionID),
@@ -270,9 +394,9 @@ func (service *Submission) FinalizeImageUpload(
 			return sumErr
 		})
 	if err != nil {
-		_ = service.dependencies.Objects.Delete(
-			context.WithoutCancel(ctx),
-			imageassets.VerifiedObjectKey(assetID.String()))
+		// The verified key is deterministic, and a concurrent finalize may
+		// already own the successful database transition for these same bytes.
+		// Expiry/deletion cleanup removes any truly orphaned verified object.
 		if errors.Is(err, imageassets.ErrEncodedTooLarge) {
 			return nil, invalid(
 				realqav1.ErrorReason_ERROR_REASON_SESSION_TOO_LARGE)

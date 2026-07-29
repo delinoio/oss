@@ -1,6 +1,7 @@
 package migrations
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"sync"
@@ -93,6 +94,36 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 	}
 	if count != 4 {
 		t.Fatalf("applied migration count = %d, want 4", count)
+	}
+	for _, operation := range []string{
+		"create_submission",
+		"create_image_upload",
+	} {
+		if _, err = pool.Exec(ctx, `
+			INSERT INTO realqa_idempotency_records (
+				id, caller_kind, caller_digest, operation, idempotency_key,
+				request_digest, resource_id
+			) VALUES ($1, 'user', $2, $3, $4, $5, $6)
+		`, uuidv7.MustNew(), bytes.Repeat([]byte{1}, 32), operation,
+			uuidv7.MustNew(), bytes.Repeat([]byte{2}, 32),
+			uuidv7.MustNew()); err != nil {
+			t.Fatalf("insert %s idempotency record: %v", operation, err)
+		}
+	}
+	for _, eventType := range []string{
+		"submission_created",
+		"image_upload_authorized",
+		"image_upload_verified",
+		"image_deleted",
+		"submission_assets_deleted",
+	} {
+		if _, err = pool.Exec(ctx, `
+			INSERT INTO realqa_audits (
+				id, event_type, actor_reference, decision, result
+			) VALUES ($1, $2, 'system', 'allow', 'success')
+		`, uuidv7.MustNew(), eventType); err != nil {
+			t.Fatalf("insert %s audit: %v", eventType, err)
+		}
 	}
 	if _, err = pool.Exec(ctx, `
 		INSERT INTO realqa_github_connections (

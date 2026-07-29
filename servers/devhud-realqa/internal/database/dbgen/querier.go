@@ -66,6 +66,7 @@ type Querier interface {
 	LockPresetOwner(ctx context.Context, arg LockPresetOwnerParams) error
 	LockShortcutAccount(ctx context.Context, accountID pgtype.UUID) error
 	LockSubmissionRecord(ctx context.Context, submissionRecordID pgtype.UUID) (RealqaSubmission, error)
+	LockUploadSessionAccount(ctx context.Context, accountID pgtype.UUID) error
 	MarkAssetRejected(ctx context.Context, arg MarkAssetRejectedParams) error
 	MarkAssetUploaded(ctx context.Context, arg MarkAssetUploadedParams) (RealqaAsset, error)
 	MarkAssetVerified(ctx context.Context, arg MarkAssetVerifiedParams) (RealqaAsset, error)

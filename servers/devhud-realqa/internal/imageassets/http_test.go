@@ -182,6 +182,89 @@ func TestSignedPUTRejectsExpiryAndExtraScope(t *testing.T) {
 	}
 }
 
+func TestIdempotentSignedPUTReplaysWithoutPersistingBearer(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	deadline := now.Add(time.Hour)
+	signer, err := NewSigner(
+		"https://assets.realqa.deli.dev", bytes.Repeat([]byte("s"), 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := pngFixture(t)
+	declaration := declarationFor(body, MediaTypePNG, 4, 3)
+	signed, err := signer.SignIdempotent(
+		now, deadline, "submission", "asset", declaration, "idempotency")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := signer.ReplayIdempotent(
+		signed.ExpiresAt, deadline, "submission", "asset",
+		declaration, "idempotency")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.URL != signed.URL ||
+		replayed.TokenDigest != signed.TokenDigest ||
+		replayed.ExpiresAt != signed.ExpiresAt {
+		t.Fatalf("replayed signed PUT = %#v, want %#v", replayed, signed)
+	}
+	other, err := signer.SignIdempotent(
+		now, deadline, "submission", "asset", declaration, "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.URL == signed.URL || other.TokenDigest == signed.TokenDigest {
+		t.Fatal("distinct idempotency keys produced the same signed PUT")
+	}
+}
+
+func TestUploadStateFailurePreservesSharedStagingObject(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	signer, err := NewSigner(
+		"https://assets.realqa.deli.dev", bytes.Repeat([]byte("s"), 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := pngFixture(t)
+	declaration := declarationFor(body, MediaTypePNG, 4, 3)
+	signed, err := signer.Sign(
+		now, now.Add(time.Hour), "submission", "asset", declaration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := Grant{
+		TokenDigest: signed.TokenDigest, SubmissionID: "submission",
+		AssetID: "asset", Declaration: declaration,
+		ExpiresAt: signed.ExpiresAt, Deadline: now.Add(time.Hour),
+	}
+	objects := &memoryObjects{}
+	handler := UploadHandler(
+		signer, objects,
+		func(_ context.Context, _ [32]byte) (Grant, error) {
+			return grant, nil
+		},
+		func(_ context.Context, _ Grant) error {
+			return errors.New("concurrent completion")
+		},
+		func() time.Time { return now.Add(time.Minute) },
+	)
+	request := httptest.NewRequest(http.MethodPut, signed.URL, bytes.NewReader(body))
+	request.Header.Set("Content-Type", string(MediaTypePNG))
+	request.Header.Set(ContentSHA256Header, declaration.SHA256)
+	request.ContentLength = int64(len(body))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("upload response = %d", response.Code)
+	}
+	if _, err = objects.Get(
+		context.Background(), StagingObjectKey("asset")); err != nil {
+		t.Fatalf("shared staging object was removed: %v", err)
+	}
+}
+
 func TestPublicGETBecomesPlaceholderAtSameURL(t *testing.T) {
 	t.Parallel()
 	objects := &memoryObjects{}

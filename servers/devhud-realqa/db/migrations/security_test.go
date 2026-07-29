@@ -70,6 +70,13 @@ func TestImageStoragePersistsOnlyUploadDigestAndPublicTombstone(t *testing.T) {
 		"realqa_public_asset_tombstones",
 		"source_sha256 bytea",
 		"sanitized_sha256 bytea",
+		"'create_submission'",
+		"'create_image_upload'",
+		"'submission_created'",
+		"'image_upload_authorized'",
+		"'image_upload_verified'",
+		"'image_deleted'",
+		"'submission_assets_deleted'",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("image storage schema is missing %q", required)

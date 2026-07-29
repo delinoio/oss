@@ -79,6 +79,64 @@ func (signer *Signer) Sign(
 		submissionID == "" || assetID == "" || deadline.Before(now) {
 		return SignedPUT{}, ErrInvalidScope
 	}
+	rawToken := make([]byte, 24)
+	if _, err := signer.random(rawToken); err != nil {
+		return SignedPUT{}, errors.New("realqa images: token generation failed")
+	}
+	return signer.signToken(
+		now, deadline, submissionID, assetID, declaration, rawToken)
+}
+
+// SignIdempotent derives a recoverable bearer from the server secret and the
+// operation's UUID v7 replay identity. Only its digest is persisted.
+func (signer *Signer) SignIdempotent(
+	now time.Time,
+	deadline time.Time,
+	submissionID string,
+	assetID string,
+	declaration Declaration,
+	idempotencyKey string,
+) (SignedPUT, error) {
+	if signer == nil || idempotencyKey == "" {
+		return SignedPUT{}, ErrInvalidScope
+	}
+	return signer.signToken(
+		now, deadline, submissionID, assetID, declaration,
+		signer.idempotentToken(submissionID, assetID, idempotencyKey),
+	)
+}
+
+// ReplayIdempotent reconstructs the original signed PUT without retaining its
+// bearer token or URL in durable state.
+func (signer *Signer) ReplayIdempotent(
+	expires time.Time,
+	deadline time.Time,
+	submissionID string,
+	assetID string,
+	declaration Declaration,
+	idempotencyKey string,
+) (SignedPUT, error) {
+	if signer == nil || idempotencyKey == "" {
+		return SignedPUT{}, ErrInvalidScope
+	}
+	return signer.signedPUT(
+		expires, deadline, submissionID, assetID, declaration,
+		signer.idempotentToken(submissionID, assetID, idempotencyKey),
+	)
+}
+
+func (signer *Signer) signToken(
+	now time.Time,
+	deadline time.Time,
+	submissionID string,
+	assetID string,
+	declaration Declaration,
+	rawToken []byte,
+) (SignedPUT, error) {
+	if signer == nil || signer.origin == nil || now.IsZero() ||
+		submissionID == "" || assetID == "" || deadline.Before(now) {
+		return SignedPUT{}, ErrInvalidScope
+	}
 	expires := now.Add(DefaultSignedPUTTTL)
 	if deadline.Before(expires) {
 		expires = deadline
@@ -86,9 +144,22 @@ func (signer *Signer) Sign(
 	if !expires.After(now) {
 		return SignedPUT{}, ErrExpired
 	}
-	rawToken := make([]byte, 24)
-	if _, err := signer.random(rawToken); err != nil {
-		return SignedPUT{}, errors.New("realqa images: token generation failed")
+	return signer.signedPUT(
+		expires, deadline, submissionID, assetID, declaration, rawToken)
+}
+
+func (signer *Signer) signedPUT(
+	expires time.Time,
+	deadline time.Time,
+	submissionID string,
+	assetID string,
+	declaration Declaration,
+	rawToken []byte,
+) (SignedPUT, error) {
+	if signer == nil || signer.origin == nil || expires.IsZero() ||
+		submissionID == "" || assetID == "" || len(rawToken) != 24 ||
+		expires.After(deadline) {
+		return SignedPUT{}, ErrInvalidScope
 	}
 	token := base64.RawURLEncoding.EncodeToString(rawToken)
 	digest := sha256.Sum256([]byte(token))
@@ -107,6 +178,19 @@ func (signer *Signer) Sign(
 	return SignedPUT{
 		URL: target.String(), TokenDigest: digest, ExpiresAt: expires,
 	}, nil
+}
+
+func (signer *Signer) idempotentToken(
+	submissionID string,
+	assetID string,
+	idempotencyKey string,
+) []byte {
+	mac := hmac.New(sha256.New, signer.key)
+	_, _ = fmt.Fprintf(
+		mac, "realqa-upload-token:v1\n%s\n%s\n%s",
+		submissionID, assetID, idempotencyKey,
+	)
+	return append([]byte(nil), mac.Sum(nil)[:24]...)
 }
 
 // TokenDigest returns the lookup key without logging or retaining the bearer
