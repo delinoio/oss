@@ -914,6 +914,16 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         }
     }
 
+    pub(crate) fn has_retained_feature_binding(
+        &mut self,
+        feature: AuthFeature,
+    ) -> Result<bool, AuthError> {
+        let Some(retained) = self.vault.load()? else {
+            return Ok(false);
+        };
+        validate_retained_feature_binding(&retained, feature)
+    }
+
     fn reject_account_switch(&mut self, subject: &str) -> Result<(), AuthError> {
         if let SessionState::SignedIn {
             subject: active_subject,
@@ -1160,6 +1170,14 @@ fn validate_retained_session_shape(session: &VaultSession) -> Result<(), AuthErr
         return Err(AuthError::TokenInvalid);
     }
     validate_device_session_shape(session.device_session_key.expose())
+}
+
+pub(crate) fn validate_retained_feature_binding(
+    session: &VaultSession,
+    feature: AuthFeature,
+) -> Result<bool, AuthError> {
+    validate_retained_session_shape(session)?;
+    Ok(session.refresh_tokens.contains_key(&feature))
 }
 
 fn device_session_matches(value: &str, subject: &str) -> Result<bool, AuthError> {
@@ -1559,6 +1577,31 @@ mod tests {
         ] {
             assert!(!is_mobile_callback_boundary(&Url::parse(callback).unwrap()));
         }
+    }
+
+    #[test]
+    fn retained_binding_check_requires_the_exact_feature_grant() {
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::Deck,
+                "deck-refresh",
+                key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut manager = manager(FakeTransport::default(), vault);
+
+        assert!(
+            manager
+                .has_retained_feature_binding(AuthFeature::Deck)
+                .unwrap()
+        );
+        assert!(
+            !manager
+                .has_retained_feature_binding(AuthFeature::RealQa)
+                .unwrap()
+        );
     }
 
     #[test]

@@ -29,6 +29,7 @@ import {
   type ToolCapability,
   ToolPlatform,
 } from "./tools/registry";
+import { BrowserCaptureComposer } from "./realqa/BrowserCaptureComposer";
 import { Dialog } from "./ui/Dialog";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import {
@@ -909,6 +910,13 @@ function ApplicationSurface({
         startupShortcutFailure={runtime.runtimeInfo.shortcutStartupFailure}
       />
     );
+  }
+
+  if (
+    runtime.status === "ready" &&
+    runtime.runtimeInfo.surface === "realqa-composer"
+  ) {
+    return <BrowserCaptureComposer />;
   }
 
   return (

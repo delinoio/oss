@@ -308,6 +308,31 @@ select:focus-visible,
   padding: 1.25rem;
 }
 
+.realqa-composer-shell {
+  display: grid;
+  width: min(100%, 64rem);
+  min-height: 100vh;
+  min-height: 100dvh;
+  gap: 1.5rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.realqa-capture-card {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.realqa-capture-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 30rem;
+  border: 1px solid #d5d9e0;
+  border-radius: 0.75rem;
+  background: #eceff3;
+  object-fit: contain;
+}
+
 .app-header {
   display: flex;
   align-items: center;

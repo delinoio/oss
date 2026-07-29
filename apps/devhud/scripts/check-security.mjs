@@ -113,9 +113,12 @@ requireCondition(
   extensionServiceWorkerSource.includes("chrome.tabs.captureVisibleTab") &&
     extensionServiceWorkerSource.includes("captureMode: \"os-capture\"") &&
     extensionServiceWorkerSource.includes("chrome.permissions.contains") &&
+    extensionServiceWorkerSource.includes("capturedTabId") &&
+    extensionServiceWorkerSource.includes("capturedWindowId") &&
+    extensionServiceWorkerSource.includes("tab.url !== capturedUrl") &&
     !extensionServiceWorkerSource.includes("captureBeyondViewport") &&
     !extensionServiceWorkerSource.includes("debugger"),
-  "RealQA extension must use visible-viewport capture, exact optional permission verification, and restricted-page OS fallback",
+  "RealQA extension must use visible-viewport capture, immutable tab identity, exact optional permission verification, and restricted-page OS fallback",
 );
 requireCondition(
   extensionProtocolSource.includes("25 * 1024 * 1024") &&
@@ -128,11 +131,18 @@ requireCondition(
 requireCondition(
   realqaNativeHostSource.includes("deny_unknown_fields") &&
     realqaNativeHostSource.includes("validate_origin") &&
-    realqaNativeHostSource.includes("try_lock_shared") &&
+    realqaNativeHostSource.includes("SocketComposerDelivery") &&
+    realqaNativeHostSource.includes("start_composer_listener") &&
+    realqaNativeHostSource.includes('.arg("--realqa-composer")') &&
+    !realqaNativeHostSource.includes("INBOX_DIRECTORY") &&
+    rustSource.includes("has_prior_feature_binding") &&
+    rustSource.includes("RealQaBrowserInbox") &&
+    rustSource.includes('argument == "--realqa-composer"') &&
+    rustSource.includes("build_realqa_composer_window") &&
     realqaNativeHostSource.includes("MAX_ENCODED_IMAGE_BYTES") &&
     realqaNativeHostSource.includes("MAX_EXTENSION_MESSAGE_BYTES") &&
     realqaNativeHostSource.includes("MAX_HOST_RESPONSE_BYTES"),
-  "RealQA native host must revalidate schema/origin, live composer readiness, and framing limits",
+  "RealQA native host must revalidate schema/origin, use authenticated memory-only composer IPC, and retain framing limits",
 );
 requireCondition(
   extensionBuildSource.includes("FIXTURE_EXTENSION_ID") &&
@@ -219,6 +229,7 @@ const expectedCapabilities = {
       "allow-realqa-composer-flatten-image",
       "allow-realqa-composer-remove-image",
       "allow-realqa-composer-reset-session",
+      "allow-realqa-take-browser-capture",
     ],
   },
 };
@@ -309,7 +320,8 @@ requireCondition(
 requireCondition(
   [...composerCommands].every(
     (command) =>
-      command.startsWith("realqa_composer_") &&
+      (command.startsWith("realqa_composer_") ||
+        command === "realqa_take_browser_capture") &&
       ![
         "realqa_capture_permission_status",
         "realqa_request_capture_permission",
@@ -390,8 +402,8 @@ for (const guard of [
 ]) {
   requireCondition(
     (rustSource.match(new RegExp(guard.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "gu")) ?? [])
-      .length === 3,
-    `all three webviews must apply ${guard}`,
+      .length === 4,
+    `all four desktop and mobile webviews must apply ${guard}`,
   );
 }
 for (const denial of [
@@ -407,7 +419,7 @@ for (const denial of [
   requireCondition(rustSource.includes(denial), `desktop resource policy must contain ${denial}`);
 }
 requireCondition(
-  (rustSource.match(/\.devtools\(true\)/gu) ?? []).length === 2 &&
+  (rustSource.match(/\.devtools\(true\)/gu) ?? []).length === 3 &&
     rustSource.includes(".devtools(false)"),
   "DevTools must be limited to the guarded desktop development/preview windows",
 );

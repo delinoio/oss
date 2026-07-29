@@ -713,6 +713,29 @@ impl NativeAuthState {
                 .clear(),
         }
     }
+
+    pub(crate) fn has_prior_feature_binding(
+        &self,
+        feature: AuthFeature,
+    ) -> Result<bool, AuthError> {
+        let mut guard = self
+            .manager
+            .lock()
+            .map_err(|_| AuthError::SecureVaultUnavailable)?;
+        match guard.as_mut() {
+            Some(manager) => manager.has_retained_feature_binding(feature),
+            None => {
+                let mut vault = self
+                    .fallback_vault
+                    .lock()
+                    .map_err(|_| AuthError::SecureVaultUnavailable)?;
+                let Some(retained) = vault.load()? else {
+                    return Ok(false);
+                };
+                crate::auth::validate_retained_feature_binding(&retained, feature)
+            }
+        }
+    }
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]

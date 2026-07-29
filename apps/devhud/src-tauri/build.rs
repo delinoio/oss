@@ -29,6 +29,7 @@ const COMMANDS: &[&str] = &[
     "realqa_composer_flatten_image",
     "realqa_composer_remove_image",
     "realqa_composer_reset_session",
+    "realqa_take_browser_capture",
 ];
 
 fn main() {

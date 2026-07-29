@@ -3,22 +3,37 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::JoinHandle,
     time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use interprocess::{
+    ConnectWaitMode,
+    local_socket::{
+        GenericFilePath, GenericNamespaced, ListenerOptions, NameType as _, Stream, ToFsName as _,
+        ToNsName as _,
+        traits::{Listener as _, Stream as _},
+    },
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 const FIXTURE_EXTENSION_ID: &str = "neiiglibncgobmehenjkhicabgfpggff";
 const HOST_STATE_DIRECTORY: &str = "realqa-native-host";
 const PAIRING_FILE: &str = "pairing.v1.json";
-const COMPOSER_READY_FILE: &str = "composer.ready";
-const INBOX_DIRECTORY: &str = "inbox";
+const COMPOSER_ENDPOINT_FILE: &str = "composer-endpoint.v1.json";
+const COMPOSER_SOCKET_PREFIX: &str = "dev.deli.devhud.realqa";
 const MAX_EXTENSION_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_HOST_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_ENCODED_IMAGE_BYTES: usize = 25 * 1024 * 1024;
 const COMPOSER_WAIT: Duration = Duration::from_secs(10);
+const COMPOSER_CONNECT_WAIT: Duration = Duration::from_millis(500);
+const COMPOSER_RESPONSE_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NativeHostFailure {
@@ -36,6 +51,13 @@ pub(crate) enum NativeHostFailure {
 struct PairingRecord {
     version: u8,
     extension_origin: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ComposerEndpointRecord {
+    version: u8,
+    token: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -125,9 +147,18 @@ pub(crate) enum NativeHostRequest {
 }
 
 impl NativeHostRequest {
-    fn request_id(&self) -> &str {
+    pub(crate) fn request_id(&self) -> &str {
         match self {
             Self::SubmitCapture { request_id, .. } => request_id,
+        }
+    }
+
+    #[cfg_attr(not(feature = "desktop-cef"), allow(dead_code))]
+    pub(crate) fn encoded_image_bytes(&self) -> usize {
+        match self {
+            Self::SubmitCapture { image, .. } => {
+                image.as_ref().map_or(0, |image| image.encoded_bytes)
+            }
         }
     }
 
@@ -360,6 +391,31 @@ enum NativeHostStatus {
     Rejected,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+enum ComposerIpcRequest {
+    Ping {
+        version: u8,
+    },
+    SubmitCapture {
+        version: u8,
+        capture: NativeHostRequest,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ComposerIpcResponse {
+    Ready,
+    Accepted,
+    Rejected,
+}
+
 pub(crate) trait ComposerDelivery {
     fn is_ready(&self) -> bool;
     fn launch(&self) -> Result<(), NativeHostFailure>;
@@ -367,11 +423,12 @@ pub(crate) trait ComposerDelivery {
     fn enqueue(&self, request: &NativeHostRequest) -> Result<(), NativeHostFailure>;
 }
 
-pub(crate) struct FileComposerDelivery {
+#[derive(Clone)]
+pub(crate) struct SocketComposerDelivery {
     root: PathBuf,
 }
 
-impl FileComposerDelivery {
+impl SocketComposerDelivery {
     fn new(root: PathBuf) -> Self {
         Self { root }
     }
@@ -391,22 +448,46 @@ impl FileComposerDelivery {
             "devhud"
         }))
     }
+
+    fn endpoint(&self) -> Result<ComposerEndpointRecord, NativeHostFailure> {
+        let bytes = fs::read(self.root.join(COMPOSER_ENDPOINT_FILE))
+            .map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+        let endpoint: ComposerEndpointRecord =
+            serde_json::from_slice(&bytes).map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+        if endpoint.version != 1 || Uuid::parse_str(&endpoint.token).is_err() {
+            return Err(NativeHostFailure::ComposerUnavailable);
+        }
+        Ok(endpoint)
+    }
+
+    fn exchange(
+        &self,
+        request: &ComposerIpcRequest,
+    ) -> Result<ComposerIpcResponse, NativeHostFailure> {
+        let endpoint = self.endpoint()?;
+        let name = composer_socket_name(&self.root, &endpoint)?;
+        let mut stream = interprocess::local_socket::ConnectOptions::new()
+            .name(name)
+            .wait_mode(ConnectWaitMode::Timeout(COMPOSER_CONNECT_WAIT))
+            .connect_sync()
+            .map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+        let response_wait = match request {
+            ComposerIpcRequest::Ping { .. } => COMPOSER_CONNECT_WAIT,
+            ComposerIpcRequest::SubmitCapture { .. } => COMPOSER_RESPONSE_WAIT,
+        };
+        stream
+            .set_recv_timeout(Some(response_wait))
+            .and_then(|()| stream.set_send_timeout(Some(COMPOSER_CONNECT_WAIT)))
+            .map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+        write_ipc_frame(&mut stream, request, MAX_EXTENSION_MESSAGE_BYTES)?;
+        read_ipc_frame(&mut stream, MAX_HOST_RESPONSE_BYTES)
+    }
 }
 
-impl ComposerDelivery for FileComposerDelivery {
+impl ComposerDelivery for SocketComposerDelivery {
     fn is_ready(&self) -> bool {
-        let path = self.root.join(COMPOSER_READY_FILE);
-        let Ok(file) = OpenOptions::new().read(true).write(true).open(path) else {
-            return false;
-        };
-        match fs2::FileExt::try_lock_shared(&file) {
-            Ok(()) => {
-                let _ = fs2::FileExt::unlock(&file);
-                false
-            }
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => true,
-            Err(_) => false,
-        }
+        self.exchange(&ComposerIpcRequest::Ping { version: 1 })
+            .is_ok_and(|response| response == ComposerIpcResponse::Ready)
     }
 
     fn launch(&self) -> Result<(), NativeHostFailure> {
@@ -432,13 +513,65 @@ impl ComposerDelivery for FileComposerDelivery {
     }
 
     fn enqueue(&self, request: &NativeHostRequest) -> Result<(), NativeHostFailure> {
-        let inbox = self.root.join(INBOX_DIRECTORY);
-        create_private_directory(&inbox).map_err(|_| NativeHostFailure::StateUnavailable)?;
-        let destination = inbox.join(format!("{}.json", request.request_id()));
-        let bytes = serde_json::to_vec(request).map_err(|_| NativeHostFailure::InvalidMessage)?;
-        write_private_new_file(&destination, &bytes)
+        let response = self.exchange(&ComposerIpcRequest::SubmitCapture {
+            version: 1,
+            capture: request.clone(),
+        })?;
+        (response == ComposerIpcResponse::Accepted)
+            .then_some(())
+            .ok_or(NativeHostFailure::ComposerUnavailable)
+    }
+}
+
+fn composer_socket_name(
+    root: &Path,
+    endpoint: &ComposerEndpointRecord,
+) -> Result<interprocess::local_socket::Name<'static>, NativeHostFailure> {
+    if GenericNamespaced::is_supported() {
+        format!("{COMPOSER_SOCKET_PREFIX}.{}", endpoint.token)
+            .to_ns_name::<GenericNamespaced>()
+            .map_err(|_| NativeHostFailure::StateUnavailable)
+    } else {
+        root.join(format!("composer-{}.sock", endpoint.token))
+            .to_fs_name::<GenericFilePath>()
             .map_err(|_| NativeHostFailure::StateUnavailable)
     }
+}
+
+fn write_ipc_frame(
+    stream: &mut Stream,
+    value: &impl Serialize,
+    maximum: usize,
+) -> Result<(), NativeHostFailure> {
+    let payload = serde_json::to_vec(value).map_err(|_| NativeHostFailure::InvalidMessage)?;
+    if payload.is_empty() || payload.len() >= maximum {
+        return Err(NativeHostFailure::MessageTooLarge);
+    }
+    let length = u32::try_from(payload.len()).map_err(|_| NativeHostFailure::MessageTooLarge)?;
+    stream
+        .write_all(&length.to_ne_bytes())
+        .and_then(|()| stream.write_all(&payload))
+        .and_then(|()| stream.flush())
+        .map_err(|_| NativeHostFailure::ComposerUnavailable)
+}
+
+fn read_ipc_frame<T: for<'de> Deserialize<'de>>(
+    stream: &mut Stream,
+    maximum: usize,
+) -> Result<T, NativeHostFailure> {
+    let mut length = [0_u8; 4];
+    stream
+        .read_exact(&mut length)
+        .map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+    let length = u32::from_ne_bytes(length) as usize;
+    if length == 0 || length >= maximum {
+        return Err(NativeHostFailure::MessageTooLarge);
+    }
+    let mut payload = vec![0; length];
+    stream
+        .read_exact(&mut payload)
+        .map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+    serde_json::from_slice(&payload).map_err(|_| NativeHostFailure::InvalidMessage)
 }
 
 fn deliver_capture(
@@ -459,12 +592,18 @@ pub(crate) struct NativeHostState {
 
 pub(crate) struct ComposerReadyGuard {
     path: PathBuf,
-    file: fs::File,
+    shutdown: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+    wake: SocketComposerDelivery,
 }
 
 impl Drop for ComposerReadyGuard {
     fn drop(&mut self) {
-        let _ = fs2::FileExt::unlock(&self.file);
+        self.shutdown.store(true, Ordering::Release);
+        let _ = self.wake.exchange(&ComposerIpcRequest::Ping { version: 1 });
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
         let _ = fs::remove_file(&self.path);
     }
 }
@@ -510,24 +649,52 @@ impl NativeHostState {
     }
 
     #[cfg_attr(not(any(feature = "desktop-cef", test)), allow(dead_code))]
-    pub(crate) fn mark_composer_ready(&self) -> Result<ComposerReadyGuard, NativeHostFailure> {
-        let path = self.root.join(COMPOSER_READY_FILE);
-        let mut options = OpenOptions::new();
-        options.create(true).read(true).truncate(false).write(true);
+    pub(crate) fn start_composer_listener(
+        &self,
+        handler: impl Fn(NativeHostRequest) -> Result<(), NativeHostFailure> + Send + Sync + 'static,
+    ) -> Result<ComposerReadyGuard, NativeHostFailure> {
+        let endpoint = ComposerEndpointRecord {
+            version: 1,
+            token: Uuid::now_v7().to_string(),
+        };
+        let name = composer_socket_name(&self.root, &endpoint)?;
+        let options = ListenerOptions::new().name(name);
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt as _;
-            options.mode(0o600);
-        }
-        let mut file = options
-            .open(&path)
+        let options = {
+            use interprocess::os::unix::local_socket::ListenerOptionsExt as _;
+            options.mode(0o600)
+        };
+        let listener = options
+            .create_sync()
             .map_err(|_| NativeHostFailure::StateUnavailable)?;
-        fs2::FileExt::try_lock_exclusive(&file).map_err(|_| NativeHostFailure::StateUnavailable)?;
-        file.set_len(0)
-            .and_then(|()| file.write_all(std::process::id().to_string().as_bytes()))
-            .and_then(|()| file.sync_all())
-            .map_err(|_| NativeHostFailure::StateUnavailable)?;
-        Ok(ComposerReadyGuard { path, file })
+        let path = self.root.join(COMPOSER_ENDPOINT_FILE);
+        remove_file_if_present(&path)?;
+        let bytes =
+            serde_json::to_vec(&endpoint).map_err(|_| NativeHostFailure::StateUnavailable)?;
+        write_private_new_file(&path, &bytes).map_err(|_| NativeHostFailure::StateUnavailable)?;
+        let handler = Arc::new(handler);
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let shutdown_for_thread = shutdown.clone();
+        let thread = std::thread::Builder::new()
+            .name("devhud-realqa-composer-ipc".to_owned())
+            .spawn(move || {
+                while let Ok(stream) = listener.accept() {
+                    if shutdown_for_thread.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let _ = handle_composer_connection(stream, handler.as_ref());
+                }
+            });
+        let thread = thread.map_err(|_| {
+            let _ = fs::remove_file(&path);
+            NativeHostFailure::StateUnavailable
+        })?;
+        Ok(ComposerReadyGuard {
+            path,
+            shutdown,
+            thread: Some(thread),
+            wake: SocketComposerDelivery::new(self.root.clone()),
+        })
     }
 
     #[cfg_attr(not(any(feature = "desktop-cef", test)), allow(dead_code))]
@@ -539,7 +706,7 @@ impl NativeHostState {
         }
         for path in [
             self.root.join(PAIRING_FILE),
-            self.root.join(COMPOSER_READY_FILE),
+            self.root.join(COMPOSER_ENDPOINT_FILE),
         ] {
             match fs::symlink_metadata(path) {
                 Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {}
@@ -548,29 +715,6 @@ impl NativeHostState {
                 Err(_) => return Err(NativeHostFailure::StateUnavailable),
             }
         }
-        let inbox = self.root.join(INBOX_DIRECTORY);
-        match fs::symlink_metadata(&inbox) {
-            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
-                for entry in fs::read_dir(inbox).map_err(|_| NativeHostFailure::StateUnavailable)? {
-                    let entry = entry.map_err(|_| NativeHostFailure::StateUnavailable)?;
-                    let name = entry.file_name();
-                    let name = name.to_str().ok_or(NativeHostFailure::StateUnavailable)?;
-                    if !entry
-                        .file_type()
-                        .map_err(|_| NativeHostFailure::StateUnavailable)?
-                        .is_file()
-                        || name
-                            .strip_suffix(".json")
-                            .is_none_or(|value| Uuid::parse_str(value).is_err())
-                    {
-                        return Err(NativeHostFailure::StateUnavailable);
-                    }
-                }
-            }
-            Ok(_) => return Err(NativeHostFailure::StateUnavailable),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(_) => return Err(NativeHostFailure::StateUnavailable),
-        }
         Ok(())
     }
 
@@ -578,16 +722,33 @@ impl NativeHostState {
     pub(crate) fn reset(&self) -> Result<(), NativeHostFailure> {
         self.preflight_reset()?;
         remove_file_if_present(&self.root.join(PAIRING_FILE))?;
-        let inbox = self.root.join(INBOX_DIRECTORY);
-        if inbox.exists() {
-            for entry in fs::read_dir(&inbox).map_err(|_| NativeHostFailure::StateUnavailable)? {
-                let entry = entry.map_err(|_| NativeHostFailure::StateUnavailable)?;
-                fs::remove_file(entry.path()).map_err(|_| NativeHostFailure::StateUnavailable)?;
-            }
-            fs::remove_dir(inbox).map_err(|_| NativeHostFailure::StateUnavailable)?;
-        }
         Ok(())
     }
+}
+
+fn handle_composer_connection(
+    mut stream: Stream,
+    handler: &dyn Fn(NativeHostRequest) -> Result<(), NativeHostFailure>,
+) -> Result<(), NativeHostFailure> {
+    stream
+        .set_recv_timeout(Some(COMPOSER_CONNECT_WAIT))
+        .and_then(|()| stream.set_send_timeout(Some(COMPOSER_RESPONSE_WAIT)))
+        .map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+    let request: ComposerIpcRequest = read_ipc_frame(&mut stream, MAX_EXTENSION_MESSAGE_BYTES)?;
+    let response = match request {
+        ComposerIpcRequest::Ping { version: 1 } => ComposerIpcResponse::Ready,
+        ComposerIpcRequest::SubmitCapture {
+            version: 1,
+            mut capture,
+        } => match capture.validate().and_then(|()| handler(capture)) {
+            Ok(()) => ComposerIpcResponse::Accepted,
+            Err(_) => ComposerIpcResponse::Rejected,
+        },
+        ComposerIpcRequest::Ping { .. } | ComposerIpcRequest::SubmitCapture { .. } => {
+            ComposerIpcResponse::Rejected
+        }
+    };
+    write_ipc_frame(&mut stream, &response, MAX_HOST_RESPONSE_BYTES)
 }
 
 #[cfg_attr(not(any(feature = "desktop-cef", test)), allow(dead_code))]
@@ -718,7 +879,7 @@ pub fn run_native_host() {
     let Ok(state) = NativeHostState::platform() else {
         std::process::exit(70);
     };
-    let delivery = FileComposerDelivery::new(state.root.clone());
+    let delivery = SocketComposerDelivery::new(state.root.clone());
     if run_host(
         &origin,
         &mut io::stdin().lock(),
@@ -747,7 +908,10 @@ fn set_windows_binary_stdio() {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::{Cell, RefCell};
+    use std::{
+        cell::{Cell, RefCell},
+        sync::{Arc, Mutex},
+    };
 
     use super::*;
 
@@ -954,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn pairing_rejects_origin_change_and_reset_removes_host_state() {
+    fn pairing_rejects_origin_change_and_reset_preserves_the_live_endpoint() {
         let root = temp_directory("pairing");
         let state = NativeHostState::new(&root).unwrap();
         state
@@ -964,17 +1128,29 @@ mod tests {
             state.ensure_paired("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"),
             Err(NativeHostFailure::PairingRejected)
         );
-        let ready = state.mark_composer_ready().unwrap();
-        assert!(FileComposerDelivery::new(state.root.clone()).is_ready());
-        FileComposerDelivery::new(state.root.clone())
-            .enqueue(&request(BrowserCaptureMode::OsCapture))
+        let accepted = Arc::new(Mutex::new(Vec::new()));
+        let accepted_for_handler = accepted.clone();
+        let ready = state
+            .start_composer_listener(move |capture| {
+                accepted_for_handler
+                    .lock()
+                    .map_err(|_| NativeHostFailure::ComposerUnavailable)?
+                    .push(capture.request_id().to_owned());
+                Ok(())
+            })
             .unwrap();
+        let delivery = SocketComposerDelivery::new(state.root.clone());
+        assert!(delivery.is_ready());
+        let capture = request(BrowserCaptureMode::VisibleViewport);
+        delivery.enqueue(&capture).unwrap();
+        assert_eq!(accepted.lock().unwrap().as_slice(), [capture.request_id()]);
+        let endpoint = fs::read(state.root.join(COMPOSER_ENDPOINT_FILE)).unwrap();
+        assert!(!String::from_utf8_lossy(&endpoint).contains("iVBOR"));
         state.reset().unwrap();
         assert!(!state.root.join(PAIRING_FILE).exists());
-        assert!(!state.root.join(INBOX_DIRECTORY).exists());
-        assert!(state.root.join(COMPOSER_READY_FILE).exists());
+        assert!(state.root.join(COMPOSER_ENDPOINT_FILE).exists());
         drop(ready);
-        assert!(!state.root.join(COMPOSER_READY_FILE).exists());
+        assert!(!state.root.join(COMPOSER_ENDPOINT_FILE).exists());
         fs::remove_dir_all(root).unwrap();
     }
 }
