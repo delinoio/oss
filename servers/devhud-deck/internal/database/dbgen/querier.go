@@ -20,7 +20,7 @@ type Querier interface {
 	DeleteAccountDevices(ctx context.Context, accountID pgtype.UUID) error
 	DeleteAllViewSnapshotStates(ctx context.Context, viewID pgtype.UUID) error
 	DeleteAllViewSnapshots(ctx context.Context, viewID pgtype.UUID) error
-	DeleteConsumedGitHubCallbackState(ctx context.Context, arg DeleteConsumedGitHubCallbackStateParams) ([]byte, error)
+	DeleteConsumedGitHubCallbackState(ctx context.Context, arg DeleteConsumedGitHubCallbackStateParams) (pgtype.Timestamptz, error)
 	DeleteDeckAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteDeviceByRegistrationAndAccount(ctx context.Context, arg DeleteDeviceByRegistrationAndAccountParams) (int64, error)
 	DeleteDeviceByRegistrationAndGrant(ctx context.Context, arg DeleteDeviceByRegistrationAndGrantParams) (int64, error)
@@ -48,6 +48,8 @@ type Querier interface {
 	DeleteViewSnapshotState(ctx context.Context, arg DeleteViewSnapshotStateParams) error
 	DeleteViewSnapshots(ctx context.Context, arg DeleteViewSnapshotsParams) error
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (DeckConnection, error)
+	EnsureGitHubAuthorizationState(ctx context.Context, providerIdentityHash []byte) error
+	EnsureGitHubInstallationState(ctx context.Context, providerIdentityHash []byte) error
 	EnsureOwnerLock(ctx context.Context, ownerHash []byte) error
 	GetCreateViewIdempotency(ctx context.Context, arg GetCreateViewIdempotencyParams) (DeckViewCreateIdempotency, error)
 	GetDeckAccountBySubject(ctx context.Context, logtoSubject string) (DeckAccount, error)
@@ -66,6 +68,7 @@ type Querier interface {
 	GetRegisterDeviceIdempotency(ctx context.Context, arg GetRegisterDeviceIdempotencyParams) (DeckDeviceRegistrationIdempotency, error)
 	GetView(ctx context.Context, viewID pgtype.UUID) (DeckView, error)
 	GetViewNotificationPreference(ctx context.Context, arg GetViewNotificationPreferenceParams) (DeckViewNotificationPreference, error)
+	GetViewSnapshotByReference(ctx context.Context, arg GetViewSnapshotByReferenceParams) (GetViewSnapshotByReferenceRow, error)
 	GetViewSnapshotState(ctx context.Context, arg GetViewSnapshotStateParams) (DeckPullRequestSnapshotState, error)
 	InsertAuditEvent(ctx context.Context, arg InsertAuditEventParams) error
 	InsertCreateViewIdempotency(ctx context.Context, arg InsertCreateViewIdempotencyParams) error
@@ -87,9 +90,14 @@ type Querier interface {
 	ListOwnerViewsForProviderCleanup(ctx context.Context, arg ListOwnerViewsForProviderCleanupParams) ([]pgtype.UUID, error)
 	ListPersonalViews(ctx context.Context, arg ListPersonalViewsParams) ([]DeckView, error)
 	ListTeamMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListTeamMembershipsForAccountRow, error)
-	ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsParams) ([]DeckPullRequestSnapshot, error)
+	ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsParams) ([]ListViewSnapshotsRow, error)
+	LockGitHubAuthorizationState(ctx context.Context, providerIdentityHash []byte) (LockGitHubAuthorizationStateRow, error)
+	LockGitHubInstallationState(ctx context.Context, providerIdentityHash []byte) (pgtype.Timestamptz, error)
 	LockOwner(ctx context.Context, ownerHash []byte) ([]byte, error)
+	MarkGitHubAuthorizationReauthorized(ctx context.Context, arg MarkGitHubAuthorizationReauthorizedParams) error
+	MarkGitHubAuthorizationRevoked(ctx context.Context, arg MarkGitHubAuthorizationRevokedParams) error
 	MarkGitHubCallbackStateConsumed(ctx context.Context, arg MarkGitHubCallbackStateConsumedParams) error
+	MarkGitHubInstallationDeleted(ctx context.Context, arg MarkGitHubInstallationDeletedParams) error
 	MarkOwnerViewsConnected(ctx context.Context, arg MarkOwnerViewsConnectedParams) error
 	MarkOwnerViewsDisconnected(ctx context.Context, arg MarkOwnerViewsDisconnectedParams) error
 	Ping(ctx context.Context) (int32, error)

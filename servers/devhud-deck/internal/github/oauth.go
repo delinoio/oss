@@ -110,7 +110,7 @@ func (oauth *OAuth) Exchange(ctx context.Context, code string) (Credential, erro
 		"client_secret": {oauth.configuration.ClientSecret},
 		"code":          {code},
 	}
-	return oauth.exchange(ctx, form)
+	return oauth.exchange(ctx, form, nil)
 }
 
 func (oauth *OAuth) Refresh(
@@ -133,7 +133,7 @@ func (oauth *OAuth) Refresh(
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {credential.RefreshToken},
 	}
-	refreshed, err := oauth.exchange(ctx, form)
+	refreshed, err := oauth.exchange(ctx, form, ErrPermissionDenied)
 	if err != nil {
 		return Credential{}, err
 	}
@@ -144,6 +144,7 @@ func (oauth *OAuth) Refresh(
 func (oauth *OAuth) exchange(
 	ctx context.Context,
 	form url.Values,
+	oauthRejection error,
 ) (Credential, error) {
 	tokenURL, _ := url.Parse(WebOrigin + OAuthTokenPath)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -168,9 +169,6 @@ func (oauth *OAuth) exchange(
 	if err != nil {
 		return Credential{}, ErrProvider
 	}
-	if response.StatusCode != http.StatusOK {
-		return Credential{}, mapStatus(response.StatusCode, response.Header, oauth.now())
-	}
 	var result struct {
 		AccessToken           string `json:"access_token"`
 		RefreshToken          string `json:"refresh_token"`
@@ -179,8 +177,24 @@ func (oauth *OAuth) exchange(
 		TokenType             string `json:"token_type"`
 		Error                 string `json:"error"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil || result.Error != "" ||
-		result.AccessToken == "" || !strings.EqualFold(result.TokenType, "bearer") {
+	decodeErr := json.Unmarshal(body, &result)
+	if response.StatusCode != http.StatusOK {
+		if decodeErr == nil && result.Error == "bad_refresh_token" &&
+			oauthRejection != nil {
+			return Credential{}, oauthRejection
+		}
+		return Credential{}, mapStatus(response.StatusCode, response.Header, oauth.now())
+	}
+	if decodeErr != nil {
+		return Credential{}, ErrProvider
+	}
+	if result.Error != "" {
+		if result.Error == "bad_refresh_token" && oauthRejection != nil {
+			return Credential{}, oauthRejection
+		}
+		return Credential{}, ErrProvider
+	}
+	if result.AccessToken == "" || !strings.EqualFold(result.TokenType, "bearer") {
 		return Credential{}, ErrProvider
 	}
 	now := oauth.now()

@@ -1,9 +1,11 @@
 -- name: InsertGitHubCallbackState :exec
 INSERT INTO deck_github_callback_states (
-    state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at
+    state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at,
+    created_at
 ) VALUES (
     sqlc.arg(state_hash), sqlc.arg(owner_scope), sqlc.arg(owner_id),
-    sqlc.arg(account_id), sqlc.arg(state_ciphertext), sqlc.arg(expires_at)
+    sqlc.arg(account_id), sqlc.arg(state_ciphertext), sqlc.arg(expires_at),
+    sqlc.arg(created_at)
 );
 
 -- name: GetGitHubCallbackStateForUpdate :one
@@ -29,7 +31,7 @@ WHERE state_hash = sqlc.arg(state_hash)
   AND owner_id = sqlc.arg(owner_id)
   AND account_id = sqlc.arg(account_id)
   AND consumed_at IS NOT NULL
-RETURNING state_hash;
+RETURNING created_at;
 
 -- name: DeleteExpiredGitHubCallbackStates :exec
 DELETE FROM deck_github_callback_states
@@ -235,6 +237,55 @@ WHERE account_id = sqlc.arg(account_id)
 -- name: DeleteGitHubUserCredentialsByGitHubUser :exec
 DELETE FROM deck_github_user_credentials
 WHERE github_user_id = sqlc.arg(github_user_id);
+
+-- name: EnsureGitHubInstallationState :exec
+INSERT INTO deck_github_installation_states (provider_identity_hash)
+VALUES (sqlc.arg(provider_identity_hash))
+ON CONFLICT (provider_identity_hash) DO NOTHING;
+
+-- name: LockGitHubInstallationState :one
+SELECT deleted_at
+FROM deck_github_installation_states
+WHERE provider_identity_hash = sqlc.arg(provider_identity_hash)
+FOR UPDATE;
+
+-- name: MarkGitHubInstallationDeleted :exec
+UPDATE deck_github_installation_states
+SET deleted_at = CASE
+    WHEN deleted_at IS NULL OR deleted_at < sqlc.arg(deleted_at)
+        THEN sqlc.arg(deleted_at)
+    ELSE deleted_at
+END
+WHERE provider_identity_hash = sqlc.arg(provider_identity_hash);
+
+-- name: EnsureGitHubAuthorizationState :exec
+INSERT INTO deck_github_authorization_states (provider_identity_hash)
+VALUES (sqlc.arg(provider_identity_hash))
+ON CONFLICT (provider_identity_hash) DO NOTHING;
+
+-- name: LockGitHubAuthorizationState :one
+SELECT revoked_at, reauthorized_at
+FROM deck_github_authorization_states
+WHERE provider_identity_hash = sqlc.arg(provider_identity_hash)
+FOR UPDATE;
+
+-- name: MarkGitHubAuthorizationRevoked :exec
+UPDATE deck_github_authorization_states
+SET revoked_at = CASE
+    WHEN revoked_at IS NULL OR revoked_at < sqlc.arg(revoked_at)
+        THEN sqlc.arg(revoked_at)
+    ELSE revoked_at
+END
+WHERE provider_identity_hash = sqlc.arg(provider_identity_hash);
+
+-- name: MarkGitHubAuthorizationReauthorized :exec
+UPDATE deck_github_authorization_states
+SET reauthorized_at = CASE
+    WHEN reauthorized_at IS NULL OR reauthorized_at < sqlc.arg(reauthorized_at)
+        THEN sqlc.arg(reauthorized_at)
+    ELSE reauthorized_at
+END
+WHERE provider_identity_hash = sqlc.arg(provider_identity_hash);
 
 -- name: ListOwnerViewsForProviderCleanup :many
 SELECT view_id

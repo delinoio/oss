@@ -80,6 +80,7 @@ func (store *Store) SaveGitHubCallbackState(
 				OwnerID: pgUUID(ownerID), AccountID: pgUUID(accountID),
 				StateCiphertext: ciphertext,
 				ExpiresAt:       pgTime(time.Unix(state.ExpiresAt, 0)),
+				CreatedAt:       pgTime(now),
 			})
 	})
 }
@@ -167,6 +168,10 @@ func (store *Store) ConnectGitHub(
 		"owner",
 		deckv1.OwnerScope(state.Owner.Scope).String()+":"+ownerID.String(),
 	)
+	installationIdentityHash := store.hasher.Sum(
+		"github-webhook-installation", strconv.FormatUint(installation.ID, 10))
+	authorizationIdentityHash := store.hasher.Sum(
+		"github-webhook-user", strconv.FormatUint(credential.UserID, 10))
 	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
 		if err := queries.EnsureOwnerLock(ctx, ownerHash[:]); err != nil {
 			return err
@@ -181,13 +186,46 @@ func (store *Store) ConnectGitHub(
 		if tombstoned {
 			return ErrDeletionInProgress
 		}
-		if _, err := queries.DeleteConsumedGitHubCallbackState(
+		if err := queries.EnsureGitHubInstallationState(
+			ctx, installationIdentityHash[:]); err != nil {
+			return err
+		}
+		deletedAt, err := queries.LockGitHubInstallationState(
+			ctx, installationIdentityHash[:])
+		if err != nil {
+			return err
+		}
+		if deletedAt.Valid {
+			return deckgithub.ErrPermissionDenied
+		}
+		callbackCreatedAt, err := queries.DeleteConsumedGitHubCallbackState(
 			ctx, dbgen.DeleteConsumedGitHubCallbackStateParams{
 				StateHash: stateHash[:], OwnerScope: int16(state.Owner.Scope),
 				OwnerID: pgUUID(ownerID), AccountID: pgUUID(accountID),
-			}); errors.Is(err, pgx.ErrNoRows) {
+			})
+		if errors.Is(err, pgx.ErrNoRows) {
 			return deckgithub.ErrInvalidSignature
 		} else if err != nil {
+			return err
+		}
+		if err := queries.EnsureGitHubAuthorizationState(
+			ctx, authorizationIdentityHash[:]); err != nil {
+			return err
+		}
+		authorizationState, err := queries.LockGitHubAuthorizationState(
+			ctx, authorizationIdentityHash[:])
+		if err != nil {
+			return err
+		}
+		if authorizationState.RevokedAt.Valid &&
+			!callbackCreatedAt.Time.After(authorizationState.RevokedAt.Time) {
+			return deckgithub.ErrPermissionDenied
+		}
+		if err := queries.MarkGitHubAuthorizationReauthorized(
+			ctx, dbgen.MarkGitHubAuthorizationReauthorizedParams{
+				ReauthorizedAt:       callbackCreatedAt,
+				ProviderIdentityHash: authorizationIdentityHash[:],
+			}); err != nil {
 			return err
 		}
 		existing, existingErr := queries.GetGitHubConnectionByOwnerForUpdate(
@@ -478,6 +516,8 @@ func (store *Store) RefreshGitHubCredential(
 		credential.UserID == 0 || credential.Validate(now) != nil {
 		return deckgithub.ErrPermissionDenied
 	}
+	authorizationIdentityHash := store.hasher.Sum(
+		"github-webhook-user", strconv.FormatUint(credential.UserID, 10))
 	accessToken, err := store.cipher.Seal(
 		"github-user-access-token", []byte(credential.AccessToken))
 	if err != nil {
@@ -492,6 +532,21 @@ func (store *Store) RefreshGitHubCredential(
 		}
 	}
 	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		if err := queries.EnsureGitHubAuthorizationState(
+			ctx, authorizationIdentityHash[:]); err != nil {
+			return err
+		}
+		authorizationState, err := queries.LockGitHubAuthorizationState(
+			ctx, authorizationIdentityHash[:])
+		if err != nil {
+			return err
+		}
+		if authorizationState.RevokedAt.Valid &&
+			(!authorizationState.ReauthorizedAt.Valid ||
+				!authorizationState.ReauthorizedAt.Time.After(
+					authorizationState.RevokedAt.Time)) {
+			return deckgithub.ErrPermissionDenied
+		}
 		connection, err := queries.GetGitHubConnectionByIDForUpdate(
 			ctx, pgUUID(connectionID))
 		if errors.Is(err, pgx.ErrNoRows) ||
@@ -787,6 +842,22 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 		if !errors.Is(replayErr, pgx.ErrNoRows) {
 			return replayErr
 		}
+		if err := queries.EnsureGitHubInstallationState(
+			ctx, providerIdentityHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockGitHubInstallationState(
+			ctx, providerIdentityHash[:]); err != nil {
+			return err
+		}
+		if event == "installation" && action == "deleted" {
+			if err := queries.MarkGitHubInstallationDeleted(
+				ctx, dbgen.MarkGitHubInstallationDeletedParams{
+					DeletedAt: pgTime(now), ProviderIdentityHash: providerIdentityHash[:],
+				}); err != nil {
+				return err
+			}
+		}
 		connection, connectionErr :=
 			queries.GetGitHubConnectionByInstallationForUpdate(
 				ctx, pgtype.Int8{Int64: int64(installationID), Valid: true})
@@ -922,6 +993,20 @@ func (store *Store) ApplyGitHubAuthorizationRevocation(
 		}
 		if !errors.Is(replayErr, pgx.ErrNoRows) {
 			return replayErr
+		}
+		if err := queries.EnsureGitHubAuthorizationState(
+			ctx, providerIdentityHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockGitHubAuthorizationState(
+			ctx, providerIdentityHash[:]); err != nil {
+			return err
+		}
+		if err := queries.MarkGitHubAuthorizationRevoked(
+			ctx, dbgen.MarkGitHubAuthorizationRevokedParams{
+				RevokedAt: pgTime(now), ProviderIdentityHash: providerIdentityHash[:],
+			}); err != nil {
+			return err
 		}
 		if err := queries.DeleteGitHubUserCredentialsByGitHubUser(
 			ctx, int64(githubUserID)); err != nil {

@@ -2,12 +2,68 @@ package github
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"testing"
 	"time"
 )
+
+func TestRefreshMapsRejectedRefreshTokenToReauthentication(t *testing.T) {
+	t.Parallel()
+	transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusBadRequest, `{
+			"error":"bad_refresh_token",
+			"error_description":"The refresh token is invalid."
+		}`), nil
+	})
+	oauth, err := NewOAuth(OAuthConfig{
+		ClientID: "fixture-client", ClientSecret: "fixture-secret",
+		AppSlug:     "deck-fixture",
+		CallbackURL: "https://deck.deli.dev/github/oauth/callback",
+	}, &http.Client{Transport: transport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_800_000_000, 0).UTC()
+	oauth.now = func() time.Time { return now }
+	_, err = oauth.Refresh(context.Background(), Credential{
+		UserID: 123, AccessToken: "ghu_old", RefreshToken: "ghr_rejected",
+		ExpiresAt:             now.Add(-time.Second),
+		RefreshTokenExpiresAt: now.Add(time.Hour),
+	})
+	if !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("rejected refresh error = %T %v", err, err)
+	}
+}
+
+func TestRefreshKeepsClientConfigurationErrorsAsProviderFailures(t *testing.T) {
+	t.Parallel()
+	transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusBadRequest, `{
+			"error":"incorrect_client_credentials"
+		}`), nil
+	})
+	oauth, err := NewOAuth(OAuthConfig{
+		ClientID: "fixture-client", ClientSecret: "fixture-secret",
+		AppSlug:     "deck-fixture",
+		CallbackURL: "https://deck.deli.dev/github/oauth/callback",
+	}, &http.Client{Transport: transport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_800_000_000, 0).UTC()
+	oauth.now = func() time.Time { return now }
+	_, err = oauth.Refresh(context.Background(), Credential{
+		UserID: 123, AccessToken: "ghu_old", RefreshToken: "ghr_valid",
+		ExpiresAt:             now.Add(-time.Second),
+		RefreshTokenExpiresAt: now.Add(time.Hour),
+	})
+	if !errors.Is(err, ErrProvider) {
+		t.Fatalf("client configuration error = %T %v", err, err)
+	}
+}
 
 func TestRefreshRotatesExpiringUserCredential(t *testing.T) {
 	t.Parallel()

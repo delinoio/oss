@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -725,9 +726,11 @@ func (store *Store) ReplaceSnapshots(
 		for index, snapshot := range snapshots {
 			repository := snapshot.GetRepository()
 			if repository == nil || repository.GetOwner() == "" ||
-				repository.GetName() == "" {
+				repository.GetName() == "" || snapshot.GetNumber() == 0 ||
+				snapshot.GetNumber() > math.MaxInt64 {
 				return errors.New("deck database: snapshot repository is required")
 			}
+			repositoryHash := store.snapshotRepositoryHash(repository)
 			repositoryCiphertext, err := store.sealProto(
 				"pr-snapshot-repository", repository)
 			if err != nil {
@@ -739,8 +742,10 @@ func (store *Store) ReplaceSnapshots(
 			}
 			if err := queries.InsertViewSnapshot(ctx, dbgen.InsertViewSnapshotParams{
 				ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
-				Ordinal: int32(index), RepositoryCiphertext: repositoryCiphertext,
-				SnapshotCiphertext: ciphertext,
+				Ordinal: int32(index), RepositoryHash: repositoryHash[:],
+				PullRequestNumber:    int64(snapshot.GetNumber()),
+				RepositoryCiphertext: repositoryCiphertext,
+				SnapshotCiphertext:   ciphertext,
 			}); err != nil {
 				return err
 			}
@@ -830,36 +835,50 @@ func (store *Store) GetSnapshot(
 	reference *deckv1.PullRequestReference,
 ) (*deckv1.PullRequestResult, error) {
 	if reference == nil || reference.Repository == nil ||
-		reference.Number == 0 {
+		reference.Number == 0 || reference.Number > math.MaxInt64 {
 		return nil, ErrNotFound
 	}
-	rows, err := store.queries.ListViewSnapshots(ctx, dbgen.ListViewSnapshotsParams{
-		ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
-		AfterOrdinal: 0, PageLimit: 500,
-	})
+	repositoryHash := store.snapshotRepositoryHash(reference.Repository)
+	row, err := store.queries.GetViewSnapshotByReference(
+		ctx, dbgen.GetViewSnapshotByReferenceParams{
+			ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
+			RepositoryHash:    repositoryHash[:],
+			PullRequestNumber: int64(reference.Number),
+		})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
-		return nil, errors.New("deck database: list snapshots failed")
+		return nil, errors.New("deck database: get snapshot failed")
 	}
-	for _, row := range rows {
-		repository := &deckv1.RepositoryReference{}
-		if err := store.openProto(
-			"pr-snapshot-repository", row.RepositoryCiphertext, repository); err != nil {
-			return nil, err
-		}
-		if !strings.EqualFold(repository.Owner, reference.Repository.Owner) ||
-			!strings.EqualFold(repository.Name, reference.Repository.Name) {
-			continue
-		}
-		result := &deckv1.PullRequestResult{}
-		if err := store.openProto(
-			"pr-snapshot", row.SnapshotCiphertext, result); err != nil {
-			return nil, err
-		}
-		if result.Number == reference.Number {
-			return result, nil
-		}
+	repository := &deckv1.RepositoryReference{}
+	if err := store.openProto(
+		"pr-snapshot-repository", row.RepositoryCiphertext, repository); err != nil {
+		return nil, err
 	}
-	return nil, ErrNotFound
+	if !strings.EqualFold(repository.Owner, reference.Repository.Owner) ||
+		!strings.EqualFold(repository.Name, reference.Repository.Name) {
+		return nil, ErrNotFound
+	}
+	result := &deckv1.PullRequestResult{}
+	if err := store.openProto(
+		"pr-snapshot", row.SnapshotCiphertext, result); err != nil {
+		return nil, err
+	}
+	if result.Number != reference.Number {
+		return nil, ErrNotFound
+	}
+	return result, nil
+}
+
+func (store *Store) snapshotRepositoryHash(
+	repository *deckv1.RepositoryReference,
+) [32]byte {
+	return store.hasher.Sum(
+		"pr-snapshot-repository",
+		strings.ToLower(repository.GetOwner())+"\x00"+
+			strings.ToLower(repository.GetName()),
+	)
 }
 
 func (store *Store) String() string {

@@ -32,6 +32,22 @@ ALTER TABLE deck_connections
             AND github_members_permission BETWEEN 0 AND 3)
     );
 
+-- Snapshot rows are a replaceable cache. Purge pre-index rows because their
+-- encrypted repository references cannot be safely backfilled without opening
+-- identity-bearing data during migration.
+DELETE FROM deck_pull_request_snapshots;
+DELETE FROM deck_pull_request_snapshot_states;
+
+ALTER TABLE deck_pull_request_snapshots
+    ADD COLUMN repository_hash bytea NOT NULL
+        CHECK (octet_length(repository_hash) = 32),
+    ADD COLUMN pull_request_number bigint NOT NULL
+        CHECK (pull_request_number > 0),
+    ADD CONSTRAINT deck_pull_request_snapshots_reference_unique
+        UNIQUE (
+            view_id, viewer_hash, repository_hash, pull_request_number
+        );
+
 CREATE TABLE deck_github_user_credentials (
     connection_id uuid NOT NULL
         REFERENCES deck_connections(connection_id) ON DELETE CASCADE,
@@ -76,6 +92,21 @@ CREATE TABLE deck_github_webhook_deliveries (
         CHECK (octet_length(provider_identity_hash) = 32),
     payload_hash bytea NOT NULL CHECK (octet_length(payload_hash) = 32),
     processed_at timestamptz NOT NULL
+);
+
+-- Nullable lifecycle rows provide stable transaction locks even before a
+-- connection or credential exists. Provider identities remain keyed hashes.
+CREATE TABLE deck_github_installation_states (
+    provider_identity_hash bytea PRIMARY KEY
+        CHECK (octet_length(provider_identity_hash) = 32),
+    deleted_at timestamptz
+);
+
+CREATE TABLE deck_github_authorization_states (
+    provider_identity_hash bytea PRIMARY KEY
+        CHECK (octet_length(provider_identity_hash) = 32),
+    revoked_at timestamptz,
+    reauthorized_at timestamptz
 );
 
 -- Notification deliveries contain opaque identifiers only. They are included

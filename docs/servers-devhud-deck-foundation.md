@@ -78,8 +78,12 @@
   Subscribed `installation` and `installation_repositories` events update only
   installation lifecycle state. GitHub's mandatory
   `github_app_authorization` revocation event deletes every credential for the
-  sending GitHub user. Any delivered PR, check, or status event is accepted
-  without state mutation and cannot refresh a view.
+  sending GitHub user. Keyed lifecycle tombstones serialize an
+  `installation.deleted` event with a first connection and serialize a user
+  revocation with callback/refresh credential upserts; only an authorization
+  callback created after the recorded revocation may supersede that user's
+  tombstone. Any delivered PR, check, or status event is accepted without
+  state mutation and cannot refresh a view.
 - The source-controlled test-only manifest is
   `servers/devhud-deck/testdata/github-app/manifest.json`. It requests only
   metadata read, contents write, pull-request write, checks read, and members
@@ -97,8 +101,10 @@
   Expired access tokens are rotated through their still-valid refresh token
   and the replacement access/refresh pair is envelope-encrypted and persisted
   before the provider operation continues. Missing, expired, revoked, or
-  rejected refresh tokens require reauthorization.
-- Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository.
+  rejected refresh tokens require reauthorization; GitHub's
+  `bad_refresh_token` response is classified as reauthentication rather than a
+  generic provider failure.
+- Authorization filtering occurs before identity-bearing results. Repository names, PR titles, counts, and query results must not be revealed to a DeliDev member whose GitHub identity cannot access the repository. Exact snapshot membership reads use a keyed repository-and-PR index after repository authorization, so they do not scan or decrypt unrelated retained repository references.
 - The provider search adapter rechecks each result repository against both the
   selected owner-scoped installation and the current viewer's user
   authorization before returning any result. It returns only the filtered page

@@ -207,6 +207,45 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || hasSnapshot {
 		t.Fatalf("truncated snapshot membership = %v err=%v", hasSnapshot, err)
 	}
+	indexedSnapshots := []*deckv1.PullRequestResult{
+		{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "unrelated", Name: "retained",
+			},
+			Number: 1, Title: "must not be opened",
+		},
+		{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "secret", Name: "project",
+			},
+			Number: 1, Title: "authorized",
+		},
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, firstViewID, viewerHash, indexedSnapshots, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_pull_request_snapshots
+		SET repository_ciphertext = $1
+		WHERE view_id = $2 AND viewer_hash = $3 AND ordinal = 0`,
+		[]byte{0}, pgUUID(firstViewID), viewerHash[:]); err != nil {
+		t.Fatal(err)
+	}
+	indexed, err := store.GetSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "SECRET", Name: "Project",
+			},
+			Number: 1,
+		})
+	if err != nil || indexed.GetTitle() != "authorized" {
+		t.Fatalf("indexed snapshot = %#v err=%v", indexed, err)
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, firstViewID, viewerHash, snapshots, now); err != nil {
+		t.Fatal(err)
+	}
 	authorizationErr := errors.New("snapshot authorization denied")
 	if _, _, _, err := store.ListSnapshots(
 		ctx, firstViewID, viewerHash,
@@ -458,6 +497,23 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		return store.ConnectGitHub(
 			ctx, hash, state, selected, userCredential, at)
 	}
+	deletedBeforeConnect := installation
+	deletedBeforeConnect.ID = 6
+	deletedCallback := callback
+	deletedCallback.InstallationID = deletedBeforeConnect.ID
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-deleted-before-connect", "installation", "deleted",
+		deletedBeforeConnect.ID, deletedBeforeConnect.Permissions,
+		security.Digest([]byte("installation-deleted-before-connect")),
+		now.Add(10*time.Second)); err != nil {
+		t.Fatalf("installation tombstone: %v", err)
+	}
+	if err := connectGitHub(
+		deletedCallback, deletedBeforeConnect, credential,
+		now.Add(20*time.Second)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("deleted installation connected: %T %v", err, err)
+	}
 	expiredCallback := callback
 	expiredCallback.Nonce = "expired"
 	expiredCallback.ExpiresAt = now.Add(-time.Minute).Unix()
@@ -561,6 +617,19 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || connection.Credential.AccessToken != credential.AccessToken {
 		t.Fatalf("rewrapped GitHub connection = %#v err=%v", connection, err)
 	}
+	inFlightCallback := callback
+	inFlightCallback.Nonce = "authorization-revocation-in-flight"
+	inFlightHash := security.Digest([]byte(inFlightCallback.Nonce))
+	if err := store.SaveGitHubCallbackState(
+		ctx, inFlightHash, inFlightCallback,
+		now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("in-flight authorization callback: %v", err)
+	}
+	if err := store.ConsumeGitHubCallbackState(
+		ctx, inFlightHash, inFlightCallback,
+		now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("consume in-flight authorization callback: %v", err)
+	}
 	revocationHash := security.Digest([]byte("authorization-revoked"))
 	if err := store.ApplyGitHubAuthorizationRevocation(
 		ctx, "authorization-revocation-1", credential.UserID,
@@ -587,6 +656,18 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		err, deckgithub.ErrPermissionDenied) {
 		t.Fatalf("revoked credential remained available: %v", err)
 	}
+	if err := store.RefreshGitHubCredential(
+		ctx, connection.ID, accountID, credential,
+		now.Add(3*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("revoked credential refreshed: %T %v", err, err)
+	}
+	if err := store.ConnectGitHub(
+		ctx, inFlightHash, inFlightCallback, installation, credential,
+		now.Add(3*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("in-flight authorization resurrected credential: %T %v", err, err)
+	}
 	if err := store.ApplyGitHubAuthorizationRevocation(
 		ctx, "authorization-revocation-1", credential.UserID,
 		revocationHash, now.Add(3*time.Minute)); err != nil {
@@ -601,12 +682,27 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reauthorized GitHub connection: %v", err)
 	}
+	if err := store.ConnectGitHub(
+		ctx, inFlightHash, inFlightCallback, installation, credential,
+		now.Add(5*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("old callback succeeded after reauthorization: %T %v", err, err)
+	}
+	reauthorizedRefresh := credential
+	reauthorizedRefresh.AccessToken = "ghu_reauthorized_refreshed"
+	reauthorizedRefresh.RefreshToken = "ghr_reauthorized_refreshed"
+	if err := store.RefreshGitHubCredential(
+		ctx, connection.ID, accountID, reauthorizedRefresh,
+		now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("reauthorized credential refresh: %v", err)
+	}
+	credential = reauthorizedRefresh
 	organizationCallback := callback
 	organizationCallback.Owner = deckgithub.OwnerBinding{
 		Scope: 2, ID: organizationID.String(),
 	}
 	if err := connectGitHub(organizationCallback, installation,
-		credential, now.Add(2*time.Minute)); !errors.Is(err, ErrInstallationOwned) {
+		credential, now.Add(6*time.Minute)); !errors.Is(err, ErrInstallationOwned) {
 		t.Fatalf("installation owner conflict = %T %v", err, err)
 	}
 	organizationInstallation := installation

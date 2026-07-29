@@ -63,7 +63,7 @@ WHERE state_hash = $1
   AND owner_id = $3
   AND account_id = $4
   AND consumed_at IS NOT NULL
-RETURNING state_hash
+RETURNING created_at
 `
 
 type DeleteConsumedGitHubCallbackStateParams struct {
@@ -73,16 +73,16 @@ type DeleteConsumedGitHubCallbackStateParams struct {
 	AccountID  pgtype.UUID
 }
 
-func (q *Queries) DeleteConsumedGitHubCallbackState(ctx context.Context, arg DeleteConsumedGitHubCallbackStateParams) ([]byte, error) {
+func (q *Queries) DeleteConsumedGitHubCallbackState(ctx context.Context, arg DeleteConsumedGitHubCallbackStateParams) (pgtype.Timestamptz, error) {
 	row := q.db.QueryRow(ctx, deleteConsumedGitHubCallbackState,
 		arg.StateHash,
 		arg.OwnerScope,
 		arg.OwnerID,
 		arg.AccountID,
 	)
-	var state_hash []byte
-	err := row.Scan(&state_hash)
-	return state_hash, err
+	var created_at pgtype.Timestamptz
+	err := row.Scan(&created_at)
+	return created_at, err
 }
 
 const deleteExpiredGitHubCallbackStates = `-- name: DeleteExpiredGitHubCallbackStates :exec
@@ -274,6 +274,28 @@ func (q *Queries) DisconnectGitHubConnection(ctx context.Context, arg Disconnect
 		&i.GithubMembersPermission,
 	)
 	return i, err
+}
+
+const ensureGitHubAuthorizationState = `-- name: EnsureGitHubAuthorizationState :exec
+INSERT INTO deck_github_authorization_states (provider_identity_hash)
+VALUES ($1)
+ON CONFLICT (provider_identity_hash) DO NOTHING
+`
+
+func (q *Queries) EnsureGitHubAuthorizationState(ctx context.Context, providerIdentityHash []byte) error {
+	_, err := q.db.Exec(ctx, ensureGitHubAuthorizationState, providerIdentityHash)
+	return err
+}
+
+const ensureGitHubInstallationState = `-- name: EnsureGitHubInstallationState :exec
+INSERT INTO deck_github_installation_states (provider_identity_hash)
+VALUES ($1)
+ON CONFLICT (provider_identity_hash) DO NOTHING
+`
+
+func (q *Queries) EnsureGitHubInstallationState(ctx context.Context, providerIdentityHash []byte) error {
+	_, err := q.db.Exec(ctx, ensureGitHubInstallationState, providerIdentityHash)
+	return err
 }
 
 const getGitHubCallbackStateForUpdate = `-- name: GetGitHubCallbackStateForUpdate :one
@@ -485,10 +507,12 @@ func (q *Queries) GetGitHubWebhookDelivery(ctx context.Context, deliveryID strin
 
 const insertGitHubCallbackState = `-- name: InsertGitHubCallbackState :exec
 INSERT INTO deck_github_callback_states (
-    state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at
+    state_hash, owner_scope, owner_id, account_id, state_ciphertext, expires_at,
+    created_at
 ) VALUES (
     $1, $2, $3,
-    $4, $5, $6
+    $4, $5, $6,
+    $7
 )
 `
 
@@ -499,6 +523,7 @@ type InsertGitHubCallbackStateParams struct {
 	AccountID       pgtype.UUID
 	StateCiphertext []byte
 	ExpiresAt       pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
 }
 
 func (q *Queries) InsertGitHubCallbackState(ctx context.Context, arg InsertGitHubCallbackStateParams) error {
@@ -509,6 +534,7 @@ func (q *Queries) InsertGitHubCallbackState(ctx context.Context, arg InsertGitHu
 		arg.AccountID,
 		arg.StateCiphertext,
 		arg.ExpiresAt,
+		arg.CreatedAt,
 	)
 	return err
 }
@@ -694,6 +720,79 @@ func (q *Queries) ListOwnerViewsForProviderCleanup(ctx context.Context, arg List
 	return items, nil
 }
 
+const lockGitHubAuthorizationState = `-- name: LockGitHubAuthorizationState :one
+SELECT revoked_at, reauthorized_at
+FROM deck_github_authorization_states
+WHERE provider_identity_hash = $1
+FOR UPDATE
+`
+
+type LockGitHubAuthorizationStateRow struct {
+	RevokedAt      pgtype.Timestamptz
+	ReauthorizedAt pgtype.Timestamptz
+}
+
+func (q *Queries) LockGitHubAuthorizationState(ctx context.Context, providerIdentityHash []byte) (LockGitHubAuthorizationStateRow, error) {
+	row := q.db.QueryRow(ctx, lockGitHubAuthorizationState, providerIdentityHash)
+	var i LockGitHubAuthorizationStateRow
+	err := row.Scan(&i.RevokedAt, &i.ReauthorizedAt)
+	return i, err
+}
+
+const lockGitHubInstallationState = `-- name: LockGitHubInstallationState :one
+SELECT deleted_at
+FROM deck_github_installation_states
+WHERE provider_identity_hash = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockGitHubInstallationState(ctx context.Context, providerIdentityHash []byte) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, lockGitHubInstallationState, providerIdentityHash)
+	var deleted_at pgtype.Timestamptz
+	err := row.Scan(&deleted_at)
+	return deleted_at, err
+}
+
+const markGitHubAuthorizationReauthorized = `-- name: MarkGitHubAuthorizationReauthorized :exec
+UPDATE deck_github_authorization_states
+SET reauthorized_at = CASE
+    WHEN reauthorized_at IS NULL OR reauthorized_at < $1
+        THEN $1
+    ELSE reauthorized_at
+END
+WHERE provider_identity_hash = $2
+`
+
+type MarkGitHubAuthorizationReauthorizedParams struct {
+	ReauthorizedAt       pgtype.Timestamptz
+	ProviderIdentityHash []byte
+}
+
+func (q *Queries) MarkGitHubAuthorizationReauthorized(ctx context.Context, arg MarkGitHubAuthorizationReauthorizedParams) error {
+	_, err := q.db.Exec(ctx, markGitHubAuthorizationReauthorized, arg.ReauthorizedAt, arg.ProviderIdentityHash)
+	return err
+}
+
+const markGitHubAuthorizationRevoked = `-- name: MarkGitHubAuthorizationRevoked :exec
+UPDATE deck_github_authorization_states
+SET revoked_at = CASE
+    WHEN revoked_at IS NULL OR revoked_at < $1
+        THEN $1
+    ELSE revoked_at
+END
+WHERE provider_identity_hash = $2
+`
+
+type MarkGitHubAuthorizationRevokedParams struct {
+	RevokedAt            pgtype.Timestamptz
+	ProviderIdentityHash []byte
+}
+
+func (q *Queries) MarkGitHubAuthorizationRevoked(ctx context.Context, arg MarkGitHubAuthorizationRevokedParams) error {
+	_, err := q.db.Exec(ctx, markGitHubAuthorizationRevoked, arg.RevokedAt, arg.ProviderIdentityHash)
+	return err
+}
+
 const markGitHubCallbackStateConsumed = `-- name: MarkGitHubCallbackStateConsumed :exec
 UPDATE deck_github_callback_states
 SET consumed_at = $1
@@ -708,6 +807,26 @@ type MarkGitHubCallbackStateConsumedParams struct {
 
 func (q *Queries) MarkGitHubCallbackStateConsumed(ctx context.Context, arg MarkGitHubCallbackStateConsumedParams) error {
 	_, err := q.db.Exec(ctx, markGitHubCallbackStateConsumed, arg.ConsumedAt, arg.StateHash)
+	return err
+}
+
+const markGitHubInstallationDeleted = `-- name: MarkGitHubInstallationDeleted :exec
+UPDATE deck_github_installation_states
+SET deleted_at = CASE
+    WHEN deleted_at IS NULL OR deleted_at < $1
+        THEN $1
+    ELSE deleted_at
+END
+WHERE provider_identity_hash = $2
+`
+
+type MarkGitHubInstallationDeletedParams struct {
+	DeletedAt            pgtype.Timestamptz
+	ProviderIdentityHash []byte
+}
+
+func (q *Queries) MarkGitHubInstallationDeleted(ctx context.Context, arg MarkGitHubInstallationDeletedParams) error {
+	_, err := q.db.Exec(ctx, markGitHubInstallationDeleted, arg.DeletedAt, arg.ProviderIdentityHash)
 	return err
 }
 

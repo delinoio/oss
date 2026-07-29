@@ -175,6 +175,48 @@ func (q *Queries) GetView(ctx context.Context, viewID pgtype.UUID) (DeckView, er
 	return i, err
 }
 
+const getViewSnapshotByReference = `-- name: GetViewSnapshotByReference :one
+SELECT view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+FROM deck_pull_request_snapshots
+WHERE view_id = $1
+  AND viewer_hash = $2
+  AND repository_hash = $3
+  AND pull_request_number = $4
+`
+
+type GetViewSnapshotByReferenceParams struct {
+	ViewID            pgtype.UUID
+	ViewerHash        []byte
+	RepositoryHash    []byte
+	PullRequestNumber int64
+}
+
+type GetViewSnapshotByReferenceRow struct {
+	ViewID               pgtype.UUID
+	ViewerHash           []byte
+	Ordinal              int32
+	RepositoryCiphertext []byte
+	SnapshotCiphertext   []byte
+}
+
+func (q *Queries) GetViewSnapshotByReference(ctx context.Context, arg GetViewSnapshotByReferenceParams) (GetViewSnapshotByReferenceRow, error) {
+	row := q.db.QueryRow(ctx, getViewSnapshotByReference,
+		arg.ViewID,
+		arg.ViewerHash,
+		arg.RepositoryHash,
+		arg.PullRequestNumber,
+	)
+	var i GetViewSnapshotByReferenceRow
+	err := row.Scan(
+		&i.ViewID,
+		&i.ViewerHash,
+		&i.Ordinal,
+		&i.RepositoryCiphertext,
+		&i.SnapshotCiphertext,
+	)
+	return i, err
+}
+
 const getViewSnapshotState = `-- name: GetViewSnapshotState :one
 SELECT view_id, viewer_hash, truncated, refreshed_at
 FROM deck_pull_request_snapshot_states
@@ -309,10 +351,12 @@ func (q *Queries) InsertView(ctx context.Context, arg InsertViewParams) (DeckVie
 
 const insertViewSnapshot = `-- name: InsertViewSnapshot :exec
 INSERT INTO deck_pull_request_snapshots (
-    view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+    view_id, viewer_hash, ordinal, repository_hash, pull_request_number,
+    repository_ciphertext, snapshot_ciphertext
 ) VALUES (
     $1, $2, $3,
-    $4, $5
+    $4, $5,
+    $6, $7
 )
 `
 
@@ -320,6 +364,8 @@ type InsertViewSnapshotParams struct {
 	ViewID               pgtype.UUID
 	ViewerHash           []byte
 	Ordinal              int32
+	RepositoryHash       []byte
+	PullRequestNumber    int64
 	RepositoryCiphertext []byte
 	SnapshotCiphertext   []byte
 }
@@ -329,6 +375,8 @@ func (q *Queries) InsertViewSnapshot(ctx context.Context, arg InsertViewSnapshot
 		arg.ViewID,
 		arg.ViewerHash,
 		arg.Ordinal,
+		arg.RepositoryHash,
+		arg.PullRequestNumber,
 		arg.RepositoryCiphertext,
 		arg.SnapshotCiphertext,
 	)
@@ -474,7 +522,15 @@ type ListViewSnapshotsParams struct {
 	PageLimit    int32
 }
 
-func (q *Queries) ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsParams) ([]DeckPullRequestSnapshot, error) {
+type ListViewSnapshotsRow struct {
+	ViewID               pgtype.UUID
+	ViewerHash           []byte
+	Ordinal              int32
+	RepositoryCiphertext []byte
+	SnapshotCiphertext   []byte
+}
+
+func (q *Queries) ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsParams) ([]ListViewSnapshotsRow, error) {
 	rows, err := q.db.Query(ctx, listViewSnapshots,
 		arg.ViewID,
 		arg.ViewerHash,
@@ -485,9 +541,9 @@ func (q *Queries) ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsPa
 		return nil, err
 	}
 	defer rows.Close()
-	items := []DeckPullRequestSnapshot{}
+	items := []ListViewSnapshotsRow{}
 	for rows.Next() {
-		var i DeckPullRequestSnapshot
+		var i ListViewSnapshotsRow
 		if err := rows.Scan(
 			&i.ViewID,
 			&i.ViewerHash,

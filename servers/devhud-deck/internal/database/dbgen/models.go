@@ -85,6 +85,12 @@ type DeckDeviceRegistrationIdempotency struct {
 	CreatedAt             pgtype.Timestamptz
 }
 
+type DeckGithubAuthorizationState struct {
+	ProviderIdentityHash []byte
+	RevokedAt            pgtype.Timestamptz
+	ReauthorizedAt       pgtype.Timestamptz
+}
+
 type DeckGithubCallbackState struct {
 	StateHash       []byte
 	OwnerScope      int16
@@ -94,6 +100,11 @@ type DeckGithubCallbackState struct {
 	ExpiresAt       pgtype.Timestamptz
 	ConsumedAt      pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
+}
+
+type DeckGithubInstallationState struct {
+	ProviderIdentityHash []byte
+	DeletedAt            pgtype.Timestamptz
 }
 
 type DeckGithubUserCredential struct {
@@ -148,6 +159,8 @@ type DeckPullRequestSnapshot struct {
 	Ordinal              int32
 	RepositoryCiphertext []byte
 	SnapshotCiphertext   []byte
+	RepositoryHash       []byte
+	PullRequestNumber    int64
 }
 
 type DeckPullRequestSnapshotState struct {

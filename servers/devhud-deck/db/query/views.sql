@@ -116,9 +116,11 @@ WHERE view_id = sqlc.arg(view_id);
 
 -- name: InsertViewSnapshot :exec
 INSERT INTO deck_pull_request_snapshots (
-    view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+    view_id, viewer_hash, ordinal, repository_hash, pull_request_number,
+    repository_ciphertext, snapshot_ciphertext
 ) VALUES (
     sqlc.arg(view_id), sqlc.arg(viewer_hash), sqlc.arg(ordinal),
+    sqlc.arg(repository_hash), sqlc.arg(pull_request_number),
     sqlc.arg(repository_ciphertext), sqlc.arg(snapshot_ciphertext)
 );
 
@@ -146,3 +148,11 @@ WHERE view_id = sqlc.arg(view_id)
   AND ordinal >= sqlc.arg(after_ordinal)
 ORDER BY ordinal
 LIMIT sqlc.arg(page_limit);
+
+-- name: GetViewSnapshotByReference :one
+SELECT view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+FROM deck_pull_request_snapshots
+WHERE view_id = sqlc.arg(view_id)
+  AND viewer_hash = sqlc.arg(viewer_hash)
+  AND repository_hash = sqlc.arg(repository_hash)
+  AND pull_request_number = sqlc.arg(pull_request_number);
