@@ -475,10 +475,7 @@ impl SocketComposerDelivery {
             ComposerIpcRequest::Ping { .. } => COMPOSER_CONNECT_WAIT,
             ComposerIpcRequest::SubmitCapture { .. } => COMPOSER_RESPONSE_WAIT,
         };
-        stream
-            .set_recv_timeout(Some(response_wait))
-            .and_then(|()| stream.set_send_timeout(Some(COMPOSER_CONNECT_WAIT)))
-            .map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+        configure_composer_stream_timeouts(&stream, response_wait, COMPOSER_CONNECT_WAIT)?;
         write_ipc_frame(&mut stream, request, MAX_EXTENSION_MESSAGE_BYTES)?;
         read_ipc_frame(&mut stream, MAX_HOST_RESPONSE_BYTES)
     }
@@ -762,10 +759,7 @@ fn handle_composer_connection(
     mut stream: Stream,
     handler: &dyn Fn(NativeHostRequest) -> Result<(), NativeHostFailure>,
 ) -> Result<(), NativeHostFailure> {
-    stream
-        .set_recv_timeout(Some(COMPOSER_CONNECT_WAIT))
-        .and_then(|()| stream.set_send_timeout(Some(COMPOSER_RESPONSE_WAIT)))
-        .map_err(|_| NativeHostFailure::ComposerUnavailable)?;
+    configure_composer_stream_timeouts(&stream, COMPOSER_CONNECT_WAIT, COMPOSER_RESPONSE_WAIT)?;
     let request: ComposerIpcRequest = read_ipc_frame(&mut stream, MAX_EXTENSION_MESSAGE_BYTES)?;
     let response = match request {
         ComposerIpcRequest::Ping { version: 1 } => ComposerIpcResponse::Ready,
@@ -781,6 +775,24 @@ fn handle_composer_connection(
         }
     };
     write_ipc_frame(&mut stream, &response, MAX_HOST_RESPONSE_BYTES)
+}
+
+fn configure_composer_stream_timeouts(
+    stream: &Stream,
+    receive: Duration,
+    send: Duration,
+) -> Result<(), NativeHostFailure> {
+    let result = stream
+        .set_recv_timeout(Some(receive))
+        .and_then(|()| stream.set_send_timeout(Some(send)));
+    #[cfg(target_os = "windows")]
+    if matches!(&result, Err(error) if error.kind() == io::ErrorKind::Unsupported) {
+        // interprocess 2.4 local sockets use Windows named pipes, whose timeout
+        // setters are unsupported. Keep this exception scoped to that backend
+        // error and remove it once upstream implements named-pipe I/O timeouts.
+        return Ok(());
+    }
+    result.map_err(|_| NativeHostFailure::ComposerUnavailable)
 }
 
 #[cfg_attr(not(any(feature = "desktop-cef", test)), allow(dead_code))]
