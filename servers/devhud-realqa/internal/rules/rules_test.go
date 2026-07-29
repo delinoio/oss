@@ -109,8 +109,11 @@ func TestCompileAcceptsCommonRegexEdgeCases(t *testing.T) {
 	t.Parallel()
 	for _, pattern := range []string{
 		`^[[:digit:]{101}]$`,
+		`^([[:digit:]{101}])+$`,
 		`^\p{^Greek}+$`,
 		`^\P{^Greek}+$`,
+		`^Issue {$`,
+		`^Issue }$`,
 	} {
 		if _, err := Compile([]Rule{{
 			ExactProcessName: "app",

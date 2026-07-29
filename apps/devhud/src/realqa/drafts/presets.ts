@@ -553,6 +553,13 @@ function hasUnsafeRepeatedOrUnbalancedGroup(pattern: string): boolean {
       index += 1;
       continue;
     }
+    if (inCharacterClass) {
+      const posixClass = translatePosixCharacterClass(pattern, index);
+      if (posixClass !== null) {
+        index = posixClass.nextIndex - 1;
+        continue;
+      }
+    }
     if (token === "[") {
       inCharacterClass = true;
       continue;
@@ -789,7 +796,7 @@ function translateTitlePattern(pattern: string): string {
         index += quantifierLength + (lazy ? 1 : 0);
         continue;
       }
-      output += token;
+      output += token === "{" || token === "}" ? `\\${token}` : token;
       index += 1;
     }
     return { output, nextIndex: index };

@@ -211,9 +211,20 @@ func inlineFlagPrefixLength(pattern string, index int, terminator byte) int {
 func hasUnsafeRepeatedOrUnbalancedGroup(pattern string) bool {
 	groups := make([]patternGroupState, 0)
 	inClass := false
+	inPOSIXClass := false
 	for index := 0; index < len(pattern); index++ {
 		token := pattern[index]
 		if token == '\\' {
+			index++
+			continue
+		}
+		if inClass && !inPOSIXClass && strings.HasPrefix(pattern[index:], "[:") {
+			inPOSIXClass = true
+			index++
+			continue
+		}
+		if inPOSIXClass && strings.HasPrefix(pattern[index:], ":]") {
+			inPOSIXClass = false
 			index++
 			continue
 		}
@@ -221,7 +232,7 @@ func hasUnsafeRepeatedOrUnbalancedGroup(pattern string) bool {
 			inClass = true
 			continue
 		}
-		if token == ']' && inClass {
+		if token == ']' && inClass && !inPOSIXClass {
 			inClass = false
 			continue
 		}

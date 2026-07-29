@@ -735,13 +735,9 @@ impl RealQaDraftState {
             .directory
             .as_ref()
             .ok_or(DraftError::StorageUnavailable)?;
-        match fs::symlink_metadata(directory) {
-            Ok(metadata) if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() => {
-                Ok(())
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            _ => Err(DraftError::StorageUnavailable),
-        }
+        validate_existing_directory(directory)?;
+        staged_reset_directories(directory)?;
+        Ok(())
     }
 
     pub(crate) fn reset(&self) -> Result<(), DraftError> {
@@ -753,6 +749,9 @@ impl RealQaDraftState {
             .directory
             .as_ref()
             .ok_or(DraftError::StorageUnavailable)?;
+        for stale_staged in staged_reset_directories(directory)? {
+            fs::remove_dir_all(stale_staged).map_err(|_| DraftError::WriteFailed)?;
+        }
         let staged = directory.with_extension(format!("reset-{}", Uuid::now_v7()));
         let staged_current = match fs::rename(directory, &staged) {
             Ok(()) => true,
@@ -775,6 +774,34 @@ impl RealQaDraftState {
             Ok(())
         }
     }
+}
+
+fn staged_reset_directories(directory: &Path) -> Result<Vec<PathBuf>, DraftError> {
+    let parent = directory.parent().ok_or(DraftError::StorageUnavailable)?;
+    let staged_prefix = directory.with_extension("reset-");
+    let staged_prefix = staged_prefix
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(DraftError::StorageUnavailable)?;
+    let mut staged = Vec::new();
+    for entry in fs::read_dir(parent).map_err(|_| DraftError::StorageUnavailable)? {
+        let entry = entry.map_err(|_| DraftError::StorageUnavailable)?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with(staged_prefix) {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|_| DraftError::StorageUnavailable)?;
+        if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+            return Err(DraftError::StorageUnavailable);
+        }
+        staged.push(path);
+    }
+    staged.sort();
+    Ok(staged)
 }
 
 fn remove_staged_with_rollback(
@@ -1997,6 +2024,21 @@ mod tests {
         let mut vault = state.vault.lock().unwrap();
         assert!(vault.load().unwrap().keys.is_empty());
         assert!(!vault.extension_pairing_present());
+    }
+
+    #[test]
+    fn reset_removes_staged_draft_directories_left_by_an_interrupted_reset() {
+        let state = state("reset-interrupted");
+        let directory = state.directory.as_ref().unwrap().clone();
+        let stale_staged = directory.with_extension(format!("reset-{}", Uuid::now_v7()));
+        fs::write(directory.join("orphaned.rqadraft"), b"ciphertext").unwrap();
+        fs::rename(&directory, &stale_staged).unwrap();
+
+        state.preflight_reset().unwrap();
+        state.reset().unwrap();
+
+        assert!(directory.is_dir());
+        assert!(!stale_staged.exists());
     }
 
     #[test]

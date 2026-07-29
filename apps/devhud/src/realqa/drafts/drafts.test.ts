@@ -376,6 +376,8 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     [String.raw`^[\p{Han}]+$`, "漢字"],
     [String.raw`^[[:alpha:]]+$`, "Letters"],
     [String.raw`^[[:^digit:]]+$`, "Letters"],
+    ["^Issue {$", "Issue {"],
+    ["^Issue }$", "Issue }"],
   ])("translates synchronized title class %s", (pattern, title) => {
     expect(
       inferDesktopUrl(
@@ -433,6 +435,11 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     expect(
       validateRealQaProcessUrlRules([
         rule({ safeWindowTitlePattern: String.raw`^[[:digit:]{101}]$` }),
+      ]),
+    ).toBe(true);
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ safeWindowTitlePattern: String.raw`^([[:digit:]{101}])+$` }),
       ]),
     ).toBe(true);
   });
