@@ -177,7 +177,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	_, _, _, err = store.RegisterDevice(ctx, RegisterDeviceParams{
 		RegistrationID: registrationID, DeviceID: deviceID, AccountID: accountID,
 		IdempotencyKey: mustV7(t), RequestDigest: security.Digest([]byte("first")),
-		Write: write, Grant: grant, LeaseExpiresAt: now.Add(deviceLeaseForTest),
+		OwnerHash: hasher.Sum("owner", "OWNER_SCOPE_PERSONAL:"+accountID.String()),
+		Write:     write, Grant: grant, LeaseExpiresAt: now.Add(deviceLeaseForTest),
 		Now: now,
 	})
 	if err != nil {
@@ -186,7 +187,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	_, _, _, err = store.RegisterDevice(ctx, RegisterDeviceParams{
 		RegistrationID: mustV7(t), DeviceID: deviceID, AccountID: secondAccountID,
 		IdempotencyKey: mustV7(t), RequestDigest: security.Digest([]byte("second")),
-		Write: write, Grant: grant, LeaseExpiresAt: now.Add(deviceLeaseForTest),
+		OwnerHash: hasher.Sum("owner", "OWNER_SCOPE_PERSONAL:"+secondAccountID.String()),
+		Write:     write, Grant: grant, LeaseExpiresAt: now.Add(deviceLeaseForTest),
 		Now: now,
 	})
 	if !errors.Is(err, ErrAccountSwitch) {
@@ -221,6 +223,19 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		now.Add(2*time.Hour), 120))
 	if !errors.Is(err, ErrDeletionInProgress) {
 		t.Fatalf("tombstoned owner create = %T %v", err, err)
+	}
+	postDeletionGrant, err := security.NewGrant()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = store.RegisterDevice(ctx, RegisterDeviceParams{
+		RegistrationID: mustV7(t), DeviceID: mustV7(t), AccountID: accountID,
+		IdempotencyKey: mustV7(t), RequestDigest: security.Digest([]byte("deleted")),
+		OwnerHash: targetHash, Write: write, Grant: postDeletionGrant,
+		LeaseExpiresAt: now.Add(deviceLeaseForTest), Now: now,
+	})
+	if !errors.Is(err, ErrDeletionInProgress) {
+		t.Fatalf("tombstoned owner register = %T %v", err, err)
 	}
 }
 

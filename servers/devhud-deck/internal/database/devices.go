@@ -29,6 +29,7 @@ type RegisterDeviceParams struct {
 	AccountID      uuid.UUID
 	IdempotencyKey uuid.UUID
 	RequestDigest  [32]byte
+	OwnerHash      [32]byte
 	Write          DeviceWrite
 	Expected       uint64
 	HasExpected    bool
@@ -79,6 +80,19 @@ func (store *Store) RegisterDevice(
 		}
 		if !errors.Is(replayErr, pgx.ErrNoRows) {
 			return replayErr
+		}
+		if err := queries.EnsureOwnerLock(ctx, params.OwnerHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockOwner(ctx, params.OwnerHash[:]); err != nil {
+			return err
+		}
+		tombstoned, err := queries.IsOwnerTombstoned(ctx, params.OwnerHash[:])
+		if err != nil {
+			return err
+		}
+		if tombstoned {
+			return ErrDeletionInProgress
 		}
 		_ = queries.DeleteExpiredDeviceIdempotency(ctx, pgTime(params.Now))
 		_ = queries.DeleteExpiredDeviceByID(ctx, dbgen.DeleteExpiredDeviceByIDParams{

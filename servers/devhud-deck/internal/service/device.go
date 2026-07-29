@@ -94,6 +94,8 @@ func (service *Device) RegisterDevice(
 			deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
 	}
 	now := service.dependencies.Clock.Now().UTC()
+	ownerHash := service.dependencies.Hasher.Sum(
+		"owner", "OWNER_SCOPE_PERSONAL:"+viewer.AccountID.String())
 	registration, grant, replayed, err := service.dependencies.Store.RegisterDevice(
 		ctx, database.RegisterDeviceParams{
 			RegistrationID: registrationID,
@@ -101,6 +103,7 @@ func (service *Device) RegisterDevice(
 			AccountID:      viewer.AccountID,
 			IdempotencyKey: idempotencyID,
 			RequestDigest:  digest,
+			OwnerHash:      ownerHash,
 			Write:          write,
 			Expected:       expected,
 			HasExpected:    hasExpected,
@@ -111,8 +114,6 @@ func (service *Device) RegisterDevice(
 	if err != nil {
 		return nil, (&View{dependencies: service.dependencies}).mapStaleWithETag(err)
 	}
-	ownerHash := service.dependencies.Hasher.Sum(
-		"owner", "OWNER_SCOPE_PERSONAL:"+viewer.AccountID.String())
 	if err := (&View{dependencies: service.dependencies}).recordAudit(
 		ctx, viewer.Subject, audit.EventDeviceRegistered,
 		deckv1.OwnerScope_OWNER_SCOPE_PERSONAL, ownerHash[:],

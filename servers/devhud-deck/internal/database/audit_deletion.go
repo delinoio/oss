@@ -79,6 +79,12 @@ func (store *Store) DeleteFeatureData(
 		if !errors.Is(replayErr, pgx.ErrNoRows) {
 			return replayErr
 		}
+		if err := queries.EnsureOwnerLock(ctx, params.TargetHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockOwner(ctx, params.TargetHash[:]); err != nil {
+			return err
+		}
 		if err := queries.InsertOwnerTombstone(ctx, dbgen.InsertOwnerTombstoneParams{
 			TargetHash: params.TargetHash[:], AcceptedAt: pgTime(params.AcceptedAt),
 		}); err != nil {
@@ -155,6 +161,12 @@ func (store *Store) DeleteOrganizationFeatureData(
 		}
 		if !errors.Is(replayErr, pgx.ErrNoRows) {
 			return replayErr
+		}
+		if err := queries.EnsureOwnerLock(ctx, params.TargetHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockOwner(ctx, params.TargetHash[:]); err != nil {
+			return err
 		}
 		if err := queries.InsertOwnerTombstone(ctx, dbgen.InsertOwnerTombstoneParams{
 			TargetHash: params.TargetHash[:], AcceptedAt: pgTime(params.AcceptedAt),
