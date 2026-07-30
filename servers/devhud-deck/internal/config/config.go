@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -34,6 +36,11 @@ type Config struct {
 	GitHubAppSlug            string
 	GitHubWebhookSecret      []byte
 	GitHubCallbackSigningKey []byte
+	DelibaseAPIOrigin        string
+	DelibaseLogtoAudience    string
+	DelibaseServiceID        uuid.UUID
+	DelibaseM2MClientID      string
+	DelibaseM2MClientSecret  string
 }
 
 func Load(lookup LookupEnv) (Config, error) {
@@ -50,7 +57,17 @@ func Load(lookup LookupEnv) (Config, error) {
 		GitHubClientID:     required(lookup, "DECK_GITHUB_APP_CLIENT_ID"),
 		GitHubClientSecret: required(lookup, "DECK_GITHUB_APP_CLIENT_SECRET"),
 		GitHubAppSlug:      required(lookup, "DECK_GITHUB_APP_SLUG"),
+		DelibaseAPIOrigin: required(
+			lookup, "DECK_DELIBASE_API_ORIGIN"),
+		DelibaseLogtoAudience: required(
+			lookup, "DECK_DELIBASE_LOGTO_AUDIENCE"),
+		DelibaseM2MClientID: required(
+			lookup, "DECK_DELIBASE_LOGTO_M2M_CLIENT_ID"),
+		DelibaseM2MClientSecret: required(
+			lookup, "DECK_DELIBASE_LOGTO_M2M_CLIENT_SECRET"),
 	}
+	configuration.DelibaseServiceID, _ = uuid.Parse(
+		required(lookup, "DECK_DELIBASE_SERVICE_IDENTITY_ID"))
 	var err error
 	configuration.EncryptionKey, err = decodeKey(
 		required(lookup, "DECK_ENCRYPTION_KEY"), 32)
@@ -90,7 +107,12 @@ func Load(lookup LookupEnv) (Config, error) {
 		!safeGitHubIdentifier(configuration.GitHubClientID) ||
 		!safeGitHubIdentifier(configuration.GitHubAppSlug) ||
 		configuration.GitHubClientSecret == "" ||
-		strings.ContainsAny(configuration.GitHubClientSecret, "\r\n") {
+		strings.ContainsAny(configuration.GitHubClientSecret, "\r\n") ||
+		configuration.DelibaseAPIOrigin != DelibaseAudience ||
+		configuration.DelibaseLogtoAudience != DelibaseAudience ||
+		configuration.DelibaseServiceID.Version() != 7 ||
+		!safeServiceCredential(configuration.DelibaseM2MClientID) ||
+		!safeServiceCredential(configuration.DelibaseM2MClientSecret) {
 		return Config{}, errors.New("deck config: required value is missing or invalid")
 	}
 	if err := exactHTTPSResource(configuration.LogtoIssuer); err != nil {
@@ -100,6 +122,11 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, fmt.Errorf("deck config: invalid Logto JWKS URL")
 	}
 	return configuration, nil
+}
+
+func safeServiceCredential(value string) bool {
+	return value != "" && strings.TrimSpace(value) == value &&
+		!strings.ContainsAny(value, "\x00\r\n")
 }
 
 func safeKeyID(value string) bool {

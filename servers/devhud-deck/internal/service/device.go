@@ -281,13 +281,98 @@ func (service *Device) UpdateViewNotificationPreference(
 }
 
 func (service *Device) ResolveNotificationEvent(
-	context.Context,
-	*connect.Request[deckv1.ResolveNotificationEventRequest],
+	ctx context.Context,
+	request *connect.Request[deckv1.ResolveNotificationEventRequest],
 ) (*connect.Response[deckv1.ResolveNotificationEventResponse], error) {
+	viewer, err := viewerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registrationID, err := parseUUID(request.Msg.GetRegistrationId())
+	if err != nil || request.Msg.GetOpaqueEventId() == "" {
+		return nil, rpcerr.New(connect.CodeInvalidArgument,
+			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
+	}
+	now := service.dependencies.Clock.Now().UTC()
+	registration, accountID, err :=
+		service.dependencies.Store.GetDeviceByRegistration(ctx, registrationID)
+	if err != nil || accountID != viewer.AccountID ||
+		registration.GetLeaseExpiresAt() == nil ||
+		!registration.GetLeaseExpiresAt().AsTime().After(now) {
+		return genericNotification(), nil
+	}
+	if err := service.dependencies.Store.PruneNotificationHistory(
+		ctx, now); err != nil {
+		return nil, mapDatabaseError(err)
+	}
+	event, err := service.dependencies.Store.GetNotificationEvent(
+		ctx, request.Msg.GetOpaqueEventId(), now)
+	if err != nil {
+		return genericNotification(), nil
+	}
+	viewerHash := service.dependencies.Hasher.Sum(
+		"snapshot-viewer", viewer.AccountID.String())
+	if event.ViewerHash != viewerHash {
+		return genericNotification(), nil
+	}
+	view, err := (&View{dependencies: service.dependencies}).getAuthorizedView(
+		ctx, viewer, event.ViewID, false)
+	if err != nil ||
+		view.GetConnectionState() !=
+			deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		return genericNotification(), nil
+	}
+	preference, err := service.dependencies.Store.NotificationPreference(
+		ctx, registrationID, event.ViewID)
+	if err != nil || !preference.GetEnabled() ||
+		!notificationTransitionEnabled(preference, event.Transition) {
+		return genericNotification(), nil
+	}
+	if !registration.GetDevice().GetDetailedNotificationTextEnabled() {
+		return genericNotification(), nil
+	}
+	repository := event.Reference.GetRepository()
+	allowed, err := service.dependencies.Repositories.CanReadRepository(
+		ctx, viewer, view.GetOwner(), repository.GetOwner(),
+		repository.GetName())
+	if err != nil || !allowed {
+		return genericNotification(), nil
+	}
+	snapshot, err := service.dependencies.Store.GetSnapshot(
+		ctx, event.ViewID, viewerHash, event.Reference)
+	if err != nil {
+		return genericNotification(), nil
+	}
+	detail := &deckv1.PullRequestDetail{
+		Result: snapshot, SupportedMutations: snapshot.SupportedMutations,
+		AvailableMergeMethods: snapshot.AvailableMergeMethods,
+		Revision:              snapshot.Revision,
+	}
+	return connect.NewResponse(&deckv1.ResolveNotificationEventResponse{
+		Resolution:       deckv1.NotificationResolution_NOTIFICATION_RESOLUTION_DETAILED,
+		NotificationText: database.DetailedNotificationText(detail),
+		ViewId:           view.GetViewId(), PullRequest: detail,
+		Transition: event.Transition,
+	}), nil
+}
+
+func genericNotification() *connect.Response[deckv1.ResolveNotificationEventResponse] {
 	return connect.NewResponse(&deckv1.ResolveNotificationEventResponse{
 		Resolution:       deckv1.NotificationResolution_NOTIFICATION_RESOLUTION_GENERIC,
 		NotificationText: "Deck view updated",
-	}), nil
+	})
+}
+
+func notificationTransitionEnabled(
+	preference *deckv1.ViewNotificationPreference,
+	target deckv1.NotificationTransition,
+) bool {
+	for _, transition := range preference.GetTransitions() {
+		if transition == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (service *Device) deviceWrite(

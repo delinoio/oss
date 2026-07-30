@@ -369,6 +369,11 @@ func (service *View) ListPullRequests(
 	}
 	viewerHash := service.dependencies.Hasher.Sum(
 		"snapshot-viewer", viewer.AccountID.String())
+	now := service.dependencies.Clock.Now().UTC()
+	if err := service.dependencies.Store.TouchViewOpened(
+		ctx, viewID, viewerHash, now); err != nil {
+		return nil, mapDatabaseError(err)
+	}
 	requiredRepositoryHashes, err := service.dependencies.Store.
 		ListSnapshotRepositoryHashes(ctx, viewID, viewerHash)
 	if err != nil {
@@ -425,7 +430,7 @@ func (service *View) ListPullRequests(
 	var refreshed *timestamppb.Timestamp
 	if !refreshedAt.IsZero() {
 		refreshed = timestamppb.New(refreshedAt)
-		freshness = deckv1.FreshnessState_FRESHNESS_STATE_FRESH
+		freshness = refreshFreshness(now, refreshedAt)
 	}
 	return connect.NewResponse(&deckv1.ListPullRequestsResponse{
 		PullRequests: authorized[offset:end],
@@ -582,22 +587,6 @@ func deletionOwnerLabel(organization bool) string {
 		return "OWNER_SCOPE_ORGANIZATION"
 	}
 	return "OWNER_SCOPE_PERSONAL"
-}
-
-func (service *View) GetRefreshPreflight(
-	context.Context,
-	*connect.Request[deckv1.GetRefreshPreflightRequest],
-) (*connect.Response[deckv1.GetRefreshPreflightResponse], error) {
-	return nil, rpcerr.New(connect.CodeUnavailable,
-		deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
-}
-
-func (service *View) RefreshView(
-	context.Context,
-	*connect.Request[deckv1.RefreshViewRequest],
-) (*connect.Response[deckv1.RefreshViewResponse], error) {
-	return nil, rpcerr.New(connect.CodeUnavailable,
-		deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
 }
 
 func (service *View) mapStaleWithETag(err error) error {

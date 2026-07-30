@@ -333,6 +333,7 @@ message GetRefreshPreflightRequest {
   UuidV7 view_id = 1;
   IdempotencyKey refresh_request_id = 2;
   RefreshOrigin origin = 3;
+  RefreshClientKind client_kind = 4;
 }
 
 message GetRefreshPreflightResponse {
@@ -350,6 +351,16 @@ enum RefreshOrigin {
   REFRESH_ORIGIN_SHORTCUT = 5;
 }
 
+// RefreshClientKind identifies the active DevHud execution surface that owns
+// the complete request. It does not authorize server-side continuation.
+enum RefreshClientKind {
+  REFRESH_CLIENT_KIND_UNSPECIFIED = 0;
+  REFRESH_CLIENT_KIND_DESKTOP = 1;
+  REFRESH_CLIENT_KIND_MOBILE = 2;
+  REFRESH_CLIENT_KIND_OS_BACKGROUND_TASK = 3;
+  REFRESH_CLIENT_KIND_WIDGET = 4;
+}
+
 enum BillingDisposition {
   BILLING_DISPOSITION_UNSPECIFIED = 0;
   BILLING_DISPOSITION_FREE_CACHE_HIT = 1;
@@ -358,6 +369,7 @@ enum BillingDisposition {
   BILLING_DISPOSITION_COMMITTED = 4;
   BILLING_DISPOSITION_RELEASED = 5;
   BILLING_DISPOSITION_REJECTED = 6;
+  BILLING_DISPOSITION_FREE_NOT_ELIGIBLE = 7;
 }
 
 message RefreshViewRequest {
@@ -365,6 +377,7 @@ message RefreshViewRequest {
   IdempotencyKey refresh_request_id = 2;
   RefreshOrigin origin = 3;
   string billing_preflight_token = 4;
+  RefreshClientKind client_kind = 5;
 }
 
 message RefreshViewResponse {

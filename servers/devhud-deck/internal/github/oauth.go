@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -155,8 +156,14 @@ func (oauth *OAuth) exchange(
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if err := notifyDispatch(ctx); err != nil {
+		return Credential{}, err
+	}
 	response, err := oauth.client.Do(request)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return Credential{}, ErrTimeout
+		}
 		return Credential{}, ErrProvider
 	}
 	defer response.Body.Close()

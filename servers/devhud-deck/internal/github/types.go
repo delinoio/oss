@@ -31,6 +31,7 @@ var (
 	ErrBranchProtected      = errors.New("deck github: repository rules prevent merge")
 	ErrStaleRevision        = errors.New("deck github: pull request revision is stale")
 	ErrProvider             = errors.New("deck github: provider request failed")
+	ErrTimeout              = errors.New("deck github: provider request timed out")
 )
 
 var (
@@ -281,6 +282,11 @@ type SearchPullRequest struct {
 	Title      string
 	Author     User
 	UpdatedAt  time.Time
+	Assignees  []User
+	Labels     []string
+	IsDraft    bool
+	IsOpen     bool
+	IsMerged   bool
 }
 
 type SearchPage struct {

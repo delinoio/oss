@@ -95,6 +95,11 @@ func validLookup(overrides map[string]string) LookupEnv {
 		"DECK_GITHUB_APP_SLUG":                        "deck-fixture",
 		"DECK_GITHUB_WEBHOOK_SECRET":                  key,
 		"DECK_GITHUB_CALLBACK_SIGNING_KEY":            key,
+		"DECK_DELIBASE_API_ORIGIN":                    "https://delibase.deli.dev",
+		"DECK_DELIBASE_LOGTO_AUDIENCE":                "https://delibase.deli.dev",
+		"DECK_DELIBASE_SERVICE_IDENTITY_ID":           "0195c4a2-4f20-7d21-8df5-48a3f4ee60e0",
+		"DECK_DELIBASE_LOGTO_M2M_CLIENT_ID":           "deck-usage-client",
+		"DECK_DELIBASE_LOGTO_M2M_CLIENT_SECRET":       "deck-usage-secret",
 	}
 	for name, value := range overrides {
 		values[name] = value

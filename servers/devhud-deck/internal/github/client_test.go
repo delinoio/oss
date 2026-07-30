@@ -327,6 +327,88 @@ func TestGraphQLErrorMapsHTTP200RateLimitHeaders(t *testing.T) {
 	}
 }
 
+func TestDispatchObserverRunsImmediatelyBeforeRoundTrip(t *testing.T) {
+	t.Parallel()
+	blocked := errors.New("billing reservation rejected")
+	roundTrips := 0
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			roundTrips++
+			return jsonResponse(http.StatusOK, `{}`), nil
+		})})
+	ctx := WithDispatchObserver(context.Background(), func() error {
+		return blocked
+	})
+	_, err := client.CanReadRepository(
+		ctx, Credential{AccessToken: "token"},
+		Repository{Owner: "acme", Name: "widget"})
+	if !errors.Is(err, blocked) || roundTrips != 0 {
+		t.Fatalf("blocked dispatch = %v, round trips = %d", err, roundTrips)
+	}
+
+	observerCalls := 0
+	client = NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			roundTrips++
+			if observerCalls != 1 {
+				t.Fatalf("round trip started before observer: %d", observerCalls)
+			}
+			return nil, context.DeadlineExceeded
+		})})
+	ctx = WithDispatchObserver(context.Background(), func() error {
+		observerCalls++
+		return nil
+	})
+	_, err = client.CanReadRepository(
+		ctx, Credential{AccessToken: "token"},
+		Repository{Owner: "acme", Name: "widget"})
+	if !errors.Is(err, ErrTimeout) || observerCalls != 1 || roundTrips != 1 {
+		t.Fatalf(
+			"timeout dispatch = %v, observer = %d, round trips = %d",
+			err, observerCalls, roundTrips)
+	}
+}
+
+func TestInstallationProviderConcurrencyLimitIsFour(t *testing.T) {
+	t.Parallel()
+	limiter := newInstallationLimiter(4)
+	releases := make([]func(), 0, 4)
+	for index := 0; index < 4; index++ {
+		release, err := limiter.acquire(42)
+		if err != nil {
+			t.Fatalf("permit %d = %v", index+1, err)
+		}
+		releases = append(releases, release)
+	}
+	if _, err := limiter.acquire(42); !errors.Is(
+		err, ErrConcurrencyLimited) {
+		t.Fatalf("fifth permit = %v", err)
+	}
+	if _, err := limiter.acquire(43); err != nil {
+		t.Fatalf("another installation was limited: %v", err)
+	}
+	for _, release := range releases {
+		release()
+	}
+}
+
+func TestMutationLimitIsThirtyPerMinutePerUser(t *testing.T) {
+	t.Parallel()
+	limiter := newUserRateLimiter(30, time.Minute)
+	now := time.Date(2026, time.July, 30, 0, 0, 0, 0, time.UTC)
+	for index := 0; index < 30; index++ {
+		if !limiter.allow("viewer", now) {
+			t.Fatalf("mutation %d was rejected", index+1)
+		}
+	}
+	if limiter.allow("viewer", now) {
+		t.Fatal("thirty-first mutation was accepted")
+	}
+	if !limiter.allow("other-viewer", now) {
+		t.Fatal("one user consumed another user's mutation limit")
+	}
+}
+
 func TestGraphQLErrorMapsSecondaryRateLimitWithoutHeaders(t *testing.T) {
 	t.Parallel()
 	client := NewClient(&http.Client{Transport: roundTripFunc(

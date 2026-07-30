@@ -495,6 +495,9 @@ func mapGitHubError(err error) error {
 	case errors.Is(err, deckgithub.ErrRateLimited):
 		return rpcerr.New(connect.CodeResourceExhausted,
 			deckv1.ErrorReason_ERROR_REASON_PROVIDER_RATE_LIMITED)
+	case errors.Is(err, deckgithub.ErrTimeout):
+		return rpcerr.New(connect.CodeUnavailable,
+			deckv1.ErrorReason_ERROR_REASON_PROVIDER_TIMEOUT)
 	case errors.Is(err, deckgithub.ErrReauthenticationRequired):
 		return rpcerr.New(connect.CodeFailedPrecondition,
 			deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)

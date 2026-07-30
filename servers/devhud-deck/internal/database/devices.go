@@ -208,7 +208,11 @@ func (store *Store) GetDevice(
 		}
 		return nil, ErrNotFound
 	}
-	return store.decodeDevice(row)
+	registration, err := store.decodeDevice(row)
+	if err == nil {
+		applyWidgetFreshness(registration, now)
+	}
+	return registration, err
 }
 
 func (store *Store) GetDeviceByRegistration(

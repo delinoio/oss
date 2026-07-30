@@ -97,8 +97,14 @@ func (client *Client) doWithConflictError(
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
+	if err := notifyDispatch(ctx); err != nil {
+		return nil, err
+	}
 	response, err := client.http.Do(request)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, ErrTimeout
+		}
 		return nil, ErrProvider
 	}
 	defer response.Body.Close()
@@ -257,10 +263,20 @@ type searchResponse struct {
 		Number        uint64 `json:"number"`
 		Title         string `json:"title"`
 		UpdatedAt     string `json:"updated_at"`
+		State         string `json:"state"`
+		Draft         bool   `json:"draft"`
 		User          struct {
 			Login string `json:"login"`
 		} `json:"user"`
-		PullRequest json.RawMessage `json:"pull_request"`
+		Assignees []struct {
+			Login string `json:"login"`
+		} `json:"assignees"`
+		Labels []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+		PullRequest *struct {
+			MergedAt *string `json:"merged_at"`
+		} `json:"pull_request"`
 	} `json:"items"`
 }
 
@@ -313,7 +329,7 @@ func (client *Client) SearchPullRequests(
 	for _, item := range response.Items {
 		// Search issues can theoretically return non-PR items if GitHub changes
 		// query handling. They are never part of Deck's result shape.
-		if len(item.PullRequest) == 0 || string(item.PullRequest) == "null" {
+		if item.PullRequest == nil {
 			continue
 		}
 		repository, err := repositoryFromAPIURL(item.RepositoryURL)
@@ -329,13 +345,28 @@ func (client *Client) SearchPullRequests(
 		if err != nil {
 			return SearchPage{}, ErrProvider
 		}
-		result.PullRequests = append(result.PullRequests, SearchPullRequest{
+		pullRequest := SearchPullRequest{
 			Repository: repository,
 			Number:     item.Number,
 			Title:      item.Title,
 			Author:     User{Login: item.User.Login},
 			UpdatedAt:  updatedAt,
-		})
+			IsDraft:    item.Draft,
+			IsOpen:     strings.EqualFold(item.State, "open"),
+			IsMerged:   item.PullRequest.MergedAt != nil,
+		}
+		for _, assignee := range item.Assignees {
+			if safePathSegment(assignee.Login) {
+				pullRequest.Assignees = append(
+					pullRequest.Assignees, User{Login: assignee.Login})
+			}
+		}
+		for _, label := range item.Labels {
+			if validOperand(label.Name) {
+				pullRequest.Labels = append(pullRequest.Labels, label.Name)
+			}
+		}
+		result.PullRequests = append(result.PullRequests, pullRequest)
 	}
 	result.VisibleCount = len(result.PullRequests)
 	if len(response.Items) == limit {
