@@ -340,6 +340,57 @@ describe("Deck client-owned refresh polling", () => {
     controller.stop();
   });
 
+  it("continues to later candidates after one preflight fails", async () => {
+    const preflights: string[] = [];
+    const refreshes: string[] = [];
+    const errors: unknown[] = [];
+    let sequence = 0;
+    const controller = new DeckRefreshController({
+      clientKind: RefreshClientKind.DESKTOP,
+      createRequestId: () => `request-${++sequence}`,
+      canPoll: () => true,
+      listCandidates: async () => [
+        {
+          viewId: "deleted",
+          notificationAttached: true,
+          shortcutAttached: false,
+          widgetAttached: false,
+        },
+        {
+          viewId: "healthy",
+          notificationAttached: true,
+          shortcutAttached: false,
+          widgetAttached: false,
+        },
+      ],
+      onError: (error) => errors.push(error),
+      transport: {
+        isAmbiguousRefreshError: () => false,
+        getPreflight: async (request) => {
+          preflights.push(request.viewId);
+          if (request.viewId === "deleted") {
+            throw new Error("view deleted");
+          }
+          return {
+            priceUsdMicros: 50n,
+            token: `token-${request.requestId}`,
+          };
+        },
+        refresh: async (request) => {
+          refreshes.push(request.viewId);
+        },
+      },
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(preflights).toEqual(["deleted", "healthy"]);
+    expect(refreshes).toEqual(["healthy"]);
+    expect(errors).toHaveLength(1);
+    controller.stop();
+  });
+
   it("does not let a stopped poll schedule into a restarted generation", async () => {
     let resolveFirst: (() => void) | undefined;
     let listCalls = 0;

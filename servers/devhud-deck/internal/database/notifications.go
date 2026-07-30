@@ -253,9 +253,11 @@ func (store *Store) UpdateWidgetSnapshots(
 	snapshots []*deckv1.PullRequestResult,
 	truncated bool,
 	refreshedAt time.Time,
+	updatedAt time.Time,
 ) error {
 	return store.updateWidgetSnapshots(
-		ctx, store.pool, accountID, viewID, snapshots, truncated, refreshedAt)
+		ctx, store.pool, accountID, viewID, snapshots, truncated,
+		refreshedAt, updatedAt)
 }
 
 func (store *Store) updateWidgetSnapshots(
@@ -266,12 +268,13 @@ func (store *Store) updateWidgetSnapshots(
 	snapshots []*deckv1.PullRequestResult,
 	truncated bool,
 	refreshedAt time.Time,
+	updatedAt time.Time,
 ) error {
 	rows, err := executor.Query(ctx, `
 		SELECT registration_id, revision, widgets_ciphertext
 		FROM deck_device_registrations
 		WHERE account_id = $1 AND lease_expires_at > $2
-	`, accountID, refreshedAt.UTC())
+	`, accountID, updatedAt.UTC())
 	if err != nil {
 		return errors.New("deck database: widget snapshot lookup failed")
 	}
@@ -307,7 +310,6 @@ func (store *Store) updateWidgetSnapshots(
 			if widget.GetViewId().GetValue() != viewID.String() {
 				continue
 			}
-			changed = true
 			items := make([]*deckv1.WidgetPullRequestItem, 0, len(snapshots))
 			if widget.GetPrivacy() ==
 				deckv1.WidgetPrivacy_WIDGET_PRIVACY_REPOSITORY_AND_TITLES {
@@ -318,12 +320,17 @@ func (store *Store) updateWidgetSnapshots(
 					})
 				}
 			}
-			widget.Snapshot = &deckv1.WidgetSnapshot{
+			snapshot := &deckv1.WidgetSnapshot{
 				MatchingCount: uint32(len(snapshots)),
 				PullRequests:  items,
 				Freshness:     deckv1.FreshnessState_FRESHNESS_STATE_FRESH,
 				GeneratedAt:   timestamppb.New(refreshedAt.UTC()),
 			}
+			if proto.Equal(widget.Snapshot, snapshot) {
+				continue
+			}
+			changed = true
+			widget.Snapshot = snapshot
 			// The count remains the visible retained result count. Truncation
 			// is intentionally not converted into a guessed provider total.
 			_ = truncated
@@ -340,7 +347,7 @@ func (store *Store) updateWidgetSnapshots(
 			SET widgets_ciphertext = $1, revision = revision + 1,
 			    updated_at = $2
 			WHERE registration_id = $3 AND revision = $4
-		`, ciphertext, refreshedAt.UTC(), device.registrationID, device.revision)
+		`, ciphertext, updatedAt.UTC(), device.registrationID, device.revision)
 		if err != nil {
 			return errors.New("deck database: widget snapshot update failed")
 		}

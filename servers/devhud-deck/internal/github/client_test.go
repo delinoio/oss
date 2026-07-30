@@ -1279,6 +1279,95 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 	}
 }
 
+func TestSnapshotMetadataPaginatesLargeCheckRollups(t *testing.T) {
+	t.Parallel()
+	graphQLCalls := 0
+	successfulChecks := strings.TrimSuffix(strings.Repeat(
+		`{"status":"COMPLETED","conclusion":"SUCCESS"},`, 100), ",")
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			switch {
+			case request.URL.Path == "/repos/acme/widget" &&
+				request.Method == http.MethodGet:
+				return jsonResponse(http.StatusOK,
+					`{"permissions":{"pull":true}}`), nil
+			case request.URL.Path == "/repos/acme/widget/pulls/7" &&
+				request.Method == http.MethodGet:
+				return jsonResponse(http.StatusOK,
+					`{"node_id":"PR_1","state":"open","mergeable":true,`+
+						`"updated_at":"2026-01-01T00:00:00Z",`+
+						`"head":{"sha":"abc"}}`), nil
+			case request.URL.Path == GraphQLPath &&
+				request.Method == http.MethodPost:
+				graphQLCalls++
+				body, err := io.ReadAll(request.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if graphQLCalls == 1 {
+					return jsonResponse(http.StatusOK, fmt.Sprintf(`{
+						"data":{"node":{
+							"reviewDecision":"APPROVED",
+							"statusCheckRollup":{
+								"state":"FAILURE",
+								"contexts":{
+									"totalCount":101,
+									"nodes":[%s],
+									"pageInfo":{
+										"hasNextPage":true,
+										"endCursor":"checks-100"
+									}
+								}
+							}
+						}}
+					}`, successfulChecks)), nil
+				}
+				if !strings.Contains(string(body), `"cursor":"checks-100"`) {
+					t.Fatalf("continuation cursor missing from %s", body)
+				}
+				return jsonResponse(http.StatusOK, `{
+					"data":{"node":{
+						"reviewDecision":"APPROVED",
+						"statusCheckRollup":{
+							"state":"FAILURE",
+							"contexts":{
+								"totalCount":101,
+								"nodes":[{
+									"status":"COMPLETED",
+									"conclusion":"FAILURE"
+								}],
+								"pageInfo":{"hasNextPage":false}
+							}
+						}
+					}}
+				}`), nil
+			default:
+				t.Fatalf("unexpected metadata request %s %s",
+					request.Method, request.URL.Path)
+				return nil, nil
+			}
+		})})
+	metadata, err := client.PullRequestSnapshotMetadata(
+		context.Background(), 42,
+		Credential{AccessToken: "ghu_viewer"},
+		Permissions{
+			Metadata: PermissionRead, PullRequests: PermissionRead,
+		},
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"},
+			Number:     7,
+		})
+	if err != nil ||
+		metadata.ChecksState != ChecksStateFailure ||
+		metadata.SuccessfulChecks != 100 ||
+		metadata.FailedChecks != 1 ||
+		metadata.PendingChecks != 0 ||
+		graphQLCalls != 2 {
+		t.Fatalf("paginated metadata = %#v calls=%d err=%v",
+			metadata, graphQLCalls, err)
+	}
+}
+
 func TestMutationRequiresRefreshWhenResultReloadFails(t *testing.T) {
 	t.Parallel()
 	mutated := false

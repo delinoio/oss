@@ -279,14 +279,26 @@ func (service *View) RefreshView(
 						return err
 					}
 				}
-				truncated, refreshedAt, freshness, resultCount, stateErr :=
-					service.currentSnapshotState(
-						ctx, viewID, viewerHash, currentTime)
+				snapshots, truncated, refreshedAt, stateErr :=
+					service.dependencies.Store.ListAllSnapshots(
+						ctx, viewID, viewerHash)
 				if stateErr != nil {
 					return stateErr
 				}
+				freshness := refreshFreshness(currentTime, refreshedAt)
+				resultCount := len(snapshots)
 				if refreshCacheAvailable(
 					cacheOutcome, recentAutomatic, refreshedAt, currentTime) {
+					if widgetErr :=
+						service.dependencies.Store.WithViewRevisionLock(
+							ctx, viewID, current.ViewRevision,
+							func(persistence *database.RefreshPersistence) error {
+								return persistence.UpdateWidgetSnapshots(
+									ctx, viewer.AccountID, viewID, snapshots,
+									truncated, refreshedAt, currentTime)
+							}); widgetErr != nil {
+						return widgetErr
+					}
 					response = refreshResponse(
 						view, cacheOutcome, cacheBilling(cacheOutcome),
 						freshness, refreshedAt,
@@ -500,8 +512,15 @@ func (service *View) reserveCreatedRefreshAttempt(
 			service.currentSnapshotState(
 				ctx, refreshViewID(view), viewerHash,
 				service.dependencies.Clock.Now().UTC())
-		if stateErr != nil {
+		if stateErr != nil && !errors.Is(stateErr, database.ErrNotFound) {
 			return false, stateErr
+		}
+		if errors.Is(stateErr, database.ErrNotFound) {
+			truncated = false
+			refreshedAt = time.Time{}
+			freshness =
+				deckv1.FreshnessState_FRESHNESS_STATE_UNSPECIFIED
+			resultCount = 0
 		}
 		*response = refreshResponse(
 			view, deckv1.RefreshOutcome_REFRESH_OUTCOME_RESERVATION_REJECTED,
@@ -617,7 +636,7 @@ func (service *View) dispatchReservedRefresh(
 				}
 				return persistence.UpdateWidgetSnapshots(
 					ctx, viewer.AccountID, refreshViewID(view),
-					snapshots, truncated, now)
+					snapshots, truncated, now, now)
 			})
 		outcome = refreshOutcomeForProviderError(providerErr)
 		if providerErr == nil {

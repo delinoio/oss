@@ -163,10 +163,11 @@ func (persistence *RefreshPersistence) UpdateWidgetSnapshots(
 	snapshots []*deckv1.PullRequestResult,
 	truncated bool,
 	refreshedAt time.Time,
+	updatedAt time.Time,
 ) error {
 	return persistence.store.updateWidgetSnapshots(
 		ctx, persistence.transaction, accountID, viewID,
-		snapshots, truncated, refreshedAt)
+		snapshots, truncated, refreshedAt, updatedAt)
 }
 
 // WithViewRevisionLock fences refresh persistence against concurrent view

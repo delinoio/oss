@@ -97,7 +97,7 @@ func (client *Client) completeMutationMetadata(
 		Conclusion string `json:"conclusion"`
 		State      string `json:"state"`
 	}
-	var data struct {
+	type responseData struct {
 		Node *struct {
 			ReviewDecision    string `json:"reviewDecision"`
 			StatusCheckRollup *struct {
@@ -106,99 +106,129 @@ func (client *Client) completeMutationMetadata(
 					TotalCount uint32         `json:"totalCount"`
 					Nodes      []checkContext `json:"nodes"`
 					PageInfo   struct {
-						HasNextPage bool `json:"hasNextPage"`
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
 					} `json:"pageInfo"`
 				} `json:"contexts"`
 			} `json:"statusCheckRollup"`
 		} `json:"node"`
 	}
-	err := client.graphQLData(ctx, credential, `
-query($id:ID!){
+	var cursor any
+	firstPage := true
+	seenCursors := make(map[string]struct{})
+	var reviewDecision string
+	var rollupState string
+	var totalCount uint32
+	metadata.PendingChecks = 0
+	metadata.SuccessfulChecks = 0
+	metadata.FailedChecks = 0
+	for {
+		var data responseData
+		err := client.graphQLData(ctx, credential, `
+query($id:ID!,$cursor:String){
   node(id:$id){
     ... on PullRequest{
       reviewDecision
       statusCheckRollup{
         state
-        contexts(first:100){
+        contexts(first:100,after:$cursor){
           totalCount
           nodes{
             ... on CheckRun{status conclusion}
             ... on StatusContext{state}
           }
-          pageInfo{hasNextPage}
+          pageInfo{hasNextPage endCursor}
         }
       }
     }
   }
-}`, map[string]any{"id": metadata.NodeID}, &data)
-	if err != nil || data.Node == nil {
-		return ActionMetadata{}, ErrProvider
-	}
-	switch strings.ToUpper(data.Node.ReviewDecision) {
-	case "":
-		metadata.ReviewDecision = ReviewDecisionUnknown
-	case "REVIEW_REQUIRED":
-		metadata.ReviewDecision = ReviewDecisionRequired
-	case "CHANGES_REQUESTED":
-		metadata.ReviewDecision = ReviewDecisionChangesRequested
-	case "APPROVED":
-		metadata.ReviewDecision = ReviewDecisionApproved
-	default:
-		return ActionMetadata{}, ErrProvider
-	}
-	rollup := data.Node.StatusCheckRollup
-	if rollup == nil {
-		metadata.ChecksState = ChecksStateUnknown
-		return metadata, nil
-	}
-	metadata.PendingChecks = 0
-	metadata.SuccessfulChecks = 0
-	metadata.FailedChecks = 0
-	if rollup.Contexts.PageInfo.HasNextPage {
-		return ActionMetadata{}, ErrProvider
-	}
-	for _, check := range rollup.Contexts.Nodes {
-		var target *uint32
-		if check.Status != "" {
-			switch strings.ToUpper(check.Status) {
-			case "IN_PROGRESS", "PENDING", "QUEUED", "REQUESTED", "WAITING":
-				target = &metadata.PendingChecks
-			case "COMPLETED":
-				switch strings.ToUpper(check.Conclusion) {
-				case "NEUTRAL", "SKIPPED", "SUCCESS":
+}`, map[string]any{"id": metadata.NodeID, "cursor": cursor}, &data)
+		if err != nil || data.Node == nil {
+			return ActionMetadata{}, ErrProvider
+		}
+		rollup := data.Node.StatusCheckRollup
+		if firstPage {
+			reviewDecision = strings.ToUpper(data.Node.ReviewDecision)
+			switch reviewDecision {
+			case "":
+				metadata.ReviewDecision = ReviewDecisionUnknown
+			case "REVIEW_REQUIRED":
+				metadata.ReviewDecision = ReviewDecisionRequired
+			case "CHANGES_REQUESTED":
+				metadata.ReviewDecision = ReviewDecisionChangesRequested
+			case "APPROVED":
+				metadata.ReviewDecision = ReviewDecisionApproved
+			default:
+				return ActionMetadata{}, ErrProvider
+			}
+			if rollup == nil {
+				metadata.ChecksState = ChecksStateUnknown
+				return metadata, nil
+			}
+			rollupState = strings.ToUpper(rollup.State)
+			totalCount = rollup.Contexts.TotalCount
+		} else if rollup == nil ||
+			strings.ToUpper(data.Node.ReviewDecision) != reviewDecision ||
+			strings.ToUpper(rollup.State) != rollupState ||
+			rollup.Contexts.TotalCount != totalCount {
+			return ActionMetadata{}, ErrProvider
+		}
+		for _, check := range rollup.Contexts.Nodes {
+			var target *uint32
+			if check.Status != "" {
+				switch strings.ToUpper(check.Status) {
+				case "IN_PROGRESS", "PENDING", "QUEUED", "REQUESTED", "WAITING":
+					target = &metadata.PendingChecks
+				case "COMPLETED":
+					switch strings.ToUpper(check.Conclusion) {
+					case "NEUTRAL", "SKIPPED", "SUCCESS":
+						target = &metadata.SuccessfulChecks
+					case "ACTION_REQUIRED", "CANCELLED", "FAILURE", "STALE",
+						"STARTUP_FAILURE", "TIMED_OUT":
+						target = &metadata.FailedChecks
+					default:
+						return ActionMetadata{}, ErrProvider
+					}
+				default:
+					return ActionMetadata{}, ErrProvider
+				}
+			} else {
+				switch strings.ToUpper(check.State) {
+				case "EXPECTED", "PENDING":
+					target = &metadata.PendingChecks
+				case "SUCCESS":
 					target = &metadata.SuccessfulChecks
-				case "ACTION_REQUIRED", "CANCELLED", "FAILURE", "STALE",
-					"STARTUP_FAILURE", "TIMED_OUT":
+				case "ERROR", "FAILURE":
 					target = &metadata.FailedChecks
 				default:
 					return ActionMetadata{}, ErrProvider
 				}
-			default:
+			}
+			if *target == ^uint32(0) {
 				return ActionMetadata{}, ErrProvider
 			}
-		} else {
-			switch strings.ToUpper(check.State) {
-			case "EXPECTED", "PENDING":
-				target = &metadata.PendingChecks
-			case "SUCCESS":
-				target = &metadata.SuccessfulChecks
-			case "ERROR", "FAILURE":
-				target = &metadata.FailedChecks
-			default:
-				return ActionMetadata{}, ErrProvider
-			}
+			*target++
 		}
-		if *target == ^uint32(0) {
+		if !rollup.Contexts.PageInfo.HasNextPage {
+			break
+		}
+		nextCursor := rollup.Contexts.PageInfo.EndCursor
+		if nextCursor == "" {
 			return ActionMetadata{}, ErrProvider
 		}
-		*target++
+		if _, duplicate := seenCursors[nextCursor]; duplicate {
+			return ActionMetadata{}, ErrProvider
+		}
+		seenCursors[nextCursor] = struct{}{}
+		cursor = nextCursor
+		firstPage = false
 	}
 	counted := uint64(metadata.PendingChecks) +
 		uint64(metadata.SuccessfulChecks) + uint64(metadata.FailedChecks)
-	if counted != uint64(rollup.Contexts.TotalCount) {
+	if counted != uint64(totalCount) {
 		return ActionMetadata{}, ErrProvider
 	}
-	switch strings.ToUpper(rollup.State) {
+	switch rollupState {
 	case "EXPECTED", "PENDING":
 		metadata.ChecksState = ChecksStatePending
 	case "SUCCESS":

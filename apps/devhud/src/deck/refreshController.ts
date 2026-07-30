@@ -242,10 +242,19 @@ export class DeckRefreshController {
             candidate.viewId,
             RefreshOrigin.AUTOMATIC,
           );
-          const preflight = await this.#options.transport.getPreflight(
-            request,
-            controller.signal,
-          );
+          let preflight: DeckRefreshPreflight;
+          try {
+            preflight = await this.#options.transport.getPreflight(
+              request,
+              controller.signal,
+            );
+          } catch (error) {
+            if (controller.signal.aborted) {
+              return;
+            }
+            this.#options.onError?.(error);
+            continue;
+          }
           if (
             controller.signal.aborted ||
             !this.#running ||
