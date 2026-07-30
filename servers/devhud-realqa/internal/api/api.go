@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -15,6 +16,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/service"
+	"github.com/delinoio/oss/servers/internal/httpserver"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
 	"github.com/delinoio/oss/servers/internal/safelog"
 )
@@ -87,7 +89,13 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	if dependencies.GitHubCallbacks != nil {
 		rootMux.Handle("/github/", dependencies.GitHubCallbacks)
 	}
-	rootMux.Handle("/", rejectBrowserOrigins(business))
+	corsConfig := httpserver.DefaultCORSConfig()
+	corsConfig.AllowedHeaders = append(corsConfig.AllowedHeaders, "Cache-Control")
+	cors, err := httpserver.CORS(corsConfig)
+	if err != nil {
+		return nil, err
+	}
+	rootMux.Handle("/", browserBoundary(cors(business)))
 
 	var root http.Handler = rootMux
 	root = requestLogger(dependencies.Logger)(root)
@@ -118,11 +126,15 @@ func writeHealth(writer http.ResponseWriter, status int, state string) {
 	_ = json.NewEncoder(writer).Encode(map[string]string{"status": state})
 }
 
-func rejectBrowserOrigins(next http.Handler) http.Handler {
+func browserBoundary(next http.Handler) http.Handler {
+	trackerPrefix := "/" + realqav1connect.RealQATrackerServiceName + "/"
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Origin") != "" {
+		origin := request.Header.Get("Origin")
+		if origin != "" && (origin != httpserver.DeliDevOrigin ||
+			!strings.HasPrefix(request.URL.Path, trackerPrefix)) {
 			writer.Header().Set("Cache-Control", "no-store")
-			http.Error(writer, "browser origins are not allowed", http.StatusForbidden)
+			http.Error(writer, "browser origin is not allowed for this procedure",
+				http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(writer, request)

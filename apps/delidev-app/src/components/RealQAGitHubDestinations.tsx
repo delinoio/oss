@@ -841,7 +841,9 @@ function IssueDefinitionDiscovery({
   issueSchema: IssueSchemaQuery;
   repository: Repository;
 }) {
-  const schema = issueSchema.data?.schema;
+  const schema = issueSchema.isError
+    ? undefined
+    : issueSchema.data?.schema;
   const definitions =
     (schema?.markdownTemplates.length ?? 0) +
     (schema?.issueForms.length ?? 0);

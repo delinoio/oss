@@ -676,6 +676,82 @@ describe("RealQA GitHub destinations", () => {
     expect(screen.queryByText("Support request")).not.toBeInTheDocument();
   });
 
+  it("hides a cached schema when its refresh fails", async () => {
+    let schemaRefreshFails = false;
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/GetGitHubConnection")) {
+        return connectJsonResponse(connectedResponse());
+      }
+      if (url.endsWith("/ListGitHubInstallations")) {
+        return connectJsonResponse(installationResponse());
+      }
+      if (url.endsWith("/ListRepositories")) {
+        return connectJsonResponse({
+          page: {},
+          repositories: [
+            {
+              callerCanSubmit: true,
+              installationId: {
+                value: "018f3f5e-7b01-7a2d-8c3a-4ba8d8b51611",
+              },
+              issuesEnabled: true,
+              repository: {
+                name: "public-app",
+                owner: "acme",
+                repositoryId: "101",
+              },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/GetRepositoryIssueSchema")) {
+        return schemaRefreshFails
+          ? connectJsonResponse(
+              { code: "permission_denied", message: "Access revoked." },
+              403,
+            )
+          : connectJsonResponse({
+              schema: {
+                issueForms: [],
+                markdownTemplates: [
+                  {
+                    definition: {
+                      definitionId: "template-support",
+                      name: "Support request",
+                      path: ".github/ISSUE_TEMPLATE/support.md",
+                    },
+                  },
+                ],
+                repository: {
+                  name: "public-app",
+                  owner: "acme",
+                  repositoryId: "101",
+                },
+                revision: { etag: "schema-9", value: "9" },
+              },
+            });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const user = userEvent.setup();
+    const { queryClient } = renderDestination({ fetchMock });
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review definitions" }),
+    );
+    expect(await screen.findByText("Support request")).toBeVisible();
+
+    schemaRefreshFails = true;
+    await queryClient.refetchQueries({ type: "active" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Access revoked.",
+    );
+    expect(screen.queryByText("Support request")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Schema revision/)).not.toBeInTheDocument();
+  });
+
   it("hides cached installations and dependent discovery when installation refresh fails", async () => {
     let installationRefreshFails = false;
     const fetchMock = vi.fn<typeof fetch>(async (request) => {

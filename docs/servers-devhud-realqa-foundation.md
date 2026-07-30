@@ -140,7 +140,7 @@ The exact sequence is:
 - Remote DevHud/extension telemetry, analytics, crash reporting, advertising, and user tracking remain prohibited. The service may use redacted structured operational logs, metrics, traces, and audits.
 - Never log or persist feature/delibase bearer tokens, signed upload URLs, object keys, screenshot content, title/body/URL/DOM data, repository names, raw process/window values, or user content outside the explicitly retained encrypted draft/asset/provider state. The sole provider-token persistence exception is the envelope-encrypted active-connection credential record defined above; it must never appear in plaintext storage or backups.
 - Validate callback state and webhook signatures, use least-privilege R2/database/provider identities, and expose typed safe errors.
-- DevHud reaches Connect and the signed image PUT through its private native transports, not browser fetch. Do not allow `http://tauri.localhost` in CORS; RealQA has no browser RPC client.
+- DevHud reaches Connect and the signed image PUT through its private native transports, not browser fetch. Do not allow `http://tauri.localhost` in CORS. The sole browser RPC exception is the exact `https://deli.dev` origin calling `RealQATrackerService` for connection and destination management in the existing DeliDev settings sections; browser-origin requests to every other RealQA service and procedure fail closed.
 - Public assets are intentionally unauthenticated only after per-submission confirmation and verified promotion; no public asset listing or bucket index exists. Authenticated `ListSubmissions` exposes only the caller-authorized retained references defined above.
 
 ## Build and Test
