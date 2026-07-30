@@ -2274,14 +2274,16 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			destination_id, state, provider_issue_id, provider_issue_url,
 			idempotency_digest, submitted_at, payer_organization_id,
 			payer_team_id, preset_revision, declared_encoded_bytes,
-			verified_encoded_bytes, upload_deadline, upload_expires_at
+			verified_encoded_bytes, created_at, upload_deadline,
+			upload_expires_at
 		)
 		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
 		       destination_id, 'submitted', 'disconnect-settlement',
 		       'https://github.com/delinoio/oss/issues/759',
 		       idempotency_digest, $9, payer_organization_id,
 		       payer_team_id, preset_revision, declared_encoded_bytes,
-		       verified_encoded_bytes, upload_deadline, upload_expires_at
+		       verified_encoded_bytes, created_at, upload_deadline,
+		       upload_expires_at
 		FROM realqa_submissions
 		WHERE id = $2;
 		INSERT INTO realqa_assets (
