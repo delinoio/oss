@@ -1551,17 +1551,56 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		now.Add(12*time.Minute)); err != nil {
 		t.Fatalf("create retained viewer snapshot: %v", err)
 	}
-	notification := []NotificationEventWrite{{
+	notificationRegistrationIDs := []uuid.UUID{mustV7(t), mustV7(t)}
+	for index, notificationAccountID := range []uuid.UUID{
+		accountID, secondAccountID,
+	} {
+		notificationGrant, grantErr := security.NewGrant()
+		if grantErr != nil {
+			t.Fatal(grantErr)
+		}
+		if _, _, _, registerErr := store.RegisterDevice(
+			ctx, RegisterDeviceParams{
+				RegistrationID: notificationRegistrationIDs[index],
+				DeviceID:       mustV7(t),
+				AccountID:      notificationAccountID,
+				IdempotencyKey: mustV7(t),
+				RequestDigest: security.Digest([]byte(
+					fmt.Sprintf("retained-notification-%d", index))),
+				OwnerHash: hasher.Sum(
+					"owner",
+					"OWNER_SCOPE_PERSONAL:"+notificationAccountID.String()),
+				Write: DeviceWrite{
+					Platform:    deckv1.DevicePlatform_DEVICE_PLATFORM_MACOS,
+					DisplayName: "Notification fixture",
+					Push: &deckv1.PushRegistration{
+						Provider: deckv1.PushProvider_PUSH_PROVIDER_APPLE,
+						OpaquePushToken: fmt.Sprintf(
+							"retained-notification-token-%d", index),
+					},
+				},
+				Grant:          notificationGrant,
+				LeaseExpiresAt: now.Add(deviceLeaseForTest),
+				Now:            now,
+			},
+		); registerErr != nil {
+			t.Fatal(registerErr)
+		}
+	}
+	notification := NotificationEventWrite{
 		Transition: deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
 		Snapshot:   snapshots[0],
-	}}
+	}
+	notification.RegistrationID = notificationRegistrationIDs[0]
 	if err := store.CreateNotificationEvents(
-		ctx, retainedViewID, viewerHash, notification,
+		ctx, retainedViewID, viewerHash, []NotificationEventWrite{notification},
 		now.Add(12*time.Minute)); err != nil {
 		t.Fatalf("create deleted viewer notification: %v", err)
 	}
+	notification.RegistrationID = notificationRegistrationIDs[1]
 	if err := store.CreateNotificationEvents(
-		ctx, retainedViewID, secondViewerHash, notification,
+		ctx, retainedViewID, secondViewerHash,
+		[]NotificationEventWrite{notification},
 		now.Add(12*time.Minute)); err != nil {
 		t.Fatalf("create retained viewer notification: %v", err)
 	}

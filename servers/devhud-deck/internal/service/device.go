@@ -315,6 +315,9 @@ func (service *Device) ResolveNotificationEvent(
 	if event.ViewerHash != viewerHash {
 		return genericNotification(), nil
 	}
+	if event.RegistrationID != registrationID {
+		return genericNotification(), nil
+	}
 	preference, err := service.dependencies.Store.NotificationPreference(
 		ctx, registrationID, event.ViewID)
 	if err != nil || !preference.GetEnabled() ||

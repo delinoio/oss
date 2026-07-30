@@ -23,6 +23,7 @@ const (
 	defaultCandidateLimit = 50
 	maxCandidateLimit     = 100
 	maxCandidatePages     = 100
+	maxSearchResults      = 1000
 )
 
 type Client struct {
@@ -313,10 +314,25 @@ func (client *Client) SearchPullRequests(
 	if err != nil {
 		return SearchPage{}, ErrUnsupportedAction
 	}
+	if offset >= maxSearchResults {
+		return SearchPage{Truncated: true}, nil
+	}
+	if remaining := maxSearchResults - offset; limit > remaining {
+		limit = remaining
+	}
 	values := url.Values{}
 	values.Set("q", query+" is:pr")
 	values.Set("per_page", strconv.Itoa(limit))
 	values.Set("page", strconv.Itoa(offset/limit+1))
+	switch page.Sort {
+	case SearchSortDefault, SearchSortUpdated:
+		values.Set("sort", "updated")
+	case SearchSortCreated:
+		values.Set("sort", "created")
+	default:
+		return SearchPage{}, ErrUnsupportedAction
+	}
+	values.Set("order", "desc")
 	var response searchResponse
 	if _, err := client.do(ctx, credential, http.MethodGet,
 		"/search/issues?"+values.Encode(), nil, &response); err != nil {
@@ -375,8 +391,10 @@ func (client *Client) SearchPullRequests(
 		result.PullRequests = append(result.PullRequests, pullRequest)
 	}
 	result.VisibleCount = len(result.PullRequests)
-	if len(response.Items) == limit {
+	if len(response.Items) == limit && offset+limit < maxSearchResults {
 		result.NextCursor = encodeProviderCursor(offset + limit)
+	} else if len(response.Items) == limit {
+		result.Truncated = true
 	}
 	return result, nil
 }

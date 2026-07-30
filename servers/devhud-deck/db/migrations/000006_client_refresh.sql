@@ -57,7 +57,13 @@ CREATE INDEX deck_refresh_attempts_manual_rate_idx
 -- Notification history contains only keyed opaque references and encrypted
 -- current-detail material. It is pruned at the exact 30-day boundary by
 -- client-owned refresh and notification-resolution requests.
+-- Pre-migration events remain unbound and therefore unresolvable until that
+-- pruning boundary; every event created by the refreshed implementation binds
+-- an active registration.
 ALTER TABLE deck_notification_events
+    ADD COLUMN registration_id uuid
+        REFERENCES deck_device_registrations(registration_id)
+        ON DELETE CASCADE,
     ADD COLUMN viewer_hash bytea
         CHECK (viewer_hash IS NULL OR octet_length(viewer_hash) = 32),
     ADD COLUMN repository_hash bytea
@@ -71,3 +77,5 @@ ALTER TABLE deck_notification_events
         );
 CREATE INDEX deck_notification_events_expiry_idx
     ON deck_notification_events (expires_at);
+CREATE INDEX deck_notification_events_registration_idx
+    ON deck_notification_events (registration_id, expires_at);

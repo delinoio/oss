@@ -266,7 +266,16 @@ type Candidate struct {
 type Page struct {
 	Cursor string
 	Limit  int
+	Sort   SearchSort
 }
+
+type SearchSort uint8
+
+const (
+	SearchSortDefault SearchSort = iota
+	SearchSortUpdated
+	SearchSortCreated
+)
 
 type CandidatePage struct {
 	Candidates []Candidate

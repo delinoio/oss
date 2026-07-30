@@ -103,9 +103,8 @@ func (client *Client) completeMutationMetadata(
 			StatusCheckRollup *struct {
 				State    string `json:"state"`
 				Contexts struct {
-					TotalCount uint32         `json:"totalCount"`
-					Nodes      []checkContext `json:"nodes"`
-					PageInfo   struct {
+					Nodes    []checkContext `json:"nodes"`
+					PageInfo struct {
 						HasNextPage bool   `json:"hasNextPage"`
 						EndCursor   string `json:"endCursor"`
 					} `json:"pageInfo"`
@@ -116,9 +115,7 @@ func (client *Client) completeMutationMetadata(
 	var cursor any
 	firstPage := true
 	seenCursors := make(map[string]struct{})
-	var reviewDecision string
 	var rollupState string
-	var totalCount uint32
 	metadata.PendingChecks = 0
 	metadata.SuccessfulChecks = 0
 	metadata.FailedChecks = 0
@@ -132,7 +129,6 @@ query($id:ID!,$cursor:String){
       statusCheckRollup{
         state
         contexts(first:100,after:$cursor){
-          totalCount
           nodes{
             ... on CheckRun{status conclusion}
             ... on StatusContext{state}
@@ -148,8 +144,7 @@ query($id:ID!,$cursor:String){
 		}
 		rollup := data.Node.StatusCheckRollup
 		if firstPage {
-			reviewDecision = strings.ToUpper(data.Node.ReviewDecision)
-			switch reviewDecision {
+			switch strings.ToUpper(data.Node.ReviewDecision) {
 			case "":
 				metadata.ReviewDecision = ReviewDecisionUnknown
 			case "REVIEW_REQUIRED":
@@ -166,12 +161,8 @@ query($id:ID!,$cursor:String){
 				return metadata, nil
 			}
 			rollupState = strings.ToUpper(rollup.State)
-			totalCount = rollup.Contexts.TotalCount
-		} else if rollup == nil ||
-			strings.ToUpper(data.Node.ReviewDecision) != reviewDecision ||
-			strings.ToUpper(rollup.State) != rollupState ||
-			rollup.Contexts.TotalCount != totalCount {
-			return ActionMetadata{}, ErrProvider
+		} else if rollup == nil {
+			break
 		}
 		for _, check := range rollup.Contexts.Nodes {
 			var target *uint32
@@ -222,11 +213,6 @@ query($id:ID!,$cursor:String){
 		seenCursors[nextCursor] = struct{}{}
 		cursor = nextCursor
 		firstPage = false
-	}
-	counted := uint64(metadata.PendingChecks) +
-		uint64(metadata.SuccessfulChecks) + uint64(metadata.FailedChecks)
-	if counted != uint64(totalCount) {
-		return ActionMetadata{}, ErrProvider
 	}
 	switch rollupState {
 	case "EXPECTED", "PENDING":

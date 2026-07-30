@@ -6,22 +6,26 @@ import (
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	"github.com/google/uuid"
 )
 
 func notificationWrites(
 	previous []*deckv1.PullRequestResult,
 	current []*deckv1.PullRequestResult,
-	preferences []*deckv1.ViewNotificationPreference,
+	preferences []database.NotificationPreferenceRecord,
 	viewerLogin string,
 ) []database.NotificationEventWrite {
-	enabled := make(map[deckv1.NotificationTransition]struct{})
-	for _, preference := range preferences {
+	enabled := make(
+		map[deckv1.NotificationTransition][]uuid.UUID)
+	for _, record := range preferences {
+		preference := record.Preference
 		if !preference.GetEnabled() {
 			continue
 		}
 		for _, transition := range preference.GetTransitions() {
 			if supportedNotificationTransition(transition) {
-				enabled[transition] = struct{}{}
+				enabled[transition] = append(
+					enabled[transition], record.RegistrationID)
 			}
 		}
 	}
@@ -37,12 +41,17 @@ func notificationWrites(
 		old := before[pullRequestSnapshotKey(snapshot)]
 		for _, transition := range notificationTransitions(
 			old, snapshot, viewerLogin) {
-			if _, ok := enabled[transition]; !ok {
+			registrationIDs := enabled[transition]
+			if len(registrationIDs) == 0 {
 				continue
 			}
-			writes = append(writes, database.NotificationEventWrite{
-				Transition: transition, Snapshot: snapshot,
-			})
+			for _, registrationID := range registrationIDs {
+				writes = append(writes, database.NotificationEventWrite{
+					RegistrationID: registrationID,
+					Transition:     transition,
+					Snapshot:       snapshot,
+				})
+			}
 		}
 	}
 	return writes

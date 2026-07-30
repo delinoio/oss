@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -851,7 +852,10 @@ func (service *View) performGitHubRefresh(
 	for len(results) <= refreshResultLimit {
 		page, pageErr := service.dependencies.GitHubClient.SearchPullRequests(
 			ctx, connection.Installation.ID, connection.Credential, resolved,
-			deckgithub.Page{Cursor: cursor, Limit: 100})
+			deckgithub.Page{
+				Cursor: cursor, Limit: 100,
+				Sort: refreshProviderSort(view.GetSort()),
+			})
 		if pageErr != nil {
 			return nil, nil, false, pageErr
 		}
@@ -891,6 +895,7 @@ func (service *View) performGitHubRefresh(
 	}
 	results, resultTruncated := retainedRefreshResults(results)
 	truncated = truncated || resultTruncated
+	sortRefreshResults(results, view.GetSort(), viewer.GitHubLogin)
 	notificationSnapshots := append(
 		[]*deckv1.PullRequestResult(nil), results...)
 	historicalSnapshots := previousOnlySnapshots(previous, results)
@@ -1015,6 +1020,70 @@ func retainedRefreshResults(
 	return results[:refreshResultLimit], true
 }
 
+func refreshProviderSort(viewSort deckv1.ViewSort) deckgithub.SearchSort {
+	if viewSort == deckv1.ViewSort_VIEW_SORT_RECENTLY_CREATED {
+		return deckgithub.SearchSortCreated
+	}
+	return deckgithub.SearchSortUpdated
+}
+
+func sortRefreshResults(
+	results []*deckv1.PullRequestResult,
+	viewSort deckv1.ViewSort,
+	viewerLogin string,
+) {
+	var rank func(*deckv1.PullRequestResult) int
+	switch viewSort {
+	case deckv1.ViewSort_VIEW_SORT_ATTENTION:
+		rank = func(result *deckv1.PullRequestResult) int {
+			if containsUser(result.GetAssignees(), viewerLogin) ||
+				containsReviewer(result.GetReviewers(), viewerLogin) {
+				return 0
+			}
+			if result.GetChecks().GetState() ==
+				deckv1.ChecksState_CHECKS_STATE_FAILURE ||
+				result.GetReviewDecision() ==
+					deckv1.ReviewDecision_REVIEW_DECISION_CHANGES_REQUESTED ||
+				result.GetMergeability() ==
+					deckv1.Mergeability_MERGEABILITY_CONFLICTING {
+				return 1
+			}
+			return 2
+		}
+	case deckv1.ViewSort_VIEW_SORT_CHECKS:
+		rank = func(result *deckv1.PullRequestResult) int {
+			switch result.GetChecks().GetState() {
+			case deckv1.ChecksState_CHECKS_STATE_FAILURE:
+				return 0
+			case deckv1.ChecksState_CHECKS_STATE_PENDING:
+				return 1
+			case deckv1.ChecksState_CHECKS_STATE_SUCCESS:
+				return 2
+			default:
+				return 3
+			}
+		}
+	case deckv1.ViewSort_VIEW_SORT_REVIEW_STATE:
+		rank = func(result *deckv1.PullRequestResult) int {
+			switch result.GetReviewDecision() {
+			case deckv1.ReviewDecision_REVIEW_DECISION_CHANGES_REQUESTED:
+				return 0
+			case deckv1.ReviewDecision_REVIEW_DECISION_REVIEW_REQUIRED:
+				return 1
+			case deckv1.ReviewDecision_REVIEW_DECISION_APPROVED:
+				return 2
+			default:
+				return 3
+			}
+		}
+	default:
+		return
+	}
+	sort.SliceStable(results, func(left, right int) bool {
+		return rank(results[left]) < rank(results[right])
+	})
+}
+
 func (service *View) currentSnapshotState(
 	ctx context.Context,
 	viewID uuid.UUID,
@@ -1099,9 +1168,10 @@ func (service *View) refreshEligible(
 }
 
 func hasEnabledNotificationPreference(
-	preferences []*deckv1.ViewNotificationPreference,
+	preferences []database.NotificationPreferenceRecord,
 ) bool {
-	for _, preference := range preferences {
+	for _, record := range preferences {
+		preference := record.Preference
 		if !preference.GetEnabled() {
 			continue
 		}

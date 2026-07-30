@@ -141,7 +141,7 @@ func (persistence *RefreshPersistence) ActiveNotificationPreferences(
 	accountID uuid.UUID,
 	viewID uuid.UUID,
 	now time.Time,
-) ([]*deckv1.ViewNotificationPreference, error) {
+) ([]NotificationPreferenceRecord, error) {
 	return persistence.store.activeNotificationPreferences(
 		ctx, persistence.transaction, accountID, viewID, now)
 }

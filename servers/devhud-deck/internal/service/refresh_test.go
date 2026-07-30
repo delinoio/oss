@@ -487,18 +487,35 @@ func TestNotificationTransitionsAreTypedAndPreferenceFiltered(t *testing.T) {
 		previous, current, "octocat"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("transitions = %v, want %v", got, want)
 	}
+	registrationID := uuid.MustParse(
+		"01900000-0000-7000-8000-000000000010")
+	secondRegistrationID := uuid.MustParse(
+		"01900000-0000-7000-8000-000000000011")
 	writes := notificationWrites(
 		[]*deckv1.PullRequestResult{previous},
 		[]*deckv1.PullRequestResult{current},
-		[]*deckv1.ViewNotificationPreference{{
-			Enabled: true,
-			Transitions: []deckv1.NotificationTransition{
-				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CONFLICTED,
+		[]database.NotificationPreferenceRecord{{
+			RegistrationID: registrationID,
+			Preference: &deckv1.ViewNotificationPreference{
+				Enabled: true,
+				Transitions: []deckv1.NotificationTransition{
+					deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CONFLICTED,
+				},
+			},
+		}, {
+			RegistrationID: secondRegistrationID,
+			Preference: &deckv1.ViewNotificationPreference{
+				Enabled: true,
+				Transitions: []deckv1.NotificationTransition{
+					deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CONFLICTED,
+				},
 			},
 		}},
 		"octocat")
-	if len(writes) != 1 || writes[0].Transition !=
-		deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CONFLICTED {
+	if len(writes) != 2 || writes[0].Transition !=
+		deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CONFLICTED ||
+		writes[0].RegistrationID != registrationID ||
+		writes[1].RegistrationID != secondRegistrationID {
 		t.Fatalf("filtered writes = %#v", writes)
 	}
 	if writes := notificationWrites(
@@ -510,12 +527,15 @@ func TestNotificationTransitionsAreTypedAndPreferenceFiltered(t *testing.T) {
 	newWrites := notificationWrites(
 		nil,
 		[]*deckv1.PullRequestResult{current},
-		[]*deckv1.ViewNotificationPreference{{
-			Enabled: true,
-			Transitions: []deckv1.NotificationTransition{
-				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
-				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_REVIEW_REQUESTED,
-				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CHECKS_FAILED,
+		[]database.NotificationPreferenceRecord{{
+			RegistrationID: registrationID,
+			Preference: &deckv1.ViewNotificationPreference{
+				Enabled: true,
+				Transitions: []deckv1.NotificationTransition{
+					deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
+					deckv1.NotificationTransition_NOTIFICATION_TRANSITION_REVIEW_REQUESTED,
+					deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CHECKS_FAILED,
+				},
 			},
 		}},
 		"octocat")
@@ -580,30 +600,95 @@ func TestNotificationTransitionsAreTypedAndPreferenceFiltered(t *testing.T) {
 		t.Fatalf("removed repository was readable: %#v", readable)
 	}
 	if hasEnabledNotificationPreference(
-		[]*deckv1.ViewNotificationPreference{{Enabled: true}}) {
+		[]database.NotificationPreferenceRecord{{
+			Preference: &deckv1.ViewNotificationPreference{Enabled: true},
+		}}) {
 		t.Fatal("empty device notification preference was eligible")
 	}
 	if !hasEnabledNotificationPreference(
-		[]*deckv1.ViewNotificationPreference{{
-			Enabled: true,
-			Transitions: []deckv1.NotificationTransition{
-				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
+		[]database.NotificationPreferenceRecord{{
+			Preference: &deckv1.ViewNotificationPreference{
+				Enabled: true,
+				Transitions: []deckv1.NotificationTransition{
+					deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
+				},
 			},
 		}}) {
 		t.Fatal("supported device notification preference was ignored")
 	}
 	if hasEnabledNotificationPreference(
-		[]*deckv1.ViewNotificationPreference{{
-			Enabled: true,
-			Transitions: []deckv1.NotificationTransition{
-				deckv1.NotificationTransition(99),
+		[]database.NotificationPreferenceRecord{{
+			Preference: &deckv1.ViewNotificationPreference{
+				Enabled: true,
+				Transitions: []deckv1.NotificationTransition{
+					deckv1.NotificationTransition(99),
+				},
 			},
 		}}) {
 		t.Fatal("unsupported device notification preference was eligible")
 	}
 	if hasEnabledNotificationPreference(
-		[]*deckv1.ViewNotificationPreference{{Enabled: false}}) {
+		[]database.NotificationPreferenceRecord{{
+			Preference: &deckv1.ViewNotificationPreference{Enabled: false},
+		}}) {
 		t.Fatal("disabled device notification preference was eligible")
+	}
+}
+
+func TestRefreshResultsApplyTheConfiguredSort(t *testing.T) {
+	t.Parallel()
+	if refreshProviderSort(
+		deckv1.ViewSort_VIEW_SORT_RECENTLY_UPDATED,
+	) != deckgithub.SearchSortUpdated ||
+		refreshProviderSort(
+			deckv1.ViewSort_VIEW_SORT_RECENTLY_CREATED,
+		) != deckgithub.SearchSortCreated {
+		t.Fatal("provider sort did not match the time-based view sort")
+	}
+	results := []*deckv1.PullRequestResult{
+		{
+			Title: "success",
+			Checks: &deckv1.CheckSummary{
+				State: deckv1.ChecksState_CHECKS_STATE_SUCCESS,
+			},
+		},
+		{
+			Title: "failure",
+			Checks: &deckv1.CheckSummary{
+				State: deckv1.ChecksState_CHECKS_STATE_FAILURE,
+			},
+		},
+		{
+			Title: "pending",
+			Checks: &deckv1.CheckSummary{
+				State: deckv1.ChecksState_CHECKS_STATE_PENDING,
+			},
+		},
+	}
+	sortRefreshResults(
+		results, deckv1.ViewSort_VIEW_SORT_CHECKS, "octocat")
+	if results[0].GetTitle() != "failure" ||
+		results[1].GetTitle() != "pending" ||
+		results[2].GetTitle() != "success" {
+		t.Fatalf("checks sort = %q, %q, %q",
+			results[0].GetTitle(), results[1].GetTitle(),
+			results[2].GetTitle())
+	}
+	results[0].ReviewDecision =
+		deckv1.ReviewDecision_REVIEW_DECISION_APPROVED
+	results[1].ReviewDecision =
+		deckv1.ReviewDecision_REVIEW_DECISION_CHANGES_REQUESTED
+	results[2].ReviewDecision =
+		deckv1.ReviewDecision_REVIEW_DECISION_REVIEW_REQUIRED
+	sortRefreshResults(
+		results, deckv1.ViewSort_VIEW_SORT_REVIEW_STATE, "octocat")
+	if results[0].GetReviewDecision() !=
+		deckv1.ReviewDecision_REVIEW_DECISION_CHANGES_REQUESTED ||
+		results[1].GetReviewDecision() !=
+			deckv1.ReviewDecision_REVIEW_DECISION_REVIEW_REQUIRED ||
+		results[2].GetReviewDecision() !=
+			deckv1.ReviewDecision_REVIEW_DECISION_APPROVED {
+		t.Fatalf("review sort = %#v", results)
 	}
 }
 

@@ -20,13 +20,20 @@ import (
 const notificationRetention = 30 * 24 * time.Hour
 
 type NotificationEventWrite struct {
-	Transition deckv1.NotificationTransition
-	Snapshot   *deckv1.PullRequestResult
+	RegistrationID uuid.UUID
+	Transition     deckv1.NotificationTransition
+	Snapshot       *deckv1.PullRequestResult
+}
+
+type NotificationPreferenceRecord struct {
+	RegistrationID uuid.UUID
+	Preference     *deckv1.ViewNotificationPreference
 }
 
 type NotificationEventRecord struct {
 	EventID           uuid.UUID
 	ViewID            uuid.UUID
+	RegistrationID    uuid.UUID
 	ViewerHash        [32]byte
 	Transition        deckv1.NotificationTransition
 	PullRequestNumber uint64
@@ -63,8 +70,9 @@ func (store *Store) createNotificationEvents(
 	}
 	for _, event := range events {
 		repository := event.Snapshot.GetRepository()
-		if event.Transition <
-			deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED ||
+		if event.RegistrationID.Version() != 7 ||
+			event.Transition <
+				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED ||
 			event.Transition >
 				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CLOSED ||
 			repository == nil || event.Snapshot.GetNumber() == 0 {
@@ -85,17 +93,27 @@ func (store *Store) createNotificationEvents(
 			return err
 		}
 		repositoryHash := store.SnapshotRepositoryHash(repository)
-		if _, err := executor.Exec(ctx, `
+		result, err := executor.Exec(ctx, `
 			INSERT INTO deck_notification_events (
-				event_id, view_id, opaque_event_id, transition,
+				event_id, view_id, registration_id, opaque_event_id, transition,
 				created_at, expires_at, viewer_hash, repository_hash,
 				pull_request_number, detail_ciphertext
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		`, eventID, viewID, verifier[:], int16(event.Transition), now.UTC(),
+			)
+			SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+			FROM deck_device_registrations
+			WHERE registration_id = $3 AND lease_expires_at > $6
+		`, eventID, viewID, event.RegistrationID, verifier[:],
+			int16(event.Transition), now.UTC(),
 			now.UTC().Add(notificationRetention), viewerHash[:],
 			repositoryHash[:], int64(event.Snapshot.GetNumber()),
-			ciphertext); err != nil {
+			ciphertext)
+		if err != nil {
 			return errors.New("deck database: notification insert failed")
+		}
+		// An unregister or lease expiry racing this refresh removes the target
+		// without turning optional notification delivery into a refresh failure.
+		if result.RowsAffected() == 0 {
+			continue
 		}
 	}
 	return nil
@@ -135,20 +153,23 @@ func (store *Store) GetNotificationEventMetadata(
 	var transition int16
 	var pullRequestNumber int64
 	err := store.pool.QueryRow(ctx, `
-		SELECT event_id, view_id, viewer_hash, transition,
+		SELECT event_id, view_id, registration_id, viewer_hash, transition,
 		       pull_request_number, created_at, expires_at
 		FROM deck_notification_events
 		WHERE opaque_event_id = $1 AND expires_at > $2
+		  AND registration_id IS NOT NULL
 		  AND viewer_hash IS NOT NULL
 		  AND detail_ciphertext IS NOT NULL
 	`, verifier[:], now.UTC()).Scan(
-		&record.EventID, &record.ViewID, &viewerHash, &transition,
+		&record.EventID, &record.ViewID, &record.RegistrationID,
+		&viewerHash, &transition,
 		&pullRequestNumber, &record.CreatedAt, &record.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NotificationEventRecord{}, ErrNotFound
 	}
 	if err != nil || record.EventID.Version() != 7 ||
-		record.ViewID.Version() != 7 || len(viewerHash) != 32 ||
+		record.ViewID.Version() != 7 ||
+		record.RegistrationID.Version() != 7 || len(viewerHash) != 32 ||
 		pullRequestNumber <= 0 ||
 		transition <
 			int16(deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED) ||
@@ -169,6 +190,7 @@ func (store *Store) GetNotificationEventDetail(
 	now time.Time,
 ) (*deckv1.PullRequestDetail, error) {
 	if event.EventID.Version() != 7 || event.ViewID.Version() != 7 ||
+		event.RegistrationID.Version() != 7 ||
 		event.PullRequestNumber == 0 {
 		return nil, ErrNotFound
 	}
@@ -177,10 +199,12 @@ func (store *Store) GetNotificationEventDetail(
 		SELECT detail_ciphertext
 		FROM deck_notification_events
 		WHERE event_id = $1 AND view_id = $2 AND viewer_hash = $3
-		  AND transition = $4 AND pull_request_number = $5
-		  AND expires_at > $6 AND detail_ciphertext IS NOT NULL
+		  AND registration_id = $4
+		  AND transition = $5 AND pull_request_number = $6
+		  AND expires_at > $7 AND detail_ciphertext IS NOT NULL
 	`, event.EventID, event.ViewID, event.ViewerHash[:],
-		int16(event.Transition), int64(event.PullRequestNumber),
+		event.RegistrationID, int16(event.Transition),
+		int64(event.PullRequestNumber),
 		now.UTC()).Scan(&ciphertext)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -230,7 +254,7 @@ func (store *Store) ActiveNotificationPreferences(
 	accountID uuid.UUID,
 	viewID uuid.UUID,
 	now time.Time,
-) ([]*deckv1.ViewNotificationPreference, error) {
+) ([]NotificationPreferenceRecord, error) {
 	return store.activeNotificationPreferences(
 		ctx, store.pool, accountID, viewID, now)
 }
@@ -241,9 +265,9 @@ func (store *Store) activeNotificationPreferences(
 	accountID uuid.UUID,
 	viewID uuid.UUID,
 	now time.Time,
-) ([]*deckv1.ViewNotificationPreference, error) {
+) ([]NotificationPreferenceRecord, error) {
 	rows, err := executor.Query(ctx, `
-		SELECT preference.preference_ciphertext
+		SELECT preference.registration_id, preference.preference_ciphertext
 		FROM deck_view_notification_preferences AS preference
 		JOIN deck_device_registrations AS registration
 		  ON registration.registration_id = preference.registration_id
@@ -256,10 +280,11 @@ func (store *Store) activeNotificationPreferences(
 			"deck database: notification preference lookup failed")
 	}
 	defer rows.Close()
-	var preferences []*deckv1.ViewNotificationPreference
+	var preferences []NotificationPreferenceRecord
 	for rows.Next() {
+		var registrationID uuid.UUID
 		var ciphertext []byte
-		if err := rows.Scan(&ciphertext); err != nil {
+		if err := rows.Scan(&registrationID, &ciphertext); err != nil {
 			return nil, errors.New(
 				"deck database: notification preference lookup failed")
 		}
@@ -268,7 +293,13 @@ func (store *Store) activeNotificationPreferences(
 			"device-notification", ciphertext, preference); err != nil {
 			return nil, err
 		}
-		preferences = append(preferences, preference)
+		if registrationID.Version() != 7 {
+			return nil, errors.New(
+				"deck database: notification preference lookup failed")
+		}
+		preferences = append(preferences, NotificationPreferenceRecord{
+			RegistrationID: registrationID, Preference: preference,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errors.New(

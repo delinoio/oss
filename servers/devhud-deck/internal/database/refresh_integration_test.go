@@ -12,6 +12,7 @@ import (
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -72,6 +73,33 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		t.Fatal(err)
 	}
 	viewerHash := hasher.Sum("snapshot-viewer", accountID.String())
+	registrationID := mustV7(t)
+	notificationGrant, err := security.NewGrant()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := store.RegisterDevice(ctx, RegisterDeviceParams{
+		RegistrationID: registrationID,
+		DeviceID:       mustV7(t),
+		AccountID:      accountID,
+		IdempotencyKey: mustV7(t),
+		RequestDigest:  security.Digest([]byte("refresh-notification-device")),
+		OwnerHash: hasher.Sum(
+			"owner", "OWNER_SCOPE_PERSONAL:"+accountID.String()),
+		Write: DeviceWrite{
+			Platform:    deckv1.DevicePlatform_DEVICE_PLATFORM_MACOS,
+			DisplayName: "Refresh fixture",
+			Push: &deckv1.PushRegistration{
+				Provider:        deckv1.PushProvider_PUSH_PROVIDER_APPLE,
+				OpaquePushToken: "refresh-notification-token",
+			},
+		},
+		Grant:          notificationGrant,
+		LeaseExpiresAt: now.Add(24 * time.Hour),
+		Now:            now,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	firstEntered := make(chan struct{})
 	releaseFirst := make(chan struct{})
@@ -337,8 +365,9 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 			return persistence.CreateNotificationEvents(
 				ctx, viewID, viewerHash,
 				[]NotificationEventWrite{{
-					Transition: deckv1.NotificationTransition_NOTIFICATION_TRANSITION_UNSPECIFIED,
-					Snapshot:   replacementSnapshots[0],
+					RegistrationID: registrationID,
+					Transition:     deckv1.NotificationTransition_NOTIFICATION_TRANSITION_UNSPECIFIED,
+					Snapshot:       replacementSnapshots[0],
 				}},
 				now.Add(time.Minute),
 			)
@@ -396,7 +425,8 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 	if err := store.CreateNotificationEvents(
 		ctx, viewID, viewerHash,
 		[]NotificationEventWrite{{
-			Transition: deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
+			RegistrationID: registrationID,
+			Transition:     deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
 			Snapshot: &deckv1.PullRequestResult{
 				Repository: &deckv1.RepositoryReference{
 					Owner: "acme", Name: "widget",
@@ -409,15 +439,19 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		t.Fatal(err)
 	}
 	var expiresAt time.Time
+	var storedRegistrationID uuid.UUID
 	if err := store.pool.QueryRow(
 		ctx,
-		"SELECT expires_at FROM deck_notification_events WHERE view_id = $1",
+		`SELECT expires_at, registration_id
+		 FROM deck_notification_events WHERE view_id = $1`,
 		viewID,
-	).Scan(&expiresAt); err != nil {
+	).Scan(&expiresAt, &storedRegistrationID); err != nil {
 		t.Fatal(err)
 	}
-	if !expiresAt.Equal(now.Add(30 * 24 * time.Hour)) {
-		t.Fatalf("notification expiry = %v", expiresAt)
+	if !expiresAt.Equal(now.Add(30*24*time.Hour)) ||
+		storedRegistrationID != registrationID {
+		t.Fatalf("notification expiry = %v registration = %v",
+			expiresAt, storedRegistrationID)
 	}
 	if err := store.PruneNotificationHistory(ctx, expiresAt); err != nil {
 		t.Fatal(err)
