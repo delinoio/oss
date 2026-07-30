@@ -100,7 +100,7 @@ func TestSubmissionRequestBodyBoundary(t *testing.T) {
 	client := realqav1connect.NewRealQASubmissionServiceClient(
 		server.Client(), server.URL)
 	message := &realqav1.CreateSubmissionRequest{
-		Images: make([]*realqav1.ImageDeclaration, 40_000),
+		Images: make([]*realqav1.ImageDeclaration, 150_000),
 	}
 	for index := range message.Images {
 		message.Images[index] = &realqav1.ImageDeclaration{}
@@ -117,6 +117,37 @@ func TestSubmissionRequestBodyBoundary(t *testing.T) {
 	}
 	if len(feature.tokens) != 0 || len(forwarded.tokens) != 0 {
 		t.Fatal("oversized submission reached authentication")
+	}
+
+	bodyBoundary := connect.NewRequest(&realqav1.SubmitIssueRequest{
+		SubmissionId: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		Issue: &realqav1.IssueSubmission{
+			RepositoryResponse: &realqav1.RepositoryIssueResponse{
+				MarkdownBody: strings.Repeat("x", 60_000),
+			},
+			PublicImageConfirmation: true,
+		},
+		ExpectedSubmissionRevision: &realqav1.Revision{Value: 1},
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	})
+	bodyBoundary.Header().Set(
+		"Authorization", "Bearer feature-secret-token")
+	bodyBoundary.Header().Set(
+		auth.ForwardedUserTokenHeader, "forwarded-secret-token")
+	_, err = client.SubmitIssue(context.Background(), bodyBoundary)
+	if connect.CodeOf(err) == connect.CodeResourceExhausted {
+		t.Fatal("60,000-byte issue input was rejected by the transport boundary")
+	}
+	if len(feature.tokens) != 1 || len(forwarded.tokens) != 1 {
+		t.Fatal("60,000-byte issue input did not reach authentication")
+	}
+	if len(forwarded.scopes) != 1 || !slices.Equal(
+		forwarded.scopes[0],
+		[]string{"delibase:usage:execute", "delibase:billing:write"},
+	) {
+		t.Fatalf("SubmitIssue forwarded scopes = %#v", forwarded.scopes)
 	}
 }
 

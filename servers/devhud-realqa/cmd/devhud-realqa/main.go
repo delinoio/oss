@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/authn"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/config"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
+	realqadelibase "github.com/delinoio/oss/servers/devhud-realqa/internal/delibase"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/logging"
@@ -21,6 +22,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/service"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/safelog"
+	"github.com/google/uuid"
 )
 
 const databaseStartupTimeout = 30 * time.Second
@@ -126,6 +128,29 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{value: "github"}
 	}
+	serviceIdentityID, err := uuid.Parse(
+		configuration.DelibaseServiceIdentityID)
+	if err != nil {
+		return &startupError{value: "billing"}
+	}
+	billing, err := realqadelibase.New(realqadelibase.Config{
+		Origin:            configuration.DelibaseAPIOrigin,
+		Audience:          configuration.DelibaseLogtoAudience,
+		Issuer:            configuration.LogtoIssuer,
+		ServiceIdentityID: serviceIdentityID,
+		ClientID:          configuration.DelibaseLogtoM2MClientID,
+		ClientSecret:      configuration.DelibaseLogtoM2MClientSecret,
+	}, nil)
+	if err != nil {
+		return &startupError{value: "billing"}
+	}
+	billingCtx, cancelBilling := context.WithTimeout(
+		ctx, databaseStartupTimeout)
+	err = billing.Warm(billingCtx)
+	cancelBilling()
+	if err != nil {
+		return &startupError{value: "billing"}
+	}
 	githubCallbacks, err := github.NewCallbackHandler(github.CallbackConfig{
 		ClientID:      configuration.GitHubOAuthClientID,
 		ClientSecret:  configuration.GitHubOAuthClientSecret,
@@ -154,8 +179,10 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	serviceDependencies := service.Dependencies{
 		Store: store, GitHub: githubAuthorization,
 		GitHubProvider: githubProvider,
+		GitHubIssues:   githubProvider,
 		GitHubProjectPermission: github.ProjectPermission(
 			configuration.GitHubProjectPermission),
+		Billing: billing, ForwardedBearer: authn.ForwardedBearer,
 		Objects: objects, UploadSigner: uploadSigner,
 		WebhookSecret: configuration.GitHubWebhookSecret,
 		Pseudonymizer: pseudonymizer, Logger: logger,
