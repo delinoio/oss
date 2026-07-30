@@ -2320,7 +2320,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		INSERT INTO realqa_storage_retention_intervals (
 			authorization_id, asset_id, retained_bytes, starts_at
 		)
-		SELECT $10, asset.id, asset.encoded_bytes, $9 - interval '1 hour'
+		SELECT $10, asset.id, asset.encoded_bytes,
+		       $9::timestamptz - interval '1 hour'
 		FROM realqa_assets AS asset
 		WHERE asset.id = $3
 	`, disconnectSubmissionID, submissionID, disconnectAssetID,
