@@ -1386,7 +1386,7 @@ var File_devhud_realqa_v1_tracker_proto protoreflect.FileDescriptor
 
 const file_devhud_realqa_v1_tracker_proto_rawDesc = "" +
 	"\n" +
-	"\x1edevhud-realqa/v1/tracker.proto\x12\x10devhud.realqa.v1\x1a\x1ddevhud-realqa/v1/common.proto\x1a\x1ddevhud-realqa/v1/preset.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x02\n" +
+	"\x1edevhud-realqa/v1/tracker.proto\x12\x10devhud.realqa.v1\x1a\x1ddevhud-realqa/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x02\n" +
 	"\x10GitHubConnection\x12=\n" +
 	"\rconnection_id\x18\x01 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\fconnectionId\x122\n" +
 	"\x05owner\x18\x02 \x01(\v2\x1c.devhud.realqa.v1.OwnerScopeR\x05owner\x12=\n" +
@@ -1626,7 +1626,6 @@ func file_devhud_realqa_v1_tracker_proto_init() {
 		return
 	}
 	file_devhud_realqa_v1_common_proto_init()
-	file_devhud_realqa_v1_preset_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

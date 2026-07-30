@@ -5,7 +5,7 @@ import { create, toBinary } from "@bufbuild/protobuf";
 import {
   ErrorDetailSchema,
   ErrorReason,
-} from "@delinoio/devhud-realqa-connect";
+} from "@delinoio/devhud-realqa-connect/devhud-realqa/v1/common_pb";
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
 

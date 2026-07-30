@@ -12,6 +12,7 @@
 - Versioned Protobuf is authoritative.
 - Generate reproducible Connect-compatible Go and protobuf-es v2 TypeScript artifacts under `protos/devhud-realqa/gen/go` and `protos/devhud-realqa/gen/ts`; generated files are derived and never a second contract.
 - The private workspace TypeScript package is `@delinoio/devhud-realqa-connect`. Its root export and versioned `./devhud-realqa/v1/*` subpath exports are repository-internal and must not be published.
+- Shared repository-issue-definition messages live in `common.proto`, so the generated tracker descriptor depends only on common messages and does not pull preset or submission service descriptors into tracker-only consumers. The unchanged v1 symbols remain compatible in the supported generated runtimes through Go's package-level symbols and the TypeScript preset-subpath facade; the scoped Buf relocation exceptions are paired with contract tests that retain every other preset message and enum.
 - Preserve released v1 fields additively. Breaking changes require `devhud.realqa.v2` and synchronized consumer migration docs.
 
 ## Services and RPCs

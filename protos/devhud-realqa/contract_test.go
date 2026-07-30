@@ -153,6 +153,55 @@ func TestClosedCoreEnumsAndGitHubOnlyTracker(t *testing.T) {
 	}
 }
 
+func TestIssueDefinitionDescriptorBoundary(t *testing.T) {
+	t.Parallel()
+
+	common := realqav1.File_devhud_realqa_v1_common_proto
+	if common.Messages().ByName("RepositoryIssueDefinitionRef") == nil ||
+		common.Enums().ByName("RepositoryIssueDefinitionKind") == nil {
+		t.Fatal("common descriptor is missing shared issue-definition symbols")
+	}
+	for _, file := range []protoreflect.FileDescriptor{
+		realqav1.File_devhud_realqa_v1_tracker_proto,
+		realqav1.File_devhud_realqa_v1_submission_proto,
+	} {
+		imports := file.Imports()
+		for index := range imports.Len() {
+			if imports.Get(index).Path() == "devhud-realqa/v1/preset.proto" {
+				t.Fatalf("%s imports the preset descriptor", file.Path())
+			}
+		}
+	}
+	preset := realqav1.File_devhud_realqa_v1_preset_proto
+	for _, name := range []protoreflect.Name{
+		"ProcessUrlRule",
+		"ShortcutDefinition",
+		"Preset",
+		"ListPresetsRequest",
+		"ListPresetsResponse",
+		"GetPresetRequest",
+		"GetPresetResponse",
+		"CreatePresetRequest",
+		"CreatePresetResponse",
+		"UpdatePresetRequest",
+		"UpdatePresetResponse",
+		"DeletePresetRequest",
+		"DeletePresetResponse",
+		"OwnerFeatureDeletion",
+		"DelibaseAccountLifecycleDeletion",
+		"DelibaseOrganizationLifecycleDeletion",
+		"DeleteFeatureDataRequest",
+		"DeleteFeatureDataResponse",
+	} {
+		if preset.Messages().ByName(name) == nil {
+			t.Errorf("preset descriptor is missing compatibility message %s", name)
+		}
+	}
+	if preset.Enums().ByName("FeatureDeletionTriggerKind") == nil {
+		t.Error("preset descriptor is missing FeatureDeletionTriggerKind")
+	}
+}
+
 func TestRevisionPaginationProviderAndContentBoundaries(t *testing.T) {
 	t.Parallel()
 

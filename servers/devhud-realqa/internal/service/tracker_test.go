@@ -2,12 +2,40 @@ package service
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/url"
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
+	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 )
+
+func TestCallerReauthenticationRequiredIsTyped(t *testing.T) {
+	t.Parallel()
+	err := callerReauthenticationRequired()
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("caller reauthentication code = %v", connect.CodeOf(err))
+	}
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("caller reauthentication failure type = %T", err)
+	}
+	for _, item := range connectErr.Details() {
+		value, detailErr := item.Value()
+		if detailErr != nil {
+			t.Fatal(detailErr)
+		}
+		detail, ok := value.(*realqav1.ErrorDetail)
+		if ok &&
+			detail.Reason == realqav1.ErrorReason_ERROR_REASON_REAUTHENTICATION_REQUIRED &&
+			detail.FailureClass == realqav1.FailureClass_FAILURE_CLASS_REAUTHENTICATION_REQUIRED {
+			return
+		}
+	}
+	t.Fatal("caller reauthentication failure did not include its typed detail")
+}
 
 func TestValidateAuthorizationTargetRequiresCanonicalOAuthCallback(t *testing.T) {
 	t.Parallel()

@@ -5,7 +5,7 @@ import {
   type Transport,
 } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { RealQATrackerService } from "@delinoio/devhud-realqa-connect";
+import { RealQATrackerService } from "@delinoio/devhud-realqa-connect/devhud-realqa/v1/tracker_pb";
 
 import { canonicalAudience } from "../config";
 

@@ -3,7 +3,7 @@ import {
   ErrorDetailSchema,
   ErrorReason,
   type Revision,
-} from "@delinoio/devhud-realqa-connect";
+} from "@delinoio/devhud-realqa-connect/devhud-realqa/v1/common_pb";
 
 export interface RealQAError {
   code: Code;

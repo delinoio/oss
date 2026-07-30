@@ -12,10 +12,16 @@ public API, tracker plugin SDK, or publishable package.
 - Versioned subpath export:
   `@delinoio/devhud-realqa-connect/devhud-realqa/v1/{common,preset,submission,tracker}_pb`
 
-The package is consumed only by the future `servers/devhud-realqa`,
-authenticated RealQA code under `apps/devhud`, and `servers/delibase` for the
-typed service-authenticated feature-deletion call. DeliDev, arbitrary browser
-clients, third-party trackers, and external plugins are not consumers.
+Repository issue-definition types are generated from `common.proto`. The
+`preset_pb` subpath continues to re-export them for source compatibility, while
+tracker-only consumers can import `common_pb` and `tracker_pb` without loading
+preset or submission descriptors.
+
+The package is consumed by the future `servers/devhud-realqa`, authenticated
+RealQA code under `apps/devhud`, `servers/delibase` for the typed
+service-authenticated feature-deletion call, and DeliDev only through the
+common-message and tracker subpaths for its bounded settings UI. Arbitrary
+browser clients, third-party trackers, and external plugins are not consumers.
 
 Run `pnpm --dir protos/devhud-realqa generate:proto` to regenerate the isolated
 descriptor and both language outputs. Run
@@ -23,4 +29,3 @@ descriptor and both language outputs. Run
 compatibility checks, two-pass deterministic generation, package build, and
 cross-component write isolation. See `AUTHENTICATION.md` for credential
 metadata that deliberately remains outside protobuf messages.
-

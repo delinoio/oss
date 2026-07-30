@@ -1,16 +1,18 @@
 import {
   ErrorReason,
+  OwnerScopeKind,
+  type OwnerScope,
+} from "@delinoio/devhud-realqa-connect/devhud-realqa/v1/common_pb";
+import {
   GitHubConnectionState,
   IssueFormFieldKind,
-  OwnerScopeKind,
   type GetGitHubConnectionResponse,
   type GitHubInstallation,
   type GetRepositoryIssueSchemaResponse,
   type ListGitHubInstallationsResponse,
   type ListRepositoriesResponse,
-  type OwnerScope,
   type Repository,
-} from "@delinoio/devhud-realqa-connect";
+} from "@delinoio/devhud-realqa-connect/devhud-realqa/v1/tracker_pb";
 import {
   useInfiniteQuery,
   useMutation,

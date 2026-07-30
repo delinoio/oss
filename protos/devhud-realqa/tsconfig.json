@@ -13,7 +13,7 @@
   "include": [
     "contract_typecheck.ts",
     "index.ts",
+    "preset.ts",
     "gen/ts/**/*.ts"
   ]
 }
-

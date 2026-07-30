@@ -14,3 +14,12 @@ lint:
 breaking:
   use:
     - FILE
+  ignore_only:
+    # These two symbols moved intact from preset.proto to common.proto so
+    # tracker-only generated clients do not load preset service descriptors.
+    # Go retains its package-level symbols, and the TypeScript package preserves
+    # its prior preset subpath exports through a checked facade.
+    ENUM_NO_DELETE:
+      - devhud-realqa/v1/preset.proto
+    MESSAGE_NO_DELETE:
+      - devhud-realqa/v1/preset.proto
