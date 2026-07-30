@@ -220,6 +220,11 @@ func (service *Submission) processStoragePeriod(
 		// delibase. Grace begins at that missed day's start and is never
 		// reconstructed or back-billed.
 		if !periodStart.Equal(today.Add(-24 * time.Hour)) {
+			if skipped, skipErr := skipAgedOutDeletionSettlement(
+				ctx, queries, binding, settlement,
+			); skipped || skipErr != nil {
+				return skipErr
+			}
 			return service.startStorageGrace(
 				ctx, binding, periodStart,
 				StorageBillingFailureUnavailable, true)
@@ -232,6 +237,27 @@ func (service *Submission) processStoragePeriod(
 	default:
 		return errors.New("realqa storage billing: invalid settlement state")
 	}
+}
+
+func skipAgedOutDeletionSettlement(
+	ctx context.Context,
+	queries dbgen.Querier,
+	binding dbgen.RealqaStorageAuthorizationBinding,
+	settlement dbgen.RealqaStorageDailySettlement,
+) (bool, error) {
+	if binding.ClosureState != "resource_deletion_pending" {
+		return false, nil
+	}
+	_, err := queries.SkipStorageDailySettlementForGrace(
+		ctx, dbgen.SkipStorageDailySettlementForGraceParams{
+			AuthorizationID: binding.AuthorizationID,
+			PeriodStart:     settlement.PeriodStart,
+		})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Another worker already advanced this exact checkpoint.
+		return true, nil
+	}
+	return true, err
 }
 
 func (service *Submission) reserveAndCommitStorage(

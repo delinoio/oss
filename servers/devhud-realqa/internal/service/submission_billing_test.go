@@ -11,6 +11,7 @@ import (
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -394,6 +395,87 @@ func TestStorageRebindSourceLookupKeepsOutagesRetryable(t *testing.T) {
 	}
 }
 
+func TestStorageRebindMaximumExcludesVerifiedUnlinkedAssets(t *testing.T) {
+	t.Parallel()
+	submissionID := toPGUUID(uuidv7.MustNew())
+	queries := &storageBillingReviewQuerier{
+		assets: []dbgen.RealqaAsset{
+			{
+				SubmissionID: submissionID,
+				State:        "public_retained",
+				UploadState:  "verified",
+				EncodedBytes: bytesPerMiB/2 + 1,
+			},
+			{
+				SubmissionID: submissionID,
+				State:        "verified_unlinked",
+				UploadState:  "verified",
+				EncodedBytes: 10 * bytesPerMiB,
+			},
+		},
+	}
+	maximum, err := retainedStorageMaximumUnits(
+		context.Background(), queries, submissionID)
+	if err != nil || maximum != 1 {
+		t.Fatalf("retained maximum = %d, %v; want 1", maximum, err)
+	}
+}
+
+func TestAgedOutDeletionSettlementSkipsWithoutStartingRecovery(
+	t *testing.T,
+) {
+	t.Parallel()
+	authorizationID := toPGUUID(uuidv7.MustNew())
+	periodStart := pgTimestamp(
+		time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC))
+	queries := &storageBillingReviewQuerier{
+		settlement: dbgen.RealqaStorageDailySettlement{
+			AuthorizationID: authorizationID,
+			PeriodStart:     periodStart,
+			State:           "pending",
+		},
+	}
+	skipped, err := skipAgedOutDeletionSettlement(
+		context.Background(), queries,
+		dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID: authorizationID,
+			ClosureState:    "resource_deletion_pending",
+		},
+		queries.settlement,
+	)
+	if err != nil || !skipped || queries.settlement.State != "grace_skipped" {
+		t.Fatalf("deletion skip = %v / %q / %v",
+			skipped, queries.settlement.State, err)
+	}
+
+	queries.settlement.State = "pending"
+	skipped, err = skipAgedOutDeletionSettlement(
+		context.Background(), queries,
+		dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID: authorizationID,
+			ClosureState:    "open",
+		},
+		queries.settlement,
+	)
+	if err != nil || skipped || queries.settlement.State != "pending" {
+		t.Fatalf("open settlement skip = %v / %q / %v",
+			skipped, queries.settlement.State, err)
+	}
+
+	queries.skipErr = pgx.ErrNoRows
+	skipped, err = skipAgedOutDeletionSettlement(
+		context.Background(), queries,
+		dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID: authorizationID,
+			ClosureState:    "resource_deletion_pending",
+		},
+		queries.settlement,
+	)
+	if err != nil || !skipped {
+		t.Fatalf("raced deletion skip = %v, %v", skipped, err)
+	}
+}
+
 func TestBillingMeterContractRejectsPriceTTLAndActivationDrift(t *testing.T) {
 	t.Parallel()
 	serviceID := uuidv7.MustNew()
@@ -764,6 +846,31 @@ type recordingIssueUpdater struct {
 	issueID   string
 	publicIDs []string
 	err       error
+}
+
+type storageBillingReviewQuerier struct {
+	dbgen.Querier
+	assets     []dbgen.RealqaAsset
+	settlement dbgen.RealqaStorageDailySettlement
+	skipErr    error
+}
+
+func (queries *storageBillingReviewQuerier) ListSubmissionAssets(
+	context.Context,
+	pgtype.UUID,
+) ([]dbgen.RealqaAsset, error) {
+	return queries.assets, nil
+}
+
+func (queries *storageBillingReviewQuerier) SkipStorageDailySettlementForGrace(
+	_ context.Context,
+	_ dbgen.SkipStorageDailySettlementForGraceParams,
+) (dbgen.RealqaStorageDailySettlement, error) {
+	if queries.skipErr != nil {
+		return dbgen.RealqaStorageDailySettlement{}, queries.skipErr
+	}
+	queries.settlement.State = "grace_skipped"
+	return queries.settlement, nil
 }
 
 func (updater *recordingIssueUpdater) RemoveImageReferences(

@@ -2140,6 +2140,9 @@ func markStorageRecoveryNotified(
 		return nil
 	}
 	notified, err := queries.MarkStorageRecoveryNotified(ctx, recovery.id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

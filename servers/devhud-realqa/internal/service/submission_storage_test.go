@@ -158,6 +158,13 @@ func TestLoadSubmissionMarksRecoveryAfterResponseAssembly(t *testing.T) {
 		t.Fatalf("notification state = %v, want notified",
 			submission.GetStorageBillingRecovery().GetNotificationState())
 	}
+
+	queries.markErr = pgx.ErrNoRows
+	if _, err = loadSubmissionWithRecord(
+		context.Background(), queries, record,
+	); err != nil {
+		t.Fatalf("raced recovery resolution failed read: %v", err)
+	}
 }
 
 type storageRecoveryQuerier struct {
@@ -165,6 +172,7 @@ type storageRecoveryQuerier struct {
 	recovery  dbgen.RealqaStorageRecovery
 	binding   dbgen.RealqaStorageAuthorizationBinding
 	assetsErr error
+	markErr   error
 	marked    bool
 }
 
@@ -201,6 +209,9 @@ func (queries *storageRecoveryQuerier) MarkStorageRecoveryNotified(
 	pgtype.UUID,
 ) (dbgen.RealqaStorageRecovery, error) {
 	queries.marked = true
+	if queries.markErr != nil {
+		return dbgen.RealqaStorageRecovery{}, queries.markErr
+	}
 	queries.recovery.NotificationState = "notified"
 	return queries.recovery, nil
 }

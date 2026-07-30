@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"time"
 
 	"connectrpc.com/connect"
@@ -94,7 +95,8 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 	if err != nil || validateBillingMeters(meters) != nil {
 		return nil, storageAuthorizationFailed()
 	}
-	maximumUnits, err := ceilMiB(submission.VerifiedEncodedBytes)
+	maximumUnits, err := retainedStorageMaximumUnits(
+		ctx, service.dependencies.Store.Queries(), submission.ID)
 	if err != nil || maximumUnits <= 0 {
 		return nil, retentionStateConflict()
 	}
@@ -228,8 +230,8 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 				lockedRecovery.AuthorizationID != binding.AuthorizationID {
 				return staleStorageAuthorizationMapping()
 			}
-			lockedMaximumUnits, lockErr := ceilMiB(
-				lockedSubmission.VerifiedEncodedBytes)
+			lockedMaximumUnits, lockErr := retainedStorageMaximumUnits(
+				ctx, queries, lockedSubmission.ID)
 			if lockErr != nil || lockedMaximumUnits <= 0 {
 				return retentionStateConflict()
 			}
@@ -429,6 +431,30 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 		"storage_authorization_rebound", scope, submissionID,
 		"allow", "success")
 	return storageRebindResponse(submissionID, completed, replayed)
+}
+
+func retainedStorageMaximumUnits(
+	ctx context.Context,
+	queries dbgen.Querier,
+	submissionID pgtype.UUID,
+) (int64, error) {
+	assets, err := queries.ListSubmissionAssets(ctx, submissionID)
+	if err != nil {
+		return 0, err
+	}
+	var retainedBytes int64
+	for _, asset := range assets {
+		if asset.State != "public_retained" {
+			continue
+		}
+		if asset.UploadState != "verified" || asset.EncodedBytes <= 0 ||
+			retainedBytes > math.MaxInt64-asset.EncodedBytes {
+			return 0, errors.New(
+				"realqa storage billing: invalid retained asset bytes")
+		}
+		retainedBytes += asset.EncodedBytes
+	}
+	return ceilMiB(retainedBytes)
 }
 
 func (service *Submission) prepareStorageRebindCutoff(
