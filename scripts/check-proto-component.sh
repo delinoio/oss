@@ -60,6 +60,20 @@ copy_generated_snapshot() {
 	cp "${DESCRIPTOR}" "${SNAPSHOT_DIR}/${DESCRIPTOR_FILE}"
 }
 
+validate_breaking_exceptions() {
+	if [ "${COMPONENT}" != "devhud-realqa" ]; then
+		return
+	fi
+
+	# Buf's relocation exception is file-scoped. This exact-set sentinel ensures
+	# it cannot hide any unrelated preset message or enum deletion.
+	(
+		cd "${REPO_ROOT}"
+		go test ./protos/devhud-realqa \
+			-run '^TestIssueDefinitionDescriptorBoundary$'
+	)
+}
+
 main() {
 	validate_arguments "$@"
 	if [ ! -f "${BASELINE}" ]; then
@@ -100,6 +114,7 @@ main() {
 		exit 1
 	fi
 
+	validate_breaking_exceptions
 	capture_unowned_worktree_state "${SNAPSHOT_DIR}/unowned-after"
 	if ! cmp -s "${SNAPSHOT_DIR}/unowned-before" "${SNAPSHOT_DIR}/unowned-after"; then
 		printf 'generator for %s modified paths outside its owned generated artifacts\n' \

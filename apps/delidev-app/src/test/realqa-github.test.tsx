@@ -134,7 +134,7 @@ function connectedResponse(
   };
 }
 
-function installationResponse() {
+function installationResponse(revision = "3") {
   return {
     installations: [
       {
@@ -143,7 +143,7 @@ function installationResponse() {
           value: "018f3f5e-7b01-7a2d-8c3a-4ba8d8b51611",
         },
         providerInstallationId: "9123",
-        revision: { etag: "installation-3", value: "3" },
+        revision: { etag: `installation-${revision}`, value: revision },
       },
     ],
     page: {},
@@ -225,14 +225,17 @@ describe("RealQA GitHub destinations", () => {
     expect(screen.queryByText("octocat")).not.toBeInTheDocument();
   });
 
-  it("reloads destination discovery when the connection revision changes", async () => {
+  it("reloads destination discovery when connection or installation revisions change", async () => {
     let connectionRevision = "7";
+    let installationRevision = "3";
     const fetchMock = vi.fn<typeof fetch>(async (request) => {
       const url = String(request);
       const currentDestination =
-        connectionRevision === "7"
-          ? "legacy-destination"
-          : "current-destination";
+        connectionRevision === "8"
+          ? "connection-destination"
+          : installationRevision === "4"
+            ? "installation-destination"
+            : "legacy-destination";
       if (url.endsWith("/GetGitHubConnection")) {
         return connectJsonResponse(
           connectedResponse(
@@ -242,7 +245,9 @@ describe("RealQA GitHub destinations", () => {
         );
       }
       if (url.endsWith("/ListGitHubInstallations")) {
-        return connectJsonResponse(installationResponse());
+        return connectJsonResponse(
+          installationResponse(installationRevision),
+        );
       }
       if (url.endsWith("/ListRepositories")) {
         return connectJsonResponse({
@@ -272,9 +277,11 @@ describe("RealQA GitHub destinations", () => {
                 definition: {
                   definitionId: "template-support",
                   name:
-                    connectionRevision === "7"
-                      ? "Legacy definition"
-                      : "Current definition",
+                    connectionRevision === "8"
+                      ? "Connection definition"
+                      : installationRevision === "4"
+                        ? "Installation definition"
+                        : "Legacy definition",
                   path: ".github/ISSUE_TEMPLATE/support.md",
                 },
               },
@@ -298,17 +305,35 @@ describe("RealQA GitHub destinations", () => {
     );
     expect(await screen.findByText("Legacy definition")).toBeVisible();
 
+    installationRevision = "4";
+    await queryClient.refetchQueries({
+      queryKey: ["realqa-tracker", "installations"],
+    });
+
+    expect(
+      await screen.findByText("acme/installation-destination"),
+    ).toBeVisible();
+    expect(await screen.findByText("Installation definition")).toBeVisible();
+    expect(
+      screen.queryByText("acme/legacy-destination"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Legacy definition")).not.toBeInTheDocument();
+
     connectionRevision = "8";
     await queryClient.refetchQueries({
       queryKey: ["realqa-tracker", "connection"],
     });
 
-    expect(await screen.findByText("acme/current-destination")).toBeVisible();
-    expect(await screen.findByText("Current definition")).toBeVisible();
     expect(
-      screen.queryByText("acme/legacy-destination"),
+      await screen.findByText("acme/connection-destination"),
+    ).toBeVisible();
+    expect(await screen.findByText("Connection definition")).toBeVisible();
+    expect(
+      screen.queryByText("acme/installation-destination"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText("Legacy definition")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Installation definition"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps member controls role-bounded and renders only server-filtered repository permissions and definitions", async () => {

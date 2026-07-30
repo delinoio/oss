@@ -173,7 +173,7 @@ func TestIssueDefinitionDescriptorBoundary(t *testing.T) {
 		}
 	}
 	preset := realqav1.File_devhud_realqa_v1_preset_proto
-	for _, name := range []protoreflect.Name{
+	wantMessages := []string{
 		"ProcessUrlRule",
 		"ShortcutDefinition",
 		"Preset",
@@ -192,13 +192,21 @@ func TestIssueDefinitionDescriptorBoundary(t *testing.T) {
 		"DelibaseOrganizationLifecycleDeletion",
 		"DeleteFeatureDataRequest",
 		"DeleteFeatureDataResponse",
-	} {
-		if preset.Messages().ByName(name) == nil {
-			t.Errorf("preset descriptor is missing compatibility message %s", name)
-		}
 	}
-	if preset.Enums().ByName("FeatureDeletionTriggerKind") == nil {
-		t.Error("preset descriptor is missing FeatureDeletionTriggerKind")
+	gotMessages := make([]string, 0, preset.Messages().Len())
+	for index := range preset.Messages().Len() {
+		gotMessages = append(gotMessages, string(preset.Messages().Get(index).Name()))
+	}
+	if !slices.Equal(gotMessages, wantMessages) {
+		t.Errorf("preset messages = %v, want exact compatibility set %v", gotMessages, wantMessages)
+	}
+	gotEnums := make([]string, 0, preset.Enums().Len())
+	for index := range preset.Enums().Len() {
+		gotEnums = append(gotEnums, string(preset.Enums().Get(index).Name()))
+	}
+	wantEnums := []string{"FeatureDeletionTriggerKind"}
+	if !slices.Equal(gotEnums, wantEnums) {
+		t.Errorf("preset enums = %v, want exact compatibility set %v", gotEnums, wantEnums)
 	}
 }
 
