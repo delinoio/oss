@@ -880,14 +880,16 @@ func (service *Submission) DeleteImage(
 			if lockErr != nil {
 				return lockErr
 			}
-			if _, lockErr = queries.MarkSubmissionStorageClosurePending(
-				ctx, dbgen.MarkSubmissionStorageClosurePendingParams{
-					Cutoff:       removed.RemovedAt,
-					SubmissionID: toPGUUID(submissionID),
-				}); lockErr != nil {
+			closurePendingRows, lockErr :=
+				queries.MarkSubmissionStorageClosurePending(
+					ctx, dbgen.MarkSubmissionStorageClosurePendingParams{
+						Cutoff:       removed.RemovedAt,
+						SubmissionID: toPGUUID(submissionID),
+					})
+			if lockErr != nil {
 				return lockErr
 			}
-			if updatedRecord.VerifiedEncodedBytes == 0 {
+			if closurePendingRows > 0 {
 				resolved, resolveErr := queries.ResolveStorageRecovery(
 					ctx, dbgen.ResolveStorageRecoveryParams{
 						RecoveredAt:        removed.RemovedAt,

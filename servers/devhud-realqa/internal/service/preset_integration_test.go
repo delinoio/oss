@@ -3492,6 +3492,176 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("webhook recovery block after deletion = %v, %v",
 			webhookBlockedAfter, err)
 	}
+	explicitGraceSubmissionID := uuidv7.MustNew()
+	explicitGracePublicAssetID := uuidv7.MustNew()
+	explicitGraceUnlinkedAssetID := uuidv7.MustNew()
+	explicitGraceAttemptKey := uuidv7.MustNew()
+	explicitGraceServiceID := uuidv7.MustNew()
+	explicitGraceMeterID := uuidv7.MustNew()
+	explicitGraceAuthorizationID := uuidv7.MustNew()
+	explicitGraceRecoveryID := uuidv7.MustNew()
+	explicitGracePublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, provider_issue_id, provider_issue_url,
+			idempotency_digest, submitted_at, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, upload_deadline, upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'storage_billing_grace', '2003',
+		       'https://github.com/delinoio/oss/issues/760',
+		       idempotency_digest, transaction_timestamp(),
+		       payer_organization_id, payer_team_id, preset_revision,
+		       declared_encoded_bytes, 0,
+		       transaction_timestamp() + interval '23 hours',
+		       transaction_timestamp() + interval '24 hours'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $13;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $6, $1, NULL, 'verified_unlinked', encoded_bytes, $7,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $13;
+		UPDATE realqa_submissions
+		SET verified_encoded_bytes = (
+			SELECT sum(encoded_bytes)
+			FROM realqa_assets
+			WHERE submission_id = $1
+			  AND upload_state = 'verified'
+		)
+		WHERE id = $1;
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES (
+			$1, $8, decode(repeat('ac', 32), 'hex'),
+			$9, $10, 1, 'active', $11, 1, 1
+		);
+		INSERT INTO realqa_storage_authorization_bindings (
+			authorization_id, submission_id, mapping_revision,
+			authorizer_account_id, owner_kind, owner_id,
+			organization_id, team_id, service_identity_id, meter_id,
+			maximum_units, status, authorization_revision
+		)
+		SELECT $11, submission.id, 1, submission.created_by_account_id,
+		       submission.owner_kind, submission.owner_id,
+		       submission.payer_organization_id, submission.payer_team_id,
+		       $9, $10, 1, 'active', 1
+		FROM realqa_submissions AS submission
+		WHERE submission.id = $1;
+		INSERT INTO realqa_storage_retention_intervals (
+			authorization_id, asset_id, retained_bytes, starts_at
+		)
+		SELECT $11, asset.id, asset.encoded_bytes, asset.verified_at
+		FROM realqa_assets AS asset
+		WHERE asset.id = $3;
+		INSERT INTO realqa_storage_recoveries (
+			id, submission_id, authorization_id, reason,
+			grace_started_at, grace_expires_at
+		) VALUES (
+			$12, $1, $11, 'payment_required',
+			transaction_timestamp(),
+			transaction_timestamp() + interval '30 days'
+		)
+	`, explicitGraceSubmissionID, webhookSubmissionID,
+		explicitGracePublicAssetID, explicitGracePublicID,
+		uuidv7.MustNew(), explicitGraceUnlinkedAssetID, uuidv7.MustNew(),
+		explicitGraceAttemptKey, explicitGraceServiceID,
+		explicitGraceMeterID, explicitGraceAuthorizationID,
+		explicitGraceRecoveryID, promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	explicitGraceSubmission, err := submissionService.GetSubmission(
+		authCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: &realqav1.UuidV7{
+				Value: explicitGraceSubmissionID.String(),
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var explicitGracePublicAsset *realqav1.ImageAsset
+	for _, asset := range explicitGraceSubmission.Msg.Submission.Assets {
+		if asset.AssetId.Value == explicitGracePublicAssetID.String() {
+			explicitGracePublicAsset = asset
+			break
+		}
+	}
+	if explicitGracePublicAsset == nil {
+		t.Fatal("explicit grace public asset was not returned")
+	}
+	explicitGraceDeleted, err := submissionService.DeleteImage(
+		authCtx, connect.NewRequest(&realqav1.DeleteImageRequest{
+			SubmissionId: explicitGraceSubmission.Msg.Submission.SubmissionId,
+			AssetId:      explicitGracePublicAsset.AssetId,
+			ExpectedSubmissionRevision: explicitGraceSubmission.Msg.
+				Submission.Revision,
+			ExpectedAssetRevision: explicitGracePublicAsset.Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var (
+		explicitGraceRetainedBytes int64
+		explicitGraceRecovered     bool
+		explicitGraceClosureState  string
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT submission.verified_encoded_bytes,
+		       recovery.recovered_at IS NOT NULL,
+		       binding.closure_state
+		FROM realqa_submissions AS submission
+		JOIN realqa_storage_recoveries AS recovery
+		  ON recovery.id = $2
+		JOIN realqa_storage_authorization_bindings AS binding
+		  ON binding.authorization_id = $3
+		WHERE submission.id = $1
+	`, explicitGraceSubmissionID, explicitGraceRecoveryID,
+		explicitGraceAuthorizationID).Scan(
+		&explicitGraceRetainedBytes, &explicitGraceRecovered,
+		&explicitGraceClosureState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if explicitGraceDeleted.Msg.Submission.State !=
+		realqav1.SubmissionState_SUBMISSION_STATE_ASSETS_DELETED ||
+		explicitGraceRetainedBytes <= 0 || !explicitGraceRecovered ||
+		explicitGraceClosureState != "resource_deletion_pending" {
+		t.Fatalf(
+			"explicit grace deletion = %v / %d / %v / %q, want assets_deleted / positive unlinked bytes / true / resource_deletion_pending",
+			explicitGraceDeleted.Msg.Submission.State,
+			explicitGraceRetainedBytes, explicitGraceRecovered,
+			explicitGraceClosureState,
+		)
+	}
 	rebindKey := uuidv7.MustNew()
 	rebindRequest := &realqav1.RebindSubmissionStorageAuthorizationRequest{
 		SubmissionId: &realqav1.UuidV7{
@@ -3867,7 +4037,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	closureServiceID := uuidv7.MustNew()
 	closureMeterID := uuidv7.MustNew()
 	closureJobID := uuidv7.MustNew()
-	closureCutoff := time.Now().UTC().Truncate(time.Microsecond)
+	externalLifecycleSubmissionID := uuidv7.MustNew()
+	externalLifecycleAttemptKey := uuidv7.MustNew()
+	externalLifecycleServiceID := uuidv7.MustNew()
+	externalLifecycleMeterID := uuidv7.MustNew()
+	externalLifecycleAuthorizationID := uuidv7.MustNew()
+	closureCutoff := time.Now().Add(-48 * time.Hour).
+		UTC().Truncate(time.Microsecond)
 	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_submissions (
 			id, owner_kind, owner_id, created_by_account_id, state,
@@ -3907,10 +4083,48 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		) VALUES (
 			$10, 'organization', $2, 'owner_request', 'completed',
 			false, $9, $9
+		);
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, state,
+			provider_issue_id, provider_issue_url, idempotency_digest,
+			payer_organization_id, payer_team_id, upload_deadline,
+			upload_expires_at
+		) VALUES (
+			$11, 'organization', $12, $3, 'submitted',
+			'2004', 'https://github.com/delinoio/oss/issues/761',
+			decode(repeat('d0', 32), 'hex'), $2, $4,
+			$9::timestamptz + interval '71 hours',
+			$9::timestamptz + interval '72 hours'
+		);
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES (
+			$11, $13, decode(repeat('d1', 32), 'hex'),
+			$14, $15, 1, 'active', $16, 1, 1
+		);
+		INSERT INTO realqa_storage_authorization_bindings (
+			authorization_id, submission_id, mapping_revision,
+			authorizer_account_id, owner_kind, owner_id,
+			organization_id, team_id, service_identity_id, meter_id,
+			maximum_units, status, authorization_revision
+		) VALUES (
+			$16, $11, 1, $3, 'organization', $12,
+			$2, $4, $14, $15, 1, 'active', 1
 		)
 	`, closureSubmissionID, closureOwnerID, accountID, closureTeamID,
 		uuidv7.MustNew(), closureServiceID, closureMeterID,
-		closureAuthorizationID, closureCutoff, closureJobID); err != nil {
+		closureAuthorizationID, closureCutoff, closureJobID,
+		externalLifecycleSubmissionID, organizationID,
+		externalLifecycleAttemptKey, externalLifecycleServiceID,
+		externalLifecycleMeterID,
+		externalLifecycleAuthorizationID); err != nil {
+		t.Fatal(err)
+	}
+	lifecycleReceiptNotBefore, err := store.Queries().
+		GetTransactionTimestamp(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
 	closureReplay, err := service.DeleteFeatureData(
@@ -3943,6 +4157,37 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if !ownerDeletedAllowed {
 		t.Fatal("lifecycle replay did not allow terminal owner deletion")
+	}
+	var (
+		externalLifecycleCutoff   time.Time
+		externalLifecycleState    string
+		externalLifecycleRecovery string
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT binding.accrual_cutoff_at, submission.state, recovery.reason
+		FROM realqa_storage_authorization_bindings AS binding
+		JOIN realqa_submissions AS submission
+		  ON submission.id = binding.submission_id
+		JOIN realqa_storage_recoveries AS recovery
+		  ON recovery.submission_id = binding.submission_id
+		 AND recovery.recovered_at IS NULL
+		 AND recovery.expired_at IS NULL
+		WHERE binding.authorization_id = $1
+	`, externalLifecycleAuthorizationID).Scan(
+		&externalLifecycleCutoff, &externalLifecycleState,
+		&externalLifecycleRecovery,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if externalLifecycleCutoff.Before(lifecycleReceiptNotBefore.Time) ||
+		!externalLifecycleCutoff.After(closureCutoff) ||
+		externalLifecycleState != "storage_billing_grace" ||
+		externalLifecycleRecovery != "authorization_access_lost" {
+		t.Fatalf(
+			"external lifecycle cutoff = %s / %q / %q, want receipt-time cutoff after %s and access-loss grace",
+			externalLifecycleCutoff, externalLifecycleState,
+			externalLifecycleRecovery, lifecycleReceiptNotBefore.Time,
+		)
 	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_github_connections

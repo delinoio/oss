@@ -450,8 +450,14 @@ func (service *Preset) prepareLifecycleStorageDeletion(
 			}); err != nil {
 		return err
 	}
+	lifecycleCutoff, err := service.dependencies.Store.Queries().
+		GetTransactionTimestamp(ctx)
+	if err != nil {
+		return err
+	}
 	return NewSubmission(service.dependencies).
-		HandleLifecycleAuthorizationDeletion(ctx, scope, cutoff)
+		HandleLifecycleAuthorizationDeletion(
+			ctx, scope, lifecycleCutoff.Time.UTC())
 }
 
 func (service *Preset) disconnectLifecycleAccount(
