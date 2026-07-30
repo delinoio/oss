@@ -3117,7 +3117,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		WHERE account_id = $1
 		  AND owner_kind = 'organization'
 		  AND owner_id = $2
-	`, accountID, organizationID); err != nil {
+	`, secondAdminID, organizationID); err != nil {
 		t.Fatal(err)
 	}
 	organizationDeletionRequest := &realqav1.DeleteFeatureDataRequest{
@@ -3132,7 +3132,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		},
 	}
 	if _, err = service.DeleteFeatureData(
-		authCtx, connect.NewRequest(organizationDeletionRequest)); err != nil {
+		secondAdminCtx, connect.NewRequest(organizationDeletionRequest)); err != nil {
 		t.Fatal(err)
 	}
 	_, err = submissionService.CreateSubmission(

@@ -61,5 +61,10 @@ ALTER TABLE realqa_audits
         'github_user_authorization_started',
         'github_connection_disconnected',
         'feature_deletion_accepted',
-        'repository_access_denied'
+        'repository_access_denied',
+        'submission_created',
+        'image_upload_authorized',
+        'image_upload_verified',
+        'image_deleted',
+        'submission_assets_deleted'
     ));
