@@ -582,20 +582,12 @@ func (service *View) reserveCreatedRefreshAttempt(
 			reserveErr, contracts.ErrRefreshReservationRejected) {
 			return false, reserveErr
 		}
-		truncated, refreshedAt, freshness, resultCount, stateErr :=
+		// The reservation rejection is definitive. Snapshot metadata is
+		// best-effort so a read failure cannot leave the attempt replayable.
+		truncated, refreshedAt, freshness, resultCount, _ :=
 			service.currentSnapshotState(
 				ctx, refreshViewID(view), viewerHash,
 				service.dependencies.Clock.Now().UTC())
-		if stateErr != nil && !errors.Is(stateErr, database.ErrNotFound) {
-			return false, stateErr
-		}
-		if errors.Is(stateErr, database.ErrNotFound) {
-			truncated = false
-			refreshedAt = time.Time{}
-			freshness =
-				deckv1.FreshnessState_FRESHNESS_STATE_UNSPECIFIED
-			resultCount = 0
-		}
 		*response = refreshResponse(
 			view, deckv1.RefreshOutcome_REFRESH_OUTCOME_RESERVATION_REJECTED,
 			deckv1.BillingDisposition_BILLING_DISPOSITION_REJECTED,
