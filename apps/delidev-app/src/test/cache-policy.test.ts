@@ -73,7 +73,34 @@ describe("service worker cache policy", () => {
     ).toBe(CacheTarget.None);
   });
 
+  it.each([
+    "GetGitHubConnection",
+    "StartGitHubConnection",
+    "ListGitHubInstallations",
+    "DisconnectGitHubConnection",
+  ])("never caches Deck integration RPC %s", (method) => {
+    expect(
+      classifyCacheRequest(
+        {
+          authorization: "Bearer deck-token",
+          method: "POST",
+          url: `https://deck.deli.dev/devhud.deck.v1.DeckIntegrationService/${method}`,
+        },
+        shellPaths,
+      ),
+    ).toBe(CacheTarget.None);
+  });
+
   it("allows only generated same-origin shell paths", () => {
+    expect(
+      classifyCacheRequest(
+        {
+          method: "GET",
+          url: "https://deli.dev/auth/devhud/callback?code=sensitive",
+        },
+        shellPaths,
+      ),
+    ).toBe(CacheTarget.None);
     expect(
       classifyCacheRequest(
         {

@@ -16,14 +16,23 @@
   mobile empty-state UI, maintained native iOS and Android hosts, private
   mobile secure-vault/widget-state plugins, independently built
   WidgetKit/AppWidgetProvider source targets, native Logto Authorization Code
-  with PKCE, per-feature OS-vault refresh grants/device binding, online
-  retained-session rehydration, memory-only bearer pairing,
-  dependency-injected frontend/native session state, the inactive Deck refresh
-  timing/origin/eligibility layer, the RealQA capture/composer foundations, and
-  the unpublished exact-origin Chrome extension/native host. It has no
-  activated production Deck/RealQA tool, authenticated Deck/RealQA UI, live
-  feature transport, visible/distributed widget, production identities,
-  published release, or rollout.
+  with PKCE, random-port one-shot desktop loopback handling at the stable
+  registered `/auth/callback` path, verified mobile callback declarations,
+  per-feature OS-vault refresh grants/device binding, online retained-session
+  rehydration, memory-only bearer pairing, dependency-injected frontend/native
+  session state, the inactive Deck refresh timing/origin/eligibility layer, a
+  platform-neutral dependency-injected RealQA capture/composer core with
+  fixture backends plus concrete macOS 14+, Windows 11 x64/ARM64, and reviewed
+  Ubuntu X11/XWayland/native-Wayland capture adapters, a desktop-only
+  account-bound AES-256-GCM RealQA draft record family whose device keys remain
+  in the OS secure vault, and the unpublished exact-origin Chrome
+  extension/native host. It has no activated production Deck/RealQA tool,
+  authenticated Deck/RealQA UI, feature networking, visible/distributed
+  widget, production Chrome identity, production Logto identity, scoped updater
+  network implementation, published release, publisher automation, public
+  support implementation, or rollout. Issues #755/#757 authorize those bounded
+  feature implementations without claiming activation or publication.
+- The implemented dependency-injected RealQA online-submission coordinator consumes encrypted draft envelopes, enforces the exact 60,000-byte preflight and a fresh public-screenshot warning/confirmation for every attempt, reuses one persistent UUID v7 across create/reconciliation, sequences private uploads, and retains the encrypted draft for cancellation, overflow, and failed or ambiguous outcomes. Its native encrypted-vault and closed Connect/signed-PUT gateway bindings remain product integrations and do not activate RealQA.
 - The current implementation includes tray-resident desktop window lifecycle, transactional global shortcuts, explicit autostart, pointer-monitor HUD placement, preview DevTools, a typed local update action, cross-window theme reconciliation, surfaced startup integration failures, provider-owned persisted System/Light/Dark state, internal registry filtering, target-isolated desktop CEF and mobile system-webview runtimes, five exact window/platform capability manifests, bundled-resource response hardening, deny-by-default CEF networking, scoped native commands, Swift/Kotlin shared-data adapters, non-distributed native widget fixtures, generated native host sources, and deterministic local and host validation commands.
 
 ## Runtime and Language

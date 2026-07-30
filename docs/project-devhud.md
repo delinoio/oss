@@ -9,17 +9,19 @@ and generated Connect packages are implemented, as is the inactive RealQA
 preset/tracker/auth/deletion plus R2-backed image-transfer/public-delivery
 server foundation, its internal GitHub.com-only provider adapter, manifest,
 callbacks, lifecycle webhooks, schema parsing, body composition, and reconciled
-new-issue dispatch boundary, and Deck's bounded authentication/persistence plus
-GitHub.com connection, lifecycle, candidate, and PR-mutation provider slice.
-The app also implements the inactive account-bound encrypted RealQA
-local-draft/native-adapter foundation. Deck now implements client-owned refresh
-polling/controller behavior, live forwarded-user billing, current snapshots,
-widget freshness, and 30-day notification transition history/resolution; push
-delivery and the remaining Deck UI/native transport remain planned. RealQA
-end-to-end submission/billing orchestration and remaining product integrations
-also remain planned. This contract authorizes implementation for issues #755
-and #757; it does not claim that either feature or origin is deployed,
-registered, published, catalog-enabled, or active.
+new-issue dispatch boundary, RealQA's replay-safe online submission,
+live-transfer billing, initial storage-authorization orchestration, and Deck's
+bounded authentication/persistence plus GitHub.com connection, lifecycle,
+candidate, and PR-mutation provider slice. The app also implements the inactive
+account-bound encrypted RealQA local-draft/native-adapter foundation and
+dependency-injected online-submission coordinator. Deck now implements
+client-owned refresh polling/controller behavior, live forwarded-user billing,
+current snapshots, widget freshness, and 30-day notification transition
+history/resolution; push delivery and the remaining Deck UI/native transport
+remain planned. RealQA recurring storage/rebind/terminal cleanup and remaining
+product integrations also remain planned. This contract authorizes
+implementation for issues #755 and #757; it does not claim that either feature
+or origin is deployed, registered, published, catalog-enabled, or active.
 
 The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild, the exact pinned Tauri desktop CEF runtime, standard mobile system webviews, tray/shortcut/autostart behavior, a closed internal tool registry, typed local persistence, bounded diagnostics, device-local reset, non-distributed native-widget fixtures, an inactive dependency-injected RealQA capture/composer core with exact window capabilities, fixture backends, and concrete reviewed macOS 14+, Windows 11 x64/ARM64, and Ubuntu adapters, the separate `devhud.realqa-draft.v1` desktop record family and record-specific native adapter, plus the unpublished exact-origin Chrome MV3/desktop Native Messaging capture bridge with post-capture and post-selection tab identity checks and 60-second one-shot DOM origin access. Windows snapshots bind the physical monitor device interface as well as the active GDI source, and window sources use DWM visible extended-frame geometry to match the captured WGC item. The composer preserves handed-off DOM target metadata, provides a narrow user-confirmed pointer-free primary-display fallback for restricted browser pages, and includes a composable keyboard/pointer/screen-reader React editor plus a closed native deterministic flatten operation for crop, arrow, rectangle, freehand, text, numbered marker, blur, and pixelate edits with undo/redo history, revision-bound off-thread approval, native-generated source previews bounded to 2,048 pixels per edge, matching reset/removal/logout invalidation for in-flight acceptance and retained sources, deserialization-time operation and nested-value limits, and aggregate freehand-point and effect-inclusive raster-work limits. Drafts preserve native-held raw originals and nondestructive operations in AES-256-GCM envelopes bound by associated data to an opaque authenticated-account binding and UUID-v7 draft ID; per-account random keys remain only in the OS secure vault and are distinct from logout-cleared refresh grants. Direct source enumeration remains closed when its capture permission is not granted; native Wayland exposes only opaque portal-picker entries before approval. The core rejects backend frames that do not match resolved capture geometry or a validated portal-approved layout. macOS uses ScreenCaptureKit/Core Graphics, Windows uses Windows Graphics Capture, and Ubuntu uses bounded X11/XWayland drawable capture plus native Wayland only through `xdg-desktop-portal`. The production tool registry remains empty, so native capture, editor, local drafts, and the Chrome bridge do not activate RealQA. Deck may later add authenticated GitHub.com pull-request workflows on desktop, iOS, Android, tray, shortcuts, notifications, and native widgets. RealQA may later add the remaining authenticated capture/editor product and new-GitHub.com-issue submission. Neither feature is part of the signed-out base shell, and no Chrome Web Store publication is authorized.
 
@@ -46,10 +48,10 @@ transport; the remaining Deck and RealQA product clients remain future work.
   Go/PostgreSQL/sqlc Deck service described by
   [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md).
 - `protos/devhud-deck` (`deck-api`, implemented private contract): the versioned `devhud.deck.v1` source, isolated descriptor, generated Go/TypeScript Connect artifacts, and private workspace export described by [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
-- `servers/devhud-realqa` (`realqa-server`): the implemented inactive Go/PostgreSQL/sqlc preset/tracker/auth/deletion and R2-backed image-transfer/public-delivery foundation plus planned GitHub issue/billing service described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
+- `servers/devhud-realqa` (`realqa-server`): the implemented inactive Go/PostgreSQL/sqlc preset/tracker/auth/deletion, GitHub.com provider, R2-backed image-transfer/public-delivery, and online submission/live-transfer/initial-storage-authorization foundation plus planned recurring storage/rebind/terminal cleanup described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
 - `protos/devhud-realqa` (`realqa-api`): the implemented versioned `devhud.realqa.v1` source, isolated descriptor, reproducible Go/TypeScript Connect artifacts, and private `@delinoio/devhud-realqa-connect` workspace package described by [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 
-No full DevHud feature client or native implementation belongs under `apps/delidev-app`, `servers/delibase`, `protos/delibase`, `crates/`, `cmds/`, or a public plugin/package path. DeliDev may consume only `DeckIntegrationService` to expose connection management through its existing `/account` and `/o/:orgSlug/settings` sections. It also owns the planned `/auth/devhud/callback` static route and exact-path Apple/Android association artifacts required to verify the Deck mobile link; these narrow responsibilities do not transfer DevHud ownership or authorize another top-level DeliDev feature route.
+No full DevHud feature client or native implementation belongs under `apps/delidev-app`, `servers/delibase`, `protos/delibase`, `crates/`, `cmds/`, or a public plugin/package path. DeliDev consumes only `DeckIntegrationService` for implemented connection management through its existing `/account` and `/o/:orgSlug/settings` sections and now owns the dedicated credential-free `/auth/devhud/callback` handoff artifact. Exact-path Apple/Android association artifacts required to verify the future Deck mobile link remain planned; these narrow responsibilities do not transfer DevHud ownership or authorize another top-level DeliDev feature route.
 
 ## Domain Contract Documents
 

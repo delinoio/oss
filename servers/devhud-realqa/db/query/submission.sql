@@ -24,15 +24,215 @@ INSERT INTO realqa_submissions (
     id, owner_kind, owner_id, created_by_account_id, preset_id,
     destination_id, state, idempotency_digest, payer_organization_id,
     payer_team_id, preset_revision, declared_encoded_bytes,
-    upload_deadline, upload_expires_at
+    upload_deadline, upload_expires_at, client_idempotency_key,
+    transfer_meter_id, transfer_service_identity_id,
+    transfer_reserve_idempotency_key, transfer_commit_idempotency_key,
+    transfer_release_idempotency_key, transfer_reserved_units,
+    transfer_state
 ) VALUES (
     sqlc.arg(id), sqlc.arg(owner_kind), sqlc.arg(owner_id),
     sqlc.arg(created_by_account_id), sqlc.arg(preset_id),
     sqlc.arg(destination_id), 'draft', sqlc.arg(idempotency_digest),
     sqlc.arg(payer_organization_id), sqlc.arg(payer_team_id),
     sqlc.arg(preset_revision), sqlc.arg(declared_encoded_bytes),
-    sqlc.arg(upload_deadline), sqlc.arg(upload_expires_at)
+    sqlc.arg(upload_deadline), sqlc.arg(upload_expires_at),
+    sqlc.arg(client_idempotency_key), sqlc.narg(transfer_meter_id),
+    sqlc.narg(transfer_service_identity_id),
+    sqlc.narg(transfer_reserve_idempotency_key),
+    sqlc.narg(transfer_commit_idempotency_key),
+    sqlc.narg(transfer_release_idempotency_key),
+    sqlc.arg(transfer_reserved_units), sqlc.arg(transfer_state)
 )
+RETURNING *;
+
+-- name: SetTransferReservation :one
+UPDATE realqa_submissions
+SET transfer_reservation_id = sqlc.arg(transfer_reservation_id),
+    transfer_reservation_created_at =
+        sqlc.arg(transfer_reservation_created_at),
+    transfer_reservation_expires_at =
+        sqlc.arg(transfer_reservation_expires_at),
+    upload_deadline = LEAST(
+        sqlc.arg(transfer_reservation_created_at) + interval '23 hours',
+        sqlc.arg(transfer_reservation_expires_at) - interval '1 hour'
+    ),
+    upload_expires_at = sqlc.arg(transfer_reservation_expires_at),
+    transfer_state = 'reserved',
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE id = sqlc.arg(id)
+  AND transfer_state = 'pending'
+  AND transfer_reservation_id IS NULL
+  AND sqlc.arg(transfer_reservation_expires_at)
+        - sqlc.arg(transfer_reservation_created_at) >= interval '24 hours'
+RETURNING *;
+
+-- name: MarkTransferCommitted :one
+UPDATE realqa_submissions
+SET transfer_state = 'committed',
+    transfer_committed_units = sqlc.arg(committed_units),
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE id = sqlc.arg(id)
+  AND transfer_state = 'reserved'
+  AND sqlc.arg(committed_units) > 0
+  AND sqlc.arg(committed_units) <= transfer_reserved_units
+RETURNING *;
+
+-- name: MarkTransferReleased :one
+UPDATE realqa_submissions
+SET transfer_state = 'released',
+    transfer_committed_units = 0,
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE id = sqlc.arg(id)
+  AND transfer_state = 'reserved'
+RETURNING *;
+
+-- name: CountRecentIssueSubmissionAttempts :one
+SELECT count(*)::bigint
+FROM realqa_issue_submission_attempts AS attempt
+JOIN realqa_submissions AS submission ON submission.id = attempt.submission_id
+WHERE submission.created_by_account_id = sqlc.arg(account_id)
+  AND attempt.accepted_at >= transaction_timestamp() - interval '1 hour';
+
+-- name: GetIssueSubmissionAttempt :one
+SELECT *
+FROM realqa_issue_submission_attempts
+WHERE submission_id = sqlc.arg(submission_id);
+
+-- name: CreateIssueSubmissionAttempt :one
+INSERT INTO realqa_issue_submission_attempts (
+    submission_id, idempotency_key, request_digest, state
+) VALUES (
+    sqlc.arg(submission_id), sqlc.arg(idempotency_key),
+    sqlc.arg(request_digest), 'pending'
+)
+RETURNING *;
+
+-- name: MarkIssueTransferFinalized :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'transfer_finalized',
+    updated_at = transaction_timestamp()
+WHERE submission_id = sqlc.arg(submission_id)
+  AND state IN ('pending', 'transfer_finalized')
+RETURNING *;
+
+-- name: MarkIssueProviderPending :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'provider_pending',
+    final_body_digest = sqlc.arg(final_body_digest),
+    failure_reason = NULL,
+    updated_at = transaction_timestamp()
+WHERE submission_id = sqlc.arg(submission_id)
+  AND state IN ('transfer_finalized', 'provider_pending')
+RETURNING *;
+
+-- name: MarkIssueProviderReconciled :one
+WITH attempt AS (
+    UPDATE realqa_issue_submission_attempts
+    SET state = 'provider_reconciled',
+        provider_issue_id = sqlc.arg(provider_issue_id),
+        provider_issue_url = sqlc.arg(provider_issue_url),
+        failure_reason = NULL,
+        updated_at = transaction_timestamp()
+    WHERE submission_id = sqlc.arg(submission_id)
+      AND state IN (
+          'provider_pending', 'provider_reconciled', 'promoting'
+      )
+      AND (
+          provider_issue_id IS NULL
+          OR (
+              provider_issue_id = sqlc.arg(provider_issue_id)
+              AND provider_issue_url = sqlc.arg(provider_issue_url)
+          )
+      )
+    RETURNING *
+)
+UPDATE realqa_submissions AS submission
+SET state = 'reconciling',
+    provider_issue_id = attempt.provider_issue_id,
+    provider_issue_url = attempt.provider_issue_url,
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+FROM attempt
+WHERE submission.id = attempt.submission_id
+RETURNING attempt.*;
+
+-- name: MarkIssuePromoting :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'promoting',
+    updated_at = transaction_timestamp()
+WHERE submission_id = sqlc.arg(submission_id)
+  AND state IN ('provider_reconciled', 'promoting')
+RETURNING *;
+
+-- name: CompleteIssueSubmissionAttempt :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'completed',
+    completed_at = transaction_timestamp(),
+    updated_at = transaction_timestamp()
+WHERE submission_id = sqlc.arg(submission_id)
+  AND state IN ('provider_reconciled', 'promoting')
+RETURNING *;
+
+-- name: FailIssueSubmissionAttempt :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'failed',
+    failure_reason = sqlc.arg(failure_reason),
+    updated_at = transaction_timestamp()
+WHERE submission_id = sqlc.arg(submission_id)
+  AND state NOT IN ('provider_reconciled', 'promoting', 'completed')
+RETURNING *;
+
+-- name: CreateStorageAuthorizationAttempt :one
+INSERT INTO realqa_storage_authorization_attempts (
+    submission_id, idempotency_key, request_digest,
+    service_identity_id, meter_id, maximum_units, state
+) VALUES (
+    sqlc.arg(submission_id), sqlc.arg(idempotency_key),
+    sqlc.arg(request_digest), sqlc.arg(service_identity_id),
+    sqlc.arg(meter_id), sqlc.arg(maximum_units), 'pending'
+)
+ON CONFLICT (submission_id) DO NOTHING
+RETURNING *;
+
+-- name: GetStorageAuthorizationAttempt :one
+SELECT *
+FROM realqa_storage_authorization_attempts
+WHERE submission_id = sqlc.arg(submission_id);
+
+-- name: CompleteStorageAuthorizationAttempt :one
+UPDATE realqa_storage_authorization_attempts
+SET state = 'active',
+    authorization_id = sqlc.arg(authorization_id),
+    authorization_revision = sqlc.arg(authorization_revision),
+    mapping_revision = 1,
+    updated_at = transaction_timestamp()
+WHERE submission_id = sqlc.arg(submission_id)
+  AND state = 'pending'
+RETURNING *;
+
+-- name: SumVerifiedDeclaredAssetBytes :one
+SELECT COALESCE(sum(declared_encoded_bytes), 0)::bigint
+FROM realqa_assets
+WHERE submission_id = sqlc.arg(submission_id)
+  AND upload_state = 'verified';
+
+-- name: ListIssueSubmissionAssets :many
+SELECT *
+FROM realqa_assets
+WHERE submission_id = sqlc.arg(submission_id)
+  AND id = ANY(sqlc.arg(asset_ids)::uuid[])
+ORDER BY id;
+
+-- name: SetSubmissionSubmitting :one
+UPDATE realqa_submissions
+SET state = 'submitting',
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE id = sqlc.arg(id)
+  AND state IN ('ready', 'submitting', 'reconciling')
 RETURNING *;
 
 -- name: CreateAssetRecord :one

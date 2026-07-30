@@ -86,6 +86,16 @@ type GitHubProviderAdapter interface {
 	) (realqagithub.RepositoryDefinitions, error)
 }
 
+type GitHubIssueProvider interface {
+	CreateIssue(
+		context.Context,
+		uuid.UUID,
+		uuid.UUID,
+		realqagithub.Repository,
+		realqagithub.IssueInput,
+	) (realqagithub.Issue, error)
+}
+
 type IssueImageUpdater interface {
 	RemoveImageReferences(context.Context, string, []string) error
 }
@@ -96,7 +106,10 @@ type Dependencies struct {
 	Clock                   Clock
 	GitHub                  GitHubAuthorization
 	GitHubProvider          GitHubProviderAdapter
+	GitHubIssues            GitHubIssueProvider
 	GitHubProjectPermission realqagithub.ProjectPermission
+	Billing                 SubmissionBilling
+	ForwardedBearer         func(context.Context) (string, bool)
 	Objects                 imageassets.ObjectStore
 	UploadSigner            *imageassets.Signer
 	IssueUpdater            IssueImageUpdater

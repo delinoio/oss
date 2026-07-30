@@ -1368,7 +1368,7 @@ func (service *Submission) CleanupExpiredStaging(
 					value      dbgen.RealqaAsset
 					cleanupErr error
 				)
-				if locked.State == "public_retained" {
+				if locked.PublicID.Valid {
 					value, cleanupErr = queries.TombstoneAsset(
 						ctx, dbgen.TombstoneAssetParams{
 							AssetRecordID:     locked.ID,
@@ -1816,6 +1816,24 @@ func loadSubmissionWithRecord(
 			IssueId:  record.ProviderIssueID.String,
 			IssueUrl: record.ProviderIssueUrl.String,
 		}
+	}
+	authorization, authorizationErr :=
+		queries.GetStorageAuthorizationAttempt(ctx, record.ID)
+	if authorizationErr == nil && authorization.AuthorizationID.Valid &&
+		authorization.MappingRevision > 0 {
+		authorizationID, parseErr := fromPGUUID(
+			authorization.AuthorizationID)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		result.StorageAuthorizationId = &realqav1.UuidV7{
+			Value: authorizationID.String(),
+		}
+		result.StorageAuthorizationMappingRevision =
+			revision(authorization.MappingRevision)
+	} else if authorizationErr != nil &&
+		!errors.Is(authorizationErr, pgx.ErrNoRows) {
+		return nil, authorizationErr
 	}
 	assets, err := queries.ListSubmissionAssets(ctx, record.ID)
 	if err != nil {
