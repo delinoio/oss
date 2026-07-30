@@ -1124,9 +1124,46 @@ function translateTitlePattern(pattern: string): string {
 
 function compileTitlePattern(pattern: string): RegExp | null {
   try {
-    return new RegExp(translateTitlePattern(pattern), "u");
+    return new RegExp(translateTitlePattern(pattern), "gu");
   } catch {
     return null;
+  }
+}
+
+function isSurrogatePairGap(value: string, index: number): boolean {
+  const previous = value.charCodeAt(index - 1);
+  const next = value.charCodeAt(index);
+  return (
+    previous >= 0xd800 &&
+    previous <= 0xdbff &&
+    next >= 0xdc00 &&
+    next <= 0xdfff
+  );
+}
+
+/**
+ * JavaScript /u lookarounds can report zero-width matches between UTF-16
+ * surrogate halves. Retry past those gaps until the runtime guarantees that
+ * every Unicode-mode match boundary is also a code-point boundary.
+ */
+function execTitlePattern(
+  expression: RegExp,
+  windowTitle: string,
+): RegExpExecArray | null {
+  expression.lastIndex = 0;
+  for (;;) {
+    const match = expression.exec(windowTitle);
+    if (match === null) return null;
+    const end = match.index + match[0].length;
+    const invalidBoundary = isSurrogatePairGap(windowTitle, match.index)
+      ? match.index
+      : isSurrogatePairGap(windowTitle, end)
+        ? end
+        : null;
+    if (invalidBoundary === null) {
+      return match;
+    }
+    expression.lastIndex = invalidBoundary + 1;
   }
 }
 
@@ -1230,7 +1267,7 @@ export function inferDesktopUrl(
     } else {
       const expression = compileTitlePattern(rule.safeWindowTitlePattern);
       if (expression === null) continue;
-      match = expression.exec(windowTitle);
+      match = execTitlePattern(expression, windowTitle);
       if (match !== null) {
         expanded = expandTemplate(rule.urlTemplate, match);
       }

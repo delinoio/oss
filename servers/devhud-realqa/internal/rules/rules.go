@@ -150,7 +150,9 @@ func containsUnsupportedCharacterClassSyntax(pattern string) bool {
 			return true
 		}
 	}
-	return false
+	// Keep the synchronized subset closed when POSIX-looking text never reaches
+	// its ":]" terminator; Go otherwise accepts some of these forms as literals.
+	return inPOSIXClass
 }
 
 type patternGroupState struct {

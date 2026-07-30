@@ -62,6 +62,7 @@ func TestCompileRejectsUnsafeOrDivergentRegexFeatures(t *testing.T) {
 		`(?=secret)`, `(a)\1`, `(?P<name>a)`, `\C`, `\Qliteral\E`,
 		`[a-z&&[^x]]`, `[a-z--[aeiou]]`, `[[:alpha:]&&[^x]]`, `a{101}`,
 		`[a[b]&&c]`, `(a+)+$`, `(?:a|aa)+$`, `((?:a|aa))+$`, `([a-z]*)*$`,
+		`^[[:.a.]]$`,
 		strings.Repeat("a", MaxPatternBytes+1),
 	}
 	for _, pattern := range patterns {

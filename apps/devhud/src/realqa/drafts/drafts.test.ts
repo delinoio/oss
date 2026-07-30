@@ -293,6 +293,28 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     },
   );
 
+  it("keeps synchronized matches out of UTF-16 surrogate-pair gaps", () => {
+    const rules = [
+      rule({
+        safeWindowTitlePattern: String.raw`^$|(a)`,
+        urlTemplate: "https://example.com/$1",
+      }),
+      rule({
+        ruleId: "01900000-0000-7000-8000-000000000002",
+        safeWindowTitlePattern: "",
+        urlTemplate: "https://fallback.example/",
+      }),
+    ];
+    expect(inferDesktopUrl(rules, "code", "😀")).toMatchObject({
+      ok: true,
+      url: { value: "https://fallback.example/" },
+    });
+    expect(inferDesktopUrl(rules, "code", "😀a")).toMatchObject({
+      ok: true,
+      url: { value: "https://example.com/a" },
+    });
+  });
+
   it.each([
     ["Issue\r757", true],
     ["Issue\u2028757", true],
@@ -740,6 +762,7 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     "[^]",
     String.raw`^[a-\d]$`,
     String.raw`^[a-[:digit:]]$`,
+    String.raw`^[[:.a.]]$`,
     "(?-)^Issue",
     "(?i-)a",
   ])("rejects unsupported shared-regex syntax %s", (pattern) => {
@@ -908,6 +931,21 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     expect(restoreCapturedUrlParts(inferred.url)).toBe(
       "https://example.com/a/../b?draft=1#section",
     );
+  });
+
+  it.each([
+    "https://EXAMPLE.COM:443/a",
+    "https://example.com:/a",
+  ])("preserves synchronized URL authority spelling in %s", (urlTemplate) => {
+    const inferred = inferDesktopUrl(
+      [rule({ urlTemplate })],
+      "code",
+      "Issue 757",
+    );
+    expect(inferred).toMatchObject({
+      ok: true,
+      url: { value: urlTemplate },
+    });
   });
 
   it("accepts raw percent text in a synchronized URL query", () => {

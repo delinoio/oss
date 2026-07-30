@@ -134,9 +134,9 @@ function sanitizeUrl(
     value
       .slice(prefix.length + authority.length)
       .split(/[?#]/u, 1)[0] ?? "";
-  // Synchronized rules retain Go's raw path spelling, including dot segments.
+  // Synchronized rules retain Go's raw scheme, authority, and path spelling.
   const canonicalValue = allowRawQueryPercent
-    ? `${parsed.origin}${rawPath === "" ? "/" : rawPath}`
+    ? `${prefix}${authority}${rawPath}`
     : parsed.toString();
   if (new TextEncoder().encode(canonicalValue).byteLength > MAX_URL_BYTES) {
     return { ok: false, reason: "invalid-url" };
