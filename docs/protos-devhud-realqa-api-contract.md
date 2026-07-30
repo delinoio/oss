@@ -5,7 +5,7 @@
 - Project/component: `devhud` / `realqa-api`
 - Canonical source path: `protos/devhud-realqa/v1`
 - Contract identity: `devhud.realqa.v1`
-- Status: implemented source contract and private workspace package for issue #757, consumed by the inactive `servers/devhud-realqa` preset/tracker/auth/deletion foundation; no deployed API, public client publication, successful submission/upload/provider implementation, or production activation is claimed.
+- Status: implemented source contract and private workspace package for issue #757, consumed by the inactive `servers/devhud-realqa` preset/tracker/auth/deletion and online submission/live-transfer/initial-storage-authorization foundation; no deployed API, public client publication, recurring storage/rebind/terminal-cleanup implementation, or production activation is claimed.
 
 ## Runtime and Language
 
@@ -69,7 +69,7 @@ Checks do not publish the TypeScript package, deploy either RealQA origin, creat
 ## Dependencies and Change Triggers
 
 - Owned by `devhud`; consumed by `servers/devhud-realqa`, authenticated RealQA code under `apps/devhud`, and `servers/delibase` only for service-authenticated `DeleteFeatureData` lifecycle delivery. DeliDev has no RealQA client.
-- Recurring storage settlement depends on the separately synchronized delibase background-usage contract implemented by issue #756. RealQA server/client implementation and activation remain future work and require a separate catalog activation; the existing live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute.
+- Recurring storage settlement depends on the separately synchronized delibase background-usage contract implemented by issue #756. RealQA's live transfer and initial authorization client are implemented; recurring authorized usage, rebind/closure, and activation remain future work and require a separate catalog activation. The live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute for recurring settlement.
 - Update this document, [project-devhud](project-devhud.md), [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, idempotency, generated package, or compatibility change.
 
 ## References

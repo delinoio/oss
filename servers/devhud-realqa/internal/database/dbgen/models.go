@@ -149,6 +149,20 @@ type RealqaIdentity struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
+type RealqaIssueSubmissionAttempt struct {
+	SubmissionID     pgtype.UUID
+	IdempotencyKey   pgtype.UUID
+	RequestDigest    []byte
+	FinalBodyDigest  []byte
+	State            string
+	ProviderIssueID  pgtype.Text
+	ProviderIssueUrl pgtype.Text
+	FailureReason    pgtype.Text
+	AcceptedAt       pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CompletedAt      pgtype.Timestamptz
+}
+
 type RealqaObjectDeletionJob struct {
 	AssetID         pgtype.UUID
 	ObjectKind      string
@@ -264,26 +278,53 @@ type RealqaShortcut struct {
 	Active      bool
 }
 
+type RealqaStorageAuthorizationAttempt struct {
+	SubmissionID          pgtype.UUID
+	IdempotencyKey        pgtype.UUID
+	RequestDigest         []byte
+	ServiceIdentityID     pgtype.UUID
+	MeterID               pgtype.UUID
+	MaximumUnits          int64
+	State                 string
+	AuthorizationID       pgtype.UUID
+	AuthorizationRevision pgtype.Int8
+	MappingRevision       int64
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+}
+
 type RealqaSubmission struct {
-	ID                   pgtype.UUID
-	OwnerKind            string
-	OwnerID              pgtype.UUID
-	CreatedByAccountID   pgtype.UUID
-	PresetID             pgtype.UUID
-	DestinationID        pgtype.UUID
-	State                string
-	ProviderIssueID      pgtype.Text
-	ProviderIssueUrl     pgtype.Text
-	IdempotencyDigest    []byte
-	Revision             int64
-	CreatedAt            pgtype.Timestamptz
-	UpdatedAt            pgtype.Timestamptz
-	SubmittedAt          pgtype.Timestamptz
-	PayerOrganizationID  pgtype.UUID
-	PayerTeamID          pgtype.UUID
-	PresetRevision       int64
-	DeclaredEncodedBytes int64
-	VerifiedEncodedBytes int64
-	UploadDeadline       pgtype.Timestamptz
-	UploadExpiresAt      pgtype.Timestamptz
+	ID                            pgtype.UUID
+	OwnerKind                     string
+	OwnerID                       pgtype.UUID
+	CreatedByAccountID            pgtype.UUID
+	PresetID                      pgtype.UUID
+	DestinationID                 pgtype.UUID
+	State                         string
+	ProviderIssueID               pgtype.Text
+	ProviderIssueUrl              pgtype.Text
+	IdempotencyDigest             []byte
+	Revision                      int64
+	CreatedAt                     pgtype.Timestamptz
+	UpdatedAt                     pgtype.Timestamptz
+	SubmittedAt                   pgtype.Timestamptz
+	PayerOrganizationID           pgtype.UUID
+	PayerTeamID                   pgtype.UUID
+	PresetRevision                int64
+	DeclaredEncodedBytes          int64
+	VerifiedEncodedBytes          int64
+	UploadDeadline                pgtype.Timestamptz
+	UploadExpiresAt               pgtype.Timestamptz
+	ClientIdempotencyKey          pgtype.UUID
+	TransferMeterID               pgtype.UUID
+	TransferServiceIdentityID     pgtype.UUID
+	TransferReservationID         pgtype.UUID
+	TransferReserveIdempotencyKey pgtype.UUID
+	TransferCommitIdempotencyKey  pgtype.UUID
+	TransferReleaseIdempotencyKey pgtype.UUID
+	TransferReservedUnits         int64
+	TransferCommittedUnits        int64
+	TransferState                 string
+	TransferReservationCreatedAt  pgtype.Timestamptz
+	TransferReservationExpiresAt  pgtype.Timestamptz
 }

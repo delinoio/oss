@@ -16,6 +16,16 @@ import (
 
 const LifecycleScope = "realqa:lifecycle:delete"
 
+type forwardedBearerKey struct{}
+
+// ForwardedBearer returns the validated delibase-audience bearer only during
+// the current request. Callers must pass it directly to the live usage client;
+// persisting or logging it is forbidden.
+func ForwardedBearer(ctx context.Context) (string, bool) {
+	value, ok := ctx.Value(forwardedBearerKey{}).(string)
+	return value, ok && value != ""
+}
+
 type Interceptor struct {
 	feature           authmiddleware.Validator
 	forwarded         authmiddleware.Validator
@@ -99,6 +109,7 @@ func (interceptor *Interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryF
 			}
 		}
 		strip(headers)
+		ctx = context.WithValue(ctx, forwardedBearerKey{}, forwardedToken)
 		ctx = auth.WithPrincipal(ctx, auth.Principal{User: featureUser})
 		return next(ctx, request)
 	}

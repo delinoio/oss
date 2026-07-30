@@ -16,7 +16,7 @@
 
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/delidev-app`: React/TypeScript/Rsbuild Cloudflare Pages PWA for project `delidev`.
-- `apps/devhud`: React/TypeScript/Rsbuild plus Tauri client/native path for project `devhud`; owns the signed-out base shell and all planned Deck/RealQA client, widget, capture, extension, and native-host sources.
+- `apps/devhud`: React/TypeScript/Rsbuild plus Tauri client/native path for project `devhud`; owns the signed-out base shell, the implemented dependency-injected encrypted-draft RealQA online-submission state machine, and all Deck/RealQA client, widget, capture, extension, and native-host sources.
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.

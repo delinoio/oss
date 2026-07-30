@@ -4,7 +4,9 @@
 `devhud.realqa.v1` Connect contract. It implements authenticated personal and
 organization preset synchronization, GitHub.com destination/repository schema
 selection, typed revisions/conflicts, private image transfer, sanitized
-PNG/WebP verification, durable public-image tombstones, and scoped feature
+PNG/WebP verification, replay-safe live transfer billing, submission-bound
+initial storage authorization, exact-body duplicate-safe GitHub issue
+submission, durable public-image promotion/tombstones, and scoped feature
 deletion. It does not deploy either RealQA origin, register a GitHub App,
 provision R2 or DNS, enable billing catalog records, or publish a
 tracker/plugin interface.
@@ -69,6 +71,17 @@ tracker/plugin interface.
 - Submission creation revalidates repository access and the 25 MiB/image,
   250 MiB/submission, and 100 MP/image limits before creating private staging
   state.
+- One draft UUID v7 is retained as the submission idempotency root. Creation
+  validates the disabled catalog mapping, reserves aggregate declared
+  `encoded_mib` once at 500 USD micros/MiB, persists exact stable downstream
+  keys, and enforces three concurrent live upload sessions per user.
+- `SubmitIssue` accepts at most 30 new attempts/hour/user, requires a fresh
+  explicit public-image confirmation, commits the aggregate verified declared
+  bytes once (or releases a zero-verified reservation), then durably creates
+  and validates the exact submission-bound `REALQA_STORAGE` authorization
+  before composing/confirming the final body and reconciling the hidden GitHub
+  marker. Verified transfer remains committed when later provider work fails.
+  Only provider identifiers/URLs, asset state, and request/body digests persist.
 - Five-minute-or-upload-deadline same-origin signed PUT URLs bind one asset's
   content type, SHA-256, encoded length, dimensions, and private token digest.
   The handler never exposes the R2 S3 endpoint.
@@ -130,6 +143,10 @@ Required non-secret values:
 - `REALQA_LOGTO_JWKS_URL`
 - `REALQA_LOGTO_AUDIENCE=https://realqa.deli.dev`
 - `REALQA_DELIBASE_LOGTO_AUDIENCE=https://delibase.deli.dev`
+- `REALQA_DELIBASE_API_ORIGIN=https://delibase.deli.dev`
+- `REALQA_DELIBASE_SERVICE_IDENTITY_ID` (the exact UUID v7 authorization target
+  for both RealQA meters)
+- `REALQA_DELIBASE_LOGTO_M2M_CLIENT_ID`
 - `REALQA_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID`
 - `REALQA_GITHUB_OAUTH_CLIENT_ID`
 - `REALQA_GITHUB_APP_SLUG`
@@ -143,6 +160,7 @@ Required non-secret values:
 Required secrets:
 
 - `REALQA_DATABASE_URL`
+- `REALQA_DELIBASE_LOGTO_M2M_CLIENT_SECRET`
 - `REALQA_IDENTITY_HASH_KEY` (at least 32 bytes)
 - `REALQA_LOG_PSEUDONYM_KEY` (at least 32 bytes)
 - `REALQA_GITHUB_OAUTH_CLIENT_SECRET`

@@ -96,7 +96,7 @@ Each project must have one project index document and one or more domain contrac
   `servers/devhud-deck` foundation and GitHub.com provider slice; future
   `https://deck.deli.dev`)
 - `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, mutation follow-up-refresh state, and non-dispatching all-origin refresh preflight)
-- `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion, internal GitHub.com provider with stable-ID repository rename synchronization, and R2-backed image-transfer/public-delivery foundation at `servers/devhud-realqa`; future end-to-end submission/billing slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
+- `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion, internal GitHub.com provider with stable-ID repository rename synchronization, R2-backed image-transfer/public-delivery, and replay-safe online submission/live-transfer/initial-storage-authorization foundation at `servers/devhud-realqa`; future recurring storage/rebind/terminal-cleanup slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
 - `docs/protos-devhud-realqa-api-contract.md` (implemented `protos/devhud-realqa/v1`; `devhud.realqa.v1`, isolated descriptor and private generated package)
 
 DevHud's implemented signed-out base shell remains bundled, usable without an

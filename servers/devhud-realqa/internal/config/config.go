@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -39,7 +41,11 @@ type Config struct {
 	LogtoIssuer                  string
 	LogtoJWKSURL                 string
 	LogtoAudience                string
+	DelibaseAPIOrigin            string
 	DelibaseLogtoAudience        string
+	DelibaseServiceIdentityID    string
+	DelibaseLogtoM2MClientID     string
+	DelibaseLogtoM2MClientSecret string
 	LifecycleLogtoClientID       string
 	IdentityHashKey              []byte
 	LogPseudonymKey              []byte
@@ -110,6 +116,42 @@ func Load(lookup LookupEnv) (Config, error) {
 	if result.DelibaseLogtoAudience != CanonicalDelibaseOrigin {
 		return Config{}, errors.New(
 			"realqa config: REALQA_DELIBASE_LOGTO_AUDIENCE must use the canonical audience")
+	}
+	if result.DelibaseAPIOrigin, err = required(
+		"REALQA_DELIBASE_API_ORIGIN"); err != nil {
+		return Config{}, err
+	}
+	if result.DelibaseAPIOrigin != CanonicalDelibaseOrigin {
+		return Config{}, errors.New(
+			"realqa config: REALQA_DELIBASE_API_ORIGIN must use the canonical origin")
+	}
+	if result.DelibaseServiceIdentityID, err = required(
+		"REALQA_DELIBASE_SERVICE_IDENTITY_ID"); err != nil {
+		return Config{}, err
+	}
+	serviceID, parseErr := uuid.Parse(result.DelibaseServiceIdentityID)
+	if parseErr != nil || serviceID.Version() != 7 ||
+		serviceID.String() != result.DelibaseServiceIdentityID {
+		return Config{}, errors.New(
+			"realqa config: REALQA_DELIBASE_SERVICE_IDENTITY_ID must be UUID v7")
+	}
+	if result.DelibaseLogtoM2MClientID, err = required(
+		"REALQA_DELIBASE_LOGTO_M2M_CLIENT_ID"); err != nil {
+		return Config{}, err
+	}
+	if !validIdentifier(result.DelibaseLogtoM2MClientID) {
+		return Config{}, errors.New(
+			"realqa config: REALQA_DELIBASE_LOGTO_M2M_CLIENT_ID is invalid")
+	}
+	if result.DelibaseLogtoM2MClientSecret, err = required(
+		"REALQA_DELIBASE_LOGTO_M2M_CLIENT_SECRET"); err != nil {
+		return Config{}, err
+	}
+	if len(result.DelibaseLogtoM2MClientSecret) < 20 ||
+		len(result.DelibaseLogtoM2MClientSecret) > 1024 ||
+		strings.ContainsAny(result.DelibaseLogtoM2MClientSecret, "\r\n") {
+		return Config{}, errors.New(
+			"realqa config: REALQA_DELIBASE_LOGTO_M2M_CLIENT_SECRET is invalid")
 	}
 	if result.LifecycleLogtoClientID, err = required(
 		"REALQA_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID"); err != nil {
