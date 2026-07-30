@@ -108,6 +108,7 @@ type usageFixture struct {
 	reserves       []*delibasev1.ReserveUsageRequest
 	commits        []*delibasev1.CommitUsageRequest
 	releases       []*delibasev1.ReleaseUsageRequest
+	releaseStatus  delibasev1.ReservationStatus
 	headers        []http.Header
 }
 
@@ -190,13 +191,17 @@ func (fixture *usageFixture) ReleaseUsage(
 	defer fixture.mu.Unlock()
 	fixture.record(request.Header())
 	fixture.releases = append(fixture.releases, request.Msg)
+	status := fixture.releaseStatus
+	if status == delibasev1.ReservationStatus_RESERVATION_STATUS_UNSPECIFIED {
+		status = delibasev1.ReservationStatus_RESERVATION_STATUS_RELEASED
+	}
 	reservation := fixture.reservation(
 		&delibasev1.ReserveUsageRequest{
 			OrganizationId: request.Msg.GetOrganizationId(),
 			TeamId:         fixtureUUID(uuid.MustParse("01900000-0000-7000-8000-000000000005")),
 			MaximumUnits:   &delibasev1.UsageUnits{Value: 1},
 		},
-		delibasev1.ReservationStatus_RESERVATION_STATUS_RELEASED)
+		status)
 	return connect.NewResponse(&delibasev1.ReleaseUsageResponse{
 		Reservation: reservation,
 	}), nil
@@ -286,11 +291,29 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 		reservation.ID); err != nil {
 		t.Fatal(err)
 	}
+	usage.mu.Lock()
+	usage.releaseStatus =
+		delibasev1.ReservationStatus_RESERVATION_STATUS_EXPIRED
+	usage.mu.Unlock()
+	if err := client.ReleaseRefresh(
+		context.Background(), "forwarded-user-token", organizationID,
+		reservation.ID); err != nil {
+		t.Fatalf("expired release = %v", err)
+	}
+	usage.mu.Lock()
+	usage.releaseStatus =
+		delibasev1.ReservationStatus_RESERVATION_STATUS_ACTIVE
+	usage.mu.Unlock()
+	if err := client.ReleaseRefresh(
+		context.Background(), "forwarded-user-token", organizationID,
+		reservation.ID); !errors.Is(err, ErrFinalizationFailed) {
+		t.Fatalf("active release = %v", err)
+	}
 
 	usage.mu.Lock()
 	defer usage.mu.Unlock()
 	if len(usage.reserves) != 1 || len(usage.commits) != 1 ||
-		len(usage.releases) != 1 {
+		len(usage.releases) != 3 {
 		t.Fatalf(
 			"usage calls reserve=%d commit=%d release=%d",
 			len(usage.reserves), len(usage.commits), len(usage.releases))

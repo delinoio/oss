@@ -221,7 +221,28 @@ func (service *View) RefreshView(
 				response, currentErr = replayRefreshAttempt(current)
 				return currentErr
 			}
-			if current.State == database.RefreshAttemptCreated {
+			recoveredCreated := false
+			if replayed && current.State == database.RefreshAttemptCreated {
+				var completed bool
+				completed, currentErr = service.reserveCreatedRefreshAttempt(
+					ctx, view, subjectHash, viewerHash, requestID, &current,
+					forwardedToken, &response, &metricOutcome)
+				if currentErr != nil || completed {
+					return currentErr
+				}
+				recoveredCreated = true
+			}
+			canUseShortcut := current.State == database.RefreshAttemptCreated ||
+				recoveredCreated
+			if canUseShortcut && view.GetConnectionState() ==
+				deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+				response = disconnectedRefreshResponse(view)
+				metricOutcome = contracts.RefreshMetricProviderFailure
+				return service.completeRefreshWithoutDispatch(
+					ctx, subjectHash, requestID, current, forwardedToken,
+					response, &metricOutcome)
+			}
+			if canUseShortcut {
 				eligible, eligibleErr := service.refreshEligible(
 					ctx, viewer, view, viewerHash,
 					request.Msg.GetOrigin(), currentTime)
@@ -239,13 +260,14 @@ func (service *View) RefreshView(
 						view, deckv1.RefreshOutcome_REFRESH_OUTCOME_AUTOMATIC_REFRESH_NOT_ELIGIBLE,
 						deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_NOT_ELIGIBLE,
 						freshness, refreshedAt, truncated, resultCount, false)
-					return service.dependencies.Store.SaveRefreshResponse(
-						ctx, subjectHash, requestID, response, true, currentTime)
+					return service.completeRefreshWithoutDispatch(
+						ctx, subjectHash, requestID, current, forwardedToken,
+						response, &metricOutcome)
 				}
 			}
 			cacheOutcome, usesCache := refreshCacheOutcome(
 				request.Msg.GetOrigin())
-			if current.State == database.RefreshAttemptCreated && usesCache {
+			if canUseShortcut && usesCache {
 				recentAutomatic := false
 				if cacheOutcome ==
 					deckv1.RefreshOutcome_REFRESH_OUTCOME_COALESCED {
@@ -270,13 +292,19 @@ func (service *View) RefreshView(
 						freshness, refreshedAt,
 						truncated, resultCount, false)
 					metricOutcome = contracts.RefreshMetricCacheHit
-					return service.dependencies.Store.SaveRefreshResponse(
-						ctx, subjectHash, requestID, response, true, currentTime)
+					return service.completeRefreshWithoutDispatch(
+						ctx, subjectHash, requestID, current, forwardedToken,
+						response, &metricOutcome)
 				}
 			}
 			// A nonterminal attempt advances only because this active request
 			// supplies a fresh forwarded-user bearer. Its original billing
 			// inputs remain authoritative after catalog or view changes.
+			if recoveredCreated {
+				return service.dispatchReservedRefresh(
+					ctx, viewer, view, subjectHash, viewerHash, requestID,
+					current, forwardedToken, &response, &metricOutcome)
+			}
 			return service.advanceProviderRefresh(
 				ctx, viewer, view, subjectHash, viewerHash, requestID,
 				current, forwardedToken, &response, &metricOutcome)
@@ -361,6 +389,51 @@ func synthesizedRefreshAccountingResponse(
 		time.Time{}, false, 0, false)
 }
 
+func disconnectedRefreshResponse(
+	view *deckv1.View,
+) *deckv1.RefreshViewResponse {
+	return refreshResponse(
+		view,
+		deckv1.RefreshOutcome_REFRESH_OUTCOME_DISCONNECTED,
+		deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_NOT_ELIGIBLE,
+		deckv1.FreshnessState_FRESHNESS_STATE_DISCONNECTED,
+		time.Time{}, false, 0, false)
+}
+
+func (service *View) completeRefreshWithoutDispatch(
+	ctx context.Context,
+	subjectHash [32]byte,
+	requestID uuid.UUID,
+	attempt database.RefreshAttempt,
+	forwardedToken string,
+	response *deckv1.RefreshViewResponse,
+	metricOutcome *contracts.RefreshMetricOutcome,
+) error {
+	now := service.dependencies.Clock.Now().UTC()
+	switch attempt.State {
+	case database.RefreshAttemptCreated:
+	case database.RefreshAttemptReserved:
+		response.BillingDisposition =
+			deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED
+		if err := service.dependencies.Store.SaveRefreshPendingResponse(
+			ctx, subjectHash, requestID, response, now); err != nil {
+			return err
+		}
+		disposition, err := finalizeRefreshReservation(
+			ctx, service.dependencies.LiveUsage, forwardedToken,
+			attempt.OrganizationID, attempt.ReservationID, false)
+		if err != nil {
+			*metricOutcome = contracts.RefreshMetricBillingFailure
+			return err
+		}
+		response.BillingDisposition = disposition
+	default:
+		return errors.New("deck refresh: invalid shortcut attempt")
+	}
+	return service.dependencies.Store.SaveRefreshResponse(
+		ctx, subjectHash, requestID, response, true, now)
+}
+
 func (service *View) advanceProviderRefresh(
 	ctx context.Context,
 	viewer contracts.Viewer,
@@ -373,51 +446,100 @@ func (service *View) advanceProviderRefresh(
 	response **deckv1.RefreshViewResponse,
 	metricOutcome *contracts.RefreshMetricOutcome,
 ) error {
-	if attempt.OrganizationID.Version() != 7 ||
-		attempt.TeamID.Version() != 7 || !validRefreshMeter(attempt.Meter) {
-		return errors.New("deck refresh: invalid persisted billing inputs")
-	}
 	if attempt.State == database.RefreshAttemptCreated {
-		billing := &deckv1.BillingSelection{
-			OrganizationId: &deckv1.UuidV7{
-				Value: attempt.OrganizationID.String(),
-			},
-			TeamId: &deckv1.UuidV7{Value: attempt.TeamID.String()},
-		}
-		reservation, reserveErr := service.dependencies.LiveUsage.ReserveRefresh(
-			ctx, forwardedToken, billing, requestID, attempt.Meter)
-		if reserveErr != nil {
-			*metricOutcome = contracts.RefreshMetricBillingFailure
-			if !errors.Is(
-				reserveErr, contracts.ErrRefreshReservationRejected) {
-				return reserveErr
-			}
-			truncated, refreshedAt, freshness, resultCount, stateErr :=
-				service.currentSnapshotState(
-					ctx, refreshViewID(view), viewerHash,
-					service.dependencies.Clock.Now().UTC())
-			if stateErr != nil {
-				return stateErr
-			}
-			*response = refreshResponse(
-				view, deckv1.RefreshOutcome_REFRESH_OUTCOME_RESERVATION_REJECTED,
-				deckv1.BillingDisposition_BILLING_DISPOSITION_REJECTED,
-				freshness, refreshedAt, truncated, resultCount, false)
-			return service.dependencies.Store.SaveRefreshResponse(
-				ctx, subjectHash, requestID, *response, true,
-				service.dependencies.Clock.Now().UTC())
-		}
-		if err := service.dependencies.Store.MarkRefreshReserved(
-			ctx, subjectHash, requestID, reservation.ID,
-			service.dependencies.Clock.Now().UTC()); err != nil {
+		completed, err := service.reserveCreatedRefreshAttempt(
+			ctx, view, subjectHash, viewerHash, requestID, &attempt,
+			forwardedToken, response, metricOutcome)
+		if err != nil || completed {
 			return err
 		}
-		attempt.State = database.RefreshAttemptReserved
-		attempt.ReservationID = reservation.ID
 	} else if refreshAttemptNeedsOnlyAccounting(attempt) {
 		return service.finalizePendingRefreshAccounting(
 			ctx, subjectHash, requestID, attempt, forwardedToken,
 			response, metricOutcome)
+	} else {
+		return errors.New("deck refresh: invalid persisted attempt state")
+	}
+	return service.dispatchReservedRefresh(
+		ctx, viewer, view, subjectHash, viewerHash, requestID, attempt,
+		forwardedToken, response, metricOutcome)
+}
+
+func (service *View) reserveCreatedRefreshAttempt(
+	ctx context.Context,
+	view *deckv1.View,
+	subjectHash [32]byte,
+	viewerHash [32]byte,
+	requestID uuid.UUID,
+	attempt *database.RefreshAttempt,
+	forwardedToken string,
+	response **deckv1.RefreshViewResponse,
+	metricOutcome *contracts.RefreshMetricOutcome,
+) (bool, error) {
+	if attempt.State != database.RefreshAttemptCreated ||
+		attempt.OrganizationID.Version() != 7 ||
+		attempt.TeamID.Version() != 7 || !validRefreshMeter(attempt.Meter) {
+		return false, errors.New(
+			"deck refresh: invalid persisted billing inputs")
+	}
+	billing := &deckv1.BillingSelection{
+		OrganizationId: &deckv1.UuidV7{
+			Value: attempt.OrganizationID.String(),
+		},
+		TeamId: &deckv1.UuidV7{Value: attempt.TeamID.String()},
+	}
+	reservation, reserveErr := service.dependencies.LiveUsage.ReserveRefresh(
+		ctx, forwardedToken, billing, requestID, attempt.Meter)
+	if reserveErr != nil {
+		*metricOutcome = contracts.RefreshMetricBillingFailure
+		if !errors.Is(
+			reserveErr, contracts.ErrRefreshReservationRejected) {
+			return false, reserveErr
+		}
+		truncated, refreshedAt, freshness, resultCount, stateErr :=
+			service.currentSnapshotState(
+				ctx, refreshViewID(view), viewerHash,
+				service.dependencies.Clock.Now().UTC())
+		if stateErr != nil {
+			return false, stateErr
+		}
+		*response = refreshResponse(
+			view, deckv1.RefreshOutcome_REFRESH_OUTCOME_RESERVATION_REJECTED,
+			deckv1.BillingDisposition_BILLING_DISPOSITION_REJECTED,
+			freshness, refreshedAt, truncated, resultCount, false)
+		return true, service.dependencies.Store.SaveRefreshResponse(
+			ctx, subjectHash, requestID, *response, true,
+			service.dependencies.Clock.Now().UTC())
+	}
+	if err := service.dependencies.Store.MarkRefreshReserved(
+		ctx, subjectHash, requestID, reservation.ID,
+		service.dependencies.Clock.Now().UTC()); err != nil {
+		return false, err
+	}
+	attempt.State = database.RefreshAttemptReserved
+	attempt.ReservationID = reservation.ID
+	return false, nil
+}
+
+func (service *View) dispatchReservedRefresh(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	view *deckv1.View,
+	subjectHash [32]byte,
+	viewerHash [32]byte,
+	requestID uuid.UUID,
+	attempt database.RefreshAttempt,
+	forwardedToken string,
+	response **deckv1.RefreshViewResponse,
+	metricOutcome *contracts.RefreshMetricOutcome,
+) error {
+	if attempt.State != database.RefreshAttemptReserved ||
+		attempt.OrganizationID.Version() != 7 ||
+		attempt.ReservationID.Version() != 7 ||
+		attempt.ViewID.Version() != 7 ||
+		attempt.ViewRevision == 0 ||
+		!validRefreshMeter(attempt.Meter) {
+		return errors.New("deck refresh: invalid reserved attempt")
 	}
 
 	dispatched := false

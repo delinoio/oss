@@ -185,6 +185,28 @@ func TestRefreshFreshnessHasAnExactFiveMinuteBoundary(t *testing.T) {
 	}
 }
 
+func TestDisconnectedRefreshIsFreeAndDisconnected(t *testing.T) {
+	t.Parallel()
+	viewID := uuid.MustParse("01900000-0000-7000-8000-000000000001")
+	response := disconnectedRefreshResponse(&deckv1.View{
+		ViewId: &deckv1.UuidV7{Value: viewID.String()},
+		Revision: &deckv1.Revision{
+			Value: 3,
+		},
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED,
+	})
+	if response.GetOutcome() !=
+		deckv1.RefreshOutcome_REFRESH_OUTCOME_DISCONNECTED ||
+		response.GetBillingDisposition() !=
+			deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_NOT_ELIGIBLE ||
+		response.GetFreshness() !=
+			deckv1.FreshnessState_FRESHNESS_STATE_DISCONNECTED ||
+		response.GetResultCount() != 0 ||
+		response.GetRefreshedAt() != nil {
+		t.Fatalf("disconnected response = %#v", response)
+	}
+}
+
 func TestAutomaticRequestsCoalesceAndManualRefreshBypassesCache(t *testing.T) {
 	t.Parallel()
 	for _, origin := range []deckv1.RefreshOrigin{

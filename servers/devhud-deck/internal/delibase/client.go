@@ -310,9 +310,12 @@ func (client *Client) ReleaseRefresh(
 		return ErrFinalizationFailed
 	}
 	response, err := client.usage.ReleaseUsage(ctx, request)
-	if err != nil ||
-		response.Msg.GetReservation().GetStatus() !=
-			delibasev1.ReservationStatus_RESERVATION_STATUS_RELEASED {
+	if err != nil {
+		return ErrFinalizationFailed
+	}
+	status := response.Msg.GetReservation().GetStatus()
+	if status != delibasev1.ReservationStatus_RESERVATION_STATUS_RELEASED &&
+		status != delibasev1.ReservationStatus_RESERVATION_STATUS_EXPIRED {
 		return ErrFinalizationFailed
 	}
 	return nil

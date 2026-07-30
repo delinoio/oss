@@ -284,6 +284,7 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - protos/delibase/gen/go/**
               - protos/devhud-deck/gen/go/**
               - servers/devhud-deck/**
               - servers/internal/**
