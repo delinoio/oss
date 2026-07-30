@@ -168,10 +168,12 @@ func scopes(procedure string) (string, []string, bool) {
 		realqav1connect.RealQASubmissionServiceCreateImageUploadProcedure,
 		realqav1connect.RealQASubmissionServiceFinalizeImageUploadProcedure,
 		realqav1connect.RealQASubmissionServiceSubmitIssueProcedure,
-		realqav1connect.RealQASubmissionServiceRebindSubmissionStorageAuthorizationProcedure,
+		realqav1connect.RealQASubmissionServiceRebindSubmissionStorageAuthorizationProcedure:
+		return "realqa:submissions:write", []string{usage}, true
+	case
 		realqav1connect.RealQASubmissionServiceDeleteImageProcedure,
 		realqav1connect.RealQASubmissionServiceDeleteSubmissionAssetsProcedure:
-		return "realqa:submissions:write", []string{usage}, true
+		return "realqa:submissions:write", []string{accountRead}, true
 	default:
 		return "", nil, false
 	}
