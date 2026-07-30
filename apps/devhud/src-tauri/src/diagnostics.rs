@@ -194,6 +194,7 @@ pub(crate) enum DiagnosticEventId {
     InstallationOutcome,
     DiagnosticsExportOutcome,
     RealqaCaptureOutcome,
+    RealqaComposerResetOutcome,
 }
 
 impl DiagnosticEventId {
@@ -216,6 +217,7 @@ impl DiagnosticEventId {
             Self::InstallationOutcome => "installation-outcome",
             Self::DiagnosticsExportOutcome => "diagnostics-export-outcome",
             Self::RealqaCaptureOutcome => "realqa-capture-outcome",
+            Self::RealqaComposerResetOutcome => "realqa-composer-reset-outcome",
         }
     }
 }
@@ -280,6 +282,7 @@ pub(crate) enum DiagnosticClassification {
     RealqaCaptureInvalidRequest,
     RealqaCaptureImageRejected,
     RealqaCaptureFailed,
+    RealqaComposerResetFailed,
 }
 
 impl DiagnosticClassification {
@@ -344,6 +347,7 @@ impl DiagnosticClassification {
             Self::RealqaCaptureInvalidRequest => "realqa-capture-invalid-request",
             Self::RealqaCaptureImageRejected => "realqa-capture-image-rejected",
             Self::RealqaCaptureFailed => "realqa-capture-failed",
+            Self::RealqaComposerResetFailed => "realqa-composer-reset-failed",
         }
     }
 }

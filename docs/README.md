@@ -91,7 +91,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### devhud
 - `docs/project-devhud.md`
-- `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell and all Deck/RealQA client/native/Chrome surfaces)
+- `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell, RealQA encrypted local-draft/capture foundations, and all Deck/RealQA client/native/Chrome surfaces)
 - `docs/servers-devhud-deck-foundation.md` (implemented inactive
   `servers/devhud-deck` foundation and GitHub.com provider slice; future
   `https://deck.deli.dev`)

@@ -240,6 +240,12 @@ const expectedCapabilities = {
       "allow-realqa-composer-reset-session",
       "allow-realqa-begin-browser-fallback-capture",
       "allow-realqa-take-browser-capture",
+      "allow-realqa-get-local-draft-status",
+      "allow-realqa-list-local-drafts",
+      "allow-realqa-save-local-draft",
+      "allow-realqa-load-local-draft",
+      "allow-realqa-delete-local-draft",
+      "allow-realqa-assert-local-draft-submission-allowed",
     ],
   },
 };
@@ -333,7 +339,13 @@ requireCondition(
       (command.startsWith("realqa_composer_") ||
         command === "get_runtime_info" ||
         command === "realqa_begin_browser_fallback_capture" ||
-        command === "realqa_take_browser_capture") &&
+        command === "realqa_take_browser_capture" ||
+        command.startsWith("realqa_get_local_draft_") ||
+        command.startsWith("realqa_list_local_drafts") ||
+        command.startsWith("realqa_save_local_draft") ||
+        command.startsWith("realqa_load_local_draft") ||
+        command.startsWith("realqa_delete_local_draft") ||
+        command.startsWith("realqa_assert_local_draft_")) &&
       ![
         "realqa_capture_permission_status",
         "realqa_request_capture_permission",

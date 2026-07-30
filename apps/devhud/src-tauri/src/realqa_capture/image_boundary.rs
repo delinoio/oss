@@ -60,6 +60,22 @@ impl<'de> Deserialize<'de> for EncodedImage {
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct BinaryEncodedImage {
+            media_type: ImageMediaType,
+            #[serde(deserialize_with = "deserialize_bounded_image_bytes")]
+            bytes: Vec<u8>,
+        }
+
+        if !deserializer.is_human_readable() {
+            let image = BinaryEncodedImage::deserialize(deserializer)?;
+            return Ok(Self {
+                media_type: image.media_type,
+                bytes: image.bytes,
+            });
+        }
+
+        #[derive(Deserialize)]
         #[serde(untagged)]
         enum BoundedEncodedImageData {
             Bytes {
