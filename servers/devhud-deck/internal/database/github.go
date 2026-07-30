@@ -321,7 +321,8 @@ func (store *Store) ConnectGitHub(
 			}
 		}
 		if canManage && existingErr == nil {
-			if githubInstallationChanged(existing, installation) {
+			installationChanged := githubInstallationChanged(existing, installation)
+			if installationChanged {
 				if err := queries.DeleteGitHubConnectionCredentials(
 					ctx, existing.ConnectionID); err != nil {
 					return err
@@ -347,7 +348,7 @@ func (store *Store) ConnectGitHub(
 				if err != nil {
 					return err
 				}
-				if loginChanged {
+				if installationChanged || loginChanged {
 					if err := queries.InvalidateOwnerViewsForProviderRename(
 						ctx, dbgen.InvalidateOwnerViewsForProviderRenameParams{
 							UpdatedAt:  pgTime(now),

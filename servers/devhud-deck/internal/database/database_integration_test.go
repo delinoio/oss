@@ -1033,6 +1033,25 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		now.Add(4*time.Minute+30*time.Second)); err != nil {
 		t.Fatalf("owner replaced organization installation: %v", err)
 	}
+	replacementView, err := store.GetView(
+		ctx, uuidValueFromProto(connectedView.ViewId))
+	if err != nil || replacementView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("replacement installation view = %#v err=%v",
+			replacementView, err)
+	}
+	var replacementRepositoryIndex []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT repository_authorization_index
+		FROM deck_views
+		WHERE view_id = $1`,
+		pgUUID(uuidValueFromProto(connectedView.ViewId)),
+	).Scan(&replacementRepositoryIndex); err != nil {
+		t.Fatal(err)
+	}
+	if replacementRepositoryIndex != nil {
+		t.Fatal("replacement installation retained its repository authorization index")
+	}
 	staleMemberRefresh := memberCredential
 	staleMemberRefresh.AccessToken = "ghu_stale_member_refresh"
 	if err := store.RefreshGitHubCredential(
