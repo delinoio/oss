@@ -1,6 +1,7 @@
 import axe from "axe-core";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -289,5 +290,79 @@ describe("Deck connection manager", () => {
       ).toBeDisabled();
     });
     expect(screen.getByText("Reconnect to use this action.")).toBeVisible();
+  });
+
+  it("renders an explicit offline state without loading connection data", () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    const fetchMock = vi.fn<typeof fetch>();
+
+    renderManager(fetchMock);
+
+    expect(
+      screen.getByText(/GitHub connection details are unavailable offline/),
+    ).toBeVisible();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not reload when an equivalent owner prop is recreated", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (request) =>
+      String(request).endsWith("/GetGitHubConnection")
+        ? connectJsonResponse(
+            { code: "not_found", message: "not connected" },
+            404,
+          )
+        : connectJsonResponse({ installations: [], page: {} }),
+    );
+    const deckTransport = createDeckIntegrationTransport({
+      baseUrl: canonicalDeckAudience,
+      fetch: fetchMock,
+      getAccessToken: async (audience) =>
+        audience === canonicalDeckAudience
+          ? "deck-token"
+          : "delibase-token",
+    });
+
+    function Parent() {
+      const [name, setName] = useState("");
+      return (
+        <AuthSessionProvider
+          value={{
+            deckTransport,
+            signIn: async () => undefined,
+            signOut: async () => undefined,
+            status: AuthStatus.SignedIn,
+          }}
+        >
+          <label>
+            Organization name
+            <input
+              onChange={(event) => setName(event.currentTarget.value)}
+              value={name}
+            />
+          </label>
+          <DeckConnectionManager
+            ownerScope={{
+              kind: "organization",
+              organizationId: "organization-id",
+              organizationName: "Acme",
+              returnPath: "/o/acme/settings",
+            }}
+          />
+        </AuthSessionProvider>
+      );
+    }
+
+    const user = userEvent.setup();
+    render(<Parent />);
+
+    await screen.findAllByText("Disconnected");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await user.type(screen.getByRole("textbox"), "Updated");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

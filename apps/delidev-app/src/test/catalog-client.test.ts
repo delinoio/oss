@@ -144,7 +144,7 @@ describe("delibase browser transports", () => {
       expect(
         headers.get("x-devhud-deck-forwarded-delibase-token"),
       ).toBe("delibase-access-token");
-      expect(headers.get("cache-control")).toBe("no-store");
+      expect(headers.has("cache-control")).toBe(false);
       return connectJsonResponse({ installations: [] });
     });
     const transport = createDeckIntegrationTransport({

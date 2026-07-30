@@ -42,6 +42,11 @@ export type DeckConnectionOwner =
       returnPath: `/o/${string}/settings`;
     };
 
+interface DeckConnectionOwnerIdentity {
+  id: string;
+  kind: DeckConnectionOwner["kind"];
+}
+
 enum LoadState {
   Idle = "idle",
   Loading = "loading",
@@ -53,7 +58,7 @@ interface DisconnectInput {
   expectedRevision: Revision;
 }
 
-function ownerMessage(scope: DeckConnectionOwner): Owner {
+function ownerMessage(scope: DeckConnectionOwnerIdentity): Owner {
   return scope.kind === "personal"
     ? ({
         $typeName: "devhud.deck.v1.Owner",
@@ -61,7 +66,7 @@ function ownerMessage(scope: DeckConnectionOwner): Owner {
           case: "accountId",
           value: {
             $typeName: "devhud.deck.v1.UuidV7",
-            value: scope.accountId,
+            value: scope.id,
           },
         },
         scope: OwnerScope.PERSONAL,
@@ -72,31 +77,34 @@ function ownerMessage(scope: DeckConnectionOwner): Owner {
           case: "organizationId",
           value: {
             $typeName: "devhud.deck.v1.UuidV7",
-            value: scope.organizationId,
+            value: scope.id,
           },
         },
         scope: OwnerScope.ORGANIZATION,
       } satisfies Owner);
 }
 
-function ownerMatches(owner: Owner | undefined, scope: DeckConnectionOwner) {
+function ownerMatches(
+  owner: Owner | undefined,
+  scope: DeckConnectionOwnerIdentity,
+) {
   if (scope.kind === "personal") {
     return (
       owner?.scope === OwnerScope.PERSONAL &&
       owner.ownerId.case === "accountId" &&
-      owner.ownerId.value.value === scope.accountId
+      owner.ownerId.value.value === scope.id
     );
   }
   return (
     owner?.scope === OwnerScope.ORGANIZATION &&
     owner.ownerId.case === "organizationId" &&
-    owner.ownerId.value.value === scope.organizationId
+    owner.ownerId.value.value === scope.id
   );
 }
 
 function validateConnection(
   connection: GitHubConnection | undefined,
-  scope: DeckConnectionOwner,
+  scope: DeckConnectionOwnerIdentity,
 ): GitHubConnection | undefined {
   if (!connection) return undefined;
   if (!ownerMatches(connection.owner, scope)) {
@@ -108,7 +116,7 @@ function validateConnection(
 function validateInstallations(
   installations: GitHubInstallation[],
   nextCursor: string | undefined,
-  scope: DeckConnectionOwner,
+  scope: DeckConnectionOwnerIdentity,
 ): GitHubInstallation[] {
   if (
     installations.length > 1 ||
@@ -187,7 +195,19 @@ export function DeckConnectionManager({
         : undefined,
     [deckTransport],
   );
-  const owner = useMemo(() => ownerMessage(ownerScope), [ownerScope]);
+  const ownerKind = ownerScope.kind;
+  const ownerId =
+    ownerScope.kind === "personal"
+      ? ownerScope.accountId
+      : ownerScope.organizationId;
+  const ownerIdentity = useMemo<DeckConnectionOwnerIdentity>(
+    () => ({ id: ownerId, kind: ownerKind }),
+    [ownerId, ownerKind],
+  );
+  const owner = useMemo(
+    () => ownerMessage(ownerIdentity),
+    [ownerIdentity],
+  );
   const requestGeneration = useRef(0);
   const pendingDisconnect = useRef<DisconnectInput | undefined>(undefined);
   const [connection, setConnection] = useState<GitHubConnection>();
@@ -218,7 +238,7 @@ export function DeckConnectionManager({
       if (connectionResult.status === "fulfilled") {
         nextConnection = validateConnection(
           connectionResult.value.connection,
-          ownerScope,
+          ownerIdentity,
         );
       } else if (!isDeckNotFound(connectionResult.reason)) {
         throw connectionResult.reason;
@@ -229,7 +249,7 @@ export function DeckConnectionManager({
       const nextInstallations = validateInstallations(
         installationsResult.value.installations,
         installationsResult.value.page?.nextCursor,
-        ownerScope,
+        ownerIdentity,
       );
       setConnection(nextConnection);
       setInstallations(nextInstallations);
@@ -241,7 +261,7 @@ export function DeckConnectionManager({
       setError(getDeckError(loadError).message);
       setLoadState(LoadState.Error);
     }
-  }, [client, online, owner, ownerScope]);
+  }, [client, online, owner, ownerIdentity]);
 
   useEffect(() => {
     void load();
@@ -312,7 +332,7 @@ export function DeckConnectionManager({
       );
       const disconnected = validateConnection(
         response.connection,
-        ownerScope,
+        ownerIdentity,
       );
       if (
         disconnected?.state !== ConnectionState.DISCONNECTED
@@ -375,6 +395,12 @@ export function DeckConnectionManager({
       ) : null}
       {configured && loadState === LoadState.Loading ? (
         <LoadingState label="Loading GitHub connection" />
+      ) : null}
+      {configured && loadState === LoadState.Idle && !online ? (
+        <p className="outage-state" role="status">
+          GitHub connection details are unavailable offline. Reconnect to
+          check or manage this connection.
+        </p>
       ) : null}
       {configured && loadState === LoadState.Error ? (
         <div className="outage-state" role="alert">

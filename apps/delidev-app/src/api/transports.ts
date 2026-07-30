@@ -92,7 +92,6 @@ export function createDeckIntegrationTransport({
       "x-devhud-deck-forwarded-delibase-token",
       delibaseToken,
     );
-    request.header.set("Cache-Control", "no-store");
     return next(request);
   };
 
