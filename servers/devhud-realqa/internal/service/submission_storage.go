@@ -708,6 +708,7 @@ func (service *Submission) ListSubmissions(
 		Page:        &realqav1.PageResponse{},
 	}
 	var last uuid.UUID
+	recoveries := make([]storageRecoveryNotification, 0, len(rows))
 	for _, row := range rows {
 		last, err = fromPGUUID(row.ID)
 		if err != nil {
@@ -742,15 +743,33 @@ func (service *Submission) ListSubmissions(
 				RemovedAt:   timestamp(asset.RemovedAt),
 			})
 		}
-		summary.StorageBillingRecovery, err =
-			storageRecoveryForSubmission(
-				ctx, service.dependencies.Store.Queries(), row.ID)
+		recovery, err := storageRecoveryForSubmission(
+			ctx, service.dependencies.Store.Queries(), row.ID)
 		if err != nil {
 			return nil, err
+		}
+		summary.StorageBillingRecovery = recovery.message
+		if recovery.message != nil {
+			recoveries = append(recoveries, recovery)
 		}
 		response.Submissions = append(response.Submissions, summary)
 	}
 	response.Page.NextCursor = cursor(last, hasMore)
+	if len(recoveries) > 0 {
+		err = service.dependencies.Store.WithinTransaction(
+			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+				for _, recovery := range recoveries {
+					if markErr := markStorageRecoveryNotified(
+						ctx, queries, recovery); markErr != nil {
+						return markErr
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return connect.NewResponse(response), nil
 }
 
@@ -1597,14 +1616,18 @@ func (service *Submission) DeleteIssueAssets(
 						break
 					}
 				}
-				if _, refreshErr := queries.
+				closurePending, refreshErr := queries.
 					MarkSubmissionStorageClosurePending(
 						ctx,
 						dbgen.MarkSubmissionStorageClosurePendingParams{
 							Cutoff:       pgTimestamp(cutoff),
 							SubmissionID: submission.ID,
-						}); refreshErr != nil {
+						})
+				if refreshErr != nil {
 					return refreshErr
+				}
+				if closurePending == 0 {
+					continue
 				}
 				if _, resolveErr := queries.ResolveStorageRecovery(
 					ctx, dbgen.ResolveStorageRecoveryParams{
@@ -1979,11 +2002,11 @@ func loadSubmissionWithRecord(
 		!errors.Is(authorizationErr, pgx.ErrNoRows) {
 		return nil, authorizationErr
 	}
-	result.StorageBillingRecovery, err = storageRecoveryForSubmission(
-		ctx, queries, record.ID)
+	recovery, err := storageRecoveryForSubmission(ctx, queries, record.ID)
 	if err != nil {
 		return nil, err
 	}
+	result.StorageBillingRecovery = recovery.message
 	if result.StorageBillingRecovery != nil {
 		result.FailureClass =
 			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED
@@ -1998,29 +2021,33 @@ func loadSubmissionWithRecord(
 	for _, asset := range assets {
 		result.Assets = append(result.Assets, updatedAssetProto(asset))
 	}
+	if err = markStorageRecoveryNotified(ctx, queries, recovery); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+type storageRecoveryNotification struct {
+	id      pgtype.UUID
+	message *realqav1.StorageBillingRecovery
 }
 
 func storageRecoveryForSubmission(
 	ctx context.Context,
 	queries dbgen.Querier,
 	submissionID pgtype.UUID,
-) (*realqav1.StorageBillingRecovery, error) {
+) (storageRecoveryNotification, error) {
 	recovery, err := queries.GetActiveStorageRecovery(ctx, submissionID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return storageRecoveryNotification{}, nil
 	}
 	if err != nil {
-		return nil, err
-	}
-	recovery, err = queries.MarkStorageRecoveryNotified(ctx, recovery.ID)
-	if err != nil {
-		return nil, err
+		return storageRecoveryNotification{}, err
 	}
 	binding, err := queries.GetStorageAuthorizationBinding(
 		ctx, recovery.AuthorizationID)
 	if err != nil {
-		return nil, err
+		return storageRecoveryNotification{}, err
 	}
 	result := &realqav1.StorageBillingRecovery{
 		AuthorizationState: storageAuthorizationState(binding.Status),
@@ -2047,7 +2074,24 @@ func storageRecoveryForSubmission(
 			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE,
 		}
 	}
-	return result, nil
+	return storageRecoveryNotification{id: recovery.ID, message: result}, nil
+}
+
+func markStorageRecoveryNotified(
+	ctx context.Context,
+	queries dbgen.Querier,
+	recovery storageRecoveryNotification,
+) error {
+	if recovery.message == nil {
+		return nil
+	}
+	notified, err := queries.MarkStorageRecoveryNotified(ctx, recovery.id)
+	if err != nil {
+		return err
+	}
+	recovery.message.NotificationState = storageNotificationStateProto(
+		notified.NotificationState)
+	return nil
 }
 
 func storageAuthorizationState(

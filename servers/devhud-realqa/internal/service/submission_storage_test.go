@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
@@ -102,6 +104,105 @@ func TestTerminalAssetStates(t *testing.T) {
 	if isTerminalAssetState("public_retained") {
 		t.Fatal("retained asset was terminal")
 	}
+}
+
+func TestLoadSubmissionMarksRecoveryAfterResponseAssembly(t *testing.T) {
+	now := time.Now().UTC()
+	submissionID := toPGUUID(uuidv7.MustNew())
+	ownerID := toPGUUID(uuidv7.MustNew())
+	authorizationID := toPGUUID(uuidv7.MustNew())
+	queries := &storageRecoveryQuerier{
+		recovery: dbgen.RealqaStorageRecovery{
+			ID:                toPGUUID(uuidv7.MustNew()),
+			SubmissionID:      submissionID,
+			AuthorizationID:   authorizationID,
+			Reason:            "payment_required",
+			NotificationState: "pending",
+			GraceStartedAt:    pgTimestamp(now),
+			GraceExpiresAt:    pgTimestamp(now.Add(30 * 24 * time.Hour)),
+		},
+		binding: dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID: authorizationID,
+			Status:          "active",
+		},
+		assetsErr: errors.New("asset read failed"),
+	}
+	record := dbgen.RealqaSubmission{
+		ID:        submissionID,
+		OwnerKind: "personal",
+		OwnerID:   ownerID,
+		State:     "storage_billing_grace",
+	}
+
+	if _, err := loadSubmissionWithRecord(
+		context.Background(), queries, record,
+	); !errors.Is(err, queries.assetsErr) {
+		t.Fatalf("load error = %v, want asset read failure", err)
+	}
+	if queries.marked {
+		t.Fatal("recovery was marked notified before response assembly failed")
+	}
+
+	queries.assetsErr = nil
+	submission, err := loadSubmissionWithRecord(
+		context.Background(), queries, record)
+	if err != nil {
+		t.Fatalf("load completed response: %v", err)
+	}
+	if !queries.marked {
+		t.Fatal("completed response did not mark recovery notified")
+	}
+	if submission.StorageBillingRecovery == nil ||
+		submission.StorageBillingRecovery.NotificationState !=
+			realqav1.StorageNotificationState_STORAGE_NOTIFICATION_STATE_NOTIFIED {
+		t.Fatalf("notification state = %v, want notified",
+			submission.GetStorageBillingRecovery().GetNotificationState())
+	}
+}
+
+type storageRecoveryQuerier struct {
+	dbgen.Querier
+	recovery  dbgen.RealqaStorageRecovery
+	binding   dbgen.RealqaStorageAuthorizationBinding
+	assetsErr error
+	marked    bool
+}
+
+func (queries *storageRecoveryQuerier) GetStorageAuthorizationAttempt(
+	context.Context,
+	pgtype.UUID,
+) (dbgen.RealqaStorageAuthorizationAttempt, error) {
+	return dbgen.RealqaStorageAuthorizationAttempt{}, pgx.ErrNoRows
+}
+
+func (queries *storageRecoveryQuerier) GetActiveStorageRecovery(
+	context.Context,
+	pgtype.UUID,
+) (dbgen.RealqaStorageRecovery, error) {
+	return queries.recovery, nil
+}
+
+func (queries *storageRecoveryQuerier) GetStorageAuthorizationBinding(
+	context.Context,
+	pgtype.UUID,
+) (dbgen.RealqaStorageAuthorizationBinding, error) {
+	return queries.binding, nil
+}
+
+func (queries *storageRecoveryQuerier) ListSubmissionAssets(
+	context.Context,
+	pgtype.UUID,
+) ([]dbgen.RealqaAsset, error) {
+	return nil, queries.assetsErr
+}
+
+func (queries *storageRecoveryQuerier) MarkStorageRecoveryNotified(
+	context.Context,
+	pgtype.UUID,
+) (dbgen.RealqaStorageRecovery, error) {
+	queries.marked = true
+	queries.recovery.NotificationState = "notified"
+	return queries.recovery, nil
 }
 
 type failingReader struct{}
