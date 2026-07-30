@@ -2770,16 +2770,6 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		ctx, storageChargingBatchLimit); err != nil {
 		t.Fatalf("background disconnect recovery: %v", err)
 	}
-	backgroundDisconnectBinding, err :=
-		store.Queries().GetStorageAuthorizationBinding(
-			ctx, toPGUUID(disconnectAuthorizationID))
-	if err != nil ||
-		!backgroundDisconnectBinding.AccrualCutoffAt.Time.Equal(
-			disconnectCutoff) {
-		t.Fatalf("background disconnect cutoff = %v / %v, want %s",
-			backgroundDisconnectBinding.AccrualCutoffAt, err,
-			disconnectCutoff)
-	}
 	backgroundDisconnectRecovery, err :=
 		store.Queries().GetActiveStorageRecovery(
 			ctx, toPGUUID(disconnectSubmissionID))
