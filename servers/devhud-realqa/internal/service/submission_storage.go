@@ -1450,6 +1450,24 @@ func (service *Submission) CleanupExpiredStaging(
 				if cleanupErr != nil {
 					return cleanupErr
 				}
+				if locked.State == "public_retained" {
+					if _, cleanupErr = queries.CloseStorageRetentionForAsset(
+						ctx, dbgen.CloseStorageRetentionForAssetParams{
+							Cutoff:  value.RemovedAt,
+							AssetID: value.ID,
+						}); cleanupErr != nil {
+						return cleanupErr
+					}
+					if _, cleanupErr =
+						queries.MarkSubmissionStorageClosurePending(
+							ctx,
+							dbgen.MarkSubmissionStorageClosurePendingParams{
+								Cutoff:       value.RemovedAt,
+								SubmissionID: value.SubmissionID,
+							}); cleanupErr != nil {
+						return cleanupErr
+					}
+				}
 				if submission.SubmittedAt.Valid &&
 					locked.State == "verified_unlinked" {
 					if _, cleanupErr = queries.TouchSubmissionAfterAssetDeletion(

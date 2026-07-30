@@ -525,7 +525,14 @@ WITH matched_submissions AS (
         revision = asset.revision + 1
     FROM selected_assets AS selected
     WHERE asset.id = selected.id
-    RETURNING asset.submission_id
+    RETURNING asset.id, asset.submission_id
+), closed_retention AS (
+    UPDATE realqa_storage_retention_intervals AS retained
+    SET ends_at = GREATEST(retained.starts_at, transaction_timestamp())
+    FROM removed_assets AS removed
+    WHERE retained.asset_id = removed.id
+      AND retained.ends_at IS NULL
+    RETURNING retained.asset_id
 ), closure_pending AS (
     UPDATE realqa_storage_authorization_bindings AS binding
     SET closure_state = 'resource_deletion_pending',

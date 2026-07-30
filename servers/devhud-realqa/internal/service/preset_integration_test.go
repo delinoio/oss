@@ -2063,6 +2063,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	partialSubmissionID := uuidv7.MustNew()
 	partialPublicAssetID := uuidv7.MustNew()
 	partialPrivateAssetID := uuidv7.MustNew()
+	partialStorageAttemptKey := uuidv7.MustNew()
+	partialServiceIdentityID := uuidv7.MustNew()
+	partialStorageMeterID := uuidv7.MustNew()
+	partialStorageAuthorizationID := uuidv7.MustNew()
 	partialPublicID := "partial-promotion-id-01"
 	partialReservedPublicID, err := imageassets.NewPublicID()
 	if err != nil {
@@ -2105,10 +2109,39 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
 		       sanitized_sha256, 'verified', transaction_timestamp()
 		FROM realqa_assets
-		WHERE id = $8
+		WHERE id = $8;
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES (
+			$1, $10, decode(repeat('ca', 32), 'hex'),
+			$11, $12, 1, 'active', $13, 1, 1
+		);
+		INSERT INTO realqa_storage_authorization_bindings (
+			authorization_id, submission_id, mapping_revision,
+			authorizer_account_id, owner_kind, owner_id,
+			organization_id, team_id, service_identity_id, meter_id,
+			maximum_units, status, authorization_revision
+		)
+		SELECT $13, submission.id, 1, submission.created_by_account_id,
+		       submission.owner_kind, submission.owner_id,
+		       submission.payer_organization_id, submission.payer_team_id,
+		       $11, $12, 1, 'active', 1
+		FROM realqa_submissions AS submission
+		WHERE submission.id = $1;
+		INSERT INTO realqa_storage_retention_intervals (
+			authorization_id, asset_id, retained_bytes, starts_at
+		)
+		SELECT $13, asset.id, asset.encoded_bytes,
+		       COALESCE(asset.verified_at, asset.created_at)
+		FROM realqa_assets AS asset
+		WHERE asset.id = $3
 	`, partialSubmissionID, submissionID, partialPublicAssetID,
 		partialPublicID, uuidv7.MustNew(), partialPrivateAssetID,
-		uuidv7.MustNew(), promotionAssetID, partialReservedPublicID); err != nil {
+		uuidv7.MustNew(), promotionAssetID, partialReservedPublicID,
+		partialStorageAttemptKey, partialServiceIdentityID,
+		partialStorageMeterID, partialStorageAuthorizationID); err != nil {
 		t.Fatal(err)
 	}
 	partialPublicKey := imageassets.PublicObjectKey(partialPublicID)
@@ -2184,6 +2217,24 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("partial promotion cleanup states = %q / %q",
 			partialPublicState, partialPrivateState)
 	}
+	var partialRetentionClosed bool
+	var partialClosureState string
+	if err = connection.QueryRow(ctx, `
+		SELECT retained.ends_at IS NOT NULL, binding.closure_state
+		FROM realqa_storage_retention_intervals AS retained
+		JOIN realqa_storage_authorization_bindings AS binding
+		  ON binding.authorization_id = retained.authorization_id
+		WHERE retained.asset_id = $1
+	`, partialPublicAssetID).Scan(
+		&partialRetentionClosed, &partialClosureState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !partialRetentionClosed ||
+		partialClosureState != "resource_deletion_pending" {
+		t.Fatalf("partial promotion billing cleanup = %v / %q",
+			partialRetentionClosed, partialClosureState)
+	}
 	publicRecord, err := submissionService.PublicAsset(ctx, partialPublicID)
 	if err != nil {
 		t.Fatal(err)
@@ -2204,6 +2255,124 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if _, ok := objects.objects[partialPrivateKey]; ok {
 		t.Fatal("partial promotion private object was retained")
+	}
+	disconnectSubmissionID := uuidv7.MustNew()
+	disconnectAssetID := uuidv7.MustNew()
+	disconnectAttemptKey := uuidv7.MustNew()
+	disconnectServiceIdentityID := uuidv7.MustNew()
+	disconnectTransferMeterID := uuidv7.MustNew()
+	disconnectStorageMeterID := uuidv7.MustNew()
+	disconnectAuthorizationID := uuidv7.MustNew()
+	disconnectPublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	disconnectCutoff := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, provider_issue_id, provider_issue_url,
+			idempotency_digest, submitted_at, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, upload_deadline, upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'submitted', 'disconnect-settlement',
+		       'https://github.com/delinoio/oss/issues/759',
+		       idempotency_digest, $9, payer_organization_id,
+		       payer_team_id, preset_revision, declared_encoded_bytes,
+		       verified_encoded_bytes, upload_deadline, upload_expires_at
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified', $9
+		FROM realqa_assets
+		WHERE id = $11;
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES (
+			$1, $6, decode(repeat('bc', 32), 'hex'),
+			$7, $8, 1, 'active', $10, 1, 1
+		);
+		INSERT INTO realqa_storage_authorization_bindings (
+			authorization_id, submission_id, mapping_revision,
+			authorizer_account_id, owner_kind, owner_id,
+			organization_id, team_id, service_identity_id, meter_id,
+			maximum_units, status, authorization_revision
+		)
+		SELECT $10, submission.id, 1, submission.created_by_account_id,
+		       submission.owner_kind, submission.owner_id,
+		       submission.payer_organization_id, submission.payer_team_id,
+		       $7, $8, 1, 'active', 1
+		FROM realqa_submissions AS submission
+		WHERE submission.id = $1;
+		INSERT INTO realqa_storage_retention_intervals (
+			authorization_id, asset_id, retained_bytes, starts_at
+		)
+		SELECT $10, asset.id, asset.encoded_bytes, $9 - interval '1 hour'
+		FROM realqa_assets AS asset
+		WHERE asset.id = $3
+	`, disconnectSubmissionID, submissionID, disconnectAssetID,
+		disconnectPublicID, uuidv7.MustNew(), disconnectAttemptKey,
+		disconnectServiceIdentityID, disconnectStorageMeterID,
+		disconnectCutoff, disconnectAuthorizationID,
+		promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	disconnectBilling := &failingAuthorizedStorageBilling{
+		meters: BillingMeters{
+			Transfer: BillingMeter{
+				ID: disconnectTransferMeterID, PriceVersionID: uuidv7.MustNew(),
+				ServiceIdentityID: disconnectServiceIdentityID,
+				Key:               "realqa_image_transfer", Unit: "encoded_mib",
+				Precision: 0, USDMicrosPerUnit: transferPriceUSDMicros,
+				ReservationTTLSeconds: 86_400, Enabled: true,
+			},
+			Storage: BillingMeter{
+				ID: disconnectStorageMeterID, PriceVersionID: uuidv7.MustNew(),
+				ServiceIdentityID: disconnectServiceIdentityID,
+				Key:               "realqa_image_storage", Unit: "mib_day",
+				Precision: 0, USDMicrosPerUnit: storagePriceUSDMicros,
+				Enabled: true,
+			},
+		},
+		reserveErr: &StorageBillingFailure{
+			Kind: StorageBillingFailureUnavailable,
+		},
+	}
+	disconnectService := NewSubmission(Dependencies{
+		Store: store, Billing: disconnectBilling,
+		Clock:         fixedSubmissionClock{now: disconnectCutoff},
+		Pseudonymizer: pseudonymizer,
+	})
+	if disconnectErr := disconnectService.HandleGitHubConnectionDeletion(
+		ctx, organizationConnectionID, "fixture-forwarded-bearer",
+	); disconnectErr == nil {
+		t.Fatal("disconnect cutoff settlement failure was ignored")
+	}
+	if disconnectBilling.reserveAuthorizedCalls != 1 ||
+		disconnectBilling.getAuthorizationCalls != 0 ||
+		disconnectBilling.revokeAuthorizationCalls != 0 {
+		t.Fatalf("disconnect failure calls reserve=%d get=%d revoke=%d",
+			disconnectBilling.reserveAuthorizedCalls,
+			disconnectBilling.getAuthorizationCalls,
+			disconnectBilling.revokeAuthorizationCalls)
+	}
+	if _, err = store.Queries().ResolveStorageRecovery(
+		ctx, dbgen.ResolveStorageRecoveryParams{
+			RecoveredAt:        pgTimestamp(disconnectCutoff),
+			TargetSubmissionID: toPGUUID(disconnectSubmissionID),
+		}); err != nil {
+		t.Fatal(err)
 	}
 	casSubmissionID := uuidv7.MustNew()
 	casAssetID := uuidv7.MustNew()
@@ -2745,30 +2914,35 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			webhookTombstones, webhookDeletionJobs)
 	}
 	var (
-		webhookState         string
-		webhookRetainedBytes int64
-		webhookRevisionAfter int64
-		webhookRecovered     bool
+		webhookState           string
+		webhookRetainedBytes   int64
+		webhookRevisionAfter   int64
+		webhookRecovered       bool
+		webhookRetentionClosed bool
 	)
 	if err = connection.QueryRow(ctx, `
 		SELECT submission.state, submission.verified_encoded_bytes,
-		       submission.revision, recovery.recovered_at IS NOT NULL
+		       submission.revision, recovery.recovered_at IS NOT NULL,
+		       retained.ends_at IS NOT NULL
 		FROM realqa_submissions AS submission
 		JOIN realqa_storage_recoveries AS recovery
 		  ON recovery.submission_id = submission.id
+		JOIN realqa_storage_retention_intervals AS retained
+		  ON retained.asset_id = $2
 		WHERE submission.id = $1
-	`, webhookSubmissionID).Scan(
+	`, webhookSubmissionID, webhookAssetID).Scan(
 		&webhookState, &webhookRetainedBytes, &webhookRevisionAfter,
-		&webhookRecovered,
+		&webhookRecovered, &webhookRetentionClosed,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if webhookState != "assets_deleted" || webhookRetainedBytes != 0 ||
 		webhookRevisionAfter != webhookRevisionBefore+2 ||
-		!webhookRecovered {
-		t.Fatalf("webhook deletion state = %q / %d / %d / %v, want assets_deleted / 0 / %d / true",
+		!webhookRecovered || !webhookRetentionClosed {
+		t.Fatalf("webhook deletion state = %q / %d / %d / %v / %v, want assets_deleted / 0 / %d / true / true",
 			webhookState, webhookRetainedBytes, webhookRevisionAfter,
-			webhookRecovered, webhookRevisionBefore+2)
+			webhookRecovered, webhookRetentionClosed,
+			webhookRevisionBefore+2)
 	}
 	webhookBlockedAfter, err := store.Queries().HasStorageSubmissionBlock(
 		ctx, dbgen.HasStorageSubmissionBlockParams{
@@ -3337,6 +3511,32 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, secondAdminID, organizationID); err != nil {
 		t.Fatal(err)
 	}
+	deletionRecoveryID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_submissions
+		SET state = 'storage_billing_grace'
+		WHERE id = $1;
+		INSERT INTO realqa_storage_recoveries (
+			id, submission_id, authorization_id, reason,
+			grace_started_at, grace_expires_at
+		) VALUES (
+			$2, $1, $3, 'payment_required',
+			transaction_timestamp(),
+			transaction_timestamp() + interval '30 days'
+		)
+	`, webhookSubmissionID, deletionRecoveryID,
+		webhookAuthorizationID); err != nil {
+		t.Fatal(err)
+	}
+	deletionBlockedBefore, err := store.Queries().HasStorageSubmissionBlock(
+		ctx, dbgen.HasStorageSubmissionBlockParams{
+			OwnerKind: "organization", OwnerID: toPGUUID(organizationID),
+			PayerOrganizationID: toPGUUID(organizationID),
+		})
+	if err != nil || !deletionBlockedBefore {
+		t.Fatalf("feature deletion recovery block before deletion = %v, %v",
+			deletionBlockedBefore, err)
+	}
 	organizationDeletionRequest := &realqav1.DeleteFeatureDataRequest{
 		TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,
 		Trigger: &realqav1.DeleteFeatureDataRequest_OwnerRequest{
@@ -3351,6 +3551,23 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if _, err = service.DeleteFeatureData(
 		secondAdminCtx, connect.NewRequest(organizationDeletionRequest)); err != nil {
 		t.Fatal(err)
+	}
+	var deletionRecoveryResolved bool
+	if err = connection.QueryRow(ctx, `
+		SELECT recovered_at IS NOT NULL
+		FROM realqa_storage_recoveries
+		WHERE id = $1
+	`, deletionRecoveryID).Scan(&deletionRecoveryResolved); err != nil {
+		t.Fatal(err)
+	}
+	deletionBlockedAfter, err := store.Queries().HasStorageSubmissionBlock(
+		ctx, dbgen.HasStorageSubmissionBlockParams{
+			OwnerKind: "organization", OwnerID: toPGUUID(organizationID),
+			PayerOrganizationID: toPGUUID(organizationID),
+		})
+	if err != nil || deletionBlockedAfter || !deletionRecoveryResolved {
+		t.Fatalf("feature deletion recovery block after deletion = %v / %v / %v",
+			deletionBlockedAfter, deletionRecoveryResolved, err)
 	}
 	_, err = submissionService.CreateSubmission(
 		authCtx, connect.NewRequest(submissionRequest))
@@ -3371,6 +3588,53 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("retained submission idempotency snapshots = %d",
 			submissionSnapshots)
 	}
+}
+
+type fixedSubmissionClock struct {
+	now time.Time
+}
+
+func (clock fixedSubmissionClock) Now() time.Time {
+	return clock.now
+}
+
+type failingAuthorizedStorageBilling struct {
+	SubmissionBilling
+	meters                   BillingMeters
+	reserveErr               error
+	reserveAuthorizedCalls   int
+	getAuthorizationCalls    int
+	revokeAuthorizationCalls int
+}
+
+func (billing *failingAuthorizedStorageBilling) Meters(
+	context.Context,
+) (BillingMeters, error) {
+	return billing.meters, nil
+}
+
+func (billing *failingAuthorizedStorageBilling) ReserveAuthorizedStorage(
+	context.Context,
+	AuthorizedStorageUsageRequest,
+) (AuthorizedStorageReservation, error) {
+	billing.reserveAuthorizedCalls++
+	return AuthorizedStorageReservation{}, billing.reserveErr
+}
+
+func (billing *failingAuthorizedStorageBilling) GetStorageAuthorization(
+	context.Context,
+	StorageAuthorizationLookupRequest,
+) (StorageAuthorization, error) {
+	billing.getAuthorizationCalls++
+	return StorageAuthorization{}, nil
+}
+
+func (billing *failingAuthorizedStorageBilling) RevokeStorageAuthorization(
+	context.Context,
+	StorageAuthorizationRevokeRequest,
+) (StorageAuthorization, error) {
+	billing.revokeAuthorizationCalls++
+	return StorageAuthorization{}, nil
 }
 
 type submissionTestObject struct {

@@ -211,11 +211,11 @@ func (service *Preset) DeleteFeatureData(
 				}); insertErr != nil {
 				return insertErr
 			}
-			var listErr error
-			if _, listErr = queries.LockScopeSubmissionRecords(
+			scopedSubmissions, listErr := queries.LockScopeSubmissionRecords(
 				ctx, dbgen.LockScopeSubmissionRecordsParams{
 					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-				}); listErr != nil {
+				})
+			if listErr != nil {
 				return listErr
 			}
 			scopedAssets, listErr = queries.ListScopeObjectAssets(ctx,
@@ -321,6 +321,16 @@ func (service *Preset) DeleteFeatureData(
 			removed += count
 			if deleteErr != nil {
 				return deleteErr
+			}
+			for _, submissionID := range scopedSubmissions {
+				if _, resolveErr := queries.ResolveStorageRecovery(
+					ctx, dbgen.ResolveStorageRecoveryParams{
+						RecoveredAt:        cutoff,
+						TargetSubmissionID: submissionID,
+					}); resolveErr != nil &&
+					!errors.Is(resolveErr, pgx.ErrNoRows) {
+					return resolveErr
+				}
 			}
 			count, deleteErr = queries.DeleteScopeDestinations(ctx,
 				dbgen.DeleteScopeDestinationsParams{

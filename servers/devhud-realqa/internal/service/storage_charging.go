@@ -742,10 +742,10 @@ func (service *Submission) HandleGitHubConnectionDeletion(
 		); err != nil {
 			return err
 		}
-		// Revocation is independent of settlement recovery. An
-		// already-accepted reservation remains finalizable by its stored
-		// period after the grant closes.
-		_ = service.settleStorageCutoff(ctx, binding, cutoff)
+		if err = service.settleStorageCutoff(
+			ctx, binding, cutoff); err != nil {
+			return err
+		}
 		if forwardedBearer == "" {
 			continue
 		}
