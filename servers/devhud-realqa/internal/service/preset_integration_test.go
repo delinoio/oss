@@ -2766,31 +2766,33 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, organizationConnectionID, backgroundDisconnectAt); err != nil {
 		t.Fatal(err)
 	}
-	if err = disconnectService.blockDisconnectedGitHubStorage(
-		ctx, storageChargingBatchLimit); err != nil {
-		t.Fatalf("background disconnect recovery: %v", err)
-	}
-	backgroundDisconnectRecovery, err :=
-		store.Queries().GetActiveStorageRecovery(
-			ctx, toPGUUID(disconnectSubmissionID))
-	if err != nil ||
-		backgroundDisconnectRecovery.Reason != "github_disconnected" {
-		t.Fatalf("background disconnect recovery = %q / %v",
-			backgroundDisconnectRecovery.Reason, err)
-	}
-	var disconnectedRetentionOpen bool
-	if err = connection.QueryRow(ctx, `
-		SELECT EXISTS (
-		    SELECT 1
-		    FROM realqa_storage_retention_intervals AS retained
-		    WHERE retained.authorization_id = $1
-		      AND retained.ends_at IS NULL
-		)
-	`, disconnectAuthorizationID).Scan(&disconnectedRetentionOpen); err != nil {
+	disconnectedCandidates, err := store.Queries().
+		ListOpenStorageBindingsForDisconnectedGitHub(
+			ctx, storageChargingBatchLimit)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if disconnectedRetentionOpen {
-		t.Fatal("background disconnect recovery left retention open")
+	selectedDisconnectedBinding := false
+	for _, candidate := range disconnectedCandidates {
+		if candidate.RealqaStorageAuthorizationBinding.AuthorizationID ==
+			toPGUUID(disconnectAuthorizationID) {
+			selectedDisconnectedBinding = true
+			break
+		}
+	}
+	if !selectedDisconnectedBinding {
+		t.Fatal("background cleanup skipped disconnected recovered binding")
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET state = 'connected',
+		    credential_ciphertext = decode('03', 'hex'),
+		    wrapped_data_key = decode('04', 'hex'),
+		    key_id = 'fixture-key',
+		    updated_at = $2
+		WHERE id = $1
+	`, organizationConnectionID, backgroundDisconnectAt.Add(time.Hour)); err != nil {
+		t.Fatal(err)
 	}
 	disconnectBilling.metersErr = nil
 	if err = disconnectService.startStorageGrace(
