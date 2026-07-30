@@ -4052,8 +4052,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		) VALUES (
 			$1, 'organization', $2, $3, 'assets_deleted',
 			decode(repeat('ce', 32), 'hex'), $2, $4,
-			$9::timestamptz + interval '23 hours',
-			$9::timestamptz + interval '24 hours'
+			transaction_timestamp() + interval '23 hours',
+			transaction_timestamp() + interval '24 hours'
 		);
 		INSERT INTO realqa_storage_authorization_attempts (
 			submission_id, idempotency_key, request_digest,
