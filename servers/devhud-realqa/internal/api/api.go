@@ -12,13 +12,17 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1/realqav1connect"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/authn"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/service"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
 	"github.com/delinoio/oss/servers/internal/safelog"
 )
 
-const readinessTimeout = 2 * time.Second
+const (
+	readinessTimeout       = 2 * time.Second
+	submissionReadMaxBytes = 60_000
+)
 
 type HealthChecker interface {
 	Ping(context.Context) error
@@ -46,23 +50,46 @@ func New(dependencies Dependencies) (http.Handler, error) {
 			dependencies.Authentication,
 		),
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", live)
-	mux.Handle("GET /readyz", ready(dependencies.Health))
-	if dependencies.GitHubCallbacks != nil {
-		mux.Handle("/github/", dependencies.GitHubCallbacks)
-	}
+	business := http.NewServeMux()
+	business.HandleFunc("GET /healthz", live)
+	business.Handle("GET /readyz", ready(dependencies.Health))
 	path, handler := realqav1connect.NewRealQAPresetServiceHandler(
 		service.NewPreset(dependencies.Services), options...)
-	mux.Handle(path, handler)
+	business.Handle(path, handler)
 	path, handler = realqav1connect.NewRealQATrackerServiceHandler(
 		service.NewTracker(dependencies.Services), options...)
-	mux.Handle(path, handler)
+	business.Handle(path, handler)
+	submissions := service.NewSubmission(dependencies.Services)
 	path, handler = realqav1connect.NewRealQASubmissionServiceHandler(
-		service.NewSubmission(dependencies.Services), options...)
-	mux.Handle(path, handler)
+		submissions,
+		append(options, connect.WithReadMaxBytes(submissionReadMaxBytes))...)
+	business.Handle(path, handler)
+	if len(dependencies.Services.WebhookSecret) >= 32 {
+		business.Handle("POST /webhooks/github/issues",
+			issueDeletionWebhook(
+				submissions, dependencies.Services.WebhookSecret))
+	}
 
-	root := rejectBrowserOrigins(mux)
+	rootMux := http.NewServeMux()
+	if dependencies.Services.Store != nil &&
+		dependencies.Services.Objects != nil &&
+		dependencies.Services.UploadSigner != nil {
+		rootMux.Handle("/uploads/", imageassets.UploadHandler(
+			dependencies.Services.UploadSigner,
+			submissions.LookupUploadGrant,
+			submissions.StoreUploaded,
+			time.Now,
+		))
+		rootMux.Handle("/i/", imageassets.PublicHandler(
+			dependencies.Services.UploadSigner,
+			dependencies.Services.Objects, submissions.PublicAsset))
+	}
+	if dependencies.GitHubCallbacks != nil {
+		rootMux.Handle("/github/", dependencies.GitHubCallbacks)
+	}
+	rootMux.Handle("/", rejectBrowserOrigins(business))
+
+	var root http.Handler = rootMux
 	root = requestLogger(dependencies.Logger)(root)
 	root = requestmeta.Middleware(nil)(root)
 	return root, nil

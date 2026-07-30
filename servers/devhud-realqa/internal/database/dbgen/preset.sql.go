@@ -272,6 +272,28 @@ func (q *Queries) DeleteShortcut(ctx context.Context, presetID pgtype.UUID) erro
 	return err
 }
 
+const getDestinationRecord = `-- name: GetDestinationRecord :one
+SELECT id, owner_kind, owner_id, installation_id, repository_id, repository_owner, repository_name, created_at
+FROM realqa_destinations
+WHERE id = $1
+`
+
+func (q *Queries) GetDestinationRecord(ctx context.Context, id pgtype.UUID) (RealqaDestination, error) {
+	row := q.db.QueryRow(ctx, getDestinationRecord, id)
+	var i RealqaDestination
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.InstallationID,
+		&i.RepositoryID,
+		&i.RepositoryOwner,
+		&i.RepositoryName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getIdempotencyRecord = `-- name: GetIdempotencyRecord :one
 SELECT id, caller_kind, caller_digest, operation, idempotency_key, request_digest, resource_id, response_payload, completed_at
 FROM realqa_idempotency_records

@@ -57,3 +57,42 @@ func TestProviderCredentialColumnsAreCiphertextOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestImageStoragePersistsOnlyUploadDigestAndPublicTombstone(t *testing.T) {
+	t.Parallel()
+	content, err := fs.ReadFile(files, "000004_image_storage.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.ToLower(string(content))
+	for _, required := range []string{
+		"upload_token_digest bytea",
+		"realqa_public_asset_tombstones",
+		"realqa_object_deletion_jobs",
+		"source_sha256 bytea",
+		"sanitized_sha256 bytea",
+		"'create_submission'",
+		"'create_image_upload'",
+		"'finalize_image_upload'",
+		"'delete_image'",
+		"'delete_submission_assets'",
+		"'submission_created'",
+		"'image_upload_authorized'",
+		"'image_upload_verified'",
+		"'image_deleted'",
+		"'submission_assets_deleted'",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("image storage schema is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"signed_put_url", "signed_get_url", "r2_access_key",
+		"r2_secret", "upload_token text", "screenshot_body",
+		"object_key text",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("image storage schema contains %q", forbidden)
+		}
+	}
+}

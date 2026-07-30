@@ -4,7 +4,7 @@
 
 - Project/component: `devhud` / `realqa-server`
 - Canonical implementation path: `servers/devhud-realqa`
-- Status: implemented inactive server foundation for issue #757 backed by the implemented `devhud.realqa.v1` source contract and private generated-client package. PostgreSQL/sqlc persistence, preset/destination synchronization, dual-audience authentication, typed deletion, health endpoints, and the internal RealQA-only GitHub.com adapter now exist under `servers/devhud-realqa`. The provider slice includes the separate least-permission manifest artifact, signed OAuth/App callbacks, signed installation/repository/issue/authorization lifecycle webhooks, one-owner installation bindings, application-encrypted user authorization credentials, live installation/repository/template/form reads, strict issue-schema parsing, exact body composition, new-issue-only dispatch, and hidden-marker reconciliation. Submission orchestration remains inactive behind the unimplemented transfer/storage/image slices; uploads, R2/public-image delivery, recurring billing, deployment, DNS, production secrets, registered GitHub App, published image/extension, enabled catalog records, and production operation remain unimplemented or inactive.
+- Status: implemented inactive server foundation for issue #757 backed by the implemented `devhud.realqa.v1` source contract and private generated-client package. PostgreSQL/sqlc persistence, preset/destination/repository-schema synchronization, dual-audience authentication, typed deletion, health endpoints, local submission/image records, signed private upload, sanitized PNG/WebP finalization, opaque public delivery, issue-deletion webhook verification, and image tombstones exist under `servers/devhud-realqa`. The internal RealQA-only GitHub.com provider slice includes the separate least-permission manifest artifact, signed OAuth/App callbacks, signed installation/repository/issue/authorization lifecycle webhooks, one-owner installation bindings, application-encrypted user authorization credentials, live installation/repository/template/form reads, strict issue-schema parsing, exact body composition, new-issue-only dispatch, and hidden-marker reconciliation. End-to-end submission orchestration, transfer/storage billing clients and settlement, deployment, DNS, production secrets, registered GitHub App, published image/extension, enabled catalog records, and production operation remain unimplemented or inactive.
 - Future canonical API origin and Logto audience: `https://realqa.deli.dev`; future public-image origin: `https://assets.realqa.deli.dev`. Both are inactive contract identifiers.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrow HTTP handlers, Cloudflare R2 signed uploads/public delivery, and shared `servers/internal` infrastructure where its generic contracts apply.
 
@@ -65,13 +65,40 @@
 
 ## Image Upload, Public Delivery, and Deletion
 
+- The implemented inactive storage slice uses only R2's S3-compatible object
+  PUT/GET/DELETE operations and intentionally defines no bucket-list,
+  bucket-create, DNS, policy, or deployment operation. Startup validates the
+  externally supplied R2 endpoint/bucket credentials and exact asset origin;
+  this repository does not provision them.
+- A signed upload grant lasts five minutes or until the earlier submission
+  upload deadline, binds exactly one private token, submission, asset, content
+  type, declared length, dimensions, and SHA-256, and persists only the token
+  digest. The same-origin handler rejects redirects, extra query scope, wrong
+  headers, expired grants, length/checksum changes, and media-type changes
+  before writing private staging.
 - Stage privately through short-lived RealQA-signed PUT URLs at exactly `https://assets.realqa.deli.dev`; the same-origin handler writes through a least-privilege R2 binding. `CreateImageUpload` never returns or allowlists an account-specific `r2.cloudflarestorage.com` S3 endpoint, and no signed PUT expires after the submission's server-derived upload deadline. After upload, re-decode/re-encode, remove metadata, and verify type, dimensions, SHA-256, and size before marking verified.
+- Finalization decodes from the independently retrieved private object, copies
+  only pixels to a new raster, re-encodes PNG or lossless WebP, checks the
+  sanitized representation again, enforces 25 MiB sanitized image and 250 MiB
+  sanitized submission totals, and only then transitions to `VERIFIED`.
 - Promote only submitted images under opaque unguessable identifiers with at least 128 bits of entropy at the future exact asset origin. Never expose bucket indexes, sequential IDs, object keys, or signed GET URLs.
 - Inline public Markdown images must be readable by ordinary issue readers without RealQA authentication. Before every submission, explain that anyone with the issue/image URL may view the screenshot and require explicit confirmation.
 - Public delivery applies WAF controls and 300 GETs/minute/IP.
+- `servers/devhud-realqa/artifacts/cloudflare-public-images.fixture.json` is
+  validation input only: it scopes managed WAF plus 300 requests/60 seconds per
+  `ip.src` to public `GET /i/` traffic, explicitly excludes upload traffic by
+  expression, and cannot deploy or provision a Cloudflare resource.
 - Stop accepting uploads for a submission no later than 23 hours after its transfer reservation is created, reserve the final hour for bounded verification and transfer commit/release, and delete unlinked private staging uploads by the 24-hour boundary after durable abandoned-submission cleanup has been recorded.
 - Retain submitted images until explicit image/range deletion, GitHub issue-deletion webhook, account/organization deletion, or storage-billing grace expiry.
 - Deleted URLs remain stable and return only a generic non-sensitive `Image removed` placeholder. When valid user authorization remains, best-effort update only the exact issue reconciled to that RealQA submission and only remove or replace its deleted-image references without changing other content; deletion itself never depends on GitHub access.
+- Public tombstones are independent of owner/submission rows and survive
+  feature/account/organization deletion. Explicit single-image and all-assets
+  deletion, authenticated GitHub issue-deletion webhook handling,
+  account/organization feature deletion, and storage-billing expiry use the
+  same tombstone-first object-removal path. Each database transition durably
+  queues the affected asset/object kinds before reporting success, and the
+  periodic worker retries failed R2 deletes without retaining raw object keys.
+  The same worker expires unlinked data at the persisted 24-hour boundary.
 
 ## Submission Consistency and Billing
 

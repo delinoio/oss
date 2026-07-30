@@ -70,7 +70,7 @@
 - `docs/apps-devhud-foundation.md`: DevHud React/TypeScript/Rsbuild plus Tauri desktop CEF, mobile webview, Deck/RealQA client/native boundaries, security, diagnostics, CI, support, and release foundation contract.
 - `docs/servers-devhud-deck-foundation.md`: Planned client-initiated Deck Go/PostgreSQL/GitHub.com service contract.
 - `docs/protos-devhud-deck-api-contract.md`: Planned `devhud.deck.v1` Connect contract.
-- `docs/servers-devhud-realqa-foundation.md`: Implemented inactive RealQA Go/PostgreSQL/sqlc preset/tracker/auth/deletion and internal GitHub.com provider foundation plus planned R2 submission and public-image contract.
+- `docs/servers-devhud-realqa-foundation.md`: Implemented inactive RealQA Go/PostgreSQL/sqlc preset/tracker/auth/deletion, internal GitHub.com provider, and R2-backed image-transfer/public-delivery foundation plus planned end-to-end submission and billing contract.
 - `docs/protos-devhud-realqa-api-contract.md`: Implemented private `devhud.realqa.v1` source and generated Connect package contract.
 ### Project Identifier Contract
 

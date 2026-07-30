@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
 	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
@@ -85,6 +86,10 @@ type GitHubProviderAdapter interface {
 	) (realqagithub.RepositoryDefinitions, error)
 }
 
+type IssueImageUpdater interface {
+	RemoveImageReferences(context.Context, string, []string) error
+}
+
 type Dependencies struct {
 	Store                   *database.Store
 	IDs                     IDGenerator
@@ -92,6 +97,10 @@ type Dependencies struct {
 	GitHub                  GitHubAuthorization
 	GitHubProvider          GitHubProviderAdapter
 	GitHubProjectPermission realqagithub.ProjectPermission
+	Objects                 imageassets.ObjectStore
+	UploadSigner            *imageassets.Signer
+	IssueUpdater            IssueImageUpdater
+	WebhookSecret           []byte
 	Pseudonymizer           *safelog.Pseudonymizer
 	Logger                  *slog.Logger
 }

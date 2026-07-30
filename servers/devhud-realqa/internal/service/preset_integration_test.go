@@ -5,7 +5,12 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -16,11 +21,13 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
 	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
 )
@@ -79,6 +86,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	accountID := uuidv7.MustNew()
 	organizationID := uuidv7.MustNew()
 	teamID := uuidv7.MustNew()
+	otherTeamID := uuidv7.MustNew()
 	connectionID := uuidv7.MustNew()
 	installationID := uuidv7.MustNew()
 	organizationConnectionID := uuidv7.MustNew()
@@ -94,7 +102,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			($1, 'organization', $3, 'admin');
 		INSERT INTO realqa_payer_team_bindings (
 			account_id, organization_id, team_id
-		) VALUES ($1, $3, $4);
+		) VALUES
+			($1, $3, $4),
+			($1, $3, $9);
 		INSERT INTO realqa_github_connections (
 			id, owner_kind, owner_id, state,
 			credential_ciphertext, wrapped_data_key, key_id
@@ -154,7 +164,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		)
 	`, accountID, digest.Sum(nil), organizationID, teamID,
 		connectionID, installationID, organizationConnectionID,
-		organizationInstallationID); err != nil {
+		organizationInstallationID, otherTeamID); err != nil {
 		t.Fatal(err)
 	}
 	terminalOwnerID := uuidv7.MustNew()
@@ -875,15 +885,41 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, organizationInstallationID, accountID); err != nil {
 		t.Fatal(err)
 	}
+	uploadSigner, err := imageassets.NewSigner(
+		"https://assets.realqa.deli.dev", []byte(strings.Repeat("u", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects := &submissionTestObjects{
+		objects: make(map[string]submissionTestObject),
+	}
 	submissionService := NewSubmission(Dependencies{
 		Store: store, Pseudonymizer: pseudonymizer,
+		Objects: objects, UploadSigner: uploadSigner,
 	})
+	pngBody := fixturePNG(t)
+	pngChecksum := sha256.Sum256(pngBody)
 	submissionRequest := &realqav1.CreateSubmissionRequest{
 		Owner:          organizationOwnerScope(organizationID),
 		Billing:        organizationRequest.Billing,
 		PresetId:       organizationPreset.Msg.Preset.PresetId,
 		PresetRevision: organizationPreset.Msg.Preset.Revision,
 		Destination:    organizationRequest.Destination,
+		Images: []*realqav1.ImageDeclaration{{
+			ClientImageId: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			MediaType:     realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_PNG,
+			EncodedBytes:  int64(len(pngBody)),
+			PixelWidth:    1,
+			PixelHeight:   1,
+			Sha256:        hex.EncodeToString(pngChecksum[:]),
+		}, {
+			ClientImageId: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			MediaType:     realqav1.ImageMediaType_IMAGE_MEDIA_TYPE_PNG,
+			EncodedBytes:  1,
+			PixelWidth:    1,
+			PixelHeight:   1,
+			Sha256:        strings.Repeat("1", 64),
+		}},
 		Idempotency: &realqav1.IdempotencyKey{
 			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
 		},
@@ -902,10 +938,1435 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, organizationInstallationID, accountID); err != nil {
 		t.Fatal(err)
 	}
+	mismatchedPayer := proto.Clone(
+		submissionRequest).(*realqav1.CreateSubmissionRequest)
+	mismatchedPayer.Billing.TeamId = &realqav1.UuidV7{
+		Value: otherTeamID.String(),
+	}
+	mismatchedPayer.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
 	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(mismatchedPayer))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("mismatched preset payer code = %v", connect.CodeOf(err))
+	}
+	createdSubmission, err := submissionService.CreateSubmission(
 		authCtx, connect.NewRequest(submissionRequest))
-	if connect.CodeOf(err) != connect.CodeUnavailable {
-		t.Fatalf("member accessible repository code = %v", connect.CodeOf(err))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(createdSubmission.Msg.Submission.Assets) != 2 {
+		t.Fatalf("created submission = %#v", createdSubmission.Msg.Submission)
+	}
+	creatorList, err := submissionService.ListSubmissions(
+		authCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(creatorList.Msg.Submissions) != 0 {
+		t.Fatalf("creator open submissions = %#v",
+			creatorList.Msg.Submissions)
+	}
+	otherSubject := "fixture-other-user"
+	otherAccountID := uuidv7.MustNew()
+	otherDigest := hmac.New(sha256.New, identityKey)
+	_, _ = otherDigest.Write([]byte(otherSubject))
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($1, $2);
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($1, 'organization', $3, 'member')
+	`, otherAccountID, otherDigest.Sum(nil), organizationID); err != nil {
+		t.Fatal(err)
+	}
+	otherAuthCtx := auth.WithPrincipal(ctx, auth.Principal{
+		User: &auth.UserClaims{
+			TokenClaims: auth.TokenClaims{Subject: otherSubject},
+			UserID:      otherSubject,
+		},
+	})
+	otherList, err := submissionService.ListSubmissions(
+		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList.Msg.Submissions) != 0 {
+		t.Fatalf("repository-inaccessible submissions = %#v",
+			otherList.Msg.Submissions)
+	}
+	_, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("repository-inaccessible get code = %v", connect.CodeOf(err))
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: createdSubmission.Msg.Submission.
+				Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("repository-inaccessible delete code = %v",
+			connect.CodeOf(err))
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id,
+			repository_owner, repository_name, issues_enabled, can_submit
+		) VALUES ($1, $2, 'repo-org', 'delinoio', 'private', true, true)
+	`, organizationInstallationID, otherAccountID); err != nil {
+		t.Fatal(err)
+	}
+	otherList, err = submissionService.ListSubmissions(
+		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList.Msg.Submissions) != 0 {
+		t.Fatalf("non-creator open submissions = %#v",
+			otherList.Msg.Submissions)
+	}
+	_, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-creator open submission code = %v", connect.CodeOf(err))
+	}
+	uploadRequest := &realqav1.CreateImageUploadRequest{
+		SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		AssetId:      createdSubmission.Msg.Submission.Assets[0].AssetId,
+		ExpectedAssetRevision: createdSubmission.Msg.Submission.
+			Assets[0].Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	_, err = submissionService.CreateImageUpload(
+		otherAuthCtx, connect.NewRequest(uploadRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-creator open upload code = %v", connect.CodeOf(err))
+	}
+	upload, err := submissionService.CreateImageUpload(
+		authCtx, connect.NewRequest(uploadRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadReplay, err := submissionService.CreateImageUpload(
+		authCtx, connect.NewRequest(uploadRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !uploadReplay.Msg.Idempotency.Replayed ||
+		uploadReplay.Msg.SignedPutUrl != upload.Msg.SignedPutUrl {
+		t.Fatalf("image upload replay = %#v", uploadReplay.Msg)
+	}
+	var persistedSignedURL bool
+	if err = connection.QueryRow(ctx, `
+		SELECT position(
+			convert_to('/uploads/', 'UTF8') IN response_payload
+		) > 0
+		FROM realqa_idempotency_records
+		WHERE operation = 'create_image_upload'
+		  AND idempotency_key = $1
+	`, uploadRequest.Idempotency.Value.Value).Scan(&persistedSignedURL); err != nil {
+		t.Fatal(err)
+	}
+	if persistedSignedURL {
+		t.Fatal("signed upload URL was persisted in idempotency state")
+	}
+	var tokenDigest []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT upload_token_digest
+		FROM realqa_assets
+		WHERE id = $1
+	`, uploadRequest.AssetId.Value).Scan(&tokenDigest); err != nil {
+		t.Fatal(err)
+	}
+	var digestValue [sha256.Size]byte
+	copy(digestValue[:], tokenDigest)
+	grant, err := submissionService.LookupUploadGrant(ctx, digestValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.StoreUploaded(
+		ctx, grant, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	replayGrant, err := submissionService.LookupUploadGrant(ctx, digestValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.StoreUploaded(
+		ctx, replayGrant, "image/png", pngBody); err != nil {
+		t.Fatalf("signed PUT replay: %v", err)
+	}
+	uploadedAsset, err := store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID: toPGUUID(uuid.MustParse(uploadRequest.AssetId.Value)),
+			SubmissionID: toPGUUID(uuid.MustParse(
+				uploadRequest.SubmissionId.Value)),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploadedAsset.Revision != upload.Msg.Asset.Revision.Value {
+		t.Fatalf("HTTP upload revision = %d, want %d",
+			uploadedAsset.Revision, upload.Msg.Asset.Revision.Value)
+	}
+	finalizeRequest := &realqav1.FinalizeImageUploadRequest{
+		SubmissionId:          uploadRequest.SubmissionId,
+		AssetId:               uploadRequest.AssetId,
+		ExpectedAssetRevision: upload.Msg.Asset.Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	objects.getErr = errors.New("fixture transient R2 read failure")
+	if _, finalizeErr := submissionService.FinalizeImageUpload(
+		authCtx, connect.NewRequest(finalizeRequest),
+	); connect.CodeOf(finalizeErr) != connect.CodeUnavailable {
+		t.Fatalf("transient object read code = %v", connect.CodeOf(finalizeErr))
+	}
+	objects.getErr = nil
+	objects.getReadErr = errors.New("fixture transient R2 stream failure")
+	if _, finalizeErr := submissionService.FinalizeImageUpload(
+		authCtx, connect.NewRequest(finalizeRequest),
+	); connect.CodeOf(finalizeErr) != connect.CodeUnavailable {
+		t.Fatalf("transient object stream code = %v", connect.CodeOf(finalizeErr))
+	}
+	objects.getReadErr = nil
+	verifiedKey := imageassets.VerifiedObjectKey(uploadRequest.AssetId.Value)
+	if err = store.Queries().EnqueueObjectDeletion(
+		ctx, dbgen.EnqueueObjectDeletionParams{
+			AssetID:    toPGUUID(uuid.MustParse(uploadRequest.AssetId.Value)),
+			ObjectKind: string(objectKindVerified),
+		}); err != nil {
+		t.Fatal(err)
+	}
+	objects.blockedDeletePrefix = verifiedKey
+	objects.deleteStarted = make(chan struct{}, 1)
+	objects.deleteRelease = make(chan struct{})
+	type deletionResult struct {
+		completed int
+		err       error
+	}
+	drainResult := make(chan deletionResult, 1)
+	go func() {
+		completed, drainErr := submissionService.DrainObjectDeletions(ctx, 100)
+		drainResult <- deletionResult{completed: completed, err: drainErr}
+	}()
+	select {
+	case <-objects.deleteStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	type finalizeResult struct {
+		response *connect.Response[realqav1.FinalizeImageUploadResponse]
+		err      error
+	}
+	finalizedResult := make(chan finalizeResult, 1)
+	go func() {
+		response, finalizeErr := submissionService.FinalizeImageUpload(
+			authCtx, connect.NewRequest(finalizeRequest))
+		finalizedResult <- finalizeResult{response: response, err: finalizeErr}
+	}()
+	for {
+		var waiting bool
+		if err = connection.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM pg_stat_activity
+				WHERE datname = current_database()
+				  AND wait_event_type = 'Lock'
+				  AND query LIKE '%DELETE FROM realqa_object_deletion_jobs%'
+			)
+		`).Scan(&waiting); err != nil {
+			close(objects.deleteRelease)
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			close(objects.deleteRelease)
+			t.Fatal(ctx.Err())
+		}
+	}
+	close(objects.deleteRelease)
+	drained := <-drainResult
+	if drained.err != nil || drained.completed != 1 {
+		t.Fatalf("drained stale verified copy = %d, %v",
+			drained.completed, drained.err)
+	}
+	finalizedCall := <-finalizedResult
+	if finalizedCall.err != nil {
+		t.Fatal(finalizedCall.err)
+	}
+	finalized := finalizedCall.response
+	objects.blockedDeletePrefix = ""
+	objects.deleteStarted = nil
+	objects.deleteRelease = nil
+	var staleVerifiedDeletions int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, uploadRequest.AssetId.Value).Scan(&staleVerifiedDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if staleVerifiedDeletions != 0 {
+		t.Fatalf("stale verified deletion jobs = %d", staleVerifiedDeletions)
+	}
+	if _, ok := objects.objects[verifiedKey]; !ok {
+		t.Fatal("finalized verified object was deleted")
+	}
+	var pendingStagingDeletions int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'staging'
+	`, uploadRequest.AssetId.Value).Scan(&pendingStagingDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingStagingDeletions != 0 {
+		t.Fatalf("finalized staging deletions = %d",
+			pendingStagingDeletions)
+	}
+	if _, ok := objects.objects[imageassets.StagingObjectKey(
+		uploadRequest.AssetId.Value)]; ok {
+		t.Fatal("finalized staging object was retained")
+	}
+	finalizeReplay, err := submissionService.FinalizeImageUpload(
+		authCtx, connect.NewRequest(finalizeRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !finalizeReplay.Msg.Idempotency.Replayed ||
+		!proto.Equal(finalizeReplay.Msg.Asset, finalized.Msg.Asset) {
+		t.Fatalf("finalize replay = %#v", finalizeReplay.Msg)
+	}
+	var originalDestinationID uuid.UUID
+	if err = connection.QueryRow(ctx, `
+		SELECT destination_id
+		FROM realqa_submissions
+		WHERE id = $1
+	`, createdSubmission.Msg.Submission.SubmissionId.Value).
+		Scan(&originalDestinationID); err != nil {
+		t.Fatal(err)
+	}
+	replacementDestinationID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_destinations (
+			id, owner_kind, owner_id, installation_id,
+			repository_id, repository_owner, repository_name
+		) VALUES ($1, 'organization', $2, $3, 'replacement',
+		          'replacement-owner', 'replacement-repository');
+		UPDATE realqa_presets SET destination_id = $1 WHERE id = $4
+	`, replacementDestinationID, organizationID, organizationInstallationID,
+		organizationPreset.Msg.Preset.PresetId.Value); err != nil {
+		t.Fatal(err)
+	}
+	loadedSubmission, err := submissionService.GetSubmission(
+		authCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadedSubmission.Msg.Submission.Destination == nil ||
+		loadedSubmission.Msg.Submission.Destination.Repository.RepositoryId !=
+			organizationRequest.Destination.Repository.RepositoryId {
+		t.Fatalf("submission destination followed mutable preset = %#v",
+			loadedSubmission.Msg.Submission.Destination)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_presets SET destination_id = $1 WHERE id = $2
+	`, originalDestinationID,
+		organizationPreset.Msg.Preset.PresetId.Value); err != nil {
+		t.Fatal(err)
+	}
+	currentSubmission, err := submissionService.GetSubmission(
+		authCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var currentAssetRevision int64
+	if err = connection.QueryRow(ctx, `
+		UPDATE realqa_assets
+		SET revision = revision + 1
+		WHERE id = $1
+		RETURNING revision
+	`, createdSubmission.Msg.Submission.Assets[1].AssetId.Value).
+		Scan(&currentAssetRevision); err != nil {
+		t.Fatal(err)
+	}
+	staleDeleteRequest := &realqav1.DeleteImageRequest{
+		SubmissionId:               createdSubmission.Msg.Submission.SubmissionId,
+		AssetId:                    createdSubmission.Msg.Submission.Assets[1].AssetId,
+		ExpectedSubmissionRevision: currentSubmission.Msg.Submission.Revision,
+		ExpectedAssetRevision: createdSubmission.Msg.Submission.
+			Assets[1].Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	_, err = submissionService.DeleteImage(
+		authCtx, connect.NewRequest(staleDeleteRequest))
+	var staleFailure *connect.Error
+	if !errors.As(err, &staleFailure) ||
+		connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatalf("stale asset deletion error = %v", err)
+	}
+	var reportedAssetRevision int64
+	for _, detail := range staleFailure.Details() {
+		value, detailErr := detail.Value()
+		typed, ok := value.(*realqav1.ErrorDetail)
+		if detailErr == nil && ok && typed.CurrentRevision != nil {
+			reportedAssetRevision = typed.CurrentRevision.Value
+		}
+	}
+	if reportedAssetRevision != currentAssetRevision {
+		t.Fatalf("stale asset revision = %d, want %d",
+			reportedAssetRevision, currentAssetRevision)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	deleteRequest := &realqav1.DeleteImageRequest{
+		SubmissionId:               createdSubmission.Msg.Submission.SubmissionId,
+		AssetId:                    createdSubmission.Msg.Submission.Assets[1].AssetId,
+		ExpectedSubmissionRevision: currentSubmission.Msg.Submission.Revision,
+		ExpectedAssetRevision:      &realqav1.Revision{Value: currentAssetRevision},
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	deletedImage, err := submissionService.DeleteImage(
+		authCtx, connect.NewRequest(deleteRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deletedImage.Msg.Submission.State !=
+		realqav1.SubmissionState_SUBMISSION_STATE_READY {
+		t.Fatalf("submission with only terminal/verified assets = %v",
+			deletedImage.Msg.Submission.State)
+	}
+	deletedImageReplay, err := submissionService.DeleteImage(
+		authCtx, connect.NewRequest(deleteRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deletedImageReplay.Msg.Idempotency.Replayed ||
+		!proto.Equal(deletedImageReplay.Msg.Submission,
+			deletedImage.Msg.Submission) {
+		t.Fatalf("delete image replay = %#v", deletedImageReplay.Msg)
+	}
+	var pendingObjectDeletions int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+	`).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 2 {
+		t.Fatalf("pending object deletions = %d, want 2",
+			pendingObjectDeletions)
+	}
+	objects.deleteErr = nil
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_object_deletion_jobs
+		SET next_attempt_at = transaction_timestamp()
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 2 {
+		t.Fatalf("drained object deletions = %d, %v", completed, drainErr)
+	}
+	promotionAssetID := uuid.MustParse(
+		createdSubmission.Msg.Submission.Assets[0].AssetId.Value)
+	submissionID := uuid.MustParse(
+		createdSubmission.Msg.Submission.SubmissionId.Value)
+	retryPromotionAssetID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $1, submission_id, 'verified_unlinked', encoded_bytes, $2,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $3
+	`, retryPromotionAssetID, uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if err = objects.Put(
+		ctx, imageassets.VerifiedObjectKey(retryPromotionAssetID.String()),
+		"image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		CREATE FUNCTION fixture_reject_public_promotion()
+		RETURNS trigger
+		LANGUAGE plpgsql
+		AS $$
+		BEGIN
+			IF NEW.state = 'public_retained' THEN
+				RAISE EXCEPTION 'fixture promotion failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$;
+		CREATE TRIGGER fixture_reject_public_promotion
+		BEFORE UPDATE ON realqa_assets
+		FOR EACH ROW EXECUTE FUNCTION fixture_reject_public_promotion()
+	`); err != nil {
+		t.Fatal(err)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{retryPromotionAssetID}); err == nil {
+		t.Fatal("promotion failure was not propagated")
+	}
+	var abandonedPublicID string
+	if err = connection.QueryRow(ctx, `
+		SELECT public_id
+		FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'public'
+	`, retryPromotionAssetID).Scan(&abandonedPublicID); err != nil {
+		t.Fatal(err)
+	}
+	var reservedPublicID string
+	if err = connection.QueryRow(ctx, `
+		SELECT public_id
+		FROM realqa_assets
+		WHERE id = $1
+	`, retryPromotionAssetID).Scan(&reservedPublicID); err != nil {
+		t.Fatal(err)
+	}
+	if reservedPublicID != abandonedPublicID {
+		t.Fatalf("reserved public ID = %q, cleanup ID = %q",
+			reservedPublicID, abandonedPublicID)
+	}
+	if _, ok := objects.objects[imageassets.PublicObjectKey(abandonedPublicID)]; !ok {
+		t.Fatal("abandoned public copy was not retained for cleanup retry")
+	}
+	if _, err = connection.Exec(ctx, `
+		DROP TRIGGER fixture_reject_public_promotion ON realqa_assets;
+		DROP FUNCTION fixture_reject_public_promotion()
+	`); err != nil {
+		t.Fatal(err)
+	}
+	objects.deleteErr = nil
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{retryPromotionAssetID}); err != nil {
+		t.Fatalf("retried promotion: %v", err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'public'
+	`, retryPromotionAssetID).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 0 {
+		t.Fatalf("retried promotion public deletions = %d",
+			pendingObjectDeletions)
+	}
+	if _, ok := objects.objects[imageassets.PublicObjectKey(abandonedPublicID)]; !ok {
+		t.Fatal("retried public copy was deleted")
+	}
+	firstQueuedPublicID := "abcdefghijklmnopqrstuv"
+	secondQueuedPublicID := "zyxwvutsrqponmlkjihgfe"
+	for _, publicID := range []string{
+		firstQueuedPublicID, secondQueuedPublicID,
+	} {
+		if err = objects.Put(
+			ctx, imageassets.PublicObjectKey(publicID),
+			"image/png", pngBody); err != nil {
+			t.Fatal(err)
+		}
+		if err = store.Queries().EnqueueObjectDeletion(
+			ctx, dbgen.EnqueueObjectDeletionParams{
+				AssetID:    toPGUUID(promotionAssetID),
+				ObjectKind: string(objectKindPublic),
+				PublicID:   pgtype.Text{String: publicID, Valid: true},
+			}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'public'
+	`, promotionAssetID).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 2 {
+		t.Fatalf("queued public object versions = %d, want 2",
+			pendingObjectDeletions)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 2 {
+		t.Fatalf("drained queued public object versions = %d, %v",
+			completed, drainErr)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	objects.blockedPutPrefix = "public/"
+	objects.putStarted = make(chan struct{}, 1)
+	objects.putRelease = make(chan struct{})
+	promotionResult := make(chan error, 1)
+	go func() {
+		promotionResult <- submissionService.PromoteSubmittedAssets(
+			ctx, submissionID, []uuid.UUID{promotionAssetID})
+	}()
+	select {
+	case <-objects.putStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	lockProbe, probeErr := pgx.Connect(ctx, scopedURL)
+	if probeErr != nil {
+		t.Fatal(probeErr)
+	}
+	var lockedAssetID uuid.UUID
+	probeErr = lockProbe.QueryRow(ctx, `
+		SELECT id
+		FROM realqa_assets
+		WHERE id = $1
+		FOR UPDATE NOWAIT
+	`, promotionAssetID).Scan(&lockedAssetID)
+	_ = lockProbe.Close(ctx)
+	var lockFailure *pgconn.PgError
+	if !errors.As(probeErr, &lockFailure) || lockFailure.Code != "55P03" {
+		close(objects.putRelease)
+		t.Fatalf("public write asset lock error = %v", probeErr)
+	}
+	close(objects.putRelease)
+	if promotionErr := <-promotionResult; promotionErr != nil {
+		t.Fatal(promotionErr)
+	}
+	objects.blockedPutPrefix = ""
+	objects.putStarted = nil
+	objects.putRelease = nil
+	var submittedRevisionBeforeRetry int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&submittedRevisionBeforeRetry); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{promotionAssetID}); err != nil {
+		t.Fatalf("resumed promotion: %v", err)
+	}
+	var submittedRevisionAfterRetry int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&submittedRevisionAfterRetry); err != nil {
+		t.Fatal(err)
+	}
+	if submittedRevisionAfterRetry != submittedRevisionBeforeRetry {
+		t.Fatalf("promotion retry revision = %d, want %d",
+			submittedRevisionAfterRetry, submittedRevisionBeforeRetry)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'admin'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2;
+		UPDATE realqa_github_connections
+		SET state = 'disconnected',
+		    credential_ciphertext = NULL,
+		    wrapped_data_key = NULL,
+		    key_id = NULL
+		WHERE id = $3
+	`, otherAccountID, organizationID, organizationConnectionID); err != nil {
+		t.Fatal(err)
+	}
+	otherList, err = submissionService.ListSubmissions(
+		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList.Msg.Submissions) != 1 ||
+		otherList.Msg.Submissions[0].SubmissionId.Value != submissionID.String() {
+		t.Fatalf("non-creator retained submissions = %#v",
+			otherList.Msg.Submissions)
+	}
+	managerSubmission, err := submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if err != nil {
+		t.Fatalf("non-creator retained submission: %v", err)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'member'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, otherAccountID, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	otherList, err = submissionService.ListSubmissions(
+		otherAuthCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList.Msg.Submissions) != 0 {
+		t.Fatalf("disconnected member retained submissions = %#v",
+			otherList.Msg.Submissions)
+	}
+	if _, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("disconnected member retained get code = %v",
+			connect.CodeOf(err))
+	}
+	_, err = submissionService.DeleteImage(
+		otherAuthCtx, connect.NewRequest(&realqav1.DeleteImageRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+			AssetId:      managerSubmission.Msg.Submission.Assets[0].AssetId,
+			ExpectedSubmissionRevision: managerSubmission.Msg.Submission.
+				Revision,
+			ExpectedAssetRevision: managerSubmission.Msg.Submission.
+				Assets[0].Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("disconnected member retained image delete code = %v",
+			connect.CodeOf(err))
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: managerSubmission.Msg.Submission.
+				Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("disconnected member retained asset delete code = %v",
+			connect.CodeOf(err))
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'admin'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2;
+		UPDATE realqa_github_connections
+		SET state = 'connected',
+		    credential_ciphertext = decode('03', 'hex'),
+		    wrapped_data_key = decode('04', 'hex'),
+		    key_id = 'fixture-key'
+		WHERE id = $3
+	`, otherAccountID, organizationID, organizationConnectionID); err != nil {
+		t.Fatal(err)
+	}
+	promotedAsset, err := store.Queries().GetAssetRecord(
+		ctx, dbgen.GetAssetRecordParams{
+			ID:           toPGUUID(promotionAssetID),
+			SubmissionID: toPGUUID(submissionID),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminalFinalize := proto.Clone(
+		finalizeRequest).(*realqav1.FinalizeImageUploadRequest)
+	terminalFinalize.ExpectedAssetRevision = &realqav1.Revision{
+		Value: promotedAsset.Revision,
+	}
+	terminalFinalize.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	if _, err = submissionService.FinalizeImageUpload(
+		authCtx, connect.NewRequest(terminalFinalize),
+	); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("finalize submitted session code = %v", connect.CodeOf(err))
+	}
+	terminalUpload := proto.Clone(
+		uploadRequest).(*realqav1.CreateImageUploadRequest)
+	terminalUpload.ExpectedAssetRevision = &realqav1.Revision{
+		Value: promotedAsset.Revision,
+	}
+	terminalUpload.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	if _, err = submissionService.CreateImageUpload(
+		authCtx, connect.NewRequest(terminalUpload),
+	); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("upload submitted session code = %v", connect.CodeOf(err))
+	}
+	if _, err = store.Queries().UpdateSubmissionVerifiedBytes(
+		ctx, dbgen.UpdateSubmissionVerifiedBytesParams{
+			VerifiedEncodedBytes: promotedAsset.EncodedBytes,
+			SubmissionRecordID:   toPGUUID(submissionID),
+		}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("unguarded submitted refresh = %v", err)
+	}
+	var submittedState string
+	if err = connection.QueryRow(ctx, `
+		SELECT state FROM realqa_submissions WHERE id = $1
+	`, submissionID).Scan(&submittedState); err != nil {
+		t.Fatal(err)
+	}
+	if submittedState != "submitted" {
+		t.Fatalf("finalize reopened submission as %q", submittedState)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_submissions
+		SET state = 'assets_deleted'
+		WHERE id = $1
+	`, submissionID); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.PromoteSubmittedAssets(
+		ctx, submissionID, []uuid.UUID{promotionAssetID},
+	); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("promotion over assets-deleted state = %v", err)
+	}
+	var terminalSubmissionState string
+	if err = connection.QueryRow(ctx, `
+		SELECT state
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&terminalSubmissionState); err != nil {
+		t.Fatal(err)
+	}
+	if terminalSubmissionState != "assets_deleted" {
+		t.Fatalf("terminal submission state = %q", terminalSubmissionState)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_submissions
+		SET state = 'submitted'
+		WHERE id = $1
+	`, submissionID); err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, promotionAssetID).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 1 {
+		t.Fatalf("promoted private-copy deletions = %d, want 1",
+			pendingObjectDeletions)
+	}
+	objects.deleteErr = nil
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_object_deletion_jobs
+		SET next_attempt_at = transaction_timestamp()
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 1 {
+		t.Fatalf("drained promoted private copy = %d, %v", completed, drainErr)
+	}
+	promotedVerifiedKey := imageassets.VerifiedObjectKey(
+		promotionAssetID.String())
+	if err = objects.Put(
+		ctx, promotedVerifiedKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	if err = submissionService.cleanupUnownedVerifiedObject(
+		ctx, submissionID, promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, promotionAssetID).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 1 {
+		t.Fatalf("post-promotion verified deletions = %d, want 1",
+			pendingObjectDeletions)
+	}
+	objects.deleteErr = nil
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_object_deletion_jobs
+		SET next_attempt_at = transaction_timestamp()
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 1 {
+		t.Fatalf("drained post-promotion private copy = %d, %v",
+			completed, drainErr)
+	}
+	if _, ok := objects.objects[promotedVerifiedKey]; ok {
+		t.Fatal("post-promotion verified object was retained")
+	}
+	emptyRequest := proto.Clone(
+		submissionRequest).(*realqav1.CreateSubmissionRequest)
+	emptyRequest.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	emptyRequest.Images = []*realqav1.ImageDeclaration{
+		proto.Clone(submissionRequest.Images[0]).(*realqav1.ImageDeclaration),
+	}
+	emptyRequest.Images[0].ClientImageId = &realqav1.UuidV7{
+		Value: uuidv7.MustNew().String(),
+	}
+	emptySubmission, err := submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(emptyRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedRequest := proto.Clone(
+		emptyRequest).(*realqav1.CreateSubmissionRequest)
+	rejectedRequest.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	rejectedRequest.Images[0].ClientImageId = &realqav1.UuidV7{
+		Value: uuidv7.MustNew().String(),
+	}
+	rejectedSubmission, err := submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(rejectedRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedSubmissionID := uuid.MustParse(
+		rejectedSubmission.Msg.Submission.SubmissionId.Value)
+	rejectedAssetID := uuid.MustParse(
+		rejectedSubmission.Msg.Submission.Assets[0].AssetId.Value)
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_assets
+		SET upload_state = 'rejected'
+		WHERE id = $1
+	`, rejectedAssetID); err != nil {
+		t.Fatal(err)
+	}
+	rejectedState, err := store.Queries().RefreshSubmissionAssetState(
+		ctx, toPGUUID(rejectedSubmissionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejectedState.State != "assets_deleted" {
+		t.Fatalf("terminal-only submission state = %q", rejectedState.State)
+	}
+	openAfterRejection, err := store.Queries().CountOpenSubmissionsForAccount(
+		ctx, toPGUUID(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if openAfterRejection != 1 {
+		t.Fatalf("open submissions after rejection = %d, want 1",
+			openAfterRejection)
+	}
+	emptyDeleted, err := submissionService.DeleteImage(
+		authCtx, connect.NewRequest(&realqav1.DeleteImageRequest{
+			SubmissionId:               emptySubmission.Msg.Submission.SubmissionId,
+			AssetId:                    emptySubmission.Msg.Submission.Assets[0].AssetId,
+			ExpectedSubmissionRevision: emptySubmission.Msg.Submission.Revision,
+			ExpectedAssetRevision: emptySubmission.Msg.Submission.
+				Assets[0].Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emptyDeleted.Msg.Submission.State !=
+		realqav1.SubmissionState_SUBMISSION_STATE_ASSETS_DELETED {
+		t.Fatalf("empty submission state = %v",
+			emptyDeleted.Msg.Submission.State)
+	}
+	_, err = submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: emptyDeleted.Msg.Submission.SubmissionId,
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-creator pre-submission terminal get code = %v",
+			connect.CodeOf(err))
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId:               emptyDeleted.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: emptyDeleted.Msg.Submission.Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-creator pre-submission terminal delete code = %v",
+			connect.CodeOf(err))
+	}
+	preSubmissionTerminals, err := submissionService.ListSubmissions(
+		authCtx, connect.NewRequest(&realqav1.ListSubmissionsRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, listed := range preSubmissionTerminals.Msg.Submissions {
+		if listed.SubmissionId.Value == rejectedSubmissionID.String() ||
+			listed.SubmissionId.Value == emptySubmission.Msg.Submission.
+				SubmissionId.Value {
+			t.Fatalf("pre-submission terminal was retained: %#v", listed)
+		}
+	}
+	terminalDeleteRequest := &realqav1.DeleteImageRequest{
+		SubmissionId:               emptyDeleted.Msg.Submission.SubmissionId,
+		AssetId:                    emptyDeleted.Msg.Submission.Assets[0].AssetId,
+		ExpectedSubmissionRevision: emptyDeleted.Msg.Submission.Revision,
+		ExpectedAssetRevision: emptyDeleted.Msg.Submission.
+			Assets[0].Revision,
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	_, err = submissionService.DeleteImage(
+		authCtx, connect.NewRequest(terminalDeleteRequest))
+	requireServiceError(t, err, connect.CodeInvalidArgument,
+		realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED)
+	var terminalSubmissionRevision, terminalAssetRevision int64
+	if err = connection.QueryRow(ctx, `
+		SELECT submission.revision, asset.revision
+		FROM realqa_submissions AS submission
+		JOIN realqa_assets AS asset ON asset.submission_id = submission.id
+		WHERE submission.id = $1 AND asset.id = $2
+	`, emptyDeleted.Msg.Submission.SubmissionId.Value,
+		emptyDeleted.Msg.Submission.Assets[0].AssetId.Value).
+		Scan(&terminalSubmissionRevision, &terminalAssetRevision); err != nil {
+		t.Fatal(err)
+	}
+	if terminalSubmissionRevision !=
+		emptyDeleted.Msg.Submission.Revision.Value ||
+		terminalAssetRevision !=
+			emptyDeleted.Msg.Submission.Assets[0].Revision.Value {
+		t.Fatalf("terminal delete changed revisions = %d / %d",
+			terminalSubmissionRevision, terminalAssetRevision)
+	}
+	emptySubmissionID := uuid.MustParse(
+		emptySubmission.Msg.Submission.SubmissionId.Value)
+	emptyAssetID := uuid.MustParse(
+		emptySubmission.Msg.Submission.Assets[0].AssetId.Value)
+	orphanedVerifiedKey := imageassets.VerifiedObjectKey(emptyAssetID.String())
+	if err = objects.Put(ctx, orphanedVerifiedKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	objects.deleteErr = errors.New("fixture R2 deletion failed")
+	if err = submissionService.cleanupUnownedVerifiedObject(
+		ctx, emptySubmissionID, emptyAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*) FROM realqa_object_deletion_jobs
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, emptyAssetID).Scan(&pendingObjectDeletions); err != nil {
+		t.Fatal(err)
+	}
+	if pendingObjectDeletions != 1 {
+		t.Fatalf("orphaned verified deletions = %d, want 1",
+			pendingObjectDeletions)
+	}
+	objects.deleteErr = nil
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_object_deletion_jobs
+		SET next_attempt_at = transaction_timestamp()
+		WHERE asset_id = $1 AND object_kind = 'verified'
+	`, emptyAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if completed, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil || completed != 1 {
+		t.Fatalf("drained orphaned verified copy = %d, %v",
+			completed, drainErr)
+	}
+	if _, ok := objects.objects[orphanedVerifiedKey]; ok {
+		t.Fatal("orphaned verified object was retained")
+	}
+	submittedExtraAssetID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $1, submission_id, 'verified_unlinked', encoded_bytes, $2,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $3;
+		UPDATE realqa_submissions
+		SET verified_encoded_bytes = verified_encoded_bytes + (
+		        SELECT encoded_bytes
+		        FROM realqa_assets
+		        WHERE id = $1
+		    ),
+		    created_at = transaction_timestamp() - interval '3 hours',
+		    upload_deadline = transaction_timestamp() - interval '2 hours',
+		    upload_expires_at = transaction_timestamp() - interval '1 hour'
+		WHERE id = $4
+	`, submittedExtraAssetID, uuidv7.MustNew(), promotionAssetID,
+		submissionID); err != nil {
+		t.Fatal(err)
+	}
+	submittedExtraKey := imageassets.VerifiedObjectKey(
+		submittedExtraAssetID.String())
+	if err = objects.Put(ctx, submittedExtraKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	var submittedRetainedBytes int64
+	if err = connection.QueryRow(ctx, `
+		SELECT COALESCE(sum(encoded_bytes), 0)::bigint
+		FROM realqa_assets
+		WHERE submission_id = $1
+		  AND id <> $2
+		  AND upload_state = 'verified'
+		  AND state IN ('verified_unlinked', 'public_retained')
+	`, submissionID, submittedExtraAssetID).
+		Scan(&submittedRetainedBytes); err != nil {
+		t.Fatal(err)
+	}
+	partialSubmissionID := uuidv7.MustNew()
+	partialPublicAssetID := uuidv7.MustNew()
+	partialPrivateAssetID := uuidv7.MustNew()
+	partialPublicID := "partial-promotion-id-01"
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, idempotency_digest, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, created_at, updated_at, upload_deadline,
+			upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'ready', idempotency_digest, payer_organization_id,
+		       payer_team_id, preset_revision, declared_encoded_bytes,
+		       verified_encoded_bytes,
+		       transaction_timestamp() - interval '25 hours',
+		       transaction_timestamp() - interval '25 hours',
+		       transaction_timestamp() - interval '2 hours',
+		       transaction_timestamp() - interval '1 hour'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5, media_type,
+		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
+		       sanitized_sha256, 'verified', transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $8;
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $6, $1, 'verified_unlinked', encoded_bytes, $7, media_type,
+		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
+		       sanitized_sha256, 'verified', transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $8
+	`, partialSubmissionID, submissionID, partialPublicAssetID,
+		partialPublicID, uuidv7.MustNew(), partialPrivateAssetID,
+		uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	partialPublicKey := imageassets.PublicObjectKey(partialPublicID)
+	partialPrivateKey := imageassets.VerifiedObjectKey(partialPrivateAssetID.String())
+	if err = objects.Put(ctx, partialPublicKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	if err = objects.Put(ctx, partialPrivateKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	cleaned, err := submissionService.CleanupExpiredStaging(
+		ctx, time.Now().UTC(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleaned != 3 {
+		t.Fatalf("expired asset cleanup count = %d, want 3", cleaned)
+	}
+	var (
+		submittedBytesAfterCleanup int64
+		submittedExtraState        string
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT submission.verified_encoded_bytes, asset.state
+		FROM realqa_submissions AS submission
+		JOIN realqa_assets AS asset ON asset.submission_id = submission.id
+		WHERE submission.id = $1 AND asset.id = $2
+	`, submissionID, submittedExtraAssetID).Scan(
+		&submittedBytesAfterCleanup, &submittedExtraState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if submittedBytesAfterCleanup != submittedRetainedBytes ||
+		submittedExtraState != "expired" {
+		t.Fatalf("submitted extra cleanup = %d / %q, want %d / expired",
+			submittedBytesAfterCleanup, submittedExtraState,
+			submittedRetainedBytes)
+	}
+	if _, err = store.Queries().MarkSubmissionSubmitted(
+		ctx, toPGUUID(partialSubmissionID)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expired partial promotion became submitted: %v", err)
+	}
+	var partialSubmissionState string
+	if err = connection.QueryRow(ctx, `
+		SELECT state
+		FROM realqa_submissions
+		WHERE id = $1
+	`, partialSubmissionID).Scan(&partialSubmissionState); err != nil {
+		t.Fatal(err)
+	}
+	if partialSubmissionState != "assets_deleted" {
+		t.Fatalf("partial promotion submission state = %q",
+			partialSubmissionState)
+	}
+	if _, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil {
+		t.Fatal(drainErr)
+	}
+	if _, ok := objects.objects[submittedExtraKey]; ok {
+		t.Fatal("submitted unlinked object was retained")
+	}
+	var partialPublicState, partialPrivateState string
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT state FROM realqa_assets WHERE id = $1),
+			(SELECT state FROM realqa_assets WHERE id = $2)
+	`, partialPublicAssetID, partialPrivateAssetID).
+		Scan(&partialPublicState, &partialPrivateState); err != nil {
+		t.Fatal(err)
+	}
+	if partialPublicState != "removed_placeholder" ||
+		partialPrivateState != "expired" {
+		t.Fatalf("partial promotion cleanup states = %q / %q",
+			partialPublicState, partialPrivateState)
+	}
+	publicRecord, err := submissionService.PublicAsset(ctx, partialPublicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if publicRecord.State != imageassets.PublicStateRemoved {
+		t.Fatalf("partial promotion public state = %v", publicRecord.State)
+	}
+	if _, ok := objects.objects[partialPublicKey]; ok {
+		t.Fatal("partial promotion public object was retained")
+	}
+	if _, ok := objects.objects[partialPrivateKey]; ok {
+		t.Fatal("partial promotion private object was retained")
+	}
+	casSubmissionID := uuidv7.MustNew()
+	casAssetID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, idempotency_digest, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			upload_deadline, upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'uploading', idempotency_digest,
+		       payer_organization_id, payer_team_id, preset_revision,
+		       declared_encoded_bytes,
+		       transaction_timestamp() + interval '1 hour',
+		       transaction_timestamp() + interval '2 hours'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, upload_state, uploaded_at
+		)
+		SELECT $3, $1, 'private_staging', 0, $4, media_type,
+		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
+		       'uploaded', transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $5
+	`, casSubmissionID, submissionID, casAssetID,
+		uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	casStagingKey := imageassets.StagingObjectKey(casAssetID.String())
+	casVerifiedKey := imageassets.VerifiedObjectKey(casAssetID.String())
+	if err = objects.Put(ctx, casStagingKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	objects.blockedPutPrefix = casVerifiedKey
+	objects.putStarted = make(chan struct{}, 1)
+	objects.putRelease = make(chan struct{})
+	finalizeCASResult := make(chan error, 1)
+	go func() {
+		_, finalizeErr := submissionService.FinalizeImageUpload(
+			authCtx, connect.NewRequest(&realqav1.FinalizeImageUploadRequest{
+				SubmissionId: &realqav1.UuidV7{Value: casSubmissionID.String()},
+				AssetId:      &realqav1.UuidV7{Value: casAssetID.String()},
+				ExpectedAssetRevision: &realqav1.Revision{
+					Value: 1,
+				},
+				Idempotency: &realqav1.IdempotencyKey{
+					Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+				},
+			}))
+		finalizeCASResult <- finalizeErr
+	}()
+	select {
+	case <-objects.putStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	cleanupResult := make(chan deletionResult, 1)
+	go func() {
+		cleaned, cleanupErr := submissionService.CleanupExpiredStaging(
+			ctx, time.Now().UTC().Add(3*time.Hour), 100)
+		cleanupResult <- deletionResult{completed: cleaned, err: cleanupErr}
+	}()
+	for {
+		var waiting bool
+		if err = connection.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM pg_stat_activity
+				WHERE datname = current_database()
+				  AND wait_event_type = 'Lock'
+				  AND query LIKE '%LockExpiredSubmissionRecord%'
+			)
+		`).Scan(&waiting); err != nil {
+			close(objects.putRelease)
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			close(objects.putRelease)
+			t.Fatal(ctx.Err())
+		}
+	}
+	close(objects.putRelease)
+	casErr := <-finalizeCASResult
+	cleanup := <-cleanupResult
+	objects.blockedPutPrefix = ""
+	objects.putStarted = nil
+	objects.putRelease = nil
+	if casErr != nil {
+		t.Fatalf("finalize lost expiry race: %v", casErr)
+	}
+	if cleanup.err != nil || cleanup.completed != 1 {
+		t.Fatalf("post-finalize cleanup = %d, %v",
+			cleanup.completed, cleanup.err)
+	}
+	var cleanupAssetState string
+	if err = connection.QueryRow(ctx, `
+		SELECT state
+		FROM realqa_assets
+		WHERE id = $1
+	`, casAssetID).Scan(&cleanupAssetState); err != nil {
+		t.Fatal(err)
+	}
+	if cleanupAssetState != "expired" {
+		t.Fatalf("post-finalize cleanup asset state = %q", cleanupAssetState)
+	}
+	if _, drainErr := submissionService.DrainObjectDeletions(
+		ctx, 100); drainErr != nil {
+		t.Fatal(drainErr)
+	}
+	if _, ok := objects.objects[casVerifiedKey]; ok {
+		t.Fatal("expired verified object was retained")
+	}
+	if _, err = connection.Exec(ctx,
+		`DELETE FROM realqa_submissions WHERE id = $1`,
+		casSubmissionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_submissions
+		SET created_at = transaction_timestamp() - interval '25 hours',
+		    upload_deadline = transaction_timestamp() - interval '2 hours',
+		    upload_expires_at = transaction_timestamp() - interval '1 hour'
+		WHERE id = $1
+	`, createdSubmission.Msg.Submission.SubmissionId.Value); err != nil {
+		t.Fatal(err)
+	}
+	openSubmissions, err := store.Queries().CountOpenSubmissionsForAccount(
+		ctx, toPGUUID(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if openSubmissions != 0 {
+		t.Fatalf("expired open submission count = %d", openSubmissions)
+	}
+	for range submissionHourLimit {
+		if _, err = connection.Exec(ctx, `
+			INSERT INTO realqa_submissions (
+				id, owner_kind, owner_id, created_by_account_id,
+				preset_id, destination_id, state, idempotency_digest,
+				preset_revision, upload_deadline, upload_expires_at
+			)
+			SELECT $1, owner_kind, owner_id, created_by_account_id,
+			       preset_id, destination_id, 'submitted', idempotency_digest,
+			       preset_revision, transaction_timestamp() + interval '23 hours',
+			       transaction_timestamp() + interval '24 hours'
+			FROM realqa_submissions
+			WHERE id = $2
+		`, uuidv7.MustNew(),
+			createdSubmission.Msg.Submission.SubmissionId.Value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rateLimitedRequest := proto.Clone(
+		submissionRequest).(*realqav1.CreateSubmissionRequest)
+	rateLimitedRequest.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	for _, image := range rateLimitedRequest.Images {
+		image.ClientImageId = &realqav1.UuidV7{
+			Value: uuidv7.MustNew().String(),
+		}
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(rateLimitedRequest))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("hourly submission limit code = %v", connect.CodeOf(err))
 	}
 	var personalDestinationID uuid.UUID
 	if err = connection.QueryRow(ctx, `
@@ -1096,6 +2557,256 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnectedState, credentialCiphertext != nil,
 			retainedPresets, retainedDestinations, retainedRepositoryAccess)
 	}
+	retainedBeforeDelete, err := submissionService.GetSubmission(
+		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+		}))
+	if err != nil {
+		t.Fatalf("get retained submission after repository disconnect: %v", err)
+	}
+	var retainedBytesBeforeDelete int64
+	if err = connection.QueryRow(ctx, `
+		SELECT verified_encoded_bytes
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&retainedBytesBeforeDelete); err != nil {
+		t.Fatal(err)
+	}
+	if retainedBytesBeforeDelete <= 0 {
+		t.Fatalf("retained bytes before deletion = %d",
+			retainedBytesBeforeDelete)
+	}
+	webhookSubmissionID := uuidv7.MustNew()
+	webhookAssetID := uuidv7.MustNew()
+	webhookPublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, provider_issue_id, provider_issue_url,
+			idempotency_digest, submitted_at, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, upload_deadline, upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'submitted', '757',
+		       'https://github.com/delinoio/oss/issues/757',
+		       idempotency_digest, transaction_timestamp(),
+		       payer_organization_id, payer_team_id, preset_revision,
+		       declared_encoded_bytes, verified_encoded_bytes,
+		       transaction_timestamp() + interval '23 hours',
+		       transaction_timestamp() + interval '24 hours'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $6
+	`, webhookSubmissionID, submissionID, webhookAssetID, webhookPublicID,
+		uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	var webhookRevisionBefore int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, webhookSubmissionID).Scan(&webhookRevisionBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.DeleteIssueAssets(ctx, "757"); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		webhookState         string
+		webhookRetainedBytes int64
+		webhookRevisionAfter int64
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT state, verified_encoded_bytes, revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, webhookSubmissionID).Scan(
+		&webhookState, &webhookRetainedBytes, &webhookRevisionAfter,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if webhookState != "submitted" || webhookRetainedBytes != 0 ||
+		webhookRevisionAfter != webhookRevisionBefore+1 {
+		t.Fatalf("webhook deletion state = %q / %d / %d, want submitted / 0 / %d",
+			webhookState, webhookRetainedBytes, webhookRevisionAfter,
+			webhookRevisionBefore+1)
+	}
+	if err = submissionService.DeleteIssueAssets(ctx, "757"); err != nil {
+		t.Fatal(err)
+	}
+	var webhookRevisionAfterReplay int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, webhookSubmissionID).Scan(&webhookRevisionAfterReplay); err != nil {
+		t.Fatal(err)
+	}
+	if webhookRevisionAfterReplay != webhookRevisionAfter {
+		t.Fatalf("webhook deletion replay revision = %d, want %d",
+			webhookRevisionAfterReplay, webhookRevisionAfter)
+	}
+	billingSubmissionID := uuidv7.MustNew()
+	billingAssetID := uuidv7.MustNew()
+	billingPublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, provider_issue_id, provider_issue_url,
+			idempotency_digest, submitted_at, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, upload_deadline, upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'storage_billing_grace', '758',
+		       'https://github.com/delinoio/oss/issues/758',
+		       idempotency_digest, transaction_timestamp(),
+		       payer_organization_id, payer_team_id, preset_revision,
+		       declared_encoded_bytes, verified_encoded_bytes,
+		       transaction_timestamp() + interval '23 hours',
+		       transaction_timestamp() + interval '24 hours'
+		FROM realqa_submissions
+		WHERE id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $6
+	`, billingSubmissionID, submissionID, billingAssetID, billingPublicID,
+		uuidv7.MustNew(), promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
+	billingPublicKey := imageassets.PublicObjectKey(billingPublicID)
+	if err = objects.Put(ctx, billingPublicKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	var billingRevisionBefore int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, billingSubmissionID).Scan(&billingRevisionBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err = submissionService.DeleteBillingExpiredAssets(
+		ctx, billingSubmissionID); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		billingState         string
+		billingRetainedBytes int64
+		billingRevisionAfter int64
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT state, verified_encoded_bytes, revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, billingSubmissionID).Scan(
+		&billingState, &billingRetainedBytes, &billingRevisionAfter,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if billingState != "assets_deleted" || billingRetainedBytes != 0 ||
+		billingRevisionAfter != billingRevisionBefore+1 {
+		t.Fatalf("billing deletion state = %q / %d / %d, want assets_deleted / 0 / %d",
+			billingState, billingRetainedBytes, billingRevisionAfter,
+			billingRevisionBefore+1)
+	}
+	if _, ok := objects.objects[billingPublicKey]; ok {
+		t.Fatal("billing-expired public object was retained")
+	}
+	if err = submissionService.DeleteBillingExpiredAssets(
+		ctx, billingSubmissionID); err != nil {
+		t.Fatal(err)
+	}
+	var billingRevisionAfterReplay int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, billingSubmissionID).Scan(&billingRevisionAfterReplay); err != nil {
+		t.Fatal(err)
+	}
+	if billingRevisionAfterReplay != billingRevisionAfter {
+		t.Fatalf("billing deletion replay revision = %d, want %d",
+			billingRevisionAfterReplay, billingRevisionAfter)
+	}
+	deletedAssets, err := submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: retainedBeforeDelete.Msg.Submission.
+				Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	if err != nil {
+		t.Fatalf("delete after repository disconnect: %v", err)
+	}
+	_, err = submissionService.DeleteSubmissionAssets(
+		otherAuthCtx,
+		connect.NewRequest(&realqav1.DeleteSubmissionAssetsRequest{
+			SubmissionId:               createdSubmission.Msg.Submission.SubmissionId,
+			ExpectedSubmissionRevision: deletedAssets.Msg.Submission.Revision,
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+			},
+		}))
+	requireServiceError(t, err, connect.CodeInvalidArgument,
+		realqav1.ErrorReason_ERROR_REASON_RETENTION_STATE_CONFLICT,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED)
+	var retainedRevisionAfterNoop int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&retainedRevisionAfterNoop); err != nil {
+		t.Fatal(err)
+	}
+	if retainedRevisionAfterNoop != deletedAssets.Msg.Submission.Revision.Value {
+		t.Fatalf("no-op asset deletion revision = %d, want %d",
+			retainedRevisionAfterNoop,
+			deletedAssets.Msg.Submission.Revision.Value)
+	}
+	var retainedBytesAfterDelete int64
+	if err = connection.QueryRow(ctx, `
+		SELECT verified_encoded_bytes
+		FROM realqa_submissions
+		WHERE id = $1
+	`, submissionID).Scan(&retainedBytesAfterDelete); err != nil {
+		t.Fatal(err)
+	}
+	if retainedBytesAfterDelete != 0 {
+		t.Fatalf("retained bytes after deletion = %d",
+			retainedBytesAfterDelete)
+	}
 	deletedPayerOrganizationID := uuidv7.MustNew()
 	deletedPayerTeamID := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `
@@ -1115,6 +2826,51 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	_, err = service.CreatePreset(authCtx, connect.NewRequest(deletedPayerRequest))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("deleted payer organization code = %v", connect.CodeOf(err))
+	}
+	deletedPayerPresetID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_presets (
+			id, owner_kind, owner_id, created_by_account_id,
+			payer_organization_id, payer_team_id, destination_id,
+			name, capture_mode, include_pointer, selector_mode,
+			issue_definition_kind, issue_definition_id,
+			issue_definition_name, issue_definition_path,
+			issue_definition_etag
+		) VALUES (
+			$1, 'personal', $2, $2, $3, $4, $5,
+			'Deleted payer fixture', 'region', false, 'normal',
+			'markdown_template', 'bug', 'Bug',
+			'.github/ISSUE_TEMPLATE/bug.md', 'schema-etag'
+		)
+	`, deletedPayerPresetID, accountID, deletedPayerOrganizationID,
+		deletedPayerTeamID, personalDestinationID); err != nil {
+		t.Fatal(err)
+	}
+	deletedPayerSubmission := &realqav1.CreateSubmissionRequest{
+		Owner: personalOwnerScope(accountID),
+		Billing: &realqav1.BillingScope{
+			OrganizationId: &realqav1.UuidV7{
+				Value: deletedPayerOrganizationID.String(),
+			},
+			TeamId: &realqav1.UuidV7{Value: deletedPayerTeamID.String()},
+		},
+		PresetId:       &realqav1.UuidV7{Value: deletedPayerPresetID.String()},
+		PresetRevision: &realqav1.Revision{Value: 1},
+		Destination:    request.Destination,
+		Images: []*realqav1.ImageDeclaration{
+			proto.Clone(submissionRequest.Images[0]).(*realqav1.ImageDeclaration),
+		},
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+		},
+	}
+	deletedPayerSubmission.Images[0].ClientImageId = &realqav1.UuidV7{
+		Value: uuidv7.MustNew().String(),
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(deletedPayerSubmission))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("submission with deleted payer code = %v", connect.CodeOf(err))
 	}
 	deletionRequest := &realqav1.DeleteFeatureDataRequest{
 		TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,
@@ -1148,13 +2904,23 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("deleted preset code = %v", connect.CodeOf(err))
 	}
-	replayed, err = service.CreatePreset(authCtx, connect.NewRequest(request))
-	if err != nil {
+	_, err = service.CreatePreset(authCtx, connect.NewRequest(request))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("create replay after feature deletion code = %v",
+			connect.CodeOf(err))
+	}
+	var presetSnapshots int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*)
+		FROM realqa_idempotency_records
+		WHERE operation = 'create_preset'
+		  AND idempotency_key = $1
+	`, request.Idempotency.Value.Value).Scan(&presetSnapshots); err != nil {
 		t.Fatal(err)
 	}
-	if !replayed.Msg.Idempotency.Replayed ||
-		replayed.Msg.Preset.PresetId.Value != created.Msg.Preset.PresetId.Value {
-		t.Fatalf("create replay after feature deletion = %#v", replayed.Msg)
+	if presetSnapshots != 0 {
+		t.Fatalf("retained preset idempotency snapshots = %d",
+			presetSnapshots)
 	}
 
 	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{
@@ -1345,6 +3111,155 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			lifecycleAuthorizationCiphertext != nil,
 		)
 	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'owner'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, accountID, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	organizationDeletionRequest := &realqav1.DeleteFeatureDataRequest{
+		TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,
+		Trigger: &realqav1.DeleteFeatureDataRequest_OwnerRequest{
+			OwnerRequest: &realqav1.OwnerFeatureDeletion{
+				Owner: organizationOwnerScope(organizationID),
+				Idempotency: &realqav1.IdempotencyKey{
+					Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+				},
+			},
+		},
+	}
+	if _, err = service.DeleteFeatureData(
+		authCtx, connect.NewRequest(organizationDeletionRequest)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(submissionRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("submission replay after feature deletion code = %v",
+			connect.CodeOf(err))
+	}
+	var submissionSnapshots int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*)
+		FROM realqa_idempotency_records
+		WHERE operation = 'create_submission'
+		  AND idempotency_key = $1
+	`, submissionRequest.Idempotency.Value.Value).Scan(&submissionSnapshots); err != nil {
+		t.Fatal(err)
+	}
+	if submissionSnapshots != 0 {
+		t.Fatalf("retained submission idempotency snapshots = %d",
+			submissionSnapshots)
+	}
+}
+
+type submissionTestObject struct {
+	body        []byte
+	contentType string
+}
+
+type submissionTestObjects struct {
+	deleteErr           error
+	getErr              error
+	getReadErr          error
+	blockedPutPrefix    string
+	putStarted          chan struct{}
+	putRelease          chan struct{}
+	blockedDeletePrefix string
+	deleteStarted       chan struct{}
+	deleteRelease       chan struct{}
+	objects             map[string]submissionTestObject
+}
+
+func (objects *submissionTestObjects) Put(
+	ctx context.Context,
+	key string,
+	contentType string,
+	body []byte,
+) error {
+	if objects.blockedPutPrefix != "" &&
+		strings.HasPrefix(key, objects.blockedPutPrefix) {
+		select {
+		case objects.putStarted <- struct{}{}:
+		default:
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-objects.putRelease:
+		}
+	}
+	objects.objects[key] = submissionTestObject{
+		body: append([]byte(nil), body...), contentType: contentType,
+	}
+	return nil
+}
+
+func (objects *submissionTestObjects) Get(
+	_ context.Context,
+	key string,
+) (imageassets.Object, error) {
+	if objects.getErr != nil {
+		return imageassets.Object{}, objects.getErr
+	}
+	object, ok := objects.objects[key]
+	if !ok {
+		return imageassets.Object{}, imageassets.ErrObjectNotFound
+	}
+	body := io.Reader(bytes.NewReader(object.body))
+	if objects.getReadErr != nil {
+		body = io.MultiReader(
+			bytes.NewReader(object.body[:1]),
+			&fixtureErrorReader{err: objects.getReadErr},
+		)
+	}
+	return imageassets.Object{
+		Body:        io.NopCloser(body),
+		ContentType: object.contentType,
+		Size:        int64(len(object.body)),
+	}, nil
+}
+
+func (objects *submissionTestObjects) Delete(ctx context.Context, key string) error {
+	if objects.blockedDeletePrefix != "" &&
+		strings.HasPrefix(key, objects.blockedDeletePrefix) {
+		select {
+		case objects.deleteStarted <- struct{}{}:
+		default:
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-objects.deleteRelease:
+		}
+	}
+	if objects.deleteErr != nil {
+		return objects.deleteErr
+	}
+	delete(objects.objects, key)
+	return nil
+}
+
+type fixtureErrorReader struct {
+	err error
+}
+
+func (reader *fixtureErrorReader) Read([]byte) (int, error) {
+	return 0, reader.err
+}
+
+func fixturePNG(t *testing.T) []byte {
+	t.Helper()
+	value := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	value.SetNRGBA(0, 0, color.NRGBA{R: 42, G: 84, B: 126, A: 255})
+	var output bytes.Buffer
+	if err := png.Encode(&output, value); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
 }
 
 func TestFirstPageUsesNonNullUUIDLowerBound(t *testing.T) {
