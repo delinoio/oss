@@ -49,6 +49,37 @@ CREATE TABLE realqa_storage_authorization_bindings (
 CREATE INDEX realqa_storage_authorization_bindings_submission
 ON realqa_storage_authorization_bindings (submission_id, mapping_revision DESC);
 
+-- Deletion before this ledger existed could leave an active grant after its
+-- last public asset was tombstoned. Restrict repair to retained/terminal
+-- submission states so an in-flight promotion with no public asset stays open.
+WITH binding_backfill AS (
+    SELECT attempt.*,
+           submission.created_by_account_id,
+           submission.owner_kind,
+           submission.owner_id,
+           submission.payer_organization_id,
+           submission.payer_team_id,
+           submission.updated_at AS submission_updated_at,
+           attempt.state = 'active'
+               AND submission.state IN (
+                   'submitted', 'failed', 'storage_billing_grace',
+                   'assets_deleted', 'deleted'
+               )
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM realqa_assets AS retained
+                   WHERE retained.submission_id = submission.id
+                     AND retained.state = 'public_retained'
+                     AND retained.upload_state = 'verified'
+               ) AS requires_resource_deletion
+    FROM realqa_storage_authorization_attempts AS attempt
+    JOIN realqa_submissions AS submission
+      ON submission.id = attempt.submission_id
+    WHERE attempt.authorization_id IS NOT NULL
+      AND attempt.state IN ('active', 'closure_pending', 'closed')
+      AND submission.payer_organization_id IS NOT NULL
+      AND submission.payer_team_id IS NOT NULL
+)
 INSERT INTO realqa_storage_authorization_bindings (
     authorization_id, submission_id, mapping_revision,
     authorizer_account_id, owner_kind, owner_id,
@@ -56,43 +87,41 @@ INSERT INTO realqa_storage_authorization_bindings (
     maximum_units, status, authorization_revision, closure_state,
     accrual_cutoff_at, closed_at
 )
-SELECT attempt.authorization_id,
-       attempt.submission_id,
-       attempt.mapping_revision,
-       submission.created_by_account_id,
-       submission.owner_kind,
-       submission.owner_id,
-       submission.payer_organization_id,
-       submission.payer_team_id,
-       attempt.service_identity_id,
-       attempt.meter_id,
-       attempt.maximum_units,
+SELECT backfill.authorization_id,
+       backfill.submission_id,
+       backfill.mapping_revision,
+       backfill.created_by_account_id,
+       backfill.owner_kind,
+       backfill.owner_id,
+       backfill.payer_organization_id,
+       backfill.payer_team_id,
+       backfill.service_identity_id,
+       backfill.meter_id,
+       backfill.maximum_units,
        CASE
-           WHEN attempt.state = 'closed' THEN 'resource_deleted'
+           WHEN backfill.state = 'closed' THEN 'resource_deleted'
            ELSE 'active'
        END,
-       attempt.authorization_revision,
+       backfill.authorization_revision,
        CASE
-           WHEN attempt.state = 'closure_pending'
+           WHEN backfill.state = 'closure_pending'
+                 OR backfill.requires_resource_deletion
                THEN 'resource_deletion_pending'
-           WHEN attempt.state = 'closed' THEN 'closed'
+           WHEN backfill.state = 'closed' THEN 'closed'
            ELSE 'open'
        END,
        CASE
-           WHEN attempt.state IN ('closure_pending', 'closed')
-               THEN attempt.updated_at
+           WHEN backfill.state IN ('closure_pending', 'closed')
+               THEN backfill.updated_at
+           WHEN backfill.requires_resource_deletion
+               THEN backfill.submission_updated_at
            ELSE NULL
        END,
        CASE
-           WHEN attempt.state = 'closed' THEN attempt.updated_at
+           WHEN backfill.state = 'closed' THEN backfill.updated_at
            ELSE NULL
        END
-FROM realqa_storage_authorization_attempts AS attempt
-JOIN realqa_submissions AS submission ON submission.id = attempt.submission_id
-WHERE attempt.authorization_id IS NOT NULL
-  AND attempt.state IN ('active', 'closure_pending', 'closed')
-  AND submission.payer_organization_id IS NOT NULL
-  AND submission.payer_team_id IS NOT NULL;
+FROM binding_backfill AS backfill;
 
 -- Each interval is an immutable attribution of one retained image byte count
 -- to one authorization. Its end may be set once by deletion, grace, or rebind.

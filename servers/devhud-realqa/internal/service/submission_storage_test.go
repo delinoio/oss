@@ -123,8 +123,12 @@ func TestLoadSubmissionMarksRecoveryAfterResponseAssembly(t *testing.T) {
 		},
 		binding: dbgen.RealqaStorageAuthorizationBinding{
 			AuthorizationID: authorizationID,
+			OwnerKind:       "personal",
+			OwnerID:         ownerID,
+			OrganizationID:  ownerID,
 			Status:          "active",
 		},
+		access:    dbgen.RealqaOwnerBinding{Role: "owner"},
 		assetsErr: errors.New("asset read failed"),
 	}
 	record := dbgen.RealqaSubmission{
@@ -134,8 +138,8 @@ func TestLoadSubmissionMarksRecoveryAfterResponseAssembly(t *testing.T) {
 		State:     "storage_billing_grace",
 	}
 
-	if _, err := loadSubmissionWithRecord(
-		context.Background(), queries, record,
+	if _, err := loadSubmissionWithRecordAndRecoveryCaller(
+		context.Background(), queries, record, ownerID,
 	); !errors.Is(err, queries.assetsErr) {
 		t.Fatalf("load error = %v, want asset read failure", err)
 	}
@@ -144,8 +148,8 @@ func TestLoadSubmissionMarksRecoveryAfterResponseAssembly(t *testing.T) {
 	}
 
 	queries.assetsErr = nil
-	submission, err := loadSubmissionWithRecord(
-		context.Background(), queries, record)
+	submission, err := loadSubmissionWithRecordAndRecoveryCaller(
+		context.Background(), queries, record, ownerID)
 	if err != nil {
 		t.Fatalf("load completed response: %v", err)
 	}
@@ -158,10 +162,14 @@ func TestLoadSubmissionMarksRecoveryAfterResponseAssembly(t *testing.T) {
 		t.Fatalf("notification state = %v, want notified",
 			submission.GetStorageBillingRecovery().GetNotificationState())
 	}
+	if len(submission.StorageBillingRecovery.Actions) != 3 {
+		t.Fatalf("recovery actions = %v, want payment/rebind/revoke",
+			submission.StorageBillingRecovery.Actions)
+	}
 
 	queries.markErr = pgx.ErrNoRows
-	if _, err = loadSubmissionWithRecord(
-		context.Background(), queries, record,
+	if _, err = loadSubmissionWithRecordAndRecoveryCaller(
+		context.Background(), queries, record, ownerID,
 	); err != nil {
 		t.Fatalf("raced recovery resolution failed read: %v", err)
 	}

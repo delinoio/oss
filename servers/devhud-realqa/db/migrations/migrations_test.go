@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -30,6 +31,163 @@ func TestEmbeddedMigrationsAreStrictlyOrdered(t *testing.T) {
 		if item.version != int64(index+1) {
 			t.Fatalf("migration %d version = %d", index, item.version)
 		}
+	}
+}
+
+func TestRecurringStorageMigrationBackfillsDeletedAssetsForClosure(t *testing.T) {
+	databaseURL := os.Getenv("REALQA_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("REALQA_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	connection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "realqa_backfill_" + uuidv7.MustNew().String()[24:]
+	identifier := pgx.Identifier{schema}.Sanitize()
+	if _, err = connection.Exec(ctx, "CREATE SCHEMA "+identifier); err != nil {
+		t.Fatal(err)
+	}
+	_ = connection.Close(ctx)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(
+			context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		cleanup, cleanupErr := pgx.Connect(cleanupCtx, databaseURL)
+		if cleanupErr == nil {
+			_, _ = cleanup.Exec(
+				cleanupCtx, "DROP SCHEMA "+identifier+" CASCADE")
+			_ = cleanup.Close(cleanupCtx)
+		}
+	})
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.ConnConfig.RuntimeParams["search_path"] = schema + ",public"
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	acquired, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer acquired.Release()
+	if _, err = acquired.Exec(ctx, `
+		CREATE TABLE realqa_schema_migrations (
+			version bigint PRIMARY KEY,
+			name text NOT NULL UNIQUE,
+			checksum bytea NOT NULL CHECK (octet_length(checksum) = 32),
+			applied_at timestamptz NOT NULL DEFAULT transaction_timestamp()
+		)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	ordered, err := load(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range ordered[:8] {
+		if err = apply(ctx, acquired.Conn(), item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	accountID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
+	serviceID := uuidv7.MustNew()
+	meterID := uuidv7.MustNew()
+	deletedSubmissionID := uuidv7.MustNew()
+	inflightSubmissionID := uuidv7.MustNew()
+	deletedAuthorizationID := uuidv7.MustNew()
+	inflightAuthorizationID := uuidv7.MustNew()
+	if _, err = acquired.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($1, $2);
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, state,
+			idempotency_digest, payer_organization_id, payer_team_id,
+			created_at, updated_at, upload_deadline, upload_expires_at,
+			submitted_at
+		) VALUES
+			(
+				$3, 'personal', $1, $1, 'submitted', $4, $5, $6,
+				transaction_timestamp() - interval '2 hours',
+				transaction_timestamp() - interval '1 hour',
+				transaction_timestamp() + interval '21 hours',
+				transaction_timestamp() + interval '22 hours',
+				transaction_timestamp() - interval '1 hour'
+			),
+			(
+				$7, 'personal', $1, $1, 'submitting', $8, $5, $6,
+				transaction_timestamp() - interval '2 hours',
+				transaction_timestamp() - interval '1 hour',
+				transaction_timestamp() + interval '21 hours',
+				transaction_timestamp() + interval '22 hours',
+				NULL
+			);
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES
+			($3, $9, $10, $11, $12, 1, 'active', $13, 1, 1),
+			($7, $14, $15, $11, $12, 1, 'active', $16, 1, 1)
+	`, accountID, bytes.Repeat([]byte{1}, 32),
+		deletedSubmissionID, bytes.Repeat([]byte{2}, 32),
+		organizationID, teamID,
+		inflightSubmissionID, bytes.Repeat([]byte{3}, 32),
+		uuidv7.MustNew(), bytes.Repeat([]byte{4}, 32),
+		serviceID, meterID, deletedAuthorizationID,
+		uuidv7.MustNew(), bytes.Repeat([]byte{5}, 32),
+		inflightAuthorizationID); err != nil {
+		t.Fatal(err)
+	}
+	if err = apply(ctx, acquired.Conn(), ordered[8]); err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		deletedClosureState  string
+		deletedCutoff        time.Time
+		deletedSubmissionCut time.Time
+		inflightClosureState string
+		inflightCutoff       pgtype.Timestamptz
+	)
+	if err = acquired.QueryRow(ctx, `
+		SELECT binding.closure_state, binding.accrual_cutoff_at,
+		       submission.updated_at
+		FROM realqa_storage_authorization_bindings AS binding
+		JOIN realqa_submissions AS submission
+		  ON submission.id = binding.submission_id
+		WHERE binding.authorization_id = $1
+	`, deletedAuthorizationID).Scan(
+		&deletedClosureState, &deletedCutoff, &deletedSubmissionCut,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if deletedClosureState != "resource_deletion_pending" ||
+		!deletedCutoff.Equal(deletedSubmissionCut) {
+		t.Fatalf("deleted backfill = %q / %v, want closure pending at %v",
+			deletedClosureState, deletedCutoff, deletedSubmissionCut)
+	}
+	if err = acquired.QueryRow(ctx, `
+		SELECT closure_state, accrual_cutoff_at
+		FROM realqa_storage_authorization_bindings
+		WHERE authorization_id = $1
+	`, inflightAuthorizationID).Scan(
+		&inflightClosureState, &inflightCutoff,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if inflightClosureState != "open" || inflightCutoff.Valid {
+		t.Fatalf("inflight backfill = %q / %v, want open without cutoff",
+			inflightClosureState, inflightCutoff)
 	}
 }
 

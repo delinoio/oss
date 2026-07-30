@@ -903,7 +903,8 @@ func (service *Submission) DeleteImage(
 					return resolveErr
 				}
 			}
-			updated, lockErr := loadSubmissionWithRecord(ctx, queries, updatedRecord)
+			updated, lockErr := loadSubmissionWithRecordAndRecoveryCaller(
+				ctx, queries, updatedRecord, toPGUUID(actor.accountID))
 			if lockErr != nil {
 				return lockErr
 			}
@@ -1059,7 +1060,8 @@ func (service *Submission) DeleteSubmissionAssets(
 			} else if !errors.Is(resolveErr, pgx.ErrNoRows) {
 				return resolveErr
 			}
-			result, lockErr := loadSubmissionWithRecord(ctx, queries, updated)
+			result, lockErr := loadSubmissionWithRecordAndRecoveryCaller(
+				ctx, queries, updated, toPGUUID(actor.accountID))
 			if lockErr != nil {
 				return lockErr
 			}
