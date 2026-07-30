@@ -126,6 +126,21 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		t.Fatalf("new attempt = %#v replayed=%v err=%v",
 			attempt, replayed, err)
 	}
+	recent, err := store.HasRecentAutomaticRefreshAttempt(
+		ctx, viewID, viewerHash, mustV7(t), now.Add(-5*time.Minute))
+	if err != nil || !recent {
+		t.Fatalf("second-device coalescing lookup = %v, %v", recent, err)
+	}
+	recent, err = store.HasRecentAutomaticRefreshAttempt(
+		ctx, viewID, viewerHash, mustV7(t), now)
+	if err != nil || recent {
+		t.Fatalf("exact coalescing boundary = %v, %v", recent, err)
+	}
+	recent, err = store.HasRecentAutomaticRefreshAttempt(
+		ctx, viewID, viewerHash, requestID, now.Add(-5*time.Minute))
+	if err != nil || recent {
+		t.Fatalf("current request was not excluded = %v, %v", recent, err)
+	}
 	reservationID := mustV7(t)
 	if err := store.MarkRefreshReserved(
 		ctx, subjectHash, requestID, reservationID, now); err != nil {

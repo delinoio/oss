@@ -185,6 +185,19 @@ func TestAutomaticRequestsCoalesceAndManualRefreshBypassesCache(t *testing.T) {
 		outcome != deckv1.RefreshOutcome_REFRESH_OUTCOME_UNSPECIFIED {
 		t.Fatalf("manual refresh used cache: %v/%v", outcome, usesCache)
 	}
+	now := time.Date(2026, time.July, 30, 0, 0, 0, 0, time.UTC)
+	if !refreshCacheAvailable(
+		deckv1.RefreshOutcome_REFRESH_OUTCOME_COALESCED,
+		true, time.Time{}, now,
+	) {
+		t.Fatal("second device did not coalesce after a failed first request")
+	}
+	if refreshCacheAvailable(
+		deckv1.RefreshOutcome_REFRESH_OUTCOME_COALESCED,
+		false, now.Add(-refreshCacheWindow), now,
+	) {
+		t.Fatal("automatic request coalesced at the expired boundary")
+	}
 }
 
 func TestRefreshPreflightBindsEveryBillingAndTraceField(t *testing.T) {
@@ -399,6 +412,7 @@ func TestRefreshImplementationHasNoSchedulerOrBackgroundAuthorization(
 		"CommitAuthorizedUsage",
 		"ReleaseAuthorizedUsage",
 		"BackgroundUsage",
+		"context.WithoutCancel",
 		"time.NewTicker",
 		"time.Tick(",
 	} {

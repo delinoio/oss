@@ -156,6 +156,35 @@ func (store *Store) GetRefreshAttempt(
 	return attempt, nil
 }
 
+// HasRecentAutomaticRefreshAttempt coalesces active client requests by
+// viewer/view even when the earlier provider request failed and therefore did
+// not produce a fresh snapshot. The current request is excluded because its
+// attempt row is inserted before this check.
+func (store *Store) HasRecentAutomaticRefreshAttempt(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	currentRequestID uuid.UUID,
+	cutoff time.Time,
+) (bool, error) {
+	var recent bool
+	err := store.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM deck_refresh_attempts
+			WHERE view_id = $1 AND viewer_hash = $2
+			  AND refresh_request_id <> $3
+			  AND origin IN (1, 2)
+			  AND created_at > $4
+		)
+	`, viewID, viewerHash[:], currentRequestID, cutoff.UTC()).Scan(&recent)
+	if err != nil {
+		return false, errors.New(
+			"deck database: refresh coalescing lookup failed")
+	}
+	return recent, nil
+}
+
 func (store *Store) MarkRefreshReserved(
 	ctx context.Context,
 	subjectHash [32]byte,
@@ -353,28 +382,6 @@ func (store *Store) HasActiveViewDeviceAttachment(
 		return false, errors.New("deck database: device attachment lookup failed")
 	}
 	return false, nil
-}
-
-func (store *Store) SnapshotState(
-	ctx context.Context,
-	viewID uuid.UUID,
-	viewerHash [32]byte,
-) (bool, time.Time, error) {
-	var truncated bool
-	var refreshedAt time.Time
-	err := store.pool.QueryRow(ctx, `
-		SELECT truncated, refreshed_at
-		FROM deck_pull_request_snapshot_states
-		WHERE view_id = $1 AND viewer_hash = $2
-	`, viewID, viewerHash[:]).Scan(&truncated, &refreshedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, time.Time{}, nil
-	}
-	if err != nil {
-		return false, time.Time{}, errors.New(
-			"deck database: snapshot state failed")
-	}
-	return truncated, refreshedAt.UTC(), nil
 }
 
 func (store *Store) ListAllSnapshots(

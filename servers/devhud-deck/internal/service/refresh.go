@@ -218,11 +218,15 @@ func (service *View) RefreshView(
 					return eligibleErr
 				}
 				if !eligible {
+					truncated, refreshedAt, freshness, resultCount, stateErr :=
+						service.currentSnapshotState(ctx, viewID, viewerHash, startedAt)
+					if stateErr != nil {
+						return stateErr
+					}
 					response = refreshResponse(
 						view, deckv1.RefreshOutcome_REFRESH_OUTCOME_AUTOMATIC_REFRESH_NOT_ELIGIBLE,
 						deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_NOT_ELIGIBLE,
-						deckv1.FreshnessState_FRESHNESS_STATE_STALE,
-						time.Time{}, false, 0, false)
+						freshness, refreshedAt, truncated, resultCount, false)
 					return service.dependencies.Store.SaveRefreshResponse(
 						ctx, subjectHash, requestID, response, true, startedAt)
 				}
@@ -230,24 +234,28 @@ func (service *View) RefreshView(
 			cacheOutcome, usesCache := refreshCacheOutcome(
 				request.Msg.GetOrigin())
 			if current.State == database.RefreshAttemptCreated && usesCache {
-				truncated, refreshedAt, stateErr :=
-					service.dependencies.Store.SnapshotState(
-						ctx, viewID, viewerHash)
+				recentAutomatic := false
+				if cacheOutcome ==
+					deckv1.RefreshOutcome_REFRESH_OUTCOME_COALESCED {
+					recentAutomatic, err =
+						service.dependencies.Store.HasRecentAutomaticRefreshAttempt(
+							ctx, viewID, viewerHash, requestID,
+							startedAt.Add(-refreshCacheWindow))
+					if err != nil {
+						return err
+					}
+				}
+				truncated, refreshedAt, freshness, resultCount, stateErr :=
+					service.currentSnapshotState(ctx, viewID, viewerHash, startedAt)
 				if stateErr != nil {
 					return stateErr
 				}
-				if !refreshedAt.IsZero() &&
-					startedAt.Before(refreshedAt.Add(refreshCacheWindow)) {
-					snapshots, _, _, listErr :=
-						service.dependencies.Store.ListAllSnapshots(
-							ctx, viewID, viewerHash)
-					if listErr != nil {
-						return listErr
-					}
+				if refreshCacheAvailable(
+					cacheOutcome, recentAutomatic, refreshedAt, startedAt) {
 					response = refreshResponse(
 						view, cacheOutcome, cacheBilling(cacheOutcome),
-						refreshFreshness(startedAt, refreshedAt), refreshedAt,
-						truncated, len(snapshots), false)
+						freshness, refreshedAt,
+						truncated, resultCount, false)
 					metricOutcome = contracts.RefreshMetricCacheHit
 					return service.dependencies.Store.SaveRefreshResponse(
 						ctx, subjectHash, requestID, response, true, startedAt)
@@ -284,11 +292,17 @@ func (service *View) advanceProviderRefresh(
 		reservation, reserveErr := service.dependencies.LiveUsage.ReserveRefresh(
 			ctx, forwardedToken, view.GetBilling(), requestID, meter)
 		if reserveErr != nil {
+			truncated, refreshedAt, freshness, resultCount, stateErr :=
+				service.currentSnapshotState(
+					ctx, refreshViewID(view), viewerHash,
+					service.dependencies.Clock.Now().UTC())
+			if stateErr != nil {
+				return stateErr
+			}
 			*response = refreshResponse(
 				view, deckv1.RefreshOutcome_REFRESH_OUTCOME_RESERVATION_REJECTED,
 				deckv1.BillingDisposition_BILLING_DISPOSITION_REJECTED,
-				deckv1.FreshnessState_FRESHNESS_STATE_STALE,
-				time.Time{}, false, 0, false)
+				freshness, refreshedAt, truncated, resultCount, false)
 			*metricOutcome = contracts.RefreshMetricBillingFailure
 			return service.dependencies.Store.SaveRefreshResponse(
 				ctx, subjectHash, requestID, *response, true,
@@ -307,11 +321,17 @@ func (service *View) advanceProviderRefresh(
 	if attempt.State == database.RefreshAttemptDispatched {
 		pending := attempt.Response
 		if pending == nil {
+			truncated, refreshedAt, freshness, resultCount, stateErr :=
+				service.currentSnapshotState(
+					ctx, refreshViewID(view), viewerHash,
+					service.dependencies.Clock.Now().UTC())
+			if stateErr != nil {
+				return stateErr
+			}
 			pending = refreshResponse(
 				view, deckv1.RefreshOutcome_REFRESH_OUTCOME_PROVIDER_FAILED,
 				deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
-				deckv1.FreshnessState_FRESHNESS_STATE_STALE,
-				time.Time{}, false, 0, false)
+				freshness, refreshedAt, truncated, resultCount, false)
 		}
 		disposition, err := finalizeRefreshReservation(
 			ctx, service.dependencies.LiveUsage, forwardedToken,
@@ -397,6 +417,15 @@ func (service *View) advanceProviderRefresh(
 			freshness = deckv1.FreshnessState_FRESHNESS_STATE_FRESH
 			refreshedAt = now
 			resultCount = len(snapshots)
+		}
+	}
+	if providerErr != nil {
+		var stateErr error
+		truncated, refreshedAt, freshness, resultCount, stateErr =
+			service.currentSnapshotState(
+				ctx, refreshViewID(view), viewerHash, now)
+		if stateErr != nil {
+			providerErr = stateErr
 		}
 	}
 	pending := refreshResponse(
@@ -518,6 +547,22 @@ func (service *View) performGitHubRefresh(
 		}
 	}
 	return results, truncated, nil
+}
+
+func (service *View) currentSnapshotState(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	now time.Time,
+) (bool, time.Time, deckv1.FreshnessState, int, error) {
+	snapshots, truncated, refreshedAt, err :=
+		service.dependencies.Store.ListAllSnapshots(ctx, viewID, viewerHash)
+	if err != nil {
+		return false, time.Time{},
+			deckv1.FreshnessState_FRESHNESS_STATE_UNSPECIFIED, 0, err
+	}
+	return truncated, refreshedAt, refreshFreshness(now, refreshedAt),
+		len(snapshots), nil
 }
 
 func refreshSnapshot(
@@ -772,6 +817,20 @@ func cacheBilling(
 		return deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_COALESCED
 	}
 	return deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_CACHE_HIT
+}
+
+func refreshCacheAvailable(
+	outcome deckv1.RefreshOutcome,
+	recentAutomatic bool,
+	refreshedAt time.Time,
+	now time.Time,
+) bool {
+	if outcome == deckv1.RefreshOutcome_REFRESH_OUTCOME_COALESCED &&
+		recentAutomatic {
+		return true
+	}
+	return !refreshedAt.IsZero() &&
+		now.Before(refreshedAt.Add(refreshCacheWindow))
 }
 
 func refreshResponse(
