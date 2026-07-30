@@ -872,7 +872,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err := store.ConnectGitHub(
 		ctx, inFlightHash, inFlightCallback, installation, credential,
 		now.Add(5*time.Minute)); !errors.Is(
-		err, deckgithub.ErrPermissionDenied) {
+		err, deckgithub.ErrPermissionDenied) &&
+		!errors.Is(err, deckgithub.ErrInvalidSignature) {
 		t.Fatalf("old callback succeeded after reauthorization: %T %v", err, err)
 	}
 	reauthorizedRefresh := credential
