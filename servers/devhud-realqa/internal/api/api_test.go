@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -15,6 +18,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/service"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
+	"google.golang.org/protobuf/proto"
 )
 
 type validator struct {
@@ -87,6 +91,81 @@ func TestHealthAndBrowserOriginBoundary(t *testing.T) {
 	}
 }
 
+func TestSubmissionRequestBodyBoundary(t *testing.T) {
+	t.Parallel()
+	feature := &validator{userSubject: "user-a"}
+	forwarded := &validator{userSubject: "user-a"}
+	server := httptest.NewServer(newTestHandler(t, feature, forwarded))
+	defer server.Close()
+	client := realqav1connect.NewRealQASubmissionServiceClient(
+		server.Client(), server.URL)
+	message := &realqav1.CreateSubmissionRequest{
+		Images: make([]*realqav1.ImageDeclaration, 40_000),
+	}
+	for index := range message.Images {
+		message.Images[index] = &realqav1.ImageDeclaration{}
+	}
+	if size := proto.Size(message); size <= submissionReadMaxBytes {
+		t.Fatalf("fixture size = %d, want greater than %d",
+			size, submissionReadMaxBytes)
+	}
+	_, err := client.CreateSubmission(
+		context.Background(), connect.NewRequest(message))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("oversized submission code = %v, want resource exhausted",
+			connect.CodeOf(err))
+	}
+	if len(feature.tokens) != 0 || len(forwarded.tokens) != 0 {
+		t.Fatal("oversized submission reached authentication")
+	}
+}
+
+func TestIssueDeletionWebhookRequiresExactEventAndSignature(t *testing.T) {
+	t.Parallel()
+	secret := []byte(strings.Repeat("w", 32))
+	payload := []byte(`{"action":"deleted","issue":{"id":757}}`)
+	handler := issueDeletionWebhook(service.NewSubmission(
+		service.Dependencies{}), secret)
+	request := httptest.NewRequest(
+		http.MethodPost, "/webhooks/github/issues", strings.NewReader(string(payload)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Event", "issues")
+	request.Header.Set("X-Hub-Signature-256", "sha256="+strings.Repeat("0", 64))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("invalid signature response = %d", response.Code)
+	}
+
+	payload = []byte(`{"action":"opened","issue":{"id":757}}`)
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write(payload)
+	request = httptest.NewRequest(
+		http.MethodPost, "/webhooks/github/issues", strings.NewReader(string(payload)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Event", "issues")
+	request.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("irrelevant action response = %d", response.Code)
+	}
+
+	payload = []byte(`{"action":"deleted","issue":{"id":757}}`)
+	mac = hmac.New(sha256.New, secret)
+	_, _ = mac.Write(payload)
+	request = httptest.NewRequest(
+		http.MethodPost, "/webhooks/github/issues", strings.NewReader(string(payload)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Event", "issues")
+	request.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("authenticated fixture response = %d", response.Code)
+	}
+}
+
 func TestDualAudienceAuthRequiresMatchingSubjectsAndScopes(t *testing.T) {
 	t.Parallel()
 	feature := &validator{userSubject: "user-a"}
@@ -129,6 +208,70 @@ func TestDualAudienceAuthRequiresMatchingSubjectsAndScopes(t *testing.T) {
 	_, err = client.ListPresets(context.Background(), request)
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("mismatched identity code = %v", connect.CodeOf(err))
+	}
+}
+
+func TestImageDeletionAuthUsesIdentityScope(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		call func(
+			context.Context,
+			realqav1connect.RealQASubmissionServiceClient,
+		) error
+	}{
+		{
+			name: "single image",
+			call: func(
+				ctx context.Context,
+				client realqav1connect.RealQASubmissionServiceClient,
+			) error {
+				request := connect.NewRequest(&realqav1.DeleteImageRequest{})
+				request.Header().Set("Authorization", "Bearer feature-secret-token")
+				request.Header().Set(
+					auth.ForwardedUserTokenHeader, "forwarded-secret-token")
+				_, err := client.DeleteImage(ctx, request)
+				return err
+			},
+		},
+		{
+			name: "submission assets",
+			call: func(
+				ctx context.Context,
+				client realqav1connect.RealQASubmissionServiceClient,
+			) error {
+				request := connect.NewRequest(
+					&realqav1.DeleteSubmissionAssetsRequest{})
+				request.Header().Set("Authorization", "Bearer feature-secret-token")
+				request.Header().Set(
+					auth.ForwardedUserTokenHeader, "forwarded-secret-token")
+				_, err := client.DeleteSubmissionAssets(ctx, request)
+				return err
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			feature := &validator{userSubject: "user-a"}
+			forwarded := &validator{userSubject: "user-a"}
+			server := httptest.NewServer(newTestHandler(t, feature, forwarded))
+			defer server.Close()
+			client := realqav1connect.NewRealQASubmissionServiceClient(
+				server.Client(), server.URL)
+			if err := test.call(context.Background(), client); err == nil {
+				t.Fatal("invalid deletion request unexpectedly succeeded")
+			}
+			if len(feature.scopes) != 1 ||
+				!slices.Equal(
+					feature.scopes[0], []string{"realqa:submissions:write"}) ||
+				len(forwarded.scopes) != 1 ||
+				!slices.Equal(
+					forwarded.scopes[0], []string{"delibase:account:read"}) {
+				t.Fatalf("validated scopes = %#v / %#v",
+					feature.scopes, forwarded.scopes)
+			}
+		})
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/config"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/github"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/logging"
 	serverruntime "github.com/delinoio/oss/servers/devhud-realqa/internal/runtime"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/service"
@@ -92,12 +93,28 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{value: "github"}
 	}
+	uploadSigner, err := imageassets.NewSigner(
+		configuration.AssetOrigin, configuration.UploadSigningKey)
+	if err != nil {
+		return &startupError{value: "storage"}
+	}
+	objects, err := imageassets.NewR2Store(imageassets.R2Config{
+		Endpoint: configuration.R2Endpoint, Bucket: configuration.R2Bucket,
+		AccessKeyID:     configuration.R2AccessKeyID,
+		SecretAccessKey: configuration.R2SecretAccessKey,
+	})
+	if err != nil {
+		return &startupError{value: "storage"}
+	}
+	serviceDependencies := service.Dependencies{
+		Store: store, GitHub: githubAuthorization,
+		Objects: objects, UploadSigner: uploadSigner,
+		WebhookSecret: configuration.GitHubWebhookSecret,
+		Pseudonymizer: pseudonymizer, Logger: logger,
+	}
 	handler, err := api.New(api.Dependencies{
 		Authentication: authentication, Health: store, Logger: logger,
-		Services: service.Dependencies{
-			Store: store, GitHub: githubAuthorization,
-			Pseudonymizer: pseudonymizer, Logger: logger,
-		},
+		Services: serviceDependencies,
 	})
 	if err != nil {
 		return &startupError{value: "handler"}
@@ -107,6 +124,8 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		return &startupError{value: "listener"}
 	}
 	defer listener.Close()
+	go service.NewSubmission(serviceDependencies).RunStagingCleanup(
+		ctx, 5*time.Minute)
 	if err = serverruntime.Serve(ctx, listener, handler, logger,
 		configuration.ShutdownTimeout); err != nil {
 		return &startupError{value: "runtime"}

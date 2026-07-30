@@ -79,6 +79,11 @@ JOIN realqa_destinations AS destination ON destination.id = preset.destination_i
 LEFT JOIN realqa_shortcuts AS shortcut ON shortcut.preset_id = preset.id
 WHERE preset.id = sqlc.arg(id);
 
+-- name: GetDestinationRecord :one
+SELECT *
+FROM realqa_destinations
+WHERE id = sqlc.arg(id);
+
 -- name: ListPresetRecords :many
 SELECT
     preset.*,

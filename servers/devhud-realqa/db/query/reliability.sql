@@ -44,6 +44,42 @@ WHERE idempotency.operation = 'disconnect_github_connection'
       AND connection.owner_id = sqlc.arg(scope_owner_id)
 );
 
+-- name: DeleteScopePresetIdempotencySnapshots :execrows
+DELETE FROM realqa_idempotency_records AS idempotency
+WHERE idempotency.operation = 'create_preset'
+  AND idempotency.resource_id IN (
+    SELECT preset.id
+    FROM realqa_presets AS preset
+    WHERE preset.owner_kind = sqlc.arg(scope_owner_kind)
+      AND preset.owner_id = sqlc.arg(scope_owner_id)
+);
+
+-- name: DeleteScopeSubmissionIdempotencySnapshots :execrows
+DELETE FROM realqa_idempotency_records AS idempotency
+WHERE (
+    idempotency.operation IN (
+        'create_submission', 'delete_submission_assets'
+    )
+    AND idempotency.resource_id IN (
+        SELECT submission.id
+        FROM realqa_submissions AS submission
+        WHERE submission.owner_kind = sqlc.arg(scope_owner_kind)
+          AND submission.owner_id = sqlc.arg(scope_owner_id)
+    )
+) OR (
+    idempotency.operation IN (
+        'create_image_upload', 'finalize_image_upload', 'delete_image'
+    )
+    AND idempotency.resource_id IN (
+        SELECT asset.id
+        FROM realqa_assets AS asset
+        JOIN realqa_submissions AS submission
+          ON submission.id = asset.submission_id
+        WHERE submission.owner_kind = sqlc.arg(scope_owner_kind)
+          AND submission.owner_id = sqlc.arg(scope_owner_id)
+    )
+);
+
 -- name: DeleteScopePresets :execrows
 DELETE FROM realqa_presets
 WHERE owner_kind = sqlc.arg(owner_kind)

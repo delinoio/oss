@@ -25,6 +25,8 @@ class DesktopSmokeRuntimeError extends Error {
   }
 }
 
+class DesktopSmokeHelperObservationError extends Error {}
+
 if (!supportedHosts.has(process.platform)) {
   console.log(
     JSON.stringify({
@@ -282,7 +284,7 @@ async function runSmokeIteration(iteration, attempt) {
     );
   }
   if (observedHelperPids.size === 0) {
-    throw new Error(
+    throw new DesktopSmokeHelperObservationError(
       `desktop smoke ${iteration} did not observe a CEF helper before shutdown`,
     );
   }
@@ -305,25 +307,32 @@ for (let iteration = 1; iteration <= 3; iteration += 1) {
       await runSmokeIteration(iteration, attempt);
       break;
     } catch (error) {
+      const missedHostedWindowsHelperObservation =
+        error instanceof DesktopSmokeHelperObservationError;
       const retryableWindowsLifecycleFailure =
         process.platform === "win32" &&
         process.env.GITHUB_ACTIONS === "true" &&
-        error instanceof DesktopSmokeRuntimeError &&
-        error.exitCode === windowsAccessViolationExitCode &&
+        (missedHostedWindowsHelperObservation ||
+          (error instanceof DesktopSmokeRuntimeError &&
+            error.exitCode === windowsAccessViolationExitCode)) &&
         attempt < windowsLifecycleAttemptLimit;
       if (!retryableWindowsLifecycleFailure) {
         throw error;
       }
-      // CEF can sporadically access-violate during renderer startup or
-      // shutdown on GPU-less GitHub-hosted Windows runners. Retry only that
-      // exact clean lifecycle failure; remove this when the runtime is stable.
+      // GPU-less GitHub-hosted Windows runners can sporadically access-violate,
+      // and their Get-CimInstance polling can miss short-lived CEF helpers
+      // during resource contention. Retry only these exact lifecycle failures;
+      // remove the observation retry when the smoke uses persistent process
+      // events instead of polling.
       console.warn(
         JSON.stringify({
           check: "devhud-desktop-smoke",
           status: "retrying",
           iteration,
           attempt,
-          reason: "windows-cef-lifecycle-access-violation",
+          reason: missedHostedWindowsHelperObservation
+            ? "windows-cef-helper-observation-missed"
+            : "windows-cef-lifecycle-access-violation",
         }),
       );
       await delay(5_000);
