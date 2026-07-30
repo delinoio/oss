@@ -181,19 +181,25 @@ type DeckPullRequestSnapshotState struct {
 }
 
 type DeckRefreshAttempt struct {
-	SubjectHash        []byte
-	RefreshRequestID   pgtype.UUID
-	RequestDigest      []byte
-	ViewID             pgtype.UUID
-	ViewerHash         []byte
-	Origin             int16
-	ClientKind         int16
-	State              int16
-	ReservationID      pgtype.UUID
-	ProviderDispatched bool
-	ResponseCiphertext []byte
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
+	SubjectHash           []byte
+	RefreshRequestID      pgtype.UUID
+	RequestDigest         []byte
+	ViewID                pgtype.UUID
+	ViewerHash            []byte
+	Origin                int16
+	ClientKind            int16
+	BillingOrganizationID pgtype.UUID
+	BillingTeamID         pgtype.UUID
+	MeterID               pgtype.UUID
+	PriceVersionID        pgtype.UUID
+	ServiceIdentityID     pgtype.UUID
+	UsdMicros             int64
+	State                 int16
+	ReservationID         pgtype.UUID
+	ProviderDispatched    bool
+	ResponseCiphertext    []byte
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
 }
 
 type DeckTeamMembership struct {
