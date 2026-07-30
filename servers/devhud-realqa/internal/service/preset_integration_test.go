@@ -2821,6 +2821,15 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		uuidv7.MustNew(), replacementAuthorizationID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'owner'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, accountID, organizationID); err != nil {
+		t.Fatal(err)
+	}
 	rebindReplay, err := submissionService.
 		RebindSubmissionStorageAuthorization(
 			authCtx, connect.NewRequest(rebindRequest))
@@ -2832,6 +2841,15 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			replacementAuthorizationID.String() ||
 		rebindReplay.Msg.MappingRevision.Value != 2 {
 		t.Fatalf("completed rebind replay = %#v", rebindReplay.Msg)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'admin'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, accountID, organizationID); err != nil {
+		t.Fatal(err)
 	}
 	fresh, err = callbackStore.ProcessWebhookDelivery(
 		ctx, webhookDeliveryID,
