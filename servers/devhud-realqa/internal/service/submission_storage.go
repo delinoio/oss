@@ -1368,7 +1368,7 @@ func (service *Submission) CleanupExpiredStaging(
 					value      dbgen.RealqaAsset
 					cleanupErr error
 				)
-				if locked.State == "public_retained" {
+				if locked.PublicID.Valid {
 					value, cleanupErr = queries.TombstoneAsset(
 						ctx, dbgen.TombstoneAssetParams{
 							AssetRecordID:     locked.ID,

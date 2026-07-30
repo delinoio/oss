@@ -143,6 +143,12 @@ func TestSubmissionRequestBodyBoundary(t *testing.T) {
 	if len(feature.tokens) != 1 || len(forwarded.tokens) != 1 {
 		t.Fatal("60,000-byte issue input did not reach authentication")
 	}
+	if len(forwarded.scopes) != 1 || !slices.Equal(
+		forwarded.scopes[0],
+		[]string{"delibase:usage:execute", "delibase:billing:write"},
+	) {
+		t.Fatalf("SubmitIssue forwarded scopes = %#v", forwarded.scopes)
+	}
 }
 
 func TestIssueDeletionWebhookRequiresExactEventAndSignature(t *testing.T) {

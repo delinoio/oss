@@ -146,8 +146,9 @@ func isLifecycleRequest(request connect.AnyRequest) bool {
 
 func scopes(procedure string) (string, []string, bool) {
 	const (
-		accountRead = "delibase:account:read"
-		usage       = "delibase:usage:execute"
+		accountRead  = "delibase:account:read"
+		billingWrite = "delibase:billing:write"
+		usage        = "delibase:usage:execute"
 	)
 	switch procedure {
 	case
@@ -178,9 +179,11 @@ func scopes(procedure string) (string, []string, bool) {
 		realqav1connect.RealQASubmissionServiceCreateSubmissionProcedure,
 		realqav1connect.RealQASubmissionServiceCreateImageUploadProcedure,
 		realqav1connect.RealQASubmissionServiceFinalizeImageUploadProcedure,
-		realqav1connect.RealQASubmissionServiceSubmitIssueProcedure,
 		realqav1connect.RealQASubmissionServiceRebindSubmissionStorageAuthorizationProcedure:
 		return "realqa:submissions:write", []string{usage}, true
+	case realqav1connect.RealQASubmissionServiceSubmitIssueProcedure:
+		return "realqa:submissions:write",
+			[]string{usage, billingWrite}, true
 	case
 		realqav1connect.RealQASubmissionServiceDeleteImageProcedure,
 		realqav1connect.RealQASubmissionServiceDeleteSubmissionAssetsProcedure:

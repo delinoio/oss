@@ -76,12 +76,14 @@ tracker/plugin interface.
   `encoded_mib` once at 500 USD micros/MiB, persists exact stable downstream
   keys, and enforces three concurrent live upload sessions per user.
 - `SubmitIssue` accepts at most 30 new attempts/hour/user, requires a fresh
-  explicit public-image confirmation, commits the aggregate verified declared
-  bytes once (or releases a zero-verified reservation), then durably creates
-  and validates the exact submission-bound `REALQA_STORAGE` authorization
-  before composing/confirming the final body and reconciling the hidden GitHub
-  marker. Verified transfer remains committed when later provider work fails.
-  Only provider identifiers/URLs, asset state, and request/body digests persist.
+  explicit public-image confirmation and a forwarded bearer with
+  `delibase:usage:execute` plus `delibase:billing:write`, commits the aggregate
+  verified declared bytes once (or releases a zero-verified reservation), then
+  durably creates and validates the exact submission-bound `REALQA_STORAGE`
+  authorization before composing/confirming the final body and reconciling the
+  hidden GitHub marker. Verified transfer remains committed when later provider
+  work fails. Only provider identifiers/URLs, asset state, and request/body
+  digests persist.
 - Five-minute-or-upload-deadline same-origin signed PUT URLs bind one asset's
   content type, SHA-256, encoded length, dimensions, and private token digest.
   The handler never exposes the R2 S3 endpoint.
