@@ -2234,7 +2234,7 @@ var File_devhud_realqa_v1_submission_proto protoreflect.FileDescriptor
 
 const file_devhud_realqa_v1_submission_proto_rawDesc = "" +
 	"\n" +
-	"!devhud-realqa/v1/submission.proto\x12\x10devhud.realqa.v1\x1a\x1ddevhud-realqa/v1/common.proto\x1a\x1ddevhud-realqa/v1/preset.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x96\x02\n" +
+	"!devhud-realqa/v1/submission.proto\x12\x10devhud.realqa.v1\x1a\x1ddevhud-realqa/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x96\x02\n" +
 	"\x10ImageDeclaration\x12@\n" +
 	"\x0fclient_image_id\x18\x01 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\rclientImageId\x12?\n" +
 	"\n" +
@@ -2656,7 +2656,6 @@ func file_devhud_realqa_v1_submission_proto_init() {
 		return
 	}
 	file_devhud_realqa_v1_common_proto_init()
-	file_devhud_realqa_v1_preset_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

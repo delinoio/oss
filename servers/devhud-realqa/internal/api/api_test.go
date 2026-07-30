@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/authn"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/service"
 	"github.com/delinoio/oss/servers/internal/auth"
+	"github.com/delinoio/oss/servers/internal/httpserver"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"google.golang.org/protobuf/proto"
 )
@@ -81,8 +82,44 @@ func TestHealthAndBrowserOriginBoundary(t *testing.T) {
 		!strings.Contains(response.Body.String(), `"ok"`) {
 		t.Fatalf("health response = %d %q", response.Code, response.Body.String())
 	}
-	request := httptest.NewRequest(http.MethodPost,
+
+	request := httptest.NewRequest(http.MethodOptions,
+		"/devhud.realqa.v1.RealQATrackerService/GetGitHubConnection", nil)
+	request.Header.Set("Origin", httpserver.DeliDevOrigin)
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	request.Header.Set("Access-Control-Request-Headers",
+		"authorization, cache-control, content-type, x-delibase-forwarded-user-token")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent ||
+		response.Header().Get("Access-Control-Allow-Origin") !=
+			httpserver.DeliDevOrigin {
+		t.Fatalf("tracker preflight = %d %#v", response.Code, response.Header())
+	}
+	allowedHeaders := response.Header().Get("Access-Control-Allow-Headers")
+	for _, required := range []string{
+		"Cache-Control",
+		auth.ForwardedUserTokenHeader,
+	} {
+		if !strings.Contains(allowedHeaders, required) {
+			t.Fatalf("tracker preflight headers missing %q: %s",
+				required, allowedHeaders)
+		}
+	}
+
+	request = httptest.NewRequest(http.MethodOptions,
 		"/devhud.realqa.v1.RealQAPresetService/ListPresets", nil)
+	request.Header.Set("Origin", httpserver.DeliDevOrigin)
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden ||
+		response.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("preset preflight = %d %#v", response.Code, response.Header())
+	}
+
+	request = httptest.NewRequest(http.MethodPost,
+		"/devhud.realqa.v1.RealQATrackerService/GetGitHubConnection", nil)
 	request.Header.Set("Origin", "http://tauri.localhost")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

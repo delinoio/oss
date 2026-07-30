@@ -1072,6 +1072,55 @@ func (ErrorReason) EnumDescriptor() ([]byte, []int) {
 	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{15}
 }
 
+type RepositoryIssueDefinitionKind int32
+
+const (
+	RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED       RepositoryIssueDefinitionKind = 0
+	RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE RepositoryIssueDefinitionKind = 1
+	RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM        RepositoryIssueDefinitionKind = 2
+)
+
+// Enum value maps for RepositoryIssueDefinitionKind.
+var (
+	RepositoryIssueDefinitionKind_name = map[int32]string{
+		0: "REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED",
+		1: "REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE",
+		2: "REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM",
+	}
+	RepositoryIssueDefinitionKind_value = map[string]int32{
+		"REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED":       0,
+		"REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE": 1,
+		"REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM":        2,
+	}
+)
+
+func (x RepositoryIssueDefinitionKind) Enum() *RepositoryIssueDefinitionKind {
+	p := new(RepositoryIssueDefinitionKind)
+	*p = x
+	return p
+}
+
+func (x RepositoryIssueDefinitionKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RepositoryIssueDefinitionKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_realqa_v1_common_proto_enumTypes[16].Descriptor()
+}
+
+func (RepositoryIssueDefinitionKind) Type() protoreflect.EnumType {
+	return &file_devhud_realqa_v1_common_proto_enumTypes[16]
+}
+
+func (x RepositoryIssueDefinitionKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RepositoryIssueDefinitionKind.Descriptor instead.
+func (RepositoryIssueDefinitionKind) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{16}
+}
+
 // UuidV7 carries the canonical lowercase string form of a UUID version 7.
 type UuidV7 struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1678,6 +1727,82 @@ func (x *ErrorDetail) GetRetryAfter() *timestamppb.Timestamp {
 	return nil
 }
 
+type RepositoryIssueDefinitionRef struct {
+	state         protoimpl.MessageState        `protogen:"open.v1"`
+	Kind          RepositoryIssueDefinitionKind `protobuf:"varint,1,opt,name=kind,proto3,enum=devhud.realqa.v1.RepositoryIssueDefinitionKind" json:"kind,omitempty"`
+	DefinitionId  string                        `protobuf:"bytes,2,opt,name=definition_id,json=definitionId,proto3" json:"definition_id,omitempty"`
+	Name          string                        `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Path          string                        `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
+	Etag          string                        `protobuf:"bytes,5,opt,name=etag,proto3" json:"etag,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RepositoryIssueDefinitionRef) Reset() {
+	*x = RepositoryIssueDefinitionRef{}
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RepositoryIssueDefinitionRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RepositoryIssueDefinitionRef) ProtoMessage() {}
+
+func (x *RepositoryIssueDefinitionRef) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RepositoryIssueDefinitionRef.ProtoReflect.Descriptor instead.
+func (*RepositoryIssueDefinitionRef) Descriptor() ([]byte, []int) {
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RepositoryIssueDefinitionRef) GetKind() RepositoryIssueDefinitionKind {
+	if x != nil {
+		return x.Kind
+	}
+	return RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED
+}
+
+func (x *RepositoryIssueDefinitionRef) GetDefinitionId() string {
+	if x != nil {
+		return x.DefinitionId
+	}
+	return ""
+}
+
+func (x *RepositoryIssueDefinitionRef) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RepositoryIssueDefinitionRef) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *RepositoryIssueDefinitionRef) GetEtag() string {
+	if x != nil {
+		return x.Etag
+	}
+	return ""
+}
+
 type GitHubRepositoryRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RepositoryId  string                 `protobuf:"bytes,1,opt,name=repository_id,json=repositoryId,proto3" json:"repository_id,omitempty"`
@@ -1689,7 +1814,7 @@ type GitHubRepositoryRef struct {
 
 func (x *GitHubRepositoryRef) Reset() {
 	*x = GitHubRepositoryRef{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[10]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1701,7 +1826,7 @@ func (x *GitHubRepositoryRef) String() string {
 func (*GitHubRepositoryRef) ProtoMessage() {}
 
 func (x *GitHubRepositoryRef) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[10]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1714,7 +1839,7 @@ func (x *GitHubRepositoryRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubRepositoryRef.ProtoReflect.Descriptor instead.
 func (*GitHubRepositoryRef) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{10}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GitHubRepositoryRef) GetRepositoryId() string {
@@ -1749,7 +1874,7 @@ type TrackerDestination struct {
 
 func (x *TrackerDestination) Reset() {
 	*x = TrackerDestination{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[11]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1761,7 +1886,7 @@ func (x *TrackerDestination) String() string {
 func (*TrackerDestination) ProtoMessage() {}
 
 func (x *TrackerDestination) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[11]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1774,7 +1899,7 @@ func (x *TrackerDestination) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrackerDestination.ProtoReflect.Descriptor instead.
 func (*TrackerDestination) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{11}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TrackerDestination) GetTracker() TrackerKind {
@@ -1808,7 +1933,7 @@ type GitHubProviderExtension struct {
 
 func (x *GitHubProviderExtension) Reset() {
 	*x = GitHubProviderExtension{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[12]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1820,7 +1945,7 @@ func (x *GitHubProviderExtension) String() string {
 func (*GitHubProviderExtension) ProtoMessage() {}
 
 func (x *GitHubProviderExtension) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[12]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1833,7 +1958,7 @@ func (x *GitHubProviderExtension) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubProviderExtension.ProtoReflect.Descriptor instead.
 func (*GitHubProviderExtension) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{12}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GitHubProviderExtension) GetMilestoneNumber() int64 {
@@ -1864,7 +1989,7 @@ type ProviderExtension struct {
 
 func (x *ProviderExtension) Reset() {
 	*x = ProviderExtension{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[13]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1876,7 +2001,7 @@ func (x *ProviderExtension) String() string {
 func (*ProviderExtension) ProtoMessage() {}
 
 func (x *ProviderExtension) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[13]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1889,7 +2014,7 @@ func (x *ProviderExtension) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderExtension.ProtoReflect.Descriptor instead.
 func (*ProviderExtension) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{13}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ProviderExtension) GetProvider() isProviderExtension_Provider {
@@ -1962,7 +2087,13 @@ const file_devhud_realqa_v1_common_proto_rawDesc = "" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12E\n" +
 	"\x10current_revision\x18\x04 \x01(\v2\x1a.devhud.realqa.v1.RevisionR\x0fcurrentRevision\x12;\n" +
 	"\vretry_after\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"retryAfter\"d\n" +
+	"retryAfter\"\xc4\x01\n" +
+	"\x1cRepositoryIssueDefinitionRef\x12C\n" +
+	"\x04kind\x18\x01 \x01(\x0e2/.devhud.realqa.v1.RepositoryIssueDefinitionKindR\x04kind\x12#\n" +
+	"\rdefinition_id\x18\x02 \x01(\tR\fdefinitionId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
+	"\x04path\x18\x04 \x01(\tR\x04path\x12\x12\n" +
+	"\x04etag\x18\x05 \x01(\tR\x04etag\"d\n" +
 	"\x13GitHubRepositoryRef\x12#\n" +
 	"\rrepository_id\x18\x01 \x01(\tR\frepositoryId\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -2131,7 +2262,11 @@ const file_devhud_realqa_v1_common_proto_rawDesc = "" +
 	"!ERROR_REASON_DELETION_IN_PROGRESS\x10&\x12\x1c\n" +
 	"\x18ERROR_REASON_URL_INVALID\x10'\x12*\n" +
 	"&ERROR_REASON_URL_CREDENTIALS_FORBIDDEN\x10(\x12\x1d\n" +
-	"\x19ERROR_REASON_RULE_INVALID\x10)BOZMgithub.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1;realqav1b\x06proto3"
+	"\x19ERROR_REASON_RULE_INVALID\x10)*\xba\x01\n" +
+	"\x1dRepositoryIssueDefinitionKind\x120\n" +
+	",REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED\x10\x00\x126\n" +
+	"2REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE\x10\x01\x12/\n" +
+	"+REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM\x10\x02BOZMgithub.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1;realqav1b\x06proto3"
 
 var (
 	file_devhud_realqa_v1_common_proto_rawDescOnce sync.Once
@@ -2145,69 +2280,72 @@ func file_devhud_realqa_v1_common_proto_rawDescGZIP() []byte {
 	return file_devhud_realqa_v1_common_proto_rawDescData
 }
 
-var file_devhud_realqa_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 16)
-var file_devhud_realqa_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_devhud_realqa_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 17)
+var file_devhud_realqa_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_devhud_realqa_v1_common_proto_goTypes = []any{
-	(IdempotentOperation)(0),        // 0: devhud.realqa.v1.IdempotentOperation
-	(RealQALimit)(0),                // 1: devhud.realqa.v1.RealQALimit
-	(OwnerScopeKind)(0),             // 2: devhud.realqa.v1.OwnerScopeKind
-	(CaptureMode)(0),                // 3: devhud.realqa.v1.CaptureMode
-	(SelectorMode)(0),               // 4: devhud.realqa.v1.SelectorMode
-	(TrackerKind)(0),                // 5: devhud.realqa.v1.TrackerKind
-	(SubmissionState)(0),            // 6: devhud.realqa.v1.SubmissionState
-	(StorageAuthorizationState)(0),  // 7: devhud.realqa.v1.StorageAuthorizationState
-	(StorageRecoveryReason)(0),      // 8: devhud.realqa.v1.StorageRecoveryReason
-	(StorageRecoveryAction)(0),      // 9: devhud.realqa.v1.StorageRecoveryAction
-	(StorageNotificationState)(0),   // 10: devhud.realqa.v1.StorageNotificationState
-	(UploadState)(0),                // 11: devhud.realqa.v1.UploadState
-	(FailureClass)(0),               // 12: devhud.realqa.v1.FailureClass
-	(AssetState)(0),                 // 13: devhud.realqa.v1.AssetState
-	(ImageMediaType)(0),             // 14: devhud.realqa.v1.ImageMediaType
-	(ErrorReason)(0),                // 15: devhud.realqa.v1.ErrorReason
-	(*UuidV7)(nil),                  // 16: devhud.realqa.v1.UuidV7
-	(*PageRequest)(nil),             // 17: devhud.realqa.v1.PageRequest
-	(*PageResponse)(nil),            // 18: devhud.realqa.v1.PageResponse
-	(*Revision)(nil),                // 19: devhud.realqa.v1.Revision
-	(*IdempotencyKey)(nil),          // 20: devhud.realqa.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),       // 21: devhud.realqa.v1.IdempotencyResult
-	(*OwnerScope)(nil),              // 22: devhud.realqa.v1.OwnerScope
-	(*BillingScope)(nil),            // 23: devhud.realqa.v1.BillingScope
-	(*StorageBillingRecovery)(nil),  // 24: devhud.realqa.v1.StorageBillingRecovery
-	(*ErrorDetail)(nil),             // 25: devhud.realqa.v1.ErrorDetail
-	(*GitHubRepositoryRef)(nil),     // 26: devhud.realqa.v1.GitHubRepositoryRef
-	(*TrackerDestination)(nil),      // 27: devhud.realqa.v1.TrackerDestination
-	(*GitHubProviderExtension)(nil), // 28: devhud.realqa.v1.GitHubProviderExtension
-	(*ProviderExtension)(nil),       // 29: devhud.realqa.v1.ProviderExtension
-	(*timestamppb.Timestamp)(nil),   // 30: google.protobuf.Timestamp
+	(IdempotentOperation)(0),             // 0: devhud.realqa.v1.IdempotentOperation
+	(RealQALimit)(0),                     // 1: devhud.realqa.v1.RealQALimit
+	(OwnerScopeKind)(0),                  // 2: devhud.realqa.v1.OwnerScopeKind
+	(CaptureMode)(0),                     // 3: devhud.realqa.v1.CaptureMode
+	(SelectorMode)(0),                    // 4: devhud.realqa.v1.SelectorMode
+	(TrackerKind)(0),                     // 5: devhud.realqa.v1.TrackerKind
+	(SubmissionState)(0),                 // 6: devhud.realqa.v1.SubmissionState
+	(StorageAuthorizationState)(0),       // 7: devhud.realqa.v1.StorageAuthorizationState
+	(StorageRecoveryReason)(0),           // 8: devhud.realqa.v1.StorageRecoveryReason
+	(StorageRecoveryAction)(0),           // 9: devhud.realqa.v1.StorageRecoveryAction
+	(StorageNotificationState)(0),        // 10: devhud.realqa.v1.StorageNotificationState
+	(UploadState)(0),                     // 11: devhud.realqa.v1.UploadState
+	(FailureClass)(0),                    // 12: devhud.realqa.v1.FailureClass
+	(AssetState)(0),                      // 13: devhud.realqa.v1.AssetState
+	(ImageMediaType)(0),                  // 14: devhud.realqa.v1.ImageMediaType
+	(ErrorReason)(0),                     // 15: devhud.realqa.v1.ErrorReason
+	(RepositoryIssueDefinitionKind)(0),   // 16: devhud.realqa.v1.RepositoryIssueDefinitionKind
+	(*UuidV7)(nil),                       // 17: devhud.realqa.v1.UuidV7
+	(*PageRequest)(nil),                  // 18: devhud.realqa.v1.PageRequest
+	(*PageResponse)(nil),                 // 19: devhud.realqa.v1.PageResponse
+	(*Revision)(nil),                     // 20: devhud.realqa.v1.Revision
+	(*IdempotencyKey)(nil),               // 21: devhud.realqa.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),            // 22: devhud.realqa.v1.IdempotencyResult
+	(*OwnerScope)(nil),                   // 23: devhud.realqa.v1.OwnerScope
+	(*BillingScope)(nil),                 // 24: devhud.realqa.v1.BillingScope
+	(*StorageBillingRecovery)(nil),       // 25: devhud.realqa.v1.StorageBillingRecovery
+	(*ErrorDetail)(nil),                  // 26: devhud.realqa.v1.ErrorDetail
+	(*RepositoryIssueDefinitionRef)(nil), // 27: devhud.realqa.v1.RepositoryIssueDefinitionRef
+	(*GitHubRepositoryRef)(nil),          // 28: devhud.realqa.v1.GitHubRepositoryRef
+	(*TrackerDestination)(nil),           // 29: devhud.realqa.v1.TrackerDestination
+	(*GitHubProviderExtension)(nil),      // 30: devhud.realqa.v1.GitHubProviderExtension
+	(*ProviderExtension)(nil),            // 31: devhud.realqa.v1.ProviderExtension
+	(*timestamppb.Timestamp)(nil),        // 32: google.protobuf.Timestamp
 }
 var file_devhud_realqa_v1_common_proto_depIdxs = []int32{
-	16, // 0: devhud.realqa.v1.IdempotencyKey.value:type_name -> devhud.realqa.v1.UuidV7
+	17, // 0: devhud.realqa.v1.IdempotencyKey.value:type_name -> devhud.realqa.v1.UuidV7
 	0,  // 1: devhud.realqa.v1.IdempotencyResult.operation:type_name -> devhud.realqa.v1.IdempotentOperation
-	30, // 2: devhud.realqa.v1.IdempotencyResult.originally_completed_at:type_name -> google.protobuf.Timestamp
+	32, // 2: devhud.realqa.v1.IdempotencyResult.originally_completed_at:type_name -> google.protobuf.Timestamp
 	2,  // 3: devhud.realqa.v1.OwnerScope.kind:type_name -> devhud.realqa.v1.OwnerScopeKind
-	16, // 4: devhud.realqa.v1.OwnerScope.personal_account_id:type_name -> devhud.realqa.v1.UuidV7
-	16, // 5: devhud.realqa.v1.OwnerScope.organization_id:type_name -> devhud.realqa.v1.UuidV7
-	16, // 6: devhud.realqa.v1.BillingScope.organization_id:type_name -> devhud.realqa.v1.UuidV7
-	16, // 7: devhud.realqa.v1.BillingScope.team_id:type_name -> devhud.realqa.v1.UuidV7
+	17, // 4: devhud.realqa.v1.OwnerScope.personal_account_id:type_name -> devhud.realqa.v1.UuidV7
+	17, // 5: devhud.realqa.v1.OwnerScope.organization_id:type_name -> devhud.realqa.v1.UuidV7
+	17, // 6: devhud.realqa.v1.BillingScope.organization_id:type_name -> devhud.realqa.v1.UuidV7
+	17, // 7: devhud.realqa.v1.BillingScope.team_id:type_name -> devhud.realqa.v1.UuidV7
 	7,  // 8: devhud.realqa.v1.StorageBillingRecovery.authorization_state:type_name -> devhud.realqa.v1.StorageAuthorizationState
 	8,  // 9: devhud.realqa.v1.StorageBillingRecovery.reason:type_name -> devhud.realqa.v1.StorageRecoveryReason
 	9,  // 10: devhud.realqa.v1.StorageBillingRecovery.actions:type_name -> devhud.realqa.v1.StorageRecoveryAction
 	10, // 11: devhud.realqa.v1.StorageBillingRecovery.notification_state:type_name -> devhud.realqa.v1.StorageNotificationState
-	30, // 12: devhud.realqa.v1.StorageBillingRecovery.grace_started_at:type_name -> google.protobuf.Timestamp
-	30, // 13: devhud.realqa.v1.StorageBillingRecovery.grace_expires_at:type_name -> google.protobuf.Timestamp
+	32, // 12: devhud.realqa.v1.StorageBillingRecovery.grace_started_at:type_name -> google.protobuf.Timestamp
+	32, // 13: devhud.realqa.v1.StorageBillingRecovery.grace_expires_at:type_name -> google.protobuf.Timestamp
 	15, // 14: devhud.realqa.v1.ErrorDetail.reason:type_name -> devhud.realqa.v1.ErrorReason
 	12, // 15: devhud.realqa.v1.ErrorDetail.failure_class:type_name -> devhud.realqa.v1.FailureClass
-	19, // 16: devhud.realqa.v1.ErrorDetail.current_revision:type_name -> devhud.realqa.v1.Revision
-	30, // 17: devhud.realqa.v1.ErrorDetail.retry_after:type_name -> google.protobuf.Timestamp
-	5,  // 18: devhud.realqa.v1.TrackerDestination.tracker:type_name -> devhud.realqa.v1.TrackerKind
-	16, // 19: devhud.realqa.v1.TrackerDestination.installation_id:type_name -> devhud.realqa.v1.UuidV7
-	26, // 20: devhud.realqa.v1.TrackerDestination.repository:type_name -> devhud.realqa.v1.GitHubRepositoryRef
-	28, // 21: devhud.realqa.v1.ProviderExtension.github:type_name -> devhud.realqa.v1.GitHubProviderExtension
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	20, // 16: devhud.realqa.v1.ErrorDetail.current_revision:type_name -> devhud.realqa.v1.Revision
+	32, // 17: devhud.realqa.v1.ErrorDetail.retry_after:type_name -> google.protobuf.Timestamp
+	16, // 18: devhud.realqa.v1.RepositoryIssueDefinitionRef.kind:type_name -> devhud.realqa.v1.RepositoryIssueDefinitionKind
+	5,  // 19: devhud.realqa.v1.TrackerDestination.tracker:type_name -> devhud.realqa.v1.TrackerKind
+	17, // 20: devhud.realqa.v1.TrackerDestination.installation_id:type_name -> devhud.realqa.v1.UuidV7
+	28, // 21: devhud.realqa.v1.TrackerDestination.repository:type_name -> devhud.realqa.v1.GitHubRepositoryRef
+	30, // 22: devhud.realqa.v1.ProviderExtension.github:type_name -> devhud.realqa.v1.GitHubProviderExtension
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_devhud_realqa_v1_common_proto_init() }
@@ -2219,7 +2357,7 @@ func file_devhud_realqa_v1_common_proto_init() {
 		(*OwnerScope_PersonalAccountId)(nil),
 		(*OwnerScope_OrganizationId)(nil),
 	}
-	file_devhud_realqa_v1_common_proto_msgTypes[13].OneofWrappers = []any{
+	file_devhud_realqa_v1_common_proto_msgTypes[14].OneofWrappers = []any{
 		(*ProviderExtension_Github)(nil),
 	}
 	type x struct{}
@@ -2227,8 +2365,8 @@ func file_devhud_realqa_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_realqa_v1_common_proto_rawDesc), len(file_devhud_realqa_v1_common_proto_rawDesc)),
-			NumEnums:      16,
-			NumMessages:   14,
+			NumEnums:      17,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

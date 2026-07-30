@@ -101,11 +101,35 @@ for (const path of shellFiles) {
 if (shellVersion !== shellHash.digest("hex").slice(0, 12)) {
   throw new Error("Service worker version does not fingerprint shell contents.");
 }
+const javascript = (
+  await Promise.all(
+    shellFiles
+      .filter((path) => path.endsWith(".js"))
+      .map((path) => readFile(join(dist, path.slice(1)), "utf8")),
+  )
+).join("\n");
+if (
+  !javascript.includes(
+    "Ch5kZXZodWQtcmVhbHFhL3YxL3RyYWNrZXIucHJvdG8",
+  ) ||
+  javascript.includes(
+    "Ch1kZXZodWQtcmVhbHFhL3YxL3ByZXNldC5wcm90",
+  ) ||
+  javascript.includes(
+    "CiFkZXZodWQtcmVhbHFhL3YxL3N1Ym1pc3Npb24ucHJvdG8",
+  )
+) {
+  throw new Error(
+    "DeliDev must bundle only the RealQA tracker descriptor boundary.",
+  );
+}
 if (
   !serviceWorker.includes("CatalogService") ||
   !serviceWorker.includes('caches.match("/index.html")') ||
   serviceWorker.includes("BillingService") ||
   serviceWorker.includes("UsageService") ||
+  serviceWorker.includes("RealQATrackerService") ||
+  serviceWorker.includes("x-delibase-forwarded-user-token") ||
   !serviceWorker.includes('url.pathname === "/auth/devhud/callback"')
 ) {
   throw new Error("Service worker cache boundary is invalid.");

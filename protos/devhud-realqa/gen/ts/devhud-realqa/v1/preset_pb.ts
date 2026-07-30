@@ -4,7 +4,7 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { BillingScope, CaptureMode, IdempotencyKey, IdempotencyResult, OwnerScope, PageRequest, PageResponse, ProviderExtension, Revision, SelectorMode, TrackerDestination, UuidV7 } from "./common_pb.js";
+import type { BillingScope, CaptureMode, IdempotencyKey, IdempotencyResult, OwnerScope, PageRequest, PageResponse, ProviderExtension, RepositoryIssueDefinitionRef, Revision, SelectorMode, TrackerDestination, UuidV7 } from "./common_pb.js";
 import { file_devhud_realqa_v1_common } from "./common_pb.js";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
@@ -14,44 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file devhud-realqa/v1/preset.proto.
  */
 export const file_devhud_realqa_v1_preset: GenFile = /*@__PURE__*/
-  fileDesc("Ch1kZXZodWQtcmVhbHFhL3YxL3ByZXNldC5wcm90bxIQZGV2aHVkLnJlYWxxYS52MSKeAQocUmVwb3NpdG9yeUlzc3VlRGVmaW5pdGlvblJlZhI9CgRraW5kGAEgASgOMi8uZGV2aHVkLnJlYWxxYS52MS5SZXBvc2l0b3J5SXNzdWVEZWZpbml0aW9uS2luZBIVCg1kZWZpbml0aW9uX2lkGAIgASgJEgwKBG5hbWUYAyABKAkSDAoEcGF0aBgEIAEoCRIMCgRldGFnGAUgASgJIqEBCg5Qcm9jZXNzVXJsUnVsZRIpCgdydWxlX2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcSGgoSZXhhY3RfcHJvY2Vzc19uYW1lGAIgASgJEiEKGXNhZmVfd2luZG93X3RpdGxlX3BhdHRlcm4YAyABKAkSFAoMdXJsX3RlbXBsYXRlGAQgASgJEg8KB2VuYWJsZWQYBSABKAgiaAoSU2hvcnRjdXREZWZpbml0aW9uEi0KC3Nob3J0Y3V0X2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcSEwoLYWNjZWxlcmF0b3IYAiABKAkSDgoGYWN0aXZlGAMgASgIIr0GCgZQcmVzZXQSKwoJcHJlc2V0X2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcSKwoFb3duZXIYAiABKAsyHC5kZXZodWQucmVhbHFhLnYxLk93bmVyU2NvcGUSLwoHYmlsbGluZxgDIAEoCzIeLmRldmh1ZC5yZWFscWEudjEuQmlsbGluZ1Njb3BlEgwKBG5hbWUYBCABKAkSOwoUZGVmYXVsdF9jYXB0dXJlX21vZGUYBSABKA4yHS5kZXZodWQucmVhbHFhLnYxLkNhcHR1cmVNb2RlEiIKGmluY2x1ZGVfcG9pbnRlcl9ieV9kZWZhdWx0GAYgASgIEj0KFWRlZmF1bHRfc2VsZWN0b3JfbW9kZRgHIAEoDjIeLmRldmh1ZC5yZWFscWEudjEuU2VsZWN0b3JNb2RlEjkKC2Rlc3RpbmF0aW9uGAggASgLMiQuZGV2aHVkLnJlYWxxYS52MS5UcmFja2VyRGVzdGluYXRpb24SSAoQaXNzdWVfZGVmaW5pdGlvbhgJIAEoCzIuLmRldmh1ZC5yZWFscWEudjEuUmVwb3NpdG9yeUlzc3VlRGVmaW5pdGlvblJlZhIWCg5kZWZhdWx0X2xhYmVscxgKIAMoCRIZChFkZWZhdWx0X2Fzc2lnbmVlcxgLIAMoCRI/ChJwcm92aWRlcl9leHRlbnNpb24YDCABKAsyIy5kZXZodWQucmVhbHFhLnYxLlByb3ZpZGVyRXh0ZW5zaW9uEjsKEXByb2Nlc3NfdXJsX3J1bGVzGA0gAygLMiAuZGV2aHVkLnJlYWxxYS52MS5Qcm9jZXNzVXJsUnVsZRI2CghzaG9ydGN1dBgOIAEoCzIkLmRldmh1ZC5yZWFscWEudjEuU2hvcnRjdXREZWZpbml0aW9uEiwKCHJldmlzaW9uGA8gASgLMhouZGV2aHVkLnJlYWxxYS52MS5SZXZpc2lvbhIuCgpjcmVhdGVkX2F0GBAgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GBEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJuChJMaXN0UHJlc2V0c1JlcXVlc3QSKwoFb3duZXIYASABKAsyHC5kZXZodWQucmVhbHFhLnYxLk93bmVyU2NvcGUSKwoEcGFnZRgCIAEoCzIdLmRldmh1ZC5yZWFscWEudjEuUGFnZVJlcXVlc3QibgoTTGlzdFByZXNldHNSZXNwb25zZRIpCgdwcmVzZXRzGAEgAygLMhguZGV2aHVkLnJlYWxxYS52MS5QcmVzZXQSLAoEcGFnZRgCIAEoCzIeLmRldmh1ZC5yZWFscWEudjEuUGFnZVJlc3BvbnNlIj8KEEdldFByZXNldFJlcXVlc3QSKwoJcHJlc2V0X2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjciPQoRR2V0UHJlc2V0UmVzcG9uc2USKAoGcHJlc2V0GAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5QcmVzZXQixgUKE0NyZWF0ZVByZXNldFJlcXVlc3QSKwoFb3duZXIYASABKAsyHC5kZXZodWQucmVhbHFhLnYxLk93bmVyU2NvcGUSLwoHYmlsbGluZxgCIAEoCzIeLmRldmh1ZC5yZWFscWEudjEuQmlsbGluZ1Njb3BlEgwKBG5hbWUYAyABKAkSOwoUZGVmYXVsdF9jYXB0dXJlX21vZGUYBCABKA4yHS5kZXZodWQucmVhbHFhLnYxLkNhcHR1cmVNb2RlEiIKGmluY2x1ZGVfcG9pbnRlcl9ieV9kZWZhdWx0GAUgASgIEj0KFWRlZmF1bHRfc2VsZWN0b3JfbW9kZRgGIAEoDjIeLmRldmh1ZC5yZWFscWEudjEuU2VsZWN0b3JNb2RlEjkKC2Rlc3RpbmF0aW9uGAcgASgLMiQuZGV2aHVkLnJlYWxxYS52MS5UcmFja2VyRGVzdGluYXRpb24SSAoQaXNzdWVfZGVmaW5pdGlvbhgIIAEoCzIuLmRldmh1ZC5yZWFscWEudjEuUmVwb3NpdG9yeUlzc3VlRGVmaW5pdGlvblJlZhIWCg5kZWZhdWx0X2xhYmVscxgJIAMoCRIZChFkZWZhdWx0X2Fzc2lnbmVlcxgKIAMoCRI/ChJwcm92aWRlcl9leHRlbnNpb24YCyABKAsyIy5kZXZodWQucmVhbHFhLnYxLlByb3ZpZGVyRXh0ZW5zaW9uEjsKEXByb2Nlc3NfdXJsX3J1bGVzGAwgAygLMiAuZGV2aHVkLnJlYWxxYS52MS5Qcm9jZXNzVXJsUnVsZRI2CghzaG9ydGN1dBgNIAEoCzIkLmRldmh1ZC5yZWFscWEudjEuU2hvcnRjdXREZWZpbml0aW9uEjUKC2lkZW1wb3RlbmN5GA4gASgLMiAuZGV2aHVkLnJlYWxxYS52MS5JZGVtcG90ZW5jeUtleSJ6ChRDcmVhdGVQcmVzZXRSZXNwb25zZRIoCgZwcmVzZXQYASABKAsyGC5kZXZodWQucmVhbHFhLnYxLlByZXNldBI4CgtpZGVtcG90ZW5jeRgCIAEoCzIjLmRldmh1ZC5yZWFscWEudjEuSWRlbXBvdGVuY3lSZXN1bHQidgoTVXBkYXRlUHJlc2V0UmVxdWVzdBIoCgZwcmVzZXQYASABKAsyGC5kZXZodWQucmVhbHFhLnYxLlByZXNldBI1ChFleHBlY3RlZF9yZXZpc2lvbhgCIAEoCzIaLmRldmh1ZC5yZWFscWEudjEuUmV2aXNpb24iQAoUVXBkYXRlUHJlc2V0UmVzcG9uc2USKAoGcHJlc2V0GAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5QcmVzZXQieQoTRGVsZXRlUHJlc2V0UmVxdWVzdBIrCglwcmVzZXRfaWQYASABKAsyGC5kZXZodWQucmVhbHFhLnYxLlV1aWRWNxI1ChFleHBlY3RlZF9yZXZpc2lvbhgCIAEoCzIaLmRldmh1ZC5yZWFscWEudjEuUmV2aXNpb24ieQoURGVsZXRlUHJlc2V0UmVzcG9uc2USKwoJcHJlc2V0X2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcSNAoQZGVsZXRlZF9yZXZpc2lvbhgCIAEoCzIaLmRldmh1ZC5yZWFscWEudjEuUmV2aXNpb24iegoUT3duZXJGZWF0dXJlRGVsZXRpb24SKwoFb3duZXIYASABKAsyHC5kZXZodWQucmVhbHFhLnYxLk93bmVyU2NvcGUSNQoLaWRlbXBvdGVuY3kYAiABKAsyIC5kZXZodWQucmVhbHFhLnYxLklkZW1wb3RlbmN5S2V5IoMBCiBEZWxpYmFzZUFjY291bnRMaWZlY3ljbGVEZWxldGlvbhIsCgphY2NvdW50X2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcSMQoPZGVsZXRpb25fam9iX2lkGAIgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcijQEKJURlbGliYXNlT3JnYW5pemF0aW9uTGlmZWN5Y2xlRGVsZXRpb24SMQoPb3JnYW5pemF0aW9uX2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcSMQoPZGVsZXRpb25fam9iX2lkGAIgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjci6AIKGERlbGV0ZUZlYXR1cmVEYXRhUmVxdWVzdBJCCgx0cmlnZ2VyX2tpbmQYASABKA4yLC5kZXZodWQucmVhbHFhLnYxLkZlYXR1cmVEZWxldGlvblRyaWdnZXJLaW5kEj8KDW93bmVyX3JlcXVlc3QYAiABKAsyJi5kZXZodWQucmVhbHFhLnYxLk93bmVyRmVhdHVyZURlbGV0aW9uSAASWAoaZGVsaWJhc2VfYWNjb3VudF9saWZlY3ljbGUYAyABKAsyMi5kZXZodWQucmVhbHFhLnYxLkRlbGliYXNlQWNjb3VudExpZmVjeWNsZURlbGV0aW9uSAASYgofZGVsaWJhc2Vfb3JnYW5pemF0aW9uX2xpZmVjeWNsZRgEIAEoCzI3LmRldmh1ZC5yZWFscWEudjEuRGVsaWJhc2VPcmdhbml6YXRpb25MaWZlY3ljbGVEZWxldGlvbkgAQgkKB3RyaWdnZXIisgEKGURlbGV0ZUZlYXR1cmVEYXRhUmVzcG9uc2USMQoPZGVsZXRpb25fam9iX2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcSEAoIYWNjZXB0ZWQYAiABKAgSFgoOYWxyZWFkeV9hYnNlbnQYAyABKAgSOAoLaWRlbXBvdGVuY3kYBCABKAsyIy5kZXZodWQucmVhbHFhLnYxLklkZW1wb3RlbmN5UmVzdWx0KroBCh1SZXBvc2l0b3J5SXNzdWVEZWZpbml0aW9uS2luZBIwCixSRVBPU0lUT1JZX0lTU1VFX0RFRklOSVRJT05fS0lORF9VTlNQRUNJRklFRBAAEjYKMlJFUE9TSVRPUllfSVNTVUVfREVGSU5JVElPTl9LSU5EX01BUktET1dOX1RFTVBMQVRFEAESLworUkVQT1NJVE9SWV9JU1NVRV9ERUZJTklUSU9OX0tJTkRfSVNTVUVfRk9STRACKv0BChpGZWF0dXJlRGVsZXRpb25UcmlnZ2VyS2luZBItCilGRUFUVVJFX0RFTEVUSU9OX1RSSUdHRVJfS0lORF9VTlNQRUNJRklFRBAAEi8KK0ZFQVRVUkVfREVMRVRJT05fVFJJR0dFUl9LSU5EX09XTkVSX1JFUVVFU1QQARI8CjhGRUFUVVJFX0RFTEVUSU9OX1RSSUdHRVJfS0lORF9ERUxJQkFTRV9BQ0NPVU5UX0xJRkVDWUNMRRACEkEKPUZFQVRVUkVfREVMRVRJT05fVFJJR0dFUl9LSU5EX0RFTElCQVNFX09SR0FOSVpBVElPTl9MSUZFQ1lDTEUQAzLSBAoTUmVhbFFBUHJlc2V0U2VydmljZRJaCgtMaXN0UHJlc2V0cxIkLmRldmh1ZC5yZWFscWEudjEuTGlzdFByZXNldHNSZXF1ZXN0GiUuZGV2aHVkLnJlYWxxYS52MS5MaXN0UHJlc2V0c1Jlc3BvbnNlElQKCUdldFByZXNldBIiLmRldmh1ZC5yZWFscWEudjEuR2V0UHJlc2V0UmVxdWVzdBojLmRldmh1ZC5yZWFscWEudjEuR2V0UHJlc2V0UmVzcG9uc2USXQoMQ3JlYXRlUHJlc2V0EiUuZGV2aHVkLnJlYWxxYS52MS5DcmVhdGVQcmVzZXRSZXF1ZXN0GiYuZGV2aHVkLnJlYWxxYS52MS5DcmVhdGVQcmVzZXRSZXNwb25zZRJdCgxVcGRhdGVQcmVzZXQSJS5kZXZodWQucmVhbHFhLnYxLlVwZGF0ZVByZXNldFJlcXVlc3QaJi5kZXZodWQucmVhbHFhLnYxLlVwZGF0ZVByZXNldFJlc3BvbnNlEl0KDERlbGV0ZVByZXNldBIlLmRldmh1ZC5yZWFscWEudjEuRGVsZXRlUHJlc2V0UmVxdWVzdBomLmRldmh1ZC5yZWFscWEudjEuRGVsZXRlUHJlc2V0UmVzcG9uc2USbAoRRGVsZXRlRmVhdHVyZURhdGESKi5kZXZodWQucmVhbHFhLnYxLkRlbGV0ZUZlYXR1cmVEYXRhUmVxdWVzdBorLmRldmh1ZC5yZWFscWEudjEuRGVsZXRlRmVhdHVyZURhdGFSZXNwb25zZUJPWk1naXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZGV2aHVkLXJlYWxxYS9nZW4vZ28vZGV2aHVkLXJlYWxxYS92MTtyZWFscWF2MWIGcHJvdG8z", [file_devhud_realqa_v1_common, file_google_protobuf_timestamp]);
-
-/**
- * @generated from message devhud.realqa.v1.RepositoryIssueDefinitionRef
- */
-export type RepositoryIssueDefinitionRef = Message<"devhud.realqa.v1.RepositoryIssueDefinitionRef"> & {
-  /**
-   * @generated from field: devhud.realqa.v1.RepositoryIssueDefinitionKind kind = 1;
-   */
-  kind: RepositoryIssueDefinitionKind;
-
-  /**
-   * @generated from field: string definition_id = 2;
-   */
-  definitionId: string;
-
-  /**
-   * @generated from field: string name = 3;
-   */
-  name: string;
-
-  /**
-   * @generated from field: string path = 4;
-   */
-  path: string;
-
-  /**
-   * @generated from field: string etag = 5;
-   */
-  etag: string;
-};
-
-/**
- * Describes the message devhud.realqa.v1.RepositoryIssueDefinitionRef.
- * Use `create(RepositoryIssueDefinitionRefSchema)` to create a new message.
- */
-export const RepositoryIssueDefinitionRefSchema: GenMessage<RepositoryIssueDefinitionRef> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 0);
+  fileDesc("Ch1kZXZodWQtcmVhbHFhL3YxL3ByZXNldC5wcm90bxIQZGV2aHVkLnJlYWxxYS52MSKhAQoOUHJvY2Vzc1VybFJ1bGUSKQoHcnVsZV9pZBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3EhoKEmV4YWN0X3Byb2Nlc3NfbmFtZRgCIAEoCRIhChlzYWZlX3dpbmRvd190aXRsZV9wYXR0ZXJuGAMgASgJEhQKDHVybF90ZW1wbGF0ZRgEIAEoCRIPCgdlbmFibGVkGAUgASgIImgKElNob3J0Y3V0RGVmaW5pdGlvbhItCgtzaG9ydGN1dF9pZBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3EhMKC2FjY2VsZXJhdG9yGAIgASgJEg4KBmFjdGl2ZRgDIAEoCCK9BgoGUHJlc2V0EisKCXByZXNldF9pZBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3EisKBW93bmVyGAIgASgLMhwuZGV2aHVkLnJlYWxxYS52MS5Pd25lclNjb3BlEi8KB2JpbGxpbmcYAyABKAsyHi5kZXZodWQucmVhbHFhLnYxLkJpbGxpbmdTY29wZRIMCgRuYW1lGAQgASgJEjsKFGRlZmF1bHRfY2FwdHVyZV9tb2RlGAUgASgOMh0uZGV2aHVkLnJlYWxxYS52MS5DYXB0dXJlTW9kZRIiChppbmNsdWRlX3BvaW50ZXJfYnlfZGVmYXVsdBgGIAEoCBI9ChVkZWZhdWx0X3NlbGVjdG9yX21vZGUYByABKA4yHi5kZXZodWQucmVhbHFhLnYxLlNlbGVjdG9yTW9kZRI5CgtkZXN0aW5hdGlvbhgIIAEoCzIkLmRldmh1ZC5yZWFscWEudjEuVHJhY2tlckRlc3RpbmF0aW9uEkgKEGlzc3VlX2RlZmluaXRpb24YCSABKAsyLi5kZXZodWQucmVhbHFhLnYxLlJlcG9zaXRvcnlJc3N1ZURlZmluaXRpb25SZWYSFgoOZGVmYXVsdF9sYWJlbHMYCiADKAkSGQoRZGVmYXVsdF9hc3NpZ25lZXMYCyADKAkSPwoScHJvdmlkZXJfZXh0ZW5zaW9uGAwgASgLMiMuZGV2aHVkLnJlYWxxYS52MS5Qcm92aWRlckV4dGVuc2lvbhI7ChFwcm9jZXNzX3VybF9ydWxlcxgNIAMoCzIgLmRldmh1ZC5yZWFscWEudjEuUHJvY2Vzc1VybFJ1bGUSNgoIc2hvcnRjdXQYDiABKAsyJC5kZXZodWQucmVhbHFhLnYxLlNob3J0Y3V0RGVmaW5pdGlvbhIsCghyZXZpc2lvbhgPIAEoCzIaLmRldmh1ZC5yZWFscWEudjEuUmV2aXNpb24SLgoKY3JlYXRlZF9hdBgQIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgRIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAibgoSTGlzdFByZXNldHNSZXF1ZXN0EisKBW93bmVyGAEgASgLMhwuZGV2aHVkLnJlYWxxYS52MS5Pd25lclNjb3BlEisKBHBhZ2UYAiABKAsyHS5kZXZodWQucmVhbHFhLnYxLlBhZ2VSZXF1ZXN0Im4KE0xpc3RQcmVzZXRzUmVzcG9uc2USKQoHcHJlc2V0cxgBIAMoCzIYLmRldmh1ZC5yZWFscWEudjEuUHJlc2V0EiwKBHBhZ2UYAiABKAsyHi5kZXZodWQucmVhbHFhLnYxLlBhZ2VSZXNwb25zZSI/ChBHZXRQcmVzZXRSZXF1ZXN0EisKCXByZXNldF9pZBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3Ij0KEUdldFByZXNldFJlc3BvbnNlEigKBnByZXNldBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuUHJlc2V0IsYFChNDcmVhdGVQcmVzZXRSZXF1ZXN0EisKBW93bmVyGAEgASgLMhwuZGV2aHVkLnJlYWxxYS52MS5Pd25lclNjb3BlEi8KB2JpbGxpbmcYAiABKAsyHi5kZXZodWQucmVhbHFhLnYxLkJpbGxpbmdTY29wZRIMCgRuYW1lGAMgASgJEjsKFGRlZmF1bHRfY2FwdHVyZV9tb2RlGAQgASgOMh0uZGV2aHVkLnJlYWxxYS52MS5DYXB0dXJlTW9kZRIiChppbmNsdWRlX3BvaW50ZXJfYnlfZGVmYXVsdBgFIAEoCBI9ChVkZWZhdWx0X3NlbGVjdG9yX21vZGUYBiABKA4yHi5kZXZodWQucmVhbHFhLnYxLlNlbGVjdG9yTW9kZRI5CgtkZXN0aW5hdGlvbhgHIAEoCzIkLmRldmh1ZC5yZWFscWEudjEuVHJhY2tlckRlc3RpbmF0aW9uEkgKEGlzc3VlX2RlZmluaXRpb24YCCABKAsyLi5kZXZodWQucmVhbHFhLnYxLlJlcG9zaXRvcnlJc3N1ZURlZmluaXRpb25SZWYSFgoOZGVmYXVsdF9sYWJlbHMYCSADKAkSGQoRZGVmYXVsdF9hc3NpZ25lZXMYCiADKAkSPwoScHJvdmlkZXJfZXh0ZW5zaW9uGAsgASgLMiMuZGV2aHVkLnJlYWxxYS52MS5Qcm92aWRlckV4dGVuc2lvbhI7ChFwcm9jZXNzX3VybF9ydWxlcxgMIAMoCzIgLmRldmh1ZC5yZWFscWEudjEuUHJvY2Vzc1VybFJ1bGUSNgoIc2hvcnRjdXQYDSABKAsyJC5kZXZodWQucmVhbHFhLnYxLlNob3J0Y3V0RGVmaW5pdGlvbhI1CgtpZGVtcG90ZW5jeRgOIAEoCzIgLmRldmh1ZC5yZWFscWEudjEuSWRlbXBvdGVuY3lLZXkiegoUQ3JlYXRlUHJlc2V0UmVzcG9uc2USKAoGcHJlc2V0GAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5QcmVzZXQSOAoLaWRlbXBvdGVuY3kYAiABKAsyIy5kZXZodWQucmVhbHFhLnYxLklkZW1wb3RlbmN5UmVzdWx0InYKE1VwZGF0ZVByZXNldFJlcXVlc3QSKAoGcHJlc2V0GAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5QcmVzZXQSNQoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAsyGi5kZXZodWQucmVhbHFhLnYxLlJldmlzaW9uIkAKFFVwZGF0ZVByZXNldFJlc3BvbnNlEigKBnByZXNldBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuUHJlc2V0InkKE0RlbGV0ZVByZXNldFJlcXVlc3QSKwoJcHJlc2V0X2lkGAEgASgLMhguZGV2aHVkLnJlYWxxYS52MS5VdWlkVjcSNQoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAsyGi5kZXZodWQucmVhbHFhLnYxLlJldmlzaW9uInkKFERlbGV0ZVByZXNldFJlc3BvbnNlEisKCXByZXNldF9pZBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3EjQKEGRlbGV0ZWRfcmV2aXNpb24YAiABKAsyGi5kZXZodWQucmVhbHFhLnYxLlJldmlzaW9uInoKFE93bmVyRmVhdHVyZURlbGV0aW9uEisKBW93bmVyGAEgASgLMhwuZGV2aHVkLnJlYWxxYS52MS5Pd25lclNjb3BlEjUKC2lkZW1wb3RlbmN5GAIgASgLMiAuZGV2aHVkLnJlYWxxYS52MS5JZGVtcG90ZW5jeUtleSKDAQogRGVsaWJhc2VBY2NvdW50TGlmZWN5Y2xlRGVsZXRpb24SLAoKYWNjb3VudF9pZBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3EjEKD2RlbGV0aW9uX2pvYl9pZBgCIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3Io0BCiVEZWxpYmFzZU9yZ2FuaXphdGlvbkxpZmVjeWNsZURlbGV0aW9uEjEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3EjEKD2RlbGV0aW9uX2pvYl9pZBgCIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3IugCChhEZWxldGVGZWF0dXJlRGF0YVJlcXVlc3QSQgoMdHJpZ2dlcl9raW5kGAEgASgOMiwuZGV2aHVkLnJlYWxxYS52MS5GZWF0dXJlRGVsZXRpb25UcmlnZ2VyS2luZBI/Cg1vd25lcl9yZXF1ZXN0GAIgASgLMiYuZGV2aHVkLnJlYWxxYS52MS5Pd25lckZlYXR1cmVEZWxldGlvbkgAElgKGmRlbGliYXNlX2FjY291bnRfbGlmZWN5Y2xlGAMgASgLMjIuZGV2aHVkLnJlYWxxYS52MS5EZWxpYmFzZUFjY291bnRMaWZlY3ljbGVEZWxldGlvbkgAEmIKH2RlbGliYXNlX29yZ2FuaXphdGlvbl9saWZlY3ljbGUYBCABKAsyNy5kZXZodWQucmVhbHFhLnYxLkRlbGliYXNlT3JnYW5pemF0aW9uTGlmZWN5Y2xlRGVsZXRpb25IAEIJCgd0cmlnZ2VyIrIBChlEZWxldGVGZWF0dXJlRGF0YVJlc3BvbnNlEjEKD2RlbGV0aW9uX2pvYl9pZBgBIAEoCzIYLmRldmh1ZC5yZWFscWEudjEuVXVpZFY3EhAKCGFjY2VwdGVkGAIgASgIEhYKDmFscmVhZHlfYWJzZW50GAMgASgIEjgKC2lkZW1wb3RlbmN5GAQgASgLMiMuZGV2aHVkLnJlYWxxYS52MS5JZGVtcG90ZW5jeVJlc3VsdCr9AQoaRmVhdHVyZURlbGV0aW9uVHJpZ2dlcktpbmQSLQopRkVBVFVSRV9ERUxFVElPTl9UUklHR0VSX0tJTkRfVU5TUEVDSUZJRUQQABIvCitGRUFUVVJFX0RFTEVUSU9OX1RSSUdHRVJfS0lORF9PV05FUl9SRVFVRVNUEAESPAo4RkVBVFVSRV9ERUxFVElPTl9UUklHR0VSX0tJTkRfREVMSUJBU0VfQUNDT1VOVF9MSUZFQ1lDTEUQAhJBCj1GRUFUVVJFX0RFTEVUSU9OX1RSSUdHRVJfS0lORF9ERUxJQkFTRV9PUkdBTklaQVRJT05fTElGRUNZQ0xFEAMy0gQKE1JlYWxRQVByZXNldFNlcnZpY2USWgoLTGlzdFByZXNldHMSJC5kZXZodWQucmVhbHFhLnYxLkxpc3RQcmVzZXRzUmVxdWVzdBolLmRldmh1ZC5yZWFscWEudjEuTGlzdFByZXNldHNSZXNwb25zZRJUCglHZXRQcmVzZXQSIi5kZXZodWQucmVhbHFhLnYxLkdldFByZXNldFJlcXVlc3QaIy5kZXZodWQucmVhbHFhLnYxLkdldFByZXNldFJlc3BvbnNlEl0KDENyZWF0ZVByZXNldBIlLmRldmh1ZC5yZWFscWEudjEuQ3JlYXRlUHJlc2V0UmVxdWVzdBomLmRldmh1ZC5yZWFscWEudjEuQ3JlYXRlUHJlc2V0UmVzcG9uc2USXQoMVXBkYXRlUHJlc2V0EiUuZGV2aHVkLnJlYWxxYS52MS5VcGRhdGVQcmVzZXRSZXF1ZXN0GiYuZGV2aHVkLnJlYWxxYS52MS5VcGRhdGVQcmVzZXRSZXNwb25zZRJdCgxEZWxldGVQcmVzZXQSJS5kZXZodWQucmVhbHFhLnYxLkRlbGV0ZVByZXNldFJlcXVlc3QaJi5kZXZodWQucmVhbHFhLnYxLkRlbGV0ZVByZXNldFJlc3BvbnNlEmwKEURlbGV0ZUZlYXR1cmVEYXRhEiouZGV2aHVkLnJlYWxxYS52MS5EZWxldGVGZWF0dXJlRGF0YVJlcXVlc3QaKy5kZXZodWQucmVhbHFhLnYxLkRlbGV0ZUZlYXR1cmVEYXRhUmVzcG9uc2VCT1pNZ2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2Rldmh1ZC1yZWFscWEvZ2VuL2dvL2Rldmh1ZC1yZWFscWEvdjE7cmVhbHFhdjFiBnByb3RvMw", [file_devhud_realqa_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message devhud.realqa.v1.ProcessUrlRule
@@ -91,7 +54,7 @@ export type ProcessUrlRule = Message<"devhud.realqa.v1.ProcessUrlRule"> & {
  * Use `create(ProcessUrlRuleSchema)` to create a new message.
  */
 export const ProcessUrlRuleSchema: GenMessage<ProcessUrlRule> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 1);
+  messageDesc(file_devhud_realqa_v1_preset, 0);
 
 /**
  * @generated from message devhud.realqa.v1.ShortcutDefinition
@@ -118,7 +81,7 @@ export type ShortcutDefinition = Message<"devhud.realqa.v1.ShortcutDefinition"> 
  * Use `create(ShortcutDefinitionSchema)` to create a new message.
  */
 export const ShortcutDefinitionSchema: GenMessage<ShortcutDefinition> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 2);
+  messageDesc(file_devhud_realqa_v1_preset, 1);
 
 /**
  * @generated from message devhud.realqa.v1.Preset
@@ -217,7 +180,7 @@ export type Preset = Message<"devhud.realqa.v1.Preset"> & {
  * Use `create(PresetSchema)` to create a new message.
  */
 export const PresetSchema: GenMessage<Preset> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 3);
+  messageDesc(file_devhud_realqa_v1_preset, 2);
 
 /**
  * @generated from message devhud.realqa.v1.ListPresetsRequest
@@ -239,7 +202,7 @@ export type ListPresetsRequest = Message<"devhud.realqa.v1.ListPresetsRequest"> 
  * Use `create(ListPresetsRequestSchema)` to create a new message.
  */
 export const ListPresetsRequestSchema: GenMessage<ListPresetsRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 4);
+  messageDesc(file_devhud_realqa_v1_preset, 3);
 
 /**
  * @generated from message devhud.realqa.v1.ListPresetsResponse
@@ -261,7 +224,7 @@ export type ListPresetsResponse = Message<"devhud.realqa.v1.ListPresetsResponse"
  * Use `create(ListPresetsResponseSchema)` to create a new message.
  */
 export const ListPresetsResponseSchema: GenMessage<ListPresetsResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 5);
+  messageDesc(file_devhud_realqa_v1_preset, 4);
 
 /**
  * @generated from message devhud.realqa.v1.GetPresetRequest
@@ -278,7 +241,7 @@ export type GetPresetRequest = Message<"devhud.realqa.v1.GetPresetRequest"> & {
  * Use `create(GetPresetRequestSchema)` to create a new message.
  */
 export const GetPresetRequestSchema: GenMessage<GetPresetRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 6);
+  messageDesc(file_devhud_realqa_v1_preset, 5);
 
 /**
  * @generated from message devhud.realqa.v1.GetPresetResponse
@@ -295,7 +258,7 @@ export type GetPresetResponse = Message<"devhud.realqa.v1.GetPresetResponse"> & 
  * Use `create(GetPresetResponseSchema)` to create a new message.
  */
 export const GetPresetResponseSchema: GenMessage<GetPresetResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 7);
+  messageDesc(file_devhud_realqa_v1_preset, 6);
 
 /**
  * @generated from message devhud.realqa.v1.CreatePresetRequest
@@ -377,7 +340,7 @@ export type CreatePresetRequest = Message<"devhud.realqa.v1.CreatePresetRequest"
  * Use `create(CreatePresetRequestSchema)` to create a new message.
  */
 export const CreatePresetRequestSchema: GenMessage<CreatePresetRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 8);
+  messageDesc(file_devhud_realqa_v1_preset, 7);
 
 /**
  * @generated from message devhud.realqa.v1.CreatePresetResponse
@@ -399,7 +362,7 @@ export type CreatePresetResponse = Message<"devhud.realqa.v1.CreatePresetRespons
  * Use `create(CreatePresetResponseSchema)` to create a new message.
  */
 export const CreatePresetResponseSchema: GenMessage<CreatePresetResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 9);
+  messageDesc(file_devhud_realqa_v1_preset, 8);
 
 /**
  * @generated from message devhud.realqa.v1.UpdatePresetRequest
@@ -421,7 +384,7 @@ export type UpdatePresetRequest = Message<"devhud.realqa.v1.UpdatePresetRequest"
  * Use `create(UpdatePresetRequestSchema)` to create a new message.
  */
 export const UpdatePresetRequestSchema: GenMessage<UpdatePresetRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 10);
+  messageDesc(file_devhud_realqa_v1_preset, 9);
 
 /**
  * @generated from message devhud.realqa.v1.UpdatePresetResponse
@@ -438,7 +401,7 @@ export type UpdatePresetResponse = Message<"devhud.realqa.v1.UpdatePresetRespons
  * Use `create(UpdatePresetResponseSchema)` to create a new message.
  */
 export const UpdatePresetResponseSchema: GenMessage<UpdatePresetResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 11);
+  messageDesc(file_devhud_realqa_v1_preset, 10);
 
 /**
  * @generated from message devhud.realqa.v1.DeletePresetRequest
@@ -460,7 +423,7 @@ export type DeletePresetRequest = Message<"devhud.realqa.v1.DeletePresetRequest"
  * Use `create(DeletePresetRequestSchema)` to create a new message.
  */
 export const DeletePresetRequestSchema: GenMessage<DeletePresetRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 12);
+  messageDesc(file_devhud_realqa_v1_preset, 11);
 
 /**
  * @generated from message devhud.realqa.v1.DeletePresetResponse
@@ -482,7 +445,7 @@ export type DeletePresetResponse = Message<"devhud.realqa.v1.DeletePresetRespons
  * Use `create(DeletePresetResponseSchema)` to create a new message.
  */
 export const DeletePresetResponseSchema: GenMessage<DeletePresetResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 13);
+  messageDesc(file_devhud_realqa_v1_preset, 12);
 
 /**
  * @generated from message devhud.realqa.v1.OwnerFeatureDeletion
@@ -504,7 +467,7 @@ export type OwnerFeatureDeletion = Message<"devhud.realqa.v1.OwnerFeatureDeletio
  * Use `create(OwnerFeatureDeletionSchema)` to create a new message.
  */
 export const OwnerFeatureDeletionSchema: GenMessage<OwnerFeatureDeletion> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 14);
+  messageDesc(file_devhud_realqa_v1_preset, 13);
 
 /**
  * @generated from message devhud.realqa.v1.DelibaseAccountLifecycleDeletion
@@ -526,7 +489,7 @@ export type DelibaseAccountLifecycleDeletion = Message<"devhud.realqa.v1.Delibas
  * Use `create(DelibaseAccountLifecycleDeletionSchema)` to create a new message.
  */
 export const DelibaseAccountLifecycleDeletionSchema: GenMessage<DelibaseAccountLifecycleDeletion> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 15);
+  messageDesc(file_devhud_realqa_v1_preset, 14);
 
 /**
  * @generated from message devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion
@@ -548,7 +511,7 @@ export type DelibaseOrganizationLifecycleDeletion = Message<"devhud.realqa.v1.De
  * Use `create(DelibaseOrganizationLifecycleDeletionSchema)` to create a new message.
  */
 export const DelibaseOrganizationLifecycleDeletionSchema: GenMessage<DelibaseOrganizationLifecycleDeletion> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 16);
+  messageDesc(file_devhud_realqa_v1_preset, 15);
 
 /**
  * @generated from message devhud.realqa.v1.DeleteFeatureDataRequest
@@ -588,7 +551,7 @@ export type DeleteFeatureDataRequest = Message<"devhud.realqa.v1.DeleteFeatureDa
  * Use `create(DeleteFeatureDataRequestSchema)` to create a new message.
  */
 export const DeleteFeatureDataRequestSchema: GenMessage<DeleteFeatureDataRequest> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 17);
+  messageDesc(file_devhud_realqa_v1_preset, 16);
 
 /**
  * @generated from message devhud.realqa.v1.DeleteFeatureDataResponse
@@ -620,33 +583,7 @@ export type DeleteFeatureDataResponse = Message<"devhud.realqa.v1.DeleteFeatureD
  * Use `create(DeleteFeatureDataResponseSchema)` to create a new message.
  */
 export const DeleteFeatureDataResponseSchema: GenMessage<DeleteFeatureDataResponse> = /*@__PURE__*/
-  messageDesc(file_devhud_realqa_v1_preset, 18);
-
-/**
- * @generated from enum devhud.realqa.v1.RepositoryIssueDefinitionKind
- */
-export enum RepositoryIssueDefinitionKind {
-  /**
-   * @generated from enum value: REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE = 1;
-   */
-  MARKDOWN_TEMPLATE = 1,
-
-  /**
-   * @generated from enum value: REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM = 2;
-   */
-  ISSUE_FORM = 2,
-}
-
-/**
- * Describes the enum devhud.realqa.v1.RepositoryIssueDefinitionKind.
- */
-export const RepositoryIssueDefinitionKindSchema: GenEnum<RepositoryIssueDefinitionKind> = /*@__PURE__*/
-  enumDesc(file_devhud_realqa_v1_preset, 0);
+  messageDesc(file_devhud_realqa_v1_preset, 17);
 
 /**
  * @generated from enum devhud.realqa.v1.FeatureDeletionTriggerKind
@@ -677,7 +614,7 @@ export enum FeatureDeletionTriggerKind {
  * Describes the enum devhud.realqa.v1.FeatureDeletionTriggerKind.
  */
 export const FeatureDeletionTriggerKindSchema: GenEnum<FeatureDeletionTriggerKind> = /*@__PURE__*/
-  enumDesc(file_devhud_realqa_v1_preset, 1);
+  enumDesc(file_devhud_realqa_v1_preset, 0);
 
 /**
  * @generated from service devhud.realqa.v1.RealQAPresetService
