@@ -31,19 +31,23 @@ func (deniedRepositories) CanReadRepository(
 	return false, nil
 }
 
-func (deniedRepositories) ListReadableRepositories(
+func (deniedRepositories) ReadableRepositoryHashes(
 	context.Context,
 	contracts.Viewer,
 	*deckv1.Owner,
-) ([]deckgithub.Repository, error) {
+	contracts.RepositoryHashKind,
+	[][32]byte,
+) (map[[32]byte]struct{}, error) {
 	return nil, nil
 }
 
-func (reauthenticationRepositories) ListReadableRepositories(
+func (reauthenticationRepositories) ReadableRepositoryHashes(
 	context.Context,
 	contracts.Viewer,
 	*deckv1.Owner,
-) ([]deckgithub.Repository, error) {
+	contracts.RepositoryHashKind,
+	[][32]byte,
+) (map[[32]byte]struct{}, error) {
 	return nil, deckgithub.ErrReauthenticationRequired
 }
 

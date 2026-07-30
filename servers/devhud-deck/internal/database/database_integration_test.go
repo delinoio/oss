@@ -260,6 +260,21 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || hasSnapshot {
 		t.Fatalf("truncated snapshot membership = %v err=%v", hasSnapshot, err)
 	}
+	if err := store.DeleteSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: snapshots[0].Repository,
+			Number:     snapshots[0].Number,
+		}); err != nil {
+		t.Fatalf("delete snapshot: %v", err)
+	}
+	hasSnapshot, err = store.HasSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: snapshots[0].Repository,
+			Number:     snapshots[0].Number,
+		})
+	if err != nil || hasSnapshot {
+		t.Fatalf("deleted snapshot membership = %v err=%v", hasSnapshot, err)
+	}
 	filteredSnapshots := make([]*deckv1.PullRequestResult, 501)
 	for index := range filteredSnapshots {
 		repository := &deckv1.RepositoryReference{
@@ -282,9 +297,15 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	filteredList, filteredTruncated, _, err := store.ListSnapshots(
 		ctx, firstViewID, viewerHash, readableSnapshots)
-	if err != nil || len(filteredList) != 499 || filteredTruncated {
+	if err != nil || len(filteredList) != 499 || !filteredTruncated {
 		t.Fatalf("filtered snapshots = %d truncated=%v err=%v",
 			len(filteredList), filteredTruncated, err)
+	}
+	repositoryHashes, err := store.ListSnapshotRepositoryHashes(
+		ctx, firstViewID, viewerHash)
+	if err != nil || len(repositoryHashes) != 2 {
+		t.Fatalf("snapshot repository hashes = %d err=%v",
+			len(repositoryHashes), err)
 	}
 	indexedSnapshots := []*deckv1.PullRequestResult{
 		{

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1416,6 +1417,91 @@ func TestRepositoryAuthorizationIsBoundToSelectedInstallation(t *testing.T) {
 		context.Background(), 42, credential)
 	if err != nil || len(readable) != 2 {
 		t.Fatalf("readable repositories = %#v err=%v", readable, err)
+	}
+}
+
+func TestReadableRepositoryVisitContinuesPastTenThousand(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			requests++
+			page, err := strconv.Atoi(request.URL.Query().Get("page"))
+			if err != nil || page < 1 || page > 101 {
+				t.Fatalf("unexpected repository page %q",
+					request.URL.Query().Get("page"))
+			}
+			count := 100
+			if page == 101 {
+				count = 1
+			}
+			repositories := make([]map[string]any, 0, count)
+			for index := 0; index < count; index++ {
+				number := (page-1)*100 + index
+				repositories = append(repositories, map[string]any{
+					"name": fmt.Sprintf("repository-%d", number),
+					"owner": map[string]any{
+						"login": "acme",
+					},
+					"permissions": map[string]any{
+						"pull": true,
+					},
+				})
+			}
+			payload, err := json.Marshal(map[string]any{
+				"total_count":  10001,
+				"repositories": repositories,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return jsonResponse(http.StatusOK, string(payload)), nil
+		})})
+	found := false
+	err := client.VisitReadableRepositoriesForInstallation(
+		context.Background(), 42, Credential{AccessToken: "ghu_viewer"},
+		func(repository Repository) bool {
+			if repository.Name == "repository-10000" {
+				found = true
+				return false
+			}
+			return true
+		})
+	if err != nil || !found || requests != 101 {
+		t.Fatalf("large installation found=%v requests=%d err=%v",
+			found, requests, err)
+	}
+}
+
+func TestReadableRepositoryVisitStopsAfterRequiredRepository(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			requests++
+			if request.URL.Query().Get("page") != "1" {
+				t.Fatalf("unexpected repository page %q",
+					request.URL.Query().Get("page"))
+			}
+			return jsonResponse(http.StatusOK, `{
+				"total_count":10001,
+				"repositories":[{
+					"name":"required",
+					"owner":{"login":"acme"},
+					"permissions":{"pull":true}
+				}]
+			}`), nil
+		})})
+	found := false
+	err := client.VisitReadableRepositoriesForInstallation(
+		context.Background(), 42, Credential{AccessToken: "ghu_viewer"},
+		func(repository Repository) bool {
+			found = repository.Name == "required"
+			return !found
+		})
+	if err != nil || !found || requests != 1 {
+		t.Fatalf("required repository found=%v requests=%d err=%v",
+			found, requests, err)
 	}
 }
 

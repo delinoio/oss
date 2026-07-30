@@ -23,7 +23,6 @@ const (
 	defaultCandidateLimit = 50
 	maxCandidateLimit     = 100
 	maxCandidatePages     = 100
-	maxInstallationPages  = 100
 )
 
 type Client struct {
@@ -454,22 +453,51 @@ func (client *Client) ListReadableRepositoriesForInstallation(
 		return nil, err
 	}
 	defer release()
-	repositories, err := client.installationRepositories(
-		ctx, installationID, credential)
+	result := make([]Repository, 0)
+	err = client.visitInstallationRepositories(
+		ctx, installationID, credential, func(repository repositoryResponse) bool {
+			if repository.userPermissions().Metadata < PermissionRead {
+				return true
+			}
+			result = append(result, Repository{
+				Owner: repository.Owner.Login,
+				Name:  repository.Name,
+			})
+			return true
+		})
 	if err != nil {
 		return nil, err
 	}
-	result := make([]Repository, 0, len(repositories))
-	for _, repository := range repositories {
-		if repository.userPermissions().Metadata < PermissionRead {
-			continue
-		}
-		result = append(result, Repository{
-			Owner: repository.Owner.Login,
-			Name:  repository.Name,
-		})
-	}
 	return result, nil
+}
+
+// VisitReadableRepositoriesForInstallation visits readable repositories until
+// visit returns false. A nil visitor validates the credential and installation
+// with one provider page without enumerating the complete installation.
+func (client *Client) VisitReadableRepositoriesForInstallation(
+	ctx context.Context,
+	installationID uint64,
+	credential Credential,
+	visit func(Repository) bool,
+) error {
+	release, err := client.concurrency.acquire(installationID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return client.visitInstallationRepositories(
+		ctx, installationID, credential, func(repository repositoryResponse) bool {
+			if visit == nil {
+				return false
+			}
+			if repository.userPermissions().Metadata < PermissionRead {
+				return true
+			}
+			return visit(Repository{
+				Owner: repository.Owner.Login,
+				Name:  repository.Name,
+			})
+		})
 }
 
 func (client *Client) installationRepositories(
@@ -477,11 +505,33 @@ func (client *Client) installationRepositories(
 	installationID uint64,
 	credential Credential,
 ) (map[string]repositoryResponse, error) {
-	if installationID == 0 {
-		return nil, ErrPermissionDenied
-	}
 	result := make(map[string]repositoryResponse)
-	for page := 1; page <= maxInstallationPages; page++ {
+	err := client.visitInstallationRepositories(
+		ctx, installationID, credential, func(repository repositoryResponse) bool {
+			reference := Repository{
+				Owner: repository.Owner.Login,
+				Name:  repository.Name,
+			}
+			result[repositoryKey(reference)] = repository
+			return true
+		})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (client *Client) visitInstallationRepositories(
+	ctx context.Context,
+	installationID uint64,
+	credential Credential,
+	visit func(repositoryResponse) bool,
+) error {
+	if installationID == 0 {
+		return ErrPermissionDenied
+	}
+	visited := 0
+	for page := 1; ; page++ {
 		path := fmt.Sprintf(
 			"/user/installations/%d/repositories?per_page=100&page=%d",
 			installationID, page)
@@ -491,7 +541,7 @@ func (client *Client) installationRepositories(
 		}
 		if _, err := client.do(
 			ctx, credential, http.MethodGet, path, nil, &response); err != nil {
-			return nil, err
+			return err
 		}
 		for _, repository := range response.Repositories {
 			reference := Repository{
@@ -499,16 +549,21 @@ func (client *Client) installationRepositories(
 				Name:  repository.Name,
 			}
 			if reference.Validate() != nil {
-				return nil, ErrProvider
+				return ErrProvider
 			}
-			result[repositoryKey(reference)] = repository
+			visited++
+			if visit != nil && !visit(repository) {
+				return nil
+			}
 		}
 		if len(response.Repositories) < maxCandidateLimit ||
-			(response.TotalCount > 0 && len(result) >= response.TotalCount) {
-			return result, nil
+			(response.TotalCount > 0 && visited >= response.TotalCount) {
+			return nil
+		}
+		if response.TotalCount <= visited {
+			return ErrProvider
 		}
 	}
-	return nil, ErrProvider
 }
 
 func repositoryKey(repository Repository) string {

@@ -66,11 +66,13 @@ func (authorizer *GitHubRepositoryAuthorizer) CanReadRepository(
 		deckgithub.Repository{Owner: owner, Name: name})
 }
 
-func (authorizer *GitHubRepositoryAuthorizer) ListReadableRepositories(
+func (authorizer *GitHubRepositoryAuthorizer) ReadableRepositoryHashes(
 	ctx context.Context,
 	viewer contracts.Viewer,
 	viewOwner *deckv1.Owner,
-) ([]deckgithub.Repository, error) {
+	kind contracts.RepositoryHashKind,
+	required [][32]byte,
+) (map[[32]byte]struct{}, error) {
 	if authorizer == nil || authorizer.store == nil ||
 		authorizer.client == nil || viewer.AccountID == uuid.Nil ||
 		viewOwner == nil {
@@ -98,8 +100,45 @@ func (authorizer *GitHubRepositoryAuthorizer) ListReadableRepositories(
 	if err != nil {
 		return nil, err
 	}
-	return authorizer.client.ListReadableRepositoriesForInstallation(
-		ctx, connection.Installation.ID, connection.Credential)
+	remaining := make(map[[32]byte]struct{}, len(required))
+	for _, hash := range required {
+		remaining[hash] = struct{}{}
+	}
+	readable := make(map[[32]byte]struct{}, len(remaining))
+	var hashRepository func(deckgithub.Repository) [32]byte
+	switch kind {
+	case contracts.RepositoryHashKindView:
+		hashRepository = func(repository deckgithub.Repository) [32]byte {
+			return authorizer.store.ViewRepositoryHash(
+				repository.Owner, repository.Name)
+		}
+	case contracts.RepositoryHashKindSnapshot:
+		hashRepository = func(repository deckgithub.Repository) [32]byte {
+			return authorizer.store.SnapshotRepositoryHash(
+				&deckv1.RepositoryReference{
+					Owner: repository.Owner,
+					Name:  repository.Name,
+				})
+		}
+	default:
+		return nil, deckgithub.ErrProvider
+	}
+	var visit func(deckgithub.Repository) bool
+	if len(remaining) > 0 {
+		visit = func(repository deckgithub.Repository) bool {
+			hash := hashRepository(repository)
+			if _, required := remaining[hash]; required {
+				readable[hash] = struct{}{}
+				delete(remaining, hash)
+			}
+			return len(remaining) > 0
+		}
+	}
+	if err := authorizer.client.VisitReadableRepositoriesForInstallation(
+		ctx, connection.Installation.ID, connection.Credential, visit); err != nil {
+		return nil, err
+	}
+	return readable, nil
 }
 
 var _ contracts.RepositoryAuthorizer = (*GitHubRepositoryAuthorizer)(nil)

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
-	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/google/uuid"
 )
 
@@ -80,6 +79,13 @@ type Directory interface {
 
 // RepositoryAuthorizer performs the final current-user GitHub permission
 // check before an identity-bearing snapshot leaves the service.
+type RepositoryHashKind uint8
+
+const (
+	RepositoryHashKindView RepositoryHashKind = iota + 1
+	RepositoryHashKindSnapshot
+)
+
 type RepositoryAuthorizer interface {
 	CanReadRepository(
 		context.Context,
@@ -88,11 +94,13 @@ type RepositoryAuthorizer interface {
 		string,
 		string,
 	) (bool, error)
-	ListReadableRepositories(
+	ReadableRepositoryHashes(
 		context.Context,
 		Viewer,
 		*deckv1.Owner,
-	) ([]deckgithub.Repository, error)
+		RepositoryHashKind,
+		[][32]byte,
+	) (map[[32]byte]struct{}, error)
 }
 
 type DenyAllRepositories struct{}
@@ -107,10 +115,12 @@ func (DenyAllRepositories) CanReadRepository(
 	return false, nil
 }
 
-func (DenyAllRepositories) ListReadableRepositories(
+func (DenyAllRepositories) ReadableRepositoryHashes(
 	context.Context,
 	Viewer,
 	*deckv1.Owner,
-) ([]deckgithub.Repository, error) {
+	RepositoryHashKind,
+	[][32]byte,
+) (map[[32]byte]struct{}, error) {
 	return nil, nil
 }

@@ -115,6 +115,13 @@ WHERE view_id = sqlc.arg(view_id) AND viewer_hash = sqlc.arg(viewer_hash);
 DELETE FROM deck_pull_request_snapshot_states
 WHERE view_id = sqlc.arg(view_id) AND viewer_hash = sqlc.arg(viewer_hash);
 
+-- name: DeleteViewSnapshot :execrows
+DELETE FROM deck_pull_request_snapshots
+WHERE view_id = sqlc.arg(view_id)
+  AND viewer_hash = sqlc.arg(viewer_hash)
+  AND repository_hash = sqlc.arg(repository_hash)
+  AND pull_request_number = sqlc.arg(pull_request_number);
+
 -- name: DeleteViewSnapshotsByViewer :exec
 DELETE FROM deck_pull_request_snapshots
 WHERE viewer_hash = sqlc.arg(viewer_hash);

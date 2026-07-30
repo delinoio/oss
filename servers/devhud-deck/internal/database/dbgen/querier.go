@@ -46,6 +46,7 @@ type Querier interface {
 	DeletePersonalFeatureData(ctx context.Context, accountID pgtype.UUID) error
 	DeleteView(ctx context.Context, arg DeleteViewParams) (int64, error)
 	DeleteViewCreateIdempotencyByOwnerHash(ctx context.Context, ownerHash []byte) error
+	DeleteViewSnapshot(ctx context.Context, arg DeleteViewSnapshotParams) (int64, error)
 	DeleteViewSnapshotState(ctx context.Context, arg DeleteViewSnapshotStateParams) error
 	DeleteViewSnapshotStatesByViewer(ctx context.Context, viewerHash []byte) error
 	DeleteViewSnapshots(ctx context.Context, arg DeleteViewSnapshotsParams) error

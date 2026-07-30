@@ -76,6 +76,34 @@ func (q *Queries) DeleteView(ctx context.Context, arg DeleteViewParams) (int64, 
 	return revision, err
 }
 
+const deleteViewSnapshot = `-- name: DeleteViewSnapshot :execrows
+DELETE FROM deck_pull_request_snapshots
+WHERE view_id = $1
+  AND viewer_hash = $2
+  AND repository_hash = $3
+  AND pull_request_number = $4
+`
+
+type DeleteViewSnapshotParams struct {
+	ViewID            pgtype.UUID
+	ViewerHash        []byte
+	RepositoryHash    []byte
+	PullRequestNumber int64
+}
+
+func (q *Queries) DeleteViewSnapshot(ctx context.Context, arg DeleteViewSnapshotParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteViewSnapshot,
+		arg.ViewID,
+		arg.ViewerHash,
+		arg.RepositoryHash,
+		arg.PullRequestNumber,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteViewSnapshotState = `-- name: DeleteViewSnapshotState :exec
 DELETE FROM deck_pull_request_snapshot_states
 WHERE view_id = $1 AND viewer_hash = $2

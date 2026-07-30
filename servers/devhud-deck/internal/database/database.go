@@ -989,6 +989,58 @@ func (store *Store) UpdateSnapshot(
 	return nil
 }
 
+func (store *Store) DeleteSnapshot(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	reference *deckv1.PullRequestReference,
+) error {
+	if reference == nil || reference.Repository == nil ||
+		reference.Number == 0 || reference.Number > math.MaxInt64 {
+		return ErrNotFound
+	}
+	repositoryHash := store.SnapshotRepositoryHash(reference.Repository)
+	if _, err := store.queries.DeleteViewSnapshot(
+		ctx, dbgen.DeleteViewSnapshotParams{
+			ViewID:            pgUUID(viewID),
+			ViewerHash:        viewerHash[:],
+			RepositoryHash:    repositoryHash[:],
+			PullRequestNumber: int64(reference.Number),
+		}); err != nil {
+		return errors.New("deck database: delete snapshot failed")
+	}
+	return nil
+}
+
+func (store *Store) ListSnapshotRepositoryHashes(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+) ([][32]byte, error) {
+	rows, err := store.queries.ListViewSnapshots(
+		ctx, dbgen.ListViewSnapshotsParams{
+			ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
+			AfterOrdinal: 0, PageLimit: 500,
+		})
+	if err != nil {
+		return nil, errors.New("deck database: list snapshot indexes failed")
+	}
+	unique := make(map[[32]byte]struct{}, len(rows))
+	for _, row := range rows {
+		if len(row.RepositoryHash) != 32 {
+			return nil, errors.New("deck database: invalid snapshot repository index")
+		}
+		var hash [32]byte
+		copy(hash[:], row.RepositoryHash)
+		unique[hash] = struct{}{}
+	}
+	result := make([][32]byte, 0, len(unique))
+	for hash := range unique {
+		result = append(result, hash)
+	}
+	return result, nil
+}
+
 func (store *Store) ListSnapshots(
 	ctx context.Context,
 	viewID uuid.UUID,
@@ -1017,7 +1069,6 @@ func (store *Store) ListSnapshots(
 		return nil, false, time.Time{}, errors.New("deck database: list snapshots failed")
 	}
 	results := make([]*deckv1.PullRequestResult, 0, len(rows))
-	filtered := false
 	for _, row := range rows {
 		if len(row.RepositoryHash) != 32 {
 			return nil, false, time.Time{},
@@ -1026,7 +1077,6 @@ func (store *Store) ListSnapshots(
 		var repositoryHash [32]byte
 		copy(repositoryHash[:], row.RepositoryHash)
 		if _, readable := readableRepositories[repositoryHash]; !readable {
-			filtered = true
 			continue
 		}
 		repository := &deckv1.RepositoryReference{}
@@ -1044,7 +1094,7 @@ func (store *Store) ListSnapshots(
 	if stateErr == nil && state.RefreshedAt.Valid {
 		refreshedAt = state.RefreshedAt.Time.UTC()
 	}
-	return results, stateErr == nil && state.Truncated && !filtered, refreshedAt, nil
+	return results, stateErr == nil && state.Truncated, refreshedAt, nil
 }
 
 func (store *Store) HasSnapshot(
