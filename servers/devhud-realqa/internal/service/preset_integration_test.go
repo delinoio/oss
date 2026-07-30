@@ -2554,13 +2554,32 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnectBilling.getAuthorizationCalls,
 			disconnectBilling.revokeAuthorizationCalls)
 	}
+	lifecycleScope := owner{kind: "personal", id: accountID}
+	for attempt := 1; attempt <= 2; attempt++ {
+		if lifecycleErr := disconnectService.
+			HandleLifecycleAuthorizationDeletion(
+				ctx, lifecycleScope, disconnectCutoff,
+			); lifecycleErr == nil {
+			t.Fatalf("lifecycle cutoff attempt %d reported success", attempt)
+		}
+		if want := 1 + attempt; disconnectBilling.reserveAuthorizedCalls != want {
+			t.Fatalf("lifecycle cutoff attempt %d reserve calls = %d, want %d",
+				attempt, disconnectBilling.reserveAuthorizedCalls, want)
+		}
+	}
+	reserveCallsBeforeAgedRetry := disconnectBilling.reserveAuthorizedCalls
 	if disconnectErr := disconnectRetryService.HandleGitHubConnectionDeletion(
 		ctx, organizationConnectionID, "fixture-forwarded-bearer",
-	); disconnectErr == nil {
-		t.Fatal("disconnect cutoff retry failure was ignored")
+	); disconnectErr != nil {
+		t.Fatalf("aged-out disconnect cutoff retry: %v", disconnectErr)
 	}
-	if disconnectBilling.reserveAuthorizedCalls != 2 {
-		t.Fatalf("disconnect cutoff retry reserve calls = %d, want 2",
+	if disconnectBilling.reserveAuthorizedCalls != reserveCallsBeforeAgedRetry {
+		t.Fatalf("aged-out disconnect retry made %d new reserve calls",
+			disconnectBilling.reserveAuthorizedCalls-
+				reserveCallsBeforeAgedRetry)
+	}
+	if disconnectBilling.reserveAuthorizedCalls != 3 {
+		t.Fatalf("disconnect reserve calls = %d, want 3",
 			disconnectBilling.reserveAuthorizedCalls)
 	}
 	disconnectBinding, err := store.Queries().GetStorageAuthorizationBinding(
@@ -2582,8 +2601,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if disconnectSettlement.State != "pending" {
-		t.Fatalf("disconnect cutoff retry state = %q, want pending",
+	if disconnectSettlement.State != "grace_skipped" {
+		t.Fatalf("disconnect cutoff retry state = %q, want grace_skipped",
 			disconnectSettlement.State)
 	}
 	if _, err = connection.Exec(ctx, `
@@ -2602,22 +2621,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	); disconnectErr != nil {
 		t.Fatalf("stale disconnect cleanup after reconnect: %v", disconnectErr)
 	}
-	if disconnectBilling.reserveAuthorizedCalls != 2 {
-		t.Fatalf("stale disconnect replay reserve calls = %d, want 2",
-			disconnectBilling.reserveAuthorizedCalls)
-	}
-	lifecycleScope := owner{kind: "personal", id: accountID}
-	for attempt := 1; attempt <= 2; attempt++ {
-		if lifecycleErr := disconnectService.
-			HandleLifecycleAuthorizationDeletion(
-				ctx, lifecycleScope, disconnectCutoff,
-			); lifecycleErr == nil {
-			t.Fatalf("lifecycle cutoff attempt %d reported success", attempt)
-		}
-		if want := 2 + attempt; disconnectBilling.reserveAuthorizedCalls != want {
-			t.Fatalf("lifecycle cutoff attempt %d reserve calls = %d, want %d",
-				attempt, disconnectBilling.reserveAuthorizedCalls, want)
-		}
+	if disconnectBilling.reserveAuthorizedCalls != reserveCallsBeforeAgedRetry {
+		t.Fatalf("stale disconnect replay reserve calls = %d, want %d",
+			disconnectBilling.reserveAuthorizedCalls,
+			reserveCallsBeforeAgedRetry)
 	}
 	commitPeriodStart := disconnectPeriodStart.Add(24 * time.Hour)
 	commitSettlement, err := store.Queries().CreateStorageDailySettlement(
