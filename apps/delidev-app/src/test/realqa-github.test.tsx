@@ -225,6 +225,92 @@ describe("RealQA GitHub destinations", () => {
     expect(screen.queryByText("octocat")).not.toBeInTheDocument();
   });
 
+  it("reloads destination discovery when the connection revision changes", async () => {
+    let connectionRevision = "7";
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      const currentDestination =
+        connectionRevision === "7"
+          ? "legacy-destination"
+          : "current-destination";
+      if (url.endsWith("/GetGitHubConnection")) {
+        return connectJsonResponse(
+          connectedResponse(
+            "GIT_HUB_CONNECTION_STATE_CONNECTED",
+            connectionRevision,
+          ),
+        );
+      }
+      if (url.endsWith("/ListGitHubInstallations")) {
+        return connectJsonResponse(installationResponse());
+      }
+      if (url.endsWith("/ListRepositories")) {
+        return connectJsonResponse({
+          page: {},
+          repositories: [
+            {
+              callerCanSubmit: true,
+              installationId: {
+                value: "018f3f5e-7b01-7a2d-8c3a-4ba8d8b51611",
+              },
+              issuesEnabled: true,
+              repository: {
+                name: currentDestination,
+                owner: "acme",
+                repositoryId: "101",
+              },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/GetRepositoryIssueSchema")) {
+        return connectJsonResponse({
+          schema: {
+            issueForms: [],
+            markdownTemplates: [
+              {
+                definition: {
+                  definitionId: "template-support",
+                  name:
+                    connectionRevision === "7"
+                      ? "Legacy definition"
+                      : "Current definition",
+                  path: ".github/ISSUE_TEMPLATE/support.md",
+                },
+              },
+            ],
+            repository: {
+              name: currentDestination,
+              owner: "acme",
+              repositoryId: "101",
+            },
+            revision: { etag: "schema-9", value: "9" },
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const user = userEvent.setup();
+    const { queryClient } = renderDestination({ fetchMock });
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review definitions" }),
+    );
+    expect(await screen.findByText("Legacy definition")).toBeVisible();
+
+    connectionRevision = "8";
+    await queryClient.refetchQueries({
+      queryKey: ["realqa-tracker", "connection"],
+    });
+
+    expect(await screen.findByText("acme/current-destination")).toBeVisible();
+    expect(await screen.findByText("Current definition")).toBeVisible();
+    expect(
+      screen.queryByText("acme/legacy-destination"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Legacy definition")).not.toBeInTheDocument();
+  });
+
   it("keeps member controls role-bounded and renders only server-filtered repository permissions and definitions", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (request) => {
       const url = String(request);

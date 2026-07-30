@@ -237,6 +237,10 @@ function RealQAGitHubDestinationsConnected({
   const connectionValue = connection.isError
     ? undefined
     : connection.data?.connection;
+  const connectionIdentityKey = [
+    connectionValue?.connectionId?.value ?? "",
+    connectionValue?.revision?.value.toString() ?? "",
+  ] as const;
   const connected =
     connectionValue?.state === GitHubConnectionState.CONNECTED;
   const memberNeedsInstallation =
@@ -261,7 +265,12 @@ function RealQAGitHubDestinationsConnected({
         owner: scope,
         page: pageParam,
       }),
-    queryKey: ["realqa-tracker", "installations", scopeKey],
+    queryKey: [
+      "realqa-tracker",
+      "installations",
+      scopeKey,
+      ...connectionIdentityKey,
+    ],
     retry: false,
     staleTime: 0,
   });
@@ -299,6 +308,7 @@ function RealQAGitHubDestinationsConnected({
       "realqa-tracker",
       "repositories",
       scopeKey,
+      ...connectionIdentityKey,
       selectedInstallation?.installationId?.value ?? "",
       repositoryQuery,
     ],
@@ -329,6 +339,7 @@ function RealQAGitHubDestinationsConnected({
       "realqa-tracker",
       "issue-schema",
       scopeKey,
+      ...connectionIdentityKey,
       selectedInstallation?.installationId?.value ?? "",
       selectedRepository?.repository?.repositoryId ?? "",
     ],
