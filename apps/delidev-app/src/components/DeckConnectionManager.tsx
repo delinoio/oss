@@ -1,15 +1,17 @@
 import { createClient } from "@connectrpc/connect";
 import {
   ConnectionState,
-  DeckIntegrationService,
   ErrorReason,
-  GitHubAccountKind,
   OwnerScope,
-  type GitHubConnection,
-  type GitHubInstallation,
   type Owner,
   type Revision,
-} from "@delinoio/devhud-deck-connect";
+} from "@delinoio/devhud-deck-connect/devhud-deck/v1/common_pb";
+import {
+  DeckIntegrationService,
+  GitHubAccountKind,
+  type GitHubConnection,
+  type GitHubInstallation,
+} from "@delinoio/devhud-deck-connect/devhud-deck/v1/integration_pb";
 import {
   useCallback,
   useEffect,
@@ -56,6 +58,10 @@ enum LoadState {
 interface DisconnectInput {
   connectionId: { value: string };
   expectedRevision: Revision;
+}
+interface PendingDisconnect {
+  input: DisconnectInput;
+  ownerIdentity: DeckConnectionOwnerIdentity;
 }
 
 function ownerMessage(scope: DeckConnectionOwnerIdentity): Owner {
@@ -209,7 +215,9 @@ export function DeckConnectionManager({
     [ownerIdentity],
   );
   const requestGeneration = useRef(0);
-  const pendingDisconnect = useRef<DisconnectInput | undefined>(undefined);
+  const pendingDisconnect = useRef<PendingDisconnect | undefined>(
+    undefined,
+  );
   const [connection, setConnection] = useState<GitHubConnection>();
   const [installations, setInstallations] = useState<GitHubInstallation[]>([]);
   const [loadState, setLoadState] = useState(LoadState.Idle);
@@ -325,16 +333,28 @@ export function DeckConnectionManager({
 
   const disconnect = async () => {
     if (!client || !online || !activeConnection || disconnecting) return;
-    pendingDisconnect.current ??= {
-      connectionId: { value: activeConnection.connectionId!.value },
-      expectedRevision: activeConnection.revision!,
-    };
+    if (
+      pendingDisconnect.current?.ownerIdentity.id !==
+        ownerIdentity.id ||
+      pendingDisconnect.current.ownerIdentity.kind !==
+        ownerIdentity.kind
+    ) {
+      pendingDisconnect.current = {
+        input: {
+          connectionId: {
+            value: activeConnection.connectionId!.value,
+          },
+          expectedRevision: activeConnection.revision!,
+        },
+        ownerIdentity,
+      };
+    }
     setDisconnecting(true);
     setError("");
     setNotice("");
     try {
       const response = await client.disconnectGitHubConnection(
-        pendingDisconnect.current,
+        pendingDisconnect.current.input,
       );
       const disconnected = validateConnection(
         response.connection,

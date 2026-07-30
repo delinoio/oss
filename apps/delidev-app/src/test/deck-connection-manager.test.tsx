@@ -264,6 +264,169 @@ describe("Deck connection manager", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("replaces a pending disconnect input after the owner changes", async () => {
+    const disconnectBodies: unknown[] = [];
+    const organizationOwner = {
+      organizationId: { value: "organization-id" },
+      scope: "OWNER_SCOPE_ORGANIZATION",
+    };
+    const organizationConnection = {
+      connection: {
+        connectionId: {
+          value: "01900000-0000-7000-8000-000000000002",
+        },
+        githubInstallationId: "84",
+        owner: organizationOwner,
+        revision: { etag: "organization-etag", value: "9" },
+        state: "CONNECTION_STATE_CONNECTED",
+      },
+    };
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
+      const url = String(request);
+      if (url.endsWith("/DisconnectGitHubConnection")) {
+        disconnectBodies.push(
+          await new Response(
+            init?.body ??
+              (request instanceof Request
+                ? request.clone().body
+                : null),
+          ).json(),
+        );
+        return disconnectBodies.length === 1
+          ? connectJsonResponse(
+              { code: "unavailable", message: "response lost" },
+              503,
+            )
+          : connectJsonResponse({
+              connection: {
+                ...organizationConnection.connection,
+                state: "CONNECTION_STATE_DISCONNECTED",
+              },
+            });
+      }
+      const body = (await new Response(
+        init?.body ??
+          (request instanceof Request
+            ? request.clone().body
+            : null),
+      ).json()) as {
+        owner?: { organizationId?: { value?: string } };
+      };
+      const organizationRequest =
+        body.owner?.organizationId?.value === "organization-id";
+      if (url.endsWith("/GetGitHubConnection")) {
+        return connectJsonResponse(
+          organizationRequest
+            ? organizationConnection
+            : connectedResponse(),
+        );
+      }
+      if (url.endsWith("/ListGitHubInstallations")) {
+        return connectJsonResponse(
+          organizationRequest
+            ? {
+                installations: [
+                  {
+                    account: {
+                      githubAccountId: "199",
+                      kind: "GIT_HUB_ACCOUNT_KIND_ORGANIZATION",
+                      login: "acme",
+                    },
+                    githubInstallationId: "84",
+                    owner: organizationOwner,
+                    state: "CONNECTION_STATE_CONNECTED",
+                  },
+                ],
+                page: {},
+              }
+            : installationsResponse(),
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const deckTransport = createDeckIntegrationTransport({
+      baseUrl: canonicalDeckAudience,
+      fetch: fetchMock,
+      getAccessToken: async (audience) =>
+        audience === canonicalDeckAudience
+          ? "deck-token"
+          : "delibase-token",
+    });
+
+    function Parent({
+      ownerScope,
+    }: {
+      ownerScope: DeckConnectionOwner;
+    }) {
+      return (
+        <AuthSessionProvider
+          value={{
+            deckTransport,
+            signIn: async () => undefined,
+            signOut: async () => undefined,
+            status: AuthStatus.SignedIn,
+          }}
+        >
+          <DeckConnectionManager ownerScope={ownerScope} />
+        </AuthSessionProvider>
+      );
+    }
+
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <Parent
+        ownerScope={{
+          accountId: "account-id",
+          kind: "personal",
+          returnPath: "/account",
+        }}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Disconnect" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Disconnect GitHub" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "temporarily unavailable",
+    );
+
+    rerender(
+      <Parent
+        ownerScope={{
+          kind: "organization",
+          organizationId: "organization-id",
+          organizationName: "Acme",
+          returnPath: "/o/acme/settings",
+        }}
+      />,
+    );
+    expect(await screen.findByText("@acme")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Disconnect GitHub" }),
+    );
+
+    expect(disconnectBodies).toEqual([
+      {
+        connectionId: {
+          value: "01900000-0000-7000-8000-000000000001",
+        },
+        expectedRevision: { etag: "opaque-etag", value: "7" },
+      },
+      {
+        connectionId: {
+          value: "01900000-0000-7000-8000-000000000002",
+        },
+        expectedRevision: {
+          etag: "organization-etag",
+          value: "9",
+        },
+      },
+    ]);
+  });
+
   it("disables every mutation after the page goes offline", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (request) =>
       String(request).endsWith("/GetGitHubConnection")

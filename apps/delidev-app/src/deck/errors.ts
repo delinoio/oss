@@ -2,7 +2,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import {
   ErrorDetailSchema,
   ErrorReason,
-} from "@delinoio/devhud-deck-connect";
+} from "@delinoio/devhud-deck-connect/devhud-deck/v1/common_pb";
 
 export interface DeckError {
   code: Code;
