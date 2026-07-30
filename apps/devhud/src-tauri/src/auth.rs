@@ -803,14 +803,19 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 return Err(error);
             }
         };
-        validate_bearer(
+        if let Err(error) = validate_bearer(
             &feature_tokens.claims,
             &self.configuration,
             &subject,
             feature.audience(),
             feature.scopes(),
             now_unix_seconds,
-        )?;
+        ) {
+            if feature_was_retained {
+                self.remove_invalid_realqa_grant(&mut retained, feature)?;
+            }
+            return Err(error);
+        }
         if let Some(rotated_refresh) = feature_tokens.refresh_token {
             refresh_token = rotated_refresh;
         }
@@ -841,14 +846,19 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 return Err(error);
             }
         };
-        validate_bearer(
+        if let Err(error) = validate_bearer(
             &delibase_tokens.claims,
             &self.configuration,
             &subject,
             DELIBASE_AUDIENCE,
             feature.delibase_scopes(),
             now_unix_seconds,
-        )?;
+        ) {
+            if feature_was_retained {
+                self.remove_invalid_realqa_grant(&mut retained, feature)?;
+            }
+            return Err(error);
+        }
         if let Some(rotated_refresh) = delibase_tokens.refresh_token {
             refresh_token = rotated_refresh;
         }
@@ -2628,6 +2638,56 @@ mod tests {
                 Err(AuthError::FirstTimeOffline)
             );
         }
+    }
+
+    #[test]
+    fn retained_realqa_callback_claim_failure_removes_invalid_grant() {
+        let mut transport = FakeTransport::default();
+        transport.exchange.push_back(Ok(tokens(
+            "account-a",
+            "devhud-client",
+            &["openid"],
+            Some("refresh-new"),
+        )));
+        transport
+            .refresh
+            .push_back(Ok(tokens("account-a", REALQA_AUDIENCE, &["openid"], None)));
+        let key = new_device_session_key("account-a").unwrap();
+        let vault = FakeVault {
+            retained: Some(retained_grant(
+                AuthFeature::RealQa,
+                "refresh-invalid",
+                key.expose(),
+            )),
+            ..FakeVault::default()
+        };
+        let mut session_manager = manager(transport, vault);
+        session_manager
+            .restore_at(Connectivity::Offline, NOW)
+            .unwrap();
+        let request = session_manager
+            .begin(
+                AuthFeature::RealQa,
+                AuthPlatform::Mobile,
+                Url::parse(MOBILE_CALLBACK).unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            session_manager.complete_callback(&callback_for(&request, "code", None), NOW),
+            Err(AuthError::ScopeMismatch)
+        );
+        assert!(session_manager.vault.retained.is_none());
+        assert_eq!(
+            session_manager.realqa_draft_access(),
+            Err(AuthError::FirstTimeOffline)
+        );
+
+        let mut restarted = manager(FakeTransport::default(), session_manager.vault);
+        assert_eq!(
+            restarted.restore_at(Connectivity::Offline, NOW),
+            Err(AuthError::FirstTimeOffline)
+        );
     }
 
     #[test]

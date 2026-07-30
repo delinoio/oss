@@ -116,7 +116,11 @@ function sanitizeUrl(
   const authority = value
     .slice(prefix.length)
     .split(/[/?#]/u, 1)[0] ?? "";
-  if (authority === "" || authority.includes("%")) {
+  if (
+    authority === "" ||
+    authority.includes("%") ||
+    authority.includes(" ")
+  ) {
     return { ok: false, reason: "invalid-url" };
   }
   if (parsed.username !== "" || parsed.password !== "") {
@@ -126,7 +130,14 @@ function sanitizeUrl(
   const strippedFragment = retainBoundedUrlPart(parsed.hash);
   parsed.search = "";
   parsed.hash = "";
-  const canonicalValue = parsed.toString();
+  const rawPath =
+    value
+      .slice(prefix.length + authority.length)
+      .split(/[?#]/u, 1)[0] ?? "";
+  // Synchronized rules retain Go's raw path spelling, including dot segments.
+  const canonicalValue = allowRawQueryPercent
+    ? `${parsed.origin}${rawPath === "" ? "/" : rawPath}`
+    : parsed.toString();
   if (new TextEncoder().encode(canonicalValue).byteLength > MAX_URL_BYTES) {
     return { ok: false, reason: "invalid-url" };
   }
@@ -155,8 +166,5 @@ export function sanitizeResolvedRuleUrl(value: string): CapturedUrlResult {
 export function restoreCapturedUrlParts(
   url: RestorableDraftUrl,
 ): string {
-  const parsed = new URL(url.value);
-  parsed.search = url.strippedQuery ?? "";
-  parsed.hash = url.strippedFragment ?? "";
-  return parsed.toString();
+  return `${url.value}${url.strippedQuery ?? ""}${url.strippedFragment ?? ""}`;
 }

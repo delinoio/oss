@@ -137,7 +137,13 @@ const goUnicodeCategoryAliases: Readonly<Record<string, string>> = {
   any: "Any",
   assigned: "Assigned",
   ascii: "ASCII",
+  c: "C",
   casedletter: "LC",
+  cc: "Cc",
+  cf: "Cf",
+  cn: "Cn",
+  co: "Co",
+  cs: "Cs",
   closepunctuation: "Pe",
   combiningmark: "M",
   connectorpunctuation: "Pc",
@@ -151,16 +157,30 @@ const goUnicodeCategoryAliases: Readonly<Record<string, string>> = {
   finalpunctuation: "Pf",
   format: "Cf",
   initialpunctuation: "Pi",
+  l: "L",
   lc: "LC",
   letter: "L",
   letternumber: "Nl",
   lineseparator: "Zl",
+  ll: "Ll",
+  lm: "Lm",
+  lo: "Lo",
   lowercaseletter: "Ll",
+  lt: "Lt",
+  lu: "Lu",
+  m: "M",
   mark: "M",
   mathsymbol: "Sm",
+  mc: "Mc",
+  me: "Me",
+  mn: "Mn",
   modifierletter: "Lm",
   modifiersymbol: "Sk",
+  n: "N",
+  nd: "Nd",
+  nl: "Nl",
   nonspacingmark: "Mn",
+  no: "No",
   number: "N",
   openpunctuation: "Ps",
   other: "C",
@@ -168,11 +188,24 @@ const goUnicodeCategoryAliases: Readonly<Record<string, string>> = {
   othernumber: "No",
   otherpunctuation: "Po",
   othersymbol: "So",
+  p: "P",
   paragraphseparator: "Zp",
+  pc: "Pc",
+  pd: "Pd",
+  pe: "Pe",
+  pf: "Pf",
+  pi: "Pi",
+  po: "Po",
+  ps: "Ps",
   privateuse: "Co",
   punct: "P",
   punctuation: "P",
+  s: "S",
+  sc: "Sc",
   separator: "Z",
+  sk: "Sk",
+  sm: "Sm",
+  so: "So",
   spaceseparator: "Zs",
   spacingmark: "Mc",
   surrogate: "Cs",
@@ -180,7 +213,39 @@ const goUnicodeCategoryAliases: Readonly<Record<string, string>> = {
   titlecaseletter: "Lt",
   unassigned: "Cn",
   uppercaseletter: "Lu",
+  z: "Z",
+  zl: "Zl",
+  zp: "Zp",
+  zs: "Zs",
 } as const;
+
+/** Unicode 15 script names accepted by the repository's Go regexp baseline. */
+const goUnicodeScriptNames: ReadonlySet<string> = new Set(
+  `Adlam Ahom Anatolian_Hieroglyphs Arabic Armenian Avestan Balinese Bamum
+  Bassa_Vah Batak Bengali Bhaiksuki Bopomofo Brahmi Braille Buginese Buhid
+  Canadian_Aboriginal Carian Caucasian_Albanian Chakma Cham Cherokee Chorasmian
+  Common Coptic Cuneiform Cypriot Cypro_Minoan Cyrillic Deseret Devanagari
+  Dives_Akuru Dogra Duployan Egyptian_Hieroglyphs Elbasan Elymaic Ethiopic
+  Georgian Glagolitic Gothic Grantha Greek Gujarati Gunjala_Gondi Gurmukhi Han
+  Hangul Hanifi_Rohingya Hanunoo Hatran Hebrew Hiragana Imperial_Aramaic
+  Inherited Inscriptional_Pahlavi Inscriptional_Parthian Javanese Kaithi Kannada
+  Katakana Kawi Kayah_Li Kharoshthi Khitan_Small_Script Khmer Khojki Khudawadi
+  Lao Latin Lepcha Limbu Linear_A Linear_B Lisu Lycian Lydian Mahajani Makasar
+  Malayalam Mandaic Manichaean Marchen Masaram_Gondi Medefaidrin Meetei_Mayek
+  Mende_Kikakui Meroitic_Cursive Meroitic_Hieroglyphs Miao Modi Mongolian Mro
+  Multani Myanmar Nabataean Nag_Mundari Nandinagari New_Tai_Lue Newa Nko Nushu
+  Nyiakeng_Puachue_Hmong Ogham Ol_Chiki Old_Hungarian Old_Italic
+  Old_North_Arabian Old_Permic Old_Persian Old_Sogdian Old_South_Arabian
+  Old_Turkic Old_Uyghur Oriya Osage Osmanya Pahawh_Hmong Palmyrene Pau_Cin_Hau
+  Phags_Pa Phoenician Psalter_Pahlavi Rejang Runic Samaritan Saurashtra Sharada
+  Shavian Siddham SignWriting Sinhala Sogdian Sora_Sompeng Soyombo Sundanese
+  Syloti_Nagri Syriac Tagalog Tagbanwa Tai_Le Tai_Tham Tai_Viet Takri Tamil
+  Tangsa Tangut Telugu Thaana Thai Tibetan Tifinagh Tirhuta Toto Ugaritic Vai
+  Vithkuqi Wancho Warang_Citi Yezidi Yi Zanabazar_Square`
+    .trim()
+    .split(/\s+/u)
+    .map((name) => name.replaceAll("_", "").toLowerCase()),
+);
 
 function complementCharacterRanges(
   ranges: readonly CharacterRange[],
@@ -330,25 +395,23 @@ function translateUnicodeClassEscape(
     )
     .join("_");
   const candidates = [
-    name,
     goUnicodeCategoryAliases[compactName],
-    normalizedName,
+    goUnicodeScriptNames.has(compactName)
+      ? `Script=${normalizedName}`
+      : undefined,
   ].filter(
     (candidate, candidateIndex, all): candidate is string =>
       candidate !== undefined && all.indexOf(candidate) === candidateIndex,
   );
   let property: string | null = null;
   for (const candidate of candidates) {
-    for (const value of [candidate, `Script=${candidate}`]) {
-      try {
-        new RegExp(`\\p{${value}}`, "u");
-        property = value;
-        break;
-      } catch {
-        // Try the next Go-compatible alias or script spelling.
-      }
+    try {
+      new RegExp(`\\p{${candidate}}`, "u");
+      property = candidate;
+      break;
+    } catch {
+      // Try the next Go-compatible category alias or script spelling.
     }
-    if (property !== null) break;
   }
   if (property === null) throw new Error("unsupported Unicode class");
   const direct = `\\${classKind}{${property}}`;
@@ -853,6 +916,15 @@ function translateTitleCharacterClass(
           /^\\(?:[dDsSwW]|[pP](?:\{\^?[A-Za-z_]+\}|[A-Za-z]))/u.test(
             pattern.slice(index + 1),
           ));
+      const isLeadingHyphen =
+        positiveMembers === "" && complementedUnicodeMembers.length === 0;
+      if (
+        nextIsClassEscape &&
+        !previousWasClassEscape &&
+        !isLeadingHyphen
+      ) {
+        throw new Error("class escape cannot terminate a character range");
+      }
       positiveMembers +=
         pattern[index] === "-" &&
         (previousWasClassEscape || nextIsClassEscape)

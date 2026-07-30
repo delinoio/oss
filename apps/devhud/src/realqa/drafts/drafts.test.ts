@@ -738,6 +738,8 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     "^Issue (",
     "[]",
     "[^]",
+    String.raw`^[a-\d]$`,
+    String.raw`^[a-[:digit:]]$`,
     "(?-)^Issue",
     "(?i-)a",
   ])("rejects unsupported shared-regex syntax %s", (pattern) => {
@@ -863,6 +865,49 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
         rule({ urlTemplate: "https://example.com/%2F" }),
       ]),
     ).toBe(true);
+  });
+
+  it.each([
+    String.raw`^\p{Emoji}$`,
+    String.raw`^\p{Math}$`,
+    String.raw`^\p{Todhri}$`,
+  ])("rejects a JavaScript-only Unicode property %s", (pattern) => {
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ safeWindowTitlePattern: pattern }),
+      ]),
+    ).toBe(false);
+  });
+
+  it("rejects a raw space in a synchronized URL authority", () => {
+    expect(
+      validateRealQaProcessUrlRules([
+        rule({ urlTemplate: "https://example.com " }),
+      ]),
+    ).toBe(false);
+  });
+
+  it("preserves synchronized URL path dot segments", () => {
+    const inferred = inferDesktopUrl(
+      [rule({ urlTemplate: "https://example.com/a/../b?draft=1#section" })],
+      "code",
+      "Issue 757",
+    );
+    expect(inferred).toEqual({
+      ok: true,
+      url: {
+        value: "https://example.com/a/../b",
+        strippedQuery: "?draft=1",
+        strippedFragment: "#section",
+        warning: null,
+      },
+    });
+    if (inferred === null || !inferred.ok) {
+      throw new Error("fixture must be valid");
+    }
+    expect(restoreCapturedUrlParts(inferred.url)).toBe(
+      "https://example.com/a/../b?draft=1#section",
+    );
   });
 
   it("accepts raw percent text in a synchronized URL query", () => {
