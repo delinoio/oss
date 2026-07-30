@@ -87,15 +87,24 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-delibase.md`
 - `docs/servers-delibase-server-foundation.md` (`servers/delibase`, future API origin `https://delibase.deli.dev`)
 - `docs/protos-delibase-api-contract.md` (`protos/delibase/v1`, `delibase.v1`)
-- `docs/servers-internal-foundation.md` (repository-shared `servers/internal` boundary currently consumed by delibase; future consumers require explicit compatibility review)
+- `docs/servers-internal-foundation.md` (repository-shared `servers/internal`
+  boundary consumed by delibase and explicitly reviewed DevHud subsets)
 
 ### devhud
 - `docs/project-devhud.md`
-- `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell, RealQA encrypted local-draft/capture foundations, and all Deck/RealQA client/native/Chrome surfaces)
+- `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell, Deck
+  dependency-injected client-owned refresh controller, RealQA encrypted
+  local-draft/capture foundations, and all Deck/RealQA client/native/Chrome
+  surfaces)
 - `docs/servers-devhud-deck-foundation.md` (implemented inactive
-  `servers/devhud-deck` foundation and GitHub.com provider slice; future
-  `https://deck.deli.dev`)
-- `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, mutation follow-up-refresh state, and non-dispatching all-origin refresh preflight)
+  `servers/devhud-deck` foundation and GitHub.com provider, client-owned
+  refresh/live billing, snapshot, and notification-resolution slices; future
+  inactive `https://deck.deli.dev`)
+- `docs/protos-devhud-deck-api-contract.md` (implemented private
+  `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor,
+  Go/TypeScript Connect artifacts, typed refresh client/freshness/outcome/billing
+  state, device/candidate reads, mutations, and non-dispatching refresh
+  preflight)
 - `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion, internal GitHub.com provider with stable-ID repository rename synchronization, and R2-backed image-transfer/public-delivery foundation at `servers/devhud-realqa`; future end-to-end submission/billing slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
 - `docs/protos-devhud-realqa-api-contract.md` (implemented `protos/devhud-realqa/v1`; `devhud.realqa.v1`, isolated descriptor and private generated package)
 
@@ -108,9 +117,10 @@ descriptors, generated Go/TypeScript artifacts, and private
 `@delinoio/devhud-deck-connect` and `@delinoio/devhud-realqa-connect` workspace
 exports are implemented, including Deck's structured request-only shortcut
 configurations and server-authored shortcut/widget state; Deck's inactive
-server foundation/provider slice and RealQA's inactive
-preset/tracker/auth/deletion foundation are implemented, while product clients
-remain planned. Issues #755/#757 authorize two bounded
+server provider/client-owned refresh slices and dependency-injected client
+controller are implemented, while live native transport registration and push
+delivery remain planned. RealQA's inactive preset/tracker/auth/deletion
+foundation is implemented. Issues #755/#757 authorize two bounded
 authenticated exceptions: Deck on
 desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is

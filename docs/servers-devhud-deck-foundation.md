@@ -13,11 +13,13 @@
   That slice implements signed App/OAuth callbacks, signed installation
   lifecycle webhooks, per-viewer encrypted user authorization credentials,
   installation ownership, authorization-filtered search and candidates,
-  action metadata, and the closed PR mutation set. The search adapter remains
-  unreachable from `RefreshView` while provider refresh and billing fail
-  closed. Notification delivery, packaging, deployment, DNS, production
-  secrets, registered GitHub Apps, catalog activation, and production
-  operation remain unimplemented and unclaimed.
+  action metadata, the closed PR mutation set, and client-owned refresh.
+  Refresh includes live forwarded-user delibase billing, five-minute
+  cross-device coalescing, current encrypted snapshots, typed freshness,
+  widget snapshot updates, 30-day notification transition history and
+  authorization-safe resolution. Push delivery, packaging, deployment, DNS,
+  production secrets, registered GitHub Apps, catalog activation, and
+  production operation remain unimplemented and unclaimed.
 - Future canonical API origin and Logto audience: `https://deck.deli.dev`; documenting it does not create or activate the origin.
 - Runtime: Go service with PostgreSQL, migrations, sqlc, Connect RPC, narrowly scoped HTTP handlers, and shared `servers/internal` infrastructure where its generic contracts apply.
 
@@ -29,8 +31,11 @@
   `x-devhud-deck-forwarded-delibase-token`. The service validates issuer,
   audience, expiry, Deck procedure scope, forwarded
   `delibase:account:read`/`delibase:organizations:read`/`delibase:teams:read`
-  scopes, and matching subjects and strips credentials before business
-  handlers. `RegisterDevice` returns its opaque single-registration
+  and `delibase:usage:execute` scopes, and matching subjects and strips
+  credentials from request metadata before business handlers. The already
+  validated forwarded bearer remains only in the active request context for
+  live reserve/commit/release and is never detached or persisted.
+  `RegisterDevice` returns its opaque single-registration
   revocation grant only in
   `x-devhud-deck-device-revocation-grant` response metadata;
   `UnregisterDevice` additionally accepts only that same key as alternate
@@ -145,7 +150,10 @@
 ## Data and Query Contract
 
 - Implement exactly the `DeckViewService`, `DeckIntegrationService`, and `DeckDeviceService` RPC sets in [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md). Business mutations remain Connect RPC; only the provider callback/webhook handlers described above use HTTP.
-- Persisted identifiers are UUID v7. Owner scope, view kind, sort, grouping, mutation kind, connection state, refresh outcome, notification transition, and freshness state are closed enums.
+- Persisted identifiers are UUID v7. Owner scope, view kind, sort, grouping,
+  mutation kind, connection state, refresh origin, active refresh-client kind,
+  refresh outcome, billing disposition, notification transition, and
+  freshness state are closed enums.
 - The closed v1 view registry contains only `GITHUB_PULL_REQUESTS`. It is internal and source-controlled, not a public plugin SDK or remote-UI registry.
 - A view contains owner scope and optional organization ID, billing organization/team, name, canonical raw GitHub search query, typed visual-builder representation, sort/grouping, notification preference, revision, and timestamps. `UpdateView` may change the notification preference but never owner or kind.
 - `CreateView` requires a stable client-generated UUID v7 idempotency key scoped to the authenticated subject and operation. An exact replay returns the original view and revision without consuming another view-limit slot; reuse with changed creation input fails with the typed idempotency-conflict reason.
@@ -172,13 +180,48 @@
 
 ## Client-Initiated Refresh and Billing
 
-- The service must not contain a scheduler, durable refresh job, or worker that initiates or continues GitHub PR polling.
-- Every refresh is traceable to a running desktop tray process, an open mobile app, an OS-permitted client background task, or an explicit app/shortcut/widget action.
+- The service contains no scheduler, durable polling job, provider-refresh
+  worker, detached request context, or post-client provider/billing
+  continuation. Durable refresh attempts exist only for idempotency and exact
+  dispatch/billing accounting; they cannot claim or schedule work.
+- Every refresh preflight and execution carries a compatible closed
+  `RefreshOrigin`/`RefreshClientKind` pair, making it traceable to a running
+  desktop tray process, open mobile app, OS-permitted client background task,
+  widget execution, or explicit manual/view-open/shortcut action. Invalid
+  combinations fail before reservation or GitHub dispatch.
 - Automatic client refresh is limited to views attached to a widget, notification, or shortcut, or opened within the previous 30 days. Other views refresh on open or manually.
 - Clients may target five-minute polling while permitted to remain active. Automatic/widget requests for the same viewer/view coalesce into one provider request during a five-minute server cache window. Manual refresh bypasses the cache and must display the billed-provider-call warning returned by `GetRefreshPreflight`. Every `RefreshView` logical request uses a stable client-generated UUID v7 identity that the client preserves across ambiguous retries; exact replay returns the first result and billing disposition, while changed view/origin/cache input conflicts.
 - When all clients stop, PR state, widgets, and notifications become stale and the service performs no later provider refresh. Widget execution is OS-controlled and no five-minute freshness guarantee is allowed.
-- Cache hits are free. The future disabled delibase catalog record is identified by app key `devhud` plus meter key `deck_github_pull_request_refresh`, uses unit name `provider_refresh` with precision zero, is allowlisted only to the Deck service identity, and has an effective unit price of exactly 50 USD micros. `GetRefreshPreflight` validates that authoritative identity, unit, service mapping, and effective price for every prospective origin without reserving usage, dispatching GitHub, refreshing a cache, or charging. It returns the server-derived price plus an opaque short-lived preflight token bound to the authenticated subject, view, billing scope, prospective `RefreshView` identity, origin, validated catalog version, and expiry; a missing, disabled, or divergent mapping fails unavailable before any attempt or manual warning. Every `RefreshView` first looks up the durable attempt by authenticated identity and request digest. An existing exact attempt returns or resumes independently of later token expiry or catalog change, while changed input conflicts. Creation of every new attempt requires and revalidates the unexpired token, bound origin, and current mapping before reservation/provider dispatch, so a caller cannot select a different refresh origin to bypass billing preflight and missing, expired, substituted, or stale state fails closed before new work. One actual GitHub provider refresh reserves and commits exactly one unit: reserve before dispatch, release when no provider request was dispatched, and commit once dispatched, including provider errors, rate limits, and timeouts. A durable attempt keyed by the `RefreshView` identity serializes reservation, provider dispatch, and commit/release, records whether dispatch occurred before exposing a result, and resumes ambiguous downstream outcomes without issuing or billing a second provider request. Failed reservation also prevents dispatch. Changing the unit or price requires a synchronized delibase/Deck contract and catalog change.
-- Deck implementation and catalog activation are blocked until a synchronized additive delibase API/server change makes live-reservation finalization independent of the originating forwarded user bearer. A successful `ReserveUsage` must issue an opaque finalization grant bound to the exact reservation ID, authenticated Deck service identity, reserved maximum, and reservation expiry; delibase retains only a non-reversible verifier and accepts the grant only with a fresh same-service M2M bearer for idempotent `CommitUsage` or `ReleaseUsage` of that reservation. The grant cannot reserve usage, change payer/meter/units, authorize provider work, or finalize another service's reservation. Deck application-level envelope-encrypts the grant in the durable refresh attempt, never logs or returns it, and deletes its ciphertext after terminal commit/release or observed expiry. A billing-only recovery worker claims an unfinished attempt after request loss or restart and retries its stable commit/release operation without a client request, a forwarded bearer, or another GitHub call. Until that bounded grant contract and a minimum 86,400-second Deck reservation TTL are implemented and validated, Deck must fail startup before billed refresh handling and the meter must remain disabled.
+- Cache hits, five-minute automatic/widget coalescing, and ineligible automatic
+  attempts are free. The disabled production-facing delibase catalog record is
+  identified by app key `devhud` plus meter key
+  `deck_github_pull_request_refresh`, uses unit name `provider_refresh` with
+  precision zero, is allowlisted only to the Deck service identity, and has an
+  effective unit price of exactly 50 USD micros. `GetRefreshPreflight`
+  validates that authoritative identity, unit, service mapping, and effective
+  price for every prospective origin/client pair without reserving usage,
+  dispatching GitHub, refreshing a cache, or charging. It returns the
+  server-derived price plus an opaque short-lived preflight token bound to the
+  authenticated subject, view, billing scope, prospective `RefreshView`
+  identity, origin, active client kind, validated catalog version, and expiry;
+  a missing, disabled, or divergent mapping fails unavailable before any
+  attempt or manual warning.
+- Every `RefreshView` first looks up the durable attempt by authenticated
+  identity and request digest. An existing exact attempt returns or resumes
+  independently of later token expiry, while changed input conflicts.
+  Creation of every new attempt requires and revalidates the unexpired token,
+  bound origin/client pair, and current mapping before reservation/provider
+  dispatch. One actual GitHub provider refresh reserves exactly one live unit
+  through the existing delibase `ReserveUsage` flow before dispatch. Failed
+  reservation prevents GitHub dispatch. Undispatched work releases that unit;
+  any recorded dispatch commits it, including GitHub errors, rate limits, and
+  timeouts. Dispatch is durably marked immediately before the provider
+  round-trip, and the outcome is encrypted before finalization so an
+  authenticated exact client retry with a fresh forwarded-user bearer can
+  finish an ambiguous commit/release without another GitHub request or charge.
+  No server worker or disconnected continuation performs that retry. Changing
+  the unit or price requires a synchronized delibase/Deck contract and catalog
+  change.
 - Limits are 12 manual refresh requests/minute/user, 30 PR mutations/minute/user, and four concurrent GitHub provider requests/installation.
 - Deck catalog records, including the identity and mapping above, remain disabled in production-facing artifacts until a separate activation change; this contract does not add them to the current empty production catalog.
 
@@ -194,7 +237,9 @@
 
 ## Storage, Retention, and Deletion
 
-- Retain only current matching PR snapshots, notification event/delivery history for 30 days, and view definitions until deletion.
+- Retain only current matching PR snapshots, notification event history for
+  exactly 30 days, and view definitions until deletion. History is pruned by
+  active refresh/resolution requests rather than a retention scheduler.
 - Logout revokes the device push registration as described above, then deletes Deck tokens, PR data, and widget snapshots from that device.
 - `Reset DevHud` revokes the device push registration as described above, then remains device-local: it deletes tokens, Deck snapshots, and shortcut effective state and does not delete server views or GitHub connections.
 - Disconnect follows the immediate provider-data deletion boundary above and preserves disconnected view definitions.
@@ -204,10 +249,24 @@
 ## Security and Observability
 
 - Remote client telemetry remains prohibited. The service may use redacted structured logs, metrics, traces, and audit events for operations and authorization.
-- Never persist or log feature/delibase bearer tokens, authorization headers, URLs, push content, or user content outside the explicit data contract. The sole provider-token persistence exception is the envelope-encrypted active-connection credential record defined above; the bounded server-side grant exceptions are the encrypted `RegisterDevice` replay result and the encrypted single-reservation billing-finalization grant defined above. Canonical raw queries and identity-bearing typed builder clauses may persist only in view definitions, and repository names, PR titles, PR authors, reviewer and assignee identities, and labels may persist only in current matching PR snapshots; encrypt those fields at rest with managed environment-scoped keys, authorize every read before decryption, and delete them at the retention boundaries above. Never place credentials or those fields in logs, telemetry, traces, audits, notification history, uncontracted caches, or plaintext backups. Audit only typed safe decisions and pseudonymized actors.
+- Never persist or log feature/delibase bearer tokens, authorization headers,
+  URLs, push content, or user content outside the explicit data contract. The
+  sole provider-token persistence exception is the envelope-encrypted
+  active-connection credential record defined above; the sole bounded
+  server-side grant exception is the encrypted `RegisterDevice` replay result.
+  Deck has no billing-finalization grant and no background-usage authorization.
+  Canonical raw queries and identity-bearing typed builder clauses may persist
+  only in view definitions, repository names and PR fields may persist only in
+  current matching PR snapshots, and notification detail may persist only as
+  encrypted 30-day transition history. Authorize every read before decryption
+  and never place credentials or identity-bearing fields in logs, metrics,
+  traces, audits, uncontracted caches, or plaintext backups.
 - Use least-privilege database/provider identities, fail-closed authorization, CSRF/state validation for callbacks, webhook signature validation, rate/concurrency limits, and explicit safe error enums.
 - DevHud reaches Connect through its private native transport, not browser fetch. Do not allow `http://tauri.localhost` in CORS. The exact `https://deli.dev` browser origin may call only `DeckIntegrationService`; all other procedures reject browser-origin requests.
-- Measure refresh latency, query latency, mutation latency, and widget snapshot size in CI/fixtures only. This contract defines no production SLO, alert threshold, dashboard, or telemetry pipeline.
+- Refresh emits only a closed typed outcome and elapsed milliseconds through
+  the redacting structured logger. Repository, query, title, identity, URL,
+  and credential labels are impossible at that interface. This contract
+  defines no SLO, alert threshold, dashboard, or remote telemetry pipeline.
 
 ## Build and Test
 
@@ -229,7 +288,26 @@ search non-disclosure, candidate, and mutation fixture checks. Billing,
 notification-delivery, and image checks remain blocked with their
 corresponding RPCs failing closed; those bullets do not claim implementation.
 
-Coverage must include unknown-clause preservation, per-viewer `@me`, repository non-disclosure, limits/pagination/truncation, deterministic reviewer grouping, current assignee/label removal operands, explicit PR lifecycle state, pre-mutation action metadata, stale revisions, multi-device coalescing and catalog-bound billing, non-dispatching manual quote success/cancel/expiry/substitution/catalog-change handling, refresh exact replay before and after quote expiry/catalog change, changed-input conflict, lost-response recovery without duplicate provider dispatch or charge, crash-after-dispatch billing recovery without a client retry or second provider request, finalization-grant reservation/service/unit/operation/expiry substitution rejection and encrypted terminal deletion, minimum Deck reservation-TTL rejection, disabled/mismatched meter rejection before warning or provider dispatch, outbound live-usage client-credentials acquisition/startup failure and service-binding rejection, provider timeout charging, reservation failure, zero refresh after all clients stop, every supported mutation and merge confirmation, widget privacy/staleness, DND-safe generic/detailed notification resolution and authorization loss, `RegisterDevice` exact replay/changed-input conflict/lost-response recovery with the identical lease/grant, stale-renewal rejection, and bounded encrypted replay-material deletion, single-purpose revocation-grant cleanup across account switches and lease expiry, shortcut conflicts, provider-credential and query/builder/snapshot envelope encryption/rotation with ciphertext-only backups, redaction, disconnect/logout/reset, exact lifecycle-client pinning and peer-M2M rejection, owner and delibase-lifecycle deletion authorization, deletion-job replay/absent data, browser-origin rejection outside exact DeliDev `DeckIntegrationService`, GitHub.com-only rejection, and a fixture GitHub App.
+Coverage must include unknown-clause preservation, per-viewer `@me`,
+repository non-disclosure, limits/pagination/truncation, deterministic reviewer
+grouping, current assignee/label removal operands, explicit PR lifecycle state,
+pre-mutation action metadata, stale revisions, two-device coalescing and exact
+50-USD-micro live charging, non-dispatching manual quote
+success/cancel/expiry/substitution/catalog-change handling, manual cache
+bypass, refresh exact replay before and after quote expiry, changed-input
+conflict, lost-response recovery without duplicate provider dispatch or
+charge, active-client retry of ambiguous commit/release, disabled/mismatched
+meter or service target rejection before warning/provider dispatch, provider
+timeout/error/rate-limit charging, undispatched release, reservation failure
+with zero GitHub calls, stopped-client silence, four-request installation
+concurrency, 12 manual refreshes/minute/user, 30 mutations/minute/user, stale
+freshness boundaries, all typed notification transitions, exact 30-day
+history, widget privacy/staleness, generic/detailed notification resolution
+and authorization loss, refresh/device idempotency, the absence of
+`REALQA_STORAGE`/authorized-background-usage calls and refresh schedulers,
+credential/query/snapshot encryption, redacted latency metrics without SLOs,
+disconnect/logout/reset, lifecycle authorization/deletion replay, exact
+browser/provider host rejection, and the fixture GitHub App.
 
 These checks validate artifacts only. They must not push GHCR images, deploy the API, configure DNS, create production secrets, register a GitHub App, enable catalog records, publish widgets, release an app, or begin operations.
 
@@ -241,7 +319,21 @@ These checks validate artifacts only. They must not push GHCR images, deploy the
 - The DeliDev settings client contract is [apps-delidev-app-foundation](apps-delidev-app-foundation.md) and is limited to `DeckIntegrationService`.
 - Shared service utilities may come from `servers/internal`; Deck business policy remains under `servers/devhud-deck`.
 - External boundaries are Logto/DeliDev authentication, delibase reservation/commit/release plus its durable account/organization-deletion lifecycle calls, PostgreSQL, the separate Deck GitHub App on GitHub.com, and opaque push delivery. The canonical API origin is future and inactive.
-- Live refresh billing has a dedicated outbound-only delibase configuration set: required non-secret `DECK_DELIBASE_API_ORIGIN`, `DECK_DELIBASE_LOGTO_AUDIENCE`, `DECK_DELIBASE_SERVICE_IDENTITY_ID`, and `DECK_DELIBASE_LOGTO_M2M_CLIENT_ID`, plus required secret `DECK_DELIBASE_LOGTO_M2M_CLIENT_SECRET`. In production, origin and audience are exactly `https://delibase.deli.dev`; the service identity is the stable UUID v7 authorization target published for the Deck meter; and the Logto client must be the delibase service identity bound to that target. Deck obtains short-lived OAuth 2 client-credentials access tokens from its validated exact Logto issuer with only the live-usage scopes and caches them in memory only until bounded expiry. Initial `ReserveUsage` combines that M2M bearer with the current request's memory-only forwarded user bearer; after reservation, `CommitUsage` or `ReleaseUsage` uses either the current forwarded bearer or the exact bounded finalization grant above with a fresh same-service M2M bearer. Once billed refresh exists, startup fails before accepting refresh requests when this set is absent, partial, malformed, targets the wrong origin/audience, names an invalid service UUID, cannot acquire the required scoped token, or delibase lacks the finalization-grant capability; delibase still rejects any token-to-service or grant-to-reservation mapping mismatch before mutation. Neither secret nor token is logged, persisted, baked into an image, or exposed to a client, and the finalization grant has only the explicitly bounded encrypted persistence exception above.
+- Live refresh billing has a dedicated outbound-only delibase configuration
+  set: required non-secret `DECK_DELIBASE_API_ORIGIN`,
+  `DECK_DELIBASE_LOGTO_AUDIENCE`, `DECK_DELIBASE_SERVICE_IDENTITY_ID`, and
+  `DECK_DELIBASE_LOGTO_M2M_CLIENT_ID`, plus required secret
+  `DECK_DELIBASE_LOGTO_M2M_CLIENT_SECRET`. In production, origin and audience
+  are exactly `https://delibase.deli.dev`; the service identity is the stable
+  UUID v7 authorization target published for the Deck meter; and the Logto
+  client must be bound to that target. Deck obtains short-lived OAuth 2
+  client-credentials tokens for only reserve/commit/release and caches them in
+  memory until bounded expiry. Every live usage call also uses the active
+  request's already validated forwarded-user bearer. Missing or malformed
+  configuration fails startup; catalog, target, unit, price, token, and usage
+  response mismatches fail closed before the corresponding provider step.
+  Neither secret nor bearer is logged, persisted, baked into an image, or
+  exposed to another client.
 - `DECK_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID` is a required non-secret receiver-side pin once lifecycle mode is implemented. It must exactly equal delibase's outbound `DELIBASE_DECK_LIFECYCLE_LOGTO_M2M_CLIENT_ID`; Deck stores no corresponding client secret. Startup fails before serving if the lifecycle handler exists and this value is absent or malformed, so lifecycle authorization never falls back to audience/scope alone.
 - The implemented provider startup set is
   `DECK_GITHUB_APP_CLIENT_ID`, `DECK_GITHUB_APP_CLIENT_SECRET`,

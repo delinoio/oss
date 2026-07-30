@@ -6,9 +6,10 @@
 - Canonical source path: `protos/devhud-deck/v1`
 - Contract identity: `devhud.deck.v1`
 - Status: implemented source contract, private generated workspace package,
-  and bounded Deck server persistence/authentication foundation for issue
-  #755. No deployed API, published client, provider/billing integration, or
-  activated feature is claimed.
+  bounded Deck server persistence/authentication/provider-refresh integration,
+  and dependency-injected client polling controller for issue #755. No
+  deployed API, published client, catalog activation, push delivery, or
+  activated product feature is claimed.
 
 ## Runtime and Language
 
@@ -31,7 +32,10 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 
 ## Wire Contract
 
-- IDs are UUID v7 wrappers. Owner scope, view kind, sort, grouping, mutation kind, connection state, refresh outcome, notification transition, freshness state, and stable error reason are closed enums.
+- IDs are UUID v7 wrappers. Owner scope, view kind, sort, grouping, mutation
+  kind, connection state, refresh origin, refresh client kind, refresh outcome,
+  billing disposition, notification transition, freshness state, and stable
+  error reason are closed enums.
 - The only v1 view kind is `GITHUB_PULL_REQUESTS`.
 - Views carry owner/billing scope, name, canonical raw query, typed builder clauses, sort/grouping, notification preference, revision/ETag, and timestamps. `UpdateView` may change the notification preference but never owner or kind.
 - `CreateView` carries a stable client-generated UUID v7 idempotency key scoped to the authenticated subject and operation. An exact replay returns the originally created view and revision; reuse with changed creation input returns the typed idempotency-conflict reason.
@@ -61,29 +65,41 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 - Mutations are a closed union for assign/unassign, reviewer request/removal, label add/remove, draft/ready, close/reopen, merge, and native auto-merge enable/cancel. Merge requests carry explicit user confirmation. A successful `MutatePullRequestResponse` normally carries synchronized pull-request detail; when GitHub accepted the mutation but the result reload failed, it instead sets `refresh_required`, omits the stale detail, and requires a client refresh without retrying the mutation.
 - `GetRefreshPreflight` is the billing preflight for every prospective logical
   refresh origin. Its request identifies the view, client-generated UUID v7
-  refresh identity, and origin. The server validates the authoritative
+  refresh identity, origin, and active desktop/mobile/OS-background/widget
+  client kind. The origin/client combination is closed and invalid
+  combinations fail before billing. The server validates the authoritative
   `(devhud, deck_github_pull_request_refresh)` meter identity, Deck service
   mapping, precision-zero `provider_refresh` unit, and effective 50-USD-micro
   unit price before returning that server-derived price, an opaque short-lived
   token bound to the authenticated subject, view, billing scope, refresh
-  identity, origin, and validated catalog version, plus its expiry. It performs
-  no usage reservation, provider dispatch, cache refresh, or charge; missing,
+  identity, origin, active client kind, and validated catalog version, plus its
+  expiry. It performs no usage reservation, provider dispatch, cache refresh,
+  or charge; missing,
   disabled, or divergent catalog metadata returns a typed unavailable result
   with no preflight. Only manual UI displays the returned price as a warning.
 - `RefreshView` carries a stable client-generated UUID v7 request identity
   scoped to the authenticated subject, operation, and view and distinguishes
-  automatic/widget/manual origin and cache behavior. The server first looks up
-  the authenticated identity and request digest. An existing exact attempt
-  returns or resumes its original freshness, outcome, cache/coalescing, and
-  billing disposition even if its preflight later expires or the catalog
-  mapping changes; changed-input reuse returns the typed idempotency-conflict
-  reason. Creation of every new attempt requires the unexpired token from
-  `GetRefreshPreflight` for that same identity and origin, revalidates the token
-  and current authoritative mapping before reservation or provider dispatch,
-  and rejects missing, expired, substituted, or stale preflight state. The
-  client preserves the refresh identity and token across ambiguous retries. One
-  durable attempt covers reservation, provider dispatch, and commit/release
-  without another provider request or charge.
+  automatic/widget/manual/view-open/shortcut origin, active client kind, and
+  cache behavior. The server first looks up the authenticated identity and
+  request digest. An existing completed exact attempt returns its original
+  freshness, outcome, cache/coalescing, and billing disposition after preflight
+  expiry; changed-input reuse returns the typed idempotency-conflict reason.
+  Creation of every new attempt requires the unexpired token from
+  `GetRefreshPreflight` for that same identity, origin, and client kind,
+  revalidates the current authoritative mapping before reservation or provider
+  dispatch, and rejects missing, expired, substituted, or stale preflight
+  state. The client preserves the refresh identity and token across ambiguous
+  retries. One durable attempt covers live reservation, immediate pre-dispatch
+  accounting, and commit/release without another provider request or charge.
+  A nonterminal attempt advances only on an active authenticated client retry
+  carrying a fresh forwarded-user bearer; it is not a server job.
+- `RefreshOutcome` includes refreshed, free cache hit, free coalesced,
+  reservation rejected, provider permission/rate-limit/timeout/failure,
+  disconnected, provider-concurrency-limited, and automatic-not-eligible
+  states. `BillingDisposition` distinguishes free cache/coalesced/ineligible,
+  reserved, committed, released, and rejected states. `FreshnessState` remains
+  independent and distinguishes fresh, stale, offline, disconnected, and
+  never-refreshed snapshots.
 - `StartGitHubConnection` returns an ephemeral GitHub.com authorization target. DevHud may pass it only to the scoped native system-browser action; the DeliDev settings client may pass a Deck target only to its separately contracted validated top-level browser handoff. It is never a general navigation field: each client applies the exact authorization host/path/App validation in its app contract and must not log, cache, persist, or reuse the query data.
 - Each logical `RegisterDevice` creation or lease renewal carries a stable client-generated UUID v7 idempotency key scoped to the authenticated subject, operation, account/device, and request input. Initial creation omits `expected_revision`; renewal carries the current device revision and a stale renewal fails without replacing newer display-name, push, shortcut, widget, or notification-detail configuration. While the original lease remains valid, an exact replay returns the original opaque registration ID, identical lease, and identical revocation grant in the same dedicated sensitive response metadata; changed-input reuse returns the typed idempotency-conflict reason. The grant remains valid through the lease and authorizes only idempotent `UnregisterDevice` when supplied as dedicated authorization metadata; ordinary matching-account authentication may also unregister. A new or renewed registration is rejected while cleanup remains pending, but a cleanup tombstone retains the registration ID, lease expiry, and grant in the OS secure vault so revocation can finish after logout or an account switch. Terminal unregister/absent-registration success or observed lease expiry permits the tombstone and grant to be deleted.
 - Push payloads carry only an opaque event ID. `ResolveNotificationEvent` requires human authentication and the matching active account/device registration, never accepts a cleanup revocation grant, and returns the affected view/PR detail only after current owner/repository authorization and the device's detailed-text opt-in are revalidated. Otherwise it returns a typed unavailable/generic result without identity-bearing fields and never initiates provider refresh.
@@ -110,7 +126,9 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
   and diagnostics except for the revocation grant's narrowly scoped OS-vault
   cleanup tombstone. `protos/devhud-deck/AUTHENTICATION.md` is the package-local
   metadata and scope reference.
-- The future delibase single-reservation billing-finalization grant is an internal delibase-to-Deck server credential, not a `devhud.deck.v1` field or metadata value. Deck clients never receive, retain, or submit it; server-side recovery uses it only under the Deck server contract.
+- Deck defines no background-usage or billing-finalization-grant field. Live
+  reserve, commit, and release use only request metadata and never appear in a
+  `devhud.deck.v1` message.
 - The DevHud generated client runs through the private native Connect transport's closed procedure/origin mapping rather than browser fetch. This changes no Connect wire shape and grants no arbitrary URL, header, method, redirect, or `http://tauri.localhost` CORS access.
 - The server verifies matching subjects, DeliDev role/scope, and the viewer's GitHub permission. Error enums distinguish authentication, authorization, provider permission, stale revision, limits, truncation, rate/concurrency limits, billing catalog/preflight, billing reservation, provider failure/rate limit/timeout, offline/stale, disconnected, and unsupported host/action.
 - Messages must not carry GitHub tokens, webhook secrets, raw authorization headers, production secrets, or sensitive push payloads.
