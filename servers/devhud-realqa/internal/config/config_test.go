@@ -23,6 +23,9 @@ func TestLoadRequiresCanonicalAudiencesAndLifecyclePin(t *testing.T) {
 		"REALQA_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID",
 		"REALQA_IDENTITY_HASH_KEY",
 		"REALQA_LOG_PSEUDONYM_KEY",
+		"REALQA_UPLOAD_SIGNING_KEY",
+		"REALQA_R2_SECRET_ACCESS_KEY",
+		"REALQA_GITHUB_WEBHOOK_SECRET",
 	} {
 		invalid := validValues()
 		delete(invalid, name)
@@ -47,5 +50,12 @@ func validValues() map[string]string {
 		"REALQA_IDENTITY_HASH_KEY":                      strings.Repeat("i", 32),
 		"REALQA_LOG_PSEUDONYM_KEY":                      strings.Repeat("p", 32),
 		"REALQA_GITHUB_OAUTH_CLIENT_ID":                 "fixture-github-client",
+		"REALQA_ASSET_ORIGIN":                           CanonicalAssetOrigin,
+		"REALQA_UPLOAD_SIGNING_KEY":                     strings.Repeat("u", 32),
+		"REALQA_R2_ENDPOINT":                            "https://fixture.r2.cloudflarestorage.com",
+		"REALQA_R2_BUCKET":                              "realqa-fixture",
+		"REALQA_R2_ACCESS_KEY_ID":                       "fixture-r2-key",
+		"REALQA_R2_SECRET_ACCESS_KEY":                   strings.Repeat("s", 32),
+		"REALQA_GITHUB_WEBHOOK_SECRET":                  strings.Repeat("w", 32),
 	}
 }

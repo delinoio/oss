@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1/realqav1connect"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	"github.com/delinoio/oss/servers/devhud-realqa/internal/imageassets"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
@@ -57,11 +58,19 @@ type GitHubAuthorization interface {
 	Target(state string) (string, error)
 }
 
+type IssueImageUpdater interface {
+	RemoveImageReferences(context.Context, string, []string) error
+}
+
 type Dependencies struct {
 	Store         *database.Store
 	IDs           IDGenerator
 	Clock         Clock
 	GitHub        GitHubAuthorization
+	Objects       imageassets.ObjectStore
+	UploadSigner  *imageassets.Signer
+	IssueUpdater  IssueImageUpdater
+	WebhookSecret []byte
 	Pseudonymizer *safelog.Pseudonymizer
 	Logger        *slog.Logger
 }

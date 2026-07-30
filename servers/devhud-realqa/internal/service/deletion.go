@@ -154,6 +154,7 @@ func (service *Preset) DeleteFeatureData(
 
 	var removed int64
 	var deletionJob dbgen.RealqaDeletionJob
+	var scopedAssets []dbgen.RealqaAsset
 	idempotencyRecordID, err := newID(service.dependencies)
 	if err != nil {
 		return nil, err
@@ -191,8 +192,50 @@ func (service *Preset) DeleteFeatureData(
 				}); insertErr != nil {
 				return insertErr
 			}
+			var listErr error
+			if _, listErr = queries.LockScopeSubmissionRecords(
+				ctx, dbgen.LockScopeSubmissionRecordsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				}); listErr != nil {
+				return listErr
+			}
+			scopedAssets, listErr = queries.ListScopeObjectAssets(ctx,
+				dbgen.ListScopeObjectAssetsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			if listErr != nil {
+				return listErr
+			}
+			for _, asset := range scopedAssets {
+				if listErr = enqueueAssetObjectDeletions(
+					ctx, queries, asset); listErr != nil {
+					return listErr
+				}
+			}
+			if listErr = queries.TombstoneScopePublicAssets(ctx,
+				dbgen.TombstoneScopePublicAssetsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				}); listErr != nil {
+				return listErr
+			}
 			count, deleteErr := queries.DeleteScopeDisconnectIdempotencySnapshots(ctx,
 				dbgen.DeleteScopeDisconnectIdempotencySnapshotsParams{
+					ScopeOwnerKind: scope.kind, ScopeOwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
+			count, deleteErr = queries.DeleteScopePresetIdempotencySnapshots(ctx,
+				dbgen.DeleteScopePresetIdempotencySnapshotsParams{
+					ScopeOwnerKind: scope.kind, ScopeOwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
+			count, deleteErr = queries.DeleteScopeSubmissionIdempotencySnapshots(ctx,
+				dbgen.DeleteScopeSubmissionIdempotencySnapshotsParams{
 					ScopeOwnerKind: scope.kind, ScopeOwnerID: toPGUUID(scope.id),
 				})
 			removed += count
@@ -273,6 +316,8 @@ func (service *Preset) DeleteFeatureData(
 		}
 		return nil, err
 	}
+	imageService := NewSubmission(service.dependencies)
+	imageService.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	audit(ctx, service.dependencies, actor, "feature_deletion_accepted",
 		scope, jobID, "allow", "success")
 	return connect.NewResponse(&realqav1.DeleteFeatureDataResponse{
