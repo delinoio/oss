@@ -516,6 +516,69 @@ func TestAgedOutDeletionSettlementSkipsWithoutStartingRecovery(
 	}
 }
 
+func TestDeletionPendingReserveFailureDoesNotStartRecovery(t *testing.T) {
+	t.Parallel()
+	authorizationID := uuidv7.MustNew()
+	submissionID := uuidv7.MustNew()
+	serviceIdentityID := uuidv7.MustNew()
+	storageMeterID := uuidv7.MustNew()
+	periodStart := time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC)
+	reserveErr := &StorageBillingFailure{
+		Kind: StorageBillingFailurePayment,
+	}
+	billing := &failingAuthorizedStorageBilling{
+		meters: BillingMeters{
+			Transfer: BillingMeter{
+				ID: uuidv7.MustNew(), PriceVersionID: uuidv7.MustNew(),
+				ServiceIdentityID:     serviceIdentityID,
+				Key:                   "realqa_image_transfer",
+				Unit:                  "encoded_mib",
+				Precision:             0,
+				USDMicrosPerUnit:      transferPriceUSDMicros,
+				ReservationTTLSeconds: 86_400,
+				Enabled:               true,
+			},
+			Storage: BillingMeter{
+				ID: storageMeterID, PriceVersionID: uuidv7.MustNew(),
+				ServiceIdentityID: serviceIdentityID,
+				Key:               "realqa_image_storage",
+				Unit:              "mib_day",
+				Precision:         0,
+				USDMicrosPerUnit:  storagePriceUSDMicros,
+				Enabled:           true,
+			},
+		},
+		reserveErr: reserveErr,
+	}
+	service := NewSubmission(Dependencies{Billing: billing})
+	err := service.reserveAndCommitStorage(
+		context.Background(),
+		dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID:   toPGUUID(authorizationID),
+			SubmissionID:      toPGUUID(submissionID),
+			ServiceIdentityID: toPGUUID(serviceIdentityID),
+			MeterID:           toPGUUID(storageMeterID),
+			ClosureState:      "resource_deletion_pending",
+		},
+		dbgen.RealqaStorageDailySettlement{
+			AuthorizationID:       toPGUUID(authorizationID),
+			PeriodStart:           pgTimestamp(periodStart),
+			Units:                 1,
+			ReserveIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+		},
+		periodStart,
+		periodStart.Add(24*time.Hour),
+	)
+	if err != reserveErr {
+		t.Fatalf("deletion-pending reserve error = %v, want original error",
+			err)
+	}
+	if billing.reserveAuthorizedCalls != 1 {
+		t.Fatalf("reserve calls = %d, want 1",
+			billing.reserveAuthorizedCalls)
+	}
+}
+
 func TestBillingMeterContractRejectsPriceTTLAndActivationDrift(t *testing.T) {
 	t.Parallel()
 	serviceID := uuidv7.MustNew()

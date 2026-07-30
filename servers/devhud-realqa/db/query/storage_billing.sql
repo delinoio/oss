@@ -360,6 +360,7 @@ JOIN realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
 WHERE connection.id = sqlc.arg(connection_id)
+  AND connection.state = 'disconnected'
   AND binding.closure_state = 'open'
 ORDER BY binding.authorization_id;
 

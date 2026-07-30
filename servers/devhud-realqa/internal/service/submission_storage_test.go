@@ -167,10 +167,81 @@ func TestLoadSubmissionMarksRecoveryAfterResponseAssembly(t *testing.T) {
 	}
 }
 
+func TestStorageRecoveryActionsFollowCallerAuthority(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	submissionID := toPGUUID(uuidv7.MustNew())
+	organizationID := toPGUUID(uuidv7.MustNew())
+	callerAccountID := toPGUUID(uuidv7.MustNew())
+	authorizationID := toPGUUID(uuidv7.MustNew())
+	queries := &storageRecoveryQuerier{
+		recovery: dbgen.RealqaStorageRecovery{
+			ID:                toPGUUID(uuidv7.MustNew()),
+			SubmissionID:      submissionID,
+			AuthorizationID:   authorizationID,
+			Reason:            "payment_required",
+			NotificationState: "pending",
+			GraceStartedAt:    pgTimestamp(now),
+			GraceExpiresAt:    pgTimestamp(now.Add(30 * 24 * time.Hour)),
+		},
+		binding: dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID: authorizationID,
+			OwnerKind:       "organization",
+			OwnerID:         organizationID,
+			OrganizationID:  organizationID,
+			Status:          "active",
+		},
+		access: dbgen.RealqaOwnerBinding{Role: "member"},
+	}
+
+	memberRecovery, err := storageRecoveryForSubmission(
+		context.Background(), queries, submissionID, callerAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memberRecovery.message.Actions) != 0 {
+		t.Fatalf("member recovery actions = %v, want none",
+			memberRecovery.message.Actions)
+	}
+
+	queries.access.Role = "admin"
+	adminRecovery, err := storageRecoveryForSubmission(
+		context.Background(), queries, submissionID, callerAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adminRecovery.message.Actions) != 2 ||
+		adminRecovery.message.Actions[0] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_PAYMENT ||
+		adminRecovery.message.Actions[1] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE {
+		t.Fatalf("admin recovery actions = %v, want payment/revoke",
+			adminRecovery.message.Actions)
+	}
+
+	queries.access.Role = "owner"
+	ownerRecovery, err := storageRecoveryForSubmission(
+		context.Background(), queries, submissionID, callerAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ownerRecovery.message.Actions) != 3 ||
+		ownerRecovery.message.Actions[0] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_PAYMENT ||
+		ownerRecovery.message.Actions[1] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND ||
+		ownerRecovery.message.Actions[2] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE {
+		t.Fatalf("owner recovery actions = %v, want payment/rebind/revoke",
+			ownerRecovery.message.Actions)
+	}
+}
+
 type storageRecoveryQuerier struct {
 	dbgen.Querier
 	recovery  dbgen.RealqaStorageRecovery
 	binding   dbgen.RealqaStorageAuthorizationBinding
+	access    dbgen.RealqaOwnerBinding
 	assetsErr error
 	markErr   error
 	marked    bool
@@ -195,6 +266,13 @@ func (queries *storageRecoveryQuerier) GetStorageAuthorizationBinding(
 	pgtype.UUID,
 ) (dbgen.RealqaStorageAuthorizationBinding, error) {
 	return queries.binding, nil
+}
+
+func (queries *storageRecoveryQuerier) GetOwnerAccess(
+	context.Context,
+	dbgen.GetOwnerAccessParams,
+) (dbgen.RealqaOwnerBinding, error) {
+	return queries.access, nil
 }
 
 func (queries *storageRecoveryQuerier) ListSubmissionAssets(

@@ -303,6 +303,13 @@ func (service *Submission) reserveAndCommitStorage(
 			IdempotencyKey: reserveKey,
 		})
 	if err != nil {
+		if binding.ClosureState == "resource_deletion_pending" {
+			// Deletion has already removed the public resource, so this
+			// pre-cutoff settlement must stay retryable without creating an
+			// owner-facing recovery that the tombstoned submission cannot
+			// resolve.
+			return err
+		}
 		if storageFailureKind(err) == StorageBillingFailureUnavailable {
 			if graceErr := service.startStorageGrace(
 				ctx, binding, periodEnd,

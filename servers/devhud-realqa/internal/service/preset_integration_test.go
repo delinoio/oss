@@ -2493,7 +2493,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		FROM realqa_assets AS asset
 		WHERE asset.id = $3;
 		UPDATE realqa_github_connections
-		SET updated_at = $9
+		SET state = 'disconnected',
+		    updated_at = $9
 		WHERE id = $12
 	`, disconnectSubmissionID, submissionID, disconnectAssetID,
 		disconnectPublicID, uuidv7.MustNew(), disconnectAttemptKey,
@@ -2579,6 +2580,23 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if disconnectSettlement.State != "pending" {
 		t.Fatalf("disconnect cutoff retry state = %q, want pending",
 			disconnectSettlement.State)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET state = 'connected',
+		    updated_at = $2
+		WHERE id = $1
+	`, organizationConnectionID, disconnectCutoff.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if disconnectErr := disconnectRetryService.HandleGitHubConnectionDeletion(
+		ctx, organizationConnectionID, "fixture-forwarded-bearer",
+	); disconnectErr != nil {
+		t.Fatalf("stale disconnect cleanup after reconnect: %v", disconnectErr)
+	}
+	if disconnectBilling.reserveAuthorizedCalls != 2 {
+		t.Fatalf("stale disconnect replay reserve calls = %d, want 2",
+			disconnectBilling.reserveAuthorizedCalls)
 	}
 	lifecycleScope := owner{kind: "personal", id: accountID}
 	for attempt := 1; attempt <= 2; attempt++ {

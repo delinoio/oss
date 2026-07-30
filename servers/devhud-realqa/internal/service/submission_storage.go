@@ -649,12 +649,13 @@ func (service *Submission) GetSubmission(
 	if request == nil || request.Msg == nil {
 		return nil, invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
 	}
-	_, id, _, _, err := service.authorizeSubmissionOwnerRequest(
+	actor, id, _, _, err := service.authorizeSubmissionOwnerRequest(
 		ctx, request.Msg.SubmissionId)
 	if err != nil {
 		return nil, err
 	}
-	submission, err := service.loadSubmission(ctx, id)
+	submission, err := service.loadSubmissionWithRecoveryCaller(
+		ctx, id, toPGUUID(actor.accountID))
 	if err != nil {
 		return nil, err
 	}
@@ -744,7 +745,8 @@ func (service *Submission) ListSubmissions(
 			})
 		}
 		recovery, err := storageRecoveryForSubmission(
-			ctx, service.dependencies.Store.Queries(), row.ID)
+			ctx, service.dependencies.Store.Queries(), row.ID,
+			toPGUUID(actor.accountID))
 		if err != nil {
 			return nil, err
 		}
@@ -1947,13 +1949,22 @@ func (service *Submission) loadSubmission(
 	ctx context.Context,
 	id uuid.UUID,
 ) (*realqav1.Submission, error) {
+	return service.loadSubmissionWithRecoveryCaller(
+		ctx, id, pgtype.UUID{})
+}
+
+func (service *Submission) loadSubmissionWithRecoveryCaller(
+	ctx context.Context,
+	id uuid.UUID,
+	callerAccountID pgtype.UUID,
+) (*realqav1.Submission, error) {
 	record, err := service.dependencies.Store.Queries().GetSubmissionRecord(
 		ctx, toPGUUID(id))
 	if err != nil {
 		return nil, err
 	}
-	return loadSubmissionWithRecord(
-		ctx, service.dependencies.Store.Queries(), record)
+	return loadSubmissionWithRecordAndRecoveryCaller(
+		ctx, service.dependencies.Store.Queries(), record, callerAccountID)
 }
 
 func loadSubmissionWithQueries(
@@ -1972,6 +1983,16 @@ func loadSubmissionWithRecord(
 	ctx context.Context,
 	queries dbgen.Querier,
 	record dbgen.RealqaSubmission,
+) (*realqav1.Submission, error) {
+	return loadSubmissionWithRecordAndRecoveryCaller(
+		ctx, queries, record, pgtype.UUID{})
+}
+
+func loadSubmissionWithRecordAndRecoveryCaller(
+	ctx context.Context,
+	queries dbgen.Querier,
+	record dbgen.RealqaSubmission,
+	callerAccountID pgtype.UUID,
 ) (*realqav1.Submission, error) {
 	id, err := fromPGUUID(record.ID)
 	if err != nil {
@@ -2056,7 +2077,8 @@ func loadSubmissionWithRecord(
 		!errors.Is(authorizationErr, pgx.ErrNoRows) {
 		return nil, authorizationErr
 	}
-	recovery, err := storageRecoveryForSubmission(ctx, queries, record.ID)
+	recovery, err := storageRecoveryForSubmission(
+		ctx, queries, record.ID, callerAccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -2090,6 +2112,7 @@ func storageRecoveryForSubmission(
 	ctx context.Context,
 	queries dbgen.Querier,
 	submissionID pgtype.UUID,
+	callerAccountID pgtype.UUID,
 ) (storageRecoveryNotification, error) {
 	recovery, err := queries.GetActiveStorageRecovery(ctx, submissionID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -2111,21 +2134,62 @@ func storageRecoveryForSubmission(
 		GraceStartedAt: timestamp(recovery.GraceStartedAt),
 		GraceExpiresAt: timestamp(recovery.GraceExpiresAt),
 	}
+	if !callerAccountID.Valid {
+		return storageRecoveryNotification{id: recovery.ID, message: result}, nil
+	}
+	resourceAccess, err := queries.GetOwnerAccess(
+		ctx, dbgen.GetOwnerAccessParams{
+			AccountID: callerAccountID,
+			OwnerKind: binding.OwnerKind,
+			OwnerID:   binding.OwnerID,
+		})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return storageRecoveryNotification{}, err
+	}
+	canRebind := err == nil && (binding.OwnerKind == "personal" ||
+		resourceAccess.Role == "owner")
+	billingAccess := resourceAccess
+	if binding.OwnerKind != "organization" ||
+		binding.OwnerID != binding.OrganizationID {
+		billingAccess, err = queries.GetOwnerAccess(
+			ctx, dbgen.GetOwnerAccessParams{
+				AccountID: callerAccountID,
+				OwnerKind: "organization",
+				OwnerID:   binding.OrganizationID,
+			})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return storageRecoveryNotification{}, err
+		}
+	}
+	canManageBilling := err == nil &&
+		(billingAccess.Role == "owner" || billingAccess.Role == "admin")
 	switch recovery.Reason {
 	case "payment_required", "overage_required", "billing_unavailable":
-		result.Actions = []realqav1.StorageRecoveryAction{
-			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_PAYMENT,
-			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND,
-			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE,
+		if canManageBilling {
+			result.Actions = append(result.Actions,
+				realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_PAYMENT)
+		}
+		if canRebind {
+			result.Actions = append(result.Actions,
+				realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND)
+		}
+		if canManageBilling {
+			result.Actions = append(result.Actions,
+				realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE)
 		}
 	case "authorization_revoked", "authorization_access_lost":
-		result.Actions = []realqav1.StorageRecoveryAction{
-			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND,
+		if canRebind {
+			result.Actions = append(result.Actions,
+				realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND)
 		}
 	default:
-		result.Actions = []realqav1.StorageRecoveryAction{
-			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND,
-			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE,
+		if canRebind {
+			result.Actions = append(result.Actions,
+				realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND)
+		}
+		if canManageBilling {
+			result.Actions = append(result.Actions,
+				realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE)
 		}
 	}
 	return storageRecoveryNotification{id: recovery.ID, message: result}, nil
