@@ -7,10 +7,37 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DECK_REFRESH_INTERVAL_MS,
   DeckRefreshController,
+  type DeckRefreshAttempt,
+  type DeckRefreshAttemptStore,
   type DeckRefreshIdentity,
   type DeckRefreshTransport,
   isAutomaticRefreshEligible,
 } from "./refreshController";
+
+function attemptStore(): DeckRefreshAttemptStore {
+  const attempts = new Map<string, DeckRefreshAttempt>();
+  return {
+    get: (viewId) => attempts.get(viewId),
+    set: (viewId, attempt) => {
+      attempts.set(viewId, attempt);
+    },
+    deleteIfMatches: (viewId, attempt) => {
+      if (attempts.get(viewId)?.request.requestId === attempt.request.requestId) {
+        attempts.delete(viewId);
+      }
+    },
+  };
+}
+
+function controllerAttemptStores(): Pick<
+  ConstructorParameters<typeof DeckRefreshController>[0],
+  "automaticAttempts" | "manualAttempts"
+> {
+  return {
+    automaticAttempts: attemptStore(),
+    manualAttempts: attemptStore(),
+  };
+}
 
 function transportRecorder() {
   const preflights: DeckRefreshIdentity[] = [];
@@ -42,6 +69,7 @@ describe("Deck client-owned refresh polling", () => {
     const recorded = transportRecorder();
     let sequence = 0;
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.DESKTOP,
       transport: recorded.transport,
       createRequestId: () => `request-${++sequence}`,
@@ -95,6 +123,7 @@ describe("Deck client-owned refresh polling", () => {
     const recorded = transportRecorder();
     let permitted = false;
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.OS_BACKGROUND_TASK,
       transport: recorded.transport,
       createRequestId: () => "request",
@@ -129,6 +158,7 @@ describe("Deck client-owned refresh polling", () => {
     const preflights: string[] = [];
     const providerDispatches: string[] = [];
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.MOBILE,
       createRequestId: () => `request-${++sequence}`,
       canPoll: () => true,
@@ -179,6 +209,7 @@ describe("Deck client-owned refresh polling", () => {
     let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
     let providerDispatches = 0;
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.DESKTOP,
       createRequestId: () => "request",
       canPoll: () => false,
@@ -207,44 +238,54 @@ describe("Deck client-owned refresh polling", () => {
     expect(providerDispatches).toBe(0);
   });
 
-  it("retries an ambiguous automatic failure with the same identity and token", async () => {
+  it("retries an ambiguous automatic failure after controller recreation", async () => {
     const preflights: DeckRefreshIdentity[] = [];
     const refreshes: Array<
       DeckRefreshIdentity & { preflightToken: string }
     > = [];
+    const automaticAttempts = attemptStore();
     let sequence = 0;
     let attached = true;
-    const controller = new DeckRefreshController({
-      clientKind: RefreshClientKind.DESKTOP,
-      createRequestId: () => `request-${++sequence}`,
-      canPoll: () => true,
-      listCandidates: async () => [
-        {
-          viewId: "view",
-          notificationAttached: attached,
-          shortcutAttached: false,
-          widgetAttached: false,
-        },
-      ],
-      transport: {
-        isAmbiguousRefreshError: () => true,
-        getPreflight: async (request) => {
-          preflights.push(request);
-          return { priceUsdMicros: 50n, token: `token-${request.requestId}` };
-        },
-        refresh: async (request) => {
-          refreshes.push(request);
-          if (refreshes.length === 1) {
-            throw new Error("response lost");
-          }
-        },
+    const transport: DeckRefreshTransport = {
+      isAmbiguousRefreshError: () => true,
+      getPreflight: async (request) => {
+        preflights.push(request);
+        return { priceUsdMicros: 50n, token: `token-${request.requestId}` };
       },
-    });
+      refresh: async (request) => {
+        refreshes.push(request);
+        if (refreshes.length === 1) {
+          throw new Error("response lost");
+        }
+      },
+    };
+    const createController = () =>
+      new DeckRefreshController({
+        automaticAttempts,
+        manualAttempts: attemptStore(),
+        clientKind: RefreshClientKind.DESKTOP,
+        createRequestId: () => `request-${++sequence}`,
+        canPoll: () => true,
+        listCandidates: async () => [
+          {
+            viewId: "view",
+            notificationAttached: attached,
+            shortcutAttached: false,
+            widgetAttached: false,
+          },
+        ],
+        transport,
+      });
 
+    let controller = createController();
     controller.start();
     await vi.advanceTimersByTimeAsync(0);
+    controller.stop();
+
     attached = false;
-    await vi.advanceTimersByTimeAsync(DECK_REFRESH_INTERVAL_MS);
+    controller = createController();
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(preflights).toHaveLength(1);
     expect(refreshes).toHaveLength(2);
@@ -252,11 +293,61 @@ describe("Deck client-owned refresh polling", () => {
     controller.stop();
   });
 
+  it("retries an ambiguous manual failure after controller recreation", async () => {
+    const preflights: DeckRefreshIdentity[] = [];
+    const refreshes: Array<
+      DeckRefreshIdentity & { preflightToken: string }
+    > = [];
+    const manualAttempts = attemptStore();
+    let confirmations = 0;
+    let sequence = 0;
+    const transport: DeckRefreshTransport = {
+      isAmbiguousRefreshError: () => true,
+      getPreflight: async (request) => {
+        preflights.push(request);
+        return { priceUsdMicros: 50n, token: `token-${request.requestId}` };
+      },
+      refresh: async (request) => {
+        refreshes.push(request);
+        if (refreshes.length === 1) {
+          throw new Error("response lost");
+        }
+      },
+    };
+    const createController = () =>
+      new DeckRefreshController({
+        automaticAttempts: attemptStore(),
+        manualAttempts,
+        clientKind: RefreshClientKind.DESKTOP,
+        createRequestId: () => `request-${++sequence}`,
+        canPoll: () => false,
+        listCandidates: async () => [],
+        transport,
+      });
+    const confirm = () => {
+      confirmations += 1;
+      return true;
+    };
+
+    await expect(
+      createController().refreshManually("view", confirm),
+    ).rejects.toThrow("response lost");
+    await expect(
+      createController().refreshManually("view", confirm),
+    ).resolves.toBe(true);
+
+    expect(preflights).toHaveLength(1);
+    expect(refreshes).toHaveLength(2);
+    expect(refreshes[1]).toEqual(refreshes[0]);
+    expect(confirmations).toBe(1);
+  });
+
   it("starts a new attempt after a terminal automatic failure", async () => {
     const preflights: DeckRefreshIdentity[] = [];
     let sequence = 0;
     let refreshes = 0;
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.DESKTOP,
       createRequestId: () => `request-${++sequence}`,
       canPoll: () => true,
@@ -299,6 +390,7 @@ describe("Deck client-owned refresh polling", () => {
     const errors: unknown[] = [];
     let sequence = 0;
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.DESKTOP,
       createRequestId: () => `request-${++sequence}`,
       canPoll: () => true,
@@ -346,6 +438,7 @@ describe("Deck client-owned refresh polling", () => {
     const errors: unknown[] = [];
     let sequence = 0;
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.DESKTOP,
       createRequestId: () => `request-${++sequence}`,
       canPoll: () => true,
@@ -395,6 +488,7 @@ describe("Deck client-owned refresh polling", () => {
     let resolveFirst: (() => void) | undefined;
     let listCalls = 0;
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.DESKTOP,
       createRequestId: () => "request",
       canPoll: () => true,
@@ -428,6 +522,7 @@ describe("Deck client-owned refresh polling", () => {
   it("warns with the server price and manual refresh bypass origin", async () => {
     const recorded = transportRecorder();
     const controller = new DeckRefreshController({
+      ...controllerAttemptStores(),
       clientKind: RefreshClientKind.DESKTOP,
       transport: recorded.transport,
       createRequestId: () => "manual-request",

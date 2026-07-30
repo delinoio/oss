@@ -399,8 +399,8 @@ func (store *Store) GetRefreshAttempt(
 }
 
 // HasRecentAutomaticRefreshAttempt coalesces active client requests only after
-// an earlier attempt actually dispatched to GitHub. The current request is
-// excluded because its attempt row is inserted before this check.
+// an earlier dispatched attempt completed its billing accounting. The current
+// request is excluded because its attempt row is inserted before this check.
 func (store *Store) HasRecentAutomaticRefreshAttempt(
 	ctx context.Context,
 	viewID uuid.UUID,
@@ -417,8 +417,10 @@ func (store *Store) HasRecentAutomaticRefreshAttempt(
 			  AND refresh_request_id <> $3
 			  AND origin IN (1, 2)
 			  AND provider_dispatched_at > $4
+			  AND state = $5
 		)
-	`, viewID, viewerHash[:], currentRequestID, cutoff.UTC()).Scan(&recent)
+	`, viewID, viewerHash[:], currentRequestID, cutoff.UTC(),
+		int16(RefreshAttemptCompleted)).Scan(&recent)
 	if err != nil {
 		return false, errors.New(
 			"deck database: refresh coalescing lookup failed")

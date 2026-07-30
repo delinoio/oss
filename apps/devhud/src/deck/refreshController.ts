@@ -47,6 +47,8 @@ export interface DeckRefreshControllerOptions {
   createRequestId: () => string;
   listCandidates: (signal: AbortSignal) => Promise<readonly DeckRefreshCandidate[]>;
   canPoll: () => boolean;
+  automaticAttempts: DeckRefreshAttemptStore;
+  manualAttempts: DeckRefreshAttemptStore;
   now?: () => Date;
   onError?: (error: unknown) => void;
 }
@@ -70,7 +72,12 @@ export interface DeckRefreshAttemptStore {
     viewId: string,
     attempt: DeckRefreshAttempt,
   ): void | Promise<void>;
-  delete(viewId: string): void | Promise<void>;
+  // Implementations must compare and delete atomically so delayed cleanup
+  // cannot remove a newer logical attempt for the same view.
+  deleteIfMatches(
+    viewId: string,
+    attempt: DeckRefreshAttempt,
+  ): void | Promise<void>;
 }
 
 export function isAutomaticRefreshEligible(
@@ -112,8 +119,6 @@ export class DeckRefreshController {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #automaticAbort: AbortController | undefined;
   #activeRequests = new Set<AbortController>();
-  #automaticAttempts = new Map<string, DeckRefreshAttempt>();
-  #manualAttempts = new Map<string, DeckRefreshAttempt>();
   #generation = 0;
   #running = false;
 
@@ -153,7 +158,10 @@ export class DeckRefreshController {
     const controller = new AbortController();
     this.#activeRequests.add(controller);
     try {
-      let pending = this.#manualAttempts.get(viewId);
+      let pending = await this.#options.manualAttempts.get(viewId);
+      if (controller.signal.aborted) {
+        return false;
+      }
       if (pending === undefined) {
         const request = this.#identity(viewId, RefreshOrigin.MANUAL);
         const preflight = await this.#options.transport.getPreflight(
@@ -170,7 +178,10 @@ export class DeckRefreshController {
           return false;
         }
         pending = { request, preflightToken: preflight.token };
-        this.#manualAttempts.set(viewId, pending);
+        await this.#options.manualAttempts.set(viewId, pending);
+        if (controller.signal.aborted) {
+          return false;
+        }
       }
       try {
         await this.#options.transport.refresh(
@@ -182,11 +193,11 @@ export class DeckRefreshController {
         );
       } catch (error) {
         if (!this.#options.transport.isAmbiguousRefreshError(error)) {
-          this.#manualAttempts.delete(viewId);
+          await this.#options.manualAttempts.deleteIfMatches(viewId, pending);
         }
         throw error;
       }
-      this.#manualAttempts.delete(viewId);
+      await this.#options.manualAttempts.deleteIfMatches(viewId, pending);
       return true;
     } finally {
       this.#activeRequests.delete(controller);
@@ -233,7 +244,15 @@ export class DeckRefreshController {
         ) {
           return;
         }
-        let pending = this.#automaticAttempts.get(candidate.viewId);
+        let pending = await this.#options.automaticAttempts.get(candidate.viewId);
+        if (
+          controller.signal.aborted ||
+          !this.#running ||
+          generation !== this.#generation ||
+          !this.#options.canPoll()
+        ) {
+          return;
+        }
         if (pending === undefined) {
           if (!isAutomaticRefreshEligible(candidate, this.#now())) {
             continue;
@@ -264,7 +283,7 @@ export class DeckRefreshController {
             return;
           }
           pending = { request, preflightToken: preflight.token };
-          this.#automaticAttempts.set(candidate.viewId, pending);
+          await this.#options.automaticAttempts.set(candidate.viewId, pending);
         }
         if (
           controller.signal.aborted ||
@@ -284,7 +303,10 @@ export class DeckRefreshController {
           );
         } catch (error) {
           if (!this.#options.transport.isAmbiguousRefreshError(error)) {
-            this.#automaticAttempts.delete(candidate.viewId);
+            await this.#options.automaticAttempts.deleteIfMatches(
+              candidate.viewId,
+              pending,
+            );
           }
           if (controller.signal.aborted) {
             return;
@@ -292,7 +314,10 @@ export class DeckRefreshController {
           this.#options.onError?.(error);
           continue;
         }
-        this.#automaticAttempts.delete(candidate.viewId);
+        await this.#options.automaticAttempts.deleteIfMatches(
+          candidate.viewId,
+          pending,
+        );
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -350,7 +375,7 @@ export class DeckWidgetRefreshController {
       pending = { request, preflightToken: preflight.token };
       await this.#attempts.set(viewId, pending);
       if (signal.aborted) {
-        await this.#attempts.delete(viewId);
+        await this.#attempts.deleteIfMatches(viewId, pending);
         return;
       }
     }
@@ -364,10 +389,10 @@ export class DeckWidgetRefreshController {
       );
     } catch (error) {
       if (!this.#transport.isAmbiguousRefreshError(error)) {
-        await this.#attempts.delete(viewId);
+        await this.#attempts.deleteIfMatches(viewId, pending);
       }
       throw error;
     }
-    await this.#attempts.delete(viewId);
+    await this.#attempts.deleteIfMatches(viewId, pending);
   }
 }

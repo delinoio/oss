@@ -19,8 +19,10 @@ function attemptStore(): DeckRefreshAttemptStore {
     set: (viewId, attempt) => {
       attempts.set(viewId, attempt);
     },
-    delete: (viewId) => {
-      attempts.delete(viewId);
+    deleteIfMatches: (viewId, attempt) => {
+      if (attempts.get(viewId)?.request.requestId === attempt.request.requestId) {
+        attempts.delete(viewId);
+      }
     },
   };
 }
@@ -109,8 +111,12 @@ describe("Deck widget refresh", () => {
           releaseSet = resolve;
         });
       },
-      delete: (viewId) => {
-        attempts.delete(viewId);
+      deleteIfMatches: (viewId, attempt) => {
+        if (
+          attempts.get(viewId)?.request.requestId === attempt.request.requestId
+        ) {
+          attempts.delete(viewId);
+        }
       },
     };
     let dispatches = 0;
@@ -137,6 +143,64 @@ describe("Deck widget refresh", () => {
 
     expect(dispatches).toBe(0);
     expect(attempts.has("view")).toBe(false);
+  });
+
+  it("does not delete a newer attempt when cancelled cleanup resumes", async () => {
+    const controller = new AbortController();
+    const attempts = new Map<string, DeckRefreshAttempt>();
+    let markSetStarted: (() => void) | undefined;
+    let releaseSet: (() => void) | undefined;
+    const setStarted = new Promise<void>((resolve) => {
+      markSetStarted = resolve;
+    });
+    const store: DeckRefreshAttemptStore = {
+      get: (viewId) => attempts.get(viewId),
+      set: async (viewId, attempt) => {
+        attempts.set(viewId, attempt);
+        markSetStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseSet = resolve;
+        });
+      },
+      deleteIfMatches: (viewId, attempt) => {
+        if (
+          attempts.get(viewId)?.request.requestId === attempt.request.requestId
+        ) {
+          attempts.delete(viewId);
+        }
+      },
+    };
+    const refresh = new DeckWidgetRefreshController(
+      {
+        isAmbiguousRefreshError: () => false,
+        getPreflight: async () => ({
+          priceUsdMicros: 50n,
+          token: "cancelled-token",
+        }),
+        refresh: async () => {
+          throw new Error("cancelled request dispatched");
+        },
+      },
+      () => "cancelled-request",
+      store,
+    );
+    const work = refresh.refresh("view", controller.signal);
+    await setStarted;
+    const replacement: DeckRefreshAttempt = {
+      request: {
+        viewId: "view",
+        requestId: "replacement-request",
+        origin: RefreshOrigin.WIDGET,
+        clientKind: RefreshClientKind.WIDGET,
+      },
+      preflightToken: "replacement-token",
+    };
+    attempts.set("view", replacement);
+    controller.abort();
+    releaseSet?.();
+    await work;
+
+    expect(attempts.get("view")).toEqual(replacement);
   });
 
   it("retries an ambiguous failure with the same identity and token", async () => {

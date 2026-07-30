@@ -170,8 +170,22 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 	}
 	recent, err = store.HasRecentAutomaticRefreshAttempt(
 		ctx, viewID, viewerHash, mustV7(t), now.Add(-5*time.Minute))
+	if err != nil || recent {
+		t.Fatalf("nonterminal dispatched attempt coalesced = %v, %v",
+			recent, err)
+	}
+	pending.BillingDisposition =
+		deckv1.BillingDisposition_BILLING_DISPOSITION_COMMITTED
+	if err := store.SaveRefreshResponse(
+		ctx, subjectHash, requestID, pending, true,
+		now.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	recent, err = store.HasRecentAutomaticRefreshAttempt(
+		ctx, viewID, viewerHash, mustV7(t), now.Add(-5*time.Minute))
 	if err != nil || !recent {
-		t.Fatalf("dispatched coalescing lookup = %v, %v", recent, err)
+		t.Fatalf("completed dispatched coalescing lookup = %v, %v",
+			recent, err)
 	}
 	recent, err = store.HasRecentAutomaticRefreshAttempt(
 		ctx, viewID, viewerHash, mustV7(t), now)
@@ -182,13 +196,6 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		ctx, viewID, viewerHash, requestID, now.Add(-5*time.Minute))
 	if err != nil || recent {
 		t.Fatalf("current request was not excluded = %v, %v", recent, err)
-	}
-	pending.BillingDisposition =
-		deckv1.BillingDisposition_BILLING_DISPOSITION_COMMITTED
-	if err := store.SaveRefreshResponse(
-		ctx, subjectHash, requestID, pending, true,
-		now.Add(10*time.Minute)); err != nil {
-		t.Fatal(err)
 	}
 	recent, err = store.HasRecentAutomaticRefreshAttempt(
 		ctx, viewID, viewerHash, mustV7(t), now.Add(5*time.Minute))
