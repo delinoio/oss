@@ -444,6 +444,25 @@ func TestNotificationTransitionsAreTypedAndPreferenceFiltered(t *testing.T) {
 	); len(writes) != 0 {
 		t.Fatalf("notification without an active device opt-in = %#v", writes)
 	}
+	newWrites := notificationWrites(
+		nil,
+		[]*deckv1.PullRequestResult{current},
+		[]*deckv1.ViewNotificationPreference{{
+			Enabled: true,
+			Transitions: []deckv1.NotificationTransition{
+				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
+				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_REVIEW_REQUESTED,
+				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CHECKS_FAILED,
+			},
+		}},
+		"octocat")
+	if len(newWrites) != 2 ||
+		newWrites[0].Transition !=
+			deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED ||
+		newWrites[1].Transition !=
+			deckv1.NotificationTransition_NOTIFICATION_TRANSITION_REVIEW_REQUESTED {
+		t.Fatalf("new matching snapshot writes = %#v", newWrites)
+	}
 
 	mergeable := &deckv1.PullRequestResult{
 		Mergeability: deckv1.Mergeability_MERGEABILITY_MERGEABLE,
@@ -480,9 +499,27 @@ func TestNotificationTransitionsAreTypedAndPreferenceFiltered(t *testing.T) {
 	if len(missing) != 1 || missing[0].GetNumber() != 8 {
 		t.Fatalf("previous-only snapshots = %#v", missing)
 	}
-	if !hasEnabledNotificationPreference(
+	if hasEnabledNotificationPreference(
 		[]*deckv1.ViewNotificationPreference{{Enabled: true}}) {
-		t.Fatal("active device notification preference was ignored")
+		t.Fatal("empty device notification preference was eligible")
+	}
+	if !hasEnabledNotificationPreference(
+		[]*deckv1.ViewNotificationPreference{{
+			Enabled: true,
+			Transitions: []deckv1.NotificationTransition{
+				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
+			},
+		}}) {
+		t.Fatal("supported device notification preference was ignored")
+	}
+	if hasEnabledNotificationPreference(
+		[]*deckv1.ViewNotificationPreference{{
+			Enabled: true,
+			Transitions: []deckv1.NotificationTransition{
+				deckv1.NotificationTransition(99),
+			},
+		}}) {
+		t.Fatal("unsupported device notification preference was eligible")
 	}
 	if hasEnabledNotificationPreference(
 		[]*deckv1.ViewNotificationPreference{{Enabled: false}}) {

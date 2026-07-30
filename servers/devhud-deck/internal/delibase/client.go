@@ -244,7 +244,6 @@ func (client *Client) ReserveRefresh(
 func definitiveReservationFailure(err error) bool {
 	switch connect.CodeOf(err) {
 	case connect.CodeInvalidArgument,
-		connect.CodeUnauthenticated,
 		connect.CodePermissionDenied,
 		connect.CodeNotFound,
 		connect.CodeAlreadyExists,

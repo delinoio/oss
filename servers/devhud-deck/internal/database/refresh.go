@@ -611,7 +611,7 @@ func (store *Store) HasActiveViewDeviceAttachment(
 			return false, err
 		}
 		for _, shortcut := range shortcuts.GetShortcuts() {
-			if shortcut.GetViewId().GetValue() == viewID.String() {
+			if activeShortcutTargetsView(shortcut, viewID) {
 				return true, nil
 			}
 		}
@@ -625,6 +625,15 @@ func (store *Store) HasActiveViewDeviceAttachment(
 		return false, errors.New("deck database: device attachment lookup failed")
 	}
 	return false, nil
+}
+
+func activeShortcutTargetsView(
+	shortcut *deckv1.ViewShortcut,
+	viewID uuid.UUID,
+) bool {
+	return shortcut.GetState() ==
+		deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE &&
+		shortcut.GetViewId().GetValue() == viewID.String()
 }
 
 func (store *Store) ListAllSnapshots(

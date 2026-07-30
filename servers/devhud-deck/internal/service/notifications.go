@@ -20,7 +20,9 @@ func notificationWrites(
 			continue
 		}
 		for _, transition := range preference.GetTransitions() {
-			enabled[transition] = struct{}{}
+			if supportedNotificationTransition(transition) {
+				enabled[transition] = struct{}{}
+			}
 		}
 	}
 	if len(enabled) == 0 {
@@ -33,9 +35,6 @@ func notificationWrites(
 	var writes []database.NotificationEventWrite
 	for _, snapshot := range current {
 		old := before[pullRequestSnapshotKey(snapshot)]
-		if old == nil {
-			continue
-		}
 		for _, transition := range notificationTransitions(
 			old, snapshot, viewerLogin) {
 			if _, ok := enabled[transition]; !ok {
@@ -54,19 +53,28 @@ func notificationTransitions(
 	current *deckv1.PullRequestResult,
 	viewerLogin string,
 ) []deckv1.NotificationTransition {
-	if previous == nil || current == nil {
+	if current == nil {
 		return nil
 	}
+	var previousAssignees []*deckv1.GitHubUser
+	var previousReviewers []*deckv1.PullRequestReviewer
+	if previous != nil {
+		previousAssignees = previous.GetAssignees()
+		previousReviewers = previous.GetReviewers()
+	}
 	var transitions []deckv1.NotificationTransition
-	if !containsUser(previous.GetAssignees(), viewerLogin) &&
+	if !containsUser(previousAssignees, viewerLogin) &&
 		containsUser(current.GetAssignees(), viewerLogin) {
 		transitions = append(transitions,
 			deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED)
 	}
-	if !containsReviewer(previous.GetReviewers(), viewerLogin) &&
+	if !containsReviewer(previousReviewers, viewerLogin) &&
 		containsReviewer(current.GetReviewers(), viewerLogin) {
 		transitions = append(transitions,
 			deckv1.NotificationTransition_NOTIFICATION_TRANSITION_REVIEW_REQUESTED)
+	}
+	if previous == nil {
+		return transitions
 	}
 	if previous.GetChecks().GetState() !=
 		deckv1.ChecksState_CHECKS_STATE_FAILURE &&
@@ -104,6 +112,15 @@ func notificationTransitions(
 			deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CLOSED)
 	}
 	return transitions
+}
+
+func supportedNotificationTransition(
+	transition deckv1.NotificationTransition,
+) bool {
+	return transition >=
+		deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED &&
+		transition <=
+			deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CLOSED
 }
 
 func pullRequestSnapshotKey(snapshot *deckv1.PullRequestResult) string {

@@ -25,7 +25,6 @@ func TestRefreshReservationFailureClassification(t *testing.T) {
 	t.Parallel()
 	for _, code := range []connect.Code{
 		connect.CodeInvalidArgument,
-		connect.CodeUnauthenticated,
 		connect.CodePermissionDenied,
 		connect.CodeNotFound,
 		connect.CodeAlreadyExists,
@@ -44,6 +43,7 @@ func TestRefreshReservationFailureClassification(t *testing.T) {
 		connect.CodeCanceled,
 		connect.CodeUnknown,
 		connect.CodeDeadlineExceeded,
+		connect.CodeUnauthenticated,
 		connect.CodeInternal,
 		connect.CodeUnavailable,
 		connect.CodeDataLoss,

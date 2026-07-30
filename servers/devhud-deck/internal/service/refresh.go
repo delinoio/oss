@@ -976,8 +976,13 @@ func hasEnabledNotificationPreference(
 	preferences []*deckv1.ViewNotificationPreference,
 ) bool {
 	for _, preference := range preferences {
-		if preference.GetEnabled() {
-			return true
+		if !preference.GetEnabled() {
+			continue
+		}
+		for _, transition := range preference.GetTransitions() {
+			if supportedNotificationTransition(transition) {
+				return true
+			}
 		}
 	}
 	return false
