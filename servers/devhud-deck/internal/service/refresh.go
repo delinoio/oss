@@ -109,7 +109,7 @@ func (service *View) RefreshView(
 		"snapshot-viewer", viewer.AccountID.String())
 
 	// Exact attempts are resolved before current view/provider authorization.
-	// Completed results and nonterminal recovery need neither repository
+	// Completed results and accounting-only recovery need neither repository
 	// access nor a retained view definition.
 	attempt, lookupErr := service.dependencies.Store.GetRefreshAttempt(
 		ctx, subjectHash, requestID, requestDigest)
@@ -125,7 +125,7 @@ func (service *View) RefreshView(
 			}
 			return connect.NewResponse(replayed), nil
 		}
-		if refreshAttemptNeedsPreAuthorizationRecovery(attempt) {
+		if refreshAttemptNeedsOnlyAccounting(attempt) {
 			if service.dependencies.LiveUsage == nil {
 				return nil, rpcerr.New(connect.CodeUnavailable,
 					deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
@@ -358,13 +358,6 @@ func refreshAttemptNeedsOnlyAccounting(
 ) bool {
 	return attempt.State == database.RefreshAttemptReserved ||
 		attempt.State == database.RefreshAttemptDispatched
-}
-
-func refreshAttemptNeedsPreAuthorizationRecovery(
-	attempt database.RefreshAttempt,
-) bool {
-	return attempt.State == database.RefreshAttemptCreated ||
-		refreshAttemptNeedsOnlyAccounting(attempt)
 }
 
 func (service *View) finalizePendingRefreshAccounting(
