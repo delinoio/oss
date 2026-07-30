@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./devhud-realqa/v1/preset_pb": {
+      "types": "./dist/preset.d.ts",
+      "import": "./dist/preset.js"
+    },
     "./devhud-realqa/v1/*": {
       "types": "./dist/gen/ts/devhud-realqa/v1/*.d.ts",
       "import": "./dist/gen/ts/devhud-realqa/v1/*.js"
@@ -37,4 +41,3 @@
     "typescript": "5.9.3"
   }
 }
-

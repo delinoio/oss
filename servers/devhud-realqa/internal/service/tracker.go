@@ -446,13 +446,18 @@ func (service *Tracker) ListRepositories(
 		}
 	}
 	if service.dependencies.GitHubProvider != nil &&
-		source != repositoryPageSourceCache {
+		source == repositoryPageSourceCache {
+		return nil, callerReauthenticationRequired()
+	}
+	if service.dependencies.GitHubProvider != nil {
 		page, providerErr := service.dependencies.GitHubProvider.ListRepositories(
 			ctx, actor.accountID, installation, realqagithub.RepositoryPageRequest{
 				Query: request.Msg.Query, Cursor: after, PageSize: int(size),
 			})
-		if providerErr != nil &&
-			!errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
+		if errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
+			return nil, callerReauthenticationRequired()
+		}
+		if providerErr != nil {
 			return nil, rqerr.New(connect.CodeUnavailable,
 				realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
 				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
@@ -570,8 +575,10 @@ func (service *Tracker) GetRepositoryIssueSchema(
 		) {
 			return nil, providerPermissionDenied()
 		}
-		if providerErr != nil &&
-			!errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
+		if errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
+			return nil, callerReauthenticationRequired()
+		}
+		if providerErr != nil {
 			return nil, rqerr.New(connect.CodeUnavailable,
 				realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
 				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
@@ -668,6 +675,12 @@ func (service *Tracker) GetRepositoryIssueSchema(
 	return connect.NewResponse(&realqav1.GetRepositoryIssueSchemaResponse{
 		Schema: schema,
 	}), nil
+}
+
+func callerReauthenticationRequired() error {
+	return rqerr.New(connect.CodeUnauthenticated,
+		realqav1.ErrorReason_ERROR_REASON_REAUTHENTICATION_REQUIRED,
+		realqav1.FailureClass_FAILURE_CLASS_REAUTHENTICATION_REQUIRED, 0)
 }
 
 func (service *Tracker) persistRepositoryDefinitions(

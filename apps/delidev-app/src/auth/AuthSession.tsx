@@ -12,6 +12,8 @@ import { runtimeConfig } from "../config";
 import {
   createAuthenticatedTransport,
   createDeckIntegrationTransport,
+  createRealQATrackerClient,
+  type RealQATrackerClient,
 } from "../api/transports";
 import {
   clearPendingSealedSignInReturnPath,
@@ -30,6 +32,7 @@ export interface AuthSessionValue {
   status: AuthStatus;
   error?: string;
   deckTransport?: Transport;
+  realqaTrackerClient?: RealQATrackerClient;
   transport?: Transport;
   signIn: (returnTo?: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -103,7 +106,18 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
         : undefined,
     [getAccessToken],
   );
-
+  const realqaTrackerClient = useMemo(
+    () =>
+      runtimeConfig.realqa.issues.length === 0
+        ? createRealQATrackerClient({
+            audience: runtimeConfig.realqa.audience,
+            baseUrl: runtimeConfig.realqa.apiOrigin,
+            delibaseAudience: runtimeConfig.logto.audience,
+            getAccessToken: (audience) => getAccessToken(audience),
+          })
+        : undefined,
+    [getAccessToken],
+  );
   const startSignIn = useCallback(
     async (returnTo = window.location.pathname + window.location.search) => {
       const returnPath = safeReturnPath(returnTo);
@@ -133,6 +147,9 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
     () => ({
       deckTransport: isAuthenticated ? deckTransport : undefined,
       error: error?.message,
+      realqaTrackerClient: isAuthenticated
+        ? realqaTrackerClient
+        : undefined,
       signIn: startSignIn,
       signOut: startSignOut,
       status: isLoading
@@ -147,6 +164,7 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
       deckTransport,
       isAuthenticated,
       isLoading,
+      realqaTrackerClient,
       startSignIn,
       startSignOut,
       transport,

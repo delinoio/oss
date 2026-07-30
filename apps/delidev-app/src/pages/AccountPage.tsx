@@ -13,6 +13,7 @@ import { BackgroundUsageAuthorizations } from "../components/BackgroundUsageAuth
 import { DeckConnectionManager } from "../components/DeckConnectionManager";
 import { Dialog } from "../components/Dialog";
 import { useAccountState } from "../components/ProtectedRoute";
+import { RealQAGitHubDestinations } from "../components/RealQAGitHubDestinations";
 import {
   ErrorState,
   LoadingState,
@@ -247,6 +248,15 @@ export function AccountPage() {
         <BackgroundUsageAuthorizations
           scope={{ kind: "account" }}
           transport={auth.transport}
+        />
+      ) : null}
+      {accountState.account?.accountId?.value ? (
+        <RealQAGitHubDestinations
+          client={auth.realqaTrackerClient}
+          owner={{
+            accountId: accountState.account.accountId.value,
+            kind: "personal",
+          }}
         />
       ) : null}
       <section className="content-card danger-zone">
