@@ -342,6 +342,24 @@ body:` + body)
 	}
 }
 
+func TestIssueFormRejectsExplicitlyEmptyFieldID(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    id: ""
+    attributes:
+      label: Summary
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err == nil || !strings.Contains(err.Error(), "field string value is invalid") {
+		t.Fatalf("expected empty field ID rejection, got %v", err)
+	}
+}
+
 func TestIssueFormRejectsMultilineInputAnswer(t *testing.T) {
 	t.Parallel()
 	form := IssueForm{Fields: []FormField{{
@@ -782,6 +800,24 @@ body:
 		); err == nil || !strings.Contains(err.Error(), "validations are not allowed") {
 			t.Fatalf("expected markdown validation %q rejection, got %v", validation, err)
 		}
+	}
+}
+
+func TestIssueFormRejectsNullValidations(t *testing.T) {
+	t.Parallel()
+	contents := []byte(`
+name: Bug report
+description: Report a bug
+body:
+  - type: input
+    attributes:
+      label: Summary
+    validations: null
+`)
+	if _, err := ParseIssueForm(
+		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+	); err == nil || !strings.Contains(err.Error(), "validations are invalid") {
+		t.Fatalf("expected null validations rejection, got %v", err)
 	}
 }
 

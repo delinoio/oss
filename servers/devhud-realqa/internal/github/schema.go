@@ -482,7 +482,8 @@ func validateIssueFormYAML(document *yaml.Node) error {
 		if typeNode != nil && !isStringNode(typeNode) {
 			return errors.New("realqa github: Issue Form field string value is invalid")
 		}
-		if id := mappingValue(item, "id"); id != nil && !isStringNode(id) {
+		if id := mappingValue(item, "id"); id != nil &&
+			(!isStringNode(id) || strings.TrimSpace(id.Value) == "") {
 			return errors.New("realqa github: Issue Form field string value is invalid")
 		}
 		fieldType := ""
@@ -516,21 +517,22 @@ func validateIssueFormYAML(document *yaml.Node) error {
 				return errors.New(
 					"realqa github: Issue Form validations are not allowed for this field")
 			}
-			if validations.Kind == yaml.MappingNode {
-				if required := mappingValue(validations, "required"); required != nil &&
-					!isBooleanNode(required) {
+			if validations.Kind != yaml.MappingNode {
+				return errors.New("realqa github: Issue Form validations are invalid")
+			}
+			if required := mappingValue(validations, "required"); required != nil &&
+				!isBooleanNode(required) {
+				return errors.New(
+					"realqa github: Issue Form boolean value is invalid")
+			}
+			if accept := mappingValue(validations, "accept"); accept != nil {
+				if fieldType != "upload" {
 					return errors.New(
-						"realqa github: Issue Form boolean value is invalid")
+						"realqa github: Issue Form upload validation is not allowed for this field")
 				}
-				if accept := mappingValue(validations, "accept"); accept != nil {
-					if fieldType != "upload" {
-						return errors.New(
-							"realqa github: Issue Form upload validation is not allowed for this field")
-					}
-					if !isStringNode(accept) ||
-						strings.TrimSpace(accept.Value) == "" {
-						return errors.New("realqa github: Issue Form field string value is invalid")
-					}
+				if !isStringNode(accept) ||
+					strings.TrimSpace(accept.Value) == "" {
+					return errors.New("realqa github: Issue Form field string value is invalid")
 				}
 			}
 		}
