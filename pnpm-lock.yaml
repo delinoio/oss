@@ -72,6 +72,9 @@ importers:
       '@delinoio/devhud-deck-connect':
         specifier: workspace:*
         version: link:../../protos/devhud-deck
+      '@delinoio/devhud-realqa-connect':
+        specifier: workspace:*
+        version: link:../../protos/devhud-realqa
       '@logto/browser':
         specifier: 3.0.13
         version: 3.0.13

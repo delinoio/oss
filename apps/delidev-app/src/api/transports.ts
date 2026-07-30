@@ -1,5 +1,11 @@
-import type { Interceptor, Transport } from "@connectrpc/connect";
+import {
+  createClient,
+  type Client,
+  type Interceptor,
+  type Transport,
+} from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import { RealQATrackerService } from "@delinoio/devhud-realqa-connect/devhud-realqa/v1/tracker_pb";
 
 import {
   canonicalAudience,
@@ -7,6 +13,7 @@ import {
 } from "../config";
 
 export type AccessTokenGetter = (audience: string) => Promise<string | undefined>;
+export type RealQATrackerClient = Client<typeof RealQATrackerService>;
 
 interface TransportOptions {
   baseUrl: string;
@@ -58,6 +65,47 @@ export function createAuthenticatedTransport({
     interceptors: [authorizationInterceptor],
     useBinaryFormat: false,
   });
+}
+
+export function createRealQATrackerClient({
+  audience,
+  baseUrl,
+  delibaseAudience,
+  fetch,
+  getAccessToken,
+}: TransportOptions & {
+  audience: string;
+  delibaseAudience: string;
+  getAccessToken: AccessTokenGetter;
+}): RealQATrackerClient {
+  const authorizationInterceptor: Interceptor = (next) => async (request) => {
+    const [realqaToken, delibaseToken] = await Promise.all([
+      getAccessToken(audience),
+      getAccessToken(delibaseAudience),
+    ]);
+    if (!realqaToken || !delibaseToken) {
+      throw new Error(
+        "RealQA and DeliDev access tokens are required for this request.",
+      );
+    }
+    request.header.set("Authorization", `Bearer ${realqaToken}`);
+    request.header.set(
+      "x-delibase-forwarded-user-token",
+      delibaseToken,
+    );
+    request.header.set("Cache-Control", "no-store");
+    return next(request);
+  };
+
+  return createClient(
+    RealQATrackerService,
+    createConnectTransport({
+      baseUrl,
+      fetch,
+      interceptors: [authorizationInterceptor],
+      useBinaryFormat: false,
+    }),
+  );
 }
 
 export function createDeckIntegrationTransport({
