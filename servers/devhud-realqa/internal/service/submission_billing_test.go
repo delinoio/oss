@@ -110,6 +110,33 @@ func TestUTCStorageBoundariesIgnoreCallerOffset(t *testing.T) {
 	}
 }
 
+func TestStorageCutoffProcessingDayAgesOnlyStalePeriods(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2030, 4, 5, 12, 0, 0, 0, time.UTC)
+	today := utcDayStart(now)
+	for _, fixture := range []struct {
+		name        string
+		periodStart time.Time
+		want        time.Time
+	}{
+		{"current partial day", today, today.Add(24 * time.Hour)},
+		{"previous day", today.Add(-24 * time.Hour), today},
+		{"stale day", today.Add(-72 * time.Hour), today},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			got, err := storageCutoffProcessingDay(now, fixture.periodStart)
+			if err != nil || !got.Equal(fixture.want) {
+				t.Fatalf("processing day = %s, %v; want %s",
+					got, err, fixture.want)
+			}
+		})
+	}
+	if _, err := storageCutoffProcessingDay(
+		now, today.Add(24*time.Hour)); err == nil {
+		t.Fatal("future storage cutoff was accepted")
+	}
+}
+
 func TestStorageSettlementIdentityBindsAuthorizationDayAndDigest(t *testing.T) {
 	t.Parallel()
 	authorizationID := uuidv7.MustNew()

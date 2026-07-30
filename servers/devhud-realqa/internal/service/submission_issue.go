@@ -66,7 +66,8 @@ func (service *Submission) SubmitIssue(
 		return nil, err
 	}
 	if attempt.State == "completed" {
-		return service.submitIssueResponse(ctx, submissionID, true, attempt)
+		return service.submitIssueResponse(
+			ctx, actor, submissionID, true, attempt)
 	}
 	if err = service.finalizeTransfer(
 		ctx, actor, scope, submissionID, attempt); err != nil {
@@ -143,7 +144,7 @@ func (service *Submission) promoteAndCompleteIssue(
 		"event", "submission_completed",
 	)
 	return service.submitIssueResponse(
-		ctx, submissionID, replayed, completed)
+		ctx, actor, submissionID, replayed, completed)
 }
 
 func (service *Submission) claimIssueSubmission(
@@ -887,11 +888,13 @@ func (service *Submission) createOrReconcileIssue(
 
 func (service *Submission) submitIssueResponse(
 	ctx context.Context,
+	actor caller,
 	submissionID uuid.UUID,
 	replayed bool,
 	attempt dbgen.RealqaIssueSubmissionAttempt,
 ) (*connect.Response[realqav1.SubmitIssueResponse], error) {
-	submission, err := service.loadSubmission(ctx, submissionID)
+	submission, err := service.loadSubmissionWithRecoveryCaller(
+		ctx, submissionID, toPGUUID(actor.accountID))
 	if err != nil {
 		return nil, err
 	}

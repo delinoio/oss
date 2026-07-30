@@ -900,9 +900,13 @@ func (service *Submission) settleStorageCutoff(
 	if err != nil {
 		return err
 	}
+	processingDay, err := storageCutoffProcessingDay(
+		service.dependencies.Clock.Now(), periodStart)
+	if err != nil {
+		return err
+	}
 	if err = service.processStoragePeriod(
-		ctx, authorizationID, periodStart,
-		periodStart.Add(24*time.Hour)); err != nil {
+		ctx, authorizationID, periodStart, processingDay); err != nil {
 		return err
 	}
 	settlement, err := service.dependencies.Store.Queries().
@@ -920,6 +924,22 @@ func (service *Submission) settleStorageCutoff(
 	default:
 		return errors.New(
 			"realqa storage billing: cutoff settlement is unresolved")
+	}
+}
+
+func storageCutoffProcessingDay(
+	now time.Time,
+	periodStart time.Time,
+) (time.Time, error) {
+	today := utcDayStart(now)
+	switch {
+	case periodStart.Equal(today):
+		return today.Add(24 * time.Hour), nil
+	case periodStart.Before(today):
+		return today, nil
+	default:
+		return time.Time{}, errors.New(
+			"realqa storage billing: future accrual cutoff")
 	}
 }
 
