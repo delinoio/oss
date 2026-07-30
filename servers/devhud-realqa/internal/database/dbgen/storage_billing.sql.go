@@ -633,7 +633,7 @@ INSERT INTO realqa_storage_recoveries (
 ) VALUES (
     $1, $2, $3,
     $4, $5,
-    $5 + interval '30 days'
+    $5::timestamptz + interval '30 days'
 )
 ON CONFLICT (submission_id)
 WHERE recovered_at IS NULL AND expired_at IS NULL DO UPDATE

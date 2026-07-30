@@ -319,7 +319,7 @@ INSERT INTO realqa_storage_recoveries (
 ) VALUES (
     sqlc.arg(id), sqlc.arg(submission_id), sqlc.arg(authorization_id),
     sqlc.arg(reason), sqlc.arg(grace_started_at),
-    sqlc.arg(grace_started_at) + interval '30 days'
+    sqlc.arg(grace_started_at)::timestamptz + interval '30 days'
 )
 ON CONFLICT (submission_id)
 WHERE recovered_at IS NULL AND expired_at IS NULL DO UPDATE
