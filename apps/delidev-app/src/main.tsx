@@ -14,6 +14,7 @@ import {
 import { VolatileLogtoClient } from "./auth/VolatileLogtoClient";
 import {
   canonicalAudience,
+  canonicalDeckAudience,
   canonicalRealQAAudience,
   runtimeConfig,
 } from "./config";
@@ -57,6 +58,9 @@ function Providers({
     endpoint: runtimeConfig.logto.endpoint,
     resources: [
       canonicalAudience,
+      ...(runtimeConfig.deck.issues.length === 0
+        ? [canonicalDeckAudience]
+        : []),
       ...(runtimeConfig.realqa.issues.length === 0
         ? [canonicalRealQAAudience]
         : []),
@@ -70,6 +74,9 @@ function Providers({
       "delibase:teams:write",
       "delibase:billing:read",
       "delibase:billing:write",
+      ...(runtimeConfig.deck.issues.length === 0
+        ? ["deck:integrations:read", "deck:integrations:write"]
+        : []),
       ...(runtimeConfig.realqa.issues.length === 0
         ? ["realqa:tracker:read", "realqa:tracker:write"]
         : []),

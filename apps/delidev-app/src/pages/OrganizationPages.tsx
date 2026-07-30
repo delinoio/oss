@@ -44,6 +44,7 @@ import { describeDelibaseError } from "../api/errors";
 import { CatalogCard } from "../components/CatalogCard";
 import { BackgroundUsageAuthorizations } from "../components/BackgroundUsageAuthorizations";
 import { Dialog } from "../components/Dialog";
+import { DeckConnectionManager } from "../components/DeckConnectionManager";
 import { useAccountState } from "../components/ProtectedRoute";
 import { RealQAGitHubDestinations } from "../components/RealQAGitHubDestinations";
 import {
@@ -3097,6 +3098,25 @@ export function OrganizationSettingsPage() {
         <p className="muted">
           An organization owner or admin can update organization details.
         </p>
+      )}
+      {canManage && organization.organizationId?.value ? (
+        <DeckConnectionManager
+          ownerScope={{
+            kind: "organization",
+            organizationId: organization.organizationId.value,
+            organizationName: organization.name,
+            returnPath: `/o/${organization.slug}/settings`,
+          }}
+        />
+      ) : (
+        <section className="content-card deck-connection">
+          <span className="eyebrow">Deck integration</span>
+          <h2>Organization GitHub connection</h2>
+          <p>
+            Only an organization Owner or Admin can view or manage its GitHub
+            connection.
+          </p>
+        </section>
       )}
       {organization.organizationId?.value ? (
         <RealQAGitHubDestinations

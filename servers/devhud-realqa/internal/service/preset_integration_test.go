@@ -2083,6 +2083,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	partialPublicAssetID := uuidv7.MustNew()
 	partialPrivateAssetID := uuidv7.MustNew()
 	partialPublicID := "partial-promotion-id-01"
+	partialReservedPublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_submissions (
 			id, owner_kind, owner_id, created_by_account_id, preset_id,
@@ -2112,18 +2116,18 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		FROM realqa_assets
 		WHERE id = $8;
 		INSERT INTO realqa_assets (
-			id, submission_id, state, encoded_bytes, client_image_id,
+			id, submission_id, public_id, state, encoded_bytes, client_image_id,
 			media_type, declared_encoded_bytes, pixel_width, pixel_height,
 			source_sha256, sanitized_sha256, upload_state, verified_at
 		)
-		SELECT $6, $1, 'verified_unlinked', encoded_bytes, $7, media_type,
+		SELECT $6, $1, $9, 'verified_unlinked', encoded_bytes, $7, media_type,
 		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
 		       sanitized_sha256, 'verified', transaction_timestamp()
 		FROM realqa_assets
 		WHERE id = $8
 	`, partialSubmissionID, submissionID, partialPublicAssetID,
 		partialPublicID, uuidv7.MustNew(), partialPrivateAssetID,
-		uuidv7.MustNew(), promotionAssetID); err != nil {
+		uuidv7.MustNew(), promotionAssetID, partialReservedPublicID); err != nil {
 		t.Fatal(err)
 	}
 	partialPublicKey := imageassets.PublicObjectKey(partialPublicID)
@@ -2195,7 +2199,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if partialPublicState != "removed_placeholder" ||
-		partialPrivateState != "expired" {
+		partialPrivateState != "removed_placeholder" {
 		t.Fatalf("partial promotion cleanup states = %q / %q",
 			partialPublicState, partialPrivateState)
 	}
@@ -2205,6 +2209,14 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if publicRecord.State != imageassets.PublicStateRemoved {
 		t.Fatalf("partial promotion public state = %v", publicRecord.State)
+	}
+	reservedRecord, err := submissionService.PublicAsset(
+		ctx, partialReservedPublicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reservedRecord.State != imageassets.PublicStateRemoved {
+		t.Fatalf("reserved public state = %v", reservedRecord.State)
 	}
 	if _, ok := objects.objects[partialPublicKey]; ok {
 		t.Fatal("partial promotion public object was retained")
@@ -2355,37 +2367,58 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("expired open submission count = %d", openSubmissions)
 	}
 	for range submissionHourLimit {
+		historicalSubmissionID := uuidv7.MustNew()
 		if _, err = connection.Exec(ctx, `
-			INSERT INTO realqa_submissions (
+			WITH inserted AS (
+			  INSERT INTO realqa_submissions (
 				id, owner_kind, owner_id, created_by_account_id,
 				preset_id, destination_id, state, idempotency_digest,
 				preset_revision, upload_deadline, upload_expires_at
-			)
+			  )
 			SELECT $1, owner_kind, owner_id, created_by_account_id,
 			       preset_id, destination_id, 'submitted', idempotency_digest,
 			       preset_revision, transaction_timestamp() + interval '23 hours',
 			       transaction_timestamp() + interval '24 hours'
 			FROM realqa_submissions
 			WHERE id = $2
-		`, uuidv7.MustNew(),
-			createdSubmission.Msg.Submission.SubmissionId.Value); err != nil {
+			RETURNING id
+			)
+			INSERT INTO realqa_issue_submission_attempts (
+				submission_id, idempotency_key, request_digest, state
+			)
+			SELECT id, $3, $4, 'failed' FROM inserted
+		`, historicalSubmissionID,
+			createdSubmission.Msg.Submission.SubmissionId.Value,
+			uuidv7.MustNew(), bytes.Repeat([]byte{7}, 32)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	rateLimitedRequest := proto.Clone(
+	recentIssueAttempts, err :=
+		store.Queries().CountRecentIssueSubmissionAttempts(
+			ctx, toPGUUID(accountID))
+	if err != nil || recentIssueAttempts != submissionHourLimit {
+		t.Fatalf("recent issue attempts = %d, %v",
+			recentIssueAttempts, err)
+	}
+	notRateLimitedRequest := proto.Clone(
 		submissionRequest).(*realqav1.CreateSubmissionRequest)
-	rateLimitedRequest.Idempotency = &realqav1.IdempotencyKey{
+	notRateLimitedRequest.Idempotency = &realqav1.IdempotencyKey{
 		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
 	}
-	for _, image := range rateLimitedRequest.Images {
+	for _, image := range notRateLimitedRequest.Images {
 		image.ClientImageId = &realqav1.UuidV7{
 			Value: uuidv7.MustNew().String(),
 		}
 	}
-	_, err = submissionService.CreateSubmission(
-		authCtx, connect.NewRequest(rateLimitedRequest))
-	if connect.CodeOf(err) != connect.CodeResourceExhausted {
-		t.Fatalf("hourly submission limit code = %v", connect.CodeOf(err))
+	notRateLimited, err := submissionService.CreateSubmission(
+		authCtx, connect.NewRequest(notRateLimitedRequest))
+	if err != nil {
+		t.Fatalf("upload-session creation consumed issue rate limit: %v", err)
+	}
+	if _, err = connection.Exec(
+		ctx, `DELETE FROM realqa_submissions WHERE id = $1`,
+		notRateLimited.Msg.Submission.SubmissionId.Value); err != nil {
+		t.Fatal(err)
 	}
 	var personalDestinationID uuid.UUID
 	if err = connection.QueryRow(ctx, `

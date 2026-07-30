@@ -9,12 +9,18 @@ import {
 } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuthenticatedTransport } from "../api/transports";
+import {
+  createAuthenticatedTransport,
+  createDeckIntegrationTransport,
+} from "../api/transports";
 import {
   AuthSessionProvider,
   AuthStatus,
 } from "../auth/AuthSession";
-import { canonicalAudience } from "../config";
+import {
+  canonicalAudience,
+  canonicalDeckAudience,
+} from "../config";
 import { OrganizationSettingsPage } from "../pages/OrganizationPages";
 import { OrganizationShell } from "../pages/OrganizationShell";
 import { TestAccountStateProvider } from "./TestAccountStateProvider";
@@ -34,6 +40,7 @@ function LocationProbe() {
 function renderSettings(
   fetchMock: typeof fetch,
   refreshAccountState: () => Promise<void>,
+  deckFetchMock?: typeof fetch,
 ) {
   const transport = createAuthenticatedTransport({
     audience: canonicalAudience,
@@ -47,12 +54,23 @@ function renderSettings(
       queries: { retry: false },
     },
   });
+  const deckTransport = deckFetchMock
+    ? createDeckIntegrationTransport({
+        baseUrl: canonicalDeckAudience,
+        fetch: deckFetchMock,
+        getAccessToken: async (audience) =>
+          audience === canonicalDeckAudience
+            ? "deck-token"
+            : "delibase-token",
+      })
+    : undefined;
 
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/o/acme/settings"]}>
-        <AuthSessionProvider
-          value={{
+          <AuthSessionProvider
+            value={{
+              deckTransport,
             signIn: async () => undefined,
             signOut: async () => undefined,
             status: AuthStatus.SignedIn,
@@ -82,6 +100,64 @@ function renderSettings(
 }
 
 describe("organization settings", () => {
+  it("does not request or reveal organization connection data to members", async () => {
+    const refreshAccountState = vi.fn(async () => undefined);
+    const deckFetchMock = vi.fn<typeof fetch>(async () =>
+      connectJsonResponse({
+        installations: [
+          {
+            account: {
+              githubAccountId: "99",
+              kind: "GIT_HUB_ACCOUNT_KIND_ORGANIZATION",
+              login: "private-installation",
+            },
+          },
+        ],
+      }),
+    );
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/ResolveOrganizationSlug")) {
+        return connectJsonResponse({
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/GetOrganization")) {
+        return connectJsonResponse({
+          callerRole: "ORGANIZATION_ROLE_MEMBER",
+          organization: {
+            name: "Acme",
+            organizationId: { value: "organization-id" },
+            slug: "acme",
+          },
+        });
+      }
+      if (url.endsWith("/ListBackgroundUsageAuthorizations")) {
+        return connectJsonResponse({ authorizations: [] });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    renderSettings(fetchMock, refreshAccountState, deckFetchMock);
+
+    expect(
+      await screen.findByText(
+        "Only an organization Owner or Admin can view or manage its GitHub connection.",
+      ),
+    ).toBeVisible();
+    expect(deckFetchMock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText("private-installation"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/repository|pull request|query|result count/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("reports a saved name when organization refresh fails", async () => {
     let getOrganizationCalls = 0;
     const refreshAccountState = vi.fn(async () => undefined);

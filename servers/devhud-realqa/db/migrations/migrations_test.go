@@ -23,8 +23,8 @@ func TestEmbeddedMigrationsAreStrictlyOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ordered) != 7 {
-		t.Fatalf("migration count = %d, want 7", len(ordered))
+	if len(ordered) != 8 {
+		t.Fatalf("migration count = %d, want 8", len(ordered))
 	}
 	for index, item := range ordered {
 		if item.version != int64(index+1) {
@@ -95,13 +95,14 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		"SELECT count(*) FROM realqa_schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 7 {
-		t.Fatalf("applied migration count = %d, want 7", count)
+	if count != 8 {
+		t.Fatalf("applied migration count = %d, want 8", count)
 	}
 	for _, operation := range []string{
 		"create_submission",
 		"create_image_upload",
 		"finalize_image_upload",
+		"submit_issue",
 		"delete_image",
 		"delete_submission_assets",
 	} {
@@ -118,8 +119,15 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 	}
 	for _, eventType := range []string{
 		"submission_created",
+		"transfer_reserved",
 		"image_upload_authorized",
 		"image_upload_verified",
+		"transfer_committed",
+		"transfer_released",
+		"storage_authorization_created",
+		"issue_submission_started",
+		"issue_reconciled",
+		"submission_completed",
 		"image_deleted",
 		"submission_assets_deleted",
 	} {

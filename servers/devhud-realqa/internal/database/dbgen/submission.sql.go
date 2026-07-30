@@ -67,6 +67,35 @@ func (q *Queries) AuthorizeAssetUpload(ctx context.Context, arg AuthorizeAssetUp
 	return i, err
 }
 
+const completeIssueSubmissionAttempt = `-- name: CompleteIssueSubmissionAttempt :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'completed',
+    completed_at = transaction_timestamp(),
+    updated_at = transaction_timestamp()
+WHERE submission_id = $1
+  AND state IN ('provider_reconciled', 'promoting')
+RETURNING submission_id, idempotency_key, request_digest, final_body_digest, state, provider_issue_id, provider_issue_url, failure_reason, accepted_at, updated_at, completed_at
+`
+
+func (q *Queries) CompleteIssueSubmissionAttempt(ctx context.Context, submissionID pgtype.UUID) (RealqaIssueSubmissionAttempt, error) {
+	row := q.db.QueryRow(ctx, completeIssueSubmissionAttempt, submissionID)
+	var i RealqaIssueSubmissionAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.FinalBodyDigest,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.FailureReason,
+		&i.AcceptedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const completeObjectDeletion = `-- name: CompleteObjectDeletion :exec
 DELETE FROM realqa_object_deletion_jobs
 WHERE asset_id = $1
@@ -85,6 +114,44 @@ func (q *Queries) CompleteObjectDeletion(ctx context.Context, arg CompleteObject
 	return err
 }
 
+const completeStorageAuthorizationAttempt = `-- name: CompleteStorageAuthorizationAttempt :one
+UPDATE realqa_storage_authorization_attempts
+SET state = 'active',
+    authorization_id = $1,
+    authorization_revision = $2,
+    mapping_revision = 1,
+    updated_at = transaction_timestamp()
+WHERE submission_id = $3
+  AND state = 'pending'
+RETURNING submission_id, idempotency_key, request_digest, service_identity_id, meter_id, maximum_units, state, authorization_id, authorization_revision, mapping_revision, created_at, updated_at
+`
+
+type CompleteStorageAuthorizationAttemptParams struct {
+	AuthorizationID       pgtype.UUID
+	AuthorizationRevision pgtype.Int8
+	SubmissionID          pgtype.UUID
+}
+
+func (q *Queries) CompleteStorageAuthorizationAttempt(ctx context.Context, arg CompleteStorageAuthorizationAttemptParams) (RealqaStorageAuthorizationAttempt, error) {
+	row := q.db.QueryRow(ctx, completeStorageAuthorizationAttempt, arg.AuthorizationID, arg.AuthorizationRevision, arg.SubmissionID)
+	var i RealqaStorageAuthorizationAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.ServiceIdentityID,
+		&i.MeterID,
+		&i.MaximumUnits,
+		&i.State,
+		&i.AuthorizationID,
+		&i.AuthorizationRevision,
+		&i.MappingRevision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const countOpenSubmissionsForAccount = `-- name: CountOpenSubmissionsForAccount :one
 SELECT count(*)::bigint
 FROM realqa_submissions
@@ -95,6 +162,21 @@ WHERE created_by_account_id = $1
 
 func (q *Queries) CountOpenSubmissionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countOpenSubmissionsForAccount, accountID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countRecentIssueSubmissionAttempts = `-- name: CountRecentIssueSubmissionAttempts :one
+SELECT count(*)::bigint
+FROM realqa_issue_submission_attempts AS attempt
+JOIN realqa_submissions AS submission ON submission.id = attempt.submission_id
+WHERE submission.created_by_account_id = $1
+  AND attempt.accepted_at >= transaction_timestamp() - interval '1 hour'
+`
+
+func (q *Queries) CountRecentIssueSubmissionAttempts(ctx context.Context, accountID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countRecentIssueSubmissionAttempts, accountID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -177,37 +259,139 @@ func (q *Queries) CreateAssetRecord(ctx context.Context, arg CreateAssetRecordPa
 	return i, err
 }
 
+const createIssueSubmissionAttempt = `-- name: CreateIssueSubmissionAttempt :one
+INSERT INTO realqa_issue_submission_attempts (
+    submission_id, idempotency_key, request_digest, state
+) VALUES (
+    $1, $2,
+    $3, 'pending'
+)
+RETURNING submission_id, idempotency_key, request_digest, final_body_digest, state, provider_issue_id, provider_issue_url, failure_reason, accepted_at, updated_at, completed_at
+`
+
+type CreateIssueSubmissionAttemptParams struct {
+	SubmissionID   pgtype.UUID
+	IdempotencyKey pgtype.UUID
+	RequestDigest  []byte
+}
+
+func (q *Queries) CreateIssueSubmissionAttempt(ctx context.Context, arg CreateIssueSubmissionAttemptParams) (RealqaIssueSubmissionAttempt, error) {
+	row := q.db.QueryRow(ctx, createIssueSubmissionAttempt, arg.SubmissionID, arg.IdempotencyKey, arg.RequestDigest)
+	var i RealqaIssueSubmissionAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.FinalBodyDigest,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.FailureReason,
+		&i.AcceptedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const createStorageAuthorizationAttempt = `-- name: CreateStorageAuthorizationAttempt :one
+INSERT INTO realqa_storage_authorization_attempts (
+    submission_id, idempotency_key, request_digest,
+    service_identity_id, meter_id, maximum_units, state
+) VALUES (
+    $1, $2,
+    $3, $4,
+    $5, $6, 'pending'
+)
+ON CONFLICT (submission_id) DO NOTHING
+RETURNING submission_id, idempotency_key, request_digest, service_identity_id, meter_id, maximum_units, state, authorization_id, authorization_revision, mapping_revision, created_at, updated_at
+`
+
+type CreateStorageAuthorizationAttemptParams struct {
+	SubmissionID      pgtype.UUID
+	IdempotencyKey    pgtype.UUID
+	RequestDigest     []byte
+	ServiceIdentityID pgtype.UUID
+	MeterID           pgtype.UUID
+	MaximumUnits      int64
+}
+
+func (q *Queries) CreateStorageAuthorizationAttempt(ctx context.Context, arg CreateStorageAuthorizationAttemptParams) (RealqaStorageAuthorizationAttempt, error) {
+	row := q.db.QueryRow(ctx, createStorageAuthorizationAttempt,
+		arg.SubmissionID,
+		arg.IdempotencyKey,
+		arg.RequestDigest,
+		arg.ServiceIdentityID,
+		arg.MeterID,
+		arg.MaximumUnits,
+	)
+	var i RealqaStorageAuthorizationAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.ServiceIdentityID,
+		&i.MeterID,
+		&i.MaximumUnits,
+		&i.State,
+		&i.AuthorizationID,
+		&i.AuthorizationRevision,
+		&i.MappingRevision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createSubmissionRecord = `-- name: CreateSubmissionRecord :one
 INSERT INTO realqa_submissions (
     id, owner_kind, owner_id, created_by_account_id, preset_id,
     destination_id, state, idempotency_digest, payer_organization_id,
     payer_team_id, preset_revision, declared_encoded_bytes,
-    upload_deadline, upload_expires_at
+    upload_deadline, upload_expires_at, client_idempotency_key,
+    transfer_meter_id, transfer_service_identity_id,
+    transfer_reserve_idempotency_key, transfer_commit_idempotency_key,
+    transfer_release_idempotency_key, transfer_reserved_units,
+    transfer_state
 ) VALUES (
     $1, $2, $3,
     $4, $5,
     $6, 'draft', $7,
     $8, $9,
     $10, $11,
-    $12, $13
+    $12, $13,
+    $14, $15,
+    $16,
+    $17,
+    $18,
+    $19,
+    $20, $21
 )
-RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 `
 
 type CreateSubmissionRecordParams struct {
-	ID                   pgtype.UUID
-	OwnerKind            string
-	OwnerID              pgtype.UUID
-	CreatedByAccountID   pgtype.UUID
-	PresetID             pgtype.UUID
-	DestinationID        pgtype.UUID
-	IdempotencyDigest    []byte
-	PayerOrganizationID  pgtype.UUID
-	PayerTeamID          pgtype.UUID
-	PresetRevision       int64
-	DeclaredEncodedBytes int64
-	UploadDeadline       pgtype.Timestamptz
-	UploadExpiresAt      pgtype.Timestamptz
+	ID                            pgtype.UUID
+	OwnerKind                     string
+	OwnerID                       pgtype.UUID
+	CreatedByAccountID            pgtype.UUID
+	PresetID                      pgtype.UUID
+	DestinationID                 pgtype.UUID
+	IdempotencyDigest             []byte
+	PayerOrganizationID           pgtype.UUID
+	PayerTeamID                   pgtype.UUID
+	PresetRevision                int64
+	DeclaredEncodedBytes          int64
+	UploadDeadline                pgtype.Timestamptz
+	UploadExpiresAt               pgtype.Timestamptz
+	ClientIdempotencyKey          pgtype.UUID
+	TransferMeterID               pgtype.UUID
+	TransferServiceIdentityID     pgtype.UUID
+	TransferReserveIdempotencyKey pgtype.UUID
+	TransferCommitIdempotencyKey  pgtype.UUID
+	TransferReleaseIdempotencyKey pgtype.UUID
+	TransferReservedUnits         int64
+	TransferState                 string
 }
 
 func (q *Queries) CreateSubmissionRecord(ctx context.Context, arg CreateSubmissionRecordParams) (RealqaSubmission, error) {
@@ -225,6 +409,14 @@ func (q *Queries) CreateSubmissionRecord(ctx context.Context, arg CreateSubmissi
 		arg.DeclaredEncodedBytes,
 		arg.UploadDeadline,
 		arg.UploadExpiresAt,
+		arg.ClientIdempotencyKey,
+		arg.TransferMeterID,
+		arg.TransferServiceIdentityID,
+		arg.TransferReserveIdempotencyKey,
+		arg.TransferCommitIdempotencyKey,
+		arg.TransferReleaseIdempotencyKey,
+		arg.TransferReservedUnits,
+		arg.TransferState,
 	)
 	var i RealqaSubmission
 	err := row.Scan(
@@ -249,6 +441,18 @@ func (q *Queries) CreateSubmissionRecord(ctx context.Context, arg CreateSubmissi
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }
@@ -311,6 +515,40 @@ func (q *Queries) ExpireAsset(ctx context.Context, id pgtype.UUID) (RealqaAsset,
 		&i.UploadExpiresAt,
 		&i.UploadedAt,
 		&i.VerifiedAt,
+	)
+	return i, err
+}
+
+const failIssueSubmissionAttempt = `-- name: FailIssueSubmissionAttempt :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'failed',
+    failure_reason = $1,
+    updated_at = transaction_timestamp()
+WHERE submission_id = $2
+  AND state NOT IN ('provider_reconciled', 'promoting', 'completed')
+RETURNING submission_id, idempotency_key, request_digest, final_body_digest, state, provider_issue_id, provider_issue_url, failure_reason, accepted_at, updated_at, completed_at
+`
+
+type FailIssueSubmissionAttemptParams struct {
+	FailureReason pgtype.Text
+	SubmissionID  pgtype.UUID
+}
+
+func (q *Queries) FailIssueSubmissionAttempt(ctx context.Context, arg FailIssueSubmissionAttemptParams) (RealqaIssueSubmissionAttempt, error) {
+	row := q.db.QueryRow(ctx, failIssueSubmissionAttempt, arg.FailureReason, arg.SubmissionID)
+	var i RealqaIssueSubmissionAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.FinalBodyDigest,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.FailureReason,
+		&i.AcceptedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
 	)
 	return i, err
 }
@@ -419,6 +657,31 @@ func (q *Queries) GetAssetUploadGrant(ctx context.Context, uploadTokenDigest []b
 	return i, err
 }
 
+const getIssueSubmissionAttempt = `-- name: GetIssueSubmissionAttempt :one
+SELECT submission_id, idempotency_key, request_digest, final_body_digest, state, provider_issue_id, provider_issue_url, failure_reason, accepted_at, updated_at, completed_at
+FROM realqa_issue_submission_attempts
+WHERE submission_id = $1
+`
+
+func (q *Queries) GetIssueSubmissionAttempt(ctx context.Context, submissionID pgtype.UUID) (RealqaIssueSubmissionAttempt, error) {
+	row := q.db.QueryRow(ctx, getIssueSubmissionAttempt, submissionID)
+	var i RealqaIssueSubmissionAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.FinalBodyDigest,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.FailureReason,
+		&i.AcceptedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const getPublicAsset = `-- name: GetPublicAsset :one
 SELECT asset.public_id, asset.media_type, asset.state
 FROM realqa_assets AS asset
@@ -444,8 +707,34 @@ func (q *Queries) GetPublicAsset(ctx context.Context, publicLookupID pgtype.Text
 	return i, err
 }
 
+const getStorageAuthorizationAttempt = `-- name: GetStorageAuthorizationAttempt :one
+SELECT submission_id, idempotency_key, request_digest, service_identity_id, meter_id, maximum_units, state, authorization_id, authorization_revision, mapping_revision, created_at, updated_at
+FROM realqa_storage_authorization_attempts
+WHERE submission_id = $1
+`
+
+func (q *Queries) GetStorageAuthorizationAttempt(ctx context.Context, submissionID pgtype.UUID) (RealqaStorageAuthorizationAttempt, error) {
+	row := q.db.QueryRow(ctx, getStorageAuthorizationAttempt, submissionID)
+	var i RealqaStorageAuthorizationAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.ServiceIdentityID,
+		&i.MeterID,
+		&i.MaximumUnits,
+		&i.State,
+		&i.AuthorizationID,
+		&i.AuthorizationRevision,
+		&i.MappingRevision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getSubmissionRecord = `-- name: GetSubmissionRecord :one
-SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 FROM realqa_submissions
 WHERE id = $1
 `
@@ -475,6 +764,18 @@ func (q *Queries) GetSubmissionRecord(ctx context.Context, id pgtype.UUID) (Real
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }
@@ -553,6 +854,61 @@ FOR UPDATE OF asset
 
 func (q *Queries) ListIssueAssets(ctx context.Context, providerIssueID pgtype.Text) ([]RealqaAsset, error) {
 	rows, err := q.db.Query(ctx, listIssueAssets, providerIssueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RealqaAsset{}
+	for rows.Next() {
+		var i RealqaAsset
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubmissionID,
+			&i.PublicID,
+			&i.ObjectKeyCiphertext,
+			&i.State,
+			&i.EncodedBytes,
+			&i.Revision,
+			&i.CreatedAt,
+			&i.RemovedAt,
+			&i.ClientImageID,
+			&i.MediaType,
+			&i.DeclaredEncodedBytes,
+			&i.PixelWidth,
+			&i.PixelHeight,
+			&i.SourceSha256,
+			&i.SanitizedSha256,
+			&i.UploadState,
+			&i.UploadTokenDigest,
+			&i.UploadExpiresAt,
+			&i.UploadedAt,
+			&i.VerifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueSubmissionAssets = `-- name: ListIssueSubmissionAssets :many
+SELECT id, submission_id, public_id, object_key_ciphertext, state, encoded_bytes, revision, created_at, removed_at, client_image_id, media_type, declared_encoded_bytes, pixel_width, pixel_height, source_sha256, sanitized_sha256, upload_state, upload_token_digest, upload_expires_at, uploaded_at, verified_at
+FROM realqa_assets
+WHERE submission_id = $1
+  AND id = ANY($2::uuid[])
+ORDER BY id
+`
+
+type ListIssueSubmissionAssetsParams struct {
+	SubmissionID pgtype.UUID
+	AssetIds     []pgtype.UUID
+}
+
+func (q *Queries) ListIssueSubmissionAssets(ctx context.Context, arg ListIssueSubmissionAssetsParams) ([]RealqaAsset, error) {
+	rows, err := q.db.Query(ctx, listIssueSubmissionAssets, arg.SubmissionID, arg.AssetIds)
 	if err != nil {
 		return nil, err
 	}
@@ -794,7 +1150,7 @@ func (q *Queries) ListSubmissionAssets(ctx context.Context, submissionID pgtype.
 }
 
 const listSubmissionRecords = `-- name: ListSubmissionRecords :many
-SELECT submission.id, submission.owner_kind, submission.owner_id, submission.created_by_account_id, submission.preset_id, submission.destination_id, submission.state, submission.provider_issue_id, submission.provider_issue_url, submission.idempotency_digest, submission.revision, submission.created_at, submission.updated_at, submission.submitted_at, submission.payer_organization_id, submission.payer_team_id, submission.preset_revision, submission.declared_encoded_bytes, submission.verified_encoded_bytes, submission.upload_deadline, submission.upload_expires_at
+SELECT submission.id, submission.owner_kind, submission.owner_id, submission.created_by_account_id, submission.preset_id, submission.destination_id, submission.state, submission.provider_issue_id, submission.provider_issue_url, submission.idempotency_digest, submission.revision, submission.created_at, submission.updated_at, submission.submitted_at, submission.payer_organization_id, submission.payer_team_id, submission.preset_revision, submission.declared_encoded_bytes, submission.verified_encoded_bytes, submission.upload_deadline, submission.upload_expires_at, submission.client_idempotency_key, submission.transfer_meter_id, submission.transfer_service_identity_id, submission.transfer_reservation_id, submission.transfer_reserve_idempotency_key, submission.transfer_commit_idempotency_key, submission.transfer_release_idempotency_key, submission.transfer_reserved_units, submission.transfer_committed_units, submission.transfer_state, submission.transfer_reservation_created_at, submission.transfer_reservation_expires_at
 FROM realqa_submissions AS submission
 WHERE submission.owner_kind = $1
   AND submission.owner_id = $2
@@ -877,6 +1233,18 @@ func (q *Queries) ListSubmissionRecords(ctx context.Context, arg ListSubmissionR
 			&i.VerifiedEncodedBytes,
 			&i.UploadDeadline,
 			&i.UploadExpiresAt,
+			&i.ClientIdempotencyKey,
+			&i.TransferMeterID,
+			&i.TransferServiceIdentityID,
+			&i.TransferReservationID,
+			&i.TransferReserveIdempotencyKey,
+			&i.TransferCommitIdempotencyKey,
+			&i.TransferReleaseIdempotencyKey,
+			&i.TransferReservedUnits,
+			&i.TransferCommittedUnits,
+			&i.TransferState,
+			&i.TransferReservationCreatedAt,
+			&i.TransferReservationExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -983,7 +1351,7 @@ func (q *Queries) LockExpiredSubmissionAsset(ctx context.Context, arg LockExpire
 }
 
 const lockExpiredSubmissionRecord = `-- name: LockExpiredSubmissionRecord :one
-SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 FROM realqa_submissions
 WHERE id = $1
   AND upload_expires_at <= $2
@@ -1020,12 +1388,24 @@ func (q *Queries) LockExpiredSubmissionRecord(ctx context.Context, arg LockExpir
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }
 
 const lockIssueSubmissionRecords = `-- name: LockIssueSubmissionRecords :many
-SELECT submission.id, submission.owner_kind, submission.owner_id, submission.created_by_account_id, submission.preset_id, submission.destination_id, submission.state, submission.provider_issue_id, submission.provider_issue_url, submission.idempotency_digest, submission.revision, submission.created_at, submission.updated_at, submission.submitted_at, submission.payer_organization_id, submission.payer_team_id, submission.preset_revision, submission.declared_encoded_bytes, submission.verified_encoded_bytes, submission.upload_deadline, submission.upload_expires_at
+SELECT submission.id, submission.owner_kind, submission.owner_id, submission.created_by_account_id, submission.preset_id, submission.destination_id, submission.state, submission.provider_issue_id, submission.provider_issue_url, submission.idempotency_digest, submission.revision, submission.created_at, submission.updated_at, submission.submitted_at, submission.payer_organization_id, submission.payer_team_id, submission.preset_revision, submission.declared_encoded_bytes, submission.verified_encoded_bytes, submission.upload_deadline, submission.upload_expires_at, submission.client_idempotency_key, submission.transfer_meter_id, submission.transfer_service_identity_id, submission.transfer_reservation_id, submission.transfer_reserve_idempotency_key, submission.transfer_commit_idempotency_key, submission.transfer_release_idempotency_key, submission.transfer_reserved_units, submission.transfer_committed_units, submission.transfer_state, submission.transfer_reservation_created_at, submission.transfer_reservation_expires_at
 FROM realqa_submissions AS submission
 WHERE submission.provider_issue_id = $1
 ORDER BY submission.id
@@ -1063,6 +1443,18 @@ func (q *Queries) LockIssueSubmissionRecords(ctx context.Context, providerIssueI
 			&i.VerifiedEncodedBytes,
 			&i.UploadDeadline,
 			&i.UploadExpiresAt,
+			&i.ClientIdempotencyKey,
+			&i.TransferMeterID,
+			&i.TransferServiceIdentityID,
+			&i.TransferReservationID,
+			&i.TransferReserveIdempotencyKey,
+			&i.TransferCommitIdempotencyKey,
+			&i.TransferReleaseIdempotencyKey,
+			&i.TransferReservedUnits,
+			&i.TransferCommittedUnits,
+			&i.TransferState,
+			&i.TransferReservationCreatedAt,
+			&i.TransferReservationExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1146,7 +1538,7 @@ func (q *Queries) LockScopeSubmissionRecords(ctx context.Context, arg LockScopeS
 }
 
 const lockSubmissionRecord = `-- name: LockSubmissionRecord :one
-SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+SELECT id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 FROM realqa_submissions
 WHERE id = $1
 FOR UPDATE
@@ -1177,6 +1569,18 @@ func (q *Queries) LockSubmissionRecord(ctx context.Context, submissionRecordID p
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }
@@ -1388,6 +1792,168 @@ func (q *Queries) MarkAssetVerifying(ctx context.Context, arg MarkAssetVerifying
 	return i, err
 }
 
+const markIssuePromoting = `-- name: MarkIssuePromoting :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'promoting',
+    updated_at = transaction_timestamp()
+WHERE submission_id = $1
+  AND state IN ('provider_reconciled', 'promoting')
+RETURNING submission_id, idempotency_key, request_digest, final_body_digest, state, provider_issue_id, provider_issue_url, failure_reason, accepted_at, updated_at, completed_at
+`
+
+func (q *Queries) MarkIssuePromoting(ctx context.Context, submissionID pgtype.UUID) (RealqaIssueSubmissionAttempt, error) {
+	row := q.db.QueryRow(ctx, markIssuePromoting, submissionID)
+	var i RealqaIssueSubmissionAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.FinalBodyDigest,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.FailureReason,
+		&i.AcceptedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const markIssueProviderPending = `-- name: MarkIssueProviderPending :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'provider_pending',
+    final_body_digest = $1,
+    failure_reason = NULL,
+    updated_at = transaction_timestamp()
+WHERE submission_id = $2
+  AND state IN ('transfer_finalized', 'provider_pending')
+RETURNING submission_id, idempotency_key, request_digest, final_body_digest, state, provider_issue_id, provider_issue_url, failure_reason, accepted_at, updated_at, completed_at
+`
+
+type MarkIssueProviderPendingParams struct {
+	FinalBodyDigest []byte
+	SubmissionID    pgtype.UUID
+}
+
+func (q *Queries) MarkIssueProviderPending(ctx context.Context, arg MarkIssueProviderPendingParams) (RealqaIssueSubmissionAttempt, error) {
+	row := q.db.QueryRow(ctx, markIssueProviderPending, arg.FinalBodyDigest, arg.SubmissionID)
+	var i RealqaIssueSubmissionAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.FinalBodyDigest,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.FailureReason,
+		&i.AcceptedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const markIssueProviderReconciled = `-- name: MarkIssueProviderReconciled :one
+WITH attempt AS (
+    UPDATE realqa_issue_submission_attempts
+    SET state = 'provider_reconciled',
+        provider_issue_id = $1,
+        provider_issue_url = $2,
+        failure_reason = NULL,
+        updated_at = transaction_timestamp()
+    WHERE submission_id = $3
+      AND state IN (
+          'provider_pending', 'provider_reconciled', 'promoting'
+      )
+      AND (
+          provider_issue_id IS NULL
+          OR (
+              provider_issue_id = $1
+              AND provider_issue_url = $2
+          )
+      )
+    RETURNING submission_id, idempotency_key, request_digest, final_body_digest, state, provider_issue_id, provider_issue_url, failure_reason, accepted_at, updated_at, completed_at
+)
+UPDATE realqa_submissions AS submission
+SET state = 'reconciling',
+    provider_issue_id = attempt.provider_issue_id,
+    provider_issue_url = attempt.provider_issue_url,
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+FROM attempt
+WHERE submission.id = attempt.submission_id
+RETURNING attempt.submission_id, attempt.idempotency_key, attempt.request_digest, attempt.final_body_digest, attempt.state, attempt.provider_issue_id, attempt.provider_issue_url, attempt.failure_reason, attempt.accepted_at, attempt.updated_at, attempt.completed_at
+`
+
+type MarkIssueProviderReconciledParams struct {
+	ProviderIssueID  pgtype.Text
+	ProviderIssueUrl pgtype.Text
+	SubmissionID     pgtype.UUID
+}
+
+type MarkIssueProviderReconciledRow struct {
+	SubmissionID     pgtype.UUID
+	IdempotencyKey   pgtype.UUID
+	RequestDigest    []byte
+	FinalBodyDigest  []byte
+	State            string
+	ProviderIssueID  pgtype.Text
+	ProviderIssueUrl pgtype.Text
+	FailureReason    pgtype.Text
+	AcceptedAt       pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CompletedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) MarkIssueProviderReconciled(ctx context.Context, arg MarkIssueProviderReconciledParams) (MarkIssueProviderReconciledRow, error) {
+	row := q.db.QueryRow(ctx, markIssueProviderReconciled, arg.ProviderIssueID, arg.ProviderIssueUrl, arg.SubmissionID)
+	var i MarkIssueProviderReconciledRow
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.FinalBodyDigest,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.FailureReason,
+		&i.AcceptedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const markIssueTransferFinalized = `-- name: MarkIssueTransferFinalized :one
+UPDATE realqa_issue_submission_attempts
+SET state = 'transfer_finalized',
+    updated_at = transaction_timestamp()
+WHERE submission_id = $1
+  AND state IN ('pending', 'transfer_finalized')
+RETURNING submission_id, idempotency_key, request_digest, final_body_digest, state, provider_issue_id, provider_issue_url, failure_reason, accepted_at, updated_at, completed_at
+`
+
+func (q *Queries) MarkIssueTransferFinalized(ctx context.Context, submissionID pgtype.UUID) (RealqaIssueSubmissionAttempt, error) {
+	row := q.db.QueryRow(ctx, markIssueTransferFinalized, submissionID)
+	var i RealqaIssueSubmissionAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.FinalBodyDigest,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.FailureReason,
+		&i.AcceptedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const markSubmissionAssetsDeleted = `-- name: MarkSubmissionAssetsDeleted :one
 UPDATE realqa_submissions
 SET state = 'assets_deleted',
@@ -1396,7 +1962,7 @@ SET state = 'assets_deleted',
     updated_at = transaction_timestamp()
 WHERE id = $1
   AND revision = $2
-RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 `
 
 type MarkSubmissionAssetsDeletedParams struct {
@@ -1429,6 +1995,18 @@ func (q *Queries) MarkSubmissionAssetsDeleted(ctx context.Context, arg MarkSubmi
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }
@@ -1441,7 +2019,7 @@ SET state = 'submitted',
     revision = revision + 1
 WHERE id = $1
   AND state IN ('ready', 'submitting', 'reconciling')
-RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 `
 
 func (q *Queries) MarkSubmissionSubmitted(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error) {
@@ -1469,6 +2047,129 @@ func (q *Queries) MarkSubmissionSubmitted(ctx context.Context, id pgtype.UUID) (
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
+	)
+	return i, err
+}
+
+const markTransferCommitted = `-- name: MarkTransferCommitted :one
+UPDATE realqa_submissions
+SET transfer_state = 'committed',
+    transfer_committed_units = $1,
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE id = $2
+  AND transfer_state = 'reserved'
+  AND $1 > 0
+  AND $1 <= transfer_reserved_units
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
+`
+
+type MarkTransferCommittedParams struct {
+	CommittedUnits int64
+	ID             pgtype.UUID
+}
+
+func (q *Queries) MarkTransferCommitted(ctx context.Context, arg MarkTransferCommittedParams) (RealqaSubmission, error) {
+	row := q.db.QueryRow(ctx, markTransferCommitted, arg.CommittedUnits, arg.ID)
+	var i RealqaSubmission
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CreatedByAccountID,
+		&i.PresetID,
+		&i.DestinationID,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.IdempotencyDigest,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SubmittedAt,
+		&i.PayerOrganizationID,
+		&i.PayerTeamID,
+		&i.PresetRevision,
+		&i.DeclaredEncodedBytes,
+		&i.VerifiedEncodedBytes,
+		&i.UploadDeadline,
+		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
+	)
+	return i, err
+}
+
+const markTransferReleased = `-- name: MarkTransferReleased :one
+UPDATE realqa_submissions
+SET transfer_state = 'released',
+    transfer_committed_units = 0,
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE id = $1
+  AND transfer_state = 'reserved'
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
+`
+
+func (q *Queries) MarkTransferReleased(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error) {
+	row := q.db.QueryRow(ctx, markTransferReleased, id)
+	var i RealqaSubmission
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CreatedByAccountID,
+		&i.PresetID,
+		&i.DestinationID,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.IdempotencyDigest,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SubmittedAt,
+		&i.PayerOrganizationID,
+		&i.PayerTeamID,
+		&i.PresetRevision,
+		&i.DeclaredEncodedBytes,
+		&i.VerifiedEncodedBytes,
+		&i.UploadDeadline,
+		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }
@@ -1555,7 +2256,7 @@ SET verified_encoded_bytes = (
     updated_at = transaction_timestamp()
 WHERE submission.id = $1
   AND submission.state IN ('draft', 'uploading', 'ready')
-RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 `
 
 func (q *Queries) RefreshSubmissionAssetState(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error) {
@@ -1583,6 +2284,18 @@ func (q *Queries) RefreshSubmissionAssetState(ctx context.Context, id pgtype.UUI
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }
@@ -1653,6 +2366,133 @@ func (q *Queries) RetryObjectDeletion(ctx context.Context, arg RetryObjectDeleti
 	return err
 }
 
+const setSubmissionSubmitting = `-- name: SetSubmissionSubmitting :one
+UPDATE realqa_submissions
+SET state = 'submitting',
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE id = $1
+  AND state IN ('ready', 'submitting', 'reconciling')
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
+`
+
+func (q *Queries) SetSubmissionSubmitting(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error) {
+	row := q.db.QueryRow(ctx, setSubmissionSubmitting, id)
+	var i RealqaSubmission
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CreatedByAccountID,
+		&i.PresetID,
+		&i.DestinationID,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.IdempotencyDigest,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SubmittedAt,
+		&i.PayerOrganizationID,
+		&i.PayerTeamID,
+		&i.PresetRevision,
+		&i.DeclaredEncodedBytes,
+		&i.VerifiedEncodedBytes,
+		&i.UploadDeadline,
+		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
+	)
+	return i, err
+}
+
+const setTransferReservation = `-- name: SetTransferReservation :one
+UPDATE realqa_submissions
+SET transfer_reservation_id = $1,
+    transfer_reservation_created_at =
+        $2,
+    transfer_reservation_expires_at =
+        $3,
+    upload_deadline = LEAST(
+        $2 + interval '23 hours',
+        $3 - interval '1 hour'
+    ),
+    upload_expires_at = $3,
+    transfer_state = 'reserved',
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE id = $4
+  AND transfer_state = 'pending'
+  AND transfer_reservation_id IS NULL
+  AND $3
+        - $2 >= interval '24 hours'
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
+`
+
+type SetTransferReservationParams struct {
+	TransferReservationID        pgtype.UUID
+	TransferReservationCreatedAt pgtype.Timestamptz
+	TransferReservationExpiresAt pgtype.Timestamptz
+	ID                           pgtype.UUID
+}
+
+func (q *Queries) SetTransferReservation(ctx context.Context, arg SetTransferReservationParams) (RealqaSubmission, error) {
+	row := q.db.QueryRow(ctx, setTransferReservation,
+		arg.TransferReservationID,
+		arg.TransferReservationCreatedAt,
+		arg.TransferReservationExpiresAt,
+		arg.ID,
+	)
+	var i RealqaSubmission
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.CreatedByAccountID,
+		&i.PresetID,
+		&i.DestinationID,
+		&i.State,
+		&i.ProviderIssueID,
+		&i.ProviderIssueUrl,
+		&i.IdempotencyDigest,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SubmittedAt,
+		&i.PayerOrganizationID,
+		&i.PayerTeamID,
+		&i.PresetRevision,
+		&i.DeclaredEncodedBytes,
+		&i.VerifiedEncodedBytes,
+		&i.UploadDeadline,
+		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
+	)
+	return i, err
+}
+
 const sumOtherVerifiedAssetBytes = `-- name: SumOtherVerifiedAssetBytes :one
 SELECT COALESCE(sum(encoded_bytes), 0)::bigint
 FROM realqa_assets
@@ -1669,6 +2509,20 @@ type SumOtherVerifiedAssetBytesParams struct {
 
 func (q *Queries) SumOtherVerifiedAssetBytes(ctx context.Context, arg SumOtherVerifiedAssetBytesParams) (int64, error) {
 	row := q.db.QueryRow(ctx, sumOtherVerifiedAssetBytes, arg.SubmissionID, arg.AssetID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const sumVerifiedDeclaredAssetBytes = `-- name: SumVerifiedDeclaredAssetBytes :one
+SELECT COALESCE(sum(declared_encoded_bytes), 0)::bigint
+FROM realqa_assets
+WHERE submission_id = $1
+  AND upload_state = 'verified'
+`
+
+func (q *Queries) SumVerifiedDeclaredAssetBytes(ctx context.Context, submissionID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumVerifiedDeclaredAssetBytes, submissionID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -1867,7 +2721,7 @@ SET verified_encoded_bytes = (
     updated_at = transaction_timestamp()
 WHERE submission.id = $1
   AND submission.revision = $2
-RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 `
 
 type TouchSubmissionAfterAssetDeletionParams struct {
@@ -1900,6 +2754,18 @@ func (q *Queries) TouchSubmissionAfterAssetDeletion(ctx context.Context, arg Tou
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }
@@ -1925,7 +2791,7 @@ SET verified_encoded_bytes = $1,
     updated_at = transaction_timestamp()
 WHERE submission.id = $2
   AND submission.state IN ('draft', 'uploading', 'ready')
-RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at
+RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 `
 
 type UpdateSubmissionVerifiedBytesParams struct {
@@ -1958,6 +2824,18 @@ func (q *Queries) UpdateSubmissionVerifiedBytes(ctx context.Context, arg UpdateS
 		&i.VerifiedEncodedBytes,
 		&i.UploadDeadline,
 		&i.UploadExpiresAt,
+		&i.ClientIdempotencyKey,
+		&i.TransferMeterID,
+		&i.TransferServiceIdentityID,
+		&i.TransferReservationID,
+		&i.TransferReserveIdempotencyKey,
+		&i.TransferCommitIdempotencyKey,
+		&i.TransferReleaseIdempotencyKey,
+		&i.TransferReservedUnits,
+		&i.TransferCommittedUnits,
+		&i.TransferState,
+		&i.TransferReservationCreatedAt,
+		&i.TransferReservationExpiresAt,
 	)
 	return i, err
 }

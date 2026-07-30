@@ -79,7 +79,7 @@
 - Installation list rows expose the stable GitHub account ID, login, and closed
   user/organization kind so settings clients can identify each accessible
   installation without displaying an opaque provider installation ID.
-- Connections may be managed from DevHud Deck settings and the existing DeliDev `/account` or `/o/:orgSlug/settings` sections. The DeliDev settings client may call only the four `DeckIntegrationService` RPCs and may navigate a returned authorization target only through its Deck-specific exact GitHub.com top-level browser validator; it must not consume views, pull-request data, mutations, devices, notifications, or widgets. No new top-level DeliDev route or generic navigation field is authorized.
+- Connections may be managed from DevHud Deck settings and the implemented DeliDev `/account` or `/o/:orgSlug/settings` controls. The DeliDev settings client calls only the four `DeckIntegrationService` RPCs, with organization calls omitted entirely for Members, and may navigate a returned authorization target only through its Deck-specific exact GitHub.com top-level browser validator; it must not consume views, pull-request data, mutations, devices, notifications, or widgets. No new top-level DeliDev route or generic navigation field is authorized.
 - HTTP is limited to GitHub OAuth/App callbacks and installation-lifecycle webhooks. Provider webhooks must not refresh pull-request status.
 - The implemented HTTP paths are exactly `/github/app/callback`,
   `/github/oauth/callback`, and `/github/webhooks`. App and OAuth callbacks use

@@ -11,9 +11,9 @@ import (
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
-	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -24,9 +24,9 @@ const (
 	submissionHourLimit = 30
 )
 
-// CreateSubmission validates the complete declaration set before creating any
-// private upload state. Transfer/storage billing activation remains a separate
-// integration; this method performs no provider or catalog mutation.
+// CreateSubmission validates the complete declaration set, durably creates the
+// submission, and establishes its replay-safe live transfer reservation before
+// returning upload authority.
 func (service *Submission) CreateSubmission(
 	ctx context.Context,
 	request *connect.Request[realqav1.CreateSubmissionRequest],
@@ -57,6 +57,38 @@ func (service *Submission) CreateSubmission(
 	}
 	if replay, ok, replayErr := service.submissionReplay(
 		ctx, actor, idempotencyID, requestDigest); ok {
+		if replayErr == nil && service.dependencies.Billing != nil {
+			submissionID, parseErr := parseUUIDMessage(
+				replay.Msg.Submission.SubmissionId)
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			record, loadErr := service.dependencies.Store.Queries().
+				GetSubmissionRecord(ctx, toPGUUID(submissionID))
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			if record.TransferState == "pending" {
+				meters, meterErr := service.dependencies.Billing.Meters(ctx)
+				if meterErr != nil ||
+					validateBillingMeters(meters) != nil {
+					return nil, transferReservationFailed()
+				}
+				ensured, ensureErr := service.ensureTransferReservation(
+					ctx, actor, submissionID, meters)
+				if ensureErr != nil {
+					return nil, ensureErr
+				}
+				replay.Msg.Submission = ensured
+				replay.Msg.TransferReservationExpiresAt =
+					ensured.TransferReservationExpiresAt
+				replay.Msg.UploadDeadline = ensured.UploadDeadline
+			} else if record.TransferState != "reserved" &&
+				record.TransferState != "committed" &&
+				record.TransferState != "released" {
+				return nil, transferReservationFailed()
+			}
+		}
 		return replay, replayErr
 	}
 	presetID, err := parseUUIDMessage(request.Msg.PresetId)
@@ -85,6 +117,24 @@ func (service *Submission) CreateSubmission(
 	}
 	if err = validateImages(request.Msg.Images); err != nil {
 		return nil, err
+	}
+	var (
+		billingMeters BillingMeters
+		reservedUnits int64
+	)
+	if service.dependencies.Billing != nil {
+		billingMeters, err = service.dependencies.Billing.Meters(ctx)
+		if err != nil || validateBillingMeters(billingMeters) != nil {
+			return nil, transferReservationFailed()
+		}
+		var declaredBytes int64
+		for _, declaration := range request.Msg.Images {
+			declaredBytes += declaration.EncodedBytes
+		}
+		reservedUnits, err = ceilMiB(declaredBytes)
+		if err != nil || reservedUnits <= 0 {
+			return nil, transferReservationFailed()
+		}
 	}
 	if service.dependencies.Objects == nil ||
 		service.dependencies.UploadSigner == nil {
@@ -125,6 +175,35 @@ func (service *Submission) CreateSubmission(
 	now := service.dependencies.Clock.Now().UTC()
 	deadline := now.Add(uploadAcceptWindow)
 	expires := now.Add(stagingLifetime)
+	transferState := "unconfigured"
+	var (
+		transferMeterID    pgtype.UUID
+		transferServiceID  pgtype.UUID
+		transferReserveKey pgtype.UUID
+		transferCommitKey  pgtype.UUID
+		transferReleaseKey pgtype.UUID
+	)
+	if service.dependencies.Billing != nil {
+		reserveKey, keyErr := derivedUUIDv7(idempotencyID, "transfer-reserve")
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		commitKey, keyErr := derivedUUIDv7(idempotencyID, "transfer-commit")
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		releaseKey, keyErr := derivedUUIDv7(idempotencyID, "transfer-release")
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		transferState = "pending"
+		transferMeterID = toPGUUID(billingMeters.Transfer.ID)
+		transferServiceID = toPGUUID(
+			billingMeters.Transfer.ServiceIdentityID)
+		transferReserveKey = toPGUUID(reserveKey)
+		transferCommitKey = toPGUUID(commitKey)
+		transferReleaseKey = toPGUUID(releaseKey)
+	}
 	var created *realqav1.Submission
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
@@ -210,16 +289,6 @@ func (service *Submission) CreateSubmission(
 				return invalid(
 					realqav1.ErrorReason_ERROR_REASON_UPLOAD_CONCURRENCY_LIMITED)
 			}
-			recent, countErr := queries.CountRecentSubmissionsForAccount(
-				ctx, toPGUUID(actor.accountID))
-			if countErr != nil {
-				return countErr
-			}
-			if recent >= submissionHourLimit {
-				return rqerr.New(connect.CodeResourceExhausted,
-					realqav1.ErrorReason_ERROR_REASON_RATE_LIMITED,
-					realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
-			}
 			var total int64
 			for _, declaration := range request.Msg.Images {
 				total += declaration.EncodedBytes
@@ -227,17 +296,25 @@ func (service *Submission) CreateSubmission(
 			_, createErr := queries.CreateSubmissionRecord(
 				ctx, dbgen.CreateSubmissionRecordParams{
 					ID: toPGUUID(submissionID), OwnerKind: scope.kind,
-					OwnerID:              toPGUUID(scope.id),
-					CreatedByAccountID:   toPGUUID(actor.accountID),
-					PresetID:             toPGUUID(presetID),
-					DestinationID:        presetRecord.DestinationID,
-					IdempotencyDigest:    requestDigest,
-					PayerOrganizationID:  toPGUUID(payerOrganization),
-					PayerTeamID:          toPGUUID(payerTeam),
-					PresetRevision:       request.Msg.PresetRevision.Value,
-					DeclaredEncodedBytes: total,
-					UploadDeadline:       pgTimestamp(deadline),
-					UploadExpiresAt:      pgTimestamp(expires),
+					OwnerID:                       toPGUUID(scope.id),
+					CreatedByAccountID:            toPGUUID(actor.accountID),
+					PresetID:                      toPGUUID(presetID),
+					DestinationID:                 presetRecord.DestinationID,
+					IdempotencyDigest:             requestDigest,
+					PayerOrganizationID:           toPGUUID(payerOrganization),
+					PayerTeamID:                   toPGUUID(payerTeam),
+					PresetRevision:                request.Msg.PresetRevision.Value,
+					DeclaredEncodedBytes:          total,
+					UploadDeadline:                pgTimestamp(deadline),
+					UploadExpiresAt:               pgTimestamp(expires),
+					ClientIdempotencyKey:          toPGUUID(idempotencyID),
+					TransferMeterID:               transferMeterID,
+					TransferServiceIdentityID:     transferServiceID,
+					TransferReserveIdempotencyKey: transferReserveKey,
+					TransferCommitIdempotencyKey:  transferCommitKey,
+					TransferReleaseIdempotencyKey: transferReleaseKey,
+					TransferReservedUnits:         reservedUnits,
+					TransferState:                 transferState,
 				})
 			if createErr != nil {
 				return createErr
@@ -264,19 +341,12 @@ func (service *Submission) CreateSubmission(
 			if createErr != nil {
 				return createErr
 			}
-			payload, marshalErr := proto.MarshalOptions{
-				Deterministic: true,
-			}.Marshal(created)
-			if marshalErr != nil {
-				return marshalErr
-			}
 			_, createErr = queries.CreateIdempotencyRecord(
 				ctx, dbgen.CreateIdempotencyRecordParams{
 					ID: toPGUUID(recordID), CallerKind: "user",
 					CallerDigest: actor.digest, Operation: "create_submission",
 					IdempotencyKey: toPGUUID(idempotencyID),
 					RequestDigest:  requestDigest, ResourceID: toPGUUID(submissionID),
-					ResponsePayload: payload,
 				})
 			return createErr
 		})
@@ -289,6 +359,13 @@ func (service *Submission) CreateSubmission(
 	}
 	audit(ctx, service.dependencies, actor, "submission_created",
 		scope, submissionID, "allow", "success")
+	if service.dependencies.Billing != nil {
+		created, err = service.ensureTransferReservation(
+			ctx, actor, submissionID, billingMeters)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return connect.NewResponse(&realqav1.CreateSubmissionResponse{
 		Submission:                   created,
 		TransferReservationExpiresAt: created.TransferReservationExpiresAt,

@@ -5,7 +5,7 @@
 - Project/component: `devhud` / `realqa-api`
 - Canonical source path: `protos/devhud-realqa/v1`
 - Contract identity: `devhud.realqa.v1`
-- Status: implemented source contract and private workspace package for issue #757, consumed by the inactive `servers/devhud-realqa` preset/tracker/auth/deletion foundation; no deployed API, public client publication, successful submission/upload/provider implementation, or production activation is claimed.
+- Status: implemented source contract and private workspace package for issue #757, consumed by the inactive `servers/devhud-realqa` preset/tracker/auth/deletion and online submission/live-transfer/initial-storage-authorization foundation; no deployed API, public client publication, recurring storage/rebind/terminal-cleanup implementation, or production activation is claimed.
 
 ## Runtime and Language
 
@@ -45,7 +45,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook, same-origin
 
 ## Authentication, Privacy, and Errors
 
-- Human RPCs use `Authorization: Bearer <realqa-audience-user-access-token>` plus the exact dedicated `x-delibase-forwarded-user-token: <delibase-audience-user-access-token>` Connect metadata. Both are memory-only, their subjects must match, and neither may appear in a protobuf message. Only `DeleteFeatureData` in delibase-lifecycle mode instead requires the exact RealQA-scoped delibase M2M identity and rejects the forwarded-user header; that identity is rejected by every other procedure. The package-local `AUTHENTICATION.md` owns the scope table. Generated clients keep all credentials out of messages, logs, errors, caches, persistence, and diagnostics.
+- Human RPCs use `Authorization: Bearer <realqa-audience-user-access-token>` plus the exact dedicated `x-delibase-forwarded-user-token: <delibase-audience-user-access-token>` Connect metadata. Both are memory-only, their subjects must match, and neither may appear in a protobuf message. The forwarded bearer for `SubmitIssue` requires both `delibase:usage:execute` for live transfer finalization and `delibase:billing:write` for initial storage-authorization creation. Only `DeleteFeatureData` in delibase-lifecycle mode instead requires the exact RealQA-scoped delibase M2M identity and rejects the forwarded-user header; that identity is rejected by every other procedure. The package-local `AUTHENTICATION.md` owns the complete scope table. Generated clients keep all credentials out of messages, logs, errors, caches, persistence, and diagnostics.
 - The DevHud generated client runs through the private native Connect transport's closed procedure/origin mapping rather than browser fetch. The separately scoped native uploader validates the exact signed asset-origin PUT capability returned by `CreateImageUpload`. Neither path grants an arbitrary URL, header, method, redirect, or `http://tauri.localhost` CORS access.
 - Errors distinguish authentication/reauthentication, authorization, stale revision or storage-authorization mapping, idempotency conflict, disconnected/unsupported host, provider permission/schema/validation, body/image/session limits, malformed/unsupported/decompression-bomb input, upload deadline/expiry or verification, ambiguous reconciliation, rate/concurrency limit, billing reservation/background-authorization/rebind/grace, asset removed, and retention state.
 - Messages must not carry GitHub tokens, webhook/R2 secrets, raw authorization headers, production secrets, raw originals, arbitrary HTML/page text, or remotely supplied UI/code.
@@ -70,7 +70,7 @@ Checks do not publish the TypeScript package, deploy either RealQA origin, creat
 ## Dependencies and Change Triggers
 
 - Owned by `devhud`; consumed by `servers/devhud-realqa`, authenticated RealQA code under `apps/devhud`, DeliDev only for the six `RealQATrackerService` settings RPCs in its existing account/organization settings sections, and `servers/delibase` only for service-authenticated `DeleteFeatureData` lifecycle delivery. DeliDev must not consume preset/submission/deletion services or add a RealQA feature route.
-- Recurring storage settlement depends on the separately synchronized delibase background-usage contract implemented by issue #756. RealQA server/client implementation and activation remain future work and require a separate catalog activation; the existing live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute.
+- Recurring storage settlement depends on the separately synchronized delibase background-usage contract implemented by issue #756. RealQA's live transfer and initial authorization client are implemented; recurring authorized usage, rebind/closure, and activation remain future work and require a separate catalog activation. The live forwarded-token `ReserveUsage`/`CommitUsage`/`ReleaseUsage` RPCs are not a substitute for recurring settlement.
 - Update this document, [project-devhud](project-devhud.md), [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md), [apps-devhud-foundation](apps-devhud-foundation.md), and affected `AGENTS.md` files for any service, RPC, message, enum, auth metadata, error, pagination, idempotency, generated package, or compatibility change.
 
 ## References

@@ -13,6 +13,8 @@ const requiredFiles = [
   "_headers",
   "manifest.webmanifest",
   "sw.js",
+  "auth/devhud/callback/index.html",
+  "deck-callback.js",
   "icons/delidev-192.png",
   "icons/delidev-512.png",
   "icons/delidev-maskable-512.png",
@@ -20,11 +22,22 @@ const requiredFiles = [
 
 await Promise.all(requiredFiles.map((path) => access(join(dist, path))));
 
-const [index, fallback, redirects, manifestText, serviceWorker] =
-  await Promise.all([
+const [
+  index,
+  fallback,
+  redirects,
+  headers,
+  callback,
+  callbackScript,
+  manifestText,
+  serviceWorker,
+] = await Promise.all([
     readFile(join(dist, "index.html"), "utf8"),
     readFile(join(dist, "404.html"), "utf8"),
     readFile(join(dist, "_redirects"), "utf8"),
+    readFile(join(dist, "_headers"), "utf8"),
+    readFile(join(dist, "auth/devhud/callback/index.html"), "utf8"),
+    readFile(join(dist, "deck-callback.js"), "utf8"),
     readFile(join(dist, "manifest.webmanifest"), "utf8"),
     readFile(join(dist, "sw.js"), "utf8"),
   ]);
@@ -35,6 +48,25 @@ if (!index.includes('href="https://deli.dev/"')) {
 }
 if (fallback !== index || !redirects.includes("/* /index.html 200")) {
   throw new Error("SPA fallback artifacts are missing or inconsistent.");
+}
+if (
+  !redirects.includes(
+    "/auth/devhud/callback /auth/devhud/callback/index.html 200",
+  ) ||
+  !headers.includes(
+    "/auth/devhud/callback/index.html\n" +
+      "  Cache-Control: no-cache, no-store, must-revalidate\n" +
+      "  Content-Security-Policy: default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\n" +
+      "  Referrer-Policy: no-referrer",
+  ) ||
+  !callback.includes('src="/deck-callback.js"') ||
+  !callbackScript.includes(
+    'window.history.replaceState(null, "", callbackPath)',
+  ) ||
+  !callbackScript.includes("window.sessionStorage.removeItem(storageKey)") ||
+  callbackScript.includes("console.")
+) {
+  throw new Error("Deck callback handoff is missing or unsafe.");
 }
 if (
   manifest.display !== "standalone" ||
@@ -97,9 +129,19 @@ if (
   serviceWorker.includes("BillingService") ||
   serviceWorker.includes("UsageService") ||
   serviceWorker.includes("RealQATrackerService") ||
-  serviceWorker.includes("x-delibase-forwarded-user-token")
+  serviceWorker.includes("x-delibase-forwarded-user-token") ||
+  !serviceWorker.includes('url.pathname === "/auth/devhud/callback"')
 ) {
   throw new Error("Service worker cache boundary is invalid.");
+}
+if (
+  shellFiles.some(
+    (path) =>
+      path.includes("auth/devhud/callback") ||
+      path.includes("deck-callback"),
+  )
+) {
+  throw new Error("Deck callback artifacts must not enter the shell cache.");
 }
 
 console.log(`Validated ${requiredFiles.length} DeliDev production artifacts.`);

@@ -16,6 +16,16 @@ import (
 
 const LifecycleScope = "realqa:lifecycle:delete"
 
+type forwardedBearerKey struct{}
+
+// ForwardedBearer returns the validated delibase-audience bearer only during
+// the current request. Callers must pass it directly to the live usage client;
+// persisting or logging it is forbidden.
+func ForwardedBearer(ctx context.Context) (string, bool) {
+	value, ok := ctx.Value(forwardedBearerKey{}).(string)
+	return value, ok && value != ""
+}
+
 type Interceptor struct {
 	feature           authmiddleware.Validator
 	forwarded         authmiddleware.Validator
@@ -99,6 +109,7 @@ func (interceptor *Interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryF
 			}
 		}
 		strip(headers)
+		ctx = context.WithValue(ctx, forwardedBearerKey{}, forwardedToken)
 		ctx = auth.WithPrincipal(ctx, auth.Principal{User: featureUser})
 		return next(ctx, request)
 	}
@@ -135,8 +146,9 @@ func isLifecycleRequest(request connect.AnyRequest) bool {
 
 func scopes(procedure string) (string, []string, bool) {
 	const (
-		accountRead = "delibase:account:read"
-		usage       = "delibase:usage:execute"
+		accountRead  = "delibase:account:read"
+		billingWrite = "delibase:billing:write"
+		usage        = "delibase:usage:execute"
 	)
 	switch procedure {
 	case
@@ -167,9 +179,11 @@ func scopes(procedure string) (string, []string, bool) {
 		realqav1connect.RealQASubmissionServiceCreateSubmissionProcedure,
 		realqav1connect.RealQASubmissionServiceCreateImageUploadProcedure,
 		realqav1connect.RealQASubmissionServiceFinalizeImageUploadProcedure,
-		realqav1connect.RealQASubmissionServiceSubmitIssueProcedure,
 		realqav1connect.RealQASubmissionServiceRebindSubmissionStorageAuthorizationProcedure:
 		return "realqa:submissions:write", []string{usage}, true
+	case realqav1connect.RealQASubmissionServiceSubmitIssueProcedure:
+		return "realqa:submissions:write",
+			[]string{usage, billingWrite}, true
 	case
 		realqav1connect.RealQASubmissionServiceDeleteImageProcedure,
 		realqav1connect.RealQASubmissionServiceDeleteSubmissionAssetsProcedure:

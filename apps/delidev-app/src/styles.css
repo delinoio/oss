@@ -1481,6 +1481,81 @@ tr:last-child td {
   margin-top: 18px;
 }
 
+.deck-connection {
+  margin-top: 18px;
+}
+
+.deck-connection-heading,
+.deck-connection-actions,
+.deck-installation-list li {
+  display: flex;
+  align-items: center;
+}
+
+.deck-connection-heading {
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.deck-connection-heading h2 {
+  margin-top: 4px;
+}
+
+.deck-state-summary {
+  padding: 18px 0;
+  border-top: 1px solid var(--gray-100);
+}
+
+.deck-state-summary p {
+  margin: 6px 0;
+  color: var(--gray-600);
+  line-height: 1.55;
+}
+
+.deck-state-summary small {
+  color: var(--gray-400);
+}
+
+.deck-installation-list {
+  margin: 0 0 20px;
+  padding: 0;
+  border-block: 1px solid var(--gray-100);
+  list-style: none;
+}
+
+.deck-installation-list li {
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.deck-installation-list strong,
+.deck-installation-list span {
+  display: block;
+}
+
+.deck-installation-list span {
+  margin-top: 3px;
+  color: var(--gray-400);
+  font-size: 13px;
+}
+
+.deck-connection-actions {
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.deck-state-3 {
+  color: var(--green);
+  background: #eaf9f1;
+}
+
+.deck-state-4,
+.deck-state-2 {
+  color: #705300;
+  background: #fff4cc;
+}
+
 .organization-list {
   margin: 20px 0 0;
   padding: 0;

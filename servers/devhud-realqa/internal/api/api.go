@@ -22,8 +22,10 @@ import (
 )
 
 const (
-	readinessTimeout       = 2 * time.Second
-	submissionReadMaxBytes = 60_000
+	readinessTimeout = 2 * time.Second
+	// Admit the 60,000-byte final-body input plus bounded protobuf metadata.
+	// Exact composed-body enforcement remains in the GitHub boundary.
+	submissionReadMaxBytes = 256 * 1024
 )
 
 type HealthChecker interface {

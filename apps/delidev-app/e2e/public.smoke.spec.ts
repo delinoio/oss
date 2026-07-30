@@ -54,6 +54,32 @@ test("RealQA settings do not add a top-level route", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("Deck callback consumes its handoff and removes callback credentials from the URL", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    sessionStorage.setItem(
+      "delidev:deck:return-to",
+      "/o/acme/settings",
+    );
+  });
+  await page.goto(
+    "/auth/devhud/callback?code=unexpected-code&state=unexpected-state#token",
+  );
+
+  await expect(page).toHaveURL(/\/o\/acme\/settings$/);
+  await expect(
+    page.getByRole("heading", { name: "Sign in to continue" }),
+  ).toBeVisible();
+  expect(page.url()).not.toContain("unexpected");
+  expect(
+    await page.evaluate(() =>
+      sessionStorage.getItem("delidev:deck:return-to"),
+    ),
+  ).toBeNull();
+});
+
 test("manifest and offline state remain available", async ({
   context,
   page,

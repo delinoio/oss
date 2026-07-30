@@ -9,12 +9,14 @@ and generated Connect packages are implemented, as is the inactive RealQA
 preset/tracker/auth/deletion plus R2-backed image-transfer/public-delivery
 server foundation, its internal GitHub.com-only provider adapter, manifest,
 callbacks, lifecycle webhooks, schema parsing, body composition, and reconciled
-new-issue dispatch boundary, and Deck's bounded authentication/persistence plus
-GitHub.com connection, lifecycle, candidate, and PR-mutation provider slice.
-The app also implements the inactive account-bound encrypted RealQA
-local-draft/native-adapter foundation. Deck's billed refresh, billing
-finalization, and notification delivery, along with RealQA end-to-end
-submission/billing orchestration and remaining product integrations, remain
+new-issue dispatch boundary, RealQA's replay-safe online submission,
+live-transfer billing, initial storage-authorization orchestration, and Deck's
+bounded authentication/persistence plus GitHub.com connection, lifecycle,
+candidate, and PR-mutation provider slice. The app also implements the inactive
+account-bound encrypted RealQA local-draft/native-adapter foundation and
+dependency-injected online-submission coordinator. Deck's billed refresh,
+billing finalization, and notification delivery, along with RealQA recurring
+storage/rebind/terminal cleanup and remaining product integrations, remain
 planned. This contract authorizes implementation for issues #755 and #757; it
 does not claim that either feature or origin is deployed, registered, published,
 catalog-enabled, or active.
@@ -36,10 +38,10 @@ The shared authentication foundation is now implemented under `apps/devhud` as d
   Go/PostgreSQL/sqlc Deck service described by
   [servers-devhud-deck-foundation](servers-devhud-deck-foundation.md).
 - `protos/devhud-deck` (`deck-api`, implemented private contract): the versioned `devhud.deck.v1` source, isolated descriptor, generated Go/TypeScript Connect artifacts, and private workspace export described by [protos-devhud-deck-api-contract](protos-devhud-deck-api-contract.md).
-- `servers/devhud-realqa` (`realqa-server`): the implemented inactive Go/PostgreSQL/sqlc preset/tracker/auth/deletion and R2-backed image-transfer/public-delivery foundation plus planned GitHub issue/billing service described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
+- `servers/devhud-realqa` (`realqa-server`): the implemented inactive Go/PostgreSQL/sqlc preset/tracker/auth/deletion, GitHub.com provider, R2-backed image-transfer/public-delivery, and online submission/live-transfer/initial-storage-authorization foundation plus planned recurring storage/rebind/terminal cleanup described by [servers-devhud-realqa-foundation](servers-devhud-realqa-foundation.md).
 - `protos/devhud-realqa` (`realqa-api`): the implemented versioned `devhud.realqa.v1` source, isolated descriptor, reproducible Go/TypeScript Connect artifacts, and private `@delinoio/devhud-realqa-connect` workspace package described by [protos-devhud-realqa-api-contract](protos-devhud-realqa-api-contract.md).
 
-No full DevHud feature client or native implementation belongs under `apps/delidev-app`, `servers/delibase`, `protos/delibase`, `crates/`, `cmds/`, or a public plugin/package path. DeliDev may consume only `DeckIntegrationService` and `RealQATrackerService` to expose connection/destination management through its existing `/account` and `/o/:orgSlug/settings` sections. It also owns the planned `/auth/devhud/callback` static route and exact-path Apple/Android association artifacts required to verify the Deck mobile link; these narrow responsibilities do not transfer DevHud ownership or authorize another top-level DeliDev feature route.
+No full DevHud feature client or native implementation belongs under `apps/delidev-app`, `servers/delibase`, `protos/delibase`, `crates/`, `cmds/`, or a public plugin/package path. DeliDev consumes only `DeckIntegrationService` and `RealQATrackerService` for implemented connection/destination management through its existing `/account` and `/o/:orgSlug/settings` sections and now owns the dedicated credential-free `/auth/devhud/callback` handoff artifact. Exact-path Apple/Android association artifacts required to verify the future Deck mobile link remain planned; these narrow responsibilities do not transfer DevHud ownership or authorize another top-level DeliDev feature route.
 The DeliDev RealQA tracker exception uses the exact RealQA browser origin/audience and dual user-token metadata from the proto authentication contract, with zero persistent cache and a separate validated GitHub.com same-tab authorization handoff. It never grants DeliDev a generic RealQA transport, provider token, callback route, or full feature surface.
 
 ## Domain Contract Documents

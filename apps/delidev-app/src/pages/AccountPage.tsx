@@ -10,6 +10,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuthSession } from "../auth/AuthSession";
 import { describeDelibaseError } from "../api/errors";
 import { BackgroundUsageAuthorizations } from "../components/BackgroundUsageAuthorizations";
+import { DeckConnectionManager } from "../components/DeckConnectionManager";
 import { Dialog } from "../components/Dialog";
 import { useAccountState } from "../components/ProtectedRoute";
 import { RealQAGitHubDestinations } from "../components/RealQAGitHubDestinations";
@@ -234,6 +235,15 @@ export function AccountPage() {
         </button>
         {!online ? <OfflineActionHint /> : null}
       </form>
+      {accountState.account?.accountId?.value ? (
+        <DeckConnectionManager
+          ownerScope={{
+            accountId: accountState.account.accountId.value,
+            kind: "personal",
+            returnPath: "/account",
+          }}
+        />
+      ) : null}
       {auth.transport ? (
         <BackgroundUsageAuthorizations
           scope={{ kind: "account" }}

@@ -26,9 +26,10 @@ and diagnostics.
 
 The implemented foundation requires `delibase:account:read` on the forwarded
 bearer for preset/tracker calls and submission reads. Submission mutations
-require `delibase:usage:execute`, matching the eventual live usage boundary.
-It is never sent to GitHub, R2, or a public image handler, and the RealQA server
-never retains it.
+require `delibase:usage:execute`, matching the eventual live usage boundary;
+`SubmitIssue` additionally requires `delibase:billing:write` because it creates
+the initial submission-bound storage authorization. It is never sent to GitHub,
+R2, or a public image handler, and the RealQA server never retains it.
 
 `RealQAPresetService.DeleteFeatureData` in a delibase lifecycle mode is the sole
 exception. That mode uses only `Authorization: Bearer

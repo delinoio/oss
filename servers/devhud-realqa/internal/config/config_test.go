@@ -21,6 +21,10 @@ func TestLoadRequiresCanonicalAudiencesAndLifecyclePin(t *testing.T) {
 		t.Fatalf("unexpected audiences: %#v", configuration)
 	}
 	for _, name := range []string{
+		"REALQA_DELIBASE_API_ORIGIN",
+		"REALQA_DELIBASE_SERVICE_IDENTITY_ID",
+		"REALQA_DELIBASE_LOGTO_M2M_CLIENT_ID",
+		"REALQA_DELIBASE_LOGTO_M2M_CLIENT_SECRET",
 		"REALQA_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID",
 		"REALQA_IDENTITY_HASH_KEY",
 		"REALQA_LOG_PSEUDONYM_KEY",
@@ -105,6 +109,10 @@ func validValues() map[string]string {
 		"REALQA_LOGTO_JWKS_URL":                         "https://tenant.logto.app/oidc/jwks",
 		"REALQA_LOGTO_AUDIENCE":                         CanonicalAPIOrigin,
 		"REALQA_DELIBASE_LOGTO_AUDIENCE":                CanonicalDelibaseOrigin,
+		"REALQA_DELIBASE_API_ORIGIN":                    CanonicalDelibaseOrigin,
+		"REALQA_DELIBASE_SERVICE_IDENTITY_ID":           "0198a000-0000-7000-8000-000000000757",
+		"REALQA_DELIBASE_LOGTO_M2M_CLIENT_ID":           "fixture-realqa-usage-client",
+		"REALQA_DELIBASE_LOGTO_M2M_CLIENT_SECRET":       "fixture-realqa-usage-client-secret",
 		"REALQA_DELIBASE_LIFECYCLE_LOGTO_M2M_CLIENT_ID": "fixture-lifecycle-client",
 		"REALQA_IDENTITY_HASH_KEY":                      strings.Repeat("i", 32),
 		"REALQA_LOG_PSEUDONYM_KEY":                      strings.Repeat("p", 32),
