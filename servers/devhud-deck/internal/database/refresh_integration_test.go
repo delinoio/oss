@@ -244,4 +244,36 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 	if notificationCount != 0 {
 		t.Fatalf("expired notification history count = %d", notificationCount)
 	}
+
+	retainedViewID := mustV7(t)
+	if _, _, err := store.CreateView(ctx, createViewParams(
+		t, hasher, accountID, retainedViewID, mustV7(t),
+		"refresh-subject", now.Add(time.Minute), 0)); err != nil {
+		t.Fatal(err)
+	}
+	retainedRequestID := mustV7(t)
+	retainedDigest := security.Digest([]byte("retained-pending-request"))
+	retainedParams := attemptParams
+	retainedParams.RequestID = retainedRequestID
+	retainedParams.RequestDigest = retainedDigest
+	retainedParams.ViewID = retainedViewID
+	retainedParams.Now = now.Add(time.Minute)
+	if _, _, err := store.BeginRefreshAttempt(ctx, retainedParams); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkRefreshReserved(
+		ctx, subjectHash, retainedRequestID, mustV7(t),
+		now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DeleteView(
+		ctx, retainedViewID, 1, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	retainedAttempt, err := store.GetRefreshAttempt(
+		ctx, subjectHash, retainedRequestID, retainedDigest)
+	if err != nil || retainedAttempt.State != RefreshAttemptReserved {
+		t.Fatalf("pending attempt after view deletion = %#v, %v",
+			retainedAttempt, err)
+	}
 }

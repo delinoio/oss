@@ -57,9 +57,20 @@ export interface ManualRefreshWarning {
   text: string;
 }
 
-interface PendingRefresh {
+export interface DeckRefreshAttempt {
   request: DeckRefreshIdentity;
   preflightToken: string;
+}
+
+export interface DeckRefreshAttemptStore {
+  get(
+    viewId: string,
+  ): DeckRefreshAttempt | undefined | Promise<DeckRefreshAttempt | undefined>;
+  set(
+    viewId: string,
+    attempt: DeckRefreshAttempt,
+  ): void | Promise<void>;
+  delete(viewId: string): void | Promise<void>;
 }
 
 export function isAutomaticRefreshEligible(
@@ -101,8 +112,8 @@ export class DeckRefreshController {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #automaticAbort: AbortController | undefined;
   #activeRequests = new Set<AbortController>();
-  #automaticAttempts = new Map<string, PendingRefresh>();
-  #manualAttempts = new Map<string, PendingRefresh>();
+  #automaticAttempts = new Map<string, DeckRefreshAttempt>();
+  #manualAttempts = new Map<string, DeckRefreshAttempt>();
   #generation = 0;
   #running = false;
 
@@ -222,11 +233,11 @@ export class DeckRefreshController {
         ) {
           return;
         }
-        if (!isAutomaticRefreshEligible(candidate, this.#now())) {
-          continue;
-        }
         let pending = this.#automaticAttempts.get(candidate.viewId);
         if (pending === undefined) {
+          if (!isAutomaticRefreshEligible(candidate, this.#now())) {
+            continue;
+          }
           const request = this.#identity(
             candidate.viewId,
             RefreshOrigin.AUTOMATIC,
@@ -281,24 +292,60 @@ export class DeckRefreshController {
   }
 }
 
-export async function refreshFromWidget(
-  viewId: string,
-  transport: DeckRefreshTransport,
-  createRequestId: () => string,
-  signal: AbortSignal,
-): Promise<void> {
-  const request: DeckRefreshIdentity = {
-    viewId,
-    requestId: createRequestId(),
-    origin: RefreshOrigin.WIDGET,
-    clientKind: RefreshClientKind.WIDGET,
-  };
-  const preflight = await transport.getPreflight(request, signal);
-  if (signal.aborted) {
-    return;
+export class DeckWidgetRefreshController {
+  readonly #transport: DeckRefreshTransport;
+  readonly #createRequestId: () => string;
+  readonly #attempts: DeckRefreshAttemptStore;
+
+  constructor(
+    transport: DeckRefreshTransport,
+    createRequestId: () => string,
+    attempts: DeckRefreshAttemptStore,
+  ) {
+    this.#transport = transport;
+    this.#createRequestId = createRequestId;
+    this.#attempts = attempts;
   }
-  await transport.refresh(
-    { ...request, preflightToken: preflight.token },
-    signal,
-  );
+
+  async refresh(viewId: string, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) {
+      return;
+    }
+    let pending = await this.#attempts.get(viewId);
+    if (signal.aborted) {
+      return;
+    }
+    if (pending === undefined) {
+      const request: DeckRefreshIdentity = {
+        viewId,
+        requestId: this.#createRequestId(),
+        origin: RefreshOrigin.WIDGET,
+        clientKind: RefreshClientKind.WIDGET,
+      };
+      const preflight = await this.#transport.getPreflight(request, signal);
+      if (signal.aborted) {
+        return;
+      }
+      pending = { request, preflightToken: preflight.token };
+      await this.#attempts.set(viewId, pending);
+      if (signal.aborted) {
+        return;
+      }
+    }
+    try {
+      await this.#transport.refresh(
+        {
+          ...pending.request,
+          preflightToken: pending.preflightToken,
+        },
+        signal,
+      );
+    } catch (error) {
+      if (!this.#transport.isAmbiguousRefreshError(error)) {
+        await this.#attempts.delete(viewId);
+      }
+      throw error;
+    }
+    await this.#attempts.delete(viewId);
+  }
 }

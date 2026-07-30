@@ -11,7 +11,9 @@ CREATE TABLE deck_refresh_attempts (
     subject_hash bytea NOT NULL CHECK (octet_length(subject_hash) = 32),
     refresh_request_id uuid NOT NULL,
     request_digest bytea NOT NULL CHECK (octet_length(request_digest) = 32),
-    view_id uuid NOT NULL REFERENCES deck_views(view_id) ON DELETE CASCADE,
+    -- Attempts intentionally outlive view deletion so an already-active
+    -- request can finish exact dispatch and billing accounting.
+    view_id uuid NOT NULL,
     viewer_hash bytea NOT NULL CHECK (octet_length(viewer_hash) = 32),
     origin smallint NOT NULL CHECK (origin BETWEEN 1 AND 5),
     client_kind smallint NOT NULL CHECK (client_kind BETWEEN 1 AND 4),

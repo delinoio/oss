@@ -191,7 +191,8 @@ func (client *Client) ReserveRefresh(
 	organizationID, teamID, err := billingIDs(billing)
 	if err != nil || refreshID.Version() != 7 ||
 		!client.validMeter(meter) || !safeCredential(forwardedToken) {
-		return contracts.UsageReservation{}, ErrReservationFailed
+		return contracts.UsageReservation{},
+			contracts.ErrRefreshReservationRejected
 	}
 	request := connect.NewRequest(&delibasev1.ReserveUsageRequest{
 		OrganizationId:  uuidMessage(organizationID),
@@ -208,6 +209,10 @@ func (client *Client) ReserveRefresh(
 	}
 	response, err := client.usage.ReserveUsage(ctx, request)
 	if err != nil {
+		if definitiveReservationFailure(err) {
+			return contracts.UsageReservation{},
+				contracts.ErrRefreshReservationRejected
+		}
 		return contracts.UsageReservation{}, ErrReservationFailed
 	}
 	reservation := response.Msg.GetReservation()
@@ -231,6 +236,24 @@ func (client *Client) ReserveRefresh(
 	return contracts.UsageReservation{
 		ID: reservationID, ExpiresAt: reservation.GetExpiresAt().AsTime().UTC(),
 	}, nil
+}
+
+func definitiveReservationFailure(err error) bool {
+	switch connect.CodeOf(err) {
+	case connect.CodeInvalidArgument,
+		connect.CodeUnauthenticated,
+		connect.CodePermissionDenied,
+		connect.CodeNotFound,
+		connect.CodeAlreadyExists,
+		connect.CodeResourceExhausted,
+		connect.CodeFailedPrecondition,
+		connect.CodeAborted,
+		connect.CodeOutOfRange,
+		connect.CodeUnimplemented:
+		return true
+	default:
+		return false
+	}
 }
 
 func (client *Client) CommitRefresh(

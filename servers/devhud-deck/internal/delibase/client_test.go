@@ -3,6 +3,7 @@ package delibase
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,40 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestRefreshReservationFailureClassification(t *testing.T) {
+	t.Parallel()
+	for _, code := range []connect.Code{
+		connect.CodeInvalidArgument,
+		connect.CodeUnauthenticated,
+		connect.CodePermissionDenied,
+		connect.CodeNotFound,
+		connect.CodeAlreadyExists,
+		connect.CodeResourceExhausted,
+		connect.CodeFailedPrecondition,
+		connect.CodeAborted,
+		connect.CodeOutOfRange,
+		connect.CodeUnimplemented,
+	} {
+		if !definitiveReservationFailure(
+			connect.NewError(code, errors.New("rejected"))) {
+			t.Fatalf("definitive code %v was classified ambiguous", code)
+		}
+	}
+	for _, code := range []connect.Code{
+		connect.CodeCanceled,
+		connect.CodeUnknown,
+		connect.CodeDeadlineExceeded,
+		connect.CodeInternal,
+		connect.CodeUnavailable,
+		connect.CodeDataLoss,
+	} {
+		if definitiveReservationFailure(
+			connect.NewError(code, errors.New("ambiguous"))) {
+			t.Fatalf("ambiguous code %v was classified definitive", code)
+		}
+	}
+}
 
 type catalogFixture struct {
 	delibasev1connect.UnimplementedCatalogServiceHandler

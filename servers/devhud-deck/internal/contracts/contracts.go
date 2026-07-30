@@ -3,6 +3,7 @@ package contracts
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -19,6 +20,12 @@ type SystemClock struct{}
 func (SystemClock) Now() time.Time { return time.Now().UTC() }
 
 const ProviderRefreshPriceUSDMicros int64 = 50
+
+// ErrRefreshReservationRejected marks a definitive downstream rejection.
+// Unmarked reservation failures remain retryable because the response may
+// have been lost after delibase accepted the idempotent reservation.
+var ErrRefreshReservationRejected = errors.New(
+	"contracts: refresh reservation was rejected")
 
 type RefreshMeter struct {
 	MeterID        uuid.UUID

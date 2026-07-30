@@ -280,6 +280,21 @@ func TestProviderFailureAccountingIsTyped(t *testing.T) {
 	}
 }
 
+func TestRefreshResultsAreTruncatedBeforeDerivedSnapshots(t *testing.T) {
+	t.Parallel()
+	results := make([]*deckv1.PullRequestResult, 501)
+	retained, truncated := retainedRefreshResults(results)
+	if len(retained) != 500 || !truncated {
+		t.Fatalf("retained results = %d, truncated = %v",
+			len(retained), truncated)
+	}
+	retained, truncated = retainedRefreshResults(results[:500])
+	if len(retained) != 500 || truncated {
+		t.Fatalf("exact-limit results = %d, truncated = %v",
+			len(retained), truncated)
+	}
+}
+
 func TestProviderDispatchCommitsAndUndispatchedWorkReleasesExactlyOnce(
 	t *testing.T,
 ) {
@@ -351,16 +366,22 @@ func TestNotificationTransitionsAreTypedAndPreferenceFiltered(t *testing.T) {
 	writes := notificationWrites(
 		[]*deckv1.PullRequestResult{previous},
 		[]*deckv1.PullRequestResult{current},
-		&deckv1.ViewNotificationPreference{
+		[]*deckv1.ViewNotificationPreference{{
 			Enabled: true,
 			Transitions: []deckv1.NotificationTransition{
 				deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CONFLICTED,
 			},
-		},
+		}},
 		"octocat")
 	if len(writes) != 1 || writes[0].Transition !=
 		deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CONFLICTED {
 		t.Fatalf("filtered writes = %#v", writes)
+	}
+	if writes := notificationWrites(
+		[]*deckv1.PullRequestResult{previous},
+		[]*deckv1.PullRequestResult{current}, nil, "octocat",
+	); len(writes) != 0 {
+		t.Fatalf("notification without an active device opt-in = %#v", writes)
 	}
 
 	mergeable := &deckv1.PullRequestResult{

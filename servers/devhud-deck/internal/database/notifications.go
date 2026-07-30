@@ -168,6 +168,47 @@ func (store *Store) NotificationPreference(
 	return preference, nil
 }
 
+func (store *Store) ActiveNotificationPreferences(
+	ctx context.Context,
+	accountID uuid.UUID,
+	viewID uuid.UUID,
+	now time.Time,
+) ([]*deckv1.ViewNotificationPreference, error) {
+	rows, err := store.pool.Query(ctx, `
+		SELECT preference.preference_ciphertext
+		FROM deck_view_notification_preferences AS preference
+		JOIN deck_device_registrations AS registration
+		  ON registration.registration_id = preference.registration_id
+		WHERE registration.account_id = $1
+		  AND preference.view_id = $2
+		  AND registration.lease_expires_at > $3
+	`, accountID, viewID, now.UTC())
+	if err != nil {
+		return nil, errors.New(
+			"deck database: notification preference lookup failed")
+	}
+	defer rows.Close()
+	var preferences []*deckv1.ViewNotificationPreference
+	for rows.Next() {
+		var ciphertext []byte
+		if err := rows.Scan(&ciphertext); err != nil {
+			return nil, errors.New(
+				"deck database: notification preference lookup failed")
+		}
+		preference := &deckv1.ViewNotificationPreference{}
+		if err := store.openProto(
+			"device-notification", ciphertext, preference); err != nil {
+			return nil, err
+		}
+		preferences = append(preferences, preference)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.New(
+			"deck database: notification preference lookup failed")
+	}
+	return preferences, nil
+}
+
 func (store *Store) UpdateWidgetSnapshots(
 	ctx context.Context,
 	accountID uuid.UUID,

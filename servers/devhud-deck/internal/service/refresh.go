@@ -311,6 +311,11 @@ func (service *View) advanceProviderRefresh(
 		reservation, reserveErr := service.dependencies.LiveUsage.ReserveRefresh(
 			ctx, forwardedToken, billing, requestID, attempt.Meter)
 		if reserveErr != nil {
+			*metricOutcome = contracts.RefreshMetricBillingFailure
+			if !errors.Is(
+				reserveErr, contracts.ErrRefreshReservationRejected) {
+				return reserveErr
+			}
 			truncated, refreshedAt, freshness, resultCount, stateErr :=
 				service.currentSnapshotState(
 					ctx, refreshViewID(view), viewerHash,
@@ -322,7 +327,6 @@ func (service *View) advanceProviderRefresh(
 				view, deckv1.RefreshOutcome_REFRESH_OUTCOME_RESERVATION_REJECTED,
 				deckv1.BillingDisposition_BILLING_DISPOSITION_REJECTED,
 				freshness, refreshedAt, truncated, resultCount, false)
-			*metricOutcome = contracts.RefreshMetricBillingFailure
 			return service.dependencies.Store.SaveRefreshResponse(
 				ctx, subjectHash, requestID, *response, true,
 				service.dependencies.Clock.Now().UTC())
@@ -330,8 +334,6 @@ func (service *View) advanceProviderRefresh(
 		if err := service.dependencies.Store.MarkRefreshReserved(
 			ctx, subjectHash, requestID, reservation.ID,
 			service.dependencies.Clock.Now().UTC()); err != nil {
-			_ = service.dependencies.LiveUsage.ReleaseRefresh(
-				ctx, forwardedToken, organizationID, reservation.ID)
 			return err
 		}
 		attempt.State = database.RefreshAttemptReserved
@@ -420,11 +422,19 @@ func (service *View) advanceProviderRefresh(
 			truncated = truncated || storeTruncated
 		}
 		if providerErr == nil {
+			preferences, preferenceErr :=
+				service.dependencies.Store.ActiveNotificationPreferences(
+					ctx, viewer.AccountID, refreshViewID(view), now)
+			if preferenceErr != nil {
+				providerErr = preferenceErr
+			}
 			writes := notificationWrites(
-				previous, snapshots, view.GetNotificationPreference(),
-				viewer.GitHubLogin)
-			providerErr = service.dependencies.Store.CreateNotificationEvents(
-				ctx, refreshViewID(view), viewerHash, writes, now)
+				previous, snapshots, preferences, viewer.GitHubLogin)
+			if providerErr == nil {
+				providerErr =
+					service.dependencies.Store.CreateNotificationEvents(
+						ctx, refreshViewID(view), viewerHash, writes, now)
+			}
 		}
 		if providerErr == nil {
 			providerErr = service.dependencies.Store.UpdateWidgetSnapshots(
@@ -454,10 +464,6 @@ func (service *View) advanceProviderRefresh(
 		truncated, resultCount, false)
 	if err := service.dependencies.Store.SaveRefreshPendingResponse(
 		ctx, subjectHash, requestID, pending, now); err != nil {
-		if !dispatched {
-			_ = service.dependencies.LiveUsage.ReleaseRefresh(
-				ctx, forwardedToken, organizationID, attempt.ReservationID)
-		}
 		return err
 	}
 	if dispatched {
@@ -586,7 +592,18 @@ func (service *View) performGitHubRefresh(
 			break
 		}
 	}
+	results, resultTruncated := retainedRefreshResults(results)
+	truncated = truncated || resultTruncated
 	return results, truncated, nil
+}
+
+func retainedRefreshResults(
+	results []*deckv1.PullRequestResult,
+) ([]*deckv1.PullRequestResult, bool) {
+	if len(results) <= 500 {
+		return results, false
+	}
+	return results[:500], true
 }
 
 func (service *View) currentSnapshotState(

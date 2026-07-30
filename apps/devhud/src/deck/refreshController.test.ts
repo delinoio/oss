@@ -197,6 +197,7 @@ describe("Deck client-owned refresh polling", () => {
       DeckRefreshIdentity & { preflightToken: string }
     > = [];
     let sequence = 0;
+    let attached = true;
     const controller = new DeckRefreshController({
       clientKind: RefreshClientKind.DESKTOP,
       createRequestId: () => `request-${++sequence}`,
@@ -204,7 +205,7 @@ describe("Deck client-owned refresh polling", () => {
       listCandidates: async () => [
         {
           viewId: "view",
-          notificationAttached: true,
+          notificationAttached: attached,
           shortcutAttached: false,
           widgetAttached: false,
         },
@@ -226,6 +227,7 @@ describe("Deck client-owned refresh polling", () => {
 
     controller.start();
     await vi.advanceTimersByTimeAsync(0);
+    attached = false;
     await vi.advanceTimersByTimeAsync(DECK_REFRESH_INTERVAL_MS);
 
     expect(preflights).toHaveLength(1);

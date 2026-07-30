@@ -338,16 +338,7 @@ func (service *Device) ResolveNotificationEvent(
 	if err != nil || !allowed {
 		return genericNotification(), nil
 	}
-	snapshot, err := service.dependencies.Store.GetSnapshot(
-		ctx, event.ViewID, viewerHash, event.Reference)
-	if err != nil {
-		return genericNotification(), nil
-	}
-	detail := &deckv1.PullRequestDetail{
-		Result: snapshot, SupportedMutations: snapshot.SupportedMutations,
-		AvailableMergeMethods: snapshot.AvailableMergeMethods,
-		Revision:              snapshot.Revision,
-	}
+	detail := event.Detail
 	return connect.NewResponse(&deckv1.ResolveNotificationEventResponse{
 		Resolution:       deckv1.NotificationResolution_NOTIFICATION_RESOLUTION_DETAILED,
 		NotificationText: database.DetailedNotificationText(detail),

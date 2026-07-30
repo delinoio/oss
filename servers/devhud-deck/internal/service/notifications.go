@@ -11,16 +11,20 @@ import (
 func notificationWrites(
 	previous []*deckv1.PullRequestResult,
 	current []*deckv1.PullRequestResult,
-	preference *deckv1.ViewNotificationPreference,
+	preferences []*deckv1.ViewNotificationPreference,
 	viewerLogin string,
 ) []database.NotificationEventWrite {
-	if preference == nil || !preference.GetEnabled() {
-		return nil
+	enabled := make(map[deckv1.NotificationTransition]struct{})
+	for _, preference := range preferences {
+		if !preference.GetEnabled() {
+			continue
+		}
+		for _, transition := range preference.GetTransitions() {
+			enabled[transition] = struct{}{}
+		}
 	}
-	enabled := make(map[deckv1.NotificationTransition]struct{},
-		len(preference.GetTransitions()))
-	for _, transition := range preference.GetTransitions() {
-		enabled[transition] = struct{}{}
+	if len(enabled) == 0 {
+		return nil
 	}
 	before := make(map[string]*deckv1.PullRequestResult, len(previous))
 	for _, snapshot := range previous {
