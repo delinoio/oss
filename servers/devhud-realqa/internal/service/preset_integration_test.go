@@ -2612,6 +2612,11 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	webhookSubmissionID := uuidv7.MustNew()
 	webhookAssetID := uuidv7.MustNew()
 	webhookDestinationID := uuidv7.MustNew()
+	webhookStorageAttemptKey := uuidv7.MustNew()
+	webhookServiceIdentityID := uuidv7.MustNew()
+	webhookMeterID := uuidv7.MustNew()
+	webhookAuthorizationID := uuidv7.MustNew()
+	webhookRecoveryID := uuidv7.MustNew()
 	webhookPublicID, err := imageassets.NewPublicID()
 	if err != nil {
 		t.Fatal(err)
@@ -2631,7 +2636,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			verified_encoded_bytes, upload_deadline, upload_expires_at
 		)
 		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
-		       $7, 'submitted', '2002',
+		       $7, 'storage_billing_grace', '2002',
 		       'https://github.com/delinoio/oss/issues/757',
 		       idempotency_digest, transaction_timestamp(),
 		       payer_organization_id, payer_team_id, preset_revision,
@@ -2651,11 +2656,54 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		       source_sha256, sanitized_sha256, 'verified',
 		       transaction_timestamp()
 		FROM realqa_assets
-		WHERE id = $6
+		WHERE id = $6;
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES (
+			$1, $10, decode(repeat('ab', 32), 'hex'),
+			$11, $12, 1, 'active', $13, 1, 1
+		);
+		INSERT INTO realqa_storage_authorization_bindings (
+			authorization_id, submission_id, mapping_revision,
+			authorizer_account_id, owner_kind, owner_id,
+			organization_id, team_id, service_identity_id, meter_id,
+			maximum_units, status, authorization_revision
+		) VALUES (
+			$13, $1, 1, $15, 'organization', $8,
+			$8, $16, $11, $12, 1, 'active', 1
+		);
+		INSERT INTO realqa_storage_retention_intervals (
+			authorization_id, asset_id, retained_bytes, starts_at
+		)
+		SELECT $13, $3, encoded_bytes,
+		       COALESCE(verified_at, created_at)
+		FROM realqa_assets
+		WHERE id = $3;
+		INSERT INTO realqa_storage_recoveries (
+			id, submission_id, authorization_id, reason,
+			grace_started_at, grace_expires_at
+		) VALUES (
+			$14, $1, $13, 'payment_required',
+			transaction_timestamp(),
+			transaction_timestamp() + interval '30 days'
+		)
 	`, webhookSubmissionID, submissionID, webhookAssetID, webhookPublicID,
 		uuidv7.MustNew(), promotionAssetID, webhookDestinationID,
-		organizationID, organizationInstallationID); err != nil {
+		organizationID, organizationInstallationID,
+		webhookStorageAttemptKey, webhookServiceIdentityID, webhookMeterID,
+		webhookAuthorizationID, webhookRecoveryID, accountID, teamID); err != nil {
 		t.Fatal(err)
+	}
+	webhookBlockedBefore, err := store.Queries().HasStorageSubmissionBlock(
+		ctx, dbgen.HasStorageSubmissionBlockParams{
+			OwnerKind: "organization", OwnerID: toPGUUID(organizationID),
+			PayerOrganizationID: toPGUUID(organizationID),
+		})
+	if err != nil || !webhookBlockedBefore {
+		t.Fatalf("webhook recovery block before deletion = %v, %v",
+			webhookBlockedBefore, err)
 	}
 	var webhookRevisionBefore int64
 	if err = connection.QueryRow(ctx, `
@@ -2700,21 +2748,90 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		webhookState         string
 		webhookRetainedBytes int64
 		webhookRevisionAfter int64
+		webhookRecovered     bool
 	)
 	if err = connection.QueryRow(ctx, `
-		SELECT state, verified_encoded_bytes, revision
-		FROM realqa_submissions
-		WHERE id = $1
+		SELECT submission.state, submission.verified_encoded_bytes,
+		       submission.revision, recovery.recovered_at IS NOT NULL
+		FROM realqa_submissions AS submission
+		JOIN realqa_storage_recoveries AS recovery
+		  ON recovery.submission_id = submission.id
+		WHERE submission.id = $1
 	`, webhookSubmissionID).Scan(
 		&webhookState, &webhookRetainedBytes, &webhookRevisionAfter,
+		&webhookRecovered,
 	); err != nil {
 		t.Fatal(err)
 	}
-	if webhookState != "submitted" || webhookRetainedBytes != 0 ||
-		webhookRevisionAfter != webhookRevisionBefore+1 {
-		t.Fatalf("webhook deletion state = %q / %d / %d, want submitted / 0 / %d",
+	if webhookState != "assets_deleted" || webhookRetainedBytes != 0 ||
+		webhookRevisionAfter != webhookRevisionBefore+2 ||
+		!webhookRecovered {
+		t.Fatalf("webhook deletion state = %q / %d / %d / %v, want assets_deleted / 0 / %d / true",
 			webhookState, webhookRetainedBytes, webhookRevisionAfter,
-			webhookRevisionBefore+1)
+			webhookRecovered, webhookRevisionBefore+2)
+	}
+	webhookBlockedAfter, err := store.Queries().HasStorageSubmissionBlock(
+		ctx, dbgen.HasStorageSubmissionBlockParams{
+			OwnerKind: "organization", OwnerID: toPGUUID(organizationID),
+			PayerOrganizationID: toPGUUID(organizationID),
+		})
+	if err != nil || webhookBlockedAfter {
+		t.Fatalf("webhook recovery block after deletion = %v, %v",
+			webhookBlockedAfter, err)
+	}
+	rebindKey := uuidv7.MustNew()
+	rebindRequest := &realqav1.RebindSubmissionStorageAuthorizationRequest{
+		SubmissionId: &realqav1.UuidV7{
+			Value: webhookSubmissionID.String(),
+		},
+		ExpectedAuthorizationId: &realqav1.UuidV7{
+			Value: webhookAuthorizationID.String(),
+		},
+		ExpectedMappingRevision: revision(1),
+		ReplacementBilling: &realqav1.BillingScope{
+			OrganizationId: &realqav1.UuidV7{
+				Value: organizationID.String(),
+			},
+			TeamId: &realqav1.UuidV7{Value: teamID.String()},
+		},
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: rebindKey.String()},
+		},
+	}
+	rebindDigest, err := digestMessage(rebindRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementAuthorizationID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_storage_rebind_attempts (
+			submission_id, caller_digest, idempotency_key, request_digest,
+			expected_authorization_id, expected_mapping_revision,
+			replacement_organization_id, replacement_team_id,
+			revoke_idempotency_key, create_idempotency_key, state,
+			replacement_authorization_id,
+			replacement_authorization_revision,
+			resulting_mapping_revision, cutoff_at, completed_at
+		) VALUES (
+			$1, $2, $3, $4, $5, 1, $6, $7, $8, $9, 'completed',
+			$10, 1, 2, transaction_timestamp(), transaction_timestamp()
+		)
+	`, webhookSubmissionID, digest.Sum(nil), rebindKey, rebindDigest,
+		webhookAuthorizationID, organizationID, teamID, uuidv7.MustNew(),
+		uuidv7.MustNew(), replacementAuthorizationID); err != nil {
+		t.Fatal(err)
+	}
+	rebindReplay, err := submissionService.
+		RebindSubmissionStorageAuthorization(
+			authCtx, connect.NewRequest(rebindRequest))
+	if err != nil {
+		t.Fatalf("completed rebind replay after state transition: %v", err)
+	}
+	if !rebindReplay.Msg.Idempotency.Replayed ||
+		rebindReplay.Msg.AuthorizationId.Value !=
+			replacementAuthorizationID.String() ||
+		rebindReplay.Msg.MappingRevision.Value != 2 {
+		t.Fatalf("completed rebind replay = %#v", rebindReplay.Msg)
 	}
 	fresh, err = callbackStore.ProcessWebhookDelivery(
 		ctx, webhookDeliveryID,

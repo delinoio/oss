@@ -272,6 +272,59 @@ func TestDerivedDownstreamKeysRemainStableDistinctUUIDv7(t *testing.T) {
 	}
 }
 
+func TestStorageRebindSourceLookupKeepsOutagesRetryable(t *testing.T) {
+	t.Parallel()
+	authorization := StorageAuthorization{
+		ID:                  uuidv7.MustNew(),
+		AuthorizerAccountID: uuidv7.MustNew(),
+		OwnerKind:           "organization",
+		OwnerID:             uuidv7.MustNew(),
+		OrganizationID:      uuidv7.MustNew(),
+		TeamID:              uuidv7.MustNew(),
+		ServiceIdentityID:   uuidv7.MustNew(),
+		MeterID:             uuidv7.MustNew(),
+		FeatureResourceID:   uuidv7.MustNew(),
+		MaximumUnits:        1,
+		Status:              "active",
+		Revision:            1,
+	}
+	binding := dbgen.RealqaStorageAuthorizationBinding{
+		AuthorizationID:       toPGUUID(authorization.ID),
+		SubmissionID:          toPGUUID(authorization.FeatureResourceID),
+		AuthorizerAccountID:   toPGUUID(authorization.AuthorizerAccountID),
+		OwnerKind:             authorization.OwnerKind,
+		OwnerID:               toPGUUID(authorization.OwnerID),
+		OrganizationID:        toPGUUID(authorization.OrganizationID),
+		TeamID:                toPGUUID(authorization.TeamID),
+		ServiceIdentityID:     toPGUUID(authorization.ServiceIdentityID),
+		MeterID:               toPGUUID(authorization.MeterID),
+		MaximumUnits:          authorization.MaximumUnits,
+		AuthorizationRevision: authorization.Revision,
+	}
+	requireServiceError(
+		t,
+		validateStorageRebindSource(
+			StorageAuthorization{}, binding,
+			errors.New("fixture delibase outage")),
+		connect.CodeUnavailable,
+		realqav1.ErrorReason_ERROR_REASON_STORAGE_AUTHORIZATION_FAILED,
+		realqav1.FailureClass_FAILURE_CLASS_RETRYABLE,
+	)
+	substituted := authorization
+	substituted.MeterID = uuidv7.MustNew()
+	requireServiceError(
+		t,
+		validateStorageRebindSource(substituted, binding, nil),
+		connect.CodeFailedPrecondition,
+		realqav1.ErrorReason_ERROR_REASON_STORAGE_AUTHORIZATION_SUBSTITUTION,
+		realqav1.FailureClass_FAILURE_CLASS_CONFLICT,
+	)
+	if err := validateStorageRebindSource(
+		authorization, binding, nil); err != nil {
+		t.Fatalf("exact rebind source rejected: %v", err)
+	}
+}
+
 func TestBillingMeterContractRejectsPriceTTLAndActivationDrift(t *testing.T) {
 	t.Parallel()
 	serviceID := uuidv7.MustNew()

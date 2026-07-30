@@ -1563,11 +1563,12 @@ func (service *Submission) DeleteIssueAssets(
 				if _, ok := affected[submission.ID]; !ok {
 					continue
 				}
-				if _, refreshErr := queries.TouchSubmissionAfterAssetDeletion(
+				updated, refreshErr := queries.TouchSubmissionAfterAssetDeletion(
 					ctx, dbgen.TouchSubmissionAfterAssetDeletionParams{
 						ID:               submission.ID,
 						ExpectedRevision: submission.Revision,
-					}); refreshErr != nil {
+					})
+				if refreshErr != nil {
 					return refreshErr
 				}
 				cutoff := service.dependencies.Clock.Now().UTC()
@@ -1586,6 +1587,16 @@ func (service *Submission) DeleteIssueAssets(
 							SubmissionID: submission.ID,
 						}); refreshErr != nil {
 					return refreshErr
+				}
+				if updated.VerifiedEncodedBytes == 0 {
+					if _, resolveErr := queries.ResolveStorageRecovery(
+						ctx, dbgen.ResolveStorageRecoveryParams{
+							RecoveredAt:        pgTimestamp(cutoff),
+							TargetSubmissionID: submission.ID,
+						}); resolveErr != nil &&
+						!errors.Is(resolveErr, pgx.ErrNoRows) {
+						return resolveErr
+					}
 				}
 			}
 			return nil

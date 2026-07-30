@@ -46,6 +46,24 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 			return nil, err
 		}
 	}
+	existingAttempt, lookupErr := service.dependencies.Store.Queries().
+		GetStorageRebindAttempt(
+			ctx, dbgen.GetStorageRebindAttemptParams{
+				CallerDigest:   actor.digest,
+				IdempotencyKey: toPGUUID(idempotencyID),
+			})
+	if lookupErr == nil {
+		if existingAttempt.SubmissionID != toPGUUID(submissionID) ||
+			!bytes.Equal(existingAttempt.RequestDigest, requestDigest) {
+			return nil, idempotencyConflict()
+		}
+		if existingAttempt.State == "completed" {
+			return storageRebindResponse(
+				submissionID, existingAttempt, true)
+		}
+	} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
+		return nil, lookupErr
+	}
 	if submission.State != "storage_billing_grace" {
 		return nil, rqerr.New(
 			connect.CodeFailedPrecondition,
@@ -224,10 +242,9 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 						AuthorizationID: expectedAuthorizationID,
 						ForwardedBearer: forwardedBearer,
 					})
-			if billingErr != nil ||
-				validateBoundStorageAuthorization(
-					current, lockedBinding, false) != nil {
-				return storageAuthorizationSubstitution()
+			if validationErr := validateStorageRebindSource(
+				current, lockedBinding, billingErr); validationErr != nil {
+				return validationErr
 			}
 			switch current.Status {
 			case "active":
@@ -499,4 +516,19 @@ func storageAuthorizationSubstitution() error {
 		realqav1.FailureClass_FAILURE_CLASS_CONFLICT,
 		0,
 	)
+}
+
+func validateStorageRebindSource(
+	authorization StorageAuthorization,
+	binding dbgen.RealqaStorageAuthorizationBinding,
+	lookupErr error,
+) error {
+	if lookupErr != nil {
+		return storageAuthorizationFailed()
+	}
+	if validateBoundStorageAuthorization(
+		authorization, binding, false) != nil {
+		return storageAuthorizationSubstitution()
+	}
+	return nil
 }
