@@ -23,8 +23,8 @@ func TestEmbeddedMigrationsAreStrictlyOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ordered) != 4 {
-		t.Fatalf("migration count = %d, want 4", len(ordered))
+	if len(ordered) != 7 {
+		t.Fatalf("migration count = %d, want 7", len(ordered))
 	}
 	for index, item := range ordered {
 		if item.version != int64(index+1) {
@@ -95,8 +95,8 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		"SELECT count(*) FROM realqa_schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 4 {
-		t.Fatalf("applied migration count = %d, want 4", count)
+	if count != 7 {
+		t.Fatalf("applied migration count = %d, want 7", count)
 	}
 	for _, operation := range []string{
 		"create_submission",
@@ -130,6 +130,13 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		`, uuidv7.MustNew(), eventType); err != nil {
 			t.Fatalf("insert %s audit: %v", eventType, err)
 		}
+	}
+	if _, err = pool.Exec(ctx, `
+		INSERT INTO realqa_audits (
+			id, event_type, actor_reference, decision, result
+		) VALUES ($1, 'github_user_authorization_started', 'system', 'allow', 'success')
+	`, uuidv7.MustNew()); err != nil {
+		t.Fatalf("member GitHub authorization audit event was rejected: %v", err)
 	}
 	if _, err = pool.Exec(ctx, `
 		INSERT INTO realqa_github_connections (
@@ -328,6 +335,124 @@ func TestImageStorageMigrationNormalizesLegacyAssetsAndBackfillsTotals(
 	}
 	if tombstones != 1 {
 		t.Fatalf("invalid public legacy tombstones = %d, want 1", tombstones)
+	}
+}
+
+func TestGitHubProviderMigrationRepairsLegacyConnections(t *testing.T) {
+	databaseURL := os.Getenv("REALQA_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("REALQA_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	connection, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close(context.Background())
+	schema := "realqa_github_migration_" + uuidv7.MustNew().String()[24:]
+	identifier := pgx.Identifier{schema}.Sanitize()
+	if _, err = connection.Exec(ctx, "CREATE SCHEMA "+identifier); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(
+			context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		cleanup, cleanupErr := pgx.Connect(cleanupCtx, databaseURL)
+		if cleanupErr == nil {
+			_, _ = cleanup.Exec(cleanupCtx, "DROP SCHEMA "+identifier+" CASCADE")
+			_ = cleanup.Close(cleanupCtx)
+		}
+	})
+	if _, err = connection.Exec(ctx, "SET search_path = "+identifier+", public"); err != nil {
+		t.Fatal(err)
+	}
+	ordered, err := load(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range ordered[:4] {
+		results, migrationErr := connection.PgConn().Exec(ctx, item.contents).ReadAll()
+		if migrationErr != nil {
+			t.Fatalf("apply migration %d: %v", item.version, migrationErr)
+		}
+		for _, result := range results {
+			if result.Err != nil {
+				t.Fatalf("apply migration %d: %v", item.version, result.Err)
+			}
+		}
+	}
+	personalID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	personalConnectionID := uuidv7.MustNew()
+	organizationConnectionID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($1, decode(repeat('01', 32), 'hex'))
+	`, personalID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state, github_login,
+			credential_ciphertext, wrapped_data_key, key_id, connected_at
+		) VALUES
+			($1, 'personal', $2, 'connected', 'personal-user',
+			 decode('01', 'hex'), decode('02', 'hex'), 'fixture-key',
+			 transaction_timestamp()),
+			($3, 'organization', $4, 'connected', 'organization-user',
+			 decode('03', 'hex'), decode('04', 'hex'), 'fixture-key',
+			 transaction_timestamp());
+	`, personalConnectionID, personalID, organizationConnectionID, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	results, err := connection.PgConn().Exec(ctx, ordered[4].contents).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
+	}
+	var personalState string
+	var personalConnector uuid.NullUUID
+	var personalCredential []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT state, connected_by_account_id, credential_ciphertext
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, personalConnectionID).Scan(
+		&personalState, &personalConnector, &personalCredential,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if personalState != "disconnected" || personalConnector.Valid ||
+		personalCredential != nil {
+		t.Fatalf(
+			"personal connection state=%q connector=%v credential=%t",
+			personalState, personalConnector.Valid, personalCredential != nil,
+		)
+	}
+	var organizationState string
+	var organizationConnector uuid.NullUUID
+	var organizationCredential []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT state, connected_by_account_id, credential_ciphertext
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, organizationConnectionID).Scan(
+		&organizationState, &organizationConnector, &organizationCredential,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if organizationState != "disconnected" || organizationConnector.Valid ||
+		organizationCredential != nil {
+		t.Fatalf(
+			"organization connection state=%q connector=%v credential=%t",
+			organizationState, organizationConnector.Valid, organizationCredential != nil,
+		)
 	}
 }
 

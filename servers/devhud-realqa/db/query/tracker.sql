@@ -24,6 +24,29 @@ DO UPDATE SET state = CASE
               updated_at = transaction_timestamp()
 RETURNING *;
 
+-- name: StartGitHubCallerAuthorization :one
+INSERT INTO realqa_github_user_authorizations (
+    connection_id, account_id, state, oauth_state_digest, oauth_state_expires_at
+)
+SELECT
+    connection.id, sqlc.arg(account_id), 'pending',
+    sqlc.arg(oauth_state_digest), sqlc.arg(oauth_state_expires_at)
+FROM realqa_github_connections AS connection
+WHERE connection.owner_kind = sqlc.arg(owner_kind)
+  AND connection.owner_id = sqlc.arg(owner_id)
+  AND connection.state = 'connected'
+ON CONFLICT (connection_id, account_id)
+DO UPDATE SET state = CASE
+                  WHEN realqa_github_user_authorizations.state = 'connected'
+                  THEN 'connected'
+                  ELSE 'pending'
+              END,
+              oauth_state_digest = EXCLUDED.oauth_state_digest,
+              oauth_state_expires_at = EXCLUDED.oauth_state_expires_at,
+              revision = realqa_github_user_authorizations.revision + 1,
+              updated_at = transaction_timestamp()
+RETURNING connection_id;
+
 -- name: ListGitHubInstallations :many
 SELECT installation.*
 FROM realqa_github_installations AS installation
@@ -32,6 +55,7 @@ JOIN realqa_github_connections AS connection
  AND connection.state = 'connected'
 WHERE installation.owner_kind = sqlc.arg(owner_kind)
   AND installation.owner_id = sqlc.arg(owner_id)
+  AND installation.state = 'active'
   AND installation.id > sqlc.arg(after_id)
 ORDER BY installation.id
 LIMIT sqlc.arg(page_limit);
@@ -42,11 +66,13 @@ FROM realqa_github_installations AS installation
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
-WHERE installation.id = sqlc.arg(id);
+WHERE installation.id = sqlc.arg(id)
+  AND installation.state = 'active';
 
 -- name: DisconnectGitHubConnection :one
 UPDATE realqa_github_connections
 SET state = 'disconnected',
+    connected_by_account_id = NULL,
     credential_ciphertext = NULL,
     wrapped_data_key = NULL,
     key_id = NULL,
@@ -68,7 +94,29 @@ JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
 WHERE access.installation_id = sqlc.arg(installation_id)
+  AND installation.state = 'active'
   AND access.account_id = sqlc.arg(account_id)
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_owner_bindings AS caller_access
+      WHERE caller_access.account_id = access.account_id
+        AND caller_access.owner_kind = connection.owner_kind
+        AND caller_access.owner_id = connection.owner_id
+        AND (
+            caller_access.role IN ('owner', 'admin')
+            OR (
+                caller_access.role = 'member'
+                AND EXISTS (
+                    SELECT 1
+                    FROM realqa_github_user_authorizations AS caller_authorization
+                    WHERE caller_authorization.connection_id = connection.id
+                      AND caller_authorization.account_id = access.account_id
+                      AND caller_authorization.state = 'connected'
+                )
+            )
+        )
+  )
+  AND access.checked_at >= statement_timestamp() - interval '5 minutes'
   AND (
       sqlc.arg(query)::text = ''
       OR access.repository_owner ILIKE '%' || sqlc.arg(query) || '%'

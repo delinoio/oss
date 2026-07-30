@@ -128,11 +128,21 @@ func (service *Preset) DeleteFeatureData(
 		}
 		actor = caller{actor: ""}
 	}
+	if service.dependencies.Store == nil {
+		return nil, errors.New("realqa service: store unavailable")
+	}
 
 	if existing, getErr := service.dependencies.Store.Queries().GetDeletionJob(
 		ctx, dbgen.GetDeletionJobParams{
 			OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
 		}); getErr == nil {
+		if accountLifecycle {
+			if cleanupErr := service.disconnectLifecycleAccount(
+				ctx, scope.id,
+			); cleanupErr != nil {
+				return nil, cleanupErr
+			}
+		}
 		existingID, conversionErr := fromPGUUID(existing.ID)
 		if conversionErr != nil {
 			return nil, conversionErr
@@ -275,6 +285,18 @@ func (service *Preset) DeleteFeatureData(
 				return deleteErr
 			}
 			if accountLifecycle {
+				count, deleteErr = queries.DeleteLifecycleAccountRepositoryAccess(
+					ctx, toPGUUID(scope.id))
+				removed += count
+				if deleteErr != nil {
+					return deleteErr
+				}
+				count, deleteErr = queries.DisconnectGitHubConnectionsForAccount(
+					ctx, toPGUUID(scope.id))
+				removed += count
+				if deleteErr != nil {
+					return deleteErr
+				}
 				count, deleteErr = queries.TombstoneLifecycleAccountIdentity(
 					ctx, toPGUUID(scope.id))
 				removed += count
@@ -309,6 +331,13 @@ func (service *Preset) DeleteFeatureData(
 			ctx, dbgen.GetDeletionJobParams{
 				OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
 			}); getErr == nil {
+			if accountLifecycle {
+				if cleanupErr := service.disconnectLifecycleAccount(
+					ctx, scope.id,
+				); cleanupErr != nil {
+					return nil, cleanupErr
+				}
+			}
 			existingID, _ := fromPGUUID(existing.ID)
 			return deletionReplay(
 				existingID, existing.AcceptedAt, existing.AlreadyAbsent,
@@ -328,6 +357,28 @@ func (service *Preset) DeleteFeatureData(
 			OriginallyCompletedAt: timestamp(deletionJob.AcceptedAt),
 		},
 	}), nil
+}
+
+func (service *Preset) disconnectLifecycleAccount(
+	ctx context.Context,
+	accountID uuid.UUID,
+) error {
+	return service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			if _, err := queries.DeleteLifecycleAccountRepositoryAccess(
+				ctx, toPGUUID(accountID),
+			); err != nil {
+				return err
+			}
+			if _, err := queries.DisconnectGitHubConnectionsForAccount(
+				ctx, toPGUUID(accountID),
+			); err != nil {
+				return err
+			}
+			_, err := queries.TombstoneLifecycleAccountIdentity(
+				ctx, toPGUUID(accountID))
+			return err
+		})
 }
 
 func deletionReplay(

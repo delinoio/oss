@@ -78,6 +78,7 @@ WHERE binding.account_id = $1
   AND binding.owner_id = $3
   AND identity.deleted_at IS NULL
   AND tombstone.owner_id IS NULL
+FOR SHARE OF binding
 `
 
 type GetOwnerAccessParams struct {
@@ -107,6 +108,7 @@ SELECT access.installation_id, access.account_id, access.repository_id, access.r
 FROM realqa_repository_access AS access
 JOIN realqa_github_installations AS installation
   ON installation.id = access.installation_id
+ AND installation.state = 'active'
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
@@ -115,6 +117,26 @@ WHERE access.installation_id = $1
   AND access.repository_id = $3
   AND access.issues_enabled
   AND access.can_submit
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_owner_bindings AS caller_access
+      WHERE caller_access.account_id = access.account_id
+        AND caller_access.owner_kind = connection.owner_kind
+        AND caller_access.owner_id = connection.owner_id
+        AND (
+            caller_access.role IN ('owner', 'admin')
+            OR (
+                caller_access.role = 'member'
+                AND EXISTS (
+                    SELECT 1
+                    FROM realqa_github_user_authorizations AS caller_authorization
+                    WHERE caller_authorization.connection_id = connection.id
+                      AND caller_authorization.account_id = access.account_id
+                      AND caller_authorization.state = 'connected'
+                )
+            )
+        )
+  )
   AND access.checked_at >= statement_timestamp() - interval '5 minutes'
 `
 
@@ -145,6 +167,7 @@ SELECT access.installation_id, access.account_id, access.repository_id, access.r
 FROM realqa_repository_access AS access
 JOIN realqa_github_installations AS installation
   ON installation.id = access.installation_id
+ AND installation.state = 'active'
 JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
  AND connection.state = 'connected'
@@ -155,6 +178,26 @@ WHERE access.installation_id = $1
   AND access.repository_id = $5
   AND access.issues_enabled
   AND access.can_submit
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_owner_bindings AS caller_access
+      WHERE caller_access.account_id = access.account_id
+        AND caller_access.owner_kind = connection.owner_kind
+        AND caller_access.owner_id = connection.owner_id
+        AND (
+            caller_access.role IN ('owner', 'admin')
+            OR (
+                caller_access.role = 'member'
+                AND EXISTS (
+                    SELECT 1
+                    FROM realqa_github_user_authorizations AS caller_authorization
+                    WHERE caller_authorization.connection_id = connection.id
+                      AND caller_authorization.account_id = access.account_id
+                      AND caller_authorization.state = 'connected'
+                )
+            )
+        )
+  )
   AND access.checked_at >= statement_timestamp() - interval '5 minutes'
 FOR SHARE OF connection
 `

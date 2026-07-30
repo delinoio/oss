@@ -114,8 +114,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		);
 		INSERT INTO realqa_github_installations (
 			id, connection_id, owner_kind, owner_id,
-			provider_installation_id, account_login
-		) VALUES ($6, $5, 'personal', $1, 757, 'fixture');
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES (
+			$6, $5, 'personal', $1, 757, 'fixture', 757,
+			'User', 'active',
+			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+		);
 		INSERT INTO realqa_repository_access (
 			installation_id, account_id, repository_id,
 			repository_owner, repository_name, issues_enabled, can_submit
@@ -139,8 +144,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		);
 		INSERT INTO realqa_github_installations (
 			id, connection_id, owner_kind, owner_id,
-			provider_installation_id, account_login
-		) VALUES ($8, $7, 'organization', $3, 758, 'fixture-org');
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES (
+			$8, $7, 'organization', $3, 758, 'fixture-org', 758,
+			'Organization', 'active',
+			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+		);
 		INSERT INTO realqa_repository_access (
 			installation_id, account_id, repository_id,
 			repository_owner, repository_name, issues_enabled, can_submit
@@ -157,6 +167,334 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		organizationInstallationID, otherTeamID); err != nil {
 		t.Fatal(err)
 	}
+	terminalOwnerID := uuidv7.MustNew()
+	terminalConnectionID := uuidv7.MustNew()
+	terminalInstallationID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state
+		) VALUES ($1, 'organization', $2, 'disconnected');
+		INSERT INTO realqa_github_installations (
+			id, connection_id, owner_kind, owner_id,
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES (
+			$3, $1, 'organization', $2, 759, 'terminal-fixture', 759,
+			'Organization', 'active',
+			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+		)
+	`, terminalConnectionID, terminalOwnerID, terminalInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	if count, stateErr := store.Queries().SetGitHubInstallationState(
+		ctx, dbgen.SetGitHubInstallationStateParams{
+			State: "deleted", ProviderInstallationID: 759,
+		}); stateErr != nil || count != 1 {
+		t.Fatalf("installation delete transition failed: count=%d err=%v", count, stateErr)
+	}
+	var deletedRevision int64
+	if err = connection.QueryRow(ctx, `
+		SELECT revision
+		FROM realqa_github_installations
+		WHERE id = $1
+	`, terminalInstallationID).Scan(&deletedRevision); err != nil {
+		t.Fatal(err)
+	}
+	if count, stateErr := store.Queries().SetGitHubInstallationState(
+		ctx, dbgen.SetGitHubInstallationStateParams{
+			State: "suspended", ProviderInstallationID: 759,
+		}); stateErr != nil || count != 1 {
+		t.Fatalf("stale suspend was not acknowledged: count=%d err=%v", count, stateErr)
+	}
+	var terminalState string
+	var terminalRevision int64
+	if err = connection.QueryRow(ctx, `
+		SELECT state, revision
+		FROM realqa_github_installations
+		WHERE id = $1
+	`, terminalInstallationID).Scan(&terminalState, &terminalRevision); err != nil {
+		t.Fatal(err)
+	}
+	if terminalState != "deleted" || terminalRevision != deletedRevision {
+		t.Fatalf("stale suspend rewrote deleted installation: state=%q revision=%d",
+			terminalState, terminalRevision)
+	}
+
+	callbackOwnerID := uuidv7.MustNew()
+	callbackConnectionID := uuidv7.MustNew()
+	callbackInstallationID := uuidv7.MustNew()
+	staleCallbackInstallationID := uuidv7.MustNew()
+	currentStateDigest := sha256.Sum256([]byte("current callback state"))
+	staleStateDigest := sha256.Sum256([]byte("stale callback state"))
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($1, 'organization', $2, 'admin');
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state,
+			oauth_state_digest, oauth_state_expires_at
+		) VALUES (
+			$3, 'organization', $2, 'pending',
+			$4, transaction_timestamp() + interval '10 minutes'
+		)
+	`, accountID, callbackOwnerID, callbackConnectionID,
+		currentStateDigest[:]); err != nil {
+		t.Fatal(err)
+	}
+	callbackStore, err := realqagithub.NewPostgresCallbackStore(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callbackPermissions, err := realqagithub.RequiredPermissions(
+		realqagithub.ProjectPermissionNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		staleStateDigest[:],
+		realqagithub.UserIdentity{ID: 7, Login: "fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{1}, WrappedDataKey: []byte{2}, KeyID: "fixture-key",
+		},
+		0,
+		[]realqagithub.Installation{{
+			ID: 760, AccountID: 760, AccountLogin: "callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if !errors.Is(err, realqagithub.ErrCallbackStateUnavailable) {
+		t.Fatalf("stale callback state was accepted: %v", err)
+	}
+	var callbackConnectionState string
+	var callbackCiphertext []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT state, credential_ciphertext
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, callbackConnectionID).Scan(
+		&callbackConnectionState, &callbackCiphertext,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if callbackConnectionState != "pending" || callbackCiphertext != nil {
+		t.Fatalf("stale callback mutated connection: state=%q ciphertext=%v",
+			callbackConnectionState, callbackCiphertext)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_github_installations (
+			id, connection_id, owner_kind, owner_id,
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES
+			(
+				$1, $3, 'organization', $4, 760, 'callback-fixture', 760,
+				'Organization', 'active',
+				'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+			),
+			(
+				$2, $3, 'organization', $4, 761, 'stale-callback-fixture', 761,
+				'Organization', 'active',
+				'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+			)
+	`, callbackInstallationID, staleCallbackInstallationID,
+		callbackConnectionID, callbackOwnerID); err != nil {
+		t.Fatal(err)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		currentStateDigest[:],
+		realqagithub.UserIdentity{ID: 7, Login: "fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{1}, WrappedDataKey: []byte{2}, KeyID: "fixture-key",
+		},
+		0,
+		[]realqagithub.Installation{{
+			ID: 760, AccountID: 760, AccountLogin: "callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var callbackInstallationState, staleCallbackInstallationState string
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT state FROM realqa_github_installations WHERE id = $1),
+			(SELECT state FROM realqa_github_installations WHERE id = $2)
+	`, callbackInstallationID, staleCallbackInstallationID).Scan(
+		&callbackInstallationState, &staleCallbackInstallationState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if callbackInstallationState != "active" ||
+		staleCallbackInstallationState != "suspended" {
+		t.Fatalf("reconnect installation states = authorized:%q stale:%q",
+			callbackInstallationState, staleCallbackInstallationState)
+	}
+	setupStateDigest := sha256.Sum256([]byte("setup callback state"))
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET oauth_state_digest = $2,
+		    oauth_state_expires_at = transaction_timestamp() + interval '10 minutes'
+		WHERE id = $1
+	`, callbackConnectionID, setupStateDigest[:]); err != nil {
+		t.Fatal(err)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		setupStateDigest[:],
+		realqagithub.UserIdentity{ID: 7, Login: "fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{1}, WrappedDataKey: []byte{2}, KeyID: "fixture-key",
+		},
+		761,
+		[]realqagithub.Installation{{
+			ID: 761, AccountID: 761, AccountLogin: "stale-callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT state
+		FROM realqa_github_installations
+		WHERE id = $1
+	`, callbackInstallationID).Scan(&callbackInstallationState); err != nil {
+		t.Fatal(err)
+	}
+	if callbackInstallationState != "active" {
+		t.Fatalf("single-installation setup suspended an existing installation: %q",
+			callbackInstallationState)
+	}
+	changedUserStateDigest := sha256.Sum256(
+		[]byte("changed GitHub user setup callback state"))
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET oauth_state_digest = $2,
+		    oauth_state_expires_at = transaction_timestamp() + interval '10 minutes'
+		WHERE id = $1
+	`, callbackConnectionID, changedUserStateDigest[:]); err != nil {
+		t.Fatal(err)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		changedUserStateDigest[:],
+		realqagithub.UserIdentity{ID: 8, Login: "replacement-fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{3}, WrappedDataKey: []byte{4}, KeyID: "fixture-key",
+		},
+		761,
+		[]realqagithub.Installation{{
+			ID: 761, AccountID: 761, AccountLogin: "stale-callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT state FROM realqa_github_installations WHERE id = $1),
+			(SELECT state FROM realqa_github_installations WHERE id = $2)
+	`, callbackInstallationID, staleCallbackInstallationID).Scan(
+		&callbackInstallationState, &staleCallbackInstallationState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if callbackInstallationState != "suspended" ||
+		staleCallbackInstallationState != "active" {
+		t.Fatalf("changed-user setup states = stale:%q authorized:%q",
+			callbackInstallationState, staleCallbackInstallationState)
+	}
+	reconnectStateDigest := sha256.Sum256([]byte("reconnect setup callback state"))
+	currentConnection, err := store.Queries().GetGitHubConnectionForOwner(
+		ctx, dbgen.GetGitHubConnectionForOwnerParams{
+			OwnerKind: "organization", OwnerID: toPGUUID(callbackOwnerID),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Queries().DisconnectGitHubConnection(
+		ctx, dbgen.DisconnectGitHubConnectionParams{
+			OwnerKind:        "organization",
+			OwnerID:          toPGUUID(callbackOwnerID),
+			ExpectedRevision: currentConnection.Revision,
+		}); err != nil {
+		t.Fatal(err)
+	}
+	startedConnection, err := store.Queries().StartGitHubConnection(
+		ctx, dbgen.StartGitHubConnectionParams{
+			ID:               toPGUUID(uuidv7.MustNew()),
+			OwnerKind:        "organization",
+			OwnerID:          toPGUUID(callbackOwnerID),
+			OauthStateDigest: reconnectStateDigest[:],
+			OauthStateExpiresAt: pgtype.Timestamptz{
+				Time: time.Now().UTC().Add(10 * time.Minute), Valid: true,
+			},
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if startedConnection.State != "pending" {
+		t.Fatalf("disconnected reconnect state = %q", startedConnection.State)
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: callbackOwnerID,
+		},
+		accountID,
+		reconnectStateDigest[:],
+		realqagithub.UserIdentity{ID: 7, Login: "fixture-user"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{1}, WrappedDataKey: []byte{2}, KeyID: "fixture-key",
+		},
+		761,
+		[]realqagithub.Installation{{
+			ID: 761, AccountID: 761, AccountLogin: "stale-callback-fixture",
+			AccountKind: realqagithub.AccountKindOrganization,
+			Permissions: callbackPermissions,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT state FROM realqa_github_installations WHERE id = $1),
+			(SELECT state FROM realqa_github_installations WHERE id = $2)
+	`, callbackInstallationID, staleCallbackInstallationID).Scan(
+		&callbackInstallationState, &staleCallbackInstallationState,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if callbackInstallationState != "suspended" ||
+		staleCallbackInstallationState != "active" {
+		t.Fatalf("post-disconnect setup states = stale:%q authorized:%q",
+			callbackInstallationState, staleCallbackInstallationState)
+	}
 	pseudonymizer, err := safelog.NewPseudonymizer(
 		[]byte(strings.Repeat("p", 32)))
 	if err != nil {
@@ -164,6 +502,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	service := NewPreset(Dependencies{
 		Store: store, Pseudonymizer: pseudonymizer,
+		GitHubProjectPermission: realqagithub.ProjectPermissionRepository,
 	})
 	request := fixtureCreatePreset(accountID, organizationID, teamID, installationID)
 	request.Destination.Repository.Owner = "spoofed-owner"
@@ -197,7 +536,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if len(listed.Msg.Presets) != 1 {
 		t.Fatalf("first preset page length = %d", len(listed.Msg.Presets))
 	}
-	githubAuthorization, err := realqagithub.NewAuthorization("fixture-realqa-client")
+	githubState, err := realqagithub.NewStateCodec(
+		[]byte(strings.Repeat("s", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	githubAuthorization, err := realqagithub.NewAppAuthorization(
+		"fixture-realqa-client", "fixture-realqa", githubState, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,6 +622,31 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("schema issue form definitions = %#v",
 			schemaResponse.Msg.Schema.IssueForms)
 	}
+	refreshedSchema := &realqav1.RepositoryIssueSchema{
+		Repository: schemaResponse.Msg.Schema.Repository,
+		MarkdownTemplates: []*realqav1.MarkdownIssueTemplate{{
+			Definition:   schemaResponse.Msg.Schema.MarkdownTemplates[0].Definition,
+			BodyTemplate: "first",
+		}},
+		IssueForms: []*realqav1.IssueForm{},
+	}
+	if err = tracker.persistRepositoryDefinitions(
+		ctx, installationID, "repo-1", refreshedSchema,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if refreshedSchema.Revision.Value != 1 {
+		t.Fatalf("first repository schema revision = %#v", refreshedSchema.Revision)
+	}
+	refreshedSchema.MarkdownTemplates[0].BodyTemplate = "second"
+	if err = tracker.persistRepositoryDefinitions(
+		ctx, installationID, "repo-1", refreshedSchema,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if refreshedSchema.Revision.Value != 2 {
+		t.Fatalf("refreshed repository schema revision = %#v", refreshedSchema.Revision)
+	}
 	replayed, err := service.CreatePreset(authCtx, connect.NewRequest(request))
 	if err != nil {
 		t.Fatal(err)
@@ -316,6 +686,17 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		  AND repository_id = 'repo-1'
 	`, installationID, accountID); err != nil {
 		t.Fatal(err)
+	}
+	staleRepositories, err := tracker.ListRepositories(authCtx, connect.NewRequest(
+		&realqav1.ListRepositoriesRequest{
+			InstallationId: &realqav1.UuidV7{Value: installationID.String()},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(staleRepositories.Msg.Repositories) != 0 {
+		t.Fatalf("stale repository access remained visible: %#v",
+			staleRepositories.Msg.Repositories)
 	}
 	replayed, err = service.CreatePreset(authCtx, connect.NewRequest(request))
 	if err != nil {
@@ -365,6 +746,29 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_installations
+		SET state = 'suspended'
+		WHERE id = $1
+	`, organizationInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	suspendedInstallationRequest := proto.Clone(
+		organizationRequest).(*realqav1.CreatePresetRequest)
+	suspendedInstallationRequest.Name = "Suspended installation"
+	renewCreateIdentities(suspendedInstallationRequest)
+	_, err = service.CreatePreset(
+		authCtx, connect.NewRequest(suspendedInstallationRequest))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("suspended installation code = %v", connect.CodeOf(err))
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_installations
+		SET state = 'active'
+		WHERE id = $1
+	`, organizationInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_owner_bindings
 		SET role = 'member'
 		WHERE account_id = $1
@@ -372,6 +776,98 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		  AND owner_id = $2
 	`, accountID, organizationID); err != nil {
 		t.Fatal(err)
+	}
+	demotedRepositories, err := tracker.ListRepositories(
+		authCtx, connect.NewRequest(&realqav1.ListRepositoriesRequest{
+			InstallationId: &realqav1.UuidV7{Value: organizationInstallationID.String()},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(demotedRepositories.Msg.Repositories) != 0 {
+		t.Fatalf("demoted member reused connector repository cache: %#v",
+			demotedRepositories.Msg.Repositories)
+	}
+	_, err = tracker.GetRepositoryIssueSchema(
+		authCtx, connect.NewRequest(&realqav1.GetRepositoryIssueSchemaRequest{
+			InstallationId: &realqav1.UuidV7{Value: organizationInstallationID.String()},
+			Repository: &realqav1.GitHubRepositoryRef{
+				RepositoryId: "repo-org", Owner: "delinoio", Name: "private",
+			},
+		}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("demoted member repository schema code = %v", connect.CodeOf(err))
+	}
+	memberAuthorization, err := tracker.StartGitHubConnection(
+		authCtx, connect.NewRequest(&realqav1.StartGitHubConnectionRequest{
+			Owner: organizationOwnerScope(organizationID),
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(
+		memberAuthorization.Msg.AuthorizationTarget, "/login/oauth/authorize?",
+	) || strings.Contains(memberAuthorization.Msg.AuthorizationTarget, "/installations/new") {
+		t.Fatalf("member received installation-management target %q",
+			memberAuthorization.Msg.AuthorizationTarget)
+	}
+	var memberState string
+	var memberStateDigest []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT state, oauth_state_digest
+		FROM realqa_github_user_authorizations
+		WHERE connection_id = $1 AND account_id = $2
+	`, organizationConnectionID, accountID).Scan(
+		&memberState, &memberStateDigest,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if memberState != "pending" || len(memberStateDigest) != sha256.Size {
+		t.Fatalf("member authorization state=%q digest=%d",
+			memberState, len(memberStateDigest))
+	}
+	err = callbackStore.ConnectUser(
+		ctx,
+		realqagithub.Owner{
+			Kind: realqagithub.OwnerKindOrganization, ID: organizationID,
+		},
+		accountID,
+		memberStateDigest,
+		realqagithub.UserIdentity{ID: 42, Login: "fixture-member"},
+		realqagithub.EncryptedCredential{
+			Ciphertext: []byte{9}, WrappedDataKey: []byte{8}, KeyID: "fixture-key",
+		},
+		0,
+		[]realqagithub.Installation{
+			{ID: 759},
+			{
+				ID: 758, AccountID: 758, AccountLogin: "fixture-org",
+				AccountKind: realqagithub.AccountKindOrganization,
+				Permissions: callbackPermissions,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var memberCiphertext, connectorCiphertext []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT credential_ciphertext
+			 FROM realqa_github_user_authorizations
+			 WHERE connection_id = $1 AND account_id = $2),
+			(SELECT credential_ciphertext
+			 FROM realqa_github_connections
+			 WHERE id = $1)
+	`, organizationConnectionID, accountID).Scan(
+		&memberCiphertext, &connectorCiphertext,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(memberCiphertext, []byte{9}) ||
+		!bytes.Equal(connectorCiphertext, []byte{3}) {
+		t.Fatalf("member credential was not isolated: member=%v connector=%v",
+			memberCiphertext, connectorCiphertext)
 	}
 	memberMutation := proto.Clone(organizationRequest).(*realqav1.CreatePresetRequest)
 	memberMutation.Name = "Member cannot manage"
@@ -2031,6 +2527,36 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnected.Msg.Connection.Revision.Value {
 		t.Fatalf("disconnect replay after role change = %#v", disconnectReplay.Msg)
 	}
+	var disconnectedState string
+	var credentialCiphertext []byte
+	var retainedPresets, retainedDestinations, retainedRepositoryAccess int
+	if err = connection.QueryRow(ctx, `
+		SELECT state, credential_ciphertext
+		FROM realqa_github_connections
+		WHERE owner_kind = 'organization' AND owner_id = $1
+	`, organizationID).Scan(&disconnectedState, &credentialCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM realqa_presets
+			 WHERE owner_kind = 'organization' AND owner_id = $1),
+			(SELECT count(*) FROM realqa_destinations
+			 WHERE owner_kind = 'organization' AND owner_id = $1),
+			(SELECT count(*) FROM realqa_repository_access
+			 WHERE installation_id = $2)
+	`, organizationID, organizationInstallationID).Scan(
+		&retainedPresets, &retainedDestinations, &retainedRepositoryAccess,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if disconnectedState != "disconnected" || credentialCiphertext != nil ||
+		retainedPresets == 0 || retainedDestinations == 0 ||
+		retainedRepositoryAccess != 0 {
+		t.Fatalf("disconnect lifecycle state=%q credential=%v presets=%d destinations=%d repository_access=%d",
+			disconnectedState, credentialCiphertext != nil,
+			retainedPresets, retainedDestinations, retainedRepositoryAccess)
+	}
 	retainedBeforeDelete, err := submissionService.GetSubmission(
 		otherAuthCtx, connect.NewRequest(&realqav1.GetSubmissionRequest{
 			SubmissionId: createdSubmission.Msg.Submission.SubmissionId,
@@ -2052,11 +2578,18 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	webhookSubmissionID := uuidv7.MustNew()
 	webhookAssetID := uuidv7.MustNew()
+	webhookDestinationID := uuidv7.MustNew()
 	webhookPublicID, err := imageassets.NewPublicID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_destinations (
+			id, owner_kind, owner_id, installation_id,
+			repository_id, repository_owner, repository_name
+		) VALUES (
+			$7, 'organization', $8, $9, '1001', 'delinoio', 'private'
+		);
 		INSERT INTO realqa_submissions (
 			id, owner_kind, owner_id, created_by_account_id, preset_id,
 			destination_id, state, provider_issue_id, provider_issue_url,
@@ -2065,7 +2598,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			verified_encoded_bytes, upload_deadline, upload_expires_at
 		)
 		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
-		       destination_id, 'submitted', '757',
+		       $7, 'submitted', '2002',
 		       'https://github.com/delinoio/oss/issues/757',
 		       idempotency_digest, transaction_timestamp(),
 		       payer_organization_id, payer_team_id, preset_revision,
@@ -2087,7 +2620,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		FROM realqa_assets
 		WHERE id = $6
 	`, webhookSubmissionID, submissionID, webhookAssetID, webhookPublicID,
-		uuidv7.MustNew(), promotionAssetID); err != nil {
+		uuidv7.MustNew(), promotionAssetID, webhookDestinationID,
+		organizationID, organizationInstallationID); err != nil {
 		t.Fatal(err)
 	}
 	var webhookRevisionBefore int64
@@ -2098,8 +2632,36 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, webhookSubmissionID).Scan(&webhookRevisionBefore); err != nil {
 		t.Fatal(err)
 	}
-	if err = submissionService.DeleteIssueAssets(ctx, "757"); err != nil {
+	webhookDeliveryID := uuidv7.MustNew()
+	fresh, err := callbackStore.ProcessWebhookDelivery(
+		ctx, webhookDeliveryID,
+		func(store realqagithub.WebhookStore) error {
+			return store.DeleteIssueAssets(ctx, realqagithub.DeletedIssueEvent{
+				InstallationID: 758,
+				RepositoryID:   1001,
+				IssueID:        2002,
+				IssueNumber:    757,
+			})
+		})
+	if err != nil || !fresh {
+		t.Fatalf("issue webhook deletion: fresh=%v err=%v", fresh, err)
+	}
+	var webhookTombstones, webhookDeletionJobs int
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*)
+			 FROM realqa_public_asset_tombstones
+			 WHERE public_id = $1),
+			(SELECT count(*)
+			 FROM realqa_object_deletion_jobs
+			 WHERE asset_id = $2)
+	`, webhookPublicID, webhookAssetID).Scan(
+		&webhookTombstones, &webhookDeletionJobs); err != nil {
 		t.Fatal(err)
+	}
+	if webhookTombstones != 1 || webhookDeletionJobs != 3 {
+		t.Fatalf("issue webhook cleanup tombstones=%d deletion_jobs=%d",
+			webhookTombstones, webhookDeletionJobs)
 	}
 	var (
 		webhookState         string
@@ -2121,8 +2683,18 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			webhookState, webhookRetainedBytes, webhookRevisionAfter,
 			webhookRevisionBefore+1)
 	}
-	if err = submissionService.DeleteIssueAssets(ctx, "757"); err != nil {
-		t.Fatal(err)
+	fresh, err = callbackStore.ProcessWebhookDelivery(
+		ctx, webhookDeliveryID,
+		func(store realqagithub.WebhookStore) error {
+			return store.DeleteIssueAssets(ctx, realqagithub.DeletedIssueEvent{
+				InstallationID: 758,
+				RepositoryID:   1001,
+				IssueID:        2002,
+				IssueNumber:    757,
+			})
+		})
+	if err != nil || fresh {
+		t.Fatalf("issue webhook replay: fresh=%v err=%v", fresh, err)
 	}
 	var webhookRevisionAfterReplay int64
 	if err = connection.QueryRow(ctx, `
@@ -2211,6 +2783,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("billing deletion state = %q / %d / %d, want assets_deleted / 0 / %d",
 			billingState, billingRetainedBytes, billingRevisionAfter,
 			billingRevisionBefore+1)
+	}
+	if _, err = submissionService.DrainObjectDeletions(ctx, 100); err != nil {
+		t.Fatal(err)
 	}
 	if _, ok := objects.objects[billingPublicKey]; ok {
 		t.Fatal("billing-expired public object was retained")
@@ -2396,13 +2971,202 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("retained preset idempotency snapshots = %d",
 			presetSnapshots)
 	}
+
+	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{
+		M2M: &auth.M2MClaims{},
+	})
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET state = 'connected',
+		    connected_by_account_id = $2,
+		    credential_ciphertext = decode('07', 'hex'),
+		    wrapped_data_key = decode('08', 'hex'),
+		    key_id = 'fixture-key'
+		WHERE id = $1
+	`, organizationConnectionID, accountID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.DeleteFeatureData(lifecycleCtx, connect.NewRequest(
+		&realqav1.DeleteFeatureDataRequest{
+			TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_DELIBASE_ACCOUNT_LIFECYCLE,
+			Trigger: &realqav1.DeleteFeatureDataRequest_DelibaseAccountLifecycle{
+				DelibaseAccountLifecycle: &realqav1.DelibaseAccountLifecycleDeletion{
+					AccountId: &realqav1.UuidV7{Value: accountID.String()},
+					DeletionJobId: &realqav1.UuidV7{
+						Value: uuidv7.MustNew().String(),
+					},
+				},
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replayConnectionState string
+	var replayConnectedBy uuid.NullUUID
+	var replayCiphertext []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT state, connected_by_account_id, credential_ciphertext
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, organizationConnectionID).Scan(
+		&replayConnectionState, &replayConnectedBy, &replayCiphertext,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if replayConnectionState != "disconnected" || replayConnectedBy.Valid ||
+		replayCiphertext != nil {
+		t.Fatalf(
+			"account lifecycle replay retained organization credential: state=%q account=%v ciphertext=%t",
+			replayConnectionState, replayConnectedBy.Valid,
+			replayCiphertext != nil,
+		)
+	}
+
+	lifecycleAccountID := uuidv7.MustNew()
+	lifecycleOrganizationID := uuidv7.MustNew()
+	lifecycleConnectionID := uuidv7.MustNew()
+	lifecycleInstallationID := uuidv7.MustNew()
+	lifecycleDigest := hmac.New(sha256.New, identityKey)
+	_, _ = lifecycleDigest.Write([]byte("fixture-lifecycle-user"))
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_identities (account_id, subject_digest)
+		VALUES ($1, $2);
+		INSERT INTO realqa_owner_bindings (
+			account_id, owner_kind, owner_id, role
+		) VALUES ($6, 'organization', $4, 'member');
+		INSERT INTO realqa_github_connections (
+			id, owner_kind, owner_id, state, connected_by_account_id,
+			credential_ciphertext, wrapped_data_key, key_id
+		) VALUES (
+			$3, 'organization', $4, 'connected', $1,
+			decode('05', 'hex'), decode('06', 'hex'), 'fixture-key'
+		);
+		INSERT INTO realqa_github_installations (
+			id, connection_id, owner_kind, owner_id,
+			provider_installation_id, account_login, provider_account_id,
+			account_kind, state, permissions
+		) VALUES (
+			$5, $3, 'organization', $4, 762, 'lifecycle-org', 762,
+			'Organization', 'active',
+			'{"issues":"write","metadata":"read","contents":"read"}'::jsonb
+		);
+		INSERT INTO realqa_repository_access (
+			installation_id, account_id, repository_id,
+			repository_owner, repository_name, issues_enabled, can_submit
+		) VALUES
+			($5, $1, 'lifecycle-repo', 'lifecycle-org', 'private', true, true),
+			($5, $6, 'member-repo', 'lifecycle-org', 'member-private', true, true);
+		INSERT INTO realqa_github_user_authorizations (
+			connection_id, account_id, state, github_user_id, github_login,
+			credential_ciphertext, wrapped_data_key, key_id, connected_at
+		) VALUES (
+			$3, $6, 'connected', 764, 'connector-member',
+			decode('0d', 'hex'), decode('0e', 'hex'), 'fixture-key',
+			transaction_timestamp()
+		);
+		UPDATE realqa_github_connections
+		SET state = 'connected',
+		    connected_by_account_id = $6,
+		    credential_ciphertext = decode('09', 'hex'),
+		    wrapped_data_key = decode('0a', 'hex'),
+		    key_id = 'fixture-key'
+		WHERE id = $7;
+		INSERT INTO realqa_github_user_authorizations (
+			connection_id, account_id, state, github_user_id, github_login,
+			credential_ciphertext, wrapped_data_key, key_id, connected_at
+		) VALUES (
+			$7, $1, 'connected', 763, 'lifecycle-member',
+			decode('0b', 'hex'), decode('0c', 'hex'), 'fixture-key',
+			transaction_timestamp()
+		)
+	`, lifecycleAccountID, lifecycleDigest.Sum(nil),
+		lifecycleConnectionID, lifecycleOrganizationID,
+		lifecycleInstallationID, secondAdminID, organizationConnectionID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.DeleteFeatureData(lifecycleCtx, connect.NewRequest(
+		&realqav1.DeleteFeatureDataRequest{
+			TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_DELIBASE_ACCOUNT_LIFECYCLE,
+			Trigger: &realqav1.DeleteFeatureDataRequest_DelibaseAccountLifecycle{
+				DelibaseAccountLifecycle: &realqav1.DelibaseAccountLifecycleDeletion{
+					AccountId: &realqav1.UuidV7{
+						Value: lifecycleAccountID.String(),
+					},
+					DeletionJobId: &realqav1.UuidV7{
+						Value: uuidv7.MustNew().String(),
+					},
+				},
+			},
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lifecycleConnectionState string
+	var lifecycleConnectedBy uuid.NullUUID
+	var lifecycleCiphertext, lifecycleWrappedKey []byte
+	var lifecycleKeyID *string
+	var lifecycleRepositoryAccess, lifecycleActiveAuthorizations int64
+	var lifecycleAuthorizationState string
+	var lifecycleAuthorizationCiphertext []byte
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			state, connected_by_account_id, credential_ciphertext,
+			wrapped_data_key, key_id,
+			(SELECT count(*)
+			 FROM realqa_repository_access
+			 WHERE installation_id = $2),
+			(SELECT count(*)
+			 FROM realqa_github_user_authorizations
+			 WHERE connection_id = $1
+			   AND (state <> 'disconnected'
+			        OR credential_ciphertext IS NOT NULL))
+		FROM realqa_github_connections
+		WHERE id = $1
+	`, lifecycleConnectionID, lifecycleInstallationID).Scan(
+		&lifecycleConnectionState, &lifecycleConnectedBy,
+		&lifecycleCiphertext, &lifecycleWrappedKey, &lifecycleKeyID,
+		&lifecycleRepositoryAccess, &lifecycleActiveAuthorizations,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycleConnectionState != "disconnected" ||
+		lifecycleConnectedBy.Valid ||
+		lifecycleCiphertext != nil || lifecycleWrappedKey != nil ||
+		lifecycleKeyID != nil || lifecycleRepositoryAccess != 0 ||
+		lifecycleActiveAuthorizations != 0 {
+		t.Fatalf(
+			"account lifecycle retained organization data: state=%q account=%v ciphertext=%t wrapped=%t key=%v repository_access=%d active_authorizations=%d",
+			lifecycleConnectionState, lifecycleConnectedBy.Valid,
+			lifecycleCiphertext != nil, lifecycleWrappedKey != nil,
+			lifecycleKeyID, lifecycleRepositoryAccess,
+			lifecycleActiveAuthorizations,
+		)
+	}
+	if err = connection.QueryRow(ctx, `
+		SELECT state, credential_ciphertext
+		FROM realqa_github_user_authorizations
+		WHERE connection_id = $1
+		  AND account_id = $2
+	`, organizationConnectionID, lifecycleAccountID).Scan(
+		&lifecycleAuthorizationState, &lifecycleAuthorizationCiphertext,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycleAuthorizationState != "disconnected" ||
+		lifecycleAuthorizationCiphertext != nil {
+		t.Fatalf(
+			"account lifecycle retained caller authorization: state=%q credential=%t",
+			lifecycleAuthorizationState,
+			lifecycleAuthorizationCiphertext != nil,
+		)
+	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_owner_bindings
 		SET role = 'owner'
 		WHERE account_id = $1
 		  AND owner_kind = 'organization'
 		  AND owner_id = $2
-	`, accountID, organizationID); err != nil {
+	`, secondAdminID, organizationID); err != nil {
 		t.Fatal(err)
 	}
 	organizationDeletionRequest := &realqav1.DeleteFeatureDataRequest{
@@ -2417,7 +3181,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		},
 	}
 	if _, err = service.DeleteFeatureData(
-		authCtx, connect.NewRequest(organizationDeletionRequest)); err != nil {
+		secondAdminCtx, connect.NewRequest(organizationDeletionRequest)); err != nil {
 		t.Fatal(err)
 	}
 	_, err = submissionService.CreateSubmission(

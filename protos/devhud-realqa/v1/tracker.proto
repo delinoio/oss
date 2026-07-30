@@ -96,6 +96,7 @@ message MarkdownIssueTemplate {
   repeated string default_labels = 3;
   repeated string default_assignees = 4;
   string body_template = 5;
+  string issue_type = 6;
 }
 
 enum IssueFormFieldKind {
@@ -121,6 +122,9 @@ message IssueFormField {
   string placeholder = 5;
   bool required = 6;
   repeated IssueFormOption options = 7;
+  bool multiple = 8;
+  string default_value = 9;
+  string render_language = 10;
 }
 
 message IssueForm {
@@ -129,6 +133,7 @@ message IssueForm {
   repeated string default_labels = 3;
   repeated string default_assignees = 4;
   repeated IssueFormField fields = 5;
+  string issue_type = 6;
 }
 
 message RepositoryIssueSchema {
@@ -155,4 +160,3 @@ service RealQATrackerService {
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   rpc GetRepositoryIssueSchema(GetRepositoryIssueSchemaRequest) returns (GetRepositoryIssueSchemaResponse);
 }
-

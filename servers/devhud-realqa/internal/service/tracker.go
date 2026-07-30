@@ -3,14 +3,17 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -18,6 +21,13 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+type repositoryPageSource string
+
+const (
+	repositoryPageSourceLive  repositoryPageSource = "github-live-v1"
+	repositoryPageSourceCache repositoryPageSource = "github-cache-v1"
 )
 
 func (service *Tracker) GetGitHubConnection(
@@ -79,43 +89,103 @@ func (service *Tracker) StartGitHubConnection(
 	if err != nil {
 		return nil, err
 	}
-	if _, err = authorizeOwner(ctx, service.dependencies, actor, scope, true, false); err != nil {
-		return nil, err
-	}
-	state, stateDigest, err := newOAuthState()
+	access, err := authorizeOwner(
+		ctx, service.dependencies, actor, scope, false, false)
 	if err != nil {
 		return nil, err
 	}
-	target, err := service.dependencies.GitHub.Target(state)
+	callerAuthorization := scope.kind == "organization" && access.Role == "member"
+	if scope.kind == "organization" && !callerAuthorization &&
+		access.Role != "owner" && access.Role != "admin" {
+		return nil, permissionDenied()
+	}
+	state, stateDigest, err := newOAuthState()
+	target := ""
+	if callerAuthorization {
+		issuer, ok := service.dependencies.GitHub.(GitHubOAuthStateIssuer)
+		if !ok {
+			return nil, rqerr.New(connect.CodeUnavailable,
+				realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
+				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+		}
+		state, err = issuer.OAuthState(scope.kind, scope.id, actor.accountID)
+		if err == nil {
+			target, err = service.dependencies.GitHub.Target(state)
+		}
+	} else if issuer, ok := service.dependencies.GitHub.(GitHubConnectionTargetIssuer); ok {
+		target, state, err = issuer.ConnectionTarget(scope.kind, scope.id, actor.accountID)
+	} else if issuer, ok := service.dependencies.GitHub.(GitHubOAuthStateIssuer); ok {
+		state, err = issuer.OAuthState(scope.kind, scope.id, actor.accountID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256([]byte(state))
+	stateDigest = digest[:]
+	if target == "" {
+		target, err = service.dependencies.GitHub.Target(state)
+	}
 	if err != nil || validateAuthorizationTarget(target) != nil {
 		return nil, rqerr.New(connect.CodeUnavailable,
 			realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
 			realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 	}
-	connectionID, err := newID(service.dependencies)
-	if err != nil {
-		return nil, err
-	}
 	expires := service.dependencies.Clock.Now().UTC().Add(10 * time.Minute)
-	var record dbgen.RealqaGithubConnection
+	var connectionID uuid.UUID
+	if !callerAuthorization {
+		connectionID, err = newID(service.dependencies)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var storedID uuid.UUID
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			if lockErr := lockActiveOwnerScope(ctx, queries, scope); lockErr != nil {
 				return lockErr
 			}
-			record, err = queries.StartGitHubConnection(
+			if callerAuthorization {
+				id, startErr := queries.StartGitHubCallerAuthorization(
+					ctx, dbgen.StartGitHubCallerAuthorizationParams{
+						AccountID:        toPGUUID(actor.accountID),
+						OauthStateDigest: stateDigest,
+						OauthStateExpiresAt: pgtype.Timestamptz{
+							Time: expires, Valid: true,
+						},
+						OwnerKind: scope.kind,
+						OwnerID:   toPGUUID(scope.id),
+					})
+				if startErr != nil {
+					return startErr
+				}
+				storedID, startErr = fromPGUUID(id)
+				return startErr
+			}
+			record, startErr := queries.StartGitHubConnection(
 				ctx, dbgen.StartGitHubConnectionParams{
 					ID: toPGUUID(connectionID), OwnerKind: scope.kind,
 					OwnerID: toPGUUID(scope.id), OauthStateDigest: stateDigest,
 					OauthStateExpiresAt: pgtype.Timestamptz{Time: expires, Valid: true},
 				})
-			return err
+			if startErr != nil {
+				return startErr
+			}
+			storedID, startErr = fromPGUUID(record.ID)
+			return startErr
 		})
+	if callerAuthorization && errors.Is(err, pgx.ErrNoRows) {
+		return nil, rqerr.New(connect.CodeFailedPrecondition,
+			realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
+			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED, 0)
+	}
 	if err != nil {
 		return nil, err
 	}
-	storedID, _ := fromPGUUID(record.ID)
-	audit(ctx, service.dependencies, actor, "github_connection_started", scope,
+	action := "github_connection_started"
+	if callerAuthorization {
+		action = "github_user_authorization_started"
+	}
+	audit(ctx, service.dependencies, actor, action, scope,
 		storedID, "allow", "success")
 	return connect.NewResponse(&realqav1.StartGitHubConnectionResponse{
 		AuthorizationTarget: target,
@@ -236,6 +306,10 @@ func (service *Tracker) DisconnectGitHubConnection(
 			if err != nil {
 				return err
 			}
+			if _, err = queries.DisconnectGitHubCallerAuthorizationsForConnection(
+				ctx, record.ID); err != nil {
+				return err
+			}
 			connection, connectionErr := connectionProto(record)
 			if connectionErr != nil {
 				return connectionErr
@@ -346,13 +420,54 @@ func (service *Tracker) ListRepositories(
 			size = request.Msg.Page.PageSize
 		}
 	}
+	source := repositoryPageSource("")
 	after := ""
 	if request.Msg.Page != nil && request.Msg.Page.Cursor != "" {
-		decoded, decodeErr := base64.RawURLEncoding.DecodeString(request.Msg.Page.Cursor)
-		if decodeErr != nil || len(decoded) == 0 || len(decoded) > 255 {
+		var decodeErr error
+		source, after, decodeErr = decodeRepositoryPageCursor(request.Msg.Page.Cursor)
+		if decodeErr != nil {
 			return nil, invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
 		}
-		after = string(decoded)
+	}
+	if service.dependencies.GitHubProvider != nil &&
+		source != repositoryPageSourceCache {
+		page, providerErr := service.dependencies.GitHubProvider.ListRepositories(
+			ctx, actor.accountID, installation, realqagithub.RepositoryPageRequest{
+				Query: request.Msg.Query, Cursor: after, PageSize: int(size),
+			})
+		if providerErr != nil &&
+			!errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
+			return nil, rqerr.New(connect.CodeUnavailable,
+				realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
+				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+		}
+		if providerErr == nil {
+			response := &realqav1.ListRepositoriesResponse{
+				Repositories: make(
+					[]*realqav1.Repository, 0, len(page.Repositories)),
+				Page: &realqav1.PageResponse{},
+			}
+			for _, row := range page.Repositories {
+				response.Repositories = append(response.Repositories, &realqav1.Repository{
+					Repository: &realqav1.GitHubRepositoryRef{
+						RepositoryId: strconv.FormatInt(row.ID, 10),
+						Owner:        row.Owner, Name: row.Name,
+					},
+					InstallationId: &realqav1.UuidV7{Value: installation.String()},
+					IssuesEnabled:  row.IssuesEnabled, CallerCanSubmit: row.CanSubmit,
+				})
+			}
+			if page.NextCursor != "" {
+				response.Page.NextCursor = encodeRepositoryPageCursor(
+					repositoryPageSourceLive, page.NextCursor)
+			}
+			return connect.NewResponse(response), nil
+		}
+	}
+	if source == repositoryPageSourceLive {
+		return nil, rqerr.New(connect.CodeUnavailable,
+			realqav1.ErrorReason_ERROR_REASON_GITHUB_DISCONNECTED,
+			realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
 	}
 	rows, err := service.dependencies.Store.Queries().ListAccessibleRepositories(
 		ctx, dbgen.ListAccessibleRepositoriesParams{
@@ -383,9 +498,29 @@ func (service *Tracker) ListRepositories(
 		})
 	}
 	if hasMore {
-		response.Page.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(last))
+		response.Page.NextCursor = encodeRepositoryPageCursor(
+			repositoryPageSourceCache, last)
 	}
 	return connect.NewResponse(response), nil
+}
+
+func encodeRepositoryPageCursor(source repositoryPageSource, cursor string) string {
+	value := string(source) + ":" + cursor
+	return base64.RawURLEncoding.EncodeToString([]byte(value))
+}
+
+func decodeRepositoryPageCursor(value string) (repositoryPageSource, string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil || len(decoded) == 0 || len(decoded) > 255 {
+		return "", "", errors.New("realqa service: repository page cursor is invalid")
+	}
+	sourceValue, cursor, found := strings.Cut(string(decoded), ":")
+	source := repositoryPageSource(sourceValue)
+	if !found || cursor == "" ||
+		(source != repositoryPageSourceLive && source != repositoryPageSourceCache) {
+		return "", "", errors.New("realqa service: repository page cursor is invalid")
+	}
+	return source, cursor, nil
 }
 
 func (service *Tracker) GetRepositoryIssueSchema(
@@ -398,6 +533,44 @@ func (service *Tracker) GetRepositoryIssueSchema(
 	actor, installation, err := service.authorizeInstallation(ctx, request.Msg.InstallationId)
 	if err != nil {
 		return nil, err
+	}
+	if service.dependencies.GitHubProvider != nil {
+		repositoryID, parseErr := strconv.ParseInt(
+			request.Msg.Repository.RepositoryId, 10, 64)
+		if parseErr != nil || repositoryID <= 0 {
+			return nil, invalid(
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID)
+		}
+		repository := realqagithub.Repository{
+			ID: repositoryID, NodeID: "R_" + strconv.FormatInt(repositoryID, 10),
+			Owner: request.Msg.Repository.Owner, Name: request.Msg.Repository.Name,
+			IssuesEnabled: true, CanSubmit: true,
+		}
+		definitions, providerErr :=
+			service.dependencies.GitHubProvider.GetRepositoryDefinitions(
+				ctx, actor.accountID, installation, repository)
+		if errors.Is(
+			providerErr, realqagithub.ErrRepositorySubmissionUnavailable,
+		) {
+			return nil, providerPermissionDenied()
+		}
+		if providerErr != nil &&
+			!errors.Is(providerErr, realqagithub.ErrCallerAuthorizationUnavailable) {
+			return nil, rqerr.New(connect.CodeUnavailable,
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
+				realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+		}
+		if providerErr == nil {
+			schema := repositoryDefinitionsProto(request.Msg.Repository, definitions)
+			if err = service.persistRepositoryDefinitions(
+				ctx, installation, request.Msg.Repository.RepositoryId, schema,
+			); err != nil {
+				return nil, err
+			}
+			return connect.NewResponse(&realqav1.GetRepositoryIssueSchemaResponse{
+				Schema: schema,
+			}), nil
+		}
 	}
 	access, err := service.dependencies.Store.Queries().GetRepositorySubmitAccess(
 		ctx, dbgen.GetRepositorySubmitAccessParams{
@@ -427,9 +600,18 @@ func (service *Tracker) GetRepositoryIssueSchema(
 		MarkdownTemplates: []*realqav1.MarkdownIssueTemplate{},
 		IssueForms:        []*realqav1.IssueForm{},
 	}
-	var revision int64 = 1
+	revision, revisionErr := service.dependencies.Store.Queries().
+		GetRepositorySchemaRevision(ctx, dbgen.GetRepositorySchemaRevisionParams{
+			InstallationID: toPGUUID(installation),
+			RepositoryID:   request.Msg.Repository.RepositoryId,
+		})
+	if errors.Is(revisionErr, pgx.ErrNoRows) {
+		revision = 1
+	} else if revisionErr != nil {
+		return nil, revisionErr
+	}
 	for _, row := range rows {
-		if row.Revision > revision {
+		if revisionErr != nil && row.Revision > revision {
 			revision = row.Revision
 		}
 		kind, kindErr := definitionKindValue(row.Kind)
@@ -470,6 +652,85 @@ func (service *Tracker) GetRepositoryIssueSchema(
 	return connect.NewResponse(&realqav1.GetRepositoryIssueSchemaResponse{
 		Schema: schema,
 	}), nil
+}
+
+func (service *Tracker) persistRepositoryDefinitions(
+	ctx context.Context,
+	installationID uuid.UUID,
+	repositoryID string,
+	schema *realqav1.RepositoryIssueSchema,
+) error {
+	if schema == nil {
+		return errors.New("realqa tracker: provider schema is unavailable")
+	}
+	return service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
+		func(queries *dbgen.Queries) error {
+			parameters := dbgen.DeleteRepositoryDefinitionsParams{
+				InstallationID: toPGUUID(installationID),
+				RepositoryID:   repositoryID,
+			}
+			if _, err := queries.DeleteRepositoryDefinitions(
+				ctx, parameters,
+			); err != nil {
+				return err
+			}
+			for _, item := range schema.MarkdownTemplates {
+				payload, err := protojson.Marshal(item)
+				if err != nil {
+					return err
+				}
+				definition := item.Definition
+				if definition == nil {
+					return errors.New("realqa tracker: provider definition is invalid")
+				}
+				if err = queries.UpsertRepositoryDefinition(
+					ctx, dbgen.UpsertRepositoryDefinitionParams{
+						InstallationID: toPGUUID(installationID),
+						RepositoryID:   repositoryID,
+						Kind:           "markdown_template",
+						DefinitionID:   definition.DefinitionId,
+						Name:           definition.Name,
+						Path:           definition.Path,
+						Etag:           definition.Etag,
+						SchemaPayload:  payload,
+					}); err != nil {
+					return err
+				}
+			}
+			for _, item := range schema.IssueForms {
+				payload, err := protojson.Marshal(item)
+				if err != nil {
+					return err
+				}
+				definition := item.Definition
+				if definition == nil {
+					return errors.New("realqa tracker: provider definition is invalid")
+				}
+				if err = queries.UpsertRepositoryDefinition(
+					ctx, dbgen.UpsertRepositoryDefinitionParams{
+						InstallationID: toPGUUID(installationID),
+						RepositoryID:   repositoryID,
+						Kind:           "issue_form",
+						DefinitionID:   definition.DefinitionId,
+						Name:           definition.Name,
+						Path:           definition.Path,
+						Etag:           definition.Etag,
+						SchemaPayload:  payload,
+					}); err != nil {
+					return err
+				}
+			}
+			revision, err := queries.BumpRepositorySchemaRevision(
+				ctx, dbgen.BumpRepositorySchemaRevisionParams{
+					InstallationID: toPGUUID(installationID),
+					RepositoryID:   repositoryID,
+				})
+			if err != nil {
+				return err
+			}
+			schema.Revision = rqerr.Revision(revision)
+			return nil
+		})
 }
 
 func (service *Tracker) authorizeInstallation(
@@ -533,4 +794,89 @@ func connectionProto(record dbgen.RealqaGithubConnection) (*realqav1.GitHubConne
 		Revision:    rqerr.Revision(record.Revision),
 		ConnectedAt: timestamp(record.ConnectedAt),
 	}, nil
+}
+
+func repositoryDefinitionsProto(
+	repository *realqav1.GitHubRepositoryRef,
+	definitions realqagithub.RepositoryDefinitions,
+) *realqav1.RepositoryIssueSchema {
+	result := &realqav1.RepositoryIssueSchema{
+		Repository: repository, MarkdownTemplates: []*realqav1.MarkdownIssueTemplate{},
+		IssueForms: []*realqav1.IssueForm{}, Revision: rqerr.Revision(1),
+	}
+	for _, template := range definitions.Markdown {
+		result.MarkdownTemplates = append(result.MarkdownTemplates,
+			&realqav1.MarkdownIssueTemplate{
+				Definition:       repositoryDefinitionRefProto(template.Definition),
+				TitlePrefix:      template.TitlePrefix,
+				IssueType:        template.IssueType,
+				DefaultLabels:    append([]string(nil), template.DefaultLabels...),
+				DefaultAssignees: append([]string(nil), template.DefaultAssignees...),
+				BodyTemplate:     template.Body,
+			})
+	}
+	for _, form := range definitions.Forms {
+		item := &realqav1.IssueForm{
+			Definition:       repositoryDefinitionRefProto(form.Definition),
+			TitlePrefix:      form.TitlePrefix,
+			IssueType:        form.IssueType,
+			DefaultLabels:    append([]string(nil), form.DefaultLabels...),
+			DefaultAssignees: append([]string(nil), form.DefaultAssignees...),
+			Fields:           []*realqav1.IssueFormField{},
+		}
+		for _, field := range form.Fields {
+			protoField := &realqav1.IssueFormField{
+				FieldId: field.ID, Kind: issueFormFieldKindProto(field.Kind),
+				Label: field.Label, Description: field.Description,
+				Placeholder: field.Placeholder, DefaultValue: field.DefaultValue,
+				RenderLanguage: field.Render, Required: field.Required,
+				Multiple: field.Multiple, Options: []*realqav1.IssueFormOption{},
+			}
+			if field.Kind == realqagithub.FormFieldMarkdown {
+				protoField.Description = field.Markdown
+			}
+			for _, option := range field.Options {
+				protoField.Options = append(protoField.Options,
+					&realqav1.IssueFormOption{
+						Value: option.Label, Label: option.Label,
+						Required: option.Required,
+					})
+			}
+			item.Fields = append(item.Fields, protoField)
+		}
+		result.IssueForms = append(result.IssueForms, item)
+	}
+	return result
+}
+
+func repositoryDefinitionRefProto(
+	definition realqagithub.DefinitionRef,
+) *realqav1.RepositoryIssueDefinitionRef {
+	kind := realqav1.RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE
+	if definition.Kind == realqagithub.DefinitionForm {
+		kind = realqav1.RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM
+	}
+	return &realqav1.RepositoryIssueDefinitionRef{
+		Kind: kind, DefinitionId: definition.ID, Name: definition.Name,
+		Path: definition.Path, Etag: definition.ETag,
+	}
+}
+
+func issueFormFieldKindProto(
+	kind realqagithub.FormFieldKind,
+) realqav1.IssueFormFieldKind {
+	switch kind {
+	case realqagithub.FormFieldMarkdown:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_MARKDOWN
+	case realqagithub.FormFieldInput:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_INPUT
+	case realqagithub.FormFieldTextarea:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_TEXTAREA
+	case realqagithub.FormFieldDropdown:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_DROPDOWN
+	case realqagithub.FormFieldCheckboxes:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_CHECKBOXES
+	default:
+		return realqav1.IssueFormFieldKind_ISSUE_FORM_FIELD_KIND_UNSPECIFIED
+	}
 }

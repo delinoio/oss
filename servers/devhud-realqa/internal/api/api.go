@@ -29,10 +29,11 @@ type HealthChecker interface {
 }
 
 type Dependencies struct {
-	Authentication *authn.Interceptor
-	Health         HealthChecker
-	Services       service.Dependencies
-	Logger         *slog.Logger
+	Authentication  *authn.Interceptor
+	Health          HealthChecker
+	Services        service.Dependencies
+	GitHubCallbacks http.Handler
+	Logger          *slog.Logger
 }
 
 func New(dependencies Dependencies) (http.Handler, error) {
@@ -82,6 +83,9 @@ func New(dependencies Dependencies) (http.Handler, error) {
 		rootMux.Handle("/i/", imageassets.PublicHandler(
 			dependencies.Services.UploadSigner,
 			dependencies.Services.Objects, submissions.PublicAsset))
+	}
+	if dependencies.GitHubCallbacks != nil {
+		rootMux.Handle("/github/", dependencies.GitHubCallbacks)
 	}
 	rootMux.Handle("/", rejectBrowserOrigins(business))
 
