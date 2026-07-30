@@ -31,6 +31,12 @@ const COMMANDS: &[&str] = &[
     "realqa_composer_remove_image",
     "realqa_composer_reset_session",
     "realqa_take_browser_capture",
+    "realqa_get_local_draft_status",
+    "realqa_list_local_drafts",
+    "realqa_save_local_draft",
+    "realqa_load_local_draft",
+    "realqa_delete_local_draft",
+    "realqa_assert_local_draft_submission_allowed",
 ];
 
 fn main() {

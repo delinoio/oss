@@ -298,6 +298,12 @@ const expectedRealqaComposerPermissions = [
   "allow-realqa-composer-reset-session",
   "allow-realqa-begin-browser-fallback-capture",
   "allow-realqa-take-browser-capture",
+  "allow-realqa-get-local-draft-status",
+  "allow-realqa-list-local-drafts",
+  "allow-realqa-save-local-draft",
+  "allow-realqa-load-local-draft",
+  "allow-realqa-delete-local-draft",
+  "allow-realqa-assert-local-draft-submission-allowed",
 ];
 requireCondition(
   JSON.stringify(mobileMainCapabilityJson.windows) === JSON.stringify(["main"]) &&

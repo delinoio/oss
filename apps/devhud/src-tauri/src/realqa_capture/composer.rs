@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     CaptureFailure, EncodedImage, ImageMediaType, ImageSessionBudget, decode_image,
-    editor::{EditorOperation, deserialize_bounded_string, deserialize_operations, flatten},
+    editor::{
+        EditorOperation, deserialize_bounded_string, deserialize_operations, flatten,
+        validate_operations,
+    },
     encode_image,
     image_boundary::bounded_preview,
     sanitize_image,
@@ -98,6 +101,8 @@ struct ComposerSession {
 #[derive(Debug)]
 struct ComposerSource {
     original: EncodedImage,
+    width: u32,
+    height: u32,
     original_encoded_bytes: u64,
     accounted_encoded_bytes: u64,
     revision: u64,
@@ -190,7 +195,44 @@ pub(crate) struct ComposerCore {
 }
 
 impl ComposerCore {
-    #[cfg(test)]
+    pub(crate) fn clone_validated_original_for_draft(
+        &self,
+        session_id: &ComposerSessionId,
+        image_id: &ComposerImageId,
+        source_revision: u64,
+        operations: &[EditorOperation],
+    ) -> Result<EncodedImage, CaptureFailure> {
+        validate_identifier(&session_id.0)?;
+        validate_identifier(&image_id.0)?;
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| CaptureFailure::CaptureFailed)?;
+        let source = state
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.images.get(image_id))
+            .filter(|source| source.revision == source_revision)
+            .ok_or(CaptureFailure::InvalidEditSequence)?;
+        validate_operations(source.width, source.height, operations)?;
+        Ok(source.original.clone())
+    }
+
+    pub(crate) fn restore_original_from_draft(
+        &self,
+        session_id: ComposerSessionId,
+        image_id: ComposerImageId,
+        original: EncodedImage,
+    ) -> Result<ComposerImage, CaptureFailure> {
+        let output_media_type = original.media_type;
+        self.accept_image(ComposerImageRequest {
+            session_id,
+            image_id,
+            image: original,
+            output_media_type,
+        })
+    }
+
     pub(crate) fn accept_image(
         &self,
         request: ComposerImageRequest,
@@ -275,6 +317,8 @@ impl ComposerCore {
             request.image_id.clone(),
             ComposerSource {
                 original: sanitized.clone(),
+                width,
+                height,
                 original_encoded_bytes: encoded_bytes,
                 accounted_encoded_bytes: encoded_bytes,
                 revision,
@@ -672,6 +716,36 @@ mod tests {
                 .retained_source_budget
                 .encoded_bytes(),
             0
+        );
+    }
+
+    #[test]
+    fn reset_clears_every_session_and_invalidates_pending_accepts() {
+        let composer = ComposerCore::default();
+        composer
+            .accept_image(request("session-1", "image-1"))
+            .expect("first image must be accepted");
+        composer
+            .accept_image(request("session-2", "image-1"))
+            .expect("second image must be accepted");
+        let pending = composer
+            .begin_accept(
+                &ComposerSessionId("session-3".to_owned()),
+                &ComposerImageId("image-1".to_owned()),
+            )
+            .expect("accept must begin");
+
+        composer.reset_all();
+
+        let state = composer
+            .state
+            .lock()
+            .expect("composer state must be available");
+        assert!(state.sessions.is_empty());
+        assert_eq!(state.retained_source_budget.encoded_bytes(), 0);
+        assert_eq!(
+            pending.ensure_current(&state),
+            Err(CaptureFailure::InvalidEditSequence)
         );
     }
 

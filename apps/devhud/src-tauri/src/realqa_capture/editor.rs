@@ -122,7 +122,7 @@ pub(crate) enum EditorOperation {
     },
 }
 
-pub(super) fn deserialize_operations<'de, D>(
+pub(crate) fn deserialize_operations<'de, D>(
     deserializer: D,
 ) -> Result<Vec<EditorOperation>, D::Error>
 where
@@ -349,7 +349,7 @@ pub(crate) fn flatten(
     }
 }
 
-fn validate_operations(
+pub(super) fn validate_operations(
     width: u32,
     height: u32,
     operations: &[EditorOperation],
