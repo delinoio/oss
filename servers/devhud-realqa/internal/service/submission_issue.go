@@ -510,16 +510,8 @@ func (service *Submission) ensureStorageAuthorization(
 	if err != nil {
 		return err
 	}
-	requestMaterial := []byte(
-		"realqa-storage-authorization:v1:" +
-			scope.kind + ":" + scope.id.String() + ":" +
-			organizationID.String() + ":" + teamID.String() + ":" +
-			meters.Storage.ServiceIdentityID.String() + ":" +
-			meters.Storage.ID.String() + ":" +
-			meters.Storage.PriceVersionID.String() + ":" +
-			"REALQA_STORAGE:UTC_DAY:" +
-			strconv.FormatInt(maximumUnits, 10))
-	requestDigest := sha256.Sum256(requestMaterial)
+	requestDigest := storageAuthorizationAttemptDigest(
+		scope, organizationID, teamID, meters.Storage, maximumUnits)
 	existing, err := service.dependencies.Store.Queries().
 		GetStorageAuthorizationAttempt(ctx, toPGUUID(submissionID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -636,6 +628,24 @@ func (service *Submission) ensureStorageAuthorization(
 				})
 			return createErr
 		})
+}
+
+func storageAuthorizationAttemptDigest(
+	scope owner,
+	organizationID uuid.UUID,
+	teamID uuid.UUID,
+	meter BillingMeter,
+	maximumUnits int64,
+) [sha256.Size]byte {
+	requestMaterial := []byte(
+		"realqa-storage-authorization:v1:" +
+			scope.kind + ":" + scope.id.String() + ":" +
+			organizationID.String() + ":" + teamID.String() + ":" +
+			meter.ServiceIdentityID.String() + ":" +
+			meter.ID.String() + ":" +
+			"REALQA_STORAGE:UTC_DAY:" +
+			strconv.FormatInt(maximumUnits, 10))
+	return sha256.Sum256(requestMaterial)
 }
 
 func (service *Submission) issueInput(

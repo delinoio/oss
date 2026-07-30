@@ -1247,7 +1247,16 @@ JOIN realqa_github_connections AS connection
   ON connection.id = installation.connection_id
 WHERE connection.state = 'disconnected'
   AND binding.closure_state = 'open'
-  AND binding.accrual_cutoff_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_recoveries AS recovery
+      WHERE recovery.submission_id = binding.submission_id
+        AND recovery.recovered_at IS NULL
+        AND recovery.expired_at IS NULL
+        AND recovery.reason NOT IN (
+            'billing_unavailable', 'payment_required', 'overage_required'
+        )
+  )
 ORDER BY binding.authorization_id
 LIMIT $1
 `

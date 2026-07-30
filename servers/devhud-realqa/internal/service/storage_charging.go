@@ -613,18 +613,18 @@ func (service *Submission) releaseReservedStorage(
 		periodStart, "released", 0); err != nil {
 		return err
 	}
-	_, err = service.dependencies.Store.Queries().
-		ReleaseStorageDailySettlement(
-			ctx, dbgen.ReleaseStorageDailySettlementParams{
-				AuthorizationID: binding.AuthorizationID,
-				PeriodStart:     settlement.PeriodStart,
-				ReservationID:   settlement.ReservationID,
-			})
+	persisted, err := persistReleasedStorageSettlement(
+		ctx, service.dependencies.Store.Queries(),
+		dbgen.ReleaseStorageDailySettlementParams{
+			AuthorizationID: binding.AuthorizationID,
+			PeriodStart:     settlement.PeriodStart,
+			ReservationID:   settlement.ReservationID,
+		})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
 		return err
+	}
+	if !persisted {
+		return nil
 	}
 	audit(ctx, service.dependencies, caller{}, "storage_daily_released",
 		owner{kind: binding.OwnerKind, id: uuid.UUID(binding.OwnerID.Bytes)},
@@ -659,17 +659,32 @@ func (service *Submission) releaseRacedStorageReservation(
 		return errors.New(
 			"realqa storage billing: raced reservation release failed")
 	}
-	_, _ = service.dependencies.Store.Queries().
-		ReleaseStorageDailySettlement(
-			ctx, dbgen.ReleaseStorageDailySettlementParams{
-				AuthorizationID: binding.AuthorizationID,
-				PeriodStart:     settlement.PeriodStart,
-				ReservationID:   toPGUUID(reserved.ID),
-			})
+	_, err = persistReleasedStorageSettlement(
+		ctx, service.dependencies.Store.Queries(),
+		dbgen.ReleaseStorageDailySettlementParams{
+			AuthorizationID: binding.AuthorizationID,
+			PeriodStart:     settlement.PeriodStart,
+			ReservationID:   toPGUUID(reserved.ID),
+		})
+	if err != nil {
+		return err
+	}
 	audit(ctx, service.dependencies, caller{}, "storage_daily_released",
 		owner{kind: binding.OwnerKind, id: uuid.UUID(binding.OwnerID.Bytes)},
 		authorizationID, "allow", "success")
 	return nil
+}
+
+func persistReleasedStorageSettlement(
+	ctx context.Context,
+	queries dbgen.Querier,
+	params dbgen.ReleaseStorageDailySettlementParams,
+) (bool, error) {
+	_, err := queries.ReleaseStorageDailySettlement(ctx, params)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func validateAuthorizedStorageReservation(
@@ -924,6 +939,11 @@ func (service *Submission) blockDisconnectedGitHubStorage(
 		if err = service.startStorageGrace(
 			ctx, binding, cutoff, StorageBillingFailureGitHub, false,
 		); err != nil {
+			return err
+		}
+		binding, cutoff, err = service.persistedStorageAccrualCutoff(
+			ctx, binding.AuthorizationID)
+		if err != nil {
 			return err
 		}
 		if err = service.settleStorageCutoff(

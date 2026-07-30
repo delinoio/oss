@@ -162,6 +162,34 @@ func TestStorageSettlementIdentityBindsAuthorizationDayAndDigest(t *testing.T) {
 	}
 }
 
+func TestStorageAuthorizationAttemptDigestSurvivesPriceRotation(
+	t *testing.T,
+) {
+	t.Parallel()
+	scope := owner{kind: "organization", id: uuidv7.MustNew()}
+	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
+	meter := BillingMeter{
+		ID:                uuidv7.MustNew(),
+		PriceVersionID:    uuidv7.MustNew(),
+		ServiceIdentityID: uuidv7.MustNew(),
+	}
+	digest := storageAuthorizationAttemptDigest(
+		scope, organizationID, teamID, meter, 3)
+	meter.PriceVersionID = uuidv7.MustNew()
+	rotated := storageAuthorizationAttemptDigest(
+		scope, organizationID, teamID, meter, 3)
+	if digest != rotated {
+		t.Fatal("compatible catalog price rotation changed create request digest")
+	}
+	meter.ID = uuidv7.MustNew()
+	substituted := storageAuthorizationAttemptDigest(
+		scope, organizationID, teamID, meter, 3)
+	if digest == substituted {
+		t.Fatal("storage meter substitution preserved create request digest")
+	}
+}
+
 func TestValidateAuthorizedStorageReservationRejectsDigestSubstitution(
 	t *testing.T,
 ) {
@@ -340,6 +368,42 @@ func TestStorageRecoverySupersessionPreservesTerminalLoss(t *testing.T) {
 				fixture.current, fixture.next, got, fixture.want)
 		}
 	}
+}
+
+func TestPersistReleasedStorageSettlementPreservesDatabaseErrors(
+	t *testing.T,
+) {
+	t.Parallel()
+	databaseErr := errors.New("fixture database unavailable")
+	queries := &storageReleaseQuerier{err: databaseErr}
+	params := dbgen.ReleaseStorageDailySettlementParams{
+		AuthorizationID: toPGUUID(uuidv7.MustNew()),
+		PeriodStart:     pgTimestamp(time.Now().UTC()),
+		ReservationID:   toPGUUID(uuidv7.MustNew()),
+	}
+	if _, err := persistReleasedStorageSettlement(
+		context.Background(), queries, params,
+	); !errors.Is(err, databaseErr) {
+		t.Fatalf("release persistence error = %v, want %v", err, databaseErr)
+	}
+	queries.err = pgx.ErrNoRows
+	if persisted, err := persistReleasedStorageSettlement(
+		context.Background(), queries, params,
+	); err != nil || persisted {
+		t.Fatalf("release persistence race = %v, %v", persisted, err)
+	}
+}
+
+type storageReleaseQuerier struct {
+	dbgen.Querier
+	err error
+}
+
+func (queries *storageReleaseQuerier) ReleaseStorageDailySettlement(
+	context.Context,
+	dbgen.ReleaseStorageDailySettlementParams,
+) (dbgen.RealqaStorageDailySettlement, error) {
+	return dbgen.RealqaStorageDailySettlement{}, queries.err
 }
 
 func TestStorageRebindSourceLookupKeepsOutagesRetryable(t *testing.T) {
