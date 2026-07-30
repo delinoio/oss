@@ -57,6 +57,16 @@ func (q *Queries) DeleteAllViewSnapshots(ctx context.Context, viewID pgtype.UUID
 	return err
 }
 
+const deleteNotificationEventsByViewer = `-- name: DeleteNotificationEventsByViewer :exec
+DELETE FROM deck_notification_events
+WHERE viewer_hash = $1
+`
+
+func (q *Queries) DeleteNotificationEventsByViewer(ctx context.Context, viewerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteNotificationEventsByViewer, viewerHash)
+	return err
+}
+
 const deleteView = `-- name: DeleteView :one
 DELETE FROM deck_views
 WHERE view_id = $1

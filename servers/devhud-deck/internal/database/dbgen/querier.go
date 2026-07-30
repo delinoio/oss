@@ -36,6 +36,7 @@ type Querier interface {
 	DeleteGitHubRemovedRepositoriesByConnection(ctx context.Context, connectionID pgtype.UUID) error
 	DeleteGitHubRemovedRepository(ctx context.Context, arg DeleteGitHubRemovedRepositoryParams) error
 	DeleteGitHubUserCredentialsByGitHubUser(ctx context.Context, githubUserID int64) error
+	DeleteNotificationEventsByViewer(ctx context.Context, viewerHash []byte) error
 	DeleteOrganizationConnection(ctx context.Context, organizationID pgtype.UUID) error
 	DeleteOrganizationFeatureData(ctx context.Context, organizationID pgtype.UUID) error
 	DeleteOrganizationMemberships(ctx context.Context, organizationID pgtype.UUID) error

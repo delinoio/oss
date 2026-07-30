@@ -1500,6 +1500,20 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		now.Add(12*time.Minute)); err != nil {
 		t.Fatalf("create retained viewer snapshot: %v", err)
 	}
+	notification := []NotificationEventWrite{{
+		Transition: deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
+		Snapshot:   snapshots[0],
+	}}
+	if err := store.CreateNotificationEvents(
+		ctx, retainedViewID, viewerHash, notification,
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create deleted viewer notification: %v", err)
+	}
+	if err := store.CreateNotificationEvents(
+		ctx, retainedViewID, secondViewerHash, notification,
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create retained viewer notification: %v", err)
+	}
 	memberPending := callback
 	memberPending.Owner = deckgithub.OwnerBinding{
 		Scope: 2, ID: mustV7(t).String(),
@@ -1561,31 +1575,43 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("account deletion retained %d callbacks", accountCallbackCount)
 	}
 	var deletedViewerSnapshotCount, deletedViewerStateCount int
+	var deletedViewerNotificationCount int
 	var retainedViewerSnapshotCount, retainedViewerStateCount int
+	var retainedViewerNotificationCount int
 	if err := store.pool.QueryRow(ctx, `
 		SELECT
 			(SELECT count(*) FROM deck_pull_request_snapshots
 			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
 			(SELECT count(*) FROM deck_pull_request_snapshot_states
 			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
+			(SELECT count(*) FROM deck_notification_events
+			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
 			(SELECT count(*) FROM deck_pull_request_snapshots
 			 WHERE view_id = $1 AND viewer_hash = $3)::integer,
 			(SELECT count(*) FROM deck_pull_request_snapshot_states
+			 WHERE view_id = $1 AND viewer_hash = $3)::integer,
+			(SELECT count(*) FROM deck_notification_events
 			 WHERE view_id = $1 AND viewer_hash = $3)::integer`,
 		pgUUID(retainedViewID), viewerHash[:], secondViewerHash[:],
 	).Scan(
 		&deletedViewerSnapshotCount, &deletedViewerStateCount,
+		&deletedViewerNotificationCount,
 		&retainedViewerSnapshotCount, &retainedViewerStateCount,
+		&retainedViewerNotificationCount,
 	); err != nil {
 		t.Fatal(err)
 	}
-	if deletedViewerSnapshotCount != 0 || deletedViewerStateCount != 0 {
-		t.Fatalf("account deletion retained viewer cache: snapshots=%d state=%d",
-			deletedViewerSnapshotCount, deletedViewerStateCount)
+	if deletedViewerSnapshotCount != 0 || deletedViewerStateCount != 0 ||
+		deletedViewerNotificationCount != 0 {
+		t.Fatalf("account deletion retained viewer data: snapshots=%d state=%d "+
+			"notifications=%d", deletedViewerSnapshotCount,
+			deletedViewerStateCount, deletedViewerNotificationCount)
 	}
-	if retainedViewerSnapshotCount != 1 || retainedViewerStateCount != 1 {
-		t.Fatalf("account deletion removed another viewer cache: snapshots=%d state=%d",
-			retainedViewerSnapshotCount, retainedViewerStateCount)
+	if retainedViewerSnapshotCount != 1 || retainedViewerStateCount != 1 ||
+		retainedViewerNotificationCount != 1 {
+		t.Fatalf("account deletion removed another viewer data: snapshots=%d "+
+			"state=%d notifications=%d", retainedViewerSnapshotCount,
+			retainedViewerStateCount, retainedViewerNotificationCount)
 	}
 	if _, err := store.GetView(ctx, retainedViewID); err != nil {
 		t.Fatalf("account deletion removed organization view: %v", err)

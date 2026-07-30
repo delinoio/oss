@@ -118,6 +118,10 @@ func (store *Store) DeleteFeatureData(
 				ctx, viewerHash[:]); err != nil {
 				return err
 			}
+			if err := queries.DeleteNotificationEventsByViewer(
+				ctx, viewerHash[:]); err != nil {
+				return err
+			}
 		}
 		switch params.Trigger {
 		case DeletionTriggerOwner:

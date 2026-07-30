@@ -648,7 +648,13 @@ func (service *View) performGitHubRefresh(
 					Number: snapshot.GetNumber(),
 				})
 		if metadataErr != nil {
-			return nil, nil, false, metadataErr
+			service.dependencies.Logger.Warn(
+				"Deck refresh skipped optional historical notification probe",
+				"event", "deck_refresh_notification_probe_skipped",
+				"provider_outcome",
+				int32(refreshOutcomeForProviderError(metadataErr)),
+			)
+			continue
 		}
 		transitioned := service.pullRequestDetail(
 			refreshViewID(view),

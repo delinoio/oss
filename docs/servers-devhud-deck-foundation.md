@@ -64,7 +64,7 @@
   repository qualifier is reauthorized before persistence. Members may use
   views only when DeliDev membership and that member's own GitHub authorization
   both permit every underlying repository.
-- Personal resources may select an accessible organization/team for billing. Organization resources bill their owning organization/team.
+- Every view selects an explicit accessible organization and team for billing. Personal resources may select an accessible organization/team; organization resources bill their owning organization/team. Missing or partial billing selections are rejected before persistence because refresh accounting cannot infer a default payer.
 - Every synchronized mutation uses a revision/ETag. Stale writes fail with a typed conflict suitable for reload, compare, and reapply.
 
 ## GitHub.com Provider Boundary
@@ -155,7 +155,7 @@
   refresh outcome, billing disposition, notification transition, and
   freshness state are closed enums.
 - The closed v1 view registry contains only `GITHUB_PULL_REQUESTS`. It is internal and source-controlled, not a public plugin SDK or remote-UI registry.
-- A view contains owner scope and optional organization ID, billing organization/team, name, canonical raw GitHub search query, typed visual-builder representation, sort/grouping, notification preference, revision, and timestamps. `UpdateView` may change the notification preference but never owner or kind.
+- A view contains owner scope and optional organization ID, required billing organization/team, name, canonical raw GitHub search query, typed visual-builder representation, sort/grouping, notification preference, revision, and timestamps. `UpdateView` may change the notification preference but never owner or kind.
 - `CreateView` requires a stable client-generated UUID v7 idempotency key scoped to the authenticated subject and operation. An exact replay returns the original view and revision without consuming another view-limit slot; reuse with changed creation input fails with the typed idempotency-conflict reason.
 - The raw query is authoritative. The builder supports owner/repository, author, assignee, individual/team reviewer, label, open/closed/draft, base/head, review decision, checks, and updated range. Editing recognized fields rewrites their clauses while preserving unknown raw clauses. Relative clauses such as `@me` are evaluated for the current viewer, including organization views.
 - Limits are 50 personal views, 250 views per organization, and 500 PR results per view with cursor pagination and an explicit truncated state. Copying or moving views between personal and organization scopes is excluded in v1.
