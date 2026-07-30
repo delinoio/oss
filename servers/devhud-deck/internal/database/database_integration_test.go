@@ -1461,8 +1461,26 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ctx, memberPendingHash, memberPending, now.Add(13*time.Minute)); err != nil {
 		t.Fatalf("account deletion member callback: %v", err)
 	}
+	if err := store.SyncMemberships(ctx, accountID, []contracts.Membership{{
+		OrganizationID: retainedOrganizationID,
+		Role:           contracts.OrganizationRoleOwner,
+	}}, nil); err != nil {
+		t.Fatalf("owner deletion retained organization membership: %v", err)
+	}
+	retainedOrganizationCallback := callback
+	retainedOrganizationCallback.Owner = deckgithub.OwnerBinding{
+		Scope: 2, ID: retainedOrganizationID.String(),
+	}
+	retainedOrganizationInstallation := installation
+	retainedOrganizationInstallation.ID = 100
+	retainedOrganizationInstallation.AccountID = 1_000
+	retainedOrganizationInstallation.AccountLogin = "retained"
+	retainedOrganizationInstallation.AccountKind =
+		deckgithub.AccountKindOrganization
+	retainedOrganizationCallback.InstallationID =
+		retainedOrganizationInstallation.ID
 	if err := connectGitHub(
-		replacementCallback, otherInstallation, organizationCredential,
+		retainedOrganizationCallback, retainedOrganizationInstallation, credential,
 		now.Add(13*time.Minute)); err != nil {
 		t.Fatalf("owner deletion organization credential fixture: %v", err)
 	}
@@ -1524,8 +1542,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("account deletion removed organization view: %v", err)
 	}
 	if organizationConnection, err := store.GetGitHubConnection(
-		ctx, 2, organizationID, accountID, true); err != nil ||
-		organizationConnection.Credential.UserID != organizationCredential.UserID {
+		ctx, 2, retainedOrganizationID, accountID, true); err != nil ||
+		organizationConnection.Credential.UserID != credential.UserID {
 		t.Fatalf("owner deletion removed organization credential: %#v %v",
 			organizationConnection, err)
 	}
