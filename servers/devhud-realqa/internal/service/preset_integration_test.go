@@ -634,7 +634,11 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	_, err = unavailableTracker.GetRepositoryIssueSchema(
 		authCtx, connect.NewRequest(&realqav1.GetRepositoryIssueSchemaRequest{
 			InstallationId: &realqav1.UuidV7{Value: installationID.String()},
-			Repository:     schemaResponse.Msg.Schema.Repository,
+			Repository: &realqav1.GitHubRepositoryRef{
+				RepositoryId: "101",
+				Owner:        "delinoio",
+				Name:         "oss",
+			},
 		}))
 	assertCallerReauthenticationRequired(t, err)
 	refreshedSchema := &realqav1.RepositoryIssueSchema{
