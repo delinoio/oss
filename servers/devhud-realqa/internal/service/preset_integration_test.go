@@ -3707,6 +3707,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{
 		M2M: &auth.M2MClaims{},
 	})
+	lifecycleBilling := *disconnectBilling
+	// Exercise the fail-closed settlement path with a valid catalog mismatch.
+	lifecycleBilling.meters.Storage.ID = uuidv7.MustNew()
+	service.dependencies.Billing = &lifecycleBilling
 	closureOwnerID := uuidv7.MustNew()
 	closureTeamID := uuidv7.MustNew()
 	closureSubmissionID := uuidv7.MustNew()
