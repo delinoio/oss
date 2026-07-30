@@ -2606,6 +2606,23 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnectSettlement.State)
 	}
 	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_storage_authorization_bindings
+		SET accrual_cutoff_at = $2
+		WHERE authorization_id = $1;
+		UPDATE realqa_storage_daily_settlements
+		SET state = 'pending'
+		WHERE authorization_id = $1
+		  AND period_start = $3
+	`, disconnectAuthorizationID, disconnectCutoff,
+		disconnectPeriodStart); err != nil {
+		t.Fatal(err)
+	}
+	disconnectBinding, err = store.Queries().GetStorageAuthorizationBinding(
+		ctx, toPGUUID(disconnectAuthorizationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_github_connections
 		SET state = 'connected',
 		    credential_ciphertext = decode('03', 'hex'),
@@ -2894,9 +2911,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		ctx, disconnectBinding, disconnectRecovery); err != nil {
 		t.Fatalf("stale rebind cutoff preflight failed: %v", err)
 	}
-	if disconnectBilling.reserveAuthorizedCalls != 4 {
-		t.Fatalf("stale rebind cutoff reserve calls = %d, want 4",
-			disconnectBilling.reserveAuthorizedCalls)
+	if disconnectBilling.reserveAuthorizedCalls != reserveCallsBeforeAgedRetry {
+		t.Fatalf("stale rebind cutoff reserve calls = %d, want %d",
+			disconnectBilling.reserveAuthorizedCalls,
+			reserveCallsBeforeAgedRetry)
 	}
 	disconnectSettlement, err = store.Queries().GetStorageDailySettlement(
 		ctx, dbgen.GetStorageDailySettlementParams{
