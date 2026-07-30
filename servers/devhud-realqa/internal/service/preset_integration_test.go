@@ -2784,6 +2784,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			billingState, billingRetainedBytes, billingRevisionAfter,
 			billingRevisionBefore+1)
 	}
+	if _, err = submissionService.DrainObjectDeletions(ctx, 100); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := objects.objects[billingPublicKey]; ok {
 		t.Fatal("billing-expired public object was retained")
 	}
