@@ -301,8 +301,10 @@ func (service *Submission) reserveAndCommitStorage(
 				ReservationID:        toPGUUID(reserved.ID),
 				ReservationCreatedAt: pgTimestamp(reserved.CreatedAt),
 				ReservationExpiresAt: pgTimestamp(reserved.ExpiresAt),
-				AuthorizationID:      binding.AuthorizationID,
-				PeriodStart:          settlement.PeriodStart,
+				ReservationPriceVersionID: toPGUUID(
+					reserved.PriceVersionID),
+				AuthorizationID: binding.AuthorizationID,
+				PeriodStart:     settlement.PeriodStart,
 			})
 	reservationStored := err == nil
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -369,18 +371,8 @@ func (service *Submission) commitReservedStorage(
 	if err != nil {
 		return err
 	}
-	meters, err := service.dependencies.Billing.Meters(ctx)
+	meter, err := persistedStorageReservationMeter(binding, settlement)
 	if err != nil {
-		if graceErr := service.startStorageGrace(
-			ctx, binding, periodEnd,
-			StorageBillingFailureUnavailable, false,
-		); graceErr != nil {
-			return graceErr
-		}
-		return errors.New(
-			"realqa storage billing: meter lookup unavailable")
-	}
-	if validateBillingMeters(meters) != nil {
 		if graceErr := service.startStorageGrace(
 			ctx, binding, periodEnd,
 			StorageBillingFailureSecurity, false,
@@ -388,7 +380,7 @@ func (service *Submission) commitReservedStorage(
 			return graceErr
 		}
 		return errors.New(
-			"realqa storage billing: meter mapping changed")
+			"realqa storage billing: invalid persisted reservation meter")
 	}
 	committed, err := service.dependencies.Billing.CommitAuthorizedStorage(
 		ctx, AuthorizedStorageFinalizationRequest{
@@ -417,7 +409,7 @@ func (service *Submission) commitReservedStorage(
 		return err
 	}
 	if err = validateAuthorizedStorageReservation(
-		committed, binding, meters.Storage, settlement,
+		committed, binding, meter, settlement,
 		periodStart, "committed", settlement.Units); err != nil {
 		if graceErr := service.startStorageGrace(
 			ctx, binding, periodEnd,
@@ -495,7 +487,7 @@ func (service *Submission) persistCommittedStorage(
 			}
 			if err != nil || recovery.AuthorizationID !=
 				binding.AuthorizationID ||
-				recovery.Reason != "billing_unavailable" {
+				!storageCommitResolvesRecovery(recovery.Reason) {
 				return err
 			}
 			if _, err = queries.ResolveStorageRecovery(
@@ -513,6 +505,34 @@ func (service *Submission) persistCommittedStorage(
 			return err
 		})
 	return committed, err
+}
+
+func persistedStorageReservationMeter(
+	binding dbgen.RealqaStorageAuthorizationBinding,
+	settlement dbgen.RealqaStorageDailySettlement,
+) (BillingMeter, error) {
+	meterID, meterErr := fromPGUUID(binding.MeterID)
+	priceVersionID, priceErr := fromPGUUID(
+		settlement.ReservationPriceVersionID)
+	serviceIdentityID, serviceErr := fromPGUUID(binding.ServiceIdentityID)
+	if meterErr != nil || priceErr != nil || serviceErr != nil {
+		return BillingMeter{}, errors.New(
+			"realqa storage billing: invalid persisted reservation meter")
+	}
+	return BillingMeter{
+		ID:                meterID,
+		PriceVersionID:    priceVersionID,
+		ServiceIdentityID: serviceIdentityID,
+	}, nil
+}
+
+func storageCommitResolvesRecovery(reason string) bool {
+	switch reason {
+	case "billing_unavailable", "payment_required", "overage_required":
+		return true
+	default:
+		return false
+	}
 }
 
 func (service *Submission) releaseReservedStorage(

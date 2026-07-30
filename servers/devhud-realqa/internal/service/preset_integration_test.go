@@ -2439,10 +2439,19 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			ReservationCreatedAt: pgTimestamp(disconnectCutoff),
 			ReservationExpiresAt: pgTimestamp(
 				disconnectCutoff.Add(24 * time.Hour)),
+			ReservationPriceVersionID: toPGUUID(
+				disconnectBilling.meters.Storage.PriceVersionID),
 			AuthorizationID: toPGUUID(disconnectAuthorizationID),
 			PeriodStart:     pgTimestamp(commitPeriodStart),
 		})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Queries().ResolveStorageRecovery(
+		ctx, dbgen.ResolveStorageRecoveryParams{
+			RecoveredAt:        pgTimestamp(disconnectCutoff),
+			TargetSubmissionID: toPGUUID(disconnectSubmissionID),
+		}); err != nil {
 		t.Fatal(err)
 	}
 	disconnectBilling.commitErr = &StorageBillingFailure{
@@ -2469,11 +2478,127 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("accepted reservation state = %q, %v, want reserved",
 			commitSettlement.State, err)
 	}
-	disconnectBilling.commitErr = nil
 	disconnectRecovery, err := store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID))
+	if err != nil || disconnectRecovery.Reason != "payment_required" {
+		t.Fatalf("payment recovery before retry = %q, %v",
+			disconnectRecovery.Reason, err)
+	}
+	disconnectBilling.commitErr = nil
+	disconnectBilling.commitResult = AuthorizedStorageReservation{
+		TransferReservation: TransferReservation{
+			ID:                disconnectReservationID,
+			OrganizationID:    organizationID,
+			TeamID:            teamID,
+			MeterID:           disconnectStorageMeterID,
+			PriceVersionID:    disconnectBilling.meters.Storage.PriceVersionID,
+			UserAccountID:     accountID,
+			ServiceIdentityID: disconnectServiceIdentityID,
+			MaximumUnits:      commitSettlement.Units,
+			CommittedUnits:    commitSettlement.Units,
+			USDMicrosPerUnit:  storagePriceUSDMicros,
+			ClientReference: storageClientReference(
+				disconnectAuthorizationID, commitPeriodStart),
+			Status:    "committed",
+			CreatedAt: commitSettlement.ReservationCreatedAt.Time,
+			ExpiresAt: commitSettlement.ReservationExpiresAt.Time,
+		},
+		AuthorizationID:   disconnectAuthorizationID,
+		FeatureResourceID: disconnectSubmissionID,
+		PeriodStart:       commitPeriodStart,
+	}
+	disconnectBilling.metersErr = errors.New("fixture catalog unavailable")
+	meterCallsBeforeCommitRetry := disconnectBilling.meterCalls
+	if err = disconnectService.commitReservedStorage(
+		ctx, disconnectBinding, commitSettlement,
+		commitPeriodStart, commitPeriodStart.Add(24*time.Hour),
+	); err != nil {
+		t.Fatalf("stored reservation commit retry: %v", err)
+	}
+	if disconnectBilling.meterCalls != meterCallsBeforeCommitRetry {
+		t.Fatal("stored reservation commit retried the catalog lookup")
+	}
+	if _, err = store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("paid storage recovery remained active: %v", err)
+	}
+	var paidSubmissionState, paidSettlementState string
+	var paidRetentionRestarted bool
+	if err = connection.QueryRow(ctx, `
+		SELECT submission.state, settlement.state,
+		       EXISTS (
+		           SELECT 1
+		           FROM realqa_storage_retention_intervals AS retained
+		           WHERE retained.authorization_id = $2
+		             AND retained.starts_at = $3
+		             AND retained.ends_at IS NULL
+		       )
+		FROM realqa_submissions AS submission
+		JOIN realqa_storage_daily_settlements AS settlement
+		  ON settlement.authorization_id = $2
+		 AND settlement.period_start = $4
+		WHERE submission.id = $1
+	`, disconnectSubmissionID, disconnectAuthorizationID, disconnectCutoff,
+		commitPeriodStart).Scan(
+		&paidSubmissionState, &paidSettlementState,
+		&paidRetentionRestarted); err != nil {
+		t.Fatal(err)
+	}
+	if paidSubmissionState != "submitted" ||
+		paidSettlementState != "committed" || !paidRetentionRestarted {
+		t.Fatalf("paid commit recovery = %q / %q / %v",
+			paidSubmissionState, paidSettlementState, paidRetentionRestarted)
+	}
+	disconnectBilling.metersErr = nil
+	if err = disconnectService.startStorageGrace(
+		ctx, disconnectBinding, disconnectCutoff,
+		StorageBillingFailurePayment, false); err != nil {
+		t.Fatal(err)
+	}
+	disconnectRecovery, err = store.Queries().GetActiveStorageRecovery(
 		ctx, toPGUUID(disconnectSubmissionID))
 	if err != nil {
 		t.Fatal(err)
+	}
+	inflightAssetID := uuidv7.MustNew()
+	inflightPublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_submissions
+		SET state = 'reconciling'
+		WHERE id = $1;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $2, $1, $3, 'public_retained', encoded_bytes, $4,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified', $5
+		FROM realqa_assets
+		WHERE id = $6
+	`, disconnectSubmissionID, inflightAssetID, inflightPublicID,
+		uuidv7.MustNew(), disconnectCutoff, disconnectAssetID); err != nil {
+		t.Fatal(err)
+	}
+	inflightSubmission, err := store.Queries().MarkSubmissionSubmitted(
+		ctx, toPGUUID(disconnectSubmissionID))
+	if err != nil || inflightSubmission.State != "storage_billing_grace" {
+		t.Fatalf("in-flight recovery promotion state = %q, %v",
+			inflightSubmission.State, err)
+	}
+	startedRows, err := store.Queries().BeginStorageRetention(
+		ctx, dbgen.BeginStorageRetentionParams{
+			StartsAt:     pgTimestamp(disconnectCutoff.Add(time.Minute)),
+			AssetID:      toPGUUID(inflightAssetID),
+			SubmissionID: toPGUUID(disconnectSubmissionID),
+		})
+	if err != nil || startedRows != 0 {
+		t.Fatalf("in-flight recovery started retention = %d, %v",
+			startedRows, err)
 	}
 	staleCutoffService := NewSubmission(Dependencies{
 		Store: store, Billing: disconnectBilling,
@@ -3807,8 +3932,11 @@ func (clock fixedSubmissionClock) Now() time.Time {
 type failingAuthorizedStorageBilling struct {
 	SubmissionBilling
 	meters                   BillingMeters
+	metersErr                error
 	reserveErr               error
 	commitErr                error
+	commitResult             AuthorizedStorageReservation
+	meterCalls               int
 	reserveAuthorizedCalls   int
 	commitAuthorizedCalls    int
 	releaseAuthorizedCalls   int
@@ -3819,7 +3947,8 @@ type failingAuthorizedStorageBilling struct {
 func (billing *failingAuthorizedStorageBilling) Meters(
 	context.Context,
 ) (BillingMeters, error) {
-	return billing.meters, nil
+	billing.meterCalls++
+	return billing.meters, billing.metersErr
 }
 
 func (billing *failingAuthorizedStorageBilling) ReserveAuthorizedStorage(
@@ -3835,7 +3964,7 @@ func (billing *failingAuthorizedStorageBilling) CommitAuthorizedStorage(
 	AuthorizedStorageFinalizationRequest,
 ) (AuthorizedStorageReservation, error) {
 	billing.commitAuthorizedCalls++
-	return AuthorizedStorageReservation{}, billing.commitErr
+	return billing.commitResult, billing.commitErr
 }
 
 func (billing *failingAuthorizedStorageBilling) ReleaseAuthorizedStorage(

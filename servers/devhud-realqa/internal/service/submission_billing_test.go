@@ -272,6 +272,51 @@ func TestDerivedDownstreamKeysRemainStableDistinctUUIDv7(t *testing.T) {
 	}
 }
 
+func TestPersistedStorageReservationMeterAndRecoveryReasons(t *testing.T) {
+	t.Parallel()
+	meterID := uuidv7.MustNew()
+	priceVersionID := uuidv7.MustNew()
+	serviceIdentityID := uuidv7.MustNew()
+	meter, err := persistedStorageReservationMeter(
+		dbgen.RealqaStorageAuthorizationBinding{
+			MeterID:           toPGUUID(meterID),
+			ServiceIdentityID: toPGUUID(serviceIdentityID),
+		},
+		dbgen.RealqaStorageDailySettlement{
+			ReservationPriceVersionID: toPGUUID(priceVersionID),
+		},
+	)
+	if err != nil || meter.ID != meterID ||
+		meter.PriceVersionID != priceVersionID ||
+		meter.ServiceIdentityID != serviceIdentityID {
+		t.Fatalf("persisted reservation meter = %#v, %v", meter, err)
+	}
+	if _, err = persistedStorageReservationMeter(
+		dbgen.RealqaStorageAuthorizationBinding{
+			MeterID:           toPGUUID(meterID),
+			ServiceIdentityID: toPGUUID(serviceIdentityID),
+		},
+		dbgen.RealqaStorageDailySettlement{},
+	); err == nil {
+		t.Fatal("missing persisted reservation price version was accepted")
+	}
+	for _, reason := range []string{
+		"billing_unavailable", "payment_required", "overage_required",
+	} {
+		if !storageCommitResolvesRecovery(reason) {
+			t.Fatalf("successful commit did not resolve %q", reason)
+		}
+	}
+	for _, reason := range []string{
+		"authorization_revoked", "authorization_access_lost",
+		"github_disconnected", "security_conflict",
+	} {
+		if storageCommitResolvesRecovery(reason) {
+			t.Fatalf("successful commit incorrectly resolved %q", reason)
+		}
+	}
+}
+
 func TestStorageRebindSourceLookupKeepsOutagesRetryable(t *testing.T) {
 	t.Parallel()
 	authorization := StorageAuthorization{

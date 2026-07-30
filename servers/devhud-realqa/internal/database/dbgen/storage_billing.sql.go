@@ -31,6 +31,13 @@ WHERE asset.submission_id = $2
   AND asset.encoded_bytes > 0
   AND binding.status = 'active'
   AND binding.closure_state = 'open'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_recoveries AS recovery
+      WHERE recovery.submission_id = asset.submission_id
+        AND recovery.recovered_at IS NULL
+        AND recovery.expired_at IS NULL
+  )
 ON CONFLICT DO NOTHING
 `
 
@@ -68,6 +75,13 @@ WHERE asset.id = $2
   AND asset.encoded_bytes > 0
   AND binding.status = 'active'
   AND binding.closure_state = 'open'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_recoveries AS recovery
+      WHERE recovery.submission_id = asset.submission_id
+        AND recovery.recovered_at IS NULL
+        AND recovery.expired_at IS NULL
+  )
 ON CONFLICT DO NOTHING
 `
 
@@ -260,7 +274,7 @@ WHERE authorization_id = $1
   AND period_start = $2
   AND reservation_id = $3
   AND state = 'reserved'
-RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
 `
 
 type CommitStorageDailySettlementParams struct {
@@ -285,6 +299,7 @@ func (q *Queries) CommitStorageDailySettlement(ctx context.Context, arg CommitSt
 		&i.ReservationID,
 		&i.ReservationCreatedAt,
 		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
 		&i.AttemptCount,
 		&i.LastAttemptedAt,
 		&i.CreatedAt,
@@ -508,7 +523,7 @@ INSERT INTO realqa_storage_daily_settlements (
     END
 )
 ON CONFLICT (authorization_id, period_start) DO NOTHING
-RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
 `
 
 type CreateStorageDailySettlementParams struct {
@@ -549,6 +564,7 @@ func (q *Queries) CreateStorageDailySettlement(ctx context.Context, arg CreateSt
 		&i.ReservationID,
 		&i.ReservationCreatedAt,
 		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
 		&i.AttemptCount,
 		&i.LastAttemptedAt,
 		&i.CreatedAt,
@@ -873,7 +889,7 @@ func (q *Queries) GetStorageAuthorizationBinding(ctx context.Context, authorizat
 }
 
 const getStorageDailySettlement = `-- name: GetStorageDailySettlement :one
-SELECT authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+SELECT authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
 FROM realqa_storage_daily_settlements
 WHERE authorization_id = $1
   AND period_start = $2
@@ -900,6 +916,7 @@ func (q *Queries) GetStorageDailySettlement(ctx context.Context, arg GetStorageD
 		&i.ReservationID,
 		&i.ReservationCreatedAt,
 		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
 		&i.AttemptCount,
 		&i.LastAttemptedAt,
 		&i.CreatedAt,
@@ -1397,7 +1414,7 @@ func (q *Queries) LockCurrentStorageAuthorizationBinding(ctx context.Context, su
 }
 
 const lockStorageDailySettlement = `-- name: LockStorageDailySettlement :one
-SELECT authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+SELECT authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
 FROM realqa_storage_daily_settlements
 WHERE authorization_id = $1
   AND period_start = $2
@@ -1425,6 +1442,7 @@ func (q *Queries) LockStorageDailySettlement(ctx context.Context, arg LockStorag
 		&i.ReservationID,
 		&i.ReservationCreatedAt,
 		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
 		&i.AttemptCount,
 		&i.LastAttemptedAt,
 		&i.CreatedAt,
@@ -1657,7 +1675,7 @@ WHERE authorization_id = $1
   AND period_start = $2
   AND reservation_id = $3
   AND state = 'reserved'
-RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
 `
 
 type ReleaseStorageDailySettlementParams struct {
@@ -1682,6 +1700,7 @@ func (q *Queries) ReleaseStorageDailySettlement(ctx context.Context, arg Release
 		&i.ReservationID,
 		&i.ReservationCreatedAt,
 		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
 		&i.AttemptCount,
 		&i.LastAttemptedAt,
 		&i.CreatedAt,
@@ -1833,22 +1852,25 @@ SET state = 'reserved',
     reservation_id = $1,
     reservation_created_at = $2,
     reservation_expires_at = $3,
+    reservation_price_version_id =
+        $4,
     attempt_count = attempt_count + 1,
     last_attempted_at = transaction_timestamp(),
     updated_at = transaction_timestamp()
-WHERE authorization_id = $4
-  AND period_start = $5
+WHERE authorization_id = $5
+  AND period_start = $6
   AND state = 'pending'
   AND reservation_id IS NULL
-RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
 `
 
 type SetStorageDailyReservationParams struct {
-	ReservationID        pgtype.UUID
-	ReservationCreatedAt pgtype.Timestamptz
-	ReservationExpiresAt pgtype.Timestamptz
-	AuthorizationID      pgtype.UUID
-	PeriodStart          pgtype.Timestamptz
+	ReservationID             pgtype.UUID
+	ReservationCreatedAt      pgtype.Timestamptz
+	ReservationExpiresAt      pgtype.Timestamptz
+	ReservationPriceVersionID pgtype.UUID
+	AuthorizationID           pgtype.UUID
+	PeriodStart               pgtype.Timestamptz
 }
 
 func (q *Queries) SetStorageDailyReservation(ctx context.Context, arg SetStorageDailyReservationParams) (RealqaStorageDailySettlement, error) {
@@ -1856,6 +1878,7 @@ func (q *Queries) SetStorageDailyReservation(ctx context.Context, arg SetStorage
 		arg.ReservationID,
 		arg.ReservationCreatedAt,
 		arg.ReservationExpiresAt,
+		arg.ReservationPriceVersionID,
 		arg.AuthorizationID,
 		arg.PeriodStart,
 	)
@@ -1873,6 +1896,7 @@ func (q *Queries) SetStorageDailyReservation(ctx context.Context, arg SetStorage
 		&i.ReservationID,
 		&i.ReservationCreatedAt,
 		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
 		&i.AttemptCount,
 		&i.LastAttemptedAt,
 		&i.CreatedAt,
@@ -1951,7 +1975,7 @@ WHERE authorization_id = $1
   AND period_start = $2
   AND state = 'pending'
   AND reservation_id IS NULL
-RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
 `
 
 type SkipStorageDailySettlementForGraceParams struct {
@@ -1975,6 +1999,7 @@ func (q *Queries) SkipStorageDailySettlementForGrace(ctx context.Context, arg Sk
 		&i.ReservationID,
 		&i.ReservationCreatedAt,
 		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
 		&i.AttemptCount,
 		&i.LastAttemptedAt,
 		&i.CreatedAt,

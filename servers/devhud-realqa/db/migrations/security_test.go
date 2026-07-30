@@ -113,6 +113,7 @@ func TestRecurringStorageLedgerIsPseudonymizedAndRecoveryBounded(
 		"retained_bytes bigint",
 		"realqa_storage_daily_settlements",
 		"primary key (authorization_id, period_start)",
+		"reservation_price_version_id uuid",
 		"realqa_storage_recoveries",
 		"grace_expires_at = grace_started_at + interval '30 days'",
 		"realqa_storage_rebind_attempts",

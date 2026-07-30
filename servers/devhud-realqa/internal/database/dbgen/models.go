@@ -316,23 +316,24 @@ type RealqaStorageAuthorizationBinding struct {
 }
 
 type RealqaStorageDailySettlement struct {
-	AuthorizationID       pgtype.UUID
-	PeriodStart           pgtype.Timestamptz
-	ByteSeconds           int64
-	Units                 int64
-	State                 string
-	RequestDigest         []byte
-	ReserveIdempotencyKey pgtype.UUID
-	CommitIdempotencyKey  pgtype.UUID
-	ReleaseIdempotencyKey pgtype.UUID
-	ReservationID         pgtype.UUID
-	ReservationCreatedAt  pgtype.Timestamptz
-	ReservationExpiresAt  pgtype.Timestamptz
-	AttemptCount          int32
-	LastAttemptedAt       pgtype.Timestamptz
-	CreatedAt             pgtype.Timestamptz
-	UpdatedAt             pgtype.Timestamptz
-	SettledAt             pgtype.Timestamptz
+	AuthorizationID           pgtype.UUID
+	PeriodStart               pgtype.Timestamptz
+	ByteSeconds               int64
+	Units                     int64
+	State                     string
+	RequestDigest             []byte
+	ReserveIdempotencyKey     pgtype.UUID
+	CommitIdempotencyKey      pgtype.UUID
+	ReleaseIdempotencyKey     pgtype.UUID
+	ReservationID             pgtype.UUID
+	ReservationCreatedAt      pgtype.Timestamptz
+	ReservationExpiresAt      pgtype.Timestamptz
+	ReservationPriceVersionID pgtype.UUID
+	AttemptCount              int32
+	LastAttemptedAt           pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+	SettledAt                 pgtype.Timestamptz
 }
 
 type RealqaStorageRebindAttempt struct {

@@ -156,6 +156,7 @@ CREATE TABLE realqa_storage_daily_settlements (
     reservation_id uuid,
     reservation_created_at timestamptz,
     reservation_expires_at timestamptz,
+    reservation_price_version_id uuid,
     attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
     last_attempted_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
@@ -173,12 +174,17 @@ CREATE TABLE realqa_storage_daily_settlements (
     CHECK (realqa_is_uuid_v7(release_idempotency_key)),
     CHECK (reservation_id IS NULL OR realqa_is_uuid_v7(reservation_id)),
     CHECK (
+        reservation_price_version_id IS NULL
+        OR realqa_is_uuid_v7(reservation_price_version_id)
+    ),
+    CHECK (
         (
             state = 'pending'
             AND units > 0
             AND reservation_id IS NULL
             AND reservation_created_at IS NULL
             AND reservation_expires_at IS NULL
+            AND reservation_price_version_id IS NULL
             AND settled_at IS NULL
         )
         OR
@@ -188,6 +194,7 @@ CREATE TABLE realqa_storage_daily_settlements (
             AND reservation_id IS NOT NULL
             AND reservation_created_at IS NOT NULL
             AND reservation_expires_at > reservation_created_at
+            AND reservation_price_version_id IS NOT NULL
             AND settled_at IS NULL
         )
         OR
@@ -197,6 +204,7 @@ CREATE TABLE realqa_storage_daily_settlements (
             AND reservation_id IS NOT NULL
             AND reservation_created_at IS NOT NULL
             AND reservation_expires_at > reservation_created_at
+            AND reservation_price_version_id IS NOT NULL
             AND settled_at IS NOT NULL
         )
         OR
@@ -205,6 +213,7 @@ CREATE TABLE realqa_storage_daily_settlements (
             AND reservation_id IS NULL
             AND reservation_created_at IS NULL
             AND reservation_expires_at IS NULL
+            AND reservation_price_version_id IS NULL
             AND settled_at IS NOT NULL
         )
     )
@@ -394,6 +403,8 @@ BEGIN
                     OLD.reservation_created_at
                OR NEW.reservation_expires_at IS DISTINCT FROM
                     OLD.reservation_expires_at
+               OR NEW.reservation_price_version_id IS DISTINCT FROM
+                    OLD.reservation_price_version_id
            )
        )
        OR (

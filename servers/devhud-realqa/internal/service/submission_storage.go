@@ -1245,6 +1245,11 @@ func (service *Submission) PromoteSubmittedAssets(
 		)
 		err = service.dependencies.Store.WithinTransaction(
 			ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+				if _, lockErr := queries.LockCurrentStorageAuthorizationBinding(
+					ctx, toPGUUID(submissionID)); lockErr != nil &&
+					!errors.Is(lockErr, pgx.ErrNoRows) {
+					return lockErr
+				}
 				submission, lockErr := queries.LockSubmissionRecord(
 					ctx, toPGUUID(submissionID))
 				if lockErr != nil {

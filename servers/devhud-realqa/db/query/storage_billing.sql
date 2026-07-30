@@ -78,6 +78,13 @@ WHERE asset.id = sqlc.arg(asset_id)
   AND asset.encoded_bytes > 0
   AND binding.status = 'active'
   AND binding.closure_state = 'open'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_recoveries AS recovery
+      WHERE recovery.submission_id = asset.submission_id
+        AND recovery.recovered_at IS NULL
+        AND recovery.expired_at IS NULL
+  )
 ON CONFLICT DO NOTHING;
 
 -- name: BeginRetainedSubmissionStorage :execrows
@@ -100,6 +107,13 @@ WHERE asset.submission_id = sqlc.arg(submission_id)
   AND asset.encoded_bytes > 0
   AND binding.status = 'active'
   AND binding.closure_state = 'open'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_recoveries AS recovery
+      WHERE recovery.submission_id = asset.submission_id
+        AND recovery.recovered_at IS NULL
+        AND recovery.expired_at IS NULL
+  )
 ON CONFLICT DO NOTHING;
 
 -- name: CloseStorageRetentionForAsset :execrows
@@ -255,6 +269,8 @@ SET state = 'reserved',
     reservation_id = sqlc.arg(reservation_id),
     reservation_created_at = sqlc.arg(reservation_created_at),
     reservation_expires_at = sqlc.arg(reservation_expires_at),
+    reservation_price_version_id =
+        sqlc.arg(reservation_price_version_id),
     attempt_count = attempt_count + 1,
     last_attempted_at = transaction_timestamp(),
     updated_at = transaction_timestamp()
