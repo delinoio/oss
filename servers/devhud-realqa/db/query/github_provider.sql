@@ -526,6 +526,41 @@ WITH matched_submissions AS (
     FROM selected_assets AS selected
     WHERE asset.id = selected.id
     RETURNING asset.submission_id
+), closure_pending AS (
+    UPDATE realqa_storage_authorization_bindings AS binding
+    SET closure_state = 'resource_deletion_pending',
+        accrual_cutoff_at = COALESCE(
+            binding.accrual_cutoff_at, transaction_timestamp()
+        ),
+        updated_at = transaction_timestamp()
+    WHERE binding.submission_id IN (
+        SELECT DISTINCT submission_id
+        FROM removed_assets
+    )
+      AND binding.closure_state IN ('open', 'resource_deletion_pending')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM realqa_assets AS asset
+          WHERE asset.submission_id = binding.submission_id
+            AND asset.state = 'public_retained'
+            AND NOT EXISTS (
+                SELECT 1
+                FROM selected_assets AS selected
+                WHERE selected.id = asset.id
+            )
+      )
+    RETURNING binding.submission_id
+), recovered AS (
+    UPDATE realqa_storage_recoveries AS recovery
+    SET recovered_at = transaction_timestamp(),
+        updated_at = transaction_timestamp()
+    WHERE recovery.submission_id IN (
+        SELECT submission_id
+        FROM closure_pending
+    )
+      AND recovery.recovered_at IS NULL
+      AND recovery.expired_at IS NULL
+    RETURNING recovery.submission_id
 )
 UPDATE realqa_submissions AS submission
 SET verified_encoded_bytes = (
@@ -539,7 +574,22 @@ SET verified_encoded_bytes = (
               WHERE selected.id = asset.id
           )
     ),
-    revision = submission.revision + 1,
+    state = CASE
+        WHEN submission.state = 'storage_billing_grace'
+          AND submission.id IN (
+              SELECT submission_id
+              FROM recovered
+          ) THEN 'assets_deleted'
+        ELSE submission.state
+    END,
+    revision = submission.revision + 1 + CASE
+        WHEN submission.state = 'storage_billing_grace'
+          AND submission.id IN (
+              SELECT submission_id
+              FROM recovered
+          ) THEN 1
+        ELSE 0
+    END,
     updated_at = transaction_timestamp()
 WHERE submission.id IN (
     SELECT DISTINCT submission_id
