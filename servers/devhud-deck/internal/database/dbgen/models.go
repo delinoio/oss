@@ -107,6 +107,12 @@ type DeckGithubInstallationState struct {
 	DeletedAt            pgtype.Timestamptz
 }
 
+type DeckGithubRemovedRepository struct {
+	ConnectionID   pgtype.UUID
+	RepositoryHash []byte
+	RemovedAt      pgtype.Timestamptz
+}
+
 type DeckGithubUserCredential struct {
 	ConnectionID               pgtype.UUID
 	AccountID                  pgtype.UUID

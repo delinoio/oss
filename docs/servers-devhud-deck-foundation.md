@@ -52,11 +52,13 @@
 - One DeliDev account is active per OS user/device. Personal views are managed
   by their owner. Organization Owners/Admins create, edit, and delete
   organization views; those management-only update/delete paths may open a
-  retained definition after repository access is removed so a manager can
-  repair or delete it, while every updated repository qualifier is
-  reauthorized before persistence. Members may use views only when DeliDev
-  membership and that member's own GitHub authorization both permit every
-  underlying repository.
+  retained definition after repository access is removed only when every
+  inaccessible qualifier has exact keyed evidence from a signed repository
+  removal event. Repository addition or installation replacement clears that
+  evidence. This lets a manager repair or delete the view while every updated
+  repository qualifier is reauthorized before persistence. Members may use
+  views only when DeliDev membership and that member's own GitHub authorization
+  both permit every underlying repository.
 - Personal resources may select an accessible organization/team for billing. Organization resources bill their owning organization/team.
 - Every synchronized mutation uses a revision/ETag. Stale writes fail with a typed conflict suitable for reload, compare, and reapply.
 
@@ -125,9 +127,11 @@
   stored outside the encrypted query to decide current GitHub visibility
   before opening any view ciphertext. The sole exception is an authorized
   personal owner or organization Owner/Admin opening the definition through
-  `UpdateView` or `DeleteView` to repair repository-removal fallout; an update
-  still reauthorizes every repository in the resulting definition before it
-  is persisted. Exact snapshot membership reads use a keyed
+  `UpdateView` or `DeleteView` to repair repository-removal fallout when every
+  inaccessible qualifier is backed by exact keyed evidence from the signed
+  repository-removal lifecycle; addition or installation replacement clears
+  the evidence. An update still reauthorizes every repository in the resulting
+  definition before it is persisted. Exact snapshot membership reads use a keyed
   repository-and-PR index after repository authorization, so they do not scan
   or decrypt unrelated retained repository references.
 - The provider search adapter rechecks each result repository against both the

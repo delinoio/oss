@@ -33,7 +33,8 @@ type Querier interface {
 	DeleteGitHubCallbackStatesByAccount(ctx context.Context, accountHash []byte) error
 	DeleteGitHubCallbackStatesByOwner(ctx context.Context, ownerHash []byte) error
 	DeleteGitHubConnectionCredentials(ctx context.Context, connectionID pgtype.UUID) error
-	DeleteGitHubUserCredentialsByAccount(ctx context.Context, accountID pgtype.UUID) error
+	DeleteGitHubRemovedRepositoriesByConnection(ctx context.Context, connectionID pgtype.UUID) error
+	DeleteGitHubRemovedRepository(ctx context.Context, arg DeleteGitHubRemovedRepositoryParams) error
 	DeleteGitHubUserCredentialsByGitHubUser(ctx context.Context, githubUserID int64) error
 	DeleteOrganizationConnection(ctx context.Context, organizationID pgtype.UUID) error
 	DeleteOrganizationFeatureData(ctx context.Context, organizationID pgtype.UUID) error
@@ -87,6 +88,7 @@ type Querier interface {
 	InvalidateOwnerViewsForProviderRename(ctx context.Context, arg InvalidateOwnerViewsForProviderRenameParams) error
 	IsOwnerTombstoned(ctx context.Context, targetHash []byte) (bool, error)
 	ListDeviceRegistrationsForUpdate(ctx context.Context) ([]DeckDeviceRegistration, error)
+	ListGitHubRemovedRepositoryHashesByOwner(ctx context.Context, arg ListGitHubRemovedRepositoryHashesByOwnerParams) ([][]byte, error)
 	ListGitHubUserCredentialsForRewrap(ctx context.Context) ([]DeckGithubUserCredential, error)
 	ListOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) ([]ListOrganizationMembershipsForAccountRow, error)
 	ListOrganizationViewIDsForUpdate(ctx context.Context, organizationID pgtype.UUID) ([]pgtype.UUID, error)
@@ -118,6 +120,7 @@ type Querier interface {
 	UpdateViewSnapshot(ctx context.Context, arg UpdateViewSnapshotParams) (int64, error)
 	UpdateViewSnapshotState(ctx context.Context, arg UpdateViewSnapshotStateParams) error
 	UpsertDeckAccount(ctx context.Context, arg UpsertDeckAccountParams) error
+	UpsertGitHubRemovedRepository(ctx context.Context, arg UpsertGitHubRemovedRepositoryParams) error
 	UpsertGitHubUserCredential(ctx context.Context, arg UpsertGitHubUserCredentialParams) error
 	UpsertOrganizationMembership(ctx context.Context, arg UpsertOrganizationMembershipParams) error
 	UpsertTeamMembership(ctx context.Context, arg UpsertTeamMembershipParams) error

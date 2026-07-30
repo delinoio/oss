@@ -28,7 +28,7 @@ func refreshGitHubConnectionCredential(
 	if store == nil || broker == nil || accountID == uuid.Nil {
 		return database.GitHubConnectionRecord{}, deckgithub.ErrPermissionDenied
 	}
-	key := accountID.String() + ":" +
+	key := connection.ID.String() + ":" + accountID.String() + ":" +
 		strconv.FormatUint(connection.Credential.UserID, 10)
 	_, err, _ := githubCredentialRefreshes.Do(key, func() (any, error) {
 		current, err := store.GetGitHubConnection(
@@ -52,7 +52,8 @@ func refreshGitHubConnectionCredential(
 	if err != nil {
 		if errors.Is(err, deckgithub.ErrPermissionDenied) {
 			if deleteErr := store.RequireGitHubCredentialReauthentication(
-				ctx, accountID, connection.Credential.UserID, now); deleteErr != nil {
+				ctx, connection.ID, accountID,
+				connection.Credential.UserID, now); deleteErr != nil {
 				return database.GitHubConnectionRecord{}, deleteErr
 			}
 			return database.GitHubConnectionRecord{},
@@ -60,8 +61,6 @@ func refreshGitHubConnectionCredential(
 		}
 		return database.GitHubConnectionRecord{}, err
 	}
-	// Only the user credential is shared across the singleflight call.
-	// Installation and App-permission state remain scoped to this connection.
 	current, err := store.GetGitHubConnection(
 		ctx, connection.OwnerScope, connection.OwnerID, accountID, true)
 	if err != nil {

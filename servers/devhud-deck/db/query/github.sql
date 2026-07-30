@@ -183,7 +183,8 @@ SET wrapping_key_id = sqlc.arg(wrapping_key_id),
     user_access_token_expires_at = sqlc.narg(user_access_token_expires_at),
     user_refresh_token_expires_at = sqlc.narg(user_refresh_token_expires_at),
     updated_at = sqlc.arg(updated_at)
-WHERE account_id = sqlc.arg(account_id)
+WHERE connection_id = sqlc.arg(connection_id)
+  AND account_id = sqlc.arg(account_id)
   AND github_user_id = sqlc.arg(github_user_id);
 
 -- name: UpsertGitHubUserCredential :exec
@@ -233,19 +234,45 @@ WHERE connection_id = sqlc.arg(connection_id)
 DELETE FROM deck_github_user_credentials
 WHERE connection_id = sqlc.arg(connection_id);
 
--- name: DeleteGitHubUserCredentialsByAccount :exec
-DELETE FROM deck_github_user_credentials
-WHERE account_id = sqlc.arg(account_id);
-
 -- name: DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser :exec
 DELETE FROM deck_github_user_credentials
-WHERE account_id = sqlc.arg(account_id)
+WHERE connection_id = sqlc.arg(connection_id)
+  AND account_id = sqlc.arg(account_id)
   AND github_user_id = sqlc.arg(github_user_id)
   AND user_access_token_expires_at <= sqlc.arg(expired_at);
 
 -- name: DeleteGitHubUserCredentialsByGitHubUser :exec
 DELETE FROM deck_github_user_credentials
 WHERE github_user_id = sqlc.arg(github_user_id);
+
+-- name: UpsertGitHubRemovedRepository :exec
+INSERT INTO deck_github_removed_repositories (
+    connection_id, repository_hash, removed_at
+) VALUES (
+    sqlc.arg(connection_id), sqlc.arg(repository_hash), sqlc.arg(removed_at)
+)
+ON CONFLICT (connection_id, repository_hash) DO UPDATE
+SET removed_at = GREATEST(
+    deck_github_removed_repositories.removed_at,
+    EXCLUDED.removed_at
+);
+
+-- name: DeleteGitHubRemovedRepository :exec
+DELETE FROM deck_github_removed_repositories
+WHERE connection_id = sqlc.arg(connection_id)
+  AND repository_hash = sqlc.arg(repository_hash);
+
+-- name: DeleteGitHubRemovedRepositoriesByConnection :exec
+DELETE FROM deck_github_removed_repositories
+WHERE connection_id = sqlc.arg(connection_id);
+
+-- name: ListGitHubRemovedRepositoryHashesByOwner :many
+SELECT removed.repository_hash
+FROM deck_github_removed_repositories AS removed
+JOIN deck_connections AS connection
+  ON connection.connection_id = removed.connection_id
+WHERE connection.owner_scope = sqlc.arg(owner_scope)
+  AND connection.owner_id = sqlc.arg(owner_id);
 
 -- name: EnsureGitHubInstallationState :exec
 INSERT INTO deck_github_installation_states (provider_identity_hash)

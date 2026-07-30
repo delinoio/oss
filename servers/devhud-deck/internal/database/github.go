@@ -326,6 +326,10 @@ func (store *Store) ConnectGitHub(
 					ctx, existing.ConnectionID); err != nil {
 					return err
 				}
+				if err := queries.DeleteGitHubRemovedRepositoriesByConnection(
+					ctx, existing.ConnectionID); err != nil {
+					return err
+				}
 			}
 			providerChanged, err := store.githubProviderChanged(
 				existing, installation)
@@ -680,6 +684,7 @@ func (store *Store) RefreshGitHubCredential(
 		}
 		if err := queries.UpdateGitHubUserCredentials(
 			ctx, dbgen.UpdateGitHubUserCredentialsParams{
+				ConnectionID:               parameters.ConnectionID,
 				WrappingKeyID:              parameters.WrappingKeyID,
 				UserAccessTokenCiphertext:  parameters.UserAccessTokenCiphertext,
 				UserRefreshTokenCiphertext: parameters.UserRefreshTokenCiphertext,
@@ -697,18 +702,50 @@ func (store *Store) RefreshGitHubCredential(
 
 func (store *Store) RequireGitHubCredentialReauthentication(
 	ctx context.Context,
+	connectionID uuid.UUID,
 	accountID uuid.UUID,
 	githubUserID uint64,
 	now time.Time,
 ) error {
-	if accountID == uuid.Nil || githubUserID == 0 {
+	if connectionID == uuid.Nil || accountID == uuid.Nil || githubUserID == 0 {
 		return deckgithub.ErrPermissionDenied
 	}
 	return store.queries.DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser(
 		ctx, dbgen.DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUserParams{
-			AccountID: pgUUID(accountID), GithubUserID: int64(githubUserID),
-			ExpiredAt: pgTime(now),
+			ConnectionID: pgUUID(connectionID), AccountID: pgUUID(accountID),
+			GithubUserID: int64(githubUserID),
+			ExpiredAt:    pgTime(now),
 		})
+}
+
+func (store *Store) ListGitHubRemovedRepositoryHashes(
+	ctx context.Context,
+	ownerScope int16,
+	ownerID uuid.UUID,
+) (map[[32]byte]struct{}, error) {
+	if store == nil || store.queries == nil ||
+		(ownerScope != 1 && ownerScope != 2) || ownerID == uuid.Nil {
+		return nil, errors.New("deck database: invalid GitHub repository owner")
+	}
+	rows, err := store.queries.ListGitHubRemovedRepositoryHashesByOwner(
+		ctx, dbgen.ListGitHubRemovedRepositoryHashesByOwnerParams{
+			OwnerScope: ownerScope,
+			OwnerID:    pgUUID(ownerID),
+		})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[[32]byte]struct{}, len(rows))
+	for _, row := range rows {
+		if len(row) != 32 {
+			return nil, errors.New(
+				"deck database: invalid removed repository hash")
+		}
+		var hash [32]byte
+		copy(hash[:], row)
+		result[hash] = struct{}{}
+	}
+	return result, nil
 }
 
 func (store *Store) validateGitHubCredentialKeyIDs(
@@ -928,6 +965,7 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 	delivery, event, action string,
 	installationID uint64,
 	permissions deckgithub.Permissions,
+	repositories []deckgithub.Repository,
 	payloadHash [32]byte,
 	now time.Time,
 ) error {
@@ -938,6 +976,16 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 	actionType, err = actionCode(action)
 	if err != nil {
 		return err
+	}
+	repositoryHashes := make([][32]byte, 0, len(repositories))
+	for _, repository := range repositories {
+		if event != "installation_repositories" || repository.Validate() != nil {
+			return deckgithub.ErrPermissionDenied
+		}
+		repositoryHashes = append(repositoryHashes, store.hasher.Sum(
+			"view-repository",
+			strings.ToLower(repository.Owner)+"\x00"+
+				strings.ToLower(repository.Name)))
 	}
 	providerIdentityHash := store.hasher.Sum(
 		"github-webhook-installation", strconv.FormatUint(installationID, 10))
@@ -976,6 +1024,29 @@ func (store *Store) ApplyGitHubInstallationLifecycle(
 			queries.GetGitHubConnectionByInstallationForUpdate(
 				ctx, pgtype.Int8{Int64: int64(installationID), Valid: true})
 		if connectionErr == nil {
+			if event == "installation_repositories" {
+				for _, repositoryHash := range repositoryHashes {
+					switch action {
+					case "added":
+						if err := queries.DeleteGitHubRemovedRepository(
+							ctx, dbgen.DeleteGitHubRemovedRepositoryParams{
+								ConnectionID:   connection.ConnectionID,
+								RepositoryHash: repositoryHash[:],
+							}); err != nil {
+							return err
+						}
+					case "removed":
+						if err := queries.UpsertGitHubRemovedRepository(
+							ctx, dbgen.UpsertGitHubRemovedRepositoryParams{
+								ConnectionID:   connection.ConnectionID,
+								RepositoryHash: repositoryHash[:],
+								RemovedAt:      pgTime(now),
+							}); err != nil {
+							return err
+						}
+					}
+				}
+			}
 			permissionLoss := action == "new_permissions_accepted" &&
 				(permissions.Metadata < deckgithub.PermissionRead ||
 					permissions.PullRequests < deckgithub.PermissionWrite ||

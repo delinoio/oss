@@ -108,10 +108,6 @@ func (store *Store) DeleteFeatureData(
 				ctx, accountHash[:]); err != nil {
 				return err
 			}
-			if err := queries.DeleteGitHubUserCredentialsByAccount(
-				ctx, pgUUID(params.TargetID)); err != nil {
-				return err
-			}
 			viewerHash := store.hasher.Sum(
 				"snapshot-viewer", params.TargetID.String())
 			if err := queries.DeleteViewSnapshotsByViewer(

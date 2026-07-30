@@ -51,6 +51,7 @@ type LifecycleStore interface {
 		string,
 		uint64,
 		Permissions,
+		[]Repository,
 		[sha256.Size]byte,
 		time.Time,
 	) error
@@ -320,6 +321,35 @@ type installationWebhook struct {
 		ID          uint64            `json:"id"`
 		Permissions map[string]string `json:"permissions"`
 	} `json:"installation"`
+	RepositoriesAdded   []webhookRepository `json:"repositories_added"`
+	RepositoriesRemoved []webhookRepository `json:"repositories_removed"`
+}
+
+type webhookRepository struct {
+	Name  string `json:"name"`
+	Owner struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+}
+
+func (webhook installationWebhook) changedRepositories() []Repository {
+	var source []webhookRepository
+	switch webhook.Action {
+	case "added":
+		source = webhook.RepositoriesAdded
+	case "removed":
+		source = webhook.RepositoriesRemoved
+	default:
+		return nil
+	}
+	repositories := make([]Repository, 0, len(source))
+	for _, item := range source {
+		repository := Repository{Owner: item.Owner.Login, Name: item.Name}
+		if repository.Validate() == nil {
+			repositories = append(repositories, repository)
+		}
+	}
+	return repositories
 }
 
 type authorizationWebhook struct {
@@ -385,7 +415,8 @@ func (broker *Broker) webhook(
 		}
 		applyErr = broker.lifecycle.ApplyGitHubInstallationLifecycle(
 			request.Context(), delivery, event, webhook.Action,
-			webhook.Installation.ID, permissions, payloadHash, broker.now())
+			webhook.Installation.ID, permissions,
+			webhook.changedRepositories(), payloadHash, broker.now())
 	}
 	if applyErr != nil {
 		if errors.Is(applyErr, ErrPermissionDenied) {

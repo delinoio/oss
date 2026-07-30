@@ -114,6 +114,27 @@ func TestViewRepositoryPermissionFailsBeforeIdentityBearingData(t *testing.T) {
 	}
 }
 
+func TestRepositoryRepairRequiresExactRemovalEvidence(t *testing.T) {
+	t.Parallel()
+	readableHash := security.Digest([]byte("readable"))
+	removedHash := security.Digest([]byte("removed"))
+	inaccessibleHash := security.Digest([]byte("inaccessible"))
+	readable := map[[32]byte]struct{}{readableHash: {}}
+	removed := map[[32]byte]struct{}{removedHash: {}}
+	if !repositoryHashesAuthorized(
+		[][32]byte{readableHash, removedHash}, readable, removed) {
+		t.Fatal("exact removed repository evidence was rejected")
+	}
+	if repositoryHashesAuthorized(
+		[][32]byte{readableHash, inaccessibleHash}, readable, removed) {
+		t.Fatal("unproven repository removal was authorized")
+	}
+	if repositoryHashesAuthorized(
+		[][32]byte{removedHash}, readable, nil) {
+		t.Fatal("repository removal bypassed normal view reads")
+	}
+}
+
 func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 	t *testing.T,
 ) {
@@ -173,12 +194,6 @@ func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 	})
 	if !errors.Is(err, database.ErrViewNotVisible) {
 		t.Fatalf("view manager bypassed repository authorization: %v", err)
-	}
-	err = viewRepairAuthorizer(
-		contracts.Viewer{AccountID: accountID},
-	)(database.ViewAuthorization{Owner: owner})
-	if err != nil {
-		t.Fatalf("view manager could not repair inaccessible definition: %v", err)
 	}
 }
 

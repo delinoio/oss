@@ -601,6 +601,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err := store.ApplyGitHubInstallationLifecycle(
 		ctx, "installation-deleted-before-connect", "installation", "deleted",
 		deletedBeforeConnect.ID, deletedBeforeConnect.Permissions,
+		nil,
 		security.Digest([]byte("installation-deleted-before-connect")),
 		now.Add(10*time.Second)); err != nil {
 		t.Fatalf("installation tombstone: %v", err)
@@ -676,6 +677,41 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		connection.Credential.UserID != credential.UserID ||
 		connection.Installation.Permissions.Contents != deckgithub.PermissionWrite {
 		t.Fatalf("GitHub connection = %#v err=%v", connection, err)
+	}
+	removedRepository := deckgithub.Repository{
+		Owner: "secret", Name: "project",
+	}
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-repository-removed", "installation_repositories",
+		"removed", installation.ID, deckgithub.Permissions{},
+		[]deckgithub.Repository{removedRepository},
+		security.Digest([]byte("installation-repository-removed")),
+		now.Add(92*time.Second)); err != nil {
+		t.Fatalf("record removed GitHub repository: %v", err)
+	}
+	removedHashes, err := store.ListGitHubRemovedRepositoryHashes(
+		ctx, 1, accountID)
+	expectedRemovedHash := hasher.Sum(
+		"view-repository", "secret\x00project")
+	if err != nil {
+		t.Fatalf("list removed GitHub repositories: %v", err)
+	}
+	if _, found := removedHashes[expectedRemovedHash]; !found {
+		t.Fatal("removed GitHub repository evidence was not retained")
+	}
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-repository-added", "installation_repositories",
+		"added", installation.ID, deckgithub.Permissions{},
+		[]deckgithub.Repository{removedRepository},
+		security.Digest([]byte("installation-repository-added")),
+		now.Add(93*time.Second)); err != nil {
+		t.Fatalf("clear removed GitHub repository: %v", err)
+	}
+	removedHashes, err = store.ListGitHubRemovedRepositoryHashes(
+		ctx, 1, accountID)
+	if err != nil || len(removedHashes) != 0 {
+		t.Fatalf("re-added GitHub repository evidence = %#v, %v",
+			removedHashes, err)
 	}
 	if _, err := store.pool.Exec(ctx, `
 		UPDATE deck_views
@@ -878,6 +914,36 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("organization GitHub connection = %#v err=%v",
 			organizationConnection, err)
 	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_github_user_credentials
+		SET github_user_id = $1
+		WHERE connection_id = $2 AND account_id = $3`,
+		int64(credential.UserID), pgUUID(organizationConnection.ID),
+		pgUUID(accountID),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RequireGitHubCredentialReauthentication(
+		ctx, organizationConnection.ID, accountID, credential.UserID,
+		now.Add(24*time.Hour)); err != nil {
+		t.Fatalf("require scoped GitHub reauthentication: %v", err)
+	}
+	if personalConnection, err := store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true); err != nil ||
+		personalConnection.Credential.UserID != credential.UserID {
+		t.Fatalf("scoped reauthentication removed personal credential: %#v %v",
+			personalConnection, err)
+	}
+	if err := connectGitHub(
+		organizationCallback, organizationInstallation,
+		organizationCredential, now.Add(4*time.Minute+15*time.Second)); err != nil {
+		t.Fatalf("restore organization GitHub credential: %v", err)
+	}
+	organizationConnection, err = store.GetGitHubConnection(
+		ctx, 2, organizationID, accountID, true)
+	if err != nil {
+		t.Fatalf("restored organization GitHub connection: %v", err)
+	}
 	connectedViewParams := createViewParams(
 		t, hasher, accountID, mustV7(t), mustV7(t), "subject-1",
 		now.Add(4*time.Minute), 3)
@@ -982,6 +1048,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err := store.ApplyGitHubInstallationLifecycle(
 		ctx, "installation-permissions-lost", "installation",
 		"new_permissions_accepted", otherInstallation.ID, lostPermissions,
+		nil,
 		security.Digest([]byte("installation-permissions-lost")),
 		now.Add(5*time.Minute)); err != nil {
 		t.Fatalf("permission-loss lifecycle: %v", err)
@@ -1095,6 +1162,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err := store.ApplyGitHubInstallationLifecycle(
 		ctx, "installation-permissions-1", "installation",
 		"new_permissions_accepted", installation.ID, acceptedPermissions,
+		nil,
 		security.Digest([]byte("installation-permissions")),
 		now.Add(6*time.Minute)); err != nil {
 		t.Fatalf("accepted GitHub permissions: %v", err)
@@ -1335,6 +1403,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err := store.ApplyGitHubInstallationLifecycle(
 		ctx, "installation-deleted-1", "installation", "deleted",
 		webhookInstallation.ID, webhookInstallation.Permissions,
+		nil,
 		security.Digest([]byte("installation-deleted")),
 		now.Add(12*time.Minute)); err != nil {
 		t.Fatalf("webhook disconnect: %v", err)
@@ -1390,6 +1459,11 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err := store.SaveGitHubCallbackState(
 		ctx, memberPendingHash, memberPending, now.Add(13*time.Minute)); err != nil {
 		t.Fatalf("account deletion member callback: %v", err)
+	}
+	if err := connectGitHub(
+		replacementCallback, otherInstallation, organizationCredential,
+		now.Add(13*time.Minute)); err != nil {
+		t.Fatalf("owner deletion organization credential fixture: %v", err)
 	}
 	replayKey := mustV7(t)
 	jobID := mustV7(t)
@@ -1447,6 +1521,12 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	if _, err := store.GetView(ctx, retainedViewID); err != nil {
 		t.Fatalf("account deletion removed organization view: %v", err)
+	}
+	if organizationConnection, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, accountID, true); err != nil ||
+		organizationConnection.Credential.UserID != organizationCredential.UserID {
+		t.Fatalf("owner deletion removed organization credential: %#v %v",
+			organizationConnection, err)
 	}
 	if _, err := store.ResolveViewer(ctx, "subject-1"); err != nil {
 		t.Fatalf("owner replay identity was removed: %v", err)

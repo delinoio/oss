@@ -90,19 +90,26 @@ func (q *Queries) DeleteExpiredGitHubCallbackStates(ctx context.Context, expired
 
 const deleteExpiredGitHubUserCredentialsByAccountAndGitHubUser = `-- name: DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser :exec
 DELETE FROM deck_github_user_credentials
-WHERE account_id = $1
-  AND github_user_id = $2
-  AND user_access_token_expires_at <= $3
+WHERE connection_id = $1
+  AND account_id = $2
+  AND github_user_id = $3
+  AND user_access_token_expires_at <= $4
 `
 
 type DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUserParams struct {
+	ConnectionID pgtype.UUID
 	AccountID    pgtype.UUID
 	GithubUserID int64
 	ExpiredAt    pgtype.Timestamptz
 }
 
 func (q *Queries) DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUser(ctx context.Context, arg DeleteExpiredGitHubUserCredentialsByAccountAndGitHubUserParams) error {
-	_, err := q.db.Exec(ctx, deleteExpiredGitHubUserCredentialsByAccountAndGitHubUser, arg.AccountID, arg.GithubUserID, arg.ExpiredAt)
+	_, err := q.db.Exec(ctx, deleteExpiredGitHubUserCredentialsByAccountAndGitHubUser,
+		arg.ConnectionID,
+		arg.AccountID,
+		arg.GithubUserID,
+		arg.ExpiredAt,
+	)
 	return err
 }
 
@@ -146,13 +153,29 @@ func (q *Queries) DeleteGitHubConnectionCredentials(ctx context.Context, connect
 	return err
 }
 
-const deleteGitHubUserCredentialsByAccount = `-- name: DeleteGitHubUserCredentialsByAccount :exec
-DELETE FROM deck_github_user_credentials
-WHERE account_id = $1
+const deleteGitHubRemovedRepositoriesByConnection = `-- name: DeleteGitHubRemovedRepositoriesByConnection :exec
+DELETE FROM deck_github_removed_repositories
+WHERE connection_id = $1
 `
 
-func (q *Queries) DeleteGitHubUserCredentialsByAccount(ctx context.Context, accountID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteGitHubUserCredentialsByAccount, accountID)
+func (q *Queries) DeleteGitHubRemovedRepositoriesByConnection(ctx context.Context, connectionID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteGitHubRemovedRepositoriesByConnection, connectionID)
+	return err
+}
+
+const deleteGitHubRemovedRepository = `-- name: DeleteGitHubRemovedRepository :exec
+DELETE FROM deck_github_removed_repositories
+WHERE connection_id = $1
+  AND repository_hash = $2
+`
+
+type DeleteGitHubRemovedRepositoryParams struct {
+	ConnectionID   pgtype.UUID
+	RepositoryHash []byte
+}
+
+func (q *Queries) DeleteGitHubRemovedRepository(ctx context.Context, arg DeleteGitHubRemovedRepositoryParams) error {
+	_, err := q.db.Exec(ctx, deleteGitHubRemovedRepository, arg.ConnectionID, arg.RepositoryHash)
 	return err
 }
 
@@ -685,6 +708,40 @@ func (q *Queries) InvalidateOwnerViewsForProviderRename(ctx context.Context, arg
 	return err
 }
 
+const listGitHubRemovedRepositoryHashesByOwner = `-- name: ListGitHubRemovedRepositoryHashesByOwner :many
+SELECT removed.repository_hash
+FROM deck_github_removed_repositories AS removed
+JOIN deck_connections AS connection
+  ON connection.connection_id = removed.connection_id
+WHERE connection.owner_scope = $1
+  AND connection.owner_id = $2
+`
+
+type ListGitHubRemovedRepositoryHashesByOwnerParams struct {
+	OwnerScope int16
+	OwnerID    pgtype.UUID
+}
+
+func (q *Queries) ListGitHubRemovedRepositoryHashesByOwner(ctx context.Context, arg ListGitHubRemovedRepositoryHashesByOwnerParams) ([][]byte, error) {
+	rows, err := q.db.Query(ctx, listGitHubRemovedRepositoryHashesByOwner, arg.OwnerScope, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := [][]byte{}
+	for rows.Next() {
+		var repository_hash []byte
+		if err := rows.Scan(&repository_hash); err != nil {
+			return nil, err
+		}
+		items = append(items, repository_hash)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGitHubUserCredentialsForRewrap = `-- name: ListGitHubUserCredentialsForRewrap :many
 SELECT connection_id, account_id, github_user_id, wrapping_key_id, user_access_token_ciphertext, user_refresh_token_ciphertext, user_access_token_expires_at, user_refresh_token_expires_at, updated_at
 FROM deck_github_user_credentials
@@ -1132,8 +1189,9 @@ SET wrapping_key_id = $1,
     user_access_token_expires_at = $4,
     user_refresh_token_expires_at = $5,
     updated_at = $6
-WHERE account_id = $7
-  AND github_user_id = $8
+WHERE connection_id = $7
+  AND account_id = $8
+  AND github_user_id = $9
 `
 
 type UpdateGitHubUserCredentialsParams struct {
@@ -1143,6 +1201,7 @@ type UpdateGitHubUserCredentialsParams struct {
 	UserAccessTokenExpiresAt   pgtype.Timestamptz
 	UserRefreshTokenExpiresAt  pgtype.Timestamptz
 	UpdatedAt                  pgtype.Timestamptz
+	ConnectionID               pgtype.UUID
 	AccountID                  pgtype.UUID
 	GithubUserID               int64
 }
@@ -1155,9 +1214,34 @@ func (q *Queries) UpdateGitHubUserCredentials(ctx context.Context, arg UpdateGit
 		arg.UserAccessTokenExpiresAt,
 		arg.UserRefreshTokenExpiresAt,
 		arg.UpdatedAt,
+		arg.ConnectionID,
 		arg.AccountID,
 		arg.GithubUserID,
 	)
+	return err
+}
+
+const upsertGitHubRemovedRepository = `-- name: UpsertGitHubRemovedRepository :exec
+INSERT INTO deck_github_removed_repositories (
+    connection_id, repository_hash, removed_at
+) VALUES (
+    $1, $2, $3
+)
+ON CONFLICT (connection_id, repository_hash) DO UPDATE
+SET removed_at = GREATEST(
+    deck_github_removed_repositories.removed_at,
+    EXCLUDED.removed_at
+)
+`
+
+type UpsertGitHubRemovedRepositoryParams struct {
+	ConnectionID   pgtype.UUID
+	RepositoryHash []byte
+	RemovedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertGitHubRemovedRepository(ctx context.Context, arg UpsertGitHubRemovedRepositoryParams) error {
+	_, err := q.db.Exec(ctx, upsertGitHubRemovedRepository, arg.ConnectionID, arg.RepositoryHash, arg.RemovedAt)
 	return err
 }
 

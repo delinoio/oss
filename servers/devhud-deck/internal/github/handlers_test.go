@@ -77,9 +77,10 @@ func (store *callbackStoreFixture) ConnectGitHub(
 }
 
 type lifecycleFixture struct {
-	calls       []string
-	permissions []Permissions
-	revocations []uint64
+	calls        []string
+	permissions  []Permissions
+	repositories [][]Repository
+	revocations  []uint64
 }
 
 func (store *lifecycleFixture) ApplyGitHubInstallationLifecycle(
@@ -87,11 +88,13 @@ func (store *lifecycleFixture) ApplyGitHubInstallationLifecycle(
 	delivery, event, action string,
 	_ uint64,
 	permissions Permissions,
+	repositories []Repository,
 	_ [sha256.Size]byte,
 	_ time.Time,
 ) error {
 	store.calls = append(store.calls, delivery+":"+event+":"+action)
 	store.permissions = append(store.permissions, permissions)
+	store.repositories = append(store.repositories, repositories)
 	return nil
 }
 
@@ -404,5 +407,26 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 			"delivery-large:installation_repositories:removed" {
 		t.Fatalf("large lifecycle response = %d, calls %#v",
 			largeResponse.Code, lifecycle.calls)
+	}
+	removedPayload := []byte(
+		`{"action":"removed","installation":{"id":42},` +
+			`"repositories_removed":[{"name":"secret",` +
+			`"owner":{"login":"octocat"}}]}`)
+	removedRequest := httptest.NewRequest(
+		http.MethodPost, WebhookPath, bytes.NewReader(removedPayload))
+	removedRequest.Header.Set("X-Hub-Signature-256",
+		WebhookSignature(secret, removedPayload))
+	removedRequest.Header.Set(
+		"X-GitHub-Event", "installation_repositories")
+	removedRequest.Header.Set("X-GitHub-Delivery", "delivery-removed")
+	removedResponse := httptest.NewRecorder()
+	broker.Handler().ServeHTTP(removedResponse, removedRequest)
+	if removedResponse.Code != http.StatusNoContent ||
+		len(lifecycle.repositories) != 5 ||
+		!reflect.DeepEqual(lifecycle.repositories[4], []Repository{{
+			Owner: "octocat", Name: "secret",
+		}}) {
+		t.Fatalf("repository removal response = %d, repositories %#v",
+			removedResponse.Code, lifecycle.repositories)
 	}
 }

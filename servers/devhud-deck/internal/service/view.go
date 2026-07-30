@@ -715,20 +715,7 @@ func (service *View) getAuthorizedViewForMutation(
 	viewer contracts.Viewer,
 	id uuid.UUID,
 ) (*deckv1.View, error) {
-	view, err := service.dependencies.Store.GetViewAuthorized(
-		ctx, id, service.viewDefinitionAuthorizer(ctx, viewer, true))
-	if err == nil {
-		return view, nil
-	}
-	if !errors.Is(err, database.ErrViewNotVisible) {
-		return nil, mapAuthorizedViewError(err)
-	}
-	view, err = service.dependencies.Store.GetViewAuthorized(
-		ctx, id, viewRepairAuthorizer(viewer))
-	if err != nil {
-		return nil, mapAuthorizedViewError(err)
-	}
-	return view, nil
+	return service.getAuthorizedView(ctx, viewer, id, true)
 }
 
 func (service *View) viewDefinitionAuthorizer(
@@ -739,6 +726,9 @@ func (service *View) viewDefinitionAuthorizer(
 	var readable map[[32]byte]struct{}
 	var readableErr error
 	loaded := false
+	var removed map[[32]byte]struct{}
+	var removedErr error
+	removedLoaded := false
 	return func(authorization database.ViewAuthorization) error {
 		if _, err := authorizeOwner(viewer, authorization.Owner, manage); err != nil {
 			return err
@@ -780,20 +770,54 @@ func (service *View) viewDefinitionAuthorizer(
 		if readableErr != nil {
 			return readableErr
 		}
-		for _, hash := range authorization.RepositoryHashes {
-			if _, allowed := readable[hash]; !allowed {
-				return database.ErrViewNotVisible
+		if repositoryHashesAuthorized(
+			authorization.RepositoryHashes, readable, nil) {
+			return nil
+		}
+		if !manage {
+			return database.ErrViewNotVisible
+		}
+		if !removedLoaded {
+			removedLoaded = true
+			currentOwnerID, err := ownerID(authorization.Owner)
+			if err != nil {
+				removedErr = rpcerr.New(connect.CodeInternal,
+					deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
+			} else if service.dependencies.Store != nil {
+				removed, err = service.dependencies.Store.
+					ListGitHubRemovedRepositoryHashes(
+						ctx, int16(authorization.Owner.Scope), currentOwnerID)
+				if err != nil {
+					removedErr = rpcerr.New(connect.CodeInternal,
+						deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
+				}
 			}
+		}
+		if removedErr != nil {
+			return removedErr
+		}
+		if !repositoryHashesAuthorized(
+			authorization.RepositoryHashes, readable, removed) {
+			return database.ErrViewNotVisible
 		}
 		return nil
 	}
 }
 
-func viewRepairAuthorizer(viewer contracts.Viewer) database.ViewAuthorizer {
-	return func(authorization database.ViewAuthorization) error {
-		_, err := authorizeOwner(viewer, authorization.Owner, true)
-		return err
+func repositoryHashesAuthorized(
+	required [][32]byte,
+	readable map[[32]byte]struct{},
+	removed map[[32]byte]struct{},
+) bool {
+	for _, hash := range required {
+		if _, allowed := readable[hash]; allowed {
+			continue
+		}
+		if _, provenRemoved := removed[hash]; !provenRemoved {
+			return false
+		}
 	}
+	return true
 }
 
 func mapAuthorizedViewError(err error) error {
