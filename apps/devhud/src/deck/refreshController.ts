@@ -180,6 +180,7 @@ export class DeckRefreshController {
         pending = { request, preflightToken: preflight.token };
         await this.#options.manualAttempts.set(viewId, pending);
         if (controller.signal.aborted) {
+          await this.#options.manualAttempts.deleteIfMatches(viewId, pending);
           return false;
         }
       }
@@ -284,6 +285,18 @@ export class DeckRefreshController {
           }
           pending = { request, preflightToken: preflight.token };
           await this.#options.automaticAttempts.set(candidate.viewId, pending);
+          if (
+            controller.signal.aborted ||
+            !this.#running ||
+            generation !== this.#generation ||
+            !this.#options.canPoll()
+          ) {
+            await this.#options.automaticAttempts.deleteIfMatches(
+              candidate.viewId,
+              pending,
+            );
+            return;
+          }
         }
         if (
           controller.signal.aborted ||

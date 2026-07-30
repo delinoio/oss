@@ -16,6 +16,7 @@ import (
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	deckdelibase "github.com/delinoio/oss/servers/devhud-deck/internal/delibase"
 	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/google/uuid"
@@ -338,6 +339,44 @@ func TestProviderFailureAccountingIsTyped(t *testing.T) {
 		if got := refreshOutcomeForProviderError(test.err); got != test.want {
 			t.Fatalf("outcome for %v = %v, want %v", test.err, got, test.want)
 		}
+	}
+}
+
+func TestRefreshBillingFailuresAreTyped(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"reservation", deckdelibase.ErrReservationFailed},
+		{"finalization", deckdelibase.ErrFinalizationFailed},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			mapped := mapRefreshError(test.err)
+			if connect.CodeOf(mapped) != connect.CodeUnavailable {
+				t.Fatalf("code = %v", connect.CodeOf(mapped))
+			}
+			var connectErr *connect.Error
+			if !errors.As(mapped, &connectErr) {
+				t.Fatalf("mapped billing error = %T", mapped)
+			}
+			for _, detail := range connectErr.Details() {
+				value, err := detail.Value()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if typed, ok := value.(*deckv1.ErrorDetail); ok {
+					if typed.GetReason() !=
+						deckv1.ErrorReason_ERROR_REASON_BILLING_RESERVATION_FAILED {
+						t.Fatalf("reason = %v", typed.GetReason())
+					}
+					return
+				}
+			}
+			t.Fatal("mapped billing error has no Deck error detail")
+		})
 	}
 }
 

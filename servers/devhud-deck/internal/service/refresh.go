@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-deck/internal/authn"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	deckdelibase "github.com/delinoio/oss/servers/devhud-deck/internal/delibase"
 	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/query"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/rpcerr"
@@ -1195,6 +1196,11 @@ func mapRefreshError(err error) error {
 	var connectErr *connect.Error
 	if errors.As(err, &connectErr) {
 		return err
+	}
+	if errors.Is(err, deckdelibase.ErrReservationFailed) ||
+		errors.Is(err, deckdelibase.ErrFinalizationFailed) {
+		return rpcerr.New(connect.CodeUnavailable,
+			deckv1.ErrorReason_ERROR_REASON_BILLING_RESERVATION_FAILED)
 	}
 	return mapDatabaseError(err)
 }

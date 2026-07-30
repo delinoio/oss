@@ -29,6 +29,49 @@ function attemptStore(): DeckRefreshAttemptStore {
   };
 }
 
+function attemptStoreWithDeferredFirstSet() {
+  const attempts = new Map<string, DeckRefreshAttempt>();
+  let finishFirstSet: (() => void) | undefined;
+  let announceFirstSet: (() => void) | undefined;
+  const firstSetStarted = new Promise<void>((resolve) => {
+    announceFirstSet = resolve;
+  });
+  let deferSet = true;
+  const store: DeckRefreshAttemptStore = {
+    get: (viewId) => attempts.get(viewId),
+    set: (viewId, attempt) => {
+      if (!deferSet) {
+        attempts.set(viewId, attempt);
+        return;
+      }
+      deferSet = false;
+      announceFirstSet?.();
+      return new Promise<void>((resolve) => {
+        finishFirstSet = () => {
+          attempts.set(viewId, attempt);
+          resolve();
+        };
+      });
+    },
+    deleteIfMatches: (viewId, attempt) => {
+      if (attempts.get(viewId)?.request.requestId === attempt.request.requestId) {
+        attempts.delete(viewId);
+      }
+    },
+  };
+  return {
+    store,
+    firstSetStarted,
+    finishFirstSet: () => {
+      if (finishFirstSet === undefined) {
+        throw new Error("first attempt-store write has not started");
+      }
+      finishFirstSet();
+    },
+    peek: (viewId: string) => attempts.get(viewId),
+  };
+}
+
 function controllerAttemptStores(): Pick<
   ConstructorParameters<typeof DeckRefreshController>[0],
   "automaticAttempts" | "manualAttempts"
@@ -205,6 +248,55 @@ describe("Deck client-owned refresh polling", () => {
     controller.stop();
   });
 
+  it("removes an automatic attempt when cancellation wins its store write", async () => {
+    const automaticAttempts = attemptStoreWithDeferredFirstSet();
+    const preflights: string[] = [];
+    const refreshes: string[] = [];
+    let attached = true;
+    let sequence = 0;
+    const controller = new DeckRefreshController({
+      automaticAttempts: automaticAttempts.store,
+      manualAttempts: attemptStore(),
+      clientKind: RefreshClientKind.DESKTOP,
+      createRequestId: () => `request-${++sequence}`,
+      canPoll: () => true,
+      listCandidates: async () => [
+        {
+          viewId: "view",
+          notificationAttached: attached,
+          shortcutAttached: false,
+          widgetAttached: false,
+        },
+      ],
+      transport: {
+        isAmbiguousRefreshError: () => false,
+        getPreflight: async (request) => {
+          preflights.push(request.requestId);
+          return { priceUsdMicros: 50n, token: "token" };
+        },
+        refresh: async (request) => {
+          refreshes.push(request.requestId);
+        },
+      },
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await automaticAttempts.firstSetStarted;
+    controller.stop();
+    automaticAttempts.finishFirstSet();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(automaticAttempts.peek("view")).toBeUndefined();
+    attached = false;
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(preflights).toEqual(["request-1"]);
+    expect(refreshes).toHaveLength(0);
+    controller.stop();
+  });
+
   it("does not dispatch after an asynchronous manual confirmation is cancelled", async () => {
     let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
     let providerDispatches = 0;
@@ -236,6 +328,50 @@ describe("Deck client-owned refresh polling", () => {
 
     await expect(refresh).resolves.toBe(false);
     expect(providerDispatches).toBe(0);
+  });
+
+  it("removes a manual attempt when cancellation wins its store write", async () => {
+    const manualAttempts = attemptStoreWithDeferredFirstSet();
+    const preflights: string[] = [];
+    const refreshes: string[] = [];
+    let confirmations = 0;
+    let sequence = 0;
+    const controller = new DeckRefreshController({
+      automaticAttempts: attemptStore(),
+      manualAttempts: manualAttempts.store,
+      clientKind: RefreshClientKind.DESKTOP,
+      createRequestId: () => `request-${++sequence}`,
+      canPoll: () => false,
+      listCandidates: async () => [],
+      transport: {
+        isAmbiguousRefreshError: () => false,
+        getPreflight: async (request) => {
+          preflights.push(request.requestId);
+          return { priceUsdMicros: 50n, token: "token" };
+        },
+        refresh: async (request) => {
+          refreshes.push(request.requestId);
+        },
+      },
+    });
+    const confirm = () => {
+      confirmations += 1;
+      return true;
+    };
+
+    const firstRefresh = controller.refreshManually("view", confirm);
+    await manualAttempts.firstSetStarted;
+    controller.stop();
+    manualAttempts.finishFirstSet();
+
+    await expect(firstRefresh).resolves.toBe(false);
+    expect(manualAttempts.peek("view")).toBeUndefined();
+    await expect(
+      controller.refreshManually("view", confirm),
+    ).resolves.toBe(true);
+    expect(preflights).toEqual(["request-1", "request-2"]);
+    expect(refreshes).toEqual(["request-2"]);
+    expect(confirmations).toBe(2);
   });
 
   it("retries an ambiguous automatic failure after controller recreation", async () => {
