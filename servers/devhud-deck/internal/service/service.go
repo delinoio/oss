@@ -3,7 +3,6 @@ package service
 
 import (
 	"log/slog"
-	"time"
 
 	"github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1/deckv1connect"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/audit"
@@ -63,15 +62,11 @@ func (dependencies Dependencies) withDefaults() Dependencies {
 
 type View struct {
 	deckv1connect.UnimplementedDeckViewServiceHandler
-	dependencies    Dependencies
-	manualRefreshes *refreshRateLimiter
+	dependencies Dependencies
 }
 
 func NewView(dependencies Dependencies) *View {
-	return &View{
-		dependencies:    dependencies.withDefaults(),
-		manualRefreshes: newRefreshRateLimiter(12, time.Minute),
-	}
+	return &View{dependencies: dependencies.withDefaults()}
 }
 
 type Device struct {

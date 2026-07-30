@@ -118,6 +118,7 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 	attemptParams := BeginRefreshAttemptParams{
 		SubjectHash: subjectHash, RequestID: requestID,
 		RequestDigest: digest, ViewID: viewID, ViewerHash: viewerHash,
+		ViewRevision:   view.GetRevision().GetValue(),
 		Origin:         deckv1.RefreshOrigin_REFRESH_ORIGIN_AUTOMATIC,
 		ClientKind:     deckv1.RefreshClientKind_REFRESH_CLIENT_KIND_DESKTOP,
 		OrganizationID: mustV7(t), TeamID: mustV7(t),
@@ -126,7 +127,7 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 			ServiceID: mustV7(t),
 			USDMicros: contracts.ProviderRefreshPriceUSDMicros,
 		},
-		Now: now,
+		Now: now.Add(-10 * time.Minute),
 	}
 	attempt, replayed, err := store.BeginRefreshAttempt(
 		ctx, attemptParams)
@@ -185,8 +186,15 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 	pending.BillingDisposition =
 		deckv1.BillingDisposition_BILLING_DISPOSITION_COMMITTED
 	if err := store.SaveRefreshResponse(
-		ctx, subjectHash, requestID, pending, true, now); err != nil {
+		ctx, subjectHash, requestID, pending, true,
+		now.Add(10*time.Minute)); err != nil {
 		t.Fatal(err)
+	}
+	recent, err = store.HasRecentAutomaticRefreshAttempt(
+		ctx, viewID, viewerHash, mustV7(t), now.Add(5*time.Minute))
+	if err != nil || recent {
+		t.Fatalf("completion time extended dispatch coalescing = %v, %v",
+			recent, err)
 	}
 	attempt, replayed, err = store.BeginRefreshAttempt(
 		ctx, attemptParams)
@@ -202,6 +210,65 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		security.Digest([]byte("changed-request")))
 	if !errors.Is(err, ErrIdempotencyConflict) {
 		t.Fatalf("changed-input replay = %v", err)
+	}
+	secondStore, err := Open(ctx, parsedURL.String(), cipher, hasher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondStore.Close()
+	manualParams := make([]BeginRefreshAttemptParams, manualRefreshLimit)
+	for index := range manualParams {
+		manualParams[index] = attemptParams
+		manualParams[index].RequestID = mustV7(t)
+		manualParams[index].RequestDigest =
+			security.Digest([]byte{byte(index + 1)})
+		manualParams[index].Origin =
+			deckv1.RefreshOrigin_REFRESH_ORIGIN_MANUAL
+		manualParams[index].ClientKind =
+			deckv1.RefreshClientKind_REFRESH_CLIENT_KIND_DESKTOP
+		manualParams[index].Now = now
+		selected := store
+		if index%2 == 1 {
+			selected = secondStore
+		}
+		if _, replayed, err := selected.BeginRefreshAttempt(
+			ctx, manualParams[index]); err != nil || replayed {
+			t.Fatalf("manual refresh %d = replayed=%v err=%v",
+				index+1, replayed, err)
+		}
+	}
+	if _, replayed, err := secondStore.BeginRefreshAttempt(
+		ctx, manualParams[0]); err != nil || !replayed {
+		t.Fatalf("manual exact replay under full window = replayed=%v err=%v",
+			replayed, err)
+	}
+	limited := attemptParams
+	limited.RequestID = mustV7(t)
+	limited.RequestDigest = security.Digest([]byte("limited"))
+	limited.Origin = deckv1.RefreshOrigin_REFRESH_ORIGIN_MANUAL
+	limited.ClientKind = deckv1.RefreshClientKind_REFRESH_CLIENT_KIND_MOBILE
+	limited.Now = now
+	if _, _, err := secondStore.BeginRefreshAttempt(ctx, limited); !errors.Is(err, ErrRefreshRateLimited) {
+		t.Fatalf("thirteenth shared manual refresh = %v", err)
+	}
+	limited.RequestID = mustV7(t)
+	limited.RequestDigest = security.Digest([]byte("next-window"))
+	limited.Now = now.Add(time.Minute)
+	if _, replayed, err := store.BeginRefreshAttempt(
+		ctx, limited); err != nil || replayed {
+		t.Fatalf("manual refresh at next window = replayed=%v err=%v",
+			replayed, err)
+	}
+	callbackCalled := false
+	err = store.WithViewRevisionLock(
+		ctx, viewID, view.GetRevision().GetValue()+1, func() error {
+			callbackCalled = true
+			return nil
+		})
+	var stale *StaleError
+	if !errors.As(err, &stale) || callbackCalled {
+		t.Fatalf("stale view revision fence = called=%v err=%v",
+			callbackCalled, err)
 	}
 
 	if err := store.CreateNotificationEvents(

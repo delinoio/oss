@@ -185,6 +185,7 @@ type DeckRefreshAttempt struct {
 	RefreshRequestID      pgtype.UUID
 	RequestDigest         []byte
 	ViewID                pgtype.UUID
+	ViewRevision          int64
 	ViewerHash            []byte
 	Origin                int16
 	ClientKind            int16
@@ -197,6 +198,7 @@ type DeckRefreshAttempt struct {
 	State                 int16
 	ReservationID         pgtype.UUID
 	ProviderDispatched    bool
+	ProviderDispatchedAt  pgtype.Timestamptz
 	ResponseCiphertext    []byte
 	CreatedAt             pgtype.Timestamptz
 	UpdatedAt             pgtype.Timestamptz

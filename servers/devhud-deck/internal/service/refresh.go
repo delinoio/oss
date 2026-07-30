@@ -29,37 +29,6 @@ const (
 	refreshPreflightSize     = 163
 )
 
-type refreshRateLimiter struct {
-	mu       sync.Mutex
-	limit    int
-	window   time.Duration
-	requests map[string][]time.Time
-}
-
-func newRefreshRateLimiter(limit int, window time.Duration) *refreshRateLimiter {
-	return &refreshRateLimiter{
-		limit: limit, window: window, requests: make(map[string][]time.Time),
-	}
-}
-
-func (limiter *refreshRateLimiter) Allow(actor string, now time.Time) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	cutoff := now.Add(-limiter.window)
-	entries := limiter.requests[actor]
-	first := 0
-	for first < len(entries) && !entries[first].After(cutoff) {
-		first++
-	}
-	entries = entries[first:]
-	if len(entries) >= limiter.limit {
-		limiter.requests[actor] = entries
-		return false
-	}
-	limiter.requests[actor] = append(entries, now)
-	return true
-}
-
 func (service *View) GetRefreshPreflight(
 	ctx context.Context,
 	request *connect.Request[deckv1.GetRefreshPreflightRequest],
@@ -125,10 +94,6 @@ func (service *View) RefreshView(
 		return nil, rpcerr.New(connect.CodeUnauthenticated,
 			deckv1.ErrorReason_ERROR_REASON_AUTHENTICATION_REQUIRED)
 	}
-	if service.dependencies.LiveUsage == nil {
-		return nil, rpcerr.New(connect.CodeUnavailable,
-			deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
-	}
 	viewID, requestID, err := validateRefreshIdentity(
 		request.Msg.GetViewId(), request.Msg.GetRefreshRequestId())
 	if err != nil || !validRefreshTrace(
@@ -136,34 +101,74 @@ func (service *View) RefreshView(
 		return nil, rpcerr.New(connect.CodeInvalidArgument,
 			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
-	view, err := service.getAuthorizedView(ctx, viewer, viewID, false)
-	if err != nil {
-		return nil, err
-	}
 	requestDigest := refreshRequestDigest(request.Msg)
 	subjectHash := service.dependencies.Hasher.Sum(
 		"refresh-subject", viewer.Subject)
 	viewerHash := service.dependencies.Hasher.Sum(
 		"snapshot-viewer", viewer.AccountID.String())
 
-	// An exact durable replay is resolved before preflight expiry or a later
-	// catalog change. It still requires current view authorization above.
+	// Exact attempts are resolved before current view/provider authorization.
+	// Completed results and accounting-only retries need neither repository
+	// access nor a retained view definition.
 	attempt, lookupErr := service.dependencies.Store.GetRefreshAttempt(
 		ctx, subjectHash, requestID, requestDigest)
-	if lookupErr == nil && attempt.State == database.RefreshAttemptCompleted {
-		replayed := proto.Clone(attempt.Response).(*deckv1.RefreshViewResponse)
-		replayed.Idempotency.Replayed = true
-		return connect.NewResponse(replayed), nil
+	if lookupErr == nil {
+		if attempt.ViewID != viewID || attempt.ViewerHash != viewerHash {
+			return nil, rpcerr.New(connect.CodeInternal,
+				deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
+		}
+		if attempt.State == database.RefreshAttemptCompleted {
+			replayed, replayErr := replayRefreshAttempt(attempt)
+			if replayErr != nil {
+				return nil, mapRefreshError(replayErr)
+			}
+			return connect.NewResponse(replayed), nil
+		}
+		if refreshAttemptNeedsOnlyAccounting(attempt) {
+			if service.dependencies.LiveUsage == nil {
+				return nil, rpcerr.New(connect.CodeUnavailable,
+					deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
+			}
+			var response *deckv1.RefreshViewResponse
+			err := service.dependencies.Store.WithRefreshLock(
+				ctx, attempt.ViewID, attempt.ViewerHash, func() error {
+					current, currentErr :=
+						service.dependencies.Store.GetRefreshAttempt(
+							ctx, subjectHash, requestID, requestDigest)
+					if currentErr != nil {
+						return currentErr
+					}
+					if current.State == database.RefreshAttemptCompleted {
+						response, currentErr = replayRefreshAttempt(current)
+						return currentErr
+					}
+					return service.finalizePendingRefreshAccounting(
+						ctx, subjectHash, requestID, current, forwardedToken,
+						&response, &metricOutcome)
+				})
+			if err != nil {
+				return nil, mapRefreshError(err)
+			}
+			return connect.NewResponse(response), nil
+		}
 	}
 	if lookupErr != nil && !errors.Is(lookupErr, database.ErrNotFound) {
 		return nil, mapDatabaseError(lookupErr)
 	}
 
+	if service.dependencies.LiveUsage == nil {
+		return nil, rpcerr.New(connect.CodeUnavailable,
+			deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
+	}
 	if errors.Is(lookupErr, database.ErrNotFound) {
 		if request.Msg.GetBillingPreflightToken() == "" {
 			return nil, rpcerr.New(connect.CodeFailedPrecondition,
 				deckv1.ErrorReason_ERROR_REASON_BILLING_PREFLIGHT_REQUIRED)
 		}
+	}
+	view, err := service.getAuthorizedView(ctx, viewer, viewID, false)
+	if err != nil {
+		return nil, err
 	}
 
 	var response *deckv1.RefreshViewResponse
@@ -197,26 +202,24 @@ func (service *View) RefreshView(
 						ctx, database.BeginRefreshAttemptParams{
 							SubjectHash: subjectHash, RequestID: requestID,
 							RequestDigest: requestDigest, ViewID: viewID,
-							ViewerHash: viewerHash, Origin: request.Msg.GetOrigin(),
+							ViewRevision:   view.GetRevision().GetValue(),
+							ViewerHash:     viewerHash,
+							Origin:         request.Msg.GetOrigin(),
 							ClientKind:     request.Msg.GetClientKind(),
 							OrganizationID: organizationID, TeamID: teamID,
 							Meter: meter, Now: currentTime,
 						})
 			}
+			if errors.Is(currentErr, database.ErrRefreshRateLimited) {
+				return rpcerr.RetryAfter(
+					deckv1.ErrorReason_ERROR_REASON_RATE_LIMITED, time.Minute)
+			}
 			if currentErr != nil {
 				return currentErr
 			}
 			if replayed && current.State == database.RefreshAttemptCompleted {
-				response = proto.Clone(current.Response).(*deckv1.RefreshViewResponse)
-				response.Idempotency.Replayed = true
-				return nil
-			}
-			if request.Msg.GetOrigin() ==
-				deckv1.RefreshOrigin_REFRESH_ORIGIN_MANUAL &&
-				current.State == database.RefreshAttemptCreated &&
-				!service.manualRefreshes.Allow(viewer.Subject, currentTime) {
-				return rpcerr.RetryAfter(
-					deckv1.ErrorReason_ERROR_REASON_RATE_LIMITED, time.Minute)
+				response, currentErr = replayRefreshAttempt(current)
+				return currentErr
 			}
 			if current.State == database.RefreshAttemptCreated {
 				eligible, eligibleErr := service.refreshEligible(
@@ -284,6 +287,79 @@ func (service *View) RefreshView(
 	return connect.NewResponse(response), nil
 }
 
+func replayRefreshAttempt(
+	attempt database.RefreshAttempt,
+) (*deckv1.RefreshViewResponse, error) {
+	if attempt.Response == nil || attempt.Response.Idempotency == nil {
+		return nil, errors.New("deck refresh: completed attempt has no response")
+	}
+	replayed := proto.Clone(attempt.Response).(*deckv1.RefreshViewResponse)
+	replayed.Idempotency.Replayed = true
+	return replayed, nil
+}
+
+func refreshAttemptNeedsOnlyAccounting(
+	attempt database.RefreshAttempt,
+) bool {
+	return attempt.State == database.RefreshAttemptDispatched ||
+		(attempt.State == database.RefreshAttemptReserved &&
+			attempt.Response != nil)
+}
+
+func (service *View) finalizePendingRefreshAccounting(
+	ctx context.Context,
+	subjectHash [32]byte,
+	requestID uuid.UUID,
+	attempt database.RefreshAttempt,
+	forwardedToken string,
+	response **deckv1.RefreshViewResponse,
+	metricOutcome *contracts.RefreshMetricOutcome,
+) error {
+	if !refreshAttemptNeedsOnlyAccounting(attempt) ||
+		attempt.OrganizationID.Version() != 7 ||
+		attempt.ReservationID.Version() != 7 ||
+		attempt.ViewID.Version() != 7 ||
+		attempt.ViewRevision == 0 ||
+		!validRefreshMeter(attempt.Meter) {
+		return errors.New("deck refresh: invalid persisted accounting attempt")
+	}
+	now := service.dependencies.Clock.Now().UTC()
+	pending := attempt.Response
+	if pending == nil {
+		truncated, refreshedAt, freshness, resultCount, stateErr :=
+			service.currentSnapshotState(
+				ctx, attempt.ViewID, attempt.ViewerHash, now)
+		if stateErr != nil {
+			return stateErr
+		}
+		pending = refreshResponse(
+			&deckv1.View{
+				ViewId: &deckv1.UuidV7{Value: attempt.ViewID.String()},
+				Revision: &deckv1.Revision{
+					Value: attempt.ViewRevision,
+					Etag: service.dependencies.Hasher.ETag(
+						attempt.ViewID, attempt.ViewRevision),
+				},
+			},
+			deckv1.RefreshOutcome_REFRESH_OUTCOME_PROVIDER_FAILED,
+			deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
+			freshness, refreshedAt, truncated, resultCount, false)
+	}
+	disposition, err := finalizeRefreshReservation(
+		ctx, service.dependencies.LiveUsage, forwardedToken,
+		attempt.OrganizationID, attempt.ReservationID,
+		attempt.State == database.RefreshAttemptDispatched)
+	if err != nil {
+		*metricOutcome = contracts.RefreshMetricBillingFailure
+		return err
+	}
+	pending.BillingDisposition = disposition
+	*response = pending
+	*metricOutcome = contracts.RefreshMetricProviderFailure
+	return service.dependencies.Store.SaveRefreshResponse(
+		ctx, subjectHash, requestID, pending, true, now)
+}
+
 func (service *View) advanceProviderRefresh(
 	ctx context.Context,
 	viewer contracts.Viewer,
@@ -300,7 +376,6 @@ func (service *View) advanceProviderRefresh(
 		attempt.TeamID.Version() != 7 || !validRefreshMeter(attempt.Meter) {
 		return errors.New("deck refresh: invalid persisted billing inputs")
 	}
-	organizationID := attempt.OrganizationID
 	if attempt.State == database.RefreshAttemptCreated {
 		billing := &deckv1.BillingSelection{
 			OrganizationId: &deckv1.UuidV7{
@@ -339,53 +414,15 @@ func (service *View) advanceProviderRefresh(
 		attempt.State = database.RefreshAttemptReserved
 		attempt.ReservationID = reservation.ID
 	}
-	if attempt.State == database.RefreshAttemptDispatched {
-		pending := attempt.Response
-		if pending == nil {
-			truncated, refreshedAt, freshness, resultCount, stateErr :=
-				service.currentSnapshotState(
-					ctx, refreshViewID(view), viewerHash,
-					service.dependencies.Clock.Now().UTC())
-			if stateErr != nil {
-				return stateErr
-			}
-			pending = refreshResponse(
-				view, deckv1.RefreshOutcome_REFRESH_OUTCOME_PROVIDER_FAILED,
-				deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
-				freshness, refreshedAt, truncated, resultCount, false)
-		}
-		disposition, err := finalizeRefreshReservation(
-			ctx, service.dependencies.LiveUsage, forwardedToken,
-			organizationID, attempt.ReservationID, true)
-		if err != nil {
-			*metricOutcome = contracts.RefreshMetricBillingFailure
-			return err
-		}
-		pending.BillingDisposition = disposition
-		*response = pending
-		*metricOutcome = contracts.RefreshMetricProviderFailure
-		return service.dependencies.Store.SaveRefreshResponse(
-			ctx, subjectHash, requestID, pending, true,
-			service.dependencies.Clock.Now().UTC())
-	}
-	if attempt.State == database.RefreshAttemptReserved &&
-		attempt.Response != nil {
-		pending := attempt.Response
-		disposition, err := finalizeRefreshReservation(
-			ctx, service.dependencies.LiveUsage, forwardedToken,
-			organizationID, attempt.ReservationID, false)
-		if err != nil {
-			*metricOutcome = contracts.RefreshMetricBillingFailure
-			return err
-		}
-		pending.BillingDisposition = disposition
-		*response = pending
-		*metricOutcome = contracts.RefreshMetricProviderFailure
-		return service.dependencies.Store.SaveRefreshResponse(
-			ctx, subjectHash, requestID, pending, true,
-			service.dependencies.Clock.Now().UTC())
+	if refreshAttemptNeedsOnlyAccounting(attempt) {
+		return service.finalizePendingRefreshAccounting(
+			ctx, subjectHash, requestID, attempt, forwardedToken,
+			response, metricOutcome)
 	}
 
+	previous, _, _, providerErr :=
+		service.dependencies.Store.ListAllSnapshots(
+			ctx, refreshViewID(view), viewerHash)
 	dispatched := false
 	var dispatchOnce sync.Once
 	var dispatchErr error
@@ -400,47 +437,44 @@ func (service *View) advanceProviderRefresh(
 		})
 		return dispatchErr
 	})
-	snapshots, truncated, providerErr := service.performGitHubRefresh(
-		providerCtx, viewer, view)
+	var snapshots, notificationSnapshots []*deckv1.PullRequestResult
+	truncated := false
+	if providerErr == nil {
+		snapshots, notificationSnapshots, truncated, providerErr =
+			service.performGitHubRefresh(providerCtx, viewer, view, previous)
+	}
 	now := service.dependencies.Clock.Now().UTC()
 	outcome := refreshOutcomeForProviderError(providerErr)
 	freshness := deckv1.FreshnessState_FRESHNESS_STATE_STALE
 	refreshedAt := time.Time{}
 	resultCount := 0
 	if providerErr == nil {
-		previous, _, _, previousErr :=
-			service.dependencies.Store.ListAllSnapshots(
-				ctx, refreshViewID(view), viewerHash)
-		if previousErr != nil {
-			providerErr = previousErr
-		}
-		var storeTruncated bool
-		if providerErr == nil {
-			storeTruncated, providerErr =
-				service.dependencies.Store.ReplaceSnapshots(
-					ctx, refreshViewID(view), viewerHash, snapshots, now)
-			truncated = truncated || storeTruncated
-		}
-		if providerErr == nil {
-			preferences, preferenceErr :=
-				service.dependencies.Store.ActiveNotificationPreferences(
-					ctx, viewer.AccountID, refreshViewID(view), now)
-			if preferenceErr != nil {
-				providerErr = preferenceErr
-			}
-			writes := notificationWrites(
-				previous, snapshots, preferences, viewer.GitHubLogin)
-			if providerErr == nil {
-				providerErr =
-					service.dependencies.Store.CreateNotificationEvents(
-						ctx, refreshViewID(view), viewerHash, writes, now)
-			}
-		}
-		if providerErr == nil {
-			providerErr = service.dependencies.Store.UpdateWidgetSnapshots(
-				ctx, viewer.AccountID, refreshViewID(view),
-				snapshots, truncated, now)
-		}
+		providerErr = service.dependencies.Store.WithViewRevisionLock(
+			ctx, refreshViewID(view), view.GetRevision().GetValue(), func() error {
+				storeTruncated, storeErr :=
+					service.dependencies.Store.ReplaceSnapshots(
+						ctx, refreshViewID(view), viewerHash, snapshots, now)
+				if storeErr != nil {
+					return storeErr
+				}
+				truncated = truncated || storeTruncated
+				preferences, preferenceErr :=
+					service.dependencies.Store.ActiveNotificationPreferences(
+						ctx, viewer.AccountID, refreshViewID(view), now)
+				if preferenceErr != nil {
+					return preferenceErr
+				}
+				writes := notificationWrites(
+					previous, notificationSnapshots,
+					preferences, viewer.GitHubLogin)
+				if err := service.dependencies.Store.CreateNotificationEvents(
+					ctx, refreshViewID(view), viewerHash, writes, now); err != nil {
+					return err
+				}
+				return service.dependencies.Store.UpdateWidgetSnapshots(
+					ctx, viewer.AccountID, refreshViewID(view),
+					snapshots, truncated, now)
+			})
 		outcome = refreshOutcomeForProviderError(providerErr)
 		if providerErr == nil {
 			freshness = deckv1.FreshnessState_FRESHNESS_STATE_FRESH
@@ -469,7 +503,7 @@ func (service *View) advanceProviderRefresh(
 	if dispatched {
 		disposition, err := finalizeRefreshReservation(
 			ctx, service.dependencies.LiveUsage, forwardedToken,
-			organizationID, attempt.ReservationID, true)
+			attempt.OrganizationID, attempt.ReservationID, true)
 		if err != nil {
 			*metricOutcome = contracts.RefreshMetricBillingFailure
 			return err
@@ -478,7 +512,7 @@ func (service *View) advanceProviderRefresh(
 	} else {
 		disposition, err := finalizeRefreshReservation(
 			ctx, service.dependencies.LiveUsage, forwardedToken,
-			organizationID, attempt.ReservationID, false)
+			attempt.OrganizationID, attempt.ReservationID, false)
 		if err != nil {
 			*metricOutcome = contracts.RefreshMetricBillingFailure
 			return err
@@ -521,33 +555,34 @@ func (service *View) performGitHubRefresh(
 	ctx context.Context,
 	viewer contracts.Viewer,
 	view *deckv1.View,
-) ([]*deckv1.PullRequestResult, bool, error) {
+	previous []*deckv1.PullRequestResult,
+) ([]*deckv1.PullRequestResult, []*deckv1.PullRequestResult, bool, error) {
 	if service.dependencies.GitHubClient == nil {
-		return nil, false, deckgithub.ErrProvider
+		return nil, nil, false, deckgithub.ErrProvider
 	}
 	ownerID, err := ownerID(view.GetOwner())
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	connection, err := service.dependencies.Store.GetGitHubConnection(
 		ctx, int16(view.GetOwner().GetScope()), ownerID, viewer.AccountID, true)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) ||
 			errors.Is(err, deckgithub.ErrPermissionDenied) {
-			return nil, false, deckgithub.ErrReauthenticationRequired
+			return nil, nil, false, deckgithub.ErrReauthenticationRequired
 		}
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	connection, err = refreshGitHubConnectionCredential(
 		ctx, service.dependencies.Store, service.dependencies.GitHubBroker,
 		viewer.AccountID, connection, service.dependencies.Clock.Now().UTC())
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	resolved, err := query.ResolveViewer(
 		view.GetQuery().GetRawQuery(), viewer.GitHubLogin)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	results := make([]*deckv1.PullRequestResult, 0, 100)
 	cursor := ""
@@ -557,7 +592,7 @@ func (service *View) performGitHubRefresh(
 			ctx, connection.Installation.ID, connection.Credential, resolved,
 			deckgithub.Page{Cursor: cursor, Limit: 100})
 		if pageErr != nil {
-			return nil, false, pageErr
+			return nil, nil, false, pageErr
 		}
 		for _, pullRequest := range page.PullRequests {
 			reference := &deckv1.PullRequestReference{
@@ -576,7 +611,7 @@ func (service *View) performGitHubRefresh(
 						Number:     pullRequest.Number,
 					})
 			if metadataErr != nil {
-				return nil, false, metadataErr
+				return nil, nil, false, metadataErr
 			}
 			detail := service.pullRequestDetail(
 				refreshViewID(view), reference,
@@ -594,7 +629,58 @@ func (service *View) performGitHubRefresh(
 	}
 	results, resultTruncated := retainedRefreshResults(results)
 	truncated = truncated || resultTruncated
-	return results, truncated, nil
+	notificationSnapshots := append(
+		[]*deckv1.PullRequestResult(nil), results...)
+	for _, snapshot := range previousOnlySnapshots(previous, results) {
+		if snapshot.GetLifecycleState() !=
+			deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_OPEN {
+			continue
+		}
+		repository := snapshot.GetRepository()
+		metadata, metadataErr :=
+			service.dependencies.GitHubClient.PullRequestSnapshotMetadata(
+				ctx, connection.Installation.ID, connection.Credential,
+				connection.Installation.Permissions,
+				deckgithub.PullRequestRef{
+					Repository: deckgithub.Repository{
+						Owner: repository.GetOwner(), Name: repository.GetName(),
+					},
+					Number: snapshot.GetNumber(),
+				})
+		if metadataErr != nil {
+			return nil, nil, false, metadataErr
+		}
+		transitioned := service.pullRequestDetail(
+			refreshViewID(view),
+			&deckv1.PullRequestReference{
+				Repository: repository, Number: snapshot.GetNumber(),
+			},
+			snapshot, metadata).Result
+		if transitioned.GetLifecycleState() ==
+			deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_CLOSED ||
+			transitioned.GetLifecycleState() ==
+				deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_MERGED {
+			notificationSnapshots = append(notificationSnapshots, transitioned)
+		}
+	}
+	return results, notificationSnapshots, truncated, nil
+}
+
+func previousOnlySnapshots(
+	previous []*deckv1.PullRequestResult,
+	current []*deckv1.PullRequestResult,
+) []*deckv1.PullRequestResult {
+	currentKeys := make(map[string]struct{}, len(current))
+	for _, snapshot := range current {
+		currentKeys[pullRequestSnapshotKey(snapshot)] = struct{}{}
+	}
+	missing := make([]*deckv1.PullRequestResult, 0)
+	for _, snapshot := range previous {
+		if _, ok := currentKeys[pullRequestSnapshotKey(snapshot)]; !ok {
+			missing = append(missing, snapshot)
+		}
+	}
+	return missing
 }
 
 func retainedRefreshResults(
@@ -670,7 +756,13 @@ func (service *View) refreshEligible(
 		origin != deckv1.RefreshOrigin_REFRESH_ORIGIN_WIDGET {
 		return true, nil
 	}
-	if view.GetNotificationPreference().GetEnabled() {
+	preferences, err :=
+		service.dependencies.Store.ActiveNotificationPreferences(
+			ctx, viewer.AccountID, refreshViewID(view), now)
+	if err != nil {
+		return false, err
+	}
+	if hasEnabledNotificationPreference(preferences) {
 		return true, nil
 	}
 	attached, err := service.dependencies.Store.HasActiveViewDeviceAttachment(
@@ -681,6 +773,17 @@ func (service *View) refreshEligible(
 	return service.dependencies.Store.ViewOpenedSince(
 		ctx, refreshViewID(view), viewerHash,
 		now.Add(-automaticViewWindow))
+}
+
+func hasEnabledNotificationPreference(
+	preferences []*deckv1.ViewNotificationPreference,
+) bool {
+	for _, preference := range preferences {
+		if preference.GetEnabled() {
+			return true
+		}
+	}
+	return false
 }
 
 func refreshRequestDigest(request *deckv1.RefreshViewRequest) [32]byte {
