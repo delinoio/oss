@@ -2086,6 +2086,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	partialServiceIdentityID := uuidv7.MustNew()
 	partialStorageMeterID := uuidv7.MustNew()
 	partialStorageAuthorizationID := uuidv7.MustNew()
+	partialStorageRecoveryID := uuidv7.MustNew()
 	partialPublicID := "partial-promotion-id-01"
 	partialReservedPublicID, err := imageassets.NewPublicID()
 	if err != nil {
@@ -2163,21 +2164,110 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		partialStorageMeterID, partialStorageAuthorizationID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = store.Queries().CreateStorageRecovery(
+		ctx, dbgen.CreateStorageRecoveryParams{
+			ID:              toPGUUID(partialStorageRecoveryID),
+			SubmissionID:    toPGUUID(partialSubmissionID),
+			AuthorizationID: toPGUUID(partialStorageAuthorizationID),
+			Reason:          "github_disconnected",
+			GraceStartedAt:  pgTimestamp(time.Now().UTC()),
+		}); err != nil {
+		t.Fatal(err)
+	}
+	unpromotedSubmissionID := uuidv7.MustNew()
+	unpromotedAssetID := uuidv7.MustNew()
+	unpromotedAttemptKey := uuidv7.MustNew()
+	unpromotedServiceIdentityID := uuidv7.MustNew()
+	unpromotedStorageMeterID := uuidv7.MustNew()
+	unpromotedAuthorizationID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, idempotency_digest, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, created_at, updated_at, upload_deadline,
+			upload_expires_at
+		)
+		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
+		       destination_id, 'ready', idempotency_digest,
+		       payer_organization_id, payer_team_id, preset_revision,
+		       asset.encoded_bytes, asset.encoded_bytes,
+		       transaction_timestamp() - interval '25 hours',
+		       transaction_timestamp() - interval '25 hours',
+		       transaction_timestamp() - interval '2 hours',
+		       transaction_timestamp() - interval '1 hour'
+		FROM realqa_submissions AS submission
+		JOIN realqa_assets AS asset ON asset.id = $9
+		WHERE submission.id = $2;
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $3, $1, 'verified_unlinked', encoded_bytes, $4, media_type,
+		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
+		       sanitized_sha256, 'verified', transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $9;
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES (
+			$1, $5, decode(repeat('da', 32), 'hex'),
+			$6, $7, 1, 'active', $8, 1, 1
+		);
+		INSERT INTO realqa_storage_authorization_bindings (
+			authorization_id, submission_id, mapping_revision,
+			authorizer_account_id, owner_kind, owner_id,
+			organization_id, team_id, service_identity_id, meter_id,
+			maximum_units, status, authorization_revision
+		)
+		SELECT $8, submission.id, 1, submission.created_by_account_id,
+		       submission.owner_kind, submission.owner_id,
+		       submission.payer_organization_id, submission.payer_team_id,
+		       $6, $7, 1, 'active', 1
+		FROM realqa_submissions AS submission
+		WHERE submission.id = $1
+	`, unpromotedSubmissionID, submissionID, unpromotedAssetID,
+		uuidv7.MustNew(), unpromotedAttemptKey, unpromotedServiceIdentityID,
+		unpromotedStorageMeterID, unpromotedAuthorizationID,
+		promotionAssetID); err != nil {
+		t.Fatal(err)
+	}
 	partialPublicKey := imageassets.PublicObjectKey(partialPublicID)
 	partialPrivateKey := imageassets.VerifiedObjectKey(partialPrivateAssetID.String())
+	unpromotedPrivateKey := imageassets.VerifiedObjectKey(
+		unpromotedAssetID.String())
 	if err = objects.Put(ctx, partialPublicKey, "image/png", pngBody); err != nil {
 		t.Fatal(err)
 	}
 	if err = objects.Put(ctx, partialPrivateKey, "image/png", pngBody); err != nil {
 		t.Fatal(err)
 	}
+	if err = objects.Put(ctx, unpromotedPrivateKey, "image/png", pngBody); err != nil {
+		t.Fatal(err)
+	}
+	blockedBeforeExpiredCleanup, err := store.Queries().
+		HasStorageSubmissionBlock(
+			ctx, dbgen.HasStorageSubmissionBlockParams{
+				OwnerKind:           "personal",
+				OwnerID:             toPGUUID(accountID),
+				PayerOrganizationID: toPGUUID(organizationID),
+			})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !blockedBeforeExpiredCleanup {
+		t.Fatal("active partial-promotion recovery did not block submissions")
+	}
 	cleaned, err := submissionService.CleanupExpiredStaging(
 		ctx, time.Now().UTC(), 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleaned != 3 {
-		t.Fatalf("expired asset cleanup count = %d, want 3", cleaned)
+	if cleaned != 4 {
+		t.Fatalf("expired asset cleanup count = %d, want 4", cleaned)
 	}
 	var (
 		submittedBytesAfterCleanup int64
@@ -2254,6 +2344,62 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("partial promotion billing cleanup = %v / %q",
 			partialRetentionClosed, partialClosureState)
 	}
+	var partialRecoveryResolved bool
+	if err = connection.QueryRow(ctx, `
+		SELECT recovered_at IS NOT NULL
+		FROM realqa_storage_recoveries
+		WHERE id = $1
+	`, partialStorageRecoveryID).Scan(&partialRecoveryResolved); err != nil {
+		t.Fatal(err)
+	}
+	if !partialRecoveryResolved {
+		t.Fatal("partial-promotion recovery was not resolved after cleanup")
+	}
+	blockedAfterExpiredCleanup, err := store.Queries().
+		HasStorageSubmissionBlock(
+			ctx, dbgen.HasStorageSubmissionBlockParams{
+				OwnerKind:           "personal",
+				OwnerID:             toPGUUID(accountID),
+				PayerOrganizationID: toPGUUID(organizationID),
+			})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blockedAfterExpiredCleanup {
+		t.Fatal("resolved partial-promotion recovery still blocked submissions")
+	}
+	var (
+		unpromotedSubmissionState string
+		unpromotedAssetState      string
+		unpromotedClosureState    string
+		unpromotedRetentionCount  int
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT submission.state, asset.state, binding.closure_state,
+		       (
+		           SELECT count(*)
+		           FROM realqa_storage_retention_intervals AS retained
+		           WHERE retained.authorization_id = binding.authorization_id
+		       )
+		FROM realqa_submissions AS submission
+		JOIN realqa_assets AS asset ON asset.submission_id = submission.id
+		JOIN realqa_storage_authorization_bindings AS binding
+		  ON binding.submission_id = submission.id
+		WHERE submission.id = $1 AND asset.id = $2
+	`, unpromotedSubmissionID, unpromotedAssetID).Scan(
+		&unpromotedSubmissionState, &unpromotedAssetState,
+		&unpromotedClosureState, &unpromotedRetentionCount,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if unpromotedSubmissionState != "assets_deleted" ||
+		unpromotedAssetState != "expired" ||
+		unpromotedClosureState != "resource_deletion_pending" ||
+		unpromotedRetentionCount != 0 {
+		t.Fatalf("unpromoted billing cleanup = %q / %q / %q / %d",
+			unpromotedSubmissionState, unpromotedAssetState,
+			unpromotedClosureState, unpromotedRetentionCount)
+	}
 	publicRecord, err := submissionService.PublicAsset(ctx, partialPublicID)
 	if err != nil {
 		t.Fatal(err)
@@ -2274,6 +2420,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if _, ok := objects.objects[partialPrivateKey]; ok {
 		t.Fatal("partial promotion private object was retained")
+	}
+	if _, ok := objects.objects[unpromotedPrivateKey]; ok {
+		t.Fatal("unpromoted private object was retained")
 	}
 	disconnectSubmissionID := uuidv7.MustNew()
 	disconnectAssetID := uuidv7.MustNew()

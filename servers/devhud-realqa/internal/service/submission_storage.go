@@ -1482,14 +1482,25 @@ func (service *Submission) CleanupExpiredStaging(
 						}); cleanupErr != nil {
 						return cleanupErr
 					}
-					if _, cleanupErr =
-						queries.MarkSubmissionStorageClosurePending(
-							ctx,
-							dbgen.MarkSubmissionStorageClosurePendingParams{
-								Cutoff:       value.RemovedAt,
-								SubmissionID: value.SubmissionID,
-							}); cleanupErr != nil {
-						return cleanupErr
+				}
+				closurePending, cleanupErr := queries.
+					MarkSubmissionStorageClosurePending(
+						ctx,
+						dbgen.MarkSubmissionStorageClosurePendingParams{
+							Cutoff:       value.RemovedAt,
+							SubmissionID: value.SubmissionID,
+						})
+				if cleanupErr != nil {
+					return cleanupErr
+				}
+				if closurePending > 0 {
+					if _, resolveErr := queries.ResolveStorageRecovery(
+						ctx, dbgen.ResolveStorageRecoveryParams{
+							RecoveredAt:        value.RemovedAt,
+							TargetSubmissionID: value.SubmissionID,
+						}); resolveErr != nil &&
+						!errors.Is(resolveErr, pgx.ErrNoRows) {
+						return resolveErr
 					}
 				}
 				if submission.SubmittedAt.Valid &&
