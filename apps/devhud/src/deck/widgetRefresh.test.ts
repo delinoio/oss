@@ -16,8 +16,13 @@ function attemptStore(): DeckRefreshAttemptStore {
   const attempts = new Map<string, DeckRefreshAttempt>();
   return {
     get: (viewId) => attempts.get(viewId),
-    set: (viewId, attempt) => {
+    claim: (viewId, attempt) => {
+      const existing = attempts.get(viewId);
+      if (existing !== undefined) {
+        return existing;
+      }
       attempts.set(viewId, attempt);
+      return attempt;
     },
     deleteIfMatches: (viewId, attempt) => {
       if (attempts.get(viewId)?.request.requestId === attempt.request.requestId) {
@@ -104,12 +109,17 @@ describe("Deck widget refresh", () => {
     });
     const store: DeckRefreshAttemptStore = {
       get: (viewId) => attempts.get(viewId),
-      set: async (viewId, attempt) => {
+      claim: async (viewId, attempt) => {
+        const existing = attempts.get(viewId);
+        if (existing !== undefined) {
+          return existing;
+        }
         attempts.set(viewId, attempt);
         markSetStarted?.();
         await new Promise<void>((resolve) => {
           releaseSet = resolve;
         });
+        return attempt;
       },
       deleteIfMatches: (viewId, attempt) => {
         if (
@@ -155,12 +165,17 @@ describe("Deck widget refresh", () => {
     });
     const store: DeckRefreshAttemptStore = {
       get: (viewId) => attempts.get(viewId),
-      set: async (viewId, attempt) => {
+      claim: async (viewId, attempt) => {
+        const existing = attempts.get(viewId);
+        if (existing !== undefined) {
+          return existing;
+        }
         attempts.set(viewId, attempt);
         markSetStarted?.();
         await new Promise<void>((resolve) => {
           releaseSet = resolve;
         });
+        return attempt;
       },
       deleteIfMatches: (viewId, attempt) => {
         if (
@@ -201,6 +216,61 @@ describe("Deck widget refresh", () => {
     await work;
 
     expect(attempts.get("view")).toEqual(replacement);
+  });
+
+  it("atomically reuses one attempt across concurrent widget refreshes", async () => {
+    const preflights: DeckRefreshIdentity[] = [];
+    const refreshes: Array<
+      DeckRefreshIdentity & { preflightToken: string }
+    > = [];
+    let releasePreflights: (() => void) | undefined;
+    const preflightsReady = new Promise<void>((resolve) => {
+      releasePreflights = resolve;
+    });
+    let sequence = 0;
+    let failAmbiguously = true;
+    const controller = new DeckWidgetRefreshController(
+      {
+        isAmbiguousRefreshError: () => true,
+        getPreflight: async (request) => {
+          preflights.push(request);
+          if (preflights.length === 2) {
+            releasePreflights?.();
+          }
+          await preflightsReady;
+          return {
+            priceUsdMicros: 50n,
+            token: `token-${request.requestId}`,
+          };
+        },
+        refresh: async (request) => {
+          refreshes.push(request);
+          if (failAmbiguously) {
+            throw new Error("response lost");
+          }
+        },
+      },
+      () => `widget-request-${++sequence}`,
+      attemptStore(),
+    );
+
+    const first = controller.refresh("view", new AbortController().signal);
+    const second = controller.refresh("view", new AbortController().signal);
+    const results = await Promise.allSettled([first, second]);
+
+    expect(results.map((result) => result.status)).toEqual([
+      "rejected",
+      "rejected",
+    ]);
+    expect(preflights).toHaveLength(2);
+    expect(refreshes).toHaveLength(2);
+    expect(refreshes[1]).toEqual(refreshes[0]);
+
+    failAmbiguously = false;
+    await controller.refresh("view", new AbortController().signal);
+
+    expect(preflights).toHaveLength(2);
+    expect(refreshes[2]).toEqual(refreshes[0]);
   });
 
   it("retries an ambiguous failure with the same identity and token", async () => {

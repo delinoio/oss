@@ -18,8 +18,13 @@ function attemptStore(): DeckRefreshAttemptStore {
   const attempts = new Map<string, DeckRefreshAttempt>();
   return {
     get: (viewId) => attempts.get(viewId),
-    set: (viewId, attempt) => {
+    claim: (viewId, attempt) => {
+      const existing = attempts.get(viewId);
+      if (existing !== undefined) {
+        return existing;
+      }
       attempts.set(viewId, attempt);
+      return attempt;
     },
     deleteIfMatches: (viewId, attempt) => {
       if (attempts.get(viewId)?.request.requestId === attempt.request.requestId) {
@@ -39,17 +44,21 @@ function attemptStoreWithDeferredFirstSet() {
   let deferSet = true;
   const store: DeckRefreshAttemptStore = {
     get: (viewId) => attempts.get(viewId),
-    set: (viewId, attempt) => {
+    claim: (viewId, attempt) => {
+      const existing = attempts.get(viewId);
+      if (existing !== undefined) {
+        return existing;
+      }
       if (!deferSet) {
         attempts.set(viewId, attempt);
-        return;
+        return attempt;
       }
       deferSet = false;
+      attempts.set(viewId, attempt);
       announceFirstSet?.();
-      return new Promise<void>((resolve) => {
+      return new Promise<DeckRefreshAttempt>((resolve) => {
         finishFirstSet = () => {
-          attempts.set(viewId, attempt);
-          resolve();
+          resolve(attempt);
         };
       });
     },

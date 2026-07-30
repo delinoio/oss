@@ -68,10 +68,12 @@ export interface DeckRefreshAttemptStore {
   get(
     viewId: string,
   ): DeckRefreshAttempt | undefined | Promise<DeckRefreshAttempt | undefined>;
-  set(
+  // Implementations must atomically retain and return an existing attempt or
+  // store and return the proposed attempt when no attempt exists.
+  claim(
     viewId: string,
     attempt: DeckRefreshAttempt,
-  ): void | Promise<void>;
+  ): DeckRefreshAttempt | Promise<DeckRefreshAttempt>;
   // Implementations must compare and delete atomically so delayed cleanup
   // cannot remove a newer logical attempt for the same view.
   deleteIfMatches(
@@ -177,10 +179,10 @@ export class DeckRefreshController {
         if (controller.signal.aborted || !confirmed) {
           return false;
         }
-        pending = { request, preflightToken: preflight.token };
-        await this.#options.manualAttempts.set(viewId, pending);
+        const proposed = { request, preflightToken: preflight.token };
+        pending = await this.#options.manualAttempts.claim(viewId, proposed);
         if (controller.signal.aborted) {
-          await this.#options.manualAttempts.deleteIfMatches(viewId, pending);
+          await this.#options.manualAttempts.deleteIfMatches(viewId, proposed);
           return false;
         }
       }
@@ -283,8 +285,11 @@ export class DeckRefreshController {
           ) {
             return;
           }
-          pending = { request, preflightToken: preflight.token };
-          await this.#options.automaticAttempts.set(candidate.viewId, pending);
+          const proposed = { request, preflightToken: preflight.token };
+          pending = await this.#options.automaticAttempts.claim(
+            candidate.viewId,
+            proposed,
+          );
           if (
             controller.signal.aborted ||
             !this.#running ||
@@ -293,7 +298,7 @@ export class DeckRefreshController {
           ) {
             await this.#options.automaticAttempts.deleteIfMatches(
               candidate.viewId,
-              pending,
+              proposed,
             );
             return;
           }
@@ -385,10 +390,10 @@ export class DeckWidgetRefreshController {
       if (signal.aborted) {
         return;
       }
-      pending = { request, preflightToken: preflight.token };
-      await this.#attempts.set(viewId, pending);
+      const proposed = { request, preflightToken: preflight.token };
+      pending = await this.#attempts.claim(viewId, proposed);
       if (signal.aborted) {
-        await this.#attempts.deleteIfMatches(viewId, pending);
+        await this.#attempts.deleteIfMatches(viewId, proposed);
         return;
       }
     }
