@@ -31,10 +31,13 @@
   `x-devhud-deck-forwarded-delibase-token`. The service validates issuer,
   audience, expiry, Deck procedure scope, forwarded
   `delibase:account:read`/`delibase:organizations:read`/`delibase:teams:read`
-  and `delibase:usage:execute` scopes, and matching subjects and strips
-  credentials from request metadata before business handlers. The already
-  validated forwarded bearer remains only in the active request context for
-  live reserve/commit/release and is never detached or persisted.
+  scopes, and matching subjects for every human RPC.
+  `delibase:usage:execute` is additionally required only for `RefreshView`,
+  which can perform live reserve/commit/release; integration, device, quote,
+  and other view procedures do not require that mutation scope. The service
+  strips credentials from request metadata before business handlers. The
+  already validated forwarded bearer remains only in the active request
+  context for live reserve/commit/release and is never detached or persisted.
   `RegisterDevice` returns its opaque single-registration
   revocation grant only in
   `x-devhud-deck-device-revocation-grant` response metadata;
@@ -199,13 +202,13 @@
   precision zero, is allowlisted only to the Deck service identity, and has an
   effective unit price of exactly 50 USD micros. `GetRefreshPreflight`
   validates that authoritative identity, unit, service mapping, and effective
-  price for every prospective origin/client pair without reserving usage,
-  dispatching GitHub, refreshing a cache, or charging. It returns the
-  server-derived price plus an opaque short-lived preflight token bound to the
-  authenticated subject, view, billing scope, prospective `RefreshView`
-  identity, origin, active client kind, validated catalog version, and expiry;
-  a missing, disabled, or divergent mapping fails unavailable before any
-  attempt or manual warning.
+  price for every prospective origin/client pair from retained
+  view/owner/billing metadata without reserving usage, contacting GitHub,
+  refreshing a cache, or charging. It returns the server-derived price plus an
+  opaque short-lived preflight token bound to the authenticated subject, view,
+  billing scope, prospective `RefreshView` identity, origin, active client
+  kind, validated catalog version, and expiry; a missing, disabled, or
+  divergent mapping fails unavailable before any attempt or manual warning.
 - Every `RefreshView` first looks up the durable attempt by authenticated
   identity and request digest. An existing exact attempt returns or resumes
   independently of later token expiry, while changed input conflicts.
@@ -216,12 +219,14 @@
   reservation prevents GitHub dispatch. Undispatched work releases that unit;
   any recorded dispatch commits it, including GitHub errors, rate limits, and
   timeouts. Dispatch is durably marked immediately before the provider
-  round-trip, and the outcome is encrypted before finalization so an
-  authenticated exact client retry with a fresh forwarded-user bearer can
-  finish an ambiguous commit/release without another GitHub request or charge.
-  No server worker or disconnected continuation performs that retry. Changing
-  the unit or price requires a synchronized delibase/Deck contract and catalog
-  change.
+  round-trip, and the outcome is encrypted before finalization when the active
+  request reaches that checkpoint. If it ends after reservation or dispatch
+  marking but before retaining an outcome, an authenticated exact client retry
+  with a fresh forwarded-user bearer synthesizes a terminal provider-failure
+  response and releases or commits from the durable dispatch state without
+  loading a possibly deleted view or snapshot. No server worker or disconnected
+  continuation performs that retry. Changing the unit or price requires a
+  synchronized delibase/Deck contract and catalog change.
 - Limits are 12 manual refresh requests/minute/user, 30 PR mutations/minute/user, and four concurrent GitHub provider requests/installation.
 - Deck catalog records, including the identity and mapping above, remain disabled in production-facing artifacts until a separate activation change; this contract does not add them to the current empty production catalog.
 

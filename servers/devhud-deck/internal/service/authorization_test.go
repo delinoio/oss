@@ -201,6 +201,36 @@ func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 	}
 }
 
+func TestRefreshMetadataAuthorizesFromRetainedOwnerState(t *testing.T) {
+	t.Parallel()
+	accountID := uuid.MustParse("01900000-0000-7000-8000-000000000001")
+	owner := &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
+		OwnerId: &deckv1.Owner_AccountId{AccountId: &deckv1.UuidV7{
+			Value: accountID.String(),
+		}},
+	}
+	authorize := refreshViewMetadataAuthorizer(
+		contracts.Viewer{AccountID: accountID})
+	if err := authorize(database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+	}); err != nil {
+		t.Fatalf("connected preflight required provider state: %v", err)
+	}
+
+	otherAccountID := uuid.MustParse(
+		"01900000-0000-7000-8000-000000000002")
+	if err := refreshViewMetadataAuthorizer(
+		contracts.Viewer{AccountID: otherAccountID},
+	)(database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+	}); err == nil {
+		t.Fatal("preflight accepted another personal owner")
+	}
+}
+
 func TestDisconnectedOrganizationViewDefinitionIsManagerOnly(t *testing.T) {
 	t.Parallel()
 	organizationID := uuid.MustParse("01900000-0000-7000-8000-000000000003")

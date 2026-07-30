@@ -44,7 +44,7 @@ func (service *View) GetRefreshPreflight(
 		return nil, rpcerr.New(connect.CodeInvalidArgument,
 			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
-	view, err := service.getAuthorizedView(ctx, viewer, viewID, false)
+	view, err := service.getRefreshViewMetadata(ctx, viewer, viewID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (service *View) RefreshView(
 				deckv1.ErrorReason_ERROR_REASON_BILLING_PREFLIGHT_REQUIRED)
 		}
 	}
-	view, err := service.getAuthorizedView(ctx, viewer, viewID, false)
+	view, err := service.getRefreshViewMetadata(ctx, viewer, viewID)
 	if err != nil {
 		return nil, err
 	}
@@ -301,9 +301,8 @@ func replayRefreshAttempt(
 func refreshAttemptNeedsOnlyAccounting(
 	attempt database.RefreshAttempt,
 ) bool {
-	return attempt.State == database.RefreshAttemptDispatched ||
-		(attempt.State == database.RefreshAttemptReserved &&
-			attempt.Response != nil)
+	return attempt.State == database.RefreshAttemptReserved ||
+		attempt.State == database.RefreshAttemptDispatched
 }
 
 func (service *View) finalizePendingRefreshAccounting(
@@ -326,24 +325,8 @@ func (service *View) finalizePendingRefreshAccounting(
 	now := service.dependencies.Clock.Now().UTC()
 	pending := attempt.Response
 	if pending == nil {
-		truncated, refreshedAt, freshness, resultCount, stateErr :=
-			service.currentSnapshotState(
-				ctx, attempt.ViewID, attempt.ViewerHash, now)
-		if stateErr != nil {
-			return stateErr
-		}
-		pending = refreshResponse(
-			&deckv1.View{
-				ViewId: &deckv1.UuidV7{Value: attempt.ViewID.String()},
-				Revision: &deckv1.Revision{
-					Value: attempt.ViewRevision,
-					Etag: service.dependencies.Hasher.ETag(
-						attempt.ViewID, attempt.ViewRevision),
-				},
-			},
-			deckv1.RefreshOutcome_REFRESH_OUTCOME_PROVIDER_FAILED,
-			deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
-			freshness, refreshedAt, truncated, resultCount, false)
+		pending = synthesizedRefreshAccountingResponse(
+			service.dependencies.Hasher, attempt)
 	}
 	disposition, err := finalizeRefreshReservation(
 		ctx, service.dependencies.LiveUsage, forwardedToken,
@@ -358,6 +341,24 @@ func (service *View) finalizePendingRefreshAccounting(
 	*metricOutcome = contracts.RefreshMetricProviderFailure
 	return service.dependencies.Store.SaveRefreshResponse(
 		ctx, subjectHash, requestID, pending, true, now)
+}
+
+func synthesizedRefreshAccountingResponse(
+	hasher *security.Hasher,
+	attempt database.RefreshAttempt,
+) *deckv1.RefreshViewResponse {
+	return refreshResponse(
+		&deckv1.View{
+			ViewId: &deckv1.UuidV7{Value: attempt.ViewID.String()},
+			Revision: &deckv1.Revision{
+				Value: attempt.ViewRevision,
+				Etag:  hasher.ETag(attempt.ViewID, attempt.ViewRevision),
+			},
+		},
+		deckv1.RefreshOutcome_REFRESH_OUTCOME_PROVIDER_FAILED,
+		deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
+		deckv1.FreshnessState_FRESHNESS_STATE_UNSPECIFIED,
+		time.Time{}, false, 0, false)
 }
 
 func (service *View) advanceProviderRefresh(
@@ -413,16 +414,12 @@ func (service *View) advanceProviderRefresh(
 		}
 		attempt.State = database.RefreshAttemptReserved
 		attempt.ReservationID = reservation.ID
-	}
-	if refreshAttemptNeedsOnlyAccounting(attempt) {
+	} else if refreshAttemptNeedsOnlyAccounting(attempt) {
 		return service.finalizePendingRefreshAccounting(
 			ctx, subjectHash, requestID, attempt, forwardedToken,
 			response, metricOutcome)
 	}
 
-	previous, _, _, providerErr :=
-		service.dependencies.Store.ListAllSnapshots(
-			ctx, refreshViewID(view), viewerHash)
 	dispatched := false
 	var dispatchOnce sync.Once
 	var dispatchErr error
@@ -437,11 +434,27 @@ func (service *View) advanceProviderRefresh(
 		})
 		return dispatchErr
 	})
+	providerView, providerErr := service.getRefreshProviderAuthorizedView(
+		providerCtx, viewer, refreshViewID(view))
+	if providerErr == nil &&
+		providerView.GetRevision().GetValue() != attempt.ViewRevision {
+		providerErr = &database.StaleError{
+			ResourceID: refreshViewID(view),
+			Revision:   providerView.GetRevision().GetValue(),
+		}
+	}
+	var previous []*deckv1.PullRequestResult
+	if providerErr == nil {
+		previous, _, _, providerErr =
+			service.dependencies.Store.ListAllSnapshots(
+				ctx, refreshViewID(view), viewerHash)
+	}
 	var snapshots, notificationSnapshots []*deckv1.PullRequestResult
 	truncated := false
 	if providerErr == nil {
 		snapshots, notificationSnapshots, truncated, providerErr =
-			service.performGitHubRefresh(providerCtx, viewer, view, previous)
+			service.performGitHubRefresh(
+				providerCtx, viewer, providerView, previous)
 	}
 	now := service.dependencies.Clock.Now().UTC()
 	outcome := refreshOutcomeForProviderError(providerErr)

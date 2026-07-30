@@ -119,10 +119,10 @@ func TestRefreshAttemptAccountingRecoveryStates(t *testing.T) {
 	}) {
 		t.Fatal("created attempt skipped view authorization")
 	}
-	if refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+	if !refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
 		State: database.RefreshAttemptReserved,
 	}) {
-		t.Fatal("unresolved reserved attempt skipped view authorization")
+		t.Fatal("unresolved reserved attempt did not resume release accounting")
 	}
 	if !refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
 		State:    database.RefreshAttemptReserved,
@@ -134,6 +134,34 @@ func TestRefreshAttemptAccountingRecoveryStates(t *testing.T) {
 		State: database.RefreshAttemptDispatched,
 	}) {
 		t.Fatal("dispatched attempt did not resume commit accounting")
+	}
+}
+
+func TestSynthesizedRefreshAccountingResponseNeedsNoRetainedViewState(
+	t *testing.T,
+) {
+	t.Parallel()
+	hasher, err := security.NewHasher(bytes.Repeat([]byte{3}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewID := uuid.MustParse("01900000-0000-7000-8000-000000000001")
+	response := synthesizedRefreshAccountingResponse(
+		hasher,
+		database.RefreshAttempt{
+			ViewID:       viewID,
+			ViewRevision: 7,
+		},
+	)
+	if response.GetViewId().GetValue() != viewID.String() ||
+		response.GetViewRevision().GetValue() != 7 ||
+		response.GetOutcome() !=
+			deckv1.RefreshOutcome_REFRESH_OUTCOME_PROVIDER_FAILED ||
+		response.GetBillingDisposition() !=
+			deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED ||
+		response.GetFreshness() !=
+			deckv1.FreshnessState_FRESHNESS_STATE_UNSPECIFIED {
+		t.Fatalf("synthesized accounting response = %#v", response)
 	}
 }
 

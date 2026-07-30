@@ -21,11 +21,10 @@ const (
 	LifecycleScope               = "deck:lifecycle:delete"
 )
 
-var forwardedScopes = []string{
+var forwardedDirectoryScopes = []string{
 	"delibase:account:read",
 	"delibase:organizations:read",
 	"delibase:teams:read",
-	"delibase:usage:execute",
 }
 
 type Validator interface {
@@ -118,7 +117,7 @@ func (interceptor *Interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryF
 			}
 		}
 		viewer, deckClaims, forwardedToken, err := interceptor.authenticateHumanWithToken(
-			ctx, request.Header(), deckScopes(procedure))
+			ctx, request.Header(), deckScopes(procedure), procedure)
 		stripCredentials(request.Header())
 		if err != nil {
 			return nil, err
@@ -149,7 +148,7 @@ func (interceptor *Interceptor) authenticateHuman(
 	scopes []string,
 ) (contracts.Viewer, *auth.UserClaims, error) {
 	viewer, claims, _, err := interceptor.authenticateHumanWithToken(
-		ctx, headers, scopes)
+		ctx, headers, scopes, "")
 	return viewer, claims, err
 }
 
@@ -157,6 +156,7 @@ func (interceptor *Interceptor) authenticateHumanWithToken(
 	ctx context.Context,
 	headers http.Header,
 	scopes []string,
+	procedure string,
 ) (contracts.Viewer, *auth.UserClaims, string, error) {
 	if len(scopes) == 0 {
 		return contracts.Viewer{}, nil, "", rpcerr.New(connect.CodePermissionDenied,
@@ -176,7 +176,7 @@ func (interceptor *Interceptor) authenticateHumanWithToken(
 		return contracts.Viewer{}, nil, "", authenticationError(err)
 	}
 	forwardedClaims, err := interceptor.dependencies.DelibaseValidator.ValidateUser(
-		ctx, forwardedToken, forwardedScopes...)
+		ctx, forwardedToken, forwardedScopes(procedure)...)
 	if err != nil {
 		return contracts.Viewer{}, nil, "", authenticationError(err)
 	}
@@ -190,6 +190,14 @@ func (interceptor *Interceptor) authenticateHumanWithToken(
 			deckv1.ErrorReason_ERROR_REASON_PERMISSION_DENIED)
 	}
 	return viewer, deckClaims, forwardedToken, nil
+}
+
+func forwardedScopes(procedure string) []string {
+	scopes := append([]string(nil), forwardedDirectoryScopes...)
+	if procedure == deckv1connect.DeckViewServiceRefreshViewProcedure {
+		scopes = append(scopes, "delibase:usage:execute")
+	}
+	return scopes
 }
 
 func (interceptor *Interceptor) authenticateLifecycle(

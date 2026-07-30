@@ -125,10 +125,12 @@ describe("Deck client-owned refresh polling", () => {
     let resolvePreflight:
       | ((value: { priceUsdMicros: bigint; token: string }) => void)
       | undefined;
-    let providerDispatches = 0;
+    let sequence = 0;
+    const preflights: string[] = [];
+    const providerDispatches: string[] = [];
     const controller = new DeckRefreshController({
       clientKind: RefreshClientKind.MOBILE,
-      createRequestId: () => "request",
+      createRequestId: () => `request-${++sequence}`,
       canPoll: () => true,
       listCandidates: async () => [
         {
@@ -140,12 +142,20 @@ describe("Deck client-owned refresh polling", () => {
       ],
       transport: {
         isAmbiguousRefreshError: () => false,
-        getPreflight: () =>
-          new Promise((resolve) => {
+        getPreflight: (request) => {
+          preflights.push(request.requestId);
+          if (preflights.length > 1) {
+            return Promise.resolve({
+              priceUsdMicros: 50n,
+              token: `token-${request.requestId}`,
+            });
+          }
+          return new Promise((resolve) => {
             resolvePreflight = resolve;
-          }),
-        refresh: async () => {
-          providerDispatches += 1;
+          });
+        },
+        refresh: async (request) => {
+          providerDispatches.push(request.requestId);
         },
       },
     });
@@ -156,7 +166,13 @@ describe("Deck client-owned refresh polling", () => {
     resolvePreflight?.({ priceUsdMicros: 50n, token: "token" });
     await Promise.resolve();
     await Promise.resolve();
-    expect(providerDispatches).toBe(0);
+    expect(providerDispatches).toHaveLength(0);
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(preflights).toEqual(["request-1", "request-2"]);
+    expect(providerDispatches).toEqual(["request-2"]);
+    controller.stop();
   });
 
   it("does not dispatch after an asynchronous manual confirmation is cancelled", async () => {
@@ -275,6 +291,52 @@ describe("Deck client-owned refresh polling", () => {
       "request-1",
       "request-2",
     ]);
+    controller.stop();
+  });
+
+  it("continues to later candidates after one refresh fails", async () => {
+    const refreshes: string[] = [];
+    const errors: unknown[] = [];
+    let sequence = 0;
+    const controller = new DeckRefreshController({
+      clientKind: RefreshClientKind.DESKTOP,
+      createRequestId: () => `request-${++sequence}`,
+      canPoll: () => true,
+      listCandidates: async () => [
+        {
+          viewId: "deleted",
+          notificationAttached: true,
+          shortcutAttached: false,
+          widgetAttached: false,
+        },
+        {
+          viewId: "healthy",
+          notificationAttached: true,
+          shortcutAttached: false,
+          widgetAttached: false,
+        },
+      ],
+      onError: (error) => errors.push(error),
+      transport: {
+        isAmbiguousRefreshError: () => false,
+        getPreflight: async (request) => ({
+          priceUsdMicros: 50n,
+          token: `token-${request.requestId}`,
+        }),
+        refresh: async (request) => {
+          refreshes.push(request.viewId);
+          if (request.viewId === "deleted") {
+            throw new Error("view deleted");
+          }
+        },
+      },
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(refreshes).toEqual(["deleted", "healthy"]);
+    expect(errors).toHaveLength(1);
     controller.stop();
   });
 

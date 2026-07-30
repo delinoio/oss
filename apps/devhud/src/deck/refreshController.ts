@@ -246,6 +246,14 @@ export class DeckRefreshController {
             request,
             controller.signal,
           );
+          if (
+            controller.signal.aborted ||
+            !this.#running ||
+            generation !== this.#generation ||
+            !this.#options.canPoll()
+          ) {
+            return;
+          }
           pending = { request, preflightToken: preflight.token };
           this.#automaticAttempts.set(candidate.viewId, pending);
         }
@@ -269,7 +277,11 @@ export class DeckRefreshController {
           if (!this.#options.transport.isAmbiguousRefreshError(error)) {
             this.#automaticAttempts.delete(candidate.viewId);
           }
-          throw error;
+          if (controller.signal.aborted) {
+            return;
+          }
+          this.#options.onError?.(error);
+          continue;
         }
         this.#automaticAttempts.delete(candidate.viewId);
       }

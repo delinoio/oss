@@ -73,10 +73,11 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
   unit price before returning that server-derived price, an opaque short-lived
   token bound to the authenticated subject, view, billing scope, refresh
   identity, origin, active client kind, and validated catalog version, plus its
-  expiry. It performs no usage reservation, provider dispatch, cache refresh,
-  or charge; missing,
-  disabled, or divergent catalog metadata returns a typed unavailable result
-  with no preflight. Only manual UI displays the returned price as a warning.
+  expiry. It authorizes retained view/owner/billing metadata and performs no
+  GitHub request, usage reservation, provider dispatch, cache refresh, or
+  charge. Missing, disabled, or divergent catalog metadata returns a typed
+  unavailable result with no preflight. Only manual UI displays the returned
+  price as a warning.
 - `RefreshView` carries a stable client-generated UUID v7 request identity
   scoped to the authenticated subject, operation, and view and distinguishes
   automatic/widget/manual/view-open/shortcut origin, active client kind, and

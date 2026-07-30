@@ -121,7 +121,9 @@ Authenticated Deck and RealQA windows receive no generic opener, but they may in
   in-flight preflight work and removes every later timer. It requests only
   views attached to a widget, notification, or shortcut or opened in the prior
   30 days. A widget uses a bounded one-shot controller and cancellation signal.
-  No timer, request, retry, or continuation survives its owning client.
+  A failed candidate is reported without skipping later candidates unless the
+  owning client was cancelled. No timer, request, retry, or continuation
+  survives its owning client.
 - Before any automatic, widget, manual, view-open, or shortcut refresh, the
   client generates the prospective logical refresh's UUID v7 identity and
   calls `DeckViewService.GetRefreshPreflight` with both the origin and active

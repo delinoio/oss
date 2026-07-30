@@ -475,6 +475,35 @@ func (store *Store) GetViewAuthorized(
 	return store.decodeView(row)
 }
 
+// GetViewMetadataAuthorized returns only unencrypted view metadata after the
+// supplied retained-state authorization. Refresh quote and attempt setup use it
+// so billing work never has to open identity-bearing view fields or contact
+// GitHub before reservation.
+func (store *Store) GetViewMetadataAuthorized(
+	ctx context.Context,
+	id uuid.UUID,
+	authorize ViewAuthorizer,
+) (*deckv1.View, error) {
+	if authorize == nil {
+		return nil, errors.New("deck database: view authorization is required")
+	}
+	row, err := store.queries.GetView(ctx, pgUUID(id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, errors.New("deck database: view lookup failed")
+	}
+	authorization, err := store.viewAuthorization(row)
+	if err != nil {
+		return nil, err
+	}
+	if err := authorize(authorization); err != nil {
+		return nil, err
+	}
+	return store.viewMetadata(row), nil
+}
+
 func (store *Store) ListViews(
 	ctx context.Context,
 	ownerScope deckv1.OwnerScope,
@@ -782,31 +811,37 @@ func (store *Store) decodeView(row dbgen.DeckView) (*deckv1.View, error) {
 	if err := store.openProto("view-notification", row.NotificationCiphertext, notification); err != nil {
 		return nil, err
 	}
+	view := store.viewMetadata(row)
+	view.Name = string(name)
+	view.Kind = deckv1.ViewKind(row.Kind)
+	view.Query = query
+	view.Sort = deckv1.ViewSort(row.Sort)
+	view.Grouping = deckv1.ViewGrouping(row.Grouping)
+	view.NotificationPreference = notification
+	view.CreatedAt = timestampProto(row.CreatedAt)
+	view.UpdatedAt = timestampProto(row.UpdatedAt)
+	return view, nil
+}
+
+func (store *Store) viewMetadata(row dbgen.DeckView) *deckv1.View {
 	id := uuidValue(row.ViewID)
 	view := &deckv1.View{
-		ViewId:                 uuidProto(id),
-		Name:                   string(name),
-		Kind:                   deckv1.ViewKind(row.Kind),
-		Query:                  query,
-		Sort:                   deckv1.ViewSort(row.Sort),
-		Grouping:               deckv1.ViewGrouping(row.Grouping),
-		NotificationPreference: notification,
-		ConnectionState:        deckv1.ConnectionState(row.ConnectionState),
-		Revision:               revisionProto(store.hasher, id, uint64(row.Revision)),
-		CreatedAt:              timestampProto(row.CreatedAt),
-		UpdatedAt:              timestampProto(row.UpdatedAt),
+		ViewId:          uuidProto(id),
+		Owner:           viewOwner(row),
+		ConnectionState: deckv1.ConnectionState(row.ConnectionState),
+		Revision:        revisionProto(store.hasher, id, uint64(row.Revision)),
 	}
-	view.Owner = viewOwner(row)
 	if row.BillingOrganizationID.Valid || row.BillingTeamID.Valid {
 		view.Billing = &deckv1.BillingSelection{}
 		if row.BillingOrganizationID.Valid {
-			view.Billing.OrganizationId = uuidProto(uuidValue(row.BillingOrganizationID))
+			view.Billing.OrganizationId = uuidProto(
+				uuidValue(row.BillingOrganizationID))
 		}
 		if row.BillingTeamID.Valid {
 			view.Billing.TeamId = uuidProto(uuidValue(row.BillingTeamID))
 		}
 	}
-	return view, nil
+	return view
 }
 
 func viewOwner(row dbgen.DeckView) *deckv1.Owner {

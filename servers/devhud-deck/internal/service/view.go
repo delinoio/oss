@@ -697,6 +697,74 @@ func (service *View) getAuthorizedView(
 	return view, nil
 }
 
+func (service *View) getRefreshViewMetadata(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	id uuid.UUID,
+) (*deckv1.View, error) {
+	view, err := service.dependencies.Store.GetViewMetadataAuthorized(
+		ctx, id, refreshViewMetadataAuthorizer(viewer))
+	if err != nil {
+		return nil, mapAuthorizedViewError(err)
+	}
+	return view, nil
+}
+
+func refreshViewMetadataAuthorizer(
+	viewer contracts.Viewer,
+) database.ViewAuthorizer {
+	return func(authorization database.ViewAuthorization) error {
+		if _, err := authorizeOwner(viewer, authorization.Owner, false); err != nil {
+			return err
+		}
+		if authorization.ConnectionState ==
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+			if _, err := authorizeOwner(viewer, authorization.Owner, true); err != nil {
+				return database.ErrViewNotVisible
+			}
+		}
+		return nil
+	}
+}
+
+func (service *View) getRefreshProviderAuthorizedView(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	id uuid.UUID,
+) (*deckv1.View, error) {
+	return service.dependencies.Store.GetViewAuthorized(
+		ctx, id, service.refreshProviderAuthorizer(ctx, viewer))
+}
+
+func (service *View) refreshProviderAuthorizer(
+	ctx context.Context,
+	viewer contracts.Viewer,
+) database.ViewAuthorizer {
+	return func(authorization database.ViewAuthorization) error {
+		if _, err := authorizeOwner(viewer, authorization.Owner, false); err != nil {
+			return err
+		}
+		if authorization.ConnectionState ==
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+			return deckgithub.ErrReauthenticationRequired
+		}
+		if !authorization.HasRepositoryIndex {
+			return errors.New("deck refresh: missing repository authorization index")
+		}
+		readable, err := service.dependencies.Repositories.ReadableRepositoryHashes(
+			ctx, viewer, authorization.Owner,
+			contracts.RepositoryHashKindView, authorization.RepositoryHashes)
+		if err != nil {
+			return err
+		}
+		if !repositoryHashesAuthorized(
+			authorization.RepositoryHashes, readable, nil) {
+			return deckgithub.ErrPermissionDenied
+		}
+		return nil
+	}
+}
+
 func (service *View) getAuthorizedViewForMutation(
 	ctx context.Context,
 	viewer contracts.Viewer,
