@@ -55,6 +55,13 @@ type LifecycleStore interface {
 		[sha256.Size]byte,
 		time.Time,
 	) error
+	ApplyGitHubInstallationTargetRename(
+		context.Context,
+		string,
+		Installation,
+		[sha256.Size]byte,
+		time.Time,
+	) error
 	ApplyGitHubAuthorizationRevocation(
 		context.Context,
 		string,
@@ -326,10 +333,8 @@ type installationWebhook struct {
 }
 
 type webhookRepository struct {
-	Name  string `json:"name"`
-	Owner struct {
-		Login string `json:"login"`
-	} `json:"owner"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
 }
 
 func (webhook installationWebhook) changedRepositories() []Repository {
@@ -344,12 +349,55 @@ func (webhook installationWebhook) changedRepositories() []Repository {
 	}
 	repositories := make([]Repository, 0, len(source))
 	for _, item := range source {
-		repository := Repository{Owner: item.Owner.Login, Name: item.Name}
-		if repository.Validate() == nil {
+		owner, name, found := strings.Cut(item.FullName, "/")
+		repository := Repository{Owner: owner, Name: name}
+		if found && strings.EqualFold(name, item.Name) &&
+			repository.Validate() == nil {
 			repositories = append(repositories, repository)
 		}
 	}
 	return repositories
+}
+
+type installationTargetWebhook struct {
+	Action       string `json:"action"`
+	TargetType   string `json:"target_type"`
+	Installation struct {
+		ID uint64 `json:"id"`
+	} `json:"installation"`
+	Account struct {
+		ID    uint64 `json:"id"`
+		Login string `json:"login"`
+		Slug  string `json:"slug"`
+		Type  string `json:"type"`
+	} `json:"account"`
+}
+
+func (webhook installationTargetWebhook) renamedInstallation() Installation {
+	login := webhook.Account.Login
+	if login == "" {
+		login = webhook.Account.Slug
+	}
+	kind := AccountKindUnknown
+	switch webhook.TargetType {
+	case "User":
+		kind = AccountKindUser
+	case "Organization":
+		kind = AccountKindOrganization
+	}
+	if webhook.Action != "renamed" || webhook.Installation.ID == 0 ||
+		webhook.Account.ID == 0 || kind == AccountKindUnknown ||
+		(webhook.Account.Type != "" &&
+			webhook.Account.Type != webhook.TargetType) ||
+		!safePathSegment(login) {
+		return Installation{}
+	}
+	return Installation{
+		ID:           webhook.Installation.ID,
+		AccountID:    webhook.Account.ID,
+		AccountLogin: login,
+		AccountKind:  kind,
+	}
 }
 
 type authorizationWebhook struct {
@@ -378,6 +426,7 @@ func (broker *Broker) webhook(
 	}
 	event := request.Header.Get("X-GitHub-Event")
 	if event != "installation" && event != "installation_repositories" &&
+		event != "installation_target" &&
 		event != "github_app_authorization" {
 		// PR/check/status webhooks are deliberately ignored and can never
 		// become refresh triggers.
@@ -401,6 +450,19 @@ func (broker *Broker) webhook(
 		}
 		applyErr = broker.lifecycle.ApplyGitHubAuthorizationRevocation(
 			request.Context(), delivery, webhook.Sender.ID, payloadHash, broker.now())
+	} else if event == "installation_target" {
+		var webhook installationTargetWebhook
+		if err := json.Unmarshal(payload, &webhook); err != nil {
+			http.Error(writer, "invalid webhook", http.StatusBadRequest)
+			return
+		}
+		installation := webhook.renamedInstallation()
+		if installation.ID == 0 {
+			http.Error(writer, "invalid webhook", http.StatusBadRequest)
+			return
+		}
+		applyErr = broker.lifecycle.ApplyGitHubInstallationTargetRename(
+			request.Context(), delivery, installation, payloadHash, broker.now())
 	} else {
 		var webhook installationWebhook
 		if err := json.Unmarshal(payload, &webhook); err != nil ||

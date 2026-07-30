@@ -1150,6 +1150,123 @@ func githubPermissionsChanged(
 		connection.GithubMembersPermission.Int16 != int16(permissions.Members)
 }
 
+func (store *Store) ApplyGitHubInstallationTargetRename(
+	ctx context.Context,
+	delivery string,
+	installation deckgithub.Installation,
+	payloadHash [32]byte,
+	now time.Time,
+) error {
+	if installation.ID == 0 || installation.AccountID == 0 ||
+		(installation.AccountKind != deckgithub.AccountKindUser &&
+			installation.AccountKind != deckgithub.AccountKindOrganization) ||
+		(deckgithub.Repository{
+			Owner: installation.AccountLogin,
+			Name:  "account",
+		}).Validate() != nil {
+		return deckgithub.ErrPermissionDenied
+	}
+	login, err := store.cipher.Seal(
+		"github-account-login", []byte(installation.AccountLogin))
+	if err != nil {
+		return err
+	}
+	const (
+		installationTargetEvent  = int16(4)
+		installationTargetRename = int16(9)
+	)
+	providerIdentityHash := store.hasher.Sum(
+		"github-webhook-installation", strconv.FormatUint(installation.ID, 10))
+	return store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		existing, replayErr := queries.GetGitHubWebhookDelivery(ctx, delivery)
+		if replayErr == nil {
+			if existing.EventType != installationTargetEvent ||
+				existing.ActionType != installationTargetRename ||
+				!bytes.Equal(
+					existing.ProviderIdentityHash, providerIdentityHash[:]) ||
+				!bytes.Equal(existing.PayloadHash, payloadHash[:]) {
+				return ErrIdempotencyConflict
+			}
+			return nil
+		}
+		if !errors.Is(replayErr, pgx.ErrNoRows) {
+			return replayErr
+		}
+		if err := queries.EnsureGitHubInstallationState(
+			ctx, providerIdentityHash[:]); err != nil {
+			return err
+		}
+		if _, err := queries.LockGitHubInstallationState(
+			ctx, providerIdentityHash[:]); err != nil {
+			return err
+		}
+		connection, connectionErr :=
+			queries.GetGitHubConnectionByInstallationForUpdate(
+				ctx, pgtype.Int8{Int64: int64(installation.ID), Valid: true})
+		if connectionErr == nil {
+			if !connection.GithubAccountID.Valid ||
+				connection.GithubAccountID.Int64 != int64(installation.AccountID) ||
+				!connection.GithubAccountKind.Valid ||
+				connection.GithubAccountKind.Int16 !=
+					int16(installation.AccountKind) {
+				return deckgithub.ErrPermissionDenied
+			}
+			currentLogin, err := store.cipher.Open(
+				"github-account-login",
+				connection.GithubAccountLoginCiphertext)
+			if err != nil {
+				return err
+			}
+			if string(currentLogin) != installation.AccountLogin {
+				if _, err := queries.UpdateGitHubAccountLogin(
+					ctx, dbgen.UpdateGitHubAccountLoginParams{
+						GithubAccountLoginCiphertext: login,
+						UpdatedAt:                    pgTime(now),
+						ConnectionID:                 connection.ConnectionID,
+						ExpectedRevision:             connection.Revision,
+					}); err != nil {
+					return err
+				}
+			}
+			if !strings.EqualFold(
+				string(currentLogin), installation.AccountLogin) {
+				if err := queries.DeleteGitHubRemovedRepositoriesByConnection(
+					ctx, connection.ConnectionID); err != nil {
+					return err
+				}
+				if err := store.cleanupGitHubOwner(
+					ctx, queries, connection.OwnerScope,
+					uuidValue(connection.OwnerID), now, true, false); err != nil {
+					return err
+				}
+				if err := queries.InvalidateOwnerViewsForProviderRename(
+					ctx, dbgen.InvalidateOwnerViewsForProviderRenameParams{
+						UpdatedAt:  pgTime(now),
+						OwnerScope: connection.OwnerScope,
+						OwnerID:    connection.OwnerID,
+					}); err != nil {
+					return err
+				}
+				ownerHash := store.githubCallbackOwnerHash(
+					connection.OwnerScope, uuidValue(connection.OwnerID))
+				if err := queries.DeleteGitHubCallbackStatesByOwner(
+					ctx, ownerHash[:]); err != nil {
+					return err
+				}
+			}
+		} else if !errors.Is(connectionErr, pgx.ErrNoRows) {
+			return connectionErr
+		}
+		return queries.InsertGitHubWebhookDelivery(
+			ctx, dbgen.InsertGitHubWebhookDeliveryParams{
+				DeliveryID: delivery, EventType: installationTargetEvent,
+				ActionType:           installationTargetRename,
+				ProviderIdentityHash: providerIdentityHash[:],
+				PayloadHash:          payloadHash[:], ProcessedAt: pgTime(now),
+			})
+	})
+}
+
 func (store *Store) ApplyGitHubAuthorizationRevocation(
 	ctx context.Context,
 	delivery string,

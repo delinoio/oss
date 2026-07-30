@@ -24,6 +24,7 @@
   },
   "default_events": [
     "installation",
-    "installation_repositories"
+    "installation_repositories",
+    "installation_target"
   ]
 }

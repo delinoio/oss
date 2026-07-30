@@ -89,8 +89,11 @@
   whose current login does not match that initiating DeliDev identity.
   Webhooks require `X-Hub-Signature-256`, a bounded body, and an explicit
   delivery ID.
-  Subscribed `installation` and `installation_repositories` events update only
-  installation lifecycle state. GitHub's mandatory
+  Subscribed `installation`, `installation_repositories`, and
+  `installation_target` events update only installation lifecycle state.
+  Account-renamed target events update the stable installation binding,
+  purge stale provider state, and invalidate repository indexes for repair.
+  GitHub's mandatory
   `github_app_authorization` revocation event deletes every credential for the
   sending GitHub user. Keyed lifecycle tombstones serialize an
   `installation.deleted` event with a first connection and serialize a user

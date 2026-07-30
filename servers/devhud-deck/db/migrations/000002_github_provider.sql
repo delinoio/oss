@@ -85,8 +85,8 @@ CREATE INDEX deck_github_callback_states_account_idx
 CREATE TABLE deck_github_webhook_deliveries (
     delivery_id text PRIMARY KEY
         CHECK (delivery_id <> '' AND length(delivery_id) <= 128),
-    event_type smallint NOT NULL CHECK (event_type IN (1, 2, 3)),
-    action_type smallint NOT NULL CHECK (action_type BETWEEN 1 AND 8),
+    event_type smallint NOT NULL CHECK (event_type IN (1, 2, 3, 4)),
+    action_type smallint NOT NULL CHECK (action_type BETWEEN 1 AND 9),
     provider_identity_hash bytea NOT NULL
         CHECK (octet_length(provider_identity_hash) = 32),
     payload_hash bytea NOT NULL CHECK (octet_length(payload_hash) = 32),

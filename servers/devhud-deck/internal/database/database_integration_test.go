@@ -1118,10 +1118,19 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	renamedInstallation := changedInstallation
 	renamedInstallation.AccountLogin = "renamed-octocat"
-	if err := connectGitHub(
-		callback, renamedInstallation, credential,
+	if err := store.ApplyGitHubInstallationTargetRename(
+		ctx, "installation-target-renamed", renamedInstallation,
+		security.Digest([]byte("installation-target-renamed")),
 		now.Add(5*time.Minute+30*time.Second)); err != nil {
-		t.Fatalf("reconnect renamed GitHub account: %v", err)
+		t.Fatalf("rename GitHub installation target: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil ||
+		connection.Installation.AccountLogin !=
+			renamedInstallation.AccountLogin ||
+		connection.Credential.AccessToken != credential.AccessToken {
+		t.Fatalf("renamed GitHub connection = %#v err=%v", connection, err)
 	}
 	renamedView, err := store.GetView(ctx, firstViewID)
 	if err != nil ||
@@ -1145,13 +1154,13 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err := connectGitHub(
 		callback, renamedInstallation, credential,
 		now.Add(5*time.Minute+45*time.Second)); err != nil {
-		t.Fatalf("repeat renamed GitHub reconnect: %v", err)
+		t.Fatalf("reconnect renamed GitHub account: %v", err)
 	}
 	renamedView, err = store.GetView(ctx, firstViewID)
 	if err != nil ||
 		renamedView.ConnectionState !=
 			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
-		t.Fatalf("repeat reconnect restored invalid view index: %#v err=%v",
+		t.Fatalf("reconnect restored invalid view index: %#v err=%v",
 			renamedView, err)
 	}
 	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,

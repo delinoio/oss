@@ -175,6 +175,16 @@ WHERE connection_id = sqlc.arg(connection_id)
   AND revision = sqlc.arg(expected_revision)
 RETURNING *;
 
+-- name: UpdateGitHubAccountLogin :one
+UPDATE deck_connections
+SET github_account_login_ciphertext =
+        sqlc.arg(github_account_login_ciphertext),
+    revision = revision + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE connection_id = sqlc.arg(connection_id)
+  AND revision = sqlc.arg(expected_revision)
+RETURNING *;
+
 -- name: UpdateGitHubUserCredentials :exec
 UPDATE deck_github_user_credentials
 SET wrapping_key_id = sqlc.arg(wrapping_key_id),

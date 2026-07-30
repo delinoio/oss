@@ -1118,6 +1118,54 @@ func (q *Queries) RewrapGitHubUserCredential(ctx context.Context, arg RewrapGitH
 	return err
 }
 
+const updateGitHubAccountLogin = `-- name: UpdateGitHubAccountLogin :one
+UPDATE deck_connections
+SET github_account_login_ciphertext =
+        $1,
+    revision = revision + 1,
+    updated_at = $2
+WHERE connection_id = $3
+  AND revision = $4
+RETURNING connection_id, owner_scope, owner_id, state, revision, created_at, updated_at, github_installation_id, github_account_id, github_account_kind, github_account_login_ciphertext, github_metadata_permission, github_contents_permission, github_pull_requests_permission, github_checks_permission, github_members_permission, github_administration_permission
+`
+
+type UpdateGitHubAccountLoginParams struct {
+	GithubAccountLoginCiphertext []byte
+	UpdatedAt                    pgtype.Timestamptz
+	ConnectionID                 pgtype.UUID
+	ExpectedRevision             int64
+}
+
+func (q *Queries) UpdateGitHubAccountLogin(ctx context.Context, arg UpdateGitHubAccountLoginParams) (DeckConnection, error) {
+	row := q.db.QueryRow(ctx, updateGitHubAccountLogin,
+		arg.GithubAccountLoginCiphertext,
+		arg.UpdatedAt,
+		arg.ConnectionID,
+		arg.ExpectedRevision,
+	)
+	var i DeckConnection
+	err := row.Scan(
+		&i.ConnectionID,
+		&i.OwnerScope,
+		&i.OwnerID,
+		&i.State,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.GithubInstallationID,
+		&i.GithubAccountID,
+		&i.GithubAccountKind,
+		&i.GithubAccountLoginCiphertext,
+		&i.GithubMetadataPermission,
+		&i.GithubContentsPermission,
+		&i.GithubPullRequestsPermission,
+		&i.GithubChecksPermission,
+		&i.GithubMembersPermission,
+		&i.GithubAdministrationPermission,
+	)
+	return i, err
+}
+
 const updateGitHubInstallationPermissions = `-- name: UpdateGitHubInstallationPermissions :one
 UPDATE deck_connections
 SET github_metadata_permission = $1,

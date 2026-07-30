@@ -80,6 +80,7 @@ type lifecycleFixture struct {
 	calls        []string
 	permissions  []Permissions
 	repositories [][]Repository
+	renames      []Installation
 	revocations  []uint64
 }
 
@@ -95,6 +96,17 @@ func (store *lifecycleFixture) ApplyGitHubInstallationLifecycle(
 	store.calls = append(store.calls, delivery+":"+event+":"+action)
 	store.permissions = append(store.permissions, permissions)
 	store.repositories = append(store.repositories, repositories)
+	return nil
+}
+
+func (store *lifecycleFixture) ApplyGitHubInstallationTargetRename(
+	_ context.Context,
+	_ string,
+	installation Installation,
+	_ [sha256.Size]byte,
+	_ time.Time,
+) error {
+	store.renames = append(store.renames, installation)
 	return nil
 }
 
@@ -267,6 +279,30 @@ func TestStartAuthorizationBindsExistingInstallation(t *testing.T) {
 	}
 }
 
+func TestInstallationRepositoryChangesUseFullName(t *testing.T) {
+	t.Parallel()
+	item := webhookRepository{
+		Name: "secret", FullName: "octocat/secret",
+	}
+	for _, fixture := range []installationWebhook{
+		{Action: "added", RepositoriesAdded: []webhookRepository{item}},
+		{Action: "removed", RepositoriesRemoved: []webhookRepository{item}},
+	} {
+		if repositories := fixture.changedRepositories(); !reflect.DeepEqual(
+			repositories,
+			[]Repository{{Owner: "octocat", Name: "secret"}},
+		) {
+			t.Fatalf("%s repositories = %#v", fixture.Action, repositories)
+		}
+	}
+	item.FullName = ""
+	if repositories := (installationWebhook{
+		Action: "removed", RepositoriesRemoved: []webhookRepository{item},
+	}).changedRepositories(); len(repositories) != 0 {
+		t.Fatalf("repository without full_name = %#v", repositories)
+	}
+}
+
 func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testing.T) {
 	t.Parallel()
 	secret := []byte("fixture-webhook-key-with-32-bytes!!")
@@ -411,7 +447,7 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 	removedPayload := []byte(
 		`{"action":"removed","installation":{"id":42},` +
 			`"repositories_removed":[{"name":"secret",` +
-			`"owner":{"login":"octocat"}}]}`)
+			`"full_name":"octocat/secret"}]}`)
 	removedRequest := httptest.NewRequest(
 		http.MethodPost, WebhookPath, bytes.NewReader(removedPayload))
 	removedRequest.Header.Set("X-Hub-Signature-256",
@@ -428,5 +464,26 @@ func TestWebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus(t *testi
 		}}) {
 		t.Fatalf("repository removal response = %d, repositories %#v",
 			removedResponse.Code, lifecycle.repositories)
+	}
+	renamePayload := []byte(
+		`{"action":"renamed","target_type":"Organization",` +
+			`"installation":{"id":42},"account":{"id":99,` +
+			`"login":"renamed-acme","type":"Organization"}}`)
+	renameRequest := httptest.NewRequest(
+		http.MethodPost, WebhookPath, bytes.NewReader(renamePayload))
+	renameRequest.Header.Set("X-Hub-Signature-256",
+		WebhookSignature(secret, renamePayload))
+	renameRequest.Header.Set("X-GitHub-Event", "installation_target")
+	renameRequest.Header.Set("X-GitHub-Delivery", "delivery-rename")
+	renameResponse := httptest.NewRecorder()
+	broker.Handler().ServeHTTP(renameResponse, renameRequest)
+	expectedRename := Installation{
+		ID: 42, AccountID: 99, AccountLogin: "renamed-acme",
+		AccountKind: AccountKindOrganization,
+	}
+	if renameResponse.Code != http.StatusNoContent ||
+		!reflect.DeepEqual(lifecycle.renames, []Installation{expectedRename}) {
+		t.Fatalf("installation rename response = %d, renames %#v",
+			renameResponse.Code, lifecycle.renames)
 	}
 }

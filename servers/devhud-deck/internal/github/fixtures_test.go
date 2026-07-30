@@ -113,7 +113,9 @@ func TestFixtureManifestHasOnlyDeckPermissionsAndLifecycleEvents(t *testing.T) {
 		"metadata": "read", "administration": "read", "contents": "write",
 		"pull_requests": "write", "checks": "read", "members": "read",
 	}
-	expectedEvents := []string{"installation", "installation_repositories"}
+	expectedEvents := []string{
+		"installation", "installation_repositories", "installation_target",
+	}
 	if manifest.Public ||
 		manifest.SetupURL != "https://deck.deli.dev/github/app/callback" ||
 		manifest.RequestOAuthOnInstall == nil ||
