@@ -313,20 +313,20 @@ describe("RealQA GitHub destinations", () => {
     expect(screen.getByText("Schema revision 9")).toBeVisible();
   });
 
-  it("reuses the UUIDv7 disconnect identity after an ambiguous failure and preserves mappings", async () => {
+  it("reuses the UUIDv7 disconnect identity and applies success before a failed refresh", async () => {
     const disconnectKeys: string[] = [];
-    let disconnected = false;
     let disconnectAttempts = 0;
+    let connectionReads = 0;
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
       const url = String(request);
       if (url.endsWith("/GetGitHubConnection")) {
-        return connectJsonResponse(
-          connectedResponse(
-            disconnected
-              ? "GIT_HUB_CONNECTION_STATE_DISCONNECTED"
-              : "GIT_HUB_CONNECTION_STATE_CONNECTED",
-          ),
-        );
+        connectionReads += 1;
+        return connectionReads === 1
+          ? connectJsonResponse(connectedResponse())
+          : connectJsonResponse(
+              { code: "unavailable", message: "Refresh failed." },
+              503,
+            );
       }
       if (url.endsWith("/ListGitHubInstallations")) {
         return connectJsonResponse(installationResponse());
@@ -345,7 +345,6 @@ describe("RealQA GitHub destinations", () => {
             503,
           );
         }
-        disconnected = true;
         return connectJsonResponse({
           connection: connectedResponse(
             "GIT_HUB_CONNECTION_STATE_DISCONNECTED",
@@ -393,6 +392,14 @@ describe("RealQA GitHub destinations", () => {
     expect(disconnectKeys[0]).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
+    await waitFor(() => expect(connectionReads).toBe(2));
+    expect(
+      screen.getByRole("button", { name: "Connect GitHub" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Disconnect GitHub" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Available destination")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(document.activeElement).toBe(confirmation),
     );
@@ -540,6 +547,83 @@ describe("RealQA GitHub destinations", () => {
         screen.getByText("No issue submission permission"),
       ).toBeVisible(),
     );
+    expect(screen.queryByText("Support request")).not.toBeInTheDocument();
+  });
+
+  it("hides cached repositories and schema when repository refresh fails", async () => {
+    let repositoryRefreshFails = false;
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/GetGitHubConnection")) {
+        return connectJsonResponse(connectedResponse());
+      }
+      if (url.endsWith("/ListGitHubInstallations")) {
+        return connectJsonResponse(installationResponse());
+      }
+      if (url.endsWith("/ListRepositories")) {
+        if (repositoryRefreshFails) {
+          return connectJsonResponse(
+            { code: "permission_denied", message: "Access revoked." },
+            403,
+          );
+        }
+        return connectJsonResponse({
+          page: {},
+          repositories: [
+            {
+              callerCanSubmit: true,
+              installationId: {
+                value: "018f3f5e-7b01-7a2d-8c3a-4ba8d8b51611",
+              },
+              issuesEnabled: true,
+              repository: {
+                name: "public-app",
+                owner: "acme",
+                repositoryId: "101",
+              },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/GetRepositoryIssueSchema")) {
+        return connectJsonResponse({
+          schema: {
+            issueForms: [],
+            markdownTemplates: [
+              {
+                definition: {
+                  definitionId: "template-support",
+                  name: "Support request",
+                  path: ".github/ISSUE_TEMPLATE/support.md",
+                },
+              },
+            ],
+            repository: {
+              name: "public-app",
+              owner: "acme",
+              repositoryId: "101",
+            },
+            revision: { etag: "schema-9", value: "9" },
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const user = userEvent.setup();
+    const { queryClient } = renderDestination({ fetchMock });
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review definitions" }),
+    );
+    expect(await screen.findByText("Support request")).toBeVisible();
+
+    repositoryRefreshFails = true;
+    await queryClient.refetchQueries({ type: "active" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Access revoked.",
+    );
+    expect(screen.queryByText("acme/public-app")).not.toBeInTheDocument();
     expect(screen.queryByText("Support request")).not.toBeInTheDocument();
   });
 

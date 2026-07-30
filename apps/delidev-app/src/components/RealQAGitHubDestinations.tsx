@@ -4,6 +4,7 @@ import {
   type Transport,
 } from "@connectrpc/connect";
 import {
+  createConnectQueryKey,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -21,10 +22,11 @@ import {
   type OwnerScope,
   type Repository,
 } from "@delinoio/devhud-realqa-connect";
-import type {
-  InfiniteData,
-  UseInfiniteQueryResult,
-  UseQueryResult,
+import {
+  useQueryClient,
+  type InfiniteData,
+  type UseInfiniteQueryResult,
+  type UseQueryResult,
 } from "@tanstack/react-query";
 import {
   useMemo,
@@ -199,6 +201,7 @@ function RealQAGitHubDestinationsConnected({
   transport: Transport;
 }) {
   const online = useOnline();
+  const queryClient = useQueryClient();
   const scope = useMemo(() => ownerScope(owner), [owner]);
   const scopeKey = ownerKey(owner);
   const canManage =
@@ -214,9 +217,16 @@ function RealQAGitHubDestinationsConnected({
   const [selectedRepositoryId, setSelectedRepositoryId] = useState("");
   const messageRef = useRef<HTMLParagraphElement>(null);
 
+  const connectionInput = { owner: scope };
+  const connectionQueryKey = createConnectQueryKey({
+    cardinality: "finite",
+    input: connectionInput,
+    schema: RealQATrackerService.method.getGitHubConnection,
+    transport,
+  });
   const connection = useQuery(
     RealQATrackerService.method.getGitHubConnection,
-    { owner: scope },
+    connectionInput,
     {
       gcTime: 0,
       refetchOnWindowFocus: true,
@@ -279,8 +289,9 @@ function RealQAGitHubDestinationsConnected({
       transport,
     },
   );
-  const repositoryRows =
-    repositories.data?.pages.flatMap((page) => page.repositories) ?? [];
+  const repositoryRows = repositories.isError
+    ? []
+    : repositories.data?.pages.flatMap((page) => page.repositories) ?? [];
   const selectedRepository = repositoryRows.find(
     (item) => item.repository?.repositoryId === selectedRepositoryId,
   );
@@ -382,7 +393,7 @@ function RealQAGitHubDestinationsConnected({
             await connection.refetch().catch(() => undefined);
           }
         },
-        onSuccess: async () => {
+        onSuccess: async (response) => {
           pendingDisconnects.delete(scopeKey);
           setSelectedInstallationId("");
           setSelectedRepositoryId("");
@@ -390,6 +401,11 @@ function RealQAGitHubDestinationsConnected({
           setDisconnectAttempted(false);
           setMessage(
             "GitHub disconnected. Existing RealQA presets and destination mappings were preserved.",
+          );
+          queryClient.setQueryData(connectionQueryKey, (current) =>
+            current
+              ? { ...current, connection: response.connection }
+              : current,
           );
           await connection.refetch().catch(() => undefined);
           disconnect.reset();
@@ -718,12 +734,14 @@ function DestinationDiscovery({
           {repositories.isPending ? (
             <LoadingState label="Loading accessible repositories" />
           ) : null}
-          {repositories.isError && !repositories.data ? (
+          {repositories.isError ? (
             <p className="inline-error" role="alert">
               {describeRealQAError(repositories.error)}
             </p>
           ) : null}
-          {repositories.data && repositoryRows.length === 0 ? (
+          {repositories.data &&
+          !repositories.isError &&
+          repositoryRows.length === 0 ? (
             <EmptyState
               description="Authorize GitHub access or search for another repository."
               title="No accessible repositories found"
@@ -770,7 +788,7 @@ function DestinationDiscovery({
               })}
             </ul>
           ) : null}
-          {repositories.hasNextPage ? (
+          {repositories.hasNextPage && !repositories.isError ? (
             <button
               className="button secondary compact"
               disabled={repositories.isFetchingNextPage}
