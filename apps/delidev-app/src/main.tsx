@@ -12,7 +12,11 @@ import {
   UnavailableAuthBridge,
 } from "./auth/AuthSession";
 import { VolatileLogtoClient } from "./auth/VolatileLogtoClient";
-import { canonicalAudience, runtimeConfig } from "./config";
+import {
+  canonicalAudience,
+  canonicalDeckAudience,
+  runtimeConfig,
+} from "./config";
 import {
   AuthCallbackPage,
   UnavailableCallbackPage,
@@ -51,7 +55,10 @@ function Providers({
   const logtoConfig: LogtoConfig = {
     appId: runtimeConfig.logto.appId,
     endpoint: runtimeConfig.logto.endpoint,
-    resources: [canonicalAudience],
+    resources:
+      runtimeConfig.deck.issues.length === 0
+        ? [canonicalAudience, canonicalDeckAudience]
+        : [canonicalAudience],
     scopes: [
       "delibase:account:read",
       "delibase:account:write",
@@ -61,6 +68,9 @@ function Providers({
       "delibase:teams:write",
       "delibase:billing:read",
       "delibase:billing:write",
+      ...(runtimeConfig.deck.issues.length === 0
+        ? ["deck:integrations:read", "deck:integrations:write"]
+        : []),
     ],
   };
   return (

@@ -9,7 +9,10 @@ import {
 } from "react";
 
 import { runtimeConfig } from "../config";
-import { createAuthenticatedTransport } from "../api/transports";
+import {
+  createAuthenticatedTransport,
+  createDeckIntegrationTransport,
+} from "../api/transports";
 import {
   clearPendingSealedSignInReturnPath,
   consumeSealedSignInReturnPath,
@@ -26,6 +29,7 @@ export enum AuthStatus {
 export interface AuthSessionValue {
   status: AuthStatus;
   error?: string;
+  deckTransport?: Transport;
   transport?: Transport;
   signIn: (returnTo?: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -89,6 +93,16 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
       }),
     [getAccessToken],
   );
+  const deckTransport = useMemo(
+    () =>
+      runtimeConfig.deck.issues.length === 0
+        ? createDeckIntegrationTransport({
+            baseUrl: runtimeConfig.deck.apiOrigin,
+            getAccessToken: (audience) => getAccessToken(audience),
+          })
+        : undefined,
+    [getAccessToken],
+  );
 
   const startSignIn = useCallback(
     async (returnTo = window.location.pathname + window.location.search) => {
@@ -117,6 +131,7 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthSessionValue>(
     () => ({
+      deckTransport: isAuthenticated ? deckTransport : undefined,
       error: error?.message,
       signIn: startSignIn,
       signOut: startSignOut,
@@ -129,6 +144,7 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
     }),
     [
       error,
+      deckTransport,
       isAuthenticated,
       isLoading,
       startSignIn,
