@@ -25,6 +25,10 @@ const (
 	EventOrganizationLifecycleDeletion
 	EventAuthorizationDenied
 	EventSnapshotReplaced
+	EventGitHubConnectionStarted
+	EventGitHubDisconnected
+	EventPullRequestMutated
+	EventGitHubLifecycleApplied
 )
 
 type ResourceType int16
@@ -35,6 +39,7 @@ const (
 	ResourceNotification
 	ResourceOwner
 	ResourceSnapshot
+	ResourceConnection
 )
 
 type Outcome int16

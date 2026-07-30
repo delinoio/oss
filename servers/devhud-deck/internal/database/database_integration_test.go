@@ -12,6 +12,7 @@ import (
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/query"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
@@ -120,6 +121,14 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if first.Revision.GetValue() != 1 || first.Revision.GetEtag() == "" {
 		t.Fatalf("first revision = %#v", first.Revision)
 	}
+	secondViewID := mustV7(t)
+	second, replayed, err := store.CreateView(ctx, createViewParams(
+		t, hasher, accountID, secondViewID, mustV7(t), "subject-1",
+		now.Add(time.Second), 1))
+	if err != nil || replayed {
+		t.Fatalf("create second view = %#v replayed=%v err=%v",
+			second, replayed, err)
+	}
 	var ciphertext []byte
 	if err := store.pool.QueryRow(ctx,
 		"SELECT query_ciphertext FROM deck_views WHERE view_id = $1",
@@ -129,8 +138,51 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if bytes.Contains(ciphertext, []byte("repo:secret/project")) {
 		t.Fatal("raw query was persisted in plaintext")
 	}
+	deniedView := errors.New("view authorization denied")
+	denyBeforeDecrypt := func(authorization ViewAuthorization) error {
+		expectedHash := store.ViewRepositoryHash("secret", "project")
+		if !authorization.HasRepositoryIndex ||
+			len(authorization.RepositoryHashes) != 1 ||
+			authorization.RepositoryHashes[0] != expectedHash {
+			t.Fatalf("view authorization index = %#v", authorization)
+		}
+		return deniedView
+	}
+	if _, err := store.pool.Exec(ctx,
+		"UPDATE deck_views SET query_ciphertext = $1 WHERE view_id = $2",
+		[]byte{0}, pgUUID(firstViewID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetViewAuthorized(
+		ctx, firstViewID, denyBeforeDecrypt); !errors.Is(err, deniedView) {
+		t.Fatalf("authorized view opened ciphertext before denial: %v", err)
+	}
+	authorizationCalls := 0
+	visible, err := store.ListViewsAuthorized(
+		ctx, deckv1.OwnerScope_OWNER_SCOPE_PERSONAL, accountID, uuid.Nil, 1,
+		func(ViewAuthorization) error {
+			authorizationCalls++
+			if authorizationCalls == 1 {
+				return ErrViewNotVisible
+			}
+			return nil
+		})
+	if err != nil || len(visible) != 1 ||
+		visible[0].GetViewId().GetValue() != secondViewID.String() {
+		t.Fatalf("visible view list = %#v, %v", visible, err)
+	}
+	if _, err := store.ListViewsAuthorized(
+		ctx, deckv1.OwnerScope_OWNER_SCOPE_PERSONAL, accountID, uuid.Nil, 2,
+		denyBeforeDecrypt); !errors.Is(err, deniedView) {
+		t.Fatalf("authorized view list opened ciphertext before denial: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx,
+		"UPDATE deck_views SET query_ciphertext = $1 WHERE view_id = $2",
+		ciphertext, pgUUID(firstViewID)); err != nil {
+		t.Fatal(err)
+	}
 
-	for index := 1; index < 50; index++ {
+	for index := 2; index < 50; index++ {
 		_, _, err := store.CreateView(ctx, createViewParams(
 			t, hasher, accountID, mustV7(t), mustV7(t), "subject-1",
 			now.Add(time.Duration(index)*time.Second), byte(index)))
@@ -180,26 +232,147 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || !truncated {
 		t.Fatalf("replace snapshots = truncated=%v err=%v", truncated, err)
 	}
-	authorizeSnapshot := func(*deckv1.RepositoryReference) error { return nil }
+	readableSnapshots := map[[32]byte]struct{}{
+		store.SnapshotRepositoryHash(snapshots[0].Repository): {},
+	}
 	current, stateTruncated, _, err := store.ListSnapshots(
-		ctx, firstViewID, viewerHash, authorizeSnapshot)
+		ctx, firstViewID, viewerHash, readableSnapshots)
 	if err != nil || len(current) != 500 || !stateTruncated {
 		t.Fatalf("snapshots = %d truncated=%v err=%v", len(current), stateTruncated, err)
 	}
-	authorizationErr := errors.New("snapshot authorization denied")
-	if _, _, _, err := store.ListSnapshots(
-		ctx, firstViewID, viewerHash,
-		func(repository *deckv1.RepositoryReference) error {
-			if repository.Owner != "secret" || repository.Name != "project" {
-				t.Fatalf("authorization repository = %#v", repository)
+	hasSnapshot, err := store.HasSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "SECRET", Name: "Project",
+			},
+			Number: 1,
+		})
+	if err != nil || !hasSnapshot {
+		t.Fatalf("current snapshot membership = %v err=%v", hasSnapshot, err)
+	}
+	hasSnapshot, err = store.HasSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "secret", Name: "project",
+			},
+			Number: 501,
+		})
+	if err != nil || hasSnapshot {
+		t.Fatalf("truncated snapshot membership = %v err=%v", hasSnapshot, err)
+	}
+	if err := store.DeleteSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: snapshots[0].Repository,
+			Number:     snapshots[0].Number,
+		}); err != nil {
+		t.Fatalf("delete snapshot: %v", err)
+	}
+	hasSnapshot, err = store.HasSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: snapshots[0].Repository,
+			Number:     snapshots[0].Number,
+		})
+	if err != nil || hasSnapshot {
+		t.Fatalf("deleted snapshot membership = %v err=%v", hasSnapshot, err)
+	}
+	filteredSnapshots := make([]*deckv1.PullRequestResult, 501)
+	for index := range filteredSnapshots {
+		repository := &deckv1.RepositoryReference{
+			Owner: "secret", Name: "project",
+		}
+		if index == 0 {
+			repository = &deckv1.RepositoryReference{
+				Owner: "unrelated", Name: "retained",
 			}
-			return authorizationErr
-		}); !errors.Is(err, authorizationErr) {
-		t.Fatalf("snapshot authorization error = %v", err)
+		}
+		filteredSnapshots[index] = &deckv1.PullRequestResult{
+			Repository: repository,
+			Number:     uint64(index + 1),
+			Title:      fmt.Sprintf("filtered title %d", index),
+		}
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, firstViewID, viewerHash, filteredSnapshots, now); err != nil {
+		t.Fatal(err)
+	}
+	filteredList, filteredTruncated, _, err := store.ListSnapshots(
+		ctx, firstViewID, viewerHash, readableSnapshots)
+	if err != nil || len(filteredList) != 499 || !filteredTruncated {
+		t.Fatalf("filtered snapshots = %d truncated=%v err=%v",
+			len(filteredList), filteredTruncated, err)
+	}
+	repositoryHashes, err := store.ListSnapshotRepositoryHashes(
+		ctx, firstViewID, viewerHash)
+	if err != nil || len(repositoryHashes) != 2 {
+		t.Fatalf("snapshot repository hashes = %d err=%v",
+			len(repositoryHashes), err)
+	}
+	indexedSnapshots := []*deckv1.PullRequestResult{
+		{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "unrelated", Name: "retained",
+			},
+			Number: 1, Title: "must not be opened",
+		},
+		{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "secret", Name: "project",
+			},
+			Number: 1, Title: "authorized",
+		},
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, firstViewID, viewerHash, indexedSnapshots, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_pull_request_snapshots
+		SET repository_ciphertext = $1
+		WHERE view_id = $2 AND viewer_hash = $3 AND ordinal = 0`,
+		[]byte{0}, pgUUID(firstViewID), viewerHash[:]); err != nil {
+		t.Fatal(err)
+	}
+	indexed, err := store.GetSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "SECRET", Name: "Project",
+			},
+			Number: 1,
+		})
+	if err != nil || indexed.GetTitle() != "authorized" {
+		t.Fatalf("indexed snapshot = %#v err=%v", indexed, err)
+	}
+	indexed.Title = "updated after mutation"
+	if err := store.UpdateSnapshot(
+		ctx, firstViewID, viewerHash, indexed); err != nil {
+		t.Fatalf("update indexed snapshot: %v", err)
+	}
+	indexed, err = store.GetSnapshot(ctx, firstViewID, viewerHash,
+		&deckv1.PullRequestReference{
+			Repository: &deckv1.RepositoryReference{
+				Owner: "secret", Name: "project",
+			},
+			Number: 1,
+		})
+	if err != nil || indexed.GetTitle() != "updated after mutation" {
+		t.Fatalf("updated snapshot = %#v err=%v", indexed, err)
+	}
+	indexedList, _, _, err := store.ListSnapshots(
+		ctx, firstViewID, viewerHash, map[[32]byte]struct{}{
+			store.SnapshotRepositoryHash(indexedSnapshots[1].Repository): {},
+		})
+	if err != nil || len(indexedList) != 1 ||
+		indexedList[0].GetTitle() != "updated after mutation" {
+		t.Fatalf("authorization-safe snapshot list = %#v err=%v",
+			indexedList, err)
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, firstViewID, viewerHash, snapshots, now); err != nil {
+		t.Fatal(err)
 	}
 	secondViewerHash := hasher.Sum("snapshot-viewer", secondAccountID.String())
 	other, otherTruncated, _, err := store.ListSnapshots(
-		ctx, firstViewID, secondViewerHash, authorizeSnapshot)
+		ctx, firstViewID, secondViewerHash, readableSnapshots)
 	if err != nil || len(other) != 0 || otherTruncated {
 		t.Fatalf("other viewer state leaked: %d truncated=%v err=%v",
 			len(other), otherTruncated, err)
@@ -209,7 +382,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, stateTruncated, _, err = store.ListSnapshots(
-		ctx, firstViewID, viewerHash, authorizeSnapshot)
+		ctx, firstViewID, viewerHash, readableSnapshots)
 	if err != nil || len(current) != 1 || stateTruncated {
 		t.Fatalf("current-only snapshots = %d truncated=%v err=%v",
 			len(current), stateTruncated, err)
@@ -225,7 +398,7 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("query update = %#v %v", updated, err)
 	}
 	current, stateTruncated, refreshedAt, err := store.ListSnapshots(
-		ctx, firstViewID, viewerHash, authorizeSnapshot)
+		ctx, firstViewID, viewerHash, readableSnapshots)
 	if err != nil || len(current) != 0 || stateTruncated || !refreshedAt.IsZero() {
 		t.Fatalf("snapshots after query update = %d truncated=%v refreshed=%v err=%v",
 			len(current), stateTruncated, refreshedAt, err)
@@ -348,6 +521,9 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 				ViewId:   uuidProto(organizationViewID),
 				Family:   deckv1.WidgetFamily_WIDGET_FAMILY_APPLE_SMALL,
 				Privacy:  deckv1.WidgetPrivacy_WIDGET_PRIVACY_COUNTS_ONLY,
+				Snapshot: &deckv1.WidgetSnapshot{
+					Freshness: deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED,
+				},
 			},
 		},
 	}
@@ -396,17 +572,804 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if !errors.Is(err, ErrAccountSwitch) {
 		t.Fatalf("account switch error = %T %v", err, err)
 	}
+	callback := deckgithub.CallbackState{
+		Purpose: deckgithub.StatePurposeOAuth, AccountID: accountID.String(),
+		GitHubLogin:    "octocat",
+		Owner:          deckgithub.OwnerBinding{Scope: 1, ID: accountID.String()},
+		InstallationID: 7, Nonce: "fixture",
+		ExpiresAt: now.Add(time.Hour).Unix(),
+	}
+	installation := deckgithub.Installation{
+		ID: 7, AccountID: 70, AccountLogin: "octocat",
+		AccountKind: deckgithub.AccountKindUser,
+		Permissions: deckgithub.Permissions{
+			Metadata: deckgithub.PermissionRead, Contents: deckgithub.PermissionWrite,
+			PullRequests: deckgithub.PermissionWrite,
+			Checks:       deckgithub.PermissionRead, Members: deckgithub.PermissionRead,
+		},
+	}
+	credential := deckgithub.Credential{
+		UserID: 700, Login: "octocat",
+		AccessToken: "ghu_database_fixture", RefreshToken: "ghr_database_fixture",
+		ExpiresAt: now.Add(time.Hour), RefreshTokenExpiresAt: now.Add(24 * time.Hour),
+	}
+	callbackSequence := 0
+	connectGitHub := func(
+		state deckgithub.CallbackState,
+		selected deckgithub.Installation,
+		userCredential deckgithub.Credential,
+		at time.Time,
+	) error {
+		callbackSequence++
+		hash := security.Digest([]byte(fmt.Sprintf(
+			"github-callback-%d", callbackSequence)))
+		if err := store.SaveGitHubCallbackState(
+			ctx, hash, state, at); err != nil {
+			return err
+		}
+		consumed, err := store.ConsumeGitHubCallbackState(
+			ctx, hash, state.Purpose, at)
+		if err != nil {
+			return err
+		}
+		return store.ConnectGitHub(
+			ctx, hash, consumed, selected, userCredential, at)
+	}
+	deletedBeforeConnect := installation
+	deletedBeforeConnect.ID = 6
+	deletedCallback := callback
+	deletedCallback.InstallationID = deletedBeforeConnect.ID
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-deleted-before-connect", "installation", "deleted",
+		deletedBeforeConnect.ID, deletedBeforeConnect.Permissions,
+		nil,
+		security.Digest([]byte("installation-deleted-before-connect")),
+		now.Add(10*time.Second)); err != nil {
+		t.Fatalf("installation tombstone: %v", err)
+	}
+	if err := connectGitHub(
+		deletedCallback, deletedBeforeConnect, credential,
+		now.Add(20*time.Second)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("deleted installation connected: %T %v", err, err)
+	}
+	expiredCallback := callback
+	expiredCallback.Nonce = "expired"
+	expiredCallback.ExpiresAt = now.Add(-time.Minute).Unix()
+	expiredHash := security.Digest([]byte("expired-callback"))
+	if err := store.SaveGitHubCallbackState(
+		ctx, expiredHash, expiredCallback, now.Add(-2*time.Minute)); err != nil {
+		t.Fatalf("expired callback fixture: %v", err)
+	}
+	activeCallback := callback
+	activeCallback.Nonce = "active"
+	activeHash := security.Digest([]byte("active-callback"))
+	if err := store.SaveGitHubCallbackState(
+		ctx, activeHash, activeCallback, now); err != nil {
+		t.Fatalf("active callback fixture: %v", err)
+	}
+	var storedOwnerHash, storedAccountHash, storedStateCiphertext []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT owner_hash, account_hash, state_ciphertext
+		FROM deck_github_callback_states
+		WHERE state_hash = $1`,
+		activeHash[:],
+	).Scan(&storedOwnerHash, &storedAccountHash, &storedStateCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	expectedOwnerHash := hasher.Sum(
+		"github-callback-owner",
+		"OWNER_SCOPE_PERSONAL:"+accountID.String())
+	expectedAccountHash := hasher.Sum(
+		"github-callback-account", accountID.String())
+	if !bytes.Equal(storedOwnerHash, expectedOwnerHash[:]) ||
+		!bytes.Equal(storedAccountHash, expectedAccountHash[:]) ||
+		bytes.Contains(storedStateCiphertext, []byte(accountID.String())) ||
+		bytes.Contains(storedStateCiphertext, []byte(activeCallback.GitHubLogin)) {
+		t.Fatal("callback bindings were not retained only as keyed indexes and ciphertext")
+	}
+	var expiredCallbackCount, activeCallbackCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT
+			count(*) FILTER (WHERE state_hash = $1)::integer,
+			count(*) FILTER (WHERE state_hash = $2)::integer
+		FROM deck_github_callback_states`,
+		expiredHash[:], activeHash[:],
+	).Scan(&expiredCallbackCount, &activeCallbackCount); err != nil {
+		t.Fatal(err)
+	}
+	if expiredCallbackCount != 0 || activeCallbackCount != 1 {
+		t.Fatalf("callback pruning = expired:%d active:%d",
+			expiredCallbackCount, activeCallbackCount)
+	}
+	if err := connectGitHub(
+		callback, installation, credential, now.Add(90*time.Second)); err != nil {
+		t.Fatalf("connect GitHub: %v", err)
+	}
+	if _, err := store.ConsumeGitHubCallbackState(
+		ctx, activeHash, activeCallback.Purpose,
+		now.Add(90*time.Second)); !errors.Is(
+		err, deckgithub.ErrInvalidSignature) {
+		t.Fatalf("stale owner callback remained usable: %T %v", err, err)
+	}
+	connection, err := store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil || connection.Credential.AccessToken != credential.AccessToken ||
+		connection.Credential.UserID != credential.UserID ||
+		connection.Installation.Permissions.Contents != deckgithub.PermissionWrite {
+		t.Fatalf("GitHub connection = %#v err=%v", connection, err)
+	}
+	removedRepository := deckgithub.Repository{
+		Owner: "secret", Name: "project",
+	}
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-repository-removed", "installation_repositories",
+		"removed", installation.ID, deckgithub.Permissions{},
+		[]deckgithub.Repository{removedRepository},
+		security.Digest([]byte("installation-repository-removed")),
+		now.Add(92*time.Second)); err != nil {
+		t.Fatalf("record removed GitHub repository: %v", err)
+	}
+	removedHashes, err := store.ListGitHubRemovedRepositoryHashes(
+		ctx, 1, accountID)
+	expectedRemovedHash := hasher.Sum(
+		"view-repository", "secret\x00project")
+	if err != nil {
+		t.Fatalf("list removed GitHub repositories: %v", err)
+	}
+	if _, found := removedHashes[expectedRemovedHash]; !found {
+		t.Fatal("removed GitHub repository evidence was not retained")
+	}
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-repository-added", "installation_repositories",
+		"added", installation.ID, deckgithub.Permissions{},
+		[]deckgithub.Repository{removedRepository},
+		security.Digest([]byte("installation-repository-added")),
+		now.Add(93*time.Second)); err != nil {
+		t.Fatalf("clear removed GitHub repository: %v", err)
+	}
+	removedHashes, err = store.ListGitHubRemovedRepositoryHashes(
+		ctx, 1, accountID)
+	if err != nil || len(removedHashes) != 0 {
+		t.Fatalf("re-added GitHub repository evidence = %#v, %v",
+			removedHashes, err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_views
+		SET repository_authorization_index = NULL, connection_state = 1
+		WHERE view_id = $1`,
+		pgUUID(firstViewID)); err != nil {
+		t.Fatal(err)
+	}
+	preIndexView, err := store.GetView(ctx, firstViewID)
+	if err != nil {
+		t.Fatalf("pre-index view: %v", err)
+	}
+	reindexedView, err := store.UpdateView(
+		ctx, firstViewID, 4, preIndexView, false, now.Add(95*time.Second))
+	if err != nil || reindexedView.Revision.GetValue() != 5 ||
+		reindexedView.ConnectionState !=
+			deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		t.Fatalf("reindexed view = %#v err=%v", reindexedView, err)
+	}
+	refreshedCredential := credential
+	refreshedCredential.AccessToken = "ghu_database_refreshed"
+	refreshedCredential.RefreshToken = "ghr_database_refreshed"
+	refreshedCredential.ExpiresAt = now.Add(8 * time.Hour)
+	if err := store.RefreshGitHubCredential(
+		ctx, connection.ID, connection.Revision, accountID, refreshedCredential,
+		now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("refresh GitHub credential: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil ||
+		connection.Credential.AccessToken != refreshedCredential.AccessToken ||
+		connection.Credential.RefreshToken != refreshedCredential.RefreshToken {
+		t.Fatalf("refreshed GitHub connection = %#v err=%v", connection, err)
+	}
+	credential = refreshedCredential
+	var accessCiphertext, refreshCiphertext []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT user_access_token_ciphertext, user_refresh_token_ciphertext
+		FROM deck_github_user_credentials
+		WHERE connection_id = $1 AND account_id = $2`,
+		pgUUID(connection.ID), pgUUID(accountID),
+	).Scan(&accessCiphertext, &refreshCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(accessCiphertext, []byte(credential.AccessToken)) ||
+		bytes.Contains(refreshCiphertext, []byte(credential.RefreshToken)) {
+		t.Fatal("GitHub user credential was persisted in plaintext")
+	}
+	rotatedCipher, err := security.NewVersionedCipher(
+		"managed-v2", map[string][]byte{
+			"v1":         bytes.Repeat([]byte{1}, 32),
+			"managed-v2": bytes.Repeat([]byte{3}, 32),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.cipher = rotatedCipher
+	if err := store.RewrapGitHubCredentials(ctx); err != nil {
+		t.Fatalf("rewrap GitHub credential: %v", err)
+	}
+	var wrappingKeyID string
+	if err := store.pool.QueryRow(ctx, `
+		SELECT wrapping_key_id, user_access_token_ciphertext
+		FROM deck_github_user_credentials
+		WHERE connection_id = $1 AND account_id = $2`,
+		pgUUID(connection.ID), pgUUID(accountID),
+	).Scan(&wrappingKeyID, &accessCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	if wrappingKeyID != "managed-v2" {
+		t.Fatalf("rewrapped credential key ID = %q", wrappingKeyID)
+	}
+	if _, err := cipher.Open(
+		"github-user-access-token", accessCiphertext); err == nil {
+		t.Fatal("rewrapped credential remained decryptable by retired key")
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil || connection.Credential.AccessToken != credential.AccessToken {
+		t.Fatalf("rewrapped GitHub connection = %#v err=%v", connection, err)
+	}
+	inFlightCallback := callback
+	inFlightCallback.Nonce = "authorization-revocation-in-flight"
+	inFlightHash := security.Digest([]byte(inFlightCallback.Nonce))
+	if err := store.SaveGitHubCallbackState(
+		ctx, inFlightHash, inFlightCallback,
+		now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("in-flight authorization callback: %v", err)
+	}
+	if _, err := store.ConsumeGitHubCallbackState(
+		ctx, inFlightHash, inFlightCallback.Purpose,
+		now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("consume in-flight authorization callback: %v", err)
+	}
+	revocationHash := security.Digest([]byte("authorization-revoked"))
+	if err := store.ApplyGitHubAuthorizationRevocation(
+		ctx, "authorization-revocation-1", credential.UserID,
+		revocationHash, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("authorization revocation: %v", err)
+	}
+	var revocationIdentityHash []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT provider_identity_hash
+		FROM deck_github_webhook_deliveries
+		WHERE delivery_id = $1`,
+		"authorization-revocation-1",
+	).Scan(&revocationIdentityHash); err != nil {
+		t.Fatal(err)
+	}
+	expectedRevocationIdentityHash := hasher.Sum(
+		"github-webhook-user", fmt.Sprint(credential.UserID))
+	if !bytes.Equal(
+		revocationIdentityHash, expectedRevocationIdentityHash[:]) {
+		t.Fatal("authorization replay retained an unexpected provider identity")
+	}
+	if _, err := store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("revoked credential remained available: %v", err)
+	}
+	if err := store.RefreshGitHubCredential(
+		ctx, connection.ID, connection.Revision, accountID, credential,
+		now.Add(3*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("revoked credential refreshed: %T %v", err, err)
+	}
+	if err := store.ConnectGitHub(
+		ctx, inFlightHash, inFlightCallback, installation, credential,
+		now.Add(3*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("in-flight authorization resurrected credential: %T %v", err, err)
+	}
+	if err := store.ApplyGitHubAuthorizationRevocation(
+		ctx, "authorization-revocation-1", credential.UserID,
+		revocationHash, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("authorization revocation replay: %v", err)
+	}
+	if err := connectGitHub(
+		callback, installation, credential, now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("reauthorize GitHub: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil {
+		t.Fatalf("reauthorized GitHub connection: %v", err)
+	}
+	staleRefresh := credential
+	staleRefresh.AccessToken = "ghu_pre_revocation_refresh"
+	staleRefresh.RefreshToken = "ghr_pre_revocation_refresh"
+	if err := store.RefreshGitHubCredential(
+		ctx, connection.ID, connection.Revision, accountID, staleRefresh,
+		now.Add(2*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("pre-revocation refresh survived reauthorization: %T %v",
+			err, err)
+	}
+	if err := store.ConnectGitHub(
+		ctx, inFlightHash, inFlightCallback, installation, credential,
+		now.Add(5*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) &&
+		!errors.Is(err, deckgithub.ErrInvalidSignature) {
+		t.Fatalf("old callback succeeded after reauthorization: %T %v", err, err)
+	}
+	reauthorizedRefresh := credential
+	reauthorizedRefresh.AccessToken = "ghu_reauthorized_refreshed"
+	reauthorizedRefresh.RefreshToken = "ghr_reauthorized_refreshed"
+	if err := store.RefreshGitHubCredential(
+		ctx, connection.ID, connection.Revision, accountID, reauthorizedRefresh,
+		now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("reauthorized credential refresh: %v", err)
+	}
+	credential = reauthorizedRefresh
+	organizationCallback := callback
+	organizationCallback.Owner = deckgithub.OwnerBinding{
+		Scope: 2, ID: organizationID.String(),
+	}
+	if err := connectGitHub(organizationCallback, installation,
+		credential, now.Add(6*time.Minute)); !errors.Is(err, ErrInstallationOwned) {
+		t.Fatalf("installation owner conflict = %T %v", err, err)
+	}
+	organizationInstallation := installation
+	organizationInstallation.ID = 8
+	organizationInstallation.AccountID = 80
+	organizationInstallation.AccountLogin = "acme"
+	organizationInstallation.AccountKind = deckgithub.AccountKindOrganization
+	organizationCallback.InstallationID = organizationInstallation.ID
+	organizationCredential := credential
+	organizationCredential.UserID = 701
+	organizationCredential.AccessToken = "ghu_organization_fixture"
+	organizationCredential.RefreshToken = "ghr_organization_fixture"
+	if err := connectGitHub(
+		organizationCallback, organizationInstallation,
+		organizationCredential, now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("connect organization GitHub: %v", err)
+	}
+	organizationConnection, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, accountID, true)
+	if err != nil ||
+		organizationConnection.Credential.UserID != organizationCredential.UserID {
+		t.Fatalf("organization GitHub connection = %#v err=%v",
+			organizationConnection, err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_github_user_credentials
+		SET github_user_id = $1
+		WHERE connection_id = $2 AND account_id = $3`,
+		int64(credential.UserID), pgUUID(organizationConnection.ID),
+		pgUUID(accountID),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RequireGitHubCredentialReauthentication(
+		ctx, organizationConnection.ID, accountID, credential.UserID,
+		now.Add(24*time.Hour)); err != nil {
+		t.Fatalf("require scoped GitHub reauthentication: %v", err)
+	}
+	if personalConnection, err := store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true); err != nil ||
+		personalConnection.Credential.UserID != credential.UserID {
+		t.Fatalf("scoped reauthentication removed personal credential: %#v %v",
+			personalConnection, err)
+	}
+	if err := connectGitHub(
+		organizationCallback, organizationInstallation,
+		organizationCredential, now.Add(4*time.Minute+15*time.Second)); err != nil {
+		t.Fatalf("restore organization GitHub credential: %v", err)
+	}
+	organizationConnection, err = store.GetGitHubConnection(
+		ctx, 2, organizationID, accountID, true)
+	if err != nil {
+		t.Fatalf("restored organization GitHub connection: %v", err)
+	}
+	connectedViewParams := createViewParams(
+		t, hasher, accountID, mustV7(t), mustV7(t), "subject-1",
+		now.Add(4*time.Minute), 3)
+	connectedViewParams.View.Owner = &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{OrganizationId: uuidProto(
+			organizationID)},
+	}
+	connectedViewParams.OwnerHash = hasher.Sum(
+		"owner", "OWNER_SCOPE_ORGANIZATION:"+organizationID.String())
+	connectedView, replayed, err := store.CreateView(ctx, connectedViewParams)
+	if err != nil || replayed || connectedView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		t.Fatalf("create connected view = %#v replayed=%v err=%v",
+			connectedView, replayed, err)
+	}
+	replayedConnectedView, replayed, err := store.CreateView(
+		ctx, connectedViewParams)
+	if err != nil || !replayed || replayedConnectedView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
+		t.Fatalf("replay connected view = %#v replayed=%v err=%v",
+			replayedConnectedView, replayed, err)
+	}
+	if err := store.SyncMemberships(ctx, secondAccountID,
+		[]contracts.Membership{{
+			OrganizationID: organizationID,
+			Role:           contracts.OrganizationRoleMember,
+		}}, nil); err != nil {
+		t.Fatalf("sync organization member: %v", err)
+	}
+	memberCallback := organizationCallback
+	memberCallback.AccountID = secondAccountID.String()
+	memberCredential := credential
+	memberCredential.UserID = 702
+	memberCredential.AccessToken = "ghu_organization_member_fixture"
+	memberCredential.RefreshToken = "ghr_organization_member_fixture"
+	if err := connectGitHub(
+		memberCallback, organizationInstallation, memberCredential,
+		now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("authorize organization member GitHub: %v", err)
+	}
+	memberConnection, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, secondAccountID, true)
+	if err != nil ||
+		memberConnection.Credential.UserID != memberCredential.UserID ||
+		memberConnection.ID != organizationConnection.ID ||
+		memberConnection.Revision != organizationConnection.Revision {
+		t.Fatalf("organization member GitHub connection = %#v err=%v",
+			memberConnection, err)
+	}
+	otherInstallation := organizationInstallation
+	otherInstallation.ID++
+	memberOtherCallback := memberCallback
+	memberOtherCallback.InstallationID = otherInstallation.ID
+	if err := connectGitHub(
+		memberOtherCallback, otherInstallation, memberCredential,
+		now.Add(4*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("member replaced organization installation: %T %v", err, err)
+	}
+	replacementCallback := organizationCallback
+	replacementCallback.InstallationID = otherInstallation.ID
+	if err := connectGitHub(
+		replacementCallback, otherInstallation, organizationCredential,
+		now.Add(4*time.Minute+30*time.Second)); err != nil {
+		t.Fatalf("owner replaced organization installation: %v", err)
+	}
+	replacementView, err := store.GetView(
+		ctx, uuidValueFromProto(connectedView.ViewId))
+	if err != nil || replacementView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("replacement installation view = %#v err=%v",
+			replacementView, err)
+	}
+	var replacementRepositoryIndex []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT repository_authorization_index
+		FROM deck_views
+		WHERE view_id = $1`,
+		pgUUID(uuidValueFromProto(connectedView.ViewId)),
+	).Scan(&replacementRepositoryIndex); err != nil {
+		t.Fatal(err)
+	}
+	if replacementRepositoryIndex != nil {
+		t.Fatal("replacement installation retained its repository authorization index")
+	}
+	staleMemberRefresh := memberCredential
+	staleMemberRefresh.AccessToken = "ghu_stale_member_refresh"
+	if err := store.RefreshGitHubCredential(
+		ctx, memberConnection.ID, memberConnection.Revision, secondAccountID,
+		staleMemberRefresh, now.Add(4*time.Minute)); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("replacement installation accepted stale credential: %T %v",
+			err, err)
+	}
+	if _, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, secondAccountID, true); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("replacement retained member credential: %T %v", err, err)
+	}
+	if err := store.ApplyGitHubAuthorizationRevocation(
+		ctx, "authorization-revocation-2", organizationCredential.UserID,
+		security.Digest([]byte("organization-authorization-revoked")),
+		now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("organization authorization revocation: %v", err)
+	}
+	if _, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, accountID, true); !errors.Is(
+		err, deckgithub.ErrPermissionDenied) {
+		t.Fatalf("revoked organization credential reused another connection: %v",
+			err)
+	}
+	if personalConnection, err := store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true); err != nil ||
+		personalConnection.Credential.UserID != credential.UserID {
+		t.Fatalf("unrelated personal credential = %#v err=%v",
+			personalConnection, err)
+	}
+	lostPermissions := otherInstallation.Permissions
+	lostPermissions.Checks = deckgithub.PermissionNone
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-permissions-lost", "installation",
+		"new_permissions_accepted", otherInstallation.ID, lostPermissions,
+		nil,
+		security.Digest([]byte("installation-permissions-lost")),
+		now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("permission-loss lifecycle: %v", err)
+	}
+	disconnectedOrganization, err := store.GetGitHubConnection(
+		ctx, 2, organizationID, accountID, false)
+	if err != nil ||
+		disconnectedOrganization.State != int16(
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED) ||
+		disconnectedOrganization.Installation.ID != 0 {
+		t.Fatalf("permission-loss connection = %#v err=%v",
+			disconnectedOrganization, err)
+	}
+	disconnectedOrganizationView, err := store.GetView(
+		ctx, uuidValueFromProto(connectedView.ViewId))
+	if err != nil || disconnectedOrganizationView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("permission-loss view = %#v err=%v",
+			disconnectedOrganizationView, err)
+	}
+	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,
+		snapshots[:1], now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateNotificationPreference(
+		ctx, registrationID, firstViewID, 0,
+		&deckv1.ViewNotificationPreference{
+			Enabled: true,
+		}, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("notification fixture: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO deck_notification_events (
+			event_id, view_id, opaque_event_id, transition, created_at, expires_at
+		) VALUES ($1, $2, $3, 1, $4, $5)`,
+		pgUUID(mustV7(t)), pgUUID(firstViewID), bytes.Repeat([]byte{9}, 32),
+		pgTime(now), pgTime(now.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	changedInstallation := installation
+	changedInstallation.Permissions.Members = deckgithub.PermissionNone
+	if err := connectGitHub(
+		callback, changedInstallation, credential,
+		now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("reconnect changed GitHub provider scope: %v", err)
+	}
+	var reconnectSnapshotCount, reconnectNotificationCount, reconnectEventCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM deck_pull_request_snapshots
+			 WHERE view_id = $1)::integer,
+			(SELECT count(*) FROM deck_view_notification_preferences
+			 WHERE view_id = $1)::integer,
+			(SELECT count(*) FROM deck_notification_events
+			 WHERE view_id = $1)::integer`,
+		pgUUID(firstViewID),
+	).Scan(&reconnectSnapshotCount, &reconnectNotificationCount,
+		&reconnectEventCount); err != nil {
+		t.Fatal(err)
+	}
+	if reconnectSnapshotCount != 0 || reconnectNotificationCount != 0 ||
+		reconnectEventCount != 0 {
+		t.Fatalf("reconnect retained stale provider state: snapshots=%d "+
+			"notifications=%d events=%d", reconnectSnapshotCount,
+			reconnectNotificationCount, reconnectEventCount)
+	}
+	renamedInstallation := changedInstallation
+	renamedInstallation.AccountLogin = "renamed-octocat"
+	if err := store.ApplyGitHubInstallationTargetRename(
+		ctx, "installation-target-renamed", renamedInstallation,
+		security.Digest([]byte("installation-target-renamed")),
+		now.Add(5*time.Minute+30*time.Second)); err != nil {
+		t.Fatalf("rename GitHub installation target: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil ||
+		connection.Installation.AccountLogin !=
+			renamedInstallation.AccountLogin ||
+		connection.Credential.AccessToken != credential.AccessToken {
+		t.Fatalf("renamed GitHub connection = %#v err=%v", connection, err)
+	}
+	renamedView, err := store.GetView(ctx, firstViewID)
+	if err != nil ||
+		renamedView.ConnectionState !=
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("renamed account view was not disconnected: %#v err=%v",
+			renamedView, err)
+	}
+	var renamedRepositoryIndex []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT repository_authorization_index
+		FROM deck_views
+		WHERE view_id = $1`,
+		pgUUID(firstViewID),
+	).Scan(&renamedRepositoryIndex); err != nil {
+		t.Fatal(err)
+	}
+	if renamedRepositoryIndex != nil {
+		t.Fatal("renamed account view retained its repository authorization index")
+	}
+	if err := connectGitHub(
+		callback, renamedInstallation, credential,
+		now.Add(5*time.Minute+45*time.Second)); err != nil {
+		t.Fatalf("reconnect renamed GitHub account: %v", err)
+	}
+	renamedView, err = store.GetView(ctx, firstViewID)
+	if err != nil ||
+		renamedView.ConnectionState !=
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("reconnect restored invalid view index: %#v err=%v",
+			renamedView, err)
+	}
+	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,
+		snapshots[:1], now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	acceptedPermissions := changedInstallation.Permissions
+	acceptedPermissions.Members = deckgithub.PermissionRead
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-permissions-1", "installation",
+		"new_permissions_accepted", installation.ID, acceptedPermissions,
+		nil,
+		security.Digest([]byte("installation-permissions")),
+		now.Add(6*time.Minute)); err != nil {
+		t.Fatalf("accepted GitHub permissions: %v", err)
+	}
+	var installationIdentityHash []byte
+	if err := store.pool.QueryRow(ctx, `
+		SELECT provider_identity_hash
+		FROM deck_github_webhook_deliveries
+		WHERE delivery_id = $1`,
+		"installation-permissions-1",
+	).Scan(&installationIdentityHash); err != nil {
+		t.Fatal(err)
+	}
+	expectedInstallationIdentityHash := hasher.Sum(
+		"github-webhook-installation", fmt.Sprint(installation.ID))
+	if !bytes.Equal(
+		installationIdentityHash, expectedInstallationIdentityHash[:]) {
+		t.Fatal("installation replay retained an unexpected provider identity")
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil ||
+		connection.Installation.Permissions != acceptedPermissions {
+		t.Fatalf("accepted GitHub permissions connection = %#v err=%v",
+			connection, err)
+	}
+	var acceptedPermissionSnapshotCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)::integer
+		FROM deck_pull_request_snapshots
+		WHERE view_id = $1`,
+		pgUUID(firstViewID),
+	).Scan(&acceptedPermissionSnapshotCount); err != nil {
+		t.Fatal(err)
+	}
+	if acceptedPermissionSnapshotCount != 0 {
+		t.Fatalf("accepted permissions retained %d stale snapshots",
+			acceptedPermissionSnapshotCount)
+	}
+	if _, err := store.ReplaceSnapshots(ctx, firstViewID, viewerHash,
+		snapshots[:1], now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateNotificationPreference(
+		ctx, registrationID, firstViewID, 0,
+		&deckv1.ViewNotificationPreference{
+			Enabled: true,
+		}, now.Add(6*time.Minute)); err != nil {
+		t.Fatalf("notification fixture after reconnect: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO deck_notification_events (
+			event_id, view_id, opaque_event_id, transition, created_at, expires_at
+		) VALUES ($1, $2, $3, 1, $4, $5)`,
+		pgUUID(mustV7(t)), pgUUID(firstViewID), bytes.Repeat([]byte{10}, 32),
+		pgTime(now), pgTime(now.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	pendingCallback := callback
+	pendingCallback.Nonce = "disconnect-pending"
+	pendingHash := security.Digest([]byte("disconnect-pending"))
+	if err := store.SaveGitHubCallbackState(
+		ctx, pendingHash, pendingCallback, now.Add(6*time.Minute)); err != nil {
+		t.Fatalf("pending disconnect callback: %v", err)
+	}
+	if _, err := store.ConsumeGitHubCallbackState(
+		ctx, pendingHash, pendingCallback.Purpose,
+		now.Add(6*time.Minute)); err != nil {
+		t.Fatalf("consume pending disconnect callback: %v", err)
+	}
+	connection, err = store.GetGitHubConnection(
+		ctx, 1, accountID, accountID, true)
+	if err != nil {
+		t.Fatalf("connection after changed reconnect: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_connections
+		SET github_account_login_ciphertext = $1
+		WHERE connection_id = $2`,
+		[]byte("not-ciphertext"), pgUUID(connection.ID)); err != nil {
+		t.Fatal(err)
+	}
+	connectionOwner, err := store.GetGitHubConnectionOwnerByID(
+		ctx, connection.ID)
+	if err != nil || connectionOwner.Scope != 1 ||
+		connectionOwner.ID != accountID {
+		t.Fatalf("authorization-safe connection owner = %#v err=%v",
+			connectionOwner, err)
+	}
+	disconnected, err := store.DisconnectGitHub(
+		ctx, connection.ID, connection.Revision, now.Add(7*time.Minute))
+	if err != nil || disconnected.State != int16(
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED) ||
+		disconnected.Installation.ID != 0 ||
+		disconnected.Installation.AccountID != 0 {
+		t.Fatalf("disconnect GitHub = %#v err=%v", disconnected, err)
+	}
+	if err := store.ConnectGitHub(
+		ctx, pendingHash, pendingCallback, changedInstallation, credential,
+		now.Add(8*time.Minute)); !errors.Is(
+		err, deckgithub.ErrInvalidSignature) {
+		t.Fatalf("consumed callback reconnected after disconnect: %T %v", err, err)
+	}
+	retainedView, err := store.GetView(ctx, firstViewID)
+	if err != nil || retainedView.ConnectionState !=
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		t.Fatalf("disconnected view was not retained: %#v err=%v", retainedView, err)
+	}
+	var credentialCount, snapshotCount, snapshotStateCount int
+	var notificationCount, eventCount, callbackCount int
+	callbackOwnerHash := hasher.Sum(
+		"github-callback-owner",
+		"OWNER_SCOPE_PERSONAL:"+accountID.String())
+	if err := store.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM deck_github_user_credentials
+			 WHERE connection_id = $1)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshots
+			 WHERE view_id = $2)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshot_states
+			 WHERE view_id = $2)::integer,
+			(SELECT count(*) FROM deck_view_notification_preferences
+			 WHERE view_id = $2)::integer,
+			(SELECT count(*) FROM deck_notification_events
+			 WHERE view_id = $2)::integer,
+			(SELECT count(*) FROM deck_github_callback_states
+			 WHERE owner_hash = $3)::integer`,
+		pgUUID(connection.ID), pgUUID(firstViewID), callbackOwnerHash[:],
+	).Scan(&credentialCount, &snapshotCount, &snapshotStateCount,
+		&notificationCount, &eventCount, &callbackCount); err != nil {
+		t.Fatal(err)
+	}
+	if credentialCount != 0 || snapshotCount != 0 || snapshotStateCount != 0 ||
+		notificationCount != 0 || eventCount != 0 || callbackCount != 0 {
+		t.Fatalf("disconnect retained provider data: credentials=%d snapshots=%d "+
+			"states=%d notifications=%d events=%d callbacks=%d", credentialCount,
+			snapshotCount, snapshotStateCount, notificationCount, eventCount,
+			callbackCount)
+	}
+	device, err := store.GetDevice(
+		ctx, accountID, deviceID, now.Add(3*time.Minute))
+	if err != nil || device.Device.Widgets[0].Snapshot.GetMatchingCount() != 0 ||
+		device.Device.Widgets[0].Snapshot.GetFreshness() !=
+			deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED {
+		t.Fatalf("widget snapshot survived disconnect: %#v err=%v", device, err)
+	}
 	updatedQuery, err = query.Parse("repo:secret/final is:open")
 	if err != nil {
 		t.Fatal(err)
 	}
 	first.Query = updatedQuery
 	updated, err = store.UpdateView(
-		ctx, firstViewID, 3, first, true, now.Add(2*time.Minute))
-	if err != nil || updated.Revision.GetValue() != 4 {
+		ctx, firstViewID, 6, first, true, now.Add(4*time.Minute))
+	if err != nil || updated.Revision.GetValue() != 7 {
 		t.Fatalf("query update with widget = %#v %v", updated, err)
 	}
-	device, err := store.GetDevice(ctx, accountID, deviceID, now.Add(3*time.Minute))
+	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(5*time.Minute))
 	if err != nil {
 		t.Fatalf("device after query update: %v", err)
 	}
@@ -417,11 +1380,11 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("widget snapshot survived query update: %#v", device.Device)
 	}
 	if deletedRevision, err := store.DeleteView(
-		ctx, firstViewID, 4, now.Add(4*time.Minute)); err != nil ||
-		deletedRevision != 4 {
+		ctx, firstViewID, 7, now.Add(6*time.Minute)); err != nil ||
+		deletedRevision != 7 {
 		t.Fatalf("delete view = revision=%d err=%v", deletedRevision, err)
 	}
-	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(5*time.Minute))
+	device, err = store.GetDevice(ctx, accountID, deviceID, now.Add(7*time.Minute))
 	if err != nil {
 		t.Fatalf("device after view deletion: %v", err)
 	}
@@ -441,12 +1404,12 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if _, err := store.DeleteOrganizationFeatureData(ctx, DeleteFeatureDataParams{
 		JobID: mustV7(t), ReplayKey: mustV7(t), TargetID: organizationID,
 		TargetHash: organizationTargetHash, Trigger: DeletionTriggerOwner,
-		AcceptedAt: now.Add(6 * time.Minute),
+		AcceptedAt: now.Add(8 * time.Minute),
 	}); err != nil {
 		t.Fatalf("organization feature deletion: %v", err)
 	}
 	device, err = store.GetDevice(
-		ctx, accountID, deviceID, now.Add(7*time.Minute))
+		ctx, accountID, deviceID, now.Add(9*time.Minute))
 	if err != nil {
 		t.Fatalf("device after organization deletion: %v", err)
 	}
@@ -458,11 +1421,118 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 			device.Device.Revision)
 	}
 	unregistered, err := store.UnregisterDevice(
-		ctx, registrationID, uuid.Nil, grant, now.Add(8*time.Minute))
+		ctx, registrationID, uuid.Nil, grant, now.Add(10*time.Minute))
 	if err != nil || !unregistered {
 		t.Fatalf("original replay grant unregister = %v, %v", unregistered, err)
 	}
 
+	webhookCallback := callback
+	webhookCallback.AccountID = secondAccountID.String()
+	webhookCallback.Owner = deckgithub.OwnerBinding{
+		Scope: 1, ID: secondAccountID.String(),
+	}
+	webhookCallback.InstallationID = 99
+	webhookInstallation := installation
+	webhookInstallation.ID = 99
+	webhookInstallation.AccountID = 990
+	webhookCredential := credential
+	webhookCredential.UserID = 799
+	if err := connectGitHub(
+		webhookCallback, webhookInstallation, webhookCredential,
+		now.Add(11*time.Minute)); err != nil {
+		t.Fatalf("webhook disconnect fixture: %v", err)
+	}
+	webhookPending := webhookCallback
+	webhookPending.Nonce = "webhook-disconnect-pending"
+	webhookPendingHash := security.Digest([]byte(webhookPending.Nonce))
+	if err := store.SaveGitHubCallbackState(
+		ctx, webhookPendingHash, webhookPending,
+		now.Add(11*time.Minute)); err != nil {
+		t.Fatalf("webhook pending callback: %v", err)
+	}
+	if err := store.ApplyGitHubInstallationLifecycle(
+		ctx, "installation-deleted-1", "installation", "deleted",
+		webhookInstallation.ID, webhookInstallation.Permissions,
+		nil,
+		security.Digest([]byte("installation-deleted")),
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("webhook disconnect: %v", err)
+	}
+	var webhookCallbackCount int
+	webhookOwnerHash := hasher.Sum(
+		"github-callback-owner",
+		"OWNER_SCOPE_PERSONAL:"+secondAccountID.String())
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)::integer
+		FROM deck_github_callback_states
+		WHERE owner_hash = $1`,
+		webhookOwnerHash[:],
+	).Scan(&webhookCallbackCount); err != nil {
+		t.Fatal(err)
+	}
+	if webhookCallbackCount != 0 {
+		t.Fatalf("webhook disconnect retained %d callbacks",
+			webhookCallbackCount)
+	}
+
+	retainedOrganizationID := mustV7(t)
+	retainedViewID := mustV7(t)
+	retainedViewParams := createViewParams(
+		t, hasher, accountID, retainedViewID, mustV7(t), "subject-1",
+		now.Add(12*time.Minute), 121)
+	retainedViewParams.View.Owner = &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{OrganizationId: uuidProto(
+			retainedOrganizationID)},
+	}
+	retainedViewParams.OwnerHash = hasher.Sum(
+		"owner", "OWNER_SCOPE_ORGANIZATION:"+retainedOrganizationID.String())
+	if _, _, err := store.CreateView(ctx, retainedViewParams); err != nil {
+		t.Fatalf("create retained organization view: %v", err)
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, retainedViewID, viewerHash, snapshots[:1],
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create deleted viewer snapshot: %v", err)
+	}
+	if _, err := store.ReplaceSnapshots(
+		ctx, retainedViewID, secondViewerHash, snapshots[:1],
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create retained viewer snapshot: %v", err)
+	}
+	memberPending := callback
+	memberPending.Owner = deckgithub.OwnerBinding{
+		Scope: 2, ID: mustV7(t).String(),
+	}
+	memberPending.Nonce = "account-deletion-org-member"
+	memberPendingHash := security.Digest([]byte(memberPending.Nonce))
+	if err := store.SaveGitHubCallbackState(
+		ctx, memberPendingHash, memberPending, now.Add(13*time.Minute)); err != nil {
+		t.Fatalf("account deletion member callback: %v", err)
+	}
+	if err := store.SyncMemberships(ctx, accountID, []contracts.Membership{{
+		OrganizationID: retainedOrganizationID,
+		Role:           contracts.OrganizationRoleOwner,
+	}}, nil); err != nil {
+		t.Fatalf("owner deletion retained organization membership: %v", err)
+	}
+	retainedOrganizationCallback := callback
+	retainedOrganizationCallback.Owner = deckgithub.OwnerBinding{
+		Scope: 2, ID: retainedOrganizationID.String(),
+	}
+	retainedOrganizationInstallation := installation
+	retainedOrganizationInstallation.ID = 100
+	retainedOrganizationInstallation.AccountID = 1_000
+	retainedOrganizationInstallation.AccountLogin = "retained"
+	retainedOrganizationInstallation.AccountKind =
+		deckgithub.AccountKindOrganization
+	retainedOrganizationCallback.InstallationID =
+		retainedOrganizationInstallation.ID
+	if err := connectGitHub(
+		retainedOrganizationCallback, retainedOrganizationInstallation, credential,
+		now.Add(13*time.Minute)); err != nil {
+		t.Fatalf("owner deletion organization credential fixture: %v", err)
+	}
 	replayKey := mustV7(t)
 	jobID := mustV7(t)
 	targetHash := hasher.Sum("owner", "OWNER_SCOPE_PERSONAL:"+accountID.String())
@@ -476,12 +1546,69 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if _, err := store.GetView(ctx, firstViewID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("view survived feature deletion: %v", err)
 	}
+	var accountCallbackCount int
+	accountCallbackHash := hasher.Sum(
+		"github-callback-account", accountID.String())
+	if err := store.pool.QueryRow(ctx, `
+		SELECT count(*)::integer
+		FROM deck_github_callback_states
+		WHERE account_hash = $1`,
+		accountCallbackHash[:],
+	).Scan(&accountCallbackCount); err != nil {
+		t.Fatal(err)
+	}
+	if accountCallbackCount != 0 {
+		t.Fatalf("account deletion retained %d callbacks", accountCallbackCount)
+	}
+	var deletedViewerSnapshotCount, deletedViewerStateCount int
+	var retainedViewerSnapshotCount, retainedViewerStateCount int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM deck_pull_request_snapshots
+			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshot_states
+			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshots
+			 WHERE view_id = $1 AND viewer_hash = $3)::integer,
+			(SELECT count(*) FROM deck_pull_request_snapshot_states
+			 WHERE view_id = $1 AND viewer_hash = $3)::integer`,
+		pgUUID(retainedViewID), viewerHash[:], secondViewerHash[:],
+	).Scan(
+		&deletedViewerSnapshotCount, &deletedViewerStateCount,
+		&retainedViewerSnapshotCount, &retainedViewerStateCount,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if deletedViewerSnapshotCount != 0 || deletedViewerStateCount != 0 {
+		t.Fatalf("account deletion retained viewer cache: snapshots=%d state=%d",
+			deletedViewerSnapshotCount, deletedViewerStateCount)
+	}
+	if retainedViewerSnapshotCount != 1 || retainedViewerStateCount != 1 {
+		t.Fatalf("account deletion removed another viewer cache: snapshots=%d state=%d",
+			retainedViewerSnapshotCount, retainedViewerStateCount)
+	}
+	if _, err := store.GetView(ctx, retainedViewID); err != nil {
+		t.Fatalf("account deletion removed organization view: %v", err)
+	}
+	if organizationConnection, err := store.GetGitHubConnection(
+		ctx, 2, retainedOrganizationID, accountID, true); err != nil ||
+		organizationConnection.Credential.UserID != credential.UserID {
+		t.Fatalf("owner deletion removed organization credential: %#v %v",
+			organizationConnection, err)
+	}
 	if _, err := store.ResolveViewer(ctx, "subject-1"); err != nil {
 		t.Fatalf("owner replay identity was removed: %v", err)
 	}
 	if _, _, err := store.CreateView(ctx, firstViewParams); !errors.Is(
 		err, ErrDeletionInProgress) {
 		t.Fatalf("deleted owner replay material survived: %T %v", err, err)
+	}
+	postDeletionCallback := callback
+	postDeletionCallback.Nonce = "post-deletion"
+	if err := store.SaveGitHubCallbackState(
+		ctx, security.Digest([]byte("post-deletion")),
+		postDeletionCallback, now); !errors.Is(err, ErrDeletionInProgress) {
+		t.Fatalf("tombstoned owner callback state = %T %v", err, err)
 	}
 	replayedDeletion, err := store.DeleteFeatureData(ctx, DeleteFeatureDataParams{
 		JobID: mustV7(t), ReplayKey: replayKey, TargetID: accountID,

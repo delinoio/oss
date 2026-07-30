@@ -1,0 +1,17 @@
+{
+  "webhook": {
+    "secret": "fixture-webhook-secret-32-bytes!!",
+    "payload": "{\"action\":\"suspend\",\"installation\":{\"id\":4242}}",
+    "signature": "sha256=357a27c130dfdf87b9b4941a02ea888f32436e95d4bcbb5488abe14c41f66b64"
+  },
+  "callback": {
+    "key_base64": "Zml4dHVyZS1jYWxsYmFjay1zaWduaW5nLWtleS0zMi1ieXRlcyEh",
+    "purpose": 1,
+    "account_id": "01900000-0000-7000-8000-000000000001",
+    "github_login": "octocat",
+    "owner_scope": 1,
+    "owner_id": "01900000-0000-7000-8000-000000000001",
+    "nonce": "Zml4dHVyZS1jYWxsYmFjay1ub25jZS0zMi1ieXRlcyE",
+    "expires_at": 1893456000
+  }
+}

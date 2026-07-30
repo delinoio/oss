@@ -463,6 +463,9 @@ message MutatePullRequestRequest {
 message MutatePullRequestResponse {
   PullRequestDetail pull_request = 1;
   PullRequestMutationKind mutation_kind = 2;
+  // True when GitHub accepted the mutation but the result reload failed.
+  // The client must refresh instead of retrying the mutation.
+  bool refresh_required = 3;
 }
 
 enum FeatureDeletionState {

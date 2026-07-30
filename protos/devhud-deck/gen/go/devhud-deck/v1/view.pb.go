@@ -4526,11 +4526,14 @@ func (x *MutatePullRequestRequest) GetMutation() *PullRequestMutation {
 }
 
 type MutatePullRequestResponse struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	PullRequest   *PullRequestDetail      `protobuf:"bytes,1,opt,name=pull_request,json=pullRequest,proto3" json:"pull_request,omitempty"`
-	MutationKind  PullRequestMutationKind `protobuf:"varint,2,opt,name=mutation_kind,json=mutationKind,proto3,enum=devhud.deck.v1.PullRequestMutationKind" json:"mutation_kind,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState  `protogen:"open.v1"`
+	PullRequest  *PullRequestDetail      `protobuf:"bytes,1,opt,name=pull_request,json=pullRequest,proto3" json:"pull_request,omitempty"`
+	MutationKind PullRequestMutationKind `protobuf:"varint,2,opt,name=mutation_kind,json=mutationKind,proto3,enum=devhud.deck.v1.PullRequestMutationKind" json:"mutation_kind,omitempty"`
+	// True when GitHub accepted the mutation but the result reload failed.
+	// The client must refresh instead of retrying the mutation.
+	RefreshRequired bool `protobuf:"varint,3,opt,name=refresh_required,json=refreshRequired,proto3" json:"refresh_required,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *MutatePullRequestResponse) Reset() {
@@ -4575,6 +4578,13 @@ func (x *MutatePullRequestResponse) GetMutationKind() PullRequestMutationKind {
 		return x.MutationKind
 	}
 	return PullRequestMutationKind_PULL_REQUEST_MUTATION_KIND_UNSPECIFIED
+}
+
+func (x *MutatePullRequestResponse) GetRefreshRequired() bool {
+	if x != nil {
+		return x.RefreshRequired
+	}
+	return false
 }
 
 type OwnerFeatureDeletion struct {
@@ -5228,10 +5238,11 @@ const file_devhud_deck_v1_view_proto_rawDesc = "" +
 	"\aview_id\x18\x01 \x01(\v2\x16.devhud.deck.v1.UuidV7R\x06viewId\x12G\n" +
 	"\fpull_request\x18\x02 \x01(\v2$.devhud.deck.v1.PullRequestReferenceR\vpullRequest\x12E\n" +
 	"\x11expected_revision\x18\x03 \x01(\v2\x18.devhud.deck.v1.RevisionR\x10expectedRevision\x12?\n" +
-	"\bmutation\x18\x04 \x01(\v2#.devhud.deck.v1.PullRequestMutationR\bmutation\"\xaf\x01\n" +
+	"\bmutation\x18\x04 \x01(\v2#.devhud.deck.v1.PullRequestMutationR\bmutation\"\xda\x01\n" +
 	"\x19MutatePullRequestResponse\x12D\n" +
 	"\fpull_request\x18\x01 \x01(\v2!.devhud.deck.v1.PullRequestDetailR\vpullRequest\x12L\n" +
-	"\rmutation_kind\x18\x02 \x01(\x0e2'.devhud.deck.v1.PullRequestMutationKindR\fmutationKind\"\x8c\x01\n" +
+	"\rmutation_kind\x18\x02 \x01(\x0e2'.devhud.deck.v1.PullRequestMutationKindR\fmutationKind\x12)\n" +
+	"\x10refresh_required\x18\x03 \x01(\bR\x0frefreshRequired\"\x8c\x01\n" +
 	"\x14OwnerFeatureDeletion\x12+\n" +
 	"\x05owner\x18\x01 \x01(\v2\x15.devhud.deck.v1.OwnerR\x05owner\x12G\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\v2\x1e.devhud.deck.v1.IdempotencyKeyR\x0eidempotencyKey\"\xe1\x01\n" +

@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-deck/internal/authn"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/query"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/rpcerr"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
@@ -44,20 +45,11 @@ func (service *View) ListViews(
 		}
 		after = uuid.UUID(payload)
 	}
-	views, err := service.dependencies.Store.ListViews(
-		ctx, request.Msg.Owner.Scope, ownerID, after, int32(pageLimit+1))
+	views, err := service.dependencies.Store.ListViewsAuthorized(
+		ctx, request.Msg.Owner.Scope, ownerID, after, int32(pageLimit+1),
+		service.viewDefinitionAuthorizer(ctx, viewer, false))
 	if err != nil {
-		return nil, mapDatabaseError(err)
-	}
-	for _, view := range views {
-		allowed, authErr := service.canReadViewRepositories(ctx, viewer, view)
-		if authErr != nil {
-			return nil, authErr
-		}
-		if !allowed {
-			return nil, rpcerr.New(connect.CodePermissionDenied,
-				deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
-		}
+		return nil, mapAuthorizedViewError(err)
 	}
 	nextCursor := ""
 	if len(views) > int(pageLimit) {
@@ -91,20 +83,9 @@ func (service *View) GetView(
 	if err != nil {
 		return nil, err
 	}
-	view, err := service.dependencies.Store.GetView(ctx, id)
-	if err != nil {
-		return nil, mapDatabaseError(err)
-	}
-	if _, err := authorizeOwner(viewer, view.Owner, false); err != nil {
-		return nil, err
-	}
-	allowed, err := service.canReadViewRepositories(ctx, viewer, view)
+	view, err := service.getAuthorizedView(ctx, viewer, id, false)
 	if err != nil {
 		return nil, err
-	}
-	if !allowed {
-		return nil, rpcerr.New(connect.CodePermissionDenied,
-			deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
 	}
 	return connect.NewResponse(&deckv1.GetViewResponse{View: view}), nil
 }
@@ -262,14 +243,11 @@ func (service *View) UpdateView(
 	if err != nil {
 		return nil, err
 	}
-	current, err := service.dependencies.Store.GetView(ctx, id)
-	if err != nil {
-		return nil, mapDatabaseError(err)
-	}
-	ownerID, err := authorizeOwner(viewer, current.Owner, true)
+	current, err := service.getAuthorizedViewForMutation(ctx, viewer, id)
 	if err != nil {
 		return nil, err
 	}
+	authorizedOwnerID, _ := ownerID(current.Owner)
 	if err := authorizeBilling(
 		viewer, current.Owner, request.Msg.View.Billing); err != nil {
 		return nil, err
@@ -317,7 +295,7 @@ func (service *View) UpdateView(
 		return nil, service.mapStaleWithETag(err)
 	}
 	ownerHash := service.dependencies.Hasher.Sum(
-		"owner", current.Owner.Scope.String()+":"+ownerID.String())
+		"owner", current.Owner.Scope.String()+":"+authorizedOwnerID.String())
 	if err := service.recordAudit(ctx, viewer.Subject, audit.EventViewUpdated,
 		current.Owner.Scope, ownerHash[:], audit.ResourceView, id,
 		audit.OutcomeSuccess); err != nil {
@@ -343,21 +321,18 @@ func (service *View) DeleteView(
 	if err != nil {
 		return nil, err
 	}
-	current, err := service.dependencies.Store.GetView(ctx, id)
-	if err != nil {
-		return nil, mapDatabaseError(err)
-	}
-	ownerID, err := authorizeOwner(viewer, current.Owner, true)
+	current, err := service.getAuthorizedViewForMutation(ctx, viewer, id)
 	if err != nil {
 		return nil, err
 	}
+	authorizedOwnerID, _ := ownerID(current.Owner)
 	deletedRevision, err := service.dependencies.Store.DeleteView(
 		ctx, id, expected, service.dependencies.Clock.Now().UTC())
 	if err != nil {
 		return nil, service.mapStaleWithETag(err)
 	}
 	ownerHash := service.dependencies.Hasher.Sum(
-		"owner", current.Owner.Scope.String()+":"+ownerID.String())
+		"owner", current.Owner.Scope.String()+":"+authorizedOwnerID.String())
 	if err := service.recordAudit(ctx, viewer.Subject, audit.EventViewDeleted,
 		current.Owner.Scope, ownerHash[:], audit.ResourceView, id,
 		audit.OutcomeSuccess); err != nil {
@@ -384,32 +359,35 @@ func (service *View) ListPullRequests(
 	if err != nil {
 		return nil, err
 	}
-	view, err := service.dependencies.Store.GetView(ctx, viewID)
+	view, err := service.getAuthorizedView(ctx, viewer, viewID, false)
 	if err != nil {
-		return nil, mapDatabaseError(err)
-	}
-	if _, err := authorizeOwner(viewer, view.Owner, false); err != nil {
 		return nil, err
 	}
 	if _, err := query.ResolveViewer(view.Query.RawQuery, viewer.GitHubLogin); err != nil {
 		return nil, rpcerr.New(connect.CodeInternal,
 			deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
 	}
-	viewerHash := service.dependencies.Hasher.Sum("snapshot-viewer", viewer.AccountID.String())
+	viewerHash := service.dependencies.Hasher.Sum(
+		"snapshot-viewer", viewer.AccountID.String())
+	requiredRepositoryHashes, err := service.dependencies.Store.
+		ListSnapshotRepositoryHashes(ctx, viewID, viewerHash)
+	if err != nil {
+		return nil, mapDatabaseError(err)
+	}
+	readableRepositoryHashes, err := service.dependencies.Repositories.
+		ReadableRepositoryHashes(
+			ctx, viewer, view.Owner, contracts.RepositoryHashKindSnapshot,
+			requiredRepositoryHashes)
+	if err != nil {
+		if errors.Is(err, deckgithub.ErrReauthenticationRequired) {
+			return nil, rpcerr.New(connect.CodeFailedPrecondition,
+				deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+		}
+		return nil, rpcerr.New(connect.CodeUnavailable,
+			deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
+	}
 	snapshots, truncated, refreshedAt, err := service.dependencies.Store.ListSnapshots(
-		ctx, viewID, viewerHash, func(repository *deckv1.RepositoryReference) error {
-			allowed, authErr := service.dependencies.Repositories.CanReadRepository(
-				ctx, viewer, repository.GetOwner(), repository.GetName())
-			if authErr != nil {
-				return rpcerr.New(connect.CodeUnavailable,
-					deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
-			}
-			if !allowed {
-				return rpcerr.New(connect.CodePermissionDenied,
-					deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
-			}
-			return nil
-		})
+		ctx, viewID, viewerHash, readableRepositoryHashes)
 	if err != nil {
 		var connectErr *connect.Error
 		if errors.As(err, &connectErr) {
@@ -537,7 +515,10 @@ func (service *View) DeleteFeatureData(
 		ownerScope = ownerRequest.Owner.Scope
 		actorSubject = viewer.Subject
 		params = database.DeleteFeatureDataParams{
-			JobID: jobID, ReplayKey: replayID, TargetID: targetID,
+			JobID: jobID,
+			ReplayKey: service.ownerDeletionReplayKey(
+				viewer.Subject, ownerRequest.Owner.Scope, targetID, replayID),
+			TargetID: targetID,
 			TargetHash: service.dependencies.Hasher.Sum(
 				"owner", deletionOwnerLabel(organization)+":"+targetID.String()),
 			Trigger: database.DeletionTriggerOwner, AcceptedAt: now,
@@ -576,19 +557,31 @@ func (service *View) DeleteFeatureData(
 	}), nil
 }
 
+func (service *View) ownerDeletionReplayKey(
+	subject string,
+	scope deckv1.OwnerScope,
+	ownerID uuid.UUID,
+	requested uuid.UUID,
+) uuid.UUID {
+	actorHash := service.dependencies.Hasher.Sum(
+		"delete-feature-data-actor", subject)
+	sum := service.dependencies.Hasher.Sum(
+		"delete-feature-data-idempotency",
+		string(actorHash[:])+"\x00"+scope.String()+"\x00"+
+			ownerID.String()+"\x00"+requested.String())
+	var scoped uuid.UUID
+	copy(scoped[:6], requested[:6])
+	copy(scoped[6:], sum[:len(scoped)-6])
+	scoped[6] = scoped[6]&0x0f | 0x70
+	scoped[8] = scoped[8]&0x3f | 0x80
+	return scoped
+}
+
 func deletionOwnerLabel(organization bool) string {
 	if organization {
 		return "OWNER_SCOPE_ORGANIZATION"
 	}
 	return "OWNER_SCOPE_PERSONAL"
-}
-
-func (service *View) ListPullRequestMutationCandidates(
-	context.Context,
-	*connect.Request[deckv1.ListPullRequestMutationCandidatesRequest],
-) (*connect.Response[deckv1.ListPullRequestMutationCandidatesResponse], error) {
-	return nil, rpcerr.New(connect.CodeUnimplemented,
-		deckv1.ErrorReason_ERROR_REASON_UNSUPPORTED_ACTION)
 }
 
 func (service *View) GetRefreshPreflight(
@@ -605,14 +598,6 @@ func (service *View) RefreshView(
 ) (*connect.Response[deckv1.RefreshViewResponse], error) {
 	return nil, rpcerr.New(connect.CodeUnavailable,
 		deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
-}
-
-func (service *View) MutatePullRequest(
-	context.Context,
-	*connect.Request[deckv1.MutatePullRequestRequest],
-) (*connect.Response[deckv1.MutatePullRequestResponse], error) {
-	return nil, rpcerr.New(connect.CodeUnimplemented,
-		deckv1.ErrorReason_ERROR_REASON_UNSUPPORTED_ACTION)
 }
 
 func (service *View) mapStaleWithETag(err error) error {
@@ -692,8 +677,13 @@ func (service *View) canReadViewRepositories(
 			continue
 		}
 		allowed, err := service.dependencies.Repositories.CanReadRepository(
-			ctx, viewer, repository.Owner, repository.Repository)
+			ctx, viewer, view.Owner,
+			repository.Owner, repository.Repository)
 		if err != nil {
+			if errors.Is(err, deckgithub.ErrReauthenticationRequired) {
+				return false, rpcerr.New(connect.CodeFailedPrecondition,
+					deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+			}
 			return false, rpcerr.New(connect.CodeUnavailable,
 				deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
 		}
@@ -702,4 +692,124 @@ func (service *View) canReadViewRepositories(
 		}
 	}
 	return true, nil
+}
+
+func (service *View) getAuthorizedView(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	id uuid.UUID,
+	manage bool,
+) (*deckv1.View, error) {
+	view, err := service.dependencies.Store.GetViewAuthorized(
+		ctx, id, service.viewDefinitionAuthorizer(ctx, viewer, manage))
+	if err != nil {
+		return nil, mapAuthorizedViewError(err)
+	}
+	return view, nil
+}
+
+func (service *View) getAuthorizedViewForMutation(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	id uuid.UUID,
+) (*deckv1.View, error) {
+	return service.getAuthorizedView(ctx, viewer, id, true)
+}
+
+func (service *View) viewDefinitionAuthorizer(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	manage bool,
+) database.ViewAuthorizer {
+	var removed map[[32]byte]struct{}
+	var removedErr error
+	removedLoaded := false
+	return func(authorization database.ViewAuthorization) error {
+		if _, err := authorizeOwner(viewer, authorization.Owner, manage); err != nil {
+			return err
+		}
+		if authorization.ConnectionState ==
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+			if _, err := authorizeOwner(viewer, authorization.Owner, true); err != nil {
+				return database.ErrViewNotVisible
+			}
+			return nil
+		}
+		if !authorization.HasRepositoryIndex {
+			return rpcerr.New(connect.CodeInternal,
+				deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
+		}
+		readable, err := service.dependencies.Repositories.
+			ReadableRepositoryHashes(
+				ctx, viewer, authorization.Owner,
+				contracts.RepositoryHashKindView,
+				authorization.RepositoryHashes)
+		if err != nil {
+			if errors.Is(err, deckgithub.ErrReauthenticationRequired) {
+				return rpcerr.New(connect.CodeFailedPrecondition,
+					deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+			}
+			return rpcerr.New(connect.CodeUnavailable,
+				deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
+		}
+		if repositoryHashesAuthorized(
+			authorization.RepositoryHashes, readable, nil) {
+			return nil
+		}
+		if !manage {
+			return database.ErrViewNotVisible
+		}
+		if !removedLoaded {
+			removedLoaded = true
+			currentOwnerID, err := ownerID(authorization.Owner)
+			if err != nil {
+				removedErr = rpcerr.New(connect.CodeInternal,
+					deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
+			} else if service.dependencies.Store != nil {
+				removed, err = service.dependencies.Store.
+					ListGitHubRemovedRepositoryHashes(
+						ctx, int16(authorization.Owner.Scope), currentOwnerID)
+				if err != nil {
+					removedErr = rpcerr.New(connect.CodeInternal,
+						deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
+				}
+			}
+		}
+		if removedErr != nil {
+			return removedErr
+		}
+		if !repositoryHashesAuthorized(
+			authorization.RepositoryHashes, readable, removed) {
+			return database.ErrViewNotVisible
+		}
+		return nil
+	}
+}
+
+func repositoryHashesAuthorized(
+	required [][32]byte,
+	readable map[[32]byte]struct{},
+	removed map[[32]byte]struct{},
+) bool {
+	for _, hash := range required {
+		if _, allowed := readable[hash]; allowed {
+			continue
+		}
+		if _, provenRemoved := removed[hash]; !provenRemoved {
+			return false
+		}
+	}
+	return true
+}
+
+func mapAuthorizedViewError(err error) error {
+	if errors.Is(err, database.ErrViewNotVisible) {
+		return rpcerr.New(connect.CodePermissionDenied,
+			deckv1.ErrorReason_ERROR_REASON_GITHUB_PERMISSION_DENIED)
+	}
+	var connectErr *connect.Error
+	if errors.As(err, &connectErr) {
+		return err
+	}
+	return mapDatabaseError(err)
 }
