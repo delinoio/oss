@@ -56,6 +56,11 @@ export interface ManualRefreshWarning {
   text: string;
 }
 
+interface PendingRefresh {
+  request: DeckRefreshIdentity;
+  preflightToken: string;
+}
+
 export function isAutomaticRefreshEligible(
   candidate: DeckRefreshCandidate,
   now: Date,
@@ -95,6 +100,9 @@ export class DeckRefreshController {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #automaticAbort: AbortController | undefined;
   #activeRequests = new Set<AbortController>();
+  #automaticAttempts = new Map<string, PendingRefresh>();
+  #manualAttempts = new Map<string, PendingRefresh>();
+  #generation = 0;
   #running = false;
 
   constructor(options: DeckRefreshControllerOptions) {
@@ -107,11 +115,13 @@ export class DeckRefreshController {
       return;
     }
     this.#running = true;
-    this.#schedule(0);
+    this.#generation += 1;
+    this.#schedule(0, this.#generation);
   }
 
   stop(): void {
     this.#running = false;
+    this.#generation += 1;
     if (this.#timer !== undefined) {
       clearTimeout(this.#timer);
       this.#timer = undefined;
@@ -131,21 +141,33 @@ export class DeckRefreshController {
     const controller = new AbortController();
     this.#activeRequests.add(controller);
     try {
-      const request = this.#identity(viewId, RefreshOrigin.MANUAL);
-      const preflight = await this.#options.transport.getPreflight(
-        request,
-        controller.signal,
-      );
-      if (
-        controller.signal.aborted ||
-        !(await confirm(manualRefreshWarning(preflight.priceUsdMicros)))
-      ) {
-        return false;
+      let pending = this.#manualAttempts.get(viewId);
+      if (pending === undefined) {
+        const request = this.#identity(viewId, RefreshOrigin.MANUAL);
+        const preflight = await this.#options.transport.getPreflight(
+          request,
+          controller.signal,
+        );
+        if (controller.signal.aborted) {
+          return false;
+        }
+        const confirmed = await confirm(
+          manualRefreshWarning(preflight.priceUsdMicros),
+        );
+        if (controller.signal.aborted || !confirmed) {
+          return false;
+        }
+        pending = { request, preflightToken: preflight.token };
+        this.#manualAttempts.set(viewId, pending);
       }
       await this.#options.transport.refresh(
-        { ...request, preflightToken: preflight.token },
+        {
+          ...pending.request,
+          preflightToken: pending.preflightToken,
+        },
         controller.signal,
       );
+      this.#manualAttempts.delete(viewId);
       return true;
     } finally {
       this.#activeRequests.delete(controller);
@@ -161,18 +183,18 @@ export class DeckRefreshController {
     };
   }
 
-  #schedule(delay: number): void {
-    if (!this.#running) {
+  #schedule(delay: number, generation: number): void {
+    if (!this.#running || generation !== this.#generation) {
       return;
     }
     this.#timer = setTimeout(() => {
       this.#timer = undefined;
-      void this.#poll();
+      void this.#poll(generation);
     }, delay);
   }
 
-  async #poll(): Promise<void> {
-    if (!this.#running) {
+  async #poll(generation: number): Promise<void> {
+    if (!this.#running || generation !== this.#generation) {
       return;
     }
     const cycleStartedAt = this.#now().getTime();
@@ -187,6 +209,7 @@ export class DeckRefreshController {
         if (
           controller.signal.aborted ||
           !this.#running ||
+          generation !== this.#generation ||
           !this.#options.canPoll()
         ) {
           return;
@@ -194,22 +217,35 @@ export class DeckRefreshController {
         if (!isAutomaticRefreshEligible(candidate, this.#now())) {
           continue;
         }
-        const request = this.#identity(candidate.viewId, RefreshOrigin.AUTOMATIC);
-        const preflight = await this.#options.transport.getPreflight(
-          request,
-          controller.signal,
-        );
+        let pending = this.#automaticAttempts.get(candidate.viewId);
+        if (pending === undefined) {
+          const request = this.#identity(
+            candidate.viewId,
+            RefreshOrigin.AUTOMATIC,
+          );
+          const preflight = await this.#options.transport.getPreflight(
+            request,
+            controller.signal,
+          );
+          pending = { request, preflightToken: preflight.token };
+          this.#automaticAttempts.set(candidate.viewId, pending);
+        }
         if (
           controller.signal.aborted ||
           !this.#running ||
+          generation !== this.#generation ||
           !this.#options.canPoll()
         ) {
           return;
         }
         await this.#options.transport.refresh(
-          { ...request, preflightToken: preflight.token },
+          {
+            ...pending.request,
+            preflightToken: pending.preflightToken,
+          },
           controller.signal,
         );
+        this.#automaticAttempts.delete(candidate.viewId);
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -219,9 +255,12 @@ export class DeckRefreshController {
       if (this.#automaticAbort === controller) {
         this.#automaticAbort = undefined;
       }
-      if (this.#running) {
+      if (this.#running && generation === this.#generation) {
         const elapsed = Math.max(0, this.#now().getTime() - cycleStartedAt);
-        this.#schedule(Math.max(0, DECK_REFRESH_INTERVAL_MS - elapsed));
+        this.#schedule(
+          Math.max(0, DECK_REFRESH_INTERVAL_MS - elapsed),
+          generation,
+        );
       }
     }
   }

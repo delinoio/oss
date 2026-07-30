@@ -157,6 +157,113 @@ describe("Deck client-owned refresh polling", () => {
     expect(providerDispatches).toBe(0);
   });
 
+  it("does not dispatch after an asynchronous manual confirmation is cancelled", async () => {
+    let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
+    let providerDispatches = 0;
+    const controller = new DeckRefreshController({
+      clientKind: RefreshClientKind.DESKTOP,
+      createRequestId: () => "request",
+      canPoll: () => false,
+      listCandidates: async () => [],
+      transport: {
+        getPreflight: async () => ({ priceUsdMicros: 50n, token: "token" }),
+        refresh: async () => {
+          providerDispatches += 1;
+        },
+      },
+    });
+
+    const refresh = controller.refreshManually(
+      "view",
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve;
+        }),
+    );
+    await Promise.resolve();
+    controller.stop();
+    resolveConfirmation?.(true);
+
+    await expect(refresh).resolves.toBe(false);
+    expect(providerDispatches).toBe(0);
+  });
+
+  it("retries an ambiguous automatic failure with the same identity and token", async () => {
+    const preflights: DeckRefreshIdentity[] = [];
+    const refreshes: Array<
+      DeckRefreshIdentity & { preflightToken: string }
+    > = [];
+    let sequence = 0;
+    const controller = new DeckRefreshController({
+      clientKind: RefreshClientKind.DESKTOP,
+      createRequestId: () => `request-${++sequence}`,
+      canPoll: () => true,
+      listCandidates: async () => [
+        {
+          viewId: "view",
+          notificationAttached: true,
+          shortcutAttached: false,
+          widgetAttached: false,
+        },
+      ],
+      transport: {
+        getPreflight: async (request) => {
+          preflights.push(request);
+          return { priceUsdMicros: 50n, token: `token-${request.requestId}` };
+        },
+        refresh: async (request) => {
+          refreshes.push(request);
+          if (refreshes.length === 1) {
+            throw new Error("response lost");
+          }
+        },
+      },
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(DECK_REFRESH_INTERVAL_MS);
+
+    expect(preflights).toHaveLength(1);
+    expect(refreshes).toHaveLength(2);
+    expect(refreshes[1]).toEqual(refreshes[0]);
+    controller.stop();
+  });
+
+  it("does not let a stopped poll schedule into a restarted generation", async () => {
+    let resolveFirst: (() => void) | undefined;
+    let listCalls = 0;
+    const controller = new DeckRefreshController({
+      clientKind: RefreshClientKind.DESKTOP,
+      createRequestId: () => "request",
+      canPoll: () => true,
+      listCandidates: async () => {
+        listCalls += 1;
+        if (listCalls === 1) {
+          await new Promise<void>((resolve) => {
+            resolveFirst = resolve;
+          });
+        }
+        return [];
+      },
+      transport: transportRecorder().transport,
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    controller.stop();
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    resolveFirst?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(DECK_REFRESH_INTERVAL_MS);
+    expect(listCalls).toBe(3);
+    controller.stop();
+  });
+
   it("warns with the server price and manual refresh bypass origin", async () => {
     const recorded = transportRecorder();
     const controller = new DeckRefreshController({
