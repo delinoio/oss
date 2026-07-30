@@ -109,8 +109,8 @@ func (service *View) RefreshView(
 		"snapshot-viewer", viewer.AccountID.String())
 
 	// Exact attempts are resolved before current view/provider authorization.
-	// Completed results and accounting-only recovery need neither repository
-	// access nor a retained view definition.
+	// Reservation recovery starts from persisted billing inputs so an
+	// ambiguous downstream hold remains recoverable after view deletion.
 	attempt, lookupErr := service.dependencies.Store.GetRefreshAttempt(
 		ctx, subjectHash, requestID, requestDigest)
 	if lookupErr == nil {
@@ -125,7 +125,7 @@ func (service *View) RefreshView(
 			}
 			return connect.NewResponse(replayed), nil
 		}
-		if refreshAttemptNeedsOnlyAccounting(attempt) {
+		if refreshAttemptNeedsPreAuthorizationRecovery(attempt) {
 			if service.dependencies.LiveUsage == nil {
 				return nil, rpcerr.New(connect.CodeUnavailable,
 					deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
@@ -143,6 +143,7 @@ func (service *View) RefreshView(
 						response, currentErr = replayRefreshAttempt(current)
 						return currentErr
 					}
+					recoveredCreated := false
 					if current.State == database.RefreshAttemptCreated {
 						var completed bool
 						completed, currentErr =
@@ -156,6 +157,24 @@ func (service *View) RefreshView(
 						if currentErr != nil || completed {
 							return currentErr
 						}
+						recoveredCreated = true
+					}
+					if recoveredCreated {
+						view, viewErr := service.getRefreshViewMetadata(
+							ctx, viewer, current.ViewID)
+						if viewErr != nil {
+							if !refreshRecoveryViewUnavailable(viewErr) {
+								return viewErr
+							}
+							return service.finalizePendingRefreshAccounting(
+								ctx, subjectHash, requestID, current,
+								forwardedToken, &response, &metricOutcome)
+						}
+						return service.continueRefreshAttempt(
+							ctx, viewer, view, subjectHash, current.ViewerHash,
+							requestID, request.Msg.GetOrigin(),
+							service.dependencies.Clock.Now().UTC(), current,
+							true, forwardedToken, &response, &metricOutcome)
 					}
 					return service.finalizePendingRefreshAccounting(
 						ctx, subjectHash, requestID, current, forwardedToken,
@@ -247,94 +266,10 @@ func (service *View) RefreshView(
 				}
 				recoveredCreated = true
 			}
-			canUseShortcut := current.State == database.RefreshAttemptCreated ||
-				recoveredCreated
-			if canUseShortcut && view.GetConnectionState() ==
-				deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
-				response = disconnectedRefreshResponse(view)
-				metricOutcome = contracts.RefreshMetricProviderFailure
-				return service.completeRefreshWithoutDispatch(
-					ctx, subjectHash, requestID, current, forwardedToken,
-					response, &metricOutcome)
-			}
-			if canUseShortcut {
-				eligible, eligibleErr := service.refreshEligible(
-					ctx, viewer, view, viewerHash,
-					request.Msg.GetOrigin(), currentTime)
-				if eligibleErr != nil {
-					return eligibleErr
-				}
-				if !eligible {
-					truncated, refreshedAt, freshness, resultCount, stateErr :=
-						service.currentSnapshotState(
-							ctx, viewID, viewerHash, currentTime)
-					if stateErr != nil {
-						return stateErr
-					}
-					response = refreshResponse(
-						view, deckv1.RefreshOutcome_REFRESH_OUTCOME_AUTOMATIC_REFRESH_NOT_ELIGIBLE,
-						deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_NOT_ELIGIBLE,
-						freshness, refreshedAt, truncated, resultCount, false)
-					return service.completeRefreshWithoutDispatch(
-						ctx, subjectHash, requestID, current, forwardedToken,
-						response, &metricOutcome)
-				}
-			}
-			cacheOutcome, usesCache := refreshCacheOutcome(
-				request.Msg.GetOrigin())
-			if canUseShortcut && usesCache {
-				recentAutomatic := false
-				if cacheOutcome ==
-					deckv1.RefreshOutcome_REFRESH_OUTCOME_COALESCED {
-					recentAutomatic, err =
-						service.dependencies.Store.HasRecentAutomaticRefreshAttempt(
-							ctx, viewID, viewerHash, requestID,
-							currentTime.Add(-refreshCacheWindow))
-					if err != nil {
-						return err
-					}
-				}
-				snapshots, truncated, refreshedAt, stateErr :=
-					service.dependencies.Store.ListAllSnapshots(
-						ctx, viewID, viewerHash)
-				if stateErr != nil {
-					return stateErr
-				}
-				freshness := refreshFreshness(currentTime, refreshedAt)
-				resultCount := len(snapshots)
-				if refreshCacheAvailable(
-					cacheOutcome, recentAutomatic, refreshedAt, currentTime) {
-					if widgetErr :=
-						service.dependencies.Store.WithViewRevisionLock(
-							ctx, viewID, current.ViewRevision,
-							func(persistence *database.RefreshPersistence) error {
-								return persistence.UpdateWidgetSnapshots(
-									ctx, viewer.AccountID, viewID, snapshots,
-									truncated, refreshedAt, currentTime)
-							}); widgetErr != nil {
-						return widgetErr
-					}
-					response = refreshResponse(
-						view, cacheOutcome, cacheBilling(cacheOutcome),
-						freshness, refreshedAt,
-						truncated, resultCount, false)
-					metricOutcome = contracts.RefreshMetricCacheHit
-					return service.completeRefreshWithoutDispatch(
-						ctx, subjectHash, requestID, current, forwardedToken,
-						response, &metricOutcome)
-				}
-			}
-			// A nonterminal attempt advances only because this active request
-			// supplies a fresh forwarded-user bearer. Its original billing
-			// inputs remain authoritative after catalog or view changes.
-			if recoveredCreated {
-				return service.dispatchReservedRefresh(
-					ctx, viewer, view, subjectHash, viewerHash, requestID,
-					current, forwardedToken, &response, &metricOutcome)
-			}
-			return service.advanceProviderRefresh(
+			return service.continueRefreshAttempt(
 				ctx, viewer, view, subjectHash, viewerHash, requestID,
-				current, forwardedToken, &response, &metricOutcome)
+				request.Msg.GetOrigin(), currentTime, current,
+				recoveredCreated, forwardedToken, &response, &metricOutcome)
 		})
 	if err != nil {
 		return nil, mapRefreshError(err)
@@ -358,6 +293,121 @@ func refreshAttemptNeedsOnlyAccounting(
 ) bool {
 	return attempt.State == database.RefreshAttemptReserved ||
 		attempt.State == database.RefreshAttemptDispatched
+}
+
+func refreshAttemptNeedsPreAuthorizationRecovery(
+	attempt database.RefreshAttempt,
+) bool {
+	return attempt.State == database.RefreshAttemptCreated ||
+		refreshAttemptNeedsOnlyAccounting(attempt)
+}
+
+func refreshRecoveryViewUnavailable(err error) bool {
+	code := connect.CodeOf(err)
+	return code == connect.CodeNotFound || code == connect.CodePermissionDenied
+}
+
+func (service *View) continueRefreshAttempt(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	view *deckv1.View,
+	subjectHash [32]byte,
+	viewerHash [32]byte,
+	requestID uuid.UUID,
+	origin deckv1.RefreshOrigin,
+	currentTime time.Time,
+	attempt database.RefreshAttempt,
+	recoveredCreated bool,
+	forwardedToken string,
+	response **deckv1.RefreshViewResponse,
+	metricOutcome *contracts.RefreshMetricOutcome,
+) error {
+	viewID := refreshViewID(view)
+	canUseShortcut := attempt.State == database.RefreshAttemptCreated ||
+		recoveredCreated
+	if canUseShortcut && view.GetConnectionState() ==
+		deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+		*response = disconnectedRefreshResponse(view)
+		*metricOutcome = contracts.RefreshMetricProviderFailure
+		return service.completeRefreshWithoutDispatch(
+			ctx, subjectHash, requestID, attempt, forwardedToken,
+			*response, metricOutcome)
+	}
+	if canUseShortcut {
+		eligible, err := service.refreshEligible(
+			ctx, viewer, view, viewerHash, origin, currentTime)
+		if err != nil {
+			return err
+		}
+		if !eligible {
+			truncated, refreshedAt, freshness, resultCount, stateErr :=
+				service.currentSnapshotState(
+					ctx, viewID, viewerHash, currentTime)
+			if stateErr != nil {
+				return stateErr
+			}
+			*response = refreshResponse(
+				view, deckv1.RefreshOutcome_REFRESH_OUTCOME_AUTOMATIC_REFRESH_NOT_ELIGIBLE,
+				deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_NOT_ELIGIBLE,
+				freshness, refreshedAt, truncated, resultCount, false)
+			return service.completeRefreshWithoutDispatch(
+				ctx, subjectHash, requestID, attempt, forwardedToken,
+				*response, metricOutcome)
+		}
+	}
+	cacheOutcome, usesCache := refreshCacheOutcome(origin)
+	if canUseShortcut && usesCache {
+		recentAutomatic := false
+		if cacheOutcome == deckv1.RefreshOutcome_REFRESH_OUTCOME_COALESCED {
+			var err error
+			recentAutomatic, err =
+				service.dependencies.Store.HasRecentAutomaticRefreshAttempt(
+					ctx, viewID, viewerHash, requestID,
+					currentTime.Add(-refreshCacheWindow))
+			if err != nil {
+				return err
+			}
+		}
+		snapshots, truncated, refreshedAt, err :=
+			service.dependencies.Store.ListAllSnapshots(
+				ctx, viewID, viewerHash)
+		if err != nil {
+			return err
+		}
+		freshness := refreshFreshness(currentTime, refreshedAt)
+		resultCount := len(snapshots)
+		if refreshCacheAvailable(
+			cacheOutcome, recentAutomatic, refreshedAt, currentTime) {
+			if err := service.dependencies.Store.WithViewRevisionLock(
+				ctx, viewID, attempt.ViewRevision,
+				func(persistence *database.RefreshPersistence) error {
+					return persistence.UpdateWidgetSnapshots(
+						ctx, viewer.AccountID, viewID, snapshots,
+						truncated, refreshedAt, currentTime)
+				}); err != nil {
+				return err
+			}
+			*response = refreshResponse(
+				view, cacheOutcome, cacheBilling(cacheOutcome),
+				freshness, refreshedAt,
+				truncated, resultCount, false)
+			*metricOutcome = contracts.RefreshMetricCacheHit
+			return service.completeRefreshWithoutDispatch(
+				ctx, subjectHash, requestID, attempt, forwardedToken,
+				*response, metricOutcome)
+		}
+	}
+	// A nonterminal attempt advances only because this active request supplies
+	// a fresh forwarded-user bearer. Its original billing inputs remain
+	// authoritative after catalog or view changes.
+	if recoveredCreated {
+		return service.dispatchReservedRefresh(
+			ctx, viewer, view, subjectHash, viewerHash, requestID,
+			attempt, forwardedToken, response, metricOutcome)
+	}
+	return service.advanceProviderRefresh(
+		ctx, viewer, view, subjectHash, viewerHash, requestID,
+		attempt, forwardedToken, response, metricOutcome)
 }
 
 func (service *View) finalizePendingRefreshAccounting(
