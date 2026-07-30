@@ -199,10 +199,11 @@
   attempts are free. The disabled production-facing delibase catalog record is
   identified by app key `devhud` plus meter key
   `deck_github_pull_request_refresh`, uses unit name `provider_refresh` with
-  precision zero, is allowlisted only to the Deck service identity, and has an
-  effective unit price of exactly 50 USD micros. `GetRefreshPreflight`
-  validates that authoritative identity, unit, service mapping, and effective
-  price for every prospective origin/client pair from retained
+  precision zero, requires a reservation TTL of at least 86,400 seconds, is
+  allowlisted only to the Deck service identity, and has an effective unit
+  price of exactly 50 USD micros. `GetRefreshPreflight` validates that
+  authoritative identity, unit, reservation TTL, service mapping, and
+  effective price for every prospective origin/client pair from retained
   view/owner/billing metadata without reserving usage, contacting GitHub,
   refreshing a cache, or charging. It returns the server-derived price plus an
   opaque short-lived preflight token bound to the authenticated subject, view,

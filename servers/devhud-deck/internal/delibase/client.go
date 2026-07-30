@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	catalogAppKey   = "devhud"
-	catalogMeterKey = "deck_github_pull_request_refresh"
-	unitName        = "provider_refresh"
-	tokenLeeway     = time.Minute
+	catalogAppKey                = "devhud"
+	catalogMeterKey              = "deck_github_pull_request_refresh"
+	unitName                     = "provider_refresh"
+	tokenLeeway                  = time.Minute
+	minimumRefreshReservationTTL = 24 * time.Hour
 )
 
 var (
@@ -156,6 +157,8 @@ func (client *Client) RefreshMeter(
 		price := meter.GetCurrentPrice().GetUsdMicrosPerUnit().GetValue()
 		if meterErr != nil || priceErr != nil || !meter.GetEnabled() ||
 			meter.GetUnitName() != unitName || meter.GetUnitPrecision() != 0 ||
+			meter.GetReservationTtlSeconds() <
+				int64(minimumRefreshReservationTTL/time.Second) ||
 			price != contracts.ProviderRefreshPriceUSDMicros ||
 			!containsAuthorizationTarget(
 				meter.GetAuthorizationTargets(), client.serviceID) {

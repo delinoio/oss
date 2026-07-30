@@ -94,9 +94,10 @@ The DeliDev RealQA tracker exception uses the exact RealQA browser origin/audien
 - Production-facing Deck and RealQA delibase catalog records remain stable but disabled until a separate activation change. There is no deployment, production app registration, catalog activation, widget publication, extension publication, image publication, store release, or operational rollout in issues #755/#757.
 - Deck billing uses the disabled production-facing delibase catalog identity
   `(app key: devhud, meter key: deck_github_pull_request_refresh)`, with unit
-  `provider_refresh`, precision zero, and an effective price fixed by this
-  contract at 50 USD micros/unit. One dispatched GitHub refresh is exactly one
-  unit. Before every prospective automatic, widget, manual, view-open, or
+  `provider_refresh`, precision zero, a reservation TTL of at least 86,400
+  seconds, and an effective price fixed by this contract at 50 USD micros/unit.
+  One dispatched GitHub refresh is exactly one unit. Before every prospective
+  automatic, widget, manual, view-open, or
   shortcut refresh, the client obtains the server-derived price and an opaque
   short-lived identity/origin/client-bound token through non-dispatching
   `DeckViewService.GetRefreshPreflight`; preflight authorizes only retained

@@ -315,20 +315,18 @@ func (service *Device) ResolveNotificationEvent(
 	if event.ViewerHash != viewerHash {
 		return genericNotification(), nil
 	}
+	preference, err := service.dependencies.Store.NotificationPreference(
+		ctx, registrationID, event.ViewID)
+	if err != nil || !preference.GetEnabled() ||
+		!notificationTransitionEnabled(preference, event.Transition) ||
+		!registration.GetDevice().GetDetailedNotificationTextEnabled() {
+		return genericNotification(), nil
+	}
 	view, err := (&View{dependencies: service.dependencies}).getAuthorizedView(
 		ctx, viewer, event.ViewID, false)
 	if err != nil ||
 		view.GetConnectionState() !=
 			deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
-		return genericNotification(), nil
-	}
-	preference, err := service.dependencies.Store.NotificationPreference(
-		ctx, registrationID, event.ViewID)
-	if err != nil || !preference.GetEnabled() ||
-		!notificationTransitionEnabled(preference, event.Transition) {
-		return genericNotification(), nil
-	}
-	if !registration.GetDevice().GetDetailedNotificationTextEnabled() {
 		return genericNotification(), nil
 	}
 	repository := event.Reference.GetRepository()

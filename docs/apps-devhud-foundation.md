@@ -127,12 +127,14 @@ Authenticated Deck and RealQA windows receive no generic opener, but they may in
 - Before any automatic, widget, manual, view-open, or shortcut refresh, the
   client generates the prospective logical refresh's UUID v7 identity and
   calls `DeckViewService.GetRefreshPreflight` with both the origin and active
-  client kind. Every new `RefreshView` attempt carries the returned opaque
-  short-lived token bound to that identity/origin/client combination. The
-  client preserves the identity and token across an ambiguous transport retry.
-  A manual confirmation displays the returned server-derived price in the
-  explicit cache-bypass/billed-GitHub-request warning; cancellation performs no
-  refresh call. Deck clients receive no background authorization or
+  client kind. A catalog mapping with a reservation TTL shorter than 86,400
+  seconds is unavailable for Deck. Every new `RefreshView` attempt carries the
+  returned opaque short-lived token bound to that identity/origin/client
+  combination. The client preserves the identity and token across an ambiguous
+  transport retry. A manual confirmation displays the returned server-derived
+  price in the explicit cache-bypass/billed-GitHub-request warning;
+  cancellation performs no refresh call. Deck clients receive no background
+  authorization or
   billing-finalization grant, and an unfinished attempt can advance only
   through a later active exact client retry with a fresh forwarded-user bearer.
 - Deck maintains one unified shortcut-conflict registry with the generic DevHud shortcut and future RealQA shortcuts. Up to 20 synchronized per-view definitions/account/device use the same closed modifier/key values as the base structured shortcut contract. Device writes send configuration only; the effective conflict state and synchronized revision are server-authored after local registration, and conflicts become inactive without silently replacing another binding.

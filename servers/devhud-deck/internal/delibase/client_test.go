@@ -61,6 +61,7 @@ type catalogFixture struct {
 	priceVersionID    uuid.UUID
 	serviceID         uuid.UUID
 	includeTarget     bool
+	reservationTTL    int64
 	catalogCallCount  int
 	catalogCallLocker sync.Mutex
 }
@@ -87,7 +88,8 @@ func (fixture *catalogFixture) GetCatalogApp(
 			MeterId: uuidMessage(fixture.meterID),
 			Key:     catalogMeterKey, Enabled: true,
 			UnitName: unitName, UnitPrecision: 0,
-			AuthorizationTargets: targets,
+			ReservationTtlSeconds: fixture.reservationTTL,
+			AuthorizationTargets:  targets,
 			CurrentPrice: &delibasev1.CatalogPrice{
 				PriceVersionId: uuidMessage(fixture.priceVersionID),
 				UsdMicrosPerUnit: &delibasev1.UsdMicros{
@@ -218,6 +220,7 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 	catalog := &catalogFixture{
 		meterID: meterID, priceVersionID: priceVersionID,
 		serviceID: serviceID, includeTarget: true,
+		reservationTTL: int64(minimumRefreshReservationTTL / time.Second),
 	}
 	usage := &usageFixture{
 		meterID: meterID, priceVersionID: priceVersionID,
@@ -350,6 +353,7 @@ func TestCatalogRejectsMissingDeckServiceTarget(t *testing.T) {
 		priceVersionID: uuid.MustParse(
 			"01900000-0000-7000-8000-000000000002"),
 		serviceID: serviceID, includeTarget: false,
+		reservationTTL: int64(minimumRefreshReservationTTL / time.Second),
 	}
 	mux := http.NewServeMux()
 	path, handler := delibasev1connect.NewCatalogServiceHandler(catalog)
@@ -382,6 +386,36 @@ func TestCatalogRejectsMissingDeckServiceTarget(t *testing.T) {
 	if _, err := client.RefreshMeter(
 		context.Background()); err != ErrCatalogUnavailable {
 		t.Fatalf("missing service target = %v", err)
+	}
+}
+
+func TestCatalogRejectsShortDeckReservationTTL(t *testing.T) {
+	t.Parallel()
+	serviceID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
+	catalog := &catalogFixture{
+		meterID: uuid.MustParse("01900000-0000-7000-8000-000000000001"),
+		priceVersionID: uuid.MustParse(
+			"01900000-0000-7000-8000-000000000002"),
+		serviceID: serviceID, includeTarget: true,
+		reservationTTL: int64(
+			minimumRefreshReservationTTL/time.Second) - 1,
+	}
+	mux := http.NewServeMux()
+	path, handler := delibasev1connect.NewCatalogServiceHandler(catalog)
+	mux.Handle(path, handler)
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+	client, err := New(Config{
+		Origin: server.URL, Audience: server.URL, Issuer: server.URL,
+		ServiceID: serviceID, ClientID: "deck-client",
+		ClientSecret: "deck-secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RefreshMeter(
+		context.Background()); err != ErrCatalogUnavailable {
+		t.Fatalf("short reservation TTL = %v", err)
 	}
 }
 

@@ -112,28 +112,33 @@ func TestRefreshTraceRequiresAnActiveCompatibleClient(t *testing.T) {
 	}
 }
 
-func TestRefreshAttemptAccountingRecoveryStates(t *testing.T) {
+func TestRefreshAttemptPreAuthorizationRecoveryStates(t *testing.T) {
 	t.Parallel()
-	if refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+	if !refreshAttemptNeedsPreAuthorizationRecovery(database.RefreshAttempt{
 		State: database.RefreshAttemptCreated,
 	}) {
-		t.Fatal("created attempt skipped view authorization")
+		t.Fatal("created attempt did not recover its ambiguous reservation")
 	}
-	if !refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+	if !refreshAttemptNeedsPreAuthorizationRecovery(database.RefreshAttempt{
 		State: database.RefreshAttemptReserved,
 	}) {
 		t.Fatal("unresolved reserved attempt did not resume release accounting")
 	}
-	if !refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+	if !refreshAttemptNeedsPreAuthorizationRecovery(database.RefreshAttempt{
 		State:    database.RefreshAttemptReserved,
 		Response: &deckv1.RefreshViewResponse{},
 	}) {
 		t.Fatal("undispatched pending response did not resume release accounting")
 	}
-	if !refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+	if !refreshAttemptNeedsPreAuthorizationRecovery(database.RefreshAttempt{
 		State: database.RefreshAttemptDispatched,
 	}) {
 		t.Fatal("dispatched attempt did not resume commit accounting")
+	}
+	if refreshAttemptNeedsPreAuthorizationRecovery(database.RefreshAttempt{
+		State: database.RefreshAttemptCompleted,
+	}) {
+		t.Fatal("completed attempt entered nonterminal recovery")
 	}
 }
 

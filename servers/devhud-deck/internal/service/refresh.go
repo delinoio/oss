@@ -108,7 +108,7 @@ func (service *View) RefreshView(
 		"snapshot-viewer", viewer.AccountID.String())
 
 	// Exact attempts are resolved before current view/provider authorization.
-	// Completed results and accounting-only retries need neither repository
+	// Completed results and nonterminal recovery need neither repository
 	// access nor a retained view definition.
 	attempt, lookupErr := service.dependencies.Store.GetRefreshAttempt(
 		ctx, subjectHash, requestID, requestDigest)
@@ -124,7 +124,7 @@ func (service *View) RefreshView(
 			}
 			return connect.NewResponse(replayed), nil
 		}
-		if refreshAttemptNeedsOnlyAccounting(attempt) {
+		if refreshAttemptNeedsPreAuthorizationRecovery(attempt) {
 			if service.dependencies.LiveUsage == nil {
 				return nil, rpcerr.New(connect.CodeUnavailable,
 					deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
@@ -141,6 +141,20 @@ func (service *View) RefreshView(
 					if current.State == database.RefreshAttemptCompleted {
 						response, currentErr = replayRefreshAttempt(current)
 						return currentErr
+					}
+					if current.State == database.RefreshAttemptCreated {
+						var completed bool
+						completed, currentErr =
+							service.reserveCreatedRefreshAttempt(
+								ctx,
+								persistedRefreshAttemptView(
+									service.dependencies.Hasher, current),
+								subjectHash, current.ViewerHash, requestID,
+								&current, forwardedToken, &response,
+								&metricOutcome)
+						if currentErr != nil || completed {
+							return currentErr
+						}
 					}
 					return service.finalizePendingRefreshAccounting(
 						ctx, subjectHash, requestID, current, forwardedToken,
@@ -345,6 +359,13 @@ func refreshAttemptNeedsOnlyAccounting(
 		attempt.State == database.RefreshAttemptDispatched
 }
 
+func refreshAttemptNeedsPreAuthorizationRecovery(
+	attempt database.RefreshAttempt,
+) bool {
+	return attempt.State == database.RefreshAttemptCreated ||
+		refreshAttemptNeedsOnlyAccounting(attempt)
+}
+
 func (service *View) finalizePendingRefreshAccounting(
 	ctx context.Context,
 	subjectHash [32]byte,
@@ -388,17 +409,24 @@ func synthesizedRefreshAccountingResponse(
 	attempt database.RefreshAttempt,
 ) *deckv1.RefreshViewResponse {
 	return refreshResponse(
-		&deckv1.View{
-			ViewId: &deckv1.UuidV7{Value: attempt.ViewID.String()},
-			Revision: &deckv1.Revision{
-				Value: attempt.ViewRevision,
-				Etag:  hasher.ETag(attempt.ViewID, attempt.ViewRevision),
-			},
-		},
+		persistedRefreshAttemptView(hasher, attempt),
 		deckv1.RefreshOutcome_REFRESH_OUTCOME_PROVIDER_FAILED,
 		deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
 		deckv1.FreshnessState_FRESHNESS_STATE_UNSPECIFIED,
 		time.Time{}, false, 0, false)
+}
+
+func persistedRefreshAttemptView(
+	hasher *security.Hasher,
+	attempt database.RefreshAttempt,
+) *deckv1.View {
+	return &deckv1.View{
+		ViewId: &deckv1.UuidV7{Value: attempt.ViewID.String()},
+		Revision: &deckv1.Revision{
+			Value: attempt.ViewRevision,
+			Etag:  hasher.ETag(attempt.ViewID, attempt.ViewRevision),
+		},
+	}
 }
 
 func disconnectedRefreshResponse(
