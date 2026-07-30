@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"time"
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
@@ -144,11 +145,9 @@ func (service *Preset) DeleteFeatureData(
 			}
 		}
 		if !ownerRequest {
-			imageService := NewSubmission(service.dependencies)
-			if cleanupErr := imageService.
-				HandleLifecycleAuthorizationDeletion(
-					ctx, scope, existing.AcceptedAt.Time,
-				); cleanupErr != nil {
+			if cleanupErr := service.prepareLifecycleStorageDeletion(
+				ctx, scope, existing.AcceptedAt.Time,
+			); cleanupErr != nil {
 				return nil, cleanupErr
 			}
 		}
@@ -403,11 +402,9 @@ func (service *Preset) DeleteFeatureData(
 				}
 			}
 			if !ownerRequest {
-				imageService := NewSubmission(service.dependencies)
-				if cleanupErr := imageService.
-					HandleLifecycleAuthorizationDeletion(
-						ctx, scope, existing.AcceptedAt.Time,
-					); cleanupErr != nil {
+				if cleanupErr := service.prepareLifecycleStorageDeletion(
+					ctx, scope, existing.AcceptedAt.Time,
+				); cleanupErr != nil {
 					return nil, cleanupErr
 				}
 			}
@@ -420,7 +417,7 @@ func (service *Preset) DeleteFeatureData(
 	}
 	imageService := NewSubmission(service.dependencies)
 	if !ownerRequest {
-		if err = imageService.HandleLifecycleAuthorizationDeletion(
+		if err = service.prepareLifecycleStorageDeletion(
 			ctx, scope, deletionJob.AcceptedAt.Time); err != nil {
 			return nil, err
 		}
@@ -436,6 +433,25 @@ func (service *Preset) DeleteFeatureData(
 			OriginallyCompletedAt: timestamp(deletionJob.AcceptedAt),
 		},
 	}), nil
+}
+
+func (service *Preset) prepareLifecycleStorageDeletion(
+	ctx context.Context,
+	scope owner,
+	cutoff time.Time,
+) error {
+	if _, err := service.dependencies.Store.Queries().
+		MarkScopeStorageClosurePending(
+			ctx, dbgen.MarkScopeStorageClosurePendingParams{
+				OwnerDeletedAllowed: true,
+				Cutoff:              pgTimestamp(cutoff),
+				OwnerKind:           scope.kind,
+				OwnerID:             toPGUUID(scope.id),
+			}); err != nil {
+		return err
+	}
+	return NewSubmission(service.dependencies).
+		HandleLifecycleAuthorizationDeletion(ctx, scope, cutoff)
 }
 
 func (service *Preset) disconnectLifecycleAccount(

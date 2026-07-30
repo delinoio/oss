@@ -317,6 +317,30 @@ func TestPersistedStorageReservationMeterAndRecoveryReasons(t *testing.T) {
 	}
 }
 
+func TestStorageRecoverySupersessionPreservesTerminalLoss(t *testing.T) {
+	t.Parallel()
+	for _, fixture := range []struct {
+		current string
+		next    string
+		want    bool
+	}{
+		{"billing_unavailable", "payment_required", true},
+		{"billing_unavailable", "github_disconnected", true},
+		{"payment_required", "authorization_access_lost", true},
+		{"overage_required", "github_disconnected", true},
+		{"payment_required", "billing_unavailable", false},
+		{"github_disconnected", "payment_required", false},
+		{"authorization_access_lost", "overage_required", false},
+	} {
+		if got := storageRecoverySupersedes(
+			fixture.current, fixture.next,
+		); got != fixture.want {
+			t.Errorf("storageRecoverySupersedes(%q, %q) = %v, want %v",
+				fixture.current, fixture.next, got, fixture.want)
+		}
+	}
+}
+
 func TestStorageRebindSourceLookupKeepsOutagesRetryable(t *testing.T) {
 	t.Parallel()
 	authorization := StorageAuthorization{

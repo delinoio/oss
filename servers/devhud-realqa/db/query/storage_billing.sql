@@ -345,7 +345,8 @@ WHERE realqa_storage_recoveries.authorization_id =
 RETURNING *;
 
 -- name: ListCurrentStorageBindingsForGitHubConnection :many
-SELECT binding.*
+SELECT sqlc.embed(binding),
+       connection.updated_at AS github_disconnected_at
 FROM realqa_storage_authorization_bindings AS binding
 JOIN realqa_storage_authorization_attempts AS current
   ON current.submission_id = binding.submission_id
@@ -356,7 +357,9 @@ JOIN realqa_destinations AS destination
   ON destination.id = submission.destination_id
 JOIN realqa_github_installations AS installation
   ON installation.id = destination.installation_id
-WHERE installation.connection_id = sqlc.arg(connection_id)
+JOIN realqa_github_connections AS connection
+  ON connection.id = installation.connection_id
+WHERE connection.id = sqlc.arg(connection_id)
   AND binding.closure_state = 'open'
 ORDER BY binding.authorization_id;
 
@@ -396,7 +399,6 @@ WHERE binding.authorizer_account_id = sqlc.arg(account_id)
       AND binding.owner_id = sqlc.arg(account_id)
   )
   AND binding.closure_state = 'open'
-  AND binding.accrual_cutoff_at IS NULL
 ORDER BY binding.authorization_id;
 
 -- name: ListCurrentStorageBindingsForDeletedPayer :many
@@ -411,7 +413,6 @@ WHERE binding.organization_id = sqlc.arg(organization_id)
       AND binding.owner_id = sqlc.arg(organization_id)
   )
   AND binding.closure_state = 'open'
-  AND binding.accrual_cutoff_at IS NULL
 ORDER BY binding.authorization_id;
 
 -- name: GetActiveStorageRecovery :one
@@ -495,7 +496,7 @@ SET recovered_at = sqlc.arg(recovered_at),
     updated_at = transaction_timestamp()
 WHERE submission_id = sqlc.arg(submission_id)
   AND authorization_id = sqlc.arg(authorization_id)
-  AND reason = 'billing_unavailable'
+  AND reason = sqlc.arg(expected_reason)
   AND recovered_at IS NULL
   AND expired_at IS NULL
 RETURNING *;

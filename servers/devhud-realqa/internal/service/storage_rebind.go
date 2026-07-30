@@ -243,6 +243,12 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 					request.Msg.ExpectedMappingRevision.Value {
 				return staleStorageAuthorizationMapping()
 			}
+			pendingCutoffPeriod, lockErr :=
+				service.lockPendingStorageRebindCutoff(
+					ctx, queries, lockedBinding, lockedRecovery)
+			if lockErr != nil {
+				return storageAuthorizationFailed()
+			}
 			current, billingErr :=
 				service.dependencies.Billing.GetStorageAuthorization(
 					ctx, StorageAuthorizationLookupRequest{
@@ -297,6 +303,15 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 			if billingErr != nil || validateStorageAuthorization(
 				replacement, replacementRequest, actor.accountID) != nil {
 				return storageAuthorizationFailed()
+			}
+			if pendingCutoffPeriod.Valid {
+				if _, lockErr = queries.SkipStorageDailySettlementForGrace(
+					ctx, dbgen.SkipStorageDailySettlementForGraceParams{
+						AuthorizationID: lockedBinding.AuthorizationID,
+						PeriodStart:     pendingCutoffPeriod,
+					}); lockErr != nil {
+					return lockErr
+				}
 			}
 			cutoff := service.dependencies.Clock.Now().UTC()
 			if _, lockErr = queries.UpdateStorageAuthorizationStatus(
@@ -443,10 +458,10 @@ func (service *Submission) prepareStorageRebindCutoff(
 	}
 
 	// A temporary reserve failure keeps the immediately preceding checkpoint
-	// pending while the old grant remains retryable. Rebind ends that window:
-	// an unreserved checkpoint becomes non-billable, while an already accepted
+	// pending while the old grant remains retryable. An already accepted
 	// reservation must finish through its stored authorization/period before
-	// the mapping can be replaced.
+	// the mapping can be replaced. The still-pending checkpoint is locked and
+	// skipped only in the replacement transaction after downstream success.
 	periodStart := utcDayStart(cutoff.Add(-time.Nanosecond))
 	queries := service.dependencies.Store.Queries()
 	settlement, err := queries.GetStorageDailySettlement(
@@ -460,27 +475,9 @@ func (service *Submission) prepareStorageRebindCutoff(
 	if err != nil {
 		return err
 	}
-	if settlement.State == "pending" {
-		if _, err = queries.SkipStorageDailySettlementForGrace(
-			ctx, dbgen.SkipStorageDailySettlementForGraceParams{
-				AuthorizationID: binding.AuthorizationID,
-				PeriodStart:     settlement.PeriodStart,
-			}); err == nil {
-			return nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		settlement, err = queries.GetStorageDailySettlement(
-			ctx, dbgen.GetStorageDailySettlementParams{
-				AuthorizationID: binding.AuthorizationID,
-				PeriodStart:     settlement.PeriodStart,
-			})
-		if err != nil {
-			return err
-		}
-	}
 	switch settlement.State {
+	case "pending":
+		return nil
 	case "reserved":
 		return service.commitReservedStorage(
 			ctx, binding, settlement, periodStart,
@@ -490,6 +487,40 @@ func (service *Submission) prepareStorageRebindCutoff(
 	default:
 		return errors.New(
 			"realqa storage billing: invalid rebind cutoff settlement")
+	}
+}
+
+func (service *Submission) lockPendingStorageRebindCutoff(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	binding dbgen.RealqaStorageAuthorizationBinding,
+	recovery dbgen.RealqaStorageRecovery,
+) (pgtype.Timestamptz, error) {
+	if recovery.Reason != "billing_unavailable" ||
+		!binding.AccrualCutoffAt.Valid {
+		return pgtype.Timestamptz{}, nil
+	}
+	periodStart := utcDayStart(
+		binding.AccrualCutoffAt.Time.UTC().Add(-time.Nanosecond))
+	settlement, err := queries.LockStorageDailySettlement(
+		ctx, dbgen.LockStorageDailySettlementParams{
+			AuthorizationID: binding.AuthorizationID,
+			PeriodStart:     pgTimestamp(periodStart),
+		})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return pgtype.Timestamptz{}, nil
+	}
+	if err != nil {
+		return pgtype.Timestamptz{}, err
+	}
+	switch settlement.State {
+	case "pending":
+		return settlement.PeriodStart, nil
+	case "committed", "released", "settled_zero", "grace_skipped":
+		return pgtype.Timestamptz{}, nil
+	default:
+		return pgtype.Timestamptz{}, errors.New(
+			"realqa storage billing: rebind cutoff changed")
 	}
 }
 

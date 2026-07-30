@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const (
@@ -722,6 +723,23 @@ func storageRecoveryReason(kind StorageBillingFailureKind) string {
 	}
 }
 
+func storageRecoverySupersedes(currentReason string, nextReason string) bool {
+	if currentReason == "billing_unavailable" {
+		return nextReason != currentReason
+	}
+	if currentReason != "payment_required" &&
+		currentReason != "overage_required" {
+		return false
+	}
+	switch nextReason {
+	case "authorization_revoked", "authorization_access_lost",
+		"security_conflict", "github_disconnected":
+		return true
+	default:
+		return false
+	}
+}
+
 // HandleGitHubConnectionDeletion cuts off storage at the disconnect instant
 // before trying the human-authorized revoke. A missing/failed revoke therefore
 // cannot extend billable accrual or permit new submissions, and rebind exposes
@@ -741,11 +759,21 @@ func (service *Submission) HandleGitHubConnectionDeletion(
 	if err != nil {
 		return err
 	}
-	cutoff := service.dependencies.Clock.Now().UTC()
-	for _, binding := range bindings {
+	for _, row := range bindings {
+		binding := row.RealqaStorageAuthorizationBinding
+		cutoff := row.GithubDisconnectedAt.Time.UTC()
+		if binding.AccrualCutoffAt.Valid &&
+			binding.AccrualCutoffAt.Time.Before(cutoff) {
+			cutoff = binding.AccrualCutoffAt.Time.UTC()
+		}
 		if err = service.startStorageGrace(
 			ctx, binding, cutoff, StorageBillingFailureGitHub, false,
 		); err != nil {
+			return err
+		}
+		binding, cutoff, err = service.persistedStorageAccrualCutoff(
+			ctx, binding.AuthorizationID)
+		if err != nil {
 			return err
 		}
 		if err = service.settleStorageCutoff(
@@ -908,8 +936,33 @@ func (service *Submission) HandleLifecycleAuthorizationDeletion(
 		); err != nil {
 			return err
 		}
+		binding, cutoff, err = service.persistedStorageAccrualCutoff(
+			ctx, binding.AuthorizationID)
+		if err != nil {
+			return err
+		}
+		if err = service.settleStorageCutoff(
+			ctx, binding, cutoff); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func (service *Submission) persistedStorageAccrualCutoff(
+	ctx context.Context,
+	authorizationID pgtype.UUID,
+) (dbgen.RealqaStorageAuthorizationBinding, time.Time, error) {
+	binding, err := service.dependencies.Store.Queries().
+		GetStorageAuthorizationBinding(ctx, authorizationID)
+	if err != nil {
+		return dbgen.RealqaStorageAuthorizationBinding{}, time.Time{}, err
+	}
+	if !binding.AccrualCutoffAt.Valid {
+		return dbgen.RealqaStorageAuthorizationBinding{}, time.Time{},
+			errors.New("realqa storage billing: accrual cutoff unavailable")
+	}
+	return binding, binding.AccrualCutoffAt.Time.UTC(), nil
 }
 
 func (service *Submission) startStorageGrace(
@@ -987,14 +1040,14 @@ func (service *Submission) startStorageGrace(
 				ctx, binding.SubmissionID)
 			if activeErr == nil &&
 				active.AuthorizationID == binding.AuthorizationID &&
-				active.Reason == "billing_unavailable" &&
-				reason != "billing_unavailable" {
+				storageRecoverySupersedes(active.Reason, reason) {
 				recoveryGraceStartedAt = active.GraceStartedAt.Time
 				if _, lockErr = queries.SupersedeStorageRecovery(
 					ctx, dbgen.SupersedeStorageRecoveryParams{
 						RecoveredAt:     pgTimestamp(recoveryStartedAt),
 						SubmissionID:    binding.SubmissionID,
 						AuthorizationID: binding.AuthorizationID,
+						ExpectedReason:  active.Reason,
 					}); lockErr != nil {
 					return lockErr
 				}

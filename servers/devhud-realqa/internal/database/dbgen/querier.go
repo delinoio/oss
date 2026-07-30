@@ -122,7 +122,7 @@ type Querier interface {
 	// being silently left chargeable or deleting the other owner's screenshots.
 	ListCurrentStorageBindingsForDeletedAuthorizer(ctx context.Context, accountID pgtype.UUID) ([]RealqaStorageAuthorizationBinding, error)
 	ListCurrentStorageBindingsForDeletedPayer(ctx context.Context, organizationID pgtype.UUID) ([]RealqaStorageAuthorizationBinding, error)
-	ListCurrentStorageBindingsForGitHubConnection(ctx context.Context, connectionID pgtype.UUID) ([]RealqaStorageAuthorizationBinding, error)
+	ListCurrentStorageBindingsForGitHubConnection(ctx context.Context, connectionID pgtype.UUID) ([]ListCurrentStorageBindingsForGitHubConnectionRow, error)
 	ListExpiredStorageRecoveries(ctx context.Context, arg ListExpiredStorageRecoveriesParams) ([]RealqaStorageRecovery, error)
 	ListExpiredSubmissionAssets(ctx context.Context, arg ListExpiredSubmissionAssetsParams) ([]RealqaAsset, error)
 	ListGitHubInstallations(ctx context.Context, arg ListGitHubInstallationsParams) ([]RealqaGithubInstallation, error)

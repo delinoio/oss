@@ -1005,7 +1005,6 @@ WHERE binding.authorizer_account_id = $1
       AND binding.owner_id = $1
   )
   AND binding.closure_state = 'open'
-  AND binding.accrual_cutoff_at IS NULL
 ORDER BY binding.authorization_id
 `
 
@@ -1064,7 +1063,6 @@ WHERE binding.organization_id = $1
       AND binding.owner_id = $1
   )
   AND binding.closure_state = 'open'
-  AND binding.accrual_cutoff_at IS NULL
 ORDER BY binding.authorization_id
 `
 
@@ -1109,7 +1107,8 @@ func (q *Queries) ListCurrentStorageBindingsForDeletedPayer(ctx context.Context,
 }
 
 const listCurrentStorageBindingsForGitHubConnection = `-- name: ListCurrentStorageBindingsForGitHubConnection :many
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at,
+       connection.updated_at AS github_disconnected_at
 FROM realqa_storage_authorization_bindings AS binding
 JOIN realqa_storage_authorization_attempts AS current
   ON current.submission_id = binding.submission_id
@@ -1120,40 +1119,48 @@ JOIN realqa_destinations AS destination
   ON destination.id = submission.destination_id
 JOIN realqa_github_installations AS installation
   ON installation.id = destination.installation_id
-WHERE installation.connection_id = $1
+JOIN realqa_github_connections AS connection
+  ON connection.id = installation.connection_id
+WHERE connection.id = $1
   AND binding.closure_state = 'open'
 ORDER BY binding.authorization_id
 `
 
-func (q *Queries) ListCurrentStorageBindingsForGitHubConnection(ctx context.Context, connectionID pgtype.UUID) ([]RealqaStorageAuthorizationBinding, error) {
+type ListCurrentStorageBindingsForGitHubConnectionRow struct {
+	RealqaStorageAuthorizationBinding RealqaStorageAuthorizationBinding
+	GithubDisconnectedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) ListCurrentStorageBindingsForGitHubConnection(ctx context.Context, connectionID pgtype.UUID) ([]ListCurrentStorageBindingsForGitHubConnectionRow, error) {
 	rows, err := q.db.Query(ctx, listCurrentStorageBindingsForGitHubConnection, connectionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []RealqaStorageAuthorizationBinding{}
+	items := []ListCurrentStorageBindingsForGitHubConnectionRow{}
 	for rows.Next() {
-		var i RealqaStorageAuthorizationBinding
+		var i ListCurrentStorageBindingsForGitHubConnectionRow
 		if err := rows.Scan(
-			&i.AuthorizationID,
-			&i.SubmissionID,
-			&i.MappingRevision,
-			&i.AuthorizerAccountID,
-			&i.OwnerKind,
-			&i.OwnerID,
-			&i.OrganizationID,
-			&i.TeamID,
-			&i.ServiceIdentityID,
-			&i.MeterID,
-			&i.MaximumUnits,
-			&i.Status,
-			&i.AuthorizationRevision,
-			&i.ClosureState,
-			&i.ClosureOwnerDeletedAllowed,
-			&i.AccrualCutoffAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ClosedAt,
+			&i.RealqaStorageAuthorizationBinding.AuthorizationID,
+			&i.RealqaStorageAuthorizationBinding.SubmissionID,
+			&i.RealqaStorageAuthorizationBinding.MappingRevision,
+			&i.RealqaStorageAuthorizationBinding.AuthorizerAccountID,
+			&i.RealqaStorageAuthorizationBinding.OwnerKind,
+			&i.RealqaStorageAuthorizationBinding.OwnerID,
+			&i.RealqaStorageAuthorizationBinding.OrganizationID,
+			&i.RealqaStorageAuthorizationBinding.TeamID,
+			&i.RealqaStorageAuthorizationBinding.ServiceIdentityID,
+			&i.RealqaStorageAuthorizationBinding.MeterID,
+			&i.RealqaStorageAuthorizationBinding.MaximumUnits,
+			&i.RealqaStorageAuthorizationBinding.Status,
+			&i.RealqaStorageAuthorizationBinding.AuthorizationRevision,
+			&i.RealqaStorageAuthorizationBinding.ClosureState,
+			&i.RealqaStorageAuthorizationBinding.ClosureOwnerDeletedAllowed,
+			&i.RealqaStorageAuthorizationBinding.AccrualCutoffAt,
+			&i.RealqaStorageAuthorizationBinding.CreatedAt,
+			&i.RealqaStorageAuthorizationBinding.UpdatedAt,
+			&i.RealqaStorageAuthorizationBinding.ClosedAt,
+			&i.GithubDisconnectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2015,7 +2022,7 @@ SET recovered_at = $1,
     updated_at = transaction_timestamp()
 WHERE submission_id = $2
   AND authorization_id = $3
-  AND reason = 'billing_unavailable'
+  AND reason = $4
   AND recovered_at IS NULL
   AND expired_at IS NULL
 RETURNING id, submission_id, authorization_id, reason, notification_state, grace_started_at, grace_expires_at, recovered_at, expired_at, created_at, updated_at
@@ -2025,10 +2032,16 @@ type SupersedeStorageRecoveryParams struct {
 	RecoveredAt     pgtype.Timestamptz
 	SubmissionID    pgtype.UUID
 	AuthorizationID pgtype.UUID
+	ExpectedReason  string
 }
 
 func (q *Queries) SupersedeStorageRecovery(ctx context.Context, arg SupersedeStorageRecoveryParams) (RealqaStorageRecovery, error) {
-	row := q.db.QueryRow(ctx, supersedeStorageRecovery, arg.RecoveredAt, arg.SubmissionID, arg.AuthorizationID)
+	row := q.db.QueryRow(ctx, supersedeStorageRecovery,
+		arg.RecoveredAt,
+		arg.SubmissionID,
+		arg.AuthorizationID,
+		arg.ExpectedReason,
+	)
 	var i RealqaStorageRecovery
 	err := row.Scan(
 		&i.ID,

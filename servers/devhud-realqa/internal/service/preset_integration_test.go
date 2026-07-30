@@ -2342,12 +2342,15 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		SELECT $10, asset.id, asset.encoded_bytes,
 		       $9::timestamptz - interval '1 hour'
 		FROM realqa_assets AS asset
-		WHERE asset.id = $3
+		WHERE asset.id = $3;
+		UPDATE realqa_github_connections
+		SET updated_at = $9
+		WHERE id = $12
 	`, disconnectSubmissionID, submissionID, disconnectAssetID,
 		disconnectPublicID, uuidv7.MustNew(), disconnectAttemptKey,
 		disconnectServiceIdentityID, disconnectStorageMeterID,
 		disconnectCutoff, disconnectAuthorizationID,
-		promotionAssetID); err != nil {
+		promotionAssetID, organizationConnectionID); err != nil {
 		t.Fatal(err)
 	}
 	disconnectBilling := &failingAuthorizedStorageBilling{
@@ -2376,6 +2379,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		Clock:         fixedSubmissionClock{now: disconnectCutoff},
 		Pseudonymizer: pseudonymizer,
 	})
+	disconnectRetryService := NewSubmission(Dependencies{
+		Store: store, Billing: disconnectBilling,
+		Clock: fixedSubmissionClock{
+			now: disconnectCutoff.Add(72 * time.Hour),
+		},
+		Pseudonymizer: pseudonymizer,
+	})
 	if disconnectErr := disconnectService.HandleGitHubConnectionDeletion(
 		ctx, organizationConnectionID, "fixture-forwarded-bearer",
 	); disconnectErr == nil {
@@ -2389,7 +2399,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnectBilling.getAuthorizationCalls,
 			disconnectBilling.revokeAuthorizationCalls)
 	}
-	if disconnectErr := disconnectService.HandleGitHubConnectionDeletion(
+	if disconnectErr := disconnectRetryService.HandleGitHubConnectionDeletion(
 		ctx, organizationConnectionID, "fixture-forwarded-bearer",
 	); disconnectErr == nil {
 		t.Fatal("disconnect cutoff retry failure was ignored")
@@ -2403,6 +2413,11 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !disconnectBinding.AccrualCutoffAt.Valid ||
+		!disconnectBinding.AccrualCutoffAt.Time.Equal(disconnectCutoff) {
+		t.Fatalf("disconnect retry cutoff = %v, want %s",
+			disconnectBinding.AccrualCutoffAt, disconnectCutoff)
+	}
 	disconnectPeriodStart := utcDayStart(disconnectCutoff)
 	disconnectSettlement, err := store.Queries().GetStorageDailySettlement(
 		ctx, dbgen.GetStorageDailySettlementParams{
@@ -2415,6 +2430,19 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if disconnectSettlement.State != "pending" {
 		t.Fatalf("disconnect cutoff retry state = %q, want pending",
 			disconnectSettlement.State)
+	}
+	lifecycleScope := owner{kind: "personal", id: accountID}
+	for attempt := 1; attempt <= 2; attempt++ {
+		if lifecycleErr := disconnectService.
+			HandleLifecycleAuthorizationDeletion(
+				ctx, lifecycleScope, disconnectCutoff,
+			); lifecycleErr == nil {
+			t.Fatalf("lifecycle cutoff attempt %d reported success", attempt)
+		}
+		if want := 2 + attempt; disconnectBilling.reserveAuthorizedCalls != want {
+			t.Fatalf("lifecycle cutoff attempt %d reserve calls = %d, want %d",
+				attempt, disconnectBilling.reserveAuthorizedCalls, want)
+		}
 	}
 	commitPeriodStart := disconnectPeriodStart.Add(24 * time.Hour)
 	commitSettlement, err := store.Queries().CreateStorageDailySettlement(
@@ -2555,10 +2583,41 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		StorageBillingFailurePayment, false); err != nil {
 		t.Fatal(err)
 	}
-	disconnectRecovery, err = store.Queries().GetActiveStorageRecovery(
+	paymentRecovery, err := store.Queries().GetActiveStorageRecovery(
 		ctx, toPGUUID(disconnectSubmissionID))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err = disconnectService.startStorageGrace(
+		ctx, disconnectBinding, disconnectCutoff,
+		StorageBillingFailureGitHub, false); err != nil {
+		t.Fatal(err)
+	}
+	terminalRecovery, err := store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID))
+	if err != nil || terminalRecovery.Reason != "github_disconnected" ||
+		!terminalRecovery.GraceStartedAt.Time.Equal(
+			paymentRecovery.GraceStartedAt.Time) {
+		t.Fatalf("terminal recovery = %q / %v, want github disconnect",
+			terminalRecovery.Reason, err)
+	}
+	if _, err = store.Queries().ResolveStorageRecovery(
+		ctx, dbgen.ResolveStorageRecoveryParams{
+			RecoveredAt:        pgTimestamp(disconnectCutoff),
+			TargetSubmissionID: toPGUUID(disconnectSubmissionID),
+		}); err != nil {
+		t.Fatal(err)
+	}
+	if err = disconnectService.startStorageGrace(
+		ctx, disconnectBinding, disconnectCutoff,
+		StorageBillingFailureUnavailable, false); err != nil {
+		t.Fatal(err)
+	}
+	disconnectRecovery, err = store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID))
+	if err != nil || disconnectRecovery.Reason != "billing_unavailable" {
+		t.Fatalf("retryable recovery = %q / %v, want billing unavailable",
+			disconnectRecovery.Reason, err)
 	}
 	inflightAssetID := uuidv7.MustNew()
 	inflightPublicID, err := imageassets.NewPublicID()
@@ -2609,10 +2668,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	})
 	if err = staleCutoffService.prepareStorageRebindCutoff(
 		ctx, disconnectBinding, disconnectRecovery); err != nil {
-		t.Fatalf("stale rebind cutoff was not skipped: %v", err)
+		t.Fatalf("stale rebind cutoff preflight failed: %v", err)
 	}
-	if disconnectBilling.reserveAuthorizedCalls != 2 {
-		t.Fatalf("stale rebind cutoff reserve calls = %d, want 2",
+	if disconnectBilling.reserveAuthorizedCalls != 4 {
+		t.Fatalf("stale rebind cutoff reserve calls = %d, want 4",
 			disconnectBilling.reserveAuthorizedCalls)
 	}
 	disconnectSettlement, err = store.Queries().GetStorageDailySettlement(
@@ -2620,8 +2679,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			AuthorizationID: toPGUUID(disconnectAuthorizationID),
 			PeriodStart:     pgTimestamp(disconnectPeriodStart),
 		})
-	if err != nil || disconnectSettlement.State != "grace_skipped" {
-		t.Fatalf("stale rebind cutoff state = %q, %v, want grace_skipped",
+	if err != nil || disconnectSettlement.State != "pending" {
+		t.Fatalf("failed rebind cutoff state = %q, %v, want pending",
 			disconnectSettlement.State, err)
 	}
 	expiryNow := disconnectRecovery.GraceExpiresAt.Time.Add(time.Hour)
@@ -3648,6 +3707,90 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{
 		M2M: &auth.M2MClaims{},
 	})
+	closureOwnerID := uuidv7.MustNew()
+	closureTeamID := uuidv7.MustNew()
+	closureSubmissionID := uuidv7.MustNew()
+	closureAuthorizationID := uuidv7.MustNew()
+	closureServiceID := uuidv7.MustNew()
+	closureMeterID := uuidv7.MustNew()
+	closureJobID := uuidv7.MustNew()
+	closureCutoff := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, state,
+			idempotency_digest, payer_organization_id, payer_team_id,
+			upload_deadline, upload_expires_at
+		) VALUES (
+			$1, 'organization', $2, $3, 'assets_deleted',
+			decode(repeat('ce', 32), 'hex'), $2, $4,
+			$9::timestamptz + interval '23 hours',
+			$9::timestamptz + interval '24 hours'
+		);
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES (
+			$1, $5, decode(repeat('cf', 32), 'hex'),
+			$6, $7, 1, 'closure_pending', $8, 1, 1
+		);
+		INSERT INTO realqa_storage_authorization_bindings (
+			authorization_id, submission_id, mapping_revision,
+			authorizer_account_id, owner_kind, owner_id,
+			organization_id, team_id, service_identity_id, meter_id,
+			maximum_units, status, authorization_revision, closure_state,
+			closure_owner_deleted_allowed, accrual_cutoff_at
+		) VALUES (
+			$8, $1, 1, $3, 'organization', $2,
+			$2, $4, $6, $7, 1, 'active', 1,
+			'resource_deletion_pending', false, $9
+		);
+		INSERT INTO realqa_scope_tombstones (
+			owner_kind, owner_id, deletion_job_id, trigger_kind, accepted_at
+		) VALUES ('organization', $2, $10, 'owner_request', $9);
+		INSERT INTO realqa_deletion_jobs (
+			id, owner_kind, owner_id, trigger_kind, status,
+			already_absent, accepted_at, completed_at
+		) VALUES (
+			$10, 'organization', $2, 'owner_request', 'completed',
+			false, $9, $9
+		)
+	`, closureSubmissionID, closureOwnerID, accountID, closureTeamID,
+		uuidv7.MustNew(), closureServiceID, closureMeterID,
+		closureAuthorizationID, closureCutoff, closureJobID); err != nil {
+		t.Fatal(err)
+	}
+	closureReplay, err := service.DeleteFeatureData(
+		lifecycleCtx, connect.NewRequest(
+			&realqav1.DeleteFeatureDataRequest{
+				TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_DELIBASE_ORGANIZATION_LIFECYCLE,
+				Trigger: &realqav1.DeleteFeatureDataRequest_DelibaseOrganizationLifecycle{
+					DelibaseOrganizationLifecycle: &realqav1.DelibaseOrganizationLifecycleDeletion{
+						OrganizationId: &realqav1.UuidV7{
+							Value: closureOwnerID.String(),
+						},
+						DeletionJobId: &realqav1.UuidV7{
+							Value: uuidv7.MustNew().String(),
+						},
+					},
+				},
+			}))
+	if err != nil || closureReplay.Msg.DeletionJobId.Value !=
+		closureJobID.String() {
+		t.Fatalf("lifecycle owner closure replay = %#v, %v",
+			closureReplay, err)
+	}
+	var ownerDeletedAllowed bool
+	if err = connection.QueryRow(ctx, `
+		SELECT closure_owner_deleted_allowed
+		FROM realqa_storage_authorization_bindings
+		WHERE authorization_id = $1
+	`, closureAuthorizationID).Scan(&ownerDeletedAllowed); err != nil {
+		t.Fatal(err)
+	}
+	if !ownerDeletedAllowed {
+		t.Fatal("lifecycle replay did not allow terminal owner deletion")
+	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_github_connections
 		SET state = 'connected',
