@@ -76,6 +76,17 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (
+    url.origin === self.location.origin &&
+    (url.pathname === "/auth/callback" ||
+      url.pathname === "/auth/devhud/callback" ||
+      url.pathname === "/auth/devhud/callback/")
+  ) {
+    // Credential callbacks are always network-only and never receive the SPA
+    // fallback, even during an outage.
+    return;
+  }
+
+  if (
     request.method === "GET" &&
     request.mode === "navigate" &&
     url.origin === self.location.origin

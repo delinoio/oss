@@ -3,13 +3,22 @@ import {
   AccountService,
   CatalogService,
 } from "@delinoio/delibase-connect";
+import {
+  DeckIntegrationService,
+  DeckViewService,
+  OwnerScope,
+} from "@delinoio/devhud-deck-connect";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   createAuthenticatedTransport,
+  createDeckIntegrationTransport,
   createPublicTransport,
 } from "../api/transports";
-import { canonicalAudience } from "../config";
+import {
+  canonicalAudience,
+  canonicalDeckAudience,
+} from "../config";
 
 function connectJsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -114,5 +123,70 @@ describe("delibase browser transports", () => {
     const response = await client.getAccountState({});
     expect(response.onboardingRequired).toBe(true);
     expect(tokenGetter).toHaveBeenCalledWith(canonicalAudience);
+  });
+
+  it("keeps both Deck credentials request-only and restricts procedures", async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    const tokenGetter = vi.fn(async (audience: string) =>
+      audience === canonicalDeckAudience
+        ? "deck-access-token"
+        : "delibase-access-token",
+    );
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
+      const headers = new Headers(
+        init?.headers ??
+          (request instanceof Request ? request.headers : undefined),
+      );
+      expect(headers.get("authorization")).toBe(
+        "Bearer deck-access-token",
+      );
+      expect(
+        headers.get("x-devhud-deck-forwarded-delibase-token"),
+      ).toBe("delibase-access-token");
+      expect(headers.get("cache-control")).toBe("no-store");
+      return connectJsonResponse({ installations: [] });
+    });
+    const transport = createDeckIntegrationTransport({
+      baseUrl: canonicalDeckAudience,
+      fetch: fetchMock,
+      getAccessToken: tokenGetter,
+    });
+    const integrationClient = createClient(
+      DeckIntegrationService,
+      transport,
+    );
+
+    await integrationClient.listGitHubInstallations({
+      owner: {
+        ownerId: {
+          case: "accountId",
+          value: { value: "account-id" },
+        },
+        scope: OwnerScope.PERSONAL,
+      },
+    });
+
+    expect(tokenGetter).toHaveBeenCalledTimes(2);
+    expect(tokenGetter).toHaveBeenCalledWith(canonicalDeckAudience);
+    expect(tokenGetter).toHaveBeenCalledWith(canonicalAudience);
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+
+    const viewClient = createClient(DeckViewService, transport);
+    await expect(
+      viewClient.listViews({
+        owner: {
+          ownerId: {
+            case: "accountId",
+            value: { value: "account-id" },
+          },
+          scope: OwnerScope.PERSONAL,
+        },
+      }),
+    ).rejects.toThrow(
+      "Only the configured Deck integration service is available.",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });

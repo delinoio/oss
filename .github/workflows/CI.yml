@@ -1567,6 +1567,7 @@ jobs:
               - apps/delidev-app/**
               - protos/buf.yaml
               - protos/delibase/**
+              - protos/devhud-deck/**
               - scripts/generate-proto-component.sh
               - scripts/lib/go-proto-tools.sh
 
@@ -1609,7 +1610,9 @@ jobs:
 
       - name: Build generated delibase client
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter @delinoio/delibase-connect build
+        run: |
+          pnpm --filter @delinoio/delibase-connect build
+          pnpm --filter @delinoio/devhud-deck-connect build
 
       - name: Validate types, lint, and components
         if: ${{ steps.gate.outputs.run == 'true' }}
