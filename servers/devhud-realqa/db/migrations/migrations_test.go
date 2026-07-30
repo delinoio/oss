@@ -108,7 +108,11 @@ func TestRecurringStorageMigrationBackfillsDeletedAssetsForClosure(t *testing.T)
 	inflightAuthorizationID := uuidv7.MustNew()
 	if _, err = acquired.Exec(ctx, `
 		INSERT INTO realqa_identities (account_id, subject_digest)
-		VALUES ($1, $2);
+		VALUES ($1, $2)
+	`, accountID, bytes.Repeat([]byte{1}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = acquired.Exec(ctx, `
 		INSERT INTO realqa_submissions (
 			id, owner_kind, owner_id, created_by_account_id, state,
 			idempotency_digest, payer_organization_id, payer_team_id,
@@ -116,7 +120,7 @@ func TestRecurringStorageMigrationBackfillsDeletedAssetsForClosure(t *testing.T)
 			submitted_at
 		) VALUES
 			(
-				$3, 'personal', $1, $1, 'submitted', $4, $5, $6,
+				$2, 'personal', $1, $1, 'submitted', $3, $4, $5,
 				transaction_timestamp() - interval '2 hours',
 				transaction_timestamp() - interval '1 hour',
 				transaction_timestamp() + interval '21 hours',
@@ -124,27 +128,30 @@ func TestRecurringStorageMigrationBackfillsDeletedAssetsForClosure(t *testing.T)
 				transaction_timestamp() - interval '1 hour'
 			),
 			(
-				$7, 'personal', $1, $1, 'submitting', $8, $5, $6,
+				$6, 'personal', $1, $1, 'submitting', $7, $4, $5,
 				transaction_timestamp() - interval '2 hours',
 				transaction_timestamp() - interval '1 hour',
 				transaction_timestamp() + interval '21 hours',
 				transaction_timestamp() + interval '22 hours',
 				NULL
-			);
+			)
+	`, accountID, deletedSubmissionID, bytes.Repeat([]byte{2}, 32),
+		organizationID, teamID, inflightSubmissionID,
+		bytes.Repeat([]byte{3}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = acquired.Exec(ctx, `
 		INSERT INTO realqa_storage_authorization_attempts (
 			submission_id, idempotency_key, request_digest,
 			service_identity_id, meter_id, maximum_units, state,
 			authorization_id, authorization_revision, mapping_revision
 		) VALUES
-			($3, $9, $10, $11, $12, 1, 'active', $13, 1, 1),
-			($7, $14, $15, $11, $12, 1, 'active', $16, 1, 1)
-	`, accountID, bytes.Repeat([]byte{1}, 32),
-		deletedSubmissionID, bytes.Repeat([]byte{2}, 32),
-		organizationID, teamID,
-		inflightSubmissionID, bytes.Repeat([]byte{3}, 32),
-		uuidv7.MustNew(), bytes.Repeat([]byte{4}, 32),
-		serviceID, meterID, deletedAuthorizationID,
-		uuidv7.MustNew(), bytes.Repeat([]byte{5}, 32),
+			($1, $2, $3, $4, $5, 1, 'active', $6, 1, 1),
+			($7, $8, $9, $4, $5, 1, 'active', $10, 1, 1)
+	`, deletedSubmissionID, uuidv7.MustNew(),
+		bytes.Repeat([]byte{4}, 32), serviceID, meterID,
+		deletedAuthorizationID, inflightSubmissionID, uuidv7.MustNew(),
+		bytes.Repeat([]byte{5}, 32),
 		inflightAuthorizationID); err != nil {
 		t.Fatal(err)
 	}
