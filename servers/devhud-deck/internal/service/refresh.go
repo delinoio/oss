@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -866,9 +867,30 @@ func (service *View) performGitHubRefresh(
 	truncated = truncated || resultTruncated
 	notificationSnapshots := append(
 		[]*deckv1.PullRequestResult(nil), results...)
-	for _, snapshot := range previousOnlySnapshots(previous, results) {
+	historicalSnapshots := previousOnlySnapshots(previous, results)
+	readableRepositories := make(map[string]struct{})
+	if hasOpenSnapshot(historicalSnapshots) {
+		repositories, readableErr :=
+			service.dependencies.GitHubClient.ListReadableRepositoriesForInstallation(
+				ctx, connection.Installation.ID, connection.Credential)
+		if readableErr != nil {
+			service.dependencies.Logger.Warn(
+				"Deck refresh skipped optional historical notification authorization",
+				"event", "deck_refresh_notification_authorization_skipped",
+				"provider_outcome",
+				int32(refreshOutcomeForProviderError(readableErr)),
+			)
+		} else {
+			readableRepositories = refreshRepositorySet(repositories)
+		}
+	}
+	for _, snapshot := range historicalSnapshots {
 		if snapshot.GetLifecycleState() !=
 			deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_OPEN {
+			continue
+		}
+		if !refreshSnapshotRepositoryReadable(
+			snapshot, readableRepositories) {
 			continue
 		}
 		repository := snapshot.GetRepository()
@@ -905,6 +927,40 @@ func (service *View) performGitHubRefresh(
 		}
 	}
 	return results, notificationSnapshots, truncated, nil
+}
+
+func hasOpenSnapshot(snapshots []*deckv1.PullRequestResult) bool {
+	for _, snapshot := range snapshots {
+		if snapshot.GetLifecycleState() ==
+			deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_OPEN {
+			return true
+		}
+	}
+	return false
+}
+
+func refreshRepositorySet(
+	repositories []deckgithub.Repository,
+) map[string]struct{} {
+	result := make(map[string]struct{}, len(repositories))
+	for _, repository := range repositories {
+		result[refreshRepositoryKey(repository.Owner, repository.Name)] = struct{}{}
+	}
+	return result
+}
+
+func refreshSnapshotRepositoryReadable(
+	snapshot *deckv1.PullRequestResult,
+	readableRepositories map[string]struct{},
+) bool {
+	repository := snapshot.GetRepository()
+	_, ok := readableRepositories[refreshRepositoryKey(
+		repository.GetOwner(), repository.GetName())]
+	return ok
+}
+
+func refreshRepositoryKey(owner, repository string) string {
+	return strings.ToLower(owner) + "\x00" + strings.ToLower(repository)
 }
 
 func previousOnlySnapshots(

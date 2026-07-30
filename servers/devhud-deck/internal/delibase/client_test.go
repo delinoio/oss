@@ -345,7 +345,7 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 	}
 }
 
-func TestCatalogRejectsMissingDeckServiceTarget(t *testing.T) {
+func TestCatalogMismatchDoesNotBlockStartup(t *testing.T) {
 	t.Parallel()
 	serviceID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
 	catalog := &catalogFixture{
@@ -379,9 +379,14 @@ func TestCatalogRejectsMissingDeckServiceTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.ValidateStartup(
-		context.Background()); err != ErrInvalidConfiguration {
-		t.Fatalf("startup accepted missing service target = %v", err)
+	if err := client.ValidateStartup(context.Background()); err != nil {
+		t.Fatalf("startup validation = %v", err)
+	}
+	catalog.catalogCallLocker.Lock()
+	startupCatalogCalls := catalog.catalogCallCount
+	catalog.catalogCallLocker.Unlock()
+	if startupCatalogCalls != 0 {
+		t.Fatalf("startup catalog calls = %d", startupCatalogCalls)
 	}
 	if _, err := client.RefreshMeter(
 		context.Background()); err != ErrCatalogUnavailable {

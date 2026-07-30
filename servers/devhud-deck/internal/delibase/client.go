@@ -104,16 +104,14 @@ func New(configuration Config, httpClient *http.Client) (*Client, error) {
 	}, nil
 }
 
-// ValidateStartup proves the configured least-privilege M2M credentials and
-// exact Deck meter binding before the server exposes billed refresh handlers.
+// ValidateStartup proves the configured least-privilege M2M credentials.
+// RefreshMeter validates the exact Deck meter binding for each billed request
+// so an inactive catalog does not disable unrelated Deck handlers.
 func (client *Client) ValidateStartup(ctx context.Context) error {
 	if client == nil {
 		return ErrInvalidConfiguration
 	}
 	if _, err := client.token(ctx); err != nil {
-		return ErrInvalidConfiguration
-	}
-	if _, err := client.RefreshMeter(ctx); err != nil {
 		return ErrInvalidConfiguration
 	}
 	return nil

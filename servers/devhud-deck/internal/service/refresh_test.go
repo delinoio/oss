@@ -554,13 +554,30 @@ func TestNotificationTransitionsAreTypedAndPreferenceFiltered(t *testing.T) {
 				Repository: &deckv1.RepositoryReference{
 					Owner: "acme", Name: "other",
 				},
-				Number: 8,
+				Number:         8,
+				LifecycleState: deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_OPEN,
 			},
 		},
 		[]*deckv1.PullRequestResult{current},
 	)
 	if len(missing) != 1 || missing[0].GetNumber() != 8 {
 		t.Fatalf("previous-only snapshots = %#v", missing)
+	}
+	if !hasOpenSnapshot(missing) {
+		t.Fatal("open historical snapshot was ignored")
+	}
+	readable := refreshRepositorySet([]deckgithub.Repository{{
+		Owner: "ACME", Name: "other",
+	}})
+	if !refreshSnapshotRepositoryReadable(missing[0], readable) {
+		t.Fatalf("readable repository set = %#v", readable)
+	}
+	if refreshSnapshotRepositoryReadable(&deckv1.PullRequestResult{
+		Repository: &deckv1.RepositoryReference{
+			Owner: "acme", Name: "removed",
+		},
+	}, readable) {
+		t.Fatalf("removed repository was readable: %#v", readable)
 	}
 	if hasEnabledNotificationPreference(
 		[]*deckv1.ViewNotificationPreference{{Enabled: true}}) {
