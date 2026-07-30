@@ -81,7 +81,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### delidev
 - `docs/project-delidev.md`
-- `docs/apps-delidev-app-foundation.md` (`apps/delidev-app`, future canonical origin `https://deli.dev`, static Cloudflare Pages artifact)
+- `docs/apps-delidev-app-foundation.md` (`apps/delidev-app`, future canonical origin `https://deli.dev`, static Cloudflare Pages artifact, and bounded RealQA tracker settings)
 
 ### delibase
 - `docs/project-delibase.md`
@@ -114,7 +114,9 @@ limited to Logto/DeliDev; bundled webviews remain offline while exact future
 feature RPCs and RealQA signed upload PUTs cross closed native transports.
 Provider work stays behind separate least-privilege GitHub Apps; RealQA's
 private schema preserves issue types, Issue Form text prefills, textarea render
-languages, and dropdown multiplicity; RealQA management stays in DevHud; and
+languages, and dropdown multiplicity; full RealQA feature management stays in
+DevHud while DeliDev exposes only bounded `RealQATrackerService` connection and
+destination settings in its existing account/organization sections; and
 delibase account/organization deletion durably
 invokes both features' service-authenticated cleanup mode. No public plugin SDK,
 arbitrary remote UI, client/extension telemetry, DNS/deployment, production app
