@@ -55,7 +55,12 @@ function Providers({
   const logtoConfig: LogtoConfig = {
     appId: runtimeConfig.logto.appId,
     endpoint: runtimeConfig.logto.endpoint,
-    resources: [canonicalAudience, canonicalRealQAAudience],
+    resources: [
+      canonicalAudience,
+      ...(runtimeConfig.realqa.issues.length === 0
+        ? [canonicalRealQAAudience]
+        : []),
+    ],
     scopes: [
       "delibase:account:read",
       "delibase:account:write",
@@ -65,8 +70,9 @@ function Providers({
       "delibase:teams:write",
       "delibase:billing:read",
       "delibase:billing:write",
-      "realqa:tracker:read",
-      "realqa:tracker:write",
+      ...(runtimeConfig.realqa.issues.length === 0
+        ? ["realqa:tracker:read", "realqa:tracker:write"]
+        : []),
     ],
   };
   return (

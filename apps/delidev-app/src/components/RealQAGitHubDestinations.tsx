@@ -9,6 +9,7 @@ import {
   useQuery,
 } from "@connectrpc/connect-query";
 import {
+  ErrorReason,
   GitHubConnectionState,
   IssueFormFieldKind,
   OwnerScopeKind,
@@ -32,7 +33,10 @@ import {
   type FormEvent,
 } from "react";
 
-import { describeRealQAError } from "../api/realqaErrors";
+import {
+  describeRealQAError,
+  getRealQAError,
+} from "../api/realqaErrors";
 import {
   runtimeConfig,
   type RealQAConfig,
@@ -224,6 +228,8 @@ function RealQAGitHubDestinationsConnected({
   const connectionValue = connection.data?.connection;
   const connected =
     connectionValue?.state === GitHubConnectionState.CONNECTED;
+  const memberNeedsInstallation =
+    owner.kind === "organization" && !owner.canManage && !connected;
 
   const installations = useInfiniteQuery(
     RealQATrackerService.method.listGitHubInstallations,
@@ -367,8 +373,14 @@ function RealQAGitHubDestinationsConnected({
         owner: scope,
       },
       {
-        onError: (error) => {
-          setActionError(describeRealQAError(error));
+        onError: async (error) => {
+          const detail = getRealQAError(error);
+          setActionError(detail.message);
+          if (detail.reason === ErrorReason.STALE_REVISION) {
+            pendingDisconnects.delete(scopeKey);
+            setDisconnectAttempted(false);
+            await connection.refetch().catch(() => undefined);
+          }
         },
         onSuccess: async () => {
           pendingDisconnects.delete(scopeKey);
@@ -457,12 +469,15 @@ function RealQAGitHubDestinationsConnected({
               Owners and Admins bind or disconnect the organization
               installation. Your authorization only reveals repositories your
               own GitHub identity can access.
+              {memberNeedsInstallation
+                ? " Ask an Owner or Admin to connect the installation before authorizing your GitHub identity."
+                : ""}
             </p>
           ) : null}
           <div className="button-row">
             <button
               className="button primary"
-              disabled={!online || startPending}
+              disabled={!online || startPending || memberNeedsInstallation}
               onClick={() => void start()}
               type="button"
             >
@@ -770,7 +785,8 @@ function DestinationDiscovery({
         </>
       ) : null}
 
-      {selectedRepository ? (
+      {selectedRepository?.issuesEnabled &&
+      selectedRepository.callerCanSubmit ? (
         <IssueDefinitionDiscovery
           issueSchema={issueSchema}
           repository={selectedRepository}
