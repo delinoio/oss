@@ -92,8 +92,10 @@ Each project must have one project index document and one or more domain contrac
 ### devhud
 - `docs/project-devhud.md`
 - `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell, RealQA encrypted local-draft/capture foundations, and all Deck/RealQA client/native/Chrome surfaces)
-- `docs/servers-devhud-deck-foundation.md` (planned `servers/devhud-deck`; future `https://deck.deli.dev`)
-- `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, and non-dispatching all-origin refresh preflight)
+- `docs/servers-devhud-deck-foundation.md` (implemented inactive
+  `servers/devhud-deck` foundation and GitHub.com provider slice; future
+  `https://deck.deli.dev`)
+- `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, mutation follow-up-refresh state, and non-dispatching all-origin refresh preflight)
 - `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion, internal GitHub.com provider with stable-ID repository rename synchronization, and R2-backed image-transfer/public-delivery foundation at `servers/devhud-realqa`; future end-to-end submission/billing slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
 - `docs/protos-devhud-realqa-api-contract.md` (implemented `protos/devhud-realqa/v1`; `devhud.realqa.v1`, isolated descriptor and private generated package)
 
@@ -105,8 +107,10 @@ exclusions. The private `devhud.deck.v1` and `devhud.realqa.v1` sources, isolate
 descriptors, generated Go/TypeScript artifacts, and private
 `@delinoio/devhud-deck-connect` and `@delinoio/devhud-realqa-connect` workspace
 exports are implemented, including Deck's structured request-only shortcut
-configurations and server-authored shortcut/widget state; both feature servers
-and product clients remain planned. Issues #755/#757 authorize two bounded
+configurations and server-authored shortcut/widget state; Deck's inactive
+server foundation/provider slice and RealQA's inactive
+preset/tracker/auth/deletion foundation are implemented, while product clients
+remain planned. Issues #755/#757 authorize two bounded
 authenticated exceptions: Deck on
 desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is

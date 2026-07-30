@@ -97,6 +97,28 @@ func (store *Store) DeleteFeatureData(
 			ctx, params.TargetHash[:]); err != nil {
 			return err
 		}
+		if params.Trigger != DeletionTriggerOrganizationLifecycle {
+			ownerHash := store.githubCallbackOwnerHash(1, params.TargetID)
+			if err := queries.DeleteGitHubCallbackStatesByOwner(
+				ctx, ownerHash[:]); err != nil {
+				return err
+			}
+			accountHash := store.githubCallbackAccountHash(params.TargetID)
+			if err := queries.DeleteGitHubCallbackStatesByAccount(
+				ctx, accountHash[:]); err != nil {
+				return err
+			}
+			viewerHash := store.hasher.Sum(
+				"snapshot-viewer", params.TargetID.String())
+			if err := queries.DeleteViewSnapshotsByViewer(
+				ctx, viewerHash[:]); err != nil {
+				return err
+			}
+			if err := queries.DeleteViewSnapshotStatesByViewer(
+				ctx, viewerHash[:]); err != nil {
+				return err
+			}
+		}
 		switch params.Trigger {
 		case DeletionTriggerOwner:
 			if err := queries.DeletePersonalFeatureData(ctx, pgUUID(params.TargetID)); err != nil {
@@ -221,6 +243,11 @@ func (store *Store) deleteOrganization(
 	deleteMemberships bool,
 ) error {
 	id := pgUUID(organizationID)
+	ownerHash := store.githubCallbackOwnerHash(2, organizationID)
+	if err := queries.DeleteGitHubCallbackStatesByOwner(
+		ctx, ownerHash[:]); err != nil {
+		return err
+	}
 	viewIDs, err := queries.ListOrganizationViewIDsForUpdate(ctx, id)
 	if err != nil {
 		return err
@@ -323,6 +350,14 @@ func (store *Store) resetDeviceWidgetSnapshots(
 		changed := false
 		for _, widget := range widgets.Widgets {
 			if uuidValueFromProto(widget.GetViewId()) != viewID {
+				continue
+			}
+			snapshot := widget.GetSnapshot()
+			if snapshot != nil && snapshot.GetMatchingCount() == 0 &&
+				len(snapshot.GetPullRequests()) == 0 &&
+				snapshot.GetFreshness() ==
+					deckv1.FreshnessState_FRESHNESS_STATE_NEVER_REFRESHED &&
+				!snapshot.GetOffline() && snapshot.GetGeneratedAt() == nil {
 				continue
 			}
 			widget.Snapshot = &deckv1.WidgetSnapshot{

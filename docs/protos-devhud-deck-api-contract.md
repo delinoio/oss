@@ -58,7 +58,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
   lease, server-authored shortcut/widget state, and device revision by stable
   device ID so a restarted or stale client can compare and reapply before
   renewal.
-- Mutations are a closed union for assign/unassign, reviewer request/removal, label add/remove, draft/ready, close/reopen, merge, and native auto-merge enable/cancel. Merge requests carry explicit user confirmation.
+- Mutations are a closed union for assign/unassign, reviewer request/removal, label add/remove, draft/ready, close/reopen, merge, and native auto-merge enable/cancel. Merge requests carry explicit user confirmation. A successful `MutatePullRequestResponse` normally carries synchronized pull-request detail; when GitHub accepted the mutation but the result reload failed, it instead sets `refresh_required`, omits the stale detail, and requires a client refresh without retrying the mutation.
 - `GetRefreshPreflight` is the billing preflight for every prospective logical
   refresh origin. Its request identifies the view, client-generated UUID v7
   refresh identity, and origin. The server validates the authoritative

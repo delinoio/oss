@@ -28,13 +28,23 @@ type DeckAuditEvent struct {
 }
 
 type DeckConnection struct {
-	ConnectionID pgtype.UUID
-	OwnerScope   int16
-	OwnerID      pgtype.UUID
-	State        int16
-	Revision     int64
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ConnectionID                   pgtype.UUID
+	OwnerScope                     int16
+	OwnerID                        pgtype.UUID
+	State                          int16
+	Revision                       int64
+	CreatedAt                      pgtype.Timestamptz
+	UpdatedAt                      pgtype.Timestamptz
+	GithubInstallationID           pgtype.Int8
+	GithubAccountID                pgtype.Int8
+	GithubAccountKind              pgtype.Int2
+	GithubAccountLoginCiphertext   []byte
+	GithubMetadataPermission       pgtype.Int2
+	GithubContentsPermission       pgtype.Int2
+	GithubPullRequestsPermission   pgtype.Int2
+	GithubChecksPermission         pgtype.Int2
+	GithubMembersPermission        pgtype.Int2
+	GithubAdministrationPermission pgtype.Int2
 }
 
 type DeckDeletionJob struct {
@@ -76,6 +86,63 @@ type DeckDeviceRegistrationIdempotency struct {
 	CreatedAt             pgtype.Timestamptz
 }
 
+type DeckGithubAuthorizationState struct {
+	ProviderIdentityHash []byte
+	RevokedAt            pgtype.Timestamptz
+	ReauthorizedAt       pgtype.Timestamptz
+}
+
+type DeckGithubCallbackState struct {
+	StateHash       []byte
+	OwnerHash       []byte
+	AccountHash     []byte
+	StateCiphertext []byte
+	ExpiresAt       pgtype.Timestamptz
+	ConsumedAt      pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
+type DeckGithubInstallationState struct {
+	ProviderIdentityHash []byte
+	DeletedAt            pgtype.Timestamptz
+}
+
+type DeckGithubRemovedRepository struct {
+	ConnectionID   pgtype.UUID
+	RepositoryHash []byte
+	RemovedAt      pgtype.Timestamptz
+}
+
+type DeckGithubUserCredential struct {
+	ConnectionID               pgtype.UUID
+	AccountID                  pgtype.UUID
+	GithubUserID               int64
+	WrappingKeyID              string
+	UserAccessTokenCiphertext  []byte
+	UserRefreshTokenCiphertext []byte
+	UserAccessTokenExpiresAt   pgtype.Timestamptz
+	UserRefreshTokenExpiresAt  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+}
+
+type DeckGithubWebhookDelivery struct {
+	DeliveryID           string
+	EventType            int16
+	ActionType           int16
+	ProviderIdentityHash []byte
+	PayloadHash          []byte
+	ProcessedAt          pgtype.Timestamptz
+}
+
+type DeckNotificationEvent struct {
+	EventID       pgtype.UUID
+	ViewID        pgtype.UUID
+	OpaqueEventID []byte
+	Transition    int16
+	CreatedAt     pgtype.Timestamptz
+	ExpiresAt     pgtype.Timestamptz
+}
+
 type DeckOrganizationMembership struct {
 	OrganizationID pgtype.UUID
 	AccountID      pgtype.UUID
@@ -98,6 +165,8 @@ type DeckPullRequestSnapshot struct {
 	Ordinal              int32
 	RepositoryCiphertext []byte
 	SnapshotCiphertext   []byte
+	RepositoryHash       []byte
+	PullRequestNumber    int64
 }
 
 type DeckPullRequestSnapshotState struct {
@@ -115,24 +184,25 @@ type DeckTeamMembership struct {
 }
 
 type DeckView struct {
-	ViewID                 pgtype.UUID
-	OwnerScope             int16
-	OwnerAccountID         pgtype.UUID
-	OwnerOrganizationID    pgtype.UUID
-	BillingOrganizationID  pgtype.UUID
-	BillingTeamID          pgtype.UUID
-	NameCiphertext         []byte
-	QueryCiphertext        []byte
-	Kind                   int16
-	Sort                   int16
-	Grouping               int16
-	NotificationCiphertext []byte
-	ConnectionState        int16
-	Revision               int64
-	SnapshotTruncated      bool
-	SnapshotRefreshedAt    pgtype.Timestamptz
-	CreatedAt              pgtype.Timestamptz
-	UpdatedAt              pgtype.Timestamptz
+	ViewID                       pgtype.UUID
+	OwnerScope                   int16
+	OwnerAccountID               pgtype.UUID
+	OwnerOrganizationID          pgtype.UUID
+	BillingOrganizationID        pgtype.UUID
+	BillingTeamID                pgtype.UUID
+	NameCiphertext               []byte
+	QueryCiphertext              []byte
+	Kind                         int16
+	Sort                         int16
+	Grouping                     int16
+	NotificationCiphertext       []byte
+	ConnectionState              int16
+	Revision                     int64
+	SnapshotTruncated            bool
+	SnapshotRefreshedAt          pgtype.Timestamptz
+	CreatedAt                    pgtype.Timestamptz
+	UpdatedAt                    pgtype.Timestamptz
+	RepositoryAuthorizationIndex []byte
 }
 
 type DeckViewCreateIdempotency struct {

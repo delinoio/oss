@@ -118,17 +118,22 @@ func TestServerContractLiveTailThroughWaitOutput(t *testing.T) {
 	server := NewServer(store, logger, 0, 24*time.Hour)
 	client := newFramedRPCClient(t, server)
 
+	appendResult := make(chan error, 1)
 	go func() {
 		time.Sleep(150 * time.Millisecond)
-		_, _ = store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("live-tail"), time.Now().UTC())
+		_, appendErr := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("live-tail"), time.Now().UTC())
+		appendResult <- appendErr
 	}()
 
 	payload := client.callTool(t, contracts.DerunMCPToolWaitOutput, map[string]any{
 		"session_id": sessionID,
 		"cursor":     "0",
 		"max_bytes":  1024,
-		"timeout_ms": 1000,
+		"timeout_ms": 5000,
 	})
+	if err := <-appendResult; err != nil {
+		t.Fatalf("AppendOutput returned error: %v", err)
+	}
 	if payload["schema_version"] != SchemaVersion {
 		t.Fatalf("unexpected schema_version: %v", payload["schema_version"])
 	}

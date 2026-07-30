@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1/deckv1connect"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/authn"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/service"
 	"github.com/delinoio/oss/servers/internal/httpserver"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
@@ -35,11 +36,14 @@ type Dependencies struct {
 	Health                 HealthChecker
 	Services               service.Dependencies
 	Logger                 *slog.Logger
+	GitHubHTTP             http.Handler
 }
 
 func New(dependencies Dependencies) (http.Handler, error) {
-	if dependencies.Health == nil || dependencies.Logger == nil {
-		return nil, errors.New("deck api: health checker and logger are required")
+	if dependencies.Health == nil || dependencies.Logger == nil ||
+		dependencies.GitHubHTTP == nil {
+		return nil, errors.New(
+			"deck api: health checker, logger, and GitHub handler are required")
 	}
 	authentication, err := authn.New(authn.Dependencies{
 		DeckValidator:            dependencies.DeckAuthentication,
@@ -61,6 +65,9 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", live)
 	mux.Handle("GET /readyz", ready(dependencies.Health))
+	mux.Handle(deckgithub.InstallationCallbackPath, dependencies.GitHubHTTP)
+	mux.Handle(deckgithub.OAuthCallbackPath, dependencies.GitHubHTTP)
+	mux.Handle(deckgithub.WebhookPath, dependencies.GitHubHTTP)
 	path, handler := deckv1connect.NewDeckViewServiceHandler(
 		service.NewView(dependencies.Services), options...)
 	mux.Handle(path, handler)

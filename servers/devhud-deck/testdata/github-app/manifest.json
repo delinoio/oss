@@ -1,0 +1,30 @@
+{
+  "name": "Deck fixture - do not register",
+  "url": "https://deli.dev",
+  "description": "Test-only manifest for Deck's GitHub.com pull-request integration.",
+  "hook_attributes": {
+    "url": "https://deck.deli.dev/github/webhooks",
+    "active": true
+  },
+  "redirect_url": "https://deck.deli.dev/github/app/callback",
+  "callback_urls": [
+    "https://deck.deli.dev/github/oauth/callback"
+  ],
+  "setup_url": "https://deck.deli.dev/github/app/callback",
+  "public": false,
+  "request_oauth_on_install": false,
+  "setup_on_update": true,
+  "default_permissions": {
+    "metadata": "read",
+    "administration": "read",
+    "contents": "write",
+    "pull_requests": "write",
+    "checks": "read",
+    "members": "read"
+  },
+  "default_events": [
+    "installation",
+    "installation_repositories",
+    "installation_target"
+  ]
+}

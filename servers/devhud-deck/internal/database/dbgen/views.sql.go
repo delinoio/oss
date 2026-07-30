@@ -76,6 +76,34 @@ func (q *Queries) DeleteView(ctx context.Context, arg DeleteViewParams) (int64, 
 	return revision, err
 }
 
+const deleteViewSnapshot = `-- name: DeleteViewSnapshot :execrows
+DELETE FROM deck_pull_request_snapshots
+WHERE view_id = $1
+  AND viewer_hash = $2
+  AND repository_hash = $3
+  AND pull_request_number = $4
+`
+
+type DeleteViewSnapshotParams struct {
+	ViewID            pgtype.UUID
+	ViewerHash        []byte
+	RepositoryHash    []byte
+	PullRequestNumber int64
+}
+
+func (q *Queries) DeleteViewSnapshot(ctx context.Context, arg DeleteViewSnapshotParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteViewSnapshot,
+		arg.ViewID,
+		arg.ViewerHash,
+		arg.RepositoryHash,
+		arg.PullRequestNumber,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteViewSnapshotState = `-- name: DeleteViewSnapshotState :exec
 DELETE FROM deck_pull_request_snapshot_states
 WHERE view_id = $1 AND viewer_hash = $2
@@ -91,6 +119,16 @@ func (q *Queries) DeleteViewSnapshotState(ctx context.Context, arg DeleteViewSna
 	return err
 }
 
+const deleteViewSnapshotStatesByViewer = `-- name: DeleteViewSnapshotStatesByViewer :exec
+DELETE FROM deck_pull_request_snapshot_states
+WHERE viewer_hash = $1
+`
+
+func (q *Queries) DeleteViewSnapshotStatesByViewer(ctx context.Context, viewerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteViewSnapshotStatesByViewer, viewerHash)
+	return err
+}
+
 const deleteViewSnapshots = `-- name: DeleteViewSnapshots :exec
 DELETE FROM deck_pull_request_snapshots
 WHERE view_id = $1 AND viewer_hash = $2
@@ -103,6 +141,16 @@ type DeleteViewSnapshotsParams struct {
 
 func (q *Queries) DeleteViewSnapshots(ctx context.Context, arg DeleteViewSnapshotsParams) error {
 	_, err := q.db.Exec(ctx, deleteViewSnapshots, arg.ViewID, arg.ViewerHash)
+	return err
+}
+
+const deleteViewSnapshotsByViewer = `-- name: DeleteViewSnapshotsByViewer :exec
+DELETE FROM deck_pull_request_snapshots
+WHERE viewer_hash = $1
+`
+
+func (q *Queries) DeleteViewSnapshotsByViewer(ctx context.Context, viewerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteViewSnapshotsByViewer, viewerHash)
 	return err
 }
 
@@ -146,7 +194,7 @@ func (q *Queries) GetCreateViewIdempotency(ctx context.Context, arg GetCreateVie
 }
 
 const getView = `-- name: GetView :one
-SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at FROM deck_views WHERE view_id = $1
+SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index FROM deck_views WHERE view_id = $1
 `
 
 func (q *Queries) GetView(ctx context.Context, viewID pgtype.UUID) (DeckView, error) {
@@ -171,6 +219,49 @@ func (q *Queries) GetView(ctx context.Context, viewID pgtype.UUID) (DeckView, er
 		&i.SnapshotRefreshedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepositoryAuthorizationIndex,
+	)
+	return i, err
+}
+
+const getViewSnapshotByReference = `-- name: GetViewSnapshotByReference :one
+SELECT view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+FROM deck_pull_request_snapshots
+WHERE view_id = $1
+  AND viewer_hash = $2
+  AND repository_hash = $3
+  AND pull_request_number = $4
+`
+
+type GetViewSnapshotByReferenceParams struct {
+	ViewID            pgtype.UUID
+	ViewerHash        []byte
+	RepositoryHash    []byte
+	PullRequestNumber int64
+}
+
+type GetViewSnapshotByReferenceRow struct {
+	ViewID               pgtype.UUID
+	ViewerHash           []byte
+	Ordinal              int32
+	RepositoryCiphertext []byte
+	SnapshotCiphertext   []byte
+}
+
+func (q *Queries) GetViewSnapshotByReference(ctx context.Context, arg GetViewSnapshotByReferenceParams) (GetViewSnapshotByReferenceRow, error) {
+	row := q.db.QueryRow(ctx, getViewSnapshotByReference,
+		arg.ViewID,
+		arg.ViewerHash,
+		arg.RepositoryHash,
+		arg.PullRequestNumber,
+	)
+	var i GetViewSnapshotByReferenceRow
+	err := row.Scan(
+		&i.ViewID,
+		&i.ViewerHash,
+		&i.Ordinal,
+		&i.RepositoryCiphertext,
+		&i.SnapshotCiphertext,
 	)
 	return i, err
 }
@@ -235,34 +326,37 @@ INSERT INTO deck_views (
     view_id, owner_scope, owner_account_id, owner_organization_id,
     billing_organization_id, billing_team_id, name_ciphertext,
     query_ciphertext, kind, sort, grouping, notification_ciphertext,
-    connection_state, revision, created_at, updated_at
+    connection_state, repository_authorization_index, revision,
+    created_at, updated_at
 ) VALUES (
     $1, $2, $3,
     $4, $5,
     $6, $7,
     $8, $9, $10,
     $11, $12,
-    $13, 1, $14, $15
+    $13, $14,
+    1, $15, $16
 )
-RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at
+RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index
 `
 
 type InsertViewParams struct {
-	ViewID                 pgtype.UUID
-	OwnerScope             int16
-	OwnerAccountID         pgtype.UUID
-	OwnerOrganizationID    pgtype.UUID
-	BillingOrganizationID  pgtype.UUID
-	BillingTeamID          pgtype.UUID
-	NameCiphertext         []byte
-	QueryCiphertext        []byte
-	Kind                   int16
-	Sort                   int16
-	Grouping               int16
-	NotificationCiphertext []byte
-	ConnectionState        int16
-	CreatedAt              pgtype.Timestamptz
-	UpdatedAt              pgtype.Timestamptz
+	ViewID                       pgtype.UUID
+	OwnerScope                   int16
+	OwnerAccountID               pgtype.UUID
+	OwnerOrganizationID          pgtype.UUID
+	BillingOrganizationID        pgtype.UUID
+	BillingTeamID                pgtype.UUID
+	NameCiphertext               []byte
+	QueryCiphertext              []byte
+	Kind                         int16
+	Sort                         int16
+	Grouping                     int16
+	NotificationCiphertext       []byte
+	ConnectionState              int16
+	RepositoryAuthorizationIndex []byte
+	CreatedAt                    pgtype.Timestamptz
+	UpdatedAt                    pgtype.Timestamptz
 }
 
 func (q *Queries) InsertView(ctx context.Context, arg InsertViewParams) (DeckView, error) {
@@ -280,6 +374,7 @@ func (q *Queries) InsertView(ctx context.Context, arg InsertViewParams) (DeckVie
 		arg.Grouping,
 		arg.NotificationCiphertext,
 		arg.ConnectionState,
+		arg.RepositoryAuthorizationIndex,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -303,16 +398,19 @@ func (q *Queries) InsertView(ctx context.Context, arg InsertViewParams) (DeckVie
 		&i.SnapshotRefreshedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepositoryAuthorizationIndex,
 	)
 	return i, err
 }
 
 const insertViewSnapshot = `-- name: InsertViewSnapshot :exec
 INSERT INTO deck_pull_request_snapshots (
-    view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+    view_id, viewer_hash, ordinal, repository_hash, pull_request_number,
+    repository_ciphertext, snapshot_ciphertext
 ) VALUES (
     $1, $2, $3,
-    $4, $5
+    $4, $5,
+    $6, $7
 )
 `
 
@@ -320,6 +418,8 @@ type InsertViewSnapshotParams struct {
 	ViewID               pgtype.UUID
 	ViewerHash           []byte
 	Ordinal              int32
+	RepositoryHash       []byte
+	PullRequestNumber    int64
 	RepositoryCiphertext []byte
 	SnapshotCiphertext   []byte
 }
@@ -329,6 +429,8 @@ func (q *Queries) InsertViewSnapshot(ctx context.Context, arg InsertViewSnapshot
 		arg.ViewID,
 		arg.ViewerHash,
 		arg.Ordinal,
+		arg.RepositoryHash,
+		arg.PullRequestNumber,
 		arg.RepositoryCiphertext,
 		arg.SnapshotCiphertext,
 	)
@@ -350,7 +452,7 @@ func (q *Queries) IsOwnerTombstoned(ctx context.Context, targetHash []byte) (boo
 }
 
 const listOrganizationViews = `-- name: ListOrganizationViews :many
-SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at FROM deck_views
+SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index FROM deck_views
 WHERE owner_scope = 2
   AND owner_organization_id = $1
   AND view_id > $2
@@ -392,6 +494,7 @@ func (q *Queries) ListOrganizationViews(ctx context.Context, arg ListOrganizatio
 			&i.SnapshotRefreshedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RepositoryAuthorizationIndex,
 		); err != nil {
 			return nil, err
 		}
@@ -404,7 +507,7 @@ func (q *Queries) ListOrganizationViews(ctx context.Context, arg ListOrganizatio
 }
 
 const listPersonalViews = `-- name: ListPersonalViews :many
-SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at FROM deck_views
+SELECT view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index FROM deck_views
 WHERE owner_scope = 1
   AND owner_account_id = $1
   AND view_id > $2
@@ -446,6 +549,7 @@ func (q *Queries) ListPersonalViews(ctx context.Context, arg ListPersonalViewsPa
 			&i.SnapshotRefreshedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RepositoryAuthorizationIndex,
 		); err != nil {
 			return nil, err
 		}
@@ -458,7 +562,8 @@ func (q *Queries) ListPersonalViews(ctx context.Context, arg ListPersonalViewsPa
 }
 
 const listViewSnapshots = `-- name: ListViewSnapshots :many
-SELECT view_id, viewer_hash, ordinal, repository_ciphertext, snapshot_ciphertext
+SELECT view_id, viewer_hash, ordinal, repository_hash,
+       repository_ciphertext, snapshot_ciphertext
 FROM deck_pull_request_snapshots
 WHERE view_id = $1
   AND viewer_hash = $2
@@ -474,7 +579,16 @@ type ListViewSnapshotsParams struct {
 	PageLimit    int32
 }
 
-func (q *Queries) ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsParams) ([]DeckPullRequestSnapshot, error) {
+type ListViewSnapshotsRow struct {
+	ViewID               pgtype.UUID
+	ViewerHash           []byte
+	Ordinal              int32
+	RepositoryHash       []byte
+	RepositoryCiphertext []byte
+	SnapshotCiphertext   []byte
+}
+
+func (q *Queries) ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsParams) ([]ListViewSnapshotsRow, error) {
 	rows, err := q.db.Query(ctx, listViewSnapshots,
 		arg.ViewID,
 		arg.ViewerHash,
@@ -485,13 +599,14 @@ func (q *Queries) ListViewSnapshots(ctx context.Context, arg ListViewSnapshotsPa
 		return nil, err
 	}
 	defer rows.Close()
-	items := []DeckPullRequestSnapshot{}
+	items := []ListViewSnapshotsRow{}
 	for rows.Next() {
-		var i DeckPullRequestSnapshot
+		var i ListViewSnapshotsRow
 		if err := rows.Scan(
 			&i.ViewID,
 			&i.ViewerHash,
 			&i.Ordinal,
+			&i.RepositoryHash,
 			&i.RepositoryCiphertext,
 			&i.SnapshotCiphertext,
 		); err != nil {
@@ -528,24 +643,33 @@ SET billing_organization_id = $1,
     sort = $5,
     grouping = $6,
     notification_ciphertext = $7,
+    connection_state = CASE
+        WHEN repository_authorization_index IS NULL
+            THEN $8
+        ELSE connection_state
+    END,
+    repository_authorization_index =
+        $9,
     revision = revision + 1,
-    updated_at = $8
-WHERE view_id = $9
-  AND revision = $10
-RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at
+    updated_at = $10
+WHERE view_id = $11
+  AND revision = $12
+RETURNING view_id, owner_scope, owner_account_id, owner_organization_id, billing_organization_id, billing_team_id, name_ciphertext, query_ciphertext, kind, sort, grouping, notification_ciphertext, connection_state, revision, snapshot_truncated, snapshot_refreshed_at, created_at, updated_at, repository_authorization_index
 `
 
 type UpdateViewParams struct {
-	BillingOrganizationID  pgtype.UUID
-	BillingTeamID          pgtype.UUID
-	NameCiphertext         []byte
-	QueryCiphertext        []byte
-	Sort                   int16
-	Grouping               int16
-	NotificationCiphertext []byte
-	UpdatedAt              pgtype.Timestamptz
-	ViewID                 pgtype.UUID
-	ExpectedRevision       int64
+	BillingOrganizationID        pgtype.UUID
+	BillingTeamID                pgtype.UUID
+	NameCiphertext               []byte
+	QueryCiphertext              []byte
+	Sort                         int16
+	Grouping                     int16
+	NotificationCiphertext       []byte
+	ConnectionState              int16
+	RepositoryAuthorizationIndex []byte
+	UpdatedAt                    pgtype.Timestamptz
+	ViewID                       pgtype.UUID
+	ExpectedRevision             int64
 }
 
 func (q *Queries) UpdateView(ctx context.Context, arg UpdateViewParams) (DeckView, error) {
@@ -557,6 +681,8 @@ func (q *Queries) UpdateView(ctx context.Context, arg UpdateViewParams) (DeckVie
 		arg.Sort,
 		arg.Grouping,
 		arg.NotificationCiphertext,
+		arg.ConnectionState,
+		arg.RepositoryAuthorizationIndex,
 		arg.UpdatedAt,
 		arg.ViewID,
 		arg.ExpectedRevision,
@@ -581,8 +707,40 @@ func (q *Queries) UpdateView(ctx context.Context, arg UpdateViewParams) (DeckVie
 		&i.SnapshotRefreshedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepositoryAuthorizationIndex,
 	)
 	return i, err
+}
+
+const updateViewSnapshot = `-- name: UpdateViewSnapshot :execrows
+UPDATE deck_pull_request_snapshots
+SET snapshot_ciphertext = $1
+WHERE view_id = $2
+  AND viewer_hash = $3
+  AND repository_hash = $4
+  AND pull_request_number = $5
+`
+
+type UpdateViewSnapshotParams struct {
+	SnapshotCiphertext []byte
+	ViewID             pgtype.UUID
+	ViewerHash         []byte
+	RepositoryHash     []byte
+	PullRequestNumber  int64
+}
+
+func (q *Queries) UpdateViewSnapshot(ctx context.Context, arg UpdateViewSnapshotParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateViewSnapshot,
+		arg.SnapshotCiphertext,
+		arg.ViewID,
+		arg.ViewerHash,
+		arg.RepositoryHash,
+		arg.PullRequestNumber,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateViewSnapshotState = `-- name: UpdateViewSnapshotState :exec

@@ -1,23 +1,54 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"testing"
 
+	"connectrpc.com/connect"
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/google/uuid"
 )
 
 type deniedRepositories struct{}
 
+type reauthenticationRepositories struct {
+	deniedRepositories
+}
+
 func (deniedRepositories) CanReadRepository(
 	context.Context,
 	contracts.Viewer,
+	*deckv1.Owner,
 	string,
 	string,
 ) (bool, error) {
 	return false, nil
+}
+
+func (deniedRepositories) ReadableRepositoryHashes(
+	context.Context,
+	contracts.Viewer,
+	*deckv1.Owner,
+	contracts.RepositoryHashKind,
+	[][32]byte,
+) (map[[32]byte]struct{}, error) {
+	return nil, nil
+}
+
+func (reauthenticationRepositories) ReadableRepositoryHashes(
+	context.Context,
+	contracts.Viewer,
+	*deckv1.Owner,
+	contracts.RepositoryHashKind,
+	[][32]byte,
+) (map[[32]byte]struct{}, error) {
+	return nil, deckgithub.ErrReauthenticationRequired
 }
 
 func TestPersonalAndOrganizationOwnership(t *testing.T) {
@@ -87,16 +118,224 @@ func TestViewRepositoryPermissionFailsBeforeIdentityBearingData(t *testing.T) {
 	}
 }
 
+func TestRepositoryRepairRequiresExactRemovalEvidence(t *testing.T) {
+	t.Parallel()
+	readableHash := security.Digest([]byte("readable"))
+	removedHash := security.Digest([]byte("removed"))
+	inaccessibleHash := security.Digest([]byte("inaccessible"))
+	readable := map[[32]byte]struct{}{readableHash: {}}
+	removed := map[[32]byte]struct{}{removedHash: {}}
+	if !repositoryHashesAuthorized(
+		[][32]byte{readableHash, removedHash}, readable, removed) {
+		t.Fatal("exact removed repository evidence was rejected")
+	}
+	if repositoryHashesAuthorized(
+		[][32]byte{readableHash, inaccessibleHash}, readable, removed) {
+		t.Fatal("unproven repository removal was authorized")
+	}
+	if repositoryHashesAuthorized(
+		[][32]byte{removedHash}, readable, nil) {
+		t.Fatal("repository removal bypassed normal view reads")
+	}
+}
+
+func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
+	t *testing.T,
+) {
+	t.Parallel()
+	hasher, err := security.NewHasher(bytes.Repeat([]byte{1}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountID := uuid.MustParse("01900000-0000-7000-8000-000000000001")
+	owner := &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
+		OwnerId: &deckv1.Owner_AccountId{AccountId: &deckv1.UuidV7{
+			Value: accountID.String(),
+		}},
+	}
+	service := &View{dependencies: Dependencies{
+		Repositories: deniedRepositories{},
+		Hasher:       hasher,
+	}.withDefaults()}
+	authorize := service.viewDefinitionAuthorizer(
+		context.Background(), contracts.Viewer{AccountID: accountID}, false)
+	err = authorize(database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED,
+	})
+	if err != nil {
+		t.Fatalf("disconnected view definition error = %v", err)
+	}
+	repositoryHash := hasher.Sum(
+		"view-repository", "secret\x00project")
+	err = authorize(database.ViewAuthorization{
+		Owner:              owner,
+		ConnectionState:    deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+		RepositoryHashes:   [][32]byte{repositoryHash},
+		HasRepositoryIndex: true,
+	})
+	if !errors.Is(err, database.ErrViewNotVisible) {
+		t.Fatalf("connected view authorization error = %v", err)
+	}
+	if connect.CodeOf(mapAuthorizedViewError(err)) != connect.CodePermissionDenied {
+		t.Fatalf("mapped connected view authorization error = %v", err)
+	}
+	err = authorize(database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+	})
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("unindexed connected view error = %v", err)
+	}
+	manage := service.viewDefinitionAuthorizer(
+		context.Background(), contracts.Viewer{AccountID: accountID}, true)
+	err = manage(database.ViewAuthorization{
+		Owner:              owner,
+		ConnectionState:    deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+		RepositoryHashes:   [][32]byte{repositoryHash},
+		HasRepositoryIndex: true,
+	})
+	if !errors.Is(err, database.ErrViewNotVisible) {
+		t.Fatalf("view manager bypassed repository authorization: %v", err)
+	}
+}
+
+func TestDisconnectedOrganizationViewDefinitionIsManagerOnly(t *testing.T) {
+	t.Parallel()
+	organizationID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
+	owner := &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		OwnerId: &deckv1.Owner_OrganizationId{
+			OrganizationId: &deckv1.UuidV7{Value: organizationID.String()},
+		},
+	}
+	service := &View{dependencies: Dependencies{}.withDefaults()}
+	authorization := database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED,
+	}
+	member := contracts.Viewer{
+		Memberships: map[uuid.UUID]contracts.OrganizationRole{
+			organizationID: contracts.OrganizationRoleMember,
+		},
+	}
+	err := service.viewDefinitionAuthorizer(
+		context.Background(), member, false,
+	)(authorization)
+	if !errors.Is(err, database.ErrViewNotVisible) {
+		t.Fatalf("organization member authorization error = %v", err)
+	}
+	manager := contracts.Viewer{
+		Memberships: map[uuid.UUID]contracts.OrganizationRole{
+			organizationID: contracts.OrganizationRoleAdmin,
+		},
+	}
+	err = service.viewDefinitionAuthorizer(
+		context.Background(), manager, false,
+	)(authorization)
+	if err != nil {
+		t.Fatalf("organization manager authorization error = %v", err)
+	}
+}
+
+func TestConnectedViewWithoutRepositoryQualifiersRequiresProviderCredentials(
+	t *testing.T,
+) {
+	t.Parallel()
+	accountID := uuid.MustParse("01900000-0000-7000-8000-000000000001")
+	organizationID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
+	service := &View{dependencies: Dependencies{
+		Repositories: reauthenticationRepositories{},
+	}.withDefaults()}
+	authorize := service.viewDefinitionAuthorizer(
+		context.Background(),
+		contracts.Viewer{
+			AccountID: accountID,
+			Memberships: map[uuid.UUID]contracts.OrganizationRole{
+				organizationID: contracts.OrganizationRoleMember,
+			},
+		},
+		false,
+	)
+	err := authorize(database.ViewAuthorization{
+		Owner: &deckv1.Owner{
+			Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+			OwnerId: &deckv1.Owner_OrganizationId{
+				OrganizationId: &deckv1.UuidV7{Value: organizationID.String()},
+			},
+		},
+		ConnectionState:    deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+		HasRepositoryIndex: true,
+	})
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("connected zero-repository view authorization error = %v", err)
+	}
+	manage := service.viewDefinitionAuthorizer(
+		context.Background(),
+		contracts.Viewer{
+			AccountID: accountID,
+			Memberships: map[uuid.UUID]contracts.OrganizationRole{
+				organizationID: contracts.OrganizationRoleOwner,
+			},
+		},
+		true,
+	)
+	err = manage(database.ViewAuthorization{
+		Owner: &deckv1.Owner{
+			Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+			OwnerId: &deckv1.Owner_OrganizationId{
+				OrganizationId: &deckv1.UuidV7{Value: organizationID.String()},
+			},
+		},
+		ConnectionState:    deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+		HasRepositoryIndex: true,
+	})
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("view manager without credentials authorization error = %v", err)
+	}
+}
+
 func TestRepositoryAuthorizationDefaultsToDeny(t *testing.T) {
 	t.Parallel()
 	dependencies := Dependencies{}.withDefaults()
 	allowed, err := dependencies.Repositories.CanReadRepository(
-		context.Background(), contracts.Viewer{}, "secret", "project")
+		context.Background(), contracts.Viewer{}, nil, "secret", "project")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if allowed {
 		t.Fatal("missing repository authorizer failed open")
+	}
+}
+
+func TestOwnerDeletionReplayKeyScopesCallerAndOwner(t *testing.T) {
+	t.Parallel()
+	hasher, err := security.NewHasher(bytes.Repeat([]byte{1}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &View{dependencies: Dependencies{Hasher: hasher}.withDefaults()}
+	ownerID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
+	requested := uuid.MustParse("01900000-0000-7000-8000-000000000004")
+	first := service.ownerDeletionReplayKey(
+		"subject-1", deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		ownerID, requested)
+	replay := service.ownerDeletionReplayKey(
+		"subject-1", deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		ownerID, requested)
+	otherCaller := service.ownerDeletionReplayKey(
+		"subject-2", deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+		ownerID, requested)
+	otherOwner := service.ownerDeletionReplayKey(
+		"subject-1", deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
+		ownerID, requested)
+	if first != replay || first == otherCaller || first == otherOwner {
+		t.Fatalf("scoped deletion keys = %s %s %s %s",
+			first, replay, otherCaller, otherOwner)
+	}
+	if first.Version() != 7 || first.Variant() != uuid.RFC4122 {
+		t.Fatalf("scoped deletion key is not UUID v7: %s", first)
 	}
 }
 
