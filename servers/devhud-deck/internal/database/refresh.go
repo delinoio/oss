@@ -9,6 +9,7 @@ import (
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/database/dbgen"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -94,14 +95,87 @@ func (store *Store) WithRefreshLock(
 	return nil
 }
 
+// RefreshPersistence binds every derived refresh write to the transaction that
+// holds the view revision fence.
+type RefreshPersistence struct {
+	store       *Store
+	transaction pgx.Tx
+	queries     *dbgen.Queries
+}
+
+func (store *Store) CheckViewRevision(
+	ctx context.Context,
+	viewID uuid.UUID,
+	expectedRevision uint64,
+) error {
+	var revision int64
+	err := store.pool.QueryRow(
+		ctx, "SELECT revision FROM deck_views WHERE view_id = $1", viewID,
+	).Scan(&revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return errors.New("deck database: view revision lookup failed")
+	}
+	if revision < 1 || uint64(revision) != expectedRevision {
+		return &StaleError{ResourceID: viewID, Revision: uint64(revision)}
+	}
+	return nil
+}
+
+func (persistence *RefreshPersistence) ReplaceSnapshots(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	snapshots []*deckv1.PullRequestResult,
+	refreshedAt time.Time,
+) (bool, error) {
+	return persistence.store.replaceSnapshots(
+		ctx, persistence.queries, viewID, viewerHash, snapshots, refreshedAt)
+}
+
+func (persistence *RefreshPersistence) ActiveNotificationPreferences(
+	ctx context.Context,
+	accountID uuid.UUID,
+	viewID uuid.UUID,
+	now time.Time,
+) ([]*deckv1.ViewNotificationPreference, error) {
+	return persistence.store.activeNotificationPreferences(
+		ctx, persistence.transaction, accountID, viewID, now)
+}
+
+func (persistence *RefreshPersistence) CreateNotificationEvents(
+	ctx context.Context,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	events []NotificationEventWrite,
+	now time.Time,
+) error {
+	return persistence.store.createNotificationEvents(
+		ctx, persistence.transaction, viewID, viewerHash, events, now)
+}
+
+func (persistence *RefreshPersistence) UpdateWidgetSnapshots(
+	ctx context.Context,
+	accountID uuid.UUID,
+	viewID uuid.UUID,
+	snapshots []*deckv1.PullRequestResult,
+	truncated bool,
+	refreshedAt time.Time,
+) error {
+	return persistence.store.updateWidgetSnapshots(
+		ctx, persistence.transaction, accountID, viewID,
+		snapshots, truncated, refreshedAt)
+}
+
 // WithViewRevisionLock fences refresh persistence against concurrent view
-// updates. The no-key-update lock remains compatible with snapshot foreign-key
-// checks performed by the callback on separate pooled connections.
+// updates and commits all callback writes atomically with the revision check.
 func (store *Store) WithViewRevisionLock(
 	ctx context.Context,
 	viewID uuid.UUID,
 	expectedRevision uint64,
-	callback func() error,
+	callback func(*RefreshPersistence) error,
 ) error {
 	if store == nil || store.pool == nil || callback == nil {
 		return errors.New("deck database: view revision lock unavailable")
@@ -127,7 +201,12 @@ func (store *Store) WithViewRevisionLock(
 	if revision < 1 || uint64(revision) != expectedRevision {
 		return &StaleError{ResourceID: viewID, Revision: uint64(revision)}
 	}
-	if err := callback(); err != nil {
+	persistence := &RefreshPersistence{
+		store:       store,
+		transaction: transaction,
+		queries:     store.queries.WithTx(transaction),
+	}
+	if err := callback(persistence); err != nil {
 		return err
 	}
 	if err := transaction.Commit(ctx); err != nil {

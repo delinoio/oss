@@ -940,55 +940,72 @@ func (store *Store) ReplaceSnapshots(
 	snapshots []*deckv1.PullRequestResult,
 	refreshedAt time.Time,
 ) (bool, error) {
+	var truncated bool
+	err := store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
+		var replaceErr error
+		truncated, replaceErr = store.replaceSnapshots(
+			ctx, queries, viewID, viewerHash, snapshots, refreshedAt)
+		return replaceErr
+	})
+	return truncated, err
+}
+
+func (store *Store) replaceSnapshots(
+	ctx context.Context,
+	queries *dbgen.Queries,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	snapshots []*deckv1.PullRequestResult,
+	refreshedAt time.Time,
+) (bool, error) {
 	truncated := len(snapshots) > 500
 	if truncated {
 		snapshots = snapshots[:500]
 	}
-	return truncated, store.withinTransaction(ctx, func(queries *dbgen.Queries) error {
-		if err := queries.DeleteViewSnapshots(ctx, dbgen.DeleteViewSnapshotsParams{
+	if err := queries.DeleteViewSnapshots(ctx, dbgen.DeleteViewSnapshotsParams{
+		ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
+	}); err != nil {
+		return truncated, err
+	}
+	if err := queries.DeleteViewSnapshotState(ctx, dbgen.DeleteViewSnapshotStateParams{
+		ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
+	}); err != nil {
+		return truncated, err
+	}
+	for index, snapshot := range snapshots {
+		repository := snapshot.GetRepository()
+		if repository == nil || repository.GetOwner() == "" ||
+			repository.GetName() == "" || snapshot.GetNumber() == 0 ||
+			snapshot.GetNumber() > math.MaxInt64 {
+			return truncated, errors.New("deck database: snapshot repository is required")
+		}
+		repositoryHash := store.SnapshotRepositoryHash(repository)
+		repositoryCiphertext, err := store.sealProto(
+			"pr-snapshot-repository", repository)
+		if err != nil {
+			return truncated, err
+		}
+		ciphertext, err := store.sealProto("pr-snapshot", snapshot)
+		if err != nil {
+			return truncated, err
+		}
+		if err := queries.InsertViewSnapshot(ctx, dbgen.InsertViewSnapshotParams{
 			ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
+			Ordinal: int32(index), RepositoryHash: repositoryHash[:],
+			PullRequestNumber:    int64(snapshot.GetNumber()),
+			RepositoryCiphertext: repositoryCiphertext,
+			SnapshotCiphertext:   ciphertext,
 		}); err != nil {
-			return err
+			return truncated, err
 		}
-		if err := queries.DeleteViewSnapshotState(ctx, dbgen.DeleteViewSnapshotStateParams{
-			ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
-		}); err != nil {
-			return err
-		}
-		for index, snapshot := range snapshots {
-			repository := snapshot.GetRepository()
-			if repository == nil || repository.GetOwner() == "" ||
-				repository.GetName() == "" || snapshot.GetNumber() == 0 ||
-				snapshot.GetNumber() > math.MaxInt64 {
-				return errors.New("deck database: snapshot repository is required")
-			}
-			repositoryHash := store.SnapshotRepositoryHash(repository)
-			repositoryCiphertext, err := store.sealProto(
-				"pr-snapshot-repository", repository)
-			if err != nil {
-				return err
-			}
-			ciphertext, err := store.sealProto("pr-snapshot", snapshot)
-			if err != nil {
-				return err
-			}
-			if err := queries.InsertViewSnapshot(ctx, dbgen.InsertViewSnapshotParams{
-				ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
-				Ordinal: int32(index), RepositoryHash: repositoryHash[:],
-				PullRequestNumber:    int64(snapshot.GetNumber()),
-				RepositoryCiphertext: repositoryCiphertext,
-				SnapshotCiphertext:   ciphertext,
-			}); err != nil {
-				return err
-			}
-		}
-		return queries.UpdateViewSnapshotState(ctx, dbgen.UpdateViewSnapshotStateParams{
-			SnapshotTruncated:   truncated,
-			SnapshotRefreshedAt: pgTime(refreshedAt),
-			ViewID:              pgUUID(viewID),
-			ViewerHash:          viewerHash[:],
-		})
+	}
+	err := queries.UpdateViewSnapshotState(ctx, dbgen.UpdateViewSnapshotStateParams{
+		SnapshotTruncated:   truncated,
+		SnapshotRefreshedAt: pgTime(refreshedAt),
+		ViewID:              pgUUID(viewID),
+		ViewerHash:          viewerHash[:],
 	})
+	return truncated, err
 }
 
 func (store *Store) UpdateSnapshot(

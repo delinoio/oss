@@ -423,19 +423,27 @@ func (service *View) advanceProviderRefresh(
 	dispatched := false
 	var dispatchOnce sync.Once
 	var dispatchErr error
-	providerCtx := deckgithub.WithDispatchObserver(ctx, func() error {
-		dispatchOnce.Do(func() {
-			dispatchErr = service.dependencies.Store.MarkRefreshDispatched(
-				ctx, subjectHash, requestID,
-				service.dependencies.Clock.Now().UTC())
-			if dispatchErr == nil {
-				dispatched = true
-			}
+	// Repository authorization may contact GitHub, so reject an already-stale
+	// attempt before using the dispatch-observed provider context.
+	providerErr := service.dependencies.Store.CheckViewRevision(
+		ctx, refreshViewID(view), attempt.ViewRevision)
+	providerCtx := ctx
+	var providerView *deckv1.View
+	if providerErr == nil {
+		providerCtx = deckgithub.WithDispatchObserver(ctx, func() error {
+			dispatchOnce.Do(func() {
+				dispatchErr = service.dependencies.Store.MarkRefreshDispatched(
+					ctx, subjectHash, requestID,
+					service.dependencies.Clock.Now().UTC())
+				if dispatchErr == nil {
+					dispatched = true
+				}
+			})
+			return dispatchErr
 		})
-		return dispatchErr
-	})
-	providerView, providerErr := service.getRefreshProviderAuthorizedView(
-		providerCtx, viewer, refreshViewID(view))
+		providerView, providerErr = service.getRefreshProviderAuthorizedView(
+			providerCtx, viewer, refreshViewID(view))
+	}
 	if providerErr == nil &&
 		providerView.GetRevision().GetValue() != attempt.ViewRevision {
 		providerErr = &database.StaleError{
@@ -463,16 +471,17 @@ func (service *View) advanceProviderRefresh(
 	resultCount := 0
 	if providerErr == nil {
 		providerErr = service.dependencies.Store.WithViewRevisionLock(
-			ctx, refreshViewID(view), view.GetRevision().GetValue(), func() error {
+			ctx, refreshViewID(view), view.GetRevision().GetValue(),
+			func(persistence *database.RefreshPersistence) error {
 				storeTruncated, storeErr :=
-					service.dependencies.Store.ReplaceSnapshots(
+					persistence.ReplaceSnapshots(
 						ctx, refreshViewID(view), viewerHash, snapshots, now)
 				if storeErr != nil {
 					return storeErr
 				}
 				truncated = truncated || storeTruncated
 				preferences, preferenceErr :=
-					service.dependencies.Store.ActiveNotificationPreferences(
+					persistence.ActiveNotificationPreferences(
 						ctx, viewer.AccountID, refreshViewID(view), now)
 				if preferenceErr != nil {
 					return preferenceErr
@@ -480,11 +489,11 @@ func (service *View) advanceProviderRefresh(
 				writes := notificationWrites(
 					previous, notificationSnapshots,
 					preferences, viewer.GitHubLogin)
-				if err := service.dependencies.Store.CreateNotificationEvents(
+				if err := persistence.CreateNotificationEvents(
 					ctx, refreshViewID(view), viewerHash, writes, now); err != nil {
 					return err
 				}
-				return service.dependencies.Store.UpdateWidgetSnapshots(
+				return persistence.UpdateWidgetSnapshots(
 					ctx, viewer.AccountID, refreshViewID(view),
 					snapshots, truncated, now)
 			})

@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -33,6 +34,11 @@ type NotificationEventRecord struct {
 	ExpiresAt  time.Time
 }
 
+type refreshSQLExecutor interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
 func (store *Store) CreateNotificationEvents(
 	ctx context.Context,
 	viewID uuid.UUID,
@@ -40,7 +46,19 @@ func (store *Store) CreateNotificationEvents(
 	events []NotificationEventWrite,
 	now time.Time,
 ) error {
-	if err := store.PruneNotificationHistory(ctx, now); err != nil {
+	return store.createNotificationEvents(
+		ctx, store.pool, viewID, viewerHash, events, now)
+}
+
+func (store *Store) createNotificationEvents(
+	ctx context.Context,
+	executor refreshSQLExecutor,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+	events []NotificationEventWrite,
+	now time.Time,
+) error {
+	if err := store.pruneNotificationHistory(ctx, executor, now); err != nil {
 		return err
 	}
 	for _, event := range events {
@@ -67,7 +85,7 @@ func (store *Store) CreateNotificationEvents(
 			return err
 		}
 		repositoryHash := store.SnapshotRepositoryHash(repository)
-		if _, err := store.pool.Exec(ctx, `
+		if _, err := executor.Exec(ctx, `
 			INSERT INTO deck_notification_events (
 				event_id, view_id, opaque_event_id, transition,
 				created_at, expires_at, viewer_hash, repository_hash,
@@ -87,7 +105,15 @@ func (store *Store) PruneNotificationHistory(
 	ctx context.Context,
 	now time.Time,
 ) error {
-	if _, err := store.pool.Exec(ctx,
+	return store.pruneNotificationHistory(ctx, store.pool, now)
+}
+
+func (store *Store) pruneNotificationHistory(
+	ctx context.Context,
+	executor refreshSQLExecutor,
+	now time.Time,
+) error {
+	if _, err := executor.Exec(ctx,
 		"DELETE FROM deck_notification_events WHERE expires_at <= $1",
 		now.UTC()); err != nil {
 		return errors.New("deck database: notification retention failed")
@@ -174,7 +200,18 @@ func (store *Store) ActiveNotificationPreferences(
 	viewID uuid.UUID,
 	now time.Time,
 ) ([]*deckv1.ViewNotificationPreference, error) {
-	rows, err := store.pool.Query(ctx, `
+	return store.activeNotificationPreferences(
+		ctx, store.pool, accountID, viewID, now)
+}
+
+func (store *Store) activeNotificationPreferences(
+	ctx context.Context,
+	executor refreshSQLExecutor,
+	accountID uuid.UUID,
+	viewID uuid.UUID,
+	now time.Time,
+) ([]*deckv1.ViewNotificationPreference, error) {
+	rows, err := executor.Query(ctx, `
 		SELECT preference.preference_ciphertext
 		FROM deck_view_notification_preferences AS preference
 		JOIN deck_device_registrations AS registration
@@ -217,7 +254,20 @@ func (store *Store) UpdateWidgetSnapshots(
 	truncated bool,
 	refreshedAt time.Time,
 ) error {
-	rows, err := store.pool.Query(ctx, `
+	return store.updateWidgetSnapshots(
+		ctx, store.pool, accountID, viewID, snapshots, truncated, refreshedAt)
+}
+
+func (store *Store) updateWidgetSnapshots(
+	ctx context.Context,
+	executor refreshSQLExecutor,
+	accountID uuid.UUID,
+	viewID uuid.UUID,
+	snapshots []*deckv1.PullRequestResult,
+	truncated bool,
+	refreshedAt time.Time,
+) error {
+	rows, err := executor.Query(ctx, `
 		SELECT registration_id, revision, widgets_ciphertext
 		FROM deck_device_registrations
 		WHERE account_id = $1 AND lease_expires_at > $2
@@ -285,7 +335,7 @@ func (store *Store) UpdateWidgetSnapshots(
 		if err != nil {
 			return err
 		}
-		result, err := store.pool.Exec(ctx, `
+		result, err := executor.Exec(ctx, `
 			UPDATE deck_device_registrations
 			SET widgets_ciphertext = $1, revision = revision + 1,
 			    updated_at = $2

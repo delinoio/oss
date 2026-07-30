@@ -52,6 +52,7 @@ type Querier interface {
 	DeleteViewSnapshotStatesByViewer(ctx context.Context, viewerHash []byte) error
 	DeleteViewSnapshots(ctx context.Context, arg DeleteViewSnapshotsParams) error
 	DeleteViewSnapshotsByViewer(ctx context.Context, viewerHash []byte) error
+	DeleteViewViewerActivityByViewer(ctx context.Context, viewerHash []byte) error
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (DeckConnection, error)
 	EnsureGitHubAuthorizationState(ctx context.Context, providerIdentityHash []byte) error
 	EnsureGitHubInstallationState(ctx context.Context, providerIdentityHash []byte) error

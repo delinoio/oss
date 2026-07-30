@@ -164,6 +164,16 @@ func (q *Queries) DeleteViewSnapshotsByViewer(ctx context.Context, viewerHash []
 	return err
 }
 
+const deleteViewViewerActivityByViewer = `-- name: DeleteViewViewerActivityByViewer :exec
+DELETE FROM deck_view_viewer_activity
+WHERE viewer_hash = $1
+`
+
+func (q *Queries) DeleteViewViewerActivityByViewer(ctx context.Context, viewerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteViewViewerActivityByViewer, viewerHash)
+	return err
+}
+
 const ensureOwnerLock = `-- name: EnsureOwnerLock :exec
 INSERT INTO deck_owner_locks (owner_hash)
 VALUES ($1)

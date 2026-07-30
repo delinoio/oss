@@ -92,6 +92,53 @@ describe("Deck widget refresh", () => {
     expect(dispatches).toBe(0);
   });
 
+  it("clears a preflight attempt when cancellation wins the store write", async () => {
+    const controller = new AbortController();
+    const attempts = new Map<string, DeckRefreshAttempt>();
+    let markSetStarted: (() => void) | undefined;
+    let releaseSet: (() => void) | undefined;
+    const setStarted = new Promise<void>((resolve) => {
+      markSetStarted = resolve;
+    });
+    const store: DeckRefreshAttemptStore = {
+      get: (viewId) => attempts.get(viewId),
+      set: async (viewId, attempt) => {
+        attempts.set(viewId, attempt);
+        markSetStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseSet = resolve;
+        });
+      },
+      delete: (viewId) => {
+        attempts.delete(viewId);
+      },
+    };
+    let dispatches = 0;
+    const refresh = new DeckWidgetRefreshController(
+      {
+        isAmbiguousRefreshError: () => false,
+        getPreflight: async () => ({
+          priceUsdMicros: 50n,
+          token: "widget-token",
+        }),
+        refresh: async () => {
+          dispatches += 1;
+        },
+      },
+      () => "widget-request",
+      store,
+    );
+
+    const work = refresh.refresh("view", controller.signal);
+    await setStarted;
+    controller.abort();
+    releaseSet?.();
+    await work;
+
+    expect(dispatches).toBe(0);
+    expect(attempts.has("view")).toBe(false);
+  });
+
   it("retries an ambiguous failure with the same identity and token", async () => {
     const preflights: DeckRefreshIdentity[] = [];
     const refreshes: Array<

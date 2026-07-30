@@ -341,6 +341,7 @@ export class DeckWidgetRefreshController {
       pending = { request, preflightToken: preflight.token };
       await this.#attempts.set(viewId, pending);
       if (signal.aborted) {
+        await this.#attempts.delete(viewId);
         return;
       }
     }

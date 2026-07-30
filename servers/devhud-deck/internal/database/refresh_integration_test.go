@@ -261,7 +261,8 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 	}
 	callbackCalled := false
 	err = store.WithViewRevisionLock(
-		ctx, viewID, view.GetRevision().GetValue()+1, func() error {
+		ctx, viewID, view.GetRevision().GetValue()+1,
+		func(*RefreshPersistence) error {
 			callbackCalled = true
 			return nil
 		})
@@ -269,6 +270,61 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 	if !errors.As(err, &stale) || callbackCalled {
 		t.Fatalf("stale view revision fence = called=%v err=%v",
 			callbackCalled, err)
+	}
+	if err := store.CheckViewRevision(
+		ctx, viewID, view.GetRevision().GetValue()); err != nil {
+		t.Fatalf("current view revision check = %v", err)
+	}
+	err = store.CheckViewRevision(
+		ctx, viewID, view.GetRevision().GetValue()+1)
+	if !errors.As(err, &stale) {
+		t.Fatalf("stale pre-provider revision check = %v", err)
+	}
+
+	baselineSnapshots := []*deckv1.PullRequestResult{{
+		Repository: &deckv1.RepositoryReference{Owner: "acme", Name: "baseline"},
+		Number:     7,
+		Title:      "baseline",
+	}}
+	if _, err := store.ReplaceSnapshots(
+		ctx, viewID, viewerHash, baselineSnapshots, now); err != nil {
+		t.Fatal(err)
+	}
+	replacementSnapshots := []*deckv1.PullRequestResult{{
+		Repository: &deckv1.RepositoryReference{Owner: "acme", Name: "replacement"},
+		Number:     8,
+		Title:      "replacement",
+	}}
+	err = store.WithViewRevisionLock(
+		ctx, viewID, view.GetRevision().GetValue(),
+		func(persistence *RefreshPersistence) error {
+			if _, replaceErr := persistence.ReplaceSnapshots(
+				ctx, viewID, viewerHash, replacementSnapshots,
+				now.Add(time.Minute)); replaceErr != nil {
+				return replaceErr
+			}
+			return persistence.CreateNotificationEvents(
+				ctx, viewID, viewerHash,
+				[]NotificationEventWrite{{
+					Transition: deckv1.NotificationTransition_NOTIFICATION_TRANSITION_UNSPECIFIED,
+					Snapshot:   replacementSnapshots[0],
+				}},
+				now.Add(time.Minute),
+			)
+		})
+	if err == nil {
+		t.Fatal("invalid notification transition committed refresh snapshots")
+	}
+	retainedSnapshots, _, retainedAt, err :=
+		store.ListAllSnapshots(ctx, viewID, viewerHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(retainedSnapshots) != 1 ||
+		retainedSnapshots[0].GetNumber() != baselineSnapshots[0].GetNumber() ||
+		!retainedAt.Equal(now) {
+		t.Fatalf("failed refresh persistence was not atomic: snapshots=%#v at=%v",
+			retainedSnapshots, retainedAt)
 	}
 
 	if err := store.CreateNotificationEvents(
