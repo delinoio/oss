@@ -606,13 +606,33 @@ func (service *Submission) ensureStorageAuthorization(
 					actor.accountID) != nil {
 				return storageAuthorizationFailed()
 			}
-			_, createErr = queries.CompleteStorageAuthorizationAttempt(
+			completed, createErr := queries.CompleteStorageAuthorizationAttempt(
 				ctx, dbgen.CompleteStorageAuthorizationAttemptParams{
 					AuthorizationID: toPGUUID(authorization.ID),
 					AuthorizationRevision: pgtype.Int8{
 						Int64: authorization.Revision, Valid: true,
 					},
 					SubmissionID: toPGUUID(submissionID),
+				})
+			if createErr != nil {
+				return createErr
+			}
+			_, createErr = queries.CreateStorageAuthorizationBinding(
+				ctx, dbgen.CreateStorageAuthorizationBindingParams{
+					AuthorizationID:     toPGUUID(authorization.ID),
+					SubmissionID:        toPGUUID(submissionID),
+					MappingRevision:     completed.MappingRevision,
+					AuthorizerAccountID: toPGUUID(actor.accountID),
+					OwnerKind:           scope.kind,
+					OwnerID:             toPGUUID(scope.id),
+					OrganizationID:      toPGUUID(organizationID),
+					TeamID:              toPGUUID(teamID),
+					ServiceIdentityID: toPGUUID(
+						authorization.ServiceIdentityID),
+					MeterID:               toPGUUID(authorization.MeterID),
+					MaximumUnits:          authorization.MaximumUnits,
+					Status:                authorization.Status,
+					AuthorizationRevision: authorization.Revision,
 				})
 			return createErr
 		})

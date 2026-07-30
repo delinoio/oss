@@ -742,6 +742,12 @@ func (service *Submission) ListSubmissions(
 				RemovedAt:   timestamp(asset.RemovedAt),
 			})
 		}
+		summary.StorageBillingRecovery, err =
+			storageRecoveryForSubmission(
+				ctx, service.dependencies.Store.Queries(), row.ID)
+		if err != nil {
+			return nil, err
+		}
 		response.Submissions = append(response.Submissions, summary)
 	}
 	response.Page.NextCursor = cursor(last, hasMore)
@@ -836,6 +842,13 @@ func (service *Submission) DeleteImage(
 				}
 				return lockErr
 			}
+			if _, lockErr = queries.CloseStorageRetentionForAsset(
+				ctx, dbgen.CloseStorageRetentionForAssetParams{
+					Cutoff:  removed.RemovedAt,
+					AssetID: removed.ID,
+				}); lockErr != nil {
+				return lockErr
+			}
 			if lockErr = enqueueAssetObjectDeletions(
 				ctx, queries, removed); lockErr != nil {
 				return lockErr
@@ -847,6 +860,25 @@ func (service *Submission) DeleteImage(
 				})
 			if lockErr != nil {
 				return lockErr
+			}
+			if _, lockErr = queries.MarkSubmissionStorageClosurePending(
+				ctx, dbgen.MarkSubmissionStorageClosurePendingParams{
+					Cutoff:       removed.RemovedAt,
+					SubmissionID: toPGUUID(submissionID),
+				}); lockErr != nil {
+				return lockErr
+			}
+			if updatedRecord.VerifiedEncodedBytes == 0 {
+				resolved, resolveErr := queries.ResolveStorageRecovery(
+					ctx, dbgen.ResolveStorageRecoveryParams{
+						RecoveredAt:        removed.RemovedAt,
+						TargetSubmissionID: toPGUUID(submissionID),
+					})
+				if resolveErr == nil {
+					updatedRecord = resolved
+				} else if !errors.Is(resolveErr, pgx.ErrNoRows) {
+					return resolveErr
+				}
 			}
 			updated, lockErr := loadSubmissionWithRecord(ctx, queries, updatedRecord)
 			if lockErr != nil {
@@ -968,6 +1000,17 @@ func (service *Submission) DeleteSubmissionAssets(
 					return lockErr
 				}
 			}
+			cutoff := service.dependencies.Clock.Now().UTC()
+			if len(removed) > 0 && removed[0].RemovedAt.Valid {
+				cutoff = removed[0].RemovedAt.Time
+			}
+			if _, lockErr = queries.CloseStorageRetentionForSubmission(
+				ctx, dbgen.CloseStorageRetentionForSubmissionParams{
+					Cutoff:       pgTimestamp(cutoff),
+					SubmissionID: toPGUUID(submissionID),
+				}); lockErr != nil {
+				return lockErr
+			}
 			updated, lockErr := queries.MarkSubmissionAssetsDeleted(
 				ctx, dbgen.MarkSubmissionAssetsDeletedParams{
 					ID:               toPGUUID(submissionID),
@@ -975,6 +1018,23 @@ func (service *Submission) DeleteSubmissionAssets(
 				})
 			if lockErr != nil {
 				return lockErr
+			}
+			if _, lockErr = queries.MarkSubmissionStorageClosurePending(
+				ctx, dbgen.MarkSubmissionStorageClosurePendingParams{
+					Cutoff:       pgTimestamp(cutoff),
+					SubmissionID: toPGUUID(submissionID),
+				}); lockErr != nil {
+				return lockErr
+			}
+			resolved, resolveErr := queries.ResolveStorageRecovery(
+				ctx, dbgen.ResolveStorageRecoveryParams{
+					RecoveredAt:        pgTimestamp(cutoff),
+					TargetSubmissionID: toPGUUID(submissionID),
+				})
+			if resolveErr == nil {
+				updated = resolved
+			} else if !errors.Is(resolveErr, pgx.ErrNoRows) {
+				return resolveErr
 			}
 			result, lockErr := loadSubmissionWithRecord(ctx, queries, updated)
 			if lockErr != nil {
@@ -1210,6 +1270,15 @@ func (service *Submission) PromoteSubmittedAssets(
 					ctx, dbgen.PromoteAssetParams{
 						PublicID:     pgtype.Text{String: publicID, Valid: true},
 						ID:           toPGUUID(assetID),
+						SubmissionID: toPGUUID(submissionID),
+					}); promoteErr != nil {
+					return promoteErr
+				}
+				if _, promoteErr := queries.BeginStorageRetention(
+					ctx, dbgen.BeginStorageRetentionParams{
+						StartsAt: pgTimestamp(
+							service.dependencies.Clock.Now().UTC()),
+						AssetID:      toPGUUID(assetID),
 						SubmissionID: toPGUUID(submissionID),
 					}); promoteErr != nil {
 					return promoteErr
@@ -1476,6 +1545,13 @@ func (service *Submission) DeleteIssueAssets(
 				if removeErr != nil {
 					return removeErr
 				}
+				if _, removeErr = queries.CloseStorageRetentionForAsset(
+					ctx, dbgen.CloseStorageRetentionForAssetParams{
+						Cutoff:  value.RemovedAt,
+						AssetID: value.ID,
+					}); removeErr != nil {
+					return removeErr
+				}
 				if removeErr = enqueueAssetObjectDeletions(
 					ctx, queries, value); removeErr != nil {
 					return removeErr
@@ -1492,6 +1568,23 @@ func (service *Submission) DeleteIssueAssets(
 						ID:               submission.ID,
 						ExpectedRevision: submission.Revision,
 					}); refreshErr != nil {
+					return refreshErr
+				}
+				cutoff := service.dependencies.Clock.Now().UTC()
+				for _, asset := range removed {
+					if asset.SubmissionID == submission.ID &&
+						asset.RemovedAt.Valid {
+						cutoff = asset.RemovedAt.Time
+						break
+					}
+				}
+				if _, refreshErr := queries.
+					MarkSubmissionStorageClosurePending(
+						ctx,
+						dbgen.MarkSubmissionStorageClosurePendingParams{
+							Cutoff:       pgTimestamp(cutoff),
+							SubmissionID: submission.ID,
+						}); refreshErr != nil {
 					return refreshErr
 				}
 			}
@@ -1535,13 +1628,37 @@ func (service *Submission) DeleteBillingExpiredAssets(
 					return removeErr
 				}
 			}
+			cutoff := service.dependencies.Clock.Now().UTC()
+			if len(removed) > 0 && removed[0].RemovedAt.Valid {
+				cutoff = removed[0].RemovedAt.Time
+			}
+			if _, removeErr = queries.CloseStorageRetentionForSubmission(
+				ctx, dbgen.CloseStorageRetentionForSubmissionParams{
+					Cutoff:       pgTimestamp(cutoff),
+					SubmissionID: toPGUUID(submissionID),
+				}); removeErr != nil {
+				return removeErr
+			}
 			if len(removed) == 0 {
-				return nil
+				_, removeErr = queries.MarkSubmissionStorageClosurePending(
+					ctx, dbgen.MarkSubmissionStorageClosurePendingParams{
+						Cutoff:       pgTimestamp(cutoff),
+						SubmissionID: toPGUUID(submissionID),
+					})
+				return removeErr
 			}
 			_, lockErr = queries.MarkSubmissionAssetsDeleted(
 				ctx, dbgen.MarkSubmissionAssetsDeletedParams{
 					ID:               toPGUUID(submissionID),
 					ExpectedRevision: locked.Revision,
+				})
+			if lockErr != nil {
+				return lockErr
+			}
+			_, lockErr = queries.MarkSubmissionStorageClosurePending(
+				ctx, dbgen.MarkSubmissionStorageClosurePendingParams{
+					Cutoff:       pgTimestamp(cutoff),
+					SubmissionID: toPGUUID(submissionID),
 				})
 			return lockErr
 		})
@@ -1835,6 +1952,17 @@ func loadSubmissionWithRecord(
 		!errors.Is(authorizationErr, pgx.ErrNoRows) {
 		return nil, authorizationErr
 	}
+	result.StorageBillingRecovery, err = storageRecoveryForSubmission(
+		ctx, queries, record.ID)
+	if err != nil {
+		return nil, err
+	}
+	if result.StorageBillingRecovery != nil {
+		result.FailureClass =
+			realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED
+		result.FailureReason =
+			realqav1.ErrorReason_ERROR_REASON_STORAGE_BILLING_GRACE
+	}
 	assets, err := queries.ListSubmissionAssets(ctx, record.ID)
 	if err != nil {
 		return nil, err
@@ -1844,6 +1972,109 @@ func loadSubmissionWithRecord(
 		result.Assets = append(result.Assets, updatedAssetProto(asset))
 	}
 	return result, nil
+}
+
+func storageRecoveryForSubmission(
+	ctx context.Context,
+	queries dbgen.Querier,
+	submissionID pgtype.UUID,
+) (*realqav1.StorageBillingRecovery, error) {
+	recovery, err := queries.GetActiveStorageRecovery(ctx, submissionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	recovery, err = queries.MarkStorageRecoveryNotified(ctx, recovery.ID)
+	if err != nil {
+		return nil, err
+	}
+	binding, err := queries.GetStorageAuthorizationBinding(
+		ctx, recovery.AuthorizationID)
+	if err != nil {
+		return nil, err
+	}
+	result := &realqav1.StorageBillingRecovery{
+		AuthorizationState: storageAuthorizationState(binding.Status),
+		Reason:             storageRecoveryReasonProto(recovery.Reason),
+		NotificationState: storageNotificationStateProto(
+			recovery.NotificationState),
+		GraceStartedAt: timestamp(recovery.GraceStartedAt),
+		GraceExpiresAt: timestamp(recovery.GraceExpiresAt),
+	}
+	switch recovery.Reason {
+	case "payment_required", "overage_required", "billing_unavailable":
+		result.Actions = []realqav1.StorageRecoveryAction{
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_PAYMENT,
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND,
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE,
+		}
+	case "authorization_revoked", "authorization_access_lost":
+		result.Actions = []realqav1.StorageRecoveryAction{
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND,
+		}
+	default:
+		result.Actions = []realqav1.StorageRecoveryAction{
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND,
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE,
+		}
+	}
+	return result, nil
+}
+
+func storageAuthorizationState(
+	value string,
+) realqav1.StorageAuthorizationState {
+	switch value {
+	case "active":
+		return realqav1.StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_ACTIVE
+	case "revoked":
+		return realqav1.StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_REVOKED
+	case "access_lost":
+		return realqav1.StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_ACCESS_LOST
+	case "resource_deleted":
+		return realqav1.StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_RESOURCE_DELETED
+	case "owner_deleted":
+		return realqav1.StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_OWNER_DELETED
+	default:
+		return realqav1.StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_UNSPECIFIED
+	}
+}
+
+func storageRecoveryReasonProto(
+	value string,
+) realqav1.StorageRecoveryReason {
+	switch value {
+	case "authorization_revoked":
+		return realqav1.StorageRecoveryReason_STORAGE_RECOVERY_REASON_AUTHORIZATION_REVOKED
+	case "authorization_access_lost":
+		return realqav1.StorageRecoveryReason_STORAGE_RECOVERY_REASON_AUTHORIZATION_ACCESS_LOST
+	case "payment_required":
+		return realqav1.StorageRecoveryReason_STORAGE_RECOVERY_REASON_PAYMENT_REQUIRED
+	case "overage_required":
+		return realqav1.StorageRecoveryReason_STORAGE_RECOVERY_REASON_OVERAGE_REQUIRED
+	case "billing_unavailable":
+		return realqav1.StorageRecoveryReason_STORAGE_RECOVERY_REASON_BILLING_UNAVAILABLE
+	case "github_disconnected":
+		return realqav1.StorageRecoveryReason_STORAGE_RECOVERY_REASON_GITHUB_DISCONNECTED
+	case "security_conflict":
+		return realqav1.StorageRecoveryReason_STORAGE_RECOVERY_REASON_SECURITY_CONFLICT
+	default:
+		return realqav1.StorageRecoveryReason_STORAGE_RECOVERY_REASON_UNSPECIFIED
+	}
+}
+
+func storageNotificationStateProto(
+	value string,
+) realqav1.StorageNotificationState {
+	if value == "pending" {
+		return realqav1.StorageNotificationState_STORAGE_NOTIFICATION_STATE_PENDING
+	}
+	if value == "notified" {
+		return realqav1.StorageNotificationState_STORAGE_NOTIFICATION_STATE_NOTIFIED
+	}
+	return realqav1.StorageNotificationState_STORAGE_NOTIFICATION_STATE_UNSPECIFIED
 }
 
 func updatedAssetProto(asset dbgen.RealqaAsset) *realqav1.ImageAsset {

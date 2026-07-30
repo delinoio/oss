@@ -13,7 +13,7 @@
   client-initiated GitHub.com pull-request service owned by project `devhud`;
   provider refresh, billing, mutation, notification delivery, and deployment
   remain unimplemented.
-- `servers/devhud-realqa`: implemented inactive Go/PostgreSQL/sqlc preset/tracker/auth/deletion, internal GitHub.com issue-provider, screenshot submission, live-transfer/initial-storage-authorization, and public-image foundation plus planned recurring storage/rebind/terminal-cleanup slices owned by project `devhud`.
+- `servers/devhud-realqa`: implemented inactive Go/PostgreSQL/sqlc preset/tracker/auth/deletion, internal GitHub.com issue-provider, screenshot submission, live-transfer/initial-storage authorization, public-image delivery, and recurring storage/rebind/grace/terminal cleanup owned by project `devhud`.
 - `servers/internal`: Repository-shared Go package boundary currently consumed by delibase; planned DevHud feature servers require explicit compatibility review before consuming provider-agnostic subsets, and no consuming project owns it.
 
 ### Server Language and Data Rules
@@ -94,8 +94,9 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
   `servers/devhud-realqa` contains the inactive preset/tracker/auth/deletion,
   internal GitHub.com provider, R2-backed image-transfer/public-delivery, and
   replay-safe online-submission foundation. Deck's billed provider refresh and
-  notification-delivery surfaces and RealQA's recurring storage, rebind, and
-  terminal-cleanup surfaces remain planned. No origin, published image,
+  notification-delivery surfaces remain planned. RealQA's recurring storage,
+  rebind, grace expiry, and terminal authorization cleanup are implemented.
+  No origin, published image,
   production secret, provider registration, catalog activation, deployment, or
   operational rollout is claimed.
 - Both services use Go, PostgreSQL, migrations, sqlc, UUID v7, Connect RPC for business mutations, redacted structured operations/audit data, and narrowly scoped HTTP callbacks/webhooks. RealQA's implemented provider HTTP surface is limited to the exact signed OAuth/App callbacks and signed GitHub lifecycle webhook path in its server contract; it does not authorize browser RPC access. DevHud calls Connect through its private native transport, so feature services must not add `http://tauri.localhost` to CORS; Deck may allow the exact HTTPS DeliDev origin only for `DeckIntegrationService`, while RealQA has no browser client. Before reusing any `servers/internal` package, complete the compatibility review required by its contract (including feature audiences and error types); keep feature business policy in its owning service.

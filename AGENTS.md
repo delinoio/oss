@@ -72,7 +72,7 @@
   Go/PostgreSQL foundation and GitHub.com connection/lifecycle/search/mutation
   provider slice plus planned billed refresh/notification contract.
 - `docs/protos-devhud-deck-api-contract.md`: Planned `devhud.deck.v1` Connect contract.
-- `docs/servers-devhud-realqa-foundation.md`: Implemented inactive RealQA Go/PostgreSQL/sqlc preset/tracker/auth/deletion, internal GitHub.com provider, R2-backed image-transfer/public-delivery, and replay-safe online submission/live-transfer/initial-storage-authorization foundation plus planned recurring storage/rebind/terminal-cleanup contract.
+- `docs/servers-devhud-realqa-foundation.md`: Implemented inactive RealQA Go/PostgreSQL/sqlc preset/tracker/auth/deletion, internal GitHub.com provider, R2-backed image-transfer/public-delivery, replay-safe online submission/live-transfer/initial-storage authorization, and recurring storage/rebind/grace/terminal-cleanup contract.
 - `docs/protos-devhud-realqa-api-contract.md`: Implemented private `devhud.realqa.v1` source and generated Connect package contract.
 ### Project Identifier Contract
 

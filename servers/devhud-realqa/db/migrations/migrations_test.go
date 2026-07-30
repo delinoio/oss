@@ -23,8 +23,8 @@ func TestEmbeddedMigrationsAreStrictlyOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ordered) != 8 {
-		t.Fatalf("migration count = %d, want 8", len(ordered))
+	if len(ordered) != 9 {
+		t.Fatalf("migration count = %d, want 9", len(ordered))
 	}
 	for index, item := range ordered {
 		if item.version != int64(index+1) {
@@ -95,14 +95,15 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		"SELECT count(*) FROM realqa_schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 8 {
-		t.Fatalf("applied migration count = %d, want 8", count)
+	if count != 9 {
+		t.Fatalf("applied migration count = %d, want 9", count)
 	}
 	for _, operation := range []string{
 		"create_submission",
 		"create_image_upload",
 		"finalize_image_upload",
 		"submit_issue",
+		"rebind_submission_storage_authorization",
 		"delete_image",
 		"delete_submission_assets",
 	} {
@@ -125,6 +126,12 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		"transfer_committed",
 		"transfer_released",
 		"storage_authorization_created",
+		"storage_daily_reserved",
+		"storage_daily_committed",
+		"storage_daily_released",
+		"storage_billing_grace_started",
+		"storage_authorization_rebound",
+		"storage_authorization_closed",
 		"issue_submission_started",
 		"issue_reconciled",
 		"submission_completed",
@@ -153,6 +160,197 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 	`, uuidv7.MustNew(), uuidv7.MustNew()); err == nil {
 		t.Fatal("connected GitHub connection accepted without encrypted credentials")
 	}
+	t.Run("recurring storage UTC concurrency and grace", func(t *testing.T) {
+		accountID := uuidv7.MustNew()
+		submissionID := uuidv7.MustNew()
+		authorizationID := uuidv7.MustNew()
+		organizationID := uuidv7.MustNew()
+		teamID := uuidv7.MustNew()
+		serviceID := uuidv7.MustNew()
+		meterID := uuidv7.MustNew()
+		if _, err = pool.Exec(ctx, `
+			INSERT INTO realqa_identities (account_id, subject_digest)
+			VALUES ($1, $2)
+		`, accountID, bytes.Repeat([]byte{3}, 32)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, `
+			INSERT INTO realqa_submissions (
+				id, owner_kind, owner_id, created_by_account_id, state,
+				idempotency_digest, payer_organization_id, payer_team_id,
+				upload_deadline, upload_expires_at, submitted_at
+			) VALUES (
+				$1, 'personal', $2, $2, 'submitted', $3, $4, $5,
+				transaction_timestamp() + interval '23 hours',
+				transaction_timestamp() + interval '24 hours',
+				transaction_timestamp()
+			)
+		`, submissionID, accountID, bytes.Repeat([]byte{4}, 32),
+			organizationID, teamID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, `
+			INSERT INTO realqa_storage_authorization_attempts (
+				submission_id, idempotency_key, request_digest,
+				service_identity_id, meter_id, maximum_units, state,
+				authorization_id, authorization_revision, mapping_revision
+			) VALUES (
+				$1, $2, $3, $4, $5, 2, 'active', $6, 1, 1
+			)
+		`, submissionID, uuidv7.MustNew(),
+			bytes.Repeat([]byte{5}, 32), serviceID, meterID,
+			authorizationID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, `
+			INSERT INTO realqa_storage_authorization_bindings (
+				authorization_id, submission_id, mapping_revision,
+				authorizer_account_id, owner_kind, owner_id,
+				organization_id, team_id, service_identity_id, meter_id,
+				maximum_units, status, authorization_revision
+			) VALUES (
+				$1, $2, 1, $3, 'personal', $3, $4, $5, $6, $7,
+				2, 'active', 1
+			)
+		`, authorizationID, submissionID, accountID, organizationID,
+			teamID, serviceID, meterID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, `
+			INSERT INTO realqa_storage_retention_intervals (
+				authorization_id, asset_id, retained_bytes,
+				starts_at, ends_at
+			) VALUES
+				($1, $2, 1048576,
+				 '2030-01-01 23:30:00+00',
+				 '2030-01-02 00:30:00+00'),
+				($1, $3, 2097152,
+				 '2030-01-02 12:00:00+00',
+				 '2030-01-02 12:00:01.5+00')
+		`, authorizationID, uuidv7.MustNew(),
+			uuidv7.MustNew()); err != nil {
+			t.Fatal(err)
+		}
+		byteSecondsFor := func(
+			start string,
+			end string,
+		) int64 {
+			var byteSeconds int64
+			if queryErr := pool.QueryRow(ctx, `
+				SELECT COALESCE(
+					CEIL(SUM(
+						retained_bytes::numeric
+						* EXTRACT(EPOCH FROM (
+							LEAST(COALESCE(ends_at, $3), $3)
+							- GREATEST(starts_at, $2)
+						))
+					)), 0
+				)::bigint
+				FROM realqa_storage_retention_intervals
+				WHERE authorization_id = $1
+				  AND starts_at < $3
+				  AND COALESCE(ends_at, $3) > $2
+			`, authorizationID, start, end).Scan(&byteSeconds); queryErr != nil {
+				t.Fatal(queryErr)
+			}
+			return byteSeconds
+		}
+		if got, want := byteSecondsFor(
+			"2030-01-01 00:00:00+00",
+			"2030-01-02 00:00:00+00",
+		), int64(1800*1048576); got != want {
+			t.Fatalf("first UTC day byte-seconds = %d, want %d", got, want)
+		}
+		if got, want := byteSecondsFor(
+			"2030-01-02 00:00:00+00",
+			"2030-01-03 00:00:00+00",
+		), int64(1803*1048576); got != want {
+			t.Fatalf("second UTC day byte-seconds = %d, want %d", got, want)
+		}
+
+		const contenders = 8
+		inserted := make(chan int64, contenders)
+		failures := make(chan error, contenders)
+		var checkpointGroup sync.WaitGroup
+		for range contenders {
+			checkpointGroup.Add(1)
+			go func() {
+				defer checkpointGroup.Done()
+				tag, insertErr := pool.Exec(ctx, `
+					INSERT INTO realqa_storage_daily_settlements (
+						authorization_id, period_start, byte_seconds,
+						units, state, request_digest,
+						reserve_idempotency_key,
+						commit_idempotency_key,
+						release_idempotency_key
+					) VALUES (
+						$1, '2030-01-01 00:00:00+00',
+						$2, 1, 'pending', $3, $4, $5, $6
+					)
+					ON CONFLICT (authorization_id, period_start)
+					DO NOTHING
+				`, authorizationID, int64(1800*1048576),
+					bytes.Repeat([]byte{6}, 32),
+					uuidv7.MustNew(), uuidv7.MustNew(), uuidv7.MustNew())
+				if insertErr != nil {
+					failures <- insertErr
+					return
+				}
+				inserted <- tag.RowsAffected()
+			}()
+		}
+		checkpointGroup.Wait()
+		close(inserted)
+		close(failures)
+		for insertErr := range failures {
+			t.Fatal(insertErr)
+		}
+		var insertedRows int64
+		for count := range inserted {
+			insertedRows += count
+		}
+		if insertedRows != 1 {
+			t.Fatalf("concurrent checkpoint inserts = %d, want 1",
+				insertedRows)
+		}
+		if _, err = pool.Exec(ctx, `
+			UPDATE realqa_storage_daily_settlements
+			SET request_digest = $3
+			WHERE authorization_id = $1
+			  AND period_start = $2
+		`, authorizationID, "2030-01-01 00:00:00+00",
+			bytes.Repeat([]byte{7}, 32)); err == nil {
+			t.Fatal("daily settlement digest mutation was accepted")
+		}
+
+		graceStart := time.Date(
+			2030, time.January, 3, 4, 5, 6, 0, time.UTC)
+		if _, err = pool.Exec(ctx, `
+			INSERT INTO realqa_storage_recoveries (
+				id, submission_id, authorization_id, reason,
+				grace_started_at, grace_expires_at
+			) VALUES (
+				$1, $2, $3, 'payment_required',
+				$4, $4 + interval '30 days'
+			)
+		`, uuidv7.MustNew(), submissionID, authorizationID,
+			graceStart); err != nil {
+			t.Fatal(err)
+		}
+		var graceExpires time.Time
+		if err = pool.QueryRow(ctx, `
+			SELECT grace_expires_at
+			FROM realqa_storage_recoveries
+			WHERE submission_id = $1
+			  AND recovered_at IS NULL
+			  AND expired_at IS NULL
+		`, submissionID).Scan(&graceExpires); err != nil {
+			t.Fatal(err)
+		}
+		if !graceExpires.Equal(graceStart.Add(30 * 24 * time.Hour)) {
+			t.Fatalf("grace expiry = %s", graceExpires)
+		}
+	})
 }
 
 func TestImageStorageMigrationNormalizesLegacyAssetsAndBackfillsTotals(

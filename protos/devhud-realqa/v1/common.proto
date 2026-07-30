@@ -124,6 +124,56 @@ enum SubmissionState {
   SUBMISSION_STATE_DELETED = 10;
 }
 
+// StorageAuthorizationState is the submission-bound delibase grant state last
+// validated by RealQA. It never makes a client-supplied state authoritative.
+enum StorageAuthorizationState {
+  STORAGE_AUTHORIZATION_STATE_UNSPECIFIED = 0;
+  STORAGE_AUTHORIZATION_STATE_ACTIVE = 1;
+  STORAGE_AUTHORIZATION_STATE_REVOKED = 2;
+  STORAGE_AUTHORIZATION_STATE_ACCESS_LOST = 3;
+  STORAGE_AUTHORIZATION_STATE_RESOURCE_DELETED = 4;
+  STORAGE_AUTHORIZATION_STATE_OWNER_DELETED = 5;
+}
+
+// StorageRecoveryReason is the typed reason new submissions are blocked for
+// the affected owner and payer while retained screenshots remain in grace.
+enum StorageRecoveryReason {
+  STORAGE_RECOVERY_REASON_UNSPECIFIED = 0;
+  STORAGE_RECOVERY_REASON_AUTHORIZATION_REVOKED = 1;
+  STORAGE_RECOVERY_REASON_AUTHORIZATION_ACCESS_LOST = 2;
+  STORAGE_RECOVERY_REASON_PAYMENT_REQUIRED = 3;
+  STORAGE_RECOVERY_REASON_OVERAGE_REQUIRED = 4;
+  STORAGE_RECOVERY_REASON_BILLING_UNAVAILABLE = 5;
+  STORAGE_RECOVERY_REASON_GITHUB_DISCONNECTED = 6;
+  STORAGE_RECOVERY_REASON_SECURITY_CONFLICT = 7;
+}
+
+// StorageRecoveryAction is a closed list of recovery operations that the
+// current caller may present. Payment changes happen on delibase's hosted
+// billing surface; authorization replacement happens through RealQA's rebind
+// RPC; revocation remains authorization-bound.
+enum StorageRecoveryAction {
+  STORAGE_RECOVERY_ACTION_UNSPECIFIED = 0;
+  STORAGE_RECOVERY_ACTION_REBIND = 1;
+  STORAGE_RECOVERY_ACTION_PAYMENT = 2;
+  STORAGE_RECOVERY_ACTION_REVOKE = 3;
+}
+
+enum StorageNotificationState {
+  STORAGE_NOTIFICATION_STATE_UNSPECIFIED = 0;
+  STORAGE_NOTIFICATION_STATE_PENDING = 1;
+  STORAGE_NOTIFICATION_STATE_NOTIFIED = 2;
+}
+
+message StorageBillingRecovery {
+  StorageAuthorizationState authorization_state = 1;
+  StorageRecoveryReason reason = 2;
+  repeated StorageRecoveryAction actions = 3;
+  StorageNotificationState notification_state = 4;
+  google.protobuf.Timestamp grace_started_at = 5;
+  google.protobuf.Timestamp grace_expires_at = 6;
+}
+
 enum UploadState {
   UPLOAD_STATE_UNSPECIFIED = 0;
   UPLOAD_STATE_DECLARED = 1;

@@ -440,6 +440,237 @@ func (SubmissionState) EnumDescriptor() ([]byte, []int) {
 	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{6}
 }
 
+// StorageAuthorizationState is the submission-bound delibase grant state last
+// validated by RealQA. It never makes a client-supplied state authoritative.
+type StorageAuthorizationState int32
+
+const (
+	StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_UNSPECIFIED      StorageAuthorizationState = 0
+	StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_ACTIVE           StorageAuthorizationState = 1
+	StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_REVOKED          StorageAuthorizationState = 2
+	StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_ACCESS_LOST      StorageAuthorizationState = 3
+	StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_RESOURCE_DELETED StorageAuthorizationState = 4
+	StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_OWNER_DELETED    StorageAuthorizationState = 5
+)
+
+// Enum value maps for StorageAuthorizationState.
+var (
+	StorageAuthorizationState_name = map[int32]string{
+		0: "STORAGE_AUTHORIZATION_STATE_UNSPECIFIED",
+		1: "STORAGE_AUTHORIZATION_STATE_ACTIVE",
+		2: "STORAGE_AUTHORIZATION_STATE_REVOKED",
+		3: "STORAGE_AUTHORIZATION_STATE_ACCESS_LOST",
+		4: "STORAGE_AUTHORIZATION_STATE_RESOURCE_DELETED",
+		5: "STORAGE_AUTHORIZATION_STATE_OWNER_DELETED",
+	}
+	StorageAuthorizationState_value = map[string]int32{
+		"STORAGE_AUTHORIZATION_STATE_UNSPECIFIED":      0,
+		"STORAGE_AUTHORIZATION_STATE_ACTIVE":           1,
+		"STORAGE_AUTHORIZATION_STATE_REVOKED":          2,
+		"STORAGE_AUTHORIZATION_STATE_ACCESS_LOST":      3,
+		"STORAGE_AUTHORIZATION_STATE_RESOURCE_DELETED": 4,
+		"STORAGE_AUTHORIZATION_STATE_OWNER_DELETED":    5,
+	}
+)
+
+func (x StorageAuthorizationState) Enum() *StorageAuthorizationState {
+	p := new(StorageAuthorizationState)
+	*p = x
+	return p
+}
+
+func (x StorageAuthorizationState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (StorageAuthorizationState) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_realqa_v1_common_proto_enumTypes[7].Descriptor()
+}
+
+func (StorageAuthorizationState) Type() protoreflect.EnumType {
+	return &file_devhud_realqa_v1_common_proto_enumTypes[7]
+}
+
+func (x StorageAuthorizationState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use StorageAuthorizationState.Descriptor instead.
+func (StorageAuthorizationState) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{7}
+}
+
+// StorageRecoveryReason is the typed reason new submissions are blocked for
+// the affected owner and payer while retained screenshots remain in grace.
+type StorageRecoveryReason int32
+
+const (
+	StorageRecoveryReason_STORAGE_RECOVERY_REASON_UNSPECIFIED               StorageRecoveryReason = 0
+	StorageRecoveryReason_STORAGE_RECOVERY_REASON_AUTHORIZATION_REVOKED     StorageRecoveryReason = 1
+	StorageRecoveryReason_STORAGE_RECOVERY_REASON_AUTHORIZATION_ACCESS_LOST StorageRecoveryReason = 2
+	StorageRecoveryReason_STORAGE_RECOVERY_REASON_PAYMENT_REQUIRED          StorageRecoveryReason = 3
+	StorageRecoveryReason_STORAGE_RECOVERY_REASON_OVERAGE_REQUIRED          StorageRecoveryReason = 4
+	StorageRecoveryReason_STORAGE_RECOVERY_REASON_BILLING_UNAVAILABLE       StorageRecoveryReason = 5
+	StorageRecoveryReason_STORAGE_RECOVERY_REASON_GITHUB_DISCONNECTED       StorageRecoveryReason = 6
+	StorageRecoveryReason_STORAGE_RECOVERY_REASON_SECURITY_CONFLICT         StorageRecoveryReason = 7
+)
+
+// Enum value maps for StorageRecoveryReason.
+var (
+	StorageRecoveryReason_name = map[int32]string{
+		0: "STORAGE_RECOVERY_REASON_UNSPECIFIED",
+		1: "STORAGE_RECOVERY_REASON_AUTHORIZATION_REVOKED",
+		2: "STORAGE_RECOVERY_REASON_AUTHORIZATION_ACCESS_LOST",
+		3: "STORAGE_RECOVERY_REASON_PAYMENT_REQUIRED",
+		4: "STORAGE_RECOVERY_REASON_OVERAGE_REQUIRED",
+		5: "STORAGE_RECOVERY_REASON_BILLING_UNAVAILABLE",
+		6: "STORAGE_RECOVERY_REASON_GITHUB_DISCONNECTED",
+		7: "STORAGE_RECOVERY_REASON_SECURITY_CONFLICT",
+	}
+	StorageRecoveryReason_value = map[string]int32{
+		"STORAGE_RECOVERY_REASON_UNSPECIFIED":               0,
+		"STORAGE_RECOVERY_REASON_AUTHORIZATION_REVOKED":     1,
+		"STORAGE_RECOVERY_REASON_AUTHORIZATION_ACCESS_LOST": 2,
+		"STORAGE_RECOVERY_REASON_PAYMENT_REQUIRED":          3,
+		"STORAGE_RECOVERY_REASON_OVERAGE_REQUIRED":          4,
+		"STORAGE_RECOVERY_REASON_BILLING_UNAVAILABLE":       5,
+		"STORAGE_RECOVERY_REASON_GITHUB_DISCONNECTED":       6,
+		"STORAGE_RECOVERY_REASON_SECURITY_CONFLICT":         7,
+	}
+)
+
+func (x StorageRecoveryReason) Enum() *StorageRecoveryReason {
+	p := new(StorageRecoveryReason)
+	*p = x
+	return p
+}
+
+func (x StorageRecoveryReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (StorageRecoveryReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_realqa_v1_common_proto_enumTypes[8].Descriptor()
+}
+
+func (StorageRecoveryReason) Type() protoreflect.EnumType {
+	return &file_devhud_realqa_v1_common_proto_enumTypes[8]
+}
+
+func (x StorageRecoveryReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use StorageRecoveryReason.Descriptor instead.
+func (StorageRecoveryReason) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{8}
+}
+
+// StorageRecoveryAction is a closed list of recovery operations that the
+// current caller may present. Payment changes happen on delibase's hosted
+// billing surface; authorization replacement happens through RealQA's rebind
+// RPC; revocation remains authorization-bound.
+type StorageRecoveryAction int32
+
+const (
+	StorageRecoveryAction_STORAGE_RECOVERY_ACTION_UNSPECIFIED StorageRecoveryAction = 0
+	StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND      StorageRecoveryAction = 1
+	StorageRecoveryAction_STORAGE_RECOVERY_ACTION_PAYMENT     StorageRecoveryAction = 2
+	StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE      StorageRecoveryAction = 3
+)
+
+// Enum value maps for StorageRecoveryAction.
+var (
+	StorageRecoveryAction_name = map[int32]string{
+		0: "STORAGE_RECOVERY_ACTION_UNSPECIFIED",
+		1: "STORAGE_RECOVERY_ACTION_REBIND",
+		2: "STORAGE_RECOVERY_ACTION_PAYMENT",
+		3: "STORAGE_RECOVERY_ACTION_REVOKE",
+	}
+	StorageRecoveryAction_value = map[string]int32{
+		"STORAGE_RECOVERY_ACTION_UNSPECIFIED": 0,
+		"STORAGE_RECOVERY_ACTION_REBIND":      1,
+		"STORAGE_RECOVERY_ACTION_PAYMENT":     2,
+		"STORAGE_RECOVERY_ACTION_REVOKE":      3,
+	}
+)
+
+func (x StorageRecoveryAction) Enum() *StorageRecoveryAction {
+	p := new(StorageRecoveryAction)
+	*p = x
+	return p
+}
+
+func (x StorageRecoveryAction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (StorageRecoveryAction) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_realqa_v1_common_proto_enumTypes[9].Descriptor()
+}
+
+func (StorageRecoveryAction) Type() protoreflect.EnumType {
+	return &file_devhud_realqa_v1_common_proto_enumTypes[9]
+}
+
+func (x StorageRecoveryAction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use StorageRecoveryAction.Descriptor instead.
+func (StorageRecoveryAction) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{9}
+}
+
+type StorageNotificationState int32
+
+const (
+	StorageNotificationState_STORAGE_NOTIFICATION_STATE_UNSPECIFIED StorageNotificationState = 0
+	StorageNotificationState_STORAGE_NOTIFICATION_STATE_PENDING     StorageNotificationState = 1
+	StorageNotificationState_STORAGE_NOTIFICATION_STATE_NOTIFIED    StorageNotificationState = 2
+)
+
+// Enum value maps for StorageNotificationState.
+var (
+	StorageNotificationState_name = map[int32]string{
+		0: "STORAGE_NOTIFICATION_STATE_UNSPECIFIED",
+		1: "STORAGE_NOTIFICATION_STATE_PENDING",
+		2: "STORAGE_NOTIFICATION_STATE_NOTIFIED",
+	}
+	StorageNotificationState_value = map[string]int32{
+		"STORAGE_NOTIFICATION_STATE_UNSPECIFIED": 0,
+		"STORAGE_NOTIFICATION_STATE_PENDING":     1,
+		"STORAGE_NOTIFICATION_STATE_NOTIFIED":    2,
+	}
+)
+
+func (x StorageNotificationState) Enum() *StorageNotificationState {
+	p := new(StorageNotificationState)
+	*p = x
+	return p
+}
+
+func (x StorageNotificationState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (StorageNotificationState) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_realqa_v1_common_proto_enumTypes[10].Descriptor()
+}
+
+func (StorageNotificationState) Type() protoreflect.EnumType {
+	return &file_devhud_realqa_v1_common_proto_enumTypes[10]
+}
+
+func (x StorageNotificationState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use StorageNotificationState.Descriptor instead.
+func (StorageNotificationState) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{10}
+}
+
 type UploadState int32
 
 const (
@@ -491,11 +722,11 @@ func (x UploadState) String() string {
 }
 
 func (UploadState) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_realqa_v1_common_proto_enumTypes[7].Descriptor()
+	return file_devhud_realqa_v1_common_proto_enumTypes[11].Descriptor()
 }
 
 func (UploadState) Type() protoreflect.EnumType {
-	return &file_devhud_realqa_v1_common_proto_enumTypes[7]
+	return &file_devhud_realqa_v1_common_proto_enumTypes[11]
 }
 
 func (x UploadState) Number() protoreflect.EnumNumber {
@@ -504,7 +735,7 @@ func (x UploadState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use UploadState.Descriptor instead.
 func (UploadState) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{7}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{11}
 }
 
 type FailureClass int32
@@ -549,11 +780,11 @@ func (x FailureClass) String() string {
 }
 
 func (FailureClass) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_realqa_v1_common_proto_enumTypes[8].Descriptor()
+	return file_devhud_realqa_v1_common_proto_enumTypes[12].Descriptor()
 }
 
 func (FailureClass) Type() protoreflect.EnumType {
-	return &file_devhud_realqa_v1_common_proto_enumTypes[8]
+	return &file_devhud_realqa_v1_common_proto_enumTypes[12]
 }
 
 func (x FailureClass) Number() protoreflect.EnumNumber {
@@ -562,7 +793,7 @@ func (x FailureClass) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FailureClass.Descriptor instead.
 func (FailureClass) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{8}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{12}
 }
 
 type AssetState int32
@@ -610,11 +841,11 @@ func (x AssetState) String() string {
 }
 
 func (AssetState) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_realqa_v1_common_proto_enumTypes[9].Descriptor()
+	return file_devhud_realqa_v1_common_proto_enumTypes[13].Descriptor()
 }
 
 func (AssetState) Type() protoreflect.EnumType {
-	return &file_devhud_realqa_v1_common_proto_enumTypes[9]
+	return &file_devhud_realqa_v1_common_proto_enumTypes[13]
 }
 
 func (x AssetState) Number() protoreflect.EnumNumber {
@@ -623,7 +854,7 @@ func (x AssetState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AssetState.Descriptor instead.
 func (AssetState) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{9}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{13}
 }
 
 type ImageMediaType int32
@@ -659,11 +890,11 @@ func (x ImageMediaType) String() string {
 }
 
 func (ImageMediaType) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_realqa_v1_common_proto_enumTypes[10].Descriptor()
+	return file_devhud_realqa_v1_common_proto_enumTypes[14].Descriptor()
 }
 
 func (ImageMediaType) Type() protoreflect.EnumType {
-	return &file_devhud_realqa_v1_common_proto_enumTypes[10]
+	return &file_devhud_realqa_v1_common_proto_enumTypes[14]
 }
 
 func (x ImageMediaType) Number() protoreflect.EnumNumber {
@@ -672,7 +903,7 @@ func (x ImageMediaType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ImageMediaType.Descriptor instead.
 func (ImageMediaType) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{10}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{14}
 }
 
 type ErrorReason int32
@@ -825,11 +1056,11 @@ func (x ErrorReason) String() string {
 }
 
 func (ErrorReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_realqa_v1_common_proto_enumTypes[11].Descriptor()
+	return file_devhud_realqa_v1_common_proto_enumTypes[15].Descriptor()
 }
 
 func (ErrorReason) Type() protoreflect.EnumType {
-	return &file_devhud_realqa_v1_common_proto_enumTypes[11]
+	return &file_devhud_realqa_v1_common_proto_enumTypes[15]
 }
 
 func (x ErrorReason) Number() protoreflect.EnumNumber {
@@ -838,7 +1069,7 @@ func (x ErrorReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ErrorReason.Descriptor instead.
 func (ErrorReason) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{11}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{15}
 }
 
 // UuidV7 carries the canonical lowercase string form of a UUID version 7.
@@ -1285,6 +1516,90 @@ func (x *BillingScope) GetTeamId() *UuidV7 {
 	return nil
 }
 
+type StorageBillingRecovery struct {
+	state              protoimpl.MessageState    `protogen:"open.v1"`
+	AuthorizationState StorageAuthorizationState `protobuf:"varint,1,opt,name=authorization_state,json=authorizationState,proto3,enum=devhud.realqa.v1.StorageAuthorizationState" json:"authorization_state,omitempty"`
+	Reason             StorageRecoveryReason     `protobuf:"varint,2,opt,name=reason,proto3,enum=devhud.realqa.v1.StorageRecoveryReason" json:"reason,omitempty"`
+	Actions            []StorageRecoveryAction   `protobuf:"varint,3,rep,packed,name=actions,proto3,enum=devhud.realqa.v1.StorageRecoveryAction" json:"actions,omitempty"`
+	NotificationState  StorageNotificationState  `protobuf:"varint,4,opt,name=notification_state,json=notificationState,proto3,enum=devhud.realqa.v1.StorageNotificationState" json:"notification_state,omitempty"`
+	GraceStartedAt     *timestamppb.Timestamp    `protobuf:"bytes,5,opt,name=grace_started_at,json=graceStartedAt,proto3" json:"grace_started_at,omitempty"`
+	GraceExpiresAt     *timestamppb.Timestamp    `protobuf:"bytes,6,opt,name=grace_expires_at,json=graceExpiresAt,proto3" json:"grace_expires_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *StorageBillingRecovery) Reset() {
+	*x = StorageBillingRecovery{}
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StorageBillingRecovery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StorageBillingRecovery) ProtoMessage() {}
+
+func (x *StorageBillingRecovery) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StorageBillingRecovery.ProtoReflect.Descriptor instead.
+func (*StorageBillingRecovery) Descriptor() ([]byte, []int) {
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StorageBillingRecovery) GetAuthorizationState() StorageAuthorizationState {
+	if x != nil {
+		return x.AuthorizationState
+	}
+	return StorageAuthorizationState_STORAGE_AUTHORIZATION_STATE_UNSPECIFIED
+}
+
+func (x *StorageBillingRecovery) GetReason() StorageRecoveryReason {
+	if x != nil {
+		return x.Reason
+	}
+	return StorageRecoveryReason_STORAGE_RECOVERY_REASON_UNSPECIFIED
+}
+
+func (x *StorageBillingRecovery) GetActions() []StorageRecoveryAction {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+func (x *StorageBillingRecovery) GetNotificationState() StorageNotificationState {
+	if x != nil {
+		return x.NotificationState
+	}
+	return StorageNotificationState_STORAGE_NOTIFICATION_STATE_UNSPECIFIED
+}
+
+func (x *StorageBillingRecovery) GetGraceStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.GraceStartedAt
+	}
+	return nil
+}
+
+func (x *StorageBillingRecovery) GetGraceExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.GraceExpiresAt
+	}
+	return nil
+}
+
 // ErrorDetail is carried as a typed Connect error detail. message is stable,
 // non-sensitive user guidance and never contains credentials or provider bodies.
 type ErrorDetail struct {
@@ -1300,7 +1615,7 @@ type ErrorDetail struct {
 
 func (x *ErrorDetail) Reset() {
 	*x = ErrorDetail{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[8]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1312,7 +1627,7 @@ func (x *ErrorDetail) String() string {
 func (*ErrorDetail) ProtoMessage() {}
 
 func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[8]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1325,7 +1640,7 @@ func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorDetail.ProtoReflect.Descriptor instead.
 func (*ErrorDetail) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{8}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ErrorDetail) GetReason() ErrorReason {
@@ -1374,7 +1689,7 @@ type GitHubRepositoryRef struct {
 
 func (x *GitHubRepositoryRef) Reset() {
 	*x = GitHubRepositoryRef{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[9]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1386,7 +1701,7 @@ func (x *GitHubRepositoryRef) String() string {
 func (*GitHubRepositoryRef) ProtoMessage() {}
 
 func (x *GitHubRepositoryRef) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[9]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1399,7 +1714,7 @@ func (x *GitHubRepositoryRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubRepositoryRef.ProtoReflect.Descriptor instead.
 func (*GitHubRepositoryRef) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{9}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GitHubRepositoryRef) GetRepositoryId() string {
@@ -1434,7 +1749,7 @@ type TrackerDestination struct {
 
 func (x *TrackerDestination) Reset() {
 	*x = TrackerDestination{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[10]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1446,7 +1761,7 @@ func (x *TrackerDestination) String() string {
 func (*TrackerDestination) ProtoMessage() {}
 
 func (x *TrackerDestination) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[10]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1459,7 +1774,7 @@ func (x *TrackerDestination) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrackerDestination.ProtoReflect.Descriptor instead.
 func (*TrackerDestination) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{10}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TrackerDestination) GetTracker() TrackerKind {
@@ -1493,7 +1808,7 @@ type GitHubProviderExtension struct {
 
 func (x *GitHubProviderExtension) Reset() {
 	*x = GitHubProviderExtension{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[11]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1505,7 +1820,7 @@ func (x *GitHubProviderExtension) String() string {
 func (*GitHubProviderExtension) ProtoMessage() {}
 
 func (x *GitHubProviderExtension) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[11]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1518,7 +1833,7 @@ func (x *GitHubProviderExtension) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubProviderExtension.ProtoReflect.Descriptor instead.
 func (*GitHubProviderExtension) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{11}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GitHubProviderExtension) GetMilestoneNumber() int64 {
@@ -1549,7 +1864,7 @@ type ProviderExtension struct {
 
 func (x *ProviderExtension) Reset() {
 	*x = ProviderExtension{}
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[12]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1561,7 +1876,7 @@ func (x *ProviderExtension) String() string {
 func (*ProviderExtension) ProtoMessage() {}
 
 func (x *ProviderExtension) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_common_proto_msgTypes[12]
+	mi := &file_devhud_realqa_v1_common_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1574,7 +1889,7 @@ func (x *ProviderExtension) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderExtension.ProtoReflect.Descriptor instead.
 func (*ProviderExtension) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{12}
+	return file_devhud_realqa_v1_common_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ProviderExtension) GetProvider() isProviderExtension_Provider {
@@ -1633,7 +1948,14 @@ const file_devhud_realqa_v1_common_proto_rawDesc = "" +
 	"\x05owner\"\x84\x01\n" +
 	"\fBillingScope\x12A\n" +
 	"\x0forganization_id\x18\x01 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\x0eorganizationId\x121\n" +
-	"\ateam_id\x18\x02 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\x06teamId\"\xa7\x02\n" +
+	"\ateam_id\x18\x02 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\x06teamId\"\xe1\x03\n" +
+	"\x16StorageBillingRecovery\x12\\\n" +
+	"\x13authorization_state\x18\x01 \x01(\x0e2+.devhud.realqa.v1.StorageAuthorizationStateR\x12authorizationState\x12?\n" +
+	"\x06reason\x18\x02 \x01(\x0e2'.devhud.realqa.v1.StorageRecoveryReasonR\x06reason\x12A\n" +
+	"\aactions\x18\x03 \x03(\x0e2'.devhud.realqa.v1.StorageRecoveryActionR\aactions\x12Y\n" +
+	"\x12notification_state\x18\x04 \x01(\x0e2*.devhud.realqa.v1.StorageNotificationStateR\x11notificationState\x12D\n" +
+	"\x10grace_started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x0egraceStartedAt\x12D\n" +
+	"\x10grace_expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0egraceExpiresAt\"\xa7\x02\n" +
 	"\vErrorDetail\x125\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x1d.devhud.realqa.v1.ErrorReasonR\x06reason\x12C\n" +
 	"\rfailure_class\x18\x02 \x01(\x0e2\x1e.devhud.realqa.v1.FailureClassR\ffailureClass\x12\x18\n" +
@@ -1710,7 +2032,32 @@ const file_devhud_realqa_v1_common_proto_rawDesc = "" +
 	"&SUBMISSION_STATE_STORAGE_BILLING_GRACE\x10\b\x12#\n" +
 	"\x1fSUBMISSION_STATE_ASSETS_DELETED\x10\t\x12\x1c\n" +
 	"\x18SUBMISSION_STATE_DELETED\x10\n" +
-	"*\x88\x02\n" +
+	"*\xa7\x02\n" +
+	"\x19StorageAuthorizationState\x12+\n" +
+	"'STORAGE_AUTHORIZATION_STATE_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"STORAGE_AUTHORIZATION_STATE_ACTIVE\x10\x01\x12'\n" +
+	"#STORAGE_AUTHORIZATION_STATE_REVOKED\x10\x02\x12+\n" +
+	"'STORAGE_AUTHORIZATION_STATE_ACCESS_LOST\x10\x03\x120\n" +
+	",STORAGE_AUTHORIZATION_STATE_RESOURCE_DELETED\x10\x04\x12-\n" +
+	")STORAGE_AUTHORIZATION_STATE_OWNER_DELETED\x10\x05*\x97\x03\n" +
+	"\x15StorageRecoveryReason\x12'\n" +
+	"#STORAGE_RECOVERY_REASON_UNSPECIFIED\x10\x00\x121\n" +
+	"-STORAGE_RECOVERY_REASON_AUTHORIZATION_REVOKED\x10\x01\x125\n" +
+	"1STORAGE_RECOVERY_REASON_AUTHORIZATION_ACCESS_LOST\x10\x02\x12,\n" +
+	"(STORAGE_RECOVERY_REASON_PAYMENT_REQUIRED\x10\x03\x12,\n" +
+	"(STORAGE_RECOVERY_REASON_OVERAGE_REQUIRED\x10\x04\x12/\n" +
+	"+STORAGE_RECOVERY_REASON_BILLING_UNAVAILABLE\x10\x05\x12/\n" +
+	"+STORAGE_RECOVERY_REASON_GITHUB_DISCONNECTED\x10\x06\x12-\n" +
+	")STORAGE_RECOVERY_REASON_SECURITY_CONFLICT\x10\a*\xad\x01\n" +
+	"\x15StorageRecoveryAction\x12'\n" +
+	"#STORAGE_RECOVERY_ACTION_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eSTORAGE_RECOVERY_ACTION_REBIND\x10\x01\x12#\n" +
+	"\x1fSTORAGE_RECOVERY_ACTION_PAYMENT\x10\x02\x12\"\n" +
+	"\x1eSTORAGE_RECOVERY_ACTION_REVOKE\x10\x03*\x97\x01\n" +
+	"\x18StorageNotificationState\x12*\n" +
+	"&STORAGE_NOTIFICATION_STATE_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"STORAGE_NOTIFICATION_STATE_PENDING\x10\x01\x12'\n" +
+	"#STORAGE_NOTIFICATION_STATE_NOTIFIED\x10\x02*\x88\x02\n" +
 	"\vUploadState\x12\x1c\n" +
 	"\x18UPLOAD_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15UPLOAD_STATE_DECLARED\x10\x01\x12\x1f\n" +
@@ -1798,8 +2145,8 @@ func file_devhud_realqa_v1_common_proto_rawDescGZIP() []byte {
 	return file_devhud_realqa_v1_common_proto_rawDescData
 }
 
-var file_devhud_realqa_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
-var file_devhud_realqa_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_devhud_realqa_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 16)
+var file_devhud_realqa_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_devhud_realqa_v1_common_proto_goTypes = []any{
 	(IdempotentOperation)(0),        // 0: devhud.realqa.v1.IdempotentOperation
 	(RealQALimit)(0),                // 1: devhud.realqa.v1.RealQALimit
@@ -1808,48 +2155,59 @@ var file_devhud_realqa_v1_common_proto_goTypes = []any{
 	(SelectorMode)(0),               // 4: devhud.realqa.v1.SelectorMode
 	(TrackerKind)(0),                // 5: devhud.realqa.v1.TrackerKind
 	(SubmissionState)(0),            // 6: devhud.realqa.v1.SubmissionState
-	(UploadState)(0),                // 7: devhud.realqa.v1.UploadState
-	(FailureClass)(0),               // 8: devhud.realqa.v1.FailureClass
-	(AssetState)(0),                 // 9: devhud.realqa.v1.AssetState
-	(ImageMediaType)(0),             // 10: devhud.realqa.v1.ImageMediaType
-	(ErrorReason)(0),                // 11: devhud.realqa.v1.ErrorReason
-	(*UuidV7)(nil),                  // 12: devhud.realqa.v1.UuidV7
-	(*PageRequest)(nil),             // 13: devhud.realqa.v1.PageRequest
-	(*PageResponse)(nil),            // 14: devhud.realqa.v1.PageResponse
-	(*Revision)(nil),                // 15: devhud.realqa.v1.Revision
-	(*IdempotencyKey)(nil),          // 16: devhud.realqa.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),       // 17: devhud.realqa.v1.IdempotencyResult
-	(*OwnerScope)(nil),              // 18: devhud.realqa.v1.OwnerScope
-	(*BillingScope)(nil),            // 19: devhud.realqa.v1.BillingScope
-	(*ErrorDetail)(nil),             // 20: devhud.realqa.v1.ErrorDetail
-	(*GitHubRepositoryRef)(nil),     // 21: devhud.realqa.v1.GitHubRepositoryRef
-	(*TrackerDestination)(nil),      // 22: devhud.realqa.v1.TrackerDestination
-	(*GitHubProviderExtension)(nil), // 23: devhud.realqa.v1.GitHubProviderExtension
-	(*ProviderExtension)(nil),       // 24: devhud.realqa.v1.ProviderExtension
-	(*timestamppb.Timestamp)(nil),   // 25: google.protobuf.Timestamp
+	(StorageAuthorizationState)(0),  // 7: devhud.realqa.v1.StorageAuthorizationState
+	(StorageRecoveryReason)(0),      // 8: devhud.realqa.v1.StorageRecoveryReason
+	(StorageRecoveryAction)(0),      // 9: devhud.realqa.v1.StorageRecoveryAction
+	(StorageNotificationState)(0),   // 10: devhud.realqa.v1.StorageNotificationState
+	(UploadState)(0),                // 11: devhud.realqa.v1.UploadState
+	(FailureClass)(0),               // 12: devhud.realqa.v1.FailureClass
+	(AssetState)(0),                 // 13: devhud.realqa.v1.AssetState
+	(ImageMediaType)(0),             // 14: devhud.realqa.v1.ImageMediaType
+	(ErrorReason)(0),                // 15: devhud.realqa.v1.ErrorReason
+	(*UuidV7)(nil),                  // 16: devhud.realqa.v1.UuidV7
+	(*PageRequest)(nil),             // 17: devhud.realqa.v1.PageRequest
+	(*PageResponse)(nil),            // 18: devhud.realqa.v1.PageResponse
+	(*Revision)(nil),                // 19: devhud.realqa.v1.Revision
+	(*IdempotencyKey)(nil),          // 20: devhud.realqa.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),       // 21: devhud.realqa.v1.IdempotencyResult
+	(*OwnerScope)(nil),              // 22: devhud.realqa.v1.OwnerScope
+	(*BillingScope)(nil),            // 23: devhud.realqa.v1.BillingScope
+	(*StorageBillingRecovery)(nil),  // 24: devhud.realqa.v1.StorageBillingRecovery
+	(*ErrorDetail)(nil),             // 25: devhud.realqa.v1.ErrorDetail
+	(*GitHubRepositoryRef)(nil),     // 26: devhud.realqa.v1.GitHubRepositoryRef
+	(*TrackerDestination)(nil),      // 27: devhud.realqa.v1.TrackerDestination
+	(*GitHubProviderExtension)(nil), // 28: devhud.realqa.v1.GitHubProviderExtension
+	(*ProviderExtension)(nil),       // 29: devhud.realqa.v1.ProviderExtension
+	(*timestamppb.Timestamp)(nil),   // 30: google.protobuf.Timestamp
 }
 var file_devhud_realqa_v1_common_proto_depIdxs = []int32{
-	12, // 0: devhud.realqa.v1.IdempotencyKey.value:type_name -> devhud.realqa.v1.UuidV7
+	16, // 0: devhud.realqa.v1.IdempotencyKey.value:type_name -> devhud.realqa.v1.UuidV7
 	0,  // 1: devhud.realqa.v1.IdempotencyResult.operation:type_name -> devhud.realqa.v1.IdempotentOperation
-	25, // 2: devhud.realqa.v1.IdempotencyResult.originally_completed_at:type_name -> google.protobuf.Timestamp
+	30, // 2: devhud.realqa.v1.IdempotencyResult.originally_completed_at:type_name -> google.protobuf.Timestamp
 	2,  // 3: devhud.realqa.v1.OwnerScope.kind:type_name -> devhud.realqa.v1.OwnerScopeKind
-	12, // 4: devhud.realqa.v1.OwnerScope.personal_account_id:type_name -> devhud.realqa.v1.UuidV7
-	12, // 5: devhud.realqa.v1.OwnerScope.organization_id:type_name -> devhud.realqa.v1.UuidV7
-	12, // 6: devhud.realqa.v1.BillingScope.organization_id:type_name -> devhud.realqa.v1.UuidV7
-	12, // 7: devhud.realqa.v1.BillingScope.team_id:type_name -> devhud.realqa.v1.UuidV7
-	11, // 8: devhud.realqa.v1.ErrorDetail.reason:type_name -> devhud.realqa.v1.ErrorReason
-	8,  // 9: devhud.realqa.v1.ErrorDetail.failure_class:type_name -> devhud.realqa.v1.FailureClass
-	15, // 10: devhud.realqa.v1.ErrorDetail.current_revision:type_name -> devhud.realqa.v1.Revision
-	25, // 11: devhud.realqa.v1.ErrorDetail.retry_after:type_name -> google.protobuf.Timestamp
-	5,  // 12: devhud.realqa.v1.TrackerDestination.tracker:type_name -> devhud.realqa.v1.TrackerKind
-	12, // 13: devhud.realqa.v1.TrackerDestination.installation_id:type_name -> devhud.realqa.v1.UuidV7
-	21, // 14: devhud.realqa.v1.TrackerDestination.repository:type_name -> devhud.realqa.v1.GitHubRepositoryRef
-	23, // 15: devhud.realqa.v1.ProviderExtension.github:type_name -> devhud.realqa.v1.GitHubProviderExtension
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	16, // 4: devhud.realqa.v1.OwnerScope.personal_account_id:type_name -> devhud.realqa.v1.UuidV7
+	16, // 5: devhud.realqa.v1.OwnerScope.organization_id:type_name -> devhud.realqa.v1.UuidV7
+	16, // 6: devhud.realqa.v1.BillingScope.organization_id:type_name -> devhud.realqa.v1.UuidV7
+	16, // 7: devhud.realqa.v1.BillingScope.team_id:type_name -> devhud.realqa.v1.UuidV7
+	7,  // 8: devhud.realqa.v1.StorageBillingRecovery.authorization_state:type_name -> devhud.realqa.v1.StorageAuthorizationState
+	8,  // 9: devhud.realqa.v1.StorageBillingRecovery.reason:type_name -> devhud.realqa.v1.StorageRecoveryReason
+	9,  // 10: devhud.realqa.v1.StorageBillingRecovery.actions:type_name -> devhud.realqa.v1.StorageRecoveryAction
+	10, // 11: devhud.realqa.v1.StorageBillingRecovery.notification_state:type_name -> devhud.realqa.v1.StorageNotificationState
+	30, // 12: devhud.realqa.v1.StorageBillingRecovery.grace_started_at:type_name -> google.protobuf.Timestamp
+	30, // 13: devhud.realqa.v1.StorageBillingRecovery.grace_expires_at:type_name -> google.protobuf.Timestamp
+	15, // 14: devhud.realqa.v1.ErrorDetail.reason:type_name -> devhud.realqa.v1.ErrorReason
+	12, // 15: devhud.realqa.v1.ErrorDetail.failure_class:type_name -> devhud.realqa.v1.FailureClass
+	19, // 16: devhud.realqa.v1.ErrorDetail.current_revision:type_name -> devhud.realqa.v1.Revision
+	30, // 17: devhud.realqa.v1.ErrorDetail.retry_after:type_name -> google.protobuf.Timestamp
+	5,  // 18: devhud.realqa.v1.TrackerDestination.tracker:type_name -> devhud.realqa.v1.TrackerKind
+	16, // 19: devhud.realqa.v1.TrackerDestination.installation_id:type_name -> devhud.realqa.v1.UuidV7
+	26, // 20: devhud.realqa.v1.TrackerDestination.repository:type_name -> devhud.realqa.v1.GitHubRepositoryRef
+	28, // 21: devhud.realqa.v1.ProviderExtension.github:type_name -> devhud.realqa.v1.GitHubProviderExtension
+	22, // [22:22] is the sub-list for method output_type
+	22, // [22:22] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_devhud_realqa_v1_common_proto_init() }
@@ -1861,7 +2219,7 @@ func file_devhud_realqa_v1_common_proto_init() {
 		(*OwnerScope_PersonalAccountId)(nil),
 		(*OwnerScope_OrganizationId)(nil),
 	}
-	file_devhud_realqa_v1_common_proto_msgTypes[12].OneofWrappers = []any{
+	file_devhud_realqa_v1_common_proto_msgTypes[13].OneofWrappers = []any{
 		(*ProviderExtension_Github)(nil),
 	}
 	type x struct{}
@@ -1869,8 +2227,8 @@ func file_devhud_realqa_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_realqa_v1_common_proto_rawDesc), len(file_devhud_realqa_v1_common_proto_rawDesc)),
-			NumEnums:      12,
-			NumMessages:   13,
+			NumEnums:      16,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

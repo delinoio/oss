@@ -59,6 +59,7 @@ message Submission {
   google.protobuf.Timestamp created_at = 17;
   google.protobuf.Timestamp updated_at = 18;
   google.protobuf.Timestamp submitted_at = 19;
+  StorageBillingRecovery storage_billing_recovery = 20;
 }
 
 message AssetSummary {
@@ -77,6 +78,7 @@ message SubmissionSummary {
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
   google.protobuf.Timestamp submitted_at = 7;
+  StorageBillingRecovery storage_billing_recovery = 8;
 }
 
 message ListSubmissionsRequest {

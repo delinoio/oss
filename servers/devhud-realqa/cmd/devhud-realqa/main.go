@@ -200,8 +200,9 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		return &startupError{value: "listener"}
 	}
 	defer listener.Close()
-	go service.NewSubmission(serviceDependencies).RunStagingCleanup(
-		ctx, 5*time.Minute)
+	submissionWorker := service.NewSubmission(serviceDependencies)
+	go submissionWorker.RunStagingCleanup(ctx, 5*time.Minute)
+	go submissionWorker.RunStorageCharging(ctx, 5*time.Minute)
 	if err = serverruntime.Serve(ctx, listener, handler, logger,
 		configuration.ShutdownTimeout); err != nil {
 		return &startupError{value: "runtime"}

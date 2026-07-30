@@ -147,6 +147,7 @@ func isLifecycleRequest(request connect.AnyRequest) bool {
 func scopes(procedure string) (string, []string, bool) {
 	const (
 		accountRead  = "delibase:account:read"
+		billingRead  = "delibase:billing:read"
 		billingWrite = "delibase:billing:write"
 		usage        = "delibase:usage:execute"
 	)
@@ -167,10 +168,11 @@ func scopes(procedure string) (string, []string, bool) {
 		realqav1connect.RealQATrackerServiceListRepositoriesProcedure,
 		realqav1connect.RealQATrackerServiceGetRepositoryIssueSchemaProcedure:
 		return "realqa:tracker:read", []string{accountRead}, true
-	case
-		realqav1connect.RealQATrackerServiceStartGitHubConnectionProcedure,
-		realqav1connect.RealQATrackerServiceDisconnectGitHubConnectionProcedure:
+	case realqav1connect.RealQATrackerServiceStartGitHubConnectionProcedure:
 		return "realqa:tracker:write", []string{accountRead}, true
+	case realqav1connect.RealQATrackerServiceDisconnectGitHubConnectionProcedure:
+		return "realqa:tracker:write",
+			[]string{accountRead, billingRead, billingWrite}, true
 	case
 		realqav1connect.RealQASubmissionServiceListSubmissionsProcedure,
 		realqav1connect.RealQASubmissionServiceGetSubmissionProcedure:
@@ -178,9 +180,11 @@ func scopes(procedure string) (string, []string, bool) {
 	case
 		realqav1connect.RealQASubmissionServiceCreateSubmissionProcedure,
 		realqav1connect.RealQASubmissionServiceCreateImageUploadProcedure,
-		realqav1connect.RealQASubmissionServiceFinalizeImageUploadProcedure,
-		realqav1connect.RealQASubmissionServiceRebindSubmissionStorageAuthorizationProcedure:
+		realqav1connect.RealQASubmissionServiceFinalizeImageUploadProcedure:
 		return "realqa:submissions:write", []string{usage}, true
+	case realqav1connect.RealQASubmissionServiceRebindSubmissionStorageAuthorizationProcedure:
+		return "realqa:submissions:write",
+			[]string{billingRead, billingWrite}, true
 	case realqav1connect.RealQASubmissionServiceSubmitIssueProcedure:
 		return "realqa:submissions:write",
 			[]string{usage, billingWrite}, true

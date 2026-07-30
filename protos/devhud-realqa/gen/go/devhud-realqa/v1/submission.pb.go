@@ -327,6 +327,7 @@ type Submission struct {
 	CreatedAt                           *timestamppb.Timestamp  `protobuf:"bytes,17,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt                           *timestamppb.Timestamp  `protobuf:"bytes,18,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	SubmittedAt                         *timestamppb.Timestamp  `protobuf:"bytes,19,opt,name=submitted_at,json=submittedAt,proto3" json:"submitted_at,omitempty"`
+	StorageBillingRecovery              *StorageBillingRecovery `protobuf:"bytes,20,opt,name=storage_billing_recovery,json=storageBillingRecovery,proto3" json:"storage_billing_recovery,omitempty"`
 	unknownFields                       protoimpl.UnknownFields
 	sizeCache                           protoimpl.SizeCache
 }
@@ -494,6 +495,13 @@ func (x *Submission) GetSubmittedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Submission) GetStorageBillingRecovery() *StorageBillingRecovery {
+	if x != nil {
+		return x.StorageBillingRecovery
+	}
+	return nil
+}
+
 type AssetSummary struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AssetId       *UuidV7                `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
@@ -571,16 +579,17 @@ func (x *AssetSummary) GetRemovedAt() *timestamppb.Timestamp {
 }
 
 type SubmissionSummary struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	SubmissionId  *UuidV7                 `protobuf:"bytes,1,opt,name=submission_id,json=submissionId,proto3" json:"submission_id,omitempty"`
-	State         SubmissionState         `protobuf:"varint,2,opt,name=state,proto3,enum=devhud.realqa.v1.SubmissionState" json:"state,omitempty"`
-	Assets        []*AssetSummary         `protobuf:"bytes,3,rep,name=assets,proto3" json:"assets,omitempty"`
-	ProviderIssue *ProviderIssueReference `protobuf:"bytes,4,opt,name=provider_issue,json=providerIssue,proto3" json:"provider_issue,omitempty"`
-	CreatedAt     *timestamppb.Timestamp  `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp  `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	SubmittedAt   *timestamppb.Timestamp  `protobuf:"bytes,7,opt,name=submitted_at,json=submittedAt,proto3" json:"submitted_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState  `protogen:"open.v1"`
+	SubmissionId           *UuidV7                 `protobuf:"bytes,1,opt,name=submission_id,json=submissionId,proto3" json:"submission_id,omitempty"`
+	State                  SubmissionState         `protobuf:"varint,2,opt,name=state,proto3,enum=devhud.realqa.v1.SubmissionState" json:"state,omitempty"`
+	Assets                 []*AssetSummary         `protobuf:"bytes,3,rep,name=assets,proto3" json:"assets,omitempty"`
+	ProviderIssue          *ProviderIssueReference `protobuf:"bytes,4,opt,name=provider_issue,json=providerIssue,proto3" json:"provider_issue,omitempty"`
+	CreatedAt              *timestamppb.Timestamp  `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt              *timestamppb.Timestamp  `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	SubmittedAt            *timestamppb.Timestamp  `protobuf:"bytes,7,opt,name=submitted_at,json=submittedAt,proto3" json:"submitted_at,omitempty"`
+	StorageBillingRecovery *StorageBillingRecovery `protobuf:"bytes,8,opt,name=storage_billing_recovery,json=storageBillingRecovery,proto3" json:"storage_billing_recovery,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *SubmissionSummary) Reset() {
@@ -658,6 +667,13 @@ func (x *SubmissionSummary) GetUpdatedAt() *timestamppb.Timestamp {
 func (x *SubmissionSummary) GetSubmittedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.SubmittedAt
+	}
+	return nil
+}
+
+func (x *SubmissionSummary) GetStorageBillingRecovery() *StorageBillingRecovery {
+	if x != nil {
+		return x.StorageBillingRecovery
 	}
 	return nil
 }
@@ -2253,8 +2269,7 @@ const file_devhud_realqa_v1_submission_proto_rawDesc = "" +
 	"\x16ProviderIssueReference\x127\n" +
 	"\atracker\x18\x01 \x01(\x0e2\x1d.devhud.realqa.v1.TrackerKindR\atracker\x12\x19\n" +
 	"\bissue_id\x18\x02 \x01(\tR\aissueId\x12\x1b\n" +
-	"\tissue_url\x18\x03 \x01(\tR\bissueUrl\"\xa2\n" +
-	"\n" +
+	"\tissue_url\x18\x03 \x01(\tR\bissueUrl\"\x86\v\n" +
 	"\n" +
 	"Submission\x12=\n" +
 	"\rsubmission_id\x18\x01 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\fsubmissionId\x122\n" +
@@ -2278,7 +2293,8 @@ const file_devhud_realqa_v1_submission_proto_rawDesc = "" +
 	"created_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12=\n" +
-	"\fsubmitted_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\vsubmittedAt\"\xba\x02\n" +
+	"\fsubmitted_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\vsubmittedAt\x12b\n" +
+	"\x18storage_billing_recovery\x18\x14 \x01(\v2(.devhud.realqa.v1.StorageBillingRecoveryR\x16storageBillingRecovery\"\xba\x02\n" +
 	"\fAssetSummary\x123\n" +
 	"\basset_id\x18\x01 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\aassetId\x12@\n" +
 	"\fupload_state\x18\x02 \x01(\x0e2\x1d.devhud.realqa.v1.UploadStateR\vuploadState\x12=\n" +
@@ -2287,7 +2303,7 @@ const file_devhud_realqa_v1_submission_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"removed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tremovedAt\"\xc9\x03\n" +
+	"removed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tremovedAt\"\xad\x04\n" +
 	"\x11SubmissionSummary\x12=\n" +
 	"\rsubmission_id\x18\x01 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\fsubmissionId\x127\n" +
 	"\x05state\x18\x02 \x01(\x0e2!.devhud.realqa.v1.SubmissionStateR\x05state\x126\n" +
@@ -2297,7 +2313,8 @@ const file_devhud_realqa_v1_submission_proto_rawDesc = "" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12=\n" +
-	"\fsubmitted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vsubmittedAt\"\x7f\n" +
+	"\fsubmitted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vsubmittedAt\x12b\n" +
+	"\x18storage_billing_recovery\x18\b \x01(\v2(.devhud.realqa.v1.StorageBillingRecoveryR\x16storageBillingRecovery\"\x7f\n" +
 	"\x16ListSubmissionsRequest\x122\n" +
 	"\x05owner\x18\x01 \x01(\v2\x1c.devhud.realqa.v1.OwnerScopeR\x05owner\x121\n" +
 	"\x04page\x18\x02 \x01(\v2\x1d.devhud.realqa.v1.PageRequestR\x04page\"\x94\x01\n" +
@@ -2488,12 +2505,13 @@ var file_devhud_realqa_v1_submission_proto_goTypes = []any{
 	(SubmissionState)(0),                                 // 40: devhud.realqa.v1.SubmissionState
 	(FailureClass)(0),                                    // 41: devhud.realqa.v1.FailureClass
 	(ErrorReason)(0),                                     // 42: devhud.realqa.v1.ErrorReason
-	(*PageRequest)(nil),                                  // 43: devhud.realqa.v1.PageRequest
-	(*PageResponse)(nil),                                 // 44: devhud.realqa.v1.PageResponse
-	(*IdempotencyKey)(nil),                               // 45: devhud.realqa.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),                            // 46: devhud.realqa.v1.IdempotencyResult
-	(*RepositoryIssueDefinitionRef)(nil),                 // 47: devhud.realqa.v1.RepositoryIssueDefinitionRef
-	(*ProviderExtension)(nil),                            // 48: devhud.realqa.v1.ProviderExtension
+	(*StorageBillingRecovery)(nil),                       // 43: devhud.realqa.v1.StorageBillingRecovery
+	(*PageRequest)(nil),                                  // 44: devhud.realqa.v1.PageRequest
+	(*PageResponse)(nil),                                 // 45: devhud.realqa.v1.PageResponse
+	(*IdempotencyKey)(nil),                               // 46: devhud.realqa.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),                            // 47: devhud.realqa.v1.IdempotencyResult
+	(*RepositoryIssueDefinitionRef)(nil),                 // 48: devhud.realqa.v1.RepositoryIssueDefinitionRef
+	(*ProviderExtension)(nil),                            // 49: devhud.realqa.v1.ProviderExtension
 }
 var file_devhud_realqa_v1_submission_proto_depIdxs = []int32{
 	30,  // 0: devhud.realqa.v1.ImageDeclaration.client_image_id:type_name -> devhud.realqa.v1.UuidV7
@@ -2527,107 +2545,109 @@ var file_devhud_realqa_v1_submission_proto_depIdxs = []int32{
 	35,  // 28: devhud.realqa.v1.Submission.created_at:type_name -> google.protobuf.Timestamp
 	35,  // 29: devhud.realqa.v1.Submission.updated_at:type_name -> google.protobuf.Timestamp
 	35,  // 30: devhud.realqa.v1.Submission.submitted_at:type_name -> google.protobuf.Timestamp
-	30,  // 31: devhud.realqa.v1.AssetSummary.asset_id:type_name -> devhud.realqa.v1.UuidV7
-	32,  // 32: devhud.realqa.v1.AssetSummary.upload_state:type_name -> devhud.realqa.v1.UploadState
-	33,  // 33: devhud.realqa.v1.AssetSummary.asset_state:type_name -> devhud.realqa.v1.AssetState
-	35,  // 34: devhud.realqa.v1.AssetSummary.created_at:type_name -> google.protobuf.Timestamp
-	35,  // 35: devhud.realqa.v1.AssetSummary.removed_at:type_name -> google.protobuf.Timestamp
-	30,  // 36: devhud.realqa.v1.SubmissionSummary.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	40,  // 37: devhud.realqa.v1.SubmissionSummary.state:type_name -> devhud.realqa.v1.SubmissionState
-	4,   // 38: devhud.realqa.v1.SubmissionSummary.assets:type_name -> devhud.realqa.v1.AssetSummary
-	2,   // 39: devhud.realqa.v1.SubmissionSummary.provider_issue:type_name -> devhud.realqa.v1.ProviderIssueReference
-	35,  // 40: devhud.realqa.v1.SubmissionSummary.created_at:type_name -> google.protobuf.Timestamp
-	35,  // 41: devhud.realqa.v1.SubmissionSummary.updated_at:type_name -> google.protobuf.Timestamp
-	35,  // 42: devhud.realqa.v1.SubmissionSummary.submitted_at:type_name -> google.protobuf.Timestamp
-	37,  // 43: devhud.realqa.v1.ListSubmissionsRequest.owner:type_name -> devhud.realqa.v1.OwnerScope
-	43,  // 44: devhud.realqa.v1.ListSubmissionsRequest.page:type_name -> devhud.realqa.v1.PageRequest
-	5,   // 45: devhud.realqa.v1.ListSubmissionsResponse.submissions:type_name -> devhud.realqa.v1.SubmissionSummary
-	44,  // 46: devhud.realqa.v1.ListSubmissionsResponse.page:type_name -> devhud.realqa.v1.PageResponse
-	37,  // 47: devhud.realqa.v1.CreateSubmissionRequest.owner:type_name -> devhud.realqa.v1.OwnerScope
-	38,  // 48: devhud.realqa.v1.CreateSubmissionRequest.billing:type_name -> devhud.realqa.v1.BillingScope
-	30,  // 49: devhud.realqa.v1.CreateSubmissionRequest.preset_id:type_name -> devhud.realqa.v1.UuidV7
-	34,  // 50: devhud.realqa.v1.CreateSubmissionRequest.preset_revision:type_name -> devhud.realqa.v1.Revision
-	39,  // 51: devhud.realqa.v1.CreateSubmissionRequest.destination:type_name -> devhud.realqa.v1.TrackerDestination
-	0,   // 52: devhud.realqa.v1.CreateSubmissionRequest.images:type_name -> devhud.realqa.v1.ImageDeclaration
-	45,  // 53: devhud.realqa.v1.CreateSubmissionRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	3,   // 54: devhud.realqa.v1.CreateSubmissionResponse.submission:type_name -> devhud.realqa.v1.Submission
-	46,  // 55: devhud.realqa.v1.CreateSubmissionResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	35,  // 56: devhud.realqa.v1.CreateSubmissionResponse.transfer_reservation_expires_at:type_name -> google.protobuf.Timestamp
-	35,  // 57: devhud.realqa.v1.CreateSubmissionResponse.upload_deadline:type_name -> google.protobuf.Timestamp
-	30,  // 58: devhud.realqa.v1.CreateImageUploadRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	30,  // 59: devhud.realqa.v1.CreateImageUploadRequest.asset_id:type_name -> devhud.realqa.v1.UuidV7
-	34,  // 60: devhud.realqa.v1.CreateImageUploadRequest.expected_asset_revision:type_name -> devhud.realqa.v1.Revision
-	45,  // 61: devhud.realqa.v1.CreateImageUploadRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	1,   // 62: devhud.realqa.v1.CreateImageUploadResponse.asset:type_name -> devhud.realqa.v1.ImageAsset
-	35,  // 63: devhud.realqa.v1.CreateImageUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
-	35,  // 64: devhud.realqa.v1.CreateImageUploadResponse.upload_deadline:type_name -> google.protobuf.Timestamp
-	46,  // 65: devhud.realqa.v1.CreateImageUploadResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	30,  // 66: devhud.realqa.v1.FinalizeImageUploadRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	30,  // 67: devhud.realqa.v1.FinalizeImageUploadRequest.asset_id:type_name -> devhud.realqa.v1.UuidV7
-	34,  // 68: devhud.realqa.v1.FinalizeImageUploadRequest.expected_asset_revision:type_name -> devhud.realqa.v1.Revision
-	45,  // 69: devhud.realqa.v1.FinalizeImageUploadRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	1,   // 70: devhud.realqa.v1.FinalizeImageUploadResponse.asset:type_name -> devhud.realqa.v1.ImageAsset
-	46,  // 71: devhud.realqa.v1.FinalizeImageUploadResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	47,  // 72: devhud.realqa.v1.RepositoryIssueResponse.definition:type_name -> devhud.realqa.v1.RepositoryIssueDefinitionRef
-	14,  // 73: devhud.realqa.v1.RepositoryIssueResponse.form_answers:type_name -> devhud.realqa.v1.IssueFormAnswer
-	16,  // 74: devhud.realqa.v1.CaptureMetadata.environment:type_name -> devhud.realqa.v1.EnvironmentField
-	17,  // 75: devhud.realqa.v1.CaptureMetadata.dom_selection:type_name -> devhud.realqa.v1.DomSelectionMetadata
-	15,  // 76: devhud.realqa.v1.IssueSubmission.repository_response:type_name -> devhud.realqa.v1.RepositoryIssueResponse
-	18,  // 77: devhud.realqa.v1.IssueSubmission.capture:type_name -> devhud.realqa.v1.CaptureMetadata
-	30,  // 78: devhud.realqa.v1.IssueSubmission.ordered_asset_ids:type_name -> devhud.realqa.v1.UuidV7
-	48,  // 79: devhud.realqa.v1.IssueSubmission.provider_extension:type_name -> devhud.realqa.v1.ProviderExtension
-	30,  // 80: devhud.realqa.v1.SubmitIssueRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	19,  // 81: devhud.realqa.v1.SubmitIssueRequest.issue:type_name -> devhud.realqa.v1.IssueSubmission
-	34,  // 82: devhud.realqa.v1.SubmitIssueRequest.expected_submission_revision:type_name -> devhud.realqa.v1.Revision
-	45,  // 83: devhud.realqa.v1.SubmitIssueRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	3,   // 84: devhud.realqa.v1.SubmitIssueResponse.submission:type_name -> devhud.realqa.v1.Submission
-	46,  // 85: devhud.realqa.v1.SubmitIssueResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	30,  // 86: devhud.realqa.v1.GetSubmissionRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	3,   // 87: devhud.realqa.v1.GetSubmissionResponse.submission:type_name -> devhud.realqa.v1.Submission
-	30,  // 88: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	30,  // 89: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.expected_authorization_id:type_name -> devhud.realqa.v1.UuidV7
-	34,  // 90: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.expected_mapping_revision:type_name -> devhud.realqa.v1.Revision
-	38,  // 91: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.replacement_billing:type_name -> devhud.realqa.v1.BillingScope
-	45,  // 92: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	30,  // 93: devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	30,  // 94: devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse.authorization_id:type_name -> devhud.realqa.v1.UuidV7
-	34,  // 95: devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse.mapping_revision:type_name -> devhud.realqa.v1.Revision
-	46,  // 96: devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	30,  // 97: devhud.realqa.v1.DeleteImageRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	30,  // 98: devhud.realqa.v1.DeleteImageRequest.asset_id:type_name -> devhud.realqa.v1.UuidV7
-	34,  // 99: devhud.realqa.v1.DeleteImageRequest.expected_submission_revision:type_name -> devhud.realqa.v1.Revision
-	34,  // 100: devhud.realqa.v1.DeleteImageRequest.expected_asset_revision:type_name -> devhud.realqa.v1.Revision
-	45,  // 101: devhud.realqa.v1.DeleteImageRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	3,   // 102: devhud.realqa.v1.DeleteImageResponse.submission:type_name -> devhud.realqa.v1.Submission
-	46,  // 103: devhud.realqa.v1.DeleteImageResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	30,  // 104: devhud.realqa.v1.DeleteSubmissionAssetsRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
-	34,  // 105: devhud.realqa.v1.DeleteSubmissionAssetsRequest.expected_submission_revision:type_name -> devhud.realqa.v1.Revision
-	45,  // 106: devhud.realqa.v1.DeleteSubmissionAssetsRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	3,   // 107: devhud.realqa.v1.DeleteSubmissionAssetsResponse.submission:type_name -> devhud.realqa.v1.Submission
-	46,  // 108: devhud.realqa.v1.DeleteSubmissionAssetsResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	6,   // 109: devhud.realqa.v1.RealQASubmissionService.ListSubmissions:input_type -> devhud.realqa.v1.ListSubmissionsRequest
-	8,   // 110: devhud.realqa.v1.RealQASubmissionService.CreateSubmission:input_type -> devhud.realqa.v1.CreateSubmissionRequest
-	10,  // 111: devhud.realqa.v1.RealQASubmissionService.CreateImageUpload:input_type -> devhud.realqa.v1.CreateImageUploadRequest
-	12,  // 112: devhud.realqa.v1.RealQASubmissionService.FinalizeImageUpload:input_type -> devhud.realqa.v1.FinalizeImageUploadRequest
-	20,  // 113: devhud.realqa.v1.RealQASubmissionService.SubmitIssue:input_type -> devhud.realqa.v1.SubmitIssueRequest
-	22,  // 114: devhud.realqa.v1.RealQASubmissionService.GetSubmission:input_type -> devhud.realqa.v1.GetSubmissionRequest
-	24,  // 115: devhud.realqa.v1.RealQASubmissionService.RebindSubmissionStorageAuthorization:input_type -> devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest
-	26,  // 116: devhud.realqa.v1.RealQASubmissionService.DeleteImage:input_type -> devhud.realqa.v1.DeleteImageRequest
-	28,  // 117: devhud.realqa.v1.RealQASubmissionService.DeleteSubmissionAssets:input_type -> devhud.realqa.v1.DeleteSubmissionAssetsRequest
-	7,   // 118: devhud.realqa.v1.RealQASubmissionService.ListSubmissions:output_type -> devhud.realqa.v1.ListSubmissionsResponse
-	9,   // 119: devhud.realqa.v1.RealQASubmissionService.CreateSubmission:output_type -> devhud.realqa.v1.CreateSubmissionResponse
-	11,  // 120: devhud.realqa.v1.RealQASubmissionService.CreateImageUpload:output_type -> devhud.realqa.v1.CreateImageUploadResponse
-	13,  // 121: devhud.realqa.v1.RealQASubmissionService.FinalizeImageUpload:output_type -> devhud.realqa.v1.FinalizeImageUploadResponse
-	21,  // 122: devhud.realqa.v1.RealQASubmissionService.SubmitIssue:output_type -> devhud.realqa.v1.SubmitIssueResponse
-	23,  // 123: devhud.realqa.v1.RealQASubmissionService.GetSubmission:output_type -> devhud.realqa.v1.GetSubmissionResponse
-	25,  // 124: devhud.realqa.v1.RealQASubmissionService.RebindSubmissionStorageAuthorization:output_type -> devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse
-	27,  // 125: devhud.realqa.v1.RealQASubmissionService.DeleteImage:output_type -> devhud.realqa.v1.DeleteImageResponse
-	29,  // 126: devhud.realqa.v1.RealQASubmissionService.DeleteSubmissionAssets:output_type -> devhud.realqa.v1.DeleteSubmissionAssetsResponse
-	118, // [118:127] is the sub-list for method output_type
-	109, // [109:118] is the sub-list for method input_type
-	109, // [109:109] is the sub-list for extension type_name
-	109, // [109:109] is the sub-list for extension extendee
-	0,   // [0:109] is the sub-list for field type_name
+	43,  // 31: devhud.realqa.v1.Submission.storage_billing_recovery:type_name -> devhud.realqa.v1.StorageBillingRecovery
+	30,  // 32: devhud.realqa.v1.AssetSummary.asset_id:type_name -> devhud.realqa.v1.UuidV7
+	32,  // 33: devhud.realqa.v1.AssetSummary.upload_state:type_name -> devhud.realqa.v1.UploadState
+	33,  // 34: devhud.realqa.v1.AssetSummary.asset_state:type_name -> devhud.realqa.v1.AssetState
+	35,  // 35: devhud.realqa.v1.AssetSummary.created_at:type_name -> google.protobuf.Timestamp
+	35,  // 36: devhud.realqa.v1.AssetSummary.removed_at:type_name -> google.protobuf.Timestamp
+	30,  // 37: devhud.realqa.v1.SubmissionSummary.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	40,  // 38: devhud.realqa.v1.SubmissionSummary.state:type_name -> devhud.realqa.v1.SubmissionState
+	4,   // 39: devhud.realqa.v1.SubmissionSummary.assets:type_name -> devhud.realqa.v1.AssetSummary
+	2,   // 40: devhud.realqa.v1.SubmissionSummary.provider_issue:type_name -> devhud.realqa.v1.ProviderIssueReference
+	35,  // 41: devhud.realqa.v1.SubmissionSummary.created_at:type_name -> google.protobuf.Timestamp
+	35,  // 42: devhud.realqa.v1.SubmissionSummary.updated_at:type_name -> google.protobuf.Timestamp
+	35,  // 43: devhud.realqa.v1.SubmissionSummary.submitted_at:type_name -> google.protobuf.Timestamp
+	43,  // 44: devhud.realqa.v1.SubmissionSummary.storage_billing_recovery:type_name -> devhud.realqa.v1.StorageBillingRecovery
+	37,  // 45: devhud.realqa.v1.ListSubmissionsRequest.owner:type_name -> devhud.realqa.v1.OwnerScope
+	44,  // 46: devhud.realqa.v1.ListSubmissionsRequest.page:type_name -> devhud.realqa.v1.PageRequest
+	5,   // 47: devhud.realqa.v1.ListSubmissionsResponse.submissions:type_name -> devhud.realqa.v1.SubmissionSummary
+	45,  // 48: devhud.realqa.v1.ListSubmissionsResponse.page:type_name -> devhud.realqa.v1.PageResponse
+	37,  // 49: devhud.realqa.v1.CreateSubmissionRequest.owner:type_name -> devhud.realqa.v1.OwnerScope
+	38,  // 50: devhud.realqa.v1.CreateSubmissionRequest.billing:type_name -> devhud.realqa.v1.BillingScope
+	30,  // 51: devhud.realqa.v1.CreateSubmissionRequest.preset_id:type_name -> devhud.realqa.v1.UuidV7
+	34,  // 52: devhud.realqa.v1.CreateSubmissionRequest.preset_revision:type_name -> devhud.realqa.v1.Revision
+	39,  // 53: devhud.realqa.v1.CreateSubmissionRequest.destination:type_name -> devhud.realqa.v1.TrackerDestination
+	0,   // 54: devhud.realqa.v1.CreateSubmissionRequest.images:type_name -> devhud.realqa.v1.ImageDeclaration
+	46,  // 55: devhud.realqa.v1.CreateSubmissionRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	3,   // 56: devhud.realqa.v1.CreateSubmissionResponse.submission:type_name -> devhud.realqa.v1.Submission
+	47,  // 57: devhud.realqa.v1.CreateSubmissionResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	35,  // 58: devhud.realqa.v1.CreateSubmissionResponse.transfer_reservation_expires_at:type_name -> google.protobuf.Timestamp
+	35,  // 59: devhud.realqa.v1.CreateSubmissionResponse.upload_deadline:type_name -> google.protobuf.Timestamp
+	30,  // 60: devhud.realqa.v1.CreateImageUploadRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	30,  // 61: devhud.realqa.v1.CreateImageUploadRequest.asset_id:type_name -> devhud.realqa.v1.UuidV7
+	34,  // 62: devhud.realqa.v1.CreateImageUploadRequest.expected_asset_revision:type_name -> devhud.realqa.v1.Revision
+	46,  // 63: devhud.realqa.v1.CreateImageUploadRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	1,   // 64: devhud.realqa.v1.CreateImageUploadResponse.asset:type_name -> devhud.realqa.v1.ImageAsset
+	35,  // 65: devhud.realqa.v1.CreateImageUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	35,  // 66: devhud.realqa.v1.CreateImageUploadResponse.upload_deadline:type_name -> google.protobuf.Timestamp
+	47,  // 67: devhud.realqa.v1.CreateImageUploadResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	30,  // 68: devhud.realqa.v1.FinalizeImageUploadRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	30,  // 69: devhud.realqa.v1.FinalizeImageUploadRequest.asset_id:type_name -> devhud.realqa.v1.UuidV7
+	34,  // 70: devhud.realqa.v1.FinalizeImageUploadRequest.expected_asset_revision:type_name -> devhud.realqa.v1.Revision
+	46,  // 71: devhud.realqa.v1.FinalizeImageUploadRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	1,   // 72: devhud.realqa.v1.FinalizeImageUploadResponse.asset:type_name -> devhud.realqa.v1.ImageAsset
+	47,  // 73: devhud.realqa.v1.FinalizeImageUploadResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	48,  // 74: devhud.realqa.v1.RepositoryIssueResponse.definition:type_name -> devhud.realqa.v1.RepositoryIssueDefinitionRef
+	14,  // 75: devhud.realqa.v1.RepositoryIssueResponse.form_answers:type_name -> devhud.realqa.v1.IssueFormAnswer
+	16,  // 76: devhud.realqa.v1.CaptureMetadata.environment:type_name -> devhud.realqa.v1.EnvironmentField
+	17,  // 77: devhud.realqa.v1.CaptureMetadata.dom_selection:type_name -> devhud.realqa.v1.DomSelectionMetadata
+	15,  // 78: devhud.realqa.v1.IssueSubmission.repository_response:type_name -> devhud.realqa.v1.RepositoryIssueResponse
+	18,  // 79: devhud.realqa.v1.IssueSubmission.capture:type_name -> devhud.realqa.v1.CaptureMetadata
+	30,  // 80: devhud.realqa.v1.IssueSubmission.ordered_asset_ids:type_name -> devhud.realqa.v1.UuidV7
+	49,  // 81: devhud.realqa.v1.IssueSubmission.provider_extension:type_name -> devhud.realqa.v1.ProviderExtension
+	30,  // 82: devhud.realqa.v1.SubmitIssueRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	19,  // 83: devhud.realqa.v1.SubmitIssueRequest.issue:type_name -> devhud.realqa.v1.IssueSubmission
+	34,  // 84: devhud.realqa.v1.SubmitIssueRequest.expected_submission_revision:type_name -> devhud.realqa.v1.Revision
+	46,  // 85: devhud.realqa.v1.SubmitIssueRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	3,   // 86: devhud.realqa.v1.SubmitIssueResponse.submission:type_name -> devhud.realqa.v1.Submission
+	47,  // 87: devhud.realqa.v1.SubmitIssueResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	30,  // 88: devhud.realqa.v1.GetSubmissionRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	3,   // 89: devhud.realqa.v1.GetSubmissionResponse.submission:type_name -> devhud.realqa.v1.Submission
+	30,  // 90: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	30,  // 91: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.expected_authorization_id:type_name -> devhud.realqa.v1.UuidV7
+	34,  // 92: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.expected_mapping_revision:type_name -> devhud.realqa.v1.Revision
+	38,  // 93: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.replacement_billing:type_name -> devhud.realqa.v1.BillingScope
+	46,  // 94: devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	30,  // 95: devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	30,  // 96: devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse.authorization_id:type_name -> devhud.realqa.v1.UuidV7
+	34,  // 97: devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse.mapping_revision:type_name -> devhud.realqa.v1.Revision
+	47,  // 98: devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	30,  // 99: devhud.realqa.v1.DeleteImageRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	30,  // 100: devhud.realqa.v1.DeleteImageRequest.asset_id:type_name -> devhud.realqa.v1.UuidV7
+	34,  // 101: devhud.realqa.v1.DeleteImageRequest.expected_submission_revision:type_name -> devhud.realqa.v1.Revision
+	34,  // 102: devhud.realqa.v1.DeleteImageRequest.expected_asset_revision:type_name -> devhud.realqa.v1.Revision
+	46,  // 103: devhud.realqa.v1.DeleteImageRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	3,   // 104: devhud.realqa.v1.DeleteImageResponse.submission:type_name -> devhud.realqa.v1.Submission
+	47,  // 105: devhud.realqa.v1.DeleteImageResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	30,  // 106: devhud.realqa.v1.DeleteSubmissionAssetsRequest.submission_id:type_name -> devhud.realqa.v1.UuidV7
+	34,  // 107: devhud.realqa.v1.DeleteSubmissionAssetsRequest.expected_submission_revision:type_name -> devhud.realqa.v1.Revision
+	46,  // 108: devhud.realqa.v1.DeleteSubmissionAssetsRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	3,   // 109: devhud.realqa.v1.DeleteSubmissionAssetsResponse.submission:type_name -> devhud.realqa.v1.Submission
+	47,  // 110: devhud.realqa.v1.DeleteSubmissionAssetsResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	6,   // 111: devhud.realqa.v1.RealQASubmissionService.ListSubmissions:input_type -> devhud.realqa.v1.ListSubmissionsRequest
+	8,   // 112: devhud.realqa.v1.RealQASubmissionService.CreateSubmission:input_type -> devhud.realqa.v1.CreateSubmissionRequest
+	10,  // 113: devhud.realqa.v1.RealQASubmissionService.CreateImageUpload:input_type -> devhud.realqa.v1.CreateImageUploadRequest
+	12,  // 114: devhud.realqa.v1.RealQASubmissionService.FinalizeImageUpload:input_type -> devhud.realqa.v1.FinalizeImageUploadRequest
+	20,  // 115: devhud.realqa.v1.RealQASubmissionService.SubmitIssue:input_type -> devhud.realqa.v1.SubmitIssueRequest
+	22,  // 116: devhud.realqa.v1.RealQASubmissionService.GetSubmission:input_type -> devhud.realqa.v1.GetSubmissionRequest
+	24,  // 117: devhud.realqa.v1.RealQASubmissionService.RebindSubmissionStorageAuthorization:input_type -> devhud.realqa.v1.RebindSubmissionStorageAuthorizationRequest
+	26,  // 118: devhud.realqa.v1.RealQASubmissionService.DeleteImage:input_type -> devhud.realqa.v1.DeleteImageRequest
+	28,  // 119: devhud.realqa.v1.RealQASubmissionService.DeleteSubmissionAssets:input_type -> devhud.realqa.v1.DeleteSubmissionAssetsRequest
+	7,   // 120: devhud.realqa.v1.RealQASubmissionService.ListSubmissions:output_type -> devhud.realqa.v1.ListSubmissionsResponse
+	9,   // 121: devhud.realqa.v1.RealQASubmissionService.CreateSubmission:output_type -> devhud.realqa.v1.CreateSubmissionResponse
+	11,  // 122: devhud.realqa.v1.RealQASubmissionService.CreateImageUpload:output_type -> devhud.realqa.v1.CreateImageUploadResponse
+	13,  // 123: devhud.realqa.v1.RealQASubmissionService.FinalizeImageUpload:output_type -> devhud.realqa.v1.FinalizeImageUploadResponse
+	21,  // 124: devhud.realqa.v1.RealQASubmissionService.SubmitIssue:output_type -> devhud.realqa.v1.SubmitIssueResponse
+	23,  // 125: devhud.realqa.v1.RealQASubmissionService.GetSubmission:output_type -> devhud.realqa.v1.GetSubmissionResponse
+	25,  // 126: devhud.realqa.v1.RealQASubmissionService.RebindSubmissionStorageAuthorization:output_type -> devhud.realqa.v1.RebindSubmissionStorageAuthorizationResponse
+	27,  // 127: devhud.realqa.v1.RealQASubmissionService.DeleteImage:output_type -> devhud.realqa.v1.DeleteImageResponse
+	29,  // 128: devhud.realqa.v1.RealQASubmissionService.DeleteSubmissionAssets:output_type -> devhud.realqa.v1.DeleteSubmissionAssetsResponse
+	120, // [120:129] is the sub-list for method output_type
+	111, // [111:120] is the sub-list for method input_type
+	111, // [111:111] is the sub-list for extension type_name
+	111, // [111:111] is the sub-list for extension extendee
+	0,   // [0:111] is the sub-list for field type_name
 }
 
 func init() { file_devhud_realqa_v1_submission_proto_init() }

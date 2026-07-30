@@ -37,6 +37,60 @@ func (q *Queries) DeleteLifecycleAccountRepositoryAccess(ctx context.Context, ac
 	return result.RowsAffected(), nil
 }
 
+const deleteScopeBillingAssets = `-- name: DeleteScopeBillingAssets :execrows
+DELETE FROM realqa_assets AS asset
+WHERE EXISTS (
+    SELECT 1
+    FROM realqa_submissions AS submission
+    JOIN realqa_storage_authorization_bindings AS binding
+      ON binding.submission_id = submission.id
+    WHERE submission.id = asset.submission_id
+      AND submission.owner_kind = $1
+      AND submission.owner_id = $2
+)
+`
+
+type DeleteScopeBillingAssetsParams struct {
+	OwnerKind string
+	OwnerID   pgtype.UUID
+}
+
+func (q *Queries) DeleteScopeBillingAssets(ctx context.Context, arg DeleteScopeBillingAssetsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteScopeBillingAssets, arg.OwnerKind, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteScopeBillingIssueAttempts = `-- name: DeleteScopeBillingIssueAttempts :execrows
+DELETE FROM realqa_issue_submission_attempts AS attempt
+WHERE EXISTS (
+    SELECT 1
+    FROM realqa_submissions AS submission
+    JOIN realqa_storage_authorization_bindings AS binding
+      ON binding.submission_id = submission.id
+    WHERE submission.id = attempt.submission_id
+      AND submission.owner_kind = $1
+      AND submission.owner_id = $2
+)
+`
+
+type DeleteScopeBillingIssueAttemptsParams struct {
+	OwnerKind string
+	OwnerID   pgtype.UUID
+}
+
+// Billing-bound submissions remain only as pseudonymized resource anchors
+// until their pre-cutoff settlements and delibase closure complete.
+func (q *Queries) DeleteScopeBillingIssueAttempts(ctx context.Context, arg DeleteScopeBillingIssueAttemptsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteScopeBillingIssueAttempts, arg.OwnerKind, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteScopeConnections = `-- name: DeleteScopeConnections :execrows
 DELETE FROM realqa_github_connections
 WHERE owner_kind = $1
@@ -146,7 +200,9 @@ const deleteScopeSubmissionIdempotencySnapshots = `-- name: DeleteScopeSubmissio
 DELETE FROM realqa_idempotency_records AS idempotency
 WHERE (
     idempotency.operation IN (
-        'create_submission', 'delete_submission_assets'
+        'create_submission', 'submit_issue',
+        'rebind_submission_storage_authorization',
+        'delete_submission_assets'
     )
     AND idempotency.resource_id IN (
         SELECT submission.id
@@ -183,9 +239,14 @@ func (q *Queries) DeleteScopeSubmissionIdempotencySnapshots(ctx context.Context,
 }
 
 const deleteScopeSubmissions = `-- name: DeleteScopeSubmissions :execrows
-DELETE FROM realqa_submissions
-WHERE owner_kind = $1
-  AND owner_id = $2
+DELETE FROM realqa_submissions AS submission
+WHERE submission.owner_kind = $1
+  AND submission.owner_id = $2
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_authorization_bindings AS binding
+      WHERE binding.submission_id = submission.id
+  )
 `
 
 type DeleteScopeSubmissionsParams struct {
@@ -274,6 +335,17 @@ func (q *Queries) GetDeletionJob(ctx context.Context, arg GetDeletionJobParams) 
 		&i.CompletedAt,
 	)
 	return i, err
+}
+
+const getTransactionTimestamp = `-- name: GetTransactionTimestamp :one
+SELECT transaction_timestamp()::timestamptz
+`
+
+func (q *Queries) GetTransactionTimestamp(ctx context.Context) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getTransactionTimestamp)
+	var column_1 pgtype.Timestamptz
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const insertAudit = `-- name: InsertAudit :exec
@@ -383,6 +455,39 @@ func (q *Queries) InsertScopeTombstone(ctx context.Context, arg InsertScopeTombs
 		arg.TriggerKind,
 	)
 	return err
+}
+
+const minimizeScopeBillingSubmissions = `-- name: MinimizeScopeBillingSubmissions :execrows
+UPDATE realqa_submissions AS submission
+SET preset_id = NULL,
+    destination_id = NULL,
+    state = 'deleted',
+    provider_issue_id = NULL,
+    provider_issue_url = NULL,
+    declared_encoded_bytes = 0,
+    verified_encoded_bytes = 0,
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE submission.owner_kind = $1
+  AND submission.owner_id = $2
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_storage_authorization_bindings AS binding
+      WHERE binding.submission_id = submission.id
+  )
+`
+
+type MinimizeScopeBillingSubmissionsParams struct {
+	OwnerKind string
+	OwnerID   pgtype.UUID
+}
+
+func (q *Queries) MinimizeScopeBillingSubmissions(ctx context.Context, arg MinimizeScopeBillingSubmissionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, minimizeScopeBillingSubmissions, arg.OwnerKind, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const tombstoneLifecycleAccountIdentity = `-- name: TombstoneLifecycleAccountIdentity :execrows

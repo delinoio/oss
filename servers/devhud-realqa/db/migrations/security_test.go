@@ -96,3 +96,53 @@ func TestImageStoragePersistsOnlyUploadDigestAndPublicTombstone(t *testing.T) {
 		}
 	}
 }
+
+func TestRecurringStorageLedgerIsPseudonymizedAndRecoveryBounded(
+	t *testing.T,
+) {
+	t.Parallel()
+	content, err := fs.ReadFile(
+		files, "000009_recurring_storage_billing.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.ToLower(string(content))
+	for _, required := range []string{
+		"realqa_storage_authorization_bindings",
+		"realqa_storage_retention_intervals",
+		"retained_bytes bigint",
+		"realqa_storage_daily_settlements",
+		"primary key (authorization_id, period_start)",
+		"realqa_storage_recoveries",
+		"grace_expires_at = grace_started_at + interval '30 days'",
+		"realqa_storage_rebind_attempts",
+		"realqa_storage_authorization_bindings_preserve",
+		"realqa_storage_retention_intervals_preserve",
+		"realqa_storage_daily_settlements_preserve",
+		"realqa_storage_recoveries_preserve",
+		"realqa_storage_rebind_attempts_preserve",
+		"'payment_required'",
+		"'overage_required'",
+		"'github_disconnected'",
+		"'storage_daily_reserved'",
+		"'storage_daily_committed'",
+		"'storage_daily_released'",
+		"'storage_billing_grace_started'",
+		"'storage_authorization_rebound'",
+		"'storage_authorization_closed'",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("recurring storage schema is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"forwarded_user_token", "bearer_token", "authorization_header",
+		"client_secret", "credential_ciphertext", "issue_body",
+		"provider_issue_url", "object_key_ciphertext", "public_id text",
+		"screenshot_bytes",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("recurring storage ledger contains %q", forbidden)
+		}
+	}
+}

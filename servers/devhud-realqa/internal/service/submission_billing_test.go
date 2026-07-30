@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -41,6 +42,210 @@ func TestCeilMiBAggregatesAndRoundsOnce(t *testing.T) {
 	otherRoundedSeparately, _ := ceilMiB(second)
 	if roundedSeparately+otherRoundedSeparately != 2 {
 		t.Fatal("fixture did not distinguish aggregate rounding")
+	}
+}
+
+func TestCeilMiBDaysAggregatesByteSecondsAndRoundsOnce(t *testing.T) {
+	t.Parallel()
+	for _, fixture := range []struct {
+		name        string
+		byteSeconds int64
+		units       int64
+	}{
+		{"zero", 0, 0},
+		{"one byte second", 1, 1},
+		{"half creation day", byteSecondsPerMiBDay / 2, 1},
+		{"exact day", byteSecondsPerMiBDay, 1},
+		{"one byte second over", byteSecondsPerMiBDay + 1, 2},
+		{"two exact days", 2 * byteSecondsPerMiBDay, 2},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			units, err := ceilMiBDays(fixture.byteSeconds)
+			if err != nil || units != fixture.units {
+				t.Fatalf("ceilMiBDays(%d) = %d, %v; want %d",
+					fixture.byteSeconds, units, err, fixture.units)
+			}
+		})
+	}
+	// Two half-MiB images retained for half a day are aggregated into one
+	// half MiB-day checkpoint and rounded once for the authorization/day.
+	halfImageHalfDay := (bytesPerMiB / 2) * (secondsPerUTCDay / 2)
+	aggregate, err := ceilMiBDays(2 * halfImageHalfDay)
+	if err != nil || aggregate != 1 {
+		t.Fatalf("aggregate partial-day units = %d, %v", aggregate, err)
+	}
+	first, _ := ceilMiBDays(halfImageHalfDay)
+	second, _ := ceilMiBDays(halfImageHalfDay)
+	if first+second != 2 {
+		t.Fatal("fixture did not distinguish per-image from daily rounding")
+	}
+	if _, err = ceilMiBDays(-1); err == nil {
+		t.Fatal("negative retained byte-seconds were accepted")
+	}
+}
+
+func TestUTCStorageBoundariesIgnoreCallerOffset(t *testing.T) {
+	t.Parallel()
+	west := time.FixedZone("west", -8*60*60)
+	east := time.FixedZone("east", 14*60*60)
+	for _, fixture := range []struct {
+		value time.Time
+		want  time.Time
+	}{
+		{
+			time.Date(2030, 1, 1, 20, 30, 0, 0, west),
+			time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			time.Date(2030, 1, 2, 1, 30, 0, 0, east),
+			time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+	} {
+		if got := utcDayStart(fixture.value); !got.Equal(fixture.want) ||
+			got.Location() != time.UTC {
+			t.Fatalf("utcDayStart(%s) = %s; want %s",
+				fixture.value, got, fixture.want)
+		}
+	}
+}
+
+func TestStorageSettlementIdentityBindsAuthorizationDayAndDigest(t *testing.T) {
+	t.Parallel()
+	authorizationID := uuidv7.MustNew()
+	binding := dbgen.RealqaStorageAuthorizationBinding{
+		AuthorizationID:     toPGUUID(authorizationID),
+		SubmissionID:        toPGUUID(uuidv7.MustNew()),
+		ServiceIdentityID:   toPGUUID(uuidv7.MustNew()),
+		AuthorizerAccountID: toPGUUID(uuidv7.MustNew()),
+		OwnerID:             toPGUUID(uuidv7.MustNew()),
+		OrganizationID:      toPGUUID(uuidv7.MustNew()),
+		TeamID:              toPGUUID(uuidv7.MustNew()),
+		MeterID:             toPGUUID(uuidv7.MustNew()),
+	}
+	period := time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC)
+	digest, err := storageSettlementDigest(binding, period, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := storageSettlementDigest(binding, period, 3)
+	if err != nil || !bytes.Equal(digest, replayed) {
+		t.Fatal("exact storage settlement digest did not replay")
+	}
+	changedUnits, _ := storageSettlementDigest(binding, period, 4)
+	changedBinding := binding
+	changedBinding.ServiceIdentityID = toPGUUID(uuidv7.MustNew())
+	changedService, _ := storageSettlementDigest(changedBinding, period, 3)
+	if bytes.Equal(digest, changedUnits) ||
+		bytes.Equal(digest, changedService) {
+		t.Fatal("storage settlement digest permitted substitution")
+	}
+	if _, err = storageSettlementDigest(
+		binding, period.Add(time.Second), 3); err == nil {
+		t.Fatal("non-midnight period was accepted")
+	}
+	reserve, commit, release, err := storageSettlementKeys(
+		authorizationID, period)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedReserve, _, _, _ := storageSettlementKeys(
+		authorizationID, period)
+	nextReserve, _, _, _ := storageSettlementKeys(
+		authorizationID, period.Add(24*time.Hour))
+	if reserve != replayedReserve || reserve == commit ||
+		reserve == release || commit == release ||
+		reserve == nextReserve ||
+		reserve.Version() != 7 || commit.Version() != 7 ||
+		release.Version() != 7 {
+		t.Fatal("daily reserve/commit/release identities were not exact")
+	}
+}
+
+func TestValidateAuthorizedStorageReservationRejectsDigestSubstitution(
+	t *testing.T,
+) {
+	t.Parallel()
+	period := time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC)
+	authorizationID := uuidv7.MustNew()
+	submissionID := uuidv7.MustNew()
+	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
+	serviceID := uuidv7.MustNew()
+	meterID := uuidv7.MustNew()
+	priceID := uuidv7.MustNew()
+	accountID := uuidv7.MustNew()
+	reservationID := uuidv7.MustNew()
+	created := period.Add(time.Minute)
+	expires := created.Add(time.Hour)
+	binding := dbgen.RealqaStorageAuthorizationBinding{
+		AuthorizationID:     toPGUUID(authorizationID),
+		SubmissionID:        toPGUUID(submissionID),
+		OrganizationID:      toPGUUID(organizationID),
+		TeamID:              toPGUUID(teamID),
+		ServiceIdentityID:   toPGUUID(serviceID),
+		MeterID:             toPGUUID(meterID),
+		AuthorizerAccountID: toPGUUID(accountID),
+	}
+	meter := BillingMeter{
+		ID: meterID, PriceVersionID: priceID,
+		ServiceIdentityID: serviceID,
+	}
+	settlement := dbgen.RealqaStorageDailySettlement{
+		AuthorizationID: binding.AuthorizationID,
+		PeriodStart:     pgTimestamp(period),
+		Units:           2,
+	}
+	reservation := AuthorizedStorageReservation{
+		TransferReservation: TransferReservation{
+			ID: reservationID, OrganizationID: organizationID,
+			TeamID: teamID, MeterID: meterID, PriceVersionID: priceID,
+			UserAccountID: accountID, ServiceIdentityID: serviceID,
+			MaximumUnits: 2, USDMicrosPerUnit: storagePriceUSDMicros,
+			ClientReference: storageClientReference(
+				authorizationID, period),
+			Status: "active", CreatedAt: created, ExpiresAt: expires,
+		},
+		AuthorizationID:   authorizationID,
+		FeatureResourceID: submissionID,
+		PeriodStart:       period,
+	}
+	if err := validateAuthorizedStorageReservation(
+		reservation, binding, meter, settlement, period,
+		"active", 0); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*AuthorizedStorageReservation){
+		"authorization": func(value *AuthorizedStorageReservation) {
+			value.AuthorizationID = uuidv7.MustNew()
+		},
+		"resource": func(value *AuthorizedStorageReservation) {
+			value.FeatureResourceID = uuidv7.MustNew()
+		},
+		"period": func(value *AuthorizedStorageReservation) {
+			value.PeriodStart = value.PeriodStart.Add(24 * time.Hour)
+		},
+		"meter": func(value *AuthorizedStorageReservation) {
+			value.MeterID = uuidv7.MustNew()
+		},
+		"price": func(value *AuthorizedStorageReservation) {
+			value.USDMicrosPerUnit++
+		},
+		"units": func(value *AuthorizedStorageReservation) {
+			value.MaximumUnits++
+		},
+		"reference": func(value *AuthorizedStorageReservation) {
+			value.ClientReference += "-changed"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := reservation
+			mutate(&changed)
+			if err := validateAuthorizedStorageReservation(
+				changed, binding, meter, settlement, period,
+				"active", 0); err == nil {
+				t.Fatal("substituted authorized reservation was accepted")
+			}
+		})
 	}
 }
 
@@ -403,4 +608,48 @@ func TestValidateStorageAuthorizationRejectsEveryBindingSubstitution(
 			}
 		})
 	}
+}
+
+func TestIssueBodyCleanupIsSubmissionBoundAndBestEffort(t *testing.T) {
+	t.Parallel()
+	updater := &recordingIssueUpdater{
+		err: errors.New("provider unavailable"),
+	}
+	handler := NewSubmission(Dependencies{IssueUpdater: updater})
+	handler.bestEffortIssueUpdate(
+		context.Background(),
+		dbgen.RealqaSubmission{
+			ProviderIssueID: pgtype.Text{
+				String: "issue-757", Valid: true,
+			},
+		},
+		[]dbgen.RealqaAsset{
+			{PublicID: pgtype.Text{String: "public-one", Valid: true}},
+			{PublicID: pgtype.Text{String: "public-two", Valid: true}},
+			{},
+		},
+	)
+	if updater.issueID != "issue-757" ||
+		len(updater.publicIDs) != 2 ||
+		updater.publicIDs[0] != "public-one" ||
+		updater.publicIDs[1] != "public-two" {
+		t.Fatalf("best-effort update = %q, %#v",
+			updater.issueID, updater.publicIDs)
+	}
+}
+
+type recordingIssueUpdater struct {
+	issueID   string
+	publicIDs []string
+	err       error
+}
+
+func (updater *recordingIssueUpdater) RemoveImageReferences(
+	_ context.Context,
+	issueID string,
+	publicIDs []string,
+) error {
+	updater.issueID = issueID
+	updater.publicIDs = append([]string(nil), publicIDs...)
+	return updater.err
 }

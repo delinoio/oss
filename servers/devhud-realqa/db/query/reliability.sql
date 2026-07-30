@@ -9,6 +9,9 @@ INSERT INTO realqa_audits (
     sqlc.narg(request_id), sqlc.narg(trace_id)
 );
 
+-- name: GetTransactionTimestamp :one
+SELECT transaction_timestamp()::timestamptz;
+
 -- name: GetDeletionJob :one
 SELECT *
 FROM realqa_deletion_jobs
@@ -58,7 +61,9 @@ WHERE idempotency.operation = 'create_preset'
 DELETE FROM realqa_idempotency_records AS idempotency
 WHERE (
     idempotency.operation IN (
-        'create_submission', 'delete_submission_assets'
+        'create_submission', 'submit_issue',
+        'rebind_submission_storage_authorization',
+        'delete_submission_assets'
     )
     AND idempotency.resource_id IN (
         SELECT submission.id
@@ -86,9 +91,59 @@ WHERE owner_kind = sqlc.arg(owner_kind)
   AND owner_id = sqlc.arg(owner_id);
 
 -- name: DeleteScopeSubmissions :execrows
-DELETE FROM realqa_submissions
-WHERE owner_kind = sqlc.arg(owner_kind)
-  AND owner_id = sqlc.arg(owner_id);
+DELETE FROM realqa_submissions AS submission
+WHERE submission.owner_kind = sqlc.arg(owner_kind)
+  AND submission.owner_id = sqlc.arg(owner_id)
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_authorization_bindings AS binding
+      WHERE binding.submission_id = submission.id
+  );
+
+-- Billing-bound submissions remain only as pseudonymized resource anchors
+-- until their pre-cutoff settlements and delibase closure complete.
+-- name: DeleteScopeBillingIssueAttempts :execrows
+DELETE FROM realqa_issue_submission_attempts AS attempt
+WHERE EXISTS (
+    SELECT 1
+    FROM realqa_submissions AS submission
+    JOIN realqa_storage_authorization_bindings AS binding
+      ON binding.submission_id = submission.id
+    WHERE submission.id = attempt.submission_id
+      AND submission.owner_kind = sqlc.arg(owner_kind)
+      AND submission.owner_id = sqlc.arg(owner_id)
+);
+
+-- name: DeleteScopeBillingAssets :execrows
+DELETE FROM realqa_assets AS asset
+WHERE EXISTS (
+    SELECT 1
+    FROM realqa_submissions AS submission
+    JOIN realqa_storage_authorization_bindings AS binding
+      ON binding.submission_id = submission.id
+    WHERE submission.id = asset.submission_id
+      AND submission.owner_kind = sqlc.arg(owner_kind)
+      AND submission.owner_id = sqlc.arg(owner_id)
+);
+
+-- name: MinimizeScopeBillingSubmissions :execrows
+UPDATE realqa_submissions AS submission
+SET preset_id = NULL,
+    destination_id = NULL,
+    state = 'deleted',
+    provider_issue_id = NULL,
+    provider_issue_url = NULL,
+    declared_encoded_bytes = 0,
+    verified_encoded_bytes = 0,
+    updated_at = transaction_timestamp(),
+    revision = revision + 1
+WHERE submission.owner_kind = sqlc.arg(owner_kind)
+  AND submission.owner_id = sqlc.arg(owner_id)
+  AND EXISTS (
+      SELECT 1
+      FROM realqa_storage_authorization_bindings AS binding
+      WHERE binding.submission_id = submission.id
+  );
 
 -- name: DeleteScopeConnections :execrows
 DELETE FROM realqa_github_connections

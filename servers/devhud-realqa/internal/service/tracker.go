@@ -357,6 +357,12 @@ func (service *Tracker) DisconnectGitHubConnection(
 		return nil, err
 	}
 	connectionID, _ := fromPGUUID(record.ID)
+	submissions := NewSubmission(service.dependencies)
+	forwardedBearer, _ := submissions.forwardedBearer(ctx)
+	if err = submissions.HandleGitHubConnectionDeletion(
+		ctx, connectionID, forwardedBearer); err != nil {
+		return nil, err
+	}
 	audit(ctx, service.dependencies, actor, "github_connection_disconnected",
 		scope, connectionID, "allow", "success")
 	return connect.NewResponse(&realqav1.DisconnectGitHubConnectionResponse{
@@ -384,6 +390,16 @@ func (service *Tracker) disconnectReplay(
 	}
 	if !bytes.Equal(record.RequestDigest, digest) {
 		return nil, true, idempotencyConflict()
+	}
+	connectionID, conversionErr := fromPGUUID(record.ResourceID)
+	if conversionErr != nil {
+		return nil, true, conversionErr
+	}
+	submissions := NewSubmission(service.dependencies)
+	forwardedBearer, _ := submissions.forwardedBearer(ctx)
+	if err = submissions.HandleGitHubConnectionDeletion(
+		ctx, connectionID, forwardedBearer); err != nil {
+		return nil, true, err
 	}
 	connection := new(realqav1.GitHubConnection)
 	if err := proto.Unmarshal(record.ResponsePayload, connection); err != nil {

@@ -143,6 +143,15 @@ func (service *Preset) DeleteFeatureData(
 				return nil, cleanupErr
 			}
 		}
+		if !ownerRequest {
+			imageService := NewSubmission(service.dependencies)
+			if cleanupErr := imageService.
+				HandleLifecycleAuthorizationDeletion(
+					ctx, scope, existing.AcceptedAt.Time,
+				); cleanupErr != nil {
+				return nil, cleanupErr
+			}
+		}
 		existingID, conversionErr := fromPGUUID(existing.ID)
 		if conversionErr != nil {
 			return nil, conversionErr
@@ -228,6 +237,27 @@ func (service *Preset) DeleteFeatureData(
 				}); listErr != nil {
 				return listErr
 			}
+			cutoff, listErr := queries.GetTransactionTimestamp(ctx)
+			if listErr != nil {
+				return listErr
+			}
+			if _, listErr = queries.CloseStorageRetentionForScope(
+				ctx, dbgen.CloseStorageRetentionForScopeParams{
+					Cutoff:    cutoff,
+					OwnerKind: scope.kind,
+					OwnerID:   toPGUUID(scope.id),
+				}); listErr != nil {
+				return listErr
+			}
+			if _, listErr = queries.MarkScopeStorageClosurePending(
+				ctx, dbgen.MarkScopeStorageClosurePendingParams{
+					OwnerDeletedAllowed: !ownerRequest,
+					Cutoff:              cutoff,
+					OwnerKind:           scope.kind,
+					OwnerID:             toPGUUID(scope.id),
+				}); listErr != nil {
+				return listErr
+			}
 			count, deleteErr := queries.DeleteScopeDisconnectIdempotencySnapshots(ctx,
 				dbgen.DeleteScopeDisconnectIdempotencySnapshotsParams{
 					ScopeOwnerKind: scope.kind, ScopeOwnerID: toPGUUID(scope.id),
@@ -262,6 +292,30 @@ func (service *Preset) DeleteFeatureData(
 			}
 			count, deleteErr = queries.DeleteScopeSubmissions(ctx,
 				dbgen.DeleteScopeSubmissionsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
+			count, deleteErr = queries.DeleteScopeBillingIssueAttempts(
+				ctx, dbgen.DeleteScopeBillingIssueAttemptsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
+			count, deleteErr = queries.DeleteScopeBillingAssets(
+				ctx, dbgen.DeleteScopeBillingAssetsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
+			count, deleteErr = queries.MinimizeScopeBillingSubmissions(
+				ctx, dbgen.MinimizeScopeBillingSubmissionsParams{
 					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
 				})
 			removed += count
@@ -338,6 +392,15 @@ func (service *Preset) DeleteFeatureData(
 					return nil, cleanupErr
 				}
 			}
+			if !ownerRequest {
+				imageService := NewSubmission(service.dependencies)
+				if cleanupErr := imageService.
+					HandleLifecycleAuthorizationDeletion(
+						ctx, scope, existing.AcceptedAt.Time,
+					); cleanupErr != nil {
+					return nil, cleanupErr
+				}
+			}
 			existingID, _ := fromPGUUID(existing.ID)
 			return deletionReplay(
 				existingID, existing.AcceptedAt, existing.AlreadyAbsent,
@@ -346,6 +409,12 @@ func (service *Preset) DeleteFeatureData(
 		return nil, err
 	}
 	imageService := NewSubmission(service.dependencies)
+	if !ownerRequest {
+		if err = imageService.HandleLifecycleAuthorizationDeletion(
+			ctx, scope, deletionJob.AcceptedAt.Time); err != nil {
+			return nil, err
+		}
+	}
 	imageService.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	audit(ctx, service.dependencies, actor, "feature_deletion_accepted",
 		scope, jobID, "allow", "success")
