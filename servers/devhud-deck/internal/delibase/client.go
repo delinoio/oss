@@ -24,11 +24,12 @@ import (
 )
 
 const (
-	catalogAppKey                = "devhud"
-	catalogMeterKey              = "deck_github_pull_request_refresh"
-	unitName                     = "provider_refresh"
-	tokenLeeway                  = time.Minute
-	minimumRefreshReservationTTL = 24 * time.Hour
+	catalogAppKey                 = "devhud"
+	catalogMeterKey               = "deck_github_pull_request_refresh"
+	unitName                      = "provider_refresh"
+	tokenLeeway                   = time.Minute
+	minimumRefreshReservationTTL  = 24 * time.Hour
+	minimumRefreshFinalizationTTL = time.Minute
 )
 
 var (
@@ -231,7 +232,7 @@ func (client *Client) ReserveRefresh(
 			contracts.ProviderRefreshPriceUSDMicros &&
 		reservation.GetStatus() ==
 			delibasev1.ReservationStatus_RESERVATION_STATUS_ACTIVE &&
-		reservation.GetExpiresAt() != nil
+		validRefreshReservationLifetime(reservation, client.now().UTC())
 	if !validReservation {
 		if idErr == nil &&
 			reservation.GetStatus() ==
@@ -248,6 +249,22 @@ func (client *Client) ReserveRefresh(
 	return contracts.UsageReservation{
 		ID: reservationID, ExpiresAt: reservation.GetExpiresAt().AsTime().UTC(),
 	}, nil
+}
+
+func validRefreshReservationLifetime(
+	reservation *delibasev1.UsageReservation,
+	now time.Time,
+) bool {
+	createdAt := reservation.GetCreatedAt()
+	expiresAt := reservation.GetExpiresAt()
+	if createdAt == nil || expiresAt == nil ||
+		createdAt.CheckValid() != nil || expiresAt.CheckValid() != nil {
+		return false
+	}
+	created := createdAt.AsTime().UTC()
+	expires := expiresAt.AsTime().UTC()
+	return expires.Sub(created) >= minimumRefreshReservationTTL &&
+		!expires.Before(now.Add(minimumRefreshFinalizationTTL))
 }
 
 func definitiveReservationFailure(err error) bool {

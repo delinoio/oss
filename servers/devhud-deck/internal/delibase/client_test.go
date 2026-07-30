@@ -107,6 +107,8 @@ type usageFixture struct {
 	meterID        uuid.UUID
 	priceVersionID uuid.UUID
 	reservationID  uuid.UUID
+	createdAt      time.Time
+	expiresAt      time.Time
 	reserves       []*delibasev1.ReserveUsageRequest
 	commits        []*delibasev1.CommitUsageRequest
 	releases       []*delibasev1.ReleaseUsageRequest
@@ -134,9 +136,9 @@ func (fixture *usageFixture) reservation(
 		MaximumCost: &delibasev1.UsdMicros{
 			Value: contracts.ProviderRefreshPriceUSDMicros,
 		},
-		Status: status,
-		ExpiresAt: timestamppb.New(
-			time.Date(2026, time.July, 31, 0, 0, 0, 0, time.UTC)),
+		Status:    status,
+		CreatedAt: timestamppb.New(fixture.createdAt),
+		ExpiresAt: timestamppb.New(fixture.expiresAt),
 	}
 }
 
@@ -217,6 +219,7 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 	reservationID := uuid.MustParse("01900000-0000-7000-8000-000000000004")
 	organizationID := uuid.MustParse("01900000-0000-7000-8000-000000000005")
 	teamID := uuid.MustParse("01900000-0000-7000-8000-000000000006")
+	now := time.Date(2026, time.July, 30, 0, 0, 0, 0, time.UTC)
 	catalog := &catalogFixture{
 		meterID: meterID, priceVersionID: priceVersionID,
 		serviceID: serviceID, includeTarget: true,
@@ -225,6 +228,7 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 	usage := &usageFixture{
 		meterID: meterID, priceVersionID: priceVersionID,
 		serviceID: serviceID, reservationID: reservationID,
+		createdAt: now, expiresAt: now.Add(minimumRefreshReservationTTL),
 	}
 	mux := http.NewServeMux()
 	catalogPath, catalogHandler :=
@@ -265,6 +269,7 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	client.now = func() time.Time { return now }
 	if err := client.ValidateStartup(context.Background()); err != nil {
 		t.Fatalf("startup validation = %v", err)
 	}
@@ -327,11 +332,25 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 	); !errors.Is(err, contracts.ErrRefreshReservationRejected) {
 		t.Fatalf("changed-price reservation cleanup = %v", err)
 	}
+	usage.mu.Lock()
+	usage.priceVersionID = priceVersionID
+	usage.reservationID = uuid.MustParse(
+		"01900000-0000-7000-8000-000000000011")
+	usage.expiresAt = now.Add(minimumRefreshFinalizationTTL - time.Second)
+	usage.createdAt = usage.expiresAt.Add(-minimumRefreshReservationTTL)
+	usage.mu.Unlock()
+	if _, err := client.ReserveRefresh(
+		context.Background(), "forwarded-user-token", billing,
+		uuid.MustParse("01900000-0000-7000-8000-000000000012"),
+		meter,
+	); !errors.Is(err, contracts.ErrRefreshReservationRejected) {
+		t.Fatalf("expiring reservation cleanup = %v", err)
+	}
 
 	usage.mu.Lock()
 	defer usage.mu.Unlock()
-	if len(usage.reserves) != 2 || len(usage.commits) != 1 ||
-		len(usage.releases) != 4 {
+	if len(usage.reserves) != 3 || len(usage.commits) != 1 ||
+		len(usage.releases) != 5 {
 		t.Fatalf(
 			"usage calls reserve=%d commit=%d release=%d",
 			len(usage.reserves), len(usage.commits), len(usage.releases))
