@@ -2582,17 +2582,17 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("disconnect reserve calls = %d, want 3",
 			disconnectBilling.reserveAuthorizedCalls)
 	}
+	disconnectPeriodStart := utcDayStart(disconnectCutoff)
 	disconnectBinding, err := store.Queries().GetStorageAuthorizationBinding(
 		ctx, toPGUUID(disconnectAuthorizationID))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !disconnectBinding.AccrualCutoffAt.Valid ||
-		!disconnectBinding.AccrualCutoffAt.Time.Equal(disconnectCutoff) {
+		!disconnectBinding.AccrualCutoffAt.Time.Equal(disconnectPeriodStart) {
 		t.Fatalf("disconnect retry cutoff = %v, want %s",
-			disconnectBinding.AccrualCutoffAt, disconnectCutoff)
+			disconnectBinding.AccrualCutoffAt, disconnectPeriodStart)
 	}
-	disconnectPeriodStart := utcDayStart(disconnectCutoff)
 	disconnectSettlement, err := store.Queries().GetStorageDailySettlement(
 		ctx, dbgen.GetStorageDailySettlementParams{
 			AuthorizationID: toPGUUID(disconnectAuthorizationID),
