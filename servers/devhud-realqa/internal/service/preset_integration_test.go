@@ -2752,9 +2752,33 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("paid commit recovery = %q / %q / %v",
 			paidSubmissionState, paidSettlementState, paidRetentionRestarted)
 	}
+	backgroundDisconnectAt := disconnectCutoff.Add(2 * time.Hour)
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_github_connections
+		SET state = 'disconnected',
+		    credential_ciphertext = NULL,
+		    wrapped_data_key = NULL,
+		    key_id = NULL,
+		    oauth_state_digest = NULL,
+		    oauth_state_expires_at = NULL,
+		    updated_at = $2
+		WHERE id = $1
+	`, organizationConnectionID, backgroundDisconnectAt); err != nil {
+		t.Fatal(err)
+	}
 	if err = disconnectService.blockDisconnectedGitHubStorage(
 		ctx, storageChargingBatchLimit); err != nil {
 		t.Fatalf("background disconnect recovery: %v", err)
+	}
+	backgroundDisconnectBinding, err :=
+		store.Queries().GetStorageAuthorizationBinding(
+			ctx, toPGUUID(disconnectAuthorizationID))
+	if err != nil ||
+		!backgroundDisconnectBinding.AccrualCutoffAt.Time.Equal(
+			disconnectCutoff) {
+		t.Fatalf("background disconnect cutoff = %v / %v, want %s",
+			backgroundDisconnectBinding.AccrualCutoffAt, err,
+			disconnectCutoff)
 	}
 	backgroundDisconnectRecovery, err :=
 		store.Queries().GetActiveStorageRecovery(
