@@ -270,13 +270,19 @@ export function DeckConnectionManager({
     };
   }, [load]);
 
-  const state = connection?.state ?? ConnectionState.DISCONNECTED;
-  const installation = installations[0];
+  const currentConnection = ownerMatches(connection?.owner, ownerIdentity)
+    ? connection
+    : undefined;
+  const state =
+    currentConnection?.state ?? ConnectionState.DISCONNECTED;
+  const installation = installations.find((candidate) =>
+    ownerMatches(candidate.owner, ownerIdentity),
+  );
   const activeConnection =
     state !== ConnectionState.DISCONNECTED &&
-    connection?.connectionId?.value &&
-    connection.revision
-      ? connection
+    currentConnection?.connectionId?.value &&
+    currentConnection.revision
+      ? currentConnection
       : undefined;
   const configured =
     runtimeConfig.deck.issues.length === 0 && Boolean(client);
@@ -393,16 +399,16 @@ export function DeckConnectionManager({
           Deck connection management is not configured for this build.
         </div>
       ) : null}
-      {configured && loadState === LoadState.Loading ? (
+      {configured && online && loadState === LoadState.Loading ? (
         <LoadingState label="Loading GitHub connection" />
       ) : null}
-      {configured && loadState === LoadState.Idle && !online ? (
+      {configured && !online && loadState !== LoadState.Ready ? (
         <p className="outage-state" role="status">
           GitHub connection details are unavailable offline. Reconnect to
           check or manage this connection.
         </p>
       ) : null}
-      {configured && loadState === LoadState.Error ? (
+      {configured && online && loadState === LoadState.Error ? (
         <div className="outage-state" role="alert">
           <p>{error}</p>
           <button
@@ -420,9 +426,10 @@ export function DeckConnectionManager({
           <div className="deck-state-summary">
             <strong>{stateLabel(state)}</strong>
             <p>{stateDescription(state)}</p>
-            {connection?.revision?.value ? (
+            {currentConnection?.revision?.value ? (
               <small>
-                Connection revision {connection.revision.value.toString()}
+                Connection revision{" "}
+                {currentConnection.revision.value.toString()}
               </small>
             ) : null}
           </div>

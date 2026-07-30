@@ -307,6 +307,114 @@ describe("Deck connection manager", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("replaces an interrupted loading state with offline guidance", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return connectJsonResponse({});
+    });
+
+    renderManager(fetchMock);
+
+    expect(
+      await screen.findByText(/Loading GitHub connection/),
+    ).toBeVisible();
+
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    window.dispatchEvent(new Event("offline"));
+
+    expect(
+      await screen.findByText(
+        /GitHub connection details are unavailable offline/,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Loading GitHub connection/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not expose cached connection data for a different owner", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (request) =>
+      String(request).endsWith("/GetGitHubConnection")
+        ? connectJsonResponse(connectedResponse())
+        : connectJsonResponse(installationsResponse()),
+    );
+    const deckTransport = createDeckIntegrationTransport({
+      baseUrl: canonicalDeckAudience,
+      fetch: fetchMock,
+      getAccessToken: async (audience) =>
+        audience === canonicalDeckAudience
+          ? "deck-token"
+          : "delibase-token",
+    });
+
+    function Parent() {
+      const [ownerScope, setOwnerScope] =
+        useState<DeckConnectionOwner>({
+          accountId: "account-id",
+          kind: "personal",
+          returnPath: "/account",
+        });
+      return (
+        <AuthSessionProvider
+          value={{
+            deckTransport,
+            signIn: async () => undefined,
+            signOut: async () => undefined,
+            status: AuthStatus.SignedIn,
+          }}
+        >
+          <button
+            onClick={() =>
+              setOwnerScope({
+                kind: "organization",
+                organizationId: "organization-id",
+                organizationName: "Acme",
+                returnPath: "/o/acme/settings",
+              })
+            }
+            type="button"
+          >
+            Switch owner
+          </button>
+          <DeckConnectionManager ownerScope={ownerScope} />
+        </AuthSessionProvider>
+      );
+    }
+
+    const user = userEvent.setup();
+    render(<Parent />);
+
+    expect(await screen.findByText("@octocat")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Disconnect" }),
+    ).toBeEnabled();
+
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    window.dispatchEvent(new Event("offline"));
+    await user.click(
+      screen.getByRole("button", { name: "Switch owner" }),
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Acme GitHub connection",
+      }),
+    ).toBeVisible();
+    expect(screen.queryByText("@octocat")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Connection revision 7"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Disconnect" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not reload when an equivalent owner prop is recreated", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (request) =>
       String(request).endsWith("/GetGitHubConnection")
