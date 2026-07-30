@@ -1,6 +1,9 @@
 package github
 
-import "context"
+import (
+	"context"
+	"net/http"
+)
 
 type dispatchObserverContextKey struct{}
 
@@ -23,4 +26,32 @@ func notifyDispatch(ctx context.Context) error {
 		return nil
 	}
 	return observer()
+}
+
+type dispatchTransport struct {
+	base http.RoundTripper
+}
+
+type dispatchError struct {
+	err error
+}
+
+func (dispatch *dispatchError) Error() string {
+	return dispatch.err.Error()
+}
+
+func (dispatch *dispatchError) Unwrap() error {
+	return dispatch.err
+}
+
+func (transport dispatchTransport) RoundTrip(
+	request *http.Request,
+) (*http.Response, error) {
+	if err := request.Context().Err(); err != nil {
+		return nil, err
+	}
+	if err := notifyDispatch(request.Context()); err != nil {
+		return nil, &dispatchError{err: err}
+	}
+	return transport.base.RoundTrip(request)
 }

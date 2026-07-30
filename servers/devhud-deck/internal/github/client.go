@@ -44,6 +44,11 @@ func NewClient(httpClient *http.Client) *Client {
 	) error {
 		return http.ErrUseLastResponse
 	}
+	baseTransport := safeHTTPClient.Transport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+	safeHTTPClient.Transport = dispatchTransport{base: baseTransport}
 	return &Client{
 		http: &safeHTTPClient, now: func() time.Time { return time.Now().UTC() },
 		mutations:   newUserRateLimiter(30, time.Minute),
@@ -97,11 +102,12 @@ func (client *Client) doWithConflictError(
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	if err := notifyDispatch(ctx); err != nil {
-		return nil, err
-	}
 	response, err := client.http.Do(request)
 	if err != nil {
+		var dispatchErr *dispatchError
+		if errors.As(err, &dispatchErr) {
+			return nil, dispatchErr.err
+		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, ErrTimeout
 		}

@@ -367,6 +367,28 @@ func TestDispatchObserverRunsImmediatelyBeforeRoundTrip(t *testing.T) {
 			"timeout dispatch = %v, observer = %d, round trips = %d",
 			err, observerCalls, roundTrips)
 	}
+
+	observerCalls = 0
+	roundTrips = 0
+	client = NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			roundTrips++
+			return jsonResponse(http.StatusOK, `{}`), nil
+		})})
+	ctx, cancel := context.WithCancel(WithDispatchObserver(
+		context.Background(), func() error {
+			observerCalls++
+			return nil
+		}))
+	cancel()
+	_, err = client.CanReadRepository(
+		ctx, Credential{AccessToken: "token"},
+		Repository{Owner: "acme", Name: "widget"})
+	if !errors.Is(err, ErrProvider) || observerCalls != 0 || roundTrips != 0 {
+		t.Fatalf(
+			"pre-transport cancellation = %v, observer = %d, round trips = %d",
+			err, observerCalls, roundTrips)
+	}
 }
 
 func TestInstallationProviderConcurrencyLimitIsFour(t *testing.T) {

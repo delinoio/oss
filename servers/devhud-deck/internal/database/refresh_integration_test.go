@@ -302,6 +302,25 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		Number:     8,
 		Title:      "replacement",
 	}}
+	atomicRequestID := mustV7(t)
+	atomicDigest := security.Digest([]byte("atomic-refresh-response"))
+	atomicParams := attemptParams
+	atomicParams.RequestID = atomicRequestID
+	atomicParams.RequestDigest = atomicDigest
+	atomicParams.Now = now.Add(time.Minute)
+	if _, _, err := store.BeginRefreshAttempt(ctx, atomicParams); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkRefreshReserved(
+		ctx, subjectHash, atomicRequestID, mustV7(t),
+		now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	atomicPending := &deckv1.RefreshViewResponse{
+		ViewId:             view.GetViewId(),
+		Outcome:            deckv1.RefreshOutcome_REFRESH_OUTCOME_REFRESHED,
+		BillingDisposition: deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
+	}
 	err = store.WithViewRevisionLock(
 		ctx, viewID, view.GetRevision().GetValue(),
 		func(persistence *RefreshPersistence) error {
@@ -309,6 +328,11 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 				ctx, viewID, viewerHash, replacementSnapshots,
 				now.Add(time.Minute)); replaceErr != nil {
 				return replaceErr
+			}
+			if saveErr := persistence.SaveRefreshPendingResponse(
+				ctx, subjectHash, atomicRequestID, atomicPending,
+				now.Add(time.Minute)); saveErr != nil {
+				return saveErr
 			}
 			return persistence.CreateNotificationEvents(
 				ctx, viewID, viewerHash,
@@ -332,6 +356,41 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		!retainedAt.Equal(now) {
 		t.Fatalf("failed refresh persistence was not atomic: snapshots=%#v at=%v",
 			retainedSnapshots, retainedAt)
+	}
+	atomicAttempt, err := store.GetRefreshAttempt(
+		ctx, subjectHash, atomicRequestID, atomicDigest)
+	if err != nil || atomicAttempt.Response != nil {
+		t.Fatalf("rolled-back refresh response = %#v, %v", atomicAttempt, err)
+	}
+	if err := store.WithViewRevisionLock(
+		ctx, viewID, view.GetRevision().GetValue(),
+		func(persistence *RefreshPersistence) error {
+			if _, replaceErr := persistence.ReplaceSnapshots(
+				ctx, viewID, viewerHash, replacementSnapshots,
+				now.Add(time.Minute)); replaceErr != nil {
+				return replaceErr
+			}
+			return persistence.SaveRefreshPendingResponse(
+				ctx, subjectHash, atomicRequestID, atomicPending,
+				now.Add(time.Minute))
+		}); err != nil {
+		t.Fatal(err)
+	}
+	retainedSnapshots, _, retainedAt, err =
+		store.ListAllSnapshots(ctx, viewID, viewerHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atomicAttempt, err = store.GetRefreshAttempt(
+		ctx, subjectHash, atomicRequestID, atomicDigest)
+	if err != nil || len(retainedSnapshots) != 1 ||
+		retainedSnapshots[0].GetNumber() != replacementSnapshots[0].GetNumber() ||
+		!retainedAt.Equal(now.Add(time.Minute)) ||
+		atomicAttempt.Response.GetOutcome() !=
+			deckv1.RefreshOutcome_REFRESH_OUTCOME_REFRESHED {
+		t.Fatalf(
+			"committed refresh persistence = snapshots=%#v at=%v attempt=%#v err=%v",
+			retainedSnapshots, retainedAt, atomicAttempt, err)
 	}
 
 	if err := store.CreateNotificationEvents(

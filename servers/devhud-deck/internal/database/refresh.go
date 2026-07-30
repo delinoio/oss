@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database/dbgen"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type RefreshAttemptState int16
@@ -168,6 +169,17 @@ func (persistence *RefreshPersistence) UpdateWidgetSnapshots(
 	return persistence.store.updateWidgetSnapshots(
 		ctx, persistence.transaction, accountID, viewID,
 		snapshots, truncated, refreshedAt, updatedAt)
+}
+
+func (persistence *RefreshPersistence) SaveRefreshPendingResponse(
+	ctx context.Context,
+	subjectHash [32]byte,
+	requestID uuid.UUID,
+	response *deckv1.RefreshViewResponse,
+	now time.Time,
+) error {
+	return persistence.store.saveRefreshPendingResponse(
+		ctx, persistence.transaction, subjectHash, requestID, response, now)
 }
 
 // WithViewRevisionLock fences refresh persistence against concurrent view
@@ -502,11 +514,27 @@ func (store *Store) SaveRefreshPendingResponse(
 	response *deckv1.RefreshViewResponse,
 	now time.Time,
 ) error {
+	return store.saveRefreshPendingResponse(
+		ctx, store.pool, subjectHash, requestID, response, now)
+}
+
+type refreshExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func (store *Store) saveRefreshPendingResponse(
+	ctx context.Context,
+	execer refreshExecer,
+	subjectHash [32]byte,
+	requestID uuid.UUID,
+	response *deckv1.RefreshViewResponse,
+	now time.Time,
+) error {
 	ciphertext, err := store.sealProto("refresh-response", response)
 	if err != nil {
 		return err
 	}
-	result, err := store.pool.Exec(ctx, `
+	result, err := execer.Exec(ctx, `
 		UPDATE deck_refresh_attempts
 		SET response_ciphertext = $3, updated_at = $4
 		WHERE subject_hash = $1 AND refresh_request_id = $2

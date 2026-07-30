@@ -29,6 +29,7 @@ const (
 	refreshPreflightLifetime = 5 * time.Minute
 	automaticViewWindow      = 30 * 24 * time.Hour
 	refreshPreflightSize     = 163
+	refreshResultLimit       = 500
 )
 
 func (service *View) GetRefreshPreflight(
@@ -637,32 +638,45 @@ func (service *View) dispatchReservedRefresh(
 	dispatched := false
 	var dispatchOnce sync.Once
 	var dispatchErr error
-	// Repository authorization may contact GitHub, so reject an already-stale
-	// attempt before using the dispatch-observed provider context.
-	providerErr := service.dependencies.Store.CheckViewRevision(
-		ctx, refreshViewID(view), attempt.ViewRevision)
-	providerCtx := ctx
-	var providerView *deckv1.View
-	if providerErr == nil {
-		providerCtx = deckgithub.WithDispatchObserver(ctx, func() error {
-			dispatchOnce.Do(func() {
-				dispatchErr = service.dependencies.Store.MarkRefreshDispatched(
-					ctx, subjectHash, requestID,
-					service.dependencies.Clock.Now().UTC())
-				if dispatchErr == nil {
-					dispatched = true
-				}
-			})
-			return dispatchErr
+	providerCtx := deckgithub.WithDispatchObserver(ctx, func() error {
+		dispatchOnce.Do(func() {
+			dispatchErr = service.dependencies.Store.MarkRefreshDispatched(
+				ctx, subjectHash, requestID,
+				service.dependencies.Clock.Now().UTC())
+			if dispatchErr == nil {
+				dispatched = true
+			}
 		})
-		providerView, providerErr = service.getRefreshProviderAuthorizedView(
-			providerCtx, viewer, refreshViewID(view))
-	}
-	if providerErr == nil &&
-		providerView.GetRevision().GetValue() != attempt.ViewRevision {
-		providerErr = &database.StaleError{
-			ResourceID: refreshViewID(view),
-			Revision:   providerView.GetRevision().GetValue(),
+		return dispatchErr
+	})
+	var providerErr error
+	var pending *deckv1.RefreshViewResponse
+	var providerView *deckv1.View
+	// Repository authorization can contact GitHub. Keep the revision fence
+	// through that authorization so an UpdateView is ordered either before any
+	// provider dispatch or after the attempt has become billable.
+	authorizationFenceErr := service.dependencies.Store.WithViewRevisionLock(
+		ctx, refreshViewID(view), attempt.ViewRevision,
+		func(*database.RefreshPersistence) error {
+			providerView, providerErr =
+				service.getRefreshProviderAuthorizedView(
+					providerCtx, viewer, refreshViewID(view))
+			if providerErr == nil &&
+				providerView.GetRevision().GetValue() != attempt.ViewRevision {
+				providerErr = &database.StaleError{
+					ResourceID: refreshViewID(view),
+					Revision:   providerView.GetRevision().GetValue(),
+				}
+			}
+			return nil
+		})
+	if authorizationFenceErr != nil {
+		var stale *database.StaleError
+		if errors.Is(authorizationFenceErr, database.ErrNotFound) ||
+			errors.As(authorizationFenceErr, &stale) {
+			providerErr = authorizationFenceErr
+		} else {
+			return authorizationFenceErr
 		}
 	}
 	var previous []*deckv1.PullRequestResult
@@ -679,46 +693,62 @@ func (service *View) dispatchReservedRefresh(
 				providerCtx, viewer, providerView, previous)
 	}
 	now := service.dependencies.Clock.Now().UTC()
-	outcome := refreshOutcomeForProviderError(providerErr)
-	freshness := deckv1.FreshnessState_FRESHNESS_STATE_STALE
-	refreshedAt := time.Time{}
-	resultCount := 0
 	if providerErr == nil {
-		providerErr = service.dependencies.Store.WithViewRevisionLock(
-			ctx, refreshViewID(view), view.GetRevision().GetValue(),
-			func(persistence *database.RefreshPersistence) error {
-				storeTruncated, storeErr :=
-					persistence.ReplaceSnapshots(
-						ctx, refreshViewID(view), viewerHash, snapshots, now)
-				if storeErr != nil {
-					return storeErr
-				}
-				truncated = truncated || storeTruncated
-				preferences, preferenceErr :=
-					persistence.ActiveNotificationPreferences(
-						ctx, viewer.AccountID, refreshViewID(view), now)
-				if preferenceErr != nil {
-					return preferenceErr
-				}
-				writes := notificationWrites(
-					previous, notificationSnapshots,
-					preferences, viewer.GitHubLogin)
-				if err := persistence.CreateNotificationEvents(
-					ctx, refreshViewID(view), viewerHash, writes, now); err != nil {
-					return err
-				}
-				return persistence.UpdateWidgetSnapshots(
-					ctx, viewer.AccountID, refreshViewID(view),
-					snapshots, truncated, now, now)
-			})
-		outcome = refreshOutcomeForProviderError(providerErr)
-		if providerErr == nil {
-			freshness = deckv1.FreshnessState_FRESHNESS_STATE_FRESH
-			refreshedAt = now
-			resultCount = len(snapshots)
+		// The retry outcome must commit with the derived snapshot state. A lost
+		// client response can then resume billing without inventing a failure for
+		// snapshots that were already replaced.
+		persistenceFenceErr :=
+			service.dependencies.Store.WithViewRevisionLock(
+				ctx, refreshViewID(view), attempt.ViewRevision,
+				func(persistence *database.RefreshPersistence) error {
+					storeTruncated, storeErr :=
+						persistence.ReplaceSnapshots(
+							ctx, refreshViewID(view), viewerHash, snapshots, now)
+					if storeErr != nil {
+						return storeErr
+					}
+					truncated = truncated || storeTruncated
+					preferences, preferenceErr :=
+						persistence.ActiveNotificationPreferences(
+							ctx, viewer.AccountID, refreshViewID(view), now)
+					if preferenceErr != nil {
+						return preferenceErr
+					}
+					writes := notificationWrites(
+						previous, notificationSnapshots,
+						preferences, viewer.GitHubLogin)
+					if err := persistence.CreateNotificationEvents(
+						ctx, refreshViewID(view), viewerHash, writes, now); err != nil {
+						return err
+					}
+					if err := persistence.UpdateWidgetSnapshots(
+						ctx, viewer.AccountID, refreshViewID(view),
+						snapshots, truncated, now, now); err != nil {
+						return err
+					}
+					pending = refreshResponse(
+						view, deckv1.RefreshOutcome_REFRESH_OUTCOME_REFRESHED,
+						deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
+						deckv1.FreshnessState_FRESHNESS_STATE_FRESH,
+						now, truncated, len(snapshots), false)
+					return persistence.SaveRefreshPendingResponse(
+						ctx, subjectHash, requestID, pending, now)
+				})
+		if persistenceFenceErr != nil {
+			var stale *database.StaleError
+			if errors.Is(persistenceFenceErr, database.ErrNotFound) ||
+				errors.As(persistenceFenceErr, &stale) {
+				providerErr = persistenceFenceErr
+			} else {
+				return persistenceFenceErr
+			}
 		}
 	}
 	if providerErr != nil {
+		outcome := refreshOutcomeForProviderError(providerErr)
+		freshness := deckv1.FreshnessState_FRESHNESS_STATE_STALE
+		refreshedAt := time.Time{}
+		resultCount := 0
 		var stateErr error
 		truncated, refreshedAt, freshness, resultCount, stateErr =
 			service.currentSnapshotState(
@@ -726,15 +756,18 @@ func (service *View) dispatchReservedRefresh(
 		if stateErr != nil {
 			providerErr = stateErr
 		}
+		pending = refreshResponse(
+			view, outcome,
+			deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
+			freshness, refreshedAt,
+			truncated, resultCount, false)
+		if err := service.dependencies.Store.SaveRefreshPendingResponse(
+			ctx, subjectHash, requestID, pending, now); err != nil {
+			return err
+		}
 	}
-	pending := refreshResponse(
-		view, outcome,
-		deckv1.BillingDisposition_BILLING_DISPOSITION_RESERVED,
-		freshness, refreshedAt,
-		truncated, resultCount, false)
-	if err := service.dependencies.Store.SaveRefreshPendingResponse(
-		ctx, subjectHash, requestID, pending, now); err != nil {
-		return err
+	if pending == nil {
+		return errors.New("deck refresh: missing pending provider response")
 	}
 	if dispatched {
 		disposition, err := finalizeRefreshReservation(
@@ -823,7 +856,7 @@ func (service *View) performGitHubRefresh(
 	results := make([]*deckv1.PullRequestResult, 0, 100)
 	cursor := ""
 	truncated := false
-	for len(results) <= 500 {
+	for len(results) <= refreshResultLimit {
 		page, pageErr := service.dependencies.GitHubClient.SearchPullRequests(
 			ctx, connection.Installation.ID, connection.Credential, resolved,
 			deckgithub.Page{Cursor: cursor, Limit: 100})
@@ -831,6 +864,10 @@ func (service *View) performGitHubRefresh(
 			return nil, nil, false, pageErr
 		}
 		for _, pullRequest := range page.PullRequests {
+			if len(results) == refreshResultLimit {
+				truncated = true
+				break
+			}
 			reference := &deckv1.PullRequestReference{
 				Repository: &deckv1.RepositoryReference{
 					Owner: pullRequest.Repository.Owner,
@@ -853,13 +890,10 @@ func (service *View) performGitHubRefresh(
 				refreshViewID(view), reference,
 				&deckv1.PullRequestResult{}, metadata)
 			results = append(results, detail.Result)
-			if len(results) > 500 {
-				truncated = true
-				break
-			}
 		}
 		truncated = truncated || page.Truncated
-		if cursor = page.NextCursor; cursor == "" || len(results) > 500 {
+		if cursor = page.NextCursor; cursor == "" ||
+			(truncated && len(results) == refreshResultLimit) {
 			break
 		}
 	}
@@ -983,10 +1017,10 @@ func previousOnlySnapshots(
 func retainedRefreshResults(
 	results []*deckv1.PullRequestResult,
 ) ([]*deckv1.PullRequestResult, bool) {
-	if len(results) <= 500 {
+	if len(results) <= refreshResultLimit {
 		return results, false
 	}
-	return results[:500], true
+	return results[:refreshResultLimit], true
 }
 
 func (service *View) currentSnapshotState(

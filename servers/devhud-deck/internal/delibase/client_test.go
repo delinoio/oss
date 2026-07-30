@@ -312,11 +312,26 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 		reservation.ID); !errors.Is(err, ErrFinalizationFailed) {
 		t.Fatalf("active release = %v", err)
 	}
+	usage.mu.Lock()
+	usage.releaseStatus =
+		delibasev1.ReservationStatus_RESERVATION_STATUS_UNSPECIFIED
+	usage.priceVersionID = uuid.MustParse(
+		"01900000-0000-7000-8000-000000000008")
+	usage.reservationID = uuid.MustParse(
+		"01900000-0000-7000-8000-000000000009")
+	usage.mu.Unlock()
+	if _, err := client.ReserveRefresh(
+		context.Background(), "forwarded-user-token", billing,
+		uuid.MustParse("01900000-0000-7000-8000-000000000010"),
+		meter,
+	); !errors.Is(err, contracts.ErrRefreshReservationRejected) {
+		t.Fatalf("changed-price reservation cleanup = %v", err)
+	}
 
 	usage.mu.Lock()
 	defer usage.mu.Unlock()
-	if len(usage.reserves) != 1 || len(usage.commits) != 1 ||
-		len(usage.releases) != 3 {
+	if len(usage.reserves) != 2 || len(usage.commits) != 1 ||
+		len(usage.releases) != 4 {
 		t.Fatalf(
 			"usage calls reserve=%d commit=%d release=%d",
 			len(usage.reserves), len(usage.commits), len(usage.releases))

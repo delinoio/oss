@@ -218,20 +218,31 @@ func (client *Client) ReserveRefresh(
 	}
 	reservation := response.Msg.GetReservation()
 	reservationID, idErr := parseUUID(reservation.GetReservationId())
-	if idErr != nil ||
-		reservation.GetOrganizationId().GetValue() != organizationID.String() ||
-		reservation.GetTeamId().GetValue() != teamID.String() ||
-		reservation.GetMeterId().GetValue() != meter.MeterID.String() ||
-		reservation.GetPriceVersionId().GetValue() != meter.PriceVersionID.String() ||
-		reservation.GetServiceIdentityId().GetValue() != client.serviceID.String() ||
-		reservation.GetMaximumUnits().GetValue() != 1 ||
-		reservation.GetUsdMicrosPerUnit().GetValue() !=
-			contracts.ProviderRefreshPriceUSDMicros ||
-		reservation.GetMaximumCost().GetValue() !=
-			contracts.ProviderRefreshPriceUSDMicros ||
-		reservation.GetStatus() !=
-			delibasev1.ReservationStatus_RESERVATION_STATUS_ACTIVE ||
-		reservation.GetExpiresAt() == nil {
+	validReservation := idErr == nil &&
+		reservation.GetOrganizationId().GetValue() == organizationID.String() &&
+		reservation.GetTeamId().GetValue() == teamID.String() &&
+		reservation.GetMeterId().GetValue() == meter.MeterID.String() &&
+		reservation.GetPriceVersionId().GetValue() == meter.PriceVersionID.String() &&
+		reservation.GetServiceIdentityId().GetValue() == client.serviceID.String() &&
+		reservation.GetMaximumUnits().GetValue() == 1 &&
+		reservation.GetUsdMicrosPerUnit().GetValue() ==
+			contracts.ProviderRefreshPriceUSDMicros &&
+		reservation.GetMaximumCost().GetValue() ==
+			contracts.ProviderRefreshPriceUSDMicros &&
+		reservation.GetStatus() ==
+			delibasev1.ReservationStatus_RESERVATION_STATUS_ACTIVE &&
+		reservation.GetExpiresAt() != nil
+	if !validReservation {
+		if idErr == nil &&
+			reservation.GetStatus() ==
+				delibasev1.ReservationStatus_RESERVATION_STATUS_ACTIVE {
+			if releaseErr := client.ReleaseRefresh(
+				ctx, forwardedToken, organizationID, reservationID); releaseErr != nil {
+				return contracts.UsageReservation{}, ErrReservationFailed
+			}
+			return contracts.UsageReservation{},
+				contracts.ErrRefreshReservationRejected
+		}
 		return contracts.UsageReservation{}, ErrReservationFailed
 	}
 	return contracts.UsageReservation{
