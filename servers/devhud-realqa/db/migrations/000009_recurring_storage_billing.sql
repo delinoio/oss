@@ -275,6 +275,8 @@ CREATE TABLE realqa_storage_rebind_attempts (
         CHECK (expected_mapping_revision > 0),
     replacement_organization_id uuid NOT NULL,
     replacement_team_id uuid NOT NULL,
+    replacement_maximum_units bigint NOT NULL
+        CHECK (replacement_maximum_units > 0),
     revoke_idempotency_key uuid NOT NULL,
     create_idempotency_key uuid NOT NULL,
     state text NOT NULL CHECK (state IN ('pending', 'completed')),
@@ -471,6 +473,8 @@ BEGIN
        OR NEW.replacement_organization_id IS DISTINCT FROM
             OLD.replacement_organization_id
        OR NEW.replacement_team_id IS DISTINCT FROM OLD.replacement_team_id
+       OR NEW.replacement_maximum_units IS DISTINCT FROM
+            OLD.replacement_maximum_units
        OR NEW.revoke_idempotency_key IS DISTINCT FROM
             OLD.revoke_idempotency_key
        OR NEW.create_idempotency_key IS DISTINCT FROM

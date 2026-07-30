@@ -421,6 +421,46 @@ func TestStorageRebindMaximumExcludesVerifiedUnlinkedAssets(t *testing.T) {
 	}
 }
 
+func TestStorageRebindRequestUsesPersistedMaximum(t *testing.T) {
+	t.Parallel()
+	organizationID := uuidv7.MustNew()
+	teamID := uuidv7.MustNew()
+	createKey := uuidv7.MustNew()
+	serviceIdentityID := uuidv7.MustNew()
+	meterID := uuidv7.MustNew()
+	submissionID := uuidv7.MustNew()
+	scope := owner{kind: "personal", id: uuidv7.MustNew()}
+	request, err := storageRebindAuthorizationRequest(
+		dbgen.RealqaStorageRebindAttempt{
+			ReplacementOrganizationID: toPGUUID(organizationID),
+			ReplacementTeamID:         toPGUUID(teamID),
+			ReplacementMaximumUnits:   7,
+			CreateIdempotencyKey:      toPGUUID(createKey),
+		},
+		scope,
+		submissionID,
+		BillingMeter{
+			ID:                meterID,
+			ServiceIdentityID: serviceIdentityID,
+		},
+		"memory-only-bearer",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.OwnerKind != scope.kind || request.OwnerID != scope.id ||
+		request.OrganizationID != organizationID ||
+		request.TeamID != teamID ||
+		request.ServiceIdentityID != serviceIdentityID ||
+		request.MeterID != meterID ||
+		request.FeatureResourceID != submissionID ||
+		request.MaximumUnits != 7 ||
+		request.IdempotencyKey != createKey ||
+		request.ForwardedBearer != "memory-only-bearer" {
+		t.Fatalf("persisted rebind request = %#v", request)
+	}
+}
+
 func TestAgedOutDeletionSettlementSkipsWithoutStartingRecovery(
 	t *testing.T,
 ) {

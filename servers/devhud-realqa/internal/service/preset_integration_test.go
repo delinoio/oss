@@ -3691,12 +3691,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			submission_id, caller_digest, idempotency_key, request_digest,
 			expected_authorization_id, expected_mapping_revision,
 			replacement_organization_id, replacement_team_id,
+			replacement_maximum_units,
 			revoke_idempotency_key, create_idempotency_key, state,
 			replacement_authorization_id,
 			replacement_authorization_revision,
 			resulting_mapping_revision, cutoff_at, completed_at
 		) VALUES (
-			$1, $2, $3, $4, $5, 1, $6, $7, $8, $9, 'completed',
+			$1, $2, $3, $4, $5, 1, $6, $7, 1, $8, $9, 'completed',
 			$10, 1, 2, transaction_timestamp(), transaction_timestamp()
 		)
 	`, webhookSubmissionID, digest.Sum(nil), rebindKey, rebindDigest,

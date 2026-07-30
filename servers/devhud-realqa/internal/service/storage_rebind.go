@@ -95,10 +95,13 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 	if err != nil || validateBillingMeters(meters) != nil {
 		return nil, storageAuthorizationFailed()
 	}
-	maximumUnits, err := retainedStorageMaximumUnits(
-		ctx, service.dependencies.Store.Queries(), submission.ID)
-	if err != nil || maximumUnits <= 0 {
-		return nil, retentionStateConflict()
+	maximumUnits := existingAttempt.ReplacementMaximumUnits
+	if errors.Is(lookupErr, pgx.ErrNoRows) {
+		maximumUnits, err = retainedStorageMaximumUnits(
+			ctx, service.dependencies.Store.Queries(), submission.ID)
+		if err != nil || maximumUnits <= 0 {
+			return nil, retentionStateConflict()
+		}
 	}
 	revokeKey, err := derivedUUIDv7(idempotencyID, "storage-rebind-revoke")
 	if err != nil {
@@ -119,6 +122,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 				ExpectedMappingRevision:   request.Msg.ExpectedMappingRevision.Value,
 				ReplacementOrganizationID: toPGUUID(replacementOrganizationID),
 				ReplacementTeamID:         toPGUUID(replacementTeamID),
+				ReplacementMaximumUnits:   maximumUnits,
 				RevokeIdempotencyKey:      toPGUUID(revokeKey),
 				CreateIdempotencyKey:      toPGUUID(createKey),
 			})
@@ -142,6 +146,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 		attempt.ReplacementOrganizationID !=
 			toPGUUID(replacementOrganizationID) ||
 		attempt.ReplacementTeamID != toPGUUID(replacementTeamID) ||
+		attempt.ReplacementMaximumUnits <= 0 ||
 		attempt.RevokeIdempotencyKey != toPGUUID(revokeKey) ||
 		attempt.CreateIdempotencyKey != toPGUUID(createKey) {
 		return nil, idempotencyConflict()
@@ -230,9 +235,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 				lockedRecovery.AuthorizationID != binding.AuthorizationID {
 				return staleStorageAuthorizationMapping()
 			}
-			lockedMaximumUnits, lockErr := retainedStorageMaximumUnits(
-				ctx, queries, lockedSubmission.ID)
-			if lockErr != nil || lockedMaximumUnits <= 0 {
+			if lockedAttempt.ReplacementMaximumUnits <= 0 {
 				return retentionStateConflict()
 			}
 			lockedBinding, lockErr :=
@@ -287,17 +290,12 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 					lockedBinding.AuthorizationRevision,
 				)
 			}
-			replacementRequest := StorageAuthorizationRequest{
-				OwnerKind:         scope.kind,
-				OwnerID:           scope.id,
-				OrganizationID:    replacementOrganizationID,
-				TeamID:            replacementTeamID,
-				ServiceIdentityID: meters.Storage.ServiceIdentityID,
-				MeterID:           meters.Storage.ID,
-				FeatureResourceID: submissionID,
-				MaximumUnits:      lockedMaximumUnits,
-				IdempotencyKey:    createKey,
-				ForwardedBearer:   forwardedBearer,
+			replacementRequest, lockErr :=
+				storageRebindAuthorizationRequest(
+					lockedAttempt, scope, submissionID,
+					meters.Storage, forwardedBearer)
+			if lockErr != nil {
+				return storageAuthorizationFailed()
 			}
 			replacement, billingErr :=
 				service.dependencies.Billing.CreateStorageAuthorization(
@@ -455,6 +453,36 @@ func retainedStorageMaximumUnits(
 		retainedBytes += asset.EncodedBytes
 	}
 	return ceilMiB(retainedBytes)
+}
+
+func storageRebindAuthorizationRequest(
+	attempt dbgen.RealqaStorageRebindAttempt,
+	scope owner,
+	submissionID uuid.UUID,
+	meter BillingMeter,
+	forwardedBearer string,
+) (StorageAuthorizationRequest, error) {
+	organizationID, organizationErr := fromPGUUID(
+		attempt.ReplacementOrganizationID)
+	teamID, teamErr := fromPGUUID(attempt.ReplacementTeamID)
+	createKey, createKeyErr := fromPGUUID(attempt.CreateIdempotencyKey)
+	if organizationErr != nil || teamErr != nil || createKeyErr != nil ||
+		attempt.ReplacementMaximumUnits <= 0 {
+		return StorageAuthorizationRequest{}, errors.New(
+			"realqa storage billing: invalid persisted rebind input")
+	}
+	return StorageAuthorizationRequest{
+		OwnerKind:         scope.kind,
+		OwnerID:           scope.id,
+		OrganizationID:    organizationID,
+		TeamID:            teamID,
+		ServiceIdentityID: meter.ServiceIdentityID,
+		MeterID:           meter.ID,
+		FeatureResourceID: submissionID,
+		MaximumUnits:      attempt.ReplacementMaximumUnits,
+		IdempotencyKey:    createKey,
+		ForwardedBearer:   forwardedBearer,
+	}, nil
 }
 
 func (service *Submission) prepareStorageRebindCutoff(

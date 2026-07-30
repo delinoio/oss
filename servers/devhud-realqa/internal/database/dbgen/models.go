@@ -345,6 +345,7 @@ type RealqaStorageRebindAttempt struct {
 	ExpectedMappingRevision          int64
 	ReplacementOrganizationID        pgtype.UUID
 	ReplacementTeamID                pgtype.UUID
+	ReplacementMaximumUnits          int64
 	RevokeIdempotencyKey             pgtype.UUID
 	CreateIdempotencyKey             pgtype.UUID
 	State                            string
