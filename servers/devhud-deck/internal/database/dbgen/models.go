@@ -135,12 +135,16 @@ type DeckGithubWebhookDelivery struct {
 }
 
 type DeckNotificationEvent struct {
-	EventID       pgtype.UUID
-	ViewID        pgtype.UUID
-	OpaqueEventID []byte
-	Transition    int16
-	CreatedAt     pgtype.Timestamptz
-	ExpiresAt     pgtype.Timestamptz
+	EventID           pgtype.UUID
+	ViewID            pgtype.UUID
+	OpaqueEventID     []byte
+	Transition        int16
+	CreatedAt         pgtype.Timestamptz
+	ExpiresAt         pgtype.Timestamptz
+	ViewerHash        []byte
+	RepositoryHash    []byte
+	PullRequestNumber pgtype.Int8
+	DetailCiphertext  []byte
 }
 
 type DeckOrganizationMembership struct {
@@ -174,6 +178,22 @@ type DeckPullRequestSnapshotState struct {
 	ViewerHash  []byte
 	Truncated   bool
 	RefreshedAt pgtype.Timestamptz
+}
+
+type DeckRefreshAttempt struct {
+	SubjectHash        []byte
+	RefreshRequestID   pgtype.UUID
+	RequestDigest      []byte
+	ViewID             pgtype.UUID
+	ViewerHash         []byte
+	Origin             int16
+	ClientKind         int16
+	State              int16
+	ReservationID      pgtype.UUID
+	ProviderDispatched bool
+	ResponseCiphertext []byte
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 }
 
 type DeckTeamMembership struct {
@@ -221,4 +241,10 @@ type DeckViewNotificationPreference struct {
 	PreferenceCiphertext []byte
 	Revision             int64
 	UpdatedAt            pgtype.Timestamptz
+}
+
+type DeckViewViewerActivity struct {
+	ViewID       pgtype.UUID
+	ViewerHash   []byte
+	LastOpenedAt pgtype.Timestamptz
 }

@@ -1089,6 +1089,9 @@ jobs:
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
+      - name: Build generated Deck client
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter @delinoio/devhud-deck-connect build
       - name: Validate DevHud frontend and portable mobile contracts
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |

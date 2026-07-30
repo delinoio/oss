@@ -387,7 +387,7 @@ Coverage expectations:
 - `devhud-realqa-macos`: runs `pnpm --filter devhud test:realqa:native` on `macos-14` to exercise the macOS capture fixtures and compile the adapter for `x86_64-apple-darwin` and `aarch64-apple-darwin`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
-- `node-devhud`: runs `pnpm install --frozen-lockfile` and DevHud `typecheck`, `lint`, unit, accessibility, build, diagnostics-contract, and portable mobile-contract commands.
+- `node-devhud`: runs `pnpm install --frozen-lockfile`, builds the private Deck generated client, and runs DevHud `typecheck`, `lint`, unit, accessibility, build, diagnostics-contract, and portable mobile-contract commands.
 - `devhud-widget-android`: compiles and tests the package-local build-only Android widget foundation plus private native plugins and verifies that the release app does not register the widget.
 - `devhud-widget-ios`: compiles and tests the package-local build-only WidgetKit foundation plus private native plugins on macOS and verifies that the release app does not embed the widget.
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
