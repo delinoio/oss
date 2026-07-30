@@ -14,6 +14,7 @@ CREATE TABLE deck_refresh_attempts (
     -- Attempts intentionally outlive view deletion so an already-active
     -- request can finish exact dispatch and billing accounting.
     view_id uuid NOT NULL,
+    view_revision bigint NOT NULL CHECK (view_revision > 0),
     viewer_hash bytea NOT NULL CHECK (octet_length(viewer_hash) = 32),
     origin smallint NOT NULL CHECK (origin BETWEEN 1 AND 5),
     client_kind smallint NOT NULL CHECK (client_kind BETWEEN 1 AND 4),
@@ -26,6 +27,7 @@ CREATE TABLE deck_refresh_attempts (
     state smallint NOT NULL CHECK (state BETWEEN 1 AND 4),
     reservation_id uuid,
     provider_dispatched boolean NOT NULL DEFAULT false,
+    provider_dispatched_at timestamptz,
     response_ciphertext bytea,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -40,13 +42,17 @@ CREATE TABLE deck_refresh_attempts (
         reservation_id IS NULL
         OR substring(reservation_id::text, 15, 1) = '7'
     ),
+    CHECK (provider_dispatched = (provider_dispatched_at IS NOT NULL)),
     CHECK (
         (state = 4 AND response_ciphertext IS NOT NULL)
         OR state <> 4
     )
 );
 CREATE INDEX deck_refresh_attempts_viewer_view_idx
-    ON deck_refresh_attempts (viewer_hash, view_id, created_at DESC);
+    ON deck_refresh_attempts (viewer_hash, view_id, provider_dispatched_at DESC);
+CREATE INDEX deck_refresh_attempts_manual_rate_idx
+    ON deck_refresh_attempts (subject_hash, created_at DESC)
+    WHERE origin = 3;
 
 -- Notification history contains only keyed opaque references and encrypted
 -- current-detail material. It is pruned at the exact 30-day boundary by

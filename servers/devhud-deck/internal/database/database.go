@@ -32,6 +32,7 @@ var (
 	ErrAccountSwitch       = errors.New("deck database: device belongs to another account")
 	ErrInstallationOwned   = errors.New("deck database: installation already has an owner")
 	ErrViewNotVisible      = errors.New("deck database: view not visible")
+	ErrRefreshRateLimited  = errors.New("deck database: refresh rate limited")
 )
 
 type LimitError struct {

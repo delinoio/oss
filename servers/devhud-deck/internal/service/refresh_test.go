@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
 	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/google/uuid"
@@ -111,23 +112,28 @@ func TestRefreshTraceRequiresAnActiveCompatibleClient(t *testing.T) {
 	}
 }
 
-func TestManualRefreshLimitIsTwelvePerMinutePerUser(t *testing.T) {
+func TestRefreshAttemptAccountingRecoveryStates(t *testing.T) {
 	t.Parallel()
-	limiter := newRefreshRateLimiter(12, time.Minute)
-	now := time.Date(2026, time.July, 30, 0, 0, 0, 0, time.UTC)
-	for index := 0; index < 12; index++ {
-		if !limiter.Allow("viewer", now) {
-			t.Fatalf("manual refresh %d was rejected", index+1)
-		}
+	if refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+		State: database.RefreshAttemptCreated,
+	}) {
+		t.Fatal("created attempt skipped view authorization")
 	}
-	if limiter.Allow("viewer", now) {
-		t.Fatal("thirteenth manual refresh was accepted")
+	if refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+		State: database.RefreshAttemptReserved,
+	}) {
+		t.Fatal("unresolved reserved attempt skipped view authorization")
 	}
-	if !limiter.Allow("other-viewer", now) {
-		t.Fatal("one viewer consumed another viewer's limit")
+	if !refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+		State:    database.RefreshAttemptReserved,
+		Response: &deckv1.RefreshViewResponse{},
+	}) {
+		t.Fatal("undispatched pending response did not resume release accounting")
 	}
-	if !limiter.Allow("viewer", now.Add(time.Minute+time.Nanosecond)) {
-		t.Fatal("manual refresh did not recover after the fixed window")
+	if !refreshAttemptNeedsOnlyAccounting(database.RefreshAttempt{
+		State: database.RefreshAttemptDispatched,
+	}) {
+		t.Fatal("dispatched attempt did not resume commit accounting")
 	}
 }
 
@@ -403,6 +409,29 @@ func TestNotificationTransitionsAreTypedAndPreferenceFiltered(t *testing.T) {
 		deckv1.NotificationTransition_NOTIFICATION_TRANSITION_MERGED,
 	}) {
 		t.Fatalf("merged transition = %v", got)
+	}
+	missing := previousOnlySnapshots(
+		[]*deckv1.PullRequestResult{
+			previous,
+			{
+				Repository: &deckv1.RepositoryReference{
+					Owner: "acme", Name: "other",
+				},
+				Number: 8,
+			},
+		},
+		[]*deckv1.PullRequestResult{current},
+	)
+	if len(missing) != 1 || missing[0].GetNumber() != 8 {
+		t.Fatalf("previous-only snapshots = %#v", missing)
+	}
+	if !hasEnabledNotificationPreference(
+		[]*deckv1.ViewNotificationPreference{{Enabled: true}}) {
+		t.Fatal("active device notification preference was ignored")
+	}
+	if hasEnabledNotificationPreference(
+		[]*deckv1.ViewNotificationPreference{{Enabled: false}}) {
+		t.Fatal("disabled device notification preference was eligible")
 	}
 }
 

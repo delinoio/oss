@@ -25,6 +25,8 @@ const (
 type RefreshAttempt struct {
 	RequestID          uuid.UUID
 	ViewID             uuid.UUID
+	ViewRevision       uint64
+	ViewerHash         [32]byte
 	State              RefreshAttemptState
 	ReservationID      uuid.UUID
 	ProviderDispatched bool
@@ -39,6 +41,7 @@ type BeginRefreshAttemptParams struct {
 	RequestID      uuid.UUID
 	RequestDigest  [32]byte
 	ViewID         uuid.UUID
+	ViewRevision   uint64
 	ViewerHash     [32]byte
 	Origin         deckv1.RefreshOrigin
 	ClientKind     deckv1.RefreshClientKind
@@ -47,6 +50,11 @@ type BeginRefreshAttemptParams struct {
 	Meter          contracts.RefreshMeter
 	Now            time.Time
 }
+
+const (
+	manualRefreshLimit  = 12
+	manualRefreshWindow = time.Minute
+)
 
 // WithRefreshLock serializes the same viewer/view across every Deck process.
 // The lock lives only for this active request and cannot enqueue later work.
@@ -86,11 +94,67 @@ func (store *Store) WithRefreshLock(
 	return nil
 }
 
+// WithViewRevisionLock fences refresh persistence against concurrent view
+// updates. The no-key-update lock remains compatible with snapshot foreign-key
+// checks performed by the callback on separate pooled connections.
+func (store *Store) WithViewRevisionLock(
+	ctx context.Context,
+	viewID uuid.UUID,
+	expectedRevision uint64,
+	callback func() error,
+) error {
+	if store == nil || store.pool == nil || callback == nil {
+		return errors.New("deck database: view revision lock unavailable")
+	}
+	transaction, err := store.pool.Begin(ctx)
+	if err != nil {
+		return errors.New("deck database: view revision lock unavailable")
+	}
+	defer func() { _ = transaction.Rollback(ctx) }()
+	var revision int64
+	err = transaction.QueryRow(ctx, `
+		SELECT revision
+		FROM deck_views
+		WHERE view_id = $1
+		FOR NO KEY UPDATE
+	`, viewID).Scan(&revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return errors.New("deck database: view revision lock unavailable")
+	}
+	if revision < 1 || uint64(revision) != expectedRevision {
+		return &StaleError{ResourceID: viewID, Revision: uint64(revision)}
+	}
+	if err := callback(); err != nil {
+		return err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return errors.New("deck database: view revision lock unavailable")
+	}
+	return nil
+}
+
+const insertRefreshAttemptSQL = `
+	INSERT INTO deck_refresh_attempts (
+		subject_hash, refresh_request_id, request_digest, view_id,
+		view_revision, viewer_hash, origin, client_kind,
+		billing_organization_id, billing_team_id, meter_id, price_version_id,
+		service_identity_id, usd_micros, state, created_at, updated_at
+	) VALUES (
+		$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+		$15, $16, $16
+	)
+	ON CONFLICT (subject_hash, refresh_request_id) DO NOTHING
+`
+
 func (store *Store) BeginRefreshAttempt(
 	ctx context.Context,
 	params BeginRefreshAttemptParams,
 ) (RefreshAttempt, bool, error) {
 	if params.RequestID.Version() != 7 || params.ViewID.Version() != 7 ||
+		params.ViewRevision == 0 ||
 		params.OrganizationID.Version() != 7 || params.TeamID.Version() != 7 ||
 		params.Meter.MeterID.Version() != 7 ||
 		params.Meter.PriceVersionID.Version() != 7 ||
@@ -103,21 +167,14 @@ func (store *Store) BeginRefreshAttempt(
 		return RefreshAttempt{}, false, errors.New(
 			"deck database: invalid refresh attempt")
 	}
-	result, err := store.pool.Exec(ctx, `
-		INSERT INTO deck_refresh_attempts (
-			subject_hash, refresh_request_id, request_digest, view_id,
-			viewer_hash, origin, client_kind, billing_organization_id,
-			billing_team_id, meter_id, price_version_id, service_identity_id,
-			usd_micros, state, created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $15
-		)
-		ON CONFLICT (subject_hash, refresh_request_id) DO NOTHING
-	`, params.SubjectHash[:], params.RequestID, params.RequestDigest[:],
-		params.ViewID, params.ViewerHash[:], int16(params.Origin),
-		int16(params.ClientKind), params.OrganizationID, params.TeamID,
-		params.Meter.MeterID, params.Meter.PriceVersionID,
+	if params.Origin == deckv1.RefreshOrigin_REFRESH_ORIGIN_MANUAL {
+		return store.beginManualRefreshAttempt(ctx, params)
+	}
+	result, err := store.pool.Exec(ctx, insertRefreshAttemptSQL,
+		params.SubjectHash[:], params.RequestID, params.RequestDigest[:],
+		params.ViewID, int64(params.ViewRevision), params.ViewerHash[:],
+		int16(params.Origin), int16(params.ClientKind), params.OrganizationID,
+		params.TeamID, params.Meter.MeterID, params.Meter.PriceVersionID,
 		params.Meter.ServiceID, params.Meter.USDMicros,
 		int16(RefreshAttemptCreated), params.Now.UTC())
 	if err != nil {
@@ -129,6 +186,70 @@ func (store *Store) BeginRefreshAttempt(
 	return attempt, result.RowsAffected() == 0, err
 }
 
+func (store *Store) beginManualRefreshAttempt(
+	ctx context.Context,
+	params BeginRefreshAttemptParams,
+) (RefreshAttempt, bool, error) {
+	transaction, err := store.pool.Begin(ctx)
+	if err != nil {
+		return RefreshAttempt{}, false,
+			errors.New("deck database: refresh attempt insert failed")
+	}
+	defer func() { _ = transaction.Rollback(ctx) }()
+	lockDigest := store.hasher.Sum(
+		"manual-refresh-rate-lock", string(params.SubjectHash[:]))
+	lockKey := int64(binary.BigEndian.Uint64(lockDigest[:8]))
+	if _, err := transaction.Exec(
+		ctx, "SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+		return RefreshAttempt{}, false,
+			errors.New("deck database: refresh attempt insert failed")
+	}
+	var exists bool
+	if err := transaction.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM deck_refresh_attempts
+			WHERE subject_hash = $1 AND refresh_request_id = $2
+		)
+	`, params.SubjectHash[:], params.RequestID).Scan(&exists); err != nil {
+		return RefreshAttempt{}, false,
+			errors.New("deck database: refresh attempt lookup failed")
+	}
+	if !exists {
+		var recent int
+		if err := transaction.QueryRow(ctx, `
+			SELECT count(*)::integer
+			FROM deck_refresh_attempts
+			WHERE subject_hash = $1 AND origin = $2 AND created_at > $3
+		`, params.SubjectHash[:],
+			int16(deckv1.RefreshOrigin_REFRESH_ORIGIN_MANUAL),
+			params.Now.UTC().Add(-manualRefreshWindow)).Scan(&recent); err != nil {
+			return RefreshAttempt{}, false,
+				errors.New("deck database: refresh rate lookup failed")
+		}
+		if recent >= manualRefreshLimit {
+			return RefreshAttempt{}, false, ErrRefreshRateLimited
+		}
+		if _, err := transaction.Exec(ctx, insertRefreshAttemptSQL,
+			params.SubjectHash[:], params.RequestID, params.RequestDigest[:],
+			params.ViewID, int64(params.ViewRevision), params.ViewerHash[:],
+			int16(params.Origin), int16(params.ClientKind), params.OrganizationID,
+			params.TeamID, params.Meter.MeterID, params.Meter.PriceVersionID,
+			params.Meter.ServiceID, params.Meter.USDMicros,
+			int16(RefreshAttemptCreated), params.Now.UTC()); err != nil {
+			return RefreshAttempt{}, false,
+				errors.New("deck database: refresh attempt insert failed")
+		}
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return RefreshAttempt{}, false,
+			errors.New("deck database: refresh attempt insert failed")
+	}
+	attempt, err := store.GetRefreshAttempt(
+		ctx, params.SubjectHash, params.RequestID, params.RequestDigest)
+	return attempt, exists, err
+}
+
 func (store *Store) GetRefreshAttempt(
 	ctx context.Context,
 	subjectHash [32]byte,
@@ -137,6 +258,8 @@ func (store *Store) GetRefreshAttempt(
 ) (RefreshAttempt, error) {
 	var storedDigest []byte
 	var viewID uuid.UUID
+	var viewRevision int64
+	var viewerHash []byte
 	var state int16
 	var reservationID *uuid.UUID
 	var dispatched bool
@@ -148,13 +271,15 @@ func (store *Store) GetRefreshAttempt(
 		SELECT request_digest, view_id, state, reservation_id,
 		       provider_dispatched, response_ciphertext,
 		       billing_organization_id, billing_team_id, meter_id,
-		       price_version_id, service_identity_id, usd_micros
+		       price_version_id, service_identity_id, usd_micros,
+		       view_revision, viewer_hash
 		FROM deck_refresh_attempts
 		WHERE subject_hash = $1 AND refresh_request_id = $2
 	`, subjectHash[:], requestID).Scan(
 		&storedDigest, &viewID, &state, &reservationID,
 		&dispatched, &responseCiphertext, &organizationID, &teamID,
-		&meterID, &priceVersionID, &serviceID, &usdMicros)
+		&meterID, &priceVersionID, &serviceID, &usdMicros,
+		&viewRevision, &viewerHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RefreshAttempt{}, ErrNotFound
 	}
@@ -165,15 +290,21 @@ func (store *Store) GetRefreshAttempt(
 	if !bytes.Equal(storedDigest, requestDigest[:]) {
 		return RefreshAttempt{}, ErrIdempotencyConflict
 	}
+	if viewRevision < 1 || len(viewerHash) != 32 {
+		return RefreshAttempt{}, errors.New(
+			"deck database: invalid refresh attempt")
+	}
 	attempt := RefreshAttempt{
 		RequestID: requestID, ViewID: viewID,
-		State: RefreshAttemptState(state), ProviderDispatched: dispatched,
+		ViewRevision: uint64(viewRevision),
+		State:        RefreshAttemptState(state), ProviderDispatched: dispatched,
 		OrganizationID: organizationID, TeamID: teamID,
 		Meter: contracts.RefreshMeter{
 			MeterID: meterID, PriceVersionID: priceVersionID,
 			ServiceID: serviceID, USDMicros: usdMicros,
 		},
 	}
+	copy(attempt.ViewerHash[:], viewerHash)
 	if reservationID != nil {
 		attempt.ReservationID = *reservationID
 	}
@@ -205,8 +336,7 @@ func (store *Store) HasRecentAutomaticRefreshAttempt(
 			WHERE view_id = $1 AND viewer_hash = $2
 			  AND refresh_request_id <> $3
 			  AND origin IN (1, 2)
-			  AND provider_dispatched
-			  AND created_at > $4
+			  AND provider_dispatched_at > $4
 		)
 	`, viewID, viewerHash[:], currentRequestID, cutoff.UTC()).Scan(&recent)
 	if err != nil {
@@ -239,7 +369,9 @@ func (store *Store) MarkRefreshDispatched(
 ) error {
 	result, err := store.pool.Exec(ctx, `
 		UPDATE deck_refresh_attempts
-		SET state = $3, provider_dispatched = true, updated_at = $4
+		SET state = $3, provider_dispatched = true,
+		    provider_dispatched_at = COALESCE(provider_dispatched_at, $4),
+		    updated_at = $4
 		WHERE subject_hash = $1 AND refresh_request_id = $2
 		  AND state IN (2, 3)
 	`, subjectHash[:], requestID, int16(RefreshAttemptDispatched), now.UTC())
