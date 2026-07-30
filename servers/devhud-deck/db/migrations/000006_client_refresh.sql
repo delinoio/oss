@@ -15,6 +15,12 @@ CREATE TABLE deck_refresh_attempts (
     viewer_hash bytea NOT NULL CHECK (octet_length(viewer_hash) = 32),
     origin smallint NOT NULL CHECK (origin BETWEEN 1 AND 5),
     client_kind smallint NOT NULL CHECK (client_kind BETWEEN 1 AND 4),
+    billing_organization_id uuid NOT NULL,
+    billing_team_id uuid NOT NULL,
+    meter_id uuid NOT NULL,
+    price_version_id uuid NOT NULL,
+    service_identity_id uuid NOT NULL,
+    usd_micros bigint NOT NULL CHECK (usd_micros = 50),
     state smallint NOT NULL CHECK (state BETWEEN 1 AND 4),
     reservation_id uuid,
     provider_dispatched boolean NOT NULL DEFAULT false,
@@ -23,6 +29,11 @@ CREATE TABLE deck_refresh_attempts (
     updated_at timestamptz NOT NULL,
     PRIMARY KEY (subject_hash, refresh_request_id),
     CHECK (substring(refresh_request_id::text, 15, 1) = '7'),
+    CHECK (substring(billing_organization_id::text, 15, 1) = '7'),
+    CHECK (substring(billing_team_id::text, 15, 1) = '7'),
+    CHECK (substring(meter_id::text, 15, 1) = '7'),
+    CHECK (substring(price_version_id::text, 15, 1) = '7'),
+    CHECK (substring(service_identity_id::text, 15, 1) = '7'),
     CHECK (
         reservation_id IS NULL
         OR substring(reservation_id::text, 15, 1) = '7'

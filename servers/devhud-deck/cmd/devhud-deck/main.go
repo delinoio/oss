@@ -146,6 +146,12 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return classifyFailure(failureDelibaseUsage, err)
 	}
+	usageCtx, cancel := context.WithTimeout(ctx, startupTimeout)
+	err = usageClient.ValidateStartup(usageCtx)
+	cancel()
+	if err != nil {
+		return classifyFailure(failureDelibaseUsage, err)
+	}
 	keys, err := auth.NewJWKS(auth.JWKSConfig{URL: configuration.LogtoJWKSURL})
 	if err != nil {
 		return classifyFailure(failureIdentityKeys, err)

@@ -1250,10 +1250,17 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 	reference := PullRequestRef{
 		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
 	}
-	initial, err := client.ActionMetadata(
+	initial, err := client.PullRequestSnapshotMetadata(
 		context.Background(), 42, credential, permissions, reference)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if initial.ReviewDecision != ReviewDecisionApproved ||
+		initial.ChecksState != ChecksStateFailure ||
+		initial.PendingChecks != 1 ||
+		initial.SuccessfulChecks != 3 ||
+		initial.FailedChecks != 3 {
+		t.Fatalf("complete snapshot metadata = %#v", initial)
 	}
 	result, err := client.Mutate(
 		context.Background(), "viewer", 42, credential, permissions,

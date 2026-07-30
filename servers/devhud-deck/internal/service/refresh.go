@@ -159,45 +159,52 @@ func (service *View) RefreshView(
 		return nil, mapDatabaseError(lookupErr)
 	}
 
-	var meter contracts.RefreshMeter
 	if errors.Is(lookupErr, database.ErrNotFound) {
 		if request.Msg.GetBillingPreflightToken() == "" {
 			return nil, rpcerr.New(connect.CodeFailedPrecondition,
 				deckv1.ErrorReason_ERROR_REASON_BILLING_PREFLIGHT_REQUIRED)
-		}
-		meter, err = service.dependencies.LiveUsage.RefreshMeter(ctx)
-		if err != nil || !validRefreshMeter(meter) {
-			return nil, rpcerr.New(connect.CodeUnavailable,
-				deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
-		}
-		if err := validateRefreshPreflight(
-			service.dependencies.Hasher, request.Msg.GetBillingPreflightToken(),
-			viewer.Subject, view, requestID, meter, request.Msg.GetOrigin(),
-			request.Msg.GetClientKind(), startedAt); err != nil {
-			return nil, err
-		}
-	} else {
-		// A nonterminal attempt can advance only because this request supplies
-		// a fresh forwarded-user bearer. No worker resumes it.
-		meter, err = service.dependencies.LiveUsage.RefreshMeter(ctx)
-		if err != nil || !validRefreshMeter(meter) {
-			return nil, rpcerr.New(connect.CodeUnavailable,
-				deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
 		}
 	}
 
 	var response *deckv1.RefreshViewResponse
 	err = service.dependencies.Store.WithRefreshLock(
 		ctx, viewID, viewerHash, func() error {
-			current, replayed, beginErr := service.dependencies.Store.BeginRefreshAttempt(
-				ctx, database.BeginRefreshAttemptParams{
-					SubjectHash: subjectHash, RequestID: requestID,
-					RequestDigest: requestDigest, ViewID: viewID,
-					ViewerHash: viewerHash, Origin: request.Msg.GetOrigin(),
-					ClientKind: request.Msg.GetClientKind(), Now: startedAt,
-				})
-			if beginErr != nil {
-				return beginErr
+			current, currentErr := service.dependencies.Store.GetRefreshAttempt(
+				ctx, subjectHash, requestID, requestDigest)
+			replayed := currentErr == nil
+			currentTime := service.dependencies.Clock.Now().UTC()
+			if errors.Is(currentErr, database.ErrNotFound) {
+				meter, meterErr := service.dependencies.LiveUsage.RefreshMeter(ctx)
+				if meterErr != nil || !validRefreshMeter(meter) {
+					return rpcerr.New(connect.CodeUnavailable,
+						deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
+				}
+				if preflightErr := validateRefreshPreflight(
+					service.dependencies.Hasher,
+					request.Msg.GetBillingPreflightToken(),
+					viewer.Subject, view, requestID, meter,
+					request.Msg.GetOrigin(), request.Msg.GetClientKind(),
+					currentTime); preflightErr != nil {
+					return preflightErr
+				}
+				organizationID, teamID, billingErr :=
+					refreshBillingIDs(view.GetBilling())
+				if billingErr != nil {
+					return billingErr
+				}
+				current, replayed, currentErr =
+					service.dependencies.Store.BeginRefreshAttempt(
+						ctx, database.BeginRefreshAttemptParams{
+							SubjectHash: subjectHash, RequestID: requestID,
+							RequestDigest: requestDigest, ViewID: viewID,
+							ViewerHash: viewerHash, Origin: request.Msg.GetOrigin(),
+							ClientKind:     request.Msg.GetClientKind(),
+							OrganizationID: organizationID, TeamID: teamID,
+							Meter: meter, Now: currentTime,
+						})
+			}
+			if currentErr != nil {
+				return currentErr
 			}
 			if replayed && current.State == database.RefreshAttemptCompleted {
 				response = proto.Clone(current.Response).(*deckv1.RefreshViewResponse)
@@ -207,19 +214,21 @@ func (service *View) RefreshView(
 			if request.Msg.GetOrigin() ==
 				deckv1.RefreshOrigin_REFRESH_ORIGIN_MANUAL &&
 				current.State == database.RefreshAttemptCreated &&
-				!service.manualRefreshes.Allow(viewer.Subject, startedAt) {
+				!service.manualRefreshes.Allow(viewer.Subject, currentTime) {
 				return rpcerr.RetryAfter(
 					deckv1.ErrorReason_ERROR_REASON_RATE_LIMITED, time.Minute)
 			}
 			if current.State == database.RefreshAttemptCreated {
 				eligible, eligibleErr := service.refreshEligible(
-					ctx, viewer, view, viewerHash, request.Msg.GetOrigin(), startedAt)
+					ctx, viewer, view, viewerHash,
+					request.Msg.GetOrigin(), currentTime)
 				if eligibleErr != nil {
 					return eligibleErr
 				}
 				if !eligible {
 					truncated, refreshedAt, freshness, resultCount, stateErr :=
-						service.currentSnapshotState(ctx, viewID, viewerHash, startedAt)
+						service.currentSnapshotState(
+							ctx, viewID, viewerHash, currentTime)
 					if stateErr != nil {
 						return stateErr
 					}
@@ -228,7 +237,7 @@ func (service *View) RefreshView(
 						deckv1.BillingDisposition_BILLING_DISPOSITION_FREE_NOT_ELIGIBLE,
 						freshness, refreshedAt, truncated, resultCount, false)
 					return service.dependencies.Store.SaveRefreshResponse(
-						ctx, subjectHash, requestID, response, true, startedAt)
+						ctx, subjectHash, requestID, response, true, currentTime)
 				}
 			}
 			cacheOutcome, usesCache := refreshCacheOutcome(
@@ -240,30 +249,34 @@ func (service *View) RefreshView(
 					recentAutomatic, err =
 						service.dependencies.Store.HasRecentAutomaticRefreshAttempt(
 							ctx, viewID, viewerHash, requestID,
-							startedAt.Add(-refreshCacheWindow))
+							currentTime.Add(-refreshCacheWindow))
 					if err != nil {
 						return err
 					}
 				}
 				truncated, refreshedAt, freshness, resultCount, stateErr :=
-					service.currentSnapshotState(ctx, viewID, viewerHash, startedAt)
+					service.currentSnapshotState(
+						ctx, viewID, viewerHash, currentTime)
 				if stateErr != nil {
 					return stateErr
 				}
 				if refreshCacheAvailable(
-					cacheOutcome, recentAutomatic, refreshedAt, startedAt) {
+					cacheOutcome, recentAutomatic, refreshedAt, currentTime) {
 					response = refreshResponse(
 						view, cacheOutcome, cacheBilling(cacheOutcome),
 						freshness, refreshedAt,
 						truncated, resultCount, false)
 					metricOutcome = contracts.RefreshMetricCacheHit
 					return service.dependencies.Store.SaveRefreshResponse(
-						ctx, subjectHash, requestID, response, true, startedAt)
+						ctx, subjectHash, requestID, response, true, currentTime)
 				}
 			}
+			// A nonterminal attempt advances only because this active request
+			// supplies a fresh forwarded-user bearer. Its original billing
+			// inputs remain authoritative after catalog or view changes.
 			return service.advanceProviderRefresh(
 				ctx, viewer, view, subjectHash, viewerHash, requestID,
-				current, forwardedToken, meter, &response, &metricOutcome)
+				current, forwardedToken, &response, &metricOutcome)
 		})
 	if err != nil {
 		return nil, mapRefreshError(err)
@@ -280,17 +293,23 @@ func (service *View) advanceProviderRefresh(
 	requestID uuid.UUID,
 	attempt database.RefreshAttempt,
 	forwardedToken string,
-	meter contracts.RefreshMeter,
 	response **deckv1.RefreshViewResponse,
 	metricOutcome *contracts.RefreshMetricOutcome,
 ) error {
-	organizationID, _, err := refreshBillingIDs(view.GetBilling())
-	if err != nil {
-		return err
+	if attempt.OrganizationID.Version() != 7 ||
+		attempt.TeamID.Version() != 7 || !validRefreshMeter(attempt.Meter) {
+		return errors.New("deck refresh: invalid persisted billing inputs")
 	}
+	organizationID := attempt.OrganizationID
 	if attempt.State == database.RefreshAttemptCreated {
+		billing := &deckv1.BillingSelection{
+			OrganizationId: &deckv1.UuidV7{
+				Value: attempt.OrganizationID.String(),
+			},
+			TeamId: &deckv1.UuidV7{Value: attempt.TeamID.String()},
+		}
 		reservation, reserveErr := service.dependencies.LiveUsage.ReserveRefresh(
-			ctx, forwardedToken, view.GetBilling(), requestID, meter)
+			ctx, forwardedToken, billing, requestID, attempt.Meter)
 		if reserveErr != nil {
 			truncated, refreshedAt, freshness, resultCount, stateErr :=
 				service.currentSnapshotState(
@@ -535,7 +554,28 @@ func (service *View) performGitHubRefresh(
 			return nil, false, pageErr
 		}
 		for _, pullRequest := range page.PullRequests {
-			results = append(results, refreshSnapshot(pullRequest))
+			reference := &deckv1.PullRequestReference{
+				Repository: &deckv1.RepositoryReference{
+					Owner: pullRequest.Repository.Owner,
+					Name:  pullRequest.Repository.Name,
+				},
+				Number: pullRequest.Number,
+			}
+			metadata, metadataErr :=
+				service.dependencies.GitHubClient.PullRequestSnapshotMetadata(
+					ctx, connection.Installation.ID, connection.Credential,
+					connection.Installation.Permissions,
+					deckgithub.PullRequestRef{
+						Repository: pullRequest.Repository,
+						Number:     pullRequest.Number,
+					})
+			if metadataErr != nil {
+				return nil, false, metadataErr
+			}
+			detail := service.pullRequestDetail(
+				refreshViewID(view), reference,
+				&deckv1.PullRequestResult{}, metadata)
+			results = append(results, detail.Result)
 			if len(results) > 500 {
 				truncated = true
 				break
@@ -563,36 +603,6 @@ func (service *View) currentSnapshotState(
 	}
 	return truncated, refreshedAt, refreshFreshness(now, refreshedAt),
 		len(snapshots), nil
-}
-
-func refreshSnapshot(
-	value deckgithub.SearchPullRequest,
-) *deckv1.PullRequestResult {
-	lifecycle := deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_CLOSED
-	if value.IsMerged {
-		lifecycle = deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_MERGED
-	} else if value.IsOpen {
-		lifecycle = deckv1.PullRequestLifecycleState_PULL_REQUEST_LIFECYCLE_STATE_OPEN
-	}
-	assignees := make([]*deckv1.GitHubUser, 0, len(value.Assignees))
-	for _, assignee := range value.Assignees {
-		assignees = append(assignees, &deckv1.GitHubUser{Login: assignee.Login})
-	}
-	revision := uint64(value.UpdatedAt.UnixNano())
-	if revision == 0 {
-		revision = 1
-	}
-	return &deckv1.PullRequestResult{
-		Repository: &deckv1.RepositoryReference{
-			Owner: value.Repository.Owner, Name: value.Repository.Name,
-		},
-		Number: value.Number, Title: value.Title,
-		Author:  &deckv1.PullRequestAuthor{Login: value.Author.Login},
-		IsDraft: value.IsDraft, UpdatedAt: timestamppb.New(value.UpdatedAt.UTC()),
-		Revision:       &deckv1.Revision{Value: revision},
-		LifecycleState: lifecycle, Assignees: assignees,
-		Labels: append([]string(nil), value.Labels...),
-	}
 }
 
 func validateRefreshIdentity(

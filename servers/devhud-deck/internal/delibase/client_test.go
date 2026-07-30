@@ -222,6 +222,9 @@ func TestLiveForwardedUsageChargesExactlyFiftyMicros(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := client.ValidateStartup(context.Background()); err != nil {
+		t.Fatalf("startup validation = %v", err)
+	}
 	meter, err := client.RefreshMeter(context.Background())
 	if err != nil || meter.USDMicros !=
 		contracts.ProviderRefreshPriceUSDMicros {
@@ -293,6 +296,17 @@ func TestCatalogRejectsMissingDeckServiceTarget(t *testing.T) {
 	mux := http.NewServeMux()
 	path, handler := delibasev1connect.NewCatalogServiceHandler(catalog)
 	mux.Handle(path, handler)
+	mux.HandleFunc("/oidc/token", func(
+		response http.ResponseWriter,
+		_ *http.Request,
+	) {
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]any{
+			"access_token": "m2m-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	})
 	server := httptest.NewTLSServer(mux)
 	defer server.Close()
 	client, err := New(Config{
@@ -303,9 +317,40 @@ func TestCatalogRejectsMissingDeckServiceTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := client.ValidateStartup(
+		context.Background()); err != ErrInvalidConfiguration {
+		t.Fatalf("startup accepted missing service target = %v", err)
+	}
 	if _, err := client.RefreshMeter(
 		context.Background()); err != ErrCatalogUnavailable {
 		t.Fatalf("missing service target = %v", err)
+	}
+}
+
+func TestStartupValidationRejectsUnavailableScopedToken(t *testing.T) {
+	t.Parallel()
+	serviceID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(
+		response http.ResponseWriter,
+		request *http.Request,
+	) {
+		if request.URL.Path != "/oidc/token" {
+			t.Fatalf("unexpected startup request path %q", request.URL.Path)
+		}
+		http.Error(response, "denied", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	client, err := New(Config{
+		Origin: server.URL, Audience: server.URL, Issuer: server.URL,
+		ServiceID: serviceID, ClientID: "deck-client",
+		ClientSecret: "wrong-secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.ValidateStartup(
+		context.Background()); err != ErrInvalidConfiguration {
+		t.Fatalf("startup accepted unavailable scoped token = %v", err)
 	}
 }
 

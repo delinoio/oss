@@ -10,6 +10,7 @@ import (
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
 	"github.com/jackc/pgx/v5"
 )
@@ -114,32 +115,32 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 	subjectHash := hasher.Sum("refresh-subject", "refresh-subject")
 	requestID := mustV7(t)
 	digest := security.Digest([]byte("same-request"))
+	attemptParams := BeginRefreshAttemptParams{
+		SubjectHash: subjectHash, RequestID: requestID,
+		RequestDigest: digest, ViewID: viewID, ViewerHash: viewerHash,
+		Origin:         deckv1.RefreshOrigin_REFRESH_ORIGIN_AUTOMATIC,
+		ClientKind:     deckv1.RefreshClientKind_REFRESH_CLIENT_KIND_DESKTOP,
+		OrganizationID: mustV7(t), TeamID: mustV7(t),
+		Meter: contracts.RefreshMeter{
+			MeterID: mustV7(t), PriceVersionID: mustV7(t),
+			ServiceID: mustV7(t),
+			USDMicros: contracts.ProviderRefreshPriceUSDMicros,
+		},
+		Now: now,
+	}
 	attempt, replayed, err := store.BeginRefreshAttempt(
-		ctx, BeginRefreshAttemptParams{
-			SubjectHash: subjectHash, RequestID: requestID,
-			RequestDigest: digest, ViewID: viewID, ViewerHash: viewerHash,
-			Origin:     deckv1.RefreshOrigin_REFRESH_ORIGIN_AUTOMATIC,
-			ClientKind: deckv1.RefreshClientKind_REFRESH_CLIENT_KIND_DESKTOP,
-			Now:        now,
-		})
-	if err != nil || replayed || attempt.State != RefreshAttemptCreated {
+		ctx, attemptParams)
+	if err != nil || replayed || attempt.State != RefreshAttemptCreated ||
+		attempt.OrganizationID != attemptParams.OrganizationID ||
+		attempt.TeamID != attemptParams.TeamID ||
+		attempt.Meter != attemptParams.Meter {
 		t.Fatalf("new attempt = %#v replayed=%v err=%v",
 			attempt, replayed, err)
 	}
 	recent, err := store.HasRecentAutomaticRefreshAttempt(
 		ctx, viewID, viewerHash, mustV7(t), now.Add(-5*time.Minute))
-	if err != nil || !recent {
-		t.Fatalf("second-device coalescing lookup = %v, %v", recent, err)
-	}
-	recent, err = store.HasRecentAutomaticRefreshAttempt(
-		ctx, viewID, viewerHash, mustV7(t), now)
 	if err != nil || recent {
-		t.Fatalf("exact coalescing boundary = %v, %v", recent, err)
-	}
-	recent, err = store.HasRecentAutomaticRefreshAttempt(
-		ctx, viewID, viewerHash, requestID, now.Add(-5*time.Minute))
-	if err != nil || recent {
-		t.Fatalf("current request was not excluded = %v, %v", recent, err)
+		t.Fatalf("undispatched attempt coalesced = %v, %v", recent, err)
 	}
 	reservationID := mustV7(t)
 	if err := store.MarkRefreshReserved(
@@ -166,6 +167,21 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		ctx, subjectHash, requestID, now); err != nil {
 		t.Fatal(err)
 	}
+	recent, err = store.HasRecentAutomaticRefreshAttempt(
+		ctx, viewID, viewerHash, mustV7(t), now.Add(-5*time.Minute))
+	if err != nil || !recent {
+		t.Fatalf("dispatched coalescing lookup = %v, %v", recent, err)
+	}
+	recent, err = store.HasRecentAutomaticRefreshAttempt(
+		ctx, viewID, viewerHash, mustV7(t), now)
+	if err != nil || recent {
+		t.Fatalf("exact coalescing boundary = %v, %v", recent, err)
+	}
+	recent, err = store.HasRecentAutomaticRefreshAttempt(
+		ctx, viewID, viewerHash, requestID, now.Add(-5*time.Minute))
+	if err != nil || recent {
+		t.Fatalf("current request was not excluded = %v, %v", recent, err)
+	}
 	pending.BillingDisposition =
 		deckv1.BillingDisposition_BILLING_DISPOSITION_COMMITTED
 	if err := store.SaveRefreshResponse(
@@ -173,13 +189,7 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		t.Fatal(err)
 	}
 	attempt, replayed, err = store.BeginRefreshAttempt(
-		ctx, BeginRefreshAttemptParams{
-			SubjectHash: subjectHash, RequestID: requestID,
-			RequestDigest: digest, ViewID: viewID, ViewerHash: viewerHash,
-			Origin:     deckv1.RefreshOrigin_REFRESH_ORIGIN_AUTOMATIC,
-			ClientKind: deckv1.RefreshClientKind_REFRESH_CLIENT_KIND_DESKTOP,
-			Now:        now,
-		})
+		ctx, attemptParams)
 	if err != nil || !replayed ||
 		attempt.State != RefreshAttemptCompleted ||
 		attempt.Response.GetBillingDisposition() !=

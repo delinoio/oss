@@ -651,6 +651,31 @@ func (client *Client) ActionMetadata(
 	return client.actionMetadata(ctx, credential, appPermissions, reference)
 }
 
+// PullRequestSnapshotMetadata loads every server-authored list and action
+// field while holding one bounded provider slot for the complete snapshot.
+func (client *Client) PullRequestSnapshotMetadata(
+	ctx context.Context,
+	installationID uint64,
+	credential Credential,
+	appPermissions Permissions,
+	reference PullRequestRef,
+) (ActionMetadata, error) {
+	if err := reference.Validate(); err != nil {
+		return ActionMetadata{}, err
+	}
+	release, err := client.concurrency.acquire(installationID)
+	if err != nil {
+		return ActionMetadata{}, err
+	}
+	defer release()
+	metadata, err := client.actionMetadata(
+		ctx, credential, appPermissions, reference)
+	if err != nil {
+		return ActionMetadata{}, err
+	}
+	return client.completeMutationMetadata(ctx, credential, metadata)
+}
+
 func (client *Client) actionMetadata(
 	ctx context.Context,
 	credential Credential,

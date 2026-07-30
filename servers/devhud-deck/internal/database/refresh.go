@@ -8,6 +8,7 @@ import (
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -28,17 +29,23 @@ type RefreshAttempt struct {
 	ReservationID      uuid.UUID
 	ProviderDispatched bool
 	Response           *deckv1.RefreshViewResponse
+	OrganizationID     uuid.UUID
+	TeamID             uuid.UUID
+	Meter              contracts.RefreshMeter
 }
 
 type BeginRefreshAttemptParams struct {
-	SubjectHash   [32]byte
-	RequestID     uuid.UUID
-	RequestDigest [32]byte
-	ViewID        uuid.UUID
-	ViewerHash    [32]byte
-	Origin        deckv1.RefreshOrigin
-	ClientKind    deckv1.RefreshClientKind
-	Now           time.Time
+	SubjectHash    [32]byte
+	RequestID      uuid.UUID
+	RequestDigest  [32]byte
+	ViewID         uuid.UUID
+	ViewerHash     [32]byte
+	Origin         deckv1.RefreshOrigin
+	ClientKind     deckv1.RefreshClientKind
+	OrganizationID uuid.UUID
+	TeamID         uuid.UUID
+	Meter          contracts.RefreshMeter
+	Now            time.Time
 }
 
 // WithRefreshLock serializes the same viewer/view across every Deck process.
@@ -84,6 +91,11 @@ func (store *Store) BeginRefreshAttempt(
 	params BeginRefreshAttemptParams,
 ) (RefreshAttempt, bool, error) {
 	if params.RequestID.Version() != 7 || params.ViewID.Version() != 7 ||
+		params.OrganizationID.Version() != 7 || params.TeamID.Version() != 7 ||
+		params.Meter.MeterID.Version() != 7 ||
+		params.Meter.PriceVersionID.Version() != 7 ||
+		params.Meter.ServiceID.Version() != 7 ||
+		params.Meter.USDMicros != contracts.ProviderRefreshPriceUSDMicros ||
 		params.Origin < deckv1.RefreshOrigin_REFRESH_ORIGIN_AUTOMATIC ||
 		params.Origin > deckv1.RefreshOrigin_REFRESH_ORIGIN_SHORTCUT ||
 		params.ClientKind < deckv1.RefreshClientKind_REFRESH_CLIENT_KIND_DESKTOP ||
@@ -94,12 +106,20 @@ func (store *Store) BeginRefreshAttempt(
 	result, err := store.pool.Exec(ctx, `
 		INSERT INTO deck_refresh_attempts (
 			subject_hash, refresh_request_id, request_digest, view_id,
-			viewer_hash, origin, client_kind, state, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+			viewer_hash, origin, client_kind, billing_organization_id,
+			billing_team_id, meter_id, price_version_id, service_identity_id,
+			usd_micros, state, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+			$14, $15, $15
+		)
 		ON CONFLICT (subject_hash, refresh_request_id) DO NOTHING
 	`, params.SubjectHash[:], params.RequestID, params.RequestDigest[:],
 		params.ViewID, params.ViewerHash[:], int16(params.Origin),
-		int16(params.ClientKind), int16(RefreshAttemptCreated), params.Now.UTC())
+		int16(params.ClientKind), params.OrganizationID, params.TeamID,
+		params.Meter.MeterID, params.Meter.PriceVersionID,
+		params.Meter.ServiceID, params.Meter.USDMicros,
+		int16(RefreshAttemptCreated), params.Now.UTC())
 	if err != nil {
 		return RefreshAttempt{}, false, errors.New(
 			"deck database: refresh attempt insert failed")
@@ -121,14 +141,20 @@ func (store *Store) GetRefreshAttempt(
 	var reservationID *uuid.UUID
 	var dispatched bool
 	var responseCiphertext []byte
+	var organizationID, teamID uuid.UUID
+	var meterID, priceVersionID, serviceID uuid.UUID
+	var usdMicros int64
 	err := store.pool.QueryRow(ctx, `
 		SELECT request_digest, view_id, state, reservation_id,
-		       provider_dispatched, response_ciphertext
+		       provider_dispatched, response_ciphertext,
+		       billing_organization_id, billing_team_id, meter_id,
+		       price_version_id, service_identity_id, usd_micros
 		FROM deck_refresh_attempts
 		WHERE subject_hash = $1 AND refresh_request_id = $2
 	`, subjectHash[:], requestID).Scan(
 		&storedDigest, &viewID, &state, &reservationID,
-		&dispatched, &responseCiphertext)
+		&dispatched, &responseCiphertext, &organizationID, &teamID,
+		&meterID, &priceVersionID, &serviceID, &usdMicros)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RefreshAttempt{}, ErrNotFound
 	}
@@ -142,6 +168,11 @@ func (store *Store) GetRefreshAttempt(
 	attempt := RefreshAttempt{
 		RequestID: requestID, ViewID: viewID,
 		State: RefreshAttemptState(state), ProviderDispatched: dispatched,
+		OrganizationID: organizationID, TeamID: teamID,
+		Meter: contracts.RefreshMeter{
+			MeterID: meterID, PriceVersionID: priceVersionID,
+			ServiceID: serviceID, USDMicros: usdMicros,
+		},
 	}
 	if reservationID != nil {
 		attempt.ReservationID = *reservationID
@@ -156,10 +187,9 @@ func (store *Store) GetRefreshAttempt(
 	return attempt, nil
 }
 
-// HasRecentAutomaticRefreshAttempt coalesces active client requests by
-// viewer/view even when the earlier provider request failed and therefore did
-// not produce a fresh snapshot. The current request is excluded because its
-// attempt row is inserted before this check.
+// HasRecentAutomaticRefreshAttempt coalesces active client requests only after
+// an earlier attempt actually dispatched to GitHub. The current request is
+// excluded because its attempt row is inserted before this check.
 func (store *Store) HasRecentAutomaticRefreshAttempt(
 	ctx context.Context,
 	viewID uuid.UUID,
@@ -175,6 +205,7 @@ func (store *Store) HasRecentAutomaticRefreshAttempt(
 			WHERE view_id = $1 AND viewer_hash = $2
 			  AND refresh_request_id <> $3
 			  AND origin IN (1, 2)
+			  AND provider_dispatched
 			  AND created_at > $4
 		)
 	`, viewID, viewerHash[:], currentRequestID, cutoff.UTC()).Scan(&recent)
