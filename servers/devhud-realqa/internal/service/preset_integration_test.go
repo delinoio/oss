@@ -2416,24 +2416,31 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("disconnect cutoff retry state = %q, want pending",
 			disconnectSettlement.State)
 	}
-	disconnectReservationID := uuidv7.MustNew()
-	if _, err = connection.Exec(ctx, `
-		UPDATE realqa_storage_daily_settlements
-		SET state = 'reserved',
-		    reservation_id = $3,
-		    reservation_created_at = $4,
-		    reservation_expires_at = $5
-		WHERE authorization_id = $1
-		  AND period_start = $2
-	`, disconnectAuthorizationID, disconnectPeriodStart,
-		disconnectReservationID, disconnectCutoff,
-		disconnectCutoff.Add(24*time.Hour)); err != nil {
+	commitPeriodStart := disconnectPeriodStart.Add(24 * time.Hour)
+	commitSettlement, err := store.Queries().CreateStorageDailySettlement(
+		ctx, dbgen.CreateStorageDailySettlementParams{
+			AuthorizationID:       toPGUUID(disconnectAuthorizationID),
+			PeriodStart:           pgTimestamp(commitPeriodStart),
+			ByteSeconds:           1,
+			Units:                 1,
+			State:                 "pending",
+			RequestDigest:         bytes.Repeat([]byte{0xcd}, 32),
+			ReserveIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+			CommitIdempotencyKey:  toPGUUID(uuidv7.MustNew()),
+			ReleaseIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+		})
+	if err != nil {
 		t.Fatal(err)
 	}
-	disconnectSettlement, err = store.Queries().GetStorageDailySettlement(
-		ctx, dbgen.GetStorageDailySettlementParams{
+	disconnectReservationID := uuidv7.MustNew()
+	commitSettlement, err = store.Queries().SetStorageDailyReservation(
+		ctx, dbgen.SetStorageDailyReservationParams{
+			ReservationID:        toPGUUID(disconnectReservationID),
+			ReservationCreatedAt: pgTimestamp(disconnectCutoff),
+			ReservationExpiresAt: pgTimestamp(
+				disconnectCutoff.Add(24 * time.Hour)),
 			AuthorizationID: toPGUUID(disconnectAuthorizationID),
-			PeriodStart:     pgTimestamp(disconnectPeriodStart),
+			PeriodStart:     pgTimestamp(commitPeriodStart),
 		})
 	if err != nil {
 		t.Fatal(err)
@@ -2442,8 +2449,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		Kind: StorageBillingFailurePayment,
 	}
 	if commitErr := disconnectService.commitReservedStorage(
-		ctx, disconnectBinding, disconnectSettlement,
-		disconnectPeriodStart, disconnectPeriodStart.Add(24*time.Hour),
+		ctx, disconnectBinding, commitSettlement,
+		commitPeriodStart, commitPeriodStart.Add(24*time.Hour),
 	); commitErr == nil {
 		t.Fatal("accepted storage reservation commit failure was ignored")
 	}
@@ -2453,28 +2460,16 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnectBilling.commitAuthorizedCalls,
 			disconnectBilling.releaseAuthorizedCalls)
 	}
-	disconnectSettlement, err = store.Queries().GetStorageDailySettlement(
+	commitSettlement, err = store.Queries().GetStorageDailySettlement(
 		ctx, dbgen.GetStorageDailySettlementParams{
 			AuthorizationID: toPGUUID(disconnectAuthorizationID),
-			PeriodStart:     pgTimestamp(disconnectPeriodStart),
+			PeriodStart:     pgTimestamp(commitPeriodStart),
 		})
-	if err != nil || disconnectSettlement.State != "reserved" {
+	if err != nil || commitSettlement.State != "reserved" {
 		t.Fatalf("accepted reservation state = %q, %v, want reserved",
-			disconnectSettlement.State, err)
+			commitSettlement.State, err)
 	}
 	disconnectBilling.commitErr = nil
-	if _, err = connection.Exec(ctx, `
-		UPDATE realqa_storage_daily_settlements
-		SET state = 'pending',
-		    reservation_id = NULL,
-		    reservation_created_at = NULL,
-		    reservation_expires_at = NULL,
-		    settled_at = NULL
-		WHERE authorization_id = $1
-		  AND period_start = $2
-	`, disconnectAuthorizationID, disconnectPeriodStart); err != nil {
-		t.Fatal(err)
-	}
 	disconnectRecovery, err := store.Queries().GetActiveStorageRecovery(
 		ctx, toPGUUID(disconnectSubmissionID))
 	if err != nil {
