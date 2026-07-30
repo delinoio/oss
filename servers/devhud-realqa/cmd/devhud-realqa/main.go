@@ -88,8 +88,53 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return &startupError{value: "authentication"}
 	}
-	githubAuthorization, err := github.NewAuthorization(
-		configuration.GitHubOAuthClientID)
+	githubState, err := github.NewStateCodec(configuration.GitHubCallbackSigningKey)
+	if err != nil {
+		return &startupError{value: "github"}
+	}
+	githubAuthorization, err := github.NewAppAuthorization(
+		configuration.GitHubOAuthClientID,
+		configuration.GitHubAppSlug,
+		githubState,
+		nil)
+	if err != nil {
+		return &startupError{value: "github"}
+	}
+	githubCredentialVault, err := github.NewAESCredentialVaultWithPreviousKeys(
+		configuration.GitHubCredentialKeyID,
+		configuration.GitHubCredentialWrappingKey,
+		configuration.GitHubCredentialPreviousKeys)
+	if err != nil {
+		return &startupError{value: "github"}
+	}
+	githubCallbackStore, err := github.NewPostgresCallbackStore(store)
+	if err != nil {
+		return &startupError{value: "github"}
+	}
+	githubClient, err := github.NewClient(github.ClientConfig{
+		ProjectPermission: github.ProjectPermission(
+			configuration.GitHubProjectPermission),
+	})
+	if err != nil {
+		return &startupError{value: "github"}
+	}
+	githubProvider, err := github.NewAdapter(
+		store, githubCredentialVault, githubClient,
+		configuration.GitHubOAuthClientID,
+		configuration.GitHubOAuthClientSecret,
+		nil)
+	if err != nil {
+		return &startupError{value: "github"}
+	}
+	githubCallbacks, err := github.NewCallbackHandler(github.CallbackConfig{
+		ClientID:      configuration.GitHubOAuthClientID,
+		ClientSecret:  configuration.GitHubOAuthClientSecret,
+		WebhookSecret: configuration.GitHubWebhookSecret,
+		State:         githubState, Store: githubCallbackStore,
+		Vault: githubCredentialVault,
+		ProjectPermission: github.ProjectPermission(
+			configuration.GitHubProjectPermission),
+	})
 	if err != nil {
 		return &startupError{value: "github"}
 	}
@@ -108,13 +153,17 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	}
 	serviceDependencies := service.Dependencies{
 		Store: store, GitHub: githubAuthorization,
+		GitHubProvider: githubProvider,
+		GitHubProjectPermission: github.ProjectPermission(
+			configuration.GitHubProjectPermission),
 		Objects: objects, UploadSigner: uploadSigner,
 		WebhookSecret: configuration.GitHubWebhookSecret,
 		Pseudonymizer: pseudonymizer, Logger: logger,
 	}
 	handler, err := api.New(api.Dependencies{
 		Authentication: authentication, Health: store, Logger: logger,
-		Services: serviceDependencies,
+		GitHubCallbacks: githubCallbacks,
+		Services:        serviceDependencies,
 	})
 	if err != nil {
 		return &startupError{value: "handler"}

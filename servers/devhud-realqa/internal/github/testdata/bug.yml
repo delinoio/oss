@@ -1,0 +1,36 @@
+name: Bug form
+description: Report a reproducible problem
+title: "[Bug] "
+labels:
+  - bug
+assignees:
+  - octocat
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping us improve.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+      placeholder: A concise summary
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Low
+        - High
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched for duplicates.
+          required: true
+        - label: I can reproduce this.

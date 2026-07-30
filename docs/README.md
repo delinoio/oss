@@ -94,7 +94,7 @@ Each project must have one project index document and one or more domain contrac
 - `docs/apps-devhud-foundation.md` (`apps/devhud`; signed-out base shell, RealQA encrypted local-draft/capture foundations, and all Deck/RealQA client/native/Chrome surfaces)
 - `docs/servers-devhud-deck-foundation.md` (planned `servers/devhud-deck`; future `https://deck.deli.dev`)
 - `docs/protos-devhud-deck-api-contract.md` (implemented private `protos/devhud-deck/v1`; `devhud.deck.v1`, isolated descriptor, Go/TypeScript Connect artifacts, device/candidate reads, and non-dispatching all-origin refresh preflight)
-- `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion and R2-backed image-transfer/public-delivery foundation at `servers/devhud-realqa`; future GitHub issue/billing slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
+- `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion, internal GitHub.com provider with stable-ID repository rename synchronization, and R2-backed image-transfer/public-delivery foundation at `servers/devhud-realqa`; future end-to-end submission/billing slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
 - `docs/protos-devhud-realqa-api-contract.md` (implemented `protos/devhud-realqa/v1`; `devhud.realqa.v1`, isolated descriptor and private generated package)
 
 DevHud's implemented signed-out base shell remains bundled, usable without an
@@ -112,8 +112,10 @@ desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is
 limited to Logto/DeliDev; bundled webviews remain offline while exact future
 feature RPCs and RealQA signed upload PUTs cross closed native transports.
-Provider work stays behind separate least-privilege GitHub Apps, RealQA
-management stays in DevHud, and delibase account/organization deletion durably
+Provider work stays behind separate least-privilege GitHub Apps; RealQA's
+private schema preserves issue types, Issue Form text prefills, textarea render
+languages, and dropdown multiplicity; RealQA management stays in DevHud; and
+delibase account/organization deletion durably
 invokes both features' service-authenticated cleanup mode. No public plugin SDK,
 arbitrary remote UI, client/extension telemetry, DNS/deployment, production app
 registration, catalog activation, widget/extension/store publication, or

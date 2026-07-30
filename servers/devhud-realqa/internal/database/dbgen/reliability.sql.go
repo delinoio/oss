@@ -24,6 +24,19 @@ func (q *Queries) DeleteLifecycleAccountIdentity(ctx context.Context, accountID 
 	return result.RowsAffected(), nil
 }
 
+const deleteLifecycleAccountRepositoryAccess = `-- name: DeleteLifecycleAccountRepositoryAccess :execrows
+DELETE FROM realqa_repository_access
+WHERE account_id = $1
+`
+
+func (q *Queries) DeleteLifecycleAccountRepositoryAccess(ctx context.Context, accountID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteLifecycleAccountRepositoryAccess, accountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteScopeConnections = `-- name: DeleteScopeConnections :execrows
 DELETE FROM realqa_github_connections
 WHERE owner_kind = $1
@@ -186,6 +199,53 @@ func (q *Queries) DeleteScopeSubmissions(ctx context.Context, arg DeleteScopeSub
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const disconnectGitHubConnectionsForAccount = `-- name: DisconnectGitHubConnectionsForAccount :one
+WITH disconnected AS (
+    UPDATE realqa_github_connections
+    SET state = 'disconnected',
+        connected_by_account_id = NULL,
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE connected_by_account_id = $1
+    RETURNING id
+),
+cleared_authorizations AS (
+    UPDATE realqa_github_user_authorizations
+    SET state = 'disconnected',
+        credential_ciphertext = NULL,
+        wrapped_data_key = NULL,
+        key_id = NULL,
+        oauth_state_digest = NULL,
+        oauth_state_expires_at = NULL,
+        revision = revision + 1,
+        updated_at = transaction_timestamp()
+    WHERE account_id = $1
+       OR connection_id IN (SELECT id FROM disconnected)
+    RETURNING 1
+),
+cleared_repository_access AS (
+    DELETE FROM realqa_repository_access AS access
+    USING realqa_github_installations AS installation
+    WHERE access.installation_id = installation.id
+      AND installation.connection_id IN (SELECT id FROM disconnected)
+    RETURNING 1
+)
+SELECT count(*)::bigint
+FROM disconnected
+`
+
+func (q *Queries) DisconnectGitHubConnectionsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, disconnectGitHubConnectionsForAccount, accountID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const getDeletionJob = `-- name: GetDeletionJob :one

@@ -68,6 +68,11 @@ type RealqaDestination struct {
 	CreatedAt       pgtype.Timestamptz
 }
 
+type RealqaGithubCallbackState struct {
+	Nonce      string
+	ConsumedAt pgtype.Timestamptz
+}
+
 type RealqaGithubConnection struct {
 	ID                   pgtype.UUID
 	OwnerKind            string
@@ -83,6 +88,8 @@ type RealqaGithubConnection struct {
 	ConnectedAt          pgtype.Timestamptz
 	CreatedAt            pgtype.Timestamptz
 	UpdatedAt            pgtype.Timestamptz
+	GithubUserID         pgtype.Int8
+	ConnectedByAccountID pgtype.UUID
 }
 
 type RealqaGithubInstallation struct {
@@ -95,6 +102,32 @@ type RealqaGithubInstallation struct {
 	Revision               int64
 	CreatedAt              pgtype.Timestamptz
 	UpdatedAt              pgtype.Timestamptz
+	ProviderAccountID      pgtype.Int8
+	AccountKind            pgtype.Text
+	State                  string
+	Permissions            []byte
+}
+
+type RealqaGithubUserAuthorization struct {
+	ConnectionID         pgtype.UUID
+	AccountID            pgtype.UUID
+	State                string
+	GithubUserID         pgtype.Int8
+	GithubLogin          string
+	CredentialCiphertext []byte
+	WrappedDataKey       []byte
+	KeyID                pgtype.Text
+	OauthStateDigest     []byte
+	OauthStateExpiresAt  pgtype.Timestamptz
+	Revision             int64
+	ConnectedAt          pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+type RealqaGithubWebhookDelivery struct {
+	DeliveryID pgtype.UUID
+	ReceivedAt pgtype.Timestamptz
 }
 
 type RealqaIdempotencyRecord struct {
@@ -205,6 +238,13 @@ type RealqaRepositoryDefinition struct {
 	Path           string
 	Etag           string
 	SchemaPayload  []byte
+	Revision       int64
+	UpdatedAt      pgtype.Timestamptz
+}
+
+type RealqaRepositorySchemaRevision struct {
+	InstallationID pgtype.UUID
+	RepositoryID   string
 	Revision       int64
 	UpdatedAt      pgtype.Timestamptz
 }

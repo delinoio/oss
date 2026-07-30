@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/database/dbgen"
+	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rqerr"
 	"github.com/delinoio/oss/servers/devhud-realqa/internal/rules"
 	"github.com/google/uuid"
@@ -235,6 +237,11 @@ func (service *Preset) validateInput(
 	if err != nil {
 		return presetInput{}, err
 	}
+	liveDefinitions, err := service.refreshProviderSelection(
+		ctx, actor, scope, input.destination)
+	if err != nil {
+		return presetInput{}, err
+	}
 	var repository dbgen.RealqaRepositoryAccess
 	input.installation, repository, err = authorizeRepository(
 		ctx, service.dependencies, actor, scope, input.destination)
@@ -250,7 +257,12 @@ func (service *Preset) validateInput(
 	if input.definition != nil {
 		input.definition = proto.Clone(input.definition).(*realqav1.RepositoryIssueDefinitionRef)
 	}
-	if err = service.validateDefinition(ctx, &input); err != nil {
+	if liveDefinitions != nil {
+		err = validateLiveDefinition(&input, *liveDefinitions)
+	} else {
+		err = service.validateDefinition(ctx, &input)
+	}
+	if err != nil {
 		return presetInput{}, err
 	}
 	input.labels, err = cleanStringList(input.labels, 100, 255)
@@ -259,6 +271,9 @@ func (service *Preset) validateInput(
 	}
 	input.assignees, err = cleanStringList(input.assignees, 100, 255)
 	if err != nil {
+		return presetInput{}, err
+	}
+	if err = validatePresetProviderMetadata(input.labels, input.assignees); err != nil {
 		return presetInput{}, err
 	}
 	input.projects = []string{}
@@ -272,6 +287,12 @@ func (service *Preset) validateInput(
 		}
 		input.projects, err = cleanStringList(github.ProjectNodeIds, 20, 255)
 		if err != nil {
+			return presetInput{}, err
+		}
+		if err = validateProjectConfiguration(
+			service.dependencies.GitHubProjectPermission,
+			input.projects,
+		); err != nil {
 			return presetInput{}, err
 		}
 	}
@@ -303,6 +324,135 @@ func (service *Preset) validateInput(
 		}
 	}
 	return input, nil
+}
+
+func validateProjectConfiguration(
+	permission realqagithub.ProjectPermission,
+	projectNodeIDs []string,
+) error {
+	if len(projectNodeIDs) == 0 {
+		return nil
+	}
+	for _, projectNodeID := range projectNodeIDs {
+		if realqagithub.ValidateProjectNodeID(projectNodeID) != nil {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+		}
+	}
+	if permission != realqagithub.ProjectPermissionRepository &&
+		permission != realqagithub.ProjectPermissionOrganization {
+		return invalid(
+			realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	return nil
+}
+
+func validatePresetProviderMetadata(labels, assignees []string) error {
+	for _, label := range labels {
+		if realqagithub.ValidateLabelName(label) != nil {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+		}
+	}
+	for _, assignee := range assignees {
+		if realqagithub.ValidateAssigneeLogin(assignee) != nil {
+			return invalid(
+				realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+		}
+	}
+	return nil
+}
+
+func (service *Preset) refreshProviderSelection(
+	ctx context.Context,
+	actor caller,
+	scope owner,
+	destination *realqav1.TrackerDestination,
+) (*realqagithub.RepositoryDefinitions, error) {
+	if service.dependencies.GitHubProvider == nil {
+		return nil, nil
+	}
+	if destination == nil || destination.InstallationId == nil ||
+		destination.Repository == nil {
+		return nil, invalid(
+			realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	installationID, err := parseUUIDv7(destination.InstallationId.Value)
+	repositoryID, parseErr := strconv.ParseInt(
+		destination.Repository.RepositoryId, 10, 64)
+	if err != nil || parseErr != nil || repositoryID <= 0 {
+		return nil, invalid(
+			realqav1.ErrorReason_ERROR_REASON_PROVIDER_VALIDATION_FAILED)
+	}
+	installation, err := service.dependencies.Store.Queries().GetGitHubInstallation(
+		ctx, toPGUUID(installationID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, permissionDenied()
+	}
+	if err != nil {
+		return nil, err
+	}
+	installationOwnerID, err := fromPGUUID(installation.OwnerID)
+	if err != nil || installation.OwnerKind != scope.kind ||
+		installationOwnerID != scope.id {
+		return nil, permissionDenied()
+	}
+	definitions, err := service.dependencies.GitHubProvider.GetRepositoryDefinitions(
+		ctx, actor.accountID, installationID, realqagithub.Repository{
+			ID: repositoryID, NodeID: "R_" + strconv.FormatInt(repositoryID, 10),
+			Owner: destination.Repository.Owner, Name: destination.Repository.Name,
+			IssuesEnabled: true, CanSubmit: true,
+		})
+	if errors.Is(err, realqagithub.ErrCallerAuthorizationUnavailable) {
+		return nil, nil
+	}
+	if errors.Is(err, realqagithub.ErrRepositorySubmissionUnavailable) {
+		return nil, providerPermissionDenied()
+	}
+	if err != nil {
+		return nil, providerDefinitionUnavailable()
+	}
+	return &definitions, nil
+}
+
+func providerDefinitionUnavailable() error {
+	return rqerr.New(connect.CodeUnavailable,
+		realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
+		realqav1.FailureClass_FAILURE_CLASS_RETRYABLE, 0)
+}
+
+func validateLiveDefinition(
+	input *presetInput,
+	definitions realqagithub.RepositoryDefinitions,
+) error {
+	if input == nil || input.definition == nil {
+		return invalid(realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID)
+	}
+	kind, err := definitionKindName(input.definition.Kind)
+	if err != nil {
+		return err
+	}
+	matches := func(definition realqagithub.DefinitionRef) bool {
+		return string(definition.Kind) == kind &&
+			definition.ID == input.definition.DefinitionId &&
+			definition.ETag == input.definition.Etag &&
+			definition.Path == input.definition.Path
+	}
+	for _, definition := range definitions.Markdown {
+		if matches(definition.Definition) {
+			input.definition.Name = definition.Definition.Name
+			return nil
+		}
+	}
+	for _, definition := range definitions.Forms {
+		if matches(definition.Definition) {
+			input.definition.Name = definition.Definition.Name
+			return nil
+		}
+	}
+	return rqerr.New(connect.CodeFailedPrecondition,
+		realqav1.ErrorReason_ERROR_REASON_PROVIDER_SCHEMA_INVALID,
+		realqav1.FailureClass_FAILURE_CLASS_CONFLICT, 0)
 }
 
 func revalidatePresetAccess(

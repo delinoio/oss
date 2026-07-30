@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/servers/delibase/internal/database/dbgen"
 	"github.com/delinoio/oss/servers/delibase/internal/reliability"
 	"github.com/delinoio/oss/servers/internal/auth"
+	"github.com/delinoio/oss/servers/internal/redact"
 	"github.com/delinoio/oss/servers/internal/safelog"
 	"github.com/delinoio/oss/servers/internal/uuidv7"
 	"github.com/google/uuid"
@@ -47,6 +48,17 @@ type usageFixture struct {
 	privateTeamID  uuid.UUID
 }
 
+func newUsageFixtureOrganizationID() uuid.UUID {
+	for {
+		organizationID := uuidv7.MustNew()
+		// Test client references and idempotency keys use this UUID as their
+		// uniqueness suffix, so avoid UUIDs that resemble card numbers.
+		if value := organizationID.String(); redact.Text(value) == value {
+			return organizationID
+		}
+	}
+}
+
 func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) {
 	databaseURL := os.Getenv("DELIBASE_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -70,6 +82,9 @@ func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) 
 		go func() {
 			defer callers.Done()
 			suffix := string(rune('a' + index))
+			// UUID numeric tails can match the credential redactor's
+			// card-number pattern before the concurrency path is reached.
+			reference := "oversubscribe-" + suffix
 			response, err := fixture.usage.ReserveUsage(
 				ownerContext,
 				usageReserveRequest(
@@ -77,8 +92,8 @@ func TestPostgreSQLUsageServicePreventsConcurrentOversubscription(t *testing.T) 
 					fixture.generalTeamID,
 					fixture.meterID,
 					75,
-					"oversubscribe-"+suffix+"-"+fixture.organizationID.String(),
-					"oversubscribe-"+suffix+"-"+fixture.organizationID.String(),
+					reference,
+					reference,
 				),
 			)
 			results <- result{response: response, err: err}
@@ -2825,7 +2840,7 @@ func newUsageFixture(
 	}
 	fixture := usageFixture{
 		store:          store,
-		organizationID: uuidv7.MustNew(),
+		organizationID: newUsageFixtureOrganizationID(),
 		ownerID:        uuidv7.MustNew(),
 		memberID:       uuidv7.MustNew(),
 		serviceID:      uuidv7.MustNew(),
