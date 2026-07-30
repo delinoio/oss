@@ -2494,6 +2494,11 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		WHERE asset.id = $3;
 		UPDATE realqa_github_connections
 		SET state = 'disconnected',
+		    credential_ciphertext = NULL,
+		    wrapped_data_key = NULL,
+		    key_id = NULL,
+		    oauth_state_digest = NULL,
+		    oauth_state_expires_at = NULL,
 		    updated_at = $9
 		WHERE id = $12
 	`, disconnectSubmissionID, submissionID, disconnectAssetID,
@@ -2584,6 +2589,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_github_connections
 		SET state = 'connected',
+		    credential_ciphertext = decode('03', 'hex'),
+		    wrapped_data_key = decode('04', 'hex'),
+		    key_id = 'fixture-key',
 		    updated_at = $2
 		WHERE id = $1
 	`, organizationConnectionID, disconnectCutoff.Add(time.Hour)); err != nil {
