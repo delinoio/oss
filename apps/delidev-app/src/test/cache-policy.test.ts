@@ -61,12 +61,21 @@ describe("service worker cache policy", () => {
     "UsageService/ReserveUsage",
     "UsageService/CommitUsage",
     "UsageService/ReleaseUsage",
+    "RealQATrackerService/GetGitHubConnection",
+    "RealQATrackerService/StartGitHubConnection",
+    "RealQATrackerService/ListGitHubInstallations",
+    "RealQATrackerService/DisconnectGitHubConnection",
+    "RealQATrackerService/ListRepositories",
+    "RealQATrackerService/GetRepositoryIssueSchema",
   ])("never caches sensitive RPC %s", (rpc) => {
+    const realqa = rpc.startsWith("RealQA");
     expect(
       classifyCacheRequest(
         {
           method: "POST",
-          url: `https://delibase.deli.dev/delibase.v1.${rpc}`,
+          url: realqa
+            ? `https://realqa.deli.dev/devhud.realqa.v1.${rpc}`
+            : `https://delibase.deli.dev/delibase.v1.${rpc}`,
         },
         shellPaths,
       ),

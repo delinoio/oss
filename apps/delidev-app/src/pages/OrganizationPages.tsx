@@ -46,6 +46,7 @@ import { BackgroundUsageAuthorizations } from "../components/BackgroundUsageAuth
 import { Dialog } from "../components/Dialog";
 import { DeckConnectionManager } from "../components/DeckConnectionManager";
 import { useAccountState } from "../components/ProtectedRoute";
+import { RealQAGitHubDestinations } from "../components/RealQAGitHubDestinations";
 import {
   EmptyState,
   ErrorState,
@@ -2938,6 +2939,7 @@ export function OrganizationSettingsPage() {
   const {
     callerRole,
     organization,
+    realqaTrackerClient,
     refreshOrganization,
     transport,
   } = useOrganization();
@@ -3116,6 +3118,17 @@ export function OrganizationSettingsPage() {
           </p>
         </section>
       )}
+      {organization.organizationId?.value ? (
+        <RealQAGitHubDestinations
+          client={realqaTrackerClient}
+          owner={{
+            canManage,
+            kind: "organization",
+            organizationId: organization.organizationId.value,
+            organizationName: organization.name,
+          }}
+        />
+      ) : null}
       {organization.organizationId?.value ? (
         <BackgroundUsageAuthorizations
           scope={{

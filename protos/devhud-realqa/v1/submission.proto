@@ -3,7 +3,6 @@ syntax = "proto3";
 package devhud.realqa.v1;
 
 import "devhud-realqa/v1/common.proto";
-import "devhud-realqa/v1/preset.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1;realqav1";

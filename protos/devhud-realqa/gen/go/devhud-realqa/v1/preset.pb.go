@@ -22,55 +22,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type RepositoryIssueDefinitionKind int32
-
-const (
-	RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED       RepositoryIssueDefinitionKind = 0
-	RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE RepositoryIssueDefinitionKind = 1
-	RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM        RepositoryIssueDefinitionKind = 2
-)
-
-// Enum value maps for RepositoryIssueDefinitionKind.
-var (
-	RepositoryIssueDefinitionKind_name = map[int32]string{
-		0: "REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED",
-		1: "REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE",
-		2: "REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM",
-	}
-	RepositoryIssueDefinitionKind_value = map[string]int32{
-		"REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED":       0,
-		"REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE": 1,
-		"REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM":        2,
-	}
-)
-
-func (x RepositoryIssueDefinitionKind) Enum() *RepositoryIssueDefinitionKind {
-	p := new(RepositoryIssueDefinitionKind)
-	*p = x
-	return p
-}
-
-func (x RepositoryIssueDefinitionKind) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (RepositoryIssueDefinitionKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_realqa_v1_preset_proto_enumTypes[0].Descriptor()
-}
-
-func (RepositoryIssueDefinitionKind) Type() protoreflect.EnumType {
-	return &file_devhud_realqa_v1_preset_proto_enumTypes[0]
-}
-
-func (x RepositoryIssueDefinitionKind) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use RepositoryIssueDefinitionKind.Descriptor instead.
-func (RepositoryIssueDefinitionKind) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{0}
-}
-
 type FeatureDeletionTriggerKind int32
 
 const (
@@ -107,11 +58,11 @@ func (x FeatureDeletionTriggerKind) String() string {
 }
 
 func (FeatureDeletionTriggerKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_devhud_realqa_v1_preset_proto_enumTypes[1].Descriptor()
+	return file_devhud_realqa_v1_preset_proto_enumTypes[0].Descriptor()
 }
 
 func (FeatureDeletionTriggerKind) Type() protoreflect.EnumType {
-	return &file_devhud_realqa_v1_preset_proto_enumTypes[1]
+	return &file_devhud_realqa_v1_preset_proto_enumTypes[0]
 }
 
 func (x FeatureDeletionTriggerKind) Number() protoreflect.EnumNumber {
@@ -120,83 +71,7 @@ func (x FeatureDeletionTriggerKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FeatureDeletionTriggerKind.Descriptor instead.
 func (FeatureDeletionTriggerKind) EnumDescriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{1}
-}
-
-type RepositoryIssueDefinitionRef struct {
-	state         protoimpl.MessageState        `protogen:"open.v1"`
-	Kind          RepositoryIssueDefinitionKind `protobuf:"varint,1,opt,name=kind,proto3,enum=devhud.realqa.v1.RepositoryIssueDefinitionKind" json:"kind,omitempty"`
-	DefinitionId  string                        `protobuf:"bytes,2,opt,name=definition_id,json=definitionId,proto3" json:"definition_id,omitempty"`
-	Name          string                        `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Path          string                        `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
-	Etag          string                        `protobuf:"bytes,5,opt,name=etag,proto3" json:"etag,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RepositoryIssueDefinitionRef) Reset() {
-	*x = RepositoryIssueDefinitionRef{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RepositoryIssueDefinitionRef) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RepositoryIssueDefinitionRef) ProtoMessage() {}
-
-func (x *RepositoryIssueDefinitionRef) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RepositoryIssueDefinitionRef.ProtoReflect.Descriptor instead.
-func (*RepositoryIssueDefinitionRef) Descriptor() ([]byte, []int) {
 	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *RepositoryIssueDefinitionRef) GetKind() RepositoryIssueDefinitionKind {
-	if x != nil {
-		return x.Kind
-	}
-	return RepositoryIssueDefinitionKind_REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED
-}
-
-func (x *RepositoryIssueDefinitionRef) GetDefinitionId() string {
-	if x != nil {
-		return x.DefinitionId
-	}
-	return ""
-}
-
-func (x *RepositoryIssueDefinitionRef) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *RepositoryIssueDefinitionRef) GetPath() string {
-	if x != nil {
-		return x.Path
-	}
-	return ""
-}
-
-func (x *RepositoryIssueDefinitionRef) GetEtag() string {
-	if x != nil {
-		return x.Etag
-	}
-	return ""
 }
 
 type ProcessUrlRule struct {
@@ -214,7 +89,7 @@ type ProcessUrlRule struct {
 
 func (x *ProcessUrlRule) Reset() {
 	*x = ProcessUrlRule{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[1]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -226,7 +101,7 @@ func (x *ProcessUrlRule) String() string {
 func (*ProcessUrlRule) ProtoMessage() {}
 
 func (x *ProcessUrlRule) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[1]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -239,7 +114,7 @@ func (x *ProcessUrlRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcessUrlRule.ProtoReflect.Descriptor instead.
 func (*ProcessUrlRule) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{1}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ProcessUrlRule) GetRuleId() *UuidV7 {
@@ -288,7 +163,7 @@ type ShortcutDefinition struct {
 
 func (x *ShortcutDefinition) Reset() {
 	*x = ShortcutDefinition{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[2]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -300,7 +175,7 @@ func (x *ShortcutDefinition) String() string {
 func (*ShortcutDefinition) ProtoMessage() {}
 
 func (x *ShortcutDefinition) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[2]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -313,7 +188,7 @@ func (x *ShortcutDefinition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShortcutDefinition.ProtoReflect.Descriptor instead.
 func (*ShortcutDefinition) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{2}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ShortcutDefinition) GetShortcutId() *UuidV7 {
@@ -363,7 +238,7 @@ type Preset struct {
 
 func (x *Preset) Reset() {
 	*x = Preset{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[3]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -375,7 +250,7 @@ func (x *Preset) String() string {
 func (*Preset) ProtoMessage() {}
 
 func (x *Preset) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[3]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -388,7 +263,7 @@ func (x *Preset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Preset.ProtoReflect.Descriptor instead.
 func (*Preset) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{3}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Preset) GetPresetId() *UuidV7 {
@@ -520,7 +395,7 @@ type ListPresetsRequest struct {
 
 func (x *ListPresetsRequest) Reset() {
 	*x = ListPresetsRequest{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[4]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -532,7 +407,7 @@ func (x *ListPresetsRequest) String() string {
 func (*ListPresetsRequest) ProtoMessage() {}
 
 func (x *ListPresetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[4]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -545,7 +420,7 @@ func (x *ListPresetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPresetsRequest.ProtoReflect.Descriptor instead.
 func (*ListPresetsRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{4}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListPresetsRequest) GetOwner() *OwnerScope {
@@ -572,7 +447,7 @@ type ListPresetsResponse struct {
 
 func (x *ListPresetsResponse) Reset() {
 	*x = ListPresetsResponse{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[5]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -584,7 +459,7 @@ func (x *ListPresetsResponse) String() string {
 func (*ListPresetsResponse) ProtoMessage() {}
 
 func (x *ListPresetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[5]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -597,7 +472,7 @@ func (x *ListPresetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPresetsResponse.ProtoReflect.Descriptor instead.
 func (*ListPresetsResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{5}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListPresetsResponse) GetPresets() []*Preset {
@@ -623,7 +498,7 @@ type GetPresetRequest struct {
 
 func (x *GetPresetRequest) Reset() {
 	*x = GetPresetRequest{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[6]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -635,7 +510,7 @@ func (x *GetPresetRequest) String() string {
 func (*GetPresetRequest) ProtoMessage() {}
 
 func (x *GetPresetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[6]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -648,7 +523,7 @@ func (x *GetPresetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPresetRequest.ProtoReflect.Descriptor instead.
 func (*GetPresetRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{6}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetPresetRequest) GetPresetId() *UuidV7 {
@@ -667,7 +542,7 @@ type GetPresetResponse struct {
 
 func (x *GetPresetResponse) Reset() {
 	*x = GetPresetResponse{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[7]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -679,7 +554,7 @@ func (x *GetPresetResponse) String() string {
 func (*GetPresetResponse) ProtoMessage() {}
 
 func (x *GetPresetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[7]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -692,7 +567,7 @@ func (x *GetPresetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPresetResponse.ProtoReflect.Descriptor instead.
 func (*GetPresetResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{7}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetPresetResponse) GetPreset() *Preset {
@@ -724,7 +599,7 @@ type CreatePresetRequest struct {
 
 func (x *CreatePresetRequest) Reset() {
 	*x = CreatePresetRequest{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[8]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +611,7 @@ func (x *CreatePresetRequest) String() string {
 func (*CreatePresetRequest) ProtoMessage() {}
 
 func (x *CreatePresetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[8]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +624,7 @@ func (x *CreatePresetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePresetRequest.ProtoReflect.Descriptor instead.
 func (*CreatePresetRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{8}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreatePresetRequest) GetOwner() *OwnerScope {
@@ -860,7 +735,7 @@ type CreatePresetResponse struct {
 
 func (x *CreatePresetResponse) Reset() {
 	*x = CreatePresetResponse{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[9]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -872,7 +747,7 @@ func (x *CreatePresetResponse) String() string {
 func (*CreatePresetResponse) ProtoMessage() {}
 
 func (x *CreatePresetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[9]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -885,7 +760,7 @@ func (x *CreatePresetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePresetResponse.ProtoReflect.Descriptor instead.
 func (*CreatePresetResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{9}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreatePresetResponse) GetPreset() *Preset {
@@ -912,7 +787,7 @@ type UpdatePresetRequest struct {
 
 func (x *UpdatePresetRequest) Reset() {
 	*x = UpdatePresetRequest{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[10]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -924,7 +799,7 @@ func (x *UpdatePresetRequest) String() string {
 func (*UpdatePresetRequest) ProtoMessage() {}
 
 func (x *UpdatePresetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[10]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -937,7 +812,7 @@ func (x *UpdatePresetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePresetRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePresetRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{10}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *UpdatePresetRequest) GetPreset() *Preset {
@@ -963,7 +838,7 @@ type UpdatePresetResponse struct {
 
 func (x *UpdatePresetResponse) Reset() {
 	*x = UpdatePresetResponse{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[11]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -975,7 +850,7 @@ func (x *UpdatePresetResponse) String() string {
 func (*UpdatePresetResponse) ProtoMessage() {}
 
 func (x *UpdatePresetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[11]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -988,7 +863,7 @@ func (x *UpdatePresetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePresetResponse.ProtoReflect.Descriptor instead.
 func (*UpdatePresetResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{11}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UpdatePresetResponse) GetPreset() *Preset {
@@ -1008,7 +883,7 @@ type DeletePresetRequest struct {
 
 func (x *DeletePresetRequest) Reset() {
 	*x = DeletePresetRequest{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[12]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1020,7 +895,7 @@ func (x *DeletePresetRequest) String() string {
 func (*DeletePresetRequest) ProtoMessage() {}
 
 func (x *DeletePresetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[12]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1033,7 +908,7 @@ func (x *DeletePresetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePresetRequest.ProtoReflect.Descriptor instead.
 func (*DeletePresetRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{12}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DeletePresetRequest) GetPresetId() *UuidV7 {
@@ -1060,7 +935,7 @@ type DeletePresetResponse struct {
 
 func (x *DeletePresetResponse) Reset() {
 	*x = DeletePresetResponse{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[13]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1072,7 +947,7 @@ func (x *DeletePresetResponse) String() string {
 func (*DeletePresetResponse) ProtoMessage() {}
 
 func (x *DeletePresetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[13]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1085,7 +960,7 @@ func (x *DeletePresetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePresetResponse.ProtoReflect.Descriptor instead.
 func (*DeletePresetResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{13}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeletePresetResponse) GetPresetId() *UuidV7 {
@@ -1112,7 +987,7 @@ type OwnerFeatureDeletion struct {
 
 func (x *OwnerFeatureDeletion) Reset() {
 	*x = OwnerFeatureDeletion{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[14]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1124,7 +999,7 @@ func (x *OwnerFeatureDeletion) String() string {
 func (*OwnerFeatureDeletion) ProtoMessage() {}
 
 func (x *OwnerFeatureDeletion) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[14]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1137,7 +1012,7 @@ func (x *OwnerFeatureDeletion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OwnerFeatureDeletion.ProtoReflect.Descriptor instead.
 func (*OwnerFeatureDeletion) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{14}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *OwnerFeatureDeletion) GetOwner() *OwnerScope {
@@ -1164,7 +1039,7 @@ type DelibaseAccountLifecycleDeletion struct {
 
 func (x *DelibaseAccountLifecycleDeletion) Reset() {
 	*x = DelibaseAccountLifecycleDeletion{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[15]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1176,7 +1051,7 @@ func (x *DelibaseAccountLifecycleDeletion) String() string {
 func (*DelibaseAccountLifecycleDeletion) ProtoMessage() {}
 
 func (x *DelibaseAccountLifecycleDeletion) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[15]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1189,7 +1064,7 @@ func (x *DelibaseAccountLifecycleDeletion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DelibaseAccountLifecycleDeletion.ProtoReflect.Descriptor instead.
 func (*DelibaseAccountLifecycleDeletion) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{15}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DelibaseAccountLifecycleDeletion) GetAccountId() *UuidV7 {
@@ -1216,7 +1091,7 @@ type DelibaseOrganizationLifecycleDeletion struct {
 
 func (x *DelibaseOrganizationLifecycleDeletion) Reset() {
 	*x = DelibaseOrganizationLifecycleDeletion{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[16]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1228,7 +1103,7 @@ func (x *DelibaseOrganizationLifecycleDeletion) String() string {
 func (*DelibaseOrganizationLifecycleDeletion) ProtoMessage() {}
 
 func (x *DelibaseOrganizationLifecycleDeletion) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[16]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1241,7 +1116,7 @@ func (x *DelibaseOrganizationLifecycleDeletion) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use DelibaseOrganizationLifecycleDeletion.ProtoReflect.Descriptor instead.
 func (*DelibaseOrganizationLifecycleDeletion) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{16}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DelibaseOrganizationLifecycleDeletion) GetOrganizationId() *UuidV7 {
@@ -1273,7 +1148,7 @@ type DeleteFeatureDataRequest struct {
 
 func (x *DeleteFeatureDataRequest) Reset() {
 	*x = DeleteFeatureDataRequest{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[17]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1285,7 +1160,7 @@ func (x *DeleteFeatureDataRequest) String() string {
 func (*DeleteFeatureDataRequest) ProtoMessage() {}
 
 func (x *DeleteFeatureDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[17]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1298,7 +1173,7 @@ func (x *DeleteFeatureDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFeatureDataRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFeatureDataRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{17}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DeleteFeatureDataRequest) GetTriggerKind() FeatureDeletionTriggerKind {
@@ -1376,7 +1251,7 @@ type DeleteFeatureDataResponse struct {
 
 func (x *DeleteFeatureDataResponse) Reset() {
 	*x = DeleteFeatureDataResponse{}
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[18]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1388,7 +1263,7 @@ func (x *DeleteFeatureDataResponse) String() string {
 func (*DeleteFeatureDataResponse) ProtoMessage() {}
 
 func (x *DeleteFeatureDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[18]
+	mi := &file_devhud_realqa_v1_preset_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1401,7 +1276,7 @@ func (x *DeleteFeatureDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFeatureDataResponse.ProtoReflect.Descriptor instead.
 func (*DeleteFeatureDataResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{18}
+	return file_devhud_realqa_v1_preset_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DeleteFeatureDataResponse) GetDeletionJobId() *UuidV7 {
@@ -1436,13 +1311,7 @@ var File_devhud_realqa_v1_preset_proto protoreflect.FileDescriptor
 
 const file_devhud_realqa_v1_preset_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddevhud-realqa/v1/preset.proto\x12\x10devhud.realqa.v1\x1a\x1ddevhud-realqa/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc4\x01\n" +
-	"\x1cRepositoryIssueDefinitionRef\x12C\n" +
-	"\x04kind\x18\x01 \x01(\x0e2/.devhud.realqa.v1.RepositoryIssueDefinitionKindR\x04kind\x12#\n" +
-	"\rdefinition_id\x18\x02 \x01(\tR\fdefinitionId\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
-	"\x04path\x18\x04 \x01(\tR\x04path\x12\x12\n" +
-	"\x04etag\x18\x05 \x01(\tR\x04etag\"\xe9\x01\n" +
+	"\x1ddevhud-realqa/v1/preset.proto\x12\x10devhud.realqa.v1\x1a\x1ddevhud-realqa/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe9\x01\n" +
 	"\x0eProcessUrlRule\x121\n" +
 	"\arule_id\x18\x01 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\x06ruleId\x12,\n" +
 	"\x12exact_process_name\x18\x02 \x01(\tR\x10exactProcessName\x129\n" +
@@ -1535,11 +1404,7 @@ const file_devhud_realqa_v1_preset_proto_rawDesc = "" +
 	"\x0fdeletion_job_id\x18\x01 \x01(\v2\x18.devhud.realqa.v1.UuidV7R\rdeletionJobId\x12\x1a\n" +
 	"\baccepted\x18\x02 \x01(\bR\baccepted\x12%\n" +
 	"\x0ealready_absent\x18\x03 \x01(\bR\ralreadyAbsent\x12E\n" +
-	"\vidempotency\x18\x04 \x01(\v2#.devhud.realqa.v1.IdempotencyResultR\vidempotency*\xba\x01\n" +
-	"\x1dRepositoryIssueDefinitionKind\x120\n" +
-	",REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED\x10\x00\x126\n" +
-	"2REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE\x10\x01\x12/\n" +
-	"+REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM\x10\x02*\xfd\x01\n" +
+	"\vidempotency\x18\x04 \x01(\v2#.devhud.realqa.v1.IdempotencyResultR\vidempotency*\xfd\x01\n" +
 	"\x1aFeatureDeletionTriggerKind\x12-\n" +
 	")FEATURE_DELETION_TRIGGER_KIND_UNSPECIFIED\x10\x00\x12/\n" +
 	"+FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST\x10\x01\x12<\n" +
@@ -1565,115 +1430,113 @@ func file_devhud_realqa_v1_preset_proto_rawDescGZIP() []byte {
 	return file_devhud_realqa_v1_preset_proto_rawDescData
 }
 
-var file_devhud_realqa_v1_preset_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_devhud_realqa_v1_preset_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_devhud_realqa_v1_preset_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_devhud_realqa_v1_preset_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_devhud_realqa_v1_preset_proto_goTypes = []any{
-	(RepositoryIssueDefinitionKind)(0),            // 0: devhud.realqa.v1.RepositoryIssueDefinitionKind
-	(FeatureDeletionTriggerKind)(0),               // 1: devhud.realqa.v1.FeatureDeletionTriggerKind
-	(*RepositoryIssueDefinitionRef)(nil),          // 2: devhud.realqa.v1.RepositoryIssueDefinitionRef
-	(*ProcessUrlRule)(nil),                        // 3: devhud.realqa.v1.ProcessUrlRule
-	(*ShortcutDefinition)(nil),                    // 4: devhud.realqa.v1.ShortcutDefinition
-	(*Preset)(nil),                                // 5: devhud.realqa.v1.Preset
-	(*ListPresetsRequest)(nil),                    // 6: devhud.realqa.v1.ListPresetsRequest
-	(*ListPresetsResponse)(nil),                   // 7: devhud.realqa.v1.ListPresetsResponse
-	(*GetPresetRequest)(nil),                      // 8: devhud.realqa.v1.GetPresetRequest
-	(*GetPresetResponse)(nil),                     // 9: devhud.realqa.v1.GetPresetResponse
-	(*CreatePresetRequest)(nil),                   // 10: devhud.realqa.v1.CreatePresetRequest
-	(*CreatePresetResponse)(nil),                  // 11: devhud.realqa.v1.CreatePresetResponse
-	(*UpdatePresetRequest)(nil),                   // 12: devhud.realqa.v1.UpdatePresetRequest
-	(*UpdatePresetResponse)(nil),                  // 13: devhud.realqa.v1.UpdatePresetResponse
-	(*DeletePresetRequest)(nil),                   // 14: devhud.realqa.v1.DeletePresetRequest
-	(*DeletePresetResponse)(nil),                  // 15: devhud.realqa.v1.DeletePresetResponse
-	(*OwnerFeatureDeletion)(nil),                  // 16: devhud.realqa.v1.OwnerFeatureDeletion
-	(*DelibaseAccountLifecycleDeletion)(nil),      // 17: devhud.realqa.v1.DelibaseAccountLifecycleDeletion
-	(*DelibaseOrganizationLifecycleDeletion)(nil), // 18: devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion
-	(*DeleteFeatureDataRequest)(nil),              // 19: devhud.realqa.v1.DeleteFeatureDataRequest
-	(*DeleteFeatureDataResponse)(nil),             // 20: devhud.realqa.v1.DeleteFeatureDataResponse
-	(*UuidV7)(nil),                                // 21: devhud.realqa.v1.UuidV7
-	(*OwnerScope)(nil),                            // 22: devhud.realqa.v1.OwnerScope
-	(*BillingScope)(nil),                          // 23: devhud.realqa.v1.BillingScope
-	(CaptureMode)(0),                              // 24: devhud.realqa.v1.CaptureMode
-	(SelectorMode)(0),                             // 25: devhud.realqa.v1.SelectorMode
-	(*TrackerDestination)(nil),                    // 26: devhud.realqa.v1.TrackerDestination
-	(*ProviderExtension)(nil),                     // 27: devhud.realqa.v1.ProviderExtension
-	(*Revision)(nil),                              // 28: devhud.realqa.v1.Revision
-	(*timestamppb.Timestamp)(nil),                 // 29: google.protobuf.Timestamp
-	(*PageRequest)(nil),                           // 30: devhud.realqa.v1.PageRequest
-	(*PageResponse)(nil),                          // 31: devhud.realqa.v1.PageResponse
-	(*IdempotencyKey)(nil),                        // 32: devhud.realqa.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),                     // 33: devhud.realqa.v1.IdempotencyResult
+	(FeatureDeletionTriggerKind)(0),               // 0: devhud.realqa.v1.FeatureDeletionTriggerKind
+	(*ProcessUrlRule)(nil),                        // 1: devhud.realqa.v1.ProcessUrlRule
+	(*ShortcutDefinition)(nil),                    // 2: devhud.realqa.v1.ShortcutDefinition
+	(*Preset)(nil),                                // 3: devhud.realqa.v1.Preset
+	(*ListPresetsRequest)(nil),                    // 4: devhud.realqa.v1.ListPresetsRequest
+	(*ListPresetsResponse)(nil),                   // 5: devhud.realqa.v1.ListPresetsResponse
+	(*GetPresetRequest)(nil),                      // 6: devhud.realqa.v1.GetPresetRequest
+	(*GetPresetResponse)(nil),                     // 7: devhud.realqa.v1.GetPresetResponse
+	(*CreatePresetRequest)(nil),                   // 8: devhud.realqa.v1.CreatePresetRequest
+	(*CreatePresetResponse)(nil),                  // 9: devhud.realqa.v1.CreatePresetResponse
+	(*UpdatePresetRequest)(nil),                   // 10: devhud.realqa.v1.UpdatePresetRequest
+	(*UpdatePresetResponse)(nil),                  // 11: devhud.realqa.v1.UpdatePresetResponse
+	(*DeletePresetRequest)(nil),                   // 12: devhud.realqa.v1.DeletePresetRequest
+	(*DeletePresetResponse)(nil),                  // 13: devhud.realqa.v1.DeletePresetResponse
+	(*OwnerFeatureDeletion)(nil),                  // 14: devhud.realqa.v1.OwnerFeatureDeletion
+	(*DelibaseAccountLifecycleDeletion)(nil),      // 15: devhud.realqa.v1.DelibaseAccountLifecycleDeletion
+	(*DelibaseOrganizationLifecycleDeletion)(nil), // 16: devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion
+	(*DeleteFeatureDataRequest)(nil),              // 17: devhud.realqa.v1.DeleteFeatureDataRequest
+	(*DeleteFeatureDataResponse)(nil),             // 18: devhud.realqa.v1.DeleteFeatureDataResponse
+	(*UuidV7)(nil),                                // 19: devhud.realqa.v1.UuidV7
+	(*OwnerScope)(nil),                            // 20: devhud.realqa.v1.OwnerScope
+	(*BillingScope)(nil),                          // 21: devhud.realqa.v1.BillingScope
+	(CaptureMode)(0),                              // 22: devhud.realqa.v1.CaptureMode
+	(SelectorMode)(0),                             // 23: devhud.realqa.v1.SelectorMode
+	(*TrackerDestination)(nil),                    // 24: devhud.realqa.v1.TrackerDestination
+	(*RepositoryIssueDefinitionRef)(nil),          // 25: devhud.realqa.v1.RepositoryIssueDefinitionRef
+	(*ProviderExtension)(nil),                     // 26: devhud.realqa.v1.ProviderExtension
+	(*Revision)(nil),                              // 27: devhud.realqa.v1.Revision
+	(*timestamppb.Timestamp)(nil),                 // 28: google.protobuf.Timestamp
+	(*PageRequest)(nil),                           // 29: devhud.realqa.v1.PageRequest
+	(*PageResponse)(nil),                          // 30: devhud.realqa.v1.PageResponse
+	(*IdempotencyKey)(nil),                        // 31: devhud.realqa.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),                     // 32: devhud.realqa.v1.IdempotencyResult
 }
 var file_devhud_realqa_v1_preset_proto_depIdxs = []int32{
-	0,  // 0: devhud.realqa.v1.RepositoryIssueDefinitionRef.kind:type_name -> devhud.realqa.v1.RepositoryIssueDefinitionKind
-	21, // 1: devhud.realqa.v1.ProcessUrlRule.rule_id:type_name -> devhud.realqa.v1.UuidV7
-	21, // 2: devhud.realqa.v1.ShortcutDefinition.shortcut_id:type_name -> devhud.realqa.v1.UuidV7
-	21, // 3: devhud.realqa.v1.Preset.preset_id:type_name -> devhud.realqa.v1.UuidV7
-	22, // 4: devhud.realqa.v1.Preset.owner:type_name -> devhud.realqa.v1.OwnerScope
-	23, // 5: devhud.realqa.v1.Preset.billing:type_name -> devhud.realqa.v1.BillingScope
-	24, // 6: devhud.realqa.v1.Preset.default_capture_mode:type_name -> devhud.realqa.v1.CaptureMode
-	25, // 7: devhud.realqa.v1.Preset.default_selector_mode:type_name -> devhud.realqa.v1.SelectorMode
-	26, // 8: devhud.realqa.v1.Preset.destination:type_name -> devhud.realqa.v1.TrackerDestination
-	2,  // 9: devhud.realqa.v1.Preset.issue_definition:type_name -> devhud.realqa.v1.RepositoryIssueDefinitionRef
-	27, // 10: devhud.realqa.v1.Preset.provider_extension:type_name -> devhud.realqa.v1.ProviderExtension
-	3,  // 11: devhud.realqa.v1.Preset.process_url_rules:type_name -> devhud.realqa.v1.ProcessUrlRule
-	4,  // 12: devhud.realqa.v1.Preset.shortcut:type_name -> devhud.realqa.v1.ShortcutDefinition
-	28, // 13: devhud.realqa.v1.Preset.revision:type_name -> devhud.realqa.v1.Revision
-	29, // 14: devhud.realqa.v1.Preset.created_at:type_name -> google.protobuf.Timestamp
-	29, // 15: devhud.realqa.v1.Preset.updated_at:type_name -> google.protobuf.Timestamp
-	22, // 16: devhud.realqa.v1.ListPresetsRequest.owner:type_name -> devhud.realqa.v1.OwnerScope
-	30, // 17: devhud.realqa.v1.ListPresetsRequest.page:type_name -> devhud.realqa.v1.PageRequest
-	5,  // 18: devhud.realqa.v1.ListPresetsResponse.presets:type_name -> devhud.realqa.v1.Preset
-	31, // 19: devhud.realqa.v1.ListPresetsResponse.page:type_name -> devhud.realqa.v1.PageResponse
-	21, // 20: devhud.realqa.v1.GetPresetRequest.preset_id:type_name -> devhud.realqa.v1.UuidV7
-	5,  // 21: devhud.realqa.v1.GetPresetResponse.preset:type_name -> devhud.realqa.v1.Preset
-	22, // 22: devhud.realqa.v1.CreatePresetRequest.owner:type_name -> devhud.realqa.v1.OwnerScope
-	23, // 23: devhud.realqa.v1.CreatePresetRequest.billing:type_name -> devhud.realqa.v1.BillingScope
-	24, // 24: devhud.realqa.v1.CreatePresetRequest.default_capture_mode:type_name -> devhud.realqa.v1.CaptureMode
-	25, // 25: devhud.realqa.v1.CreatePresetRequest.default_selector_mode:type_name -> devhud.realqa.v1.SelectorMode
-	26, // 26: devhud.realqa.v1.CreatePresetRequest.destination:type_name -> devhud.realqa.v1.TrackerDestination
-	2,  // 27: devhud.realqa.v1.CreatePresetRequest.issue_definition:type_name -> devhud.realqa.v1.RepositoryIssueDefinitionRef
-	27, // 28: devhud.realqa.v1.CreatePresetRequest.provider_extension:type_name -> devhud.realqa.v1.ProviderExtension
-	3,  // 29: devhud.realqa.v1.CreatePresetRequest.process_url_rules:type_name -> devhud.realqa.v1.ProcessUrlRule
-	4,  // 30: devhud.realqa.v1.CreatePresetRequest.shortcut:type_name -> devhud.realqa.v1.ShortcutDefinition
-	32, // 31: devhud.realqa.v1.CreatePresetRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	5,  // 32: devhud.realqa.v1.CreatePresetResponse.preset:type_name -> devhud.realqa.v1.Preset
-	33, // 33: devhud.realqa.v1.CreatePresetResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	5,  // 34: devhud.realqa.v1.UpdatePresetRequest.preset:type_name -> devhud.realqa.v1.Preset
-	28, // 35: devhud.realqa.v1.UpdatePresetRequest.expected_revision:type_name -> devhud.realqa.v1.Revision
-	5,  // 36: devhud.realqa.v1.UpdatePresetResponse.preset:type_name -> devhud.realqa.v1.Preset
-	21, // 37: devhud.realqa.v1.DeletePresetRequest.preset_id:type_name -> devhud.realqa.v1.UuidV7
-	28, // 38: devhud.realqa.v1.DeletePresetRequest.expected_revision:type_name -> devhud.realqa.v1.Revision
-	21, // 39: devhud.realqa.v1.DeletePresetResponse.preset_id:type_name -> devhud.realqa.v1.UuidV7
-	28, // 40: devhud.realqa.v1.DeletePresetResponse.deleted_revision:type_name -> devhud.realqa.v1.Revision
-	22, // 41: devhud.realqa.v1.OwnerFeatureDeletion.owner:type_name -> devhud.realqa.v1.OwnerScope
-	32, // 42: devhud.realqa.v1.OwnerFeatureDeletion.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
-	21, // 43: devhud.realqa.v1.DelibaseAccountLifecycleDeletion.account_id:type_name -> devhud.realqa.v1.UuidV7
-	21, // 44: devhud.realqa.v1.DelibaseAccountLifecycleDeletion.deletion_job_id:type_name -> devhud.realqa.v1.UuidV7
-	21, // 45: devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion.organization_id:type_name -> devhud.realqa.v1.UuidV7
-	21, // 46: devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion.deletion_job_id:type_name -> devhud.realqa.v1.UuidV7
-	1,  // 47: devhud.realqa.v1.DeleteFeatureDataRequest.trigger_kind:type_name -> devhud.realqa.v1.FeatureDeletionTriggerKind
-	16, // 48: devhud.realqa.v1.DeleteFeatureDataRequest.owner_request:type_name -> devhud.realqa.v1.OwnerFeatureDeletion
-	17, // 49: devhud.realqa.v1.DeleteFeatureDataRequest.delibase_account_lifecycle:type_name -> devhud.realqa.v1.DelibaseAccountLifecycleDeletion
-	18, // 50: devhud.realqa.v1.DeleteFeatureDataRequest.delibase_organization_lifecycle:type_name -> devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion
-	21, // 51: devhud.realqa.v1.DeleteFeatureDataResponse.deletion_job_id:type_name -> devhud.realqa.v1.UuidV7
-	33, // 52: devhud.realqa.v1.DeleteFeatureDataResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
-	6,  // 53: devhud.realqa.v1.RealQAPresetService.ListPresets:input_type -> devhud.realqa.v1.ListPresetsRequest
-	8,  // 54: devhud.realqa.v1.RealQAPresetService.GetPreset:input_type -> devhud.realqa.v1.GetPresetRequest
-	10, // 55: devhud.realqa.v1.RealQAPresetService.CreatePreset:input_type -> devhud.realqa.v1.CreatePresetRequest
-	12, // 56: devhud.realqa.v1.RealQAPresetService.UpdatePreset:input_type -> devhud.realqa.v1.UpdatePresetRequest
-	14, // 57: devhud.realqa.v1.RealQAPresetService.DeletePreset:input_type -> devhud.realqa.v1.DeletePresetRequest
-	19, // 58: devhud.realqa.v1.RealQAPresetService.DeleteFeatureData:input_type -> devhud.realqa.v1.DeleteFeatureDataRequest
-	7,  // 59: devhud.realqa.v1.RealQAPresetService.ListPresets:output_type -> devhud.realqa.v1.ListPresetsResponse
-	9,  // 60: devhud.realqa.v1.RealQAPresetService.GetPreset:output_type -> devhud.realqa.v1.GetPresetResponse
-	11, // 61: devhud.realqa.v1.RealQAPresetService.CreatePreset:output_type -> devhud.realqa.v1.CreatePresetResponse
-	13, // 62: devhud.realqa.v1.RealQAPresetService.UpdatePreset:output_type -> devhud.realqa.v1.UpdatePresetResponse
-	15, // 63: devhud.realqa.v1.RealQAPresetService.DeletePreset:output_type -> devhud.realqa.v1.DeletePresetResponse
-	20, // 64: devhud.realqa.v1.RealQAPresetService.DeleteFeatureData:output_type -> devhud.realqa.v1.DeleteFeatureDataResponse
-	59, // [59:65] is the sub-list for method output_type
-	53, // [53:59] is the sub-list for method input_type
-	53, // [53:53] is the sub-list for extension type_name
-	53, // [53:53] is the sub-list for extension extendee
-	0,  // [0:53] is the sub-list for field type_name
+	19, // 0: devhud.realqa.v1.ProcessUrlRule.rule_id:type_name -> devhud.realqa.v1.UuidV7
+	19, // 1: devhud.realqa.v1.ShortcutDefinition.shortcut_id:type_name -> devhud.realqa.v1.UuidV7
+	19, // 2: devhud.realqa.v1.Preset.preset_id:type_name -> devhud.realqa.v1.UuidV7
+	20, // 3: devhud.realqa.v1.Preset.owner:type_name -> devhud.realqa.v1.OwnerScope
+	21, // 4: devhud.realqa.v1.Preset.billing:type_name -> devhud.realqa.v1.BillingScope
+	22, // 5: devhud.realqa.v1.Preset.default_capture_mode:type_name -> devhud.realqa.v1.CaptureMode
+	23, // 6: devhud.realqa.v1.Preset.default_selector_mode:type_name -> devhud.realqa.v1.SelectorMode
+	24, // 7: devhud.realqa.v1.Preset.destination:type_name -> devhud.realqa.v1.TrackerDestination
+	25, // 8: devhud.realqa.v1.Preset.issue_definition:type_name -> devhud.realqa.v1.RepositoryIssueDefinitionRef
+	26, // 9: devhud.realqa.v1.Preset.provider_extension:type_name -> devhud.realqa.v1.ProviderExtension
+	1,  // 10: devhud.realqa.v1.Preset.process_url_rules:type_name -> devhud.realqa.v1.ProcessUrlRule
+	2,  // 11: devhud.realqa.v1.Preset.shortcut:type_name -> devhud.realqa.v1.ShortcutDefinition
+	27, // 12: devhud.realqa.v1.Preset.revision:type_name -> devhud.realqa.v1.Revision
+	28, // 13: devhud.realqa.v1.Preset.created_at:type_name -> google.protobuf.Timestamp
+	28, // 14: devhud.realqa.v1.Preset.updated_at:type_name -> google.protobuf.Timestamp
+	20, // 15: devhud.realqa.v1.ListPresetsRequest.owner:type_name -> devhud.realqa.v1.OwnerScope
+	29, // 16: devhud.realqa.v1.ListPresetsRequest.page:type_name -> devhud.realqa.v1.PageRequest
+	3,  // 17: devhud.realqa.v1.ListPresetsResponse.presets:type_name -> devhud.realqa.v1.Preset
+	30, // 18: devhud.realqa.v1.ListPresetsResponse.page:type_name -> devhud.realqa.v1.PageResponse
+	19, // 19: devhud.realqa.v1.GetPresetRequest.preset_id:type_name -> devhud.realqa.v1.UuidV7
+	3,  // 20: devhud.realqa.v1.GetPresetResponse.preset:type_name -> devhud.realqa.v1.Preset
+	20, // 21: devhud.realqa.v1.CreatePresetRequest.owner:type_name -> devhud.realqa.v1.OwnerScope
+	21, // 22: devhud.realqa.v1.CreatePresetRequest.billing:type_name -> devhud.realqa.v1.BillingScope
+	22, // 23: devhud.realqa.v1.CreatePresetRequest.default_capture_mode:type_name -> devhud.realqa.v1.CaptureMode
+	23, // 24: devhud.realqa.v1.CreatePresetRequest.default_selector_mode:type_name -> devhud.realqa.v1.SelectorMode
+	24, // 25: devhud.realqa.v1.CreatePresetRequest.destination:type_name -> devhud.realqa.v1.TrackerDestination
+	25, // 26: devhud.realqa.v1.CreatePresetRequest.issue_definition:type_name -> devhud.realqa.v1.RepositoryIssueDefinitionRef
+	26, // 27: devhud.realqa.v1.CreatePresetRequest.provider_extension:type_name -> devhud.realqa.v1.ProviderExtension
+	1,  // 28: devhud.realqa.v1.CreatePresetRequest.process_url_rules:type_name -> devhud.realqa.v1.ProcessUrlRule
+	2,  // 29: devhud.realqa.v1.CreatePresetRequest.shortcut:type_name -> devhud.realqa.v1.ShortcutDefinition
+	31, // 30: devhud.realqa.v1.CreatePresetRequest.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	3,  // 31: devhud.realqa.v1.CreatePresetResponse.preset:type_name -> devhud.realqa.v1.Preset
+	32, // 32: devhud.realqa.v1.CreatePresetResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	3,  // 33: devhud.realqa.v1.UpdatePresetRequest.preset:type_name -> devhud.realqa.v1.Preset
+	27, // 34: devhud.realqa.v1.UpdatePresetRequest.expected_revision:type_name -> devhud.realqa.v1.Revision
+	3,  // 35: devhud.realqa.v1.UpdatePresetResponse.preset:type_name -> devhud.realqa.v1.Preset
+	19, // 36: devhud.realqa.v1.DeletePresetRequest.preset_id:type_name -> devhud.realqa.v1.UuidV7
+	27, // 37: devhud.realqa.v1.DeletePresetRequest.expected_revision:type_name -> devhud.realqa.v1.Revision
+	19, // 38: devhud.realqa.v1.DeletePresetResponse.preset_id:type_name -> devhud.realqa.v1.UuidV7
+	27, // 39: devhud.realqa.v1.DeletePresetResponse.deleted_revision:type_name -> devhud.realqa.v1.Revision
+	20, // 40: devhud.realqa.v1.OwnerFeatureDeletion.owner:type_name -> devhud.realqa.v1.OwnerScope
+	31, // 41: devhud.realqa.v1.OwnerFeatureDeletion.idempotency:type_name -> devhud.realqa.v1.IdempotencyKey
+	19, // 42: devhud.realqa.v1.DelibaseAccountLifecycleDeletion.account_id:type_name -> devhud.realqa.v1.UuidV7
+	19, // 43: devhud.realqa.v1.DelibaseAccountLifecycleDeletion.deletion_job_id:type_name -> devhud.realqa.v1.UuidV7
+	19, // 44: devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion.organization_id:type_name -> devhud.realqa.v1.UuidV7
+	19, // 45: devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion.deletion_job_id:type_name -> devhud.realqa.v1.UuidV7
+	0,  // 46: devhud.realqa.v1.DeleteFeatureDataRequest.trigger_kind:type_name -> devhud.realqa.v1.FeatureDeletionTriggerKind
+	14, // 47: devhud.realqa.v1.DeleteFeatureDataRequest.owner_request:type_name -> devhud.realqa.v1.OwnerFeatureDeletion
+	15, // 48: devhud.realqa.v1.DeleteFeatureDataRequest.delibase_account_lifecycle:type_name -> devhud.realqa.v1.DelibaseAccountLifecycleDeletion
+	16, // 49: devhud.realqa.v1.DeleteFeatureDataRequest.delibase_organization_lifecycle:type_name -> devhud.realqa.v1.DelibaseOrganizationLifecycleDeletion
+	19, // 50: devhud.realqa.v1.DeleteFeatureDataResponse.deletion_job_id:type_name -> devhud.realqa.v1.UuidV7
+	32, // 51: devhud.realqa.v1.DeleteFeatureDataResponse.idempotency:type_name -> devhud.realqa.v1.IdempotencyResult
+	4,  // 52: devhud.realqa.v1.RealQAPresetService.ListPresets:input_type -> devhud.realqa.v1.ListPresetsRequest
+	6,  // 53: devhud.realqa.v1.RealQAPresetService.GetPreset:input_type -> devhud.realqa.v1.GetPresetRequest
+	8,  // 54: devhud.realqa.v1.RealQAPresetService.CreatePreset:input_type -> devhud.realqa.v1.CreatePresetRequest
+	10, // 55: devhud.realqa.v1.RealQAPresetService.UpdatePreset:input_type -> devhud.realqa.v1.UpdatePresetRequest
+	12, // 56: devhud.realqa.v1.RealQAPresetService.DeletePreset:input_type -> devhud.realqa.v1.DeletePresetRequest
+	17, // 57: devhud.realqa.v1.RealQAPresetService.DeleteFeatureData:input_type -> devhud.realqa.v1.DeleteFeatureDataRequest
+	5,  // 58: devhud.realqa.v1.RealQAPresetService.ListPresets:output_type -> devhud.realqa.v1.ListPresetsResponse
+	7,  // 59: devhud.realqa.v1.RealQAPresetService.GetPreset:output_type -> devhud.realqa.v1.GetPresetResponse
+	9,  // 60: devhud.realqa.v1.RealQAPresetService.CreatePreset:output_type -> devhud.realqa.v1.CreatePresetResponse
+	11, // 61: devhud.realqa.v1.RealQAPresetService.UpdatePreset:output_type -> devhud.realqa.v1.UpdatePresetResponse
+	13, // 62: devhud.realqa.v1.RealQAPresetService.DeletePreset:output_type -> devhud.realqa.v1.DeletePresetResponse
+	18, // 63: devhud.realqa.v1.RealQAPresetService.DeleteFeatureData:output_type -> devhud.realqa.v1.DeleteFeatureDataResponse
+	58, // [58:64] is the sub-list for method output_type
+	52, // [52:58] is the sub-list for method input_type
+	52, // [52:52] is the sub-list for extension type_name
+	52, // [52:52] is the sub-list for extension extendee
+	0,  // [0:52] is the sub-list for field type_name
 }
 
 func init() { file_devhud_realqa_v1_preset_proto_init() }
@@ -1682,7 +1545,7 @@ func file_devhud_realqa_v1_preset_proto_init() {
 		return
 	}
 	file_devhud_realqa_v1_common_proto_init()
-	file_devhud_realqa_v1_preset_proto_msgTypes[17].OneofWrappers = []any{
+	file_devhud_realqa_v1_preset_proto_msgTypes[16].OneofWrappers = []any{
 		(*DeleteFeatureDataRequest_OwnerRequest)(nil),
 		(*DeleteFeatureDataRequest_DelibaseAccountLifecycle)(nil),
 		(*DeleteFeatureDataRequest_DelibaseOrganizationLifecycle)(nil),
@@ -1692,8 +1555,8 @@ func file_devhud_realqa_v1_preset_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_realqa_v1_preset_proto_rawDesc), len(file_devhud_realqa_v1_preset_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   19,
+			NumEnums:      1,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -622,6 +622,25 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("schema issue form definitions = %#v",
 			schemaResponse.Msg.Schema.IssueForms)
 	}
+	unavailableTracker := NewTracker(Dependencies{
+		Store: store, Pseudonymizer: pseudonymizer,
+		GitHubProvider: callerAuthorizationUnavailableProvider{},
+	})
+	_, err = unavailableTracker.ListRepositories(
+		authCtx, connect.NewRequest(&realqav1.ListRepositoriesRequest{
+			InstallationId: &realqav1.UuidV7{Value: installationID.String()},
+		}))
+	assertCallerReauthenticationRequired(t, err)
+	_, err = unavailableTracker.GetRepositoryIssueSchema(
+		authCtx, connect.NewRequest(&realqav1.GetRepositoryIssueSchemaRequest{
+			InstallationId: &realqav1.UuidV7{Value: installationID.String()},
+			Repository: &realqav1.GitHubRepositoryRef{
+				RepositoryId: "101",
+				Owner:        "delinoio",
+				Name:         "oss",
+			},
+		}))
+	assertCallerReauthenticationRequired(t, err)
 	refreshedSchema := &realqav1.RepositoryIssueSchema{
 		Repository: schemaResponse.Msg.Schema.Repository,
 		MarkdownTemplates: []*realqav1.MarkdownIssueTemplate{{
@@ -3353,6 +3372,49 @@ func TestFirstPageUsesNonNullUUIDLowerBound(t *testing.T) {
 	if !lowerBound.Valid || lowerBound.Bytes != uuid.Nil {
 		t.Fatalf("first-page lower bound = %#v", lowerBound)
 	}
+}
+
+type callerAuthorizationUnavailableProvider struct{}
+
+func (callerAuthorizationUnavailableProvider) ListRepositories(
+	context.Context,
+	uuid.UUID,
+	uuid.UUID,
+	realqagithub.RepositoryPageRequest,
+) (realqagithub.RepositoryPage, error) {
+	return realqagithub.RepositoryPage{},
+		realqagithub.ErrCallerAuthorizationUnavailable
+}
+
+func (callerAuthorizationUnavailableProvider) GetRepositoryDefinitions(
+	context.Context,
+	uuid.UUID,
+	uuid.UUID,
+	realqagithub.Repository,
+) (realqagithub.RepositoryDefinitions, error) {
+	return realqagithub.RepositoryDefinitions{},
+		realqagithub.ErrCallerAuthorizationUnavailable
+}
+
+func assertCallerReauthenticationRequired(t *testing.T, err error) {
+	t.Helper()
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("caller reauthentication code = %v", connect.CodeOf(err))
+	}
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("caller reauthentication failure type = %T", err)
+	}
+	for _, item := range connectErr.Details() {
+		value, detailErr := item.Value()
+		detail, ok := value.(*realqav1.ErrorDetail)
+		if detailErr == nil && ok &&
+			detail.Reason == realqav1.ErrorReason_ERROR_REASON_REAUTHENTICATION_REQUIRED &&
+			detail.FailureClass == realqav1.FailureClass_FAILURE_CLASS_REAUTHENTICATION_REQUIRED {
+			return
+		}
+	}
+	t.Fatal("caller reauthentication failure did not include its typed detail")
 }
 
 func fixtureCreatePreset(

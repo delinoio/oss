@@ -216,6 +216,20 @@ message ErrorDetail {
   google.protobuf.Timestamp retry_after = 5;
 }
 
+enum RepositoryIssueDefinitionKind {
+  REPOSITORY_ISSUE_DEFINITION_KIND_UNSPECIFIED = 0;
+  REPOSITORY_ISSUE_DEFINITION_KIND_MARKDOWN_TEMPLATE = 1;
+  REPOSITORY_ISSUE_DEFINITION_KIND_ISSUE_FORM = 2;
+}
+
+message RepositoryIssueDefinitionRef {
+  RepositoryIssueDefinitionKind kind = 1;
+  string definition_id = 2;
+  string name = 3;
+  string path = 4;
+  string etag = 5;
+}
+
 message GitHubRepositoryRef {
   string repository_id = 1;
   string owner = 2;

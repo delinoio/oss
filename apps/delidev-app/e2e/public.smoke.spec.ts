@@ -47,6 +47,13 @@ test("protected pages fail closed when Logto is not configured", async ({
   ).toBeDisabled();
 });
 
+test("RealQA settings do not add a top-level route", async ({ page }) => {
+  await page.goto("/realqa");
+  await expect(
+    page.getByRole("heading", { name: "That page isn’t here" }),
+  ).toBeVisible();
+});
+
 test("Deck callback consumes its handoff and removes callback credentials from the URL", async ({
   page,
 }) => {
