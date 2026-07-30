@@ -2499,14 +2499,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("stale rebind cutoff state = %q, %v, want grace_skipped",
 			disconnectSettlement.State, err)
 	}
-	expiryNow := disconnectCutoff.Add(31 * 24 * time.Hour)
-	if _, err = connection.Exec(ctx, `
-		UPDATE realqa_storage_recoveries
-		SET grace_expires_at = $2
-		WHERE id = $1
-	`, disconnectRecovery.ID, expiryNow.Add(-time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	expiryNow := disconnectRecovery.GraceExpiresAt.Time.Add(time.Hour)
 	expiredRecoveries, err := store.Queries().ListExpiredStorageRecoveries(
 		ctx, dbgen.ListExpiredStorageRecoveriesParams{
 			Cutoff: pgTimestamp(expiryNow), BatchLimit: 100,
