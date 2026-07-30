@@ -78,7 +78,9 @@ main() {
 			--path "${CONTRACT_PATH}" \
 			--exclude-source-info \
 			--output "${SNAPSHOT_DIR}/current.binpb"
-		buf breaking "${SNAPSHOT_DIR}/current.binpb" --against "${BASELINE}"
+		buf breaking "${SNAPSHOT_DIR}/current.binpb" \
+			--against "${BASELINE}" \
+			--config "${REPO_ROOT}/protos/buf.yaml"
 	)
 
 	capture_unowned_worktree_state "${SNAPSHOT_DIR}/unowned-before"
