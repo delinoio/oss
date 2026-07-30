@@ -21,7 +21,9 @@ import { formatEnumLabel } from "../utils/format";
 interface OrganizationContextValue {
   callerRole: OrganizationRole;
   organization: Organization;
-  realqaTransport?: ReturnType<typeof useAuthSession>["realqaTransport"];
+  realqaTrackerClient?: ReturnType<
+    typeof useAuthSession
+  >["realqaTrackerClient"];
   refreshOrganization: () => Promise<void>;
   transport: NonNullable<ReturnType<typeof useAuthSession>["transport"]>;
 }
@@ -49,7 +51,7 @@ const organizationNavigation = [
 
 export function OrganizationShell({ children }: { children: ReactNode }) {
   const { orgSlug = "" } = useParams();
-  const { realqaTransport, transport } = useAuthSession();
+  const { realqaTrackerClient, transport } = useAuthSession();
   const { accountState } = useAccountState();
   const location = useLocation();
   const navigate = useNavigate();
@@ -116,7 +118,7 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
       value={{
         callerRole: details.data.callerRole,
         organization: details.data.organization,
-        realqaTransport,
+        realqaTrackerClient,
         refreshOrganization: async () => {
           await Promise.all([
             resolved.refetch({ throwOnError: true }),

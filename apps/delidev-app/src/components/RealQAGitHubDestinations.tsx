@@ -1,20 +1,9 @@
 import {
-  createClient,
-  type ConnectError,
-  type Transport,
-} from "@connectrpc/connect";
-import {
-  createConnectQueryKey,
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-} from "@connectrpc/connect-query";
-import {
   ErrorReason,
   GitHubConnectionState,
   IssueFormFieldKind,
   OwnerScopeKind,
-  RealQATrackerService,
+  type GetGitHubConnectionResponse,
   type GitHubInstallation,
   type GetRepositoryIssueSchemaResponse,
   type ListGitHubInstallationsResponse,
@@ -23,6 +12,9 @@ import {
   type Repository,
 } from "@delinoio/devhud-realqa-connect";
 import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
   useQueryClient,
   type InfiniteData,
   type UseInfiniteQueryResult,
@@ -39,6 +31,7 @@ import {
   describeRealQAError,
   getRealQAError,
 } from "../api/realqaErrors";
+import type { RealQATrackerClient } from "../api/transports";
 import {
   runtimeConfig,
   type RealQAConfig,
@@ -65,22 +58,32 @@ export type RealQAOwner =
       organizationName: string;
     };
 
+type DisconnectGitHubConnectionInput = Parameters<
+  RealQATrackerClient["disconnectGitHubConnection"]
+>[0];
+interface PageInput {
+  cursor: string;
+  pageSize: number;
+}
+
 interface PendingDisconnect {
-  idempotency: { value: { value: string } };
+  idempotency: NonNullable<
+    DisconnectGitHubConnectionInput["idempotency"]
+  >;
   revision: string;
 }
 
 type InstallationQuery = UseInfiniteQueryResult<
   InfiniteData<ListGitHubInstallationsResponse>,
-  ConnectError
+  Error
 >;
 type RepositoryQuery = UseInfiniteQueryResult<
   InfiniteData<ListRepositoriesResponse>,
-  ConnectError
+  Error
 >;
 type IssueSchemaQuery = UseQueryResult<
   GetRepositoryIssueSchemaResponse,
-  ConnectError
+  Error
 >;
 
 const pendingDisconnects = new Map<string, PendingDisconnect>();
@@ -167,38 +170,38 @@ function RealQAUnavailable({
 
 export function RealQAGitHubDestinations({
   authorizationNavigator,
+  client,
   config = runtimeConfig.realqa,
   owner,
-  transport,
 }: {
   authorizationNavigator?: (target: string) => void;
+  client?: RealQATrackerClient;
   config?: RealQAConfig;
   owner: RealQAOwner;
-  transport?: Transport;
 }) {
-  if (!transport || config.issues.length > 0) {
+  if (!client || config.issues.length > 0) {
     return <RealQAUnavailable config={config} />;
   }
   return (
     <RealQAGitHubDestinationsConnected
       authorizationNavigator={authorizationNavigator}
+      client={client}
       config={config}
       owner={owner}
-      transport={transport}
     />
   );
 }
 
 function RealQAGitHubDestinationsConnected({
   authorizationNavigator,
+  client,
   config,
   owner,
-  transport,
 }: {
   authorizationNavigator?: (target: string) => void;
+  client: RealQATrackerClient;
   config: RealQAConfig;
   owner: RealQAOwner;
-  transport: Transport;
 }) {
   const online = useOnline();
   const queryClient = useQueryClient();
@@ -218,119 +221,132 @@ function RealQAGitHubDestinationsConnected({
   const messageRef = useRef<HTMLParagraphElement>(null);
 
   const connectionInput = { owner: scope };
-  const connectionQueryKey = createConnectQueryKey({
-    cardinality: "finite",
-    input: connectionInput,
-    schema: RealQATrackerService.method.getGitHubConnection,
-    transport,
+  const connectionQueryKey = [
+    "realqa-tracker",
+    "connection",
+    scopeKey,
+  ] as const;
+  const connection = useQuery({
+    gcTime: 0,
+    queryFn: () => client.getGitHubConnection(connectionInput),
+    queryKey: connectionQueryKey,
+    refetchOnWindowFocus: true,
+    retry: false,
+    staleTime: 0,
   });
-  const connection = useQuery(
-    RealQATrackerService.method.getGitHubConnection,
-    connectionInput,
-    {
-      gcTime: 0,
-      refetchOnWindowFocus: true,
-      retry: false,
-      staleTime: 0,
-      transport,
-    },
-  );
-  const connectionValue = connection.data?.connection;
+  const connectionValue = connection.isError
+    ? undefined
+    : connection.data?.connection;
   const connected =
     connectionValue?.state === GitHubConnectionState.CONNECTED;
   const memberNeedsInstallation =
     owner.kind === "organization" && !owner.canManage && !connected;
 
-  const installations = useInfiniteQuery(
-    RealQATrackerService.method.listGitHubInstallations,
-    {
-      owner: scope,
-      page: { cursor: "", pageSize: 25 },
+  const installations = useInfiniteQuery<
+    ListGitHubInstallationsResponse,
+    Error,
+    InfiniteData<ListGitHubInstallationsResponse, PageInput>,
+    readonly unknown[],
+    PageInput
+  >({
+    enabled: connected && online,
+    gcTime: 0,
+    getNextPageParam: (lastPage) => {
+      const cursor = lastPage.page?.nextCursor;
+      return cursor ? { cursor, pageSize: 25 } : undefined;
     },
-    {
-      enabled: connected && online,
-      gcTime: 0,
-      getNextPageParam: (lastPage) => {
-        const cursor = lastPage.page?.nextCursor;
-        return cursor ? { cursor, pageSize: 25 } : undefined;
-      },
-      pageParamKey: "page",
-      retry: false,
-      staleTime: 0,
-      transport,
-    },
-  );
-  const installationRows =
-    installations.data?.pages.flatMap((page) => page.installations) ?? [];
+    initialPageParam: { cursor: "", pageSize: 25 },
+    queryFn: ({ pageParam }) =>
+      client.listGitHubInstallations({
+        owner: scope,
+        page: pageParam,
+      }),
+    queryKey: ["realqa-tracker", "installations", scopeKey],
+    retry: false,
+    staleTime: 0,
+  });
+  const installationRows = installations.isError
+    ? []
+    : installations.data?.pages.flatMap((page) => page.installations) ?? [];
   const selectedInstallation =
     installationRows.find(
       (item) => item.installationId?.value === selectedInstallationId,
     ) ?? installationRows[0];
 
-  const repositories = useInfiniteQuery(
-    RealQATrackerService.method.listRepositories,
-    {
-      installationId: selectedInstallation?.installationId,
-      page: { cursor: "", pageSize: 50 },
-      query: repositoryQuery,
+  const repositories = useInfiniteQuery<
+    ListRepositoriesResponse,
+    Error,
+    InfiniteData<ListRepositoriesResponse, PageInput>,
+    readonly unknown[],
+    PageInput
+  >({
+    enabled: Boolean(
+      connected && online && selectedInstallation?.installationId,
+    ),
+    gcTime: 0,
+    getNextPageParam: (lastPage) => {
+      const cursor = lastPage.page?.nextCursor;
+      return cursor ? { cursor, pageSize: 50 } : undefined;
     },
-    {
-      enabled: Boolean(
-        connected && online && selectedInstallation?.installationId,
-      ),
-      gcTime: 0,
-      getNextPageParam: (lastPage) => {
-        const cursor = lastPage.page?.nextCursor;
-        return cursor ? { cursor, pageSize: 50 } : undefined;
-      },
-      pageParamKey: "page",
-      retry: false,
-      staleTime: 0,
-      transport,
-    },
-  );
+    initialPageParam: { cursor: "", pageSize: 50 },
+    queryFn: ({ pageParam }) =>
+      client.listRepositories({
+        installationId: selectedInstallation?.installationId,
+        page: pageParam,
+        query: repositoryQuery,
+      }),
+    queryKey: [
+      "realqa-tracker",
+      "repositories",
+      scopeKey,
+      selectedInstallation?.installationId?.value ?? "",
+      repositoryQuery,
+    ],
+    retry: false,
+    staleTime: 0,
+  });
   const repositoryRows = repositories.isError
     ? []
     : repositories.data?.pages.flatMap((page) => page.repositories) ?? [];
   const selectedRepository = repositoryRows.find(
     (item) => item.repository?.repositoryId === selectedRepositoryId,
   );
-  const issueSchema = useQuery(
-    RealQATrackerService.method.getRepositoryIssueSchema,
-    {
-      installationId: selectedInstallation?.installationId,
-      repository: selectedRepository?.repository,
-    },
-    {
-      enabled: Boolean(
-        online &&
-          selectedInstallation?.installationId &&
-          selectedRepository?.repository &&
-          selectedRepository.issuesEnabled &&
-          selectedRepository.callerCanSubmit,
-      ),
-      gcTime: 0,
-      retry: false,
-      staleTime: 0,
-      transport,
-    },
-  );
+  const issueSchema = useQuery({
+    enabled: Boolean(
+      online &&
+        selectedInstallation?.installationId &&
+        selectedRepository?.repository &&
+        selectedRepository.issuesEnabled &&
+        selectedRepository.callerCanSubmit,
+    ),
+    gcTime: 0,
+    queryFn: () =>
+      client.getRepositoryIssueSchema({
+        installationId: selectedInstallation?.installationId,
+        repository: selectedRepository?.repository,
+      }),
+    queryKey: [
+      "realqa-tracker",
+      "issue-schema",
+      scopeKey,
+      selectedInstallation?.installationId?.value ?? "",
+      selectedRepository?.repository?.repositoryId ?? "",
+    ],
+    retry: false,
+    staleTime: 0,
+  });
 
-  const trackerClient = useMemo(
-    () => createClient(RealQATrackerService, transport),
-    [transport],
-  );
-  const disconnect = useMutation(
-    RealQATrackerService.method.disconnectGitHubConnection,
-    { transport },
-  );
+  const disconnect = useMutation({
+    mutationFn: (input: DisconnectGitHubConnectionInput) =>
+      client.disconnectGitHubConnection(input),
+  });
 
   const start = async () => {
     setActionError("");
     setMessage("");
     setStartPending(true);
     try {
-      const response = await trackerClient.startGitHubConnection({
+      const response = await client.startGitHubConnection({
         owner: scope,
       });
       navigateToRealQAGitHubAuthorization(
@@ -402,10 +418,12 @@ function RealQAGitHubDestinationsConnected({
           setMessage(
             "GitHub disconnected. Existing RealQA presets and destination mappings were preserved.",
           );
-          queryClient.setQueryData(connectionQueryKey, (current) =>
-            current
-              ? { ...current, connection: response.connection }
-              : current,
+          queryClient.setQueryData<GetGitHubConnectionResponse>(
+            connectionQueryKey,
+            (current) =>
+              current
+                ? { ...current, connection: response.connection }
+                : current,
           );
           await connection.refetch().catch(() => undefined);
           disconnect.reset();
@@ -444,7 +462,7 @@ function RealQAGitHubDestinationsConnected({
       {connection.isPending ? (
         <LoadingState label="Loading RealQA GitHub connection" />
       ) : null}
-      {connection.isError && !connection.data ? (
+      {connection.isError ? (
         <div className="inline-state">
           <p className="inline-error" role="alert">
             {describeRealQAError(connection.error)}
@@ -572,7 +590,7 @@ function RealQAGitHubDestinationsConnected({
         />
       ) : null}
 
-      {disconnectOpen ? (
+      {disconnectOpen && connectionValue ? (
         <Dialog
           descriptionId="realqa-disconnect-description"
           onClose={closeDisconnect}
@@ -658,12 +676,14 @@ function DestinationDiscovery({
       {installations.isPending ? (
         <LoadingState label="Loading GitHub installations" />
       ) : null}
-      {installations.isError && !installations.data ? (
+      {installations.isError ? (
         <p className="inline-error" role="alert">
           {describeRealQAError(installations.error)}
         </p>
       ) : null}
-      {installations.data && installationRows.length === 0 ? (
+      {installations.data &&
+      !installations.isError &&
+      installationRows.length === 0 ? (
         <EmptyState
           description="Reconnect GitHub to bind an installation to this owner."
           title="No installation is bound"
@@ -688,7 +708,7 @@ function DestinationDiscovery({
           </select>
         </label>
       ) : null}
-      {installations.hasNextPage ? (
+      {installations.hasNextPage && !installations.isError ? (
         <button
           className="button secondary compact"
           disabled={installations.isFetchingNextPage}

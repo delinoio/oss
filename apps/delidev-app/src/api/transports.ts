@@ -1,9 +1,16 @@
-import type { Interceptor, Transport } from "@connectrpc/connect";
+import {
+  createClient,
+  type Client,
+  type Interceptor,
+  type Transport,
+} from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import { RealQATrackerService } from "@delinoio/devhud-realqa-connect";
 
 import { canonicalAudience } from "../config";
 
 export type AccessTokenGetter = (audience: string) => Promise<string | undefined>;
+export type RealQATrackerClient = Client<typeof RealQATrackerService>;
 
 interface TransportOptions {
   baseUrl: string;
@@ -57,7 +64,7 @@ export function createAuthenticatedTransport({
   });
 }
 
-export function createRealQAAuthenticatedTransport({
+export function createRealQATrackerClient({
   audience,
   baseUrl,
   delibaseAudience,
@@ -67,7 +74,7 @@ export function createRealQAAuthenticatedTransport({
   audience: string;
   delibaseAudience: string;
   getAccessToken: AccessTokenGetter;
-}): Transport {
+}): RealQATrackerClient {
   const authorizationInterceptor: Interceptor = (next) => async (request) => {
     const [realqaToken, delibaseToken] = await Promise.all([
       getAccessToken(audience),
@@ -87,10 +94,13 @@ export function createRealQAAuthenticatedTransport({
     return next(request);
   };
 
-  return createConnectTransport({
-    baseUrl,
-    fetch,
-    interceptors: [authorizationInterceptor],
-    useBinaryFormat: false,
-  });
+  return createClient(
+    RealQATrackerService,
+    createConnectTransport({
+      baseUrl,
+      fetch,
+      interceptors: [authorizationInterceptor],
+      useBinaryFormat: false,
+    }),
+  );
 }

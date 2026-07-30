@@ -242,11 +242,11 @@ export function AccountPage() {
       ) : null}
       {accountState.account?.accountId?.value ? (
         <RealQAGitHubDestinations
+          client={auth.realqaTrackerClient}
           owner={{
             accountId: accountState.account.accountId.value,
             kind: "personal",
           }}
-          transport={auth.realqaTransport}
         />
       ) : null}
       <section className="content-card danger-zone">

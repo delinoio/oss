@@ -9,7 +9,7 @@ import {
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
 
-import { createRealQAAuthenticatedTransport } from "../api/transports";
+import { createRealQATrackerClient } from "../api/transports";
 import { RealQAGitHubDestinations } from "../components/RealQAGitHubDestinations";
 import type { RealQAConfig } from "../config";
 
@@ -96,7 +96,7 @@ function renderDestination({
       queries: { retry: false },
     },
   });
-  const transport = createRealQAAuthenticatedTransport({
+  const client = createRealQATrackerClient({
     audience: config.audience,
     baseUrl: config.apiOrigin,
     delibaseAudience: "https://delibase.deli.dev",
@@ -108,9 +108,9 @@ function renderDestination({
     <QueryClientProvider client={queryClient}>
       <RealQAGitHubDestinations
         authorizationNavigator={authorizationNavigator}
+        client={client}
         config={config}
         owner={owner}
-        transport={transport}
       />
     </QueryClientProvider>,
   );
@@ -177,6 +177,52 @@ describe("RealQA GitHub destinations", () => {
     expect(
       screen.getByText(/Ask an Owner or Admin to connect the installation/),
     ).toBeVisible();
+  });
+
+  it("hides cached connection state and controls when status refresh fails", async () => {
+    let connectionRefreshFails = false;
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/GetGitHubConnection")) {
+        return connectionRefreshFails
+          ? connectJsonResponse(
+              { code: "permission_denied", message: "Access revoked." },
+              403,
+            )
+          : connectJsonResponse(connectedResponse());
+      }
+      if (url.endsWith("/ListGitHubInstallations")) {
+        return connectJsonResponse(installationResponse());
+      }
+      if (url.endsWith("/ListRepositories")) {
+        return connectJsonResponse({ page: {}, repositories: [] });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const user = userEvent.setup();
+    renderDestination({ fetchMock });
+
+    expect(
+      await screen.findByRole("button", { name: "Disconnect GitHub" }),
+    ).toBeVisible();
+    expect(screen.getByText("Available destination")).toBeVisible();
+
+    connectionRefreshFails = true;
+    await user.click(
+      screen.getByRole("button", { name: "Refresh status" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Access revoked.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Disconnect GitHub" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reconnect GitHub" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Available destination")).not.toBeInTheDocument();
+    expect(screen.queryByText("octocat")).not.toBeInTheDocument();
   });
 
   it("keeps member controls role-bounded and renders only server-filtered repository permissions and definitions", async () => {
@@ -313,7 +359,7 @@ describe("RealQA GitHub destinations", () => {
     expect(screen.getByText("Schema revision 9")).toBeVisible();
   });
 
-  it("reuses the UUIDv7 disconnect identity and applies success before a failed refresh", async () => {
+  it("reuses the UUIDv7 disconnect identity and fails closed after a failed refresh", async () => {
     const disconnectKeys: string[] = [];
     let disconnectAttempts = 0;
     let connectionReads = 0;
@@ -393,9 +439,12 @@ describe("RealQA GitHub destinations", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     await waitFor(() => expect(connectionReads).toBe(2));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "RealQA is temporarily unavailable",
+    );
     expect(
-      screen.getByRole("button", { name: "Connect GitHub" }),
-    ).toBeEnabled();
+      screen.queryByRole("button", { name: "Connect GitHub" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Disconnect GitHub" }),
     ).not.toBeInTheDocument();
@@ -623,6 +672,85 @@ describe("RealQA GitHub destinations", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Access revoked.",
     );
+    expect(screen.queryByText("acme/public-app")).not.toBeInTheDocument();
+    expect(screen.queryByText("Support request")).not.toBeInTheDocument();
+  });
+
+  it("hides cached installations and dependent discovery when installation refresh fails", async () => {
+    let installationRefreshFails = false;
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      const url = String(request);
+      if (url.endsWith("/GetGitHubConnection")) {
+        return connectJsonResponse(connectedResponse());
+      }
+      if (url.endsWith("/ListGitHubInstallations")) {
+        return installationRefreshFails
+          ? connectJsonResponse(
+              { code: "permission_denied", message: "Access revoked." },
+              403,
+            )
+          : connectJsonResponse(installationResponse());
+      }
+      if (url.endsWith("/ListRepositories")) {
+        return connectJsonResponse({
+          page: {},
+          repositories: [
+            {
+              callerCanSubmit: true,
+              installationId: {
+                value: "018f3f5e-7b01-7a2d-8c3a-4ba8d8b51611",
+              },
+              issuesEnabled: true,
+              repository: {
+                name: "public-app",
+                owner: "acme",
+                repositoryId: "101",
+              },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/GetRepositoryIssueSchema")) {
+        return connectJsonResponse({
+          schema: {
+            issueForms: [],
+            markdownTemplates: [
+              {
+                definition: {
+                  definitionId: "template-support",
+                  name: "Support request",
+                  path: ".github/ISSUE_TEMPLATE/support.md",
+                },
+              },
+            ],
+            repository: {
+              name: "public-app",
+              owner: "acme",
+              repositoryId: "101",
+            },
+            revision: { etag: "schema-9", value: "9" },
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const user = userEvent.setup();
+    const { queryClient } = renderDestination({ fetchMock });
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review definitions" }),
+    );
+    expect(await screen.findByText("Support request")).toBeVisible();
+
+    installationRefreshFails = true;
+    await queryClient.refetchQueries({ type: "active" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Access revoked.",
+    );
+    expect(
+      screen.queryByLabelText("GitHub App installation"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("acme/public-app")).not.toBeInTheDocument();
     expect(screen.queryByText("Support request")).not.toBeInTheDocument();
   });

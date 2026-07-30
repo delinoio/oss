@@ -2938,7 +2938,7 @@ export function OrganizationSettingsPage() {
   const {
     callerRole,
     organization,
-    realqaTransport,
+    realqaTrackerClient,
     refreshOrganization,
     transport,
   } = useOrganization();
@@ -3100,13 +3100,13 @@ export function OrganizationSettingsPage() {
       )}
       {organization.organizationId?.value ? (
         <RealQAGitHubDestinations
+          client={realqaTrackerClient}
           owner={{
             canManage,
             kind: "organization",
             organizationId: organization.organizationId.value,
             organizationName: organization.name,
           }}
-          transport={realqaTransport}
         />
       ) : null}
       {organization.organizationId?.value ? (

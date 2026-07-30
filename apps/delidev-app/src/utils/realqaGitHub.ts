@@ -61,9 +61,8 @@ export function isRealQAGitHubAuthorizationTarget(
     }
     const redirectUris = url.searchParams.getAll("redirect_uri");
     if (
-      redirectUris.length > 1 ||
-      (redirectUris.length === 1 &&
-        redirectUris[0] !== config.githubCallbackUri)
+      redirectUris.length !== 1 ||
+      redirectUris[0] !== config.githubCallbackUri
     ) {
       return false;
     }

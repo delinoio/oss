@@ -11,7 +11,8 @@ import {
 import { runtimeConfig } from "../config";
 import {
   createAuthenticatedTransport,
-  createRealQAAuthenticatedTransport,
+  createRealQATrackerClient,
+  type RealQATrackerClient,
 } from "../api/transports";
 import {
   clearPendingSealedSignInReturnPath,
@@ -29,7 +30,7 @@ export enum AuthStatus {
 export interface AuthSessionValue {
   status: AuthStatus;
   error?: string;
-  realqaTransport?: Transport;
+  realqaTrackerClient?: RealQATrackerClient;
   transport?: Transport;
   signIn: (returnTo?: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -93,10 +94,10 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
       }),
     [getAccessToken],
   );
-  const realqaTransport = useMemo(
+  const realqaTrackerClient = useMemo(
     () =>
       runtimeConfig.realqa.issues.length === 0
-        ? createRealQAAuthenticatedTransport({
+        ? createRealQATrackerClient({
             audience: runtimeConfig.realqa.audience,
             baseUrl: runtimeConfig.realqa.apiOrigin,
             delibaseAudience: runtimeConfig.logto.audience,
@@ -134,7 +135,9 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
   const value = useMemo<AuthSessionValue>(
     () => ({
       error: error?.message,
-      realqaTransport: isAuthenticated ? realqaTransport : undefined,
+      realqaTrackerClient: isAuthenticated
+        ? realqaTrackerClient
+        : undefined,
       signIn: startSignIn,
       signOut: startSignOut,
       status: isLoading
@@ -148,7 +151,7 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
       error,
       isAuthenticated,
       isLoading,
-      realqaTransport,
+      realqaTrackerClient,
       startSignIn,
       startSignOut,
       transport,

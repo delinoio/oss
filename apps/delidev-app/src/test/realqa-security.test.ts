@@ -1,8 +1,6 @@
-import { createClient } from "@connectrpc/connect";
-import { RealQATrackerService } from "@delinoio/devhud-realqa-connect";
 import { describe, expect, it, vi } from "vitest";
 
-import { createRealQAAuthenticatedTransport } from "../api/transports";
+import { createRealQATrackerClient } from "../api/transports";
 import type { RealQAConfig } from "../config";
 import {
   isRealQAGitHubAuthorizationTarget,
@@ -27,6 +25,8 @@ describe("RealQA GitHub authorization guard", () => {
     `https://github.com:8443/login/oauth/authorize?client_id=fixture-client&state=${state}`,
     `https://user@github.com/login/oauth/authorize?client_id=fixture-client&state=${state}`,
     `https://github.com/login/oauth/authorize?client_id=wrong&state=${state}`,
+    `https://github.com/login/oauth/authorize?client_id=fixture-client&state=${state}`,
+    `https://github.com/login/oauth/authorize?client_id=fixture-client&redirect_uri=https%3A%2F%2Fwrong.example.com%2Fcallback&state=${state}`,
     `https://github.com/login/oauth/authorize?client_id=fixture-client&state=${state}#token`,
     `https://github.com/%2e%2e/login/oauth/authorize?client_id=fixture-client&state=${state}`,
     `https://github.com/apps/another-app/installations/new?state=${state}`,
@@ -39,12 +39,6 @@ describe("RealQA GitHub authorization guard", () => {
   });
 
   it("allows only the configured OAuth and GitHub App installation shapes", () => {
-    expect(
-      isRealQAGitHubAuthorizationTarget(
-        `https://github.com/login/oauth/authorize?client_id=fixture-client&state=${state}`,
-        config,
-      ),
-    ).toBe(true);
     expect(
       isRealQAGitHubAuthorizationTarget(
         `https://github.com/login/oauth/authorize?client_id=fixture-client&redirect_uri=${encodeURIComponent(config.githubCallbackUri)}&state=${state}`,
@@ -60,7 +54,7 @@ describe("RealQA GitHub authorization guard", () => {
   });
 });
 
-describe("RealQA authenticated transport", () => {
+describe("RealQA tracker client", () => {
   it("adds both audience tokens only to the network request", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
       const headers = new Headers(
@@ -76,7 +70,7 @@ describe("RealQA authenticated transport", () => {
       });
     });
     const tokenCalls: string[] = [];
-    const transport = createRealQAAuthenticatedTransport({
+    const client = createRealQATrackerClient({
       audience: "https://realqa.deli.dev",
       baseUrl: "https://realqa.deli.dev",
       delibaseAudience: "https://delibase.deli.dev",
@@ -89,7 +83,9 @@ describe("RealQA authenticated transport", () => {
       },
     });
 
-    const client = createClient(RealQATrackerService, transport);
+    expect("createPreset" in client).toBe(false);
+    expect("submitIssue" in client).toBe(false);
+    expect("deleteFeatureData" in client).toBe(false);
     await client.getGitHubConnection({});
 
     expect(tokenCalls).toEqual([
