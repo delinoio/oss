@@ -331,7 +331,7 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 				grace_started_at, grace_expires_at
 			) VALUES (
 				$1, $2, $3, 'payment_required',
-				$4, $4 + interval '30 days'
+				$4::timestamptz, $4::timestamptz + interval '30 days'
 			)
 		`, uuidv7.MustNew(), submissionID, authorizationID,
 			graceStart); err != nil {
