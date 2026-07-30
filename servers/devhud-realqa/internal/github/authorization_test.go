@@ -27,7 +27,7 @@ func TestAuthorizationTargetIsPinnedToGitHub(t *testing.T) {
 	if parsed.Scheme != "https" || parsed.Host != "github.com" ||
 		parsed.Path != "/login/oauth/authorize" ||
 		parsed.Query().Get("client_id") != "fixture-realqa-client" ||
-		parsed.Query().Get("redirect_uri") != oauthCallbackURL ||
+		parsed.Query().Get("redirect_uri") != OAuthCallbackURL ||
 		parsed.Query().Get("state") != state {
 		t.Fatalf("unexpected target %q", target)
 	}

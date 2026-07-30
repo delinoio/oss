@@ -563,7 +563,11 @@ func validateAuthorizationTarget(value string) error {
 	query := parsed.Query()
 	switch {
 	case parsed.Path == "/login/oauth/authorize":
-		if len(query) != 2 || query.Get("client_id") == "" || query.Get("state") == "" {
+		if len(query) != 3 ||
+			len(query["client_id"]) != 1 || query.Get("client_id") == "" ||
+			len(query["redirect_uri"]) != 1 ||
+			query.Get("redirect_uri") != realqagithub.OAuthCallbackURL ||
+			len(query["state"]) != 1 || query.Get("state") == "" {
 			return errors.New("realqa service: invalid GitHub authorization target")
 		}
 	case strings.HasPrefix(parsed.Path, "/apps/") &&

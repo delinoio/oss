@@ -2,10 +2,38 @@ package service
 
 import (
 	"encoding/base64"
+	"net/url"
+	"strings"
 	"testing"
 
 	realqagithub "github.com/delinoio/oss/servers/devhud-realqa/internal/github"
 )
+
+func TestValidateAuthorizationTargetRequiresCanonicalOAuthCallback(t *testing.T) {
+	t.Parallel()
+	authorization, err := realqagithub.NewAuthorization("fixture-realqa-client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := authorization.Target(strings.Repeat("a", 43))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = validateAuthorizationTarget(target); err != nil {
+		t.Fatalf("canonical target was rejected: %v", err)
+	}
+
+	parsed, err := url.Parse(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	query.Set("redirect_uri", "https://example.com/github/oauth/callback")
+	parsed.RawQuery = query.Encode()
+	if err = validateAuthorizationTarget(parsed.String()); err == nil {
+		t.Fatal("substituted OAuth callback was accepted")
+	}
+}
 
 func TestRepositoryPageCursorPreservesSource(t *testing.T) {
 	t.Parallel()

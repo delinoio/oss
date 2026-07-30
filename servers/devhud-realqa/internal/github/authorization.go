@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const oauthCallbackURL = "https://realqa.deli.dev/github/oauth/callback"
+const OAuthCallbackURL = "https://realqa.deli.dev/github/oauth/callback"
 
 type Authorization struct {
 	clientID string
@@ -119,7 +119,7 @@ func (authorization *Authorization) Target(state string) (string, error) {
 	}
 	query := target.Query()
 	query.Set("client_id", authorization.clientID)
-	query.Set("redirect_uri", oauthCallbackURL)
+	query.Set("redirect_uri", OAuthCallbackURL)
 	query.Set("state", state)
 	target.RawQuery = query.Encode()
 	return target.String(), nil
