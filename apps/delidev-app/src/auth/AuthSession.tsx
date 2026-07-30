@@ -9,7 +9,10 @@ import {
 } from "react";
 
 import { runtimeConfig } from "../config";
-import { createAuthenticatedTransport } from "../api/transports";
+import {
+  createAuthenticatedTransport,
+  createRealQAAuthenticatedTransport,
+} from "../api/transports";
 import {
   clearPendingSealedSignInReturnPath,
   consumeSealedSignInReturnPath,
@@ -26,6 +29,7 @@ export enum AuthStatus {
 export interface AuthSessionValue {
   status: AuthStatus;
   error?: string;
+  realqaTransport?: Transport;
   transport?: Transport;
   signIn: (returnTo?: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -89,6 +93,18 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
       }),
     [getAccessToken],
   );
+  const realqaTransport = useMemo(
+    () =>
+      runtimeConfig.realqa.issues.length === 0
+        ? createRealQAAuthenticatedTransport({
+            audience: runtimeConfig.realqa.audience,
+            baseUrl: runtimeConfig.realqa.apiOrigin,
+            delibaseAudience: runtimeConfig.logto.audience,
+            getAccessToken: (audience) => getAccessToken(audience),
+          })
+        : undefined,
+    [getAccessToken],
+  );
 
   const startSignIn = useCallback(
     async (returnTo = window.location.pathname + window.location.search) => {
@@ -118,6 +134,7 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
   const value = useMemo<AuthSessionValue>(
     () => ({
       error: error?.message,
+      realqaTransport: isAuthenticated ? realqaTransport : undefined,
       signIn: startSignIn,
       signOut: startSignOut,
       status: isLoading
@@ -131,6 +148,7 @@ export function LogtoAuthBridge({ children }: { children: ReactNode }) {
       error,
       isAuthenticated,
       isLoading,
+      realqaTransport,
       startSignIn,
       startSignOut,
       transport,

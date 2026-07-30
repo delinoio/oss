@@ -12,6 +12,7 @@ import { describeDelibaseError } from "../api/errors";
 import { BackgroundUsageAuthorizations } from "../components/BackgroundUsageAuthorizations";
 import { Dialog } from "../components/Dialog";
 import { useAccountState } from "../components/ProtectedRoute";
+import { RealQAGitHubDestinations } from "../components/RealQAGitHubDestinations";
 import {
   ErrorState,
   LoadingState,
@@ -237,6 +238,15 @@ export function AccountPage() {
         <BackgroundUsageAuthorizations
           scope={{ kind: "account" }}
           transport={auth.transport}
+        />
+      ) : null}
+      {accountState.account?.accountId?.value ? (
+        <RealQAGitHubDestinations
+          owner={{
+            accountId: accountState.account.accountId.value,
+            kind: "personal",
+          }}
+          transport={auth.realqaTransport}
         />
       ) : null}
       <section className="content-card danger-zone">

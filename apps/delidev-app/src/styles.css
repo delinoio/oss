@@ -1920,6 +1920,175 @@ tr:last-child td {
   gap: 22px;
 }
 
+.integration-card {
+  display: grid;
+  gap: 22px;
+  margin-top: 18px;
+}
+
+.integration-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.integration-heading .eyebrow {
+  margin-bottom: 8px;
+}
+
+.integration-heading h2,
+.destination-discovery h3,
+.issue-definition-discovery h3,
+.issue-definition-discovery h4 {
+  margin: 0;
+}
+
+.integration-heading p {
+  max-width: 700px;
+  margin: 8px 0 0;
+  color: var(--gray-600);
+  line-height: 1.6;
+}
+
+.connection-state {
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+
+.integration-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  border-radius: 14px;
+  background: var(--gray-200);
+}
+
+.integration-facts > div {
+  min-width: 0;
+  padding: 14px;
+  background: #fff;
+}
+
+.integration-facts dt {
+  color: var(--gray-600);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.integration-facts dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.inline-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.destination-discovery {
+  display: grid;
+  gap: 18px;
+  padding-top: 22px;
+  border-top: 1px solid var(--gray-200);
+}
+
+.destination-discovery > label,
+.repository-search label {
+  display: grid;
+  gap: 8px;
+  color: var(--gray-900);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.destination-discovery select,
+.repository-search input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 13px;
+  border: 1px solid #d1d6db;
+  border-radius: 11px;
+  color: var(--gray-900);
+  background: #fff;
+}
+
+.repository-search {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.repository-list,
+.definition-list,
+.form-field-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-list {
+  border-top: 1px solid var(--gray-100);
+}
+
+.repository-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.repository-list strong,
+.repository-list span,
+.definition-list strong,
+.definition-list span {
+  display: block;
+}
+
+.repository-list span,
+.definition-list span,
+.form-field-list {
+  margin-top: 5px;
+  color: var(--gray-600);
+  font-size: 13px;
+}
+
+.issue-definition-discovery {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 14px;
+  background: var(--gray-50);
+}
+
+.definition-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.definition-list > li {
+  padding: 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.form-field-list {
+  display: grid;
+  gap: 4px;
+  padding-left: 16px;
+  list-style: disc;
+}
+
 .background-authorizations > div:first-child > p {
   margin: 8px 0 0;
   color: var(--gray-600);
@@ -1964,6 +2133,18 @@ tr:last-child td {
 
   .authorization-facts .authorization-guidance {
     grid-column: auto;
+  }
+
+  .integration-heading,
+  .inline-state,
+  .repository-list > li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .integration-facts,
+  .repository-search {
+    grid-template-columns: 1fr;
   }
 }
 

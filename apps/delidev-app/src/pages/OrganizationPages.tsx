@@ -45,6 +45,7 @@ import { CatalogCard } from "../components/CatalogCard";
 import { BackgroundUsageAuthorizations } from "../components/BackgroundUsageAuthorizations";
 import { Dialog } from "../components/Dialog";
 import { useAccountState } from "../components/ProtectedRoute";
+import { RealQAGitHubDestinations } from "../components/RealQAGitHubDestinations";
 import {
   EmptyState,
   ErrorState,
@@ -2937,6 +2938,7 @@ export function OrganizationSettingsPage() {
   const {
     callerRole,
     organization,
+    realqaTransport,
     refreshOrganization,
     transport,
   } = useOrganization();
@@ -3096,6 +3098,17 @@ export function OrganizationSettingsPage() {
           An organization owner or admin can update organization details.
         </p>
       )}
+      {organization.organizationId?.value ? (
+        <RealQAGitHubDestinations
+          owner={{
+            canManage,
+            kind: "organization",
+            organizationId: organization.organizationId.value,
+            organizationName: organization.name,
+          }}
+          transport={realqaTransport}
+        />
+      ) : null}
       {organization.organizationId?.value ? (
         <BackgroundUsageAuthorizations
           scope={{

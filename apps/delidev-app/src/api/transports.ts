@@ -56,3 +56,41 @@ export function createAuthenticatedTransport({
     useBinaryFormat: false,
   });
 }
+
+export function createRealQAAuthenticatedTransport({
+  audience,
+  baseUrl,
+  delibaseAudience,
+  fetch,
+  getAccessToken,
+}: TransportOptions & {
+  audience: string;
+  delibaseAudience: string;
+  getAccessToken: AccessTokenGetter;
+}): Transport {
+  const authorizationInterceptor: Interceptor = (next) => async (request) => {
+    const [realqaToken, delibaseToken] = await Promise.all([
+      getAccessToken(audience),
+      getAccessToken(delibaseAudience),
+    ]);
+    if (!realqaToken || !delibaseToken) {
+      throw new Error(
+        "RealQA and DeliDev access tokens are required for this request.",
+      );
+    }
+    request.header.set("Authorization", `Bearer ${realqaToken}`);
+    request.header.set(
+      "x-delibase-forwarded-user-token",
+      delibaseToken,
+    );
+    request.header.set("Cache-Control", "no-store");
+    return next(request);
+  };
+
+  return createConnectTransport({
+    baseUrl,
+    fetch,
+    interceptors: [authorizationInterceptor],
+    useBinaryFormat: false,
+  });
+}

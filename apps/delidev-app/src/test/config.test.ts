@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalAudience, readRuntimeConfig } from "../config";
+import {
+  canonicalAudience,
+  canonicalRealQAAudience,
+  readRuntimeConfig,
+} from "../config";
 
 describe("runtime configuration", () => {
   it("accepts only the canonical audience and HTTPS public origins", () => {
@@ -14,6 +18,41 @@ describe("runtime configuration", () => {
       "https://deli.dev",
     );
     expect(valid.issues).toEqual([]);
+    expect(valid.realqa.issues).toHaveLength(5);
+
+    const realqa = readRuntimeConfig(
+      {
+        PUBLIC_DELIBASE_API_ORIGIN: canonicalAudience,
+        PUBLIC_LOGTO_APP_ID: "spa-id",
+        PUBLIC_LOGTO_AUDIENCE: canonicalAudience,
+        PUBLIC_LOGTO_ENDPOINT: "https://tenant.logto.app",
+        PUBLIC_REALQA_API_ORIGIN: canonicalRealQAAudience,
+        PUBLIC_REALQA_GITHUB_APP_CLIENT_ID: "fixture-client",
+        PUBLIC_REALQA_GITHUB_APP_SLUG: "fixture-realqa",
+        PUBLIC_REALQA_GITHUB_CALLBACK_URI:
+          "https://realqa.deli.dev/github/oauth/callback",
+        PUBLIC_REALQA_LOGTO_AUDIENCE: canonicalRealQAAudience,
+      },
+      "https://deli.dev",
+    );
+    expect(realqa.realqa.issues).toEqual([]);
+
+    const ghes = readRuntimeConfig(
+      {
+        PUBLIC_DELIBASE_API_ORIGIN: canonicalAudience,
+        PUBLIC_LOGTO_APP_ID: "spa-id",
+        PUBLIC_LOGTO_AUDIENCE: canonicalAudience,
+        PUBLIC_LOGTO_ENDPOINT: "https://tenant.logto.app",
+        PUBLIC_REALQA_API_ORIGIN: "https://ghe.example.com",
+        PUBLIC_REALQA_GITHUB_APP_CLIENT_ID: "fixture-client",
+        PUBLIC_REALQA_GITHUB_APP_SLUG: "fixture-realqa",
+        PUBLIC_REALQA_GITHUB_CALLBACK_URI:
+          "https://ghe.example.com/github/oauth/callback",
+        PUBLIC_REALQA_LOGTO_AUDIENCE: "https://ghe.example.com",
+      },
+      "https://deli.dev",
+    );
+    expect(ghes.realqa.issues).toHaveLength(3);
 
     const invalid = readRuntimeConfig(
       {

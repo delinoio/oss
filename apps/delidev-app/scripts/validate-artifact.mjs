@@ -73,7 +73,9 @@ if (
   !serviceWorker.includes("CatalogService") ||
   !serviceWorker.includes('caches.match("/index.html")') ||
   serviceWorker.includes("BillingService") ||
-  serviceWorker.includes("UsageService")
+  serviceWorker.includes("UsageService") ||
+  serviceWorker.includes("RealQATrackerService") ||
+  serviceWorker.includes("x-delibase-forwarded-user-token")
 ) {
   throw new Error("Service worker cache boundary is invalid.");
 }
