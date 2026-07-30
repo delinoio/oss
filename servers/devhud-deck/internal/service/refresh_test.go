@@ -404,18 +404,53 @@ func TestRefreshBillingFailuresAreTyped(t *testing.T) {
 	}
 }
 
-func TestRefreshResultsAreTruncatedBeforeDerivedSnapshots(t *testing.T) {
+func TestRefreshResultsAreSortedBeforeTruncation(t *testing.T) {
 	t.Parallel()
 	results := make([]*deckv1.PullRequestResult, 501)
+	for index := range results {
+		results[index] = &deckv1.PullRequestResult{
+			Number: uint64(index + 1),
+			Checks: &deckv1.CheckSummary{
+				State: deckv1.ChecksState_CHECKS_STATE_SUCCESS,
+			},
+		}
+	}
+	results[500].Checks.State = deckv1.ChecksState_CHECKS_STATE_FAILURE
+	sortRefreshResults(
+		results, deckv1.ViewSort_VIEW_SORT_CHECKS, "octocat")
 	retained, truncated := retainedRefreshResults(results)
 	if len(retained) != 500 || !truncated {
 		t.Fatalf("retained results = %d, truncated = %v",
 			len(retained), truncated)
 	}
+	if retained[0].GetNumber() != 501 {
+		t.Fatalf("first retained result = %d, want 501",
+			retained[0].GetNumber())
+	}
 	retained, truncated = retainedRefreshResults(results[:500])
 	if len(retained) != 500 || truncated {
 		t.Fatalf("exact-limit results = %d, truncated = %v",
 			len(retained), truncated)
+	}
+}
+
+func TestRefreshCandidateHydrationMatchesTheConfiguredSort(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		sort deckv1.ViewSort
+		want bool
+	}{
+		{deckv1.ViewSort_VIEW_SORT_RECENTLY_UPDATED, false},
+		{deckv1.ViewSort_VIEW_SORT_RECENTLY_CREATED, false},
+		{deckv1.ViewSort_VIEW_SORT_ATTENTION, true},
+		{deckv1.ViewSort_VIEW_SORT_CHECKS, true},
+		{deckv1.ViewSort_VIEW_SORT_REVIEW_STATE, true},
+	}
+	for _, test := range tests {
+		if got := refreshSortCollectsAllCandidates(test.sort); got != test.want {
+			t.Fatalf("collect all candidates for %v = %v, want %v",
+				test.sort, got, test.want)
+		}
 	}
 }
 

@@ -372,8 +372,8 @@ func (service *View) continueRefreshAttempt(
 			}
 		}
 		snapshots, truncated, refreshedAt, err :=
-			service.dependencies.Store.ListAllSnapshots(
-				ctx, viewID, viewerHash)
+			service.listAuthorizedRefreshSnapshots(
+				ctx, viewer, view, viewerHash)
 		if err != nil {
 			return err
 		}
@@ -849,7 +849,8 @@ func (service *View) performGitHubRefresh(
 	results := make([]*deckv1.PullRequestResult, 0, 100)
 	cursor := ""
 	truncated := false
-	for len(results) <= refreshResultLimit {
+	collectAllCandidates := refreshSortCollectsAllCandidates(view.GetSort())
+	for {
 		page, pageErr := service.dependencies.GitHubClient.SearchPullRequests(
 			ctx, connection.Installation.ID, connection.Credential, resolved,
 			deckgithub.Page{
@@ -860,7 +861,7 @@ func (service *View) performGitHubRefresh(
 			return nil, nil, false, pageErr
 		}
 		for _, pullRequest := range page.PullRequests {
-			if len(results) == refreshResultLimit {
+			if !collectAllCandidates && len(results) >= refreshResultLimit {
 				truncated = true
 				break
 			}
@@ -888,14 +889,18 @@ func (service *View) performGitHubRefresh(
 			results = append(results, detail.Result)
 		}
 		truncated = truncated || page.Truncated
-		if cursor = page.NextCursor; cursor == "" ||
-			(truncated && len(results) == refreshResultLimit) {
+		cursor = page.NextCursor
+		if cursor == "" {
+			break
+		}
+		if !collectAllCandidates && len(results) >= refreshResultLimit {
+			truncated = true
 			break
 		}
 	}
+	sortRefreshResults(results, view.GetSort(), viewer.GitHubLogin)
 	results, resultTruncated := retainedRefreshResults(results)
 	truncated = truncated || resultTruncated
-	sortRefreshResults(results, view.GetSort(), viewer.GitHubLogin)
 	notificationSnapshots := append(
 		[]*deckv1.PullRequestResult(nil), results...)
 	historicalSnapshots := previousOnlySnapshots(previous, results)
@@ -1027,6 +1032,17 @@ func refreshProviderSort(viewSort deckv1.ViewSort) deckgithub.SearchSort {
 	return deckgithub.SearchSortUpdated
 }
 
+func refreshSortCollectsAllCandidates(viewSort deckv1.ViewSort) bool {
+	switch viewSort {
+	case deckv1.ViewSort_VIEW_SORT_ATTENTION,
+		deckv1.ViewSort_VIEW_SORT_CHECKS,
+		deckv1.ViewSort_VIEW_SORT_REVIEW_STATE:
+		return true
+	default:
+		return false
+	}
+}
+
 func sortRefreshResults(
 	results []*deckv1.PullRequestResult,
 	viewSort deckv1.ViewSort,
@@ -1082,6 +1098,36 @@ func sortRefreshResults(
 	sort.SliceStable(results, func(left, right int) bool {
 		return rank(results[left]) < rank(results[right])
 	})
+}
+
+func (service *View) listAuthorizedRefreshSnapshots(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	view *deckv1.View,
+	viewerHash [32]byte,
+) ([]*deckv1.PullRequestResult, bool, time.Time, error) {
+	viewID := refreshViewID(view)
+	requiredRepositoryHashes, err := service.dependencies.Store.
+		ListSnapshotRepositoryHashes(ctx, viewID, viewerHash)
+	if err != nil {
+		return nil, false, time.Time{}, err
+	}
+	readableRepositoryHashes, err := service.dependencies.Repositories.
+		ReadableRepositoryHashes(
+			ctx, viewer, view.GetOwner(),
+			contracts.RepositoryHashKindSnapshot, requiredRepositoryHashes)
+	if err != nil {
+		if errors.Is(err, deckgithub.ErrReauthenticationRequired) {
+			return nil, false, time.Time{}, rpcerr.New(
+				connect.CodeFailedPrecondition,
+				deckv1.ErrorReason_ERROR_REASON_DISCONNECTED)
+		}
+		return nil, false, time.Time{}, rpcerr.New(
+			connect.CodeUnavailable,
+			deckv1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE)
+	}
+	return service.dependencies.Store.ListSnapshots(
+		ctx, viewID, viewerHash, readableRepositoryHashes)
 }
 
 func (service *View) currentSnapshotState(
