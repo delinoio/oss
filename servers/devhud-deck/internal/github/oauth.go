@@ -62,6 +62,11 @@ func NewOAuth(configuration OAuthConfig, client *http.Client) (*OAuth, error) {
 	) error {
 		return http.ErrUseLastResponse
 	}
+	baseTransport := safeHTTPClient.Transport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+	safeHTTPClient.Transport = dispatchTransport{base: baseTransport}
 	return &OAuth{
 		configuration: configuration, client: &safeHTTPClient,
 		now: func() time.Time { return time.Now().UTC() },
@@ -156,11 +161,12 @@ func (oauth *OAuth) exchange(
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if err := notifyDispatch(ctx); err != nil {
-		return Credential{}, err
-	}
 	response, err := oauth.client.Do(request)
 	if err != nil {
+		var dispatchErr *dispatchError
+		if errors.As(err, &dispatchErr) {
+			return Credential{}, dispatchErr.err
+		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			return Credential{}, ErrTimeout
 		}
