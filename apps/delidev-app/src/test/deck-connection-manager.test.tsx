@@ -20,6 +20,15 @@ import {
   canonicalDeckGitHubCallbackUri,
   runtimeConfig,
 } from "../config";
+import { handoffDeckGitHubAuthorization } from "../deck/githubHandoff";
+
+vi.mock("../deck/githubHandoff", () => ({
+  handoffDeckGitHubAuthorization: vi.fn(),
+}));
+
+const handoffDeckGitHubAuthorizationMock = vi.mocked(
+  handoffDeckGitHubAuthorization,
+);
 
 function connectJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -99,6 +108,7 @@ function renderManager(
 
 describe("Deck connection manager", () => {
   beforeEach(() => {
+    handoffDeckGitHubAuthorizationMock.mockReset();
     Object.assign(runtimeConfig.deck, {
       apiOrigin: canonicalDeckAudience,
       audience: canonicalDeckAudience,
@@ -198,6 +208,118 @@ describe("Deck connection manager", () => {
       });
       expect(JSON.stringify(body)).not.toContain("accountId");
     }
+  });
+
+  it("ignores a GitHub setup response after the owner changes", async () => {
+    let resolvePersonalStart!: (response: Response) => void;
+    const personalStartResponse = new Promise<Response>((resolve) => {
+      resolvePersonalStart = resolve;
+    });
+    const personalTarget =
+      "https://github.com/apps/deli-dev-deck/installations/new?state=personal-owner-abcdefghijklmnopqrstuvwxyz";
+    const organizationTarget =
+      "https://github.com/apps/deli-dev-deck/installations/new?state=organization-owner-abcdefghijklmnopqrstu";
+    const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
+      const url = String(request);
+      const body = (await new Response(
+        init?.body ??
+          (request instanceof Request ? request.clone().body : null),
+      ).json()) as {
+        owner?: { organizationId?: { value?: string } };
+      };
+      const organizationRequest =
+        body.owner?.organizationId?.value === "organization-id";
+      if (url.endsWith("/StartGitHubConnection")) {
+        return organizationRequest
+          ? connectJsonResponse({
+              authorizationTarget: organizationTarget,
+            })
+          : personalStartResponse;
+      }
+      if (url.endsWith("/GetGitHubConnection")) {
+        return connectJsonResponse(
+          { code: "not_found", message: "not connected" },
+          404,
+        );
+      }
+      if (url.endsWith("/ListGitHubInstallations")) {
+        return connectJsonResponse({ installations: [], page: {} });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const deckTransport = createDeckIntegrationTransport({
+      baseUrl: canonicalDeckAudience,
+      fetch: fetchMock,
+      getAccessToken: async (audience) =>
+        audience === canonicalDeckAudience
+          ? "deck-token"
+          : "delibase-token",
+    });
+
+    function Parent() {
+      const [ownerScope, setOwnerScope] =
+        useState<DeckConnectionOwner>({
+          accountId: "account-id",
+          kind: "personal",
+          returnPath: "/account",
+        });
+      return (
+        <AuthSessionProvider
+          value={{
+            deckTransport,
+            signIn: async () => undefined,
+            signOut: async () => undefined,
+            status: AuthStatus.SignedIn,
+          }}
+        >
+          <button
+            onClick={() =>
+              setOwnerScope({
+                kind: "organization",
+                organizationId: "organization-id",
+                organizationName: "Acme",
+                returnPath: "/o/acme/settings",
+              })
+            }
+            type="button"
+          >
+            Switch owner
+          </button>
+          <DeckConnectionManager ownerScope={ownerScope} />
+        </AuthSessionProvider>
+      );
+    }
+
+    const user = userEvent.setup();
+    render(<Parent />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Connect GitHub.com" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Switch owner" }),
+    );
+    const organizationStart = await screen.findByRole("button", {
+      name: "Connect GitHub.com",
+    });
+    expect(organizationStart).toBeEnabled();
+
+    resolvePersonalStart(
+      connectJsonResponse({ authorizationTarget: personalTarget }),
+    );
+    await user.click(organizationStart);
+
+    await waitFor(() => {
+      expect(handoffDeckGitHubAuthorizationMock).toHaveBeenCalledWith(
+        organizationTarget,
+        "/o/acme/settings",
+        expect.objectContaining({
+          githubAppClientId: "Iv1.fixture-client",
+          githubAppSlug: "deli-dev-deck",
+        }),
+      );
+    });
+    expect(handoffDeckGitHubAuthorizationMock).toHaveBeenCalledTimes(1);
   });
 
   it("preserves disconnect revision input across an ambiguous retry and restores dialog focus", async () => {

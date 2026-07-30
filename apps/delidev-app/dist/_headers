@@ -20,6 +20,11 @@
   Content-Security-Policy: default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   Referrer-Policy: no-referrer
 
+/auth/devhud/callback/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Security-Policy: default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+
 /deck-callback.js
   Cache-Control: no-cache, no-store, must-revalidate
   Referrer-Policy: no-referrer

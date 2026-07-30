@@ -15,6 +15,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -61,6 +62,10 @@ interface DisconnectInput {
 }
 interface PendingDisconnect {
   input: DisconnectInput;
+  ownerIdentity: DeckConnectionOwnerIdentity;
+}
+interface PendingStart {
+  generation: number;
   ownerIdentity: DeckConnectionOwnerIdentity;
 }
 
@@ -215,6 +220,7 @@ export function DeckConnectionManager({
     [ownerIdentity],
   );
   const requestGeneration = useRef(0);
+  const startGeneration = useRef(0);
   const pendingDisconnect = useRef<PendingDisconnect | undefined>(
     undefined,
   );
@@ -223,9 +229,16 @@ export function DeckConnectionManager({
   const [loadState, setLoadState] = useState(LoadState.Idle);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [starting, setStarting] = useState(false);
+  const [pendingStart, setPendingStart] = useState<PendingStart>();
   const [disconnecting, setDisconnecting] = useState(false);
   const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    startGeneration.current += 1;
+    return () => {
+      startGeneration.current += 1;
+    };
+  }, [ownerIdentity, ownerScope.returnPath]);
 
   const load = useCallback(async () => {
     if (!client || !online) return;
@@ -294,14 +307,20 @@ export function DeckConnectionManager({
       : undefined;
   const configured =
     runtimeConfig.deck.issues.length === 0 && Boolean(client);
+  const starting =
+    pendingStart?.generation === startGeneration.current &&
+    pendingStart.ownerIdentity.id === ownerIdentity.id &&
+    pendingStart.ownerIdentity.kind === ownerIdentity.kind;
 
   const startConnection = async () => {
     if (!client || !online || !configured || starting) return;
-    setStarting(true);
+    const generation = startGeneration.current;
+    setPendingStart({ generation, ownerIdentity });
     setError("");
     setNotice("");
     try {
       const response = await client.startGitHubConnection({ owner });
+      if (generation !== startGeneration.current) return;
       if (
         !response.authorizationTarget ||
         (response.expiresAt &&
@@ -319,8 +338,9 @@ export function DeckConnectionManager({
         },
       );
     } catch (startError) {
+      if (generation !== startGeneration.current) return;
       setError(getDeckError(startError).message);
-      setStarting(false);
+      setPendingStart(undefined);
     }
   };
 

@@ -53,8 +53,12 @@ if (
   !redirects.includes(
     "/auth/devhud/callback /auth/devhud/callback/index.html 200",
   ) ||
-  !headers.includes("/auth/devhud/callback") ||
-  !headers.includes("Cache-Control: no-cache, no-store, must-revalidate") ||
+  !headers.includes(
+    "/auth/devhud/callback/index.html\n" +
+      "  Cache-Control: no-cache, no-store, must-revalidate\n" +
+      "  Content-Security-Policy: default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\n" +
+      "  Referrer-Policy: no-referrer",
+  ) ||
   !callback.includes('src="/deck-callback.js"') ||
   !callbackScript.includes(
     'window.history.replaceState(null, "", callbackPath)',
