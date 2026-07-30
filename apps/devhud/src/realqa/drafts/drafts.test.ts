@@ -752,6 +752,8 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     String.raw`\Qliteral\E`,
     "[a-z&&[^x]]",
     "[[:alpha:]&&[^x]]",
+    String.raw`^[[:foo]$`,
+    String.raw`^[[:digit]$`,
     "a{101}",
     "(a+)+$",
     "(?:a|aa)+$",
@@ -828,7 +830,14 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
     ).toBe(false);
   });
 
-  it.each(["^issue--draft$", "^issue&&draft$", "^issue~~draft$"])(
+  it.each([
+    "^issue--draft$",
+    "^issue&&draft$",
+    "^issue~~draft$",
+    "^[[]--$",
+    "^[[]&&$",
+    "^[[]~~$",
+  ])(
     "accepts safe literal class-operator text %s",
     (pattern) => {
       expect(
@@ -959,6 +968,60 @@ describe("RealQA synchronized presets and ordered desktop rules", () => {
         value: "https://example.com/",
         strippedQuery: "?q=%zz&partial=%2",
       },
+    });
+  });
+
+  it.each([
+    ["https://example.com/?q=é", "?q=é", null],
+    ["https://example.com/?q=a b", "?q=a b", null],
+    ["https://example.com/?", "?", null],
+    ["https://example.com/#", null, "#"],
+  ])(
+    "preserves raw synchronized URL query and fragment spelling in %s",
+    (urlTemplate, strippedQuery, strippedFragment) => {
+      const inferred = inferDesktopUrl(
+        [rule({ urlTemplate })],
+        "code",
+        "Issue 757",
+      );
+      expect(inferred).toEqual({
+        ok: true,
+        url: {
+          value: "https://example.com/",
+          strippedQuery,
+          strippedFragment,
+          warning: null,
+        },
+      });
+      if (inferred === null || !inferred.ok) {
+        throw new Error("fixture must be valid");
+      }
+      expect(restoreCapturedUrlParts(inferred.url)).toBe(urlTemplate);
+    },
+  );
+
+  it.each([
+    "https://example.com{/path",
+    "https://example.com}/path",
+    "https://example.com`/path",
+  ])("rejects a Go-invalid synchronized authority in %s", (urlTemplate) => {
+    expect(validateRealQaProcessUrlRules([rule({ urlTemplate })])).toBe(false);
+  });
+
+  it.each([
+    "https://example.com</path",
+    'https://example.com"/path',
+  ])("accepts a Go-valid synchronized authority in %s", (urlTemplate) => {
+    expect(validateRealQaProcessUrlRules([rule({ urlTemplate })])).toBe(true);
+    expect(
+      inferDesktopUrl(
+        [rule({ urlTemplate })],
+        "code",
+        "Issue 757",
+      ),
+    ).toMatchObject({
+      ok: true,
+      url: { value: urlTemplate },
     });
   });
 

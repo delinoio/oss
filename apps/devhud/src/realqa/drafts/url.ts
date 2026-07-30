@@ -3,6 +3,7 @@ import type { RestorableDraftUrl } from "./contracts";
 const MAX_URL_BYTES = 8_192;
 const INVALID_PERCENT_ESCAPE = /%(?![0-9a-f]{2})/iu;
 const HTTP_URL_PREFIX = /^https?:\/\//iu;
+const GO_INVALID_UNBRACKETED_HOST = /[\\^`{|}]/u;
 
 export type CapturedUrlResult =
   | { readonly ok: true; readonly url: RestorableDraftUrl }
@@ -89,6 +90,69 @@ function containsInvalidPercentEscape(
   return INVALID_PERCENT_ESCAPE.test(outsideQuery);
 }
 
+function synchronizedHostname(authority: string): string | null {
+  if (
+    authority === "" ||
+    authority.includes("%") ||
+    authority.includes(" ") ||
+    GO_INVALID_UNBRACKETED_HOST.test(authority)
+  ) {
+    return null;
+  }
+  if (authority.startsWith("[")) {
+    const closingBracket = authority.lastIndexOf("]");
+    if (
+      closingBracket < 0 ||
+      !/^(?::\d*)?$/u.test(authority.slice(closingBracket + 1))
+    ) {
+      return null;
+    }
+    try {
+      return new URL(`http://${authority}/`).hostname;
+    } catch {
+      return null;
+    }
+  }
+  if (authority.includes("[")) return null;
+  const firstColon = authority.indexOf(":");
+  if (
+    firstColon >= 0 &&
+    (firstColon !== authority.lastIndexOf(":") ||
+      !/^:\d*$/u.test(authority.slice(firstColon)))
+  ) {
+    return null;
+  }
+  return (firstColon < 0 ? authority : authority.slice(0, firstColon))
+    .toLowerCase()
+    .replace(/\.$/u, "");
+}
+
+function rawUrlParts(
+  value: string,
+  contentStart: number,
+): {
+  readonly path: string;
+  readonly query: string | null;
+  readonly fragment: string | null;
+} {
+  const fragmentIndex = value.indexOf("#", contentStart);
+  const queryIndex = value.indexOf("?", contentStart);
+  const pathEnd =
+    queryIndex >= 0 && (fragmentIndex < 0 || queryIndex < fragmentIndex)
+      ? queryIndex
+      : fragmentIndex >= 0
+        ? fragmentIndex
+        : value.length;
+  return {
+    path: value.slice(contentStart, pathEnd),
+    query:
+      queryIndex >= 0 && (fragmentIndex < 0 || queryIndex < fragmentIndex)
+        ? value.slice(queryIndex, fragmentIndex < 0 ? value.length : fragmentIndex)
+        : null,
+    fragment: fragmentIndex >= 0 ? value.slice(fragmentIndex) : null,
+  };
+}
+
 function sanitizeUrl(
   value: string,
   allowRawQueryPercent: boolean,
@@ -100,44 +164,51 @@ function sanitizeUrl(
   ) {
     return { ok: false, reason: "invalid-url" };
   }
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return { ok: false, reason: "invalid-url" };
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { ok: false, reason: "unsupported-scheme" };
-  }
   const prefix = value.match(HTTP_URL_PREFIX)?.[0];
   if (prefix === undefined) {
-    return { ok: false, reason: "invalid-url" };
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === "http:" || parsed.protocol === "https:"
+        ? { ok: false, reason: "invalid-url" }
+        : { ok: false, reason: "unsupported-scheme" };
+    } catch {
+      return { ok: false, reason: "invalid-url" };
+    }
   }
   const authority = value
     .slice(prefix.length)
     .split(/[/?#]/u, 1)[0] ?? "";
-  if (
-    authority === "" ||
-    authority.includes("%") ||
-    authority.includes(" ")
-  ) {
-    return { ok: false, reason: "invalid-url" };
-  }
-  if (parsed.username !== "" || parsed.password !== "") {
+  if (authority.includes("@")) {
     return { ok: false, reason: "credentials-forbidden" };
   }
-  const strippedQuery = retainBoundedUrlPart(parsed.search);
-  const strippedFragment = retainBoundedUrlPart(parsed.hash);
-  parsed.search = "";
-  parsed.hash = "";
-  const rawPath =
-    value
-      .slice(prefix.length + authority.length)
-      .split(/[?#]/u, 1)[0] ?? "";
-  // Synchronized rules retain Go's raw scheme, authority, and path spelling.
-  const canonicalValue = allowRawQueryPercent
-    ? `${prefix}${authority}${rawPath}`
-    : parsed.toString();
+  const synchronizedHost = synchronizedHostname(authority);
+  if (synchronizedHost === null) {
+    return { ok: false, reason: "invalid-url" };
+  }
+  const parts = rawUrlParts(value, prefix.length + authority.length);
+  let strippedQuery: string | null;
+  let strippedFragment: string | null;
+  let canonicalValue: string;
+  let warningHostname: string;
+  if (allowRawQueryPercent) {
+    strippedQuery = retainBoundedUrlPart(parts.query ?? "");
+    strippedFragment = retainBoundedUrlPart(parts.fragment ?? "");
+    canonicalValue = `${prefix}${authority}${parts.path}`;
+    warningHostname = synchronizedHost;
+  } else {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return { ok: false, reason: "invalid-url" };
+    }
+    strippedQuery = retainBoundedUrlPart(parsed.search);
+    strippedFragment = retainBoundedUrlPart(parsed.hash);
+    parsed.search = "";
+    parsed.hash = "";
+    canonicalValue = parsed.toString();
+    warningHostname = parsed.hostname;
+  }
   if (new TextEncoder().encode(canonicalValue).byteLength > MAX_URL_BYTES) {
     return { ok: false, reason: "invalid-url" };
   }
@@ -147,7 +218,7 @@ function sanitizeUrl(
       value: canonicalValue,
       strippedQuery,
       strippedFragment,
-      warning: isLocalOrPrivateHost(parsed.hostname)
+      warning: isLocalOrPrivateHost(warningHostname)
         ? "localhost-or-private-host"
         : null,
     },

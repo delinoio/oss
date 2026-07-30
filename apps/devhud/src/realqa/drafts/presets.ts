@@ -496,12 +496,11 @@ function hasUnsupportedCharacterClassSetAlgebra(pattern: string): boolean {
     if (token === "[") {
       const firstMember = pattern[index + 1] === "^" ? index + 2 : index + 1;
       if (!inCharacterClass && pattern[firstMember] === "]") return true;
-      if (inCharacterClass) {
+      if (inCharacterClass && pattern.startsWith("[:", index)) {
         const posixClass = translatePosixCharacterClass(pattern, index);
-        if (posixClass !== null) {
-          index = posixClass.nextIndex - 1;
-          continue;
-        }
+        if (posixClass === null) return true;
+        index = posixClass.nextIndex - 1;
+        continue;
       }
       inCharacterClass = true;
       continue;
