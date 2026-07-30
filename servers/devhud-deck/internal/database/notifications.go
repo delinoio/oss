@@ -25,13 +25,13 @@ type NotificationEventWrite struct {
 }
 
 type NotificationEventRecord struct {
-	ViewID     uuid.UUID
-	ViewerHash [32]byte
-	Transition deckv1.NotificationTransition
-	Reference  *deckv1.PullRequestReference
-	Detail     *deckv1.PullRequestDetail
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
+	EventID           uuid.UUID
+	ViewID            uuid.UUID
+	ViewerHash        [32]byte
+	Transition        deckv1.NotificationTransition
+	PullRequestNumber uint64
+	CreatedAt         time.Time
+	ExpiresAt         time.Time
 }
 
 type refreshSQLExecutor interface {
@@ -121,7 +121,7 @@ func (store *Store) pruneNotificationHistory(
 	return nil
 }
 
-func (store *Store) GetNotificationEvent(
+func (store *Store) GetNotificationEventMetadata(
 	ctx context.Context,
 	opaque string,
 	now time.Time,
@@ -131,44 +131,75 @@ func (store *Store) GetNotificationEvent(
 	}
 	verifier := security.GrantVerifier(opaque)
 	var record NotificationEventRecord
-	var viewerHash, ciphertext []byte
+	var viewerHash []byte
 	var transition int16
 	var pullRequestNumber int64
 	err := store.pool.QueryRow(ctx, `
-		SELECT view_id, viewer_hash, transition, pull_request_number,
-		       detail_ciphertext, created_at, expires_at
+		SELECT event_id, view_id, viewer_hash, transition,
+		       pull_request_number, created_at, expires_at
 		FROM deck_notification_events
 		WHERE opaque_event_id = $1 AND expires_at > $2
 		  AND viewer_hash IS NOT NULL
 		  AND detail_ciphertext IS NOT NULL
 	`, verifier[:], now.UTC()).Scan(
-		&record.ViewID, &viewerHash, &transition, &pullRequestNumber,
-		&ciphertext, &record.CreatedAt, &record.ExpiresAt)
+		&record.EventID, &record.ViewID, &viewerHash, &transition,
+		&pullRequestNumber, &record.CreatedAt, &record.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NotificationEventRecord{}, ErrNotFound
 	}
-	if err != nil || len(viewerHash) != 32 {
+	if err != nil || record.EventID.Version() != 7 ||
+		record.ViewID.Version() != 7 || len(viewerHash) != 32 ||
+		pullRequestNumber <= 0 ||
+		transition <
+			int16(deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED) ||
+		transition >
+			int16(deckv1.NotificationTransition_NOTIFICATION_TRANSITION_CLOSED) {
 		return NotificationEventRecord{}, errors.New(
 			"deck database: notification lookup failed")
 	}
 	copy(record.ViewerHash[:], viewerHash)
 	record.Transition = deckv1.NotificationTransition(transition)
-	record.Detail = &deckv1.PullRequestDetail{}
-	if err := store.openProto(
-		"notification-detail", ciphertext, record.Detail); err != nil {
-		return NotificationEventRecord{}, err
+	record.PullRequestNumber = uint64(pullRequestNumber)
+	return record, nil
+}
+
+func (store *Store) GetNotificationEventDetail(
+	ctx context.Context,
+	event NotificationEventRecord,
+	now time.Time,
+) (*deckv1.PullRequestDetail, error) {
+	if event.EventID.Version() != 7 || event.ViewID.Version() != 7 ||
+		event.PullRequestNumber == 0 {
+		return nil, ErrNotFound
 	}
-	repository := record.Detail.GetResult().GetRepository()
-	if repository == nil || pullRequestNumber <= 0 ||
-		record.Detail.GetResult().GetNumber() != uint64(pullRequestNumber) {
-		return NotificationEventRecord{}, errors.New(
+	var ciphertext []byte
+	err := store.pool.QueryRow(ctx, `
+		SELECT detail_ciphertext
+		FROM deck_notification_events
+		WHERE event_id = $1 AND view_id = $2 AND viewer_hash = $3
+		  AND transition = $4 AND pull_request_number = $5
+		  AND expires_at > $6 AND detail_ciphertext IS NOT NULL
+	`, event.EventID, event.ViewID, event.ViewerHash[:],
+		int16(event.Transition), int64(event.PullRequestNumber),
+		now.UTC()).Scan(&ciphertext)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, errors.New("deck database: notification lookup failed")
+	}
+	detail := &deckv1.PullRequestDetail{}
+	if err := store.openProto(
+		"notification-detail", ciphertext, detail); err != nil {
+		return nil, err
+	}
+	repository := detail.GetResult().GetRepository()
+	if repository == nil ||
+		detail.GetResult().GetNumber() != event.PullRequestNumber {
+		return nil, errors.New(
 			"deck database: invalid notification record")
 	}
-	record.Reference = &deckv1.PullRequestReference{
-		Repository: proto.Clone(repository).(*deckv1.RepositoryReference),
-		Number:     uint64(pullRequestNumber),
-	}
-	return record, nil
+	return detail, nil
 }
 
 func (store *Store) NotificationPreference(

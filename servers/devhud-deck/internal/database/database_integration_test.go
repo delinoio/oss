@@ -232,6 +232,57 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || !truncated {
 		t.Fatalf("replace snapshots = truncated=%v err=%v", truncated, err)
 	}
+	notificationOpaque, err := security.NewGrant()
+	if err != nil {
+		t.Fatal(err)
+	}
+	notificationVerifier := security.GrantVerifier(notificationOpaque)
+	notificationEventID := mustV7(t)
+	notificationCiphertext, err := store.sealProto(
+		"notification-detail", notificationDetail(snapshots[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	notificationRepositoryHash :=
+		store.SnapshotRepositoryHash(snapshots[0].GetRepository())
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO deck_notification_events (
+			event_id, view_id, opaque_event_id, transition,
+			created_at, expires_at, viewer_hash, repository_hash,
+			pull_request_number, detail_ciphertext
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, notificationEventID, firstViewID, notificationVerifier[:],
+		int16(deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED),
+		now, now.Add(notificationRetention), viewerHash[:],
+		notificationRepositoryHash[:],
+		int64(snapshots[0].GetNumber()), []byte("invalid ciphertext")); err != nil {
+		t.Fatal(err)
+	}
+	notificationRecord, err := store.GetNotificationEventMetadata(
+		ctx, notificationOpaque, now)
+	if err != nil || notificationRecord.EventID != notificationEventID ||
+		notificationRecord.ViewerHash != viewerHash {
+		t.Fatalf("notification metadata = %#v err=%v",
+			notificationRecord, err)
+	}
+	if _, err := store.GetNotificationEventDetail(
+		ctx, notificationRecord, now); err == nil {
+		t.Fatal("invalid notification detail was opened")
+	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_notification_events
+		SET detail_ciphertext = $1
+		WHERE event_id = $2
+	`, notificationCiphertext, notificationEventID); err != nil {
+		t.Fatal(err)
+	}
+	notificationDetailRecord, err := store.GetNotificationEventDetail(
+		ctx, notificationRecord, now)
+	if err != nil ||
+		notificationDetailRecord.GetResult().GetTitle() != snapshots[0].GetTitle() {
+		t.Fatalf("notification detail = %#v err=%v",
+			notificationDetailRecord, err)
+	}
 	readableSnapshots := map[[32]byte]struct{}{
 		store.SnapshotRepositoryHash(snapshots[0].Repository): {},
 	}

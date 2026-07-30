@@ -305,7 +305,7 @@ func (service *Device) ResolveNotificationEvent(
 		ctx, now); err != nil {
 		return nil, mapDatabaseError(err)
 	}
-	event, err := service.dependencies.Store.GetNotificationEvent(
+	event, err := service.dependencies.Store.GetNotificationEventMetadata(
 		ctx, request.Msg.GetOpaqueEventId(), now)
 	if err != nil {
 		return genericNotification(), nil
@@ -329,14 +329,18 @@ func (service *Device) ResolveNotificationEvent(
 			deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
 		return genericNotification(), nil
 	}
-	repository := event.Reference.GetRepository()
+	detail, err := service.dependencies.Store.GetNotificationEventDetail(
+		ctx, event, now)
+	if err != nil {
+		return genericNotification(), nil
+	}
+	repository := detail.GetResult().GetRepository()
 	allowed, err := service.dependencies.Repositories.CanReadRepository(
 		ctx, viewer, view.GetOwner(), repository.GetOwner(),
 		repository.GetName())
 	if err != nil || !allowed {
 		return genericNotification(), nil
 	}
-	detail := event.Detail
 	return connect.NewResponse(&deckv1.ResolveNotificationEventResponse{
 		Resolution:       deckv1.NotificationResolution_NOTIFICATION_RESOLUTION_DETAILED,
 		NotificationText: database.DetailedNotificationText(detail),
