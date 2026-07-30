@@ -345,7 +345,8 @@ WHERE installation.connection_id = sqlc.arg(connection_id)
 ORDER BY binding.authorization_id;
 
 -- name: ListOpenStorageBindingsForDisconnectedGitHub :many
-SELECT binding.*
+SELECT sqlc.embed(binding),
+       connection.updated_at AS github_disconnected_at
 FROM realqa_storage_authorization_bindings AS binding
 JOIN realqa_storage_authorization_attempts AS current
   ON current.submission_id = binding.submission_id
@@ -486,9 +487,12 @@ RETURNING *;
 -- name: ListExpiredStorageRecoveries :many
 SELECT recovery.*
 FROM realqa_storage_recoveries AS recovery
+JOIN realqa_submissions AS submission
+  ON submission.id = recovery.submission_id
 WHERE recovery.recovered_at IS NULL
   AND recovery.expired_at IS NULL
   AND recovery.grace_expires_at <= sqlc.arg(cutoff)
+  AND submission.state = 'storage_billing_grace'
 ORDER BY recovery.grace_expires_at, recovery.id
 LIMIT sqlc.arg(batch_limit);
 
@@ -497,6 +501,8 @@ UPDATE realqa_storage_recoveries
 SET expired_at = sqlc.arg(expired_at),
     updated_at = transaction_timestamp()
 WHERE id = sqlc.arg(id)
+  AND submission_id = sqlc.arg(submission_id)
+  AND grace_expires_at <= sqlc.arg(cutoff)
   AND recovered_at IS NULL
   AND expired_at IS NULL
 RETURNING *;

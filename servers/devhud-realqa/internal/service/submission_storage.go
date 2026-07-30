@@ -1653,18 +1653,51 @@ func (service *Submission) DeleteBillingExpiredAssets(
 	ctx context.Context,
 	submissionID uuid.UUID,
 ) error {
+	_, err := service.deleteBillingExpiredAssets(ctx, submissionID, nil)
+	return err
+}
+
+type storageRecoveryExpiryClaim struct {
+	ID     pgtype.UUID
+	Cutoff time.Time
+}
+
+func (service *Submission) deleteBillingExpiredAssets(
+	ctx context.Context,
+	submissionID uuid.UUID,
+	expiry *storageRecoveryExpiryClaim,
+) (bool, error) {
 	submission, err := service.dependencies.Store.Queries().GetSubmissionRecord(
 		ctx, toPGUUID(submissionID))
 	if err != nil {
-		return err
+		return false, err
 	}
 	var removed []dbgen.RealqaAsset
+	claimed := expiry == nil
 	err = service.dependencies.Store.WithinTransaction(ctx, pgx.TxOptions{},
 		func(queries *dbgen.Queries) error {
 			locked, lockErr := queries.LockSubmissionRecord(
 				ctx, toPGUUID(submissionID))
 			if lockErr != nil {
 				return lockErr
+			}
+			if expiry != nil {
+				if locked.State != "storage_billing_grace" {
+					return nil
+				}
+				if _, lockErr = queries.MarkStorageRecoveryExpired(
+					ctx, dbgen.MarkStorageRecoveryExpiredParams{
+						ExpiredAt:    pgTimestamp(expiry.Cutoff),
+						ID:           expiry.ID,
+						SubmissionID: toPGUUID(submissionID),
+						Cutoff:       pgTimestamp(expiry.Cutoff),
+					}); lockErr != nil {
+					if errors.Is(lockErr, pgx.ErrNoRows) {
+						return nil
+					}
+					return lockErr
+				}
+				claimed = true
 			}
 			var removeErr error
 			removed, removeErr = queries.TombstoneSubmissionAssets(
@@ -1713,12 +1746,15 @@ func (service *Submission) DeleteBillingExpiredAssets(
 			return lockErr
 		})
 	if err != nil {
-		return err
+		return false, err
+	}
+	if !claimed {
+		return false, nil
 	}
 	service.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	service.bestEffortIssueUpdate(
 		context.WithoutCancel(ctx), submission, removed)
-	return nil
+	return true, nil
 }
 
 func (service *Submission) authorizeSubmissionRequest(

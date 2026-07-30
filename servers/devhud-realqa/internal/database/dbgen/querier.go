@@ -128,7 +128,7 @@ type Querier interface {
 	ListGitHubInstallations(ctx context.Context, arg ListGitHubInstallationsParams) ([]RealqaGithubInstallation, error)
 	ListIssueAssets(ctx context.Context, providerIssueID pgtype.Text) ([]RealqaAsset, error)
 	ListIssueSubmissionAssets(ctx context.Context, arg ListIssueSubmissionAssetsParams) ([]RealqaAsset, error)
-	ListOpenStorageBindingsForDisconnectedGitHub(ctx context.Context, batchLimit int32) ([]RealqaStorageAuthorizationBinding, error)
+	ListOpenStorageBindingsForDisconnectedGitHub(ctx context.Context, batchLimit int32) ([]ListOpenStorageBindingsForDisconnectedGitHubRow, error)
 	ListPendingObjectDeletions(ctx context.Context, arg ListPendingObjectDeletionsParams) ([]RealqaObjectDeletionJob, error)
 	ListPresetRecords(ctx context.Context, arg ListPresetRecordsParams) ([]ListPresetRecordsRow, error)
 	ListProcessURLRules(ctx context.Context, presetID pgtype.UUID) ([]RealqaProcessUrlRule, error)

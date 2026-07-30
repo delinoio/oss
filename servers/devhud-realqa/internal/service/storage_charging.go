@@ -353,19 +353,6 @@ func (service *Submission) commitReservedStorage(
 	periodStart time.Time,
 	periodEnd time.Time,
 ) error {
-	recovery, recoveryErr := service.dependencies.Store.Queries().
-		GetActiveStorageRecovery(ctx, binding.SubmissionID)
-	if recoveryErr == nil && recovery.AuthorizationID ==
-		binding.AuthorizationID &&
-		recovery.Reason != "billing_unavailable" &&
-		recovery.Reason != "github_disconnected" &&
-		recovery.Reason != "security_conflict" {
-		return service.releaseReservedStorage(
-			ctx, binding, settlement, periodStart)
-	}
-	if recoveryErr != nil && !errors.Is(recoveryErr, pgx.ErrNoRows) {
-		return recoveryErr
-	}
 	authorizationID, err := fromPGUUID(binding.AuthorizationID)
 	if err != nil {
 		return err
@@ -427,8 +414,7 @@ func (service *Submission) commitReservedStorage(
 		); graceErr != nil {
 			return graceErr
 		}
-		return service.releaseReservedStorage(
-			ctx, binding, settlement, periodStart)
+		return err
 	}
 	if err = validateAuthorizedStorageReservation(
 		committed, binding, meters.Storage, settlement,
@@ -738,7 +724,7 @@ func (service *Submission) HandleGitHubConnectionDeletion(
 	cutoff := service.dependencies.Clock.Now().UTC()
 	for _, binding := range bindings {
 		if err = service.startStorageGrace(
-			ctx, binding, cutoff, StorageBillingFailureGitHub, true,
+			ctx, binding, cutoff, StorageBillingFailureGitHub, false,
 		); err != nil {
 			return err
 		}
@@ -845,16 +831,17 @@ func (service *Submission) blockDisconnectedGitHubStorage(
 	ctx context.Context,
 	batchLimit int,
 ) error {
-	bindings, err := service.dependencies.Store.Queries().
+	disconnected, err := service.dependencies.Store.Queries().
 		ListOpenStorageBindingsForDisconnectedGitHub(
 			ctx, int32(batchLimit))
 	if err != nil {
 		return err
 	}
-	cutoff := service.dependencies.Clock.Now().UTC()
-	for _, binding := range bindings {
+	for _, row := range disconnected {
+		binding := row.RealqaStorageAuthorizationBinding
+		cutoff := row.GithubDisconnectedAt.Time.UTC()
 		if err = service.startStorageGrace(
-			ctx, binding, cutoff, StorageBillingFailureGitHub, true,
+			ctx, binding, cutoff, StorageBillingFailureGitHub, false,
 		); err != nil {
 			return err
 		}
@@ -897,7 +884,7 @@ func (service *Submission) HandleLifecycleAuthorizationDeletion(
 	for _, binding := range bindings {
 		if err = service.startStorageGrace(
 			ctx, binding, cutoff,
-			StorageBillingFailureAccess, true,
+			StorageBillingFailureAccess, false,
 		); err != nil {
 			return err
 		}
@@ -1043,27 +1030,29 @@ func (service *Submission) expireStorageGrace(
 		return err
 	}
 	for _, recovery := range rows {
-		submissionID, parseErr := fromPGUUID(recovery.SubmissionID)
-		if parseErr != nil {
-			return parseErr
-		}
-		// Tombstoning and object deletion intentionally precede delibase
-		// closure, so an outage can never extend public readability.
-		if parseErr = service.DeleteBillingExpiredAssets(
-			ctx, submissionID); parseErr != nil {
-			return parseErr
-		}
-		if _, parseErr = service.dependencies.Store.Queries().
-			MarkStorageRecoveryExpired(
-				ctx, dbgen.MarkStorageRecoveryExpiredParams{
-					ExpiredAt: pgTimestamp(now),
-					ID:        recovery.ID,
-				}); parseErr != nil &&
-			!errors.Is(parseErr, pgx.ErrNoRows) {
-			return parseErr
+		if err = service.expireStorageRecovery(ctx, recovery, now); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func (service *Submission) expireStorageRecovery(
+	ctx context.Context,
+	recovery dbgen.RealqaStorageRecovery,
+	now time.Time,
+) error {
+	submissionID, err := fromPGUUID(recovery.SubmissionID)
+	if err != nil {
+		return err
+	}
+	// Tombstoning and object deletion intentionally precede delibase closure,
+	// so an outage can never extend public readability.
+	_, err = service.deleteBillingExpiredAssets(
+		ctx, submissionID, &storageRecoveryExpiryClaim{
+			ID: recovery.ID, Cutoff: now,
+		})
+	return err
 }
 
 func (service *Submission) processStorageClosures(

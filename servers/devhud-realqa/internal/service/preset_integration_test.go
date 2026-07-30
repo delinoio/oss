@@ -2389,12 +2389,208 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnectBilling.getAuthorizationCalls,
 			disconnectBilling.revokeAuthorizationCalls)
 	}
-	if _, err = store.Queries().ResolveStorageRecovery(
+	if disconnectErr := disconnectService.HandleGitHubConnectionDeletion(
+		ctx, organizationConnectionID, "fixture-forwarded-bearer",
+	); disconnectErr == nil {
+		t.Fatal("disconnect cutoff retry failure was ignored")
+	}
+	if disconnectBilling.reserveAuthorizedCalls != 2 {
+		t.Fatalf("disconnect cutoff retry reserve calls = %d, want 2",
+			disconnectBilling.reserveAuthorizedCalls)
+	}
+	disconnectBinding, err := store.Queries().GetStorageAuthorizationBinding(
+		ctx, toPGUUID(disconnectAuthorizationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	disconnectPeriodStart := utcDayStart(disconnectCutoff)
+	disconnectSettlement, err := store.Queries().GetStorageDailySettlement(
+		ctx, dbgen.GetStorageDailySettlementParams{
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(disconnectPeriodStart),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disconnectSettlement.State != "pending" {
+		t.Fatalf("disconnect cutoff retry state = %q, want pending",
+			disconnectSettlement.State)
+	}
+	disconnectReservationID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_storage_daily_settlements
+		SET state = 'reserved',
+		    reservation_id = $3,
+		    reservation_created_at = $4,
+		    reservation_expires_at = $5
+		WHERE authorization_id = $1
+		  AND period_start = $2
+	`, disconnectAuthorizationID, disconnectPeriodStart,
+		disconnectReservationID, disconnectCutoff,
+		disconnectCutoff.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	disconnectSettlement, err = store.Queries().GetStorageDailySettlement(
+		ctx, dbgen.GetStorageDailySettlementParams{
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(disconnectPeriodStart),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disconnectBilling.commitErr = &StorageBillingFailure{
+		Kind: StorageBillingFailurePayment,
+	}
+	if commitErr := disconnectService.commitReservedStorage(
+		ctx, disconnectBinding, disconnectSettlement,
+		disconnectPeriodStart, disconnectPeriodStart.Add(24*time.Hour),
+	); commitErr == nil {
+		t.Fatal("accepted storage reservation commit failure was ignored")
+	}
+	if disconnectBilling.commitAuthorizedCalls != 1 ||
+		disconnectBilling.releaseAuthorizedCalls != 0 {
+		t.Fatalf("accepted reservation calls commit=%d release=%d, want 1/0",
+			disconnectBilling.commitAuthorizedCalls,
+			disconnectBilling.releaseAuthorizedCalls)
+	}
+	disconnectSettlement, err = store.Queries().GetStorageDailySettlement(
+		ctx, dbgen.GetStorageDailySettlementParams{
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(disconnectPeriodStart),
+		})
+	if err != nil || disconnectSettlement.State != "reserved" {
+		t.Fatalf("accepted reservation state = %q, %v, want reserved",
+			disconnectSettlement.State, err)
+	}
+	disconnectBilling.commitErr = nil
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_storage_daily_settlements
+		SET state = 'pending',
+		    reservation_id = NULL,
+		    reservation_created_at = NULL,
+		    reservation_expires_at = NULL,
+		    settled_at = NULL
+		WHERE authorization_id = $1
+		  AND period_start = $2
+	`, disconnectAuthorizationID, disconnectPeriodStart); err != nil {
+		t.Fatal(err)
+	}
+	disconnectRecovery, err := store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleCutoffService := NewSubmission(Dependencies{
+		Store: store, Billing: disconnectBilling,
+		Clock: fixedSubmissionClock{
+			now: disconnectCutoff.Add(72 * time.Hour),
+		},
+		Pseudonymizer: pseudonymizer,
+	})
+	if err = staleCutoffService.prepareStorageRebindCutoff(
+		ctx, disconnectBinding, disconnectRecovery); err != nil {
+		t.Fatalf("stale rebind cutoff was not skipped: %v", err)
+	}
+	if disconnectBilling.reserveAuthorizedCalls != 2 {
+		t.Fatalf("stale rebind cutoff reserve calls = %d, want 2",
+			disconnectBilling.reserveAuthorizedCalls)
+	}
+	disconnectSettlement, err = store.Queries().GetStorageDailySettlement(
+		ctx, dbgen.GetStorageDailySettlementParams{
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(disconnectPeriodStart),
+		})
+	if err != nil || disconnectSettlement.State != "grace_skipped" {
+		t.Fatalf("stale rebind cutoff state = %q, %v, want grace_skipped",
+			disconnectSettlement.State, err)
+	}
+	expiryNow := disconnectCutoff.Add(31 * 24 * time.Hour)
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_storage_recoveries
+		SET grace_expires_at = $2
+		WHERE id = $1
+	`, disconnectRecovery.ID, expiryNow.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	expiredRecoveries, err := store.Queries().ListExpiredStorageRecoveries(
+		ctx, dbgen.ListExpiredStorageRecoveriesParams{
+			Cutoff: pgTimestamp(expiryNow), BatchLimit: 100,
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selectedRecovery dbgen.RealqaStorageRecovery
+	for _, candidate := range expiredRecoveries {
+		if candidate.ID == disconnectRecovery.ID {
+			selectedRecovery = candidate
+			break
+		}
+	}
+	if !selectedRecovery.ID.Valid {
+		t.Fatal("disconnect recovery was not selected for expiry")
+	}
+	expiryTx, err := connection.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lockedExpirySubmission uuid.UUID
+	if err = expiryTx.QueryRow(ctx, `
+		SELECT id
+		FROM realqa_submissions
+		WHERE id = $1
+		FOR UPDATE
+	`, disconnectSubmissionID).Scan(&lockedExpirySubmission); err != nil {
+		_ = expiryTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	expiryService := NewSubmission(Dependencies{
+		Store: store, Billing: disconnectBilling,
+		Clock:         fixedSubmissionClock{now: expiryNow},
+		Pseudonymizer: pseudonymizer,
+	})
+	expiryDone := make(chan error, 1)
+	go func() {
+		expiryDone <- expiryService.expireStorageRecovery(
+			ctx, selectedRecovery, expiryNow)
+	}()
+	if _, err = dbgen.New(expiryTx).ResolveStorageRecovery(
 		ctx, dbgen.ResolveStorageRecoveryParams{
-			RecoveredAt:        pgTimestamp(disconnectCutoff),
+			RecoveredAt:        pgTimestamp(expiryNow),
 			TargetSubmissionID: toPGUUID(disconnectSubmissionID),
 		}); err != nil {
+		_ = expiryTx.Rollback(ctx)
 		t.Fatal(err)
+	}
+	if err = expiryTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case expiryErr := <-expiryDone:
+		if expiryErr != nil {
+			t.Fatal(expiryErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("storage grace expiry did not finish after recovery")
+	}
+	var disconnectAssetState, disconnectSubmissionState string
+	if err = connection.QueryRow(ctx, `
+		SELECT asset.state, submission.state
+		FROM realqa_assets AS asset
+		JOIN realqa_submissions AS submission
+		  ON submission.id = asset.submission_id
+		WHERE asset.id = $1
+	`, disconnectAssetID).Scan(
+		&disconnectAssetState, &disconnectSubmissionState); err != nil {
+		t.Fatal(err)
+	}
+	if disconnectAssetState != "public_retained" ||
+		disconnectSubmissionState != "submitted" {
+		t.Fatalf("recovered grace expiry state = %q / %q, want public_retained / submitted",
+			disconnectAssetState, disconnectSubmissionState)
+	}
+	if _, err = store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("recovered grace remained active: %v", err)
 	}
 	casSubmissionID := uuidv7.MustNew()
 	casAssetID := uuidv7.MustNew()
@@ -3624,7 +3820,10 @@ type failingAuthorizedStorageBilling struct {
 	SubmissionBilling
 	meters                   BillingMeters
 	reserveErr               error
+	commitErr                error
 	reserveAuthorizedCalls   int
+	commitAuthorizedCalls    int
+	releaseAuthorizedCalls   int
 	getAuthorizationCalls    int
 	revokeAuthorizationCalls int
 }
@@ -3641,6 +3840,22 @@ func (billing *failingAuthorizedStorageBilling) ReserveAuthorizedStorage(
 ) (AuthorizedStorageReservation, error) {
 	billing.reserveAuthorizedCalls++
 	return AuthorizedStorageReservation{}, billing.reserveErr
+}
+
+func (billing *failingAuthorizedStorageBilling) CommitAuthorizedStorage(
+	context.Context,
+	AuthorizedStorageFinalizationRequest,
+) (AuthorizedStorageReservation, error) {
+	billing.commitAuthorizedCalls++
+	return AuthorizedStorageReservation{}, billing.commitErr
+}
+
+func (billing *failingAuthorizedStorageBilling) ReleaseAuthorizedStorage(
+	context.Context,
+	AuthorizedStorageFinalizationRequest,
+) (AuthorizedStorageReservation, error) {
+	billing.releaseAuthorizedCalls++
+	return AuthorizedStorageReservation{}, nil
 }
 
 func (billing *failingAuthorizedStorageBilling) GetStorageAuthorization(

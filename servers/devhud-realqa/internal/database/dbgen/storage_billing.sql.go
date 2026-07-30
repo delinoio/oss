@@ -1151,9 +1151,12 @@ func (q *Queries) ListCurrentStorageBindingsForGitHubConnection(ctx context.Cont
 const listExpiredStorageRecoveries = `-- name: ListExpiredStorageRecoveries :many
 SELECT recovery.id, recovery.submission_id, recovery.authorization_id, recovery.reason, recovery.notification_state, recovery.grace_started_at, recovery.grace_expires_at, recovery.recovered_at, recovery.expired_at, recovery.created_at, recovery.updated_at
 FROM realqa_storage_recoveries AS recovery
+JOIN realqa_submissions AS submission
+  ON submission.id = recovery.submission_id
 WHERE recovery.recovered_at IS NULL
   AND recovery.expired_at IS NULL
   AND recovery.grace_expires_at <= $1
+  AND submission.state = 'storage_billing_grace'
 ORDER BY recovery.grace_expires_at, recovery.id
 LIMIT $2
 `
@@ -1196,7 +1199,8 @@ func (q *Queries) ListExpiredStorageRecoveries(ctx context.Context, arg ListExpi
 }
 
 const listOpenStorageBindingsForDisconnectedGitHub = `-- name: ListOpenStorageBindingsForDisconnectedGitHub :many
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at,
+       connection.updated_at AS github_disconnected_at
 FROM realqa_storage_authorization_bindings AS binding
 JOIN realqa_storage_authorization_attempts AS current
   ON current.submission_id = binding.submission_id
@@ -1216,35 +1220,41 @@ ORDER BY binding.authorization_id
 LIMIT $1
 `
 
-func (q *Queries) ListOpenStorageBindingsForDisconnectedGitHub(ctx context.Context, batchLimit int32) ([]RealqaStorageAuthorizationBinding, error) {
+type ListOpenStorageBindingsForDisconnectedGitHubRow struct {
+	RealqaStorageAuthorizationBinding RealqaStorageAuthorizationBinding
+	GithubDisconnectedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) ListOpenStorageBindingsForDisconnectedGitHub(ctx context.Context, batchLimit int32) ([]ListOpenStorageBindingsForDisconnectedGitHubRow, error) {
 	rows, err := q.db.Query(ctx, listOpenStorageBindingsForDisconnectedGitHub, batchLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []RealqaStorageAuthorizationBinding{}
+	items := []ListOpenStorageBindingsForDisconnectedGitHubRow{}
 	for rows.Next() {
-		var i RealqaStorageAuthorizationBinding
+		var i ListOpenStorageBindingsForDisconnectedGitHubRow
 		if err := rows.Scan(
-			&i.AuthorizationID,
-			&i.SubmissionID,
-			&i.MappingRevision,
-			&i.AuthorizerAccountID,
-			&i.OwnerKind,
-			&i.OwnerID,
-			&i.OrganizationID,
-			&i.TeamID,
-			&i.ServiceIdentityID,
-			&i.MeterID,
-			&i.MaximumUnits,
-			&i.Status,
-			&i.AuthorizationRevision,
-			&i.ClosureState,
-			&i.ClosureOwnerDeletedAllowed,
-			&i.AccrualCutoffAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ClosedAt,
+			&i.RealqaStorageAuthorizationBinding.AuthorizationID,
+			&i.RealqaStorageAuthorizationBinding.SubmissionID,
+			&i.RealqaStorageAuthorizationBinding.MappingRevision,
+			&i.RealqaStorageAuthorizationBinding.AuthorizerAccountID,
+			&i.RealqaStorageAuthorizationBinding.OwnerKind,
+			&i.RealqaStorageAuthorizationBinding.OwnerID,
+			&i.RealqaStorageAuthorizationBinding.OrganizationID,
+			&i.RealqaStorageAuthorizationBinding.TeamID,
+			&i.RealqaStorageAuthorizationBinding.ServiceIdentityID,
+			&i.RealqaStorageAuthorizationBinding.MeterID,
+			&i.RealqaStorageAuthorizationBinding.MaximumUnits,
+			&i.RealqaStorageAuthorizationBinding.Status,
+			&i.RealqaStorageAuthorizationBinding.AuthorizationRevision,
+			&i.RealqaStorageAuthorizationBinding.ClosureState,
+			&i.RealqaStorageAuthorizationBinding.ClosureOwnerDeletedAllowed,
+			&i.RealqaStorageAuthorizationBinding.AccrualCutoffAt,
+			&i.RealqaStorageAuthorizationBinding.CreatedAt,
+			&i.RealqaStorageAuthorizationBinding.UpdatedAt,
+			&i.RealqaStorageAuthorizationBinding.ClosedAt,
+			&i.GithubDisconnectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1541,18 +1551,27 @@ UPDATE realqa_storage_recoveries
 SET expired_at = $1,
     updated_at = transaction_timestamp()
 WHERE id = $2
+  AND submission_id = $3
+  AND grace_expires_at <= $4
   AND recovered_at IS NULL
   AND expired_at IS NULL
 RETURNING id, submission_id, authorization_id, reason, notification_state, grace_started_at, grace_expires_at, recovered_at, expired_at, created_at, updated_at
 `
 
 type MarkStorageRecoveryExpiredParams struct {
-	ExpiredAt pgtype.Timestamptz
-	ID        pgtype.UUID
+	ExpiredAt    pgtype.Timestamptz
+	ID           pgtype.UUID
+	SubmissionID pgtype.UUID
+	Cutoff       pgtype.Timestamptz
 }
 
 func (q *Queries) MarkStorageRecoveryExpired(ctx context.Context, arg MarkStorageRecoveryExpiredParams) (RealqaStorageRecovery, error) {
-	row := q.db.QueryRow(ctx, markStorageRecoveryExpired, arg.ExpiredAt, arg.ID)
+	row := q.db.QueryRow(ctx, markStorageRecoveryExpired,
+		arg.ExpiredAt,
+		arg.ID,
+		arg.SubmissionID,
+		arg.Cutoff,
+	)
 	var i RealqaStorageRecovery
 	err := row.Scan(
 		&i.ID,

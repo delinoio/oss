@@ -221,6 +221,13 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 			if lockedSubmission.State != "storage_billing_grace" {
 				return staleStorageAuthorizationMapping()
 			}
+			lockedRecovery, lockErr := queries.GetActiveStorageRecovery(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil ||
+				lockedRecovery.ID != recovery.ID ||
+				lockedRecovery.AuthorizationID != binding.AuthorizationID {
+				return staleStorageAuthorizationMapping()
+			}
 			lockedMaximumUnits, lockErr := ceilMiB(
 				lockedSubmission.VerifiedEncodedBytes)
 			if lockErr != nil || lockedMaximumUnits <= 0 {
@@ -416,6 +423,22 @@ func (service *Submission) prepareStorageRebindCutoff(
 ) error {
 	cutoff := binding.AccrualCutoffAt.Time.UTC()
 	if recovery.Reason != "billing_unavailable" {
+		periodStart := utcDayStart(cutoff)
+		if !cutoff.After(periodStart) {
+			return nil
+		}
+		today := utcDayStart(service.dependencies.Clock.Now())
+		if periodStart.Before(today.Add(-24 * time.Hour)) {
+			authorizationID, err := fromPGUUID(binding.AuthorizationID)
+			if err != nil {
+				return err
+			}
+			if err = service.processStoragePeriod(
+				ctx, authorizationID, periodStart, today); err != nil {
+				return err
+			}
+			return nil
+		}
 		return service.settleStorageCutoff(ctx, binding, cutoff)
 	}
 
