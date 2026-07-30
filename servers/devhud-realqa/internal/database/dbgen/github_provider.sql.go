@@ -870,21 +870,76 @@ func (q *Queries) GitHubInstallationIsActiveForOwner(ctx context.Context, arg Gi
 }
 
 const markAssetsRemovedForDeletedGitHubIssue = `-- name: MarkAssetsRemovedForDeletedGitHubIssue :execrows
-UPDATE realqa_assets AS asset
-SET state = 'removed_placeholder',
-    object_key_ciphertext = NULL,
-    removed_at = COALESCE(asset.removed_at, transaction_timestamp()),
-    revision = asset.revision + 1
-FROM realqa_submissions AS submission
-JOIN realqa_destinations AS destination
-  ON destination.id = submission.destination_id
-JOIN realqa_github_installations AS installation
-  ON installation.id = destination.installation_id
-WHERE asset.submission_id = submission.id
-  AND installation.provider_installation_id = $1
-  AND destination.repository_id = $2
-  AND submission.provider_issue_id = $3
-  AND asset.state IN ('private_staging', 'verified_unlinked', 'public_retained')
+WITH matched_submissions AS (
+    SELECT submission.id
+    FROM realqa_submissions AS submission
+    JOIN realqa_destinations AS destination
+      ON destination.id = submission.destination_id
+    JOIN realqa_github_installations AS installation
+      ON installation.id = destination.installation_id
+    WHERE installation.provider_installation_id
+              = $1
+      AND destination.repository_id = $2
+      AND submission.provider_issue_id = $3
+    FOR UPDATE OF submission
+), selected_assets AS (
+    SELECT asset.id, asset.submission_id, asset.public_id
+    FROM realqa_assets AS asset
+    JOIN matched_submissions AS submission
+      ON submission.id = asset.submission_id
+    WHERE asset.state NOT IN ('removed_placeholder', 'deleted', 'expired')
+    FOR UPDATE OF asset
+), tombstones AS (
+    INSERT INTO realqa_public_asset_tombstones (public_id)
+    SELECT public_id
+    FROM selected_assets
+    WHERE public_id IS NOT NULL
+    ON CONFLICT (public_id) DO NOTHING
+), private_object_deletions AS (
+    INSERT INTO realqa_object_deletion_jobs (asset_id, object_kind)
+    SELECT asset.id, kind.object_kind
+    FROM selected_assets AS asset
+    CROSS JOIN (VALUES ('staging'), ('verified')) AS kind(object_kind)
+    ON CONFLICT DO NOTHING
+), public_object_deletions AS (
+    INSERT INTO realqa_object_deletion_jobs (
+        asset_id, object_kind, public_id
+    )
+    SELECT id, 'public', public_id
+    FROM selected_assets
+    WHERE public_id IS NOT NULL
+    ON CONFLICT DO NOTHING
+), removed_assets AS (
+    UPDATE realqa_assets AS asset
+    SET upload_state = 'deleted',
+        state = CASE
+            WHEN asset.public_id IS NULL THEN 'deleted'
+            ELSE 'removed_placeholder'
+        END,
+        removed_at = COALESCE(asset.removed_at, transaction_timestamp()),
+        revision = asset.revision + 1
+    FROM selected_assets AS selected
+    WHERE asset.id = selected.id
+    RETURNING asset.submission_id
+)
+UPDATE realqa_submissions AS submission
+SET verified_encoded_bytes = (
+        SELECT COALESCE(sum(asset.encoded_bytes), 0)::bigint
+        FROM realqa_assets AS asset
+        WHERE asset.submission_id = submission.id
+          AND asset.upload_state = 'verified'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM selected_assets AS selected
+              WHERE selected.id = asset.id
+          )
+    ),
+    revision = submission.revision + 1,
+    updated_at = transaction_timestamp()
+WHERE submission.id IN (
+    SELECT DISTINCT submission_id
+    FROM removed_assets
+)
 `
 
 type MarkAssetsRemovedForDeletedGitHubIssueParams struct {

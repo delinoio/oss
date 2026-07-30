@@ -142,7 +142,7 @@ type rawFormAttributes struct {
 	Render      string      `yaml:"render"`
 	Multiple    bool        `yaml:"multiple"`
 	Options     []yaml.Node `yaml:"options"`
-	Default     *int        `yaml:"default"`
+	Default     yaml.Node   `yaml:"default"`
 }
 
 type rawFormValidation struct {
@@ -377,7 +377,7 @@ func parseFormField(raw rawFormField) (FormField, error) {
 			field.Options = append(field.Options, parsed)
 		}
 	}
-	if raw.Attributes.Default != nil {
+	if raw.Attributes.Default.Kind != 0 {
 		return FormField{}, errors.New(
 			"realqa github: Issue Form dropdown default is unsupported")
 	}
@@ -394,7 +394,7 @@ func validateSkippedUpload(raw rawFormField) error {
 		raw.Attributes.Render != "" ||
 		raw.Attributes.Multiple ||
 		len(raw.Attributes.Options) != 0 ||
-		raw.Attributes.Default != nil ||
+		raw.Attributes.Default.Kind != 0 ||
 		strings.ContainsAny(raw.Validations.Accept, "\x00\r\n") {
 		return errors.New("realqa github: Issue Form upload field is unsupported")
 	}
@@ -459,7 +459,8 @@ func validateIssueFormYAML(document *yaml.Node) error {
 		return errors.New("realqa github: Issue Form schema is invalid")
 	}
 	for _, key := range []string{"name", "description", "title", "type"} {
-		if value := mappingValue(root, key); value != nil && !isStringNode(value) {
+		if value := mappingValue(root, key); value != nil &&
+			(!isStringNode(value) || strings.TrimSpace(value.Value) == "") {
 			return errors.New("realqa github: Issue Form string value is invalid")
 		}
 	}

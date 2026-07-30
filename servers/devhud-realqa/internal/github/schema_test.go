@@ -176,6 +176,30 @@ body:
 	}
 }
 
+func TestIssueFormRejectsBlankTopLevelStrings(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{`title: ""`, `type: "   "`} {
+		t.Run(strings.SplitN(field, ":", 2)[0], func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseIssueForm(
+				".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`,
+				[]byte(fmt.Sprintf(`
+name: Bug report
+description: Report a bug
+%s
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+`, field)))
+			if err == nil || !strings.Contains(err.Error(), "string value is invalid") {
+				t.Fatalf("expected blank %s rejection, got %v", field, err)
+			}
+		})
+	}
+}
+
 func TestParseAndValidateIssueFormFixture(t *testing.T) {
 	t.Parallel()
 	contents, err := os.ReadFile("testdata/bug.yml")
@@ -332,7 +356,10 @@ func TestIssueFormRejectsMultilineInputAnswer(t *testing.T) {
 
 func TestIssueFormRejectsUnsupportedDropdownDefault(t *testing.T) {
 	t.Parallel()
-	contents := []byte(`
+	for _, value := range []string{"1", "null"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			contents := []byte(fmt.Sprintf(`
 name: Bug report
 description: Report a bug
 body:
@@ -343,13 +370,16 @@ body:
       options:
         - Low
         - High
-      default: 1
-`)
-	form, err := ParseIssueForm(
-		".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
-	)
-	if err == nil || !strings.Contains(err.Error(), "dropdown default is unsupported") {
-		t.Fatalf("expected unsupported dropdown default, got form=%#v err=%v", form, err)
+      default: %s
+`, value))
+			form, err := ParseIssueForm(
+				".github/ISSUE_TEMPLATE/bug.yml", `"fixture-etag"`, contents,
+			)
+			if err == nil || !strings.Contains(err.Error(), "dropdown default is unsupported") {
+				t.Fatalf("expected unsupported dropdown default, got form=%#v err=%v",
+					form, err)
+			}
+		})
 	}
 }
 

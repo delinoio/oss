@@ -2578,11 +2578,18 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	webhookSubmissionID := uuidv7.MustNew()
 	webhookAssetID := uuidv7.MustNew()
+	webhookDestinationID := uuidv7.MustNew()
 	webhookPublicID, err := imageassets.NewPublicID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_destinations (
+			id, owner_kind, owner_id, installation_id,
+			repository_id, repository_owner, repository_name
+		) VALUES (
+			$7, 'organization', $8, $9, '1001', 'delinoio', 'private'
+		);
 		INSERT INTO realqa_submissions (
 			id, owner_kind, owner_id, created_by_account_id, preset_id,
 			destination_id, state, provider_issue_id, provider_issue_url,
@@ -2591,7 +2598,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			verified_encoded_bytes, upload_deadline, upload_expires_at
 		)
 		SELECT $1, owner_kind, owner_id, created_by_account_id, preset_id,
-		       destination_id, 'submitted', '757',
+		       $7, 'submitted', '2002',
 		       'https://github.com/delinoio/oss/issues/757',
 		       idempotency_digest, transaction_timestamp(),
 		       payer_organization_id, payer_team_id, preset_revision,
@@ -2613,7 +2620,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		FROM realqa_assets
 		WHERE id = $6
 	`, webhookSubmissionID, submissionID, webhookAssetID, webhookPublicID,
-		uuidv7.MustNew(), promotionAssetID); err != nil {
+		uuidv7.MustNew(), promotionAssetID, webhookDestinationID,
+		organizationID, organizationInstallationID); err != nil {
 		t.Fatal(err)
 	}
 	var webhookRevisionBefore int64
@@ -2624,8 +2632,36 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	`, webhookSubmissionID).Scan(&webhookRevisionBefore); err != nil {
 		t.Fatal(err)
 	}
-	if err = submissionService.DeleteIssueAssets(ctx, "757"); err != nil {
+	webhookDeliveryID := uuidv7.MustNew()
+	fresh, err := callbackStore.ProcessWebhookDelivery(
+		ctx, webhookDeliveryID,
+		func(store realqagithub.WebhookStore) error {
+			return store.DeleteIssueAssets(ctx, realqagithub.DeletedIssueEvent{
+				InstallationID: 758,
+				RepositoryID:   1001,
+				IssueID:        2002,
+				IssueNumber:    757,
+			})
+		})
+	if err != nil || !fresh {
+		t.Fatalf("issue webhook deletion: fresh=%v err=%v", fresh, err)
+	}
+	var webhookTombstones, webhookDeletionJobs int
+	if err = connection.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*)
+			 FROM realqa_public_asset_tombstones
+			 WHERE public_id = $1),
+			(SELECT count(*)
+			 FROM realqa_object_deletion_jobs
+			 WHERE asset_id = $2)
+	`, webhookPublicID, webhookAssetID).Scan(
+		&webhookTombstones, &webhookDeletionJobs); err != nil {
 		t.Fatal(err)
+	}
+	if webhookTombstones != 1 || webhookDeletionJobs != 3 {
+		t.Fatalf("issue webhook cleanup tombstones=%d deletion_jobs=%d",
+			webhookTombstones, webhookDeletionJobs)
 	}
 	var (
 		webhookState         string
@@ -2647,8 +2683,18 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			webhookState, webhookRetainedBytes, webhookRevisionAfter,
 			webhookRevisionBefore+1)
 	}
-	if err = submissionService.DeleteIssueAssets(ctx, "757"); err != nil {
-		t.Fatal(err)
+	fresh, err = callbackStore.ProcessWebhookDelivery(
+		ctx, webhookDeliveryID,
+		func(store realqagithub.WebhookStore) error {
+			return store.DeleteIssueAssets(ctx, realqagithub.DeletedIssueEvent{
+				InstallationID: 758,
+				RepositoryID:   1001,
+				IssueID:        2002,
+				IssueNumber:    757,
+			})
+		})
+	if err != nil || fresh {
+		t.Fatalf("issue webhook replay: fresh=%v err=%v", fresh, err)
 	}
 	var webhookRevisionAfterReplay int64
 	if err = connection.QueryRow(ctx, `
