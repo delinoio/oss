@@ -15,6 +15,7 @@ describe("Deck widget refresh", () => {
     const preflights: DeckRefreshIdentity[] = [];
     const refreshes: Array<DeckRefreshIdentity & { preflightToken: string }> = [];
     const transport: DeckRefreshTransport = {
+      isAmbiguousRefreshError: () => false,
       async getPreflight(request) {
         preflights.push(request);
         return { priceUsdMicros: 50n, token: "widget-token" };
@@ -56,6 +57,7 @@ describe("Deck widget refresh", () => {
     const work = refreshFromWidget(
       "view",
       {
+        isAmbiguousRefreshError: () => false,
         getPreflight: () =>
           new Promise((resolve) => {
             resolvePreflight = resolve;

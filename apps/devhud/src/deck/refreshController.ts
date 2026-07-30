@@ -27,6 +27,7 @@ export interface DeckRefreshPreflight {
 }
 
 export interface DeckRefreshTransport {
+  isAmbiguousRefreshError(error: unknown): boolean;
   getPreflight(
     request: DeckRefreshIdentity,
     signal: AbortSignal,
@@ -160,13 +161,20 @@ export class DeckRefreshController {
         pending = { request, preflightToken: preflight.token };
         this.#manualAttempts.set(viewId, pending);
       }
-      await this.#options.transport.refresh(
-        {
-          ...pending.request,
-          preflightToken: pending.preflightToken,
-        },
-        controller.signal,
-      );
+      try {
+        await this.#options.transport.refresh(
+          {
+            ...pending.request,
+            preflightToken: pending.preflightToken,
+          },
+          controller.signal,
+        );
+      } catch (error) {
+        if (!this.#options.transport.isAmbiguousRefreshError(error)) {
+          this.#manualAttempts.delete(viewId);
+        }
+        throw error;
+      }
       this.#manualAttempts.delete(viewId);
       return true;
     } finally {
@@ -238,13 +246,20 @@ export class DeckRefreshController {
         ) {
           return;
         }
-        await this.#options.transport.refresh(
-          {
-            ...pending.request,
-            preflightToken: pending.preflightToken,
-          },
-          controller.signal,
-        );
+        try {
+          await this.#options.transport.refresh(
+            {
+              ...pending.request,
+              preflightToken: pending.preflightToken,
+            },
+            controller.signal,
+          );
+        } catch (error) {
+          if (!this.#options.transport.isAmbiguousRefreshError(error)) {
+            this.#automaticAttempts.delete(candidate.viewId);
+          }
+          throw error;
+        }
         this.#automaticAttempts.delete(candidate.viewId);
       }
     } catch (error) {

@@ -16,6 +16,7 @@ function transportRecorder() {
   const preflights: DeckRefreshIdentity[] = [];
   const refreshes: Array<DeckRefreshIdentity & { preflightToken: string }> = [];
   const transport: DeckRefreshTransport = {
+    isAmbiguousRefreshError: () => false,
     async getPreflight(request) {
       preflights.push(request);
       return { priceUsdMicros: 50n, token: `token-${request.requestId}` };
@@ -138,6 +139,7 @@ describe("Deck client-owned refresh polling", () => {
         },
       ],
       transport: {
+        isAmbiguousRefreshError: () => false,
         getPreflight: () =>
           new Promise((resolve) => {
             resolvePreflight = resolve;
@@ -166,6 +168,7 @@ describe("Deck client-owned refresh polling", () => {
       canPoll: () => false,
       listCandidates: async () => [],
       transport: {
+        isAmbiguousRefreshError: () => false,
         getPreflight: async () => ({ priceUsdMicros: 50n, token: "token" }),
         refresh: async () => {
           providerDispatches += 1;
@@ -207,6 +210,7 @@ describe("Deck client-owned refresh polling", () => {
         },
       ],
       transport: {
+        isAmbiguousRefreshError: () => true,
         getPreflight: async (request) => {
           preflights.push(request);
           return { priceUsdMicros: 50n, token: `token-${request.requestId}` };
@@ -227,6 +231,48 @@ describe("Deck client-owned refresh polling", () => {
     expect(preflights).toHaveLength(1);
     expect(refreshes).toHaveLength(2);
     expect(refreshes[1]).toEqual(refreshes[0]);
+    controller.stop();
+  });
+
+  it("starts a new attempt after a terminal automatic failure", async () => {
+    const preflights: DeckRefreshIdentity[] = [];
+    let sequence = 0;
+    let refreshes = 0;
+    const controller = new DeckRefreshController({
+      clientKind: RefreshClientKind.DESKTOP,
+      createRequestId: () => `request-${++sequence}`,
+      canPoll: () => true,
+      listCandidates: async () => [
+        {
+          viewId: "view",
+          notificationAttached: true,
+          shortcutAttached: false,
+          widgetAttached: false,
+        },
+      ],
+      transport: {
+        isAmbiguousRefreshError: () => false,
+        getPreflight: async (request) => {
+          preflights.push(request);
+          return { priceUsdMicros: 50n, token: `token-${request.requestId}` };
+        },
+        refresh: async () => {
+          refreshes += 1;
+          if (refreshes === 1) {
+            throw new Error("terminal response");
+          }
+        },
+      },
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(DECK_REFRESH_INTERVAL_MS);
+
+    expect(preflights.map((request) => request.requestId)).toEqual([
+      "request-1",
+      "request-2",
+    ]);
     controller.stop();
   });
 
