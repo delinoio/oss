@@ -2690,9 +2690,12 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	disconnectRecovery, err := store.Queries().GetActiveStorageRecovery(
 		ctx, toPGUUID(disconnectSubmissionID))
-	if err != nil || disconnectRecovery.Reason != "payment_required" {
-		t.Fatalf("payment recovery before retry = %q, %v",
-			disconnectRecovery.Reason, err)
+	if err != nil || disconnectRecovery.Reason != "payment_required" ||
+		!disconnectRecovery.GraceStartedAt.Time.Equal(
+			commitPeriodStart.Add(24*time.Hour)) {
+		t.Fatalf("payment recovery before retry = %q / %v, %v",
+			disconnectRecovery.Reason,
+			disconnectRecovery.GraceStartedAt.Time, err)
 	}
 	disconnectBilling.commitErr = nil
 	disconnectBilling.commitResult = AuthorizedStorageReservation{
@@ -2719,11 +2722,12 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	disconnectBilling.metersErr = errors.New("fixture catalog unavailable")
 	meterCallsBeforeCommitRetry := disconnectBilling.meterCalls
-	if err = disconnectService.commitReservedStorage(
-		ctx, disconnectBinding, commitSettlement,
-		commitPeriodStart, commitPeriodStart.Add(24*time.Hour),
-	); err != nil {
-		t.Fatalf("stored reservation commit retry: %v", err)
+	rebindReservedBinding := disconnectBinding
+	rebindReservedBinding.AccrualCutoffAt = pgTimestamp(
+		commitPeriodStart.Add(24 * time.Hour))
+	if err = disconnectService.prepareStorageRebindCutoff(
+		ctx, rebindReservedBinding, disconnectRecovery); err != nil {
+		t.Fatalf("stored reservation rebind cutoff retry: %v", err)
 	}
 	if disconnectBilling.meterCalls != meterCallsBeforeCommitRetry {
 		t.Fatal("stored reservation commit retried the catalog lookup")
@@ -4053,7 +4057,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("submission with deleted payer code = %v", connect.CodeOf(err))
 	}
 	pendingStorageAttemptKey := uuidv7.MustNew()
+	pendingIssueAttemptKey := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_issue_submission_attempts (
+			submission_id, idempotency_key, request_digest, state
+		) VALUES (
+			$1, $5, decode(repeat('d3', 32), 'hex'), 'pending'
+		);
 		INSERT INTO realqa_storage_authorization_attempts (
 			submission_id, idempotency_key, request_digest,
 			service_identity_id, meter_id, maximum_units, state
@@ -4062,7 +4072,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			$3, $4, 1, 'pending'
 		)
 	`, billingSubmissionID, pendingStorageAttemptKey,
-		uuidv7.MustNew(), uuidv7.MustNew()); err != nil {
+		uuidv7.MustNew(), uuidv7.MustNew(),
+		pendingIssueAttemptKey); err != nil {
 		t.Fatal(err)
 	}
 	deletionRequest := &realqav1.DeleteFeatureDataRequest{
@@ -4115,22 +4126,50 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("retained preset idempotency snapshots = %d",
 			presetSnapshots)
 	}
-	var pendingStorageTombstones int
+	var (
+		pendingStorageTombstones int
+		pendingIssueAttempts     int
+		pendingAssets            int
+		pendingSubmissionState   string
+	)
 	if err = connection.QueryRow(ctx, `
-		SELECT count(*)
+		SELECT submission.state,
+		       count(*) FILTER (
+		           WHERE attempt.idempotency_key = $2
+		             AND attempt.state = 'pending'
+		       ),
+		       (
+		           SELECT count(*)
+		           FROM realqa_issue_submission_attempts AS issue
+		           WHERE issue.submission_id = submission.id
+		       ),
+		       (
+		           SELECT count(*)
+		           FROM realqa_assets AS asset
+		           WHERE asset.submission_id = submission.id
+		       )
 		FROM realqa_submissions AS submission
 		JOIN realqa_storage_authorization_attempts AS attempt
 		  ON attempt.submission_id = submission.id
 		WHERE submission.id = $1
-		  AND attempt.idempotency_key = $2
-		  AND attempt.state = 'pending'
+		GROUP BY submission.id
 	`, billingSubmissionID, pendingStorageAttemptKey).
-		Scan(&pendingStorageTombstones); err != nil {
+		Scan(
+			&pendingSubmissionState,
+			&pendingStorageTombstones,
+			&pendingIssueAttempts,
+			&pendingAssets,
+		); err != nil {
 		t.Fatal(err)
 	}
-	if pendingStorageTombstones != 1 {
-		t.Fatalf("pending storage tombstones = %d, want 1",
-			pendingStorageTombstones)
+	if pendingSubmissionState != "deleted" ||
+		pendingStorageTombstones != 1 ||
+		pendingIssueAttempts != 0 ||
+		pendingAssets != 0 {
+		t.Fatalf(
+			"pending storage tombstone = %q / %d / %d / %d, want deleted / 1 / 0 / 0",
+			pendingSubmissionState, pendingStorageTombstones,
+			pendingIssueAttempts, pendingAssets)
 	}
 
 	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{

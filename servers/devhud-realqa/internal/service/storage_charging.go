@@ -1079,6 +1079,10 @@ func (service *Submission) startStorageGrace(
 					return lockErr
 				}
 			}
+			if _, lockErr := queries.LockSubmissionRecord(
+				ctx, binding.SubmissionID); lockErr != nil {
+				return lockErr
+			}
 			current, lockErr := queries.LockCurrentStorageAuthorizationBinding(
 				ctx, binding.SubmissionID)
 			if lockErr != nil {
@@ -1111,7 +1115,7 @@ func (service *Submission) startStorageGrace(
 				return lockErr
 			}
 			reason := storageRecoveryReason(kind)
-			recoveryGraceStartedAt := recoveryStartedAt
+			recoveryGraceStartedAt := graceStart
 			active, activeErr := queries.GetActiveStorageRecovery(
 				ctx, binding.SubmissionID)
 			if activeErr == nil &&

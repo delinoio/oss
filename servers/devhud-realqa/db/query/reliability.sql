@@ -113,11 +113,22 @@ DELETE FROM realqa_issue_submission_attempts AS attempt
 WHERE EXISTS (
     SELECT 1
     FROM realqa_submissions AS submission
-    JOIN realqa_storage_authorization_bindings AS binding
-      ON binding.submission_id = submission.id
     WHERE submission.id = attempt.submission_id
       AND submission.owner_kind = sqlc.arg(owner_kind)
       AND submission.owner_id = sqlc.arg(owner_id)
+      AND (
+          EXISTS (
+              SELECT 1
+              FROM realqa_storage_authorization_bindings AS binding
+              WHERE binding.submission_id = submission.id
+          )
+          OR EXISTS (
+              SELECT 1
+              FROM realqa_storage_authorization_attempts AS storage_attempt
+              WHERE storage_attempt.submission_id = submission.id
+                AND storage_attempt.state = 'pending'
+          )
+      )
 );
 
 -- name: DeleteScopeBillingAssets :execrows
@@ -125,11 +136,22 @@ DELETE FROM realqa_assets AS asset
 WHERE EXISTS (
     SELECT 1
     FROM realqa_submissions AS submission
-    JOIN realqa_storage_authorization_bindings AS binding
-      ON binding.submission_id = submission.id
     WHERE submission.id = asset.submission_id
       AND submission.owner_kind = sqlc.arg(owner_kind)
       AND submission.owner_id = sqlc.arg(owner_id)
+      AND (
+          EXISTS (
+              SELECT 1
+              FROM realqa_storage_authorization_bindings AS binding
+              WHERE binding.submission_id = submission.id
+          )
+          OR EXISTS (
+              SELECT 1
+              FROM realqa_storage_authorization_attempts AS storage_attempt
+              WHERE storage_attempt.submission_id = submission.id
+                AND storage_attempt.state = 'pending'
+          )
+      )
 );
 
 -- name: MinimizeScopeBillingSubmissions :execrows
@@ -149,6 +171,11 @@ WHERE submission.owner_kind = sqlc.arg(owner_kind)
       SELECT 1
       FROM realqa_storage_authorization_bindings AS binding
       WHERE binding.submission_id = submission.id
+      UNION ALL
+      SELECT 1
+      FROM realqa_storage_authorization_attempts AS attempt
+      WHERE attempt.submission_id = submission.id
+        AND attempt.state = 'pending'
   );
 
 -- name: DeleteScopeConnections :execrows

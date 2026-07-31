@@ -522,7 +522,8 @@ func (service *Submission) prepareStorageRebindCutoff(
 	if recovery.Reason != "billing_unavailable" {
 		periodStart := utcDayStart(cutoff)
 		if !cutoff.After(periodStart) {
-			return nil
+			return service.finishReservedStorageRebindCutoff(
+				ctx, binding, cutoff.Add(-time.Nanosecond))
 		}
 		today := utcDayStart(service.dependencies.Clock.Now())
 		if periodStart.Before(today.Add(-24 * time.Hour)) {
@@ -544,7 +545,16 @@ func (service *Submission) prepareStorageRebindCutoff(
 	// reservation must finish through its stored authorization/period before
 	// the mapping can be replaced. The still-pending checkpoint is locked and
 	// skipped only in the replacement transaction after downstream success.
-	periodStart := utcDayStart(cutoff.Add(-time.Nanosecond))
+	return service.finishReservedStorageRebindCutoff(
+		ctx, binding, cutoff.Add(-time.Nanosecond))
+}
+
+func (service *Submission) finishReservedStorageRebindCutoff(
+	ctx context.Context,
+	binding dbgen.RealqaStorageAuthorizationBinding,
+	cutoff time.Time,
+) error {
+	periodStart := utcDayStart(cutoff)
 	queries := service.dependencies.Store.Queries()
 	settlement, err := queries.GetStorageDailySettlement(
 		ctx, dbgen.GetStorageDailySettlementParams{
