@@ -3197,6 +3197,94 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		ctx, toPGUUID(disconnectSubmissionID)); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("recovered grace remained active: %v", err)
 	}
+	reviewGraceStart := expiryNow.Add(24 * time.Hour)
+	reviewClock := reviewGraceStart.Add(time.Hour)
+	reviewService := NewSubmission(Dependencies{
+		Store: store, Billing: disconnectBilling,
+		Clock:         fixedSubmissionClock{now: reviewClock},
+		Pseudonymizer: pseudonymizer,
+	})
+	if err = reviewService.startStorageGrace(
+		ctx, disconnectBinding, reviewGraceStart,
+		StorageBillingFailureUnavailable, false); err != nil {
+		t.Fatal(err)
+	}
+	laterReviewRecovery, err := store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	backdatedGraceStart := reviewGraceStart.Add(-24 * time.Hour)
+	if err = reviewService.startStorageGrace(
+		ctx, disconnectBinding, backdatedGraceStart,
+		StorageBillingFailureUnavailable, false); err != nil {
+		t.Fatal(err)
+	}
+	backdatedRecovery, err := store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID))
+	if err != nil ||
+		backdatedRecovery.ID == laterReviewRecovery.ID ||
+		!backdatedRecovery.GraceStartedAt.Time.Equal(backdatedGraceStart) ||
+		!backdatedRecovery.GraceExpiresAt.Time.Equal(
+			backdatedGraceStart.Add(30*24*time.Hour)) {
+		t.Fatalf(
+			"backdated storage recovery = %v / %v / %v / %v, want replacement at %v",
+			backdatedRecovery.ID, backdatedRecovery.GraceStartedAt,
+			backdatedRecovery.GraceExpiresAt, err, backdatedGraceStart,
+		)
+	}
+	var laterRecoveryResolved bool
+	if err = connection.QueryRow(ctx, `
+		SELECT recovered_at IS NOT NULL
+		FROM realqa_storage_recoveries
+		WHERE id = $1
+	`, uuid.UUID(laterReviewRecovery.ID.Bytes)).Scan(
+		&laterRecoveryResolved); err != nil {
+		t.Fatal(err)
+	}
+	if !laterRecoveryResolved {
+		t.Fatal("later storage recovery was not superseded")
+	}
+	if _, err = store.Queries().ResolveStorageRecovery(
+		ctx, dbgen.ResolveStorageRecoveryParams{
+			RecoveredAt:        pgTimestamp(reviewClock),
+			TargetSubmissionID: toPGUUID(disconnectSubmissionID),
+		}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Queries().MarkStorageAuthorizationClosurePending(
+		ctx, dbgen.MarkStorageAuthorizationClosurePendingParams{
+			Cutoff:          pgTimestamp(reviewClock),
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+		}); err != nil {
+		t.Fatal(err)
+	}
+	if err = reviewService.startStorageGrace(
+		ctx, disconnectBinding, reviewClock,
+		StorageBillingFailurePayment, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Queries().GetActiveStorageRecovery(
+		ctx, toPGUUID(disconnectSubmissionID)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("deletion-pending binding entered recovery: %v", err)
+	}
+	var reviewSubmissionState, reviewClosureState string
+	if err = connection.QueryRow(ctx, `
+		SELECT submission.state, binding.closure_state
+		FROM realqa_submissions AS submission
+		JOIN realqa_storage_authorization_bindings AS binding
+		  ON binding.submission_id = submission.id
+		WHERE submission.id = $1
+		  AND binding.authorization_id = $2
+	`, disconnectSubmissionID, disconnectAuthorizationID).Scan(
+		&reviewSubmissionState, &reviewClosureState); err != nil {
+		t.Fatal(err)
+	}
+	if reviewSubmissionState != "submitted" ||
+		reviewClosureState != "resource_deletion_pending" {
+		t.Fatalf("deletion-pending grace race = %q / %q",
+			reviewSubmissionState, reviewClosureState)
+	}
 	casSubmissionID := uuidv7.MustNew()
 	casAssetID := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `

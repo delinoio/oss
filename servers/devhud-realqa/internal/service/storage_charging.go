@@ -1098,9 +1098,11 @@ func (service *Submission) startStorageGrace(
 			if lockErr != nil {
 				return lockErr
 			}
-			if current.AuthorizationID != binding.AuthorizationID {
-				// An old accepted reservation may still finish after rebind,
-				// but it must not place the replacement mapping into grace.
+			if current.AuthorizationID != binding.AuthorizationID ||
+				current.ClosureState != "open" {
+				// An old accepted reservation may still finish after rebind or
+				// deletion, but it must not place the replacement or
+				// tombstoned mapping into grace.
 				return nil
 			}
 			if skipUnreserved {
@@ -1128,10 +1130,14 @@ func (service *Submission) startStorageGrace(
 			recoveryGraceStartedAt := graceStart
 			active, activeErr := queries.GetActiveStorageRecovery(
 				ctx, binding.SubmissionID)
+			activeGraceStartedAt := active.GraceStartedAt.Time.UTC()
 			if activeErr == nil &&
 				active.AuthorizationID == binding.AuthorizationID &&
-				storageRecoverySupersedes(active.Reason, reason) {
-				recoveryGraceStartedAt = active.GraceStartedAt.Time
+				(storageRecoverySupersedes(active.Reason, reason) ||
+					graceStart.Before(activeGraceStartedAt)) {
+				if activeGraceStartedAt.Before(recoveryGraceStartedAt) {
+					recoveryGraceStartedAt = activeGraceStartedAt
+				}
 				if _, lockErr = queries.SupersedeStorageRecovery(
 					ctx, dbgen.SupersedeStorageRecoveryParams{
 						RecoveredAt:     pgTimestamp(recoveryStartedAt),
