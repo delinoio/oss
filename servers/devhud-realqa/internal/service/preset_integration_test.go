@@ -4056,24 +4056,65 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("submission with deleted payer code = %v", connect.CodeOf(err))
 	}
+	pendingStorageSubmissionID := uuidv7.MustNew()
+	pendingStorageAssetID := uuidv7.MustNew()
+	pendingStoragePublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	pendingStorageAttemptKey := uuidv7.MustNew()
 	pendingIssueAttemptKey := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, state,
+			provider_issue_id, provider_issue_url, idempotency_digest,
+			submitted_at, payer_organization_id, payer_team_id,
+			preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, upload_deadline, upload_expires_at
+		)
+		SELECT $1, 'personal', $2, $2, 'submitted',
+		       'pending-storage-deletion',
+		       'https://github.com/delinoio/oss/issues/760',
+		       decode(repeat('d4', 32), 'hex'), transaction_timestamp(),
+		       payer_organization_id, payer_team_id, preset_revision,
+		       declared_encoded_bytes, verified_encoded_bytes,
+		       transaction_timestamp() + interval '23 hours',
+		       transaction_timestamp() + interval '24 hours'
+		FROM realqa_submissions
+		WHERE id = $10;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $3, $1, $4, 'public_retained', encoded_bytes, $5,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $11;
 		INSERT INTO realqa_issue_submission_attempts (
 			submission_id, idempotency_key, request_digest, state
 		) VALUES (
-			$1, $5, decode(repeat('d3', 32), 'hex'), 'pending'
+			$1, $6, decode(repeat('d3', 32), 'hex'), 'pending'
 		);
 		INSERT INTO realqa_storage_authorization_attempts (
 			submission_id, idempotency_key, request_digest,
 			service_identity_id, meter_id, maximum_units, state
 		) VALUES (
-			$1, $2, decode(repeat('d2', 32), 'hex'),
-			$3, $4, 1, 'pending'
+			$1, $7, decode(repeat('d2', 32), 'hex'),
+			$8, $9, 1, 'pending'
 		)
-	`, billingSubmissionID, pendingStorageAttemptKey,
-		uuidv7.MustNew(), uuidv7.MustNew(),
-		pendingIssueAttemptKey); err != nil {
+	`, pendingStorageSubmissionID, accountID, pendingStorageAssetID,
+		pendingStoragePublicID, uuidv7.MustNew(), pendingIssueAttemptKey,
+		pendingStorageAttemptKey, uuidv7.MustNew(), uuidv7.MustNew(),
+		billingSubmissionID, billingAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if err = objects.Put(
+		ctx, imageassets.PublicObjectKey(pendingStoragePublicID),
+		"image/png", pngBody); err != nil {
 		t.Fatal(err)
 	}
 	deletionRequest := &realqav1.DeleteFeatureDataRequest{
@@ -4153,7 +4194,7 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		  ON attempt.submission_id = submission.id
 		WHERE submission.id = $1
 		GROUP BY submission.id
-	`, billingSubmissionID, pendingStorageAttemptKey).
+	`, pendingStorageSubmissionID, pendingStorageAttemptKey).
 		Scan(
 			&pendingSubmissionState,
 			&pendingStorageTombstones,
