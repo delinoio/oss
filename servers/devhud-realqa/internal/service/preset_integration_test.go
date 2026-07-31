@@ -2606,23 +2606,6 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			disconnectSettlement.State)
 	}
 	if _, err = connection.Exec(ctx, `
-		UPDATE realqa_storage_authorization_bindings
-		SET accrual_cutoff_at = $2
-		WHERE authorization_id = $1;
-		UPDATE realqa_storage_daily_settlements
-		SET state = 'pending'
-		WHERE authorization_id = $1
-		  AND period_start = $3
-	`, disconnectAuthorizationID, disconnectCutoff,
-		disconnectPeriodStart); err != nil {
-		t.Fatal(err)
-	}
-	disconnectBinding, err = store.Queries().GetStorageAuthorizationBinding(
-		ctx, toPGUUID(disconnectAuthorizationID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_github_connections
 		SET state = 'connected',
 		    credential_ciphertext = decode('03', 'hex'),
@@ -2921,8 +2904,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			AuthorizationID: toPGUUID(disconnectAuthorizationID),
 			PeriodStart:     pgTimestamp(disconnectPeriodStart),
 		})
-	if err != nil || disconnectSettlement.State != "pending" {
-		t.Fatalf("failed rebind cutoff state = %q, %v, want pending",
+	if err != nil || disconnectSettlement.State != "grace_skipped" {
+		t.Fatalf("stale rebind cutoff state = %q, %v, want grace_skipped",
 			disconnectSettlement.State, err)
 	}
 	expiryNow := disconnectRecovery.GraceExpiresAt.Time.Add(time.Hour)
