@@ -35,6 +35,7 @@ type NotificationEventRecord struct {
 	ViewID            uuid.UUID
 	RegistrationID    uuid.UUID
 	ViewerHash        [32]byte
+	RepositoryHash    [32]byte
 	Transition        deckv1.NotificationTransition
 	PullRequestNumber uint64
 	CreatedAt         time.Time
@@ -150,11 +151,12 @@ func (store *Store) GetNotificationEventMetadata(
 	verifier := security.GrantVerifier(opaque)
 	var record NotificationEventRecord
 	var viewerHash []byte
+	var repositoryHash []byte
 	var transition int16
 	var pullRequestNumber int64
 	err := store.pool.QueryRow(ctx, `
 		SELECT event_id, view_id, registration_id, viewer_hash, transition,
-		       pull_request_number, created_at, expires_at
+		       repository_hash, pull_request_number, created_at, expires_at
 		FROM deck_notification_events
 		WHERE opaque_event_id = $1 AND expires_at > $2
 		  AND registration_id IS NOT NULL
@@ -163,13 +165,15 @@ func (store *Store) GetNotificationEventMetadata(
 	`, verifier[:], now.UTC()).Scan(
 		&record.EventID, &record.ViewID, &record.RegistrationID,
 		&viewerHash, &transition,
-		&pullRequestNumber, &record.CreatedAt, &record.ExpiresAt)
+		&repositoryHash, &pullRequestNumber,
+		&record.CreatedAt, &record.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NotificationEventRecord{}, ErrNotFound
 	}
 	if err != nil || record.EventID.Version() != 7 ||
 		record.ViewID.Version() != 7 ||
 		record.RegistrationID.Version() != 7 || len(viewerHash) != 32 ||
+		len(repositoryHash) != 32 ||
 		pullRequestNumber <= 0 ||
 		transition <
 			int16(deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED) ||
@@ -179,6 +183,7 @@ func (store *Store) GetNotificationEventMetadata(
 			"deck database: notification lookup failed")
 	}
 	copy(record.ViewerHash[:], viewerHash)
+	copy(record.RepositoryHash[:], repositoryHash)
 	record.Transition = deckv1.NotificationTransition(transition)
 	record.PullRequestNumber = uint64(pullRequestNumber)
 	return record, nil
@@ -201,10 +206,11 @@ func (store *Store) GetNotificationEventDetail(
 		WHERE event_id = $1 AND view_id = $2 AND viewer_hash = $3
 		  AND registration_id = $4
 		  AND transition = $5 AND pull_request_number = $6
-		  AND expires_at > $7 AND detail_ciphertext IS NOT NULL
+		  AND repository_hash = $7
+		  AND expires_at > $8 AND detail_ciphertext IS NOT NULL
 	`, event.EventID, event.ViewID, event.ViewerHash[:],
 		event.RegistrationID, int16(event.Transition),
-		int64(event.PullRequestNumber),
+		int64(event.PullRequestNumber), event.RepositoryHash[:],
 		now.UTC()).Scan(&ciphertext)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -219,6 +225,7 @@ func (store *Store) GetNotificationEventDetail(
 	}
 	repository := detail.GetResult().GetRepository()
 	if repository == nil ||
+		store.SnapshotRepositoryHash(repository) != event.RepositoryHash ||
 		detail.GetResult().GetNumber() != event.PullRequestNumber {
 		return nil, errors.New(
 			"deck database: invalid notification record")

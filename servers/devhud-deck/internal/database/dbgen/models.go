@@ -141,6 +141,7 @@ type DeckNotificationEvent struct {
 	Transition        int16
 	CreatedAt         pgtype.Timestamptz
 	ExpiresAt         pgtype.Timestamptz
+	RegistrationID    pgtype.UUID
 	ViewerHash        []byte
 	RepositoryHash    []byte
 	PullRequestNumber pgtype.Int8

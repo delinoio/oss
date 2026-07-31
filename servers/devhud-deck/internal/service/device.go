@@ -332,16 +332,20 @@ func (service *Device) ResolveNotificationEvent(
 			deckv1.ConnectionState_CONNECTION_STATE_CONNECTED {
 		return genericNotification(), nil
 	}
-	detail, err := service.dependencies.Store.GetNotificationEventDetail(
-		ctx, event, now)
+	readableRepositories, err := service.dependencies.Repositories.
+		ReadableRepositoryHashes(
+			ctx, viewer, view.GetOwner(),
+			contracts.RepositoryHashKindSnapshot,
+			[][32]byte{event.RepositoryHash})
 	if err != nil {
 		return genericNotification(), nil
 	}
-	repository := detail.GetResult().GetRepository()
-	allowed, err := service.dependencies.Repositories.CanReadRepository(
-		ctx, viewer, view.GetOwner(), repository.GetOwner(),
-		repository.GetName())
-	if err != nil || !allowed {
+	if _, readable := readableRepositories[event.RepositoryHash]; !readable {
+		return genericNotification(), nil
+	}
+	detail, err := service.dependencies.Store.GetNotificationEventDetail(
+		ctx, event, now)
+	if err != nil {
 		return genericNotification(), nil
 	}
 	return connect.NewResponse(&deckv1.ResolveNotificationEventResponse{

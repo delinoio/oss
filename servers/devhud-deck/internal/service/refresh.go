@@ -675,8 +675,8 @@ func (service *View) dispatchReservedRefresh(
 	var previous []*deckv1.PullRequestResult
 	if providerErr == nil {
 		previous, _, _, providerErr =
-			service.dependencies.Store.ListAllSnapshots(
-				ctx, refreshViewID(view), viewerHash)
+			service.listAuthorizedRefreshSnapshots(
+				providerCtx, viewer, providerView, viewerHash)
 	}
 	var snapshots, notificationSnapshots []*deckv1.PullRequestResult
 	truncated := false
@@ -1136,14 +1136,14 @@ func (service *View) currentSnapshotState(
 	viewerHash [32]byte,
 	now time.Time,
 ) (bool, time.Time, deckv1.FreshnessState, int, error) {
-	snapshots, truncated, refreshedAt, err :=
-		service.dependencies.Store.ListAllSnapshots(ctx, viewID, viewerHash)
+	truncated, refreshedAt, resultCount, err :=
+		service.dependencies.Store.GetSnapshotSummary(ctx, viewID, viewerHash)
 	if err != nil {
 		return false, time.Time{},
 			deckv1.FreshnessState_FRESHNESS_STATE_UNSPECIFIED, 0, err
 	}
 	return truncated, refreshedAt, refreshFreshness(now, refreshedAt),
-		len(snapshots), nil
+		resultCount, nil
 }
 
 func validateRefreshIdentity(

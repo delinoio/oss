@@ -261,7 +261,8 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	notificationRecord, err := store.GetNotificationEventMetadata(
 		ctx, notificationOpaque, now)
 	if err != nil || notificationRecord.EventID != notificationEventID ||
-		notificationRecord.ViewerHash != viewerHash {
+		notificationRecord.ViewerHash != viewerHash ||
+		notificationRecord.RepositoryHash != notificationRepositoryHash {
 		t.Fatalf("notification metadata = %#v err=%v",
 			notificationRecord, err)
 	}
@@ -283,6 +284,13 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("notification detail = %#v err=%v",
 			notificationDetailRecord, err)
 	}
+	mismatchedNotificationRecord := notificationRecord
+	mismatchedNotificationRecord.RepositoryHash =
+		security.Digest([]byte("different repository"))
+	if _, err := store.GetNotificationEventDetail(
+		ctx, mismatchedNotificationRecord, now); err == nil {
+		t.Fatal("notification detail ignored its authorized repository hash")
+	}
 	readableSnapshots := map[[32]byte]struct{}{
 		store.SnapshotRepositoryHash(snapshots[0].Repository): {},
 	}
@@ -290,6 +298,14 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ctx, firstViewID, viewerHash, readableSnapshots)
 	if err != nil || len(current) != 500 || !stateTruncated {
 		t.Fatalf("snapshots = %d truncated=%v err=%v", len(current), stateTruncated, err)
+	}
+	summaryTruncated, summaryRefreshedAt, summaryCount, err :=
+		store.GetSnapshotSummary(ctx, firstViewID, viewerHash)
+	if err != nil || !summaryTruncated || summaryCount != 500 ||
+		!summaryRefreshedAt.Equal(now) {
+		t.Fatalf(
+			"snapshot summary = count=%d truncated=%v refreshed_at=%v err=%v",
+			summaryCount, summaryTruncated, summaryRefreshedAt, err)
 	}
 	hasSnapshot, err := store.HasSnapshot(ctx, firstViewID, viewerHash,
 		&deckv1.PullRequestReference{

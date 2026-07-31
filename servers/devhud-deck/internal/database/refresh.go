@@ -666,20 +666,41 @@ func activeShortcutTargetsView(
 		shortcut.GetViewId().GetValue() == viewID.String()
 }
 
-func (store *Store) ListAllSnapshots(
+func (store *Store) GetSnapshotSummary(
 	ctx context.Context,
 	viewID uuid.UUID,
 	viewerHash [32]byte,
-) ([]*deckv1.PullRequestResult, bool, time.Time, error) {
-	hashes, err := store.ListSnapshotRepositoryHashes(ctx, viewID, viewerHash)
+) (bool, time.Time, int, error) {
+	_, err := store.queries.GetView(ctx, pgUUID(viewID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, time.Time{}, 0, ErrNotFound
+	}
 	if err != nil {
-		return nil, false, time.Time{}, err
+		return false, time.Time{}, 0,
+			errors.New("deck database: snapshot state failed")
 	}
-	readable := make(map[[32]byte]struct{}, len(hashes))
-	for _, hash := range hashes {
-		readable[hash] = struct{}{}
+	state, stateErr := store.queries.GetViewSnapshotState(
+		ctx, dbgen.GetViewSnapshotStateParams{
+			ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
+		})
+	if stateErr != nil && !errors.Is(stateErr, pgx.ErrNoRows) {
+		return false, time.Time{}, 0,
+			errors.New("deck database: snapshot state failed")
 	}
-	return store.ListSnapshots(ctx, viewID, viewerHash, readable)
+	resultCount, err := store.queries.CountViewSnapshots(
+		ctx, dbgen.CountViewSnapshotsParams{
+			ViewID: pgUUID(viewID), ViewerHash: viewerHash[:],
+		})
+	if err != nil {
+		return false, time.Time{}, 0,
+			errors.New("deck database: snapshot state failed")
+	}
+	var refreshedAt time.Time
+	if stateErr == nil && state.RefreshedAt.Valid {
+		refreshedAt = state.RefreshedAt.Time.UTC()
+	}
+	return stateErr == nil && state.Truncated,
+		refreshedAt, int(resultCount), nil
 }
 
 func freshnessState(now, refreshedAt time.Time) deckv1.FreshnessState {

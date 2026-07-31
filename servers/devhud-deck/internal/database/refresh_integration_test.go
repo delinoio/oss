@@ -376,7 +376,7 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		t.Fatal("invalid notification transition committed refresh snapshots")
 	}
 	retainedSnapshots, _, retainedAt, err :=
-		store.ListAllSnapshots(ctx, viewID, viewerHash)
+		listAllSnapshotsForTest(ctx, store, viewID, viewerHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		t.Fatal(err)
 	}
 	retainedSnapshots, _, retainedAt, err =
-		store.ListAllSnapshots(ctx, viewID, viewerHash)
+		listAllSnapshotsForTest(ctx, store, viewID, viewerHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,4 +499,21 @@ func TestPostgreSQLRefreshCoalescingAndAttemptAccounting(t *testing.T) {
 		t.Fatalf("pending attempt after view deletion = %#v, %v",
 			retainedAttempt, err)
 	}
+}
+
+func listAllSnapshotsForTest(
+	ctx context.Context,
+	store *Store,
+	viewID uuid.UUID,
+	viewerHash [32]byte,
+) ([]*deckv1.PullRequestResult, bool, time.Time, error) {
+	hashes, err := store.ListSnapshotRepositoryHashes(ctx, viewID, viewerHash)
+	if err != nil {
+		return nil, false, time.Time{}, err
+	}
+	readable := make(map[[32]byte]struct{}, len(hashes))
+	for _, hash := range hashes {
+		readable[hash] = struct{}{}
+	}
+	return store.ListSnapshots(ctx, viewID, viewerHash, readable)
 }

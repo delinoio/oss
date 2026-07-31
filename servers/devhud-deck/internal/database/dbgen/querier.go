@@ -15,6 +15,7 @@ type Querier interface {
 	CanUseOrganizationForGitHubCallback(ctx context.Context, arg CanUseOrganizationForGitHubCallbackParams) (bool, error)
 	CountOrganizationViews(ctx context.Context, ownerOrganizationID pgtype.UUID) (int32, error)
 	CountPersonalViews(ctx context.Context, ownerAccountID pgtype.UUID) (int32, error)
+	CountViewSnapshots(ctx context.Context, arg CountViewSnapshotsParams) (int32, error)
 	DeactivateOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeactivateTeamMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteAccountDevices(ctx context.Context, accountID pgtype.UUID) error
