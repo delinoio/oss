@@ -332,6 +332,14 @@ func TestStorageBillingErrorsRemainTypedForRecovery(t *testing.T) {
 				fixture.reason, failure, fixture.kind)
 		}
 	}
+	var invalidPeriod *service.StorageBillingFailure
+	if !errors.As(
+		storageBillingError(connect.NewError(
+			connect.CodeInvalidArgument, errors.New("period aged out"))),
+		&invalidPeriod,
+	) || invalidPeriod.Kind != service.StorageBillingFailurePeriod {
+		t.Fatalf("invalid reserve period mapped to %#v", invalidPeriod)
+	}
 	var invalidResponse *service.StorageBillingFailure
 	if !errors.As(invalidAuthorizedStorageResponse(), &invalidResponse) ||
 		invalidResponse.Kind != service.StorageBillingFailureSecurity {

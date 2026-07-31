@@ -163,6 +163,7 @@ const (
 	StorageBillingFailurePayment       StorageBillingFailureKind = "payment"
 	StorageBillingFailureOverage       StorageBillingFailureKind = "overage"
 	StorageBillingFailureUnavailable   StorageBillingFailureKind = "unavailable"
+	StorageBillingFailurePeriod        StorageBillingFailureKind = "period"
 	StorageBillingFailureSecurity      StorageBillingFailureKind = "security"
 	StorageBillingFailureGitHub        StorageBillingFailureKind = "github"
 )

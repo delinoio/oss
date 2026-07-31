@@ -233,6 +233,21 @@ func (service *Preset) DeleteFeatureData(
 					// the only local recipe for recovering the exact grant.
 					return reauthenticationRequired()
 				}
+				hasPending, pendingErr =
+					queries.HasScopePendingStorageRebindAttempt(
+						ctx, dbgen.HasScopePendingStorageRebindAttemptParams{
+							OwnerKind: scope.kind,
+							OwnerID:   toPGUUID(scope.id),
+						})
+				if pendingErr != nil {
+					return pendingErr
+				}
+				if hasPending {
+					// A pending rebind may already have created its replacement
+					// grant. Keep its stable replay recipe until recovery either
+					// installs or closes that grant.
+					return reauthenticationRequired()
+				}
 			}
 			scopedAssets, listErr = queries.ListScopeObjectAssets(ctx,
 				dbgen.ListScopeObjectAssetsParams{

@@ -842,6 +842,12 @@ func storageBillingError(err error) error {
 	kind := service.StorageBillingFailureUnavailable
 	var failure *connect.Error
 	if errors.As(err, &failure) {
+		if failure.Code() == connect.CodeInvalidArgument {
+			// Recurring requests are built from validated persisted state.
+			// After delibase checks completed reserve replays, this response
+			// definitively means the period cannot accept a new reservation.
+			kind = service.StorageBillingFailurePeriod
+		}
 		for _, detail := range failure.Details() {
 			value, detailErr := detail.Value()
 			if detailErr != nil {

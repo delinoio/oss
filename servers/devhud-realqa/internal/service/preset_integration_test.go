@@ -2772,20 +2772,25 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		}
 	}
 	reserveCallsBeforeAgedRetry := disconnectBilling.reserveAuthorizedCalls
+	disconnectBilling.reserveErr = &StorageBillingFailure{
+		Kind: StorageBillingFailurePeriod,
+	}
 	if disconnectErr := disconnectRetryService.HandleGitHubConnectionDeletion(
 		ctx, organizationConnectionID, "fixture-forwarded-bearer",
 	); disconnectErr != nil {
 		t.Fatalf("aged-out disconnect cutoff retry: %v", disconnectErr)
 	}
-	if disconnectBilling.reserveAuthorizedCalls != reserveCallsBeforeAgedRetry {
-		t.Fatalf("aged-out disconnect retry made %d new reserve calls",
-			disconnectBilling.reserveAuthorizedCalls-
-				reserveCallsBeforeAgedRetry)
+	if disconnectBilling.reserveAuthorizedCalls !=
+		reserveCallsBeforeAgedRetry+1 {
+		t.Fatalf("aged-out disconnect retry reserve calls = %d, want %d",
+			disconnectBilling.reserveAuthorizedCalls,
+			reserveCallsBeforeAgedRetry+1)
 	}
-	if disconnectBilling.reserveAuthorizedCalls != 3 {
-		t.Fatalf("disconnect reserve calls = %d, want 3",
+	if disconnectBilling.reserveAuthorizedCalls != 4 {
+		t.Fatalf("disconnect reserve calls = %d, want 4",
 			disconnectBilling.reserveAuthorizedCalls)
 	}
+	reserveCallsAfterAgedRetry := disconnectBilling.reserveAuthorizedCalls
 	disconnectPeriodStart := utcDayStart(disconnectCutoff)
 	disconnectBinding, err := store.Queries().GetStorageAuthorizationBinding(
 		ctx, toPGUUID(disconnectAuthorizationID))
@@ -2825,10 +2830,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	); disconnectErr != nil {
 		t.Fatalf("stale disconnect cleanup after reconnect: %v", disconnectErr)
 	}
-	if disconnectBilling.reserveAuthorizedCalls != reserveCallsBeforeAgedRetry {
+	if disconnectBilling.reserveAuthorizedCalls != reserveCallsAfterAgedRetry {
 		t.Fatalf("stale disconnect replay reserve calls = %d, want %d",
 			disconnectBilling.reserveAuthorizedCalls,
-			reserveCallsBeforeAgedRetry)
+			reserveCallsAfterAgedRetry)
 	}
 	commitPeriodStart := disconnectPeriodStart.Add(24 * time.Hour)
 	commitSettlement, err := store.Queries().CreateStorageDailySettlement(
@@ -2967,6 +2972,91 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("paid commit recovery = %q / %q / %v",
 			paidSubmissionState, paidSettlementState, paidRetentionRestarted)
 	}
+	terminalPeriodStart := commitPeriodStart.Add(10 * 24 * time.Hour)
+	terminalSettlement, err := store.Queries().CreateStorageDailySettlement(
+		ctx, dbgen.CreateStorageDailySettlementParams{
+			AuthorizationID:       toPGUUID(disconnectAuthorizationID),
+			PeriodStart:           pgTimestamp(terminalPeriodStart),
+			ByteSeconds:           1,
+			Units:                 1,
+			State:                 "pending",
+			RequestDigest:         bytes.Repeat([]byte{0xce}, 32),
+			ReserveIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+			CommitIdempotencyKey:  toPGUUID(uuidv7.MustNew()),
+			ReleaseIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminalReservationID := uuidv7.MustNew()
+	terminalCreatedAt := terminalPeriodStart.Add(24 * time.Hour)
+	terminalSettlement, err = store.Queries().SetStorageDailyReservation(
+		ctx, dbgen.SetStorageDailyReservationParams{
+			ReservationID:        toPGUUID(terminalReservationID),
+			ReservationCreatedAt: pgTimestamp(terminalCreatedAt),
+			ReservationExpiresAt: pgTimestamp(
+				terminalCreatedAt.Add(24 * time.Hour)),
+			ReservationPriceVersionID: toPGUUID(
+				disconnectBilling.meters.Storage.PriceVersionID),
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(terminalPeriodStart),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disconnectBilling.commitErr = &StorageBillingFailure{
+		Kind: StorageBillingFailureAuthorization,
+	}
+	disconnectBilling.releaseResult = AuthorizedStorageReservation{
+		TransferReservation: TransferReservation{
+			ID:                terminalReservationID,
+			OrganizationID:    organizationID,
+			TeamID:            teamID,
+			MeterID:           disconnectStorageMeterID,
+			PriceVersionID:    disconnectBilling.meters.Storage.PriceVersionID,
+			UserAccountID:     accountID,
+			ServiceIdentityID: disconnectServiceIdentityID,
+			MaximumUnits:      terminalSettlement.Units,
+			USDMicrosPerUnit:  storagePriceUSDMicros,
+			ClientReference: storageClientReference(
+				disconnectAuthorizationID, terminalPeriodStart),
+			Status:    "released",
+			CreatedAt: terminalSettlement.ReservationCreatedAt.Time,
+			ExpiresAt: terminalSettlement.ReservationExpiresAt.Time,
+		},
+		AuthorizationID:   disconnectAuthorizationID,
+		FeatureResourceID: disconnectSubmissionID,
+		PeriodStart:       terminalPeriodStart,
+	}
+	terminalBinding := disconnectBinding
+	terminalBinding.ClosureState = "resource_deletion_pending"
+	commitCallsBeforeTerminal := disconnectBilling.commitAuthorizedCalls
+	releaseCallsBeforeTerminal := disconnectBilling.releaseAuthorizedCalls
+	if terminalErr := disconnectService.commitReservedStorage(
+		ctx, terminalBinding, terminalSettlement,
+		terminalPeriodStart, terminalPeriodStart.Add(24*time.Hour),
+	); terminalErr == nil {
+		t.Fatal("terminal authorization commit failure was hidden")
+	}
+	terminalSettlement, err = store.Queries().GetStorageDailySettlement(
+		ctx, dbgen.GetStorageDailySettlementParams{
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(terminalPeriodStart),
+		})
+	if err != nil || terminalSettlement.State != "released" ||
+		disconnectBilling.commitAuthorizedCalls !=
+			commitCallsBeforeTerminal+1 ||
+		disconnectBilling.releaseAuthorizedCalls !=
+			releaseCallsBeforeTerminal+1 {
+		t.Fatalf(
+			"terminal settlement = %q / commit:%d / release:%d / %v",
+			terminalSettlement.State,
+			disconnectBilling.commitAuthorizedCalls-commitCallsBeforeTerminal,
+			disconnectBilling.releaseAuthorizedCalls-releaseCallsBeforeTerminal,
+			err,
+		)
+	}
+	disconnectBilling.commitErr = nil
 	missingPeriodStart := commitPeriodStart.Add(24 * time.Hour)
 	missingMidnightCutoff := missingPeriodStart.Add(24 * time.Hour)
 	if _, err = store.Queries().GetStorageDailySettlement(
@@ -3173,10 +3263,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		ctx, disconnectBinding, disconnectRecovery); err != nil {
 		t.Fatalf("stale rebind cutoff preflight failed: %v", err)
 	}
-	if disconnectBilling.reserveAuthorizedCalls != reserveCallsBeforeAgedRetry {
+	if disconnectBilling.reserveAuthorizedCalls != reserveCallsAfterAgedRetry {
 		t.Fatalf("stale rebind cutoff reserve calls = %d, want %d",
 			disconnectBilling.reserveAuthorizedCalls,
-			reserveCallsBeforeAgedRetry)
+			reserveCallsAfterAgedRetry)
 	}
 	disconnectSettlement, err = store.Queries().GetStorageDailySettlement(
 		ctx, dbgen.GetStorageDailySettlementParams{
@@ -4312,19 +4402,26 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			len(pendingRebindBilling.markRequests),
 		)
 	}
-	var pendingReplacementState, pendingReplacementClosure string
+	var pendingReplacementState, pendingReplacementClosure, pendingAttemptState string
 	if err = connection.QueryRow(ctx, `
-			SELECT status, closure_state
-			FROM realqa_storage_authorization_bindings
-			WHERE authorization_id = $1
+			SELECT binding.status, binding.closure_state, attempt.state
+			FROM realqa_storage_authorization_bindings AS binding
+			JOIN realqa_storage_rebind_attempts AS attempt
+			  ON attempt.replacement_authorization_id =
+			     binding.authorization_id
+			WHERE binding.authorization_id = $1
 		`, pendingReplacementID).Scan(
-		&pendingReplacementState, &pendingReplacementClosure); err != nil {
+		&pendingReplacementState, &pendingReplacementClosure,
+		&pendingAttemptState); err != nil {
 		t.Fatal(err)
 	}
 	if pendingReplacementState != "resource_deleted" ||
-		pendingReplacementClosure != "closed" {
-		t.Fatalf("pending replacement binding = %q / %q, want closed resource",
-			pendingReplacementState, pendingReplacementClosure)
+		pendingReplacementClosure != "closed" ||
+		pendingAttemptState != "closed" {
+		t.Fatalf(
+			"pending replacement binding/attempt = %q / %q / %q, want closed",
+			pendingReplacementState, pendingReplacementClosure,
+			pendingAttemptState)
 	}
 	lostPayerSubmissionID := uuidv7.MustNew()
 	lostPayerAssetID := uuidv7.MustNew()
@@ -4520,17 +4617,21 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			lostPayerBilling.createAuthorizationCalls,
 			lostPayerBilling.markResourceDeletedCalls)
 	}
-	var lostPayerClosureState string
+	var lostPayerClosureState, lostPayerAttemptState string
 	if err = connection.QueryRow(ctx, `
-		SELECT closure_state
-		FROM realqa_storage_authorization_bindings
-		WHERE authorization_id = $1
-	`, lostPayerReplacementID).Scan(&lostPayerClosureState); err != nil {
+		SELECT binding.closure_state, attempt.state
+		FROM realqa_storage_authorization_bindings AS binding
+		JOIN realqa_storage_rebind_attempts AS attempt
+		  ON attempt.replacement_authorization_id = binding.authorization_id
+		WHERE binding.authorization_id = $1
+	`, lostPayerReplacementID).Scan(
+		&lostPayerClosureState, &lostPayerAttemptState); err != nil {
 		t.Fatal(err)
 	}
-	if lostPayerClosureState != "closed" {
-		t.Fatalf("lost-payer replacement closure = %q, want closed",
-			lostPayerClosureState)
+	if lostPayerClosureState != "closed" ||
+		lostPayerAttemptState != "closed" {
+		t.Fatalf("lost-payer replacement closure = %q / %q, want closed",
+			lostPayerClosureState, lostPayerAttemptState)
 	}
 	if _, err = connection.Exec(ctx, `
 		INSERT INTO realqa_payer_team_bindings (
@@ -4544,13 +4645,37 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	distinctRebindRequest.Idempotency = &realqav1.IdempotencyKey{
 		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
 	}
-	_, err = lostPayerService.RebindSubmissionStorageAuthorization(
+	lostPayerBilling.getResult = StorageAuthorization{
+		ID:                  lostPayerAuthorizationID,
+		AuthorizerAccountID: accountID,
+		OwnerKind:           "personal",
+		OwnerID:             accountID,
+		OrganizationID:      organizationID,
+		TeamID:              teamID,
+		ServiceIdentityID:   lostPayerServiceID,
+		MeterID:             lostPayerMeterID,
+		FeatureResourceID:   lostPayerSubmissionID,
+		MaximumUnits:        1,
+		Status:              "active",
+		Revision:            1,
+	}
+	lostPayerBilling.revokeResult = lostPayerBilling.getResult
+	lostPayerBilling.revokeResult.Status = "revoked"
+	lostPayerBilling.revokeResult.Revision = 2
+	retryReplacementID := uuidv7.MustNew()
+	lostPayerBilling.createResult = lostPayerReplacement
+	lostPayerBilling.createResult.ID = retryReplacementID
+	rebound, err := lostPayerService.RebindSubmissionStorageAuthorization(
 		authCtx, connect.NewRequest(distinctRebindRequest))
-	requireServiceError(t, err, connect.CodeAlreadyExists,
-		realqav1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
-		realqav1.FailureClass_FAILURE_CLASS_CONFLICT)
-	if lostPayerBilling.createAuthorizationCalls != 1 {
-		t.Fatalf("distinct pending rebind created another authorization: %d calls",
+	if err != nil {
+		t.Fatalf("distinct rebind after replacement cleanup: %v", err)
+	}
+	if rebound.Msg.AuthorizationId.Value != retryReplacementID.String() ||
+		rebound.Msg.MappingRevision.Value != 2 {
+		t.Fatalf("distinct rebind response = %#v", rebound.Msg)
+	}
+	if lostPayerBilling.createAuthorizationCalls != 2 {
+		t.Fatalf("distinct rebind create calls = %d, want 2",
 			lostPayerBilling.createAuthorizationCalls)
 	}
 	if _, err = connection.Exec(ctx, `
@@ -4943,6 +5068,57 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			WHERE submission.id = $1
 		`, pendingStorageSubmissionID, pendingStorageAuthorizationID,
 		pendingStorageServiceID, pendingStorageMeterID); err != nil {
+		t.Fatal(err)
+	}
+	deletionPendingRebindKey := uuidv7.MustNew()
+	pendingRebindReplacementID := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+			INSERT INTO realqa_storage_rebind_attempts (
+				submission_id, caller_digest, idempotency_key,
+				request_digest, expected_authorization_id,
+				expected_mapping_revision, replacement_organization_id,
+				replacement_team_id, replacement_maximum_units,
+				replacement_service_identity_id, replacement_meter_id,
+				revoke_idempotency_key, create_idempotency_key, state
+			)
+			SELECT submission.id, decode(repeat('d1', 32), 'hex'), $2,
+			       decode(repeat('d0', 32), 'hex'), $3, 1,
+			       submission.payer_organization_id,
+			       submission.payer_team_id, 1, $4, $5, $6, $7, 'pending'
+			FROM realqa_submissions AS submission
+			WHERE submission.id = $1
+		`, pendingStorageSubmissionID, deletionPendingRebindKey,
+		pendingStorageAuthorizationID, pendingStorageServiceID,
+		pendingStorageMeterID, uuidv7.MustNew(), uuidv7.MustNew()); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.DeleteFeatureData(
+		authCtx, connect.NewRequest(deletionRequest))
+	assertCallerReauthenticationRequired(t, err)
+	var pendingRebindTombstones int
+	if err = connection.QueryRow(ctx, `
+			SELECT count(*)
+			FROM realqa_scope_tombstones
+			WHERE owner_kind = 'personal'
+			  AND owner_id = $1
+		`, accountID).Scan(&pendingRebindTombstones); err != nil {
+		t.Fatal(err)
+	}
+	if pendingRebindTombstones != 0 {
+		t.Fatalf("pending rebind deletion created %d tombstones",
+			pendingRebindTombstones)
+	}
+	if _, err = connection.Exec(ctx, `
+			UPDATE realqa_storage_rebind_attempts
+			SET state = 'closed',
+			    replacement_authorization_id = $3,
+			    replacement_authorization_revision = 2,
+			    completed_at = transaction_timestamp()
+			WHERE caller_digest = decode(repeat('d1', 32), 'hex')
+			  AND idempotency_key = $2
+			  AND submission_id = $1
+		`, pendingStorageSubmissionID, deletionPendingRebindKey,
+		pendingRebindReplacementID); err != nil {
 		t.Fatal(err)
 	}
 	deleted, err := service.DeleteFeatureData(
@@ -5483,10 +5659,16 @@ type failingAuthorizedStorageBilling struct {
 	metersErr                error
 	createErr                error
 	createResult             StorageAuthorization
+	getErr                   error
+	getResult                StorageAuthorization
+	revokeErr                error
+	revokeResult             StorageAuthorization
 	reserveErr               error
 	reserveResult            AuthorizedStorageReservation
 	commitErr                error
 	commitResult             AuthorizedStorageReservation
+	releaseErr               error
+	releaseResult            AuthorizedStorageReservation
 	meterCalls               int
 	createAuthorizationCalls int
 	reserveAuthorizedCalls   int
@@ -5538,7 +5720,7 @@ func (billing *failingAuthorizedStorageBilling) ReleaseAuthorizedStorage(
 	AuthorizedStorageFinalizationRequest,
 ) (AuthorizedStorageReservation, error) {
 	billing.releaseAuthorizedCalls++
-	return AuthorizedStorageReservation{}, nil
+	return billing.releaseResult, billing.releaseErr
 }
 
 func (billing *failingAuthorizedStorageBilling) GetStorageAuthorization(
@@ -5546,7 +5728,7 @@ func (billing *failingAuthorizedStorageBilling) GetStorageAuthorization(
 	StorageAuthorizationLookupRequest,
 ) (StorageAuthorization, error) {
 	billing.getAuthorizationCalls++
-	return StorageAuthorization{}, nil
+	return billing.getResult, billing.getErr
 }
 
 func (billing *failingAuthorizedStorageBilling) RevokeStorageAuthorization(
@@ -5554,7 +5736,7 @@ func (billing *failingAuthorizedStorageBilling) RevokeStorageAuthorization(
 	StorageAuthorizationRevokeRequest,
 ) (StorageAuthorization, error) {
 	billing.revokeAuthorizationCalls++
-	return StorageAuthorization{}, nil
+	return billing.revokeResult, billing.revokeErr
 }
 
 func (billing *failingAuthorizedStorageBilling) MarkStorageResourceDeleted(

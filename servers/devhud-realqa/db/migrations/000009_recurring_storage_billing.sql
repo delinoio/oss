@@ -7,6 +7,7 @@ CREATE TABLE realqa_storage_authorization_bindings (
     submission_id uuid NOT NULL
         REFERENCES realqa_submissions(id) ON DELETE RESTRICT,
     mapping_revision bigint NOT NULL CHECK (mapping_revision > 0),
+    mapping_installed boolean NOT NULL DEFAULT true,
     authorizer_account_id uuid NOT NULL,
     owner_kind text NOT NULL CHECK (owner_kind IN (
         'personal', 'organization'
@@ -42,9 +43,12 @@ CREATE TABLE realqa_storage_authorization_bindings (
     CHECK (
         (closure_state = 'closed' AND closed_at IS NOT NULL)
         OR (closure_state <> 'closed' AND closed_at IS NULL)
-    ),
-    UNIQUE (submission_id, mapping_revision)
+    )
 );
+
+CREATE UNIQUE INDEX realqa_storage_authorization_bindings_installed_mapping
+ON realqa_storage_authorization_bindings (submission_id, mapping_revision)
+WHERE mapping_installed;
 
 CREATE INDEX realqa_storage_authorization_bindings_submission
 ON realqa_storage_authorization_bindings (submission_id, mapping_revision DESC);
@@ -310,7 +314,7 @@ CREATE TABLE realqa_storage_rebind_attempts (
     replacement_meter_id uuid NOT NULL,
     revoke_idempotency_key uuid NOT NULL,
     create_idempotency_key uuid NOT NULL,
-    state text NOT NULL CHECK (state IN ('pending', 'completed')),
+    state text NOT NULL CHECK (state IN ('pending', 'completed', 'closed')),
     replacement_authorization_id uuid,
     replacement_authorization_revision bigint,
     resulting_mapping_revision bigint,
@@ -345,6 +349,15 @@ CREATE TABLE realqa_storage_rebind_attempts (
             AND cutoff_at IS NOT NULL
             AND completed_at IS NOT NULL
         )
+        OR
+        (
+            state = 'closed'
+            AND realqa_is_uuid_v7(replacement_authorization_id)
+            AND replacement_authorization_revision > 0
+            AND resulting_mapping_revision IS NULL
+            AND cutoff_at IS NULL
+            AND completed_at IS NOT NULL
+        )
     )
 );
 
@@ -361,6 +374,7 @@ BEGIN
        OR NEW.authorization_id IS DISTINCT FROM OLD.authorization_id
        OR NEW.submission_id IS DISTINCT FROM OLD.submission_id
        OR NEW.mapping_revision IS DISTINCT FROM OLD.mapping_revision
+       OR NEW.mapping_installed IS DISTINCT FROM OLD.mapping_installed
        OR NEW.authorizer_account_id IS DISTINCT FROM OLD.authorizer_account_id
        OR NEW.owner_kind IS DISTINCT FROM OLD.owner_kind
        OR NEW.owner_id IS DISTINCT FROM OLD.owner_id
@@ -521,7 +535,10 @@ BEGIN
        OR NEW.create_idempotency_key IS DISTINCT FROM
             OLD.create_idempotency_key
        OR NEW.created_at IS DISTINCT FROM OLD.created_at
-       OR (OLD.state = 'completed' AND NEW IS DISTINCT FROM OLD) THEN
+       OR (
+           OLD.state IN ('completed', 'closed')
+           AND NEW IS DISTINCT FROM OLD
+       ) THEN
         RAISE EXCEPTION 'RealQA storage rebind history is immutable'
             USING ERRCODE = 'check_violation';
     END IF;

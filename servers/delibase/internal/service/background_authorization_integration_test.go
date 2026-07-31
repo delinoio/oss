@@ -524,7 +524,12 @@ func TestPostgreSQLAuthorizedUsageFinancialPathsAndSubstitution(t *testing.T) {
 			grant.Authorization.AuthorizationId.Value {
 		t.Fatalf("authorized overage reservation = %#v", reserved.Msg)
 	}
-	replayedReserve, err := fixture.usage.ReserveAuthorizedUsage(
+	lateReplayDependencies := fixture.dependencies
+	lateReplayDependencies.Clock = fixedAuthorizedUsageClock{
+		now: usageContext.PeriodStart.AsTime().Add(48 * time.Hour),
+	}
+	lateReplayUsage := NewUsage(lateReplayDependencies)
+	replayedReserve, err := lateReplayUsage.ReserveAuthorizedUsage(
 		m2mContext,
 		connect.NewRequest(&delibasev1.ReserveAuthorizedUsageRequest{
 			Context:         usageContext,
@@ -536,7 +541,23 @@ func TestPostgreSQLAuthorizedUsageFinancialPathsAndSubstitution(t *testing.T) {
 		}),
 	)
 	if err != nil || !replayedReserve.Msg.Idempotency.Replayed {
-		t.Fatalf("authorized reserve replay = %#v, %v", replayedReserve, err)
+		t.Fatalf("aged authorized reserve replay = %#v, %v",
+			replayedReserve, err)
+	}
+	_, err = lateReplayUsage.ReserveAuthorizedUsage(
+		m2mContext,
+		connect.NewRequest(&delibasev1.ReserveAuthorizedUsageRequest{
+			Context:         usageContext,
+			MaximumUnits:    &delibasev1.UsageUnits{Value: 1},
+			ClientReference: "aged-new-" + fixture.organizationID.String(),
+			Idempotency: idempotency(
+				"aged-new-reserve-" + fixture.organizationID.String(),
+			),
+		}),
+	)
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("new aged reserve code = %v, want invalid argument",
+			connect.CodeOf(err))
 	}
 	_, err = fixture.usage.ReserveAuthorizedUsage(
 		m2mContext,
@@ -1494,6 +1515,14 @@ func authorizedUsageContext(
 			ServiceID: serviceClient,
 		},
 	})
+}
+
+type fixedAuthorizedUsageClock struct {
+	now time.Time
+}
+
+func (clock fixedAuthorizedUsageClock) Now() time.Time {
+	return clock.now
 }
 
 func reserveAuthorizedUsage(

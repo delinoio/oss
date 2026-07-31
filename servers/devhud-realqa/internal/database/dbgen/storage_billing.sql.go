@@ -143,7 +143,7 @@ SET status = $1,
 WHERE authorization_id = $4
   AND closure_state = 'open'
   AND $1::text IN ('revoked', 'access_lost')
-RETURNING authorization_id, submission_id, mapping_revision, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
+RETURNING authorization_id, submission_id, mapping_revision, mapping_installed, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
 `
 
 type CloseReboundStorageAuthorizationParams struct {
@@ -165,6 +165,7 @@ func (q *Queries) CloseReboundStorageAuthorization(ctx context.Context, arg Clos
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -181,6 +182,60 @@ func (q *Queries) CloseReboundStorageAuthorization(ctx context.Context, arg Clos
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+	)
+	return i, err
+}
+
+const closeStorageRebindAttempt = `-- name: CloseStorageRebindAttempt :one
+UPDATE realqa_storage_rebind_attempts
+SET state = 'closed',
+    replacement_authorization_id =
+        $1,
+    replacement_authorization_revision =
+        $2,
+    completed_at = transaction_timestamp()
+WHERE caller_digest = $3
+  AND idempotency_key = $4
+  AND state = 'pending'
+RETURNING submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, replacement_service_identity_id, replacement_meter_id, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
+`
+
+type CloseStorageRebindAttemptParams struct {
+	ReplacementAuthorizationID       pgtype.UUID
+	ReplacementAuthorizationRevision pgtype.Int8
+	CallerDigest                     []byte
+	IdempotencyKey                   pgtype.UUID
+}
+
+func (q *Queries) CloseStorageRebindAttempt(ctx context.Context, arg CloseStorageRebindAttemptParams) (RealqaStorageRebindAttempt, error) {
+	row := q.db.QueryRow(ctx, closeStorageRebindAttempt,
+		arg.ReplacementAuthorizationID,
+		arg.ReplacementAuthorizationRevision,
+		arg.CallerDigest,
+		arg.IdempotencyKey,
+	)
+	var i RealqaStorageRebindAttempt
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.CallerDigest,
+		&i.IdempotencyKey,
+		&i.RequestDigest,
+		&i.ExpectedAuthorizationID,
+		&i.ExpectedMappingRevision,
+		&i.ReplacementOrganizationID,
+		&i.ReplacementTeamID,
+		&i.ReplacementMaximumUnits,
+		&i.ReplacementServiceIdentityID,
+		&i.ReplacementMeterID,
+		&i.RevokeIdempotencyKey,
+		&i.CreateIdempotencyKey,
+		&i.State,
+		&i.ReplacementAuthorizationID,
+		&i.ReplacementAuthorizationRevision,
+		&i.ResultingMappingRevision,
+		&i.CutoffAt,
+		&i.CreatedAt,
+		&i.CompletedAt,
 	)
 	return i, err
 }
@@ -318,7 +373,7 @@ SET status = $1,
     updated_at = transaction_timestamp()
 WHERE authorization_id = $3
   AND closure_state = 'resource_deletion_pending'
-RETURNING authorization_id, submission_id, mapping_revision, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
+RETURNING authorization_id, submission_id, mapping_revision, mapping_installed, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
 `
 
 type CompleteStorageAuthorizationClosureParams struct {
@@ -334,6 +389,7 @@ func (q *Queries) CompleteStorageAuthorizationClosure(ctx context.Context, arg C
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -416,17 +472,18 @@ func (q *Queries) CompleteStorageRebindAttempt(ctx context.Context, arg Complete
 
 const createStorageAuthorizationBinding = `-- name: CreateStorageAuthorizationBinding :one
 INSERT INTO realqa_storage_authorization_bindings (
-    authorization_id, submission_id, mapping_revision,
+    authorization_id, submission_id, mapping_revision, mapping_installed,
     authorizer_account_id, owner_kind, owner_id, organization_id, team_id,
     service_identity_id, meter_id, maximum_units, status,
     authorization_revision
 ) VALUES (
     $1, $2,
     $3, $4,
-    $5, $6, $7,
-    $8, $9, $10,
-    $11, $12,
-    $13
+    $5,
+    $6, $7, $8,
+    $9, $10, $11,
+    $12, $13,
+    $14
 )
 ON CONFLICT (authorization_id) DO UPDATE
 SET updated_at = transaction_timestamp()
@@ -434,6 +491,8 @@ WHERE realqa_storage_authorization_bindings.submission_id =
         EXCLUDED.submission_id
   AND realqa_storage_authorization_bindings.mapping_revision =
         EXCLUDED.mapping_revision
+  AND realqa_storage_authorization_bindings.mapping_installed =
+        EXCLUDED.mapping_installed
   AND realqa_storage_authorization_bindings.authorizer_account_id =
         EXCLUDED.authorizer_account_id
   AND realqa_storage_authorization_bindings.owner_kind = EXCLUDED.owner_kind
@@ -449,13 +508,14 @@ WHERE realqa_storage_authorization_bindings.submission_id =
   AND realqa_storage_authorization_bindings.status = EXCLUDED.status
   AND realqa_storage_authorization_bindings.authorization_revision =
         EXCLUDED.authorization_revision
-RETURNING authorization_id, submission_id, mapping_revision, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
+RETURNING authorization_id, submission_id, mapping_revision, mapping_installed, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
 `
 
 type CreateStorageAuthorizationBindingParams struct {
 	AuthorizationID       pgtype.UUID
 	SubmissionID          pgtype.UUID
 	MappingRevision       int64
+	MappingInstalled      bool
 	AuthorizerAccountID   pgtype.UUID
 	OwnerKind             string
 	OwnerID               pgtype.UUID
@@ -473,6 +533,7 @@ func (q *Queries) CreateStorageAuthorizationBinding(ctx context.Context, arg Cre
 		arg.AuthorizationID,
 		arg.SubmissionID,
 		arg.MappingRevision,
+		arg.MappingInstalled,
 		arg.AuthorizerAccountID,
 		arg.OwnerKind,
 		arg.OwnerID,
@@ -489,6 +550,7 @@ func (q *Queries) CreateStorageAuthorizationBinding(ctx context.Context, arg Cre
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -717,7 +779,7 @@ SET accrual_cutoff_at = CASE
     END,
     updated_at = transaction_timestamp()
 WHERE binding.authorization_id = $2
-RETURNING binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
+RETURNING binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
 `
 
 type CutoffStorageAuthorizationAccrualParams struct {
@@ -732,6 +794,7 @@ func (q *Queries) CutoffStorageAuthorizationAccrual(ctx context.Context, arg Cut
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -780,7 +843,7 @@ func (q *Queries) GetActiveStorageRecovery(ctx context.Context, submissionID pgt
 }
 
 const getCurrentStorageAuthorizationBinding = `-- name: GetCurrentStorageAuthorizationBinding :one
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
 FROM realqa_storage_authorization_attempts AS mapping
 JOIN realqa_storage_authorization_bindings AS binding
   ON binding.authorization_id = mapping.authorization_id
@@ -795,6 +858,7 @@ func (q *Queries) GetCurrentStorageAuthorizationBinding(ctx context.Context, sub
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -873,7 +937,7 @@ func (q *Queries) GetOldestStorageBillingPeriod(ctx context.Context, cutoff pgty
 }
 
 const getStorageAuthorizationBinding = `-- name: GetStorageAuthorizationBinding :one
-SELECT authorization_id, submission_id, mapping_revision, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
+SELECT authorization_id, submission_id, mapping_revision, mapping_installed, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
 FROM realqa_storage_authorization_bindings
 WHERE authorization_id = $1
 `
@@ -885,6 +949,7 @@ func (q *Queries) GetStorageAuthorizationBinding(ctx context.Context, authorizat
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -1014,7 +1079,7 @@ func (q *Queries) HasStorageSubmissionBlock(ctx context.Context, arg HasStorageS
 }
 
 const listCurrentStorageBindingsForDeletedAuthorizer = `-- name: ListCurrentStorageBindingsForDeletedAuthorizer :many
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
 FROM realqa_storage_authorization_bindings AS binding
 JOIN realqa_storage_authorization_attempts AS current
   ON current.submission_id = binding.submission_id
@@ -1044,6 +1109,7 @@ func (q *Queries) ListCurrentStorageBindingsForDeletedAuthorizer(ctx context.Con
 			&i.AuthorizationID,
 			&i.SubmissionID,
 			&i.MappingRevision,
+			&i.MappingInstalled,
 			&i.AuthorizerAccountID,
 			&i.OwnerKind,
 			&i.OwnerID,
@@ -1072,7 +1138,7 @@ func (q *Queries) ListCurrentStorageBindingsForDeletedAuthorizer(ctx context.Con
 }
 
 const listCurrentStorageBindingsForDeletedPayer = `-- name: ListCurrentStorageBindingsForDeletedPayer :many
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
 FROM realqa_storage_authorization_bindings AS binding
 JOIN realqa_storage_authorization_attempts AS current
   ON current.submission_id = binding.submission_id
@@ -1099,6 +1165,7 @@ func (q *Queries) ListCurrentStorageBindingsForDeletedPayer(ctx context.Context,
 			&i.AuthorizationID,
 			&i.SubmissionID,
 			&i.MappingRevision,
+			&i.MappingInstalled,
 			&i.AuthorizerAccountID,
 			&i.OwnerKind,
 			&i.OwnerID,
@@ -1127,7 +1194,7 @@ func (q *Queries) ListCurrentStorageBindingsForDeletedPayer(ctx context.Context,
 }
 
 const listCurrentStorageBindingsForGitHubConnection = `-- name: ListCurrentStorageBindingsForGitHubConnection :many
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at,
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at,
        connection.updated_at AS github_disconnected_at
 FROM realqa_storage_authorization_bindings AS binding
 JOIN realqa_storage_authorization_attempts AS current
@@ -1165,6 +1232,7 @@ func (q *Queries) ListCurrentStorageBindingsForGitHubConnection(ctx context.Cont
 			&i.RealqaStorageAuthorizationBinding.AuthorizationID,
 			&i.RealqaStorageAuthorizationBinding.SubmissionID,
 			&i.RealqaStorageAuthorizationBinding.MappingRevision,
+			&i.RealqaStorageAuthorizationBinding.MappingInstalled,
 			&i.RealqaStorageAuthorizationBinding.AuthorizerAccountID,
 			&i.RealqaStorageAuthorizationBinding.OwnerKind,
 			&i.RealqaStorageAuthorizationBinding.OwnerID,
@@ -1244,7 +1312,7 @@ func (q *Queries) ListExpiredStorageRecoveries(ctx context.Context, arg ListExpi
 }
 
 const listOpenStorageBindingsForDisconnectedGitHub = `-- name: ListOpenStorageBindingsForDisconnectedGitHub :many
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at,
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at,
        connection.updated_at AS github_disconnected_at
 FROM realqa_storage_authorization_bindings AS binding
 JOIN realqa_storage_authorization_attempts AS current
@@ -1292,6 +1360,7 @@ func (q *Queries) ListOpenStorageBindingsForDisconnectedGitHub(ctx context.Conte
 			&i.RealqaStorageAuthorizationBinding.AuthorizationID,
 			&i.RealqaStorageAuthorizationBinding.SubmissionID,
 			&i.RealqaStorageAuthorizationBinding.MappingRevision,
+			&i.RealqaStorageAuthorizationBinding.MappingInstalled,
 			&i.RealqaStorageAuthorizationBinding.AuthorizerAccountID,
 			&i.RealqaStorageAuthorizationBinding.OwnerKind,
 			&i.RealqaStorageAuthorizationBinding.OwnerID,
@@ -1321,7 +1390,7 @@ func (q *Queries) ListOpenStorageBindingsForDisconnectedGitHub(ctx context.Conte
 }
 
 const listStorageClosureCandidates = `-- name: ListStorageClosureCandidates :many
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
 FROM realqa_storage_authorization_bindings AS binding
 WHERE binding.closure_state = 'resource_deletion_pending'
   AND binding.accrual_cutoff_at IS NOT NULL
@@ -1386,6 +1455,7 @@ func (q *Queries) ListStorageClosureCandidates(ctx context.Context, arg ListStor
 			&i.AuthorizationID,
 			&i.SubmissionID,
 			&i.MappingRevision,
+			&i.MappingInstalled,
 			&i.AuthorizerAccountID,
 			&i.OwnerKind,
 			&i.OwnerID,
@@ -1414,7 +1484,7 @@ func (q *Queries) ListStorageClosureCandidates(ctx context.Context, arg ListStor
 }
 
 const lockCurrentStorageAuthorizationBinding = `-- name: LockCurrentStorageAuthorizationBinding :one
-SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
+SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at
 FROM realqa_storage_authorization_attempts AS mapping
 JOIN realqa_storage_authorization_bindings AS binding
   ON binding.authorization_id = mapping.authorization_id
@@ -1430,6 +1500,7 @@ func (q *Queries) LockCurrentStorageAuthorizationBinding(ctx context.Context, su
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -1569,7 +1640,7 @@ SET closure_state = 'resource_deletion_pending',
     updated_at = transaction_timestamp()
 WHERE authorization_id = $2
   AND closure_state IN ('open', 'resource_deletion_pending')
-RETURNING authorization_id, submission_id, mapping_revision, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
+RETURNING authorization_id, submission_id, mapping_revision, mapping_installed, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
 `
 
 type MarkStorageAuthorizationClosurePendingParams struct {
@@ -1584,6 +1655,7 @@ func (q *Queries) MarkStorageAuthorizationClosurePending(ctx context.Context, ar
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,
@@ -2119,7 +2191,7 @@ SET status = $1,
     updated_at = transaction_timestamp()
 WHERE authorization_id = $3
   AND $2 >= authorization_revision
-RETURNING authorization_id, submission_id, mapping_revision, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
+RETURNING authorization_id, submission_id, mapping_revision, mapping_installed, authorizer_account_id, owner_kind, owner_id, organization_id, team_id, service_identity_id, meter_id, maximum_units, status, authorization_revision, closure_state, closure_owner_deleted_allowed, accrual_cutoff_at, created_at, updated_at, closed_at
 `
 
 type UpdateStorageAuthorizationStatusParams struct {
@@ -2135,6 +2207,7 @@ func (q *Queries) UpdateStorageAuthorizationStatus(ctx context.Context, arg Upda
 		&i.AuthorizationID,
 		&i.SubmissionID,
 		&i.MappingRevision,
+		&i.MappingInstalled,
 		&i.AuthorizerAccountID,
 		&i.OwnerKind,
 		&i.OwnerID,

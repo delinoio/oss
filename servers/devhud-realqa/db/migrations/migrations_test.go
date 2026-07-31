@@ -553,11 +553,9 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		}
 		if _, err = pool.Exec(ctx, `
 				UPDATE realqa_storage_rebind_attempts
-				SET state = 'completed',
+				SET state = 'closed',
 				    replacement_authorization_id = $3,
 				    replacement_authorization_revision = 1,
-				    resulting_mapping_revision = 2,
-				    cutoff_at = transaction_timestamp(),
 				    completed_at = transaction_timestamp()
 				WHERE caller_digest = $1
 				  AND idempotency_key = $2
@@ -567,7 +565,7 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		}
 		if err = insertRebind(
 			bytes.Repeat([]byte{10}, 32), secondRebindKey); err != nil {
-			t.Fatalf("new rebind after completion: %v", err)
+			t.Fatalf("new rebind after closed cleanup: %v", err)
 		}
 	})
 }

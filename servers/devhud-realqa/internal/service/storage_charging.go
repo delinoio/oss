@@ -216,21 +216,13 @@ func (service *Submission) processStoragePeriod(
 	case "committed", "released", "settled_zero", "grace_skipped":
 		return nil
 	case "pending":
-		// A completed day older than yesterday is no longer reservable by
-		// delibase. Grace begins at that missed day's start and is never
-		// reconstructed or back-billed.
-		if !periodStart.Equal(today.Add(-24 * time.Hour)) {
-			if skipped, skipErr := skipAgedOutDeletionSettlement(
-				ctx, queries, binding, settlement,
-			); skipped || skipErr != nil {
-				return skipErr
-			}
-			return service.startStorageGrace(
-				ctx, binding, periodStart,
-				StorageBillingFailureUnavailable, true)
-		}
+		// The stable reserve key must be replayed even after rollover: the
+		// downstream reservation may have committed while persisting its
+		// response failed locally. Delibase returns that completed replay
+		// before applying the new-reservation period window.
 		return service.reserveAndCommitStorage(
-			ctx, binding, settlement, periodStart, periodEnd)
+			ctx, binding, settlement, periodStart, periodEnd,
+			!periodStart.Equal(today.Add(-24*time.Hour)))
 	case "reserved":
 		return service.commitReservedStorage(
 			ctx, binding, settlement, periodStart, periodEnd)
@@ -266,6 +258,7 @@ func (service *Submission) reserveAndCommitStorage(
 	settlement dbgen.RealqaStorageDailySettlement,
 	periodStart time.Time,
 	periodEnd time.Time,
+	agedOut bool,
 ) error {
 	authorizationID, _ := fromPGUUID(binding.AuthorizationID)
 	submissionID, _ := fromPGUUID(binding.SubmissionID)
@@ -310,6 +303,18 @@ func (service *Submission) reserveAndCommitStorage(
 			IdempotencyKey: reserveKey,
 		})
 	if err != nil {
+		kind := storageFailureKind(err)
+		if agedOut && kind == StorageBillingFailurePeriod {
+			if skipped, skipErr := skipAgedOutDeletionSettlement(
+				ctx, service.dependencies.Store.Queries(),
+				binding, settlement,
+			); skipped || skipErr != nil {
+				return skipErr
+			}
+			return service.startStorageGrace(
+				ctx, binding, periodStart,
+				StorageBillingFailureUnavailable, true)
+		}
 		if binding.ClosureState == "resource_deletion_pending" {
 			// Deletion has already removed the public resource, so this
 			// pre-cutoff settlement must stay retryable without creating an
@@ -317,7 +322,7 @@ func (service *Submission) reserveAndCommitStorage(
 			// resolve.
 			return err
 		}
-		if storageFailureKind(err) == StorageBillingFailureUnavailable {
+		if kind == StorageBillingFailureUnavailable {
 			if graceErr := service.startStorageGrace(
 				ctx, binding, periodEnd,
 				StorageBillingFailureUnavailable, false,
@@ -327,7 +332,7 @@ func (service *Submission) reserveAndCommitStorage(
 			return err
 		}
 		return service.startStorageGrace(
-			ctx, binding, periodStart, storageFailureKind(err), true)
+			ctx, binding, periodStart, kind, true)
 	}
 	if err = validateAuthorizedStorageReservation(
 		reserved, binding, meters.Storage, settlement,
@@ -437,10 +442,30 @@ func (service *Submission) commitReservedStorage(
 			IdempotencyKey:    commitKey,
 		})
 	if err != nil {
+		kind := storageFailureKind(err)
+		if kind == StorageBillingFailureAuthorization ||
+			kind == StorageBillingFailureAccess {
+			if binding.ClosureState != "resource_deletion_pending" {
+				if graceErr := service.startStorageGrace(
+					ctx, binding, periodEnd, kind, false,
+				); graceErr != nil {
+					return graceErr
+				}
+			}
+			// Delibase permits releasing an accepted hold after the bound
+			// authorization closes. Finalize it with the stored release key
+			// so closure and rebind work cannot remain blocked on a commit
+			// that can never succeed.
+			return errors.Join(
+				err,
+				service.releaseReservedStorage(
+					ctx, binding, settlement, periodStart),
+			)
+		}
 		if binding.ClosureState == "resource_deletion_pending" {
 			return err
 		}
-		if storageFailureKind(err) == StorageBillingFailureUnavailable {
+		if kind == StorageBillingFailureUnavailable {
 			if graceErr := service.startStorageGrace(
 				ctx, binding, periodEnd,
 				StorageBillingFailureUnavailable, false,
@@ -450,7 +475,7 @@ func (service *Submission) commitReservedStorage(
 			return err
 		}
 		if graceErr := service.startStorageGrace(
-			ctx, binding, periodEnd, storageFailureKind(err), false,
+			ctx, binding, periodEnd, kind, false,
 		); graceErr != nil {
 			return graceErr
 		}
@@ -612,10 +637,9 @@ func (service *Submission) releaseReservedStorage(
 	if err != nil {
 		return err
 	}
-	meters, err := service.dependencies.Billing.Meters(ctx)
-	if err != nil || validateBillingMeters(meters) != nil {
-		return errors.New(
-			"realqa storage billing: release meter unavailable")
+	meter, err := persistedStorageReservationMeter(binding, settlement)
+	if err != nil {
+		return err
 	}
 	released, err := service.dependencies.Billing.ReleaseAuthorizedStorage(
 		ctx, AuthorizedStorageFinalizationRequest{
@@ -630,7 +654,7 @@ func (service *Submission) releaseReservedStorage(
 		return err
 	}
 	if err = validateAuthorizedStorageReservation(
-		released, binding, meters.Storage, settlement,
+		released, binding, meter, settlement,
 		periodStart, "released", 0); err != nil {
 		return err
 	}

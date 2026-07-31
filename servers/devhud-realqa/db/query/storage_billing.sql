@@ -1,12 +1,13 @@
 -- name: CreateStorageAuthorizationBinding :one
 INSERT INTO realqa_storage_authorization_bindings (
-    authorization_id, submission_id, mapping_revision,
+    authorization_id, submission_id, mapping_revision, mapping_installed,
     authorizer_account_id, owner_kind, owner_id, organization_id, team_id,
     service_identity_id, meter_id, maximum_units, status,
     authorization_revision
 ) VALUES (
     sqlc.arg(authorization_id), sqlc.arg(submission_id),
-    sqlc.arg(mapping_revision), sqlc.arg(authorizer_account_id),
+    sqlc.arg(mapping_revision), sqlc.arg(mapping_installed),
+    sqlc.arg(authorizer_account_id),
     sqlc.arg(owner_kind), sqlc.arg(owner_id), sqlc.arg(organization_id),
     sqlc.arg(team_id), sqlc.arg(service_identity_id), sqlc.arg(meter_id),
     sqlc.arg(maximum_units), sqlc.arg(status),
@@ -18,6 +19,8 @@ WHERE realqa_storage_authorization_bindings.submission_id =
         EXCLUDED.submission_id
   AND realqa_storage_authorization_bindings.mapping_revision =
         EXCLUDED.mapping_revision
+  AND realqa_storage_authorization_bindings.mapping_installed =
+        EXCLUDED.mapping_installed
   AND realqa_storage_authorization_bindings.authorizer_account_id =
         EXCLUDED.authorizer_account_id
   AND realqa_storage_authorization_bindings.owner_kind = EXCLUDED.owner_kind
@@ -716,6 +719,19 @@ SET state = 'completed',
         sqlc.arg(replacement_authorization_revision),
     resulting_mapping_revision = sqlc.arg(resulting_mapping_revision),
     cutoff_at = sqlc.arg(cutoff_at),
+    completed_at = transaction_timestamp()
+WHERE caller_digest = sqlc.arg(caller_digest)
+  AND idempotency_key = sqlc.arg(idempotency_key)
+  AND state = 'pending'
+RETURNING *;
+
+-- name: CloseStorageRebindAttempt :one
+UPDATE realqa_storage_rebind_attempts
+SET state = 'closed',
+    replacement_authorization_id =
+        sqlc.arg(replacement_authorization_id),
+    replacement_authorization_revision =
+        sqlc.arg(replacement_authorization_revision),
     completed_at = transaction_timestamp()
 WHERE caller_digest = sqlc.arg(caller_digest)
   AND idempotency_key = sqlc.arg(idempotency_key)

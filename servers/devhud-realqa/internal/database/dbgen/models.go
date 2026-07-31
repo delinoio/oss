@@ -297,6 +297,7 @@ type RealqaStorageAuthorizationBinding struct {
 	AuthorizationID            pgtype.UUID
 	SubmissionID               pgtype.UUID
 	MappingRevision            int64
+	MappingInstalled           bool
 	AuthorizerAccountID        pgtype.UUID
 	OwnerKind                  string
 	OwnerID                    pgtype.UUID

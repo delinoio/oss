@@ -21,6 +21,7 @@ type Querier interface {
 	BumpRepositorySchemaRevision(ctx context.Context, arg BumpRepositorySchemaRevisionParams) (int64, error)
 	CalculateStorageByteSeconds(ctx context.Context, arg CalculateStorageByteSecondsParams) (int64, error)
 	CloseReboundStorageAuthorization(ctx context.Context, arg CloseReboundStorageAuthorizationParams) (RealqaStorageAuthorizationBinding, error)
+	CloseStorageRebindAttempt(ctx context.Context, arg CloseStorageRebindAttemptParams) (RealqaStorageRebindAttempt, error)
 	CloseStorageRetentionForAsset(ctx context.Context, arg CloseStorageRetentionForAssetParams) (int64, error)
 	CloseStorageRetentionForScope(ctx context.Context, arg CloseStorageRetentionForScopeParams) (int64, error)
 	CloseStorageRetentionForSubmission(ctx context.Context, arg CloseStorageRetentionForSubmissionParams) (int64, error)
@@ -113,6 +114,7 @@ type Querier interface {
 	GitHubInstallationIsActiveForOwner(ctx context.Context, arg GitHubInstallationIsActiveForOwnerParams) (bool, error)
 	HasPayerTeamAccess(ctx context.Context, arg HasPayerTeamAccessParams) (bool, error)
 	HasScopePendingStorageAuthorizationAttempt(ctx context.Context, arg HasScopePendingStorageAuthorizationAttemptParams) (bool, error)
+	HasScopePendingStorageRebindAttempt(ctx context.Context, arg HasScopePendingStorageRebindAttemptParams) (bool, error)
 	HasStorageSubmissionBlock(ctx context.Context, arg HasStorageSubmissionBlockParams) (bool, error)
 	InsertAudit(ctx context.Context, arg InsertAuditParams) error
 	InsertDeletionJob(ctx context.Context, arg InsertDeletionJobParams) (RealqaDeletionJob, error)

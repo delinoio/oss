@@ -657,6 +657,7 @@ func TestDeletionPendingReserveFailureDoesNotStartRecovery(t *testing.T) {
 		},
 		periodStart,
 		periodStart.Add(24*time.Hour),
+		false,
 	)
 	if err != reserveErr {
 		t.Fatalf("deletion-pending reserve error = %v, want original error",
@@ -722,6 +723,7 @@ func TestDeletionPendingMeterOutageDoesNotStartRecovery(t *testing.T) {
 		},
 		time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC),
 		time.Date(2030, 4, 6, 0, 0, 0, 0, time.UTC),
+		false,
 	)
 	if err != meterErr {
 		t.Fatalf("deletion-pending meter error = %v, want original error",
@@ -769,6 +771,7 @@ func TestDeletionPendingCatalogDriftRemainsRetryable(t *testing.T) {
 		},
 		time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC),
 		time.Date(2030, 4, 6, 0, 0, 0, 0, time.UTC),
+		false,
 	)
 	if err == nil {
 		t.Fatal("deletion-pending catalog drift was treated as settled")

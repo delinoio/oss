@@ -400,6 +400,30 @@ func (q *Queries) HasScopePendingStorageAuthorizationAttempt(ctx context.Context
 	return exists, err
 }
 
+const hasScopePendingStorageRebindAttempt = `-- name: HasScopePendingStorageRebindAttempt :one
+SELECT EXISTS (
+    SELECT 1
+    FROM realqa_storage_rebind_attempts AS attempt
+    JOIN realqa_submissions AS submission
+      ON submission.id = attempt.submission_id
+    WHERE submission.owner_kind = $1
+      AND submission.owner_id = $2
+      AND attempt.state = 'pending'
+)
+`
+
+type HasScopePendingStorageRebindAttemptParams struct {
+	OwnerKind string
+	OwnerID   pgtype.UUID
+}
+
+func (q *Queries) HasScopePendingStorageRebindAttempt(ctx context.Context, arg HasScopePendingStorageRebindAttemptParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasScopePendingStorageRebindAttempt, arg.OwnerKind, arg.OwnerID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const insertAudit = `-- name: InsertAudit :exec
 INSERT INTO realqa_audits (
     id, event_type, actor_reference, owner_kind, owner_id,

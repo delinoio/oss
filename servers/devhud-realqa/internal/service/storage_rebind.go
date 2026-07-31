@@ -62,6 +62,9 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 			return storageRebindResponse(
 				submissionID, existingAttempt, true)
 		}
+		if existingAttempt.State == "closed" {
+			return nil, idempotencyConflict()
+		}
 	} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
 		return nil, lookupErr
 	}
@@ -184,6 +187,9 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 	}
 	if attempt.State == "completed" {
 		return storageRebindResponse(submissionID, attempt, true)
+	}
+	if attempt.State == "closed" {
+		return nil, idempotencyConflict()
 	}
 	binding, err := service.dependencies.Store.Queries().
 		GetCurrentStorageAuthorizationBinding(
@@ -404,6 +410,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 					AuthorizationID:     toPGUUID(replacement.ID),
 					SubmissionID:        toPGUUID(submissionID),
 					MappingRevision:     mapping.MappingRevision,
+					MappingInstalled:    true,
 					AuthorizerAccountID: toPGUUID(actor.accountID),
 					OwnerKind:           scope.kind,
 					OwnerID:             toPGUUID(scope.id),
@@ -478,9 +485,9 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 // downstream before the local install transaction was lost. Once the
 // submission has left grace or the caller has lost replacement-payer access,
 // that grant must be closed rather than installed.
-// The attempt remains pending as the durable create replay recipe. Once the
-// create response is known, a deletion-pending binding durably gives the M2M
-// closure worker everything it needs if this request is lost again.
+// The attempt remains pending until the replacement binding is durably closed,
+// preserving the stable create replay recipe across local failures. Its closed
+// terminal state then permits a distinct payer-authorized retry.
 func (service *Submission) closePendingStorageRebind(
 	ctx context.Context,
 	actor caller,
@@ -535,6 +542,7 @@ func (service *Submission) closePendingStorageRebind(
 		AuthorizationID:       toPGUUID(replacement.ID),
 		SubmissionID:          toPGUUID(submissionID),
 		MappingRevision:       attempt.ExpectedMappingRevision + 1,
+		MappingInstalled:      false,
 		AuthorizerAccountID:   toPGUUID(actor.accountID),
 		OwnerKind:             scope.kind,
 		OwnerID:               toPGUUID(scope.id),
@@ -552,9 +560,10 @@ func (service *Submission) closePendingStorageRebind(
 			persisted, persistErr :=
 				queries.CreateStorageAuthorizationBinding(
 					ctx, dbgen.CreateStorageAuthorizationBindingParams{
-						AuthorizationID: cleanupBinding.AuthorizationID,
-						SubmissionID:    cleanupBinding.SubmissionID,
-						MappingRevision: cleanupBinding.MappingRevision,
+						AuthorizationID:  cleanupBinding.AuthorizationID,
+						SubmissionID:     cleanupBinding.SubmissionID,
+						MappingRevision:  cleanupBinding.MappingRevision,
+						MappingInstalled: cleanupBinding.MappingInstalled,
 						AuthorizerAccountID: cleanupBinding.
 							AuthorizerAccountID,
 						OwnerKind:      cleanupBinding.OwnerKind,
@@ -606,7 +615,8 @@ func (service *Submission) closePendingStorageRebind(
 		return err
 	}
 	if alreadyClosed {
-		return nil
+		return service.closeStorageRebindAttempt(
+			ctx, actor, idempotencyID, replacement)
 	}
 	closeKey, err := derivedUUIDv7(
 		idempotencyID, "storage-rebind-resource-deleted")
@@ -648,9 +658,53 @@ func (service *Submission) closePendingStorageRebind(
 			return storageAuthorizationFailed()
 		}
 	}
+	if err = service.closeStorageRebindAttempt(
+		ctx, actor, idempotencyID, closed); err != nil {
+		return err
+	}
 	audit(ctx, service.dependencies, actor,
 		"storage_rebind_replacement_closed", scope, submissionID,
 		"allow", "success")
+	return nil
+}
+
+func (service *Submission) closeStorageRebindAttempt(
+	ctx context.Context,
+	actor caller,
+	idempotencyID uuid.UUID,
+	replacement StorageAuthorization,
+) error {
+	queries := service.dependencies.Store.Queries()
+	_, err := queries.CloseStorageRebindAttempt(
+		ctx, dbgen.CloseStorageRebindAttemptParams{
+			ReplacementAuthorizationID: toPGUUID(replacement.ID),
+			ReplacementAuthorizationRevision: pgtype.Int8{
+				Int64: replacement.Revision,
+				Valid: true,
+			},
+			CallerDigest:   actor.digest,
+			IdempotencyKey: toPGUUID(idempotencyID),
+		})
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	persisted, lookupErr := queries.GetStorageRebindAttempt(
+		ctx, dbgen.GetStorageRebindAttemptParams{
+			CallerDigest:   actor.digest,
+			IdempotencyKey: toPGUUID(idempotencyID),
+		})
+	if lookupErr != nil ||
+		persisted.State != "closed" ||
+		persisted.ReplacementAuthorizationID !=
+			toPGUUID(replacement.ID) ||
+		!persisted.ReplacementAuthorizationRevision.Valid ||
+		persisted.ReplacementAuthorizationRevision.Int64 <
+			replacement.Revision {
+		return storageAuthorizationFailed()
+	}
 	return nil
 }
 
@@ -661,6 +715,7 @@ func sameStorageAuthorizationBinding(
 	return actual.AuthorizationID == expected.AuthorizationID &&
 		actual.SubmissionID == expected.SubmissionID &&
 		actual.MappingRevision == expected.MappingRevision &&
+		actual.MappingInstalled == expected.MappingInstalled &&
 		actual.AuthorizerAccountID == expected.AuthorizerAccountID &&
 		actual.OwnerKind == expected.OwnerKind &&
 		actual.OwnerID == expected.OwnerID &&

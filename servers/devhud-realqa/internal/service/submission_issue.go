@@ -651,6 +651,7 @@ func (service *Submission) ensureStorageAuthorizationMaximum(
 					AuthorizationID:     toPGUUID(authorization.ID),
 					SubmissionID:        toPGUUID(submissionID),
 					MappingRevision:     completed.MappingRevision,
+					MappingInstalled:    true,
 					AuthorizerAccountID: toPGUUID(actor.accountID),
 					OwnerKind:           scope.kind,
 					OwnerID:             toPGUUID(scope.id),
