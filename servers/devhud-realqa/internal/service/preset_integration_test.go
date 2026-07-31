@@ -2542,8 +2542,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		FROM realqa_assets
 		WHERE id = $11;
 		INSERT INTO realqa_issue_submission_attempts (
-			submission_id, idempotency_key, request_digest, state
-		) VALUES ($1, $8, $9, 'transfer_finalized');
+			submission_id, idempotency_key, request_digest, state,
+			accepted_at, updated_at
+		) VALUES (
+			$1, $8, $9, 'transfer_finalized',
+			$5::timestamptz - interval '1 hour',
+			$5::timestamptz - interval '1 hour'
+		);
 		INSERT INTO realqa_storage_authorization_attempts (
 			submission_id, idempotency_key, request_digest,
 			service_identity_id, meter_id, maximum_units, state
