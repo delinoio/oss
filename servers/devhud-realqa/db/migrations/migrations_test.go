@@ -567,6 +567,21 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 			bytes.Repeat([]byte{10}, 32), secondRebindKey); err != nil {
 			t.Fatalf("new rebind after closed cleanup: %v", err)
 		}
+		if _, err = pool.Exec(ctx, `
+				UPDATE realqa_storage_rebind_attempts
+				SET state = 'owner_deleted',
+				    completed_at = transaction_timestamp()
+				WHERE caller_digest = $1
+				  AND idempotency_key = $2
+			`, bytes.Repeat([]byte{10}, 32), secondRebindKey); err != nil {
+			t.Fatal(err)
+		}
+		if err = insertRebind(
+			bytes.Repeat([]byte{11}, 32),
+			uuidv7.MustNew(),
+		); err != nil {
+			t.Fatalf("new rebind after owner deletion: %v", err)
+		}
 	})
 }
 

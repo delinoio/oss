@@ -179,7 +179,7 @@ CREATE TABLE realqa_storage_daily_settlements (
     byte_seconds bigint NOT NULL CHECK (byte_seconds >= 0),
     units bigint NOT NULL CHECK (units >= 0),
     state text NOT NULL CHECK (state IN (
-        'pending', 'reserved', 'committed', 'released',
+        'pending', 'lifecycle_pending', 'reserved', 'committed', 'released',
         'settled_zero', 'grace_skipped'
     )),
     request_digest bytea NOT NULL CHECK (octet_length(request_digest) = 32),
@@ -212,7 +212,7 @@ CREATE TABLE realqa_storage_daily_settlements (
     ),
     CHECK (
         (
-            state = 'pending'
+            state IN ('pending', 'lifecycle_pending')
             AND units > 0
             AND reservation_id IS NULL
             AND reservation_created_at IS NULL
@@ -258,7 +258,7 @@ WHERE reservation_id IS NOT NULL;
 
 CREATE INDEX realqa_storage_daily_settlements_pending
 ON realqa_storage_daily_settlements (period_start, authorization_id)
-WHERE state IN ('pending', 'reserved');
+WHERE state IN ('pending', 'lifecycle_pending', 'reserved');
 
 CREATE TABLE realqa_storage_recoveries (
     id uuid PRIMARY KEY,
@@ -314,7 +314,9 @@ CREATE TABLE realqa_storage_rebind_attempts (
     replacement_meter_id uuid NOT NULL,
     revoke_idempotency_key uuid NOT NULL,
     create_idempotency_key uuid NOT NULL,
-    state text NOT NULL CHECK (state IN ('pending', 'completed', 'closed')),
+    state text NOT NULL CHECK (state IN (
+        'pending', 'completed', 'closed', 'owner_deleted'
+    )),
     replacement_authorization_id uuid,
     replacement_authorization_revision bigint,
     resulting_mapping_revision bigint,
@@ -354,6 +356,15 @@ CREATE TABLE realqa_storage_rebind_attempts (
             state = 'closed'
             AND realqa_is_uuid_v7(replacement_authorization_id)
             AND replacement_authorization_revision > 0
+            AND resulting_mapping_revision IS NULL
+            AND cutoff_at IS NULL
+            AND completed_at IS NOT NULL
+        )
+        OR
+        (
+            state = 'owner_deleted'
+            AND replacement_authorization_id IS NULL
+            AND replacement_authorization_revision IS NULL
             AND resulting_mapping_revision IS NULL
             AND cutoff_at IS NULL
             AND completed_at IS NOT NULL
@@ -438,9 +449,21 @@ BEGIN
     IF TG_OP = 'DELETE'
        OR NEW.authorization_id IS DISTINCT FROM OLD.authorization_id
        OR NEW.period_start IS DISTINCT FROM OLD.period_start
-       OR NEW.byte_seconds IS DISTINCT FROM OLD.byte_seconds
-       OR NEW.units IS DISTINCT FROM OLD.units
-       OR NEW.request_digest IS DISTINCT FROM OLD.request_digest
+       OR (
+           (
+               NEW.byte_seconds IS DISTINCT FROM OLD.byte_seconds
+               OR NEW.units IS DISTINCT FROM OLD.units
+               OR NEW.request_digest IS DISTINCT FROM OLD.request_digest
+           )
+           AND NOT (
+               OLD.state = 'lifecycle_pending'
+               AND NEW.state IN ('pending', 'settled_zero')
+               AND NEW.byte_seconds <= OLD.byte_seconds
+               AND NEW.units <= OLD.units
+               AND OLD.reservation_id IS NULL
+               AND NEW.reservation_id IS NULL
+           )
+       )
        OR NEW.reserve_idempotency_key IS DISTINCT FROM
             OLD.reserve_idempotency_key
        OR NEW.commit_idempotency_key IS DISTINCT FROM
@@ -448,6 +471,12 @@ BEGIN
        OR NEW.release_idempotency_key IS DISTINCT FROM
             OLD.release_idempotency_key
        OR NEW.created_at IS DISTINCT FROM OLD.created_at
+       OR (
+           OLD.state = 'lifecycle_pending'
+           AND NEW.state NOT IN (
+               'lifecycle_pending', 'pending', 'settled_zero'
+           )
+       )
        OR (
            OLD.reservation_id IS NOT NULL
            AND (
@@ -536,7 +565,7 @@ BEGIN
             OLD.create_idempotency_key
        OR NEW.created_at IS DISTINCT FROM OLD.created_at
        OR (
-           OLD.state IN ('completed', 'closed')
+           OLD.state IN ('completed', 'closed', 'owner_deleted')
            AND NEW IS DISTINCT FROM OLD
        ) THEN
         RAISE EXCEPTION 'RealQA storage rebind history is immutable'

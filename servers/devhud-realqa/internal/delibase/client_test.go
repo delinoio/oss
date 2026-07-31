@@ -305,6 +305,10 @@ func TestStorageBillingErrorsRemainTypedForRecovery(t *testing.T) {
 			service.StorageBillingFailureAccess,
 		},
 		{
+			delibasev1.ErrorReason_ERROR_REASON_RESERVATION_EXPIRED,
+			service.StorageBillingFailureExpired,
+		},
+		{
 			delibasev1.ErrorReason_ERROR_REASON_AVAILABLE_FUNDS_EXHAUSTED,
 			service.StorageBillingFailurePayment,
 		},
@@ -331,6 +335,24 @@ func TestStorageBillingErrorsRemainTypedForRecovery(t *testing.T) {
 			t.Fatalf("reason %s mapped to %#v; want %s",
 				fixture.reason, failure, fixture.kind)
 		}
+	}
+	ownerDeleted := connect.NewError(
+		connect.CodePermissionDenied, errors.New("billing failed"))
+	detail, err := connect.NewErrorDetail(&delibasev1.ErrorDetail{
+		Reason: delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST,
+		Metadata: map[string]string{
+			"authorization_status": "owner_deleted",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerDeleted.AddDetail(detail)
+	var ownerDeletedFailure *service.StorageBillingFailure
+	if !errors.As(storageBillingError(ownerDeleted), &ownerDeletedFailure) ||
+		ownerDeletedFailure.Kind != service.StorageBillingFailureOwnerDeleted {
+		t.Fatalf("owner-deleted authorization mapped to %#v",
+			ownerDeletedFailure)
 	}
 	var invalidPeriod *service.StorageBillingFailure
 	if !errors.As(

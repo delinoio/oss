@@ -861,7 +861,13 @@ func storageBillingError(err error) error {
 			case delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID:
 				kind = service.StorageBillingFailureAuthorization
 			case delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST:
-				kind = service.StorageBillingFailureAccess
+				if typed.Metadata["authorization_status"] == "owner_deleted" {
+					kind = service.StorageBillingFailureOwnerDeleted
+				} else {
+					kind = service.StorageBillingFailureAccess
+				}
+			case delibasev1.ErrorReason_ERROR_REASON_RESERVATION_EXPIRED:
+				kind = service.StorageBillingFailureExpired
 			case
 				delibasev1.ErrorReason_ERROR_REASON_SUBSCRIPTION_INACTIVE,
 				delibasev1.ErrorReason_ERROR_REASON_SUBSCRIPTION_PAST_DUE,

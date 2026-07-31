@@ -164,6 +164,8 @@ const (
 	StorageBillingFailureOverage       StorageBillingFailureKind = "overage"
 	StorageBillingFailureUnavailable   StorageBillingFailureKind = "unavailable"
 	StorageBillingFailurePeriod        StorageBillingFailureKind = "period"
+	StorageBillingFailureExpired       StorageBillingFailureKind = "expired"
+	StorageBillingFailureOwnerDeleted  StorageBillingFailureKind = "owner_deleted"
 	StorageBillingFailureSecurity      StorageBillingFailureKind = "security"
 	StorageBillingFailureGitHub        StorageBillingFailureKind = "github"
 )

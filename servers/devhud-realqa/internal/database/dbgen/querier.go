@@ -56,6 +56,10 @@ type Querier interface {
 	CreateStorageRecovery(ctx context.Context, arg CreateStorageRecoveryParams) (RealqaStorageRecovery, error)
 	CreateSubmissionRecord(ctx context.Context, arg CreateSubmissionRecordParams) (RealqaSubmission, error)
 	CutoffStorageAuthorizationAccrual(ctx context.Context, arg CutoffStorageAuthorizationAccrualParams) (RealqaStorageAuthorizationBinding, error)
+	// A typed OWNER_DELETED rejection proves this stable reserve key established
+	// no hold. Preserve the checkpoint until lifecycle delivery supplies the exact
+	// cutoff, when its unreserved byte-seconds may be safely shortened once.
+	DeferStorageDailySettlementForLifecycle(ctx context.Context, arg DeferStorageDailySettlementForLifecycleParams) (RealqaStorageDailySettlement, error)
 	DeleteLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DeleteLifecycleAccountRepositoryAccess(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	DeletePresetAtRevision(ctx context.Context, arg DeletePresetAtRevisionParams) (int64, error)
@@ -131,6 +135,7 @@ type Querier interface {
 	ListGitHubInstallations(ctx context.Context, arg ListGitHubInstallationsParams) ([]RealqaGithubInstallation, error)
 	ListIssueAssets(ctx context.Context, providerIssueID pgtype.Text) ([]RealqaAsset, error)
 	ListIssueSubmissionAssets(ctx context.Context, arg ListIssueSubmissionAssetsParams) ([]RealqaAsset, error)
+	ListLifecyclePendingStorageSettlements(ctx context.Context, authorizationID pgtype.UUID) ([]RealqaStorageDailySettlement, error)
 	ListOpenStorageBindingsForDisconnectedGitHub(ctx context.Context, batchLimit int32) ([]ListOpenStorageBindingsForDisconnectedGitHubRow, error)
 	ListPendingObjectDeletions(ctx context.Context, arg ListPendingObjectDeletionsParams) ([]RealqaObjectDeletionJob, error)
 	ListPresetRecords(ctx context.Context, arg ListPresetRecordsParams) ([]ListPresetRecordsRow, error)
@@ -177,6 +182,7 @@ type Querier interface {
 	Ping(ctx context.Context) (int64, error)
 	PromoteAsset(ctx context.Context, arg PromoteAssetParams) (RealqaAsset, error)
 	RecordGitHubWebhookDelivery(ctx context.Context, deliveryID pgtype.UUID) (int64, error)
+	RefreshLifecycleStorageDailySettlement(ctx context.Context, arg RefreshLifecycleStorageDailySettlementParams) (RealqaStorageDailySettlement, error)
 	RefreshSubmissionAssetState(ctx context.Context, id pgtype.UUID) (RealqaSubmission, error)
 	ReleaseStorageDailySettlement(ctx context.Context, arg ReleaseStorageDailySettlementParams) (RealqaStorageDailySettlement, error)
 	RemoveGitHubRepositoryAccess(ctx context.Context, arg RemoveGitHubRepositoryAccessParams) (int64, error)
@@ -200,6 +206,10 @@ type Querier interface {
 	SumVerifiedDeclaredAssetBytes(ctx context.Context, submissionID pgtype.UUID) (int64, error)
 	SupersedeStorageRecovery(ctx context.Context, arg SupersedeStorageRecoveryParams) (RealqaStorageRecovery, error)
 	SuspendUnauthorizedGitHubInstallations(ctx context.Context, arg SuspendUnauthorizedGitHubInstallationsParams) (int64, error)
+	// A lifecycle deletion can remove the caller, replacement payer, or feature
+	// owner before an ambiguous replacement create response can be replayed. Keep
+	// the stable recipe but release the one-pending-attempt gate.
+	TerminalizeLifecycleStorageRebindAttempts(ctx context.Context, arg TerminalizeLifecycleStorageRebindAttemptsParams) (int64, error)
 	TombstoneAsset(ctx context.Context, arg TombstoneAssetParams) (RealqaAsset, error)
 	TombstoneLifecycleAccountIdentity(ctx context.Context, accountID pgtype.UUID) (int64, error)
 	TombstoneScopePublicAssets(ctx context.Context, arg TombstoneScopePublicAssetsParams) error

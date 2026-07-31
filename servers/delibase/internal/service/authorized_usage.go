@@ -1364,8 +1364,10 @@ func validateBackgroundAuthorizationBinding(
 	switch authorization.Status {
 	case "active":
 		return nil
-	case "access_lost", "owner_deleted":
+	case "access_lost":
 		return backgroundAuthorizationAccessLost()
+	case "owner_deleted":
+		return backgroundAuthorizationOwnerDeleted()
 	default:
 		return backgroundAuthorizationStatusInvalid()
 	}

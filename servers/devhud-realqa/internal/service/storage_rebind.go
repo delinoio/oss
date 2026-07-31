@@ -62,7 +62,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 			return storageRebindResponse(
 				submissionID, existingAttempt, true)
 		}
-		if existingAttempt.State == "closed" {
+		if existingAttempt.State != "pending" {
 			return nil, idempotencyConflict()
 		}
 	} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
@@ -188,7 +188,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 	if attempt.State == "completed" {
 		return storageRebindResponse(submissionID, attempt, true)
 	}
-	if attempt.State == "closed" {
+	if attempt.State != "pending" {
 		return nil, idempotencyConflict()
 	}
 	binding, err := service.dependencies.Store.Queries().

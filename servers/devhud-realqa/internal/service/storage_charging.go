@@ -223,6 +223,9 @@ func (service *Submission) processStoragePeriod(
 		return service.reserveAndCommitStorage(
 			ctx, binding, settlement, periodStart, periodEnd,
 			!periodStart.Equal(today.Add(-24*time.Hour)))
+	case "lifecycle_pending":
+		return errors.New(
+			"realqa storage billing: awaiting lifecycle cutoff")
 	case "reserved":
 		return service.commitReservedStorage(
 			ctx, binding, settlement, periodStart, periodEnd)
@@ -328,6 +331,36 @@ func (service *Submission) reserveAndCommitStorage(
 				StorageBillingFailureUnavailable, false,
 			); graceErr != nil {
 				return graceErr
+			}
+			return err
+		}
+		if kind == StorageBillingFailureOwnerDeleted {
+			// Delibase closes owner grants before its lifecycle delivery.
+			// Keep this checkpoint retryable until that delivery supplies the
+			// accepted cutoff instead of irreversibly skipping the whole day.
+			if graceErr := service.startStorageGrace(
+				ctx, binding, periodEnd, kind, false,
+			); graceErr != nil {
+				return graceErr
+			}
+			if _, deferErr := service.dependencies.Store.Queries().
+				DeferStorageDailySettlementForLifecycle(
+					ctx, dbgen.DeferStorageDailySettlementForLifecycleParams{
+						AuthorizationID: binding.AuthorizationID,
+						PeriodStart:     settlement.PeriodStart,
+					}); deferErr != nil {
+				if !errors.Is(deferErr, pgx.ErrNoRows) {
+					return deferErr
+				}
+				current, lookupErr := service.dependencies.Store.Queries().
+					GetStorageDailySettlement(
+						ctx, dbgen.GetStorageDailySettlementParams{
+							AuthorizationID: binding.AuthorizationID,
+							PeriodStart:     settlement.PeriodStart,
+						})
+				if lookupErr != nil || current.State != "lifecycle_pending" {
+					return errors.Join(deferErr, lookupErr)
+				}
 			}
 			return err
 		}
@@ -444,7 +477,9 @@ func (service *Submission) commitReservedStorage(
 	if err != nil {
 		kind := storageFailureKind(err)
 		if kind == StorageBillingFailureAuthorization ||
-			kind == StorageBillingFailureAccess {
+			kind == StorageBillingFailureAccess ||
+			kind == StorageBillingFailureOwnerDeleted ||
+			kind == StorageBillingFailureExpired {
 			if binding.ClosureState != "resource_deletion_pending" {
 				if graceErr := service.startStorageGrace(
 					ctx, binding, periodEnd, kind, false,
@@ -653,9 +688,13 @@ func (service *Submission) releaseReservedStorage(
 	if err != nil {
 		return err
 	}
+	if released.Status != "released" && released.Status != "expired" {
+		return errors.New(
+			"realqa storage billing: invalid reservation release status")
+	}
 	if err = validateAuthorizedStorageReservation(
 		released, binding, meter, settlement,
-		periodStart, "released", 0); err != nil {
+		periodStart, released.Status, 0); err != nil {
 		return err
 	}
 	persisted, err := persistReleasedStorageSettlement(
@@ -699,7 +738,8 @@ func (service *Submission) releaseRacedStorageReservation(
 			Units:             settlement.Units,
 			IdempotencyKey:    releaseKey,
 		})
-	if err != nil || released.Status != "released" ||
+	if err != nil ||
+		(released.Status != "released" && released.Status != "expired") ||
 		released.ID != reserved.ID {
 		return errors.New(
 			"realqa storage billing: raced reservation release failed")
@@ -802,6 +842,8 @@ func storageRecoveryReason(kind StorageBillingFailureKind) string {
 	case StorageBillingFailureAuthorization:
 		return "authorization_revoked"
 	case StorageBillingFailureAccess:
+		return "authorization_access_lost"
+	case StorageBillingFailureOwnerDeleted:
 		return "authorization_access_lost"
 	case StorageBillingFailurePayment:
 		return "payment_required"
@@ -968,7 +1010,8 @@ func (service *Submission) settleStorageCutoff(
 		return nil
 	default:
 		return errors.New(
-			"realqa storage billing: cutoff settlement is unresolved")
+			"realqa storage billing: cutoff settlement is unresolved: " +
+				settlement.State)
 	}
 }
 
@@ -1054,6 +1097,10 @@ func (service *Submission) HandleLifecycleAuthorizationDeletion(
 		); err != nil {
 			return err
 		}
+		if err = service.refreshLifecycleStorageSettlements(
+			ctx, binding); err != nil {
+			return err
+		}
 		binding, cutoff, err = service.persistedStorageAccrualCutoff(
 			ctx, binding.AuthorizationID)
 		if err != nil {
@@ -1062,6 +1109,81 @@ func (service *Submission) HandleLifecycleAuthorizationDeletion(
 		if err = service.settleStorageCutoff(
 			ctx, binding, cutoff); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (service *Submission) refreshLifecycleStorageSettlements(
+	ctx context.Context,
+	binding dbgen.RealqaStorageAuthorizationBinding,
+) error {
+	settlements, err := service.dependencies.Store.Queries().
+		ListLifecyclePendingStorageSettlements(
+			ctx, binding.AuthorizationID)
+	if err != nil {
+		return err
+	}
+	for _, settlement := range settlements {
+		periodStart := settlement.PeriodStart.Time.UTC()
+		byteSeconds, calculateErr := service.dependencies.Store.Queries().
+			CalculateStorageByteSeconds(
+				ctx, dbgen.CalculateStorageByteSecondsParams{
+					PeriodEnd: pgTimestamp(
+						periodStart.Add(24 * time.Hour)),
+					PeriodStart:     settlement.PeriodStart,
+					AuthorizationID: binding.AuthorizationID,
+				})
+		if calculateErr != nil {
+			return calculateErr
+		}
+		units, calculateErr := ceilMiBDays(byteSeconds)
+		if calculateErr != nil {
+			return calculateErr
+		}
+		digest, calculateErr := storageSettlementDigest(
+			binding, periodStart, units)
+		if calculateErr != nil {
+			return calculateErr
+		}
+		state := "pending"
+		if units == 0 {
+			state = "settled_zero"
+		}
+		_, refreshErr := service.dependencies.Store.Queries().
+			RefreshLifecycleStorageDailySettlement(
+				ctx, dbgen.RefreshLifecycleStorageDailySettlementParams{
+					ByteSeconds:     byteSeconds,
+					Units:           units,
+					RequestDigest:   digest,
+					State:           state,
+					AuthorizationID: binding.AuthorizationID,
+					PeriodStart:     settlement.PeriodStart,
+					ReserveIdempotencyKey: settlement.
+						ReserveIdempotencyKey,
+					CommitIdempotencyKey: settlement.
+						CommitIdempotencyKey,
+					ReleaseIdempotencyKey: settlement.
+						ReleaseIdempotencyKey,
+				})
+		if errors.Is(refreshErr, pgx.ErrNoRows) {
+			current, lookupErr := service.dependencies.Store.Queries().
+				GetStorageDailySettlement(
+					ctx, dbgen.GetStorageDailySettlementParams{
+						AuthorizationID: binding.AuthorizationID,
+						PeriodStart:     settlement.PeriodStart,
+					})
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if current.State == "lifecycle_pending" {
+				return errors.New(
+					"realqa storage billing: lifecycle refresh conflict")
+			}
+			continue
+		}
+		if refreshErr != nil {
+			return refreshErr
 		}
 	}
 	return nil

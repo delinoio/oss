@@ -3056,6 +3056,77 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			err,
 		)
 	}
+	expiredPeriodStart := terminalPeriodStart.Add(24 * time.Hour)
+	expiredSettlement, err := store.Queries().CreateStorageDailySettlement(
+		ctx, dbgen.CreateStorageDailySettlementParams{
+			AuthorizationID:       toPGUUID(disconnectAuthorizationID),
+			PeriodStart:           pgTimestamp(expiredPeriodStart),
+			ByteSeconds:           1,
+			Units:                 1,
+			State:                 "pending",
+			RequestDigest:         bytes.Repeat([]byte{0xcf}, 32),
+			ReserveIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+			CommitIdempotencyKey:  toPGUUID(uuidv7.MustNew()),
+			ReleaseIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredReservationID := uuidv7.MustNew()
+	expiredCreatedAt := expiredPeriodStart.Add(24 * time.Hour)
+	expiredSettlement, err = store.Queries().SetStorageDailyReservation(
+		ctx, dbgen.SetStorageDailyReservationParams{
+			ReservationID:        toPGUUID(expiredReservationID),
+			ReservationCreatedAt: pgTimestamp(expiredCreatedAt),
+			ReservationExpiresAt: pgTimestamp(
+				expiredCreatedAt.Add(24 * time.Hour)),
+			ReservationPriceVersionID: toPGUUID(
+				disconnectBilling.meters.Storage.PriceVersionID),
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(expiredPeriodStart),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disconnectBilling.commitErr = &StorageBillingFailure{
+		Kind: StorageBillingFailureExpired,
+	}
+	disconnectBilling.releaseResult = AuthorizedStorageReservation{
+		TransferReservation: TransferReservation{
+			ID:                expiredReservationID,
+			OrganizationID:    organizationID,
+			TeamID:            teamID,
+			MeterID:           disconnectStorageMeterID,
+			PriceVersionID:    disconnectBilling.meters.Storage.PriceVersionID,
+			UserAccountID:     accountID,
+			ServiceIdentityID: disconnectServiceIdentityID,
+			MaximumUnits:      expiredSettlement.Units,
+			USDMicrosPerUnit:  storagePriceUSDMicros,
+			ClientReference: storageClientReference(
+				disconnectAuthorizationID, expiredPeriodStart),
+			Status:    "expired",
+			CreatedAt: expiredSettlement.ReservationCreatedAt.Time,
+			ExpiresAt: expiredSettlement.ReservationExpiresAt.Time,
+		},
+		AuthorizationID:   disconnectAuthorizationID,
+		FeatureResourceID: disconnectSubmissionID,
+		PeriodStart:       expiredPeriodStart,
+	}
+	if expiredErr := disconnectService.commitReservedStorage(
+		ctx, terminalBinding, expiredSettlement,
+		expiredPeriodStart, expiredPeriodStart.Add(24*time.Hour),
+	); expiredErr == nil {
+		t.Fatal("expired reservation commit failure was hidden")
+	}
+	expiredSettlement, err = store.Queries().GetStorageDailySettlement(
+		ctx, dbgen.GetStorageDailySettlementParams{
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(expiredPeriodStart),
+		})
+	if err != nil || expiredSettlement.State != "released" {
+		t.Fatalf("expired settlement = %q / %v, want released",
+			expiredSettlement.State, err)
+	}
 	disconnectBilling.commitErr = nil
 	missingPeriodStart := commitPeriodStart.Add(24 * time.Hour)
 	missingMidnightCutoff := missingPeriodStart.Add(24 * time.Hour)
@@ -5216,8 +5287,6 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		M2M: &auth.M2MClaims{},
 	})
 	lifecycleBilling := *disconnectBilling
-	// Exercise the fail-closed settlement path with a valid catalog mismatch.
-	lifecycleBilling.meters.Storage.ID = uuidv7.MustNew()
 	service.dependencies.Billing = &lifecycleBilling
 	closureOwnerID := uuidv7.MustNew()
 	closureTeamID := uuidv7.MustNew()
@@ -5231,6 +5300,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	externalLifecycleServiceID := uuidv7.MustNew()
 	externalLifecycleMeterID := uuidv7.MustNew()
 	externalLifecycleAuthorizationID := uuidv7.MustNew()
+	externalLifecycleRebindKey := uuidv7.MustNew()
+	externalLifecycleAssetID := uuidv7.MustNew()
 	closureCutoff := time.Now().Add(-48 * time.Hour).
 		UTC().Truncate(time.Microsecond)
 	if _, err = connection.Exec(ctx, `
@@ -5301,6 +5372,26 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		) VALUES (
 			$16, $11, 1, $3, 'organization', $12,
 			$2, $4, $14, $15, 1, 'active', 1
+		);
+		INSERT INTO realqa_storage_retention_intervals (
+			authorization_id, asset_id, retained_bytes, starts_at
+		) VALUES (
+			$16, $20, 1048576,
+			date_trunc(
+				'day', $9::timestamptz AT TIME ZONE 'UTC'
+			) AT TIME ZONE 'UTC'
+		);
+		INSERT INTO realqa_storage_rebind_attempts (
+			submission_id, caller_digest, idempotency_key,
+			request_digest, expected_authorization_id,
+			expected_mapping_revision, replacement_organization_id,
+			replacement_team_id, replacement_maximum_units,
+			replacement_service_identity_id, replacement_meter_id,
+			revoke_idempotency_key, create_idempotency_key, state
+		) VALUES (
+			$11, decode(repeat('d2', 32), 'hex'), $17,
+			decode(repeat('d3', 32), 'hex'), $16, 1, $2, $4, 1,
+			$14, $15, $18, $19, 'pending'
 		)
 	`, closureSubmissionID, closureOwnerID, accountID, closureTeamID,
 		uuidv7.MustNew(), closureServiceID, closureMeterID,
@@ -5308,8 +5399,141 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		externalLifecycleSubmissionID, organizationID,
 		externalLifecycleAttemptKey, externalLifecycleServiceID,
 		externalLifecycleMeterID,
-		externalLifecycleAuthorizationID); err != nil {
+		externalLifecycleAuthorizationID, externalLifecycleRebindKey,
+		uuidv7.MustNew(), uuidv7.MustNew(),
+		externalLifecycleAssetID); err != nil {
 		t.Fatal(err)
+	}
+	externalLifecyclePeriodStart := utcDayStart(closureCutoff)
+	externalLifecyclePeriodEnd :=
+		externalLifecyclePeriodStart.Add(24 * time.Hour)
+	externalLifecycleBinding, err :=
+		store.Queries().GetStorageAuthorizationBinding(
+			ctx, toPGUUID(externalLifecycleAuthorizationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	externalLifecycleDigest, err := storageSettlementDigest(
+		externalLifecycleBinding, externalLifecyclePeriodStart, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	externalReserveKey, externalCommitKey, externalReleaseKey, err :=
+		storageSettlementKeys(
+			externalLifecycleAuthorizationID,
+			externalLifecyclePeriodStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	externalLifecycleSettlement, err :=
+		store.Queries().CreateStorageDailySettlement(
+			ctx, dbgen.CreateStorageDailySettlementParams{
+				AuthorizationID: toPGUUID(
+					externalLifecycleAuthorizationID),
+				PeriodStart:           pgTimestamp(externalLifecyclePeriodStart),
+				ByteSeconds:           byteSecondsPerMiBDay,
+				Units:                 1,
+				State:                 "pending",
+				RequestDigest:         externalLifecycleDigest,
+				ReserveIdempotencyKey: toPGUUID(externalReserveKey),
+				CommitIdempotencyKey:  toPGUUID(externalCommitKey),
+				ReleaseIdempotencyKey: toPGUUID(externalReleaseKey),
+			})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecyclePriceVersionID := uuidv7.MustNew()
+	lifecycleBilling.meters = BillingMeters{
+		Transfer: BillingMeter{
+			ID: uuidv7.MustNew(), PriceVersionID: uuidv7.MustNew(),
+			ServiceIdentityID:     externalLifecycleServiceID,
+			Key:                   "realqa_image_transfer",
+			Unit:                  "encoded_mib",
+			Precision:             0,
+			USDMicrosPerUnit:      transferPriceUSDMicros,
+			ReservationTTLSeconds: 86_400,
+			Enabled:               true,
+		},
+		Storage: BillingMeter{
+			ID:                externalLifecycleMeterID,
+			PriceVersionID:    lifecyclePriceVersionID,
+			ServiceIdentityID: externalLifecycleServiceID,
+			Key:               "realqa_image_storage",
+			Unit:              "mib_day",
+			Precision:         0,
+			USDMicrosPerUnit:  storagePriceUSDMicros,
+			Enabled:           true,
+		},
+	}
+	lifecycleBilling.reserveErr = &StorageBillingFailure{
+		Kind: StorageBillingFailureOwnerDeleted,
+	}
+	ownerDeletedWorker := NewSubmission(Dependencies{
+		Store: store, Billing: &lifecycleBilling,
+		Clock:         fixedSubmissionClock{now: externalLifecyclePeriodEnd},
+		Pseudonymizer: pseudonymizer,
+	})
+	if workerErr := ownerDeletedWorker.reserveAndCommitStorage(
+		ctx, externalLifecycleBinding, externalLifecycleSettlement,
+		externalLifecyclePeriodStart, externalLifecyclePeriodEnd, false,
+	); workerErr == nil {
+		t.Fatal("owner-deleted reserve failure was hidden")
+	}
+	externalLifecycleSettlement, err =
+		store.Queries().GetStorageDailySettlement(
+			ctx, dbgen.GetStorageDailySettlementParams{
+				AuthorizationID: toPGUUID(
+					externalLifecycleAuthorizationID),
+				PeriodStart: pgTimestamp(externalLifecyclePeriodStart),
+			})
+	if err != nil ||
+		externalLifecycleSettlement.State != "lifecycle_pending" {
+		t.Fatalf(
+			"pre-lifecycle settlement = %q / %v, want lifecycle_pending",
+			externalLifecycleSettlement.State, err)
+	}
+	externalLifecycleBinding, err =
+		store.Queries().GetStorageAuthorizationBinding(
+			ctx, toPGUUID(externalLifecycleAuthorizationID))
+	if err != nil || !externalLifecycleBinding.AccrualCutoffAt.Valid ||
+		!externalLifecycleBinding.AccrualCutoffAt.Time.Equal(
+			externalLifecyclePeriodEnd) {
+		t.Fatalf("pre-lifecycle cutoff = %v / %v, want %s",
+			externalLifecycleBinding.AccrualCutoffAt, err,
+			externalLifecyclePeriodEnd)
+	}
+	lifecycleReservationID := uuidv7.MustNew()
+	lifecycleReservation := TransferReservation{
+		ID:                lifecycleReservationID,
+		OrganizationID:    closureOwnerID,
+		TeamID:            closureTeamID,
+		MeterID:           externalLifecycleMeterID,
+		PriceVersionID:    lifecyclePriceVersionID,
+		UserAccountID:     accountID,
+		ServiceIdentityID: externalLifecycleServiceID,
+		MaximumUnits:      externalLifecycleSettlement.Units,
+		USDMicrosPerUnit:  storagePriceUSDMicros,
+		ClientReference: storageClientReference(
+			externalLifecycleAuthorizationID,
+			externalLifecyclePeriodStart),
+		Status:    "active",
+		CreatedAt: externalLifecyclePeriodEnd,
+		ExpiresAt: externalLifecyclePeriodEnd.Add(24 * time.Hour),
+	}
+	lifecycleBilling.reserveErr = nil
+	lifecycleBilling.reserveResult = AuthorizedStorageReservation{
+		TransferReservation: lifecycleReservation,
+		AuthorizationID:     externalLifecycleAuthorizationID,
+		FeatureResourceID:   externalLifecycleSubmissionID,
+		PeriodStart:         externalLifecyclePeriodStart,
+	}
+	lifecycleReservation.Status = "committed"
+	lifecycleReservation.CommittedUnits = externalLifecycleSettlement.Units
+	lifecycleBilling.commitResult = AuthorizedStorageReservation{
+		TransferReservation: lifecycleReservation,
+		AuthorizationID:     externalLifecycleAuthorizationID,
+		FeatureResourceID:   externalLifecycleSubmissionID,
+		PeriodStart:         externalLifecyclePeriodStart,
 	}
 	closureReplay, err := service.DeleteFeatureData(
 		lifecycleCtx, connect.NewRequest(
@@ -5343,6 +5567,54 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatal("lifecycle replay did not allow terminal owner deletion")
 	}
 	var (
+		lifecycleRebindState     string
+		lifecycleRebindCompleted time.Time
+		lifecycleRebindDigest    []byte
+	)
+	if err = connection.QueryRow(ctx, `
+		SELECT state, completed_at, request_digest
+		FROM realqa_storage_rebind_attempts
+		WHERE caller_digest = decode(repeat('d2', 32), 'hex')
+		  AND idempotency_key = $1
+	`, externalLifecycleRebindKey).Scan(
+		&lifecycleRebindState, &lifecycleRebindCompleted,
+		&lifecycleRebindDigest,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycleRebindState != "owner_deleted" ||
+		!lifecycleRebindCompleted.Equal(closureCutoff) ||
+		!bytes.Equal(lifecycleRebindDigest, bytes.Repeat([]byte{0xd3}, 32)) {
+		t.Fatalf("lifecycle rebind terminal = %q / %s / %x",
+			lifecycleRebindState, lifecycleRebindCompleted,
+			lifecycleRebindDigest)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_storage_rebind_attempts (
+			submission_id, caller_digest, idempotency_key,
+			request_digest, expected_authorization_id,
+			expected_mapping_revision, replacement_organization_id,
+			replacement_team_id, replacement_maximum_units,
+			replacement_service_identity_id, replacement_meter_id,
+			revoke_idempotency_key, create_idempotency_key, state
+		) VALUES (
+			$1, decode(repeat('d4', 32), 'hex'), $2,
+			decode(repeat('d5', 32), 'hex'), $3, 1, $4, $5, 1,
+			$6, $7, $8, $9, 'pending'
+		);
+		UPDATE realqa_storage_rebind_attempts
+		SET state = 'owner_deleted',
+		    completed_at = $10
+		WHERE submission_id = $1
+		  AND caller_digest = decode(repeat('d4', 32), 'hex')
+		  AND idempotency_key = $2
+	`, externalLifecycleSubmissionID, uuidv7.MustNew(),
+		externalLifecycleAuthorizationID, organizationID, closureTeamID,
+		externalLifecycleServiceID, externalLifecycleMeterID,
+		uuidv7.MustNew(), uuidv7.MustNew(), closureCutoff); err != nil {
+		t.Fatalf("new rebind after lifecycle terminalization: %v", err)
+	}
+	var (
 		externalLifecycleCutoff   time.Time
 		externalLifecycleState    string
 		externalLifecycleRecovery string
@@ -5371,6 +5643,17 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			externalLifecycleCutoff, externalLifecycleState,
 			externalLifecycleRecovery, closureCutoff,
 		)
+	}
+	externalLifecycleSettlement, err =
+		store.Queries().GetStorageDailySettlement(
+			ctx, dbgen.GetStorageDailySettlementParams{
+				AuthorizationID: toPGUUID(
+					externalLifecycleAuthorizationID),
+				PeriodStart: pgTimestamp(externalLifecyclePeriodStart),
+			})
+	if err != nil || externalLifecycleSettlement.State != "committed" {
+		t.Fatalf("post-lifecycle settlement = %q / %v, want committed",
+			externalLifecycleSettlement.State, err)
 	}
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_github_connections

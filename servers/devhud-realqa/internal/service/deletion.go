@@ -473,6 +473,15 @@ func (service *Preset) prepareLifecycleStorageDeletion(
 	cutoff time.Time,
 ) error {
 	if _, err := service.dependencies.Store.Queries().
+		TerminalizeLifecycleStorageRebindAttempts(
+			ctx, dbgen.TerminalizeLifecycleStorageRebindAttemptsParams{
+				Cutoff:    pgTimestamp(cutoff),
+				OwnerKind: scope.kind,
+				OwnerID:   toPGUUID(scope.id),
+			}); err != nil {
+		return err
+	}
+	if _, err := service.dependencies.Store.Queries().
 		MarkScopeStorageClosurePending(
 			ctx, dbgen.MarkScopeStorageClosurePendingParams{
 				OwnerDeletedAllowed: true,

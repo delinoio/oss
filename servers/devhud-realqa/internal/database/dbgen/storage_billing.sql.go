@@ -815,6 +815,53 @@ func (q *Queries) CutoffStorageAuthorizationAccrual(ctx context.Context, arg Cut
 	return i, err
 }
 
+const deferStorageDailySettlementForLifecycle = `-- name: DeferStorageDailySettlementForLifecycle :one
+UPDATE realqa_storage_daily_settlements
+SET state = 'lifecycle_pending',
+    attempt_count = attempt_count + 1,
+    last_attempted_at = transaction_timestamp(),
+    updated_at = transaction_timestamp()
+WHERE authorization_id = $1
+  AND period_start = $2
+  AND state = 'pending'
+  AND reservation_id IS NULL
+RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+`
+
+type DeferStorageDailySettlementForLifecycleParams struct {
+	AuthorizationID pgtype.UUID
+	PeriodStart     pgtype.Timestamptz
+}
+
+// A typed OWNER_DELETED rejection proves this stable reserve key established
+// no hold. Preserve the checkpoint until lifecycle delivery supplies the exact
+// cutoff, when its unreserved byte-seconds may be safely shortened once.
+func (q *Queries) DeferStorageDailySettlementForLifecycle(ctx context.Context, arg DeferStorageDailySettlementForLifecycleParams) (RealqaStorageDailySettlement, error) {
+	row := q.db.QueryRow(ctx, deferStorageDailySettlementForLifecycle, arg.AuthorizationID, arg.PeriodStart)
+	var i RealqaStorageDailySettlement
+	err := row.Scan(
+		&i.AuthorizationID,
+		&i.PeriodStart,
+		&i.ByteSeconds,
+		&i.Units,
+		&i.State,
+		&i.RequestDigest,
+		&i.ReserveIdempotencyKey,
+		&i.CommitIdempotencyKey,
+		&i.ReleaseIdempotencyKey,
+		&i.ReservationID,
+		&i.ReservationCreatedAt,
+		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
+		&i.AttemptCount,
+		&i.LastAttemptedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SettledAt,
+	)
+	return i, err
+}
+
 const getActiveStorageRecovery = `-- name: GetActiveStorageRecovery :one
 SELECT id, submission_id, authorization_id, reason, notification_state, grace_started_at, grace_expires_at, recovered_at, expired_at, created_at, updated_at
 FROM realqa_storage_recoveries
@@ -912,7 +959,7 @@ unsettled AS (
       ON settlement.authorization_id = period.authorization_id
      AND settlement.period_start = period.period_start
     WHERE settlement.authorization_id IS NULL
-       OR settlement.state IN ('pending', 'reserved')
+       OR settlement.state IN ('pending', 'lifecycle_pending', 'reserved')
 )
 SELECT authorization_id,
        to_char(
@@ -1311,6 +1358,53 @@ func (q *Queries) ListExpiredStorageRecoveries(ctx context.Context, arg ListExpi
 	return items, nil
 }
 
+const listLifecyclePendingStorageSettlements = `-- name: ListLifecyclePendingStorageSettlements :many
+SELECT authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+FROM realqa_storage_daily_settlements
+WHERE authorization_id = $1
+  AND state = 'lifecycle_pending'
+ORDER BY period_start
+`
+
+func (q *Queries) ListLifecyclePendingStorageSettlements(ctx context.Context, authorizationID pgtype.UUID) ([]RealqaStorageDailySettlement, error) {
+	rows, err := q.db.Query(ctx, listLifecyclePendingStorageSettlements, authorizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RealqaStorageDailySettlement{}
+	for rows.Next() {
+		var i RealqaStorageDailySettlement
+		if err := rows.Scan(
+			&i.AuthorizationID,
+			&i.PeriodStart,
+			&i.ByteSeconds,
+			&i.Units,
+			&i.State,
+			&i.RequestDigest,
+			&i.ReserveIdempotencyKey,
+			&i.CommitIdempotencyKey,
+			&i.ReleaseIdempotencyKey,
+			&i.ReservationID,
+			&i.ReservationCreatedAt,
+			&i.ReservationExpiresAt,
+			&i.ReservationPriceVersionID,
+			&i.AttemptCount,
+			&i.LastAttemptedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SettledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenStorageBindingsForDisconnectedGitHub = `-- name: ListOpenStorageBindingsForDisconnectedGitHub :many
 SELECT binding.authorization_id, binding.submission_id, binding.mapping_revision, binding.mapping_installed, binding.authorizer_account_id, binding.owner_kind, binding.owner_id, binding.organization_id, binding.team_id, binding.service_identity_id, binding.meter_id, binding.maximum_units, binding.status, binding.authorization_revision, binding.closure_state, binding.closure_owner_deleted_allowed, binding.accrual_cutoff_at, binding.created_at, binding.updated_at, binding.closed_at,
        connection.updated_at AS github_disconnected_at
@@ -1399,7 +1493,9 @@ WHERE binding.closure_state = 'resource_deletion_pending'
       SELECT 1
       FROM realqa_storage_daily_settlements AS settlement
       WHERE settlement.authorization_id = binding.authorization_id
-        AND settlement.state IN ('pending', 'reserved')
+        AND settlement.state IN (
+            'pending', 'lifecycle_pending', 'reserved'
+        )
   )
   AND NOT EXISTS (
       SELECT 1
@@ -1430,7 +1526,9 @@ WHERE binding.closure_state = 'resource_deletion_pending'
         ) > retained.starts_at
         AND (
             settlement.authorization_id IS NULL
-            OR settlement.state IN ('pending', 'reserved')
+            OR settlement.state IN (
+                'pending', 'lifecycle_pending', 'reserved'
+            )
         )
   )
 ORDER BY binding.accrual_cutoff_at, binding.authorization_id
@@ -1774,6 +1872,79 @@ func (q *Queries) MarkSubmissionStorageClosurePending(ctx context.Context, arg M
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const refreshLifecycleStorageDailySettlement = `-- name: RefreshLifecycleStorageDailySettlement :one
+UPDATE realqa_storage_daily_settlements
+SET byte_seconds = $1,
+    units = $2,
+    request_digest = $3,
+    state = $4,
+    settled_at = CASE
+        WHEN $4::text = 'settled_zero'
+            THEN transaction_timestamp()
+        ELSE NULL
+    END,
+    updated_at = transaction_timestamp()
+WHERE authorization_id = $5
+  AND period_start = $6
+  AND reserve_idempotency_key = $7
+  AND commit_idempotency_key = $8
+  AND release_idempotency_key = $9
+  AND state = 'lifecycle_pending'
+  AND reservation_id IS NULL
+  AND byte_seconds >= $1
+  AND units >= $2
+  AND $4::text IN ('pending', 'settled_zero')
+RETURNING authorization_id, period_start, byte_seconds, units, state, request_digest, reserve_idempotency_key, commit_idempotency_key, release_idempotency_key, reservation_id, reservation_created_at, reservation_expires_at, reservation_price_version_id, attempt_count, last_attempted_at, created_at, updated_at, settled_at
+`
+
+type RefreshLifecycleStorageDailySettlementParams struct {
+	ByteSeconds           int64
+	Units                 int64
+	RequestDigest         []byte
+	State                 string
+	AuthorizationID       pgtype.UUID
+	PeriodStart           pgtype.Timestamptz
+	ReserveIdempotencyKey pgtype.UUID
+	CommitIdempotencyKey  pgtype.UUID
+	ReleaseIdempotencyKey pgtype.UUID
+}
+
+func (q *Queries) RefreshLifecycleStorageDailySettlement(ctx context.Context, arg RefreshLifecycleStorageDailySettlementParams) (RealqaStorageDailySettlement, error) {
+	row := q.db.QueryRow(ctx, refreshLifecycleStorageDailySettlement,
+		arg.ByteSeconds,
+		arg.Units,
+		arg.RequestDigest,
+		arg.State,
+		arg.AuthorizationID,
+		arg.PeriodStart,
+		arg.ReserveIdempotencyKey,
+		arg.CommitIdempotencyKey,
+		arg.ReleaseIdempotencyKey,
+	)
+	var i RealqaStorageDailySettlement
+	err := row.Scan(
+		&i.AuthorizationID,
+		&i.PeriodStart,
+		&i.ByteSeconds,
+		&i.Units,
+		&i.State,
+		&i.RequestDigest,
+		&i.ReserveIdempotencyKey,
+		&i.CommitIdempotencyKey,
+		&i.ReleaseIdempotencyKey,
+		&i.ReservationID,
+		&i.ReservationCreatedAt,
+		&i.ReservationExpiresAt,
+		&i.ReservationPriceVersionID,
+		&i.AttemptCount,
+		&i.LastAttemptedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SettledAt,
+	)
+	return i, err
 }
 
 const releaseStorageDailySettlement = `-- name: ReleaseStorageDailySettlement :one
@@ -2162,6 +2333,51 @@ func (q *Queries) SupersedeStorageRecovery(ctx context.Context, arg SupersedeSto
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const terminalizeLifecycleStorageRebindAttempts = `-- name: TerminalizeLifecycleStorageRebindAttempts :execrows
+UPDATE realqa_storage_rebind_attempts AS attempt
+SET state = 'owner_deleted',
+    completed_at = $1
+FROM realqa_submissions AS submission
+WHERE submission.id = attempt.submission_id
+  AND attempt.state = 'pending'
+  AND (
+      (
+          submission.owner_kind = $2
+          AND submission.owner_id = $3
+      )
+      OR (
+          $2::text = 'organization'
+          AND attempt.replacement_organization_id = $3
+      )
+      OR (
+          $2::text = 'personal'
+          AND EXISTS (
+              SELECT 1
+              FROM realqa_identities AS identity
+              WHERE identity.account_id = $3
+                AND identity.subject_digest = attempt.caller_digest
+          )
+      )
+  )
+`
+
+type TerminalizeLifecycleStorageRebindAttemptsParams struct {
+	Cutoff    pgtype.Timestamptz
+	OwnerKind string
+	OwnerID   pgtype.UUID
+}
+
+// A lifecycle deletion can remove the caller, replacement payer, or feature
+// owner before an ambiguous replacement create response can be replayed. Keep
+// the stable recipe but release the one-pending-attempt gate.
+func (q *Queries) TerminalizeLifecycleStorageRebindAttempts(ctx context.Context, arg TerminalizeLifecycleStorageRebindAttemptsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, terminalizeLifecycleStorageRebindAttempts, arg.Cutoff, arg.OwnerKind, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const touchStorageDailySettlementAttempt = `-- name: TouchStorageDailySettlementAttempt :exec

@@ -203,7 +203,7 @@ unsettled AS (
       ON settlement.authorization_id = period.authorization_id
      AND settlement.period_start = period.period_start
     WHERE settlement.authorization_id IS NULL
-       OR settlement.state IN ('pending', 'reserved')
+       OR settlement.state IN ('pending', 'lifecycle_pending', 'reserved')
 )
 SELECT authorization_id,
        to_char(
@@ -291,6 +291,52 @@ SET attempt_count = attempt_count + 1,
 WHERE authorization_id = sqlc.arg(authorization_id)
   AND period_start = sqlc.arg(period_start)
   AND state IN ('pending', 'reserved');
+
+-- A typed OWNER_DELETED rejection proves this stable reserve key established
+-- no hold. Preserve the checkpoint until lifecycle delivery supplies the exact
+-- cutoff, when its unreserved byte-seconds may be safely shortened once.
+-- name: DeferStorageDailySettlementForLifecycle :one
+UPDATE realqa_storage_daily_settlements
+SET state = 'lifecycle_pending',
+    attempt_count = attempt_count + 1,
+    last_attempted_at = transaction_timestamp(),
+    updated_at = transaction_timestamp()
+WHERE authorization_id = sqlc.arg(authorization_id)
+  AND period_start = sqlc.arg(period_start)
+  AND state = 'pending'
+  AND reservation_id IS NULL
+RETURNING *;
+
+-- name: ListLifecyclePendingStorageSettlements :many
+SELECT *
+FROM realqa_storage_daily_settlements
+WHERE authorization_id = sqlc.arg(authorization_id)
+  AND state = 'lifecycle_pending'
+ORDER BY period_start;
+
+-- name: RefreshLifecycleStorageDailySettlement :one
+UPDATE realqa_storage_daily_settlements
+SET byte_seconds = sqlc.arg(byte_seconds),
+    units = sqlc.arg(units),
+    request_digest = sqlc.arg(request_digest),
+    state = sqlc.arg(state),
+    settled_at = CASE
+        WHEN sqlc.arg(state)::text = 'settled_zero'
+            THEN transaction_timestamp()
+        ELSE NULL
+    END,
+    updated_at = transaction_timestamp()
+WHERE authorization_id = sqlc.arg(authorization_id)
+  AND period_start = sqlc.arg(period_start)
+  AND reserve_idempotency_key = sqlc.arg(reserve_idempotency_key)
+  AND commit_idempotency_key = sqlc.arg(commit_idempotency_key)
+  AND release_idempotency_key = sqlc.arg(release_idempotency_key)
+  AND state = 'lifecycle_pending'
+  AND reservation_id IS NULL
+  AND byte_seconds >= sqlc.arg(byte_seconds)
+  AND units >= sqlc.arg(units)
+  AND sqlc.arg(state)::text IN ('pending', 'settled_zero')
+RETURNING *;
 
 -- name: CommitStorageDailySettlement :one
 UPDATE realqa_storage_daily_settlements
@@ -581,7 +627,9 @@ WHERE binding.closure_state = 'resource_deletion_pending'
       SELECT 1
       FROM realqa_storage_daily_settlements AS settlement
       WHERE settlement.authorization_id = binding.authorization_id
-        AND settlement.state IN ('pending', 'reserved')
+        AND settlement.state IN (
+            'pending', 'lifecycle_pending', 'reserved'
+        )
   )
   AND NOT EXISTS (
       SELECT 1
@@ -612,7 +660,9 @@ WHERE binding.closure_state = 'resource_deletion_pending'
         ) > retained.starts_at
         AND (
             settlement.authorization_id IS NULL
-            OR settlement.state IN ('pending', 'reserved')
+            OR settlement.state IN (
+                'pending', 'lifecycle_pending', 'reserved'
+            )
         )
   )
 ORDER BY binding.accrual_cutoff_at, binding.authorization_id
@@ -685,6 +735,36 @@ FROM realqa_storage_rebind_attempts
 WHERE caller_digest = sqlc.arg(caller_digest)
   AND idempotency_key = sqlc.arg(idempotency_key)
 FOR UPDATE;
+
+-- A lifecycle deletion can remove the caller, replacement payer, or feature
+-- owner before an ambiguous replacement create response can be replayed. Keep
+-- the stable recipe but release the one-pending-attempt gate.
+-- name: TerminalizeLifecycleStorageRebindAttempts :execrows
+UPDATE realqa_storage_rebind_attempts AS attempt
+SET state = 'owner_deleted',
+    completed_at = sqlc.arg(cutoff)
+FROM realqa_submissions AS submission
+WHERE submission.id = attempt.submission_id
+  AND attempt.state = 'pending'
+  AND (
+      (
+          submission.owner_kind = sqlc.arg(owner_kind)
+          AND submission.owner_id = sqlc.arg(owner_id)
+      )
+      OR (
+          sqlc.arg(owner_kind)::text = 'organization'
+          AND attempt.replacement_organization_id = sqlc.arg(owner_id)
+      )
+      OR (
+          sqlc.arg(owner_kind)::text = 'personal'
+          AND EXISTS (
+              SELECT 1
+              FROM realqa_identities AS identity
+              WHERE identity.account_id = sqlc.arg(owner_id)
+                AND identity.subject_digest = attempt.caller_digest
+          )
+      )
+  );
 
 -- name: ReplaceStorageAuthorizationMapping :one
 UPDATE realqa_storage_authorization_attempts
