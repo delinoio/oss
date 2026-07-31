@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
@@ -102,6 +104,202 @@ func TestTerminalAssetStates(t *testing.T) {
 	if isTerminalAssetState("public_retained") {
 		t.Fatal("retained asset was terminal")
 	}
+}
+
+func TestLoadSubmissionMarksRecoveryAfterResponseAssembly(t *testing.T) {
+	now := time.Now().UTC()
+	submissionID := toPGUUID(uuidv7.MustNew())
+	ownerID := toPGUUID(uuidv7.MustNew())
+	authorizationID := toPGUUID(uuidv7.MustNew())
+	queries := &storageRecoveryQuerier{
+		recovery: dbgen.RealqaStorageRecovery{
+			ID:                toPGUUID(uuidv7.MustNew()),
+			SubmissionID:      submissionID,
+			AuthorizationID:   authorizationID,
+			Reason:            "payment_required",
+			NotificationState: "pending",
+			GraceStartedAt:    pgTimestamp(now),
+			GraceExpiresAt:    pgTimestamp(now.Add(30 * 24 * time.Hour)),
+		},
+		binding: dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID: authorizationID,
+			OwnerKind:       "personal",
+			OwnerID:         ownerID,
+			OrganizationID:  ownerID,
+			Status:          "active",
+		},
+		access:    dbgen.RealqaOwnerBinding{Role: "owner"},
+		assetsErr: errors.New("asset read failed"),
+	}
+	record := dbgen.RealqaSubmission{
+		ID:        submissionID,
+		OwnerKind: "personal",
+		OwnerID:   ownerID,
+		State:     "storage_billing_grace",
+	}
+
+	if _, err := loadSubmissionWithRecordAndRecoveryCaller(
+		context.Background(), queries, record, ownerID,
+	); !errors.Is(err, queries.assetsErr) {
+		t.Fatalf("load error = %v, want asset read failure", err)
+	}
+	if queries.marked {
+		t.Fatal("recovery was marked notified before response assembly failed")
+	}
+
+	queries.assetsErr = nil
+	submission, err := loadSubmissionWithRecordAndRecoveryCaller(
+		context.Background(), queries, record, ownerID)
+	if err != nil {
+		t.Fatalf("load completed response: %v", err)
+	}
+	if !queries.marked {
+		t.Fatal("completed response did not mark recovery notified")
+	}
+	if submission.StorageBillingRecovery == nil ||
+		submission.StorageBillingRecovery.NotificationState !=
+			realqav1.StorageNotificationState_STORAGE_NOTIFICATION_STATE_NOTIFIED {
+		t.Fatalf("notification state = %v, want notified",
+			submission.GetStorageBillingRecovery().GetNotificationState())
+	}
+	if len(submission.StorageBillingRecovery.Actions) != 3 {
+		t.Fatalf("recovery actions = %v, want payment/rebind/revoke",
+			submission.StorageBillingRecovery.Actions)
+	}
+
+	queries.markErr = pgx.ErrNoRows
+	if _, err = loadSubmissionWithRecordAndRecoveryCaller(
+		context.Background(), queries, record, ownerID,
+	); err != nil {
+		t.Fatalf("raced recovery resolution failed read: %v", err)
+	}
+}
+
+func TestStorageRecoveryActionsFollowCallerAuthority(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	submissionID := toPGUUID(uuidv7.MustNew())
+	organizationID := toPGUUID(uuidv7.MustNew())
+	callerAccountID := toPGUUID(uuidv7.MustNew())
+	authorizationID := toPGUUID(uuidv7.MustNew())
+	queries := &storageRecoveryQuerier{
+		recovery: dbgen.RealqaStorageRecovery{
+			ID:                toPGUUID(uuidv7.MustNew()),
+			SubmissionID:      submissionID,
+			AuthorizationID:   authorizationID,
+			Reason:            "payment_required",
+			NotificationState: "pending",
+			GraceStartedAt:    pgTimestamp(now),
+			GraceExpiresAt:    pgTimestamp(now.Add(30 * 24 * time.Hour)),
+		},
+		binding: dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID: authorizationID,
+			OwnerKind:       "organization",
+			OwnerID:         organizationID,
+			OrganizationID:  organizationID,
+			Status:          "active",
+		},
+		access: dbgen.RealqaOwnerBinding{Role: "member"},
+	}
+
+	memberRecovery, err := storageRecoveryForSubmission(
+		context.Background(), queries, submissionID, callerAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memberRecovery.message.Actions) != 0 {
+		t.Fatalf("member recovery actions = %v, want none",
+			memberRecovery.message.Actions)
+	}
+
+	queries.access.Role = "admin"
+	adminRecovery, err := storageRecoveryForSubmission(
+		context.Background(), queries, submissionID, callerAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adminRecovery.message.Actions) != 2 ||
+		adminRecovery.message.Actions[0] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_PAYMENT ||
+		adminRecovery.message.Actions[1] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE {
+		t.Fatalf("admin recovery actions = %v, want payment/revoke",
+			adminRecovery.message.Actions)
+	}
+
+	queries.access.Role = "owner"
+	ownerRecovery, err := storageRecoveryForSubmission(
+		context.Background(), queries, submissionID, callerAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ownerRecovery.message.Actions) != 3 ||
+		ownerRecovery.message.Actions[0] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_PAYMENT ||
+		ownerRecovery.message.Actions[1] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND ||
+		ownerRecovery.message.Actions[2] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE {
+		t.Fatalf("owner recovery actions = %v, want payment/rebind/revoke",
+			ownerRecovery.message.Actions)
+	}
+}
+
+type storageRecoveryQuerier struct {
+	dbgen.Querier
+	recovery  dbgen.RealqaStorageRecovery
+	binding   dbgen.RealqaStorageAuthorizationBinding
+	access    dbgen.RealqaOwnerBinding
+	assetsErr error
+	markErr   error
+	marked    bool
+}
+
+func (queries *storageRecoveryQuerier) GetStorageAuthorizationAttempt(
+	context.Context,
+	pgtype.UUID,
+) (dbgen.RealqaStorageAuthorizationAttempt, error) {
+	return dbgen.RealqaStorageAuthorizationAttempt{}, pgx.ErrNoRows
+}
+
+func (queries *storageRecoveryQuerier) GetActiveStorageRecovery(
+	context.Context,
+	pgtype.UUID,
+) (dbgen.RealqaStorageRecovery, error) {
+	return queries.recovery, nil
+}
+
+func (queries *storageRecoveryQuerier) GetStorageAuthorizationBinding(
+	context.Context,
+	pgtype.UUID,
+) (dbgen.RealqaStorageAuthorizationBinding, error) {
+	return queries.binding, nil
+}
+
+func (queries *storageRecoveryQuerier) GetOwnerAccess(
+	context.Context,
+	dbgen.GetOwnerAccessParams,
+) (dbgen.RealqaOwnerBinding, error) {
+	return queries.access, nil
+}
+
+func (queries *storageRecoveryQuerier) ListSubmissionAssets(
+	context.Context,
+	pgtype.UUID,
+) ([]dbgen.RealqaAsset, error) {
+	return nil, queries.assetsErr
+}
+
+func (queries *storageRecoveryQuerier) MarkStorageRecoveryNotified(
+	context.Context,
+	pgtype.UUID,
+) (dbgen.RealqaStorageRecovery, error) {
+	queries.marked = true
+	if queries.markErr != nil {
+		return dbgen.RealqaStorageRecovery{}, queries.markErr
+	}
+	queries.recovery.NotificationState = "notified"
+	return queries.recovery, nil
 }
 
 type failingReader struct{}

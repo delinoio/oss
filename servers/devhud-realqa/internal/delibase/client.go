@@ -20,6 +20,7 @@ import (
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/delinoio/oss/servers/internal/requestmeta"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -133,7 +134,8 @@ func (client *Client) Meters(
 			AppSlug: "devhud",
 		}),
 	)
-	if err != nil || response.Msg.App == nil {
+	if err != nil || response == nil || response.Msg == nil ||
+		response.Msg.App == nil {
 		return service.BillingMeters{}, errors.New(
 			"realqa delibase: catalog unavailable")
 	}
@@ -327,13 +329,252 @@ func (client *Client) CreateStorageAuthorization(
 		"Authorization", "Bearer "+value.ForwardedBearer)
 	response, err := client.billing.CreateBackgroundUsageAuthorization(
 		ctx, request)
-	if err != nil || response.Msg.Authorization == nil ||
+	if err != nil || response == nil || response.Msg == nil ||
+		response.Msg.Authorization == nil ||
 		response.Msg.Authorization.Authorization == nil {
 		return service.StorageAuthorization{}, errors.New(
 			"realqa delibase: authorization unavailable")
 	}
 	return storageAuthorization(
 		response.Msg.Authorization.Authorization)
+}
+
+func (client *Client) GetStorageAuthorization(
+	ctx context.Context,
+	value service.StorageAuthorizationLookupRequest,
+) (service.StorageAuthorization, error) {
+	request := connect.NewRequest(
+		&delibasev1.GetBackgroundUsageAuthorizationRequest{
+			AuthorizationId: wireUUID(value.AuthorizationID),
+		})
+	request.Header().Set("Authorization", "Bearer "+value.ForwardedBearer)
+	response, err := client.billing.GetBackgroundUsageAuthorization(ctx, request)
+	if err != nil || response == nil || response.Msg == nil ||
+		response.Msg.Authorization == nil ||
+		response.Msg.Authorization.Authorization == nil {
+		return service.StorageAuthorization{}, storageBillingError(err)
+	}
+	return storageAuthorization(response.Msg.Authorization.Authorization)
+}
+
+func (client *Client) RevokeStorageAuthorization(
+	ctx context.Context,
+	value service.StorageAuthorizationRevokeRequest,
+) (service.StorageAuthorization, error) {
+	request := connect.NewRequest(
+		&delibasev1.RevokeBackgroundUsageAuthorizationRequest{
+			AuthorizationId:  wireUUID(value.AuthorizationID),
+			ExpectedRevision: value.ExpectedRevision,
+			Idempotency: &delibasev1.IdempotencyKey{
+				Key: value.IdempotencyKey.String(),
+			},
+		})
+	request.Header().Set("Authorization", "Bearer "+value.ForwardedBearer)
+	response, err := client.billing.RevokeBackgroundUsageAuthorization(
+		ctx, request)
+	if err != nil || response == nil || response.Msg == nil ||
+		response.Msg.Authorization == nil ||
+		response.Msg.Authorization.Authorization == nil {
+		return service.StorageAuthorization{}, storageBillingError(err)
+	}
+	return storageAuthorization(response.Msg.Authorization.Authorization)
+}
+
+func (client *Client) ReserveAuthorizedStorage(
+	ctx context.Context,
+	value service.AuthorizedStorageUsageRequest,
+) (service.AuthorizedStorageReservation, error) {
+	token, err := client.token(ctx, scopeReserve)
+	if err != nil {
+		return service.AuthorizedStorageReservation{}, storageBillingError(err)
+	}
+	request := connect.NewRequest(&delibasev1.ReserveAuthorizedUsageRequest{
+		Context: authorizedContext(
+			value.AuthorizationID,
+			value.FeatureResourceID,
+			value.PeriodStart,
+		),
+		MaximumUnits:    &delibasev1.UsageUnits{Value: value.Units},
+		ClientReference: value.ClientReference,
+		Idempotency: &delibasev1.IdempotencyKey{
+			Key: value.IdempotencyKey.String(),
+		},
+	})
+	authorizedHeaders(request.Header(), token)
+	response, err := client.usage.ReserveAuthorizedUsage(ctx, request)
+	if err != nil {
+		return service.AuthorizedStorageReservation{}, storageBillingError(err)
+	}
+	if response == nil || response.Msg == nil {
+		return service.AuthorizedStorageReservation{},
+			invalidAuthorizedStorageResponse()
+	}
+	result, err := authorizedStorageReservation(response.Msg.Reservation, 0)
+	if err != nil {
+		return service.AuthorizedStorageReservation{},
+			invalidAuthorizedStorageResponse()
+	}
+	return result, nil
+}
+
+func (client *Client) CommitAuthorizedStorage(
+	ctx context.Context,
+	value service.AuthorizedStorageFinalizationRequest,
+) (service.AuthorizedStorageReservation, error) {
+	token, err := client.token(ctx, scopeCommit)
+	if err != nil {
+		return service.AuthorizedStorageReservation{}, storageBillingError(err)
+	}
+	request := connect.NewRequest(&delibasev1.CommitAuthorizedUsageRequest{
+		Context: authorizedContext(
+			value.AuthorizationID,
+			value.FeatureResourceID,
+			value.PeriodStart,
+		),
+		ReservationId: wireUUID(value.ReservationID),
+		ActualUnits:   &delibasev1.UsageUnits{Value: value.Units},
+		Idempotency: &delibasev1.IdempotencyKey{
+			Key: value.IdempotencyKey.String(),
+		},
+	})
+	authorizedHeaders(request.Header(), token)
+	response, err := client.usage.CommitAuthorizedUsage(ctx, request)
+	if err != nil {
+		return service.AuthorizedStorageReservation{}, storageBillingError(err)
+	}
+	if response == nil || response.Msg == nil ||
+		response.Msg.Commit == nil {
+		return service.AuthorizedStorageReservation{},
+			invalidAuthorizedStorageResponse()
+	}
+	result, err := authorizedStorageReservation(
+		response.Msg.Reservation,
+		response.Msg.GetCommit().GetCommittedUnits().GetValue(),
+	)
+	if err != nil {
+		return service.AuthorizedStorageReservation{},
+			invalidAuthorizedStorageResponse()
+	}
+	return result, nil
+}
+
+func (client *Client) ReleaseAuthorizedStorage(
+	ctx context.Context,
+	value service.AuthorizedStorageFinalizationRequest,
+) (service.AuthorizedStorageReservation, error) {
+	token, err := client.token(ctx, scopeRelease)
+	if err != nil {
+		return service.AuthorizedStorageReservation{}, storageBillingError(err)
+	}
+	request := connect.NewRequest(&delibasev1.ReleaseAuthorizedUsageRequest{
+		Context: authorizedContext(
+			value.AuthorizationID,
+			value.FeatureResourceID,
+			value.PeriodStart,
+		),
+		ReservationId: wireUUID(value.ReservationID),
+		ReservedUnits: &delibasev1.UsageUnits{Value: value.Units},
+		Idempotency: &delibasev1.IdempotencyKey{
+			Key: value.IdempotencyKey.String(),
+		},
+	})
+	authorizedHeaders(request.Header(), token)
+	response, err := client.usage.ReleaseAuthorizedUsage(ctx, request)
+	if err != nil {
+		return service.AuthorizedStorageReservation{}, storageBillingError(err)
+	}
+	if response == nil || response.Msg == nil {
+		return service.AuthorizedStorageReservation{},
+			invalidAuthorizedStorageResponse()
+	}
+	result, err := authorizedStorageReservation(response.Msg.Reservation, 0)
+	if err != nil {
+		return service.AuthorizedStorageReservation{},
+			invalidAuthorizedStorageResponse()
+	}
+	return result, nil
+}
+
+func (client *Client) MarkStorageResourceDeleted(
+	ctx context.Context,
+	value service.StorageResourceDeletedRequest,
+) (service.StorageAuthorization, error) {
+	token, err := client.token(ctx, scopeRelease)
+	if err != nil {
+		return service.StorageAuthorization{}, storageBillingError(err)
+	}
+	request := connect.NewRequest(
+		&delibasev1.MarkBackgroundUsageResourceDeletedRequest{
+			AuthorizationId:   wireUUID(value.AuthorizationID),
+			Purpose:           delibasev1.BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE,
+			FeatureResourceId: wireUUID(value.FeatureResourceID),
+			ExpectedRevision:  value.ExpectedRevision,
+			Idempotency: &delibasev1.IdempotencyKey{
+				Key: value.IdempotencyKey.String(),
+			},
+		})
+	authorizedHeaders(request.Header(), token)
+	response, err := client.usage.MarkBackgroundUsageResourceDeleted(
+		ctx, request)
+	if err != nil || response == nil || response.Msg == nil ||
+		response.Msg.Authorization == nil ||
+		response.Msg.Authorization.Authorization == nil {
+		return service.StorageAuthorization{}, storageBillingError(err)
+	}
+	return storageAuthorization(response.Msg.Authorization.Authorization)
+}
+
+func authorizedContext(
+	authorizationID uuid.UUID,
+	resourceID uuid.UUID,
+	periodStart time.Time,
+) *delibasev1.AuthorizedUsageContext {
+	return &delibasev1.AuthorizedUsageContext{
+		AuthorizationId:   wireUUID(authorizationID),
+		Purpose:           delibasev1.BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE,
+		FeatureResourceId: wireUUID(resourceID),
+		Period:            delibasev1.BackgroundUsagePeriod_BACKGROUND_USAGE_PERIOD_UTC_DAY,
+		PeriodStart:       timestamppb.New(periodStart.UTC()),
+	}
+}
+
+func authorizedStorageReservation(
+	value *delibasev1.UsageReservation,
+	committedUnits int64,
+) (service.AuthorizedStorageReservation, error) {
+	base, err := transferReservation(value, committedUnits)
+	if err != nil || value.AuthorizedUsage == nil ||
+		value.AuthorizedUsage.Purpose !=
+			delibasev1.BackgroundUsagePurpose_BACKGROUND_USAGE_PURPOSE_REALQA_STORAGE ||
+		value.AuthorizedUsage.Period !=
+			delibasev1.BackgroundUsagePeriod_BACKGROUND_USAGE_PERIOD_UTC_DAY ||
+		value.AuthorizedUsage.PeriodStart == nil {
+		return service.AuthorizedStorageReservation{}, errors.New(
+			"realqa delibase: invalid authorized reservation")
+	}
+	authorizationID, err := parseUUID(
+		value.AuthorizedUsage.AuthorizationId)
+	if err != nil {
+		return service.AuthorizedStorageReservation{}, err
+	}
+	resourceID, err := parseUUID(
+		value.AuthorizedUsage.FeatureResourceId)
+	if err != nil {
+		return service.AuthorizedStorageReservation{}, err
+	}
+	periodStart := value.AuthorizedUsage.PeriodStart.AsTime().UTC()
+	if periodStart.Nanosecond() != 0 ||
+		periodStart.Hour() != 0 || periodStart.Minute() != 0 ||
+		periodStart.Second() != 0 {
+		return service.AuthorizedStorageReservation{}, errors.New(
+			"realqa delibase: invalid authorized period")
+	}
+	return service.AuthorizedStorageReservation{
+		TransferReservation: base,
+		AuthorizationID:     authorizationID,
+		FeatureResourceID:   resourceID,
+		PeriodStart:         periodStart,
+	}, nil
 }
 
 func transferReservation(
@@ -522,6 +763,11 @@ func liveHeaders(headers http.Header, serviceToken, userToken string) {
 	headers.Set(auth.ForwardedUserTokenHeader, userToken)
 }
 
+func authorizedHeaders(headers http.Header, serviceToken string) {
+	headers.Set("Authorization", "Bearer "+serviceToken)
+	headers.Del(auth.ForwardedUserTokenHeader)
+}
+
 func wireUUID(value uuid.UUID) *delibasev1.UuidV7 {
 	return &delibasev1.UuidV7{Value: value.String()}
 }
@@ -576,9 +822,77 @@ func reservationStatus(
 func authorizationStatus(
 	value delibasev1.BackgroundUsageAuthorizationStatus,
 ) string {
-	if value ==
-		delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACTIVE {
+	switch value {
+	case delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACTIVE:
 		return "active"
+	case delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_REVOKED:
+		return "revoked"
+	case delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_ACCESS_LOST:
+		return "access_lost"
+	case delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_RESOURCE_DELETED:
+		return "resource_deleted"
+	case delibasev1.BackgroundUsageAuthorizationStatus_BACKGROUND_USAGE_AUTHORIZATION_STATUS_OWNER_DELETED:
+		return "owner_deleted"
+	default:
+		return ""
 	}
-	return ""
+}
+
+func storageBillingError(err error) error {
+	kind := service.StorageBillingFailureUnavailable
+	var failure *connect.Error
+	if errors.As(err, &failure) {
+		if failure.Code() == connect.CodeInvalidArgument {
+			// Recurring requests are built from validated persisted state.
+			// After delibase checks completed reserve replays, this response
+			// definitively means the period cannot accept a new reservation.
+			kind = service.StorageBillingFailurePeriod
+		}
+		for _, detail := range failure.Details() {
+			value, detailErr := detail.Value()
+			if detailErr != nil {
+				continue
+			}
+			typed, ok := value.(*delibasev1.ErrorDetail)
+			if !ok {
+				continue
+			}
+			switch typed.Reason {
+			case delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_STATUS_INVALID:
+				kind = service.StorageBillingFailureAuthorization
+			case delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST:
+				if typed.Metadata["authorization_status"] == "owner_deleted" {
+					kind = service.StorageBillingFailureOwnerDeleted
+				} else {
+					kind = service.StorageBillingFailureAccess
+				}
+			case delibasev1.ErrorReason_ERROR_REASON_RESERVATION_EXPIRED:
+				kind = service.StorageBillingFailureExpired
+			case
+				delibasev1.ErrorReason_ERROR_REASON_SUBSCRIPTION_INACTIVE,
+				delibasev1.ErrorReason_ERROR_REASON_SUBSCRIPTION_PAST_DUE,
+				delibasev1.ErrorReason_ERROR_REASON_SUBSCRIPTION_CANCELED,
+				delibasev1.ErrorReason_ERROR_REASON_SUBSCRIPTION_REVOKED,
+				delibasev1.ErrorReason_ERROR_REASON_AVAILABLE_FUNDS_EXHAUSTED:
+				kind = service.StorageBillingFailurePayment
+			case
+				delibasev1.ErrorReason_ERROR_REASON_OVERAGE_NOT_CONFIGURED,
+				delibasev1.ErrorReason_ERROR_REASON_OVERAGE_DISABLED,
+				delibasev1.ErrorReason_ERROR_REASON_OVERAGE_LIMIT_EXHAUSTED:
+				kind = service.StorageBillingFailureOverage
+			case
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_SUBSTITUTION,
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_REPLAY_CONFLICT,
+				delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_PERIOD_LIMIT_EXCEEDED:
+				kind = service.StorageBillingFailureSecurity
+			}
+		}
+	}
+	return &service.StorageBillingFailure{Kind: kind}
+}
+
+func invalidAuthorizedStorageResponse() error {
+	return &service.StorageBillingFailure{
+		Kind: service.StorageBillingFailureSecurity,
+	}
 }

@@ -430,12 +430,23 @@ RETURNING *;
 
 -- name: MarkSubmissionSubmitted :one
 UPDATE realqa_submissions
-SET state = 'submitted',
+SET state = CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM realqa_storage_recoveries AS recovery
+            WHERE recovery.submission_id = realqa_submissions.id
+              AND recovery.recovered_at IS NULL
+              AND recovery.expired_at IS NULL
+        ) THEN 'storage_billing_grace'
+        ELSE 'submitted'
+    END,
     submitted_at = COALESCE(submitted_at, transaction_timestamp()),
     updated_at = transaction_timestamp(),
     revision = revision + 1
-WHERE id = sqlc.arg(id)
-  AND state IN ('ready', 'submitting', 'reconciling')
+WHERE realqa_submissions.id = sqlc.arg(id)
+  AND realqa_submissions.state IN (
+      'ready', 'submitting', 'reconciling', 'storage_billing_grace'
+  )
 RETURNING *;
 
 -- name: GetPublicAsset :one

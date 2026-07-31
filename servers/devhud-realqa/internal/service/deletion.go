@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"time"
 
 	"connectrpc.com/connect"
 	realqav1 "github.com/delinoio/oss/protos/devhud-realqa/gen/go/devhud-realqa/v1"
@@ -143,6 +144,13 @@ func (service *Preset) DeleteFeatureData(
 				return nil, cleanupErr
 			}
 		}
+		if !ownerRequest {
+			if cleanupErr := service.prepareLifecycleStorageDeletion(
+				ctx, scope, existing.AcceptedAt.Time,
+			); cleanupErr != nil {
+				return nil, cleanupErr
+			}
+		}
 		existingID, conversionErr := fromPGUUID(existing.ID)
 		if conversionErr != nil {
 			return nil, conversionErr
@@ -202,12 +210,44 @@ func (service *Preset) DeleteFeatureData(
 				}); insertErr != nil {
 				return insertErr
 			}
-			var listErr error
-			if _, listErr = queries.LockScopeSubmissionRecords(
+			scopedSubmissions, listErr := queries.LockScopeSubmissionRecords(
 				ctx, dbgen.LockScopeSubmissionRecordsParams{
 					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
-				}); listErr != nil {
+				})
+			if listErr != nil {
 				return listErr
+			}
+			if ownerRequest {
+				hasPending, pendingErr :=
+					queries.HasScopePendingStorageAuthorizationAttempt(
+						ctx, dbgen.HasScopePendingStorageAuthorizationAttemptParams{
+							OwnerKind: scope.kind,
+							OwnerID:   toPGUUID(scope.id),
+						})
+				if pendingErr != nil {
+					return pendingErr
+				}
+				if hasPending {
+					// The original submitter must replay the stable create key
+					// with a fresh forwarded bearer before deletion can remove
+					// the only local recipe for recovering the exact grant.
+					return reauthenticationRequired()
+				}
+				hasPending, pendingErr =
+					queries.HasScopePendingStorageRebindAttempt(
+						ctx, dbgen.HasScopePendingStorageRebindAttemptParams{
+							OwnerKind: scope.kind,
+							OwnerID:   toPGUUID(scope.id),
+						})
+				if pendingErr != nil {
+					return pendingErr
+				}
+				if hasPending {
+					// A pending rebind may already have created its replacement
+					// grant. Keep its stable replay recipe until recovery either
+					// installs or closes that grant.
+					return reauthenticationRequired()
+				}
 			}
 			scopedAssets, listErr = queries.ListScopeObjectAssets(ctx,
 				dbgen.ListScopeObjectAssetsParams{
@@ -225,6 +265,27 @@ func (service *Preset) DeleteFeatureData(
 			if listErr = queries.TombstoneScopePublicAssets(ctx,
 				dbgen.TombstoneScopePublicAssetsParams{
 					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				}); listErr != nil {
+				return listErr
+			}
+			cutoff, listErr := queries.GetTransactionTimestamp(ctx)
+			if listErr != nil {
+				return listErr
+			}
+			if _, listErr = queries.CloseStorageRetentionForScope(
+				ctx, dbgen.CloseStorageRetentionForScopeParams{
+					Cutoff:    cutoff,
+					OwnerKind: scope.kind,
+					OwnerID:   toPGUUID(scope.id),
+				}); listErr != nil {
+				return listErr
+			}
+			if _, listErr = queries.MarkScopeStorageClosurePending(
+				ctx, dbgen.MarkScopeStorageClosurePendingParams{
+					OwnerDeletedAllowed: !ownerRequest,
+					Cutoff:              cutoff,
+					OwnerKind:           scope.kind,
+					OwnerID:             toPGUUID(scope.id),
 				}); listErr != nil {
 				return listErr
 			}
@@ -267,6 +328,40 @@ func (service *Preset) DeleteFeatureData(
 			removed += count
 			if deleteErr != nil {
 				return deleteErr
+			}
+			count, deleteErr = queries.DeleteScopeBillingIssueAttempts(
+				ctx, dbgen.DeleteScopeBillingIssueAttemptsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
+			count, deleteErr = queries.DeleteScopeBillingAssets(
+				ctx, dbgen.DeleteScopeBillingAssetsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
+			count, deleteErr = queries.MinimizeScopeBillingSubmissions(
+				ctx, dbgen.MinimizeScopeBillingSubmissionsParams{
+					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
+				})
+			removed += count
+			if deleteErr != nil {
+				return deleteErr
+			}
+			for _, submissionID := range scopedSubmissions {
+				if _, resolveErr := queries.ResolveStorageRecovery(
+					ctx, dbgen.ResolveStorageRecoveryParams{
+						RecoveredAt:        cutoff,
+						TargetSubmissionID: submissionID,
+					}); resolveErr != nil &&
+					!errors.Is(resolveErr, pgx.ErrNoRows) {
+					return resolveErr
+				}
 			}
 			count, deleteErr = queries.DeleteScopeDestinations(ctx,
 				dbgen.DeleteScopeDestinationsParams{
@@ -338,6 +433,13 @@ func (service *Preset) DeleteFeatureData(
 					return nil, cleanupErr
 				}
 			}
+			if !ownerRequest {
+				if cleanupErr := service.prepareLifecycleStorageDeletion(
+					ctx, scope, existing.AcceptedAt.Time,
+				); cleanupErr != nil {
+					return nil, cleanupErr
+				}
+			}
 			existingID, _ := fromPGUUID(existing.ID)
 			return deletionReplay(
 				existingID, existing.AcceptedAt, existing.AlreadyAbsent,
@@ -346,6 +448,12 @@ func (service *Preset) DeleteFeatureData(
 		return nil, err
 	}
 	imageService := NewSubmission(service.dependencies)
+	if !ownerRequest {
+		if err = service.prepareLifecycleStorageDeletion(
+			ctx, scope, deletionJob.AcceptedAt.Time); err != nil {
+			return nil, err
+		}
+	}
 	imageService.drainObjectDeletionsBestEffort(context.WithoutCancel(ctx))
 	audit(ctx, service.dependencies, actor, "feature_deletion_accepted",
 		scope, jobID, "allow", "success")
@@ -357,6 +465,35 @@ func (service *Preset) DeleteFeatureData(
 			OriginallyCompletedAt: timestamp(deletionJob.AcceptedAt),
 		},
 	}), nil
+}
+
+func (service *Preset) prepareLifecycleStorageDeletion(
+	ctx context.Context,
+	scope owner,
+	cutoff time.Time,
+) error {
+	if _, err := service.dependencies.Store.Queries().
+		TerminalizeLifecycleStorageRebindAttempts(
+			ctx, dbgen.TerminalizeLifecycleStorageRebindAttemptsParams{
+				Cutoff:    pgTimestamp(cutoff),
+				OwnerKind: scope.kind,
+				OwnerID:   toPGUUID(scope.id),
+			}); err != nil {
+		return err
+	}
+	if _, err := service.dependencies.Store.Queries().
+		MarkScopeStorageClosurePending(
+			ctx, dbgen.MarkScopeStorageClosurePendingParams{
+				OwnerDeletedAllowed: true,
+				Cutoff:              pgTimestamp(cutoff),
+				OwnerKind:           scope.kind,
+				OwnerID:             toPGUUID(scope.id),
+			}); err != nil {
+		return err
+	}
+	return NewSubmission(service.dependencies).
+		HandleLifecycleAuthorizationDeletion(
+			ctx, scope, cutoff.UTC())
 }
 
 func (service *Preset) disconnectLifecycleAccount(

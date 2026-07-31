@@ -59,6 +59,12 @@ func (service *Submission) SubmitIssue(
 	if err != nil || clientKey != idempotencyID {
 		return nil, idempotencyConflict()
 	}
+	if recovered, recoveryErr := service.recoverExpiredStorageAuthorization(
+		ctx, actor, scope, submissionID, submission,
+		idempotencyID, requestDigest,
+	); recovered {
+		return nil, recoveryErr
+	}
 	attempt, replayed, err := service.claimIssueSubmission(
 		ctx, actor, submissionID, idempotencyID, requestDigest,
 		request.Msg.ExpectedSubmissionRevision.Value)
@@ -66,7 +72,8 @@ func (service *Submission) SubmitIssue(
 		return nil, err
 	}
 	if attempt.State == "completed" {
-		return service.submitIssueResponse(ctx, submissionID, true, attempt)
+		return service.submitIssueResponse(
+			ctx, actor, submissionID, true, attempt)
 	}
 	if err = service.finalizeTransfer(
 		ctx, actor, scope, submissionID, attempt); err != nil {
@@ -143,7 +150,7 @@ func (service *Submission) promoteAndCompleteIssue(
 		"event", "submission_completed",
 	)
 	return service.submitIssueResponse(
-		ctx, submissionID, replayed, completed)
+		ctx, actor, submissionID, replayed, completed)
 }
 
 func (service *Submission) claimIssueSubmission(
@@ -484,6 +491,20 @@ func (service *Submission) ensureStorageAuthorization(
 	if maximumUnits == 0 {
 		return nil
 	}
+	return service.ensureStorageAuthorizationMaximum(
+		ctx, actor, scope, submissionID, maximumUnits)
+}
+
+func (service *Submission) ensureStorageAuthorizationMaximum(
+	ctx context.Context,
+	actor caller,
+	scope owner,
+	submissionID uuid.UUID,
+	maximumUnits int64,
+) error {
+	if maximumUnits <= 0 {
+		return storageAuthorizationFailed()
+	}
 	submission, err := service.dependencies.Store.Queries().
 		GetSubmissionRecord(ctx, toPGUUID(submissionID))
 	if err != nil {
@@ -497,32 +518,29 @@ func (service *Submission) ensureStorageAuthorization(
 	if err != nil {
 		return storageAuthorizationFailed()
 	}
-	meters, err := service.dependencies.Billing.Meters(ctx)
-	if err != nil || validateBillingMeters(meters) != nil {
-		return storageAuthorizationFailed()
-	}
-	forwardedBearer, ok := service.forwardedBearer(ctx)
-	if !ok {
-		return reauthenticationRequired()
-	}
 	idempotencyKey, err := derivedUUIDv7(
 		submissionID, "storage-authorization")
 	if err != nil {
 		return err
 	}
-	requestMaterial := []byte(
-		"realqa-storage-authorization:v1:" +
-			scope.kind + ":" + scope.id.String() + ":" +
-			organizationID.String() + ":" + teamID.String() + ":" +
-			meters.Storage.ServiceIdentityID.String() + ":" +
-			meters.Storage.ID.String() + ":" +
-			meters.Storage.PriceVersionID.String() + ":" +
-			"REALQA_STORAGE:UTC_DAY:" +
-			strconv.FormatInt(maximumUnits, 10))
-	requestDigest := sha256.Sum256(requestMaterial)
 	existing, err := service.dependencies.Store.Queries().
 		GetStorageAuthorizationAttempt(ctx, toPGUUID(submissionID))
+	var (
+		forwardedBearer    string
+		hasForwardedBearer bool
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
+		meters, metersErr := service.dependencies.Billing.Meters(ctx)
+		if metersErr != nil || validateBillingMeters(meters) != nil {
+			return storageAuthorizationFailed()
+		}
+		forwardedBearer, hasForwardedBearer =
+			service.forwardedBearer(ctx)
+		if !hasForwardedBearer {
+			return reauthenticationRequired()
+		}
+		requestDigest := storageAuthorizationAttemptDigest(
+			scope, organizationID, teamID, meters.Storage, maximumUnits)
 		existing, err = service.dependencies.Store.Queries().
 			CreateStorageAuthorizationAttempt(
 				ctx, dbgen.CreateStorageAuthorizationAttemptParams{
@@ -542,21 +560,32 @@ func (service *Submission) ensureStorageAuthorization(
 	if err != nil {
 		return err
 	}
+	serviceIdentityID, serviceIdentityErr := fromPGUUID(
+		existing.ServiceIdentityID)
+	meterID, meterErr := fromPGUUID(existing.MeterID)
+	if serviceIdentityErr != nil || meterErr != nil {
+		return storageAuthorizationSubstitution()
+	}
+	attemptMeter := BillingMeter{
+		ID:                meterID,
+		ServiceIdentityID: serviceIdentityID,
+	}
+	requestDigest := storageAuthorizationAttemptDigest(
+		scope, organizationID, teamID, attemptMeter, maximumUnits)
 	if existing.IdempotencyKey != toPGUUID(idempotencyKey) ||
 		!bytes.Equal(existing.RequestDigest, requestDigest[:]) ||
-		existing.ServiceIdentityID !=
-			toPGUUID(meters.Storage.ServiceIdentityID) ||
-		existing.MeterID != toPGUUID(meters.Storage.ID) ||
 		existing.MaximumUnits != maximumUnits {
-		return rqerr.New(
-			connect.CodeFailedPrecondition,
-			realqav1.ErrorReason_ERROR_REASON_STORAGE_AUTHORIZATION_SUBSTITUTION,
-			realqav1.FailureClass_FAILURE_CLASS_CONFLICT,
-			0,
-		)
+		return storageAuthorizationSubstitution()
 	}
 	if existing.State == "active" {
 		return nil
+	}
+	if !hasForwardedBearer {
+		forwardedBearer, hasForwardedBearer =
+			service.forwardedBearer(ctx)
+		if !hasForwardedBearer {
+			return reauthenticationRequired()
+		}
 	}
 	return service.dependencies.Store.WithinTransaction(
 		ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
@@ -590,8 +619,8 @@ func (service *Submission) ensureStorageAuthorization(
 				OwnerID:           scope.id,
 				OrganizationID:    organizationID,
 				TeamID:            teamID,
-				ServiceIdentityID: meters.Storage.ServiceIdentityID,
-				MeterID:           meters.Storage.ID,
+				ServiceIdentityID: serviceIdentityID,
+				MeterID:           meterID,
 				FeatureResourceID: submissionID,
 				MaximumUnits:      maximumUnits,
 				IdempotencyKey:    idempotencyKey,
@@ -606,7 +635,7 @@ func (service *Submission) ensureStorageAuthorization(
 					actor.accountID) != nil {
 				return storageAuthorizationFailed()
 			}
-			_, createErr = queries.CompleteStorageAuthorizationAttempt(
+			completed, createErr := queries.CompleteStorageAuthorizationAttempt(
 				ctx, dbgen.CompleteStorageAuthorizationAttemptParams{
 					AuthorizationID: toPGUUID(authorization.ID),
 					AuthorizationRevision: pgtype.Int8{
@@ -614,8 +643,137 @@ func (service *Submission) ensureStorageAuthorization(
 					},
 					SubmissionID: toPGUUID(submissionID),
 				})
+			if createErr != nil {
+				return createErr
+			}
+			_, createErr = queries.CreateStorageAuthorizationBinding(
+				ctx, dbgen.CreateStorageAuthorizationBindingParams{
+					AuthorizationID:     toPGUUID(authorization.ID),
+					SubmissionID:        toPGUUID(submissionID),
+					MappingRevision:     completed.MappingRevision,
+					MappingInstalled:    true,
+					AuthorizerAccountID: toPGUUID(actor.accountID),
+					OwnerKind:           scope.kind,
+					OwnerID:             toPGUUID(scope.id),
+					OrganizationID:      toPGUUID(organizationID),
+					TeamID:              toPGUUID(teamID),
+					ServiceIdentityID: toPGUUID(
+						authorization.ServiceIdentityID),
+					MeterID:               toPGUUID(authorization.MeterID),
+					MaximumUnits:          authorization.MaximumUnits,
+					Status:                authorization.Status,
+					AuthorizationRevision: authorization.Revision,
+				})
 			return createErr
 		})
+}
+
+// recoverExpiredStorageAuthorization is a cleanup-only replay. Once staging
+// expiry has terminalized the assets, a fresh authenticated replay may recover
+// an ambiguous initial authorization through its stable key and immediately
+// queue that exact grant for deletion. It never resumes provider work or image
+// promotion after the transfer reservation expires.
+func (service *Submission) recoverExpiredStorageAuthorization(
+	ctx context.Context,
+	actor caller,
+	scope owner,
+	submissionID uuid.UUID,
+	submission dbgen.RealqaSubmission,
+	idempotencyID uuid.UUID,
+	requestDigest []byte,
+) (bool, error) {
+	if submission.State != "assets_deleted" ||
+		!submission.UploadExpiresAt.Valid ||
+		service.dependencies.Clock.Now().UTC().Before(
+			submission.UploadExpiresAt.Time.UTC()) {
+		return false, nil
+	}
+	issueAttempt, err := service.dependencies.Store.Queries().
+		GetIssueSubmissionAttempt(ctx, toPGUUID(submissionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	if issueAttempt.IdempotencyKey != toPGUUID(idempotencyID) ||
+		!bytes.Equal(issueAttempt.RequestDigest, requestDigest) {
+		return true, idempotencyConflict()
+	}
+	storageAttempt, err := service.dependencies.Store.Queries().
+		GetStorageAuthorizationAttempt(ctx, toPGUUID(submissionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	if issueAttempt.State != "transfer_finalized" {
+		return true, storageAuthorizationFailed()
+	}
+	switch storageAttempt.State {
+	case "pending":
+		if err = service.ensureStorageAuthorizationMaximum(
+			ctx, actor, scope, submissionID,
+			storageAttempt.MaximumUnits); err != nil {
+			return true, err
+		}
+	case "active", "closure_pending", "closed":
+		// A prior replay may have installed the binding before losing its
+		// response or before the deletion-pending transition committed.
+	default:
+		return true, storageAuthorizationFailed()
+	}
+	err = service.dependencies.Store.WithinTransaction(
+		ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+			locked, lockErr := queries.LockSubmissionRecord(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
+			if locked.State != "assets_deleted" ||
+				!locked.UploadExpiresAt.Valid {
+				return retentionStateConflict()
+			}
+			binding, lockErr := queries.LockCurrentStorageAuthorizationBinding(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
+			updated, lockErr := queries.MarkSubmissionStorageClosurePending(
+				ctx, dbgen.MarkSubmissionStorageClosurePendingParams{
+					Cutoff:       locked.UploadExpiresAt,
+					SubmissionID: locked.ID,
+				})
+			if lockErr == nil && updated == 0 &&
+				binding.ClosureState != "closed" {
+				return errors.New(
+					"realqa storage billing: expired authorization remained open")
+			}
+			return lockErr
+		})
+	if err != nil {
+		return true, err
+	}
+	return true, uploadExpired()
+}
+
+func storageAuthorizationAttemptDigest(
+	scope owner,
+	organizationID uuid.UUID,
+	teamID uuid.UUID,
+	meter BillingMeter,
+	maximumUnits int64,
+) [sha256.Size]byte {
+	requestMaterial := []byte(
+		"realqa-storage-authorization:v1:" +
+			scope.kind + ":" + scope.id.String() + ":" +
+			organizationID.String() + ":" + teamID.String() + ":" +
+			meter.ServiceIdentityID.String() + ":" +
+			meter.ID.String() + ":" +
+			"REALQA_STORAGE:UTC_DAY:" +
+			strconv.FormatInt(maximumUnits, 10))
+	return sha256.Sum256(requestMaterial)
 }
 
 func (service *Submission) issueInput(
@@ -857,11 +1015,13 @@ func (service *Submission) createOrReconcileIssue(
 
 func (service *Submission) submitIssueResponse(
 	ctx context.Context,
+	actor caller,
 	submissionID uuid.UUID,
 	replayed bool,
 	attempt dbgen.RealqaIssueSubmissionAttempt,
 ) (*connect.Response[realqav1.SubmitIssueResponse], error) {
-	submission, err := service.loadSubmission(ctx, submissionID)
+	submission, err := service.loadSubmissionWithRecoveryCaller(
+		ctx, submissionID, toPGUUID(actor.accountID))
 	if err != nil {
 		return nil, err
 	}

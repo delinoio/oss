@@ -293,6 +293,96 @@ type RealqaStorageAuthorizationAttempt struct {
 	UpdatedAt             pgtype.Timestamptz
 }
 
+type RealqaStorageAuthorizationBinding struct {
+	AuthorizationID            pgtype.UUID
+	SubmissionID               pgtype.UUID
+	MappingRevision            int64
+	MappingInstalled           bool
+	AuthorizerAccountID        pgtype.UUID
+	OwnerKind                  string
+	OwnerID                    pgtype.UUID
+	OrganizationID             pgtype.UUID
+	TeamID                     pgtype.UUID
+	ServiceIdentityID          pgtype.UUID
+	MeterID                    pgtype.UUID
+	MaximumUnits               int64
+	Status                     string
+	AuthorizationRevision      int64
+	ClosureState               string
+	ClosureOwnerDeletedAllowed bool
+	AccrualCutoffAt            pgtype.Timestamptz
+	CreatedAt                  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+	ClosedAt                   pgtype.Timestamptz
+}
+
+type RealqaStorageDailySettlement struct {
+	AuthorizationID           pgtype.UUID
+	PeriodStart               pgtype.Timestamptz
+	ByteSeconds               int64
+	Units                     int64
+	State                     string
+	RequestDigest             []byte
+	ReserveIdempotencyKey     pgtype.UUID
+	CommitIdempotencyKey      pgtype.UUID
+	ReleaseIdempotencyKey     pgtype.UUID
+	ReservationID             pgtype.UUID
+	ReservationCreatedAt      pgtype.Timestamptz
+	ReservationExpiresAt      pgtype.Timestamptz
+	ReservationPriceVersionID pgtype.UUID
+	AttemptCount              int32
+	LastAttemptedAt           pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+	SettledAt                 pgtype.Timestamptz
+}
+
+type RealqaStorageRebindAttempt struct {
+	SubmissionID                     pgtype.UUID
+	CallerDigest                     []byte
+	IdempotencyKey                   pgtype.UUID
+	RequestDigest                    []byte
+	ExpectedAuthorizationID          pgtype.UUID
+	ExpectedMappingRevision          int64
+	ReplacementOrganizationID        pgtype.UUID
+	ReplacementTeamID                pgtype.UUID
+	ReplacementMaximumUnits          int64
+	ReplacementServiceIdentityID     pgtype.UUID
+	ReplacementMeterID               pgtype.UUID
+	RevokeIdempotencyKey             pgtype.UUID
+	CreateIdempotencyKey             pgtype.UUID
+	State                            string
+	ReplacementAuthorizationID       pgtype.UUID
+	ReplacementAuthorizationRevision pgtype.Int8
+	ResultingMappingRevision         pgtype.Int8
+	CutoffAt                         pgtype.Timestamptz
+	CreatedAt                        pgtype.Timestamptz
+	CompletedAt                      pgtype.Timestamptz
+}
+
+type RealqaStorageRecovery struct {
+	ID                pgtype.UUID
+	SubmissionID      pgtype.UUID
+	AuthorizationID   pgtype.UUID
+	Reason            string
+	NotificationState string
+	GraceStartedAt    pgtype.Timestamptz
+	GraceExpiresAt    pgtype.Timestamptz
+	RecoveredAt       pgtype.Timestamptz
+	ExpiredAt         pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+}
+
+type RealqaStorageRetentionInterval struct {
+	AuthorizationID pgtype.UUID
+	AssetID         pgtype.UUID
+	RetainedBytes   int64
+	StartsAt        pgtype.Timestamptz
+	EndsAt          pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
 type RealqaSubmission struct {
 	ID                            pgtype.UUID
 	OwnerKind                     string
