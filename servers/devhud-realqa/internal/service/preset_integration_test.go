@@ -4202,16 +4202,24 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		realqav1.ErrorReason_ERROR_REASON_STORAGE_AUTHORIZATION_FAILED,
 		realqav1.FailureClass_FAILURE_CLASS_RETRYABLE)
 	var pendingReplacementQueued string
+	var pendingReplacementMappingRevision int64
 	if err = connection.QueryRow(ctx, `
-			SELECT closure_state
+			SELECT closure_state, mapping_revision
 			FROM realqa_storage_authorization_bindings
 			WHERE authorization_id = $1
-		`, pendingReplacementID).Scan(&pendingReplacementQueued); err != nil {
+		`, pendingReplacementID).Scan(
+		&pendingReplacementQueued,
+		&pendingReplacementMappingRevision,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if pendingReplacementQueued != "resource_deletion_pending" {
 		t.Fatalf("pending replacement closure = %q, want queued",
 			pendingReplacementQueued)
+	}
+	if pendingReplacementMappingRevision != 2 {
+		t.Fatalf("pending replacement mapping revision = %d, want 2",
+			pendingReplacementMappingRevision)
 	}
 	pendingRebindBilling.markErr = nil
 	_, err = pendingRebindService.RebindSubmissionStorageAuthorization(

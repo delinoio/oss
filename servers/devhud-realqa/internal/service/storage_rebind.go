@@ -509,7 +509,7 @@ func (service *Submission) closePendingStorageRebind(
 	cleanupBinding := dbgen.RealqaStorageAuthorizationBinding{
 		AuthorizationID:       toPGUUID(replacement.ID),
 		SubmissionID:          toPGUUID(submissionID),
-		MappingRevision:       attempt.ExpectedMappingRevision,
+		MappingRevision:       attempt.ExpectedMappingRevision + 1,
 		AuthorizerAccountID:   toPGUUID(actor.accountID),
 		OwnerKind:             scope.kind,
 		OwnerID:               toPGUUID(scope.id),
