@@ -66,6 +66,14 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 		return nil, lookupErr
 	}
 	if submission.State != "storage_billing_grace" {
+		if lookupErr == nil {
+			if err = service.closePendingStorageRebind(
+				ctx, actor, scope, submissionID, idempotencyID,
+				request.Msg, existingAttempt,
+			); err != nil {
+				return nil, err
+			}
+		}
 		return nil, rqerr.New(
 			connect.CodeFailedPrecondition,
 			realqav1.ErrorReason_ERROR_REASON_STORAGE_REBIND_REQUIRED,
@@ -440,6 +448,202 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 		"storage_authorization_rebound", scope, submissionID,
 		"allow", "success")
 	return storageRebindResponse(submissionID, completed, replayed)
+}
+
+// closePendingStorageRebind recovers a replacement that may have been created
+// downstream before the local install transaction was lost. Once the
+// submission has left grace, that grant must be closed rather than installed.
+// The attempt remains pending as the durable create replay recipe. Once the
+// create response is known, a deletion-pending binding durably gives the M2M
+// closure worker everything it needs if this request is lost again.
+func (service *Submission) closePendingStorageRebind(
+	ctx context.Context,
+	actor caller,
+	scope owner,
+	submissionID uuid.UUID,
+	idempotencyID uuid.UUID,
+	request *realqav1.RebindSubmissionStorageAuthorizationRequest,
+	attempt dbgen.RealqaStorageRebindAttempt,
+) error {
+	expectedAuthorizationID, expectedErr := parseUUIDMessage(
+		request.ExpectedAuthorizationId)
+	replacementOrganizationID, organizationErr := parseUUIDMessage(
+		request.ReplacementBilling.OrganizationId)
+	replacementTeamID, teamErr := parseUUIDMessage(
+		request.ReplacementBilling.TeamId)
+	revokeKey, revokeErr := derivedUUIDv7(
+		idempotencyID, "storage-rebind-revoke")
+	createKey, createErr := derivedUUIDv7(
+		idempotencyID, "storage-rebind-create")
+	if expectedErr != nil || organizationErr != nil || teamErr != nil ||
+		revokeErr != nil || createErr != nil ||
+		attempt.State != "pending" ||
+		attempt.ExpectedAuthorizationID != toPGUUID(expectedAuthorizationID) ||
+		attempt.ExpectedMappingRevision != request.ExpectedMappingRevision.Value ||
+		attempt.ReplacementOrganizationID !=
+			toPGUUID(replacementOrganizationID) ||
+		attempt.ReplacementTeamID != toPGUUID(replacementTeamID) ||
+		attempt.RevokeIdempotencyKey != toPGUUID(revokeKey) ||
+		attempt.CreateIdempotencyKey != toPGUUID(createKey) {
+		return idempotencyConflict()
+	}
+	if service.dependencies.Billing == nil {
+		return storageAuthorizationFailed()
+	}
+	forwardedBearer, ok := service.forwardedBearer(ctx)
+	if !ok {
+		return reauthenticationRequired()
+	}
+	replacementRequest, err := storageRebindAuthorizationRequest(
+		attempt, scope, submissionID, forwardedBearer)
+	if err != nil {
+		return storageAuthorizationFailed()
+	}
+	replacement, err := service.dependencies.Billing.
+		CreateStorageAuthorization(ctx, replacementRequest)
+	if err != nil ||
+		validateStorageAuthorization(
+			replacement, replacementRequest, actor.accountID) != nil {
+		return storageAuthorizationFailed()
+	}
+	cleanupBinding := dbgen.RealqaStorageAuthorizationBinding{
+		AuthorizationID:       toPGUUID(replacement.ID),
+		SubmissionID:          toPGUUID(submissionID),
+		MappingRevision:       attempt.ExpectedMappingRevision,
+		AuthorizerAccountID:   toPGUUID(actor.accountID),
+		OwnerKind:             scope.kind,
+		OwnerID:               toPGUUID(scope.id),
+		OrganizationID:        toPGUUID(replacementOrganizationID),
+		TeamID:                toPGUUID(replacementTeamID),
+		ServiceIdentityID:     attempt.ReplacementServiceIdentityID,
+		MeterID:               attempt.ReplacementMeterID,
+		MaximumUnits:          attempt.ReplacementMaximumUnits,
+		Status:                replacement.Status,
+		AuthorizationRevision: replacement.Revision,
+	}
+	alreadyClosed := false
+	err = service.dependencies.Store.WithinTransaction(
+		ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+			persisted, persistErr :=
+				queries.CreateStorageAuthorizationBinding(
+					ctx, dbgen.CreateStorageAuthorizationBindingParams{
+						AuthorizationID: cleanupBinding.AuthorizationID,
+						SubmissionID:    cleanupBinding.SubmissionID,
+						MappingRevision: cleanupBinding.MappingRevision,
+						AuthorizerAccountID: cleanupBinding.
+							AuthorizerAccountID,
+						OwnerKind:      cleanupBinding.OwnerKind,
+						OwnerID:        cleanupBinding.OwnerID,
+						OrganizationID: cleanupBinding.OrganizationID,
+						TeamID:         cleanupBinding.TeamID,
+						ServiceIdentityID: cleanupBinding.
+							ServiceIdentityID,
+						MeterID: cleanupBinding.MeterID,
+						MaximumUnits: cleanupBinding.
+							MaximumUnits,
+						Status: cleanupBinding.Status,
+						AuthorizationRevision: cleanupBinding.
+							AuthorizationRevision,
+					})
+			if errors.Is(persistErr, pgx.ErrNoRows) {
+				persisted, persistErr =
+					queries.GetStorageAuthorizationBinding(
+						ctx, cleanupBinding.AuthorizationID)
+			}
+			if persistErr != nil {
+				return persistErr
+			}
+			if !sameStorageAuthorizationBinding(
+				persisted, cleanupBinding) {
+				return storageAuthorizationSubstitution()
+			}
+			if persisted.ClosureState == "closed" {
+				if !storageClosureStatusAllowed(
+					persisted.Status, false) ||
+					persisted.AuthorizationRevision <
+						replacement.Revision {
+					return storageAuthorizationFailed()
+				}
+				alreadyClosed = true
+				return nil
+			}
+			_, persistErr =
+				queries.MarkStorageAuthorizationClosurePending(
+					ctx, dbgen.MarkStorageAuthorizationClosurePendingParams{
+						Cutoff: pgTimestamp(
+							service.dependencies.Clock.Now().UTC()),
+						AuthorizationID: cleanupBinding.
+							AuthorizationID,
+					})
+			return persistErr
+		})
+	if err != nil {
+		return err
+	}
+	if alreadyClosed {
+		return nil
+	}
+	closeKey, err := derivedUUIDv7(
+		idempotencyID, "storage-rebind-resource-deleted")
+	if err != nil {
+		return err
+	}
+	closed, err := service.dependencies.Billing.MarkStorageResourceDeleted(
+		ctx, StorageResourceDeletedRequest{
+			AuthorizationID:   replacement.ID,
+			FeatureResourceID: submissionID,
+			ExpectedRevision:  replacement.Revision,
+			IdempotencyKey:    closeKey,
+		})
+	if err != nil ||
+		validateBoundStorageAuthorization(
+			closed, cleanupBinding, false) != nil ||
+		!storageClosureStatusAllowed(closed.Status, false) {
+		return storageAuthorizationFailed()
+	}
+	if _, err = service.dependencies.Store.Queries().
+		CompleteStorageAuthorizationClosure(
+			ctx, dbgen.CompleteStorageAuthorizationClosureParams{
+				Status:                closed.Status,
+				AuthorizationRevision: closed.Revision,
+				AuthorizationID:       cleanupBinding.AuthorizationID,
+			}); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		persisted, lookupErr := service.dependencies.Store.Queries().
+			GetStorageAuthorizationBinding(
+				ctx, cleanupBinding.AuthorizationID)
+		if lookupErr != nil ||
+			!sameStorageAuthorizationBinding(
+				persisted, cleanupBinding) ||
+			persisted.ClosureState != "closed" ||
+			persisted.AuthorizationRevision < closed.Revision ||
+			!storageClosureStatusAllowed(persisted.Status, false) {
+			return storageAuthorizationFailed()
+		}
+	}
+	audit(ctx, service.dependencies, actor,
+		"storage_rebind_replacement_closed", scope, submissionID,
+		"allow", "success")
+	return nil
+}
+
+func sameStorageAuthorizationBinding(
+	actual dbgen.RealqaStorageAuthorizationBinding,
+	expected dbgen.RealqaStorageAuthorizationBinding,
+) bool {
+	return actual.AuthorizationID == expected.AuthorizationID &&
+		actual.SubmissionID == expected.SubmissionID &&
+		actual.MappingRevision == expected.MappingRevision &&
+		actual.AuthorizerAccountID == expected.AuthorizerAccountID &&
+		actual.OwnerKind == expected.OwnerKind &&
+		actual.OwnerID == expected.OwnerID &&
+		actual.OrganizationID == expected.OrganizationID &&
+		actual.TeamID == expected.TeamID &&
+		actual.ServiceIdentityID == expected.ServiceIdentityID &&
+		actual.MeterID == expected.MeterID &&
+		actual.MaximumUnits == expected.MaximumUnits
 }
 
 func retainedStorageMaximumUnits(

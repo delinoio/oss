@@ -112,6 +112,7 @@ type Querier interface {
 	GetTransactionTimestamp(ctx context.Context) (pgtype.Timestamptz, error)
 	GitHubInstallationIsActiveForOwner(ctx context.Context, arg GitHubInstallationIsActiveForOwnerParams) (bool, error)
 	HasPayerTeamAccess(ctx context.Context, arg HasPayerTeamAccessParams) (bool, error)
+	HasScopePendingStorageAuthorizationAttempt(ctx context.Context, arg HasScopePendingStorageAuthorizationAttemptParams) (bool, error)
 	HasStorageSubmissionBlock(ctx context.Context, arg HasStorageSubmissionBlockParams) (bool, error)
 	InsertAudit(ctx context.Context, arg InsertAuditParams) error
 	InsertDeletionJob(ctx context.Context, arg InsertDeletionJobParams) (RealqaDeletionJob, error)

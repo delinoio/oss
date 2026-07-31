@@ -217,6 +217,23 @@ func (service *Preset) DeleteFeatureData(
 			if listErr != nil {
 				return listErr
 			}
+			if ownerRequest {
+				hasPending, pendingErr :=
+					queries.HasScopePendingStorageAuthorizationAttempt(
+						ctx, dbgen.HasScopePendingStorageAuthorizationAttemptParams{
+							OwnerKind: scope.kind,
+							OwnerID:   toPGUUID(scope.id),
+						})
+				if pendingErr != nil {
+					return pendingErr
+				}
+				if hasPending {
+					// The original submitter must replay the stable create key
+					// with a fresh forwarded bearer before deletion can remove
+					// the only local recipe for recovering the exact grant.
+					return reauthenticationRequired()
+				}
+			}
 			scopedAssets, listErr = queries.ListScopeObjectAssets(ctx,
 				dbgen.ListScopeObjectAssetsParams{
 					OwnerKind: scope.kind, OwnerID: toPGUUID(scope.id),
@@ -450,14 +467,9 @@ func (service *Preset) prepareLifecycleStorageDeletion(
 			}); err != nil {
 		return err
 	}
-	lifecycleCutoff, err := service.dependencies.Store.Queries().
-		GetTransactionTimestamp(ctx)
-	if err != nil {
-		return err
-	}
 	return NewSubmission(service.dependencies).
 		HandleLifecycleAuthorizationDeletion(
-			ctx, scope, lifecycleCutoff.Time.UTC())
+			ctx, scope, cutoff.UTC())
 }
 
 func (service *Preset) disconnectLifecycleAccount(

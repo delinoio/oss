@@ -4101,9 +4101,155 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		rebindReplay.Msg.MappingRevision.Value != 2 {
 		t.Fatalf("completed rebind replay = %#v", rebindReplay.Msg)
 	}
+	pendingRebindKey := uuidv7.MustNew()
+	pendingRebindRequest :=
+		&realqav1.RebindSubmissionStorageAuthorizationRequest{
+			SubmissionId: &realqav1.UuidV7{
+				Value: explicitGraceSubmissionID.String(),
+			},
+			ExpectedAuthorizationId: &realqav1.UuidV7{
+				Value: explicitGraceAuthorizationID.String(),
+			},
+			ExpectedMappingRevision: revision(1),
+			ReplacementBilling: &realqav1.BillingScope{
+				OrganizationId: &realqav1.UuidV7{
+					Value: organizationID.String(),
+				},
+				TeamId: &realqav1.UuidV7{Value: teamID.String()},
+			},
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{
+					Value: pendingRebindKey.String(),
+				},
+			},
+		}
+	pendingRebindDigest, err := digestMessage(pendingRebindRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingRebindRevokeKey, err := derivedUUIDv7(
+		pendingRebindKey, "storage-rebind-revoke")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingRebindCreateKey, err := derivedUUIDv7(
+		pendingRebindKey, "storage-rebind-create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingReplacementID := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `
-		UPDATE realqa_owner_bindings
-		SET role = 'admin'
+			INSERT INTO realqa_storage_rebind_attempts (
+				submission_id, caller_digest, idempotency_key, request_digest,
+				expected_authorization_id, expected_mapping_revision,
+				replacement_organization_id, replacement_team_id,
+				replacement_maximum_units,
+				replacement_service_identity_id, replacement_meter_id,
+				revoke_idempotency_key, create_idempotency_key, state
+			) VALUES (
+				$1, $2, $3, $4, $5, 1, $6, $7, 1, $8, $9, $10, $11,
+				'pending'
+			)
+		`, explicitGraceSubmissionID, digest.Sum(nil), pendingRebindKey,
+		pendingRebindDigest, explicitGraceAuthorizationID,
+		organizationID, teamID, explicitGraceServiceID,
+		explicitGraceMeterID, pendingRebindRevokeKey,
+		pendingRebindCreateKey); err != nil {
+		t.Fatal(err)
+	}
+	pendingReplacement := StorageAuthorization{
+		ID:                  pendingReplacementID,
+		AuthorizerAccountID: accountID,
+		OwnerKind:           "organization",
+		OwnerID:             organizationID,
+		OrganizationID:      organizationID,
+		TeamID:              teamID,
+		ServiceIdentityID:   explicitGraceServiceID,
+		MeterID:             explicitGraceMeterID,
+		FeatureResourceID:   explicitGraceSubmissionID,
+		MaximumUnits:        1,
+		Status:              "active",
+		Revision:            1,
+	}
+	pendingRebindBilling := &failingAuthorizedStorageBilling{
+		createResult: pendingReplacement,
+		markErr:      errors.New("fixture replacement closure unavailable"),
+		markResult: StorageAuthorization{
+			ID:                  pendingReplacementID,
+			AuthorizerAccountID: accountID,
+			OwnerKind:           "organization",
+			OwnerID:             organizationID,
+			OrganizationID:      organizationID,
+			TeamID:              teamID,
+			ServiceIdentityID:   explicitGraceServiceID,
+			MeterID:             explicitGraceMeterID,
+			FeatureResourceID:   explicitGraceSubmissionID,
+			MaximumUnits:        1,
+			Status:              "resource_deleted",
+			Revision:            2,
+		},
+	}
+	pendingRebindService := NewSubmission(Dependencies{
+		Store: store, Billing: pendingRebindBilling,
+		ForwardedBearer: func(context.Context) (string, bool) {
+			return "fixture-forwarded-bearer", true
+		},
+		Pseudonymizer: pseudonymizer,
+	})
+	_, err = pendingRebindService.RebindSubmissionStorageAuthorization(
+		authCtx, connect.NewRequest(pendingRebindRequest))
+	requireServiceError(t, err, connect.CodeUnavailable,
+		realqav1.ErrorReason_ERROR_REASON_STORAGE_AUTHORIZATION_FAILED,
+		realqav1.FailureClass_FAILURE_CLASS_RETRYABLE)
+	var pendingReplacementQueued string
+	if err = connection.QueryRow(ctx, `
+			SELECT closure_state
+			FROM realqa_storage_authorization_bindings
+			WHERE authorization_id = $1
+		`, pendingReplacementID).Scan(&pendingReplacementQueued); err != nil {
+		t.Fatal(err)
+	}
+	if pendingReplacementQueued != "resource_deletion_pending" {
+		t.Fatalf("pending replacement closure = %q, want queued",
+			pendingReplacementQueued)
+	}
+	pendingRebindBilling.markErr = nil
+	_, err = pendingRebindService.RebindSubmissionStorageAuthorization(
+		authCtx, connect.NewRequest(pendingRebindRequest))
+	requireServiceError(t, err, connect.CodeFailedPrecondition,
+		realqav1.ErrorReason_ERROR_REASON_STORAGE_REBIND_REQUIRED,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED)
+	if pendingRebindBilling.createAuthorizationCalls != 2 ||
+		pendingRebindBilling.markResourceDeletedCalls != 2 ||
+		len(pendingRebindBilling.createRequests) != 2 ||
+		len(pendingRebindBilling.markRequests) != 2 ||
+		pendingRebindBilling.createRequests[0].IdempotencyKey !=
+			pendingRebindBilling.createRequests[1].IdempotencyKey {
+		t.Fatalf(
+			"pending rebind cleanup calls = create:%d mark:%d requests:%d/%d",
+			pendingRebindBilling.createAuthorizationCalls,
+			pendingRebindBilling.markResourceDeletedCalls,
+			len(pendingRebindBilling.createRequests),
+			len(pendingRebindBilling.markRequests),
+		)
+	}
+	var pendingReplacementState, pendingReplacementClosure string
+	if err = connection.QueryRow(ctx, `
+			SELECT status, closure_state
+			FROM realqa_storage_authorization_bindings
+			WHERE authorization_id = $1
+		`, pendingReplacementID).Scan(
+		&pendingReplacementState, &pendingReplacementClosure); err != nil {
+		t.Fatal(err)
+	}
+	if pendingReplacementState != "resource_deleted" ||
+		pendingReplacementClosure != "closed" {
+		t.Fatalf("pending replacement binding = %q / %q, want closed resource",
+			pendingReplacementState, pendingReplacementClosure)
+	}
+	if _, err = connection.Exec(ctx, `
+			UPDATE realqa_owner_bindings
+			SET role = 'admin'
 		WHERE account_id = $1
 		  AND owner_kind = 'organization'
 		  AND owner_id = $2
@@ -4356,8 +4502,11 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	pendingStorageAttemptKey := uuidv7.MustNew()
 	pendingIssueAttemptKey := uuidv7.MustNew()
+	pendingStorageAuthorizationID := uuidv7.MustNew()
+	pendingStorageServiceID := uuidv7.MustNew()
+	pendingStorageMeterID := uuidv7.MustNew()
 	if _, err = connection.Exec(ctx, `
-		INSERT INTO realqa_submissions (
+			INSERT INTO realqa_submissions (
 			id, owner_kind, owner_id, created_by_account_id, state,
 			provider_issue_id, provider_issue_url, idempotency_digest,
 			submitted_at, payer_organization_id, payer_team_id,
@@ -4398,9 +4547,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			$1, $7, decode(repeat('d2', 32), 'hex'),
 			$8, $9, 1, 'pending'
 		)
-	`, pendingStorageSubmissionID, accountID, pendingStorageAssetID,
+		`, pendingStorageSubmissionID, accountID, pendingStorageAssetID,
 		pendingStoragePublicID, uuidv7.MustNew(), pendingIssueAttemptKey,
-		pendingStorageAttemptKey, uuidv7.MustNew(), uuidv7.MustNew(),
+		pendingStorageAttemptKey, pendingStorageServiceID,
+		pendingStorageMeterID,
 		billingSubmissionID, billingAssetID); err != nil {
 		t.Fatal(err)
 	}
@@ -4419,6 +4569,75 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 				},
 			},
 		},
+	}
+	_, err = service.DeleteFeatureData(
+		authCtx, connect.NewRequest(deletionRequest))
+	assertCallerReauthenticationRequired(t, err)
+	var (
+		pendingBeforeState       string
+		pendingBeforeIssueRows   int
+		pendingBeforeAssets      int
+		pendingBeforeTombstones  int
+		pendingBeforeDeletionJob int
+	)
+	if err = connection.QueryRow(ctx, `
+			SELECT submission.state,
+			       (SELECT count(*)
+			        FROM realqa_issue_submission_attempts AS issue
+			        WHERE issue.submission_id = submission.id),
+			       (SELECT count(*)
+			        FROM realqa_assets AS asset
+			        WHERE asset.submission_id = submission.id),
+			       (SELECT count(*)
+			        FROM realqa_scope_tombstones AS tombstone
+			        WHERE tombstone.owner_kind = 'personal'
+			          AND tombstone.owner_id = $2),
+			       (SELECT count(*)
+			        FROM realqa_deletion_jobs AS job
+			        WHERE job.owner_kind = 'personal'
+			          AND job.owner_id = $2)
+			FROM realqa_submissions AS submission
+			WHERE submission.id = $1
+		`, pendingStorageSubmissionID, accountID).Scan(
+		&pendingBeforeState, &pendingBeforeIssueRows,
+		&pendingBeforeAssets, &pendingBeforeTombstones,
+		&pendingBeforeDeletionJob,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if pendingBeforeState != "submitted" ||
+		pendingBeforeIssueRows != 1 || pendingBeforeAssets != 1 ||
+		pendingBeforeTombstones != 0 || pendingBeforeDeletionJob != 0 {
+		t.Fatalf(
+			"pending storage deletion rollback = %q / %d / %d / %d / %d",
+			pendingBeforeState, pendingBeforeIssueRows,
+			pendingBeforeAssets, pendingBeforeTombstones,
+			pendingBeforeDeletionJob,
+		)
+	}
+	if _, err = connection.Exec(ctx, `
+			UPDATE realqa_storage_authorization_attempts
+			SET state = 'active',
+			    authorization_id = $2,
+			    authorization_revision = 1,
+			    mapping_revision = 1
+			WHERE submission_id = $1
+			  AND state = 'pending';
+			INSERT INTO realqa_storage_authorization_bindings (
+				authorization_id, submission_id, mapping_revision,
+				authorizer_account_id, owner_kind, owner_id,
+				organization_id, team_id, service_identity_id, meter_id,
+				maximum_units, status, authorization_revision
+			)
+			SELECT $2, submission.id, 1, submission.created_by_account_id,
+			       submission.owner_kind, submission.owner_id,
+			       submission.payer_organization_id, submission.payer_team_id,
+			       $3, $4, 1, 'active', 1
+			FROM realqa_submissions AS submission
+			WHERE submission.id = $1
+		`, pendingStorageSubmissionID, pendingStorageAuthorizationID,
+		pendingStorageServiceID, pendingStorageMeterID); err != nil {
+		t.Fatal(err)
 	}
 	deleted, err := service.DeleteFeatureData(
 		authCtx, connect.NewRequest(deletionRequest))
@@ -4464,9 +4683,10 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		pendingIssueAttempts     int
 		pendingAssets            int
 		pendingSubmissionState   string
+		pendingClosureState      string
 	)
 	if err = connection.QueryRow(ctx, `
-		SELECT submission.state,
+			SELECT submission.state,
 		       count(*) FILTER (
 		           WHERE attempt.idempotency_key = $2
 		             AND attempt.state = 'pending'
@@ -4476,33 +4696,38 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		           FROM realqa_issue_submission_attempts AS issue
 		           WHERE issue.submission_id = submission.id
 		       ),
-		       (
-		           SELECT count(*)
-		           FROM realqa_assets AS asset
-		           WHERE asset.submission_id = submission.id
-		       )
-		FROM realqa_submissions AS submission
-		JOIN realqa_storage_authorization_attempts AS attempt
-		  ON attempt.submission_id = submission.id
-		WHERE submission.id = $1
-		GROUP BY submission.id
-	`, pendingStorageSubmissionID, pendingStorageAttemptKey).
+			       (
+			           SELECT count(*)
+			           FROM realqa_assets AS asset
+			           WHERE asset.submission_id = submission.id
+			       ),
+			       binding.closure_state
+			FROM realqa_submissions AS submission
+			JOIN realqa_storage_authorization_attempts AS attempt
+			  ON attempt.submission_id = submission.id
+			JOIN realqa_storage_authorization_bindings AS binding
+			  ON binding.authorization_id = attempt.authorization_id
+			WHERE submission.id = $1
+			GROUP BY submission.id, binding.closure_state
+		`, pendingStorageSubmissionID, pendingStorageAttemptKey).
 		Scan(
 			&pendingSubmissionState,
 			&pendingStorageTombstones,
 			&pendingIssueAttempts,
 			&pendingAssets,
+			&pendingClosureState,
 		); err != nil {
 		t.Fatal(err)
 	}
 	if pendingSubmissionState != "deleted" ||
-		pendingStorageTombstones != 1 ||
+		pendingStorageTombstones != 0 ||
 		pendingIssueAttempts != 0 ||
-		pendingAssets != 0 {
+		pendingAssets != 0 ||
+		pendingClosureState != "resource_deletion_pending" {
 		t.Fatalf(
-			"pending storage tombstone = %q / %d / %d / %d, want deleted / 1 / 0 / 0",
+			"recovered storage tombstone = %q / %d / %d / %d / %q, want deleted / 0 / 0 / 0 / resource_deletion_pending",
 			pendingSubmissionState, pendingStorageTombstones,
-			pendingIssueAttempts, pendingAssets)
+			pendingIssueAttempts, pendingAssets, pendingClosureState)
 	}
 
 	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{
@@ -4604,11 +4829,6 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		externalLifecycleAuthorizationID); err != nil {
 		t.Fatal(err)
 	}
-	lifecycleReceiptNotBefore, err := store.Queries().
-		GetTransactionTimestamp(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
 	closureReplay, err := service.DeleteFeatureData(
 		lifecycleCtx, connect.NewRequest(
 			&realqav1.DeleteFeatureDataRequest{
@@ -4661,14 +4881,13 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if externalLifecycleCutoff.Before(lifecycleReceiptNotBefore.Time) ||
-		!externalLifecycleCutoff.After(closureCutoff) ||
+	if !externalLifecycleCutoff.Equal(closureCutoff) ||
 		externalLifecycleState != "storage_billing_grace" ||
 		externalLifecycleRecovery != "authorization_access_lost" {
 		t.Fatalf(
-			"external lifecycle cutoff = %s / %q / %q, want receipt-time cutoff after %s and access-loss grace",
+			"external lifecycle cutoff = %s / %q / %q, want accepted cutoff %s and access-loss grace",
 			externalLifecycleCutoff, externalLifecycleState,
-			externalLifecycleRecovery, lifecycleReceiptNotBefore.Time,
+			externalLifecycleRecovery, closureCutoff,
 		)
 	}
 	if _, err = connection.Exec(ctx, `
@@ -4968,6 +5187,11 @@ type failingAuthorizedStorageBilling struct {
 	releaseAuthorizedCalls   int
 	getAuthorizationCalls    int
 	revokeAuthorizationCalls int
+	markResourceDeletedCalls int
+	markErr                  error
+	markResult               StorageAuthorization
+	createRequests           []StorageAuthorizationRequest
+	markRequests             []StorageResourceDeletedRequest
 }
 
 func (billing *failingAuthorizedStorageBilling) Meters(
@@ -4978,10 +5202,11 @@ func (billing *failingAuthorizedStorageBilling) Meters(
 }
 
 func (billing *failingAuthorizedStorageBilling) CreateStorageAuthorization(
-	context.Context,
-	StorageAuthorizationRequest,
+	_ context.Context,
+	request StorageAuthorizationRequest,
 ) (StorageAuthorization, error) {
 	billing.createAuthorizationCalls++
+	billing.createRequests = append(billing.createRequests, request)
 	return billing.createResult, billing.createErr
 }
 
@@ -5023,6 +5248,15 @@ func (billing *failingAuthorizedStorageBilling) RevokeStorageAuthorization(
 ) (StorageAuthorization, error) {
 	billing.revokeAuthorizationCalls++
 	return StorageAuthorization{}, nil
+}
+
+func (billing *failingAuthorizedStorageBilling) MarkStorageResourceDeleted(
+	_ context.Context,
+	request StorageResourceDeletedRequest,
+) (StorageAuthorization, error) {
+	billing.markResourceDeletedCalls++
+	billing.markRequests = append(billing.markRequests, request)
+	return billing.markResult, billing.markErr
 }
 
 type submissionTestObject struct {

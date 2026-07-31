@@ -90,6 +90,17 @@ DELETE FROM realqa_presets
 WHERE owner_kind = sqlc.arg(owner_kind)
   AND owner_id = sqlc.arg(owner_id);
 
+-- name: HasScopePendingStorageAuthorizationAttempt :one
+SELECT EXISTS (
+    SELECT 1
+    FROM realqa_storage_authorization_attempts AS attempt
+    JOIN realqa_submissions AS submission
+      ON submission.id = attempt.submission_id
+    WHERE submission.owner_kind = sqlc.arg(owner_kind)
+      AND submission.owner_id = sqlc.arg(owner_id)
+      AND attempt.state = 'pending'
+);
+
 -- name: DeleteScopeSubmissions :execrows
 DELETE FROM realqa_submissions AS submission
 WHERE submission.owner_kind = sqlc.arg(owner_kind)
