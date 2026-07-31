@@ -2967,6 +2967,77 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("paid commit recovery = %q / %q / %v",
 			paidSubmissionState, paidSettlementState, paidRetentionRestarted)
 	}
+	missingPeriodStart := commitPeriodStart.Add(24 * time.Hour)
+	missingMidnightCutoff := missingPeriodStart.Add(24 * time.Hour)
+	if _, err = store.Queries().GetStorageDailySettlement(
+		ctx, dbgen.GetStorageDailySettlementParams{
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(missingPeriodStart),
+		}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("missing midnight settlement already existed: %v", err)
+	}
+	missingReservationID := uuidv7.MustNew()
+	missingReservation := TransferReservation{
+		ID:                missingReservationID,
+		OrganizationID:    organizationID,
+		TeamID:            teamID,
+		MeterID:           disconnectStorageMeterID,
+		PriceVersionID:    disconnectBilling.meters.Storage.PriceVersionID,
+		UserAccountID:     accountID,
+		ServiceIdentityID: disconnectServiceIdentityID,
+		MaximumUnits:      disconnectBinding.MaximumUnits,
+		USDMicrosPerUnit:  storagePriceUSDMicros,
+		ClientReference: storageClientReference(
+			disconnectAuthorizationID, missingPeriodStart),
+		Status:    "active",
+		CreatedAt: missingMidnightCutoff,
+		ExpiresAt: missingMidnightCutoff.Add(24 * time.Hour),
+	}
+	midnightBilling := &failingAuthorizedStorageBilling{
+		meters: disconnectBilling.meters,
+		reserveResult: AuthorizedStorageReservation{
+			TransferReservation: missingReservation,
+			AuthorizationID:     disconnectAuthorizationID,
+			FeatureResourceID:   disconnectSubmissionID,
+			PeriodStart:         missingPeriodStart,
+		},
+	}
+	missingReservation.Status = "committed"
+	missingReservation.CommittedUnits = disconnectBinding.MaximumUnits
+	midnightBilling.commitResult = AuthorizedStorageReservation{
+		TransferReservation: missingReservation,
+		AuthorizationID:     disconnectAuthorizationID,
+		FeatureResourceID:   disconnectSubmissionID,
+		PeriodStart:         missingPeriodStart,
+	}
+	midnightService := NewSubmission(Dependencies{
+		Store: store, Billing: midnightBilling,
+		Clock:         fixedSubmissionClock{now: missingMidnightCutoff},
+		Pseudonymizer: pseudonymizer,
+	})
+	midnightBinding := disconnectBinding
+	midnightBinding.AccrualCutoffAt = pgTimestamp(missingMidnightCutoff)
+	if err = midnightService.prepareStorageRebindCutoff(
+		ctx, midnightBinding,
+		dbgen.RealqaStorageRecovery{Reason: "payment_required"},
+	); err != nil {
+		t.Fatalf("missing midnight rebind cutoff settlement: %v", err)
+	}
+	midnightSettlement, err := store.Queries().GetStorageDailySettlement(
+		ctx, dbgen.GetStorageDailySettlementParams{
+			AuthorizationID: toPGUUID(disconnectAuthorizationID),
+			PeriodStart:     pgTimestamp(missingPeriodStart),
+		})
+	if err != nil || midnightSettlement.State != "committed" ||
+		midnightBilling.reserveAuthorizedCalls != 1 ||
+		midnightBilling.commitAuthorizedCalls != 1 {
+		t.Fatalf(
+			"missing midnight settlement = %q / %d / %d / %v, want committed / 1 / 1",
+			midnightSettlement.State,
+			midnightBilling.reserveAuthorizedCalls,
+			midnightBilling.commitAuthorizedCalls, err,
+		)
+	}
 	backgroundDisconnectAt := disconnectCutoff.Add(2 * time.Hour)
 	if _, err = connection.Exec(ctx, `
 		UPDATE realqa_github_connections
@@ -5186,6 +5257,7 @@ type failingAuthorizedStorageBilling struct {
 	createErr                error
 	createResult             StorageAuthorization
 	reserveErr               error
+	reserveResult            AuthorizedStorageReservation
 	commitErr                error
 	commitResult             AuthorizedStorageReservation
 	meterCalls               int
@@ -5223,7 +5295,7 @@ func (billing *failingAuthorizedStorageBilling) ReserveAuthorizedStorage(
 	AuthorizedStorageUsageRequest,
 ) (AuthorizedStorageReservation, error) {
 	billing.reserveAuthorizedCalls++
-	return AuthorizedStorageReservation{}, billing.reserveErr
+	return billing.reserveResult, billing.reserveErr
 }
 
 func (billing *failingAuthorizedStorageBilling) CommitAuthorizedStorage(

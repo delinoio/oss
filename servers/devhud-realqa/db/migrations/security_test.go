@@ -133,6 +133,7 @@ func TestRecurringStorageLedgerIsPseudonymizedAndRecoveryBounded(
 		"'storage_daily_released'",
 		"'storage_billing_grace_started'",
 		"'storage_authorization_rebound'",
+		"'storage_rebind_replacement_closed'",
 		"'storage_authorization_closed'",
 	} {
 		if !strings.Contains(text, required) {

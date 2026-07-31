@@ -726,7 +726,7 @@ func (service *Submission) prepareStorageRebindCutoff(
 	if recovery.Reason != "billing_unavailable" {
 		periodStart := utcDayStart(cutoff)
 		if !cutoff.After(periodStart) {
-			return service.finishReservedStorageRebindCutoff(
+			return service.settleCompletedStorageRebindCutoff(
 				ctx, binding, cutoff.Add(-time.Nanosecond))
 		}
 		today := utcDayStart(service.dependencies.Clock.Now())
@@ -751,6 +751,41 @@ func (service *Submission) prepareStorageRebindCutoff(
 	// skipped only in the replacement transaction after downstream success.
 	return service.finishReservedStorageRebindCutoff(
 		ctx, binding, cutoff.Add(-time.Nanosecond))
+}
+
+// settleCompletedStorageRebindCutoff runs the completed-day path so a
+// missing or pending checkpoint is durably settled or skipped before the old
+// authorization mapping can be replaced.
+func (service *Submission) settleCompletedStorageRebindCutoff(
+	ctx context.Context,
+	binding dbgen.RealqaStorageAuthorizationBinding,
+	cutoff time.Time,
+) error {
+	periodStart := utcDayStart(cutoff)
+	settlement, err := service.dependencies.Store.Queries().
+		GetStorageDailySettlement(
+			ctx, dbgen.GetStorageDailySettlementParams{
+				AuthorizationID: binding.AuthorizationID,
+				PeriodStart:     pgTimestamp(periodStart),
+			})
+	if err == nil && settlement.State != "pending" {
+		return service.finishReservedStorageRebindCutoff(
+			ctx, binding, cutoff)
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	authorizationID, err := fromPGUUID(binding.AuthorizationID)
+	if err != nil {
+		return err
+	}
+	processingDay, err := storageCutoffProcessingDay(
+		service.dependencies.Clock.Now(), periodStart)
+	if err != nil {
+		return err
+	}
+	return service.processStoragePeriod(
+		ctx, authorizationID, periodStart, processingDay)
 }
 
 func (service *Submission) finishReservedStorageRebindCutoff(

@@ -568,6 +568,7 @@ ALTER TABLE realqa_audits
         'storage_daily_released',
         'storage_billing_grace_started',
         'storage_authorization_rebound',
+        'storage_rebind_replacement_closed',
         'storage_authorization_closed',
         'issue_submission_started',
         'issue_reconciled',
