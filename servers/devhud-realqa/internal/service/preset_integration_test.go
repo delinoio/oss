@@ -3768,17 +3768,20 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 			expected_authorization_id, expected_mapping_revision,
 			replacement_organization_id, replacement_team_id,
 			replacement_maximum_units,
+			replacement_service_identity_id, replacement_meter_id,
 			revoke_idempotency_key, create_idempotency_key, state,
 			replacement_authorization_id,
 			replacement_authorization_revision,
 			resulting_mapping_revision, cutoff_at, completed_at
 		) VALUES (
-			$1, $2, $3, $4, $5, 1, $6, $7, 1, $8, $9, 'completed',
-			$10, 1, 2, transaction_timestamp(), transaction_timestamp()
+			$1, $2, $3, $4, $5, 1, $6, $7, 1, $8, $9, $10, $11,
+			'completed', $12, 1, 2, transaction_timestamp(),
+			transaction_timestamp()
 		)
 	`, webhookSubmissionID, digest.Sum(nil), rebindKey, rebindDigest,
 		webhookAuthorizationID, organizationID, teamID, uuidv7.MustNew(),
-		uuidv7.MustNew(), replacementAuthorizationID); err != nil {
+		uuidv7.MustNew(), uuidv7.MustNew(), uuidv7.MustNew(),
+		replacementAuthorizationID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = connection.Exec(ctx, `
@@ -4049,6 +4052,19 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("submission with deleted payer code = %v", connect.CodeOf(err))
 	}
+	pendingStorageAttemptKey := uuidv7.MustNew()
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state
+		) VALUES (
+			$1, $2, decode(repeat('d2', 32), 'hex'),
+			$3, $4, 1, 'pending'
+		)
+	`, billingSubmissionID, pendingStorageAttemptKey,
+		uuidv7.MustNew(), uuidv7.MustNew()); err != nil {
+		t.Fatal(err)
+	}
 	deletionRequest := &realqav1.DeleteFeatureDataRequest{
 		TriggerKind: realqav1.FeatureDeletionTriggerKind_FEATURE_DELETION_TRIGGER_KIND_OWNER_REQUEST,
 		Trigger: &realqav1.DeleteFeatureDataRequest_OwnerRequest{
@@ -4098,6 +4114,23 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	if presetSnapshots != 0 {
 		t.Fatalf("retained preset idempotency snapshots = %d",
 			presetSnapshots)
+	}
+	var pendingStorageTombstones int
+	if err = connection.QueryRow(ctx, `
+		SELECT count(*)
+		FROM realqa_submissions AS submission
+		JOIN realqa_storage_authorization_attempts AS attempt
+		  ON attempt.submission_id = submission.id
+		WHERE submission.id = $1
+		  AND attempt.idempotency_key = $2
+		  AND attempt.state = 'pending'
+	`, billingSubmissionID, pendingStorageAttemptKey).
+		Scan(&pendingStorageTombstones); err != nil {
+		t.Fatal(err)
+	}
+	if pendingStorageTombstones != 1 {
+		t.Fatalf("pending storage tombstones = %d, want 1",
+			pendingStorageTombstones)
 	}
 
 	lifecycleCtx := auth.WithPrincipal(ctx, auth.Principal{

@@ -498,24 +498,29 @@ func (service *Submission) ensureStorageAuthorization(
 	if err != nil {
 		return storageAuthorizationFailed()
 	}
-	meters, err := service.dependencies.Billing.Meters(ctx)
-	if err != nil || validateBillingMeters(meters) != nil {
-		return storageAuthorizationFailed()
-	}
-	forwardedBearer, ok := service.forwardedBearer(ctx)
-	if !ok {
-		return reauthenticationRequired()
-	}
 	idempotencyKey, err := derivedUUIDv7(
 		submissionID, "storage-authorization")
 	if err != nil {
 		return err
 	}
-	requestDigest := storageAuthorizationAttemptDigest(
-		scope, organizationID, teamID, meters.Storage, maximumUnits)
 	existing, err := service.dependencies.Store.Queries().
 		GetStorageAuthorizationAttempt(ctx, toPGUUID(submissionID))
+	var (
+		forwardedBearer    string
+		hasForwardedBearer bool
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
+		meters, metersErr := service.dependencies.Billing.Meters(ctx)
+		if metersErr != nil || validateBillingMeters(meters) != nil {
+			return storageAuthorizationFailed()
+		}
+		forwardedBearer, hasForwardedBearer =
+			service.forwardedBearer(ctx)
+		if !hasForwardedBearer {
+			return reauthenticationRequired()
+		}
+		requestDigest := storageAuthorizationAttemptDigest(
+			scope, organizationID, teamID, meters.Storage, maximumUnits)
 		existing, err = service.dependencies.Store.Queries().
 			CreateStorageAuthorizationAttempt(
 				ctx, dbgen.CreateStorageAuthorizationAttemptParams{
@@ -535,21 +540,32 @@ func (service *Submission) ensureStorageAuthorization(
 	if err != nil {
 		return err
 	}
+	serviceIdentityID, serviceIdentityErr := fromPGUUID(
+		existing.ServiceIdentityID)
+	meterID, meterErr := fromPGUUID(existing.MeterID)
+	if serviceIdentityErr != nil || meterErr != nil {
+		return storageAuthorizationSubstitution()
+	}
+	attemptMeter := BillingMeter{
+		ID:                meterID,
+		ServiceIdentityID: serviceIdentityID,
+	}
+	requestDigest := storageAuthorizationAttemptDigest(
+		scope, organizationID, teamID, attemptMeter, maximumUnits)
 	if existing.IdempotencyKey != toPGUUID(idempotencyKey) ||
 		!bytes.Equal(existing.RequestDigest, requestDigest[:]) ||
-		existing.ServiceIdentityID !=
-			toPGUUID(meters.Storage.ServiceIdentityID) ||
-		existing.MeterID != toPGUUID(meters.Storage.ID) ||
 		existing.MaximumUnits != maximumUnits {
-		return rqerr.New(
-			connect.CodeFailedPrecondition,
-			realqav1.ErrorReason_ERROR_REASON_STORAGE_AUTHORIZATION_SUBSTITUTION,
-			realqav1.FailureClass_FAILURE_CLASS_CONFLICT,
-			0,
-		)
+		return storageAuthorizationSubstitution()
 	}
 	if existing.State == "active" {
 		return nil
+	}
+	if !hasForwardedBearer {
+		forwardedBearer, hasForwardedBearer =
+			service.forwardedBearer(ctx)
+		if !hasForwardedBearer {
+			return reauthenticationRequired()
+		}
 	}
 	return service.dependencies.Store.WithinTransaction(
 		ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
@@ -583,8 +599,8 @@ func (service *Submission) ensureStorageAuthorization(
 				OwnerID:           scope.id,
 				OrganizationID:    organizationID,
 				TeamID:            teamID,
-				ServiceIdentityID: meters.Storage.ServiceIdentityID,
-				MeterID:           meters.Storage.ID,
+				ServiceIdentityID: serviceIdentityID,
+				MeterID:           meterID,
 				FeatureResourceID: submissionID,
 				MaximumUnits:      maximumUnits,
 				IdempotencyKey:    idempotencyKey,

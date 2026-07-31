@@ -98,10 +98,16 @@ WHERE submission.owner_kind = sqlc.arg(owner_kind)
       SELECT 1
       FROM realqa_storage_authorization_bindings AS binding
       WHERE binding.submission_id = submission.id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_authorization_attempts AS attempt
+      WHERE attempt.submission_id = submission.id
+        AND attempt.state = 'pending'
   );
 
--- Billing-bound submissions remain only as pseudonymized resource anchors
--- until their pre-cutoff settlements and delibase closure complete.
+-- Billing-bound submissions and unresolved authorization attempts remain only
+-- as pseudonymized resource anchors until exact recovery and closure complete.
 -- name: DeleteScopeBillingIssueAttempts :execrows
 DELETE FROM realqa_issue_submission_attempts AS attempt
 WHERE EXISTS (

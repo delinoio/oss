@@ -62,8 +62,8 @@ type Querier interface {
 	DeleteRepositoryAccessForAccount(ctx context.Context, arg DeleteRepositoryAccessForAccountParams) (int64, error)
 	DeleteRepositoryDefinitions(ctx context.Context, arg DeleteRepositoryDefinitionsParams) (int64, error)
 	DeleteScopeBillingAssets(ctx context.Context, arg DeleteScopeBillingAssetsParams) (int64, error)
-	// Billing-bound submissions remain only as pseudonymized resource anchors
-	// until their pre-cutoff settlements and delibase closure complete.
+	// Billing-bound submissions and unresolved authorization attempts remain only
+	// as pseudonymized resource anchors until exact recovery and closure complete.
 	DeleteScopeBillingIssueAttempts(ctx context.Context, arg DeleteScopeBillingIssueAttemptsParams) (int64, error)
 	DeleteScopeConnections(ctx context.Context, arg DeleteScopeConnectionsParams) (int64, error)
 	DeleteScopeDestinations(ctx context.Context, arg DeleteScopeDestinationsParams) (int64, error)

@@ -512,7 +512,7 @@ func TestStorageRebindMaximumExcludesVerifiedUnlinkedAssets(t *testing.T) {
 	}
 }
 
-func TestStorageRebindRequestUsesPersistedMaximum(t *testing.T) {
+func TestStorageRebindRequestUsesPersistedInputs(t *testing.T) {
 	t.Parallel()
 	organizationID := uuidv7.MustNew()
 	teamID := uuidv7.MustNew()
@@ -523,17 +523,15 @@ func TestStorageRebindRequestUsesPersistedMaximum(t *testing.T) {
 	scope := owner{kind: "personal", id: uuidv7.MustNew()}
 	request, err := storageRebindAuthorizationRequest(
 		dbgen.RealqaStorageRebindAttempt{
-			ReplacementOrganizationID: toPGUUID(organizationID),
-			ReplacementTeamID:         toPGUUID(teamID),
-			ReplacementMaximumUnits:   7,
-			CreateIdempotencyKey:      toPGUUID(createKey),
+			ReplacementOrganizationID:    toPGUUID(organizationID),
+			ReplacementTeamID:            toPGUUID(teamID),
+			ReplacementMaximumUnits:      7,
+			ReplacementServiceIdentityID: toPGUUID(serviceIdentityID),
+			ReplacementMeterID:           toPGUUID(meterID),
+			CreateIdempotencyKey:         toPGUUID(createKey),
 		},
 		scope,
 		submissionID,
-		BillingMeter{
-			ID:                meterID,
-			ServiceIdentityID: serviceIdentityID,
-		},
 		"memory-only-bearer",
 	)
 	if err != nil {
@@ -667,6 +665,34 @@ func TestDeletionPendingReserveFailureDoesNotStartRecovery(t *testing.T) {
 	if billing.reserveAuthorizedCalls != 1 {
 		t.Fatalf("reserve calls = %d, want 1",
 			billing.reserveAuthorizedCalls)
+	}
+}
+
+func TestDeletionPendingMeterOutageDoesNotStartRecovery(t *testing.T) {
+	t.Parallel()
+	meterErr := errors.New("fixture catalog unavailable")
+	billing := &failingAuthorizedStorageBilling{metersErr: meterErr}
+	service := NewSubmission(Dependencies{Billing: billing})
+	err := service.reserveAndCommitStorage(
+		context.Background(),
+		dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID: toPGUUID(uuidv7.MustNew()),
+			SubmissionID:    toPGUUID(uuidv7.MustNew()),
+			ClosureState:    "resource_deletion_pending",
+		},
+		dbgen.RealqaStorageDailySettlement{
+			ReserveIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+		},
+		time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC),
+		time.Date(2030, 4, 6, 0, 0, 0, 0, time.UTC),
+	)
+	if err != meterErr {
+		t.Fatalf("deletion-pending meter error = %v, want original error",
+			err)
+	}
+	if billing.meterCalls != 1 || billing.reserveAuthorizedCalls != 0 {
+		t.Fatalf("meter / reserve calls = %d / %d, want 1 / 0",
+			billing.meterCalls, billing.reserveAuthorizedCalls)
 	}
 }
 

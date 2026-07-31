@@ -81,8 +81,8 @@ type DeleteScopeBillingIssueAttemptsParams struct {
 	OwnerID   pgtype.UUID
 }
 
-// Billing-bound submissions remain only as pseudonymized resource anchors
-// until their pre-cutoff settlements and delibase closure complete.
+// Billing-bound submissions and unresolved authorization attempts remain only
+// as pseudonymized resource anchors until exact recovery and closure complete.
 func (q *Queries) DeleteScopeBillingIssueAttempts(ctx context.Context, arg DeleteScopeBillingIssueAttemptsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteScopeBillingIssueAttempts, arg.OwnerKind, arg.OwnerID)
 	if err != nil {
@@ -246,6 +246,12 @@ WHERE submission.owner_kind = $1
       SELECT 1
       FROM realqa_storage_authorization_bindings AS binding
       WHERE binding.submission_id = submission.id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM realqa_storage_authorization_attempts AS attempt
+      WHERE attempt.submission_id = submission.id
+        AND attempt.state = 'pending'
   )
 `
 

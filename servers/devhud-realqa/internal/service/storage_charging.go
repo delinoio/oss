@@ -275,6 +275,9 @@ func (service *Submission) reserveAndCommitStorage(
 	}
 	meters, err := service.dependencies.Billing.Meters(ctx)
 	if err != nil {
+		if binding.ClosureState == "resource_deletion_pending" {
+			return err
+		}
 		if graceErr := service.startStorageGrace(
 			ctx, binding, periodEnd,
 			StorageBillingFailureUnavailable, false,

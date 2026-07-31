@@ -367,7 +367,7 @@ SET state = 'completed',
 WHERE caller_digest = $5
   AND idempotency_key = $6
   AND state = 'pending'
-RETURNING submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
+RETURNING submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, replacement_service_identity_id, replacement_meter_id, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
 `
 
 type CompleteStorageRebindAttemptParams struct {
@@ -399,6 +399,8 @@ func (q *Queries) CompleteStorageRebindAttempt(ctx context.Context, arg Complete
 		&i.ReplacementOrganizationID,
 		&i.ReplacementTeamID,
 		&i.ReplacementMaximumUnits,
+		&i.ReplacementServiceIdentityID,
+		&i.ReplacementMeterID,
 		&i.RevokeIdempotencyKey,
 		&i.CreateIdempotencyKey,
 		&i.State,
@@ -580,7 +582,8 @@ INSERT INTO realqa_storage_rebind_attempts (
     submission_id, caller_digest, idempotency_key, request_digest,
     expected_authorization_id, expected_mapping_revision,
     replacement_organization_id, replacement_team_id,
-    replacement_maximum_units,
+    replacement_maximum_units, replacement_service_identity_id,
+    replacement_meter_id,
     revoke_idempotency_key, create_idempotency_key, state
 ) VALUES (
     $1, $2,
@@ -589,25 +592,29 @@ INSERT INTO realqa_storage_rebind_attempts (
     $6,
     $7, $8,
     $9,
-    $10, $11,
+    $10,
+    $11,
+    $12, $13,
     'pending'
 )
 ON CONFLICT (caller_digest, idempotency_key) DO NOTHING
-RETURNING submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
+RETURNING submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, replacement_service_identity_id, replacement_meter_id, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
 `
 
 type CreateStorageRebindAttemptParams struct {
-	SubmissionID              pgtype.UUID
-	CallerDigest              []byte
-	IdempotencyKey            pgtype.UUID
-	RequestDigest             []byte
-	ExpectedAuthorizationID   pgtype.UUID
-	ExpectedMappingRevision   int64
-	ReplacementOrganizationID pgtype.UUID
-	ReplacementTeamID         pgtype.UUID
-	ReplacementMaximumUnits   int64
-	RevokeIdempotencyKey      pgtype.UUID
-	CreateIdempotencyKey      pgtype.UUID
+	SubmissionID                 pgtype.UUID
+	CallerDigest                 []byte
+	IdempotencyKey               pgtype.UUID
+	RequestDigest                []byte
+	ExpectedAuthorizationID      pgtype.UUID
+	ExpectedMappingRevision      int64
+	ReplacementOrganizationID    pgtype.UUID
+	ReplacementTeamID            pgtype.UUID
+	ReplacementMaximumUnits      int64
+	ReplacementServiceIdentityID pgtype.UUID
+	ReplacementMeterID           pgtype.UUID
+	RevokeIdempotencyKey         pgtype.UUID
+	CreateIdempotencyKey         pgtype.UUID
 }
 
 func (q *Queries) CreateStorageRebindAttempt(ctx context.Context, arg CreateStorageRebindAttemptParams) (RealqaStorageRebindAttempt, error) {
@@ -621,6 +628,8 @@ func (q *Queries) CreateStorageRebindAttempt(ctx context.Context, arg CreateStor
 		arg.ReplacementOrganizationID,
 		arg.ReplacementTeamID,
 		arg.ReplacementMaximumUnits,
+		arg.ReplacementServiceIdentityID,
+		arg.ReplacementMeterID,
 		arg.RevokeIdempotencyKey,
 		arg.CreateIdempotencyKey,
 	)
@@ -635,6 +644,8 @@ func (q *Queries) CreateStorageRebindAttempt(ctx context.Context, arg CreateStor
 		&i.ReplacementOrganizationID,
 		&i.ReplacementTeamID,
 		&i.ReplacementMaximumUnits,
+		&i.ReplacementServiceIdentityID,
+		&i.ReplacementMeterID,
 		&i.RevokeIdempotencyKey,
 		&i.CreateIdempotencyKey,
 		&i.State,
@@ -933,7 +944,7 @@ func (q *Queries) GetStorageDailySettlement(ctx context.Context, arg GetStorageD
 }
 
 const getStorageRebindAttempt = `-- name: GetStorageRebindAttempt :one
-SELECT submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
+SELECT submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, replacement_service_identity_id, replacement_meter_id, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
 FROM realqa_storage_rebind_attempts
 WHERE caller_digest = $1
   AND idempotency_key = $2
@@ -957,6 +968,8 @@ func (q *Queries) GetStorageRebindAttempt(ctx context.Context, arg GetStorageReb
 		&i.ReplacementOrganizationID,
 		&i.ReplacementTeamID,
 		&i.ReplacementMaximumUnits,
+		&i.ReplacementServiceIdentityID,
+		&i.ReplacementMeterID,
 		&i.RevokeIdempotencyKey,
 		&i.CreateIdempotencyKey,
 		&i.State,
@@ -1477,7 +1490,7 @@ func (q *Queries) LockStorageDailySettlement(ctx context.Context, arg LockStorag
 }
 
 const lockStorageRebindAttempt = `-- name: LockStorageRebindAttempt :one
-SELECT submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
+SELECT submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, replacement_service_identity_id, replacement_meter_id, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
 FROM realqa_storage_rebind_attempts
 WHERE caller_digest = $1
   AND idempotency_key = $2
@@ -1502,6 +1515,8 @@ func (q *Queries) LockStorageRebindAttempt(ctx context.Context, arg LockStorageR
 		&i.ReplacementOrganizationID,
 		&i.ReplacementTeamID,
 		&i.ReplacementMaximumUnits,
+		&i.ReplacementServiceIdentityID,
+		&i.ReplacementMeterID,
 		&i.RevokeIdempotencyKey,
 		&i.CreateIdempotencyKey,
 		&i.State,

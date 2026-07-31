@@ -652,7 +652,8 @@ INSERT INTO realqa_storage_rebind_attempts (
     submission_id, caller_digest, idempotency_key, request_digest,
     expected_authorization_id, expected_mapping_revision,
     replacement_organization_id, replacement_team_id,
-    replacement_maximum_units,
+    replacement_maximum_units, replacement_service_identity_id,
+    replacement_meter_id,
     revoke_idempotency_key, create_idempotency_key, state
 ) VALUES (
     sqlc.arg(submission_id), sqlc.arg(caller_digest),
@@ -661,6 +662,8 @@ INSERT INTO realqa_storage_rebind_attempts (
     sqlc.arg(expected_mapping_revision),
     sqlc.arg(replacement_organization_id), sqlc.arg(replacement_team_id),
     sqlc.arg(replacement_maximum_units),
+    sqlc.arg(replacement_service_identity_id),
+    sqlc.arg(replacement_meter_id),
     sqlc.arg(revoke_idempotency_key), sqlc.arg(create_idempotency_key),
     'pending'
 )

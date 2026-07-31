@@ -306,6 +306,8 @@ CREATE TABLE realqa_storage_rebind_attempts (
     replacement_team_id uuid NOT NULL,
     replacement_maximum_units bigint NOT NULL
         CHECK (replacement_maximum_units > 0),
+    replacement_service_identity_id uuid NOT NULL,
+    replacement_meter_id uuid NOT NULL,
     revoke_idempotency_key uuid NOT NULL,
     create_idempotency_key uuid NOT NULL,
     state text NOT NULL CHECK (state IN ('pending', 'completed')),
@@ -321,6 +323,8 @@ CREATE TABLE realqa_storage_rebind_attempts (
     CHECK (realqa_is_uuid_v7(expected_authorization_id)),
     CHECK (realqa_is_uuid_v7(replacement_organization_id)),
     CHECK (realqa_is_uuid_v7(replacement_team_id)),
+    CHECK (realqa_is_uuid_v7(replacement_service_identity_id)),
+    CHECK (realqa_is_uuid_v7(replacement_meter_id)),
     CHECK (realqa_is_uuid_v7(revoke_idempotency_key)),
     CHECK (realqa_is_uuid_v7(create_idempotency_key)),
     CHECK (
@@ -504,6 +508,10 @@ BEGIN
        OR NEW.replacement_team_id IS DISTINCT FROM OLD.replacement_team_id
        OR NEW.replacement_maximum_units IS DISTINCT FROM
             OLD.replacement_maximum_units
+       OR NEW.replacement_service_identity_id IS DISTINCT FROM
+            OLD.replacement_service_identity_id
+       OR NEW.replacement_meter_id IS DISTINCT FROM
+            OLD.replacement_meter_id
        OR NEW.revoke_idempotency_key IS DISTINCT FROM
             OLD.revoke_idempotency_key
        OR NEW.create_idempotency_key IS DISTINCT FROM

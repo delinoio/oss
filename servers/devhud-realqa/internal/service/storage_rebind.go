@@ -91,17 +91,23 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 	if !ok {
 		return nil, reauthenticationRequired()
 	}
-	meters, err := service.dependencies.Billing.Meters(ctx)
-	if err != nil || validateBillingMeters(meters) != nil {
-		return nil, storageAuthorizationFailed()
-	}
 	maximumUnits := existingAttempt.ReplacementMaximumUnits
+	replacementServiceIdentityID :=
+		existingAttempt.ReplacementServiceIdentityID
+	replacementMeterID := existingAttempt.ReplacementMeterID
 	if errors.Is(lookupErr, pgx.ErrNoRows) {
+		meters, metersErr := service.dependencies.Billing.Meters(ctx)
+		if metersErr != nil || validateBillingMeters(meters) != nil {
+			return nil, storageAuthorizationFailed()
+		}
 		maximumUnits, err = retainedStorageMaximumUnits(
 			ctx, service.dependencies.Store.Queries(), submission.ID)
 		if err != nil || maximumUnits <= 0 {
 			return nil, retentionStateConflict()
 		}
+		replacementServiceIdentityID =
+			toPGUUID(meters.Storage.ServiceIdentityID)
+		replacementMeterID = toPGUUID(meters.Storage.ID)
 	}
 	revokeKey, err := derivedUUIDv7(idempotencyID, "storage-rebind-revoke")
 	if err != nil {
@@ -114,17 +120,19 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 	attempt, err := service.dependencies.Store.Queries().
 		CreateStorageRebindAttempt(
 			ctx, dbgen.CreateStorageRebindAttemptParams{
-				SubmissionID:              toPGUUID(submissionID),
-				CallerDigest:              actor.digest,
-				IdempotencyKey:            toPGUUID(idempotencyID),
-				RequestDigest:             requestDigest,
-				ExpectedAuthorizationID:   toPGUUID(expectedAuthorizationID),
-				ExpectedMappingRevision:   request.Msg.ExpectedMappingRevision.Value,
-				ReplacementOrganizationID: toPGUUID(replacementOrganizationID),
-				ReplacementTeamID:         toPGUUID(replacementTeamID),
-				ReplacementMaximumUnits:   maximumUnits,
-				RevokeIdempotencyKey:      toPGUUID(revokeKey),
-				CreateIdempotencyKey:      toPGUUID(createKey),
+				SubmissionID:                 toPGUUID(submissionID),
+				CallerDigest:                 actor.digest,
+				IdempotencyKey:               toPGUUID(idempotencyID),
+				RequestDigest:                requestDigest,
+				ExpectedAuthorizationID:      toPGUUID(expectedAuthorizationID),
+				ExpectedMappingRevision:      request.Msg.ExpectedMappingRevision.Value,
+				ReplacementOrganizationID:    toPGUUID(replacementOrganizationID),
+				ReplacementTeamID:            toPGUUID(replacementTeamID),
+				ReplacementMaximumUnits:      maximumUnits,
+				ReplacementServiceIdentityID: replacementServiceIdentityID,
+				ReplacementMeterID:           replacementMeterID,
+				RevokeIdempotencyKey:         toPGUUID(revokeKey),
+				CreateIdempotencyKey:         toPGUUID(createKey),
 			})
 	if errors.Is(err, pgx.ErrNoRows) {
 		attempt, err = service.dependencies.Store.Queries().
@@ -136,6 +144,9 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 	}
 	if err != nil {
 		return nil, err
+	}
+	if _, err = storageRebindAttemptMeter(attempt); err != nil {
+		return nil, idempotencyConflict()
 	}
 	if attempt.SubmissionID != toPGUUID(submissionID) ||
 		!bytes.Equal(attempt.RequestDigest, requestDigest) ||
@@ -293,7 +304,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 			replacementRequest, lockErr :=
 				storageRebindAuthorizationRequest(
 					lockedAttempt, scope, submissionID,
-					meters.Storage, forwardedBearer)
+					forwardedBearer)
 			if lockErr != nil {
 				return storageAuthorizationFailed()
 			}
@@ -459,14 +470,15 @@ func storageRebindAuthorizationRequest(
 	attempt dbgen.RealqaStorageRebindAttempt,
 	scope owner,
 	submissionID uuid.UUID,
-	meter BillingMeter,
 	forwardedBearer string,
 ) (StorageAuthorizationRequest, error) {
 	organizationID, organizationErr := fromPGUUID(
 		attempt.ReplacementOrganizationID)
 	teamID, teamErr := fromPGUUID(attempt.ReplacementTeamID)
 	createKey, createKeyErr := fromPGUUID(attempt.CreateIdempotencyKey)
+	meter, meterErr := storageRebindAttemptMeter(attempt)
 	if organizationErr != nil || teamErr != nil || createKeyErr != nil ||
+		meterErr != nil ||
 		attempt.ReplacementMaximumUnits <= 0 {
 		return StorageAuthorizationRequest{}, errors.New(
 			"realqa storage billing: invalid persisted rebind input")
@@ -482,6 +494,22 @@ func storageRebindAuthorizationRequest(
 		MaximumUnits:      attempt.ReplacementMaximumUnits,
 		IdempotencyKey:    createKey,
 		ForwardedBearer:   forwardedBearer,
+	}, nil
+}
+
+func storageRebindAttemptMeter(
+	attempt dbgen.RealqaStorageRebindAttempt,
+) (BillingMeter, error) {
+	serviceIdentityID, serviceIdentityErr := fromPGUUID(
+		attempt.ReplacementServiceIdentityID)
+	meterID, meterErr := fromPGUUID(attempt.ReplacementMeterID)
+	if serviceIdentityErr != nil || meterErr != nil {
+		return BillingMeter{}, errors.New(
+			"realqa storage billing: invalid persisted rebind meter")
+	}
+	return BillingMeter{
+		ID:                meterID,
+		ServiceIdentityID: serviceIdentityID,
 	}, nil
 }
 
