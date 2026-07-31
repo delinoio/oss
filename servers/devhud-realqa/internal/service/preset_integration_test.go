@@ -2524,8 +2524,9 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		SELECT $1, 'personal', $2, $2, 'ready',
 		       $8, decode(repeat('dc', 32), 'hex'), $3, $4,
 		       preset_revision, asset.encoded_bytes, asset.encoded_bytes,
-		       $5 - interval '24 hours', $5 - interval '24 hours',
-		       $5 - interval '1 hour', $5
+		       $5::timestamptz - interval '24 hours',
+		       $5::timestamptz - interval '24 hours',
+		       $5::timestamptz - interval '1 hour', $5
 		FROM realqa_submissions AS submission
 		JOIN realqa_assets AS asset ON asset.id = $11
 		WHERE submission.id = $12;
@@ -2536,7 +2537,8 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		)
 		SELECT $6, $1, 'verified_unlinked', encoded_bytes, $7, media_type,
 		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
-		       sanitized_sha256, 'verified', $5 - interval '1 hour'
+		       sanitized_sha256, 'verified',
+		       $5::timestamptz - interval '1 hour'
 		FROM realqa_assets
 		WHERE id = $11;
 		INSERT INTO realqa_issue_submission_attempts (
