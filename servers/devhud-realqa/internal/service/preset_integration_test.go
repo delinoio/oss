@@ -2188,16 +2188,38 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'owner'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, accountID, organizationID); err != nil {
+		t.Fatal(err)
+	}
 	recoveryReplay, recoveryReplayFound, err := submissionService.submissionReplay(
 		ctx,
 		caller{accountID: accountID, digest: digest.Sum(nil)},
 		recoveryReplayKey,
 		recoveryReplayDigest,
 	)
+	if _, roleErr := connection.Exec(ctx, `
+		UPDATE realqa_owner_bindings
+		SET role = 'member'
+		WHERE account_id = $1
+		  AND owner_kind = 'organization'
+		  AND owner_id = $2
+	`, accountID, organizationID); roleErr != nil {
+		t.Fatal(roleErr)
+	}
 	if err != nil || !recoveryReplayFound ||
 		recoveryReplay == nil ||
 		recoveryReplay.Msg.Submission.StorageBillingRecovery == nil ||
-		len(recoveryReplay.Msg.Submission.StorageBillingRecovery.Actions) == 0 {
+		len(recoveryReplay.Msg.Submission.StorageBillingRecovery.Actions) != 2 ||
+		recoveryReplay.Msg.Submission.StorageBillingRecovery.Actions[0] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REBIND ||
+		recoveryReplay.Msg.Submission.StorageBillingRecovery.Actions[1] !=
+			realqav1.StorageRecoveryAction_STORAGE_RECOVERY_ACTION_REVOKE {
 		t.Fatalf("create-submission recovery replay = %#v / %v / %v",
 			recoveryReplay, recoveryReplayFound, err)
 	}
