@@ -516,6 +516,59 @@ func TestPostgreSQLMigrationsAreConcurrentAndIdempotent(t *testing.T) {
 		if !graceExpires.Equal(graceStart.Add(30 * 24 * time.Hour)) {
 			t.Fatalf("grace expiry = %s", graceExpires)
 		}
+
+		firstRebindKey := uuidv7.MustNew()
+		secondRebindKey := uuidv7.MustNew()
+		insertRebind := func(
+			callerDigest []byte,
+			idempotencyKey uuid.UUID,
+		) error {
+			_, insertErr := pool.Exec(ctx, `
+					INSERT INTO realqa_storage_rebind_attempts (
+						submission_id, caller_digest, idempotency_key,
+						request_digest, expected_authorization_id,
+						expected_mapping_revision,
+						replacement_organization_id, replacement_team_id,
+						replacement_maximum_units,
+						replacement_service_identity_id, replacement_meter_id,
+						revoke_idempotency_key, create_idempotency_key, state
+					) VALUES (
+						$1, $2, $3, $4, $5, 1, $6, $7, 2, $8, $9,
+						$10, $11, 'pending'
+					)
+				`, submissionID, callerDigest, idempotencyKey,
+				bytes.Repeat([]byte{8}, 32), authorizationID,
+				organizationID, teamID, serviceID, meterID,
+				uuidv7.MustNew(), uuidv7.MustNew())
+			return insertErr
+		}
+		firstCallerDigest := bytes.Repeat([]byte{9}, 32)
+		if err = insertRebind(
+			firstCallerDigest, firstRebindKey); err != nil {
+			t.Fatal(err)
+		}
+		if err = insertRebind(
+			bytes.Repeat([]byte{10}, 32), secondRebindKey); err == nil {
+			t.Fatal("distinct pending rebind was accepted")
+		}
+		if _, err = pool.Exec(ctx, `
+				UPDATE realqa_storage_rebind_attempts
+				SET state = 'completed',
+				    replacement_authorization_id = $3,
+				    replacement_authorization_revision = 1,
+				    resulting_mapping_revision = 2,
+				    cutoff_at = transaction_timestamp(),
+				    completed_at = transaction_timestamp()
+				WHERE caller_digest = $1
+				  AND idempotency_key = $2
+			`, firstCallerDigest, firstRebindKey,
+			uuidv7.MustNew()); err != nil {
+			t.Fatal(err)
+		}
+		if err = insertRebind(
+			bytes.Repeat([]byte{10}, 32), secondRebindKey); err != nil {
+			t.Fatalf("new rebind after completion: %v", err)
+		}
 	})
 }
 

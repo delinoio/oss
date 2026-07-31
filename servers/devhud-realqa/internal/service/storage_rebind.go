@@ -90,6 +90,14 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 		ctx, service.dependencies, actor, scope,
 		request.Msg.ReplacementBilling)
 	if err != nil {
+		if lookupErr == nil && connect.CodeOf(err) == connect.CodePermissionDenied {
+			if cleanupErr := service.closePendingStorageRebind(
+				ctx, actor, scope, submissionID, idempotencyID,
+				request.Msg, existingAttempt,
+			); cleanupErr != nil {
+				return nil, cleanupErr
+			}
+		}
 		return nil, err
 	}
 	if service.dependencies.Billing == nil {
@@ -142,6 +150,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 				RevokeIdempotencyKey:         toPGUUID(revokeKey),
 				CreateIdempotencyKey:         toPGUUID(createKey),
 			})
+	attemptCreated := err == nil
 	if errors.Is(err, pgx.ErrNoRows) {
 		attempt, err = service.dependencies.Store.Queries().
 			GetStorageRebindAttempt(
@@ -149,6 +158,9 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 					CallerDigest:   actor.digest,
 					IdempotencyKey: toPGUUID(idempotencyID),
 				})
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, idempotencyConflict()
 	}
 	if err != nil {
 		return nil, err
@@ -198,6 +210,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 	}
 	var completed dbgen.RealqaStorageRebindAttempt
 	replayed := false
+	payerAccessLost := false
 	err = service.dependencies.Store.WithinTransaction(
 		ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
 			lockedAttempt, lockErr := queries.LockStorageRebindAttempt(
@@ -224,6 +237,8 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 			if replacementPayer != scope {
 				if lockErr := lockActiveOwnerScope(
 					ctx, queries, replacementPayer); lockErr != nil {
+					payerAccessLost =
+						connect.CodeOf(lockErr) == connect.CodePermissionDenied
 					return lockErr
 				}
 			}
@@ -237,6 +252,7 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 				return lockErr
 			}
 			if !payerAllowed {
+				payerAccessLost = true
 				return permissionDenied()
 			}
 			lockedSubmission, lockErr := queries.LockSubmissionRecord(
@@ -442,6 +458,14 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 			return lockErr
 		})
 	if err != nil {
+		if payerAccessLost && !attemptCreated {
+			if cleanupErr := service.closePendingStorageRebind(
+				ctx, actor, scope, submissionID, idempotencyID,
+				request.Msg, attempt,
+			); cleanupErr != nil {
+				return nil, cleanupErr
+			}
+		}
 		return nil, err
 	}
 	audit(ctx, service.dependencies, actor,
@@ -452,7 +476,8 @@ func (service *Submission) RebindSubmissionStorageAuthorization(
 
 // closePendingStorageRebind recovers a replacement that may have been created
 // downstream before the local install transaction was lost. Once the
-// submission has left grace, that grant must be closed rather than installed.
+// submission has left grace or the caller has lost replacement-payer access,
+// that grant must be closed rather than installed.
 // The attempt remains pending as the durable create replay recipe. Once the
 // create response is known, a deletion-pending binding durably gives the M2M
 // closure worker everything it needs if this request is lost again.

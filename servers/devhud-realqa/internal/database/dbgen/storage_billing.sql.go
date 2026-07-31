@@ -597,7 +597,7 @@ INSERT INTO realqa_storage_rebind_attempts (
     $12, $13,
     'pending'
 )
-ON CONFLICT (caller_digest, idempotency_key) DO NOTHING
+ON CONFLICT DO NOTHING
 RETURNING submission_id, caller_digest, idempotency_key, request_digest, expected_authorization_id, expected_mapping_revision, replacement_organization_id, replacement_team_id, replacement_maximum_units, replacement_service_identity_id, replacement_meter_id, revoke_idempotency_key, create_idempotency_key, state, replacement_authorization_id, replacement_authorization_revision, resulting_mapping_revision, cutoff_at, created_at, completed_at
 `
 

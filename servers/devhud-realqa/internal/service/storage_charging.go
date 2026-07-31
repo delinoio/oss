@@ -291,6 +291,10 @@ func (service *Submission) reserveAndCommitStorage(
 		toPGUUID(meters.Storage.ID) != binding.MeterID ||
 		toPGUUID(meters.Storage.ServiceIdentityID) !=
 			binding.ServiceIdentityID {
+		if binding.ClosureState == "resource_deletion_pending" {
+			return errors.New(
+				"realqa storage billing: persisted meter mapping changed")
+		}
 		return service.startStorageGrace(
 			ctx, binding, periodStart,
 			StorageBillingFailureSecurity, true)
@@ -506,6 +510,10 @@ func (service *Submission) persistCommittedStorage(
 					ctx, queries, payerOwner); err != nil {
 					return err
 				}
+			}
+			if _, err := queries.LockSubmissionRecord(
+				ctx, binding.SubmissionID); err != nil {
+				return err
 			}
 			current, err := queries.LockCurrentStorageAuthorizationBinding(
 				ctx, binding.SubmissionID)

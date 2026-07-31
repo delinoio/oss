@@ -348,6 +348,10 @@ CREATE TABLE realqa_storage_rebind_attempts (
     )
 );
 
+CREATE UNIQUE INDEX realqa_storage_rebind_attempts_pending_submission
+ON realqa_storage_rebind_attempts (submission_id)
+WHERE state = 'pending';
+
 CREATE FUNCTION realqa_preserve_storage_authorization_binding()
 RETURNS trigger
 LANGUAGE plpgsql

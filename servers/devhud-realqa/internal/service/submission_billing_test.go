@@ -733,6 +733,52 @@ func TestDeletionPendingMeterOutageDoesNotStartRecovery(t *testing.T) {
 	}
 }
 
+func TestDeletionPendingCatalogDriftRemainsRetryable(t *testing.T) {
+	t.Parallel()
+	serviceIdentityID := uuidv7.MustNew()
+	billing := &failingAuthorizedStorageBilling{
+		meters: BillingMeters{
+			Transfer: BillingMeter{
+				ID: uuidv7.MustNew(), PriceVersionID: uuidv7.MustNew(),
+				ServiceIdentityID: serviceIdentityID,
+				Key:               "realqa_image_transfer", Unit: "encoded_mib",
+				Precision: 0, USDMicrosPerUnit: transferPriceUSDMicros,
+				ReservationTTLSeconds: 86_400, Enabled: true,
+			},
+			Storage: BillingMeter{
+				ID: uuidv7.MustNew(), PriceVersionID: uuidv7.MustNew(),
+				ServiceIdentityID: serviceIdentityID,
+				Key:               "realqa_image_storage", Unit: "mib_day",
+				Precision: 0, USDMicrosPerUnit: storagePriceUSDMicros,
+				Enabled: true,
+			},
+		},
+	}
+	service := NewSubmission(Dependencies{Billing: billing})
+	err := service.reserveAndCommitStorage(
+		context.Background(),
+		dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID:   toPGUUID(uuidv7.MustNew()),
+			SubmissionID:      toPGUUID(uuidv7.MustNew()),
+			ServiceIdentityID: toPGUUID(serviceIdentityID),
+			MeterID:           toPGUUID(uuidv7.MustNew()),
+			ClosureState:      "resource_deletion_pending",
+		},
+		dbgen.RealqaStorageDailySettlement{
+			ReserveIdempotencyKey: toPGUUID(uuidv7.MustNew()),
+		},
+		time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC),
+		time.Date(2030, 4, 6, 0, 0, 0, 0, time.UTC),
+	)
+	if err == nil {
+		t.Fatal("deletion-pending catalog drift was treated as settled")
+	}
+	if billing.meterCalls != 1 || billing.reserveAuthorizedCalls != 0 {
+		t.Fatalf("meter / reserve calls = %d / %d, want 1 / 0",
+			billing.meterCalls, billing.reserveAuthorizedCalls)
+	}
+}
+
 func TestBillingMeterContractRejectsPriceTTLAndActivationDrift(t *testing.T) {
 	t.Parallel()
 	serviceID := uuidv7.MustNew()

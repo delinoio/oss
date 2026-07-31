@@ -667,7 +667,7 @@ INSERT INTO realqa_storage_rebind_attempts (
     sqlc.arg(revoke_idempotency_key), sqlc.arg(create_idempotency_key),
     'pending'
 )
-ON CONFLICT (caller_digest, idempotency_key) DO NOTHING
+ON CONFLICT DO NOTHING
 RETURNING *;
 
 -- name: GetStorageRebindAttempt :one

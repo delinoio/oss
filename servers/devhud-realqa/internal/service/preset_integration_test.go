@@ -4326,6 +4326,233 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		t.Fatalf("pending replacement binding = %q / %q, want closed resource",
 			pendingReplacementState, pendingReplacementClosure)
 	}
+	lostPayerSubmissionID := uuidv7.MustNew()
+	lostPayerAssetID := uuidv7.MustNew()
+	lostPayerStorageAttemptKey := uuidv7.MustNew()
+	lostPayerAuthorizationID := uuidv7.MustNew()
+	lostPayerServiceID := uuidv7.MustNew()
+	lostPayerMeterID := uuidv7.MustNew()
+	lostPayerRecoveryID := uuidv7.MustNew()
+	lostPayerRebindKey := uuidv7.MustNew()
+	lostPayerReplacementID := uuidv7.MustNew()
+	lostPayerPublicID, err := imageassets.NewPublicID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lostPayerRequest :=
+		&realqav1.RebindSubmissionStorageAuthorizationRequest{
+			SubmissionId: &realqav1.UuidV7{
+				Value: lostPayerSubmissionID.String(),
+			},
+			ExpectedAuthorizationId: &realqav1.UuidV7{
+				Value: lostPayerAuthorizationID.String(),
+			},
+			ExpectedMappingRevision: revision(1),
+			ReplacementBilling: &realqav1.BillingScope{
+				OrganizationId: &realqav1.UuidV7{
+					Value: organizationID.String(),
+				},
+				TeamId: &realqav1.UuidV7{Value: teamID.String()},
+			},
+			Idempotency: &realqav1.IdempotencyKey{
+				Value: &realqav1.UuidV7{
+					Value: lostPayerRebindKey.String(),
+				},
+			},
+		}
+	lostPayerRequestDigest, err := digestMessage(lostPayerRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lostPayerRevokeKey, err := derivedUUIDv7(
+		lostPayerRebindKey, "storage-rebind-revoke")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lostPayerCreateKey, err := derivedUUIDv7(
+		lostPayerRebindKey, "storage-rebind-create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, preset_id,
+			destination_id, state, provider_issue_id, provider_issue_url,
+			idempotency_digest, submitted_at, payer_organization_id,
+			payer_team_id, preset_revision, declared_encoded_bytes,
+			verified_encoded_bytes, upload_deadline, upload_expires_at
+		)
+		SELECT $1, 'personal', $2, $2, preset_id, destination_id,
+		       'storage_billing_grace', 'lost-payer-rebind',
+		       'https://github.com/delinoio/oss/issues/761',
+		       idempotency_digest, transaction_timestamp(), $3, $4,
+		       preset_revision, declared_encoded_bytes, verified_encoded_bytes,
+		       transaction_timestamp() + interval '23 hours',
+		       transaction_timestamp() + interval '24 hours'
+		FROM realqa_submissions
+		WHERE id = $5;
+		INSERT INTO realqa_assets (
+			id, submission_id, public_id, state, encoded_bytes,
+			client_image_id, media_type, declared_encoded_bytes,
+			pixel_width, pixel_height, source_sha256, sanitized_sha256,
+			upload_state, verified_at
+		)
+		SELECT $6, $1, $7, 'public_retained', encoded_bytes, $8,
+		       media_type, declared_encoded_bytes, pixel_width, pixel_height,
+		       source_sha256, sanitized_sha256, 'verified',
+		       transaction_timestamp()
+		FROM realqa_assets
+		WHERE id = $9;
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state,
+			authorization_id, authorization_revision, mapping_revision
+		) VALUES (
+			$1, $10, decode(repeat('ad', 32), 'hex'), $11, $12, 1,
+			'active', $13, 1, 1
+		);
+		INSERT INTO realqa_storage_authorization_bindings (
+			authorization_id, submission_id, mapping_revision,
+			authorizer_account_id, owner_kind, owner_id,
+			organization_id, team_id, service_identity_id, meter_id,
+			maximum_units, status, authorization_revision
+		) VALUES (
+			$13, $1, 1, $2, 'personal', $2, $3, $4, $11, $12,
+			1, 'active', 1
+		);
+		INSERT INTO realqa_storage_recoveries (
+			id, submission_id, authorization_id, reason,
+			grace_started_at, grace_expires_at
+		) VALUES (
+			$14, $1, $13, 'payment_required',
+			transaction_timestamp(),
+			transaction_timestamp() + interval '30 days'
+		);
+		INSERT INTO realqa_storage_rebind_attempts (
+			submission_id, caller_digest, idempotency_key, request_digest,
+			expected_authorization_id, expected_mapping_revision,
+			replacement_organization_id, replacement_team_id,
+			replacement_maximum_units, replacement_service_identity_id,
+			replacement_meter_id, revoke_idempotency_key,
+			create_idempotency_key, state
+		) VALUES (
+			$1, $15, $16, $17, $13, 1, $3, $4, 1, $11, $12,
+			$18, $19, 'pending'
+		)
+	`, lostPayerSubmissionID, accountID, organizationID, teamID,
+		submissionID, lostPayerAssetID, lostPayerPublicID, uuidv7.MustNew(),
+		promotionAssetID, lostPayerStorageAttemptKey, lostPayerServiceID,
+		lostPayerMeterID, lostPayerAuthorizationID, lostPayerRecoveryID,
+		digest.Sum(nil), lostPayerRebindKey, lostPayerRequestDigest,
+		lostPayerRevokeKey, lostPayerCreateKey); err != nil {
+		t.Fatal(err)
+	}
+	lostPayerReplacement := StorageAuthorization{
+		ID:                  lostPayerReplacementID,
+		AuthorizerAccountID: accountID,
+		OwnerKind:           "personal",
+		OwnerID:             accountID,
+		OrganizationID:      organizationID,
+		TeamID:              teamID,
+		ServiceIdentityID:   lostPayerServiceID,
+		MeterID:             lostPayerMeterID,
+		FeatureResourceID:   lostPayerSubmissionID,
+		MaximumUnits:        1,
+		Status:              "active",
+		Revision:            1,
+	}
+	lostPayerBilling := &failingAuthorizedStorageBilling{
+		meters: BillingMeters{
+			Transfer: BillingMeter{
+				ID: uuidv7.MustNew(), PriceVersionID: uuidv7.MustNew(),
+				ServiceIdentityID: lostPayerServiceID,
+				Key:               "realqa_image_transfer", Unit: "encoded_mib",
+				Precision: 0, USDMicrosPerUnit: transferPriceUSDMicros,
+				ReservationTTLSeconds: 86_400, Enabled: true,
+			},
+			Storage: BillingMeter{
+				ID: lostPayerMeterID, PriceVersionID: uuidv7.MustNew(),
+				ServiceIdentityID: lostPayerServiceID,
+				Key:               "realqa_image_storage", Unit: "mib_day",
+				Precision: 0, USDMicrosPerUnit: storagePriceUSDMicros,
+				Enabled: true,
+			},
+		},
+		createResult: lostPayerReplacement,
+		markResult: StorageAuthorization{
+			ID:                  lostPayerReplacementID,
+			AuthorizerAccountID: accountID,
+			OwnerKind:           "personal",
+			OwnerID:             accountID,
+			OrganizationID:      organizationID,
+			TeamID:              teamID,
+			ServiceIdentityID:   lostPayerServiceID,
+			MeterID:             lostPayerMeterID,
+			FeatureResourceID:   lostPayerSubmissionID,
+			MaximumUnits:        1,
+			Status:              "resource_deleted",
+			Revision:            2,
+		},
+	}
+	lostPayerService := NewSubmission(Dependencies{
+		Store: store, Billing: lostPayerBilling,
+		ForwardedBearer: func(context.Context) (string, bool) {
+			return "fixture-forwarded-bearer", true
+		},
+		Pseudonymizer: pseudonymizer,
+	})
+	if _, err = connection.Exec(ctx, `
+		DELETE FROM realqa_payer_team_bindings
+		WHERE account_id = $1
+		  AND organization_id = $2
+		  AND team_id = $3
+	`, accountID, organizationID, teamID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = lostPayerService.RebindSubmissionStorageAuthorization(
+		authCtx, connect.NewRequest(lostPayerRequest))
+	requireServiceError(t, err, connect.CodePermissionDenied,
+		realqav1.ErrorReason_ERROR_REASON_PERMISSION_DENIED,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED)
+	if lostPayerBilling.createAuthorizationCalls != 1 ||
+		lostPayerBilling.markResourceDeletedCalls != 1 {
+		t.Fatalf("lost-payer cleanup calls = create:%d mark:%d, want 1/1",
+			lostPayerBilling.createAuthorizationCalls,
+			lostPayerBilling.markResourceDeletedCalls)
+	}
+	var lostPayerClosureState string
+	if err = connection.QueryRow(ctx, `
+		SELECT closure_state
+		FROM realqa_storage_authorization_bindings
+		WHERE authorization_id = $1
+	`, lostPayerReplacementID).Scan(&lostPayerClosureState); err != nil {
+		t.Fatal(err)
+	}
+	if lostPayerClosureState != "closed" {
+		t.Fatalf("lost-payer replacement closure = %q, want closed",
+			lostPayerClosureState)
+	}
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_payer_team_bindings (
+			account_id, organization_id, team_id
+		) VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
+	`, accountID, organizationID, teamID); err != nil {
+		t.Fatal(err)
+	}
+	distinctRebindRequest := proto.Clone(lostPayerRequest).(*realqav1.RebindSubmissionStorageAuthorizationRequest)
+	distinctRebindRequest.Idempotency = &realqav1.IdempotencyKey{
+		Value: &realqav1.UuidV7{Value: uuidv7.MustNew().String()},
+	}
+	_, err = lostPayerService.RebindSubmissionStorageAuthorization(
+		authCtx, connect.NewRequest(distinctRebindRequest))
+	requireServiceError(t, err, connect.CodeAlreadyExists,
+		realqav1.ErrorReason_ERROR_REASON_IDEMPOTENCY_CONFLICT,
+		realqav1.FailureClass_FAILURE_CLASS_CONFLICT)
+	if lostPayerBilling.createAuthorizationCalls != 1 {
+		t.Fatalf("distinct pending rebind created another authorization: %d calls",
+			lostPayerBilling.createAuthorizationCalls)
+	}
 	if _, err = connection.Exec(ctx, `
 			UPDATE realqa_owner_bindings
 			SET role = 'admin'
