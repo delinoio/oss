@@ -28,6 +28,7 @@
     "lint": "eslint . --max-warnings 0",
     "mobile:generate:android": "node scripts/mobile.mjs generate android",
     "mobile:generate:ios": "node scripts/mobile.mjs generate ios",
+    "pretest": "pnpm --filter @delinoio/devhud-deck-connect build",
     "smoke:desktop": "node scripts/smoke-desktop.mjs",
     "test": "vitest run",
     "test:diagnostics": "pnpm run check:diagnostics && vitest run src/runtime/startup.test.ts src/App.ui.test.tsx && cargo test -p devhud",
