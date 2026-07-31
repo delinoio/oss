@@ -504,7 +504,8 @@ func (service *Submission) submissionReplay(
 		if parseErr != nil {
 			return nil, true, parseErr
 		}
-		submission, err = service.loadSubmission(ctx, id)
+		submission, err = service.loadSubmissionWithRecoveryCaller(
+			ctx, id, toPGUUID(actor.accountID))
 		if err != nil {
 			return nil, true, err
 		}

@@ -410,14 +410,18 @@ func (service *Submission) commitReservedStorage(
 	}
 	meter, err := persistedStorageReservationMeter(binding, settlement)
 	if err != nil {
+		persistedErr := errors.New(
+			"realqa storage billing: invalid persisted reservation meter")
+		if binding.ClosureState == "resource_deletion_pending" {
+			return persistedErr
+		}
 		if graceErr := service.startStorageGrace(
 			ctx, binding, periodEnd,
 			StorageBillingFailureSecurity, false,
 		); graceErr != nil {
 			return graceErr
 		}
-		return errors.New(
-			"realqa storage billing: invalid persisted reservation meter")
+		return persistedErr
 	}
 	committed, err := service.dependencies.Billing.CommitAuthorizedStorage(
 		ctx, AuthorizedStorageFinalizationRequest{
@@ -429,6 +433,9 @@ func (service *Submission) commitReservedStorage(
 			IdempotencyKey:    commitKey,
 		})
 	if err != nil {
+		if binding.ClosureState == "resource_deletion_pending" {
+			return err
+		}
 		if storageFailureKind(err) == StorageBillingFailureUnavailable {
 			if graceErr := service.startStorageGrace(
 				ctx, binding, periodEnd,
@@ -448,6 +455,9 @@ func (service *Submission) commitReservedStorage(
 	if err = validateAuthorizedStorageReservation(
 		committed, binding, meter, settlement,
 		periodStart, "committed", settlement.Units); err != nil {
+		if binding.ClosureState == "resource_deletion_pending" {
+			return err
+		}
 		if graceErr := service.startStorageGrace(
 			ctx, binding, periodEnd,
 			StorageBillingFailureSecurity, false,

@@ -59,6 +59,12 @@ func (service *Submission) SubmitIssue(
 	if err != nil || clientKey != idempotencyID {
 		return nil, idempotencyConflict()
 	}
+	if recovered, recoveryErr := service.recoverExpiredStorageAuthorization(
+		ctx, actor, scope, submissionID, submission,
+		idempotencyID, requestDigest,
+	); recovered {
+		return nil, recoveryErr
+	}
 	attempt, replayed, err := service.claimIssueSubmission(
 		ctx, actor, submissionID, idempotencyID, requestDigest,
 		request.Msg.ExpectedSubmissionRevision.Value)
@@ -485,6 +491,20 @@ func (service *Submission) ensureStorageAuthorization(
 	if maximumUnits == 0 {
 		return nil
 	}
+	return service.ensureStorageAuthorizationMaximum(
+		ctx, actor, scope, submissionID, maximumUnits)
+}
+
+func (service *Submission) ensureStorageAuthorizationMaximum(
+	ctx context.Context,
+	actor caller,
+	scope owner,
+	submissionID uuid.UUID,
+	maximumUnits int64,
+) error {
+	if maximumUnits <= 0 {
+		return storageAuthorizationFailed()
+	}
 	submission, err := service.dependencies.Store.Queries().
 		GetSubmissionRecord(ctx, toPGUUID(submissionID))
 	if err != nil {
@@ -645,6 +665,96 @@ func (service *Submission) ensureStorageAuthorization(
 				})
 			return createErr
 		})
+}
+
+// recoverExpiredStorageAuthorization is a cleanup-only replay. Once staging
+// expiry has terminalized the assets, a fresh authenticated replay may recover
+// an ambiguous initial authorization through its stable key and immediately
+// queue that exact grant for deletion. It never resumes provider work or image
+// promotion after the transfer reservation expires.
+func (service *Submission) recoverExpiredStorageAuthorization(
+	ctx context.Context,
+	actor caller,
+	scope owner,
+	submissionID uuid.UUID,
+	submission dbgen.RealqaSubmission,
+	idempotencyID uuid.UUID,
+	requestDigest []byte,
+) (bool, error) {
+	if submission.State != "assets_deleted" ||
+		!submission.UploadExpiresAt.Valid ||
+		service.dependencies.Clock.Now().UTC().Before(
+			submission.UploadExpiresAt.Time.UTC()) {
+		return false, nil
+	}
+	issueAttempt, err := service.dependencies.Store.Queries().
+		GetIssueSubmissionAttempt(ctx, toPGUUID(submissionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	if issueAttempt.IdempotencyKey != toPGUUID(idempotencyID) ||
+		!bytes.Equal(issueAttempt.RequestDigest, requestDigest) {
+		return true, idempotencyConflict()
+	}
+	storageAttempt, err := service.dependencies.Store.Queries().
+		GetStorageAuthorizationAttempt(ctx, toPGUUID(submissionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	if issueAttempt.State != "transfer_finalized" {
+		return true, storageAuthorizationFailed()
+	}
+	switch storageAttempt.State {
+	case "pending":
+		if err = service.ensureStorageAuthorizationMaximum(
+			ctx, actor, scope, submissionID,
+			storageAttempt.MaximumUnits); err != nil {
+			return true, err
+		}
+	case "active", "closure_pending", "closed":
+		// A prior replay may have installed the binding before losing its
+		// response or before the deletion-pending transition committed.
+	default:
+		return true, storageAuthorizationFailed()
+	}
+	err = service.dependencies.Store.WithinTransaction(
+		ctx, pgx.TxOptions{}, func(queries *dbgen.Queries) error {
+			locked, lockErr := queries.LockSubmissionRecord(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
+			if locked.State != "assets_deleted" ||
+				!locked.UploadExpiresAt.Valid {
+				return retentionStateConflict()
+			}
+			binding, lockErr := queries.LockCurrentStorageAuthorizationBinding(
+				ctx, toPGUUID(submissionID))
+			if lockErr != nil {
+				return lockErr
+			}
+			updated, lockErr := queries.MarkSubmissionStorageClosurePending(
+				ctx, dbgen.MarkSubmissionStorageClosurePendingParams{
+					Cutoff:       locked.UploadExpiresAt,
+					SubmissionID: locked.ID,
+				})
+			if lockErr == nil && updated == 0 &&
+				binding.ClosureState != "closed" {
+				return errors.New(
+					"realqa storage billing: expired authorization remained open")
+			}
+			return lockErr
+		})
+	if err != nil {
+		return true, err
+	}
+	return true, uploadExpired()
 }
 
 func storageAuthorizationAttemptDigest(

@@ -668,6 +668,43 @@ func TestDeletionPendingReserveFailureDoesNotStartRecovery(t *testing.T) {
 	}
 }
 
+func TestDeletionPendingCommitFailureDoesNotStartRecovery(t *testing.T) {
+	t.Parallel()
+	commitErr := &StorageBillingFailure{
+		Kind: StorageBillingFailurePayment,
+	}
+	billing := &failingAuthorizedStorageBilling{commitErr: commitErr}
+	service := NewSubmission(Dependencies{Billing: billing})
+	periodStart := time.Date(2030, 4, 5, 0, 0, 0, 0, time.UTC)
+	err := service.commitReservedStorage(
+		context.Background(),
+		dbgen.RealqaStorageAuthorizationBinding{
+			AuthorizationID:   toPGUUID(uuidv7.MustNew()),
+			SubmissionID:      toPGUUID(uuidv7.MustNew()),
+			ServiceIdentityID: toPGUUID(uuidv7.MustNew()),
+			MeterID:           toPGUUID(uuidv7.MustNew()),
+			ClosureState:      "resource_deletion_pending",
+		},
+		dbgen.RealqaStorageDailySettlement{
+			PeriodStart:               pgTimestamp(periodStart),
+			Units:                     1,
+			ReservationID:             toPGUUID(uuidv7.MustNew()),
+			CommitIdempotencyKey:      toPGUUID(uuidv7.MustNew()),
+			ReservationPriceVersionID: toPGUUID(uuidv7.MustNew()),
+		},
+		periodStart,
+		periodStart.Add(24*time.Hour),
+	)
+	if err != commitErr {
+		t.Fatalf("deletion-pending commit error = %v, want original error",
+			err)
+	}
+	if billing.commitAuthorizedCalls != 1 {
+		t.Fatalf("commit calls = %d, want 1",
+			billing.commitAuthorizedCalls)
+	}
+}
+
 func TestDeletionPendingMeterOutageDoesNotStartRecovery(t *testing.T) {
 	t.Parallel()
 	meterErr := errors.New("fixture catalog unavailable")

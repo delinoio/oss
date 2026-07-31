@@ -2174,6 +2174,33 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 		}); err != nil {
 		t.Fatal(err)
 	}
+	recoveryReplayKey := uuidv7.MustNew()
+	recoveryReplayDigest := bytes.Repeat([]byte{0xcb}, 32)
+	if _, err = store.Queries().CreateIdempotencyRecord(
+		ctx, dbgen.CreateIdempotencyRecordParams{
+			ID:             toPGUUID(uuidv7.MustNew()),
+			CallerKind:     "user",
+			CallerDigest:   digest.Sum(nil),
+			Operation:      "create_submission",
+			IdempotencyKey: toPGUUID(recoveryReplayKey),
+			RequestDigest:  recoveryReplayDigest,
+			ResourceID:     toPGUUID(partialSubmissionID),
+		}); err != nil {
+		t.Fatal(err)
+	}
+	recoveryReplay, recoveryReplayFound, err := submissionService.submissionReplay(
+		ctx,
+		caller{accountID: accountID, digest: digest.Sum(nil)},
+		recoveryReplayKey,
+		recoveryReplayDigest,
+	)
+	if err != nil || !recoveryReplayFound ||
+		recoveryReplay == nil ||
+		recoveryReplay.Msg.Submission.StorageBillingRecovery == nil ||
+		len(recoveryReplay.Msg.Submission.StorageBillingRecovery.Actions) == 0 {
+		t.Fatalf("create-submission recovery replay = %#v / %v / %v",
+			recoveryReplay, recoveryReplayFound, err)
+	}
 	unpromotedSubmissionID := uuidv7.MustNew()
 	unpromotedAssetID := uuidv7.MustNew()
 	unpromotedAttemptKey := uuidv7.MustNew()
@@ -2423,6 +2450,154 @@ func TestPostgreSQLPresetReplayRevisionRolesAndDeletion(t *testing.T) {
 	}
 	if _, ok := objects.objects[unpromotedPrivateKey]; ok {
 		t.Fatal("unpromoted private object was retained")
+	}
+	expiredAttemptSubmissionID := uuidv7.MustNew()
+	expiredAttemptAssetID := uuidv7.MustNew()
+	expiredAttemptIssueKey := uuidv7.MustNew()
+	expiredAttemptServiceID := uuidv7.MustNew()
+	expiredAttemptMeterID := uuidv7.MustNew()
+	expiredAttemptAuthorizationID := uuidv7.MustNew()
+	expiredAttemptCreateKey, err := derivedUUIDv7(
+		expiredAttemptSubmissionID, "storage-authorization")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredAttemptCutoff := time.Now().Add(-time.Hour).
+		UTC().Truncate(time.Microsecond)
+	expiredAttemptRequest := &realqav1.SubmitIssueRequest{
+		SubmissionId: &realqav1.UuidV7{
+			Value: expiredAttemptSubmissionID.String(),
+		},
+		ExpectedSubmissionRevision: &realqav1.Revision{Value: 1},
+		Issue: &realqav1.IssueSubmission{
+			PublicImageConfirmation: true,
+		},
+		Idempotency: &realqav1.IdempotencyKey{
+			Value: &realqav1.UuidV7{Value: expiredAttemptIssueKey.String()},
+		},
+	}
+	expiredAttemptIssueDigest, err := digestMessage(expiredAttemptRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredAttemptDigest := storageAuthorizationAttemptDigest(
+		owner{kind: "personal", id: accountID},
+		organizationID,
+		teamID,
+		BillingMeter{
+			ID:                expiredAttemptMeterID,
+			ServiceIdentityID: expiredAttemptServiceID,
+		},
+		1,
+	)
+	if _, err = connection.Exec(ctx, `
+		INSERT INTO realqa_submissions (
+			id, owner_kind, owner_id, created_by_account_id, state,
+			client_idempotency_key, idempotency_digest,
+			payer_organization_id, payer_team_id, preset_revision,
+			declared_encoded_bytes,
+			verified_encoded_bytes, created_at, updated_at,
+			upload_deadline, upload_expires_at
+		)
+		SELECT $1, 'personal', $2, $2, 'ready',
+		       $8, decode(repeat('dc', 32), 'hex'), $3, $4,
+		       preset_revision, asset.encoded_bytes, asset.encoded_bytes,
+		       $5 - interval '24 hours', $5 - interval '24 hours',
+		       $5 - interval '1 hour', $5
+		FROM realqa_submissions AS submission
+		JOIN realqa_assets AS asset ON asset.id = $11
+		WHERE submission.id = $12;
+		INSERT INTO realqa_assets (
+			id, submission_id, state, encoded_bytes, client_image_id,
+			media_type, declared_encoded_bytes, pixel_width, pixel_height,
+			source_sha256, sanitized_sha256, upload_state, verified_at
+		)
+		SELECT $6, $1, 'verified_unlinked', encoded_bytes, $7, media_type,
+		       declared_encoded_bytes, pixel_width, pixel_height, source_sha256,
+		       sanitized_sha256, 'verified', $5 - interval '1 hour'
+		FROM realqa_assets
+		WHERE id = $11;
+		INSERT INTO realqa_issue_submission_attempts (
+			submission_id, idempotency_key, request_digest, state
+		) VALUES ($1, $8, $9, 'transfer_finalized');
+		INSERT INTO realqa_storage_authorization_attempts (
+			submission_id, idempotency_key, request_digest,
+			service_identity_id, meter_id, maximum_units, state
+		) VALUES ($1, $10, $13, $14, $15, 1, 'pending')
+	`, expiredAttemptSubmissionID, accountID, organizationID, teamID,
+		expiredAttemptCutoff, expiredAttemptAssetID, uuidv7.MustNew(),
+		expiredAttemptIssueKey, expiredAttemptIssueDigest,
+		expiredAttemptCreateKey, promotionAssetID, submissionID,
+		expiredAttemptDigest[:], expiredAttemptServiceID,
+		expiredAttemptMeterID); err != nil {
+		t.Fatal(err)
+	}
+	expiredCleaned, err := submissionService.CleanupExpiredStaging(
+		ctx, time.Now().UTC(), 100)
+	if err != nil || expiredCleaned != 1 {
+		t.Fatalf("pending-attempt staging cleanup = %d, %v",
+			expiredCleaned, err)
+	}
+	expiredSubmission, err := store.Queries().GetSubmissionRecord(
+		ctx, toPGUUID(expiredAttemptSubmissionID))
+	if err != nil || expiredSubmission.State != "assets_deleted" {
+		t.Fatalf("pending-attempt terminal submission = %q, %v",
+			expiredSubmission.State, err)
+	}
+	expiredBilling := &failingAuthorizedStorageBilling{
+		createResult: StorageAuthorization{
+			ID:                  expiredAttemptAuthorizationID,
+			AuthorizerAccountID: accountID,
+			OwnerKind:           "personal",
+			OwnerID:             accountID,
+			OrganizationID:      organizationID,
+			TeamID:              teamID,
+			ServiceIdentityID:   expiredAttemptServiceID,
+			MeterID:             expiredAttemptMeterID,
+			FeatureResourceID:   expiredAttemptSubmissionID,
+			MaximumUnits:        1,
+			Status:              "active",
+			Revision:            1,
+		},
+	}
+	expiredRecoveryService := NewSubmission(Dependencies{
+		Store: store, Billing: expiredBilling,
+		Clock:         fixedSubmissionClock{now: time.Now().UTC()},
+		Pseudonymizer: pseudonymizer,
+		ForwardedBearer: func(context.Context) (string, bool) {
+			return "fixture-forwarded-bearer", true
+		},
+	})
+	_, recoveryErr := expiredRecoveryService.SubmitIssue(
+		authCtx, connect.NewRequest(expiredAttemptRequest))
+	requireServiceError(
+		t,
+		recoveryErr,
+		connect.CodeDeadlineExceeded,
+		realqav1.ErrorReason_ERROR_REASON_UPLOAD_EXPIRED,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED,
+	)
+	_, recoveryErr = expiredRecoveryService.SubmitIssue(
+		authCtx, connect.NewRequest(expiredAttemptRequest))
+	requireServiceError(
+		t,
+		recoveryErr,
+		connect.CodeDeadlineExceeded,
+		realqav1.ErrorReason_ERROR_REASON_UPLOAD_EXPIRED,
+		realqav1.FailureClass_FAILURE_CLASS_USER_ACTION_REQUIRED,
+	)
+	expiredBinding, err := store.Queries().GetStorageAuthorizationBinding(
+		ctx, toPGUUID(expiredAttemptAuthorizationID))
+	if err != nil ||
+		expiredBinding.ClosureState != "resource_deletion_pending" ||
+		!expiredBinding.AccrualCutoffAt.Valid ||
+		!expiredBinding.AccrualCutoffAt.Time.Equal(expiredAttemptCutoff) ||
+		expiredBilling.createAuthorizationCalls != 1 {
+		t.Fatalf("expired authorization recovery = %q / %v / %d / %v",
+			expiredBinding.ClosureState,
+			expiredBinding.AccrualCutoffAt,
+			expiredBilling.createAuthorizationCalls,
+			err)
 	}
 	disconnectSubmissionID := uuidv7.MustNew()
 	disconnectAssetID := uuidv7.MustNew()
@@ -4664,10 +4839,13 @@ type failingAuthorizedStorageBilling struct {
 	SubmissionBilling
 	meters                   BillingMeters
 	metersErr                error
+	createErr                error
+	createResult             StorageAuthorization
 	reserveErr               error
 	commitErr                error
 	commitResult             AuthorizedStorageReservation
 	meterCalls               int
+	createAuthorizationCalls int
 	reserveAuthorizedCalls   int
 	commitAuthorizedCalls    int
 	releaseAuthorizedCalls   int
@@ -4680,6 +4858,14 @@ func (billing *failingAuthorizedStorageBilling) Meters(
 ) (BillingMeters, error) {
 	billing.meterCalls++
 	return billing.meters, billing.metersErr
+}
+
+func (billing *failingAuthorizedStorageBilling) CreateStorageAuthorization(
+	context.Context,
+	StorageAuthorizationRequest,
+) (StorageAuthorization, error) {
+	billing.createAuthorizationCalls++
+	return billing.createResult, billing.createErr
 }
 
 func (billing *failingAuthorizedStorageBilling) ReserveAuthorizedStorage(
