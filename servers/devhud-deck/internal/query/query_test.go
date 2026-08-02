@@ -54,6 +54,28 @@ func TestParseAndBuilderEditPreserveUnknownClauses(t *testing.T) {
 	}
 }
 
+func TestParseEnforcesProviderQueryLimit(t *testing.T) {
+	t.Parallel()
+	prefix := "is:pr label:"
+	atLimit := prefix + strings.Repeat("a", maxQueryBytes-len(prefix))
+	parsed, err := Parse(atLimit)
+	if err != nil {
+		t.Fatalf("parse query at provider limit: %v", err)
+	}
+	if len(parsed.RawQuery) != maxQueryBytes {
+		t.Fatalf("canonical query length = %d", len(parsed.RawQuery))
+	}
+	if _, err := Parse(atLimit + "a"); err == nil {
+		t.Fatal("query over provider limit was accepted")
+	}
+
+	withoutPullRequest := "label:" +
+		strings.Repeat("a", maxQueryBytes-len("label:"))
+	if _, err := Parse(withoutPullRequest); err == nil {
+		t.Fatal("canonical query over provider limit was accepted")
+	}
+}
+
 func TestResolveViewerUsesCurrentViewerWithoutChangingDefinition(t *testing.T) {
 	t.Parallel()
 	definition, err := Parse("is:pr author:@me assignee:@me future:@me")
