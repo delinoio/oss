@@ -105,6 +105,15 @@ function isStaleRevision(error: unknown): boolean {
   return error instanceof DeckProductError && error.code === DeckFailureCode.StaleRevision;
 }
 
+function shouldClearShortcuts(error: unknown): boolean {
+  return error instanceof DeckProductError && (
+    error.code === DeckFailureCode.AuthenticationRequired ||
+    error.code === DeckFailureCode.PermissionDenied ||
+    error.code === DeckFailureCode.GitHubPermissionDenied ||
+    error.code === DeckFailureCode.Disconnected
+  );
+}
+
 export function DeckProvider({
   children,
   gateway,
@@ -205,7 +214,10 @@ export function DeckProvider({
   }, [gateway, selectedViewId]);
 
   useEffect(() => {
-    void gateway.synchronizeShortcuts().catch(() => undefined);
+    void gateway.synchronizeShortcuts().catch((error: unknown) => {
+      if (!shouldClearShortcuts(error)) return;
+      return gateway.clearShortcuts().catch(() => undefined);
+    });
   }, [gateway, views]);
   useEffect(
     () => () => { void gateway.clearShortcuts().catch(() => undefined); },

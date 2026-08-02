@@ -444,6 +444,8 @@ const transportFailureCodes: Readonly<Record<string, DeckFailureCode>> = {
   "billing-unavailable": DeckFailureCode.BillingUnavailable,
   "provider-unavailable": DeckFailureCode.ProviderUnavailable,
   "service-unavailable": DeckFailureCode.ServiceUnavailable,
+  "browser-unavailable": DeckFailureCode.BrowserUnavailable,
+  "invalid-pull-request": DeckFailureCode.UnsupportedAction,
 };
 
 interface NativeConnectFailure {
@@ -697,7 +699,13 @@ export class NativeDeckGateway implements DeckGateway {
       throw error;
     }
   }
-  openPullRequest(pullRequest: DeckPullRequest): Promise<void> { return openDeckPullRequest(pullRequest.repositoryOwner, pullRequest.repositoryName, pullRequest.number); }
+  openPullRequest(pullRequest: DeckPullRequest): Promise<void> {
+    return this.#call(() => openDeckPullRequest(
+      pullRequest.repositoryOwner,
+      pullRequest.repositoryName,
+      pullRequest.number,
+    ));
+  }
   recordViewOpened(viewId: string): void { this.#lastOpenedAt.set(viewId, new Date()); }
   synchronizeShortcuts(): Promise<void> { return this.#runShortcutSynchronization(); }
 

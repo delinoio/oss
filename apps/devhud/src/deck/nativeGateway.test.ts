@@ -298,6 +298,21 @@ describe("native Deck gateway", () => {
     expect(requests[1]).toMatchObject({ origin: RefreshOrigin.MANUAL });
   });
 
+  it.each([
+    ["reauthentication-required", DeckFailureCode.AuthenticationRequired],
+    ["browser-unavailable", DeckFailureCode.BrowserUnavailable],
+    ["invalid-pull-request", DeckFailureCode.UnsupportedAction],
+  ])("maps the %s GitHub handoff failure", async (code, expected) => {
+    vi.mocked(invoke).mockRejectedValueOnce({ code });
+    const gateway = new NativeDeckGateway();
+
+    await expect(gateway.openPullRequest({
+      repositoryOwner: "delinoio",
+      repositoryName: "oss",
+      number: 795,
+    } as never)).rejects.toMatchObject({ code: expected });
+  });
+
   it("maps typed Connect details and retry-after into the stable product error", () => {
     const detail = create(ErrorDetailSchema, {
       reason: ErrorReason.PROVIDER_RATE_LIMITED,

@@ -161,6 +161,35 @@ describe("Deck composable production workspace", () => {
     expect(clearShortcuts).toHaveBeenCalledOnce();
   });
 
+  it("clears retained shortcuts when synchronization loses view permission", async () => {
+    const clearShortcuts = vi.fn(async () => undefined);
+    const backend = gateway({
+      synchronizeShortcuts: vi.fn(async () => {
+        throw new DeckProductError(DeckFailureCode.PermissionDenied);
+      }),
+      clearShortcuts,
+    });
+
+    renderDeck(backend);
+
+    await waitFor(() => expect(clearShortcuts).toHaveBeenCalled());
+  });
+
+  it("retains shortcuts through retryable synchronization failures", async () => {
+    const clearShortcuts = vi.fn(async () => undefined);
+    const backend = gateway({
+      synchronizeShortcuts: vi.fn(async () => {
+        throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+      }),
+      clearShortcuts,
+    });
+
+    renderDeck(backend);
+    await waitFor(() => expect(backend.synchronizeShortcuts).toHaveBeenCalled());
+
+    expect(clearShortcuts).not.toHaveBeenCalled();
+  });
+
   it("navigates explicit personal and organization ownership scopes", async () => {
     const backend = gateway({ listOwners: vi.fn(async () => [owner, organization]) });
     const user = userEvent.setup();

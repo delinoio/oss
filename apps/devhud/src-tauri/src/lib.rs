@@ -3175,8 +3175,9 @@ fn reset_dev_hud(
     let deck_device_reset_failed = deck_device_auth_clear.is_err();
     let (auth_reset_failed, realqa_draft_reset_failed) = composer_core.reset_all_with(|| {
         browser_inbox.clear();
+        let auth_reset_failed = auth_state.reset().is_err();
         (
-            deck_device_reset_failed || auth_state.reset().is_err(),
+            deck_device_reset_failed || auth_reset_failed,
             realqa_drafts.reset().is_err(),
         )
     });
